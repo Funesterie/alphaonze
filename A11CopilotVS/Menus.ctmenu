@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+  <Commands package="guidA11CopilotVSPackage">
+    <Buttons>
+      <Button guid="guidA11ToolWindowCommand" id="cmdidA11ToolWindow" priority="0x0100" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1"/>
+        <Icon guid="guidImages" id="bmpPic1" />
+        <Strings>
+          <ButtonText>A-11 Copilot</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+  <Symbols>
+    <GuidSymbol name="guidA11CopilotVSPackage" value="{12345678-abcd-4abc-9abc-1234567890ab}" />
+    <GuidSymbol name="guidA11ToolWindowCommand" value="{fedcba98-7654-4321-baba-abcdef123456}" />
+    <IDSymbol name="cmdidA11ToolWindow" value="0x0100" />
+    <GuidSymbol name="guidImages" value="{00000000-0000-0000-0000-000000000000}" />
+  </Symbols>
+</CommandTable>

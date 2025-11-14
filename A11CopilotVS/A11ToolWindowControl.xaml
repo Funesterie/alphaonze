@@ -1,0 +1,31 @@
+<UserControl x:Class="A11CopilotVS.A11ToolWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinWidth="350" MinHeight="300">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Zone d'historique -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="MessagesPanel" />
+        </ScrollViewer>
+
+        <!-- Zone de saisie -->
+        <DockPanel Grid.Row="1" Margin="0,8,0,0">
+            <TextBox x:Name="PromptBox"
+                     AcceptsReturn="True"
+                     Height="60"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     DockPanel.Dock="Left" />
+            <Button x:Name="SendButton"
+                    Content="▶"
+                    Width="40"
+                    Margin="8,0,0,0"
+                    Click="SendButton_Click" />
+        </DockPanel>
+    </Grid>
+</UserControl>

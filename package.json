@@ -1,0 +1,17 @@
+{
+  "name": "a11-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP Server to expose local A-11 model to Copilot via MCP",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "a11-mcp-server": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "ws": "^8.13.0"
+  }
+}

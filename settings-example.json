@@ -1,0 +1,9 @@
+{
+  "targetSettingsPath": "C:\\Users\\cella\\AppData\\Roaming\\GitHub Copilot\\settings.json",
+  "mcpServers": {
+    "a11": {
+      "command": "node",
+      "args": ["D:\\A11\\mcp\\a11-mcp-server\\index.js"]
+    }
+  }
+}
