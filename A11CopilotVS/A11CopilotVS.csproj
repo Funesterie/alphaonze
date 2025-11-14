@@ -9,11 +9,15 @@
     <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
     <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
     <CopyOutputSymbolsToOutputDirectory>false</CopyOutputSymbolsToOutputDirectory>
+    <GenerateVsixContainer>true</GenerateVsixContainer>
+    <RootOutputDirectory>$(OutputPath)</RootOutputDirectory>
+    <VssdkOperationMode>Client</VssdkOperationMode>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
   <PropertyGroup>
     <StartAction>Program</StartAction>
     <StartProgram>$(DevEnvDir)devenv.exe</StartProgram>
+    <StartProgram Condition="'$(DevEnvDir)' == ''">C:\\Program Files\\Microsoft Visual Studio\\2026\\Community\\Common7\\IDE\\devenv.exe</StartProgram>
     <StartArguments>/rootsuffix Exp</StartArguments>
   </PropertyGroup>
   <ItemGroup>

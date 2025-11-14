@@ -1,0 +1,24 @@
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="A11CopilotVS.12345678-abcd-4abc-9abc-1234567890ab" Version="1.0" Publisher="YourName" />
+    <DisplayName>A-11 Copilot</DisplayName>
+    <Description xml:space="preserve">Assistant A-11 local for Visual Studio.</Description>
+  </Metadata>
+  <Installation>
+    <InstalledByMsi>false</InstalledByMsi>
+    <SupportedProducts>
+      <VisualStudio Version="18.0">
+        <Edition>Community</Edition>
+        <Edition>Pro</Edition>
+        <Edition>Enterprise</Edition>
+      </VisualStudio>
+    </SupportedProducts>
+  </Installation>
+  <Dependencies>
+    <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" Version="[4.5,)" />
+  </Dependencies>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" Path="A11CopilotVS.dll" Addressable="true" />
+    <Asset Type="Microsoft.VisualStudio.ToolWindow" Path="A11ToolWindow.cs" />
+  </Assets>
+</PackageManifest>

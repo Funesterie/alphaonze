@@ -22,16 +22,17 @@ namespace A11CopilotVS
             InitializeComponent();
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "VSTHRD100:Avoid async void methods", Justification = "Event handler with proper exception handling")]
         private async void SendButton_Click(object sender, RoutedEventArgs e)
         {
-            var prompt = PromptBox.Text.Trim();
-            if (string.IsNullOrEmpty(prompt)) return;
-
-            AppendMessage("Toi", prompt);
-            PromptBox.Clear();
-
             try
             {
+                var prompt = PromptBox.Text.Trim();
+                if (string.IsNullOrEmpty(prompt)) return;
+
+                AppendMessage("Toi", prompt);
+                PromptBox.Clear();
+
                 var body = new
                 {
                     model = A11Model,
