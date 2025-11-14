@@ -5,7 +5,7 @@
   <Commands package="guidA11CopilotVSPackage">
     <Buttons>
       <Button guid="guidA11ToolWindowCommand" id="cmdidA11ToolWindow" priority="0x0100" type="Button">
-        <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1"/>
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
           <ButtonText>A-11 Copilot</ButtonText>
