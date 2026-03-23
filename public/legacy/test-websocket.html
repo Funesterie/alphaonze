@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A11 WebSocket Test Client</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0e0f12 0%, #1a1b2e 100%);
+            color: #e6e6e6;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #2563eb;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #8892a6;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .status.connecting { background: #fbbf24; color: #000; }
+        .status.connected { background: #13c47f; color: #000; }
+        .status.disconnected { background: #f97316; color: #fff; }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #a3aab9;
+            font-weight: 500;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            background: #161a22;
+            border: 1px solid #1f232b;
+            border-radius: 8px;
+            color: #e6e6e6;
+            font-size: 14px;
+        }
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #2563eb;
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover:not(:disabled) {
+            background: #1e40af;
+        }
+        button:disabled {
+            background: #374151;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #0d0f13;
+            border: 1px solid #1f232b;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .log-entry.sent {
+            background: #1e293b;
+            border-left: 3px solid #3b82f6;
+        }
+        .log-entry.received {
+            background: #14532d;
+            border-left: 3px solid #13c47f;
+        }
+        .log-entry.error {
+            background: #7f1d1d;
+            border-left: 3px solid #f97316;
+        }
+        .log-entry .timestamp {
+            color: #64748b;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .badge.sent { background: #3b82f6; }
+        .badge.received { background: #13c47f; }
+        .badge.error { background: #f97316; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 A11 WebSocket Test Client</h1>
+        <p class="subtitle">Test de communication temps réel avec Alpha Onze</p>
+        
+        <div id="status" class="status disconnected">
+            ⚠️ Déconnecté
+        </div>
+        
+        <div class="input-group">
+            <label for="wsUrl">URL WebSocket</label>
+            <input type="text" id="wsUrl" value="ws://127.0.0.1:3000" placeholder="ws://127.0.0.1:3000">
+        </div>
+        
+        <button id="connectBtn" onclick="toggleConnection()">🔌 Connexion</button>
+        
+        <div class="input-group" style="margin-top: 20px;">
+            <label for="prompt">Message pour A11</label>
+            <textarea id="prompt" placeholder="Écris ton message ici...">Bonjour A11, peux-tu te présenter brièvement ?</textarea>
+        </div>
+        
+        <button id="sendBtn" onclick="sendMessage()" disabled>📤 Envoyer</button>
+        
+        <div class="log" id="log">
+            <div style="color: #64748b; text-align: center; padding: 20px;">
+                Connecte-toi pour commencer...
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const logEl = document.getElementById('log');
+        const wsUrlInput = document.getElementById('wsUrl');
+        const promptInput = document.getElementById('prompt');
+        
+        function toggleConnection() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            } else {
+                connect();
+            }
+        }
+        
+        function connect() {
+            const url = wsUrlInput.value.trim();
+            if (!url) {
+                alert('URL WebSocket requise');
+                return;
+            }
+            
+            statusEl.className = 'status connecting';
+            statusEl.textContent = '🔄 Connexion en cours...';
+            connectBtn.disabled = true;
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                statusEl.className = 'status connected';
+                statusEl.textContent = '✅ Connecté';
+                connectBtn.textContent = '🔌 Déconnexion';
+                connectBtn.disabled = false;
+                sendBtn.disabled = false;
+                addLog('info', 'Connexion établie avec succès');
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.error) {
+                        addLog('error', `Erreur: ${data.error}`);
+                    } else {
+                        addLog('received', data.text || JSON.stringify(data));
+                    }
+                } catch (e) {
+                    addLog('received', event.data);
+                }
+            };
+            
+            ws.onerror = (err) => {
+                addLog('error', 'Erreur WebSocket');
+                console.error(err);
+            };
+            
+            ws.onclose = () => {
+                statusEl.className = 'status disconnected';
+                statusEl.textContent = '⚠️ Déconnecté';
+                connectBtn.textContent = '🔌 Connexion';
+                connectBtn.disabled = false;
+                sendBtn.disabled = true;
+                addLog('info', 'Connexion fermée');
+                ws = null;
+            };
+        }
+        
+        function sendMessage() {
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+                alert('Message requis');
+                return;
+            }
+            
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Non connecté');
+                return;
+            }
+            
+            const payload = { prompt };
+            ws.send(JSON.stringify(payload));
+            addLog('sent', prompt);
+        }
+        
+        function addLog(type, message) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString('fr-FR');
+            const badge = type === 'sent' ? 'ENVOYÉ' : type === 'received' ? 'REÇU' : type === 'error' ? 'ERREUR' : 'INFO';
+            
+            entry.innerHTML = `
+                <div class="timestamp">
+                    <span class="badge ${type}">${badge}</span>
+                    ${timestamp}
+                </div>
+                <div>${escapeHtml(message)}</div>
+            `;
+            
+            if (logEl.firstChild && logEl.firstChild.textContent.includes('Connecte-toi')) {
+                logEl.innerHTML = '';
+            }
+            
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Auto-connect on load
+        window.addEventListener('load', () => {
+            // Optional: auto-connect
+            // connect();
+        });
+        
+        // Enter to send
+        promptInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

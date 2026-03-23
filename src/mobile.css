@@ -1,0 +1,6 @@
+/* Minimal mobile-specific overrides (stub) */
+@media (max-width: 600px) {
+  :root { --bg: #071021; }
+  .app-container { padding: 12px; }
+  .chat-message { font-size: 15px; line-height:1.3; }
+}

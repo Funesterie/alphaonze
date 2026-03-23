@@ -1,0 +1,110 @@
+/* Alpha Onze - Chat UI styles */
+:root{
+  color-scheme: dark;
+  --bg:#0e0f12;--panel:#0f1115;--muted:#8892a6;--border:#1f232b;--accent:#2563eb;--accent-2:#1e40af;
+  --bubble-user:#161a22;--bubble-ai:#101317;--text:#e6e6e6;--ok:#13c47f;--bad:#f97316;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--text)}
+
+.app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:auto 1fr auto;height:100vh}
+.header{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:2}
+.header .title{font-weight:700}
+.header .pill{font-size:12px;color:var(--muted)}
+.header .protocol-badge{font-size:11px;color:#a5b4fc;background:#1e1b4b;padding:4px 10px;border-radius:12px;border:1px solid #312e81;cursor:help;font-weight:500}
+
+.sidebar{border-right:1px solid var(--border);background:#0c0d11;display:flex;flex-direction:column}
+.sidebar .tools{display:flex;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
+.btn{background:var(--accent);border:0;color:#fff;border-radius:8px;padding:8px 10px;font-weight:600;cursor:pointer}
+.btn.secondary{background:#1b1e27}
+.btn.ghost{background:transparent;color:#cbd5e1;border:1px solid var(--border)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+
+.chats{flex:1;overflow:auto}
+.chat-item{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:8px}
+.chat-item.active{background:#11141a}
+.chat-item .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-item .time{color:var(--muted);font-size:12px}
+
+.main{display:flex;flex-direction:column;min-width:0}
+.scroll-frame{flex:1;min-height:0;margin:12px;border:1px solid var(--border);border-radius:12px;background:#0d0f13;overflow:auto;box-shadow:0 0 0 1px rgba(0,0,0,0.2) inset}
+.log{flex:1;padding:16px}
+.message{max-width:900px;margin:0 auto 14px auto;padding:12px 14px;border-radius:10px;line-height:1.6;border:1px solid var(--border)}
+.message.user{background:var(--bubble-user)}
+.message.assistant{background:var(--bubble-ai)}
+.message .role{font-weight:700;color:#9fb3c8;margin-bottom:6px}
+.message pre{background:#0a0c10;border:1px solid var(--border);padding:10px;border-radius:8px;overflow:auto}
+.message code{background:#0a0c10;border:1px solid var(--border);padding:2px 4px;border-radius:6px}
+
+.composer{padding:12px;border-top:1px solid var(--border);background:var(--panel)}
+.composer .row{display:flex;gap:10px;max-width:900px;margin:0 auto}
+.composer textarea{flex:1;resize:vertical;max-height:35vh;background:#0d0f13;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px}
+.composer .send{width:44px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.hint{font-size:12px;color:var(--muted);text-align:center;margin:4px auto}
+.attachments{display:flex;flex-wrap:wrap;gap:6px;max-width:900px;margin:6px auto 0 auto}
+.attachment-chip{background:#141823;border:1px solid var(--border);color:#cbd5e1;border-radius:12px;padding:4px 8px;font-size:12px;display:flex;align-items:center;gap:6px}
+.attachment-chip .remove{cursor:pointer;color:#f87171}
+
+.status{margin-left:auto;color:var(--muted)}
+.status.ok{color:var(--ok)}
+.status.bad{color:var(--bad)}
+
+.settings{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);align-items:center;justify-content:center;z-index:10}
+.settings .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;width:520px;max-width:92vw}
+.settings .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.settings label{font-size:12px;color:#a3aab9}
+.settings input, .settings textarea{width:100%;background:#0d0f13;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px}
+.settings .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+
+.footer{grid-column:1/-1;padding:8px 12px;color:var(--muted);border-top:1px solid var(--border);background:#0c0d11}
+
+/* Media Panel */
+.media-panel, .voice-panel{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;z-index:10}
+.media-panel .card, .voice-panel .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;width:700px;max-width:92vw;max-height:90vh;overflow-y:auto}
+
+.tabs{display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.tab{background:transparent;border:none;color:var(--muted);padding:8px 16px;cursor:pointer;font-weight:600;border-bottom:2px solid transparent}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+.btn.special{background:#6366f1;color:#fff}
+.btn.special:hover{background:#4f46e5}
+
+.preview{margin-top:16px;padding:12px;background:#0d0f13;border:1px solid var(--border);border-radius:8px;min-height:100px;display:flex;align-items:center;justify-content:center}
+.preview img, .preview video{max-width:100%;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.preview.loading{color:var(--muted)}
+.preview.loading::before{content:"⏳ Génération en cours..."}
+
+/* Voice Panel */
+.voice-status{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:#0d0f13;border:1px solid var(--border);border-radius:8px}
+.voice-indicator{width:12px;height:12px;border-radius:50%;background:var(--muted);transition:all 0.3s}
+.voice-indicator.active{background:var(--ok);animation:pulse 1.5s infinite}
+
+@keyframes pulse{
+  0%, 100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.7;transform:scale(1.2)}
+}
+
+.audio-player{margin-top:16px;padding:12px;background:#0d0f13;border:1px solid var(--border);border-radius:8px}
+.audio-player audio{width:100%;border-radius:6px}
+
+#speedValue{color:var(--accent);font-weight:600;margin-left:8px}
+
+/* Animation pour les images A11 */
+@keyframes a11Morph{
+  0%, 100%{opacity:1}
+  33%{opacity:0}
+  66%{opacity:0}
+}
+
+.a11-avatar{width:200px;height:200px;border-radius:12px;overflow:hidden;position:relative;margin:0 auto}
+.a11-avatar img{position:absolute;width:100%;height:100%;object-fit:cover;transition:opacity 0.8s ease-in-out}
+
+@media (max-width: 900px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .media-panel .card, .voice-panel .card{width:95vw}
+}

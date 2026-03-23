@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>A-11 / Qflush UI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css">
+    <script src="app.js" defer></script>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+  </head>
+  <body>
+    <div id="container">
+      <div id="avatar-panel">
+        <img id="avatar" src="avatar.png" alt="Avatar" />
+      </div>
+      <div id="main-panel">
+        <div id="status"></div>
+        <div id="actions">
+          <button id="newChat">Nouveau chat</button>
+          <button id="clearChat">Effacer</button>
+          <button id="settingsBtn">Paramètres</button>
+        </div>
+        <div id="attachments"></div>
+        <button id="attach">📎</button>
+        <input id="fileInput" type="file" style="display:none" multiple />
+        <button id="ocrBtn">📷 OCR</button>
+        <input id="ocrFile" type="file" accept="image/*" style="display:none" />
+        <div id="settings" style="display:none">
+          <label>Top-p: <input id="setTopP" type="number" min="0" max="1" step="0.01"></label>
+          <label>Nindô: <input id="setNindo" type="text"></label>
+          <label>System: <textarea id="setSystem"></textarea></label>
+          <button id="saveSettings">Enregistrer</button>
+          <button id="cancelSettings">Annuler</button>
+        </div>
+        <div id="chats"></div>
+        <div id="log-panel">
+          <div id="log"></div>
+        </div>
+        <div id="chat-panel">
+          <div id="chat"></div>
+        </div>
+        <div id="input-panel">
+          <form id="composerForm">
+            <input id="input" type="text" placeholder="Écrivez ici..." autocomplete="off" />
+            <button id="send">Envoyer</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
