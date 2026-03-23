@@ -373,3 +373,31 @@ export async function fetchA11Conversation(convId: string) {
   if (!res.ok) throw new Error('Erreur chargement conversation A-11');
   return res.json();
 }
+
+export async function callQflush(input: string): Promise<string> {
+  const url = API_BASE ? `${API_BASE}/ai` : "/ai";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input }),
+  });
+  if (!res.ok) {
+    throw new Error(`Qflush error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.output || "Réponse Qflush vide";
+}
+
+export async function callAI(input: string, mode: 'qflush' | 'llm' = 'llm'): Promise<string> {
+  const url = API_BASE ? `${API_BASE}/ai` : "/ai";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input, mode }),
+  });
+  if (!res.ok) {
+    throw new Error(`AI error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.output || "Réponse vide";
+}

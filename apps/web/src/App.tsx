@@ -13,7 +13,7 @@ import {
 } from "./lib/speech";
 import handleImportFiles from "./lib/importer";
 import { mountA11AvatarUI } from "./lib/avatar-ui";
-import { chatCompletion, callA11Agent, type A11ChatMessage } from "./lib/api";
+import { chatCompletion, callA11Agent, type A11ChatMessage, callQflush, callAI } from "./lib/api";
 
 type Role = "user" | "assistant" | "system";
 
@@ -139,7 +139,7 @@ export function App() {
         name: "Session actuelle",
         updated: Date.now(),
         messages: [
-          { id: `sys-${Date.now()}`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO },
+          { id: `sys-${Date.now()`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO },
         ],
       },
     ];
@@ -226,17 +226,9 @@ export function App() {
     setSending(true);
 
     try {
-      // Utilisation de chatCompletion pour transmettre le prompt et le flag dev
-      // On reconstruit l'historique sans les messages système (le prompt système est passé séparément)
-      const history = messages.filter(m => m.role !== 'system').concat(userMsg);
-      const assistantText = await chatCompletion(
-        history,
-        'local',
-        {
-          systemPrompt: systemPrompt,
-          a11Dev: devMode
-        }
-      );
+      let assistantText: string;
+      const mode = devMode ? 'qflush' : 'llm';
+      assistantText = await callAI(text, mode);
 
       const aiMsg: ChatMessage = {
         id: `a-${Date.now()}`,
@@ -260,7 +252,7 @@ export function App() {
         id: `e-${Date.now()}`,
         role: "assistant",
         content:
-          "Erreur lors de l’appel à /api/llm/chat : " + (err?.message || err),
+          "Erreur lors de l’appel : " + (err?.message || err),
       };
       setMessages((prev) => {
         const nm = [...prev, errMsg];
@@ -517,8 +509,8 @@ export function App() {
             }}
             title={
               devMode
-                ? "Mode DEV activé : A-11 peut modifier des fichiers (via Cerbère)"
-                : "Mode DEV désactivé : A-11 reste en mode chat normal"
+                ? "Mode DEV activé : A-11 utilise Qflush (IA locale)"
+                : "Mode DEV désactivé : A-11 utilise le LLM normal"
             }
           >
             <span
@@ -554,7 +546,7 @@ export function App() {
           <MuteButton />
           {stats && (
             <div
-              style={{
+              style({
                 fontSize: 11,
                 padding: "4px 8px",
                 borderRadius: 999,
@@ -563,7 +555,7 @@ export function App() {
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-              }}
+              })}
             >
               <span
                 style={{
