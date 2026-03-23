@@ -139,7 +139,7 @@ export function App() {
         name: "Session actuelle",
         updated: Date.now(),
         messages: [
-          { id: `sys-${Date.now()`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO },
+          { id: `sys-${Date.now()}`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO },
         ],
       },
     ];
@@ -213,7 +213,7 @@ export function App() {
     // Ajout du préfixe DEV_ENGINE si mode dev
     const prefix = devMode ? "[DEV_ENGINE] " : "";
     const userMsg: ChatMessage = {
-      id: `u-${Date.now()}}`,
+      id: `u-${Date.now()}`,
       role: "user",
       content: prefix + text,
     };
@@ -546,7 +546,7 @@ export function App() {
           <MuteButton />
           {stats && (
             <div
-              style({
+              style={{
                 fontSize: 11,
                 padding: "4px 8px",
                 borderRadius: 999,
@@ -555,7 +555,7 @@ export function App() {
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-              })}
+              }}
             >
               <span
                 style={{
