@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/copy_legacy.js",
+    "build": "node ./node_modules/vite/bin/vite.js build && node scripts/copy_legacy.js",
     "preview": "vite preview",
     "lint": "echo \"no lint configured\"",
     "test": "echo \"no tests configured\""
