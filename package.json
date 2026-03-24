@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "node node_modules/vite/bin/vite.js build && node scripts/copy_legacy.js",
+    "build": "npm --prefix apps/web ci && npm --prefix apps/web run build && node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('apps/web/dist','dist',{recursive:true});\"",
     "preview": "vite preview",
     "lint": "echo \"no lint configured\"",
     "test": "echo \"no tests configured\""
