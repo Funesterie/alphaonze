@@ -25,7 +25,15 @@ export interface ProjectStructure {
 export interface SolutionInfo { name: string; path: string; projectCount: number; isOpen: boolean }
 export interface ActiveDocument { path: string; name: string; line: number; column: number; selectedText: string }
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
+const isLocalHost =
+  typeof window !== 'undefined' &&
+  /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
+const API_BASE =
+  (import.meta as any).env?.VITE_A11_API_BASE_URL ||
+  (import.meta as any).env?.VITE_API_BASE_URL ||
+  (import.meta as any).env?.VITE_API_BASE ||
+  (!isLocalHost ? 'https://api.funesterie.pro' : '/api');
 
 async function jsonFetch(url: string, init?: RequestInit) {
   const res = await fetch(url, {
