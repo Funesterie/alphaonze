@@ -13,7 +13,7 @@ import {
 } from "./lib/speech";
 import handleImportFiles from "./lib/importer";
 import { mountA11AvatarUI } from "./lib/avatar-ui";
-import { OPENAI_MODELS, type Msg, type OpenAIModel, chatCompletion, callQflush } from "./lib/api";
+import { type Msg, chatCompletion } from "./lib/api";
 
 type Role = "user" | "assistant" | "system";
 
@@ -34,11 +34,6 @@ interface LlmStats {
 
 const DEFAULT_SYSTEM_NINDO =
   "Tu es A-11, assistant local NOSSEN. Reste concis, orienté action, et utilise les capacités locales (VSIX, Qflush, Cerbère) quand c’est pertinent.";
-
-const OPENAI_MODEL_LABELS: Record<OpenAIModel, string> = {
-  'gpt-4o-mini': 'GPT-4o Mini',
-  'gpt-4.1-mini': 'GPT-4.1 Mini',
-};
 
 // MuteButton : icône seule, contrôle global du son
 function MuteButton() {
@@ -96,7 +91,6 @@ export function App() {
   const [speaking, setSpeaking] = useState(false); // pour l'avatar animé
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toggleLockRef = useRef(false);
-  const [model, setModel] = useState<OpenAIModel>("gpt-4o-mini");
 
   // Chats state persisted in localStorage
   const [chats, setChats] = useState<{
@@ -231,22 +225,16 @@ export function App() {
     setSending(true);
 
     try {
-      let assistantText: string;
-      if (devMode) {
-        assistantText = await callQflush(text);
-      } else {
-        const historyMessages: Msg[] = [...messages, userMsg]
-          .filter((message) => message.role !== "system")
-          .map((message) => ({
-            role: message.role === "assistant" ? "assistant" : "user",
-            content: message.content,
-          }));
+      const historyMessages: Msg[] = [...messages, userMsg]
+        .filter((message) => message.role !== "system")
+        .map((message) => ({
+          role: message.role === "assistant" ? "assistant" : "user",
+          content: message.content,
+        }));
 
-        assistantText = await chatCompletion(historyMessages, 'openai', {
-          systemPrompt,
-          model,
-        });
-      }
+      const assistantText = await chatCompletion(historyMessages, {
+        systemPrompt,
+      });
 
       const aiMsg: ChatMessage = {
         id: `a-${Date.now()}`,
@@ -421,6 +409,17 @@ export function App() {
   // Prompt effectivement utilisé selon le mode
   const systemPrompt = devMode ? systemPromptDev : systemPromptChat;
 
+  const sourceIndicator = useMemo(() => {
+    const normalized = `${stats?.backend ?? ''} ${stats?.model ?? ''}`.toLowerCase();
+    if (normalized.includes('local') || normalized.includes('llama') || normalized.includes('127.0.0.1')) {
+      return { label: 'Local LLM', color: '#22c55e' };
+    }
+    if (normalized.includes('openai') || normalized.includes('gpt')) {
+      return { label: 'OpenAI', color: '#38bdf8' };
+    }
+    return { label: 'Source auto (backend)', color: '#94a3b8' };
+  }, [stats]);
+
   // Initialisation globale de window.speak au montage pour garantir le son
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -543,43 +542,32 @@ export function App() {
             Mode DEV
           </button>
         </div>
-        {/* Select modèle + MuteButton + badge backend */}
+        {/* Source IA (lecture seule) + MuteButton + badge backend */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              padding: 4,
+              padding: '6px 10px',
               borderRadius: 999,
               background: '#111827',
               border: '1px solid #22293a',
+              color: '#e5e7eb',
+              fontSize: 12,
+              fontWeight: 700,
             }}
+            title="Le front appelle /api/ai uniquement; le backend choisit la source"
           >
-            {OPENAI_MODELS.map((openAiModel) => {
-              const isActive = model === openAiModel;
-              return (
-                <button
-                  key={openAiModel}
-                  type="button"
-                  onClick={() => setModel(openAiModel)}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 999,
-                    border: 'none',
-                    background: isActive ? '#0ea5e9' : 'transparent',
-                    color: isActive ? '#082f49' : '#e5e7eb',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    transition: 'background 120ms ease, color 120ms ease',
-                  }}
-                  title={`Utiliser ${OPENAI_MODEL_LABELS[openAiModel]}`}
-                >
-                  {OPENAI_MODEL_LABELS[openAiModel]}
-                </button>
-              );
-            })}
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                background: sourceIndicator.color,
+              }}
+            />
+            <span>{sourceIndicator.label}</span>
           </div>
           <MuteButton />
           {stats && (
@@ -764,7 +752,7 @@ export function App() {
         </main>
       </div>
       <footer className="footer">
-        A-11 / Qflush UI · OpenAI x2 · Cerbère 4545 · Funesterie
+        A-11 / Qflush UI · Front -&gt; /api/ai -&gt; Backend
       </footer>
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
     </div>

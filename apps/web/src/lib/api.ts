@@ -13,12 +13,6 @@ const API_BASE =
   (import.meta.env?.VITE_API_BASE) ||
   (!isLocalHost ? PROD_API_BASE : '');
 
-// Router URL for chat completions (env override > production default > local relative path)
-const LLM_ROUTER_URL =
-  (import.meta.env?.VITE_API_URL) ||
-  (import.meta.env?.VITE_LLM_ROUTER_URL) ||
-  (!isLocalHost ? PROD_API_BASE : '');
-
 // Nezlephant token (optionnel)
 const NEZ_TOKEN = (import.meta.env?.VITE_A11_NEZ_TOKEN) || '';
 
@@ -29,15 +23,6 @@ export const TTS_API =
 // export const TTS_VOICES = ['fr_FR-siwis-medium', 'fr_FR-siwis-sd', 'fr_FR-williwaw', 'fr_FR-barkly'];
 export const TTS_VOICES = ['fr_FR-siwis-medium'];
 
-export const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4.1-mini'] as const;
-export type OpenAIModel = (typeof OPENAI_MODELS)[number];
-
-export type Provider = "openai";
-
-export function getModelForProvider(provider: Provider, model?: OpenAIModel): string {
-  return provider === 'openai' ? (model ?? 'gpt-4o-mini') : 'gpt-4o-mini';
-}
-
 export type Msg = { role: "user" | "assistant" | "system"; content: string };
 export type ChatResponse = {
   choices?: { message?: { content?: string } }[];
@@ -45,11 +30,9 @@ export type ChatResponse = {
   output?: string;
 };
 
-// Appel générique POST JSON : désormais on passe toujours via le LLM router
-async function apiPost(path: string, body: unknown, provider: Provider = 'openai') {
-  // Always call the LLM router endpoint for chat completions to centralize upstreams
-  const routerBase = LLM_ROUTER_URL.replace(/\/$/, '');
-  const url = `${routerBase}/v1/chat/completions`;
+// Appel générique POST JSON : le frontend appelle uniquement le backend /api/ai
+async function apiPost(body: unknown) {
+  const url = '/api/ai';
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -62,10 +45,10 @@ async function apiPost(path: string, body: unknown, provider: Provider = 'openai
     body: JSON.stringify(body),
   };
 
-  // Use credentials for same-origin scenarios if router is same origin
+  // Use credentials for same-origin scenarios if API is same origin
   try {
-    const routerUrlObj = new URL(routerBase);
-    if (routerUrlObj.origin === location.origin) fetchOptions.credentials = 'include';
+    const apiUrlObj = new URL(url, location.origin);
+    if (apiUrlObj.origin === location.origin) fetchOptions.credentials = 'include';
   } catch (e) {
     // ignore
   }
@@ -188,24 +171,16 @@ async function apiPost(path: string, body: unknown, provider: Provider = 'openai
   return data;
 }
 
-// Appel OpenAI-like, now accepts provider
 export async function chatCompletion(
   messages: Msg[],
-  provider: Provider = 'openai',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; a11Dev?: boolean; model?: OpenAIModel }
+  systemPromptOrOptions?: string | { systemPrompt?: string }
 ) {
-  // Support both old signature (systemPrompt string) and new options object
+  // Support both old signature (systemPrompt string) and options object
   let systemPrompt: string | undefined;
-  let turboFlag = false;
-  let a11DevFlag = false;
-  let selectedModel: OpenAIModel | undefined;
   if (typeof systemPromptOrOptions === 'string') {
     systemPrompt = systemPromptOrOptions;
   } else if (typeof systemPromptOrOptions === 'object' && systemPromptOrOptions !== null) {
     systemPrompt = systemPromptOrOptions.systemPrompt;
-    turboFlag = !!systemPromptOrOptions.turbo;
-    a11DevFlag = !!systemPromptOrOptions.a11Dev;
-    selectedModel = systemPromptOrOptions.model;
   }
 
   // Ajout du systemPrompt si fourni
@@ -221,17 +196,10 @@ export async function chatCompletion(
   }));
 
   const payload = {
-    provider,
-    model: getModelForProvider(provider, selectedModel),
     messages: msgs,
-    stream: false,
-    temperature: turboFlag ? 0.3 : 0.7,
-    top_p: 0.9,
-    a11Dev: a11DevFlag // ← AJOUT ICI
   };
 
-  // Always post to router (apiPost ignores the path and uses router endpoint)
-  const data = await apiPost('/v1/chat/completions', payload, provider);
+  const data = await apiPost(payload);
 
   // On essaie de lire réponse façon OpenAI
   const content =
@@ -243,14 +211,14 @@ export async function chatCompletion(
 }
 
 // Chat simple avec prompt système et modèle choisis
-export async function chat(message: string, history: Msg[] = [], provider: Provider = 'openai', systemPrompt?: string) {
+export async function chat(message: string, history: Msg[] = [], systemPrompt?: string) {
   const messages: Msg[] = history.length ? history : [
     { role: 'system', content: systemPrompt || 'Tu es AlphaOnze (A-11), un assistant IA français unique et attachant.' },
     { role: 'user', content: message }
   ];
   try { window.dispatchEvent(new Event('conversation:start')); } catch {}
   try {
-    return await chatCompletion(messages, provider, systemPrompt);
+    return await chatCompletion(messages, systemPrompt);
   } finally {
     try { window.dispatchEvent(new Event('conversation:end')); } catch {}
   }
@@ -357,7 +325,7 @@ export async function callA11Agent(messages: A11ChatMessage[], devMode?: boolean
 //   method: 'POST',
 //   headers: { 'Content-Type': 'application/json' },
 //   credentials: 'include',
-//   body: JSON.stringify({ provider: 'openai', model: getModelForProvider('openai'), messages: [{ role: 'user', content: 'salut' }], stream: true })
+//   body: JSON.stringify({ messages: [{ role: 'user', content: 'salut' }] })
 // });
 
 // === A11 Conversation History (backend) ===
@@ -378,33 +346,9 @@ export async function fetchA11Conversation(convId: string) {
 }
 
 export async function callQflush(input: string): Promise<string> {
-  const url = API_BASE ? `${API_BASE}/ai` : "/ai";
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input }),
-  });
-  if (!res.ok) {
-    throw new Error(`Qflush error: ${res.status}`);
-  }
-  const data = await res.json();
-  return data.output || "Réponse Qflush vide";
+  return chatCompletion([{ role: 'user', content: input }]);
 }
 
-export async function callAI(input: string, mode: 'qflush' | 'llm' = 'llm'): Promise<string> {
-  if (mode === 'llm') {
-    return chatCompletion([{ role: 'user', content: input }], 'openai');
-  }
-
-  const url = API_BASE ? `${API_BASE}/ai` : "/ai";
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input, mode }),
-  });
-  if (!res.ok) {
-    throw new Error(`AI error: ${res.status}`);
-  }
-  const data = await res.json();
-  return data.output || "Réponse vide";
+export async function callAI(input: string, _mode: 'qflush' | 'llm' = 'llm'): Promise<string> {
+  return chatCompletion([{ role: 'user', content: input }]);
 }
