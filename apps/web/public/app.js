@@ -2,8 +2,8 @@
 (function () {
     // API Configuration - utilise les variables d'environnement Vite ou fallback
     const API_BASE = typeof import.meta !== 'undefined' && import.meta.env
-        ? (import.meta.env.VITE_API_BASE || "")
-        : "";
+        ? ((import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE || ""))
+        : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? "" : "https://api.funesterie.pro");
     const A11_USER = typeof import.meta !== 'undefined' && import.meta.env
         ? (import.meta.env.VITE_A11_USER || "")
         : "";
@@ -928,9 +928,9 @@
             provider
         };
 
-        let res = await fetch("/v1/chat/completions", {
+        let res = await fetch(apiUrl("/v1/chat/completions"), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders(),
             body: JSON.stringify(payload),
             signal: controller.signal,
         });

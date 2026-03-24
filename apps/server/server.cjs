@@ -318,15 +318,29 @@ function _find_idle_asset() {
   return null;
 }
 
-// CORS configuration: allow local dev origins and production origin
-const defaultCorsOrigins = ['http://127.0.0.1:3000', 'http://localhost:5173', 'http://localhost:3000', 'https://funesterie.pro', 'https://alphaonze.netlify.app'];
-const CORS_ORIGINS = (process.env.CORS_ORIGINS && process.env.CORS_ORIGINS.split(',')) || defaultCorsOrigins;
+// CORS configuration: allow local dev origins and production frontends
+const defaultCorsOrigins = [
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://funesterie.pro',
+  'https://a11.funesterie.pro',
+  'https://alphaonze.netlify.app'
+];
+const CORS_ORIGINS = (process.env.CORS_ORIGINS && process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)) || defaultCorsOrigins;
+const CORS_ALLOW_NETLIFY_APP = String(process.env.CORS_ALLOW_NETLIFY_APP || 'true').toLowerCase() === 'true';
+
+function isAllowedCorsOrigin(origin) {
+  if (CORS_ORIGINS.includes(origin)) return true;
+  if (CORS_ALLOW_NETLIFY_APP && /^https:\/\/[a-z0-9-]+\.netlify\.app$/i.test(origin)) return true;
+  return false;
+}
 
 const corsOptions = {
   origin: function(origin, callback) {
     // Allow requests with no origin (e.g., curl, mobile clients)
     if (!origin) return callback(null, true);
-    if (CORS_ORIGINS.indexOf(origin) !== -1) return callback(null, true);
+    if (isAllowedCorsOrigin(origin)) return callback(null, true);
     return callback(new Error('CORS origin denied'));
   },
   credentials: true,

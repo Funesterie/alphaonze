@@ -1,11 +1,21 @@
 // @ts-nocheck
 
-// API Base URL for production (can be overridden via Vite env)
-const API_BASE = (import.meta.env?.VITE_API_BASE_URL) || '';
+const isLocalHost =
+  typeof window !== 'undefined' &&
+  /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
 
-// Router URL — utilise le chemin relatif par défaut (proxy Vite en dev, même origine en prod)
-// Le backend (port 3000) embarque déjà le LLM router, pas besoin de port 4545
-const LLM_ROUTER_URL = (import.meta.env?.VITE_LLM_ROUTER_URL) || '';
+const PROD_API_BASE = 'https://api.funesterie.pro';
+
+// API Base URL for production (env override > production default > local relative paths)
+const API_BASE =
+  (import.meta.env?.VITE_API_BASE_URL) ||
+  (import.meta.env?.VITE_API_BASE) ||
+  (!isLocalHost ? PROD_API_BASE : '');
+
+// Router URL for chat completions (env override > production default > local relative path)
+const LLM_ROUTER_URL =
+  (import.meta.env?.VITE_LLM_ROUTER_URL) ||
+  (!isLocalHost ? PROD_API_BASE : '');
 
 // Nezlephant token (optionnel)
 const NEZ_TOKEN = (import.meta.env?.VITE_A11_NEZ_TOKEN) || '';
