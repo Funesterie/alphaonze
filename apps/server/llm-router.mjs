@@ -24,10 +24,15 @@ const BACKENDS = {
 console.log('[Cerbère] DEV ENGINE initialized');
 console.log('[Cerbère] Available backends:', BACKENDS);
 
-// Backend selection based on model
-function selectBackend(model) {
+// Backend selection based on explicit provider first, then model fallback
+function selectBackend(model, provider) {
+  const providerLower = String(provider || '').toLowerCase();
+  if (providerLower === 'openai') return BACKENDS.openai;
+  if (providerLower === 'ollama') return BACKENDS.ollama;
+  if (providerLower === 'local' || providerLower === 'llama') return BACKENDS.llama_local;
+
   if (!model) return BACKENDS.llama_local;
-  
+
   const modelLower = String(model).toLowerCase();
   
   // OpenAI models
@@ -310,6 +315,7 @@ async function handleDownloadFile(msg) {
 app.post("/v1/chat/completions", async (req, res) => {
   const body = req.body || {};
   const model = body.model || "llama3.2:latest";
+  const provider = body.provider;
   const messages = body.messages || [];
   const stream = body.stream === true;
 
@@ -343,17 +349,18 @@ app.post("/v1/chat/completions", async (req, res) => {
     }
   }
 
-  const backend = selectBackend(model);
+  const backend = selectBackend(model, provider);
   if (!backend) {
     return res.status(502).json({
       error: "no_backend_available",
-      detail: `No backend configured for model: ${model}`,
+      detail: `No backend configured for model/provider: ${model}/${provider || 'n/a'}`,
     });
   }
 
   const upstreamUrl = `${backend.replace(/\/$/, "")}/v1/chat/completions`;
   console.log(`[Cerbère] Routing to: ${upstreamUrl}`);
   console.log(`[Cerbère] Model: ${model}`);
+  console.log(`[Cerbère] Provider: ${provider || 'auto'}`);
   console.log(`[Cerbère] Dev mode: ${isDeveloperMode}`);
 
   const upstreamBody = {

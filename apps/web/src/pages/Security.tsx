@@ -56,9 +56,8 @@ export default function SecurityPage() {
         <label>
           Fournisseur LLM
           <select style={{marginLeft:8}}>
-            <option value="local">Local (llama/ollama)</option>
-            <option value="gpt">GPT (OpenAI)</option>
-            <option value="autre">Autre</option>
+            <option value="openai-mini">GPT-4o Mini</option>
+            <option value="openai-41-mini">GPT-4.1 Mini</option>
           </select>
         </label>
         <label>

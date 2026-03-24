@@ -13,7 +13,7 @@ import {
 } from "./lib/speech";
 import handleImportFiles from "./lib/importer";
 import { mountA11AvatarUI } from "./lib/avatar-ui";
-import { chatCompletion, callA11Agent, type A11ChatMessage, callQflush, callAI } from "./lib/api";
+import { OPENAI_MODELS, type Msg, type OpenAIModel, chatCompletion, callQflush } from "./lib/api";
 
 type Role = "user" | "assistant" | "system";
 
@@ -34,6 +34,11 @@ interface LlmStats {
 
 const DEFAULT_SYSTEM_NINDO =
   "Tu es A-11, assistant local NOSSEN. Reste concis, orienté action, et utilise les capacités locales (VSIX, Qflush, Cerbère) quand c’est pertinent.";
+
+const OPENAI_MODEL_LABELS: Record<OpenAIModel, string> = {
+  'gpt-4o-mini': 'GPT-4o Mini',
+  'gpt-4.1-mini': 'GPT-4.1 Mini',
+};
 
 // MuteButton : icône seule, contrôle global du son
 function MuteButton() {
@@ -91,7 +96,7 @@ export function App() {
   const [speaking, setSpeaking] = useState(false); // pour l'avatar animé
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toggleLockRef = useRef(false);
-  const [model, setModel] = useState("llama3.2:latest");
+  const [model, setModel] = useState<OpenAIModel>("gpt-4o-mini");
 
   // Chats state persisted in localStorage
   const [chats, setChats] = useState<{
@@ -227,8 +232,21 @@ export function App() {
 
     try {
       let assistantText: string;
-      const mode = devMode ? 'qflush' : 'llm';
-      assistantText = await callAI(text, mode);
+      if (devMode) {
+        assistantText = await callQflush(text);
+      } else {
+        const historyMessages: Msg[] = [...messages, userMsg]
+          .filter((message) => message.role !== "system")
+          .map((message) => ({
+            role: message.role === "assistant" ? "assistant" : "user",
+            content: message.content,
+          }));
+
+        assistantText = await chatCompletion(historyMessages, 'openai', {
+          systemPrompt,
+          model,
+        });
+      }
 
       const aiMsg: ChatMessage = {
         id: `a-${Date.now()}`,
@@ -527,22 +545,42 @@ export function App() {
         </div>
         {/* Select modèle + MuteButton + badge backend */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <select
-            value={model}
-            onChange={e => setModel(e.target.value)}
+          <div
             style={{
-              padding: "6px 10px",
-              borderRadius: 6,
-              background: "#181f2a",
-              color: "#e5e7eb",
-              border: "1px solid #22293a",
-              fontSize: 13,
-              marginRight: 2
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: 4,
+              borderRadius: 999,
+              background: '#111827',
+              border: '1px solid #22293a',
             }}
           >
-            <option value="llama3.2:latest">llama3.2:latest</option>
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-          </select>
+            {OPENAI_MODELS.map((openAiModel) => {
+              const isActive = model === openAiModel;
+              return (
+                <button
+                  key={openAiModel}
+                  type="button"
+                  onClick={() => setModel(openAiModel)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 999,
+                    border: 'none',
+                    background: isActive ? '#0ea5e9' : 'transparent',
+                    color: isActive ? '#082f49' : '#e5e7eb',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'background 120ms ease, color 120ms ease',
+                  }}
+                  title={`Utiliser ${OPENAI_MODEL_LABELS[openAiModel]}`}
+                >
+                  {OPENAI_MODEL_LABELS[openAiModel]}
+                </button>
+              );
+            })}
+          </div>
           <MuteButton />
           {stats && (
             <div
@@ -726,7 +764,7 @@ export function App() {
         </main>
       </div>
       <footer className="footer">
-        A-11 / Qflush UI · Cerbère 4545 · LLaMA local · Funesterie
+        A-11 / Qflush UI · OpenAI x2 · Cerbère 4545 · Funesterie
       </footer>
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
     </div>

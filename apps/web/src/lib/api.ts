@@ -3,15 +3,9 @@
 // API Base URL for production (can be overridden via Vite env)
 const API_BASE = (import.meta.env?.VITE_API_BASE_URL) || '';
 
-// Router URL (can be overridden via Vite env)
-const LLM_ROUTER_URL = (import.meta.env?.VITE_LLM_ROUTER_URL) || 'http://127.0.0.1:4545';
-
-// Liste des endpoints pour chaque moteur (gardé pour référence mais frontkit uses router)
-const ENGINE_BASES = {
-  local: 'http://127.0.0.1:8000',    // llama.cpp (NOT used directly in browser to avoid CORS)
-  ollama: 'http://127.0.0.1:11434', // Ollama
-  openai: 'https://api.openai.com/v1' // OpenAI (exemple)
-};
+// Router URL — utilise le chemin relatif par défaut (proxy Vite en dev, même origine en prod)
+// Le backend (port 3000) embarque déjà le LLM router, pas besoin de port 4545
+const LLM_ROUTER_URL = (import.meta.env?.VITE_LLM_ROUTER_URL) || '';
 
 // Nezlephant token (optionnel)
 const NEZ_TOKEN = (import.meta.env?.VITE_A11_NEZ_TOKEN) || '';
@@ -23,18 +17,13 @@ export const TTS_API =
 // export const TTS_VOICES = ['fr_FR-siwis-medium', 'fr_FR-siwis-sd', 'fr_FR-williwaw', 'fr_FR-barkly'];
 export const TTS_VOICES = ['fr_FR-siwis-medium'];
 
-export type Provider = "local" | "ollama" | "openai";
+export const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4.1-mini'] as const;
+export type OpenAIModel = (typeof OPENAI_MODELS)[number];
 
-export function getModelForProvider(provider: Provider): string {
-  switch (provider) {
-    case 'openai':
-      return 'gpt-4o-mini';
-    case 'ollama':
-      return 'llama3.2:latest';
-    case 'local':
-    default:
-      return 'llama3.2:latest';
-  }
+export type Provider = "openai";
+
+export function getModelForProvider(provider: Provider, model?: OpenAIModel): string {
+  return provider === 'openai' ? (model ?? 'gpt-4o-mini') : 'gpt-4o-mini';
 }
 
 export type Msg = { role: "user" | "assistant" | "system"; content: string };
@@ -45,7 +34,7 @@ export type ChatResponse = {
 };
 
 // Appel générique POST JSON : désormais on passe toujours via le LLM router
-async function apiPost(path: string, body: unknown, provider: Provider = 'local') {
+async function apiPost(path: string, body: unknown, provider: Provider = 'openai') {
   // Always call the LLM router endpoint for chat completions to centralize upstreams
   const routerBase = LLM_ROUTER_URL.replace(/\/$/, '');
   const url = `${routerBase}/v1/chat/completions`;
@@ -190,19 +179,21 @@ async function apiPost(path: string, body: unknown, provider: Provider = 'local'
 // Appel OpenAI-like, now accepts provider
 export async function chatCompletion(
   messages: Msg[],
-  provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; a11Dev?: boolean }
+  provider: Provider = 'openai',
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; a11Dev?: boolean; model?: OpenAIModel }
 ) {
   // Support both old signature (systemPrompt string) and new options object
   let systemPrompt: string | undefined;
   let turboFlag = false;
   let a11DevFlag = false;
+  let selectedModel: OpenAIModel | undefined;
   if (typeof systemPromptOrOptions === 'string') {
     systemPrompt = systemPromptOrOptions;
   } else if (typeof systemPromptOrOptions === 'object' && systemPromptOrOptions !== null) {
     systemPrompt = systemPromptOrOptions.systemPrompt;
     turboFlag = !!systemPromptOrOptions.turbo;
     a11DevFlag = !!systemPromptOrOptions.a11Dev;
+    selectedModel = systemPromptOrOptions.model;
   }
 
   // Ajout du systemPrompt si fourni
@@ -211,7 +202,7 @@ export async function chatCompletion(
     msgs = [{ role: 'system', content: systemPrompt }, ...messages.filter(m => m.role !== 'system')];
   }
 
-  // Filtre les tokens spéciaux Llama (<|...|>) dans tous les messages
+  // Filtre les tokens spéciaux hérités dans tous les messages
   msgs = msgs.map(m => ({
     ...m,
     content: typeof m.content === 'string' ? m.content.replace(/<\|.*?\|>/g, '') : ''
@@ -219,7 +210,7 @@ export async function chatCompletion(
 
   const payload = {
     provider,
-    model: getModelForProvider(provider),
+    model: getModelForProvider(provider, selectedModel),
     messages: msgs,
     stream: false,
     temperature: turboFlag ? 0.3 : 0.7,
@@ -240,7 +231,7 @@ export async function chatCompletion(
 }
 
 // Chat simple avec prompt système et modèle choisis
-export async function chat(message: string, history: Msg[] = [], provider: Provider = 'local', systemPrompt?: string) {
+export async function chat(message: string, history: Msg[] = [], provider: Provider = 'openai', systemPrompt?: string) {
   const messages: Msg[] = history.length ? history : [
     { role: 'system', content: systemPrompt || 'Tu es AlphaOnze (A-11), un assistant IA français unique et attachant.' },
     { role: 'user', content: message }
@@ -354,7 +345,7 @@ export async function callA11Agent(messages: A11ChatMessage[], devMode?: boolean
 //   method: 'POST',
 //   headers: { 'Content-Type': 'application/json' },
 //   credentials: 'include',
-//   body: JSON.stringify({ provider: 'ollama', model: getModelForProvider('ollama'), messages: [{ role: 'user', content: 'salut' }], stream: true })
+//   body: JSON.stringify({ provider: 'openai', model: getModelForProvider('openai'), messages: [{ role: 'user', content: 'salut' }], stream: true })
 // });
 
 // === A11 Conversation History (backend) ===
@@ -389,6 +380,10 @@ export async function callQflush(input: string): Promise<string> {
 }
 
 export async function callAI(input: string, mode: 'qflush' | 'llm' = 'llm'): Promise<string> {
+  if (mode === 'llm') {
+    return chatCompletion([{ role: 'user', content: input }], 'openai');
+  }
+
   const url = API_BASE ? `${API_BASE}/ai` : "/ai";
   const res = await fetch(url, {
     method: "POST",

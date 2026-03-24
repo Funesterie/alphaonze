@@ -94,6 +94,12 @@ const open = require('open');
 const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 const { nezAuth, getNezAccessLog, TOKENS, MODE } = require('./src/middleware/nezAuth');
+let qflushIntegration = null;
+try {
+  qflushIntegration = require('./src/qflush-integration.cjs');
+} catch (e) {
+  console.warn('[QFLUSH] qflush integration helper unavailable:', e && e.message);
+}
 
 const BASE = path.resolve(__dirname);
 const LLAMA_DIR = path.join(BASE, 'llama.cpp');
@@ -136,10 +142,40 @@ try {
   console.log('[QFLUSH] qflush detection failed:', e && e.message);
 }
 
+if (!QFLUSH_AVAILABLE && qflushIntegration && qflushIntegration.qflushAvailable) {
+  QFLUSH_AVAILABLE = true;
+  QFLUSH_MODULE = qflushIntegration;
+  console.log('[QFLUSH] Using local qflush integration helper');
+}
+
 // export for other modules to check
 globalThis.__QFLUSH_AVAILABLE = QFLUSH_AVAILABLE;
 globalThis.__QFLUSH_MODULE = QFLUSH_MODULE;
 globalThis.__QFLUSH_PATH = QFLUSH_PATH;
+
+async function bootstrapQflushSupervisor() {
+  if (!QFLUSH_AVAILABLE || !qflushIntegration || typeof qflushIntegration.setupA11Supervisor !== 'function') {
+    return null;
+  }
+  try {
+    const supervisor = await qflushIntegration.setupA11Supervisor();
+    if (!supervisor) return null;
+    globalThis.__A11_QFLUSH_SUPERVISOR = supervisor;
+
+    const autoStart = String(process.env.QFLUSH_AUTO_START || 'true').toLowerCase() !== 'false';
+    if (autoStart && typeof qflushIntegration.startProcess === 'function') {
+      await qflushIntegration.startProcess(supervisor, 'cerbere');
+      if (String(process.env.MANAGE_TTS || '').toLowerCase() === 'true') {
+        await qflushIntegration.startProcess(supervisor, 'tts');
+      }
+    }
+
+    return supervisor;
+  } catch (err) {
+    console.error('[QFLUSH] Supervisor bootstrap failed:', err && err.message);
+    return null;
+  }
+}
 
 // --- Mémoire persistante A-11 (conversations) ---
 const fsMem = require('node:fs');
@@ -344,6 +380,28 @@ app.get('/api/system-prompt', (_req, res) => {
   } catch (err) {
     console.error('[A11] Failed to read system_prompt:', err && err.message);
     return res.status(500).json({ ok: false, error: (err && err.message) || 'read_error' });
+  }
+});
+
+app.get('/api/qflush/status', (_req, res) => {
+  try {
+    if (!QFLUSH_AVAILABLE || !qflushIntegration) {
+      return res.json({ available: false, initialized: false, message: 'QFlush not available' });
+    }
+
+    const supervisor = globalThis.__A11_QFLUSH_SUPERVISOR;
+    if (!supervisor) {
+      return res.json({ available: true, initialized: false, message: 'Supervisor not initialized' });
+    }
+
+    if (typeof qflushIntegration.getStatus === 'function') {
+      const status = qflushIntegration.getStatus(supervisor);
+      return res.json({ available: true, initialized: true, ...status });
+    }
+
+    return res.json({ available: true, initialized: true, message: 'Status API unavailable' });
+  } catch (err) {
+    return res.status(500).json({ available: true, initialized: false, error: err && err.message });
   }
 });
 
@@ -640,6 +698,9 @@ globalThis.power3 = power3;
 // Fallback: ensure server starts
 if (!LISTENING) {
   try {
+    bootstrapQflushSupervisor().catch((e) => {
+      console.error('[QFLUSH] Bootstrap error:', e && e.message);
+    });
     app.listen(PORT, HOST_BIND, () => {
       LISTENING = true;
       console.log(`[A11] Server listening on http://${HOST_BIND}:${PORT}`);
@@ -980,9 +1041,3 @@ app.use(a11HistoryRouter);
 // Ajout du routeur Cerbère (llm-router.cjs)
 const llmRouter = require('./llm-router.cjs');
 app.use(llmRouter);
-
-// Démarrage du serveur sur le port défini (une seule déclaration de PORT)
-// Utilise la variable PORT déjà définie plus haut (globalThis.__A11_PORT)
-app.listen(PORT, () => {
-  console.log(`[A11] Server listening on port ${PORT}`);
-});

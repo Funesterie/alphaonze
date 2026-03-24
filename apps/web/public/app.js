@@ -79,7 +79,7 @@
     };
 
     const cfg = loadCfg();
-    if (!cfg.provider) cfg.provider = (typeof import.meta !== 'undefined' && import.meta.env ? (import.meta.env.VITE_A11_PROVIDER || 'local') : 'local');
+    if (!cfg.provider) cfg.provider = (typeof import.meta !== 'undefined' && import.meta.env ? (import.meta.env.VITE_A11_PROVIDER || 'openai') : 'openai');
 
     // Initialize nindo if not present
     if (!cfg.nindo) cfg.nindo = defaultCfg.nindo;
@@ -878,7 +878,7 @@
                 $setNindo.title = "Géré par A11 (self-control)";
             }
             if ($setSystem) $setSystem.value = cfg.system || defaultCfg.system;
-            if (document.getElementById('setProvider')) document.getElementById('setProvider').value = cfg.provider || 'local';
+            if (document.getElementById('setProvider')) document.getElementById('setProvider').value = cfg.provider || 'openai';
         } catch { }
     }
 
@@ -904,23 +904,31 @@
         return fallback;
     }
 
+    function getModelForProvider(provider) {
+        // Seuls les 2 modèles OpenAI sont supportés
+        const p = String(provider || '').toLowerCase();
+        if (p === 'openai-4.1') return 'gpt-4.1-mini';
+        return 'gpt-4o-mini'; // défaut OpenAI
+    }
+
     async function sendAndStream(chat) {
         // add a placeholder assistant message
         updateLastAssistantDelta("");
         let toolHandled = false;
         let toolBuffer = "";
         const controller = new AbortController();
+        const provider = 'openai';
         const payload = {
-            model: "local-model",
+            model: getModelForProvider(cfg.provider),
             messages: chat.messages,
             temperature: 0.7, // fixed temperature (removed UI control)
             top_p: cfg.top_p,
             stream: true,
             n: 1,
-            provider: cfg.provider || 'local'
+            provider
         };
 
-        const res = await fetch("/v1/chat/completions", {
+        let res = await fetch("/v1/chat/completions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),

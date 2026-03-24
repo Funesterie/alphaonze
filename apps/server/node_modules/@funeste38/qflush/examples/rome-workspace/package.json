@@ -1,8 +1,0 @@
-{
-  "name": "rome-example-workspace",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Minimal example workspace to satisfy Rome workspace checks in CI",
-  "license": "MIT",
-  "dependencies": {}
-}
