@@ -8,12 +8,14 @@ const PROD_API_BASE = 'https://api.funesterie.pro';
 
 // API Base URL for production (env override > production default > local relative paths)
 const API_BASE =
+  (import.meta.env?.VITE_API_URL) ||
   (import.meta.env?.VITE_API_BASE_URL) ||
   (import.meta.env?.VITE_API_BASE) ||
   (!isLocalHost ? PROD_API_BASE : '');
 
 // Router URL for chat completions (env override > production default > local relative path)
 const LLM_ROUTER_URL =
+  (import.meta.env?.VITE_API_URL) ||
   (import.meta.env?.VITE_LLM_ROUTER_URL) ||
   (!isLocalHost ? PROD_API_BASE : '');
 
