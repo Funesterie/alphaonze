@@ -680,7 +680,7 @@ export function App() {
                       ? "Toi"
                       : m.role === "assistant"
                       ? "A-11"
-                      : "Système / Nindo"}
+                      : "TEST NETLIFY 123"}
                   </div>
                   {m.role === "assistant"
                     ? <ReactMarkdown>{m.content}</ReactMarkdown>
