@@ -121,6 +121,12 @@ fn project_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
 }
 
+fn current_exe_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+}
+
 fn copy_directory(source: &Path, target: &Path) -> Result<(), String> {
     if !source.exists() {
         return Err(format!("Ressource packagee introuvable: {}", source.display()));
@@ -191,6 +197,22 @@ fn resolve_release_source_root(app: &AppHandle, config: &DesktopConfig) -> Optio
         let bundled_root = resource_dir.join(&config.paths.packaged_root);
         if bundled_root.exists() {
             return Some(bundled_root);
+        }
+    }
+
+    if let Some(exe_dir) = current_exe_dir() {
+        let exe_candidates = [
+            exe_dir.join("resources").join(&config.paths.packaged_root),
+            exe_dir
+                .join("_up_")
+                .join("resources")
+                .join(&config.paths.packaged_root),
+            exe_dir.join(&config.paths.packaged_root),
+        ];
+        for candidate in exe_candidates {
+            if candidate.exists() {
+                return Some(candidate);
+            }
         }
     }
 
@@ -272,7 +294,18 @@ fn resolve_runtime_paths(app: &AppHandle, config: &DesktopConfig) -> Result<Runt
     }
 
     Err(format!(
-        "Ressource packagee introuvable: {}",
+        "Ressource packagee introuvable. Candidates testes: {}, {}, {}, {}",
+        app.path()
+            .resource_dir()
+            .ok()
+            .map(|dir| dir.join(&config.paths.packaged_root).display().to_string())
+            .unwrap_or_else(|| "(resource_dir indisponible)".to_string()),
+        current_exe_dir()
+            .map(|dir| dir.join("resources").join(&config.paths.packaged_root).display().to_string())
+            .unwrap_or_else(|| "(exe/resources indisponible)".to_string()),
+        current_exe_dir()
+            .map(|dir| dir.join("_up_").join("resources").join(&config.paths.packaged_root).display().to_string())
+            .unwrap_or_else(|| "(exe/_up_/resources indisponible)".to_string()),
         project_root()
             .join("resources")
             .join(&config.paths.packaged_root)
