@@ -1,0 +1,9 @@
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+
+a11/launchers/dist/** -text
+a11/a11desktoptauri/resources/a11-local/** -text
+a11/a11desktoptauri/src-tauri/target/** -text
+a11/a11desktoptauri/src-tauri/target-alt/** -text

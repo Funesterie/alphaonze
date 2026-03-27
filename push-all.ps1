@@ -28,7 +28,11 @@ function Invoke-Git {
 
 function Normalize-RepoPath {
   param([string]$Path)
-  return ($Path -replace "\\", "/").Trim()
+  $normalized = ($Path -replace "\\", "/").Trim()
+  if ($normalized.StartsWith('"') -and $normalized.EndsWith('"') -and $normalized.Length -ge 2) {
+    $normalized = $normalized.Substring(1, $normalized.Length - 2)
+  }
+  return $normalized
 }
 
 function Test-IgnoredPath {
@@ -63,7 +67,7 @@ function Test-IgnoredPath {
 function Get-RepoStatusEntries {
   param([string]$RepoPath)
 
-  $lines = & git -C $RepoPath status --porcelain=v1
+  $lines = & git -c core.quotepath=false -C $RepoPath status --porcelain=v1
   if ($LASTEXITCODE -ne 0) {
     throw "Unable to read git status for $RepoPath"
   }
@@ -159,8 +163,16 @@ function Process-Repo {
   }
 
   if ($ignoredEntries.Count) {
-    Write-Host "Ignored changes:" -ForegroundColor Yellow
-    foreach ($entry in $ignoredEntries) {
+    $ignoredPreviewLimit = 40
+    if ($ignoredEntries.Count -gt $ignoredPreviewLimit) {
+      Write-Host "Ignored changes: $($ignoredEntries.Count) entries (showing first $ignoredPreviewLimit)" -ForegroundColor Yellow
+      $previewEntries = $ignoredEntries | Select-Object -First $ignoredPreviewLimit
+    } else {
+      Write-Host "Ignored changes:" -ForegroundColor Yellow
+      $previewEntries = $ignoredEntries
+    }
+
+    foreach ($entry in $previewEntries) {
       Write-Host "  $($entry.Raw)"
     }
   }
@@ -232,6 +244,12 @@ $repoOrder = @(
     Branch = "main"
     Ignore = @(
       "a11_runtime/",
+      "a11/launchers/dist/",
+      "a11/a11desktoptauri/node_modules/",
+      "a11/a11desktoptauri/dist/",
+      "a11/a11desktoptauri/resources/a11-local/",
+      "a11/a11desktoptauri/src-tauri/target/",
+      "a11/a11desktoptauri/src-tauri/target-alt/",
       "tmp-*.log",
       "*.log"
     )

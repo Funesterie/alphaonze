@@ -1,6 +1,0 @@
-[build]
-builder = "NIXPACKS"
-
-[deploy]
-startCommand = "npm run railway:start"
-healthcheckPath = "/health"

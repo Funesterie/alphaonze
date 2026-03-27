@@ -1,9 +1,0 @@
-{
-  "extends": "../tsconfig.json",
-  "compilerOptions": {
-    "types": ["node"],
-    "allowJs": true
-  },
-  "include": ["../src/tests/**/*", "../src/types/**/*", "../src/types/vitest-shims.d.ts"],
-  "exclude": []
-}

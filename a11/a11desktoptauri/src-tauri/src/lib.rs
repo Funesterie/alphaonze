@@ -186,12 +186,29 @@ fn should_refresh_runtime_copy(source_root: &Path, target_root: &Path) -> bool {
     source_modified > target_modified
 }
 
-fn ensure_packaged_runtime(app: &AppHandle, config: &DesktopConfig) -> Result<PathBuf, String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("Resource dir introuvable: {error}"))?;
-    let bundled_root = resource_dir.join(&config.paths.packaged_root);
+fn resolve_release_source_root(app: &AppHandle, config: &DesktopConfig) -> Option<PathBuf> {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled_root = resource_dir.join(&config.paths.packaged_root);
+        if bundled_root.exists() {
+            return Some(bundled_root);
+        }
+    }
+
+    let project_resources = project_root()
+        .join("resources")
+        .join(&config.paths.packaged_root);
+    if project_resources.exists() {
+        return Some(project_resources);
+    }
+
+    None
+}
+
+fn ensure_packaged_runtime(
+    app: &AppHandle,
+    config: &DesktopConfig,
+    source_root: &Path,
+) -> Result<PathBuf, String> {
     let local_data_dir = app
         .path()
         .app_local_data_dir()
@@ -199,7 +216,7 @@ fn ensure_packaged_runtime(app: &AppHandle, config: &DesktopConfig) -> Result<Pa
     let writable_root = local_data_dir.join(&config.paths.packaged_root);
     let writable_launcher = writable_root.join(&config.paths.packaged_launcher_script);
 
-    if should_refresh_runtime_copy(&bundled_root, &writable_root) || !writable_launcher.exists() {
+    if should_refresh_runtime_copy(source_root, &writable_root) || !writable_launcher.exists() {
         if writable_root.exists() {
             fs::remove_dir_all(&writable_root).map_err(|error| {
                 format!(
@@ -208,7 +225,7 @@ fn ensure_packaged_runtime(app: &AppHandle, config: &DesktopConfig) -> Result<Pa
                 )
             })?;
         }
-        copy_directory(&bundled_root, &writable_root)?;
+        copy_directory(source_root, &writable_root)?;
     }
 
     Ok(writable_root)
@@ -229,14 +246,38 @@ fn resolve_runtime_paths(app: &AppHandle, config: &DesktopConfig) -> Result<Runt
         });
     }
 
-    let packaged_root = ensure_packaged_runtime(app, config)?;
-    Ok(RuntimePaths {
-        launcher_mode: "packaged".to_string(),
-        launcher_script: packaged_root.join(&config.paths.packaged_launcher_script),
-        launcher_config: packaged_root.join(&config.paths.packaged_launcher_config),
-        logs_dir: packaged_root.join(&config.paths.packaged_logs_dir),
-        skip_ui_build: true,
-    })
+    if let Some(source_root) = resolve_release_source_root(app, config) {
+        let packaged_root = ensure_packaged_runtime(app, config, &source_root)?;
+        return Ok(RuntimePaths {
+            launcher_mode: "packaged".to_string(),
+            launcher_script: packaged_root.join(&config.paths.packaged_launcher_script),
+            launcher_config: packaged_root.join(&config.paths.packaged_launcher_config),
+            logs_dir: packaged_root.join(&config.paths.packaged_logs_dir),
+            skip_ui_build: true,
+        });
+    }
+
+    let root = project_root();
+    let launcher_script = resolve_relative(&root, &config.paths.repo_launcher_script);
+    let launcher_config = resolve_relative(&root, &config.paths.repo_launcher_config);
+    let logs_dir = resolve_relative(&root, &config.paths.repo_logs_dir);
+    if launcher_script.exists() && launcher_config.exists() {
+        return Ok(RuntimePaths {
+            launcher_mode: "repo-fallback".to_string(),
+            launcher_script,
+            launcher_config,
+            logs_dir,
+            skip_ui_build: false,
+        });
+    }
+
+    Err(format!(
+        "Ressource packagee introuvable: {}",
+        project_root()
+            .join("resources")
+            .join(&config.paths.packaged_root)
+            .display()
+    ))
 }
 
 fn parse_launcher_env(path: &Path) -> HashMap<String, String> {

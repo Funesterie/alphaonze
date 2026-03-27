@@ -4,6 +4,14 @@
 
 # Local launcher runtime
 /a11/launchers/runtime/
+/a11/launchers/dist/
+
+# Desktop wrapper generated files
+/a11/a11desktoptauri/node_modules/
+/a11/a11desktoptauri/dist/
+/a11/a11desktoptauri/resources/a11-local/
+/a11/a11desktoptauri/src-tauri/target/
+/a11/a11desktoptauri/src-tauri/target-alt/
 
 # Local binaries kept outside Git
 /a11/ngrok.exe
