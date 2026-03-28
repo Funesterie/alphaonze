@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 resources/a11-local
+artifacts
 
 # Tauri / Cargo
 src-tauri/target

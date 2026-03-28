@@ -51,6 +51,65 @@
           <div class="services" id="services"></div>
         </article>
 
+        <article class="card" id="model-card">
+          <h2>Moteur IA</h2>
+          <div class="engine-grid">
+            <section class="engine-pane">
+              <h3>Modele local GGUF</h3>
+              <label class="field">
+                <span>Profil local</span>
+                <select id="local-model-select"></select>
+              </label>
+              <p id="model-summary">
+                Le mode installer-lite attend un modele GGUF externe pour activer le LLM local.
+              </p>
+              <div class="actions">
+                <button class="button-primary" id="model-import-btn" type="button">
+                  Importer un GGUF
+                </button>
+                <button class="button-secondary" id="model-download-btn" type="button">
+                  Telecharger ce modele
+                </button>
+                <button class="button-ghost" id="model-folder-btn" type="button">
+                  Ouvrir le dossier modele
+                </button>
+              </div>
+              <p class="meta" id="model-path"></p>
+            </section>
+
+            <section class="engine-pane">
+              <h3>IA distante</h3>
+              <label class="field">
+                <span>Fournisseur</span>
+                <select id="remote-provider-select"></select>
+              </label>
+              <label class="field">
+                <span>Base API</span>
+                <input id="remote-base-url" type="text" placeholder="https://api.openai.com/v1" />
+              </label>
+              <label class="field">
+                <span>Modele</span>
+                <input id="remote-model" type="text" placeholder="gpt-4o-mini" />
+              </label>
+              <label class="field">
+                <span>Cle API</span>
+                <input id="remote-api-key" type="password" placeholder="sk-..." />
+              </label>
+              <div class="actions">
+                <button class="button-primary" id="remote-save-btn" type="button">
+                  Utiliser cette IA
+                </button>
+                <button class="button-secondary" id="remote-local-btn" type="button">
+                  Revenir au local
+                </button>
+              </div>
+              <p id="remote-summary" class="meta">
+                OpenAI, Grok et tout endpoint compatible OpenAI peuvent etre relies ici.
+              </p>
+            </section>
+          </div>
+        </article>
+
         <article class="card">
           <h2>Controle rapide</h2>
           <p class="meta">
@@ -66,11 +125,15 @@
             <button class="button-secondary" id="logs-btn" type="button">
               Ouvrir les logs
             </button>
+            <button class="button-ghost" id="quit-btn" type="button">
+              Quitter l'app
+            </button>
           </div>
           <p class="meta" id="logs-path"></p>
         </article>
       </section>
 
+      <p class="notice" id="notice-msg" hidden></p>
       <p class="hint" id="error-msg" hidden></p>
     </main>
   </body>

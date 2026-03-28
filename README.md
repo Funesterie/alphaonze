@@ -61,6 +61,29 @@ bootstrap.bat local --check-only --no-pause
 bootstrap.bat online --check-only --no-pause
 ```
 
+## Deploy prod A11
+
+Pour la prod A11, le plus simple est maintenant d'utiliser le flux dedie:
+
+```powershell
+pwsh -File .\deploy-a11-prod.ps1 -StatusOnly
+pwsh -File .\deploy-a11-prod.ps1 -Message "fix(a11): mon correctif prod"
+```
+
+Ou en double-clic / `cmd`:
+
+```bat
+deploy-a11-prod.bat -StatusOnly
+deploy-a11-prod.bat -Message "fix(a11): mon correctif prod"
+```
+
+Ce flux:
+
+- cible seulement les depots utiles a la prod A11
+- pousse vers `main`, ce qui est le plus simple si Railway / Netlify surveillent `main`
+- bloque clairement les branches locales qui ont diverge de `main`, au lieu de donner l'impression qu'un push a "fait quelque chose"
+- ignore les fichiers runtime locaux connus, comme les memos techniques
+
 ### Actions disponibles
 
 - `status`

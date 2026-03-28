@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "desktop:sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-local-package.ps1",
+    "tauri:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable-package.ps1",
+    "tauri:installer-lite": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer-lite.ps1",
     "tauri": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1",
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1 dev",
     "tauri:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri.ps1 build"

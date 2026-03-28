@@ -28,7 +28,8 @@ body {
 
 body {
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 button {
@@ -139,9 +140,19 @@ button:disabled {
   border-color: rgba(95, 218, 173, 0.28);
 }
 
+.phase-pill[data-state="warning"] {
+  background: rgba(180, 126, 42, 0.18);
+  border-color: rgba(245, 197, 93, 0.34);
+}
+
 .phase-pill[data-state="ready"]::before {
   background: #7cffb9;
   box-shadow: 0 0 18px rgba(124, 255, 185, 0.55);
+}
+
+.phase-pill[data-state="warning"]::before {
+  background: #f8cf72;
+  box-shadow: 0 0 18px rgba(248, 207, 114, 0.55);
 }
 
 .grid {
@@ -166,6 +177,12 @@ button:disabled {
 .card p {
   margin: 0;
   color: #c2cae7;
+}
+
+.card h3 {
+  margin: 0 0 10px;
+  font-size: 0.98rem;
+  color: #f4edff;
 }
 
 .actions {
@@ -257,6 +274,16 @@ button:disabled {
   color: #ffb3bf;
 }
 
+.notice {
+  min-height: 24px;
+  margin: 0;
+  color: #f2d891;
+}
+
+.notice[hidden] {
+  display: none;
+}
+
 .hint[hidden] {
   display: none;
 }
@@ -264,6 +291,60 @@ button:disabled {
 .meta {
   color: #8b96bd;
   font-size: 0.92rem;
+}
+
+#model-card {
+  border-color: rgba(233, 185, 82, 0.24);
+  background:
+    linear-gradient(180deg, rgba(31, 20, 7, 0.9), rgba(13, 16, 28, 0.82));
+}
+
+.engine-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.engine-pane {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field span {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #eedab2;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(192, 169, 255, 0.22);
+  background: rgba(8, 12, 23, 0.82);
+  color: #f3ebff;
+  font: inherit;
+  padding: 0.85rem 0.95rem;
+  outline: none;
+}
+
+.field input::placeholder {
+  color: #7e88ad;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: rgba(245, 196, 93, 0.55);
+  box-shadow: 0 0 0 3px rgba(245, 196, 93, 0.12);
 }
 
 @media (max-width: 640px) {

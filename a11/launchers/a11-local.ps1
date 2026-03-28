@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('start', 'desktop', 'stop', 'status', 'check', 'package')]
+  [ValidateSet('start', 'desktop', 'stop', 'restart', 'status', 'status-json', 'check', 'package')]
   [string]$Command = 'start',
   [string]$ConfigPath = '',
   [switch]$NoOpen,
@@ -229,6 +229,20 @@ function Test-HttpReady {
   }
 }
 
+function Test-UiReady {
+  param(
+    [string]$Url,
+    [int]$TimeoutSec = 4
+  )
+
+  try {
+    $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec -ErrorAction Stop
+    return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400)
+  } catch {
+    return $false
+  }
+}
+
 function Get-AliveProcess {
   param([int]$ProcessId)
   try {
@@ -236,6 +250,145 @@ function Get-AliveProcess {
   } catch {
     return $null
   }
+}
+
+function Get-ProcessMetadata {
+  param([int]$ProcessId)
+
+  if (-not $ProcessId) {
+    return $null
+  }
+
+  try {
+    return Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
+  } catch {
+    return $null
+  }
+}
+
+function Test-ServiceOwnedProcess {
+  param(
+    [pscustomobject]$Service,
+    [int]$ProcessId
+  )
+
+  if (-not $ProcessId) {
+    return $false
+  }
+
+  $processInfo = Get-ProcessMetadata -ProcessId $ProcessId
+  if (-not $processInfo) {
+    return $false
+  }
+
+  $serviceExe = ''
+  try {
+    $serviceExe = [System.IO.Path]::GetFullPath([string]$Service.FilePath)
+  } catch {
+    $serviceExe = [string]$Service.FilePath
+  }
+
+  $processExe = [string]$processInfo.ExecutablePath
+  if (-not $processExe) {
+    return $false
+  }
+
+  $sameExecutable = [string]::Equals(
+    $processExe,
+    $serviceExe,
+    [System.StringComparison]::OrdinalIgnoreCase
+  )
+
+  if (-not $sameExecutable) {
+    return $false
+  }
+
+  $commandLine = [string]$processInfo.CommandLine
+  $commandLineLower = $commandLine.ToLowerInvariant()
+  $knownMarkers = switch ($Service.Key) {
+    'llm' { @('llama-server.exe') }
+    'backend' { @('server.cjs') }
+    'tts' { @('siwis.py') }
+    'qflush' { @('qflushd.js') }
+    'frontend' { @('vite') }
+    default { @() }
+  }
+
+  foreach ($marker in $knownMarkers) {
+    if ($commandLineLower.Contains($marker.ToLowerInvariant())) {
+      return $true
+    }
+  }
+
+  if ([string]::IsNullOrWhiteSpace($commandLine)) {
+    return $false
+  }
+
+  $markers = New-Object System.Collections.Generic.List[string]
+
+  if ($Service.WorkingDirectory) {
+    $markers.Add([System.IO.Path]::GetFullPath([string]$Service.WorkingDirectory))
+  }
+
+  foreach ($argument in @($Service.ArgumentList)) {
+    $raw = [string]$argument
+    if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+    if ($raw.StartsWith('-')) { continue }
+    if ($raw -match '^\d+$') { continue }
+
+    $candidate = $raw
+    if ([System.IO.Path]::IsPathRooted($candidate) -or $candidate.Contains('\') -or $candidate.Contains('/')) {
+      $markers.Add([System.IO.Path]::GetFileName($candidate))
+      continue
+    }
+
+    $markers.Add($candidate)
+  }
+
+  foreach ($marker in $markers) {
+    if ([string]::IsNullOrWhiteSpace($marker)) { continue }
+    if ($commandLineLower.Contains($marker.ToLowerInvariant())) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Resolve-OwnedServicePid {
+  param([pscustomobject]$Service)
+
+  if (-not $Service.Port) {
+    return $null
+  }
+
+  $listeningPid = Get-ListeningProcessId -Port $Service.Port
+  if (-not $listeningPid) {
+    return $null
+  }
+
+  if (Test-ServiceOwnedProcess -Service $Service -ProcessId $listeningPid) {
+    return $listeningPid
+  }
+
+  return $null
+}
+
+function Get-OwnedServiceProcessIds {
+  param([pscustomobject]$Service)
+
+  $results = New-Object System.Collections.Generic.List[int]
+  $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+  foreach ($processInfo in @($processes)) {
+    if (-not $processInfo) { continue }
+    $candidatePid = [int]$processInfo.ProcessId
+    if ($candidatePid -le 0) { continue }
+    if (Test-ServiceOwnedProcess -Service $Service -ProcessId $candidatePid) {
+      $results.Add($candidatePid)
+    }
+  }
+
+  return @($results.ToArray() | Sort-Object -Unique)
 }
 
 function Stop-ProcessTree {
@@ -317,6 +470,230 @@ function Save-State {
   $json | Set-Content -Path $Path -Encoding UTF8
 }
 
+function Load-OperationState {
+  param([string]$Path)
+
+  if (-not (Test-Path $Path)) {
+    return $null
+  }
+
+  try {
+    $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+      return $null
+    }
+
+    $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+    $pid = 0
+    [void][int]::TryParse([string]$parsed.pid, [ref]$pid)
+    if ($pid -gt 0 -and (Get-AliveProcess -ProcessId $pid)) {
+      return [pscustomobject]@{
+        active = $true
+        command = [string]$parsed.command
+        pid = $pid
+        startedAt = [string]$parsed.startedAt
+        configPath = [string]$parsed.configPath
+      }
+    }
+  } catch {
+  }
+
+  Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  return $null
+}
+
+function Save-OperationState {
+  param(
+    [string]$Path,
+    [string]$CommandName,
+    [string]$ConfigPath
+  )
+
+  $payload = @{
+    active = $true
+    command = $CommandName
+    pid = $PID
+    startedAt = (Get-Date).ToString('o')
+    configPath = $ConfigPath
+  }
+  $payload | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Clear-OperationState {
+  param(
+    [string]$Path,
+    [string]$CommandName = ''
+  )
+
+  $active = Load-OperationState -Path $Path
+  if (-not $active) {
+    return
+  }
+
+  if ($active.pid -eq $PID -or [string]::IsNullOrWhiteSpace($CommandName) -or $active.command -eq $CommandName) {
+    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Save-LauncherSnapshot {
+  param(
+    [string]$Path,
+    [object]$Snapshot
+  )
+
+  try {
+    Write-AtomicJsonFile -Path $Path -Payload $Snapshot
+  } catch {
+  }
+}
+
+function Write-AtomicJsonFile {
+  param(
+    [string]$Path,
+    [object]$Payload
+  )
+
+  $tempPath = "$Path.$PID.tmp"
+  $Payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tempPath -Encoding UTF8
+  Move-Item -LiteralPath $tempPath -Destination $Path -Force
+}
+
+function Set-LauncherProgress {
+  param(
+    [string]$Path,
+    [string]$Phase,
+    [string]$Message,
+    [string]$ServiceKey = '',
+    [string]$ServiceLabel = ''
+  )
+
+  try {
+    Write-AtomicJsonFile -Path $Path -Payload @{
+      active = $true
+      phase = $Phase
+      message = $Message
+      serviceKey = $ServiceKey
+      serviceLabel = $ServiceLabel
+      updatedAt = (Get-Date).ToString('o')
+      pid = $PID
+    }
+  } catch {
+  }
+}
+
+function Get-LauncherProgress {
+  param([string]$Path)
+
+  if (-not (Test-Path $Path)) {
+    return $null
+  }
+
+  try {
+    return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    return $null
+  }
+}
+
+function Clear-LauncherProgress {
+  param([string]$Path)
+
+  Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+}
+
+function Get-ActiveLauncherOperations {
+  param([string[]]$CommandNames = @('start', 'restart', 'desktop'))
+
+  $scriptPath = ''
+  try {
+    $scriptPath = [System.IO.Path]::GetFullPath($PSCommandPath).ToLowerInvariant()
+  } catch {
+    $scriptPath = [string]$PSCommandPath
+  }
+
+  $results = New-Object System.Collections.Generic.List[object]
+  $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+  foreach ($processInfo in @($processes)) {
+    if (-not $processInfo) { continue }
+    if ([int]$processInfo.ProcessId -eq $PID) { continue }
+
+    $commandLine = [string]$processInfo.CommandLine
+    if ([string]::IsNullOrWhiteSpace($commandLine)) { continue }
+
+    $commandLineLower = $commandLine.ToLowerInvariant()
+    if (-not $commandLineLower.Contains($scriptPath)) { continue }
+
+    foreach ($commandName in @($CommandNames)) {
+      if ([string]::IsNullOrWhiteSpace($commandName)) { continue }
+      $pattern = "(^|\s)$([regex]::Escape($commandName.ToLowerInvariant()))(\s|$)"
+      if ($commandLineLower -match $pattern) {
+        $startedAt = $null
+        if ($processInfo.CreationDate) {
+          try {
+            $startedAt = ([System.Management.ManagementDateTimeConverter]::ToDateTime($processInfo.CreationDate)).ToString('o')
+          } catch {
+            $startedAt = [string]$processInfo.CreationDate
+          }
+        }
+
+        $results.Add([pscustomobject]@{
+          active = $true
+          command = $commandName
+          pid = [int]$processInfo.ProcessId
+          startedAt = $startedAt
+          commandLine = $commandLine
+        })
+        break
+      }
+    }
+  }
+
+  return @($results.ToArray())
+}
+
+function Stop-LauncherOperations {
+  param([string[]]$CommandNames = @('start', 'restart', 'desktop'))
+
+  $operations = Get-ActiveLauncherOperations -CommandNames $CommandNames
+  foreach ($operation in @($operations)) {
+    if (-not $operation.pid) { continue }
+    Write-WarnLine "Arret du launcher '$($operation.command)' (PID $($operation.pid))."
+    Stop-ProcessTree -ProcessId $operation.pid
+  }
+
+  Clear-OperationState -Path $operationFile
+}
+
+function Invoke-WithOperationLock {
+  param(
+    [string]$Path,
+    [string]$CommandName,
+    [scriptblock]$Action
+  )
+
+  $active = Load-OperationState -Path $Path
+  if ($active -and $active.pid -ne $PID) {
+    Write-WarnLine "Launcher deja occupe par '$($active.command)' (PID $($active.pid))."
+    return $false
+  }
+
+  $liveOperations = Get-ActiveLauncherOperations -CommandNames @('start', 'restart', 'desktop') | Select-Object -First 1
+  if ($liveOperations) {
+    Write-WarnLine "Launcher deja occupe par '$($liveOperations.command)' (PID $($liveOperations.pid))."
+    return $false
+  }
+
+  Save-OperationState -Path $Path -CommandName $CommandName -ConfigPath $resolvedConfigPath
+  try {
+    & $Action
+    return $true
+  } finally {
+    Clear-OperationState -Path $Path -CommandName $CommandName
+    Clear-LauncherProgress -Path $progressFile
+  }
+}
+
 function Start-ManagedProcess {
   param(
     [pscustomobject]$Service,
@@ -366,11 +743,19 @@ function Wait-UntilReady {
       }
     }
 
+    $portReady = $false
+    if ($Service.Port) {
+      $portReady = Test-PortReady -Port $Service.Port
+    }
+
     if ($Service.HealthMode -eq 'http') {
+      if ($portReady -and $Service.ReadyWhenPortOpen) {
+        return $true
+      }
       if (Test-HttpReady -Url $Service.HealthUrl -TimeoutSec 3) {
         return $true
       }
-    } elseif ($Service.Port -and (Test-PortReady -Port $Service.Port)) {
+    } elseif ($portReady) {
       return $true
     }
 
@@ -545,10 +930,12 @@ function Write-PackagedConfig {
     "A11_ENABLE_TTS=$([int]$Context.EnableTts)",
     "A11_ENABLE_LLM=$([int]$Context.EnableLlm)",
     "A11_ENABLE_QFLUSH=$([int]$Context.EnableQflush)",
+    "A11_CHAT_PROVIDER_MODE=$($Context.ChatProviderMode)",
     '',
     "A11_BACKEND_PORT=$($Context.BackendPort)",
     "A11_TTS_PORT=$($Context.TtsPort)",
     "A11_LLM_PORT=$($Context.LlmPort)",
+    'A11_LLM_STARTUP_TIMEOUT_SEC=90',
     "A11_QFLUSH_PORT=$($Context.QflushPort)",
     "A11_FRONTEND_PORT=$($Context.FrontendPort)",
     '',
@@ -562,9 +949,16 @@ function Write-PackagedConfig {
     'A11_QFLUSH_DIR=..\qflush',
     'A11_LLM_EXE=..\llm\llm\server\llama-server.exe',
     'A11_LLM_MODEL=..\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+    'A11_LLM_MODEL_CATALOG_ID=llama32-3b-q4km',
+    'A11_LLM_MODEL_URL=',
+    'A11_REMOTE_PROVIDER_CATALOG_FILE=config\remote-providers.json',
     'A11_TTS_MODEL=..\tts\fr_FR-siwis-medium.onnx',
     'A11_TTS_PIPER=..\tts\piper.exe',
     'A11_TTS_ESPEAK=..\tts\espeak-ng-data',
+    "A11_REMOTE_PROVIDER_ID=$($Context.RemoteProviderId)",
+    "OPENAI_BASE_URL=$($Context.OpenAiBaseUrl)",
+    'OPENAI_API_KEY=',
+    "OPENAI_MODEL=$($Context.OpenAiModel)",
     '',
     "A11_QFLUSH_CHAT_FLOW=$($Context.QflushChatFlow)",
     "A11_QFLUSH_MEMORY_SUMMARY_FLOW=$($Context.QflushMemorySummaryFlow)",
@@ -601,24 +995,45 @@ function Build-ServiceDefinitions {
   $ttsModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_MODEL' '..\a11backendrailway\apps\tts\fr_FR-siwis-medium.onnx') -BaseDirectory $LauncherDirectory
   $ttsPiper = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_PIPER' '..\a11backendrailway\apps\tts\piper.exe') -BaseDirectory $LauncherDirectory
   $ttsEspeak = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_ESPEAK' '..\a11backendrailway\apps\tts\espeak-ng-data') -BaseDirectory $LauncherDirectory
+  $remoteProviderCatalogFile = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_REMOTE_PROVIDER_CATALOG_FILE' 'config\remote-providers.json') -BaseDirectory $LauncherDirectory
 
   $enableBackend = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_BACKEND' '1') $true
   $enableTts = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_TTS' '1') $true
   $enableLlm = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_LLM' '1') $true
   $enableQflush = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_QFLUSH' '0') $false
+  $chatProviderMode = (Get-ConfigValue $Config 'A11_CHAT_PROVIDER_MODE' '').Trim().ToLowerInvariant()
+  $remoteProviderId = Get-ConfigValue $Config 'A11_REMOTE_PROVIDER_ID' ''
+  $openAiBaseUrl = (Get-ConfigValue $Config 'OPENAI_BASE_URL' '').Trim()
+  $openAiApiKey = (Get-ConfigValue $Config 'OPENAI_API_KEY' '').Trim()
+  $openAiModel = (Get-ConfigValue $Config 'OPENAI_MODEL' (Get-ConfigValue $Config 'A11_OPENAI_MODEL' 'gpt-4o-mini')).Trim()
 
   $backendPort = To-IntValue (Get-ConfigValue $Config 'A11_BACKEND_PORT' '3000') 3000
   $ttsPort = To-IntValue (Get-ConfigValue $Config 'A11_TTS_PORT' '5002') 5002
   $llmPort = To-IntValue (Get-ConfigValue $Config 'A11_LLM_PORT' '8080') 8080
+  $llmStartupTimeoutSec = To-IntValue (Get-ConfigValue $Config 'A11_LLM_STARTUP_TIMEOUT_SEC' '90') 90
   $qflushPort = To-IntValue (Get-ConfigValue $Config 'A11_QFLUSH_PORT' '43421') 43421
   $frontendPort = To-IntValue (Get-ConfigValue $Config 'A11_FRONTEND_PORT' '5173') 5173
 
   $qflushChatFlow = Get-ConfigValue $Config 'A11_QFLUSH_CHAT_FLOW' ''
   $qflushMemorySummaryFlow = Get-ConfigValue $Config 'A11_QFLUSH_MEMORY_SUMMARY_FLOW' 'a11.memory.summary.v1'
+
+  if (-not $chatProviderMode) {
+    if ($enableLlm) {
+      $chatProviderMode = 'local'
+    } elseif ($openAiBaseUrl -or $openAiApiKey) {
+      $chatProviderMode = 'remote'
+    } else {
+      $chatProviderMode = 'local'
+    }
+  }
+
+  $useRemoteProvider = $chatProviderMode -eq 'remote' -and -not [string]::IsNullOrWhiteSpace($openAiBaseUrl) -and -not [string]::IsNullOrWhiteSpace($openAiApiKey)
+  $effectiveEnableLlm = $enableLlm -and -not $useRemoteProvider
   $qflushRuntimeUrl = ''
   if ($enableQflush) {
     $qflushRuntimeUrl = $LocalQflushUrl
   }
+  $effectiveQflushChatFlow = if ($enableQflush -and -not $useRemoteProvider) { $qflushChatFlow } else { '' }
   $backendWebDist = ''
   $serveStatic = 'false'
   if ($UiMode -eq 'embedded') {
@@ -634,15 +1049,17 @@ function Build-ServiceDefinitions {
   $services += [pscustomobject]@{
     Key = 'llm'
     DisplayName = 'A11 LLM'
-    Enabled = $enableLlm
+    Required = $true
+    Enabled = $effectiveEnableLlm
     FilePath = $llmExe
     WorkingDirectory = (Split-Path -Parent $llmExe)
     ArgumentList = @('-m', $llmModel, '--port', "$llmPort", '--host', '127.0.0.1')
     Environment = @{}
     Port = $llmPort
     HealthUrl = "http://127.0.0.1:$llmPort/health"
-    HealthMode = 'port'
-    StartupTimeoutSec = 45
+    HealthMode = 'http'
+    ReadyWhenPortOpen = $true
+    StartupTimeoutSec = $llmStartupTimeoutSec
     LogKey = 'llm'
     Issues = @(
       if (-not (Test-Path $llmExe)) { "Missing llama executable: $llmExe" }
@@ -653,6 +1070,7 @@ function Build-ServiceDefinitions {
   $services += [pscustomobject]@{
     Key = 'tts'
     DisplayName = 'A11 TTS'
+    Required = $true
     Enabled = $enableTts
     FilePath = $PythonCommand
     WorkingDirectory = $ttsDir
@@ -668,6 +1086,7 @@ function Build-ServiceDefinitions {
     Port = $ttsPort
     HealthUrl = "$LocalTtsUrl/health"
     HealthMode = 'http'
+    ReadyWhenPortOpen = $true
     StartupTimeoutSec = 35
     LogKey = 'tts'
     Issues = @(
@@ -683,6 +1102,7 @@ function Build-ServiceDefinitions {
   $services += [pscustomobject]@{
     Key = 'qflush'
     DisplayName = 'Qflush'
+    Required = $false
     Enabled = $enableQflush
     FilePath = $NodeCommand
     WorkingDirectory = $qflushDir
@@ -701,6 +1121,7 @@ function Build-ServiceDefinitions {
     Port = $qflushPort
     HealthUrl = "$LocalQflushUrl/health"
     HealthMode = 'http'
+    ReadyWhenPortOpen = $true
     StartupTimeoutSec = 35
     LogKey = 'qflush'
     Issues = @(
@@ -714,22 +1135,29 @@ function Build-ServiceDefinitions {
     NODE_ENV = 'development'
     A11_LOCAL_MODE = '1'
     A11_RUNTIME_PROFILE = 'local'
-    BACKEND = 'local'
+    BACKEND = $(if ($useRemoteProvider) { 'openai' } else { 'local' })
     APP_URL = $LocalUiUrl
     FRONT_URL = $LocalUiUrl
     PUBLIC_API_URL = $LocalApiUrl
     API_URL = $LocalApiUrl
-    LOCAL_LLM_URL = $LocalLlmUrl
-    LLAMA_BASE = $LocalLlmUrl
+    LOCAL_LLM_URL = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
+    LLAMA_BASE = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
     LLAMA_PORT = $llmPort
     LOCAL_LLM_PORT = $llmPort
+    OPENAI_BASE_URL = $openAiBaseUrl
+    OPENAI_API_KEY = $openAiApiKey
+    OPENAI_MODEL = $openAiModel
+    A11_OPENAI_MODEL = $openAiModel
+    A11_REMOTE_PROVIDER_ID = $remoteProviderId
+    A11_REMOTE_PROVIDER_CATALOG_FILE = $remoteProviderCatalogFile
+    A11_CHAT_PROVIDER_MODE = $chatProviderMode
     TTS_PORT = $ttsPort
     TTS_URL = $LocalTtsUrl
     TTS_BASE_URL = $LocalTtsUrl
     TTS_PUBLIC_BASE_URL = $LocalTtsUrl
     QFLUSH_URL = $qflushRuntimeUrl
     QFLUSH_REMOTE_URL = $qflushRuntimeUrl
-    QFLUSH_CHAT_FLOW = $(if ($enableQflush) { $qflushChatFlow } else { '' })
+    QFLUSH_CHAT_FLOW = $effectiveQflushChatFlow
     QFLUSH_MEMORY_SUMMARY_FLOW = $qflushMemorySummaryFlow
     A11_WEB_DIST_DIR = $backendWebDist
     SERVE_STATIC = $serveStatic
@@ -739,6 +1167,7 @@ function Build-ServiceDefinitions {
   $services += [pscustomobject]@{
     Key = 'backend'
     DisplayName = 'A11 Backend'
+    Required = $true
     Enabled = $enableBackend
     FilePath = $NodeCommand
     WorkingDirectory = $backendDir
@@ -747,6 +1176,7 @@ function Build-ServiceDefinitions {
     Port = $backendPort
     HealthUrl = "$LocalApiUrl/health"
     HealthMode = 'http'
+    ReadyWhenPortOpen = $true
     StartupTimeoutSec = 45
     LogKey = 'backend'
     Issues = @(
@@ -760,6 +1190,7 @@ function Build-ServiceDefinitions {
     $services += [pscustomobject]@{
       Key = 'frontend'
       DisplayName = 'A11 Frontend'
+      Required = $false
       Enabled = $true
       FilePath = $NpmCommand
       WorkingDirectory = $frontendDir
@@ -776,6 +1207,7 @@ function Build-ServiceDefinitions {
       Port = $frontendPort
       HealthUrl = "http://127.0.0.1:$frontendPort/"
       HealthMode = 'http'
+      ReadyWhenPortOpen = $true
       StartupTimeoutSec = 40
       LogKey = 'frontend'
       Issues = @(
@@ -804,8 +1236,14 @@ function Build-ServiceDefinitions {
     QflushMemorySummaryFlow = $qflushMemorySummaryFlow
     EnableBackend = $enableBackend
     EnableTts = $enableTts
-    EnableLlm = $enableLlm
+    EnableLlm = $effectiveEnableLlm
     EnableQflush = $enableQflush
+    ChatProviderMode = $chatProviderMode
+    UseRemoteProvider = $useRemoteProvider
+    RemoteProviderId = $remoteProviderId
+    RemoteProviderCatalogFile = $remoteProviderCatalogFile
+    OpenAiBaseUrl = $openAiBaseUrl
+    OpenAiModel = $openAiModel
   }
 }
 
@@ -837,16 +1275,35 @@ function Get-ServiceStatus {
   if ($Service.Port) {
     $listeningPid = Get-ListeningProcessId -Port $Service.Port
   }
+  if ($listeningPid -and $servicePid -and $servicePid -ne $listeningPid) {
+    if (Test-ServiceOwnedProcess -Service $Service -ProcessId $listeningPid) {
+      $servicePid = $listeningPid
+      $alive = $true
+      $managedByLauncher = $true
+    }
+  }
+  if (-not $managedByLauncher -and $listeningPid) {
+    if (Test-ServiceOwnedProcess -Service $Service -ProcessId $listeningPid) {
+      $managedByLauncher = $true
+      if (-not $servicePid) {
+        $servicePid = $listeningPid
+      }
+    }
+  }
   $healthy = $false
   if ($Service.HealthMode -eq 'http') {
-    $healthy = Test-HttpReady -Url $Service.HealthUrl -TimeoutSec 2
+    if ($listeningPid -or $alive -or (-not $Service.Port)) {
+      $healthy = Test-HttpReady -Url $Service.HealthUrl -TimeoutSec 2
+    }
   }
   if (-not $healthy -and $Service.Port) {
     $healthy = $null -ne $listeningPid
   }
-  $resolvedPid = $listeningPid
-  if ($servicePid) {
+  $resolvedPid = $null
+  if ($servicePid -and $alive) {
     $resolvedPid = $servicePid
+  } elseif ($listeningPid) {
+    $resolvedPid = $listeningPid
   }
 
   $stateLabel = 'stopped'
@@ -884,6 +1341,73 @@ function Get-ServiceStatus {
   }
 }
 
+function Get-LauncherStatusSnapshot {
+  $activeOperation = Load-OperationState -Path $operationFile
+  if (-not $activeOperation) {
+    $liveLauncherOperation = Get-ActiveLauncherOperations -CommandNames @('start', 'restart', 'desktop') | Select-Object -First 1
+    if ($liveLauncherOperation) {
+      $activeOperation = [pscustomobject]@{
+        active = $true
+        command = [string]$liveLauncherOperation.command
+        pid = [int]$liveLauncherOperation.pid
+        startedAt = [string]$liveLauncherOperation.startedAt
+        configPath = $resolvedConfigPath
+      }
+    }
+  }
+  $progress = Get-LauncherProgress -Path $progressFile
+  $rows = foreach ($service in $definitionBundle.Services) {
+    $status = Get-ServiceStatus -Service $service -StateServices $state.services
+    [pscustomobject]@{
+      key = $service.Key
+      label = $service.DisplayName
+      enabled = [bool]$status.Enabled
+      state = [string]$status.State
+      port = if ($null -ne $status.Port) { [int]$status.Port } else { $null }
+      pid = if ($null -ne $status.Pid) { [int]$status.Pid } else { $null }
+      ready = [bool]$status.Healthy
+      required = [bool]$service.Required
+      healthUrl = [string]$status.Url
+    }
+  }
+
+  $requiredReady = @($rows | Where-Object { $_.required -and $_.enabled }).Count -eq 0 -or
+    (@($rows | Where-Object { $_.required -and $_.enabled -and -not $_.ready }).Count -eq 0)
+  $backendUiReady = @($rows | Where-Object { $_.key -eq 'backend' -and $_.ready }).Count -gt 0
+  $frontendUiReady = @($rows | Where-Object { $_.key -eq 'frontend' -and $_.ready }).Count -gt 0
+  $uiReady = if ($uiMode -eq 'embedded') {
+    $backendUiReady
+  } else {
+    $frontendUiReady
+  }
+
+  $snapshot = [pscustomobject]@{
+    ok = (-not $script:HadErrors)
+    command = $Command
+    uiMode = $uiMode
+    uiUrl = $localUiUrl
+    uiReady = $uiReady
+    requiredServicesReady = $requiredReady
+    ready = ($requiredReady -and $uiReady)
+    logsDirectory = $logsDirectory
+    launcherConfig = $resolvedConfigPath
+    remoteProviderCatalogFile = $definitionBundle.RemoteProviderCatalogFile
+    operation = $activeOperation
+    progress = $progress
+    services = $rows
+  }
+
+  Save-LauncherSnapshot -Path $snapshotFile -Snapshot $snapshot
+  return $snapshot
+}
+
+function Update-LauncherSnapshotCache {
+  try {
+    [void](Get-LauncherStatusSnapshot)
+  } catch {
+  }
+}
+
 function Open-A11DesktopWindow {
   param(
     [string]$Url,
@@ -916,17 +1440,46 @@ function Open-A11DesktopWindow {
 function Start-A11Stack {
   param([switch]$DesktopWindow)
 
+  Set-LauncherProgress -Path $progressFile -Phase 'validation' -Message 'Verification de la stack locale...'
+  Update-LauncherSnapshotCache
+  $validationStateChanged = $false
+
   foreach ($service in $definitionBundle.Services) {
     if (-not $service.Enabled) { continue }
+
+    $externalPid = if ($service.Port) { Get-ListeningProcessId -Port $service.Port } else { $null }
+    if ($externalPid) {
+      $ownedExternal = Test-ServiceOwnedProcess -Service $service -ProcessId $externalPid
+      if ($ownedExternal) {
+        Write-Info "$($service.DisplayName) already active locally on port $($service.Port) (PID $externalPid)"
+      } else {
+        Write-WarnLine "$($service.DisplayName) already active on port $($service.Port) (PID $externalPid)"
+      }
+      $state.services[$service.Key] = @{
+        pid = $externalPid
+        port = $service.Port
+        healthUrl = $service.HealthUrl
+        managedByLauncher = $ownedExternal
+      }
+      $validationStateChanged = $true
+      continue
+    }
+
     if ($service.Issues.Count -gt 0) {
       foreach ($issue in $service.Issues) {
         Write-ErrorLine "$($service.DisplayName): $issue"
       }
     }
   }
+  if ($validationStateChanged) {
+    Save-State -Path $stateFile -State $state
+    Update-LauncherSnapshotCache
+  }
   if ($script:HadErrors) { return }
 
   if ($uiMode -eq 'embedded') {
+    Set-LauncherProgress -Path $progressFile -Phase 'ui-build' -Message 'Preparation de l interface embarquee...'
+    Update-LauncherSnapshotCache
     Ensure-EmbeddedUiBuild `
       -FrontendDirectory $definitionBundle.FrontendDir `
       -WebDistDirectory $definitionBundle.WebDistDirectory `
@@ -936,6 +1489,8 @@ function Start-A11Stack {
       -SkipBuild:$SkipUiBuild
   }
   if ($definitionBundle.EnableQflush) {
+    Set-LauncherProgress -Path $progressFile -Phase 'qflush-build' -Message 'Preparation de Qflush...'
+    Update-LauncherSnapshotCache
     [void](Ensure-QflushBuild -QflushDirectory $definitionBundle.QflushDir -NpmCommand $npmCommand)
     ($definitionBundle.Services | Where-Object { $_.Key -eq 'qflush' } | Select-Object -First 1).ArgumentList = @((Join-Path $definitionBundle.QflushDir 'dist\daemon\qflushd.js'))
   }
@@ -946,24 +1501,25 @@ function Start-A11Stack {
       continue
     }
 
-    $externalPid = if ($service.Port) { Get-ListeningProcessId -Port $service.Port } else { $null }
-    if ($externalPid) {
-      Write-WarnLine "$($service.DisplayName) already active on port $($service.Port) (PID $externalPid)"
-      $state.services[$service.Key] = @{
-        pid = $externalPid
-        port = $service.Port
-        healthUrl = $service.HealthUrl
-        managedByLauncher = $false
+    $existingState = $null
+    if ($state.services.ContainsKey($service.Key)) {
+      $existingState = $state.services[$service.Key]
+    }
+    if ($existingState -and ($existingState.managedByLauncher -eq $false) -and $existingState.pid) {
+      $externalStatus = Get-ServiceStatus -Service $service -StateServices $state.services
+      if ($externalStatus.State -eq 'running-external' -or $externalStatus.State -eq 'degraded-external' -or $externalStatus.State -eq 'disabled-external') {
+        continue
       }
-      continue
+
+      Write-WarnLine "$($service.DisplayName) stale external state cleared (PID $($existingState.pid))"
+      [void]$state.services.Remove($service.Key)
+      Save-State -Path $stateFile -State $state
     }
 
+    Set-LauncherProgress -Path $progressFile -Phase 'service-start' -Message "Demarrage de $($service.DisplayName)..." -ServiceKey $service.Key -ServiceLabel $service.DisplayName
+    Update-LauncherSnapshotCache
     $started = Start-ManagedProcess -Service $service -LogsDirectory $logsDirectory -ShowWindow:$ShowWindows
     $service | Add-Member -NotePropertyName Pid -NotePropertyValue $started.Pid -Force
-    if (-not (Wait-UntilReady -Service $service)) {
-      Write-ErrorLine "$($service.DisplayName) did not become ready in time"
-    }
-
     $state.services[$service.Key] = @{
       pid = $started.Pid
       port = $service.Port
@@ -974,9 +1530,18 @@ function Start-A11Stack {
       managedByLauncher = $true
     }
     Save-State -Path $stateFile -State $state
+    Update-LauncherSnapshotCache
+    Set-LauncherProgress -Path $progressFile -Phase 'service-wait' -Message "Attente de $($service.DisplayName)..." -ServiceKey $service.Key -ServiceLabel $service.DisplayName
+    Update-LauncherSnapshotCache
+    if (-not (Wait-UntilReady -Service $service)) {
+      Write-ErrorLine "$($service.DisplayName) did not become ready in time"
+    }
+    Update-LauncherSnapshotCache
   }
 
   if (-not $script:HadErrors) {
+    Set-LauncherProgress -Path $progressFile -Phase 'finalizing' -Message 'Finalisation de la stack locale...'
+    Update-LauncherSnapshotCache
     Write-Info "UI: $localUiUrl"
     Write-Info "API: $localApiUrl"
     Write-Info "TTS: $localTtsUrl"
@@ -996,12 +1561,102 @@ function Start-A11Stack {
       }
     }
   }
+
+  $finalStatuses = foreach ($service in $definitionBundle.Services) {
+    Get-ServiceStatus -Service $service -StateServices $state.services
+  }
+  $enabledFailures = $finalStatuses | Where-Object { $_.Enabled -and -not $_.Healthy }
+  if (-not $enabledFailures -or $enabledFailures.Count -eq 0) {
+    $script:HadErrors = $false
+  }
+  Update-LauncherSnapshotCache
+}
+
+function Stop-A11Stack {
+  Set-LauncherProgress -Path $progressFile -Phase 'stop' -Message 'Arret de la stack locale...'
+  Update-LauncherSnapshotCache
+  $stopOrder = @('frontend', 'backend', 'qflush', 'tts', 'llm')
+  foreach ($serviceKey in $stopOrder) {
+    $service = $definitionBundle.Services | Where-Object { $_.Key -eq $serviceKey } | Select-Object -First 1
+    if (-not $service) { continue }
+
+    $stateEntry = $null
+    if ($state.services.ContainsKey($service.Key)) {
+      $stateEntry = $state.services[$service.Key]
+    }
+    $managedByLauncher = $false
+    if ($stateEntry -and $null -ne $stateEntry.managedByLauncher) {
+      $managedByLauncher = [bool]$stateEntry.managedByLauncher
+    }
+
+    if (-not $managedByLauncher) {
+      $ownedPid = Resolve-OwnedServicePid -Service $service
+      if ($ownedPid) {
+        $managedByLauncher = $true
+        $stateEntry = @{
+          pid = $ownedPid
+          port = $service.Port
+          healthUrl = $service.HealthUrl
+          managedByLauncher = $true
+        }
+        $state.services[$service.Key] = $stateEntry
+      }
+    }
+
+    if (-not $service.Enabled -and -not $managedByLauncher) {
+      Write-Info "$($service.DisplayName) ignored (disabled in config)"
+      if ($stateEntry -and $state.services.ContainsKey($service.Key)) {
+        $state.services.Remove($service.Key)
+      }
+      continue
+    }
+    if (-not $managedByLauncher) {
+      if ($stateEntry -and $state.services.ContainsKey($service.Key)) {
+        $state.services.Remove($service.Key)
+      }
+      if ($service.Port -and (Get-ListeningProcessId -Port $service.Port)) {
+        Write-Info "$($service.DisplayName) left running (external process not owned by launcher)"
+      } else {
+        Write-Info "$($service.DisplayName) already stopped"
+      }
+      continue
+    }
+
+    $targetPids = New-Object System.Collections.Generic.List[int]
+    if ($stateEntry -and $stateEntry.pid) {
+      $targetPids.Add([int]$stateEntry.pid)
+    }
+
+    foreach ($ownedPid in @(Get-OwnedServiceProcessIds -Service $service)) {
+      if ($ownedPid -and -not $targetPids.Contains([int]$ownedPid)) {
+        $targetPids.Add([int]$ownedPid)
+      }
+    }
+
+    if ($targetPids.Count -gt 0) {
+      foreach ($targetPid in @($targetPids.ToArray() | Sort-Object -Unique)) {
+        Write-Info "Stopping $($service.DisplayName) (PID $targetPid)"
+        Stop-ProcessTree -ProcessId $targetPid
+      }
+    } else {
+      Write-Info "$($service.DisplayName) already stopped"
+    }
+
+    if ($state.services.ContainsKey($service.Key)) {
+      $state.services.Remove($service.Key)
+    }
+  }
+  Save-State -Path $stateFile -State $state
+  Update-LauncherSnapshotCache
 }
 
 $launcherDirectory = Split-Path -Parent $PSCommandPath
 $runtimeDirectory = Join-Path $launcherDirectory 'runtime'
 $logsDirectory = Join-Path $runtimeDirectory 'logs'
 $stateFile = Join-Path $runtimeDirectory 'a11-local.state.json'
+$snapshotFile = Join-Path $runtimeDirectory 'a11-local.snapshot.json'
+$operationFile = Join-Path $runtimeDirectory 'a11-local.operation.json'
+$progressFile = Join-Path $runtimeDirectory 'a11-local.progress.json'
 New-Item -ItemType Directory -Force -Path $logsDirectory | Out-Null
 
 $resolvedConfigPath = if ($ConfigPath) {
@@ -1090,56 +1745,23 @@ switch ($Command) {
     $rows | Sort-Object Service | Format-Table Service,State,Port,Pid,Healthy,Url -AutoSize
   }
 
+  'status-json' {
+    $snapshot = Get-LauncherStatusSnapshot
+    $snapshot | ConvertTo-Json -Depth 8
+  }
+
   'stop' {
-    $stopOrder = @('frontend', 'backend', 'qflush', 'tts', 'llm')
-    foreach ($serviceKey in $stopOrder) {
-      $service = $definitionBundle.Services | Where-Object { $_.Key -eq $serviceKey } | Select-Object -First 1
-      if (-not $service) { continue }
+    Stop-LauncherOperations
+    [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'stop' -Action {
+      Stop-A11Stack
+    })
+  }
 
-      $stateEntry = $null
-      if ($state.services.ContainsKey($service.Key)) {
-        $stateEntry = $state.services[$service.Key]
-      }
-      $managedByLauncher = $false
-      if ($stateEntry -and $null -ne $stateEntry.managedByLauncher) {
-        $managedByLauncher = [bool]$stateEntry.managedByLauncher
-      }
-      if (-not $service.Enabled -and -not $managedByLauncher) {
-        Write-Info "$($service.DisplayName) ignored (disabled in config)"
-        if ($stateEntry -and $state.services.ContainsKey($service.Key)) {
-          $state.services.Remove($service.Key)
-        }
-        continue
-      }
-      if (-not $managedByLauncher) {
-        if ($stateEntry -and $state.services.ContainsKey($service.Key)) {
-          $state.services.Remove($service.Key)
-        }
-        if ($service.Port -and (Get-ListeningProcessId -Port $service.Port)) {
-          Write-Info "$($service.DisplayName) left running (external process not owned by launcher)"
-        } else {
-          Write-Info "$($service.DisplayName) already stopped"
-        }
-        continue
-      }
-
-      $targetPid = $null
-      if ($stateEntry -and $stateEntry.pid) {
-        $targetPid = [int]$stateEntry.pid
-      }
-
-      if ($targetPid) {
-        Write-Info "Stopping $($service.DisplayName) (PID $targetPid)"
-        Stop-ProcessTree -ProcessId $targetPid
-      } else {
-        Write-Info "$($service.DisplayName) already stopped"
-      }
-
-      if ($state.services.ContainsKey($service.Key)) {
-        $state.services.Remove($service.Key)
-      }
-    }
-    Save-State -Path $stateFile -State $state
+  'restart' {
+    [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'restart' -Action {
+      Stop-A11Stack
+      Start-A11Stack
+    })
   }
 
   'package' {
@@ -1207,17 +1829,25 @@ switch ($Command) {
       PublicFrontendUrl = $publicFrontendUrl
       QflushChatFlow = $definitionBundle.QflushChatFlow
       QflushMemorySummaryFlow = $definitionBundle.QflushMemorySummaryFlow
+      ChatProviderMode = $definitionBundle.ChatProviderMode
+      RemoteProviderId = $definitionBundle.RemoteProviderId
+      OpenAiBaseUrl = $definitionBundle.OpenAiBaseUrl
+      OpenAiModel = $definitionBundle.OpenAiModel
     })
     Write-PackagePlanFile -Path (Join-Path $packageRoot 'PACKAGE_LAYOUT_PLAN.md') -Plan $plan -PackageRoot $packageRoot
     Write-Info "Local package staging ready: $packageRoot"
   }
 
   'start' {
-    Start-A11Stack
+    [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'start' -Action {
+      Start-A11Stack
+    })
   }
 
   'desktop' {
-    Start-A11Stack -DesktopWindow
+    [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'desktop' -Action {
+      Start-A11Stack -DesktopWindow
+    })
   }
 }
 
