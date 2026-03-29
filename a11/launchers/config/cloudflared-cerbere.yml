@@ -1,0 +1,7 @@
+tunnel: 64e2c232-609c-45db-bf37-9bd77471334f
+credentials-file: C:\Users\cella\.cloudflared\64e2c232-609c-45db-bf37-9bd77471334f.json
+
+ingress:
+  - hostname: cerbere.funesterie.me
+    service: http://localhost:4545
+  - service: http_status:404

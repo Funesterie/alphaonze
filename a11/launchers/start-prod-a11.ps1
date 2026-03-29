@@ -146,28 +146,42 @@ $healthUrl = "$apiUrl/health"
 $statusUrl = "$apiUrl/api/status"
 $ttsPublicUrl = 'https://ttssiwis-production.up.railway.app/health'
 $qflushPublicUrl = 'https://qflush-production.up.railway.app/health'
+$cerberePublicUrl = 'https://cerbere.funesterie.me/health'
 
+$cerberePort = 4545
 $llmPort = 8080
 $localLlmBase = "http://127.0.0.1:$llmPort"
+$localCerbereBase = "http://127.0.0.1:$cerberePort"
 
 $openBrowser = -not (Has-Flag '--no-open')
 $pauseAtEnd = -not (Has-Flag '--no-pause')
 $showWindows = Has-Flag '--show-windows'
 $startLlm = -not (Has-Flag '--no-llm')
-$startNgrok = -not (Has-Flag '--no-ngrok')
+$startCerbere = -not (Has-Flag '--no-cerbere')
+$startTunnel = -not (Has-Flag '--no-tunnel')
+$restartTunnel = Has-Flag '--restart-tunnel'
+$startNgrok = Has-Flag '--with-ngrok'
 $checkOnly = Has-Flag '--check-only'
 
 if ($checkOnly) {
   $openBrowser = $false
   $startLlm = $false
+  $startCerbere = $false
+  $startTunnel = $false
   $startNgrok = $false
 }
 
 if ($env:A11_PROD_NO_OPEN -eq '1') { $openBrowser = $false }
 if ($env:A11_PROD_NO_PAUSE -eq '1') { $pauseAtEnd = $false }
 if ($env:A11_PROD_NO_LLM -eq '1') { $startLlm = $false }
+if ($env:A11_PROD_NO_CERBERE -eq '1') { $startCerbere = $false }
+if ($env:A11_PROD_NO_TUNNEL -eq '1') { $startTunnel = $false }
+if ($env:A11_PROD_RESTART_TUNNEL -eq '1') { $restartTunnel = $true }
+if ($env:A11_PROD_USE_NGROK -eq '1') { $startNgrok = $true }
 if ($env:A11_PROD_NO_NGROK -eq '1') { $startNgrok = $false }
 
+$nodeExe = Get-CommandPath 'node'
+$powershellExe = Get-CommandPath 'powershell'
 $llmExe = Resolve-FirstExistingPath @(
   (Join-Path $workspaceRoot 'a11llm\llm\server\llama-server.exe'),
   'D:\funesterie\a11\a11llm\llm\server\llama-server.exe'
@@ -176,6 +190,16 @@ $llmExe = Resolve-FirstExistingPath @(
 $modelPath = Resolve-FirstExistingPath @(
   (Join-Path $workspaceRoot 'a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
   'D:\funesterie\a11\a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'
+)
+
+$cerbereScript = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'a11backendrailway\apps\server\llm-router.mjs'),
+  'D:\funesterie\a11\a11backendrailway\apps\server\llm-router.mjs'
+)
+
+$tunnelLauncher = Resolve-FirstExistingPath @(
+  (Join-Path $launchersDir 'start-cerbere-cloudflare-tunnel.ps1'),
+  (Join-Path $launchersDir 'start-cloudflare-tunnel.ps1')
 )
 
 $ngrokExe = Resolve-FirstExistingPath @(
@@ -194,7 +218,13 @@ Write-Host "[A11 PROD] Health        : $healthUrl"
 Write-Host "[A11 PROD] Status        : $statusUrl"
 Write-Host "[A11 PROD] TTS public    : $ttsPublicUrl"
 Write-Host "[A11 PROD] Qflush public : $qflushPublicUrl"
+Write-Host "[A11 PROD] Cerbere local : $localCerbereBase"
+Write-Host "[A11 PROD] Cerbere public: $cerberePublicUrl"
+Write-Host "[A11 PROD] Node         : $nodeExe"
+Write-Host "[A11 PROD] PowerShell   : $powershellExe"
 Write-Host "[A11 PROD] LLM exe       : $llmExe"
+Write-Host "[A11 PROD] Cerbere      : $cerbereScript"
+Write-Host "[A11 PROD] Tunnel script: $tunnelLauncher"
 Write-Host "[A11 PROD] ngrok         : $ngrokExe"
 Write-Host "[A11 PROD] Logs          : $launcherLogDir"
 Write-Host ""
@@ -204,6 +234,7 @@ Test-HttpTarget -Name 'API health' -Url $healthUrl
 Test-HttpTarget -Name 'API status' -Url $statusUrl
 Test-HttpTarget -Name 'TTS public' -Url $ttsPublicUrl
 Test-HttpTarget -Name 'Qflush public' -Url $qflushPublicUrl
+Test-HttpTarget -Name 'Cerbere public' -Url $cerberePublicUrl
 
 if ($startLlm) {
   $portInfo = Get-ListeningProcessInfo -Port $llmPort
@@ -227,6 +258,64 @@ if ($startLlm) {
   }
 } else {
   Write-Host '[A11 PROD] LLM local desactive.'
+}
+
+if ($startCerbere) {
+  $portInfo = Get-ListeningProcessInfo -Port $cerberePort
+  if ($portInfo) {
+    Write-Host "[WARN] Cerbere deja actif sur $cerberePort (PID $($portInfo.Pid)). Lancement saute."
+  } elseif (-not $nodeExe) {
+    Mark-Error '[ERR] Node.js introuvable pour lancer Cerbere.'
+  } elseif (-not $cerbereScript) {
+    Mark-Error '[ERR] Script Cerbere introuvable.'
+  } elseif ($checkOnly) {
+    Write-Host "[CHECK] Cerbere pret : $cerbereScript"
+  } else {
+    Start-ManagedProcess `
+      -Name 'A11 PROD CERBERE' `
+      -WorkingDirectory (Split-Path -Parent $cerbereScript) `
+      -FilePath $nodeExe `
+      -ArgumentList @($cerbereScript) `
+      -Environment @{
+        PORT = "$cerberePort"
+        LLM_ROUTER_PORT = "$cerberePort"
+        LOCAL_LLM_PORT = "$llmPort"
+        LLAMA_PORT = "$llmPort"
+        LOCAL_LLM_URL = $localLlmBase
+        LLAMA_BASE = $localLlmBase
+        QFLUSH_REMOTE_URL = 'https://qflush-production.up.railway.app'
+      } `
+      -LogName 'prod-cerbere' `
+      -ShowWindow $showWindows | Out-Null
+  }
+} else {
+  Write-Host '[A11 PROD] Cerbere local desactive.'
+}
+
+if ($startTunnel) {
+  if (-not $powershellExe) {
+    Mark-Error '[ERR] PowerShell introuvable pour lancer le tunnel Cloudflare.'
+  } elseif (-not $tunnelLauncher) {
+    Mark-Error '[ERR] Script tunnel Cloudflare introuvable.'
+  } elseif ($checkOnly) {
+    Write-Host "[CHECK] Tunnel pret : $tunnelLauncher"
+  } else {
+    $tunnelArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tunnelLauncher)
+    if ($restartTunnel) {
+      $tunnelArgs += '-RestartExisting'
+    }
+
+    Start-ManagedProcess `
+      -Name 'A11 PROD CLOUDFLARE' `
+      -WorkingDirectory $launchersDir `
+      -FilePath $powershellExe `
+      -ArgumentList $tunnelArgs `
+      -Environment @{} `
+      -LogName 'prod-cloudflared' `
+      -ShowWindow $showWindows | Out-Null
+  }
+} else {
+  Write-Host '[A11 PROD] Tunnel Cloudflare desactive.'
 }
 
 if ($startNgrok) {
@@ -261,6 +350,8 @@ Write-Host "[A11 PROD] Resume"
 Write-Host "  - frontend prod : $frontendUrl"
 Write-Host "  - api prod      : $apiUrl"
 Write-Host "  - llm local     : $localLlmBase"
+Write-Host "  - cerbere local : $localCerbereBase"
+Write-Host "  - cerbere public: $cerberePublicUrl"
 Write-Host "  - logs          : $launcherLogDir"
 Write-Host ""
 Write-Host "[A11 PROD] Utilisation :"
@@ -268,11 +359,15 @@ Write-Host "  - normal        : double-clic sur ce fichier"
 Write-Host "  - check only    : start-prod-a11.bat --check-only"
 Write-Host "  - sans pause    : start-prod-a11.bat --no-pause"
 Write-Host "  - sans LLM      : start-prod-a11.bat --no-llm"
-Write-Host "  - sans ngrok    : start-prod-a11.bat --no-ngrok"
+Write-Host "  - sans Cerbere  : start-prod-a11.bat --no-cerbere"
+Write-Host "  - sans tunnel   : start-prod-a11.bat --no-tunnel"
+Write-Host "  - relance tunnel: start-prod-a11.bat --restart-tunnel"
+Write-Host "  - mode legacy   : start-prod-a11.bat --with-ngrok"
 Write-Host "  - voir consoles : start-prod-a11.bat --show-windows"
 Write-Host ""
-Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local ne sert qu'au LLM/tunnel si besoin."
-Write-Host "[A11 PROD] Si ton URL ngrok change, pense a mettre a jour la variable Railway LLM_URL."
+Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local sert au couple LLM + Cerbere + tunnel."
+Write-Host "[A11 PROD] Railway doit viser https://cerbere.funesterie.me pour le LLM routeur distant."
+Write-Host "[A11 PROD] Si cloudflared tournait deja en mode token, lance une fois avec --restart-tunnel."
 
 if ($pauseAtEnd) {
   [void](Read-Host 'Appuie sur Entree pour fermer ce lanceur')

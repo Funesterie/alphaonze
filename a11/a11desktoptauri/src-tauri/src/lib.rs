@@ -919,7 +919,26 @@ fn is_http_url_ready(url: &str) -> bool {
     };
 
     match client.get(url).send() {
-        Ok(response) => response.status().is_success() || response.status().is_redirection(),
+        Ok(response) => {
+            if !(response.status().is_success() || response.status().is_redirection()) {
+                return false;
+            }
+
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+            let body = response.text().unwrap_or_default();
+
+            if content_type.contains("application/json") {
+                return body.contains("\"embeddedUiReady\":true")
+                    || body.contains("\"embeddedUiReady\": true");
+            }
+
+            body.contains("id=\"root\"") || body.contains("id='root'")
+        }
         Err(_) => false,
     }
 }

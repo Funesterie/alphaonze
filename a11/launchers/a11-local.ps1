@@ -29,6 +29,55 @@ function Write-ErrorLine {
   Write-Host "[ERR] $Message" -ForegroundColor Red
 }
 
+function Remove-DirectoryTreeBestEffort {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+    [string]$AllowedRoot = ''
+  )
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return
+  }
+
+  $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+  if (-not [string]::IsNullOrWhiteSpace($AllowedRoot)) {
+    $resolvedAllowedRoot = [System.IO.Path]::GetFullPath($AllowedRoot)
+    if (-not $resolvedPath.StartsWith($resolvedAllowedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "Suppression refusee hors du dossier autorise: $resolvedPath"
+    }
+  }
+
+  try {
+    Remove-Item -LiteralPath $resolvedPath -Recurse -Force -ErrorAction Stop
+    return
+  } catch {
+    Write-WarnLine "Best-effort cleanup for package root after Remove-Item failure: $resolvedPath"
+  }
+
+  Get-ChildItem -LiteralPath $resolvedPath -Force -Recurse -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending |
+    ForEach-Object {
+      try {
+        if ($_.PSIsContainer) {
+          Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        } else {
+          Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+      } catch {
+      }
+    }
+
+  try {
+    Remove-Item -LiteralPath $resolvedPath -Recurse -Force -ErrorAction SilentlyContinue
+  } catch {
+  }
+
+  if (Test-Path -LiteralPath $resolvedPath) {
+    throw "Impossible de nettoyer le dossier package: $resolvedPath"
+  }
+}
+
 function Resolve-DesktopBrowserExecutable {
   param([string]$Preference = '')
 
@@ -237,7 +286,28 @@ function Test-UiReady {
 
   try {
     $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec -ErrorAction Stop
-    return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400)
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
+      return $false
+    }
+
+    $body = [string]$response.Content
+    if ([string]::IsNullOrWhiteSpace($body)) {
+      return $false
+    }
+
+    $contentType = [string]$response.Headers['Content-Type']
+    if ($contentType -match 'application/json') {
+      try {
+        $json = $body | ConvertFrom-Json -ErrorAction Stop
+        if ($null -ne $json.embeddedUiReady) {
+          return [bool]$json.embeddedUiReady
+        }
+      } catch {
+        return $false
+      }
+    }
+
+    return ($body -match 'id=["'']root["'']')
   } catch {
     return $false
   }
@@ -1373,13 +1443,7 @@ function Get-LauncherStatusSnapshot {
 
   $requiredReady = @($rows | Where-Object { $_.required -and $_.enabled }).Count -eq 0 -or
     (@($rows | Where-Object { $_.required -and $_.enabled -and -not $_.ready }).Count -eq 0)
-  $backendUiReady = @($rows | Where-Object { $_.key -eq 'backend' -and $_.ready }).Count -gt 0
-  $frontendUiReady = @($rows | Where-Object { $_.key -eq 'frontend' -and $_.ready }).Count -gt 0
-  $uiReady = if ($uiMode -eq 'embedded') {
-    $backendUiReady
-  } else {
-    $frontendUiReady
-  }
+  $uiReady = Test-UiReady -Url $localUiUrl -TimeoutSec 4
 
   $snapshot = [pscustomobject]@{
     ok = (-not $script:HadErrors)
@@ -1766,6 +1830,7 @@ switch ($Command) {
 
   'package' {
     $packageRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $config 'A11_PACKAGE_ROOT' 'dist\a11-local') -BaseDirectory $launcherDirectory
+    $packageContainerRoot = Join-Path $launcherDirectory 'dist'
     $plan = @(
       [pscustomobject]@{ Name = 'backend'; Source = $definitionBundle.BackendDir; Target = (Join-Path $packageRoot 'backend'); Reason = 'API locale A11' }
       [pscustomobject]@{ Name = 'tts'; Source = $definitionBundle.TtsDir; Target = (Join-Path $packageRoot 'tts'); Reason = 'Service audio local' }
@@ -1786,7 +1851,7 @@ switch ($Command) {
 
     if (Test-Path $packageRoot) {
       if ($Force) {
-        Remove-Item -LiteralPath $packageRoot -Recurse -Force
+        Remove-DirectoryTreeBestEffort -Path $packageRoot -AllowedRoot $packageContainerRoot
       } else {
         Write-WarnLine "Package root already exists, files will be updated: $packageRoot"
       }
