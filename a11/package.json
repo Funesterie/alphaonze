@@ -1,0 +1,18 @@
+{
+  "name": "a11-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unified control entrypoint for the A11 stack",
+  "scripts": {
+    "start:online": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./launchers/start-prod-a11.ps1",
+    "build:backend": "npm --prefix ./a11backendrailway/apps/server run railway:build",
+    "build:frontend": "npm --prefix ./a11frontendnetlify run build",
+    "build:qflush": "npm --prefix ./a11qflushrailway run railway:build",
+    "build:all": "npm run build:backend && npm run build:frontend && npm run build:qflush",
+    "test:backend": "npm --prefix ./a11backendrailway/apps/server run test:e2e:artifact",
+    "test:qflush": "npm --prefix ./a11qflushrailway run test",
+    "test:all": "npm run test:backend && npm run test:qflush",
+    "doctor:git": "git -C ./a11backendrailway ls-remote --heads origin main sync/backend-main-20260328 && git -C ./a11qflushrailway ls-remote --heads origin main deploy/trigger-qflush-20260327",
+    "doctor:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"(Invoke-WebRequest -UseBasicParsing 'https://api.funesterie.pro/api/status').Content; Write-Host ''; (Invoke-WebRequest -UseBasicParsing 'https://qflush-production.up.railway.app/health').Content\""
+  }
+}
