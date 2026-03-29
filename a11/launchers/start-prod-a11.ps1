@@ -17,6 +17,57 @@ function Resolve-FirstExistingPath {
   return $null
 }
 
+function Get-A11R2Secrets {
+  param([string]$Path)
+
+  $result = [ordered]@{
+    Endpoint = ''
+    AccessKey = ''
+    SecretKey = ''
+    Bucket = 'a11-files'
+    PublicBaseUrl = 'https://files.funesterie.me'
+  }
+
+  if (-not (Test-Path $Path)) {
+    return [pscustomobject]$result
+  }
+
+  $lines = Get-Content -Path $Path
+  $r2Index = -1
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    if ([string]$lines[$i] -match '^\s*R2\s*$') {
+      $r2Index = $i
+      break
+    }
+  }
+
+  if ($r2Index -lt 0) {
+    return [pscustomobject]$result
+  }
+
+  for ($i = $r2Index + 1; $i -lt $lines.Count; $i++) {
+    $line = [string]$lines[$i]
+    $trimmed = $line.Trim()
+    if (-not $trimmed) { continue }
+    if ($trimmed -match '^JWT SECRET=') { break }
+
+    if (-not $result.Endpoint -and $trimmed -match '^https://.+\.r2\.cloudflarestorage\.com/?$') {
+      $result.Endpoint = $trimmed
+      continue
+    }
+    if (-not $result.AccessKey -and $trimmed -match '^[A-Fa-f0-9]{32}$') {
+      $result.AccessKey = $trimmed
+      continue
+    }
+    if (-not $result.SecretKey -and $trimmed -match '^[A-Fa-f0-9]{64}$') {
+      $result.SecretKey = $trimmed
+      continue
+    }
+  }
+
+  return [pscustomobject]$result
+}
+
 function Get-ListeningProcessInfo {
   param([int]$Port)
 
@@ -147,15 +198,19 @@ $statusUrl = "$apiUrl/api/status"
 $ttsPublicUrl = 'https://ttssiwis-production.up.railway.app/health'
 $qflushPublicUrl = 'https://qflush-production.up.railway.app/health'
 $cerberePublicUrl = 'https://cerbere.funesterie.me/health'
+$sdPublicUrl = 'https://sd.funesterie.me/health'
 
+$backendPort = 3000
 $cerberePort = 4545
 $llmPort = 8080
+$localBackendBase = "http://127.0.0.1:$backendPort"
 $localLlmBase = "http://127.0.0.1:$llmPort"
 $localCerbereBase = "http://127.0.0.1:$cerberePort"
 
 $openBrowser = -not (Has-Flag '--no-open')
 $pauseAtEnd = -not (Has-Flag '--no-pause')
 $showWindows = Has-Flag '--show-windows'
+$startBackend = -not (Has-Flag '--no-backend')
 $startLlm = -not (Has-Flag '--no-llm')
 $startCerbere = -not (Has-Flag '--no-cerbere')
 $startTunnel = -not (Has-Flag '--no-tunnel')
@@ -173,6 +228,7 @@ if ($checkOnly) {
 
 if ($env:A11_PROD_NO_OPEN -eq '1') { $openBrowser = $false }
 if ($env:A11_PROD_NO_PAUSE -eq '1') { $pauseAtEnd = $false }
+if ($env:A11_PROD_NO_BACKEND -eq '1') { $startBackend = $false }
 if ($env:A11_PROD_NO_LLM -eq '1') { $startLlm = $false }
 if ($env:A11_PROD_NO_CERBERE -eq '1') { $startCerbere = $false }
 if ($env:A11_PROD_NO_TUNNEL -eq '1') { $startTunnel = $false }
@@ -192,10 +248,32 @@ $modelPath = Resolve-FirstExistingPath @(
   'D:\funesterie\a11\a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'
 )
 
+$backendScript = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'a11backendrailway\apps\server\server.cjs'),
+  'D:\funesterie\a11\a11backendrailway\apps\server\server.cjs'
+)
+
 $cerbereScript = Resolve-FirstExistingPath @(
   (Join-Path $workspaceRoot 'a11backendrailway\apps\server\llm-router.mjs'),
   'D:\funesterie\a11\a11backendrailway\apps\server\llm-router.mjs'
 )
+
+$sdScriptPath = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'a11backendrailway\apps\server\tools\sd\generate_sd_image.py'),
+  (Join-Path $workspaceRoot 'a11llm\scripts\generate_sd_image.py'),
+  'D:\funesterie\a11\a11backendrailway\apps\server\tools\sd\generate_sd_image.py',
+  'D:\funesterie\a11\a11llm\scripts\generate_sd_image.py'
+)
+
+$sdPythonExe = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'a11llm\scripts\venv\Scripts\python.exe'),
+  'D:\funesterie\a11\a11llm\scripts\venv\Scripts\python.exe'
+)
+
+$sdOutputDir = Join-Path $workspaceRoot 'tmp\a11-images'
+$downloadGuidePath = Join-Path $launchersDir 'LLM_DOWNLOAD_LINKS.md'
+$keyFilePath = Join-Path $env:USERPROFILE 'Desktop\a11key.txt'
+$r2Secrets = Get-A11R2Secrets -Path $keyFilePath
 
 $tunnelLauncher = Resolve-FirstExistingPath @(
   (Join-Path $launchersDir 'start-cerbere-cloudflare-tunnel.ps1'),
@@ -218,14 +296,22 @@ Write-Host "[A11 PROD] Health        : $healthUrl"
 Write-Host "[A11 PROD] Status        : $statusUrl"
 Write-Host "[A11 PROD] TTS public    : $ttsPublicUrl"
 Write-Host "[A11 PROD] Qflush public : $qflushPublicUrl"
+Write-Host "[A11 PROD] SD public     : $sdPublicUrl"
+Write-Host "[A11 PROD] Backend local : $localBackendBase"
 Write-Host "[A11 PROD] Cerbere local : $localCerbereBase"
 Write-Host "[A11 PROD] Cerbere public: $cerberePublicUrl"
 Write-Host "[A11 PROD] Node         : $nodeExe"
 Write-Host "[A11 PROD] PowerShell   : $powershellExe"
+Write-Host "[A11 PROD] Backend      : $backendScript"
 Write-Host "[A11 PROD] LLM exe       : $llmExe"
+Write-Host "[A11 PROD] LLM model     : $modelPath"
 Write-Host "[A11 PROD] Cerbere      : $cerbereScript"
+Write-Host "[A11 PROD] SD script     : $sdScriptPath"
+Write-Host "[A11 PROD] SD python     : $sdPythonExe"
 Write-Host "[A11 PROD] Tunnel script: $tunnelLauncher"
 Write-Host "[A11 PROD] ngrok         : $ngrokExe"
+Write-Host "[A11 PROD] Downloads     : $downloadGuidePath"
+Write-Host "[A11 PROD] R2 key file   : $keyFilePath"
 Write-Host "[A11 PROD] Logs          : $launcherLogDir"
 Write-Host ""
 
@@ -234,7 +320,68 @@ Test-HttpTarget -Name 'API health' -Url $healthUrl
 Test-HttpTarget -Name 'API status' -Url $statusUrl
 Test-HttpTarget -Name 'TTS public' -Url $ttsPublicUrl
 Test-HttpTarget -Name 'Qflush public' -Url $qflushPublicUrl
+Test-HttpTarget -Name 'SD public' -Url $sdPublicUrl
 Test-HttpTarget -Name 'Cerbere public' -Url $cerberePublicUrl
+
+if ($startBackend) {
+  $portInfo = Get-ListeningProcessInfo -Port $backendPort
+  if ($portInfo) {
+    Write-Host "[WARN] Backend local deja actif sur $backendPort (PID $($portInfo.Pid)). Lancement saute."
+  } elseif (-not $nodeExe) {
+    Mark-Error '[ERR] Node.js introuvable pour lancer le backend local.'
+  } elseif (-not $backendScript) {
+    Mark-Error '[ERR] Backend local introuvable.'
+  } elseif ($checkOnly) {
+    Write-Host "[CHECK] Backend local pret : $backendScript"
+  } else {
+    $backendEnvironment = @{
+      PORT = "$backendPort"
+      BACKEND = 'local'
+      LLM_ROUTER_URL = $localCerbereBase
+      LOCAL_LLM_URL = $localLlmBase
+      LLAMA_BASE = $localLlmBase
+      A11_SD_PROXY_URL = ''
+      SD_PROXY_URL = ''
+      ENABLE_SD = $(if ($sdScriptPath) { 'true' } else { 'false' })
+      SD_OUTPUT_DIR = $sdOutputDir
+      PUBLIC_API_URL = 'https://api.funesterie.pro'
+      A11_ALLOW_PUBLIC_TUNNEL_LLM = '1'
+      QFLUSH_REMOTE_URL = 'https://qflush-production.up.railway.app'
+    }
+    if ($sdScriptPath) {
+      $backendEnvironment['SD_SCRIPT_PATH'] = $sdScriptPath
+    }
+    if ($sdPythonExe) {
+      $backendEnvironment['SD_PYTHON_PATH'] = $sdPythonExe
+    }
+    if ($r2Secrets.Endpoint) {
+      $backendEnvironment['R2_ENDPOINT'] = $r2Secrets.Endpoint
+    }
+    if ($r2Secrets.AccessKey) {
+      $backendEnvironment['R2_ACCESS_KEY'] = $r2Secrets.AccessKey
+    }
+    if ($r2Secrets.SecretKey) {
+      $backendEnvironment['R2_SECRET_KEY'] = $r2Secrets.SecretKey
+    }
+    if ($r2Secrets.Bucket) {
+      $backendEnvironment['R2_BUCKET'] = $r2Secrets.Bucket
+    }
+    if ($r2Secrets.PublicBaseUrl) {
+      $backendEnvironment['R2_PUBLIC_BASE_URL'] = $r2Secrets.PublicBaseUrl
+    }
+
+    Start-ManagedProcess `
+      -Name 'A11 PROD BACKEND LOCAL' `
+      -WorkingDirectory (Split-Path -Parent $backendScript) `
+      -FilePath $nodeExe `
+      -ArgumentList @($backendScript) `
+      -Environment $backendEnvironment `
+      -LogName 'prod-backend-local' `
+      -ShowWindow $showWindows | Out-Null
+  }
+} else {
+  Write-Host '[A11 PROD] Backend local desactive.'
+}
 
 if ($startLlm) {
   $portInfo = Get-ListeningProcessInfo -Port $llmPort
@@ -349,15 +496,19 @@ Write-Host ""
 Write-Host "[A11 PROD] Resume"
 Write-Host "  - frontend prod : $frontendUrl"
 Write-Host "  - api prod      : $apiUrl"
+Write-Host "  - backend local : $localBackendBase"
 Write-Host "  - llm local     : $localLlmBase"
 Write-Host "  - cerbere local : $localCerbereBase"
 Write-Host "  - cerbere public: $cerberePublicUrl"
+Write-Host "  - sd public     : $sdPublicUrl"
+Write-Host "  - downloads     : $downloadGuidePath"
 Write-Host "  - logs          : $launcherLogDir"
 Write-Host ""
 Write-Host "[A11 PROD] Utilisation :"
 Write-Host "  - normal        : double-clic sur ce fichier"
 Write-Host "  - check only    : start-prod-a11.bat --check-only"
 Write-Host "  - sans pause    : start-prod-a11.bat --no-pause"
+Write-Host "  - sans backend  : start-prod-a11.bat --no-backend"
 Write-Host "  - sans LLM      : start-prod-a11.bat --no-llm"
 Write-Host "  - sans Cerbere  : start-prod-a11.bat --no-cerbere"
 Write-Host "  - sans tunnel   : start-prod-a11.bat --no-tunnel"
@@ -365,8 +516,9 @@ Write-Host "  - relance tunnel: start-prod-a11.bat --restart-tunnel"
 Write-Host "  - mode legacy   : start-prod-a11.bat --with-ngrok"
 Write-Host "  - voir consoles : start-prod-a11.bat --show-windows"
 Write-Host ""
-Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local sert au couple LLM + Cerbere + tunnel."
+Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local sert au backend image + LLM + Cerbere + tunnel."
 Write-Host "[A11 PROD] Railway doit viser https://cerbere.funesterie.me pour le LLM routeur distant."
+Write-Host "[A11 PROD] Railway doit viser https://sd.funesterie.me/api/tools/generate_sd pour la generation d'image distante."
 Write-Host "[A11 PROD] Si cloudflared tournait deja en mode token, lance une fois avec --restart-tunnel."
 
 if ($pauseAtEnd) {
