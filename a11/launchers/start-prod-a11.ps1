@@ -519,7 +519,7 @@ if ($startNgrok) {
       -ShowWindow $showWindows | Out-Null
   }
 } else {
-  Write-Host '[A11 PROD] ngrok desactive.'
+  Write-Host '[A11 PROD] ngrok legacy desactive (Cloudflare Tunnel actif ou prefere).'
 }
 
 if ($openBrowser) {
@@ -548,7 +548,7 @@ Write-Host "  - sans LLM      : start-prod-a11.bat --no-llm"
 Write-Host "  - sans Cerbere  : start-prod-a11.bat --no-cerbere"
 Write-Host "  - sans tunnel   : start-prod-a11.bat --no-tunnel"
 Write-Host "  - relance tunnel: start-prod-a11.bat --restart-tunnel"
-Write-Host "  - mode legacy   : start-prod-a11.bat --with-ngrok"
+Write-Host "  - mode legacy   : start-prod-a11.bat --with-ngrok (fallback seulement)"
 Write-Host "  - voir consoles : start-prod-a11.bat --show-windows"
 Write-Host ""
 Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local sert au backend image + LLM + Cerbere + tunnel."
