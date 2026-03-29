@@ -317,7 +317,12 @@ if (-not $SkipQflush) {
     Name = "a11qflushrailway"
     Path = "D:\funesterie\a11\a11qflushrailway"
     Branch = "main"
-    Ignore = @()
+    Ignore = @(
+      ".qflush/",
+      "dist/",
+      "node_modules/",
+      "*.log"
+    )
   }
 }
 
