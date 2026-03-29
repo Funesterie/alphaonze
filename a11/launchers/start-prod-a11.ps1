@@ -117,6 +117,41 @@ function Mark-Error {
   Write-Host $Message -ForegroundColor Red
 }
 
+function Write-LauncherFatalLog {
+  param([string]$Message)
+
+  try {
+    $baseDir = Split-Path -Parent $PSCommandPath
+    $runtimeDir = Join-Path $baseDir 'runtime'
+    $logDir = Join-Path $runtimeDir 'logs'
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    $fatalLogPath = Join-Path $logDir 'start-prod-a11.fatal.log'
+    $timestamp = Get-Date -Format o
+    Add-Content -Path $fatalLogPath -Value "[$timestamp] $Message"
+  } catch {
+  }
+}
+
+trap {
+  $exceptionMessage = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }
+  $errorDump = ($_ | Out-String).Trim()
+
+  Mark-Error "[FATAL] $exceptionMessage"
+  Write-LauncherFatalLog -Message $errorDump
+
+  $shouldPause = $true
+  try {
+    $shouldPause = [bool](Get-Variable -Name pauseAtEnd -ValueOnly -ErrorAction Stop)
+  } catch {
+  }
+
+  if ($shouldPause) {
+    [void](Read-Host 'Erreur fatale. Appuie sur Entree pour fermer ce lanceur')
+  }
+
+  exit 1
+}
+
 function Test-HttpTarget {
   param(
     [string]$Name,
