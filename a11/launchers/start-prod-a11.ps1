@@ -227,6 +227,7 @@ $launcherLogDir = Join-Path $launcherRuntimeDir 'logs'
 New-Item -ItemType Directory -Force -Path $launcherLogDir | Out-Null
 
 $frontendUrl = 'https://a11.funesterie.pro'
+$frontendLaunchUrl = '{0}?launcher=1&v={1}' -f $frontendUrl, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
 $apiUrl = 'https://api.funesterie.pro'
 $healthUrl = "$apiUrl/health"
 $statusUrl = "$apiUrl/api/status"
@@ -524,7 +525,7 @@ if ($startNgrok) {
 
 if ($openBrowser) {
   Write-Host "[A11 PROD] Ouverture du frontend en production..."
-  Start-Process $frontendUrl | Out-Null
+  Start-Process $frontendLaunchUrl | Out-Null
 }
 
 Write-Host ""
