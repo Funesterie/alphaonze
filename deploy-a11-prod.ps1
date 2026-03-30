@@ -2,7 +2,9 @@ param(
   [string]$Message = "",
   [switch]$StatusOnly,
   [switch]$NoPause,
-  [switch]$SkipQflush
+  [switch]$SkipQflush,
+  [switch]$RedeployRailway,
+  [switch]$ForceRailwayRedeploy
 )
 
 $ErrorActionPreference = "Stop"
@@ -261,6 +263,8 @@ function Process-Repo {
       TargetBranch = $targetBranch
       Ahead = $divergence.Ahead
       Behind = $divergence.Behind
+      Path = $repoPath
+      RailwayService = $RepoConfig.RailwayService
     }
   }
 
@@ -294,6 +298,27 @@ function Process-Repo {
     TargetBranch = $targetBranch
     Ahead = $divergence.Ahead
     Behind = $divergence.Behind
+    Path = $repoPath
+    RailwayService = $RepoConfig.RailwayService
+  }
+}
+
+function Invoke-RailwayRedeploy {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoPath,
+    [Parameter(Mandatory = $true)][string]$ServiceName
+  )
+
+  Write-Host "Railway redeploy: $ServiceName" -ForegroundColor Cyan
+  Push-Location $RepoPath
+  try {
+    & railway redeploy -y -s $ServiceName --json | Out-Host
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+      throw "railway redeploy failed for service '$ServiceName' in $RepoPath (exit $exitCode)"
+    }
+  } finally {
+    Pop-Location
   }
 }
 
@@ -302,6 +327,7 @@ $repoOrder = @(
     Name = "a11backendrailway"
     Path = "D:\funesterie\a11\a11backendrailway"
     Branch = "main"
+    RailwayService = "a11backend"
     Ignore = @(
       "apps/server/.env.local",
       "a11_memory/memos/memo_index.jsonl",
@@ -324,11 +350,12 @@ $repoOrder = @(
   }
 )
 
-if (-not $SkipQflush) {
+  if (-not $SkipQflush) {
   $repoOrder += @{
     Name = "a11qflushrailway"
     Path = "D:\funesterie\a11\a11qflushrailway"
     Branch = "main"
+    RailwayService = "qflush"
     Ignore = @(
       ".qflush/",
       "dist/",
@@ -359,6 +386,19 @@ try {
   $blocked = @($results | Where-Object { $_.State -eq "blocked" })
   if ($blocked.Count) {
     throw "Deploy prod bloque sur $($blocked.Count) depot(s). Corrige d'abord les branches signalees ci-dessus."
+  }
+
+  if (-not $StatusOnly -and ($RedeployRailway -or $ForceRailwayRedeploy)) {
+    Write-Host ""
+    Write-Host "Redeploy Railway:" -ForegroundColor Cyan
+    foreach ($result in $results) {
+      if (-not $result.RailwayService) { continue }
+      if (-not $ForceRailwayRedeploy -and $result.State -eq "noop") {
+        Write-Host "- $($result.Name): saute (pas de nouveau deploy Git)" -ForegroundColor DarkGray
+        continue
+      }
+      Invoke-RailwayRedeploy -RepoPath $result.Path -ServiceName $result.RailwayService
+    }
   }
 
   Write-Host ""
