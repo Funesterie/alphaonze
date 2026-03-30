@@ -227,7 +227,7 @@ $launcherLogDir = Join-Path $launcherRuntimeDir 'logs'
 New-Item -ItemType Directory -Force -Path $launcherLogDir | Out-Null
 
 $frontendUrl = 'https://a11.funesterie.pro'
-$frontendLaunchUrl = '{0}?launcher=1&v={1}' -f $frontendUrl, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+$frontendLaunchUrl = '{0}?launcher=1&a11-reset-api-override=1&a11-force-api-mode=online&v={1}' -f $frontendUrl, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
 $apiUrl = 'https://api.funesterie.pro'
 $healthUrl = "$apiUrl/health"
 $statusUrl = "$apiUrl/api/status"
@@ -521,6 +521,16 @@ if ($startNgrok) {
   }
 } else {
   Write-Host '[A11 PROD] ngrok legacy desactive (Cloudflare Tunnel actif ou prefere).'
+}
+
+if (-not $checkOnly) {
+  Write-Host ""
+  Write-Host "[A11 PROD] Verification finale post-demarrage..." -ForegroundColor Cyan
+  Start-Sleep -Seconds 6
+  Test-HttpTarget -Name 'Backend local health' -Url "$localBackendBase/health"
+  Test-HttpTarget -Name 'Cerbere local health' -Url "$localCerbereBase/health"
+  Test-HttpTarget -Name 'SD public final' -Url $sdPublicUrl
+  Test-HttpTarget -Name 'Cerbere public final' -Url $cerberePublicUrl
 }
 
 if ($openBrowser) {
