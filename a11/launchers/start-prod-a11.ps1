@@ -273,15 +273,18 @@ $sdPublicUrl = 'https://sd.funesterie.me/health'
 $backendPort = 3000
 $cerberePort = 4545
 $llmPort = 8080
+$ollamaPort = 11434
 $localBackendBase = "http://127.0.0.1:$backendPort"
 $localLlmBase = "http://127.0.0.1:$llmPort"
 $localCerbereBase = "http://127.0.0.1:$cerberePort"
+$localOllamaBase = "http://127.0.0.1:$ollamaPort"
 
 $openBrowser = -not (Has-Flag '--no-open')
 $pauseAtEnd = -not (Has-Flag '--no-pause')
 $showWindows = Has-Flag '--show-windows'
 $startBackend = -not (Has-Flag '--no-backend')
 $startLlm = -not (Has-Flag '--no-llm')
+$startOllama = -not (Has-Flag '--no-ollama')
 $startCerbere = -not (Has-Flag '--no-cerbere')
 $startTunnel = -not (Has-Flag '--no-tunnel')
 $restartTunnel = Has-Flag '--restart-tunnel'
@@ -291,6 +294,7 @@ $checkOnly = Has-Flag '--check-only'
 if ($checkOnly) {
   $openBrowser = $false
   $startLlm = $false
+  $startOllama = $false
   $startCerbere = $false
   $startTunnel = $false
   $startNgrok = $false
@@ -300,6 +304,7 @@ if ($env:A11_PROD_NO_OPEN -eq '1') { $openBrowser = $false }
 if ($env:A11_PROD_NO_PAUSE -eq '1') { $pauseAtEnd = $false }
 if ($env:A11_PROD_NO_BACKEND -eq '1') { $startBackend = $false }
 if ($env:A11_PROD_NO_LLM -eq '1') { $startLlm = $false }
+if ($env:A11_PROD_NO_OLLAMA -eq '1') { $startOllama = $false }
 if ($env:A11_PROD_NO_CERBERE -eq '1') { $startCerbere = $false }
 if ($env:A11_PROD_NO_TUNNEL -eq '1') { $startTunnel = $false }
 if ($env:A11_PROD_RESTART_TUNNEL -eq '1') { $restartTunnel = $true }
@@ -308,6 +313,10 @@ if ($env:A11_PROD_NO_NGROK -eq '1') { $startNgrok = $false }
 
 $nodeExe = Get-CommandPath 'node'
 $powershellExe = Get-CommandPath 'powershell'
+$ollamaExe = Resolve-FirstExistingPath @(
+  (Get-CommandPath 'ollama'),
+  'C:\Program Files\ollama\ollama.exe'
+)
 $llmExe = Resolve-FirstExistingPath @(
   (Join-Path $workspaceRoot 'a11llm\llm\server\llama-server.exe'),
   'D:\funesterie\a11\a11llm\llm\server\llama-server.exe'
@@ -368,9 +377,11 @@ Write-Host "[A11 PROD] TTS public    : $ttsPublicUrl"
 Write-Host "[A11 PROD] Qflush public : $qflushPublicUrl"
 Write-Host "[A11 PROD] SD public     : $sdPublicUrl"
 Write-Host "[A11 PROD] Backend local : $localBackendBase"
+Write-Host "[A11 PROD] Ollama local  : $localOllamaBase"
 Write-Host "[A11 PROD] Cerbere local : $localCerbereBase"
 Write-Host "[A11 PROD] Cerbere public: $cerberePublicUrl"
 Write-Host "[A11 PROD] Node         : $nodeExe"
+Write-Host "[A11 PROD] Ollama exe    : $ollamaExe"
 Write-Host "[A11 PROD] PowerShell   : $powershellExe"
 Write-Host "[A11 PROD] Backend      : $backendScript"
 Write-Host "[A11 PROD] LLM exe       : $llmExe"
@@ -487,6 +498,38 @@ if ($startLlm) {
   Write-Host '[A11 PROD] LLM local desactive.'
 }
 
+if ($startOllama) {
+  $portInfo = Get-ListeningProcessInfo -Port $ollamaPort
+  $ollamaHealthUrl = "$localOllamaBase/api/tags"
+  if ($portInfo -and (Test-HttpHealthy -Url $ollamaHealthUrl)) {
+    Write-Host "[WARN] Ollama deja actif sur $ollamaPort (PID $($portInfo.Pid)). Lancement saute."
+  } elseif ($portInfo) {
+    Write-Host "[WARN] Ollama detecte sur $ollamaPort (PID $($portInfo.Pid)) mais health KO. Redemarrage..."
+    try {
+      Stop-Process -Id $portInfo.Pid -Force -ErrorAction Stop
+      Start-Sleep -Seconds 2
+    } catch {
+      Mark-Error "[ERR] Impossible de redemarrer Ollama sur $ollamaPort : $($_.Exception.Message)"
+    }
+  } elseif (-not $ollamaExe) {
+    Write-Host '[WARN] Ollama non trouve. Le plan B local restera indisponible.'
+  } elseif ($checkOnly) {
+    Write-Host "[CHECK] Ollama pret : $ollamaExe"
+  } else {
+    Start-ManagedProcess `
+      -Name 'A11 PROD OLLAMA' `
+      -WorkingDirectory (Split-Path -Parent $ollamaExe) `
+      -FilePath $ollamaExe `
+      -ArgumentList @('serve') `
+      -Environment @{} `
+      -LogName 'prod-ollama' `
+      -ShowWindow $showWindows | Out-Null
+    Wait-HttpHealthy -Name 'Ollama local' -Url $ollamaHealthUrl -TimeoutSec 45 | Out-Null
+  }
+} else {
+  Write-Host '[A11 PROD] Ollama local desactive.'
+}
+
 if ($startCerbere) {
   $portInfo = Get-ListeningProcessInfo -Port $cerberePort
   $cerbereHealthUrl = "$localCerbereBase/health"
@@ -519,6 +562,7 @@ if ($startCerbere) {
         LLAMA_PORT = "$llmPort"
         LOCAL_LLM_URL = $localLlmBase
         LLAMA_BASE = $localLlmBase
+        OLLAMA_BASE = $localOllamaBase
         QFLUSH_REMOTE_URL = 'https://qflush-production.up.railway.app'
       } `
       -LogName 'prod-cerbere' `
@@ -583,7 +627,9 @@ if (-not $checkOnly) {
   Start-Sleep -Seconds 6
   Test-HttpTarget -Name 'Backend local health' -Url "$localBackendBase/health"
   Test-HttpTarget -Name 'LLM local health' -Url "$localLlmBase/health"
+  Test-HttpTarget -Name 'Ollama local health' -Url "$localOllamaBase/api/tags"
   Test-HttpTarget -Name 'Cerbere local health' -Url "$localCerbereBase/health"
+  Test-HttpTarget -Name 'Cerbere stats' -Url "$localCerbereBase/api/llm/stats"
   Test-HttpTarget -Name 'SD public final' -Url $sdPublicUrl
   Test-HttpTarget -Name 'Cerbere public final' -Url $cerberePublicUrl
 }
@@ -599,6 +645,7 @@ Write-Host "  - frontend prod : $frontendUrl"
 Write-Host "  - api prod      : $apiUrl"
 Write-Host "  - backend local : $localBackendBase"
 Write-Host "  - llm local     : $localLlmBase"
+Write-Host "  - ollama local  : $localOllamaBase"
 Write-Host "  - cerbere local : $localCerbereBase"
 Write-Host "  - cerbere public: $cerberePublicUrl"
 Write-Host "  - sd public     : $sdPublicUrl"
@@ -611,6 +658,7 @@ Write-Host "  - check only    : start-prod-a11.bat --check-only"
 Write-Host "  - sans pause    : start-prod-a11.bat --no-pause"
 Write-Host "  - sans backend  : start-prod-a11.bat --no-backend"
 Write-Host "  - sans LLM      : start-prod-a11.bat --no-llm"
+Write-Host "  - sans Ollama   : start-prod-a11.bat --no-ollama"
 Write-Host "  - sans Cerbere  : start-prod-a11.bat --no-cerbere"
 Write-Host "  - sans tunnel   : start-prod-a11.bat --no-tunnel"
 Write-Host "  - relance tunnel: start-prod-a11.bat --restart-tunnel"
