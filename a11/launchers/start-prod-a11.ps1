@@ -166,6 +166,40 @@ function Test-HttpTarget {
   }
 }
 
+function Test-HttpHealthy {
+  param(
+    [string]$Url,
+    [int]$TimeoutSec = 8
+  )
+
+  try {
+    $response = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec $TimeoutSec
+    return ([int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 300)
+  } catch {
+    return $false
+  }
+}
+
+function Wait-HttpHealthy {
+  param(
+    [string]$Name,
+    [string]$Url,
+    [int]$TimeoutSec = 60
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  do {
+    if (Test-HttpHealthy -Url $Url -TimeoutSec 8) {
+      Write-Host ("[A11 PROD] {0} HEALTHY : {1}" -f $Name, $Url)
+      return $true
+    }
+    Start-Sleep -Seconds 3
+  } while ((Get-Date) -lt $deadline)
+
+  Mark-Error ("[ERR] {0} health timeout : {1}" -f $Name, $Url)
+  return $false
+}
+
 function Start-ManagedProcess {
   param(
     [string]$Name,
@@ -421,8 +455,17 @@ if ($startBackend) {
 
 if ($startLlm) {
   $portInfo = Get-ListeningProcessInfo -Port $llmPort
-  if ($portInfo) {
+  $llmHealthUrl = "$localLlmBase/health"
+  if ($portInfo -and (Test-HttpHealthy -Url $llmHealthUrl)) {
     Write-Host "[WARN] LLM deja actif sur $llmPort (PID $($portInfo.Pid)). Lancement saute."
+  } elseif ($portInfo) {
+    Write-Host "[WARN] LLM detecte sur $llmPort (PID $($portInfo.Pid)) mais health KO. Redemarrage..."
+    try {
+      Stop-Process -Id $portInfo.Pid -Force -ErrorAction Stop
+      Start-Sleep -Seconds 2
+    } catch {
+      Mark-Error "[ERR] Impossible de redemarrer le LLM sur $llmPort : $($_.Exception.Message)"
+    }
   } elseif (-not $llmExe) {
     Mark-Error '[ERR] LLM non trouve.'
   } elseif (-not $modelPath) {
@@ -438,6 +481,7 @@ if ($startLlm) {
       -Environment @{} `
       -LogName 'prod-llama-server' `
       -ShowWindow $showWindows | Out-Null
+    Wait-HttpHealthy -Name 'LLM local' -Url $llmHealthUrl -TimeoutSec 90 | Out-Null
   }
 } else {
   Write-Host '[A11 PROD] LLM local desactive.'
@@ -445,8 +489,17 @@ if ($startLlm) {
 
 if ($startCerbere) {
   $portInfo = Get-ListeningProcessInfo -Port $cerberePort
-  if ($portInfo) {
+  $cerbereHealthUrl = "$localCerbereBase/health"
+  if ($portInfo -and (Test-HttpHealthy -Url $cerbereHealthUrl)) {
     Write-Host "[WARN] Cerbere deja actif sur $cerberePort (PID $($portInfo.Pid)). Lancement saute."
+  } elseif ($portInfo) {
+    Write-Host "[WARN] Cerbere detecte sur $cerberePort (PID $($portInfo.Pid)) mais health KO. Redemarrage..."
+    try {
+      Stop-Process -Id $portInfo.Pid -Force -ErrorAction Stop
+      Start-Sleep -Seconds 2
+    } catch {
+      Mark-Error "[ERR] Impossible de redemarrer Cerbere sur $cerberePort : $($_.Exception.Message)"
+    }
   } elseif (-not $nodeExe) {
     Mark-Error '[ERR] Node.js introuvable pour lancer Cerbere.'
   } elseif (-not $cerbereScript) {
@@ -470,6 +523,7 @@ if ($startCerbere) {
       } `
       -LogName 'prod-cerbere' `
       -ShowWindow $showWindows | Out-Null
+    Wait-HttpHealthy -Name 'Cerbere local' -Url $cerbereHealthUrl -TimeoutSec 45 | Out-Null
   }
 } else {
   Write-Host '[A11 PROD] Cerbere local desactive.'
@@ -528,6 +582,7 @@ if (-not $checkOnly) {
   Write-Host "[A11 PROD] Verification finale post-demarrage..." -ForegroundColor Cyan
   Start-Sleep -Seconds 6
   Test-HttpTarget -Name 'Backend local health' -Url "$localBackendBase/health"
+  Test-HttpTarget -Name 'LLM local health' -Url "$localLlmBase/health"
   Test-HttpTarget -Name 'Cerbere local health' -Url "$localCerbereBase/health"
   Test-HttpTarget -Name 'SD public final' -Url $sdPublicUrl
   Test-HttpTarget -Name 'Cerbere public final' -Url $cerberePublicUrl
