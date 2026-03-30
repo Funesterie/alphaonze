@@ -48,6 +48,12 @@ function Test-IgnoredPath {
     $normalizedRule = Normalize-RepoPath $rule
     if ($normalizedRule.EndsWith("/")) {
       $prefix = $normalizedRule.TrimEnd("/")
+      if ($prefix -and -not $prefix.Contains("/")) {
+        $segments = $candidate -split "/"
+        if ($segments -contains $prefix) {
+          return $true
+        }
+      }
       if ($candidate -eq $prefix -or $candidate.StartsWith("$prefix/")) {
         return $true
       }
@@ -308,7 +314,13 @@ $repoOrder = @(
     Name = "a11frontendnetlify"
     Path = "D:\funesterie\a11\a11frontendnetlify"
     Branch = "main"
-    Ignore = @()
+    Ignore = @(
+      "node_modules/",
+      "apps/web/node_modules/",
+      "dist/",
+      "apps/web/dist/",
+      ".netlify/plugins/"
+    )
   }
 )
 
