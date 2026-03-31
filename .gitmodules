@@ -1,10 +1,10 @@
 [submodule "a11/a11backendrailway"]
 	path = a11/a11backendrailway
-	url = https://github.com/jEFFLEZ/a11backendrailway.git
+	url = https://github.com/Funesterie/a11backendrailway.git
 	ignore = dirty
 [submodule "a11/a11frontendnetlify"]
 	path = a11/a11frontendnetlify
-	url = https://github.com/jEFFLEZ/a11frontendnetlify.git
+	url = https://github.com/Funesterie/a11frontendnetlify.git
 	ignore = dirty
 [submodule "a11/a11llm"]
 	path = a11/a11llm
@@ -12,5 +12,5 @@
 	ignore = dirty
 [submodule "a11/a11qflushrailway"]
 	path = a11/a11qflushrailway
-	url = https://github.com/jEFFLEZ/a11qflushrailway.git
+	url = https://github.com/Funesterie/a11qflushrailway.git
 	ignore = dirty

@@ -26,6 +26,41 @@ function Invoke-Git {
   return $exitCode
 }
 
+function Get-PushRemotes {
+  param([string]$RepoPath)
+
+  $remoteNames = & git -C $RepoPath remote
+  if ($LASTEXITCODE -ne 0) {
+    throw "Unable to list remotes for $RepoPath"
+  }
+
+  $preferred = @("origin", "jEFFLEZ")
+  $selected = @()
+  foreach ($name in $preferred) {
+    if ($remoteNames -contains $name) {
+      $selected += $name
+    }
+  }
+
+  if (-not $selected.Count) {
+    $selected = @($remoteNames)
+  }
+
+  return $selected
+}
+
+function Push-RepoHead {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoPath,
+    [Parameter(Mandatory = $true)][string]$TargetBranch
+  )
+
+  foreach ($remoteName in (Get-PushRemotes -RepoPath $RepoPath)) {
+    Write-Host "Push HEAD -> $remoteName/$TargetBranch" -ForegroundColor Green
+    Invoke-Git -RepoPath $RepoPath -Args @("push", $remoteName, "HEAD:$TargetBranch")
+  }
+}
+
 function Normalize-RepoPath {
   param([string]$Path)
   $normalized = ($Path -replace "\\", "/").Trim()
@@ -130,8 +165,8 @@ function Process-Repo {
   if (-not $entries.Count) {
     Write-Host "No local changes." -ForegroundColor DarkGray
     if (-not $StatusMode) {
-      Write-Host "Push current HEAD to origin/$targetBranch..." -ForegroundColor DarkGray
-      Invoke-Git -RepoPath $repoPath -Args @("push", "origin", "HEAD:$targetBranch")
+      Write-Host "Push current HEAD to configured remotes..." -ForegroundColor DarkGray
+      Push-RepoHead -RepoPath $repoPath -TargetBranch $targetBranch
     }
     return
   }
@@ -196,8 +231,7 @@ function Process-Repo {
     Write-Host "Nothing staged after ignore filters." -ForegroundColor DarkGray
   }
 
-  Write-Host "Push HEAD -> origin/$targetBranch" -ForegroundColor Green
-  Invoke-Git -RepoPath $repoPath -Args @("push", "origin", "HEAD:$targetBranch")
+  Push-RepoHead -RepoPath $repoPath -TargetBranch $targetBranch
 }
 
 $repoOrder = @(
@@ -227,6 +261,8 @@ $repoOrder = @(
       "llm/models/",
       "llm/server/",
       "llama.cpp/",
+      "scripts/*.png",
+      "scripts/generate_sd_image.py",
       "*.gguf",
       "*.dll",
       "*.exe"
@@ -236,7 +272,22 @@ $repoOrder = @(
     Name = "a11qflushrailway"
     Path = "D:\funesterie\a11\a11qflushrailway"
     Branch = "main"
-    Ignore = @()
+    Ignore = @(
+      ".qflush/logic-config.json",
+      ".qflush/safe-modes.json",
+      ".qflush/logs/",
+      "tmp-*.log",
+      "*.log"
+    )
+  },
+  @{
+    Name = "scream"
+    Path = "D:\scream"
+    Branch = "main"
+    Ignore = @(
+      "tmp-*.log",
+      "*.log"
+    )
   },
   @{
     Name = "funesterie"
@@ -250,6 +301,10 @@ $repoOrder = @(
       "a11/a11desktoptauri/resources/a11-local/",
       "a11/a11desktoptauri/src-tauri/target/",
       "a11/a11desktoptauri/src-tauri/target-alt/",
+      ".codex-tmp/",
+      "a11/tmp/",
+      "dump-a11-prep/",
+      "pour copilot/",
       "tmp-*.log",
       "*.log"
     )
