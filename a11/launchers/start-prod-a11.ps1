@@ -351,7 +351,13 @@ $sdPythonExe = Resolve-FirstExistingPath @(
 
 $sdOutputDir = Join-Path $workspaceRoot 'tmp\a11-images'
 $downloadGuidePath = Join-Path $launchersDir 'LLM_DOWNLOAD_LINKS.md'
-$keyFilePath = Join-Path $env:USERPROFILE 'Desktop\a11key.txt'
+$keyFilePath = Resolve-FirstExistingPath @(
+  (Join-Path $env:USERPROFILE 'Desktop\important CODEX\a11key.txt'),
+  (Join-Path $env:USERPROFILE 'Desktop\a11key.txt')
+)
+if (-not $keyFilePath) {
+  $keyFilePath = Join-Path $env:USERPROFILE 'Desktop\important CODEX\a11key.txt'
+}
 $r2Secrets = Get-A11R2Secrets -Path $keyFilePath
 
 $tunnelLauncher = Resolve-FirstExistingPath @(
@@ -393,6 +399,7 @@ Write-Host "[A11 PROD] Tunnel script: $tunnelLauncher"
 Write-Host "[A11 PROD] ngrok         : $ngrokExe"
 Write-Host "[A11 PROD] Downloads     : $downloadGuidePath"
 Write-Host "[A11 PROD] R2 key file   : $keyFilePath"
+Write-Host ("[A11 PROD] R2 loaded     : endpoint={0} accessKey={1} secretKey={2}" -f ([bool]$r2Secrets.Endpoint), ([bool]$r2Secrets.AccessKey), ([bool]$r2Secrets.SecretKey))
 Write-Host "[A11 PROD] Logs          : $launcherLogDir"
 Write-Host ""
 
