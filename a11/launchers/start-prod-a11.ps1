@@ -368,10 +368,10 @@ $backendScript = Resolve-FirstExistingPath @(
 )
 
 $cerbereScript = Resolve-FirstExistingPath @(
-  (Join-Path $workspaceRoot 'backend\apps\server\llm-router.mjs'),
-  (Join-Path $workspaceRoot 'a11backendrailway\apps\server\llm-router.mjs'),
-  'D:\funesterie\a11\backend\apps\server\llm-router.mjs',
-  'D:\funesterie\a11\a11backendrailway\apps\server\llm-router.mjs'
+  (Join-Path $workspaceRoot 'backend\apps\server\llm-router-runner.cjs'),
+  (Join-Path $workspaceRoot 'a11backendrailway\apps\server\llm-router-runner.cjs'),
+  'D:\funesterie\a11\backend\apps\server\llm-router-runner.cjs',
+  'D:\funesterie\a11\a11backendrailway\apps\server\llm-router-runner.cjs'
 )
 
 $sdScriptPath = Resolve-FirstExistingPath @(

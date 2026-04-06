@@ -125,8 +125,23 @@ export function findBackingSourceByTarget(
   return findCanonicalSourceByTarget(manifest, target);
 }
 
-export function getCerbereScriptPath(sourcePath: string): string {
-  return path.join(sourcePath, "apps", "server", "llm-router.mjs");
+export function getCerbereScriptCandidates(sourcePath: string): string[] {
+  return [
+    path.join(sourcePath, "apps", "server", "llm-router-runner.cjs"),
+    path.join(sourcePath, "apps", "server", "llm-router.mjs")
+  ];
+}
+
+export async function resolveCerbereScriptPath(sourcePath: string): Promise<string> {
+  const candidates = getCerbereScriptCandidates(sourcePath);
+
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
 }
 
 function getHealthCandidatesForTarget(target: DragonLogTarget): string[] {
@@ -364,7 +379,7 @@ export async function probeCerbereSource(
     return undefined;
   }
 
-  const scriptPath = getCerbereScriptPath(source.path);
+  const scriptPath = await resolveCerbereScriptPath(source.path);
   const sourceExists = await pathExists(source.path);
   const exists = sourceExists && (await pathExists(scriptPath));
   const hasPackageJson = sourceExists && (await pathExists(path.join(source.path, "package.json")));

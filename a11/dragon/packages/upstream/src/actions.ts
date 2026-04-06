@@ -33,10 +33,10 @@ import {
   findBackingSourceByTarget,
   findCanonicalSourceByTarget,
   getBaseUrlFromHealthUrl,
-  getCerbereScriptPath,
   loadDragonManifest,
   probeCanonicalSource,
   probeCerbereSource,
+  resolveCerbereScriptPath,
   resolveDragonManifestPath,
   waitForCanonicalSourceHealth
 } from "./snapshot.js";
@@ -593,7 +593,9 @@ async function executeCerbereAction(
   manifest: DragonManifest,
   manifestPath: string
 ): Promise<DragonActionExecution> {
-  const scriptPath = getCerbereScriptPath(source.path);
+  const scriptPath = await resolveCerbereScriptPath(source.path);
+  const cerbereCommandPath = path.relative(source.path, scriptPath).split(path.sep).join("/");
+  const cerbereCommand = [process.execPath, cerbereCommandPath];
 
   if (actionId === "cerbere.start") {
     if (!(await pathExists(scriptPath))) {
@@ -613,7 +615,7 @@ async function executeCerbereAction(
         {
           target: "cerbere",
           projectPath: source.path,
-          command: [process.execPath, "apps/server/llm-router.mjs"],
+          command: cerbereCommand,
           pid: preflight.processId,
           port: preflight.port ?? CERBERE_PORT,
           healthUrl: preflight.healthUrl,
@@ -639,7 +641,7 @@ async function executeCerbereAction(
     try {
       const pid = await spawnDetachedNodeProcess(
         source.path,
-        ["apps/server/llm-router.mjs"],
+        [cerbereCommandPath],
         path.join(source.path, "logs", "cerbere.out.log"),
         path.join(source.path, "logs", "cerbere.err.log"),
         {
@@ -654,7 +656,7 @@ async function executeCerbereAction(
         {
           target: "cerbere",
           projectPath: source.path,
-          command: [process.execPath, "apps/server/llm-router.mjs"],
+          command: cerbereCommand,
           pid,
           port: CERBERE_PORT,
           healthUrl: preflight?.healthUrl ?? `http://127.0.0.1:${CERBERE_PORT}/health`,
@@ -671,7 +673,7 @@ async function executeCerbereAction(
         {
           target: "cerbere",
           projectPath: source.path,
-          command: [process.execPath, "apps/server/llm-router.mjs"],
+          command: cerbereCommand,
           pid: probe?.processId ?? pid,
           port: probe?.port ?? CERBERE_PORT,
           healthUrl: probe?.healthUrl ?? `http://127.0.0.1:${CERBERE_PORT}/health`,
@@ -699,7 +701,7 @@ async function executeCerbereAction(
         {
           target: "cerbere",
           projectPath: source.path,
-          command: [process.execPath, "apps/server/llm-router.mjs"],
+          command: cerbereCommand,
           port: CERBERE_PORT,
           healthUrl: preflight?.healthUrl ?? `http://127.0.0.1:${CERBERE_PORT}/health`,
           status: "failed",
@@ -743,7 +745,7 @@ async function executeCerbereAction(
       {
         target: "cerbere",
         projectPath: source.path,
-        command: state?.command ?? [process.execPath, "apps/server/llm-router.mjs"],
+        command: state?.command ?? cerbereCommand,
         pid: processId,
         port: preflight?.port ?? CERBERE_PORT,
         healthUrl: preflight?.healthUrl,
@@ -909,7 +911,7 @@ export async function listIntegrationCatalog(manifestPath?: string): Promise<Dra
 
         if (action.target === "cerbere") {
           const source = findBackingSourceByTarget(manifest, "cerbere");
-          const targetPath = source ? getCerbereScriptPath(source.path) : undefined;
+          const targetPath = source ? await resolveCerbereScriptPath(source.path) : undefined;
           return {
             ...action,
             available: Boolean(targetPath && (await pathExists(targetPath))),
