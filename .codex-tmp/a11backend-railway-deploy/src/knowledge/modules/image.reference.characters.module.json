@@ -1,0 +1,30 @@
+{
+  "id": "image.reference.characters",
+  "label": "Image Reference Characters",
+  "discipline": "image",
+  "activation": {
+    "domainsAny": ["image"],
+    "modesAny": ["generate", "web_search"],
+    "requiresReferenceHint": true,
+    "referenceHintsAny": ["donkey kong", "mario 64", "mario", "zelda", "one piece", "ghibli"]
+  },
+  "knowledge": {
+    "concepts": ["personnage iconique", "silhouette reconnaissable", "fidelite de reference"],
+    "methods": ["preserver le personnage principal avant le decor", "signaler le risque de drift du modele", "choisir une lecture reconnaissable et simple"],
+    "commonErrors": ["perdre le personnage au profit d un decor joli", "sortir un mashup confus", "inventer trop d objets autour d une reference connue"]
+  },
+  "apply": {
+    "style": {
+      "modifiers": ["recognizable character silhouette", "franchise-inspired character focus"]
+    }
+  },
+  "impacts": {
+    "generate": [
+      "met l accent sur la fidelite du personnage plutot que sur le decor",
+      "rappelle que la qualite finale depend encore du modele image"
+    ],
+    "web_search": [
+      "favorise la recherche d une image existante pour un personnage deja connu"
+    ]
+  }
+}

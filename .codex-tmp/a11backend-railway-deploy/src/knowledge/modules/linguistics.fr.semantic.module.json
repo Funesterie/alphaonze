@@ -1,0 +1,29 @@
+{
+  "id": "linguistics.fr.semantic",
+  "label": "Linguistique FR Semantique",
+  "discipline": "linguistics",
+  "activation": {
+    "languagesAny": ["fr"],
+    "domainsAny": ["image"],
+    "modesAny": ["generate", "web_search"]
+  },
+  "knowledge": {
+    "concepts": ["attachement adjectival", "lecture litterale du sujet", "ambiguite semantique"],
+    "methods": ["rattacher les couleurs au sujet principal", "preferer le show web si la demande est de voir", "laisser les modificateurs douteux en ambiguite"],
+    "commonErrors": ["melanger sujet et decor", "forcer une generation alors que l utilisateur veut voir", "perdre le sens d une phrase sale mais recuperable"]
+  },
+  "apply": {
+    "constraints": {
+      "literalInterpretation": true
+    }
+  },
+  "impacts": {
+    "generate": [
+      "privilegie une lecture litterale du sujet et de ses adjectifs",
+      "conserve les zones ambiguës pour eviter d inventer"
+    ],
+    "web_search": [
+      "favorise une image existante quand la demande ressemble a montre-moi ou je veux voir"
+    ]
+  }
+}

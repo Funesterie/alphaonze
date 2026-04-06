@@ -1,0 +1,13 @@
+{
+  "id": "retro-game-character",
+  "label": "Retro Game Character",
+  "match": {
+    "referenceHintsAny": ["mario 64", "mario", "donkey kong", "zelda"]
+  },
+  "apply": {
+    "style": {
+      "modifiers": ["iconic video game character art", "clean readable silhouette", "hero character framing"]
+    },
+    "composition": ["hero shot"]
+  }
+}

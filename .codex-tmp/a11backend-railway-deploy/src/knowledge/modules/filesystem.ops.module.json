@@ -1,0 +1,27 @@
+{
+  "id": "filesystem.ops",
+  "label": "Filesystem Ops",
+  "discipline": "filesystem",
+  "activation": {
+    "domainsAny": ["code"],
+    "topIntentsAny": ["code.python.generate"],
+    "keywordsAny": ["fichier", "fichiers", "dossier", "dossiers", "png", "jpg", "jpeg", "csv", "trier", "renommer", "classer"]
+  },
+  "knowledge": {
+    "concepts": ["lot de fichiers", "entree/sortie disque", "tri", "renommage"],
+    "methods": ["preciser le dossier source", "eviter les actions destructives implicites", "traiter les extensions comme des contraintes de lot"],
+    "commonErrors": ["renommer le mauvais lot", "melanger tri et suppression", "agir sans verifier le chemin cible"]
+  },
+  "semantic": {
+    "scoreAdjustments": {
+      "code.python.generate": 1.05,
+      "image.generate": -0.25
+    }
+  },
+  "impacts": {
+    "semantic": [
+      "un choix fichier mal compris peut toucher un lot entier",
+      "favorise une lecture code/filesystem quand le prompt parle de dossiers, png ou csv"
+    ]
+  }
+}

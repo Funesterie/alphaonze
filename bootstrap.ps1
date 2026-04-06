@@ -88,7 +88,7 @@ function Sync-Workspace {
 function Show-Status {
   Write-Host ('[funesterie] Racine          : {0}' -f $workspaceRoot)
   Write-Host ('[funesterie] Launchers A11   : {0}' -f $launchersRoot)
-  Write-Host ('[funesterie] Dragon separe   : D:\dragon')
+  Write-Host ('[funesterie] Dragon A11      : D:\funesterie\a11\a11dragonrailway')
   Write-Host ''
 
   $criticalPaths = @(

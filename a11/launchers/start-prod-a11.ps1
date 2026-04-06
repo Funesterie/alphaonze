@@ -266,7 +266,7 @@ $apiUrl = 'https://api.funesterie.pro'
 $healthUrl = "$apiUrl/health"
 $statusUrl = "$apiUrl/api/status"
 $ttsPublicUrl = 'https://ttssiwis-production.up.railway.app/health'
-$qflushPublicUrl = 'https://qflush-production.up.railway.app/health'
+$dragonPublicUrl = 'https://dragon-api-production.up.railway.app/health'
 $cerberePublicUrl = 'https://cerbere.funesterie.me/health'
 $sdPublicUrl = 'https://sd.funesterie.me/health'
 
@@ -380,7 +380,7 @@ Write-Host "[A11 PROD] API           : $apiUrl"
 Write-Host "[A11 PROD] Health        : $healthUrl"
 Write-Host "[A11 PROD] Status        : $statusUrl"
 Write-Host "[A11 PROD] TTS public    : $ttsPublicUrl"
-Write-Host "[A11 PROD] Qflush public : $qflushPublicUrl"
+Write-Host "[A11 PROD] Dragon public : $dragonPublicUrl"
 Write-Host "[A11 PROD] SD public     : $sdPublicUrl"
 Write-Host "[A11 PROD] Backend local : $localBackendBase"
 Write-Host "[A11 PROD] Ollama local  : $localOllamaBase"
@@ -407,7 +407,7 @@ Test-HttpTarget -Name 'Frontend' -Url $frontendUrl
 Test-HttpTarget -Name 'API health' -Url $healthUrl
 Test-HttpTarget -Name 'API status' -Url $statusUrl
 Test-HttpTarget -Name 'TTS public' -Url $ttsPublicUrl
-Test-HttpTarget -Name 'Qflush public' -Url $qflushPublicUrl
+Test-HttpTarget -Name 'Dragon public' -Url $dragonPublicUrl
 Test-HttpTarget -Name 'SD public' -Url $sdPublicUrl
 Test-HttpTarget -Name 'Cerbere public' -Url $cerberePublicUrl
 
@@ -434,7 +434,7 @@ if ($startBackend) {
       SD_OUTPUT_DIR = $sdOutputDir
       PUBLIC_API_URL = 'https://api.funesterie.pro'
       A11_ALLOW_PUBLIC_TUNNEL_LLM = '1'
-      QFLUSH_REMOTE_URL = 'https://qflush-production.up.railway.app'
+      DRAGON_API_URL = 'https://dragon-api-production.up.railway.app'
     }
     if ($sdScriptPath) {
       $backendEnvironment['SD_SCRIPT_PATH'] = $sdScriptPath
@@ -570,7 +570,7 @@ if ($startCerbere) {
         LOCAL_LLM_URL = $localLlmBase
         LLAMA_BASE = $localLlmBase
         OLLAMA_BASE = $localOllamaBase
-        QFLUSH_REMOTE_URL = 'https://qflush-production.up.railway.app'
+        DRAGON_API_URL = 'https://dragon-api-production.up.railway.app'
       } `
       -LogName 'prod-cerbere' `
       -ShowWindow $showWindows | Out-Null

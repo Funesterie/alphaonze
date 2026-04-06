@@ -310,8 +310,8 @@ $repoOrder = @(
     )
   },
   @{
-    Name = "dragon"
-    Path = "D:\dragon"
+    Name = "a11dragonrailway"
+    Path = "D:\funesterie\a11\a11dragonrailway"
     Branch = "main"
     Ignore = @(
       ".dragon/runtime/",

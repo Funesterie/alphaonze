@@ -1,0 +1,26 @@
+{
+  "id": "python.core",
+  "label": "Python Core",
+  "discipline": "programming",
+  "activation": {
+    "domainsAny": ["code", "filesystem"],
+    "topIntentsAny": ["code.python.generate"],
+    "keywordsAny": ["python", "script", "code", "fonction", "module", "api", "json", "regex"]
+  },
+  "knowledge": {
+    "concepts": ["script", "fonction", "module", "entrees/sorties"],
+    "methods": ["separer orchestration et logique metier", "capturer les erreurs pres des I/O", "raisonner en pipeline entree transformation sortie"],
+    "commonErrors": ["melanger transport et logique", "exceptions avalees", "etat global mutable"]
+  },
+  "apply": {},
+  "semantic": {
+    "scoreAdjustments": {
+      "code.python.generate": 0.85,
+      "image.generate": -0.18
+    }
+  },
+  "impacts": {
+    "generate": [],
+    "web_search": []
+  }
+}

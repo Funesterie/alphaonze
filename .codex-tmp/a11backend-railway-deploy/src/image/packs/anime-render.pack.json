@@ -1,0 +1,14 @@
+{
+  "id": "anime-render",
+  "label": "Anime Render",
+  "match": {
+    "renderHintsAny": ["anime"],
+    "referenceHintsAny": ["one piece", "ghibli"]
+  },
+  "apply": {
+    "style": {
+      "render": "anime illustration",
+      "modifiers": ["clean linework", "cel shading", "expressive anime color palette"]
+    }
+  }
+}

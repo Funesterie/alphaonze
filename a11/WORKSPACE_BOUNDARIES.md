@@ -4,7 +4,7 @@ Date de reference: 2026-03-27
 
 ## Regle principale
 
-`D:\dragon` est un projet separe.
+`D:\funesterie\a11\a11dragonrailway` fait partie du workspace A11/Funesterie.
 
 Il ne doit pas devenir le depot principal des scripts, lanceurs, services ou fichiers runtime de `A11` par defaut.
 
@@ -23,7 +23,7 @@ Il ne doit pas devenir le depot principal des scripts, lanceurs, services ou fic
 
 ## Regles d'organisation
 
-- Ne pas deplacer la logique A11 vers `D:\dragon` par convenience.
+- Ne pas eclater la logique A11/Dragon hors de `D:\funesterie\a11` par convenience.
 - Garder les changements frontend dans `a11frontendnetlify`.
 - Garder les changements backend dans `a11backendrailway`.
 - Garder les changements LLM locaux dans `a11llm`.

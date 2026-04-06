@@ -1,0 +1,13 @@
+{
+  "id": "cartoon-render",
+  "label": "Cartoon Render",
+  "match": {
+    "renderHintsAny": ["cartoon"]
+  },
+  "apply": {
+    "style": {
+      "render": "cartoon illustration",
+      "modifiers": ["bold outlines", "stylized character design", "playful cartoon shading"]
+    }
+  }
+}

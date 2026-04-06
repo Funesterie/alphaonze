@@ -13,6 +13,10 @@
       "path": "a11/a11backendrailway"
     },
     {
+      "name": "A11 Dragon",
+      "path": "a11/a11dragonrailway"
+    },
+    {
       "name": "A11 Frontend",
       "path": "a11/a11frontendnetlify"
     },

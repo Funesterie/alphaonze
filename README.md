@@ -115,4 +115,4 @@ et masque les gros dossiers bruitants comme `node_modules`, `dist`, `.git` et le
 
 ## Note
 
-`D:\dragon` reste un projet separe et est pousse dans son propre depot `dragon`.
+`D:\funesterie\a11\a11dragonrailway` heberge maintenant le repo Dragon et se pousse dans son propre depot `a11dragonrailway`.
