@@ -1,0 +1,16 @@
+# logic.qfl - sample rules for QFLUSH logic engine
+
+rule build_module {
+  when file.type == "module" and file.tagChanged == true
+  do run "npm run build" in "${workspaceRoot}"
+}
+
+rule encode_assets {
+  when file.type == "asset"
+  do npz.encode file.path
+}
+
+rule refresh_on_index {
+  when rome.index.updated
+  do daemon.reload
+}

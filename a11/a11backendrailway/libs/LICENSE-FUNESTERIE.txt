@@ -1,0 +1,58 @@
+FUNESTERIE LICENSE AGREEMENT (FCL 1.0)
+Last updated: 2025
+
+Copyright © Funesterie™
+
+FCL — Funesterie Config Language, including its syntax, grammar,
+structure, naming, examples, documentation, and all associated 
+materials, is proprietary software fully owned by Funesterie™.
+
+By using, copying, distributing or integrating FCL, you agree to the
+terms of this license.
+
+1. Definitions
+--------------
+“FCL” refers to the Funesterie Config Language, the syntax, the grammar,
+its specification, examples, reference documentation, and official tools.
+
+“Personal Use” means individual usage for hobby, testing, learning, or
+non-commercial open-source projects, with no revenue involved.
+
+“Commercial Use” includes any use within a business, company, paid app,
+SaaS product, or any revenue-generating activity.
+
+2. Rights granted
+-----------------
+Personal Use: free, unlimited, no registration required.
+
+Commercial Use: requires an active Funesterie™ Commercial License.
+Without such license, all commercial usage is strictly prohibited.
+
+3. Restrictions
+---------------
+• You may NOT fork, rename, copy, or rebrand the FCL format.
+• You may NOT create competing formats based on FCL.
+• You may NOT redistribute modified versions of FCL.
+• You may NOT remove or replace the Funesterie™ branding.
+• You may NOT reverse-engineer paid tools, SDKs or parsers.
+• You may NOT integrate FCL in commercial products without a license.
+
+4. Ownership
+------------
+FCL remains the sole intellectual property of Funesterie™. 
+No rights are transferred except those specified above.
+
+5. Termination
+--------------
+Any violation terminates all granted rights. 
+Funesterie™ may pursue legal action for unauthorized commercial use.
+
+6. Disclaimer
+-------------
+FCL is provided “as is”, without warranty of any kind.
+
+This project includes third-party components under their own licenses.
+See THIRD_PARTY_LICENSES.txt for details.
+
+For commercial licensing contact:
+cellaurojeffrey@gmail.com

@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-04-02",
+  "workspace": "D:\\dragon",
+  "scope": "D:\\",
+  "canonical_sources": [
+    {
+      "path": "D:\\qflush",
+      "role": "control_plane",
+      "status": "primary"
+    },
+    {
+      "path": "D:\\A11",
+      "role": "feature_superset",
+      "status": "reference"
+    },
+    {
+      "path": "D:\\a11ba",
+      "role": "backend_candidate",
+      "status": "preferred_extraction"
+    },
+    {
+      "path": "D:\\a11frontend",
+      "role": "frontend_candidate",
+      "status": "preferred_extraction"
+    },
+    {
+      "path": "D:\\a11-mcp-server",
+      "role": "mcp_bridge",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\rome",
+      "role": "workspace_runtime",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\bat",
+      "role": "process_manager",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\envaptex",
+      "role": "config_system",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\freeland",
+      "role": "value_decoder",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\nezlephant",
+      "role": "encoded_payloads",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\morphing",
+      "role": "binary_contracts",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\beam",
+      "role": "pipeline_engine",
+      "status": "keep"
+    },
+    {
+      "path": "D:\\SPYDER",
+      "role": "graph_runtime",
+      "status": "reference"
+    }
+  ],
+  "snapshots_or_mirrors": [
+    "D:\\qflush-pr55",
+    "D:\\qflush-ma-on-main",
+    "D:\\backa11",
+    "D:\\gpt6.0",
+    "D:\\tmp-a11ba-deploy-20260324",
+    "D:\\tmp-a11frontend-deploy-20260324"
+  ],
+  "deployment_wrappers": [
+    "D:\\funesterie\\a11\\a11dragonrailway",
+    "D:\\funesterie\\a11\\a11backendrailway",
+    "D:\\funesterie\\a11\\a11frontendnetlify"
+  ],
+  "target_stack": {
+    "dragon_repo": "D:\\dragon",
+    "dragon_daemon": "D:\\dragon\\apps\\dragon-daemon",
+    "dragon_api": "D:\\dragon\\apps\\dragon-api",
+    "dragon_web": "D:\\dragon\\apps\\dragon-web",
+    "dragon_mcp": "D:\\a11-mcp-server",
+    "dragon_feature_reference": "D:\\A11"
+  }
+}

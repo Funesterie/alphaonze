@@ -1,0 +1,15 @@
+Refactor to extract helpers and simplify `src/commands/start.ts`.
+
+Summary:
+- Extracted helpers: `probeAndPersistSpyderPort`, `resolveOrMergedRunCmd`, `resolvePackagePathForModule`, `startRunnable`.
+- Simplified `startModule` and delegated responsibilities to helpers for clarity.
+- CI/test updates: use `QFLUSH_TEST_TOKEN` and `QFLUSH_SPYDER_ADMIN_PORT` secrets; tests added for spyder admin port behavior.
+
+Local verification: tests pass locally (25 files, 51 tests).
+
+Checklist:
+- [x] Code compiles and tests pass locally
+- [x] New helpers covered by tests where relevant
+- [ ] Address linter/warn issues (e.g. vite/esbuild warnings)
+
+Notes: please add repository secrets `QFLUSH_TEST_TOKEN` and `QFLUSH_SPYDER_ADMIN_PORT` in GitHub Actions secrets if you want CI to run with stable values.

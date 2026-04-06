@@ -1,0 +1,93 @@
+name: A11 Backend Self-Hosted CI
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: a11backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-backend:
+    runs-on: [self-hosted, windows, a11backend]
+
+    defaults:
+      run:
+        shell: pwsh
+
+    env:
+      NODE_ENV: production
+      CI: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Show versions
+        run: |
+          node -v
+          npm -v
+          git --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check package scripts
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $pkg.scripts | ConvertTo-Json -Depth 5
+
+      - name: Build
+        run: |
+          if (Test-Path package.json) {
+            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+            if ($pkg.scripts.build) {
+              npm run build
+            } else {
+              Write-Host "No build script found, skipping build."
+            }
+          }
+
+      - name: Typecheck
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.typecheck) {
+            npm run typecheck
+          } else {
+            Write-Host "No typecheck script found, skipping."
+          }
+
+      - name: Test
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.test) {
+            npm test -- --run
+          } else {
+            Write-Host "No test script found, skipping."
+          }
+
+      - name: Validate important paths
+        run: |
+          $paths = @(
+            "apps/server",
+            "apps/server/package.json"
+          )
+
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "OK: $p"
+            } else {
+              Write-Warning "Missing: $p"
+            }
+          }
+
+      - name: Health summary
+        run: |
+          Write-Host "Backend validation complete."
+          Write-Host "Railway can deploy from main if this branch is the source of truth."

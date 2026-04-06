@@ -1,0 +1,33 @@
+# Exclure les fichiers/dossiers inutiles ou volumineux du build Railway
+node_modules
+*.log
+*.tmp
+*.bak
+*.swp
+*.ps1
+*.out
+*.txt
+*.svg
+*.onnx
+logs/
+dist/
+build/
+.vscode/
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+cleanup*.log
+fix-install*.log
+run_*_logs.txt
+temp_out*.txt
+decoded_brotli_red_80.json
+dump-*.ps1
+qflush-code-dump.txt
+st.txt
+tart skeleton*
+tmp/
+tmp-pem/
+.git-rewrite/
+Cartes de pirate au coucher du soleil.png
+Logo et personnage Funesterie.png

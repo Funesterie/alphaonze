@@ -1,0 +1,5 @@
+dist/
+extensions/**/obj/
+extensions/**/bin/
+node_modules/
+.qflush/

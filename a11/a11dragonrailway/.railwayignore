@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.github
+.dragon
+coverage
+.env
+.env.local
+.DS_Store
+Thumbs.db
+.vs
+DRAGON_GIGA_APP_ANALYSIS.md
+dragon.sln

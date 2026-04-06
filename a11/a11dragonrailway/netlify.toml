@@ -1,0 +1,12 @@
+[build]
+  base = "."
+  command = "npm ci && npm run build:packages && npm --workspace @funeste38/dragon-web run build"
+  publish = "apps/dragon-web/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
