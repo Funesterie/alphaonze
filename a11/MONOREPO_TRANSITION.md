@@ -50,7 +50,7 @@ Today, production still depends on these repos directly:
 ## Next Safe Steps
 
 1. Keep the legacy remotes alive while `Funesterie/funesterie` becomes the operational control root.
-2. Point Railway and Netlify to the monorepo with the correct root directories.
+2. Finish provider rewiring with the monorepo roots documented in `HOSTING_REWIRE_STATUS.md`.
 3. Verify builds and runtime health from the monorepo branch used in production.
 4. Archive old repositories.
 5. Delete old repositories only after at least one stable production cycle.
@@ -73,6 +73,6 @@ The monorepo is now the code truth.
 
 The remaining work is operational:
 
-1. rewire hosting providers to `Funesterie/funesterie`
+1. finish the provider-side switch described in `HOSTING_REWIRE_STATUS.md`
 2. validate one full production cycle
 3. archive then delete the legacy remotes

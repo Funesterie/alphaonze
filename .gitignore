@@ -84,8 +84,8 @@ Thumbs.db
 /a11/a11backendrailway/libs/eslint-report.json
 /a11/a11backendrailway/libs/tsc-output.txt
 /a11/a11backendrailway/libs/st.txt
-/a11/a11backendrailway/libs/) {
-/a11/a11backendrailway/libs/e {
+/a11/a11backendrailway/libs/) \{
+/a11/a11backendrailway/libs/e \{
 /a11/a11backendrailway/libs/h*
 /a11/a11backendrailway/libs/tart skeleton*
 /a11/a11backendrailway/libs/*.log
