@@ -35,14 +35,14 @@ Les lanceurs essayent d'eviter l'effet "15 terminaux ouverts":
 
 Ces scripts vivent ici pour eviter de melanger l'orchestration globale avec:
 
-- `a11backendrailway` pour le backend
-- `a11frontendnetlify` pour le frontend
-- `a11llm` pour le LLM local
+- `backend` pour le backend
+- `frontend` pour le frontend
+- `llm` pour le LLM local
 - `a11qflushrailway` pour qflush
 
 ## Compatibilite
 
-Les anciens scripts dans `a11backendrailway` restent presents comme wrappers de compatibilite et redirigent vers ce dossier.
+Les anciens scripts backend restent presents comme wrappers de compatibilite et redirigent vers ce dossier.
 
 ## Commandes utiles
 

@@ -16,13 +16,13 @@ Ce depot sert maintenant de source de verite pour:
   Regles de separation entre les projets.
 - `a11/MONOREPO_STATUS.md`
   Etat de la migration vers le depot unique.
-- `a11/a11backendrailway`
+- `a11/backend`
   Backend A11.
-- `a11/a11dragonrailway`
+- `a11/dragon`
   Stack Dragon.
-- `a11/a11frontendnetlify`
+- `a11/frontend`
   Frontend A11.
-- `a11/a11llm`
+- `a11/llm`
   Couche LLM locale A11.
 
 ## Philosophie
@@ -115,13 +115,13 @@ et masque les gros dossiers bruitants comme `node_modules`, `dist`, `.git`,
 
 ## Note
 
-La bascule vers un seul depot Git est faite cote code.
+La bascule vers un seul depot Git est faite cote code et cote hebergement.
 
-- Railway backend est maintenant rebascule vers `Funesterie/funesterie` et
-  tourne sainement depuis le monorepo.
-- Netlify frontend dispose maintenant de sa config monorepo, mais le changement
-  de repo source reste a finir cote dashboard Netlify, meme si la prod sert deja
-  un deploy publie depuis les artefacts du monorepo.
+- Railway backend pointe maintenant vers `Funesterie/funesterie` / `master`
+  avec `a11/backend/apps/server` comme racine de deploy, et la sante publique
+  est validee.
+- Netlify frontend pointe maintenant vers `Funesterie/funesterie` / `master`
+  avec `a11/frontend` comme base directory, et la prod sert depuis le monorepo.
 
 Le suivi operationnel detaille vit dans `a11/HOSTING_REWIRE_STATUS.md` avant
 l'archivage final des anciens depots specialises.

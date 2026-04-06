@@ -10,19 +10,19 @@
     },
     {
       "name": "A11 Backend",
-      "path": "a11/a11backendrailway"
+      "path": "a11/backend"
     },
     {
       "name": "A11 Dragon",
-      "path": "a11/a11dragonrailway"
+      "path": "a11/dragon"
     },
     {
       "name": "A11 Frontend",
-      "path": "a11/a11frontendnetlify"
+      "path": "a11/frontend"
     },
     {
       "name": "A11 LLM",
-      "path": "a11/a11llm"
+      "path": "a11/llm"
     }
   ],
   "settings": {

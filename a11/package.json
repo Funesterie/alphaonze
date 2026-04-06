@@ -5,15 +5,15 @@
   "description": "Unified control entrypoint for the A11 monorepo",
   "scripts": {
     "start:online": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./launchers/start-prod-a11.ps1",
-    "build:backend": "npm --prefix ./a11backendrailway/apps/server run railway:build",
-    "build:frontend": "npm --prefix ./a11frontendnetlify/apps/web run build",
-    "build:dragon": "npm --prefix ./a11dragonrailway run build",
+    "build:backend": "npm --prefix ./backend/apps/server run railway:build",
+    "build:frontend": "npm --prefix ./frontend/apps/web run build",
+    "build:dragon": "npm --prefix ./dragon run build",
     "build:all": "npm run build:backend && npm run build:frontend && npm run build:dragon",
-    "test:backend": "npm --prefix ./a11backendrailway/apps/server run test:contracts",
-    "test:backend:e2e": "npm --prefix ./a11backendrailway/apps/server run test:e2e:artifact",
-    "test:dragon": "npm --prefix ./a11dragonrailway run typecheck",
+    "test:backend": "npm --prefix ./backend/apps/server run test:contracts",
+    "test:backend:e2e": "npm --prefix ./backend/apps/server run test:e2e:artifact",
+    "test:dragon": "npm --prefix ./dragon run typecheck",
     "test:all": "npm run test:backend && npm run test:dragon",
-    "check:llm-assets": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./a11llm/scripts/check-local-assets.ps1",
+    "check:llm-assets": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./llm/scripts/check-local-assets.ps1",
     "doctor:git": "git -C .. status --short",
     "doctor:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"(Invoke-WebRequest -UseBasicParsing 'https://api.funesterie.pro/api/status').Content; Write-Host ''; (Invoke-WebRequest -UseBasicParsing 'https://qflush-production.up.railway.app/health').Content\""
   }

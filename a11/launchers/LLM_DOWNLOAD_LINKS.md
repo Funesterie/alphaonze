@@ -16,12 +16,12 @@ These large assets stay outside the backend repo and outside Tauri.
 
 ## Local target paths used by A11
 
-- `D:\funesterie\a11\a11llm\llm\server\llama-server.exe`
-- `D:\funesterie\a11\a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf`
-- `D:\funesterie\a11\a11llm\scripts\venv\Scripts\python.exe`
+- `D:\funesterie\a11\llm\llm\server\llama-server.exe`
+- `D:\funesterie\a11\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf`
+- `D:\funesterie\a11\llm\scripts\venv\Scripts\python.exe`
 
 ## Architecture reminder
 
-- Keep heavy models, `llama.cpp`, and Python venvs in `a11llm`
-- Keep lightweight backend scripts in `a11backendrailway/apps/server`
+- Keep heavy models, `llama.cpp`, and Python venvs in `llm`
+- Keep lightweight backend scripts in `backend/apps/server`
 - Do not bundle GGUF assets into Tauri until the desktop is stable enough for a tagged release

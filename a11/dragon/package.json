@@ -1,0 +1,43 @@
+{
+  "name": "dragon",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:packages": "npm --workspace @funeste38/dragon-contracts run build && npm --workspace @funeste38/dragon-upstream run build",
+    "build:daemon": "npm run build:packages && npm --workspace @funeste38/dragon run build",
+    "build:api": "npm run build:packages && npm --workspace @funeste38/dragon-api run build",
+    "build:web": "npm run build:packages && npm --workspace @funeste38/dragon-web run build",
+    "build": "npm run build:packages && npm --workspace @funeste38/dragon run build && npm --workspace @funeste38/dragon-api run build && npm --workspace @funeste38/dragon-web run build",
+    "typecheck": "npm run build:packages && npm --workspace @funeste38/dragon run typecheck && npm --workspace @funeste38/dragon-api run typecheck && npm --workspace @funeste38/dragon-web run typecheck",
+    "dev": "npm run build:packages && concurrently --kill-others-on-fail -n daemon,api,web -c blue,cyan,green \"npm --workspace @funeste38/dragon run dev\" \"npm --workspace @funeste38/dragon-api run dev\" \"npm --workspace @funeste38/dragon-web run dev\"",
+    "start:daemon": "npm --workspace @funeste38/dragon run start",
+    "start:api": "npm --workspace @funeste38/dragon-api run start",
+    "start:web": "npm --workspace @funeste38/dragon-web run dev",
+    "railway:build": "npm run build",
+    "railway:start": "npm run start:api",
+    "railway:start:daemon": "npm run start:daemon",
+    "publish:contracts": "npm publish --workspace @funeste38/dragon-contracts --access public",
+    "publish:upstream": "npm publish --workspace @funeste38/dragon-upstream --access public",
+    "publish:dragon": "npm publish --workspace @funeste38/dragon --access public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Funesterie/funesterie.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

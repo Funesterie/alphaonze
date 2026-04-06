@@ -318,34 +318,48 @@ $ollamaExe = Resolve-FirstExistingPath @(
   'C:\Program Files\ollama\ollama.exe'
 )
 $llmExe = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'llm\llm\server\llama-server.exe'),
   (Join-Path $workspaceRoot 'a11llm\llm\server\llama-server.exe'),
+  'D:\funesterie\a11\llm\llm\server\llama-server.exe',
   'D:\funesterie\a11\a11llm\llm\server\llama-server.exe'
 )
 
 $modelPath = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
   (Join-Path $workspaceRoot 'a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
+  'D:\funesterie\a11\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf',
   'D:\funesterie\a11\a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'
 )
 
 $backendScript = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'backend\apps\server\server.cjs'),
   (Join-Path $workspaceRoot 'a11backendrailway\apps\server\server.cjs'),
+  'D:\funesterie\a11\backend\apps\server\server.cjs',
   'D:\funesterie\a11\a11backendrailway\apps\server\server.cjs'
 )
 
 $cerbereScript = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'backend\apps\server\llm-router.mjs'),
   (Join-Path $workspaceRoot 'a11backendrailway\apps\server\llm-router.mjs'),
+  'D:\funesterie\a11\backend\apps\server\llm-router.mjs',
   'D:\funesterie\a11\a11backendrailway\apps\server\llm-router.mjs'
 )
 
 $sdScriptPath = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'backend\apps\server\tools\sd\generate_sd_image.py'),
+  (Join-Path $workspaceRoot 'llm\scripts\generate_sd_image.py'),
   (Join-Path $workspaceRoot 'a11backendrailway\apps\server\tools\sd\generate_sd_image.py'),
   (Join-Path $workspaceRoot 'a11llm\scripts\generate_sd_image.py'),
+  'D:\funesterie\a11\backend\apps\server\tools\sd\generate_sd_image.py',
+  'D:\funesterie\a11\llm\scripts\generate_sd_image.py',
   'D:\funesterie\a11\a11backendrailway\apps\server\tools\sd\generate_sd_image.py',
   'D:\funesterie\a11\a11llm\scripts\generate_sd_image.py'
 )
 
 $sdPythonExe = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'llm\scripts\venv\Scripts\python.exe'),
   (Join-Path $workspaceRoot 'a11llm\scripts\venv\Scripts\python.exe'),
+  'D:\funesterie\a11\llm\scripts\venv\Scripts\python.exe',
   'D:\funesterie\a11\a11llm\scripts\venv\Scripts\python.exe'
 )
 
@@ -366,6 +380,8 @@ $tunnelLauncher = Resolve-FirstExistingPath @(
 )
 
 $ngrokExe = Resolve-FirstExistingPath @(
+  (Join-Path $workspaceRoot 'backend\apps\tts\ngrok.exe'),
+  (Join-Path $workspaceRoot 'llm\llm\ngrok.exe'),
   (Join-Path $workspaceRoot 'a11backendrailway\apps\tts\ngrok.exe'),
   (Join-Path $workspaceRoot 'a11llm\llm\ngrok.exe'),
   (Join-Path $workspaceRoot 'ngrok.exe'),

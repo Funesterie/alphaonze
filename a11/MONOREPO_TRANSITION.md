@@ -11,30 +11,30 @@ Phase 1 is done on the code side:
 
 - the nested Git repositories have been absorbed into `funesterie`
 - the root repository now versions the A11 applications directly
-- the workspace keeps stable paths under `a11/` to avoid breaking scripts and deploy roots too early
+- the workspace now uses simple app folders under `a11/`
 
 ## What Is Inside The Monorepo
 
 These folders now live in the same Git repository:
 
-- `a11backendrailway`
-- `a11frontendnetlify`
-- `a11dragonrailway`
-- `a11llm`
+- `backend`
+- `frontend`
+- `dragon`
+- `llm`
 - `launchers`
 
 ## Stable Layout For The First Cut
 
-The code stays here for now:
+The code now stays here:
 
 ```text
 funesterie/
   a11/
     launchers/
-    a11backendrailway/
-    a11frontendnetlify/
-    a11dragonrailway/
-    a11llm/
+    backend/
+    frontend/
+    dragon/
+    llm/
 ```
 
 ## Important
@@ -44,8 +44,8 @@ switched to the new source of truth.
 
 Today, production still depends on these repos directly:
 
-- Railway backend: `a11backendrailway`
-- Netlify frontend: `a11frontendnetlify`
+- Railway backend: `backend`
+- Netlify frontend: `frontend`
 
 ## Next Safe Steps
 
@@ -63,9 +63,9 @@ monorepo default branch.
 Recommended roots with the current stable layout:
 
 - Railway backend:
-  `a11/a11backendrailway/apps/server`
+  `a11/backend/apps/server`
 - Netlify frontend:
-  `a11/a11frontendnetlify/apps/web`
+  `a11/frontend/apps/web`
 
 ## Recommendation
 

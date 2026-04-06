@@ -33,69 +33,70 @@ Thumbs.db
 **/.env.local
 **/.env.*.local
 **/.netlify/
-/a11/a11llm/llama.cpp/
+/a11/llm/llama.cpp/
+/a11/a11llm/
 !**/.env.example
 !**/.env.*.example
 
 # A11 monorepo generated state
-/a11/a11backendrailway/a11_memory/memos/
-/a11/a11backendrailway/apps/server/.a11_state/
-/a11/a11backendrailway/apps/server/.qflash/
-/a11/a11backendrailway/apps/server/tmp/
-/a11/a11frontendnetlify/a11_memory/memos/
-/a11/a11frontendnetlify/apps/logs/
+/a11/backend/a11_memory/memos/
+/a11/backend/apps/server/.a11_state/
+/a11/backend/apps/server/.qflash/
+/a11/backend/apps/server/tmp/
+/a11/frontend/a11_memory/memos/
+/a11/frontend/apps/logs/
 
 # A11 frontend generated public bundles
-/a11/a11frontendnetlify/apps/web/public/assets/
-/a11/a11frontendnetlify/apps/web/public/legacy/
-/a11/a11frontendnetlify/apps/web/public/*.map
-/a11/a11frontendnetlify/apps/web/public/index.html
-/a11/a11frontendnetlify/apps/web/public/index (2).html
-/a11/a11frontendnetlify/apps/web/public/1762171870866_Homme-m__ca_dans_une_cape_lumineuse.png
-/a11/a11frontendnetlify/apps/web/public/index-*.js
-/a11/a11frontendnetlify/apps/web/public/index-*.css
-/a11/a11frontendnetlify/apps/web/public/main-*.js
-/a11/a11frontendnetlify/apps/web/public/main-*.css
-/a11/a11frontendnetlify/apps/web/public/pdf-*.js
-/a11/a11frontendnetlify/apps/web/public/app*.js
-/a11/a11frontendnetlify/apps/web/public/anonymous_code_placeholder.js
-/a11/a11frontendnetlify/apps/web/public/api-config.js
-/a11/a11frontendnetlify/apps/web/public/installHook.js.map
-/a11/a11frontendnetlify/apps/web/public/style.css
-/a11/a11frontendnetlify/apps/web/public/styles.css
-/a11/a11frontendnetlify/apps/web/public/test-*.html
-/a11/a11frontendnetlify/dy
-/a11/a11llm/scripts/*.png
+/a11/frontend/apps/web/public/assets/
+/a11/frontend/apps/web/public/legacy/
+/a11/frontend/apps/web/public/*.map
+/a11/frontend/apps/web/public/index.html
+/a11/frontend/apps/web/public/index (2).html
+/a11/frontend/apps/web/public/1762171870866_Homme-m__ca_dans_une_cape_lumineuse.png
+/a11/frontend/apps/web/public/index-*.js
+/a11/frontend/apps/web/public/index-*.css
+/a11/frontend/apps/web/public/main-*.js
+/a11/frontend/apps/web/public/main-*.css
+/a11/frontend/apps/web/public/pdf-*.js
+/a11/frontend/apps/web/public/app*.js
+/a11/frontend/apps/web/public/anonymous_code_placeholder.js
+/a11/frontend/apps/web/public/api-config.js
+/a11/frontend/apps/web/public/installHook.js.map
+/a11/frontend/apps/web/public/style.css
+/a11/frontend/apps/web/public/styles.css
+/a11/frontend/apps/web/public/test-*.html
+/a11/frontend/dy
+/a11/llm/scripts/*.png
 
 # A11 heavy local TTS/runtime assets
-/a11/a11backendrailway/apps/tts/espeak-ng-data/
-/a11/a11backendrailway/apps/tts/piper/
-/a11/a11backendrailway/apps/tts/.ngrok.exe.old
-/a11/a11backendrailway/apps/tts/*.dll
-/a11/a11backendrailway/apps/tts/*.exe
-/a11/a11backendrailway/apps/tts/*.onnx
-/a11/a11backendrailway/apps/tts/*.ort
-/a11/a11backendrailway/apps/server/tts/*.onnx
+/a11/backend/apps/tts/espeak-ng-data/
+/a11/backend/apps/tts/piper/
+/a11/backend/apps/tts/.ngrok.exe.old
+/a11/backend/apps/tts/*.dll
+/a11/backend/apps/tts/*.exe
+/a11/backend/apps/tts/*.onnx
+/a11/backend/apps/tts/*.ort
+/a11/backend/apps/server/tts/*.onnx
 
 # A11 local debug and throwaway outputs
-/a11/a11backendrailway/libs/.gitmodules
-/a11/a11backendrailway/libs/jwt.txt
-/a11/a11backendrailway/libs/decoded_brotli_red_80.json
-/a11/a11backendrailway/libs/eslint-report.json
-/a11/a11backendrailway/libs/tsc-output.txt
-/a11/a11backendrailway/libs/st.txt
-/a11/a11backendrailway/libs/) \{
-/a11/a11backendrailway/libs/e \{
-/a11/a11backendrailway/libs/h*
-/a11/a11backendrailway/libs/tart skeleton*
-/a11/a11backendrailway/libs/*.log
-/a11/a11backendrailway/libs/*log*.txt
-/a11/a11backendrailway/libs/run-detach*.txt
-/a11/a11backendrailway/libs/temp_*.txt
-/a11/a11backendrailway/libs/tmp-*.js
-/a11/a11backendrailway/libs/tmp-decode-cortex.js
-/a11/a11backendrailway/libs/*.tsbuildinfo
-/a11/a11backendrailway/libs/*.map
-/a11/a11backendrailway/libs/src/**/*.map
-/a11/a11backendrailway/libs/Cartes de pirate au coucher du soleil.png
-/a11/a11backendrailway/libs/Logo et personnage Funesterie.png
+/a11/backend/libs/.gitmodules
+/a11/backend/libs/jwt.txt
+/a11/backend/libs/decoded_brotli_red_80.json
+/a11/backend/libs/eslint-report.json
+/a11/backend/libs/tsc-output.txt
+/a11/backend/libs/st.txt
+/a11/backend/libs/) \{
+/a11/backend/libs/e \{
+/a11/backend/libs/h*
+/a11/backend/libs/tart skeleton*
+/a11/backend/libs/*.log
+/a11/backend/libs/*log*.txt
+/a11/backend/libs/run-detach*.txt
+/a11/backend/libs/temp_*.txt
+/a11/backend/libs/tmp-*.js
+/a11/backend/libs/tmp-decode-cortex.js
+/a11/backend/libs/*.tsbuildinfo
+/a11/backend/libs/*.map
+/a11/backend/libs/src/**/*.map
+/a11/backend/libs/Cartes de pirate au coucher du soleil.png
+/a11/backend/libs/Logo et personnage Funesterie.png

@@ -12,10 +12,10 @@ rester des frontieres Git separees.
 
 ## Depots absorbes
 
-- `a11/a11backendrailway`
-- `a11/a11frontendnetlify`
-- `a11/a11dragonrailway`
-- `a11/a11llm`
+- `a11/backend`
+- `a11/frontend`
+- `a11/dragon`
+- `a11/llm`
 
 ## Etat source capture avant absorption
 
@@ -47,16 +47,19 @@ rester des frontieres Git separees.
 - Railway backend:
   - source repointee vers `Funesterie/funesterie`
   - branche active: `master`
-  - cible monorepo: `a11/a11backendrailway/apps/server`
+  - cible monorepo: `a11/backend/apps/server`
   - shim de compatibilite ajoute: `apps/server/railway.json`
-  - deployment Railway valide et sante publique confirmee
+  - dernier deployment valide: `3774690e-1a4a-4944-a79c-82b5f63628aa`
+  - sante publique confirmee
 - Netlify frontend:
   - site confirme: `a11funesterie`
-  - build monorepo valide depuis `a11/a11frontendnetlify`
-  - config canonique ajoutee: `a11/a11frontendnetlify/netlify.toml`
-  - production publiee depuis les artefacts du monorepo
-  - repo source encore affiche cote Netlify: `Funesterie/a11frontendnetlify`
-    (bascule finale a finir dans le dashboard)
+  - build monorepo valide depuis `a11/frontend`
+  - config canonique ajoutee: `a11/frontend/netlify.toml`
+  - repo source repointe vers `Funesterie/funesterie`
+  - branche active: `master`
+  - base directory: `a11/frontend`
+  - dernier deploy live: `69d3ed6065e9514faaca98d1`
+  - production publiee et servie depuis le monorepo
 
 Voir `a11/HOSTING_REWIRE_STATUS.md` pour les IDs, les commandes, et l'etat
 de preparation a l'archivage.
