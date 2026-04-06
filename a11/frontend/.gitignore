@@ -14,6 +14,7 @@ Thumbs.db
 *.ps1
 *.out
 *.txt
+!package.json
 *.json
 *.svg
 
