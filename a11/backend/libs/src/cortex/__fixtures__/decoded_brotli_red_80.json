@@ -1,0 +1,5 @@
+{
+  "cmd": "enable-spyder",
+  "args": ["foo", "bar"],
+  "meta": {"version": 80}
+}
