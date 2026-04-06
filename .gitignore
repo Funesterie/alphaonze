@@ -20,3 +20,8 @@
 # OS noise
 Thumbs.db
 .DS_Store
+
+# IDE and local packaging artifacts
+/.vs/
+/.codex-tmp/*.zip
+/.codex-tmp/**/*.zip
