@@ -48,7 +48,6 @@ rester des frontieres Git separees.
   - source repointee vers `Funesterie/funesterie`
   - branche active: `master`
   - cible monorepo: `a11/backend/apps/server`
-  - shim de compatibilite ajoute: `apps/server/railway.json`
   - dernier deployment valide: `3774690e-1a4a-4944-a79c-82b5f63628aa`
   - sante publique confirmee
 - Netlify frontend:

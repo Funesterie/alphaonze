@@ -16,7 +16,6 @@ Date: 2026-04-06
 Etat actuel:
 
 - le service Railway a ete reconnecte au repo monorepo `Funesterie/funesterie`
-- un shim de compatibilite a ete ajoute dans le monorepo a `apps/server/railway.json`
 - un deploy valide tourne maintenant avec:
   - rootDirectory: `a11/backend/apps/server`
   - configFile: `a11/backend/apps/server/railway.json`
