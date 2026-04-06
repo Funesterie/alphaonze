@@ -42,6 +42,23 @@ rester des frontieres Git separees.
   sur la branche `master`.
 - Les dossiers temporaires `.codex-tmp` ne font pas partie du mono-repo.
 
+## Rewire Hosting
+
+- Railway backend:
+  - source repointee vers `Funesterie/funesterie`
+  - branche active: `master`
+  - cible monorepo: `a11/a11backendrailway/apps/server`
+  - shim de compatibilite ajoute: `apps/server/railway.json`
+- Netlify frontend:
+  - site confirme: `a11funesterie`
+  - build monorepo valide depuis `a11/a11frontendnetlify`
+  - config canonique ajoutee: `a11/a11frontendnetlify/netlify.toml`
+  - repo source encore affiche cote Netlify: `Funesterie/a11frontendnetlify`
+    (bascule finale a finir dans le dashboard)
+
+Voir `a11/HOSTING_REWIRE_STATUS.md` pour les IDs, les commandes, et l'etat
+de preparation a l'archivage.
+
 ## Note de prudence
 
 La suppression des anciens repos Git distants ne doit intervenir qu'apres
