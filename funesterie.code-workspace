@@ -19,10 +19,6 @@
     {
       "name": "A11 Frontend",
       "path": "a11/frontend"
-    },
-    {
-      "name": "A11 LLM",
-      "path": "a11/llm"
     }
   ],
   "settings": {

@@ -6825,7 +6825,18 @@ function getA11AgentRemoteFallbackConfig() {
 function shouldFallbackToLocalOnOpenAIError(err) {
   const status = Number(err?.response?.status || 0);
   const code = String(err?.response?.data?.error?.code || '').trim().toLowerCase();
+  const type = String(err?.response?.data?.error?.type || '').trim().toLowerCase();
+  const responseMessage = String(err?.response?.data?.error?.message || err?.response?.data?.message || '').trim().toLowerCase();
+  const rawMessage = String(err?.message || '').trim().toLowerCase();
   if (status === 429 && code === 'insufficient_quota') return true;
+  if (status === 429) return true;
+  if (code.includes('billing')) return true;
+  if (type.includes('billing')) return true;
+  if (responseMessage.includes('billing hard limit')) return true;
+  if (responseMessage.includes('insufficient quota')) return true;
+  if (responseMessage.includes('exceeded your current quota')) return true;
+  if (rawMessage.includes('billing hard limit')) return true;
+  if (rawMessage.includes('insufficient quota')) return true;
   if (status === 401 && code === 'invalid_issuer') return true;
   return false;
 }
@@ -9972,6 +9983,19 @@ async function proxyQflushChat(req, res) {
     return res.status(200).json(data);
   } catch (err) {
     console.error('[A11] Error proxying chat via QFLUSH:', err && (err.message || err.toString()));
+    const localProviderFallbackBody = {
+      ...(req.body || {}),
+      a11SkipQflush: true,
+      dragonCompat: true,
+      provider: 'local',
+      model: String(process.env.LOCAL_DEFAULT_MODEL || req.body?.model || 'llama3.2:latest'),
+    };
+    const localChatFallbackUrl = getCompletionsUrlForRequest(localProviderFallbackBody);
+    if (localChatFallbackUrl && shouldFallbackToLocalOnOpenAIError(err)) {
+      console.warn('[A11] QFLUSH remote failed on quota/billing, falling back to local chat ->', localChatFallbackUrl);
+      req.body = localProviderFallbackBody;
+      return proxyChatToOpenAI(req, res);
+    }
     return res.status(502).json({ ok: false, error: 'qflush_unreachable', message: String(err?.message) });
   }
 }

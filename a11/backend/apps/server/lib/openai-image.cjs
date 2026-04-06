@@ -157,8 +157,23 @@ async function tryGeneratePngWithOpenAI({
   };
 }
 
+function looksLikeOpenAiQuotaError(result = {}) {
+  const statusCode = Number(result?.statusCode || 0);
+  const errorCode = String(result?.error || '').trim().toLowerCase();
+  const message = String(result?.message || '').trim().toLowerCase();
+
+  if (statusCode === 429) return true;
+  if (errorCode.includes('insufficient_quota')) return true;
+  if (errorCode.includes('billing')) return true;
+  if (message.includes('billing hard limit')) return true;
+  if (message.includes('insufficient quota')) return true;
+  if (message.includes('exceeded your current quota')) return true;
+  return false;
+}
+
 module.exports = {
   tryGeneratePngWithOpenAI,
+  looksLikeOpenAiQuotaError,
   resolveOpenAiImageConfig,
   resolveOpenAiImageSize,
 };

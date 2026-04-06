@@ -7,7 +7,7 @@ const {
   runSdScript: defaultRunSdScript,
 } = require('../../lib/sd-runtime.cjs');
 const { uploadBufferToR2: defaultUploadBufferToR2 } = require('../../lib/file-storage.cjs');
-const { tryGeneratePngWithOpenAI } = require('../../lib/openai-image.cjs');
+const { tryGeneratePngWithOpenAI, looksLikeOpenAiQuotaError } = require('../../lib/openai-image.cjs');
 
 function defaultFetch(...args) {
   if (typeof globalThis.fetch === 'function') {
@@ -165,6 +165,31 @@ function fallbackIsAdminRequest(req) {
   const bearer = String(req?.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim();
   const directToken = String(req?.headers?.['x-nez-token'] || '').trim();
   return allowedTokens.includes(bearer) || allowedTokens.includes(directToken);
+}
+
+function isMissingTorchFailure(result = {}) {
+  const text = String(result?.message || result?.stderr || '').toLowerCase();
+  return text.includes('no module named') && text.includes('torch');
+}
+
+function buildSdUnavailablePayload({ localResult = null, openAiResult = null } = {}) {
+  const reasons = [];
+  if (localResult?.error === 'python_spawn_failed') reasons.push('le runtime Python SD local est introuvable');
+  if (isMissingTorchFailure(localResult)) reasons.push('torch manque sur le backend image');
+  if (openAiResult?.error === 'openai_image_unconfigured') reasons.push('OPENAI_API_KEY image n est pas configuree');
+  if (looksLikeOpenAiQuotaError(openAiResult)) reasons.push('le quota OpenAI image est depasse');
+  if (!reasons.length && localResult?.message) reasons.push(String(localResult.message));
+  if (!reasons.length && openAiResult?.message) reasons.push(String(openAiResult.message));
+
+  return {
+    ok: false,
+    error: 'image_backend_unavailable',
+    message: reasons.length
+      ? `Generation image indisponible: ${reasons.join(' ; ')}.`
+      : 'Generation image indisponible sur cet environnement.',
+    local: localResult || null,
+    openai: openAiResult || null,
+  };
 }
 
 function resolveDependencies(overrides = {}) {
@@ -341,11 +366,10 @@ function createSdToolsRouter(overrides = {}) {
 
       const error = new Error(openAiFallback?.message || 'Stable Diffusion indisponible sur cet environnement');
       error.statusCode = 503;
-      error.payload = {
-        ok: false,
-        error: openAiFallback?.error || 'sd_unavailable',
-        message: error.message,
-      };
+      error.payload = buildSdUnavailablePayload({
+        localResult: { ok: false, error: 'sd_unavailable', message: 'Aucun script SD local disponible.' },
+        openAiResult: openAiFallback,
+      });
       throw error;
     }
 
@@ -398,13 +422,11 @@ function createSdToolsRouter(overrides = {}) {
       console.error('[no_image] existsSync:', outputJson?.output_path ? fs.existsSync(outputJson.output_path) : 'no path');
 
       const error = new Error(openAiFallback?.message || outputJson?.message || 'Aucune image générée');
-      error.statusCode = 500;
-      error.payload = {
-        ok: false,
-        error: openAiFallback?.error || outputJson?.error || 'no_image',
-        message: openAiFallback?.message || outputJson?.message || 'Aucune image générée',
-        raw: outputJson,
-      };
+      error.statusCode = 503;
+      error.payload = buildSdUnavailablePayload({
+        localResult: outputJson,
+        openAiResult: openAiFallback,
+      });
       throw error;
     }
 

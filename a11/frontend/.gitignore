@@ -16,6 +16,9 @@ Thumbs.db
 *.txt
 !package.json
 *.json
+!apps/web/package.json
+!apps/web/package-lock.json
+!apps/web/tsconfig.json
 *.svg
 
 # Fichiers/dossiers spécifiques à ignorer
