@@ -15,7 +15,9 @@ rester des frontieres Git separees.
 - `a11/backend`
 - `a11/frontend`
 - `a11/dragon`
-- `a11/llm`
+
+Le support LLM local reste documente historiquement, mais n'est plus versionne
+dans l'arborescence courante du monorepo.
 
 ## Etat source capture avant absorption
 

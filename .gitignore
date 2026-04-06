@@ -43,6 +43,7 @@ Thumbs.db
 /a11/backend/apps/server/.a11_state/
 /a11/backend/apps/server/.qflash/
 /a11/backend/apps/server/tmp/
+/a11/tmp/
 /a11/frontend/a11_memory/memos/
 /a11/frontend/apps/logs/
 

@@ -37,7 +37,7 @@ Ces scripts vivent ici pour eviter de melanger l'orchestration globale avec:
 
 - `backend` pour le backend
 - `frontend` pour le frontend
-- `llm` pour le LLM local
+- une cible LLM locale externe configuree au runtime
 - `a11qflushrailway` pour qflush
 
 ## Compatibilite
