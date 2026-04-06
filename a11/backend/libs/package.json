@@ -39,7 +39,7 @@
   ],
   "scripts": {
     "build": "tsc -p .",
-    "prestart": "node ../apps/server/tts/download-onnx.js",
+    "prestart": "node ../apps/tts/download-onnx.js",
     "build:clean": "rimraf dist && tsc -p .",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1,4 +1,4 @@
-// apps/server/tts/download-onnx.js
+// apps/tts/download-onnx.js
 const fs = require('fs');
 const https = require('https');
 const path = require('path');

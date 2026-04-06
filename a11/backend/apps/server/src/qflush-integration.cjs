@@ -9,6 +9,13 @@ const fs = require('node:fs');
 const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const { A11Supervisor } = require('./a11-supervisor.cjs');
+const {
+  DEFAULT_TTS_MODEL,
+  findTTSScript,
+  getCanonicalTtsDir,
+  getTtsBinaryPathCandidates,
+  getTtsEspeakPathCandidates,
+} = require('../lib/tts-paths.cjs');
 
 // Always available since we have our own implementation
 const qflushAvailable = true;
@@ -174,26 +181,24 @@ function findLlamaModel() {
 
 function buildKnownServiceRegistry() {
   const serverDir = path.resolve(__dirname, '..');
-  const workspaceRoot = path.resolve(serverDir, '..');
   const llmPort = getLlmPort();
   const ttsPort = getTtsPort();
   const backendPort = getBackendPort();
   const ttsScript = findTTSScript(true);
-  const ttsDir = ttsScript ? path.dirname(ttsScript) : path.join(workspaceRoot, 'apps', 'tts');
+  const ttsDir = getCanonicalTtsDir();
   const ttsModelPath = findFirstExistingPath([
     process.env.TTS_MODEL_PATH,
     process.env.MODEL_PATH,
-    path.join(ttsDir, 'fr_FR-siwis-medium.onnx'),
-    path.join(serverDir, 'tts', 'fr_FR-siwis-medium.onnx'),
+    path.join(ttsDir, DEFAULT_TTS_MODEL),
   ]);
   const ttsPiperPath = findFirstExistingPath([
     process.env.TTS_PIPER_PATH,
     process.env.PIPER_PATH,
-    path.join(ttsDir, 'piper.exe'),
+    ...getTtsBinaryPathCandidates(),
   ]);
   const ttsEspeakPath = findFirstExistingPath([
     process.env.ESPEAK_DATA_PATH,
-    path.join(ttsDir, 'espeak-ng-data'),
+    ...getTtsEspeakPathCandidates(),
   ]);
   const llamaExe = findLlamaExe();
   const llamaModel = findLlamaModel();
@@ -457,34 +462,6 @@ async function setupA11Supervisor() {
   }
 
   return supervisor;
-}
-
-// Helper functions
-
-function findTTSScript(quiet = false) {
-  const BASE = path.resolve(__dirname, '../..');
-  const WORKSPACE_ROOT = path.resolve(BASE, '..', '..');
-  const candidates = [
-    path.join(WORKSPACE_ROOT, 'apps', 'tts', 'siwis.py'),
-    path.join(WORKSPACE_ROOT, 'apps', 'tts', 'serve.py'),
-    path.join(WORKSPACE_ROOT, 'apps', 'tts', 'server.py'),
-    path.join(BASE, 'tts', 'siwis.py'),
-    path.join(BASE, 'tts', 'serve.py'),
-    path.join(BASE, 'tts', 'server.py'),
-    path.join(BASE, 'piper', 'serve.py'),
-    path.join(BASE, 'piper', 'server.py')
-  ];
-  
-  for (const script of candidates) {
-    if (fs.existsSync(script)) {
-      if (!quiet) {
-        console.log('[Supervisor] Found TTS script at:', script);
-      }
-      return script;
-    }
-  }
-  
-  return null;
 }
 
 /**

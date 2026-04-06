@@ -4,6 +4,15 @@ const { spawn, spawnSync } = require('node:child_process');
 const express = require('express');
 const router = express.Router();
 const buildTtsReadableText = require('../src/tts/build-tts-readable-text.cjs');
+const {
+  DEFAULT_TTS_MODEL_NAME,
+  firstExistingPath,
+  getBackendRoot,
+  getPublicTtsDir,
+  getTtsBinaryPathCandidates,
+  getTtsEspeakPathCandidates,
+  getTtsModelDirCandidates,
+} = require('../lib/tts-paths.cjs');
 
 const commandAvailabilityCache = new Map();
 
@@ -96,26 +105,6 @@ function getRemoteTtsBaseUrls(ttsConfig = getLocalTtsConfig()) {
   return Array.from(new Set(candidates));
 }
 
-function getWorkspaceRoot() {
-  return path.resolve(__dirname, '..', '..', '..');
-}
-
-function getPublicTtsDir() {
-  return path.join(getWorkspaceRoot(), 'public', 'tts');
-}
-
-function firstExistingPath(candidates) {
-  for (const candidate of candidates) {
-    const raw = String(candidate || '').trim();
-    if (!raw) continue;
-    const resolved = path.resolve(raw);
-    if (fs.existsSync(resolved)) {
-      return resolved;
-    }
-  }
-  return null;
-}
-
 function ensurePublicTtsDir() {
   const ttsDir = getPublicTtsDir();
   fs.mkdirSync(ttsDir, { recursive: true });
@@ -123,18 +112,11 @@ function ensurePublicTtsDir() {
 }
 
 function resolvePiperBinary() {
-  const workspaceRoot = getWorkspaceRoot();
+  const backendRoot = getBackendRoot();
   const configured = String(process.env.PIPER_BIN || process.env.PIPER_EXE || process.env.PIPER_PATH || '').trim();
   const candidates = [
     configured,
-    path.join(workspaceRoot, 'apps', 'tts', 'piper.exe'),
-    path.join(workspaceRoot, 'apps', 'tts', 'piper'),
-    path.join(workspaceRoot, 'apps', 'tts', 'piper', 'piper.exe'),
-    path.join(workspaceRoot, 'apps', 'tts', 'piper', 'piper'),
-    path.join(workspaceRoot, 'apps', 'server', 'tts', 'piper.exe'),
-    path.join(workspaceRoot, 'apps', 'server', 'tts', 'piper'),
-    path.join(workspaceRoot, 'piper', 'piper.exe'),
-    path.join(workspaceRoot, 'piper', 'piper'),
+    ...getTtsBinaryPathCandidates(),
     'piper'
   ].filter(Boolean);
 
@@ -142,7 +124,7 @@ function resolvePiperBinary() {
     // Command name on PATH (for example "piper")
     if (!candidate.includes(path.sep) && !candidate.includes('/')) {
       if (isCommandAvailable(candidate)) {
-        return { command: candidate, cwd: workspaceRoot };
+        return { command: candidate, cwd: backendRoot };
       }
       continue;
     }
@@ -157,7 +139,6 @@ function resolvePiperBinary() {
 }
 
 function resolvePiperModel(requestedModel) {
-  const workspaceRoot = getWorkspaceRoot();
   const explicitModelPath = String(process.env.TTS_MODEL_PATH || process.env.PIPER_MODEL_PATH || process.env.MODEL_PATH || '').trim();
   const modelsDirEnv = String(process.env.TTS_MODELS_DIR || process.env.PIPER_MODELS_DIR || '').trim();
 
@@ -175,19 +156,12 @@ function resolvePiperModel(requestedModel) {
   addModelCandidate(modelCandidates, requestedModel);
   addModelCandidate(modelCandidates, explicitModelPath);
   // Prefer SIWIS when no explicit model is requested.
-  addModelCandidate(modelCandidates, 'fr_FR-siwis-medium');
+  addModelCandidate(modelCandidates, DEFAULT_TTS_MODEL_NAME);
   addModelCandidate(modelCandidates, 'fr_FR-medium');
 
   const baseDirs = [
     modelsDirEnv,
-    path.join(workspaceRoot, 'apps', 'server', 'tts'),
-    path.join(workspaceRoot, 'apps', 'tts'),
-    path.join(workspaceRoot, 'piper', 'models'),
-    path.join(workspaceRoot, 'tts'),
-    '/app/apps/server/tts',
-    '/app/apps/tts',
-    '/app/tts',
-    '/data/tts'
+    ...getTtsModelDirCandidates(),
   ].filter(Boolean);
 
   for (const candidate of modelCandidates) {
@@ -480,13 +454,7 @@ function resolveEspeakData() {
   const fromEnv = String(process.env.ESPEAK_DATA_PATH || '').trim();
   if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
 
-  const workspaceRoot = getWorkspaceRoot();
-  const localEspeak = firstExistingPath([
-    path.join(workspaceRoot, 'apps', 'tts', 'espeak-ng-data'),
-    path.join(workspaceRoot, 'apps', 'tts', 'piper', 'espeak-ng-data'),
-    path.join(workspaceRoot, 'apps', 'server', 'tts', 'espeak-ng-data'),
-    path.join(workspaceRoot, 'piper', 'espeak-ng-data'),
-  ]);
+  const localEspeak = firstExistingPath(getTtsEspeakPathCandidates());
   if (localEspeak) return localEspeak;
 
   // piper-tts pip package bundles espeak-ng-data inside piper_phonemize
@@ -609,7 +577,7 @@ router.get('/tts/health', async (req, res) => {
     });
   }
 
-  const spawn = getSpawnReadiness(requestedVoice || 'fr_FR-siwis-medium');
+  const spawn = getSpawnReadiness(requestedVoice || DEFAULT_TTS_MODEL_NAME);
   let httpWarning = null;
   if (preferHttpTts) {
     if (lastError?.name === 'TimeoutError') {
@@ -696,10 +664,7 @@ router.get('/tts/health', async (req, res) => {
 router.get('/tts/models', (req, res) => {
   try {
     const configuredDir = String(process.env.TTS_MODELS_DIR || process.env.PIPER_MODELS_DIR || '').trim();
-    const modelsDir = configuredDir || firstExistingPath([
-      path.join(getWorkspaceRoot(), 'apps', 'server', 'tts'),
-      path.join(getWorkspaceRoot(), 'apps', 'tts'),
-    ]);
+    const modelsDir = configuredDir || firstExistingPath(getTtsModelDirCandidates());
     if (!modelsDir || !fs.existsSync(modelsDir)) return res.json({ models: [] });
     const models = listOnnxFiles(modelsDir);
     return res.json({ models, modelsDir });
