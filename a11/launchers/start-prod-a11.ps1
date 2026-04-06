@@ -17,6 +17,31 @@ function Resolve-FirstExistingPath {
   return $null
 }
 
+function Get-A11LlmRootCandidates {
+  param([string]$WorkspaceRoot)
+
+  $roots = @(
+    $env:A11_LLM_ROOT,
+    $env:LLM_ROOT,
+    (Join-Path $WorkspaceRoot 'llm'),
+    (Join-Path $WorkspaceRoot 'a11llm'),
+    'D:\funesterie\a11\llm',
+    'D:\funesterie\a11\a11llm',
+    (Join-Path $env:USERPROFILE 'Desktop\LLM'),
+    'C:\Users\cella\Desktop\LLM'
+  )
+
+  $result = New-Object System.Collections.Generic.List[string]
+  foreach ($root in $roots) {
+    if ([string]::IsNullOrWhiteSpace($root)) { continue }
+    $normalized = [string]$root
+    if (-not $result.Contains($normalized)) {
+      $result.Add($normalized)
+    }
+  }
+  return $result.ToArray()
+}
+
 function Get-A11R2Secrets {
   param([string]$Path)
 
@@ -317,19 +342,23 @@ $ollamaExe = Resolve-FirstExistingPath @(
   (Get-CommandPath 'ollama'),
   'C:\Program Files\ollama\ollama.exe'
 )
-$llmExe = Resolve-FirstExistingPath @(
-  (Join-Path $workspaceRoot 'llm\llm\server\llama-server.exe'),
-  (Join-Path $workspaceRoot 'a11llm\llm\server\llama-server.exe'),
-  'D:\funesterie\a11\llm\llm\server\llama-server.exe',
-  'D:\funesterie\a11\a11llm\llm\server\llama-server.exe'
-)
+$llmRootCandidates = Get-A11LlmRootCandidates -WorkspaceRoot $workspaceRoot
+$llmExeCandidates = New-Object System.Collections.Generic.List[string]
+$llmModelCandidates = New-Object System.Collections.Generic.List[string]
+foreach ($llmRoot in $llmRootCandidates) {
+  $llmExeCandidates.Add((Join-Path $llmRoot 'llm\server\llama-server.exe'))
+  $llmExeCandidates.Add((Join-Path $llmRoot 'server\llama-server.exe'))
+  $llmModelCandidates.Add((Join-Path $llmRoot 'llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'))
+  $llmModelCandidates.Add((Join-Path $llmRoot 'models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'))
+}
+$llmExeCandidates.Add($env:A11_LLM_EXE)
+$llmExeCandidates.Add($env:LLAMA_SERVER_EXE)
+$llmExe = Resolve-FirstExistingPath $llmExeCandidates.ToArray()
 
-$modelPath = Resolve-FirstExistingPath @(
-  (Join-Path $workspaceRoot 'llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
-  (Join-Path $workspaceRoot 'a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
-  'D:\funesterie\a11\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-  'D:\funesterie\a11\a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf'
-)
+$llmModelCandidates.Add($env:A11_LLM_MODEL)
+$llmModelCandidates.Add($env:LLAMA_MODEL)
+$llmModelCandidates.Add($env:DEFAULT_MODEL)
+$modelPath = Resolve-FirstExistingPath $llmModelCandidates.ToArray()
 
 $backendScript = Resolve-FirstExistingPath @(
   (Join-Path $workspaceRoot 'backend\apps\server\server.cjs'),

@@ -70,6 +70,8 @@ Thumbs.db
 
 # A11 heavy local TTS/runtime assets
 /a11/backend/apps/tts/espeak-ng-data/
+!/a11/backend/apps/tts/piper/piper
+!/a11/backend/apps/tts/piper/piper_phonemize
 /a11/backend/apps/tts/piper/
 /a11/backend/apps/tts/.ngrok.exe.old
 /a11/backend/apps/tts/*.dll

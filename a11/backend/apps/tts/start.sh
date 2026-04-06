@@ -7,8 +7,54 @@ cd "$SCRIPT_DIR"
 export PORT="${PORT:-8080}"
 export MODEL_PATH="${MODEL_PATH:-$SCRIPT_DIR/fr_FR-siwis-medium.onnx}"
 
-if [ -x "$SCRIPT_DIR/piper/piper" ]; then
-  export PIPER_PATH="${PIPER_PATH:-$SCRIPT_DIR/piper/piper}"
+download_model_if_missing() {
+  if [ -f "$MODEL_PATH" ]; then
+    return 0
+  fi
+
+  if [ -z "${ONNX_MODEL_URL:-}" ]; then
+    return 1
+  fi
+
+  echo "[TTS] Model missing, downloading from ONNX_MODEL_URL"
+  python3 - "$MODEL_PATH" "$ONNX_MODEL_URL" <<'PY'
+import pathlib
+import sys
+import urllib.request
+
+target = pathlib.Path(sys.argv[1])
+url = sys.argv[2]
+target.parent.mkdir(parents=True, exist_ok=True)
+with urllib.request.urlopen(url) as response, target.open("wb") as handle:
+    handle.write(response.read())
+PY
+}
+
+resolve_piper_path() {
+  local configured="${PIPER_PATH:-}"
+  local candidates=(
+    "$configured"
+    "$SCRIPT_DIR/piper/piper"
+    "$SCRIPT_DIR/piper"
+    "$SCRIPT_DIR/piper.exe"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ] && [ ! -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  if command -v piper >/dev/null 2>&1; then
+    command -v piper
+    return 0
+  fi
+
+  return 1
+}
+
+if [ -d "$SCRIPT_DIR/piper" ]; then
   export LD_LIBRARY_PATH="$SCRIPT_DIR/piper${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   export PATH="$SCRIPT_DIR/piper:$PATH"
 fi
@@ -25,19 +71,17 @@ fi
 
 mkdir -p "$SCRIPT_DIR/out"
 
-if [ ! -f "$MODEL_PATH" ]; then
+if ! download_model_if_missing && [ ! -f "$MODEL_PATH" ]; then
   echo "[TTS] Model not found: $MODEL_PATH" >&2
+  echo "[TTS] Set MODEL_PATH to a bundled model or ONNX_MODEL_URL to download it at startup." >&2
   exit 1
 fi
 
-if [ ! -x "${PIPER_PATH:-}" ]; then
-  if command -v piper >/dev/null 2>&1; then
-    export PIPER_PATH="$(command -v piper)"
-  else
-    echo "[TTS] Piper binary not found. Expected \$PIPER_PATH or $SCRIPT_DIR/piper/piper" >&2
-    exit 1
-  fi
+if ! resolved_piper="$(resolve_piper_path)"; then
+  echo "[TTS] Piper binary not found. Expected \$PIPER_PATH or $SCRIPT_DIR/piper/piper" >&2
+  exit 1
 fi
+export PIPER_PATH="$resolved_piper"
 
 echo "[TTS] Starting siwis.py"
 echo "[TTS] PORT=$PORT"

@@ -41,6 +41,22 @@ function findFirstExistingPath(candidates = []) {
   return null;
 }
 
+function getLlmRootCandidates() {
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const roots = [
+    process.env.A11_LLM_ROOT,
+    process.env.LLM_ROOT,
+    path.join(__dirname, '..', '..', '..', '..', 'llm'),
+    path.join(__dirname, '..', '..', '..', '..', 'a11llm'),
+    'D:\\funesterie\\a11\\llm',
+    'D:\\funesterie\\a11\\a11llm',
+    home ? path.join(home, 'Desktop', 'LLM') : null,
+    'C:\\Users\\cella\\Desktop\\LLM',
+  ];
+
+  return [...new Set(roots.filter(Boolean))];
+}
+
 function getListeningPid(port) {
   try {
     const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' });
@@ -109,28 +125,51 @@ function isServiceEnabled(name) {
 
 function findLlamaExe() {
   const serverRoot = path.resolve(__dirname, '..', '..', '..');
-  return findFirstExistingPath([
+  const candidates = [
+    process.env.A11_LLM_EXE,
+    process.env.LLAMA_SERVER_EXE,
+  ];
+
+  for (const root of getLlmRootCandidates()) {
+    candidates.push(path.join(root, 'llm', 'server', 'llama-server.exe'));
+    candidates.push(path.join(root, 'server', 'llama-server.exe'));
+  }
+
+  candidates.push(
     path.join(serverRoot, '..', 'llm', 'llm', 'server', 'llama-server.exe'),
     path.join(serverRoot, '..', '..', 'llm', 'llm', 'server', 'llama-server.exe'),
     path.join(serverRoot, '..', 'a11llm', 'llm', 'server', 'llama-server.exe'),
     path.join(serverRoot, '..', '..', 'a11llm', 'llm', 'server', 'llama-server.exe'),
     'D:\\funesterie\\a11\\llm\\llm\\server\\llama-server.exe',
     'D:\\funesterie\\a11\\a11llm\\llm\\server\\llama-server.exe',
-  ]);
+  );
+
+  return findFirstExistingPath(candidates);
 }
 
 function findLlamaModel() {
   const serverRoot = path.resolve(__dirname, '..', '..', '..');
-  return findFirstExistingPath([
-    process.env.DEFAULT_MODEL,
+  const candidates = [
+    process.env.A11_LLM_MODEL,
     process.env.LLAMA_MODEL,
+    process.env.DEFAULT_MODEL,
+  ];
+
+  for (const root of getLlmRootCandidates()) {
+    candidates.push(path.join(root, 'llm', 'models', 'Llama-3.2-3B-Instruct-Q4_K_M.gguf'));
+    candidates.push(path.join(root, 'models', 'Llama-3.2-3B-Instruct-Q4_K_M.gguf'));
+  }
+
+  candidates.push(
     path.join(serverRoot, '..', 'llm', 'llm', 'models', 'Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
     path.join(serverRoot, '..', '..', 'llm', 'llm', 'models', 'Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
     path.join(serverRoot, '..', 'a11llm', 'llm', 'models', 'Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
     path.join(serverRoot, '..', '..', 'a11llm', 'llm', 'models', 'Llama-3.2-3B-Instruct-Q4_K_M.gguf'),
     'D:\\funesterie\\a11\\llm\\llm\\models\\Llama-3.2-3B-Instruct-Q4_K_M.gguf',
     'D:\\funesterie\\a11\\a11llm\\llm\\models\\Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-  ]);
+  );
+
+  return findFirstExistingPath(candidates);
 }
 
 function buildKnownServiceRegistry() {
