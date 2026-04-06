@@ -49,10 +49,12 @@ rester des frontieres Git separees.
   - branche active: `master`
   - cible monorepo: `a11/a11backendrailway/apps/server`
   - shim de compatibilite ajoute: `apps/server/railway.json`
+  - deployment Railway valide et sante publique confirmee
 - Netlify frontend:
   - site confirme: `a11funesterie`
   - build monorepo valide depuis `a11/a11frontendnetlify`
   - config canonique ajoutee: `a11/a11frontendnetlify/netlify.toml`
+  - production publiee depuis les artefacts du monorepo
   - repo source encore affiche cote Netlify: `Funesterie/a11frontendnetlify`
     (bascule finale a finir dans le dashboard)
 

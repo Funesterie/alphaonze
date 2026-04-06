@@ -117,9 +117,11 @@ et masque les gros dossiers bruitants comme `node_modules`, `dist`, `.git`,
 
 La bascule vers un seul depot Git est faite cote code.
 
-- Railway backend est maintenant rebascule vers `Funesterie/funesterie`.
+- Railway backend est maintenant rebascule vers `Funesterie/funesterie` et
+  tourne sainement depuis le monorepo.
 - Netlify frontend dispose maintenant de sa config monorepo, mais le changement
-  de repo source reste a finir cote dashboard Netlify.
+  de repo source reste a finir cote dashboard Netlify, meme si la prod sert deja
+  un deploy publie depuis les artefacts du monorepo.
 
 Le suivi operationnel detaille vit dans `a11/HOSTING_REWIRE_STATUS.md` avant
 l'archivage final des anciens depots specialises.
