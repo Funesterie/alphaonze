@@ -1,0 +1,39 @@
+{
+  "name": "@funeste38/dragon-upstream",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "description": "Dragon upstream probing, daemon policy and integration workflows.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Funesterie/funesterie.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@funeste38/dragon-contracts": "^0.2.0"
+  }
+}

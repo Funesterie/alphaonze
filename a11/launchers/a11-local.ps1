@@ -1056,15 +1056,15 @@ function Build-ServiceDefinitions {
     [string]$WebDistDirectory
   )
 
-  $backendDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_BACKEND_DIR' '..\a11backendrailway\apps\server') -BaseDirectory $LauncherDirectory
-  $ttsDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_DIR' '..\a11backendrailway\apps\tts') -BaseDirectory $LauncherDirectory
-  $frontendDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_FRONTEND_DIR' '..\a11frontendnetlify\apps\web') -BaseDirectory $LauncherDirectory
+  $backendDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_BACKEND_DIR' '..\backend\apps\server') -BaseDirectory $LauncherDirectory
+  $ttsDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_DIR' '..\backend\apps\tts') -BaseDirectory $LauncherDirectory
+  $frontendDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_FRONTEND_DIR' '..\frontend\apps\web') -BaseDirectory $LauncherDirectory
   $qflushDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_QFLUSH_DIR' '..\a11qflushrailway') -BaseDirectory $LauncherDirectory
-  $llmExe = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_EXE' '..\a11llm\llm\server\llama-server.exe') -BaseDirectory $LauncherDirectory
-  $llmModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_MODEL' '..\a11llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf') -BaseDirectory $LauncherDirectory
-  $ttsModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_MODEL' '..\a11backendrailway\apps\tts\fr_FR-siwis-medium.onnx') -BaseDirectory $LauncherDirectory
-  $ttsPiper = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_PIPER' '..\a11backendrailway\apps\tts\piper.exe') -BaseDirectory $LauncherDirectory
-  $ttsEspeak = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_ESPEAK' '..\a11backendrailway\apps\tts\espeak-ng-data') -BaseDirectory $LauncherDirectory
+  $llmExe = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_EXE' '..\llm\llm\server\llama-server.exe') -BaseDirectory $LauncherDirectory
+  $llmModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_MODEL' '..\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf') -BaseDirectory $LauncherDirectory
+  $ttsModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_MODEL' '..\backend\apps\tts\fr_FR-siwis-medium.onnx') -BaseDirectory $LauncherDirectory
+  $ttsPiper = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_PIPER' '..\backend\apps\tts\piper.exe') -BaseDirectory $LauncherDirectory
+  $ttsEspeak = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_ESPEAK' '..\backend\apps\tts\espeak-ng-data') -BaseDirectory $LauncherDirectory
   $remoteProviderCatalogFile = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_REMOTE_PROVIDER_CATALOG_FILE' 'config\remote-providers.json') -BaseDirectory $LauncherDirectory
 
   $enableBackend = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_BACKEND' '1') $true
@@ -1743,7 +1743,7 @@ $desktopWindowWidth = To-IntValue (Get-ConfigValue $config 'A11_DESKTOP_WIDTH' '
 $desktopWindowHeight = To-IntValue (Get-ConfigValue $config 'A11_DESKTOP_HEIGHT' '960') 960
 $publicApiUrl = Get-ConfigValue $config 'A11_PUBLIC_API_URL' 'https://api.funesterie.pro'
 $publicFrontendUrl = Get-ConfigValue $config 'A11_PUBLIC_FRONTEND_URL' 'https://a11.funesterie.pro'
-$webDistDirectory = Resolve-LauncherRelativePath -Value (Get-ConfigValue $config 'A11_WEB_DIST_DIR' '..\a11frontendnetlify\apps\web\dist') -BaseDirectory $launcherDirectory
+$webDistDirectory = Resolve-LauncherRelativePath -Value (Get-ConfigValue $config 'A11_WEB_DIST_DIR' '..\frontend\apps\web\dist') -BaseDirectory $launcherDirectory
 
 $backendPort = To-IntValue (Get-ConfigValue $config 'A11_BACKEND_PORT' '3000') 3000
 $ttsPort = To-IntValue (Get-ConfigValue $config 'A11_TTS_PORT' '5002') 5002
