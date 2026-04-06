@@ -10,8 +10,6 @@ But: savoir vite quel arbre corriger sans se perdre dans tout le workspace.
   Backend API A11, Cerbere, routes serveur, auth, fichiers, TTS cote backend.
 - `a11/frontend`
   Interface web, panneaux React, UX, Netlify, appels API frontend.
-- `a11/llm`
-  Couche LLM locale, bridge, doc des modeles/binaires, scripts de verification.
 - `a11/a11qflushrailway`
   Couche qflush associee a A11, orchestration qflush, flows et integration dediee.
 
@@ -20,7 +18,7 @@ But: savoir vite quel arbre corriger sans se perdre dans tout le workspace.
 - bug UI ou page -> `frontend`
 - bug API ou 502 backend -> `backend`
 - bug lancement local global -> `launchers`
-- bug modele local / llama-server -> `llm`
+- bug modele local / llama-server -> `launchers` et la cible locale configuree
 - bug qflush -> `a11qflushrailway`
 
 ## Important

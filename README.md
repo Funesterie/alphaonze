@@ -22,8 +22,6 @@ Ce depot sert maintenant de source de verite pour:
   Stack Dragon.
 - `a11/frontend`
   Frontend A11.
-- `a11/llm`
-  Couche LLM locale A11.
 
 ## Philosophie
 
@@ -108,7 +106,6 @@ Cette workspace affiche separement:
 - `A11 Backend`
 - `A11 Dragon`
 - `A11 Frontend`
-- `A11 LLM`
 
 et masque les gros dossiers bruitants comme `node_modules`, `dist`, `.git`,
 `.codex-tmp`, `llama.cpp` et les runtimes locaux.
