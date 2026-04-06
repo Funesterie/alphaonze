@@ -1,12 +1,12 @@
 # funesterie
 
-Repo maitre de l'ecosysteme Funesterie.
+Repo maitre et depot Git unique de l'ecosysteme Funesterie.
 
-Ce depot sert de point d'entree pour:
+Ce depot sert maintenant de source de verite pour:
 
 - la documentation et les conventions workspace
 - les lanceurs locaux transverses de `A11`
-- les sous-repos specialises relies en submodules
+- les applications Funesterie absorbees dans un seul monorepo
 
 ## Structure
 
@@ -14,31 +14,30 @@ Ce depot sert de point d'entree pour:
   Lanceurs globaux A11 et scripts d'orchestration locale.
 - `a11/WORKSPACE_BOUNDARIES.md`
   Regles de separation entre les projets.
+- `a11/MONOREPO_STATUS.md`
+  Etat de la migration vers le depot unique.
 - `a11/a11backendrailway`
   Backend A11.
+- `a11/a11dragonrailway`
+  Stack Dragon.
 - `a11/a11frontendnetlify`
   Frontend A11.
 - `a11/a11llm`
   Couche LLM locale A11.
-- `a11/a11qflushrailway`
-  Integration qflush pour A11.
 
 ## Philosophie
 
-Chaque composant garde son propre depot, son propre historique et son propre cycle de vie.
+`funesterie` remplace maintenant l'ancien montage en submodules.
 
-Le repo `funesterie` ne remplace pas ces depots: il les relie et versionne seulement la couche workspace commune.
+Les anciens depots A11 ne sont plus censes etre des frontieres Git actives:
+leurs fichiers vivent dans ce depot unique, sur la branche `master`.
+On garde seulement leurs remotes historiques comme reference tant que les
+services d'hebergement n'ont pas tous ete rebranches sur ce repo.
 
 ## Clonage
 
 ```bash
-git clone --recurse-submodules https://github.com/jEFFLEZ/funesterie.git
-```
-
-Si le repo est deja clone:
-
-```bash
-git submodule update --init --recursive
+git clone https://github.com/Funesterie/funesterie.git
 ```
 
 ## Bootstrap workspace
@@ -79,17 +78,17 @@ deploy-a11-prod.bat -Message "fix(a11): mon correctif prod"
 
 Ce flux:
 
-- cible seulement les depots utiles a la prod A11
-- pousse vers `main`, ce qui est le plus simple si Railway / Netlify surveillent `main`
-- bloque clairement les branches locales qui ont diverge de `main`, au lieu de donner l'impression qu'un push a "fait quelque chose"
+- cible seulement les applications utiles a la prod A11
+- suppose que la source de verite Git est ce depot unique
+- bloque clairement les branches locales qui ont diverge de la branche de deploy
 - ignore les fichiers runtime locaux connus, comme les memos techniques
 
 ### Actions disponibles
 
 - `status`
-  Affiche l'etat du workspace, des submodules et des lanceurs.
+  Affiche l'etat du workspace et des lanceurs.
 - `setup`
-  Initialise et resynchronise les submodules.
+  Prepare le workspace local.
 - `local`
   Delegue vers `a11\launchers\start-all-a11.ps1`.
 - `online`
@@ -107,12 +106,15 @@ Cette workspace affiche separement:
 
 - `A11 Launchers`
 - `A11 Backend`
+- `A11 Dragon`
 - `A11 Frontend`
 - `A11 LLM`
-- `A11 Qflush`
 
-et masque les gros dossiers bruitants comme `node_modules`, `dist`, `.git` et les runtimes locaux.
+et masque les gros dossiers bruitants comme `node_modules`, `dist`, `.git`,
+`.codex-tmp`, `llama.cpp` et les runtimes locaux.
 
 ## Note
 
-`D:\funesterie\a11\a11dragonrailway` heberge maintenant le repo Dragon et se pousse dans son propre depot `a11dragonrailway`.
+La bascule vers un seul depot Git est faite cote code. La derniere etape
+restante est de rebrancher Railway / Netlify sur ce monorepo avant
+d'archiver les anciens depots specialises.

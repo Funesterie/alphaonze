@@ -23,19 +23,17 @@
     {
       "name": "A11 LLM",
       "path": "a11/a11llm"
-    },
-    {
-      "name": "A11 Qflush",
-      "path": "a11/a11qflushrailway"
     }
   ],
   "settings": {
     "files.exclude": {
+      "**/.codex-tmp": true,
       "**/.git": true,
       "**/.vs": true,
       "**/.vscode": true,
       "**/node_modules": true,
       "**/dist": true,
+      "**/llama.cpp": true,
       "**/.a11-launcher": true,
       "**/apps/logs": true,
       "**/a11_memory/conversations": true,
@@ -45,11 +43,13 @@
       "a11_runtime": true
     },
     "search.exclude": {
+      "**/.codex-tmp": true,
       "**/.git": true,
       "**/.vs": true,
       "**/.vscode": true,
       "**/node_modules": true,
       "**/dist": true,
+      "**/llama.cpp": true,
       "**/.a11-launcher": true,
       "**/apps/logs": true,
       "**/a11_memory/conversations": true,

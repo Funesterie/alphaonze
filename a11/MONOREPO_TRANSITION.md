@@ -2,96 +2,77 @@
 
 ## Goal
 
-Make `D:\\funesterie\\a11` the single operational home for the A11 stack without breaking current production.
+Make `D:\\funesterie` the single Git source of truth for the A11 stack without
+breaking current production.
 
-## What Should Be Unified
+## Current Status
 
-These repositories are all part of the same runtime product and are good candidates for one A11 monorepo:
+Phase 1 is done on the code side:
+
+- the nested Git repositories have been absorbed into `funesterie`
+- the root repository now versions the A11 applications directly
+- the workspace keeps stable paths under `a11/` to avoid breaking scripts and deploy roots too early
+
+## What Is Inside The Monorepo
+
+These folders now live in the same Git repository:
 
 - `a11backendrailway`
 - `a11frontendnetlify`
-- `a11qflushrailway`
-- `a11desktoptauri`
+- `a11dragonrailway`
 - `a11llm`
 - `launchers`
 
-## What Should Stay Separate
+## Stable Layout For The First Cut
 
-These are reusable packages and it is healthier to keep them versioned independently:
+The code stays here for now:
 
-- `freeland`
-- `morphing`
-- `freeland-bros`
-- `rome`
-- `nezlephant`
-- `bat`
-- `beam`
-- `spyder`
-- `envaptex`
-
-If needed, A11 can consume them as npm packages or git dependencies, but they do not need to live inside the A11 deploy repo.
-
-## Recommended Final Shape
-
-Target layout inside one repo:
-
-```txt
-a11/
-  apps/
-    backend/
-    frontend/
-    qflush/
-    desktop/
-  llm/
-  launchers/
-  docs/
+```text
+funesterie/
+  a11/
+    launchers/
+    a11backendrailway/
+    a11frontendnetlify/
+    a11dragonrailway/
+    a11llm/
 ```
 
 ## Important
 
-Do not delete the current deploy repositories until the hosting providers are switched to the new source of truth.
+Do not delete the legacy remote repositories until Railway / Netlify are
+switched to the new source of truth.
 
 Today, production still depends on these repos directly:
 
 - Railway backend: `a11backendrailway`
-- Railway qflush: `a11qflushrailway`
 - Netlify frontend: `a11frontendnetlify`
 
-## Safe Migration Order
+## Next Safe Steps
 
-1. Keep the current repos alive while `D:\\funesterie\\a11` becomes the control root.
-2. Move code into the final folder layout in one source repo.
-3. Point Railway and Netlify to the monorepo with the correct root directories.
-4. Verify builds and runtime health.
-5. Archive old repos.
-6. Delete old repos only after at least one stable production cycle.
+1. Keep the legacy remotes alive while `Funesterie/funesterie` becomes the operational control root.
+2. Point Railway and Netlify to the monorepo with the correct root directories.
+3. Verify builds and runtime health from the monorepo branch used in production.
+4. Archive old repositories.
+5. Delete old repositories only after at least one stable production cycle.
 
 ## Railway / Netlify Baseline
 
-If you later switch providers to the monorepo, the source should still stay on `main`.
+If you switch providers to the monorepo, the source should stay on the
+monorepo default branch.
 
-Recommended root directories after consolidation:
+Recommended roots with the current stable layout:
 
 - Railway backend:
-  `a11/apps/backend`
-- Railway qflush:
-  `a11/apps/qflush`
+  `a11/a11backendrailway/apps/server`
 - Netlify frontend:
-  `a11/apps/frontend`
-
-## Current Reality
-
-Right now, Railway backend has been following the backend branch `sync/backend-main-20260328`, and qflush has been following `deploy/trigger-qflush-20260327`.
-
-That is exactly why the system felt confusing: the hosting source of truth was not consistently `main`.
+  `a11/a11frontendnetlify/apps/web`
 
 ## Recommendation
 
-Yes, simplify.
+The monorepo is now the code truth.
 
-But simplify in two phases:
+The remaining work is operational:
 
-1. First, make `D:\\funesterie\\a11` the operational control center.
-2. Then migrate hosting to a single A11 repo and retire the legacy repos.
-
-That path is much safer than deleting everything now.
+1. rewire hosting providers to `Funesterie/funesterie`
+2. validate one full production cycle
+3. archive then delete the legacy remotes

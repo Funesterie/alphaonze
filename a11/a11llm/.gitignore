@@ -1,0 +1,26 @@
+# Local assets and binaries
+/llm/models/*
+!/llm/models/README.md
+/llm/server/*
+!/llm/server/README.md
+/llm/ngrok.exe
+
+# Upstream source checkout kept local
+/llama.cpp/
+
+# Python and build outputs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.cache
+Thumbs.db
+Desktop.ini

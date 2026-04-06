@@ -1,0 +1,36 @@
+# Node / build
+node_modules/
+
+out/
+build/
+npm-debug.log*
+package-lock.json
+
+# Spyder local import artifacts
+spyder/node_modules/
+spyder/dist/
+spyder/out/
+spyder/*.log
+
+# Local QFlush runtime state (should not be committed)
+.qflush/
+
+# Visual Studio / VSIX build outputs
+extensions/visual-studio-npz/NPZVsix/obj/
+extensions/visual-studio-npz/NPZVsix/bin/
+extensions/vscode-npz/out/
+tmp-vsix-gen/
+
+# IDE folders
+.vscode/
+.vs/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.log
+/parts/dl/qflush-code-dump.txt

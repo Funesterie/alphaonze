@@ -1,0 +1,51 @@
+THIRD-PARTY LICENSES AND NOTICES
+
+This project "@funeste38/qflash" includes third-party components that are
+licensed under their respective open-source licenses. For full license
+texts, see the packages under "node_modules" or each package's repository.
+
+Required attribution and notices:
+
+- "envapt"
+  Copyright (c) the original authors (materwelonDhruv and contributors)
+  Licensed under the Apache License, Version 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+
+  Note: Apache-2.0 requires you to retain the license and copyright
+  notice when redistributing. If you bundle or redistribute envapt
+  with qflash, include the envapt LICENSE file (from node_modules/envapt)
+  in your distribution (for example: /licenses/envapt-LICENSE.txt).
+
+- @funeste38/envaptex
+  Copyright (c) the original authors
+  License: see node_modules/@funeste38/envaptex/package.json (include its LICENSE)
+
+- @funeste38/rome
+  Copyright (c) the original authors
+  License: see node_modules/@funeste38/rome/package.json (include its LICENSE)
+
+- @funeste38/nezlephant
+  Copyright (c) the original authors
+  License: see node_modules/@funeste38/nezlephant/package.json (include its LICENSE)
+
+- @funeste38/freeland
+  Copyright (c) the original authors
+  License: see node_modules/@funeste38/freeland/package.json (include its LICENSE)
+
+- @funeste38/bat
+  Copyright (c) the original authors
+  License: see node_modules/@funeste38/bat/package.json (include its LICENSE)
+
+RECOMMENDATION FOR DISTRIBUTION
+
+- Include a directory `/licenses/` in your distributed package and
+  copy each third-party LICENSE file there (e.g. `/licenses/envapt-LICENSE.txt`).
+- Add a short "Third-party notices" section in your README linking to
+  that directory and listing the components used.
+- Do NOT remove or alter any copyright or license headers present in
+  source files that you redistribute unchanged.
+
+SAMPLE NOTICE (for README or About screen):
+
+  This software includes components from "envapt" (Apache License 2.0).
+  See /licenses/envapt-LICENSE.txt and https://www.apache.org/licenses/LICENSE-2.0

@@ -1,0 +1,2 @@
+//registry.npmjs.org/:_authToken=YOUR_TOKEN_HERE
+# Use this file as ~/.npmrc or set NPM_TOKEN in CI secrets
