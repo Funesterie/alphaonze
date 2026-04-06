@@ -1,0 +1,20 @@
+{
+  "id": "base-literal-image",
+  "label": "Base Literal Image",
+  "match": {
+    "actions": ["generate"]
+  },
+  "apply": {
+    "style": {
+      "modifiers": ["high quality", "detailed"]
+    },
+    "composition": ["clear centered composition", "clear subject focus", "simple clean background"],
+    "constraints": {
+      "literalInterpretation": true,
+      "noExtraProps": true,
+      "safeMode": true,
+      "noText": true,
+      "singleMainSubject": true
+    }
+  }
+}

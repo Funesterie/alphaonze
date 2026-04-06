@@ -25,4 +25,4 @@ But: savoir vite quel arbre corriger sans se perdre dans tout le workspace.
 
 ## Important
 
-`D:\dragon` reste un projet separe.
+`D:\funesterie\a11\a11dragonrailway` porte maintenant le repo Dragon dans l'espace A11.

@@ -1,0 +1,27 @@
+{
+  "id": "security.auth",
+  "label": "Security Auth",
+  "discipline": "security",
+  "activation": {
+    "keywordsAny": ["jwt", "token", "bearer", "auth", "login", "oauth", "mot de passe", "password", "session", "cookie", "csrf"]
+  },
+  "knowledge": {
+    "concepts": ["authentification", "session", "jeton", "controle d acces"],
+    "methods": ["traiter les identifiants comme sensibles", "distinguer bug de config et bug logique", "raisonner par surface d acces et expiration"],
+    "commonErrors": ["journaliser un secret", "confondre auth et permission", "modifier un flux auth sans verifier les consequences"]
+  },
+  "semantic": {
+    "scoreAdjustments": {
+      "web.search": 0.42,
+      "chat.reply": 0.16,
+      "image.generate": -0.4,
+      "web.image.search": -0.35
+    }
+  },
+  "impacts": {
+    "semantic": [
+      "rappelle qu un choix auth touche l acces utilisateur et la securite",
+      "ecarte les chemins image quand le vocabulaire parle de jetons, login ou session"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "image.composition.core",
+  "label": "Image Composition Core",
+  "discipline": "image",
+  "activation": {
+    "domainsAny": ["image"],
+    "modesAny": ["generate"]
+  },
+  "knowledge": {
+    "concepts": ["sujet principal", "lisibilite", "hierarchie visuelle"],
+    "methods": ["centrer l attention sur un seul sujet", "reduire le clutter non demande", "garder une composition lisible avant le style"],
+    "commonErrors": ["wallpaper de motifs repetes", "trop d accessoires non demandes", "sujet perdu dans le decor"]
+  },
+  "apply": {
+    "composition": ["subject fills the frame", "balanced negative space"],
+    "constraints": {
+      "singleMainSubject": true,
+      "noExtraProps": true
+    }
+  },
+  "impacts": {
+    "generate": [
+      "renforce la lisibilite du sujet principal",
+      "reduit le risque d image decor/pattern au lieu du vrai sujet"
+    ]
+  }
+}
