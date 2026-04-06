@@ -41,8 +41,8 @@
     "build": "tsc -p .",
     "prestart": "node ../apps/tts/download-onnx.js",
     "build:clean": "rimraf dist && tsc -p .",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --config vitest.config.js",
+    "test:watch": "vitest --config vitest.config.js",
     "lint": "eslint src --ext .ts,.tsx",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm test"
