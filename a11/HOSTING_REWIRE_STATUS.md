@@ -17,7 +17,11 @@ Etat actuel:
 - le service Railway a ete reconnecte au repo monorepo `Funesterie/funesterie`
 - Railway cherche encore son ancien chemin config-as-code `apps/server/railway.json`
 - un shim de compatibilite a ete ajoute dans le monorepo a `apps/server/railway.json`
-- l'ancienne prod reste encore saine pendant la transition (`/health` repond `200`)
+- un deploy valide tourne maintenant avec:
+  - rootDirectory: `a11/a11backendrailway/apps/server`
+  - configFile: `a11/a11backendrailway/apps/server/railway.json`
+  - watchPatterns: `a11/a11backendrailway/apps/server/**`
+- la sante publique backend est confirmee (`/health` repond `200`)
 
 Commande de verification utile:
 
@@ -43,6 +47,8 @@ Etat actuel:
 - le site Netlify est bien lie localement et la build monorepo passe
 - une config monorepo canonique existe maintenant a `a11/a11frontendnetlify/netlify.toml`
 - la config `a11/a11frontendnetlify/apps/web/netlify.toml` a ete corrigee pour rester valide en execution locale
+- un deploy production Netlify a ete publie directement depuis `a11/a11frontendnetlify/dist`
+- la sante publique frontend est confirmee (`https://a11.funesterie.pro/` repond `200`)
 - l'API/CLI Netlify disponible ici permet de lire le site et de deployer, mais pas de remplacer effectivement le repo Git source existant
 - le dashboard Netlify affiche encore `Funesterie/a11frontendnetlify` sur la branche `main`
 
