@@ -84,6 +84,15 @@ function defaultShouldDefaultToLocalProvider({
 }
 
 function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
+  if (error_?.payload && typeof error_.payload === 'object') {
+    return {
+      ...error_.payload,
+      requestId: String(error_.payload.requestId || requestId),
+      error: String(error_.payload.error || fallbackError),
+      message: String(error_.payload.message || error_?.message || error_),
+    };
+  }
+
   const payload = {
     ok: false,
     error: String(error_?.error || fallbackError),
