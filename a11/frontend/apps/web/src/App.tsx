@@ -118,6 +118,28 @@ type ChatModelChoice = {
   providerProfileId?: string;
 };
 
+function buildPublicAssetPath(relativePath: string) {
+  const base = String((import.meta as any)?.env?.BASE_URL || "/").trim() || "/";
+  const normalizedBase = `${base.replace(/\/+$/, "")}/`.replace(/^$/, "/");
+  return `${normalizedBase}${String(relativePath || "").replace(/^\/+/, "")}`.replace(/^\/\//, "/");
+}
+
+function applyImageFallback(
+  event: React.SyntheticEvent<HTMLImageElement, Event>,
+  fallbackSrc: string
+) {
+  const img = event.currentTarget;
+  if (!fallbackSrc || img.dataset.fallbackApplied === "1") return;
+  if (img.src.endsWith(fallbackSrc)) return;
+  img.dataset.fallbackApplied = "1";
+  img.src = fallbackSrc;
+}
+
+const A11_AVATAR_IDLE_SRC = buildPublicAssetPath("a11_static.png");
+const A11_AVATAR_IDLE_FALLBACK_SRC = buildPublicAssetPath("assets/a11_static.png");
+const A11_AVATAR_TALKING_SRC = buildPublicAssetPath("A11_talking_smooth_8s.gif");
+const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking_smooth_8s.gif");
+
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
     value: "local:llama3.2:latest",
@@ -2323,7 +2345,9 @@ export function App() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: isCompactLayout ? 10 : 16, minWidth: 0 }}>
           <div
+            id="a11-avatar"
             style={{
+              position: "relative",
               width: isCompactLayout ? 42 : 56,
               height: isCompactLayout ? 42 : 56,
               borderRadius: 999,
@@ -2333,13 +2357,37 @@ export function App() {
             }}
           >
             <img
-              id="a11-avatar"
-              src={audioPlaying ? "/assets/A11_talking_smooth_8s.gif" : "/assets/a11_static.png"}
+              id="a11-avatar-idle"
+              src={A11_AVATAR_IDLE_SRC}
               alt="A11"
-              onError={(e) => {
-                e.currentTarget.src = "/assets/a11_static.png";
+              fetchPriority="high"
+              onError={(event) => applyImageFallback(event, A11_AVATAR_IDLE_FALLBACK_SRC)}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                opacity: audioPlaying ? 0 : 1,
+                transition: "opacity 160ms linear",
               }}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+            <img
+              id="a11-avatar-gif"
+              src={A11_AVATAR_TALKING_SRC}
+              alt=""
+              aria-hidden="true"
+              onError={(event) => applyImageFallback(event, A11_AVATAR_TALKING_FALLBACK_SRC)}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                opacity: audioPlaying ? 1 : 0,
+                transition: "opacity 160ms linear",
+                pointerEvents: "none",
+              }}
             />
           </div>
           <div style={{ minWidth: 0 }}>

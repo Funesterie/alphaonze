@@ -53,6 +53,8 @@ const createDecommissionedDevRoutesRouter = require('./src/routes/decommissioned
 
 // --- Endpoint de healthcheck Railway ---
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+const createAdminRouter = require('./src/routes/admin.cjs');
 // ...existing code...
 // --- .env first ---
 const path = require('node:path');
@@ -5397,6 +5399,11 @@ const sdTools = createSdToolsRouter({
 app.use('/api', createAdminRunRouter({
   isAdminRequest,
   runQflushFlow,
+}));
+
+app.use('/api/admin', createAdminRouter({
+  verifyJWT,
+  isAdminRequest,
 }));
 
 app.use('/api', createChatRouter({
