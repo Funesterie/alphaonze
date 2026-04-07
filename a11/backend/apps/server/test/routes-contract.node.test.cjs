@@ -538,6 +538,125 @@ test('POST /api/llm/chat executes compound pdf with latest images requests', asy
   );
 });
 
+test('POST /api/llm/chat generates an image then sends it by mail in one request', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        generateSd: async () => ({
+          ok: true,
+          artifact_type: 'image',
+          image_url: 'https://files.example.com/generated-dragon.png',
+          filename: 'generated-dragon.png',
+        }),
+        emailLatestResource: async ({ to }) => ({
+          ok: true,
+          to,
+          latest: true,
+          resource: {
+            id: 51,
+            kind: 'image',
+            url: 'https://files.example.com/generated-dragon.png',
+          },
+          mail: { ok: true },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-chain-mail',
+        messages: [{ role: 'user', content: 'genere une image de dragon puis envoie-la par mail à cellaurojeffrey@gmail.com' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.kind, 'compound.generate_image_then_mail');
+      assert.equal(json.artifact_type, 'email');
+      assert.match(String(json.image_url || ''), /generated-dragon\.png/i);
+      assert.match(String(json.content || ''), /image a ete generee puis envoyee par mail/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat finds a web image then creates a PDF in one request', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        duckduckgoImageSearch: async () => ({
+          image_url: 'https://images.example.com/dragon-web.png',
+          source_url: 'https://example.com/dragon',
+          title: 'dragon',
+        }),
+        generatePdf: async ({ sections }) => ({
+          ok: true,
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\dragon-web.pdf',
+          filename: 'dragon-web.pdf',
+          sections,
+        }),
+        shareFile: async () => ({
+          ok: true,
+          url: 'https://files.example.com/dragon-web.pdf',
+          conversationResource: {
+            id: 101,
+            filename: 'dragon-web.pdf',
+            url: 'https://files.example.com/dragon-web.pdf',
+          },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-chain-pdf',
+        messages: [{ role: 'user', content: 'cherche une image de dragon sur le web puis fais-en un pdf' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.kind, 'compound.web_image_then_pdf');
+      assert.equal(json.artifact_type, 'pdf');
+      assert.match(String(json.source_image_url || ''), /dragon-web\.png/i);
+      assert.match(String(json.file_url || ''), /dragon-web\.pdf/i);
+    }
+  );
+});
+
 test('POST /api/admin/image-cardinality is admin protected and returns local debug telemetry', async () => {
   const jwtSecret = 'test-secret';
   const adminToken = jwt.sign({ id: 'admin', username: 'admin', role: 'admin', isAdmin: true }, jwtSecret, { expiresIn: '1h' });
