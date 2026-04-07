@@ -312,12 +312,12 @@ async function resolveCerbereRuntimeDetails(
 }
 
 function deriveRuntimeState(healthState: HealthState, runtime: RuntimeDetails, exists: boolean): DragonRuntimeState {
-  if (!exists) {
-    return "unknown";
-  }
-
   if (healthState === "available") {
     return "ready";
+  }
+
+  if (!exists) {
+    return "unknown";
   }
 
   if (healthState === "unknown") {
@@ -343,9 +343,11 @@ export async function probeCanonicalSource(
   const hasGit = exists && (await pathExists(path.join(source.path, ".git")));
   const packageName = exists ? await readPackageName(source.path) : undefined;
   const healthCandidates = getHealthCandidates(source);
-  const health = exists
+  const health = healthCandidates.length
     ? await probeHealthCandidates(healthCandidates)
-    : { healthState: "unavailable" as const, healthDetail: "Path not found" };
+    : exists
+      ? { healthState: "unknown" as const, healthDetail: "No health URL configured" }
+      : { healthState: "unavailable" as const, healthDetail: "Path not found" };
   const runtime = exists
     ? await resolveRuntimeDetails(source, health.resolvedUrl ?? healthCandidates[0], manifestPath)
     : {};
