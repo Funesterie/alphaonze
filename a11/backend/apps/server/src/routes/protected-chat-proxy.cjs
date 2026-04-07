@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const express = require('express');
+const { ensureRequestId } = require('../../lib/request-context.cjs');
 const {
   extractLatestUserMessage,
 } = require('../mask/image-chat-runtime.cjs');
@@ -80,6 +81,21 @@ function defaultShouldDefaultToLocalProvider({
   if (isTruthyEnv(process.env.A11_LOCAL_MODE) || runtimeProfile === 'local') return true;
   if (hasRemoteProvider) return false;
   return hasLocalChatUpstreamConfigured();
+}
+
+function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
+  const payload = {
+    ok: false,
+    error: String(error_?.error || fallbackError),
+    requestId,
+    message: String(error_?.message || error_),
+  };
+
+  if (error_?.upstream && typeof error_.upstream === 'object') {
+    payload.upstream = error_.upstream;
+  }
+
+  return payload;
 }
 
 function createProtectedChatProxyRouter({
@@ -210,15 +226,20 @@ function createProtectedChatProxyRouter({
   const router = express.Router();
 
   router.post('/llm/chat', verifyJWT, express.json({ limit: '10mb' }), async (req, res) => {
+    const requestId = ensureRequestId(req, res);
     try {
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error('[A11][/api/llm/chat] Error:', error_?.message || error_);
-      return res.status(502).json({ ok: false, error: 'proxy_error', message: String(error_?.message || error_) });
+      console.error(`[A11][/api/llm/chat] requestId=${requestId} Error:`, error_?.message || error_);
+      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
+        ? Number(error_.status)
+        : 502;
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
     }
   });
 
   router.post('/ai/chat', express.json({ limit: '10mb' }), async (req, res) => {
+    const requestId = ensureRequestId(req, res);
     try {
       req.body = {
         ...(req.body || {}),
@@ -226,16 +247,16 @@ function createProtectedChatProxyRouter({
       };
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error('[A11][AuthChat] Proxy error:', error_?.message || error_);
-      return res.status(502).json({
-        ok: false,
-        error: 'upstream_unreachable',
-        message: String(error_?.message || error_),
-      });
+      console.error(`[A11][AuthChat] requestId=${requestId} Proxy error:`, error_?.message || error_);
+      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
+        ? Number(error_.status)
+        : 502;
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'upstream_unreachable'));
     }
   });
 
   router.post('/ai', express.json({ limit: '10mb' }), async (req, res) => {
+    const requestId = ensureRequestId(req, res);
     try {
       req.body = {
         ...(req.body || {}),
@@ -243,17 +264,24 @@ function createProtectedChatProxyRouter({
       };
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error('[A11][/api/ai] Error:', error_?.message || error_);
-      return res.status(502).json({ ok: false, error: 'proxy_error', message: String(error_?.message || error_) });
+      console.error(`[A11][/api/ai] requestId=${requestId} Error:`, error_?.message || error_);
+      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
+        ? Number(error_.status)
+        : 502;
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
     }
   });
 
   router.post('/completions', express.json({ limit: '10mb' }), async (req, res) => {
+    const requestId = ensureRequestId(req, res);
     try {
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error('[A11][/api/completions] Error:', error_?.message || error_);
-      return res.status(502).json({ ok: false, error: 'proxy_error', message: String(error_?.message || error_) });
+      console.error(`[A11][/api/completions] requestId=${requestId} Error:`, error_?.message || error_);
+      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
+        ? Number(error_.status)
+        : 502;
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
     }
   });
 

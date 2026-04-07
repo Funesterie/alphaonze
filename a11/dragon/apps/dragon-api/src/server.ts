@@ -36,7 +36,8 @@ const port = Number(process.env.PORT ?? process.env.DRAGON_API_PORT ?? 4600);
 const MAX_TIMELINE_ENTRIES = 60;
 const DASHBOARD_STREAM_PULSE_MS = 5000;
 const LOG_STREAM_PULSE_MS = 2500;
-const FLOW_PROXY_TIMEOUT_MS = 60_000;
+const FLOW_PROXY_TIMEOUT_MS =
+  Number.parseInt(process.env.DRAGON_FLOW_PROXY_TIMEOUT_MS || "", 10) || 60_000;
 
 interface IntegrationPayload {
   generatedAt: string;
@@ -77,6 +78,50 @@ type TimelineEntryInput = Omit<DragonTimelineEntry, "id" | "ts"> & {
 
 function createSseId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function truncateCompatText(value: unknown, maxLength = 2000): string {
+  const text = String(value ?? "");
+  if (!text) {
+    return "";
+  }
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength)}...`;
+}
+
+function getCompatRequestId(req: Request): string {
+  return String(req.header("x-request-id") || "").trim() || createSseId();
+}
+
+function attachCompatRequestId(res: Response, requestId: string): string {
+  const resolved = String(requestId || "").trim() || createSseId();
+  res.setHeader("x-request-id", resolved);
+  return resolved;
+}
+
+function buildCompatProxyFailureBody(
+  requestId: string,
+  url: string,
+  detail: {
+    status?: number;
+    body?: unknown;
+    timeoutMs?: number;
+    message?: string;
+  }
+): Record<string, unknown> {
+  return {
+    ok: false,
+    error: "compat_flow_proxy_failed",
+    requestId,
+    upstream: {
+      url,
+      ...(typeof detail.status === "number" ? { status: detail.status } : {}),
+      ...(detail.timeoutMs ? { timeoutMs: detail.timeoutMs } : {}),
+      ...(detail.body !== undefined && detail.body !== null
+        ? { body: truncateCompatText(detail.body, 2000) }
+        : {}),
+      ...(detail.message ? { message: String(detail.message) } : {})
+    }
+  };
 }
 
 function writeSse(res: Response, event: string, data: unknown): void {
@@ -205,7 +250,8 @@ async function resolveCompatA11BaseUrl(manifestPath: string): Promise<string | u
 
 async function postCompatJson(
   url: string,
-  body: unknown
+  body: unknown,
+  requestId: string
 ): Promise<{ status: number; body: unknown; resolvedUrl: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FLOW_PROXY_TIMEOUT_MS);
@@ -216,6 +262,7 @@ async function postCompatJson(
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        "x-request-id": requestId,
         ...buildCompatA11Headers()
       },
       body: JSON.stringify(body ?? {})
@@ -230,26 +277,46 @@ async function postCompatJson(
       parsed = rawText;
     }
 
+    if (!response.ok) {
+      return {
+        status: 502,
+        resolvedUrl: url,
+        body: buildCompatProxyFailureBody(requestId, url, {
+          status: response.status,
+          body: rawText
+        })
+      };
+    }
+
     return {
       status: response.status,
       resolvedUrl: url,
       body:
         parsed && typeof parsed === "object"
-          ? parsed
+          ? {
+              ...(parsed as Record<string, unknown>),
+              requestId:
+                typeof (parsed as Record<string, unknown>).requestId === "string"
+                  ? (parsed as Record<string, unknown>).requestId
+                  : requestId
+            }
           : {
               ok: response.ok,
+              requestId,
               raw: parsed
             }
     };
   } catch (error) {
     return {
-      status: 502,
+      status:
+        error instanceof Error && /abort|timeout/i.test(error.message)
+          ? 504
+          : 502,
       resolvedUrl: url,
-      body: {
-        ok: false,
-        error: "compat_flow_proxy_failed",
+      body: buildCompatProxyFailureBody(requestId, url, {
+        timeoutMs: FLOW_PROXY_TIMEOUT_MS,
         message: error instanceof Error ? error.message : String(error)
-      }
+      })
     };
   } finally {
     clearTimeout(timeout);
@@ -312,7 +379,8 @@ function buildCompatChatRequestBody(payload: unknown): Record<string, unknown> {
 
 async function runCompatA11ChatFlow(
   payload: unknown,
-  manifestPath: string
+  manifestPath: string,
+  requestId: string
 ): Promise<CompatFlowDispatchResult> {
   const a11BaseUrl = await resolveCompatA11BaseUrl(manifestPath);
   if (!a11BaseUrl) {
@@ -330,7 +398,8 @@ async function runCompatA11ChatFlow(
   return {
     ...(await postCompatJson(
       `${a11BaseUrl}/api/admin/dragon/chat-completions`,
-      buildCompatChatRequestBody(payload)
+      buildCompatChatRequestBody(payload),
+      requestId
     )),
     target: "a11"
   };
@@ -338,7 +407,8 @@ async function runCompatA11ChatFlow(
 
 async function runCompatA11MemorySummaryFlow(
   payload: unknown,
-  manifestPath: string
+  manifestPath: string,
+  requestId: string
 ): Promise<CompatFlowDispatchResult> {
   const a11BaseUrl = await resolveCompatA11BaseUrl(manifestPath);
   if (!a11BaseUrl) {
@@ -356,7 +426,8 @@ async function runCompatA11MemorySummaryFlow(
   return {
     ...(await postCompatJson(
       `${a11BaseUrl}/api/admin/dragon/memory-summary`,
-      isRecord(payload) ? payload : {}
+      isRecord(payload) ? payload : {},
+      requestId
     )),
     target: "a11"
   };
@@ -366,13 +437,14 @@ async function dispatchCompatFlowRun(
   flow: string,
   payload: unknown,
   manifestPath: string,
-  ephemeralStorePath: string
+  ephemeralStorePath: string,
+  requestId: string
 ): Promise<CompatFlowDispatchResult> {
   switch (String(flow || "").trim()) {
     case "a11.chat.v1":
-      return runCompatA11ChatFlow(payload, manifestPath);
+      return runCompatA11ChatFlow(payload, manifestPath, requestId);
     case "a11.memory.summary.v1":
-      return runCompatA11MemorySummaryFlow(payload, manifestPath);
+      return runCompatA11MemorySummaryFlow(payload, manifestPath, requestId);
     case "a11.memory.ephemeral.v1":
       return {
         ...(await runDragonEphemeralMemoryFlow(ephemeralStorePath, payload)),
@@ -388,6 +460,54 @@ async function dispatchCompatFlowRun(
         },
         target: "dragon"
       };
+  }
+}
+
+async function probeCompatA11Health(
+  manifestPath: string,
+  requestId: string
+): Promise<{ ok: boolean; status: number; url?: string; body?: unknown }> {
+  const a11BaseUrl = await resolveCompatA11BaseUrl(manifestPath);
+  if (!a11BaseUrl) {
+    return {
+      ok: false,
+      status: 502,
+      body: {
+        ok: false,
+        error: "a11_unavailable",
+        message: "Dragon ne trouve pas de base URL A11."
+      }
+    };
+  }
+
+  const url = `${a11BaseUrl}/health`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.min(FLOW_PROXY_TIMEOUT_MS, 3000));
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+      headers: {
+        "x-request-id": requestId
+      }
+    });
+    const rawText = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      url,
+      body: rawText
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      url,
+      body: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -634,10 +754,12 @@ async function main(): Promise<void> {
 
   app.post("/api/admin/run", async (req, res, next) => {
     try {
+      const requestId = attachCompatRequestId(res, getCompatRequestId(req));
       if (!isCompatAuthorized(req)) {
         return res.status(403).json({
           ok: false,
           error: "admin_required",
+          requestId,
           message: "Dragon compat route requires a valid admin token."
         });
       }
@@ -648,6 +770,7 @@ async function main(): Promise<void> {
         return res.status(400).json({
           ok: false,
           error: "missing_flow",
+          requestId,
           message: 'Champ "flow" requis.'
         });
       }
@@ -656,7 +779,8 @@ async function main(): Promise<void> {
         flow,
         body.payload ?? {},
         manifestPath,
-        ephemeralMemoryStatePath
+        ephemeralMemoryStatePath,
+        requestId
       );
 
       recordTimelineEntry({
@@ -668,7 +792,70 @@ async function main(): Promise<void> {
         actionId: flow
       });
 
-      return res.status(proxied.status).json(proxied.body);
+      const proxiedBody =
+        proxied.body && typeof proxied.body === "object"
+          ? {
+              ...(proxied.body as Record<string, unknown>),
+              requestId:
+                typeof (proxied.body as Record<string, unknown>).requestId === "string"
+                  ? (proxied.body as Record<string, unknown>).requestId
+                  : requestId
+            }
+          : proxied.body;
+
+      return res.status(proxied.status).json(proxiedBody);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/diag/a11", async (req, res, next) => {
+    try {
+      const requestId = attachCompatRequestId(res, getCompatRequestId(req));
+      if (!isCompatAuthorized(req)) {
+        return res.status(403).json({
+          ok: false,
+          error: "admin_required",
+          requestId,
+          message: "Dragon compat route requires a valid admin token."
+        });
+      }
+
+      const apply = String(req.query.apply || "").trim() === "1";
+      const probe = await probeCompatA11Health(manifestPath, requestId);
+      if (!apply) {
+        return res.status(probe.ok ? 200 : probe.status).json({
+          ok: probe.ok,
+          dryRun: true,
+          requestId,
+          a11Health: {
+            url: probe.url || null,
+            status: probe.status,
+            body: probe.body ? truncateCompatText(probe.body, 1000) : null
+          }
+        });
+      }
+
+      const body = (req.body || {}) as FlowRunRequestBody;
+      const flow = String(body.flow || "a11.chat.v1").trim();
+      const payload = body.payload ?? {
+        messages: [{ role: "user", content: "dragon diag ping" }],
+        model: "gpt-4o-mini"
+      };
+      const proxied = await dispatchCompatFlowRun(
+        flow,
+        payload,
+        manifestPath,
+        ephemeralMemoryStatePath,
+        requestId
+      );
+
+      return res.status(proxied.status).json({
+        dryRun: false,
+        requestId,
+        flow,
+        result: proxied.body
+      });
     } catch (error) {
       next(error);
     }

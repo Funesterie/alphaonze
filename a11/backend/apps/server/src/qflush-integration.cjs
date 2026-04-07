@@ -4,11 +4,13 @@
  * TODO: Add llama-server when needed
  */
 
+const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
 const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const { A11Supervisor } = require('./a11-supervisor.cjs');
+const { createUpstreamHttpError, fetchJsonWithRetry } = require('../lib/fetch-json-retry.cjs');
 const {
   DEFAULT_TTS_MODEL,
   findTTSScript,
@@ -506,8 +508,51 @@ function getDragonApiUrl() {
   return String(process.env.DRAGON_API_URL || '').trim();
 }
 
+function shouldUseDragonAsQflushRunner() {
+  const raw = String(process.env.A11_QFLUSH_USE_DRAGON || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+function getQflushRemoteBaseUrl() {
+  return String(
+    process.env.QFLUSH_URL
+    || process.env.QFLUSH_REMOTE_URL
+    || process.env.QFLUSH_BASE_URL
+    || ''
+  ).trim();
+}
+
 function getRemoteFlowBaseUrl() {
-  return getDragonApiUrl() || String(process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || '').trim();
+  const qflushRemoteUrl = getQflushRemoteBaseUrl();
+  if (qflushRemoteUrl) {
+    return {
+      baseUrl: qflushRemoteUrl,
+      target: 'qflush',
+    };
+  }
+
+  const dragonApiUrl = getDragonApiUrl();
+  if (dragonApiUrl && shouldUseDragonAsQflushRunner()) {
+    return {
+      baseUrl: dragonApiUrl,
+      target: 'dragon',
+    };
+  }
+
+  return {
+    baseUrl: '',
+    target: null,
+  };
+}
+
+function getRemoteFlowTimeoutMs() {
+  const parsed = Number.parseInt(String(process.env.A11_QFLUSH_REMOTE_TIMEOUT_MS || '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
+}
+
+function getRemoteFlowRetryCount() {
+  const parsed = Number.parseInt(String(process.env.A11_QFLUSH_REMOTE_RETRIES || '').trim(), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2;
 }
 
 function shouldUseRemoteFlow(flow) {
@@ -517,7 +562,8 @@ function shouldUseRemoteFlow(flow) {
 
 async function runQflushFlow(flow, payload, options = {}) {
   const dragonApiUrl = getDragonApiUrl();
-  const remoteUrl = getRemoteFlowBaseUrl();
+  const requestId = String(options.requestId || '').trim() || crypto.randomUUID();
+  const { baseUrl: remoteUrl, target } = getRemoteFlowBaseUrl();
   if (remoteUrl && shouldUseRemoteFlow(flow)) {
     // Route A11 flows through Dragon when a remote compat endpoint is configured.
     // We intentionally avoid the legacy /run endpoint.
@@ -526,32 +572,53 @@ async function runQflushFlow(flow, payload, options = {}) {
       const endpointPath = '/api/admin/run';
       const headers = {
         'Content-Type': 'application/json',
+        'X-Request-Id': requestId,
       };
       if (remoteToken) {
         headers['Authorization'] = `Bearer ${remoteToken}`;
+        headers['X-NEZ-ADMIN'] = remoteToken;
         headers['x-qflush-token'] = remoteToken;
       }
-      const response = await fetch(`${String(remoteUrl).replace(/\/+$/, '')}${endpointPath}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          flow,
-          payload,
-          admin: options.admin === true,
-          target: dragonApiUrl ? 'dragon' : 'qflush',
-        })
-      });
+
+      const response = await fetchJsonWithRetry(
+        `${String(remoteUrl).replace(/\/+$/, '')}${endpointPath}`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            flow,
+            payload,
+            admin: options.admin === true,
+            requestId,
+            target: dragonApiUrl && target !== 'qflush' ? 'dragon' : (target || 'qflush'),
+          })
+        },
+        {
+          timeoutMs: getRemoteFlowTimeoutMs(),
+          retries: getRemoteFlowRetryCount(),
+          requestId,
+          logger: console,
+        }
+      );
       if (!response.ok) {
-        throw new Error(`Remote flow error: ${response.status} ${response.statusText}`);
+        throw createUpstreamHttpError(response, {
+          error: 'qflush_unreachable',
+          message: `Remote flow ${flow} unreachable`,
+        });
       }
-      const rawText = await response.text();
-      try {
-        return rawText ? JSON.parse(rawText) : {};
-      } catch {
-        return { ok: true, raw: rawText };
+
+      if (response.data !== null) {
+        return response.data;
       }
+      return response.text ? { ok: true, raw: response.text, requestId } : { ok: true, requestId };
     } catch (e) {
-      console.error('[QFLUSH] Remote call failed:', e.message);
+      console.error('[QFLUSH] Remote call failed:', JSON.stringify({
+        requestId,
+        flow,
+        target,
+        message: e?.message || String(e),
+        upstream: e?.upstream || null,
+      }));
       throw e;
     }
   }

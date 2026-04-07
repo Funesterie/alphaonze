@@ -17,12 +17,18 @@ function buildRuntimeConfig(env = process.env) {
   const runtimeProfile = String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase();
   const localOnly = toBoolean(env.A11_LOCAL_MODE) || runtimeProfile === 'local';
   const dragonApiUrl = normalizeUrl(env.DRAGON_API_URL || '');
-  const qflushRemoteUrl = String(
-    dragonApiUrl
-      || env.QFLUSH_URL
+  const qflushUseDragonCompat = toBoolean(env.A11_QFLUSH_USE_DRAGON);
+  const declaredQflushRemoteUrl = normalizeUrl(
+    env.QFLUSH_URL
       || env.QFLUSH_REMOTE_URL
-      || (localOnly ? '' : 'https://dragon-api-production.up.railway.app')
-  ).trim();
+      || env.QFLUSH_BASE_URL
+      || ''
+  );
+  const qflushRemoteUrl = declaredQflushRemoteUrl
+    || (!localOnly && qflushUseDragonCompat ? dragonApiUrl : '');
+  const qflushRemoteSource = declaredQflushRemoteUrl
+    ? 'qflush'
+    : (qflushRemoteUrl ? 'dragon-compat' : '');
   const frontendUrl = normalizeUrl(env.APP_URL || env.FRONT_URL || 'https://a11.funesterie.pro');
   const ttsInternalUrl = String(env.TTS_URL || env.TTS_HOST || '').trim();
   const ttsPublicBaseUrl = normalizeUrl(env.TTS_PUBLIC_BASE_URL || env.TTS_BASE_URL || '');
@@ -54,6 +60,8 @@ function buildRuntimeConfig(env = process.env) {
     },
     qflush: {
       remoteUrl: qflushRemoteUrl,
+      remoteSource: qflushRemoteSource,
+      useDragonCompat: qflushUseDragonCompat && !declaredQflushRemoteUrl,
       memorySummaryFlow: String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim(),
       ephemeralMemoryFlow: String(env.QFLUSH_EPHEMERAL_MEMORY_FLOW || 'a11.memory.ephemeral.v1').trim(),
       chatFlow: String(env.QFLUSH_CHAT_FLOW || '').trim(),
@@ -118,6 +126,8 @@ function getPublicRuntimeStatus(options = {}) {
       qflush: {
         available: Boolean(options.hasQflush),
         remoteUrl: config.qflush.remoteUrl || null,
+        remoteSource: config.qflush.remoteSource || null,
+        useDragonCompat: config.qflush.useDragonCompat,
         chatFlow: config.qflush.chatFlow || null,
         memorySummaryFlow: config.qflush.memorySummaryFlow || null,
         ephemeralMemoryFlow: config.qflush.ephemeralMemoryFlow || null,

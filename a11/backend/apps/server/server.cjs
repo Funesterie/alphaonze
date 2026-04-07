@@ -196,6 +196,7 @@ normalizeEnvVars([
   'LLM_ROUTER_URL',
   'QFLUSH_URL',
   'QFLUSH_REMOTE_URL',
+  'QFLUSH_BASE_URL',
   'QFLUSH_REDIS_URL',
   'REDIS_URL',
   'REDIS_PUBLIC_URL',
@@ -229,6 +230,8 @@ normalizeEnvVars([
 adoptEnvAlias('PUBLIC_API_URL', ['API_URL', 'A11_SERVER_URL']);
 adoptEnvAlias('API_URL', ['PUBLIC_API_URL', 'A11_SERVER_URL']);
 adoptEnvAlias('LLM_ROUTER_URL', ['VITE_LLM_ROUTER_URL']);
+adoptEnvAlias('QFLUSH_URL', ['QFLUSH_REMOTE_URL', 'QFLUSH_BASE_URL']);
+adoptEnvAlias('QFLUSH_REMOTE_URL', ['QFLUSH_URL', 'QFLUSH_BASE_URL']);
 adoptEnvAlias('A11_OPENAI_BASE_URL', ['OPENAI_BASE_URL']);
 adoptEnvAlias('A11_OPENAI_MODEL', ['OPENAI_MODEL']);
 adoptEnvAlias('DATABASE_URL', ['DATABASE_PUBLIC_URL', 'DATABASE_PRIVATE_URL', 'POSTGRES_URL', 'POSTGRES_PUBLIC_URL', 'POSTGRES_PRIVATE_URL']);
@@ -306,6 +309,7 @@ const sharp = require('sharp');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
+const { ensureRequestId, truncateText } = require('./lib/request-context.cjs');
 const { nezAuth, getNezAccessLog, TOKENS, MODE, registerIssuedToken } = require('./src/middleware/nezAuth');
 const { createVerifyJWT, extractRequestAuthToken } = require('./src/middleware/jwt-auth.cjs');
 // Removed duplicate createFileStorage declaration
@@ -8437,6 +8441,7 @@ async function runLogicalMemorySummaryFlow(payload = {}) {
 
 function buildOpenAIProxyHeaders(reqHeaders, options = {}) {
   const provider = String(options.provider || '').trim().toLowerCase();
+  const requestId = String(options.requestId || '').trim();
   const requestedAccept = String(reqHeaders?.accept || '').trim().toLowerCase();
   const headers = {
     'content-type': 'application/json',
@@ -8448,6 +8453,9 @@ function buildOpenAIProxyHeaders(reqHeaders, options = {}) {
   const resolvedApiKey = String(options.apiKey || process.env.OPENAI_API_KEY || '').trim();
   if (provider !== 'local' && resolvedApiKey) {
     headers.authorization = `Bearer ${resolvedApiKey}`;
+  }
+  if (requestId) {
+    headers['x-request-id'] = requestId;
   }
   return headers;
 }
@@ -8470,6 +8478,7 @@ function coerceUpstreamChatPayload(payload, depth = 0) {
 async function requestChatUpstream(url, body, options = {}) {
   const provider = String(options.provider || '').trim().toLowerCase();
   const apiKey = String(options.apiKey || '').trim();
+  const requestId = String(options.requestId || '').trim();
   const reqHeaders = options.reqHeaders && typeof options.reqHeaders === 'object'
     ? options.reqHeaders
     : {};
@@ -8479,6 +8488,7 @@ async function requestChatUpstream(url, body, options = {}) {
     headers: buildOpenAIProxyHeaders(reqHeaders, {
       provider,
       apiKey,
+      requestId,
     }),
     data: body && Object.keys(body).length ? body : undefined,
     timeout: Number(options.timeout || 60000) || 60000,
@@ -8508,6 +8518,63 @@ function appendChatTurnLogSafe(body, responsePayload, defaultModel, userId = nul
   } catch (e) {
     console.warn('[A11][memory] log chat_turn failed:', e?.message);
   }
+}
+
+function buildGatewayErrorPayload(error_, requestId, fallbackError = 'upstream_unreachable', upstreamUrl = '') {
+  const payload = {
+    ok: false,
+    error: String(error_?.error || fallbackError),
+    requestId,
+    message: String(error_?.message || error_),
+  };
+
+  const upstream = {};
+  const resolvedUpstreamUrl = String(
+    error_?.upstream?.url
+    || error_?.config?.url
+    || upstreamUrl
+    || ''
+  ).trim();
+  if (resolvedUpstreamUrl) upstream.url = resolvedUpstreamUrl;
+
+  const resolvedUpstreamStatus = Number.isFinite(Number(error_?.upstream?.status))
+    ? Number(error_.upstream.status)
+    : (Number.isFinite(Number(error_?.response?.status)) ? Number(error_.response.status) : null);
+  if (resolvedUpstreamStatus) upstream.status = resolvedUpstreamStatus;
+
+  const upstreamBodySource =
+    error_?.upstream?.body
+    ?? error_?.response?.data
+    ?? error_?.text
+    ?? '';
+  const upstreamBody = typeof upstreamBodySource === 'string'
+    ? upstreamBodySource
+    : JSON.stringify(upstreamBodySource);
+  if (upstreamBody) {
+    upstream.body = truncateText(upstreamBody, 2000);
+  }
+
+  const timeoutMs = Number.isFinite(Number(error_?.upstream?.timeoutMs))
+    ? Number(error_.upstream.timeoutMs)
+    : null;
+  if (timeoutMs) upstream.timeoutMs = timeoutMs;
+
+  const networkError = error_?.upstream?.networkError || null;
+  if (networkError) {
+    upstream.networkError = {
+      code: networkError.code || null,
+      message: networkError.message || null,
+      isTimeout: networkError.isTimeout === true,
+      isDns: networkError.isDns === true,
+      isConn: networkError.isConn === true,
+    };
+  }
+
+  if (Object.keys(upstream).length) {
+    payload.upstream = upstream;
+  }
+
+  return payload;
 }
 
 async function loadUserMemoryContext(userId, latestUserMessage, conversationId) {
@@ -9835,11 +9902,13 @@ function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structured
 }
 
 async function proxyQflushChat(req, res) {
+  const requestId = ensureRequestId(req, res);
   const qflushChatFlow = getQflushChatFlow();
   if (!qflushChatFlow) {
     return res.status(500).json({
       ok: false,
       error: 'missing_qflush_chat_flow',
+      requestId,
       message: 'QFLUSH chat mode requires QFLUSH_CHAT_FLOW to be configured.'
     });
   }
@@ -9874,7 +9943,7 @@ async function proxyQflushChat(req, res) {
     );
 
     const qflushUrl = process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || 'not_set';
-    console.log('[A11] USING QFLUSH flow ->', qflushChatFlow, '| QFLUSH_URL =', qflushUrl);
+    console.log('[A11] USING QFLUSH flow ->', qflushChatFlow, '| QFLUSH_URL =', qflushUrl, '| requestId =', requestId);
     const qflushResult = await runQflushFlow(qflushChatFlow, {
       prompt,
       messages: qflushMessages,
@@ -9891,7 +9960,7 @@ async function proxyQflushChat(req, res) {
       userId: userId || null,
       user: req.user || null,
       request: body
-    });
+    }, { requestId });
     console.log('[A11][QFLUSH][DEBUG] Qflush raw result:', JSON.stringify(qflushResult)?.slice(0, 1000));
 
     const qflushVerificationState = extractQflushVerificationState(qflushResult);
@@ -9989,7 +10058,7 @@ async function proxyQflushChat(req, res) {
     appendChatTurnLogSafe(body, data, 'qflush', userId);
     return res.status(200).json(data);
   } catch (err) {
-    console.error('[A11] Error proxying chat via QFLUSH:', err && (err.message || err.toString()));
+    console.error('[A11] Error proxying chat via QFLUSH:', requestId, err && (err.message || err.toString()));
     const localProviderFallbackBody = {
       ...(req.body || {}),
       a11SkipQflush: true,
@@ -10003,7 +10072,10 @@ async function proxyQflushChat(req, res) {
       req.body = localProviderFallbackBody;
       return proxyChatToOpenAI(req, res);
     }
-    return res.status(502).json({ ok: false, error: 'qflush_unreachable', message: String(err?.message) });
+    const status = Number.isFinite(Number(err?.status)) && Number(err.status) >= 400
+      ? Number(err.status)
+      : 502;
+    return res.status(status).json(buildGatewayErrorPayload(err, requestId, 'qflush_unreachable'));
   }
 }
 
@@ -10083,6 +10155,7 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
 }
 
 async function proxyChatToOpenAI(req, res) {
+  const requestId = ensureRequestId(req, res);
   const requestedProvider = String(req.body?.provider || '').trim().toLowerCase();
   const provider = requestedProvider || (BACKEND === 'local' ? 'local' : 'openai');
   const latestUserMessage = getLatestUserMessage(req.body || {});
@@ -10272,6 +10345,7 @@ async function proxyChatToOpenAI(req, res) {
         provider,
         apiKey: remoteProviderConfig?.apiKey || '',
         reqHeaders: req.headers,
+        requestId,
       }
     );
 
@@ -10304,6 +10378,7 @@ async function proxyChatToOpenAI(req, res) {
         const retryResult = await requestChatUpstream(upstreamUrl, retryBody, {
           provider,
           reqHeaders: {},
+          requestId,
         });
         const retryRawContent = extractAssistantText(retryResult.data);
         const retryResolvedAssistant = await resolveAssistantActionEnvelope({
@@ -10362,6 +10437,7 @@ async function proxyChatToOpenAI(req, res) {
             {
               provider: 'local',
               reqHeaders: req.headers,
+              requestId,
             }
           );
           const localRawContent = extractAssistantText(localData);
@@ -10423,6 +10499,7 @@ async function proxyChatToOpenAI(req, res) {
               provider: 'openai',
               apiKey: remoteChatFallbackConfig.apiKey,
               reqHeaders: req.headers,
+              requestId,
             }
           );
           const remoteRawContent = extractAssistantText(remoteData);
@@ -10451,11 +10528,14 @@ async function proxyChatToOpenAI(req, res) {
       }
     }
 
-    console.error('[A11] Error proxying chat ->', upstreamUrl, sanitizeAxiosErrorForLog(err));
-    if (err.response?.data) {
-      return res.status(err.response.status || 502).json(err.response.data);
+    console.error('[A11] Error proxying chat ->', upstreamUrl, 'requestId=', requestId, sanitizeAxiosErrorForLog(err));
+    if (err.response?.data && typeof err.response.data === 'object') {
+      return res.status(err.response.status || 502).json({
+        ...err.response.data,
+        requestId: err.response.data.requestId || requestId,
+      });
     }
-    return res.status(502).json({ ok: false, error: 'upstream_unreachable', message: String(err?.message) });
+    return res.status(502).json(buildGatewayErrorPayload(err, requestId, 'upstream_unreachable', upstreamUrl));
   }
 }
 
