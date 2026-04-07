@@ -1,6 +1,8 @@
 # Workspace runtime and temp files
 /a11_runtime/
 /tmp-*.log
+/dist/
+/funesterie.local.code-workspace
 
 # Local launcher runtime
 /a11/launchers/runtime/
