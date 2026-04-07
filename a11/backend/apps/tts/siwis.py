@@ -5,6 +5,7 @@
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
+import sys
 import json
 import os
 import shutil
@@ -420,6 +421,20 @@ def notify_a11_avatar(gif_path: str, endpoint: str = ""):
 
 
 class TTSHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        parsed = urllib.parse.urlparse(getattr(self, "path", "") or "")
+        message = "%s - - [%s] %s" % (
+            self.address_string(),
+            self.log_date_time_string(),
+            format % args,
+        )
+
+        if parsed.path in ("/health", "/api/tts/health"):
+            print(f"[TTS][HTTP][health] {message}")
+            return
+
+        print(f"[TTS][HTTP] {message}", file=sys.stdout)
+
     def _send_json(self, obj, status=200):
         data = json.dumps(obj).encode("utf-8")
         self.send_response(status)
