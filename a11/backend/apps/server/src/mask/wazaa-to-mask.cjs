@@ -82,6 +82,12 @@ function sanitizeImageSubjectCandidate(value = '') {
   if (/\b(?:image\s+of|generate|g[eé]n[eè]re|show me|montre(?:-|\s)?moi|dessine|draw|create|cr[eée]e|je veux|i want)\b/i.test(normalized)) {
     return '';
   }
+  if (
+    /^(?:d['’]?(?:un|une)?|de|du|des|de\s+la|de\s+l['’]|la|le|les|un|une)$/i.test(normalized)
+    || /^(?:d['’](?:un|une)|de\s+la|de\s+l['’])\s*$/i.test(normalized)
+  ) {
+    return '';
+  }
   if (/^(?:one|a|an|the|un|une|des|du|de|la|le|les)$/i.test(normalized)) {
     return '';
   }
