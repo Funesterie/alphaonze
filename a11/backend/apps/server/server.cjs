@@ -321,6 +321,7 @@ const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/s
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
+const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
@@ -5406,6 +5407,11 @@ app.use('/api', createAdminRunRouter({
 }));
 
 app.use('/api/admin', createAdminRouter({
+  verifyJWT,
+  isAdminRequest,
+}));
+
+app.use('/api/admin', createImageCardinalityDebugRouter({
   verifyJWT,
   isAdminRequest,
 }));

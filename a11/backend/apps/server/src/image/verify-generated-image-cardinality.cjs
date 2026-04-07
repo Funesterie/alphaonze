@@ -97,6 +97,35 @@ function resolveVisionConfig(overrides = {}) {
   };
 }
 
+function shouldLogVerificationDebug(result = {}) {
+  const expectedCount = Number(result?.expected?.subject_count || 0);
+  const observedCount = Number(result?.observed?.subject_count || 0);
+  const confidence = Number(result?.observed?.confidence || 0);
+  return (
+    result?.decision?.retry === true
+    || result?.observed?.duplicate_subjects === true
+    || result?.observed?.fusion_detected === true
+    || (expectedCount > 0 && observedCount !== expectedCount)
+    || confidence < 0.45
+    || String(process.env.A11_IMAGE_CARDINALITY_DEBUG || '').trim().toLowerCase() === 'true'
+  );
+}
+
+function buildVerificationDebugMeta(result = {}) {
+  const raw = result?.raw && typeof result.raw === 'object' ? result.raw : {};
+  return {
+    expected_subject_count: Number(result?.expected?.subject_count || 0),
+    observed_subject_count: Number(result?.observed?.subject_count || 0),
+    duplicate_subjects: result?.observed?.duplicate_subjects === true,
+    fusion_detected: result?.observed?.fusion_detected === true,
+    subject_match: result?.observed?.subject_match !== false,
+    confidence: Number(result?.observed?.confidence || 0),
+    reason: String(result?.decision?.reason || '').trim() || 'unknown',
+    notes: String(result?.decision?.notes || raw?.notes || '').trim(),
+    components: Array.isArray(raw?.components) ? raw.components : [],
+  };
+}
+
 async function fetchImageBuffer(imageUrl, fetch = defaultFetch) {
   const normalizedImageUrl = String(imageUrl || '').trim();
   if (!normalizedImageUrl) {
@@ -521,7 +550,7 @@ async function verifyGeneratedImageCardinality({
       || fusionDetected
     );
 
-  return {
+  const result = {
     ok: true,
     expected: {
       subject_count: Number(expected.subjectCount || 0),
@@ -544,6 +573,25 @@ async function verifyGeneratedImageCardinality({
     },
     raw: parsed,
   };
+
+  if (shouldLogVerificationDebug(result)) {
+    const debugMeta = buildVerificationDebugMeta(result);
+    console.warn(
+      `[A11][image-cardinality] requestId=${String(requestId || 'unknown').trim() || 'unknown'}`
+      + ` mode=${String(config.mode || 'local').trim() || 'local'}`
+      + ` expected=${debugMeta.expected_subject_count}`
+      + ` observed=${debugMeta.observed_subject_count}`
+      + ` retry=${result.decision.retry === true ? 'yes' : 'no'}`
+      + ` confidence=${debugMeta.confidence.toFixed(2)}`
+      + ` reason=${debugMeta.reason}`
+      + ` duplicate=${debugMeta.duplicate_subjects ? 'yes' : 'no'}`
+      + ` fusion=${debugMeta.fusion_detected ? 'yes' : 'no'}`
+      + ` components=${debugMeta.components.length}`
+      + ` notes=${debugMeta.notes || 'none'}`
+    );
+  }
+
+  return result;
 }
 
 function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
@@ -601,6 +649,7 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
 }
 
 module.exports = {
+  buildVerificationDebugMeta,
   inferExpectedImageContract,
   resolveVisionConfig,
   classifyImageCardinalityLocally,

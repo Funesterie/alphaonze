@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 
 const createChatRouter = require('../src/routes/chat.cjs');
 const createProtectedChatProxyRouter = require('../src/routes/protected-chat-proxy.cjs');
+const createImageCardinalityDebugRouter = require('../src/routes/image-cardinality-debug.cjs');
 const maskRouter = require('../src/routes/mask.cjs');
 const createDecommissionedDevRoutesRouter = require('../src/routes/decommissioned-dev-routes.cjs');
 const compileMaskToSD = require('../src/mask/compile-mask-to-sd.cjs');
@@ -412,6 +413,77 @@ test('POST /api/llm/chat returns the same image payload without requiring dev mo
       assert.equal(json.mode, 'generate_sd');
       assert.equal(json.imagePath, 'https://files.example.com/generated-without-dev.png');
       assert.equal(json.pipeline, 'intent-router-v2');
+    }
+  );
+});
+
+test('POST /api/admin/image-cardinality is admin protected and returns local debug telemetry', async () => {
+  const jwtSecret = 'test-secret';
+  const adminToken = jwt.sign({ id: 'admin', username: 'admin', role: 'admin', isAdmin: true }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api/admin', createImageCardinalityDebugRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        isAdminRequest(req) {
+          return req.user?.isAdmin === true || req.user?.role === 'admin';
+        },
+        verifyGeneratedImageCardinality: async ({ imageUrl, expected }) => ({
+          ok: true,
+          expected: {
+            subject_count: Number(expected?.subjectCount || 0),
+            subject_type: 'subject',
+            subject_label: String(expected?.subjectLabel || 'subject'),
+            allow_group: false,
+          },
+          observed: {
+            subject_count: 2,
+            subject_label: 'subject',
+            duplicate_subjects: true,
+            fusion_detected: false,
+            subject_match: true,
+            confidence: 0.91,
+          },
+          decision: {
+            retry: true,
+            reason: 'multiple_subjects_detected',
+            notes: 'local test',
+          },
+          raw: {
+            components: [{ area: 120 }, { area: 111 }],
+          },
+          imageUrl,
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const unauthorized = await postJson(baseUrl, '/api/admin/image-cardinality', {
+        imageUrl: 'https://images.example.com/sample.png',
+        expected: { enabled: true, subjectCount: 1, subjectLabel: 'subject' },
+      });
+      assert.equal(unauthorized.response.status, 401);
+
+      const { response, json } = await postJson(baseUrl, '/api/admin/image-cardinality', {
+        imageUrl: 'https://images.example.com/sample.png',
+        expected: { enabled: true, subjectCount: 1, subjectLabel: 'subject' },
+      }, {
+        authorization: `Bearer ${adminToken}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.config.provider, 'local');
+      assert.equal(json.verification.decision.retry, true);
+      assert.equal(json.debug.observed_subject_count, 2);
+      assert.equal(Array.isArray(json.debug.components), true);
     }
   );
 });
