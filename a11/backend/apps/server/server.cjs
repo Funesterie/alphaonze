@@ -8267,7 +8267,12 @@ function getMemorySummaryProvider() {
   if (configured === 'openai' || configured === 'local') {
     return configured;
   }
-  return getLocalLlamaCompletionUrl() || getLocalCompletionsUrl() ? 'local' : 'openai';
+  const hasScopedOpenAi = !!String(
+    process.env.A11_AGENT_OPENAI_API_KEY
+    || process.env.A11_OPENAI_API_KEY
+    || ''
+  ).trim();
+  return hasLocalChatUpstreamConfigured() ? 'local' : (hasScopedOpenAi ? 'openai' : 'local');
 }
 
 function shouldUseQflushChat(body) {

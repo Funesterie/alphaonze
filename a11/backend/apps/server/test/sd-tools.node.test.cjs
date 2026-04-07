@@ -174,3 +174,40 @@ test('generateSdInternal repairs stale compiled prompts that still contain image
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bimage rabbit\b/i);
   assert.doesNotMatch(String(capturedBody?.negative_prompt || ''), /\bimage rabbit\b/i);
 });
+
+test('generateSdInternal blocks local-only fallback in production when proxy fails', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+
+  try {
+    const { generateSdInternal } = createSdToolsRouter({
+      fetch: async () => ({
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'sd_proxy_failed', message: 'proxy down' });
+        },
+      }),
+      resolveSdProxyUrl: () => 'https://sd.example.com',
+      resolveSdScriptPath: () => 'D:\\funesterie\\a11\\llm\\scripts\\generate_sd_image.py',
+      shouldAllowLocalSdFallback: () => false,
+    });
+
+    await assert.rejects(
+      () => generateSdInternal({
+        req: { headers: {} },
+        prompt: 'genere un lapin rose',
+        body: { prompt: 'genere un lapin rose' },
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 503);
+        assert.equal(error.payload?.error, 'image_backend_unavailable');
+        assert.equal(error.payload?.code, 'local_only_fallback_blocked');
+        assert.equal(error.payload?.upstream?.url, 'https://sd.example.com');
+        return true;
+      }
+    );
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+  }
+});

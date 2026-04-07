@@ -84,9 +84,12 @@ function isLlmEnrichmentEnabled() {
   if (explicit !== undefined && explicit !== '') {
     return ['1', 'true', 'yes', 'on'].includes(String(explicit).trim().toLowerCase());
   }
-  // Auto-enabled when an API key is available
-  const config = resolveTranslationConfig();
-  return Boolean(config.apiKey);
+  const explicitScopedKey = (
+    process.env.A11_TRANSLATION_API_KEY
+    || process.env.A11_OPENAI_API_KEY
+    || ''
+  );
+  return Boolean(String(explicitScopedKey).trim());
 }
 
 async function callTranslationLlm(text) {
