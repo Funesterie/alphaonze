@@ -1056,6 +1056,9 @@ export async function chatCompletionDetailed(
   const imageUrl =
     resolveApiAssetUrl(data?.a11Agent?.imagePath) ||
     resolveApiAssetUrl(data?.imagePath) ||
+    resolveApiAssetUrl(data?.image_url) ||
+    resolveApiAssetUrl(data?.imageUrl) ||
+    resolveApiAssetUrl(data?.url) ||
     extractImageUrlFromA11Agent(data?.a11Agent || null) ||
     null;
 

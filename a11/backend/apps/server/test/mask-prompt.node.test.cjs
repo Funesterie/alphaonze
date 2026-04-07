@@ -21,7 +21,7 @@ test('buildSdPromptBundle steers ambiguous color prompts toward literal subject 
   assert.match(String(bundle.prompt || ''), /solo composition/i);
   assert.doesNotMatch(String(bundle.prompt || ''), /one instance only|single main subject/i);
   assert.match(String(bundle.negativeHints.join(', ') || ''), /flowers/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /crowd|duplicate/i);
+  assert.match(String(bundle.negativeHints.join(', ') || ''), /multiple subjects|second subject|crowd/i);
 });
 
 test('buildSdPromptBundle keeps english color ordering natural for solo prompts', () => {
@@ -81,7 +81,7 @@ test('buildSdPromptBundle strengthens solo character riding prompts and translat
   assert.match(String(bundle.prompt || ''), /bicycle|bike/i);
   assert.match(String(bundle.prompt || ''), /on a bicycle/i);
   assert.match(String(bundle.prompt || ''), /single character focus|solo composition|exactly one/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /crowd|group shot|duplicate/i);
+  assert.match(String(bundle.negativeHints.join(', ') || ''), /crowd|group shot|multiple subjects/i);
 });
 
 test('compileCharacterCountConstraints enforces exactly two distinct characters for paired prompts', () => {
@@ -104,7 +104,7 @@ test('compileSingleSubjectConstraints enforces one distinct object for singular 
   assert.match(String(constraints?.promptHints?.join(' ') || ''), /exactly one blue bicycle/i);
   assert.match(String(constraints?.promptHints?.join(' ') || ''), /one blue bicycle only|one blue bicycle/i);
   assert.match(String(bundle.prompt || ''), /exactly one blue bicycle/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /multiple blue bicycle|duplicate blue bicycle|extra blue bicycle/i);
+  assert.match(String(bundle.negativeHints.join(', ') || ''), /multiple subjects|second subject|group shot/i);
 });
 
 test('buildMaskImageGenerateFromText enriches MASK fields for image prompts', () => {
@@ -127,7 +127,7 @@ test('compileMaskToSD keeps singular object constraints for solo prompts', () =>
   assert.match(String(compiled.prompt || ''), /exactly one blue bicycle/i);
   assert.match(String(compiled.prompt || ''), /solo composition/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /one subject only|one instance only|single main subject/i);
-  assert.match(String(compiled.negative_prompt || ''), /multiple blue bicycle|duplicate blue bicycle|extra blue bicycle/i);
+  assert.match(String(compiled.negative_prompt || ''), /multiple subjects|second subject|group shot/i);
 });
 
 test('translateImagePromptToEnglish binds ultraviolet compounds before token splitting', () => {

@@ -1442,11 +1442,15 @@ export function App() {
       const normalizedAssistant = role === "assistant"
         ? normalizeAssistantMessagePayload(
             String(message?.content || ""),
-            typeof message?.imageUrl === "string" ? message.imageUrl : null
+            typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
+              ? (message?.imageUrl || message?.image_url || message?.imagePath)
+              : null
           )
         : {
             content: String(message?.content || ""),
-            imageUrl: typeof message?.imageUrl === "string" ? resolveApiAssetUrl(message.imageUrl) : null,
+            imageUrl: typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
+              ? resolveApiAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
+              : null,
           };
       return {
         id: String(message?.id || `backend-msg-${Date.now()}-${index}`),

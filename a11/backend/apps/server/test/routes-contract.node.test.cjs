@@ -362,6 +362,8 @@ test('POST /api/llm/chat returns a web image payload for image search prompts', 
       assert.equal(json.ok, true);
       assert.equal(json.artifact_type, 'web_image');
       assert.match(String(json.image_url || ''), /mario%2064\.png$/i);
+      assert.match(String(json.imagePath || ''), /mario%2064\.png$/i);
+      assert.match(String(json.content || json.choices?.[0]?.message?.content || ''), /ouvrir l'image/i);
     }
   );
 });

@@ -92,9 +92,9 @@ function compileMaskToSD(mask) {
     negativePromptParts.push('flowers', 'bouquet', 'rose petals', 'floral background', 'floral pattern', 'foreground flowers', 'decorative foreground objects');
   }
   if (!includesAny(rawPrompt, [/\bplusieurs\b/, /\bdes\b/, /\bmany\b/, /\bmultiple\b/, /\bcrowd\b/, /\bgroup\b/, /\bgroupe\b/])) {
-    negativePromptParts.push('extra character', 'duplicate subject', 'multiple subjects', 'multiple characters', 'multiple animals', 'crowd', 'group shot', 'clones', 'twins', 'duplicate body', 'duplicate face', 'extra heads');
+    negativePromptParts.push('multiple subjects', 'second subject', 'crowd', 'group shot', 'fused anatomy', 'merged limbs');
   }
-  if (Array.isArray(semanticBinding?.blockedDuplicates)) {
+  if (characterCountConstraints && Array.isArray(semanticBinding?.blockedDuplicates)) {
     negativePromptParts.push(...semanticBinding.blockedDuplicates);
   }
   const negativePrompt = [...new Set(negativePromptParts)].join(', ');

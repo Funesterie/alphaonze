@@ -122,14 +122,30 @@ function validateAndCompileMask(mask) {
 }
 
 function buildWebImagePayload(result, subject, resolution) {
+  const imageUrl = result?.image_url || null;
+  const content = imageUrl
+    ? `Image trouvée sur le web. [ouvrir l'image](${imageUrl})`
+    : 'Image trouvée sur le web.';
   return withIntentMetadata({
     ok: true,
     artifact_type: 'web_image',
-    image_url: result?.image_url || null,
+    content,
+    image_url: imageUrl,
+    imagePath: imageUrl,
     source_url: result?.source_url || null,
     title: result?.title || subject || null,
     width: result?.width,
     height: result?.height,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content,
+        },
+        finish_reason: 'stop',
+      },
+    ],
   }, resolution);
 }
 
