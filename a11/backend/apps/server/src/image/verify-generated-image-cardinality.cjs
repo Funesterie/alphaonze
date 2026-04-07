@@ -386,16 +386,26 @@ function classifyComponents({ components, expected, mask, width, height, foregro
     && observedCount > 1
     && areaRatio >= 0.28;
   const horizontalPeaks = largest ? countHorizontalPeaks(mask, width, height, largest) : 0;
+  const fullFrameComponent = Boolean(
+    largest
+    && largest.width >= Math.floor(width * 0.96)
+    && largest.height >= Math.floor(height * 0.96)
+  );
+  const busyFullFrameScene = expectedCount === 1
+    && observedCount === 1
+    && fullFrameComponent
+    && foregroundRatio >= 0.92
+    && horizontalPeaks >= 8;
   const fusionDetected = expectedCount === 1
     && observedCount === 1
     && largest
     && largest.width > largest.height * 1.18
     && horizontalPeaks >= 2;
-  const subjectMatch = observedCount >= Math.min(expectedCount || 1, 1);
+  const subjectMatch = !busyFullFrameScene && observedCount >= Math.min(expectedCount || 1, 1);
   const confidence = clamp01(
     observedCount === 0
       ? 0.08
-      : 0.46 + Math.min(0.38, foregroundRatio * 1.6) + (duplicateSubjects || fusionDetected ? 0.1 : 0.04)
+      : 0.46 + Math.min(0.38, foregroundRatio * 1.6) + (duplicateSubjects || fusionDetected ? 0.1 : 0.04) - (busyFullFrameScene ? 0.26 : 0)
   );
 
   return {
@@ -404,10 +414,10 @@ function classifyComponents({ components, expected, mask, width, height, foregro
       ? String(expected?.subjectLabel || expected?.subjectType || 'subject').trim()
       : '',
     duplicate_subjects: duplicateSubjects,
-    fusion_detected: fusionDetected,
+    fusion_detected: fusionDetected || busyFullFrameScene,
     subject_match: subjectMatch,
     confidence,
-    notes: `local_heuristic fg_ratio=${foregroundRatio.toFixed(3)} components=${observedCount} peaks=${horizontalPeaks}`,
+    notes: `local_heuristic fg_ratio=${foregroundRatio.toFixed(3)} components=${observedCount} peaks=${horizontalPeaks}${busyFullFrameScene ? ' busy_full_frame_scene=1' : ''}`,
     components: topComponents.map((component) => ({
       area: component.area,
       width: component.width,
