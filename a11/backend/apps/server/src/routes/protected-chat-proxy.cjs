@@ -148,8 +148,39 @@ function detectCompoundActionRequest(text = '') {
   const hasMailAction = /\b(envoie|envoyer|envoi|mail|email|courriel)\b/.test(normalizedText);
   const hasPdfAction = /\b(pdf|document pdf|fichier pdf|rapport pdf)\b/.test(normalizedText);
   const hasImageMention = /\b(image|images|illustration|photo|photos)\b/.test(normalizedText);
+  const hasGenerateImageSignal = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare)\b/.test(normalizedText);
+  const hasWebImageSignal = /\b(cherche|chercher|trouve|trouver|montre|montrer|affiche|afficher)\b/.test(normalizedText)
+    && /\b(web|internet)\b/.test(normalizedText);
+
+  const generateThenMailMatch = sourceText.match(/^(.*?\b(?:image|illustration|photo)\b.*?)(?:\s+(?:puis|et)\s+|\s*,\s*)(?:envoie|envoyer|envoi).+?([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}).*$/i);
+  if (generateThenMailMatch) {
+    return {
+      kind: 'compound.generate_image_then_mail',
+      recipients: [String(generateThenMailMatch[2] || '').trim()].filter(Boolean),
+      sourceText,
+      imagePromptText: String(generateThenMailMatch[1] || '').trim(),
+    };
+  }
+
+  const webSearchToPdfMatch = sourceText.match(/^(.*?\b(?:image|images|photo|photos)\b.*?\b(?:web|internet)\b.*?)(?:\s+(?:puis|et)\s+|\s*,\s*)(?:fais|faire|cree|creer|genere|generer).*\bpdf\b.*$/i);
+  if (webSearchToPdfMatch) {
+    return {
+      kind: 'compound.web_image_then_pdf',
+      recipients,
+      sourceText,
+      imagePromptText: String(webSearchToPdfMatch[1] || '').trim(),
+    };
+  }
 
   if (hasMailAction && recipients.length && hasImageMention) {
+    if (hasGenerateImageSignal) {
+      return {
+        kind: 'compound.generate_image_then_mail',
+        recipients,
+        sourceText,
+        imagePromptText: sourceText.replace(/\b(?:puis|et)\s+(?:envoie|envoyer|envoi)\b[\s\S]*$/i, '').trim(),
+      };
+    }
     return {
       kind: 'compound.mail_with_latest_image',
       recipients,
@@ -158,6 +189,14 @@ function detectCompoundActionRequest(text = '') {
   }
 
   if (hasPdfAction && hasImageMention) {
+    if (hasWebImageSignal) {
+      return {
+        kind: 'compound.web_image_then_pdf',
+        recipients,
+        sourceText,
+        imagePromptText: sourceText.replace(/\b(?:puis|et)\s+(?:fais|faire|cree|creer|genere|generer)\b[\s\S]*?\bpdf\b[\s\S]*$/i, '').trim(),
+      };
+    }
     return {
       kind: 'compound.pdf_with_latest_images',
       recipients,
@@ -193,6 +232,7 @@ function buildAssistantChoice(content) {
 async function executeCompoundActionRequest({
   req,
   compound,
+  intentResolver,
   listResources,
   generatePdf,
   shareFile,
@@ -242,6 +282,69 @@ async function executeCompoundActionRequest({
       recipients: compound.recipients,
       resource: result?.resource || null,
       mail: result?.mail || null,
+      choices: buildAssistantChoice(content),
+    }, resolution);
+  }
+
+  if (compound.kind === 'compound.generate_image_then_mail') {
+    const imagePromptText = String(compound.imagePromptText || '').trim() || compound.sourceText;
+    const imageResolution = await intentResolver.resolveUserRequest({
+      req,
+      body: req.body || {},
+      userText: imagePromptText,
+      messages: [{ role: 'user', content: imagePromptText }],
+      executeRuntime: true,
+    });
+
+    if (imageResolution?.kind !== 'image.generate' || !imageResolution?.responsePayload) {
+      const error = new Error('compound_generate_image_then_mail_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_generate_image_then_mail_failed',
+        details: imageResolution,
+      };
+      throw error;
+    }
+
+    const mailResult = await emailLatestResource({
+      to: compound.recipients,
+      conversationId: context.conversationId || null,
+      kind: 'image',
+      attachToEmail: true,
+      subject: 'A11 - image generee',
+      message: "Image generee et jointe depuis la conversation A11.",
+      _context: context,
+    });
+
+    if (!mailResult?.ok) {
+      const error = new Error(mailResult?.error || 'compound_generate_image_mail_send_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_generate_image_mail_send_failed',
+        details: mailResult,
+      };
+      throw error;
+    }
+
+    const imageUrl = String(
+      imageResolution?.responsePayload?.image_url
+      || imageResolution?.responsePayload?.imagePath
+      || ''
+    ).trim() || null;
+    const content = `C'est fait. L'image a ete generee puis envoyee par mail${imageUrl ? `. [ouvrir l'image](${imageUrl})` : '.'}`;
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'email',
+      content,
+      recipients: compound.recipients,
+      image_url: imageUrl,
+      imagePath: imageUrl,
+      image: imageResolution?.responsePayload || null,
+      mail: mailResult?.mail || null,
+      resource: mailResult?.resource || null,
       choices: buildAssistantChoice(content),
     }, resolution);
   }
@@ -327,6 +430,105 @@ async function executeCompoundActionRequest({
     }, resolution);
   }
 
+  if (compound.kind === 'compound.web_image_then_pdf') {
+    const imagePromptText = String(compound.imagePromptText || '').trim() || compound.sourceText;
+    const webImageResolution = await intentResolver.resolveUserRequest({
+      req,
+      body: req.body || {},
+      userText: imagePromptText,
+      messages: [{ role: 'user', content: imagePromptText }],
+      executeRuntime: true,
+    });
+
+    if (webImageResolution?.kind !== 'web.image.search' || !webImageResolution?.responsePayload) {
+      const error = new Error('compound_web_image_then_pdf_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_web_image_then_pdf_failed',
+        details: webImageResolution,
+      };
+      throw error;
+    }
+
+    const webImageUrl = String(
+      webImageResolution?.responsePayload?.image_url
+      || webImageResolution?.responsePayload?.imagePath
+      || ''
+    ).trim();
+    if (!webImageUrl) {
+      const error = new Error('compound_web_image_then_pdf_missing_image');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_web_image_then_pdf_missing_image',
+        details: webImageResolution,
+      };
+      throw error;
+    }
+
+    const pdf = await generatePdf({
+      conversationId: context.conversationId || null,
+      title: 'Document A11',
+      author: 'A11',
+      sections: [
+        {
+          heading: 'Image web',
+          text: compound.sourceText,
+          images: [webImageUrl],
+        },
+      ],
+      _context: context,
+    });
+
+    if (!pdf?.ok || !String(pdf?.outputPath || '').trim()) {
+      const error = new Error(pdf?.error || 'compound_web_image_pdf_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_web_image_pdf_failed',
+        details: pdf,
+      };
+      throw error;
+    }
+
+    const shared = await shareFile({
+      path: pdf.outputPath,
+      conversationId: context.conversationId || null,
+      filename: String(pdf.filename || '').trim() || 'a11-web-images.pdf',
+      _context: context,
+    });
+
+    if (!shared?.ok) {
+      const error = new Error(shared?.error || 'compound_web_image_pdf_share_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_web_image_pdf_share_failed',
+        details: shared,
+      };
+      throw error;
+    }
+
+    const pdfUrl = String(shared?.url || shared?.conversationResource?.url || shared?.conversationResource?.downloadUrl || '').trim() || null;
+    const content = pdfUrl
+      ? `C'est fait. J'ai trouve une image sur le web puis cree le PDF. [ouvrir le PDF](${pdfUrl})`
+      : "C'est fait. J'ai trouve une image sur le web puis cree le PDF.";
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'pdf',
+      content,
+      file_url: pdfUrl,
+      filePath: pdfUrl,
+      source_image_url: webImageUrl,
+      web_image: webImageResolution?.responsePayload || null,
+      pdf,
+      shared: shared?.conversationResource || shared || null,
+      choices: buildAssistantChoice(content),
+    }, resolution);
+  }
+
   return null;
 }
 
@@ -375,6 +577,7 @@ function createProtectedChatProxyRouter({
       const compoundPayload = await executeCompoundActionRequest({
         req,
         compound: compoundRequest,
+        intentResolver,
         listResources,
         generatePdf,
         shareFile,
