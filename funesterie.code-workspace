@@ -52,6 +52,32 @@
       "**/public/tts": true,
       "a11/launchers/runtime": true,
       "a11_runtime": true
-    }
+    },
+    "github.copilot.chat.agent.autoFix": true,
+    "github.copilot.chat.claudeAgent.allowDangerouslySkipPermissions": true,
+    "github.copilot.chat.rateLimitAutoSwitchToAuto": true,
+    "github.copilot.chat.scopeSelection": true,
+    "github.copilot.chat.anthropic.thinking.forceExtendedThinking": true,
+    "github.copilot.chat.backgroundCompaction": true,
+    "github.copilot.chat.codesearch.enabled": true,
+    "github.copilot.chat.conversationTranscriptLookup.enabled": true,
+    "github.copilot.chat.copilotMemory.enabled": true,
+    "github.copilot.chat.alternateGeminiModelFPrompt.enabled": true,
+    "github.copilot.chat.alternateGptPrompt.enabled": true,
+    "github.copilot.chat.anthropic.tools.websearch.enabled": true,
+    "github.copilot.chat.githubMcpServer.enabled": true,
+    "github.copilot.chat.githubMcpServer.lockdown": true,
+    "github.copilot.chat.githubMcpServer.readonly": true,
+    "github.copilot.chat.newWorkspace.useContext7": true,
+    "github.copilot.chat.notebook.enhancedNextEditSuggestions.enabled": true,
+    "github.copilot.chat.notebook.followCellExecution.enabled": true,
+    "github.copilot.chat.responsesApi.promptCacheKey.enabled": true,
+    "github.copilot.chat.responsesApiContextManagement.enabled": true,
+    "github.copilot.chat.switchAgent.enabled": true
+  },
+  "extensions": {
+    "recommendations": [
+      "github.copilot-chat"
+    ]
   }
 }

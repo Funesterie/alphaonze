@@ -7,17 +7,19 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
+    // TODO: 'baseUrl' is deprecated and will stop working in TS 7.0. Migrate to project references and 'paths' soon.
     "baseUrl": "./src",
     "paths": {
       "*": ["*", "./lib/*", "./pages/*"]
     },
-    "types": ["node", "react", "react-dom", "vite/client"]
+    "types": ["node", "react", "react-dom", "vite/client"],
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"],
   "exclude": [

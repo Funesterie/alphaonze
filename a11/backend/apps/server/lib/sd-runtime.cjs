@@ -14,6 +14,26 @@ const CANONICAL_SD_VENV = path.join(
   'venv',
   process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
 );
+const LAUNCHER_DIST_SD_VENV = path.join(
+  A11_ROOT,
+  'launchers',
+  'dist',
+  'a11-local',
+  'llm',
+  'scripts',
+  'venv',
+  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
+);
+const DESKTOP_RESOURCES_SD_VENV = path.join(
+  A11_ROOT,
+  'a11desktoptauri',
+  'resources',
+  'a11-local',
+  'llm',
+  'scripts',
+  'venv',
+  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
+);
 const LEGACY_SD_SCRIPT = path.join(LEGACY_A11LLM_ROOT, 'scripts', 'generate_sd_image.py');
 const LEGACY_SD_VENV = path.join(
   LEGACY_A11LLM_ROOT,
@@ -79,12 +99,13 @@ function resolveSdScriptPath() {
 
 function resolveSdPythonBin(scriptPath = '') {
   const explicit = String(process.env.SD_PYTHON_PATH || '').trim();
-  if (explicit) {
-    return explicit;
+  const normalizedExplicit = normalizeCandidate(explicit);
+  if (normalizedExplicit && fs.existsSync(normalizedExplicit)) {
+    return normalizedExplicit;
   }
 
   if (!shouldAllowLocalSdFallback(process.env)) {
-    return '';
+    return normalizedExplicit || '';
   }
 
   const scriptDir = scriptPath && fs.existsSync(scriptPath) ? path.dirname(scriptPath) : '';
@@ -95,7 +116,10 @@ function resolveSdPythonBin(scriptPath = '') {
     : '';
 
   const candidates = uniqueCandidates([
+    normalizedExplicit,
     adjacentVenv,
+    LAUNCHER_DIST_SD_VENV,
+    DESKTOP_RESOURCES_SD_VENV,
     CANONICAL_SD_VENV,
     LEGACY_SD_VENV,
   ]);
@@ -106,7 +130,7 @@ function resolveSdPythonBin(scriptPath = '') {
     }
   }
 
-  return process.platform === 'win32' ? 'python' : 'python3';
+  return normalizedExplicit || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
 function sanitizeProxyHeaders(headers = {}) {

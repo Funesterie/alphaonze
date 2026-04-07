@@ -521,8 +521,12 @@ $sdScriptPath = Resolve-FirstExistingPath @(
 $sdPythonExe = Resolve-FirstExistingPath @(
   (Join-Path $workspaceRoot 'llm\scripts\venv\Scripts\python.exe'),
   (Join-Path $workspaceRoot 'a11llm\scripts\venv\Scripts\python.exe'),
+  (Join-Path $workspaceRoot 'launchers\dist\a11-local\llm\scripts\venv\Scripts\python.exe'),
+  (Join-Path $workspaceRoot 'a11desktoptauri\resources\a11-local\llm\scripts\venv\Scripts\python.exe'),
   'D:\funesterie\a11\llm\scripts\venv\Scripts\python.exe',
-  'D:\funesterie\a11\a11llm\scripts\venv\Scripts\python.exe'
+  'D:\funesterie\a11\a11llm\scripts\venv\Scripts\python.exe',
+  'D:\funesterie\a11\launchers\dist\a11-local\llm\scripts\venv\Scripts\python.exe',
+  'D:\funesterie\a11\a11desktoptauri\resources\a11-local\llm\scripts\venv\Scripts\python.exe'
 )
 
 $sdOutputDir = Join-Path $workspaceRoot 'tmp\a11-images'
