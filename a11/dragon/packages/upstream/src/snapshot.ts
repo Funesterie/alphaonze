@@ -389,10 +389,12 @@ export async function probeCerbereSource(
   const hasGit = sourceExists && (await pathExists(path.join(source.path, ".git")));
   const packageName = sourceExists ? await readPackageName(source.path) : undefined;
   const healthCandidates = getHealthCandidatesForTarget("cerbere");
-  const health = exists
+  const health = healthCandidates.length
     ? await probeHealthCandidates(healthCandidates)
-    : { healthState: "unavailable" as const, healthDetail: "Cerbere script not found" };
-  const runtime = exists
+    : exists
+      ? { healthState: "unknown" as const, healthDetail: "No health URL configured" }
+      : { healthState: "unavailable" as const, healthDetail: "Cerbere script not found" };
+  const runtime = exists || health.healthState === "available"
     ? await resolveCerbereRuntimeDetails(source, health.resolvedUrl ?? healthCandidates[0], manifestPath)
     : {};
 
