@@ -69,28 +69,56 @@ function getSourceText(wazaa) {
   ).trim();
 }
 
+function shouldPreferSemanticPrompt(wazaa) {
+  return Boolean(
+    wazaa?.meta?.llmEnriched === true
+    || String(wazaa?.meta?.translatedText || '').trim()
+  );
+}
+
 function sanitizeImageSubjectCandidate(value = '') {
   const normalized = String(value || '').trim();
   if (!normalized) return '';
   if (/\b(?:image\s+of|generate|g[eé]n[eè]re|show me|montre(?:-|\s)?moi|dessine|draw|create|cr[eée]e|je veux|i want)\b/i.test(normalized)) {
     return '';
   }
+  if (/^(?:one|a|an|the|un|une|des|du|de|la|le|les)$/i.test(normalized)) {
+    return '';
+  }
   return normalized;
+}
+
+function stripPaletteSuffixFromSubject(value = '', palette = []) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) return raw;
+  const paletteSet = new Set((Array.isArray(palette) ? palette : []).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean));
+  if (!paletteSet.size) return raw;
+
+  while (tokens.length > 1 && paletteSet.has(String(tokens[tokens.length - 1] || '').trim().toLowerCase())) {
+    tokens.pop();
+  }
+  return tokens.join(' ').trim() || raw;
 }
 
 function buildImageGenerateMask(wazaa, sourceText) {
   const translatedText = String(wazaa?.meta?.translatedText || '').trim();
-  const sourceImageAnalysis = analyzeImagePrompt(sourceText || '');
-  const translatedImageAnalysis = translatedText && translatedText !== sourceText
-    ? analyzeImagePrompt(translatedText)
+  const semanticPromptDriven = shouldPreferSemanticPrompt(wazaa);
+  const semanticSeedText = translatedText || sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'));
+  const semanticImageAnalysis = semanticPromptDriven && semanticSeedText
+    ? analyzeImagePrompt(semanticSeedText)
     : null;
-  const subject = sourceImageAnalysis?.semanticBinding?.primarySubject
-    || translatedImageAnalysis?.semanticBinding?.primarySubject
-    || sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'))
-    || sourceImageAnalysis?.subjectPromptEnglish
-    || sourceImageAnalysis?.subjectText
-    || translatedImageAnalysis?.subjectPromptEnglish
-    || translatedImageAnalysis?.subjectText
+  const legacyImageAnalysis = !semanticPromptDriven && sourceText
+    ? analyzeImagePrompt(sourceText)
+    : null;
+  const subject = sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'))
+    || semanticImageAnalysis?.semanticBinding?.primarySubject
+    || legacyImageAnalysis?.semanticBinding?.primarySubject
+    || semanticImageAnalysis?.subjectPromptEnglish
+    || semanticImageAnalysis?.subjectText
+    || legacyImageAnalysis?.subjectPromptEnglish
+    || legacyImageAnalysis?.subjectText
     || translatedText
     || sourceText;
   const environment = getEntityValue(wazaa, 'environment');
@@ -99,14 +127,17 @@ function buildImageGenerateMask(wazaa, sourceText) {
   const llmColors = Array.isArray(wazaa?.meta?.llmColors) ? wazaa.meta.llmColors : [];
   const palette = toUniqueStrings([
     ...llmColors,
-    ...(Array.isArray(sourceImageAnalysis?.palette) ? sourceImageAnalysis.palette : []),
-    ...(Array.isArray(translatedImageAnalysis?.palette) ? translatedImageAnalysis.palette : []),
+    ...(Array.isArray(semanticImageAnalysis?.palette) ? semanticImageAnalysis.palette : []),
+    ...(Array.isArray(legacyImageAnalysis?.palette) ? legacyImageAnalysis.palette : []),
     ...splitCsvValues(attribute),
   ]);
+  const normalizedSubject = semanticPromptDriven
+    ? stripPaletteSuffixFromSubject(subject, palette)
+    : subject;
   const style = toUniqueStrings([
     styleEntity,
-    ...(Array.isArray(sourceImageAnalysis?.styleHints) ? sourceImageAnalysis.styleHints : []),
-    ...(Array.isArray(translatedImageAnalysis?.styleHints) ? translatedImageAnalysis.styleHints : []),
+    ...(Array.isArray(semanticImageAnalysis?.styleHints) ? semanticImageAnalysis.styleHints : []),
+    ...(Array.isArray(legacyImageAnalysis?.styleHints) ? legacyImageAnalysis.styleHints : []),
     'high quality',
     'detailed',
   ]);
@@ -117,12 +148,12 @@ function buildImageGenerateMask(wazaa, sourceText) {
     task: { domain: 'image', action: 'generate' },
     compiler: { target: 'sd-payload', version: '1.0' },
     inputs: {
-      subject: subject ? [subject] : [],
+      subject: normalizedSubject ? [normalizedSubject] : [],
       environment: environment ? [environment] : [],
       style,
       composition: toUniqueStrings([
-        ...(Array.isArray(sourceImageAnalysis?.compositionHints) ? sourceImageAnalysis.compositionHints : []),
-        ...(Array.isArray(translatedImageAnalysis?.compositionHints) ? translatedImageAnalysis.compositionHints : []),
+        ...(Array.isArray(semanticImageAnalysis?.compositionHints) ? semanticImageAnalysis.compositionHints : []),
+        ...(Array.isArray(legacyImageAnalysis?.compositionHints) ? legacyImageAnalysis.compositionHints : []),
       ]),
       lighting: [],
       palette,
@@ -138,6 +169,12 @@ function buildImageGenerateMask(wazaa, sourceText) {
       no_text: true,
     },
     ambiguities: Array.isArray(wazaa?.ambiguities) ? wazaa.ambiguities : [],
+    meta: {
+      ...(wazaa?.meta && typeof wazaa.meta === 'object' ? wazaa.meta : {}),
+      promptCompiler: semanticPromptDriven ? 'a11-semantic' : 'legacy-fallback',
+      canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
+      promptSeedText: semanticPromptDriven ? (semanticSeedText || sourceText) : sourceText,
+    },
     raw: sourceText,
   };
 }

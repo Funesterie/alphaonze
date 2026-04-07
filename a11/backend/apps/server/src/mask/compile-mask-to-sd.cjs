@@ -13,13 +13,42 @@ const {
  * @param {object} mask
  * @returns {object} Raw SD payload (prompt, negative_prompt, width, height, steps, guidance_scale, etc.)
  */
-function joinField(arr, label) {
+function identityPrompt(value = '') {
+  return String(value || '').trim();
+}
+
+function joinField(arr, label, normalizeValue = identityPrompt) {
   if (!Array.isArray(arr) || arr.length === 0) return '';
   const normalizedValues = arr
-    .map((value) => translateImagePromptToEnglish(String(value || '').trim()))
+    .map((value) => normalizeValue(String(value || '').trim()))
     .filter(Boolean);
   if (normalizedValues.length === 0) return '';
   return label ? `${label}: ${normalizedValues.join(', ')}` : normalizedValues.join(', ');
+}
+
+function shouldUseSemanticPromptCompiler(mask) {
+  return Boolean(
+    String(mask?.meta?.promptCompiler || '').trim() === 'a11-semantic'
+    || mask?.meta?.llmEnriched === true
+    || String(mask?.meta?.translatedText || '').trim()
+  );
+}
+
+function buildPromptCompilerContext(mask) {
+  const semanticCompiler = shouldUseSemanticPromptCompiler(mask);
+  const normalizeValue = semanticCompiler ? identityPrompt : translateImagePromptToEnglish;
+  const rawPrompt = String(mask?.raw || '').trim();
+  const translatedText = String(mask?.meta?.translatedText || '').trim();
+  const compilerSeedPrompt = semanticCompiler
+    ? (translatedText || String(mask?.meta?.promptSeedText || '').trim() || rawPrompt)
+    : rawPrompt;
+
+  return {
+    semanticCompiler,
+    normalizeValue,
+    rawPrompt,
+    compilerSeedPrompt,
+  };
 }
 
 function normalizeText(value = '') {
@@ -38,27 +67,29 @@ function compileMaskToSD(mask) {
   if (mask?.intent !== 'image.generate') {
     throw new Error('MASK intent must be image.generate');
   }
-  const rawPrompt = String(mask?.raw || '').trim();
-  const translatedSubject = joinField(mask.inputs?.subject);
-  const translatedEnvironment = joinField(mask.inputs?.environment);
+  const compilerContext = buildPromptCompilerContext(mask);
+  const rawPrompt = compilerContext.rawPrompt;
+  const promptSeed = compilerContext.compilerSeedPrompt || rawPrompt;
+  const translatedSubject = joinField(mask.inputs?.subject, '', compilerContext.normalizeValue);
+  const translatedEnvironment = joinField(mask.inputs?.environment, '', compilerContext.normalizeValue);
   const translatedStyleHints = (Array.isArray(mask.inputs?.style) ? mask.inputs.style : [])
-    .map((value) => translateImagePromptToEnglish(String(value || '').trim()))
+    .map((value) => compilerContext.normalizeValue(String(value || '').trim()))
     .filter(Boolean);
   const translatedCompositionHints = (Array.isArray(mask.inputs?.composition) ? mask.inputs.composition : [])
-    .map((value) => translateImagePromptToEnglish(String(value || '').trim()))
+    .map((value) => compilerContext.normalizeValue(String(value || '').trim()))
     .filter(Boolean);
-  const characterCountConstraints = compileCharacterCountConstraints(rawPrompt);
+  const characterCountConstraints = compileCharacterCountConstraints(promptSeed);
   const singleSubjectConstraints = characterCountConstraints
     ? null
-    : compileSingleSubjectConstraints(rawPrompt, translatedSubject);
+    : compileSingleSubjectConstraints(promptSeed, translatedSubject);
   const semanticBinding = bindSemanticAtoms({
-    rawPrompt,
+    rawPrompt: promptSeed,
     subjectPromptEnglish: translatedSubject,
     styleHints: translatedStyleHints,
     compositionHints: translatedCompositionHints,
     characterCountConstraints,
     singleSubjectConstraints,
-    translatePrompt: translateImagePromptToEnglish,
+    translatePrompt: compilerContext.normalizeValue,
   });
   const promptSections = [
     semanticBinding.promptLead || translatedSubject,
@@ -66,8 +97,10 @@ function compileMaskToSD(mask) {
     translatedEnvironment,
     (semanticBinding.styleAtoms || translatedStyleHints).join(', '),
     (semanticBinding.structuralAtoms || []).join(', '),
-    joinField(mask.inputs?.lighting),
-    mask.inputs?.palette?.length ? `color palette: ${mask.inputs.palette.join(', ')}` : '',
+    joinField(mask.inputs?.lighting, '', compilerContext.normalizeValue),
+    mask.inputs?.palette?.length
+      ? `color palette: ${mask.inputs.palette.map((value) => compilerContext.normalizeValue(String(value || '').trim())).filter(Boolean).join(', ')}`
+      : '',
     mask.inputs?.palette?.length ? 'the requested color applies to the main subject itself, not to the background, foreground, props, or decorative elements' : '',
     'literal interpretation, apply the requested colors to the main subject only, keep a coherent single scene, do not add extra props or decorative elements unless requested',
   ].filter(s => typeof s === 'string' && s.length > 0);
