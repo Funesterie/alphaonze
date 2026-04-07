@@ -32,6 +32,17 @@ function uniqueCandidates(values) {
   return [...new Set(values.map(normalizeCandidate).filter(Boolean))];
 }
 
+function isProductionRuntime(env = process.env) {
+  return String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
+}
+
+function shouldAllowLocalSdFallback(env = process.env) {
+  if (String(env.A11_SD_ALLOW_LOCAL_FALLBACK || '').trim() !== '') {
+    return ['1', 'true', 'yes', 'on'].includes(String(env.A11_SD_ALLOW_LOCAL_FALLBACK).trim().toLowerCase());
+  }
+  return !isProductionRuntime(env);
+}
+
 function resolveSdProxyUrl() {
   return [
     process.env.A11_SD_PROXY_URL,
@@ -41,19 +52,26 @@ function resolveSdProxyUrl() {
 
 function resolveSdScriptPath() {
   const explicit = String(process.env.SD_SCRIPT_PATH || '').trim();
+  const allowLocalFallback = shouldAllowLocalSdFallback(process.env);
   const candidates = uniqueCandidates([
-    explicit,
-    VENDORED_SD_SCRIPT,
-    CANONICAL_SD_SCRIPT,
-    LEGACY_SD_SCRIPT,
-    'D:\\funesterie\\a11\\llm\\scripts\\generate_sd_image.py',
-    'D:\\funesterie\\a11\\a11llm\\scripts\\generate_sd_image.py',
+    ...(allowLocalFallback ? [
+      explicit,
+      VENDORED_SD_SCRIPT,
+      CANONICAL_SD_SCRIPT,
+      LEGACY_SD_SCRIPT,
+      'D:\\funesterie\\a11\\llm\\scripts\\generate_sd_image.py',
+      'D:\\funesterie\\a11\\a11llm\\scripts\\generate_sd_image.py',
+    ] : [explicit]),
   ]);
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
     }
+  }
+
+  if (!allowLocalFallback) {
+    return explicit ? normalizeCandidate(explicit) : '';
   }
 
   return explicit ? normalizeCandidate(explicit) : VENDORED_SD_SCRIPT;
@@ -63,6 +81,10 @@ function resolveSdPythonBin(scriptPath = '') {
   const explicit = String(process.env.SD_PYTHON_PATH || '').trim();
   if (explicit) {
     return explicit;
+  }
+
+  if (!shouldAllowLocalSdFallback(process.env)) {
+    return '';
   }
 
   const scriptDir = scriptPath && fs.existsSync(scriptPath) ? path.dirname(scriptPath) : '';
@@ -223,4 +245,5 @@ module.exports = {
   runSdScript,
   sanitizeProxyHeaders,
   VENDORED_SD_SCRIPT,
+  shouldAllowLocalSdFallback,
 };

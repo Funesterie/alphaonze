@@ -5,6 +5,7 @@ const {
   resolveSdProxyUrl: defaultResolveSdProxyUrl,
   resolveSdScriptPath: defaultResolveSdScriptPath,
   runSdScript: defaultRunSdScript,
+  shouldAllowLocalSdFallback: defaultShouldAllowLocalSdFallback,
 } = require('../../lib/sd-runtime.cjs');
 const { uploadBufferToR2: defaultUploadBufferToR2 } = require('../../lib/file-storage.cjs');
 const { tryGeneratePngWithOpenAI, looksLikeOpenAiQuotaError } = require('../../lib/openai-image.cjs');
@@ -192,6 +193,34 @@ function buildSdUnavailablePayload({ localResult = null, openAiResult = null } =
   };
 }
 
+function buildSdBackendUnavailablePayload({
+  proxyUrl = '',
+  proxyResult = null,
+  reason = 'backend image unavailable',
+  localFallbackBlocked = false,
+} = {}) {
+  const upstreamMessage = String(
+    proxyResult?.body?.message
+    || proxyResult?.text
+    || reason
+    || 'backend image unavailable'
+  ).trim();
+
+  return {
+    ok: false,
+    error: 'image_backend_unavailable',
+    code: localFallbackBlocked ? 'local_only_fallback_blocked' : 'sd_backend_unavailable',
+    message: localFallbackBlocked
+      ? `Generation image indisponible: backend SD proxy en echec et fallback local bloque en production. ${upstreamMessage}`.trim()
+      : `Generation image indisponible: ${upstreamMessage}`.trim(),
+    upstream: proxyUrl ? {
+      provider: 'sd-proxy',
+      url: proxyUrl,
+      status: Number(proxyResult?.status || 0) || null,
+    } : null,
+  };
+}
+
 function resolveDependencies(overrides = {}) {
   return {
     fs: overrides.fs || defaultFs,
@@ -203,6 +232,7 @@ function resolveDependencies(overrides = {}) {
     runSdScript: overrides.runSdScript || defaultRunSdScript,
     uploadBufferToR2: overrides.uploadBufferToR2 || defaultUploadBufferToR2,
     isAdminRequest: overrides.isAdminRequest || fallbackIsAdminRequest,
+    shouldAllowLocalSdFallback: overrides.shouldAllowLocalSdFallback || defaultShouldAllowLocalSdFallback,
   };
 }
 
@@ -217,6 +247,7 @@ function createSdToolsRouter(overrides = {}) {
     runSdScript,
     uploadBufferToR2,
     isAdminRequest,
+    shouldAllowLocalSdFallback,
   } = resolveDependencies(overrides);
 
   const express = require('express');
@@ -261,7 +292,10 @@ function createSdToolsRouter(overrides = {}) {
 
     const proxyUrl = resolveSdProxyUrl();
     const scriptPath = resolveSdScriptPath();
-    const hasLocalScript = !!scriptPath && fs.existsSync(scriptPath);
+    const allowLocalFallback = typeof shouldAllowLocalSdFallback === 'function'
+      ? shouldAllowLocalSdFallback(process.env)
+      : String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
+    const hasLocalScript = allowLocalFallback && !!scriptPath && fs.existsSync(scriptPath);
 
     if (proxyUrl) {
       try {
@@ -301,11 +335,16 @@ function createSdToolsRouter(overrides = {}) {
         if (!hasLocalScript) {
           const error = new Error(proxyJson?.message || proxyText || `Proxy SD indisponible (${proxyUrl})`);
           error.statusCode = proxyResponse.status || 502;
-          error.payload = {
-            ok: false,
-            error: proxyJson?.error || 'sd_proxy_failed',
-            message: proxyJson?.message || proxyText || `Proxy SD indisponible (${proxyUrl})`,
-          };
+          error.payload = buildSdBackendUnavailablePayload({
+            proxyUrl,
+            proxyResult: {
+              status: proxyResponse.status,
+              text: proxyText,
+              body: proxyJson,
+            },
+            reason: proxyJson?.message || proxyText || `Proxy SD indisponible (${proxyUrl})`,
+            localFallbackBlocked: !allowLocalFallback,
+          });
           throw error;
         }
 
@@ -314,11 +353,11 @@ function createSdToolsRouter(overrides = {}) {
         if (!hasLocalScript) {
           const error = new Error(String(error_?.message || error_));
           error.statusCode = error_?.statusCode || 502;
-          error.payload = error_?.payload || {
-            ok: false,
-            error: 'sd_proxy_failed',
-            message: String(error_?.message || error_),
-          };
+          error.payload = error_?.payload || buildSdBackendUnavailablePayload({
+            proxyUrl,
+            reason: String(error_?.message || error_),
+            localFallbackBlocked: !allowLocalFallback,
+          });
           throw error;
         }
         console.warn('[A11][generate_sd] SD proxy unreachable, fallback to local script:', error_?.message);
@@ -335,6 +374,16 @@ function createSdToolsRouter(overrides = {}) {
     }
 
     if (!hasLocalScript) {
+      if (!allowLocalFallback) {
+        const error = new Error('Generation image indisponible: backend SD local bloque en production.');
+        error.statusCode = 503;
+        error.payload = buildSdBackendUnavailablePayload({
+          reason: 'backend SD local indisponible sur cet environnement',
+          localFallbackBlocked: true,
+        });
+        throw error;
+      }
+
       const tempDir = String(process.env.SD_OUTPUT_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/a11-images' : path.join(process.cwd(), 'tmp', 'generated')));
       fs.mkdirSync(tempDir, { recursive: true });
       const outputName = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
@@ -390,6 +439,16 @@ function createSdToolsRouter(overrides = {}) {
     }, { scriptPath });
 
     if (!outputJson?.ok || !outputJson?.output_path || !fs.existsSync(outputJson.output_path)) {
+      if (!allowLocalFallback) {
+        const error = new Error('Generation image indisponible: fallback local bloque en production.');
+        error.statusCode = 503;
+        error.payload = buildSdBackendUnavailablePayload({
+          reason: outputJson?.message || 'fallback local bloque en production',
+          localFallbackBlocked: true,
+        });
+        throw error;
+      }
+
       const openAiFallback = await tryGeneratePngWithOpenAI({
         prompt: finalPrompt,
         outputPath,
@@ -509,6 +568,7 @@ function looksLikeDependencyBag(value) {
       || 'runSdScript' in value
       || 'uploadBufferToR2' in value
       || 'isAdminRequest' in value
+      || 'shouldAllowLocalSdFallback' in value
     )
   );
 }
@@ -525,5 +585,6 @@ function sdToolsEntrypoint(...args) {
 sdToolsEntrypoint.router = defaultSdTools.router;
 sdToolsEntrypoint.generateSdInternal = defaultSdTools.generateSdInternal;
 sdToolsEntrypoint.createSdToolsRouter = createSdToolsRouter;
+sdToolsEntrypoint.buildSdBackendUnavailablePayload = buildSdBackendUnavailablePayload;
 
 module.exports = sdToolsEntrypoint;

@@ -104,7 +104,7 @@ function normalizeBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
-function normalizeLlmProvider(value, fallback = "openai") {
+function normalizeLlmProvider(value, fallback = "none") {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return fallback;
   if (normalized === "ollama") return "ollama";
@@ -112,6 +112,15 @@ function normalizeLlmProvider(value, fallback = "openai") {
   if (["llama_server", "llama-server", "llama", "local"].includes(normalized)) return "llama_server";
   if (["none", "disabled", "off"].includes(normalized)) return "none";
   return fallback;
+}
+
+function deriveDefaultLlmProvider() {
+  const explicit = normalizeLlmProvider(process.env.A11_LLM_PROVIDER, "");
+  if (explicit) return explicit;
+  if (process.env.OLLAMA_BASE || process.env.OLLAMA_HOST || process.env.OLLAMA_PORT) return "ollama";
+  if (process.env.LLAMA_BASE || process.env.LOCAL_LLM_URL) return "llama_server";
+  if (process.env.A11_OPENAI_API_KEY || process.env.OPENAI_API_KEY) return "openai";
+  return "none";
 }
 
 // ========================================================================
@@ -123,7 +132,7 @@ const BACKENDS = {
   llama_server: normalizeBaseUrl(process.env.LLAMA_BASE || process.env.LOCAL_LLM_URL || ""),
 };
 const OLLAMA_BASE = BACKENDS.ollama;
-const LLM_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_PROVIDER, "openai");
+const LLM_PROVIDER = deriveDefaultLlmProvider();
 const LLM_FALLBACK_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_FALLBACK_PROVIDER, "llama_server");
 const OLLAMA_PRIMARY_MODEL = String(process.env.A11_OLLAMA_PRIMARY_MODEL || "gemma4:e4b").trim() || "gemma4:e4b";
 const OLLAMA_FALLBACK_MODEL = String(process.env.A11_OLLAMA_FALLBACK_MODEL || "gemma4:e2b").trim() || "gemma4:e2b";

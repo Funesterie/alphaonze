@@ -13,9 +13,38 @@ function toBoolean(value) {
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
+function hasAnyValue(...values) {
+  return values.some((value) => String(value || '').trim());
+}
+
+function resolveLlmProvider(value, fallback = 'none') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === 'ollama') return 'ollama';
+  if (normalized === 'openai') return 'openai';
+  if (['llama_server', 'llama-server', 'llama', 'local'].includes(normalized)) return 'llama_server';
+  if (['none', 'disabled', 'off'].includes(normalized)) return 'none';
+  return fallback;
+}
+
+function deriveDefaultLlmProvider(env = {}) {
+  const explicitProvider = resolveLlmProvider(env.A11_LLM_PROVIDER, '');
+  if (explicitProvider) return explicitProvider;
+  if (hasAnyValue(env.OLLAMA_BASE, env.OLLAMA_HOST, env.OLLAMA_PORT)) return 'ollama';
+  if (hasAnyValue(env.LLAMA_BASE, env.LOCAL_LLM_URL)) return 'llama_server';
+  if (hasAnyValue(env.A11_OPENAI_API_KEY, env.OPENAI_API_KEY)) return 'openai';
+  return 'none';
+}
+
+function isProductionRuntime(env = {}) {
+  const nodeEnv = String(env.NODE_ENV || '').trim().toLowerCase();
+  return nodeEnv === 'production';
+}
+
 function buildRuntimeConfig(env = process.env) {
   const runtimeProfile = String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase();
   const localOnly = toBoolean(env.A11_LOCAL_MODE) || runtimeProfile === 'local';
+  const productionRuntime = isProductionRuntime(env);
   const dragonApiUrl = normalizeUrl(env.DRAGON_API_URL || '');
   const qflushUseDragonCompat = toBoolean(env.A11_QFLUSH_USE_DRAGON);
   const declaredQflushRemoteUrl = normalizeUrl(
@@ -34,6 +63,24 @@ function buildRuntimeConfig(env = process.env) {
   const ttsPublicBaseUrl = normalizeUrl(env.TTS_PUBLIC_BASE_URL || env.TTS_BASE_URL || '');
   const publicApiUrl = normalizeUrl(env.PUBLIC_API_URL || env.API_URL || env.A11_SERVER_URL || '');
   const r2Bucket = String(env.R2_BUCKET || env.R2_BUCKET_NAME || '').trim();
+  const openAiConfigured = hasAnyValue(env.A11_OPENAI_API_KEY, env.OPENAI_API_KEY);
+  const translationConfigured = hasAnyValue(env.A11_TRANSLATION_API_KEY, env.A11_OPENAI_API_KEY);
+  const sdProxyUrl = normalizeUrl(env.A11_SD_PROXY_URL || env.SD_PROXY_URL || '');
+  const sdLocalFallbackEnabled = toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK) || !productionRuntime;
+  const sdOpenAiFallbackEnabled = toBoolean(env.A11_SD_ALLOW_OPENAI_FALLBACK) && openAiConfigured;
+  const explicitWazaaLlm = String(env.A11_WAZAA_LLM_ENRICH || '').trim();
+  const wazaaLlmEnabled = explicitWazaaLlm
+    ? toBoolean(explicitWazaaLlm)
+    : translationConfigured;
+  const defaultLlmProvider = deriveDefaultLlmProvider(env);
+  const memorySummaryProvider = (() => {
+    const configured = String(env.MEMORY_SUMMARY_PROVIDER || '').trim().toLowerCase();
+    if (configured === 'openai' || configured === 'local') return configured;
+    if (qflushRemoteUrl || hasAnyValue(env.LLAMA_BASE, env.LOCAL_LLM_URL, env.OLLAMA_BASE, env.QFLUSH_CHAT_FLOW)) {
+      return 'local';
+    }
+    return openAiConfigured ? 'openai' : 'local';
+  })();
   const hasTtsHttpConfig = Boolean(String(
     env.TTS_URL ||
     env.TTS_HOST ||
@@ -85,6 +132,35 @@ function buildRuntimeConfig(env = process.env) {
       serviceName: String(env.RAILWAY_SERVICE_NAME || '').trim(),
       environmentName: String(env.RAILWAY_ENVIRONMENT_NAME || '').trim(),
     },
+    features: {
+      chat: {
+        provider: qflushRemoteUrl
+          ? 'qflush'
+          : defaultLlmProvider,
+        qflushRemoteUrl,
+        llmProvider: defaultLlmProvider,
+      },
+      semantic: {
+        provider: wazaaLlmEnabled ? 'openai-compatible' : 'heuristic',
+        llmEnrichmentEnabled: wazaaLlmEnabled,
+        translationConfigured,
+      },
+      memory: {
+        provider: memorySummaryProvider,
+        qflushFlow: String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim(),
+      },
+      sd: {
+        provider: sdProxyUrl
+          ? 'proxy'
+          : (sdLocalFallbackEnabled ? 'local' : (sdOpenAiFallbackEnabled ? 'openai' : 'unconfigured')),
+        proxyUrl: sdProxyUrl,
+        localFallbackEnabled: sdLocalFallbackEnabled,
+        openAiFallbackEnabled: sdOpenAiFallbackEnabled,
+      },
+      tts: {
+        provider: hasTtsHttpConfig ? 'http' : 'local',
+      },
+    },
   };
 }
 
@@ -132,6 +208,31 @@ function getPublicRuntimeStatus(options = {}) {
         memorySummaryFlow: config.qflush.memorySummaryFlow || null,
         ephemeralMemoryFlow: config.qflush.ephemeralMemoryFlow || null,
         manageTts: config.qflush.manageTts,
+      },
+    },
+    features: {
+      chat: {
+        provider: config.features.chat.provider,
+        llmProvider: config.features.chat.llmProvider,
+        qflushRemoteUrl: config.features.chat.qflushRemoteUrl || null,
+      },
+      semantic: {
+        provider: config.features.semantic.provider,
+        llmEnrichmentEnabled: config.features.semantic.llmEnrichmentEnabled,
+        translationConfigured: config.features.semantic.translationConfigured,
+      },
+      memory: {
+        provider: config.features.memory.provider,
+        qflushFlow: config.features.memory.qflushFlow || null,
+      },
+      sd: {
+        provider: config.features.sd.provider,
+        proxyUrl: config.features.sd.proxyUrl || null,
+        localFallbackEnabled: config.features.sd.localFallbackEnabled,
+        openAiFallbackEnabled: config.features.sd.openAiFallbackEnabled,
+      },
+      tts: {
+        provider: config.features.tts.provider,
       },
     },
     auth: {
