@@ -153,15 +153,11 @@ const PUBLIC_INTEGRATION_CANONICAL_NAMES = new Set(["qflush", "a11"]);
 const PUBLIC_INTEGRATION_PROBE_NAMES = new Set(["qflush", "a11", "cerbere"]);
 
 function normalizeIntegrationEntityName(value: string): string {
-  return String(value || "")
+  const normalized = String(value || "")
     .trim()
-    .replace(/[\\/]+$/, "")
-    .toLowerCase();
-}
-
-function isPublicCanonicalSourcePath(sourcePath: string): boolean {
-  const baseName = path.basename(String(sourcePath || "").replace(/[\\/]+$/, ""));
-  return PUBLIC_INTEGRATION_CANONICAL_NAMES.has(normalizeIntegrationEntityName(baseName));
+    .replace(/[\\/]+$/, "");
+  const segments = normalized.split(/[\\/]+/).filter(Boolean);
+  return String(segments.at(-1) ?? normalized).toLowerCase();
 }
 
 function summarizeIntegrationUpstreams(upstreams: UpstreamProbe[]): DragonSystemSnapshot["summary"] {
@@ -185,7 +181,7 @@ function buildPublicIntegrationSnapshot(snapshot: DragonSystemSnapshot): DragonS
     manifest: {
       ...snapshot.manifest,
       canonical_sources: snapshot.manifest.canonical_sources.filter((source) =>
-        isPublicCanonicalSourcePath(source.path)
+        PUBLIC_INTEGRATION_CANONICAL_NAMES.has(normalizeIntegrationEntityName(source.path))
       ),
       snapshots_or_mirrors: []
     },
