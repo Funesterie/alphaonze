@@ -21,7 +21,7 @@ console.log(`[Cerbère] DEV_MODE=${DEV_MODE ? "true" : "false"}`);
 // Ollama backend config (env or default)
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "127.0.0.1";
 const OLLAMA_PORT = process.env.OLLAMA_PORT || "11434";
-const OLLAMA_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}`;
+const DEFAULT_OLLAMA_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}`;
 
 // Import A-11 agent prompts
 const {
@@ -100,17 +100,452 @@ const DEFAULT_WORKSPACE = String.raw`D:\A12`;
 let WORKSPACE_ROOT = path.resolve(process.env.A11_WORKSPACE_ROOT || DEFAULT_WORKSPACE);
 console.log("[Cerbère] Workspace root:", WORKSPACE_ROOT);
 
+function normalizeBaseUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function normalizeLlmProvider(value, fallback = "openai") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === "ollama") return "ollama";
+  if (normalized === "openai") return "openai";
+  if (["llama_server", "llama-server", "llama", "local"].includes(normalized)) return "llama_server";
+  if (["none", "disabled", "off"].includes(normalized)) return "none";
+  return fallback;
+}
+
 // ========================================================================
 //    SECTION 2 — BACKENDS & MODEL SELECTION
 // ========================================================================
 const BACKENDS = {
-  openai: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+  openai: normalizeBaseUrl(process.env.OPENAI_BASE_URL || "https://api.openai.com/v1"),
+  ollama: normalizeBaseUrl(process.env.OLLAMA_BASE || DEFAULT_OLLAMA_BASE),
+  llama_server: normalizeBaseUrl(process.env.LLAMA_BASE || process.env.LOCAL_LLM_URL || ""),
 };
+const OLLAMA_BASE = BACKENDS.ollama;
+const LLM_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_PROVIDER, "openai");
+const LLM_FALLBACK_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_FALLBACK_PROVIDER, "llama_server");
+const OLLAMA_PRIMARY_MODEL = String(process.env.A11_OLLAMA_PRIMARY_MODEL || "gemma4:e4b").trim() || "gemma4:e4b";
+const OLLAMA_FALLBACK_MODEL = String(process.env.A11_OLLAMA_FALLBACK_MODEL || "gemma4:e2b").trim() || "gemma4:e2b";
+const DEFAULT_LOCAL_MODEL = String(
+  process.env.LOCAL_DEFAULT_MODEL
+  || process.env.DEFAULT_MODEL
+  || process.env.LLAMA_MODEL
+  || "llama3.2:latest"
+).trim() || "llama3.2:latest";
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
+const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 15000) || 15000;
+const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
+
+const llmRuntimeState = {
+  lastResolvedTarget: null,
+  lastResolvedAt: null,
+  lastOllamaTags: null,
+  lastOllamaTagsAt: 0,
+  lastError: null,
+};
 
 logInfo("[Cerbère] Backends configurés: " + JSON.stringify(BACKENDS));
+logInfo(`[Cerbère] LLM provider=${LLM_PROVIDER} primary=${OLLAMA_PRIMARY_MODEL} fallback=${OLLAMA_FALLBACK_MODEL} finalFallback=${LLM_FALLBACK_PROVIDER}`);
+
+function rememberLlmError(error, extra = {}) {
+  llmRuntimeState.lastError = {
+    at: new Date().toISOString(),
+    message: String(error?.message || error || "unknown_error"),
+    ...extra,
+  };
+}
+
+function rememberResolvedTarget(target, extra = {}) {
+  const snapshot = {
+    provider: target.provider,
+    model: target.model,
+    baseUrl: target.baseUrl,
+    url: target.url,
+    reason: target.reason || null,
+    resolvedAt: new Date().toISOString(),
+    ...extra,
+  };
+  llmRuntimeState.lastResolvedTarget = snapshot;
+  llmRuntimeState.lastResolvedAt = snapshot.resolvedAt;
+  llmRuntimeState.lastError = null;
+  return snapshot;
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = LLM_REQUEST_TIMEOUT_MS) {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  return { response, data, text };
+}
+
+function buildOllamaTagsUrl() {
+  return `${BACKENDS.ollama}/api/tags`;
+}
+
+function buildOllamaChatUrl(baseUrl) {
+  return `${normalizeBaseUrl(baseUrl)}/api/chat`;
+}
+
+function buildLlamaServerCompletionsUrl(baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl);
+  if (!normalized) return "";
+  if (/\/v1\/chat\/completions$/i.test(normalized) || /\/chat\/completions$/i.test(normalized)) {
+    return normalized;
+  }
+  return normalized.endsWith("/v1") ? `${normalized}/chat/completions` : `${normalized}/v1/chat/completions`;
+}
+
+function normalizeOllamaModelNames(payload) {
+  const models = Array.isArray(payload?.models) ? payload.models : [];
+  return Array.from(new Set(
+    models
+      .map((entry) => String(entry?.model || entry?.name || "").trim())
+      .filter(Boolean)
+  ));
+}
+
+function getConfiguredOllamaCandidates(requestedModel = "") {
+  const candidates = [];
+  const explicit = String(requestedModel || "").trim();
+  if (explicit && [OLLAMA_PRIMARY_MODEL, OLLAMA_FALLBACK_MODEL].includes(explicit)) {
+    candidates.push(explicit);
+  }
+  for (const candidate of [OLLAMA_PRIMARY_MODEL, OLLAMA_FALLBACK_MODEL]) {
+    if (candidate && !candidates.includes(candidate)) candidates.push(candidate);
+  }
+  return candidates;
+}
+
+async function getOllamaTags({ force = false } = {}) {
+  if (!BACKENDS.ollama) {
+    return { ok: false, error: "ollama_base_missing", models: [] };
+  }
+
+  const now = Date.now();
+  if (
+    !force
+    && Array.isArray(llmRuntimeState.lastOllamaTags)
+    && (now - llmRuntimeState.lastOllamaTagsAt) < OLLAMA_TAGS_CACHE_TTL_MS
+  ) {
+    return {
+      ok: true,
+      cached: true,
+      models: [...llmRuntimeState.lastOllamaTags],
+      baseUrl: BACKENDS.ollama,
+    };
+  }
+
+  try {
+    const { response, data, text } = await fetchJsonWithTimeout(buildOllamaTagsUrl(), {}, Math.min(LLM_REQUEST_TIMEOUT_MS, 6000));
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: `ollama_http_${response.status}`,
+        detail: text || "",
+        status: response.status,
+        models: [],
+        baseUrl: BACKENDS.ollama,
+      };
+    }
+    const models = normalizeOllamaModelNames(data);
+    llmRuntimeState.lastOllamaTags = models;
+    llmRuntimeState.lastOllamaTagsAt = now;
+    return {
+      ok: true,
+      cached: false,
+      models,
+      raw: data,
+      baseUrl: BACKENDS.ollama,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.name === "TimeoutError" ? "ollama_timeout" : "ollama_unreachable",
+      detail: error?.message || String(error),
+      models: [],
+      baseUrl: BACKENDS.ollama,
+    };
+  }
+}
+
+async function probeLlamaServerHealth() {
+  if (!BACKENDS.llama_server) {
+    return { ok: false, error: "llama_server_base_missing", baseUrl: "" };
+  }
+  const healthUrl = `${BACKENDS.llama_server}/health`;
+  try {
+    const { response, data, text } = await fetchJsonWithTimeout(healthUrl, {}, Math.min(LLM_REQUEST_TIMEOUT_MS, 5000));
+    return {
+      ok: response.ok,
+      status: response.status,
+      baseUrl: BACKENDS.llama_server,
+      healthUrl,
+      detail: response.ok ? data : (text || data || ""),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.name === "TimeoutError" ? "llama_server_timeout" : "llama_server_unreachable",
+      detail: error?.message || String(error),
+      baseUrl: BACKENDS.llama_server,
+      healthUrl,
+    };
+  }
+}
+
+function resolveLlamaServerTarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.llama_server) return null;
+  const model = String(requestedModel || DEFAULT_LOCAL_MODEL).trim() || DEFAULT_LOCAL_MODEL;
+  return {
+    provider: "llama_server",
+    model,
+    baseUrl: BACKENDS.llama_server,
+    url: buildLlamaServerCompletionsUrl(BACKENDS.llama_server),
+    reason: reason || null,
+  };
+}
+
+function resolveOpenAITarget(requestedModel = "", reason = "") {
+  const model = String(requestedModel || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
+  return {
+    provider: "openai",
+    model,
+    baseUrl: BACKENDS.openai,
+    url: buildOpenAICompletionsUrl(BACKENDS.openai),
+    reason: reason || null,
+  };
+}
+
+async function resolveOllamaTarget(requestedModel = "", { emitLogs = true } = {}) {
+  const tags = await getOllamaTags();
+  if (!tags.ok) {
+    return { ok: false, reason: tags.error || "ollama_unavailable", detail: tags.detail || "", tags };
+  }
+
+  const candidates = getConfiguredOllamaCandidates(requestedModel);
+  for (const candidate of candidates) {
+    if (tags.models.includes(candidate)) {
+      if (emitLogs && candidate === OLLAMA_FALLBACK_MODEL && candidate !== OLLAMA_PRIMARY_MODEL) {
+        logWarn(`[LLM] fallback=${candidate} reason=primary_unavailable`);
+      }
+      return {
+        ok: true,
+        target: {
+          provider: "ollama",
+          model: candidate,
+          baseUrl: BACKENDS.ollama,
+          url: buildOllamaChatUrl(BACKENDS.ollama),
+          reason: candidate === OLLAMA_PRIMARY_MODEL ? null : "primary_unavailable",
+        },
+        tags,
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    reason: "ollama_model_missing",
+    detail: `Configured models not installed on Ollama (${candidates.join(", ")})`,
+    tags,
+  };
+}
+
+async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
+  const provider = normalizeLlmProvider(LLM_PROVIDER, "openai");
+
+  if (provider === "ollama") {
+    const ollamaResult = await resolveOllamaTarget(requestedModel, { emitLogs });
+    if (ollamaResult.ok) {
+      if (emitLogs) logInfo(`[LLM] provider=ollama model=${ollamaResult.target.model}`);
+      rememberResolvedTarget(ollamaResult.target, {
+        availableOllamaModels: ollamaResult.tags?.models || [],
+      });
+      return ollamaResult.target;
+    }
+
+    if (emitLogs) {
+      rememberLlmError(ollamaResult.detail || ollamaResult.reason, {
+        provider: "ollama",
+        reason: ollamaResult.reason,
+      });
+    }
+
+    if (LLM_FALLBACK_PROVIDER === "llama_server") {
+      const llamaTarget = resolveLlamaServerTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+      if (llamaTarget) {
+        if (emitLogs) logWarn(`[LLM] fallback=llama-server reason=${ollamaResult.reason || "ollama_unavailable"}`);
+        rememberResolvedTarget(llamaTarget, {
+          availableOllamaModels: ollamaResult.tags?.models || [],
+        });
+        return llamaTarget;
+      }
+    }
+
+    if (LLM_FALLBACK_PROVIDER === "openai") {
+      const openAiTarget = resolveOpenAITarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+      if (emitLogs) logWarn(`[LLM] fallback=openai reason=${ollamaResult.reason || "ollama_unavailable"}`);
+      rememberResolvedTarget(openAiTarget, {
+        availableOllamaModels: ollamaResult.tags?.models || [],
+      });
+      return openAiTarget;
+    }
+
+    throw new Error(ollamaResult.detail || ollamaResult.reason || "ollama_resolution_failed");
+  }
+
+  if (provider === "llama_server") {
+    const llamaTarget = resolveLlamaServerTarget(requestedModel, "provider_forced");
+    if (!llamaTarget) {
+      throw new Error("llama_server_base_missing");
+    }
+    if (emitLogs) logInfo(`[LLM] provider=llama-server model=${llamaTarget.model}`);
+    rememberResolvedTarget(llamaTarget);
+    return llamaTarget;
+  }
+
+  const openAiTarget = resolveOpenAITarget(requestedModel, "provider_forced");
+  if (emitLogs) logInfo(`[LLM] provider=openai model=${openAiTarget.model}`);
+  rememberResolvedTarget(openAiTarget);
+  return openAiTarget;
+}
+
+function normalizeMessageContentForOllama(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object" && entry.type === "text") {
+          return String(entry.text || "").trim();
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (content && typeof content === "object" && typeof content.text === "string") {
+    return content.text;
+  }
+  return String(content || "");
+}
+
+function buildOllamaMessages(messages = []) {
+  return (Array.isArray(messages) ? messages : []).map((message) => ({
+    role: String(message?.role || "user"),
+    content: normalizeMessageContentForOllama(message?.content),
+  }));
+}
+
+function toOpenAIStyleResponseFromOllama(payload, model) {
+  const content = sanitizeAssistantText(String(payload?.message?.content || ""));
+  const promptTokens = Number(payload?.prompt_eval_count || 0) || 0;
+  const completionTokens = Number(payload?.eval_count || 0) || 0;
+  const finishReason = String(payload?.done_reason || "").trim() || (payload?.done ? "stop" : "length");
+
+  return {
+    id: `cerbere-ollama-${Date.now()}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content,
+        },
+        finish_reason: finishReason,
+      },
+    ],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    },
+    provider: "ollama",
+  };
+}
+
+async function getLlmDebugSnapshot({ force = false } = {}) {
+  const ollamaTags = await getOllamaTags({ force });
+  const llamaHealth = await probeLlamaServerHealth();
+
+  let active = llmRuntimeState.lastResolvedTarget;
+  try {
+    const target = await resolveLlmTarget("", { emitLogs: false });
+    active = {
+      provider: target.provider,
+      model: target.model,
+      baseUrl: target.baseUrl,
+      url: target.url,
+      reason: target.reason || null,
+      resolvedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    rememberLlmError(error, { provider: LLM_PROVIDER });
+    active = {
+      provider: null,
+      model: null,
+      baseUrl: null,
+      url: null,
+      reason: String(error?.message || error || "resolution_failed"),
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    configured: {
+      provider: LLM_PROVIDER,
+      fallbackProvider: LLM_FALLBACK_PROVIDER,
+      ollamaPrimaryModel: OLLAMA_PRIMARY_MODEL,
+      ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
+      openaiModel: DEFAULT_OPENAI_MODEL,
+      localModel: DEFAULT_LOCAL_MODEL,
+    },
+    active,
+    providers: {
+      openai: {
+        configured: true,
+        baseUrl: BACKENDS.openai,
+        model: DEFAULT_OPENAI_MODEL,
+        apiKeyConfigured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
+      },
+      ollama: {
+        configured: Boolean(BACKENDS.ollama),
+        baseUrl: BACKENDS.ollama,
+        ok: ollamaTags.ok,
+        error: ollamaTags.ok ? null : ollamaTags.error || null,
+        detail: ollamaTags.ok ? null : ollamaTags.detail || null,
+        models: ollamaTags.models || [],
+        primaryInstalled: (ollamaTags.models || []).includes(OLLAMA_PRIMARY_MODEL),
+        fallbackInstalled: (ollamaTags.models || []).includes(OLLAMA_FALLBACK_MODEL),
+      },
+      llama_server: {
+        configured: Boolean(BACKENDS.llama_server),
+        baseUrl: BACKENDS.llama_server,
+        ok: llamaHealth.ok,
+        error: llamaHealth.ok ? null : llamaHealth.error || null,
+        detail: llamaHealth.ok ? llamaHealth.detail || null : llamaHealth.detail || null,
+        healthUrl: llamaHealth.healthUrl || null,
+      },
+    },
+    lastError: llmRuntimeState.lastError,
+    lastResolvedAt: llmRuntimeState.lastResolvedAt,
+  };
+}
 
 // expose simple stats for frontend dev checks
 router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
@@ -123,10 +558,64 @@ router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
     canonical: true,
     mode: DEV_MODE ? "developer" : "production",
     backends: BACKENDS,
-    features: ["strict_proxy", "multi_backend_routing", "smart_prompting"],
+    llm: {
+      provider: LLM_PROVIDER,
+      fallbackProvider: LLM_FALLBACK_PROVIDER,
+      ollamaPrimaryModel: OLLAMA_PRIMARY_MODEL,
+      ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
+      localModel: DEFAULT_LOCAL_MODEL,
+      openaiModel: DEFAULT_OPENAI_MODEL,
+    },
+    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback"],
   });
 });
 console.log("[Cerbère] Registered debug stats routes: /api/stats, /api/llm/stats");
+
+router.get("/api/llm/models", async (_req, res) => {
+  try {
+    const snapshot = await getLlmDebugSnapshot();
+    return res.json({
+      ok: true,
+      configured: snapshot.configured,
+      models: {
+        ollamaInstalled: snapshot.providers.ollama.models,
+        localDefault: snapshot.configured.localModel,
+        openaiDefault: snapshot.configured.openaiModel,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error?.message || String(error) });
+  }
+});
+
+router.get("/api/llm/active", async (_req, res) => {
+  try {
+    const snapshot = await getLlmDebugSnapshot();
+    return res.json({
+      ok: true,
+      active: snapshot.active,
+      configured: snapshot.configured,
+      lastError: snapshot.lastError,
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error?.message || String(error) });
+  }
+});
+
+router.get("/api/llm/health", async (_req, res) => {
+  try {
+    const snapshot = await getLlmDebugSnapshot({ force: true });
+    return res.json({
+      ok: true,
+      configured: snapshot.configured,
+      active: snapshot.active,
+      providers: snapshot.providers,
+      lastError: snapshot.lastError,
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error?.message || String(error) });
+  }
+});
 
 // -------------------------------------------
 // 2.2 — STRATEGISTE 64K (Ollama)
@@ -156,9 +645,9 @@ function buildOpenAICompletionsUrl(baseUrl) {
   return `${normalized}/v1/chat/completions`;
 }
 
-function buildUpstreamHeaders(backendBase) {
+function buildUpstreamHeaders(backendBase, provider = "openai") {
   const headers = { "Content-Type": "application/json" };
-  if (process.env.OPENAI_API_KEY) {
+  if (provider === "openai" && process.env.OPENAI_API_KEY) {
     headers.Authorization = `Bearer ${process.env.OPENAI_API_KEY}`;
   }
   return headers;
@@ -1008,21 +1497,62 @@ router.post("/v1/chat/completions", async (req, res) => {
   }
 
   try {
-    // Strict proxy mode only
-    const backendBase = selectBackend(model);
-    const backendUrl = buildOpenAICompletionsUrl(backendBase);
-    const upstreamHeaders = buildUpstreamHeaders(backendBase);
-    const upstreamBody = { ...body, model, messages, stream };
-    const upstreamRes = await fetch(backendUrl, {
+    const target = await resolveLlmTarget(model, { emitLogs: true });
+
+    if (target.provider === "ollama") {
+      const ollamaPayload = {
+        model: target.model,
+        messages: buildOllamaMessages(messages),
+        stream: false,
+      };
+
+      const upstreamRes = await fetch(target.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ollamaPayload),
+        signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+      });
+
+      const rawText = await upstreamRes.text();
+      let rawJson = null;
+      if (rawText) {
+        try {
+          rawJson = JSON.parse(rawText);
+        } catch {
+          rawJson = null;
+        }
+      }
+
+      if (!upstreamRes.ok) {
+        logError(`[Cerbère] Upstream error ${upstreamRes.status} from ${target.url}: ${rawText}`);
+        return res.status(upstreamRes.status).json({
+          error: "upstream_error",
+          provider: target.provider,
+          status: upstreamRes.status,
+          detail: rawText,
+        });
+      }
+
+      return res.json(toOpenAIStyleResponseFromOllama(rawJson || {}, target.model));
+    }
+
+    const upstreamBody = { ...body, model: target.model, messages, stream };
+    const upstreamRes = await fetch(target.url, {
       method: "POST",
-      headers: upstreamHeaders,
+      headers: buildUpstreamHeaders(target.baseUrl, target.provider),
       body: JSON.stringify(upstreamBody),
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
     });
 
     if (!upstreamRes.ok) {
       const errText = await upstreamRes.text();
-      logError(`[Cerbère] Upstream error ${upstreamRes.status} from ${backendUrl}: ${errText}`);
-      return res.status(upstreamRes.status).json({ error: "upstream_error", status: upstreamRes.status, detail: errText });
+      logError(`[Cerbère] Upstream error ${upstreamRes.status} from ${target.url}: ${errText}`);
+      return res.status(upstreamRes.status).json({
+        error: "upstream_error",
+        provider: target.provider,
+        status: upstreamRes.status,
+        detail: errText,
+      });
     }
     const data = await upstreamRes.json();
     if (typeof data?.choices?.[0]?.message?.content === "string") {

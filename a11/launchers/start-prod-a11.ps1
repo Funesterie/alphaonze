@@ -205,6 +205,99 @@ function Test-HttpHealthy {
   }
 }
 
+function Normalize-LlmProvider {
+  param(
+    [string]$Value,
+    [string]$Fallback = 'openai'
+  )
+
+  $normalized = [string]$Value
+  if ([string]::IsNullOrWhiteSpace($normalized)) { return $Fallback }
+  $normalized = $normalized.Trim().ToLowerInvariant()
+
+  switch ($normalized) {
+    'ollama' { return 'ollama' }
+    'openai' { return 'openai' }
+    'llama' { return 'llama_server' }
+    'local' { return 'llama_server' }
+    'llama-server' { return 'llama_server' }
+    'llama_server' { return 'llama_server' }
+    'none' { return 'none' }
+    'disabled' { return 'none' }
+    'off' { return 'none' }
+    default { return $Fallback }
+  }
+}
+
+function Get-OllamaModelNames {
+  param(
+    [string]$BaseUrl,
+    [int]$TimeoutSec = 8
+  )
+
+  try {
+    $payload = Invoke-RestMethod -Uri ($BaseUrl.TrimEnd('/') + '/api/tags') -Method Get -TimeoutSec $TimeoutSec
+    $names = @()
+    foreach ($entry in @($payload.models)) {
+      $candidate = ''
+      if ($entry.PSObject.Properties.Match('model').Count -gt 0) {
+        $candidate = [string]$entry.model
+      } elseif ($entry.PSObject.Properties.Match('name').Count -gt 0) {
+        $candidate = [string]$entry.name
+      }
+      if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+        $names += $candidate.Trim()
+      }
+    }
+    return @($names | Select-Object -Unique)
+  } catch {
+    return @()
+  }
+}
+
+function Invoke-OllamaWarmup {
+  param(
+    [string]$BaseUrl,
+    [string[]]$CandidateModels
+  )
+
+  $installedModels = Get-OllamaModelNames -BaseUrl $BaseUrl -TimeoutSec 10
+  if (-not $installedModels.Count) {
+    Write-Host '[WARN] Warmup Ollama saute: aucun modele detecte via /api/tags.'
+    return $false
+  }
+
+  $targetModel = $null
+  foreach ($candidate in $CandidateModels) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    if ($installedModels -contains $candidate) {
+      $targetModel = $candidate
+      break
+    }
+  }
+
+  if (-not $targetModel) {
+    Write-Host ("[WARN] Warmup Ollama saute: modeles cibles absents ({0})." -f ($CandidateModels -join ', '))
+    return $false
+  }
+
+  try {
+    $body = @{
+      model = $targetModel
+      prompt = 'ping'
+      stream = $false
+      keep_alive = '30m'
+    } | ConvertTo-Json -Depth 5 -Compress
+
+    $null = Invoke-RestMethod -Uri ($BaseUrl.TrimEnd('/') + '/api/generate') -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 90
+    Write-Host "[A11 PROD] Warmup Ollama OK : $targetModel"
+    return $true
+  } catch {
+    Write-Host "[WARN] Warmup Ollama KO : $($_.Exception.Message)"
+    return $false
+  }
+}
+
 function Wait-HttpHealthy {
   param(
     [string]$Name,
@@ -315,6 +408,11 @@ $startTunnel = -not (Has-Flag '--no-tunnel')
 $restartTunnel = Has-Flag '--restart-tunnel'
 $startNgrok = Has-Flag '--with-ngrok'
 $checkOnly = Has-Flag '--check-only'
+$requestedLlmProvider = Normalize-LlmProvider -Value $(if ($env:A11_LLM_PROVIDER) { $env:A11_LLM_PROVIDER } else { 'ollama' }) -Fallback 'ollama'
+$requestedLlmFallbackProvider = Normalize-LlmProvider -Value $(if ($env:A11_LLM_FALLBACK_PROVIDER) { $env:A11_LLM_FALLBACK_PROVIDER } else { 'llama_server' }) -Fallback 'llama_server'
+$ollamaPrimaryModel = if ($env:A11_OLLAMA_PRIMARY_MODEL) { [string]$env:A11_OLLAMA_PRIMARY_MODEL } else { 'gemma4:e4b' }
+$ollamaFallbackModel = if ($env:A11_OLLAMA_FALLBACK_MODEL) { [string]$env:A11_OLLAMA_FALLBACK_MODEL } else { 'gemma4:e2b' }
+$ollamaWarmupEnabled = if ($env:A11_OLLAMA_WARMUP -eq '0') { $false } else { $true }
 
 if ($checkOnly) {
   $openBrowser = $false
@@ -335,6 +433,40 @@ if ($env:A11_PROD_NO_TUNNEL -eq '1') { $startTunnel = $false }
 if ($env:A11_PROD_RESTART_TUNNEL -eq '1') { $restartTunnel = $true }
 if ($env:A11_PROD_USE_NGROK -eq '1') { $startNgrok = $true }
 if ($env:A11_PROD_NO_NGROK -eq '1') { $startNgrok = $false }
+
+$configuredLlmEnabled = if ($checkOnly) {
+  (-not (Has-Flag '--no-llm')) -and ($env:A11_PROD_NO_LLM -ne '1')
+} else {
+  $startLlm
+}
+
+$configuredOllamaEnabled = if ($checkOnly) {
+  (-not (Has-Flag '--no-ollama')) -and ($env:A11_PROD_NO_OLLAMA -ne '1')
+} else {
+  $startOllama
+}
+
+$effectiveLlmProvider = $requestedLlmProvider
+if ($effectiveLlmProvider -eq 'ollama' -and -not $configuredOllamaEnabled) {
+  $effectiveLlmProvider = if ($configuredLlmEnabled) { 'llama_server' } else { 'openai' }
+}
+if ($effectiveLlmProvider -eq 'llama_server' -and -not $configuredLlmEnabled) {
+  $effectiveLlmProvider = if ($configuredOllamaEnabled) { 'ollama' } else { 'openai' }
+}
+
+$effectiveLlmFallbackProvider = $requestedLlmFallbackProvider
+if ($effectiveLlmFallbackProvider -eq 'llama_server' -and -not $configuredLlmEnabled) {
+  $effectiveLlmFallbackProvider = 'none'
+}
+if ($effectiveLlmFallbackProvider -eq 'ollama' -and -not $configuredOllamaEnabled) {
+  $effectiveLlmFallbackProvider = 'none'
+}
+if ($effectiveLlmProvider -eq $effectiveLlmFallbackProvider) {
+  $effectiveLlmFallbackProvider = 'none'
+}
+
+$effectiveLocalLlmBase = if ($configuredLlmEnabled) { $localLlmBase } else { '' }
+$effectiveOllamaBase = if ($configuredOllamaEnabled) { $localOllamaBase } else { '' }
 
 $nodeExe = Get-CommandPath 'node'
 $powershellExe = Get-CommandPath 'powershell'
@@ -445,6 +577,11 @@ Write-Host "[A11 PROD] ngrok         : $ngrokExe"
 Write-Host "[A11 PROD] Downloads     : $downloadGuidePath"
 Write-Host "[A11 PROD] R2 key file   : $keyFilePath"
 Write-Host ("[A11 PROD] R2 loaded     : endpoint={0} accessKey={1} secretKey={2}" -f ([bool]$r2Secrets.Endpoint), ([bool]$r2Secrets.AccessKey), ([bool]$r2Secrets.SecretKey))
+Write-Host "[A11 PROD] LLM provider  : $effectiveLlmProvider"
+Write-Host "[A11 PROD] LLM fallback  : $effectiveLlmFallbackProvider"
+Write-Host "[A11 PROD] Ollama primary: $ollamaPrimaryModel"
+Write-Host "[A11 PROD] Ollama second : $ollamaFallbackModel"
+Write-Host "[A11 PROD] Ollama warmup : $ollamaWarmupEnabled"
 Write-Host "[A11 PROD] Logs          : $launcherLogDir"
 Write-Host ""
 
@@ -471,8 +608,13 @@ if ($startBackend) {
       PORT = "$backendPort"
       BACKEND = 'local'
       LLM_ROUTER_URL = $localCerbereBase
-      LOCAL_LLM_URL = $localLlmBase
-      LLAMA_BASE = $localLlmBase
+      LOCAL_LLM_URL = $effectiveLocalLlmBase
+      LLAMA_BASE = $effectiveLocalLlmBase
+      OLLAMA_BASE = $effectiveOllamaBase
+      A11_LLM_PROVIDER = $effectiveLlmProvider
+      A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
+      A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
+      A11_LLM_FALLBACK_PROVIDER = $effectiveLlmFallbackProvider
       A11_SD_PROXY_URL = ''
       SD_PROXY_URL = ''
       ENABLE_SD = $(if ($sdScriptPath) { 'true' } else { 'false' })
@@ -555,6 +697,9 @@ if ($startOllama) {
   $ollamaHealthUrl = "$localOllamaBase/api/tags"
   if ($portInfo -and (Test-HttpHealthy -Url $ollamaHealthUrl)) {
     Write-Host "[WARN] Ollama deja actif sur $ollamaPort (PID $($portInfo.Pid)). Lancement saute."
+    if (-not $checkOnly -and $ollamaWarmupEnabled) {
+      Invoke-OllamaWarmup -BaseUrl $localOllamaBase -CandidateModels @($ollamaPrimaryModel, $ollamaFallbackModel) | Out-Null
+    }
   } elseif ($portInfo) {
     Write-Host "[WARN] Ollama detecte sur $ollamaPort (PID $($portInfo.Pid)) mais health KO. Redemarrage..."
     try {
@@ -576,7 +721,10 @@ if ($startOllama) {
       -Environment @{} `
       -LogName 'prod-ollama' `
       -ShowWindow $showWindows | Out-Null
-    Wait-HttpHealthy -Name 'Ollama local' -Url $ollamaHealthUrl -TimeoutSec 45 | Out-Null
+    $ollamaReady = Wait-HttpHealthy -Name 'Ollama local' -Url $ollamaHealthUrl -TimeoutSec 45
+    if ($ollamaReady -and $ollamaWarmupEnabled) {
+      Invoke-OllamaWarmup -BaseUrl $localOllamaBase -CandidateModels @($ollamaPrimaryModel, $ollamaFallbackModel) | Out-Null
+    }
   }
 } else {
   Write-Host '[A11 PROD] Ollama local desactive.'
@@ -612,9 +760,13 @@ if ($startCerbere) {
         LLM_ROUTER_PORT = "$cerberePort"
         LOCAL_LLM_PORT = "$llmPort"
         LLAMA_PORT = "$llmPort"
-        LOCAL_LLM_URL = $localLlmBase
-        LLAMA_BASE = $localLlmBase
-        OLLAMA_BASE = $localOllamaBase
+        LOCAL_LLM_URL = $effectiveLocalLlmBase
+        LLAMA_BASE = $effectiveLocalLlmBase
+        OLLAMA_BASE = $effectiveOllamaBase
+        A11_LLM_PROVIDER = $effectiveLlmProvider
+        A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
+        A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
+        A11_LLM_FALLBACK_PROVIDER = $effectiveLlmFallbackProvider
         DRAGON_API_URL = 'https://dragon-api-production.up.railway.app'
       } `
       -LogName 'prod-cerbere' `
@@ -682,6 +834,8 @@ if (-not $checkOnly) {
   Test-HttpTarget -Name 'Ollama local health' -Url "$localOllamaBase/api/tags"
   Test-HttpTarget -Name 'Cerbere local health' -Url "$localCerbereBase/health"
   Test-HttpTarget -Name 'Cerbere stats' -Url "$localCerbereBase/api/llm/stats"
+  Test-HttpTarget -Name 'Cerbere active LLM' -Url "$localCerbereBase/api/llm/active"
+  Test-HttpTarget -Name 'Cerbere LLM health' -Url "$localCerbereBase/api/llm/health"
   Test-HttpTarget -Name 'SD public final' -Url $sdPublicUrl
   Test-HttpTarget -Name 'Cerbere public final' -Url $cerberePublicUrl
 }
@@ -700,6 +854,10 @@ Write-Host "  - llm local     : $localLlmBase"
 Write-Host "  - ollama local  : $localOllamaBase"
 Write-Host "  - cerbere local : $localCerbereBase"
 Write-Host "  - cerbere public: $cerberePublicUrl"
+Write-Host "  - llm provider  : $effectiveLlmProvider"
+Write-Host "  - llm fallback  : $effectiveLlmFallbackProvider"
+Write-Host "  - model primaire: $ollamaPrimaryModel"
+Write-Host "  - model secours : $ollamaFallbackModel"
 Write-Host "  - sd public     : $sdPublicUrl"
 Write-Host "  - downloads     : $downloadGuidePath"
 Write-Host "  - logs          : $launcherLogDir"
@@ -715,6 +873,7 @@ Write-Host "  - sans Cerbere  : start-prod-a11.bat --no-cerbere"
 Write-Host "  - sans tunnel   : start-prod-a11.bat --no-tunnel"
 Write-Host "  - relance tunnel: start-prod-a11.bat --restart-tunnel"
 Write-Host "  - mode legacy   : start-prod-a11.bat --with-ngrok (fallback seulement)"
+Write-Host "  - bootstrap IA  : npm --prefix .. run bootstrap:ollama:gemma"
 Write-Host "  - voir consoles : start-prod-a11.bat --show-windows"
 Write-Host ""
 Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local sert au backend image + LLM + Cerbere + tunnel."
