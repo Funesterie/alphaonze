@@ -216,4 +216,6 @@ test('compileMaskToSD prefers semantic prompt metadata over local translation pa
   assert.match(String(compiled.prompt || ''), /\bin a cave\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bpokemon rose\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bgenerate un\b/i);
+  assert.match(String(compiled.prompt || ''), /color palette: pink/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /color palette: pink, pink/i);
 });
