@@ -7,6 +7,11 @@ cd "$SCRIPT_DIR"
 export PORT="${PORT:-8080}"
 export MODEL_PATH="${MODEL_PATH:-$SCRIPT_DIR/fr_FR-siwis-medium.onnx}"
 
+if [ -z "${ONNX_MODEL_URL:-}" ] && [ -n "${MODEL_URL_BASE:-}" ]; then
+  model_name="$(basename "$MODEL_PATH")"
+  export ONNX_MODEL_URL="${MODEL_URL_BASE%/}/$model_name"
+fi
+
 download_model_if_missing() {
   if [ -f "$MODEL_PATH" ]; then
     return 0
