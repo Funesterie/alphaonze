@@ -171,3 +171,54 @@ test('generateImageFromMask skips retry when image verification is unavailable',
   assert.equal(result.imageGuard?.verification?.reason, 'vision_unavailable');
   assert.equal(result.imageGuard?.retries?.length, 0);
 });
+
+test('generateImageFromMask rejects invalid solid-black generations before returning success', async () => {
+  await assert.rejects(
+    () => generateImageFromMask({
+      req: { headers: {} },
+      rawMask: {
+        version: 'mask-1',
+        intent: 'image.generate',
+        task: { domain: 'image', action: 'generate' },
+        compiler: { target: 'sd-payload', version: '1.0' },
+        inputs: {
+          subject: ['vegeta'],
+          environment: [],
+          style: ['high quality'],
+          composition: [],
+          lighting: [],
+          palette: ['pink'],
+        },
+        options: {
+          width: 768,
+          height: 768,
+          steps: 30,
+          guidance_scale: 7.5,
+        },
+        constraints: {
+          safe_mode: true,
+          no_text: true,
+        },
+        ambiguities: [],
+        raw: "genere une image de vegeta",
+      },
+      generateSd: async () => ({
+        ok: true,
+        image_url: 'https://files.example.com/black.png',
+        filename: 'black.png',
+      }),
+      inspectGeneratedImageResult: async () => ({
+        ok: false,
+        reason: 'solid_black_image_detected',
+        imageUrl: 'https://files.example.com/black.png',
+        metadata: { width: 768, height: 768, channels: 4, sizeBytes: 1795 },
+      }),
+    }),
+    (error) => {
+      assert.equal(error?.statusCode, 502);
+      assert.equal(error?.payload?.error, 'image_generation_invalid');
+      assert.equal(error?.payload?.details?.reason, 'solid_black_image_detected');
+      return true;
+    }
+  );
+});

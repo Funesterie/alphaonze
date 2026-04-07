@@ -348,7 +348,6 @@ export function initSpeech(onResult: (txt: string, isFinal?: boolean) => void): 
   if (recognition) return; // déjà créé
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    console.warn('[speech] SpeechRecognition API not available');
     return;
   }
   try {

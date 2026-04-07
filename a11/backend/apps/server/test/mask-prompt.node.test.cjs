@@ -34,8 +34,15 @@ test('buildSdPromptBundle keeps english color ordering natural for solo prompts'
 });
 
 test('buildSdPromptBundle strips bare image request prefixes before extracting the subject', () => {
-  for (const rawPrompt of ['genere une image lapin rose', 'je veux une image lapin rose']) {
+  for (const rawPrompt of ['genere une image lapin rose', 'je veux une image lapin rose', "j'aimerais que tu génère une image de vegeta avec la chevelure rose"]) {
     const bundle = buildSdPromptBundle(rawPrompt);
+
+    if (/vegeta/i.test(rawPrompt)) {
+      assert.match(String(bundle.prompt || ''), /\bvegeta\b/i);
+      assert.doesNotMatch(String(bundle.prompt || ''), /\bimage of vegeta\b/i);
+      assert.doesNotMatch(String(bundle.prompt || ''), /\bque tu génère a image of\b/i);
+      continue;
+    }
 
     assert.match(String(bundle.prompt || ''), /\bone rabbit with pink fur\b/i);
     assert.doesNotMatch(String(bundle.prompt || ''), /\bimage rabbit\b/i);
