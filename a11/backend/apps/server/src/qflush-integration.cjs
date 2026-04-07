@@ -547,7 +547,7 @@ function getRemoteFlowBaseUrl() {
 
 function getRemoteFlowTimeoutMs() {
   const parsed = Number.parseInt(String(process.env.A11_QFLUSH_REMOTE_TIMEOUT_MS || '').trim(), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60000;
 }
 
 function getRemoteFlowRetryCount() {
