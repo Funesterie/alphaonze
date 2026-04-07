@@ -30,7 +30,14 @@ import urllib.request
 target = pathlib.Path(sys.argv[1])
 url = sys.argv[2]
 target.parent.mkdir(parents=True, exist_ok=True)
-with urllib.request.urlopen(url) as response, target.open("wb") as handle:
+request = urllib.request.Request(
+    url,
+    headers={
+        "User-Agent": "Mozilla/5.0 Codex/A11 Railway TTS",
+        "Accept": "*/*",
+    },
+)
+with urllib.request.urlopen(request) as response, target.open("wb") as handle:
     handle.write(response.read())
 PY
 }
