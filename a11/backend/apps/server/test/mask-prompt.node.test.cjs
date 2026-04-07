@@ -185,3 +185,35 @@ test('compileMaskToSD preserves with and under relations as separate atoms', () 
   assert.match(String(compiled.prompt || ''), /with a hat/i);
   assert.match(String(compiled.prompt || ''), /under a moon/i);
 });
+
+test('compileMaskToSD prefers semantic prompt metadata over local translation patches', () => {
+  const compiled = compileMaskToSD({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'sd-payload', version: '1.0' },
+    inputs: {
+      subject: ['pink pokemon'],
+      environment: ['in a cave'],
+      style: ['anime illustration'],
+      composition: ['solo composition', 'clear centered composition'],
+      lighting: [],
+      palette: ['pink'],
+    },
+    options: { width: 768, height: 768, steps: 40, guidance_scale: 8 },
+    constraints: { safe_mode: true, no_text: true },
+    ambiguities: [],
+    raw: 'genere un pokemon rose dans une grotte',
+    meta: {
+      llmEnriched: true,
+      translatedText: 'generate a pink pokemon in a cave',
+      promptCompiler: 'a11-semantic',
+      promptSeedText: 'generate a pink pokemon in a cave',
+    },
+  });
+
+  assert.match(String(compiled.prompt || ''), /\bpink pokemon\b/i);
+  assert.match(String(compiled.prompt || ''), /\bin a cave\b/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bpokemon rose\b/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bgenerate un\b/i);
+});

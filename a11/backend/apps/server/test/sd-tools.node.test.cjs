@@ -78,8 +78,11 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
-  assert.match(String(capturedBody?.prompt || ''), /\bone rabbit with pink fur\b/i);
+  assert.match(String(capturedBody?.prompt || ''), /\brabbit\b/i);
+  assert.match(String(capturedBody?.prompt || ''), /color palette: pink/i);
+  assert.match(String(capturedBody?.prompt || ''), /exactly one pink rabbit|exactly one rabbit/i);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bimage rabbit\b/i);
+  assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bgenere\b|\blapin rose\b/i);
 
   const negativeParts = String(capturedBody?.negative_prompt || '')
     .split(',')

@@ -1,6 +1,8 @@
 const defaultFs = require('node:fs');
 const defaultPath = require('node:path');
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
+const { buildCanonicalImageMaskFromText } = require('../mask/resolve-image-mask-from-text.cjs');
+const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
 const {
   resolveSdProxyUrl: defaultResolveSdProxyUrl,
   resolveSdScriptPath: defaultResolveSdScriptPath,
@@ -269,20 +271,43 @@ function createSdToolsRouter(overrides = {}) {
       inferredPromptAlreadyCompiled || looksLikeCompiledNegativePrompt(requestBody?.negative_prompt)
     );
 
+    let semanticCompiledState = null;
+    if (!promptAlreadyCompiled && !inferredPromptAlreadyCompiled) {
+      try {
+        const maskResolution = await buildCanonicalImageMaskFromText(rawPrompt, {
+          allowCompatFallback: true,
+          maskOptions: {
+            width: Number(requestBody?.width || 768),
+            height: Number(requestBody?.height || 768),
+            steps: Number(requestBody?.num_inference_steps || requestBody?.steps || 35),
+            guidance_scale: Number(requestBody?.guidance_scale || 8.0),
+            ...(requestBody?.seed !== undefined ? { seed: Number(requestBody.seed) } : {}),
+          },
+        });
+        if (maskResolution?.rawMask) {
+          semanticCompiledState = compileMaskImageGenerate(maskResolution.rawMask);
+        }
+      } catch {
+        semanticCompiledState = null;
+      }
+    }
+
     const repairedRawPrompt = repairCompiledSdPromptArtifacts(rawPrompt);
-    const promptBundle = promptAlreadyCompiled || inferredPromptAlreadyCompiled
+    const promptBundle = promptAlreadyCompiled || inferredPromptAlreadyCompiled || semanticCompiledState
       ? { prompt: repairedRawPrompt || rawPrompt, negativeHints: [] }
       : buildSdPromptBundle(rawPrompt, {
         preferLiteralColor: requestBody?.prefer_literal_color === true || requestBody?.image_interpretation === 'literal_color',
         forceColorPrompt: requestBody?.force_color_prompt === true,
       });
     const finalPrompt = repairCompiledSdPromptArtifacts(
-      promptAlreadyCompiled || inferredPromptAlreadyCompiled ? repairedRawPrompt || rawPrompt : promptBundle.prompt
+      promptAlreadyCompiled || inferredPromptAlreadyCompiled
+        ? (repairedRawPrompt || rawPrompt)
+        : (semanticCompiledState?.sdBody?.prompt || promptBundle.prompt)
     );
 
     const negative_prompt = repairCompiledSdPromptArtifacts(mergeUniquePromptFragments(
-      requestBody?.negative_prompt || 'blurry, abstract, deformed, extra limbs, bad anatomy, low quality, text, watermark',
-      negativePromptAlreadyCompiled || inferredNegativePromptAlreadyCompiled ? [] : promptBundle.negativeHints,
+      requestBody?.negative_prompt || (semanticCompiledState?.sdBody?.negative_prompt || 'blurry, abstract, deformed, extra limbs, bad anatomy, low quality, text, watermark'),
+      negativePromptAlreadyCompiled || inferredNegativePromptAlreadyCompiled || semanticCompiledState ? [] : promptBundle.negativeHints,
     ));
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
