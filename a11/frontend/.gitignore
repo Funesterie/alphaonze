@@ -13,13 +13,10 @@ Thumbs.db
 *.swp
 *.ps1
 *.out
-*.txt
-!package.json
-*.json
-!apps/web/package.json
-!apps/web/package-lock.json
-!apps/web/tsconfig.json
-*.svg
+# ⚠️ Ne jamais ignorer globalement *.json ou *.svg !
+# Pour les logs ou fichiers temporaires, cible précisément :
+logs/*.txt
+temp/*.txt
 
 # Fichiers/dossiers spécifiques à ignorer
 cleanup*.log
