@@ -149,6 +149,51 @@ function buildSnapshotSignature(snapshot: DragonSystemSnapshot): string {
   });
 }
 
+const PUBLIC_INTEGRATION_CANONICAL_NAMES = new Set(["qflush", "a11"]);
+const PUBLIC_INTEGRATION_PROBE_NAMES = new Set(["qflush", "a11", "cerbere"]);
+
+function normalizeIntegrationEntityName(value: string): string {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/]+$/, "")
+    .toLowerCase();
+}
+
+function isPublicCanonicalSourcePath(sourcePath: string): boolean {
+  const baseName = path.basename(String(sourcePath || "").replace(/[\\/]+$/, ""));
+  return PUBLIC_INTEGRATION_CANONICAL_NAMES.has(normalizeIntegrationEntityName(baseName));
+}
+
+function summarizeIntegrationUpstreams(upstreams: UpstreamProbe[]): DragonSystemSnapshot["summary"] {
+  return {
+    total: upstreams.length,
+    existing: upstreams.filter((entry) => entry.exists).length,
+    healthy: upstreams.filter((entry) => entry.healthState === "available").length,
+    ready: upstreams.filter((entry) => entry.runtimeState === "ready").length,
+    degraded: upstreams.filter((entry) => entry.exists && entry.runtimeState === "degraded").length,
+    dead: upstreams.filter((entry) => entry.exists && entry.runtimeState === "dead").length
+  };
+}
+
+function buildPublicIntegrationSnapshot(snapshot: DragonSystemSnapshot): DragonSystemSnapshot {
+  const upstreams = snapshot.upstreams.filter((probe) =>
+    PUBLIC_INTEGRATION_PROBE_NAMES.has(normalizeIntegrationEntityName(probe.name))
+  );
+
+  return {
+    ...snapshot,
+    manifest: {
+      ...snapshot.manifest,
+      canonical_sources: snapshot.manifest.canonical_sources.filter((source) =>
+        isPublicCanonicalSourcePath(source.path)
+      ),
+      snapshots_or_mirrors: []
+    },
+    upstreams,
+    summary: summarizeIntegrationUpstreams(upstreams)
+  };
+}
+
 function parseLogTarget(value: unknown): DragonLogTarget {
   return value === "a11" || value === "cerbere" ? value : "qflush";
 }
@@ -683,11 +728,12 @@ async function main(): Promise<void> {
   }
 
   async function buildIntegrationPayload(): Promise<IntegrationPayload> {
-    const [snapshot, catalog, daemon] = await Promise.all([
+    const [rawSnapshot, catalog, daemon] = await Promise.all([
       buildSystemSnapshot(manifestPath),
       listIntegrationCatalog(manifestPath),
       getDragonDaemonStatus(manifestPath)
     ]);
+    const snapshot = buildPublicIntegrationSnapshot(rawSnapshot);
 
     return {
       generatedAt: new Date().toISOString(),

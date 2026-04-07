@@ -412,6 +412,7 @@ $requestedLlmProvider = Normalize-LlmProvider -Value $(if ($env:A11_LLM_PROVIDER
 $requestedLlmFallbackProvider = Normalize-LlmProvider -Value $(if ($env:A11_LLM_FALLBACK_PROVIDER) { $env:A11_LLM_FALLBACK_PROVIDER } else { 'llama_server' }) -Fallback 'llama_server'
 $ollamaPrimaryModel = if ($env:A11_OLLAMA_PRIMARY_MODEL) { [string]$env:A11_OLLAMA_PRIMARY_MODEL } else { 'gemma4:e4b' }
 $ollamaFallbackModel = if ($env:A11_OLLAMA_FALLBACK_MODEL) { [string]$env:A11_OLLAMA_FALLBACK_MODEL } else { 'gemma4:e2b' }
+$llmRequestTimeoutMs = if ($env:A11_LLM_REQUEST_TIMEOUT_MS) { [string]$env:A11_LLM_REQUEST_TIMEOUT_MS } else { '60000' }
 $ollamaWarmupEnabled = if ($env:A11_OLLAMA_WARMUP -eq '0') { $false } else { $true }
 
 if ($checkOnly) {
@@ -615,6 +616,7 @@ if ($startBackend) {
       A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
       A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
       A11_LLM_FALLBACK_PROVIDER = $effectiveLlmFallbackProvider
+      A11_LLM_REQUEST_TIMEOUT_MS = $llmRequestTimeoutMs
       A11_SD_PROXY_URL = ''
       SD_PROXY_URL = ''
       ENABLE_SD = $(if ($sdScriptPath) { 'true' } else { 'false' })
@@ -767,6 +769,7 @@ if ($startCerbere) {
         A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
         A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
         A11_LLM_FALLBACK_PROVIDER = $effectiveLlmFallbackProvider
+        A11_LLM_REQUEST_TIMEOUT_MS = $llmRequestTimeoutMs
         DRAGON_API_URL = 'https://dragon-api-production.up.railway.app'
       } `
       -LogName 'prod-cerbere' `
