@@ -96,6 +96,15 @@ test('analyzeSemanticIntent activates auth and network knowledge for token and c
   assert.notEqual(result?.decision?.selectedIntentType, 'image.generate');
 });
 
+test("analyzeSemanticIntent does not route mail requests with referenced images to image generation", () => {
+  const result = analyzeSemanticIntent("envoi un mail à cellaurojeffrey@gmail.com avec l'image de dragon", {});
+
+  assert.equal(result?.decision?.selectedIntentType, 'chat.reply');
+  assert.notEqual(result?.topIntents?.[0]?.type, 'image.generate');
+  assert.notEqual(result?.topIntents?.[0]?.type, 'web.image.search');
+  assert.equal(result?.summary?.decision?.selectedIntentType, 'chat.reply');
+});
+
 test('textToWazaa and wazaaToMask preserve semantic hierarchy and emit canonical masks per domain', () => {
   const imageWazaa = textToWazaa.sync('genere une image de goku dans le ciel', {});
   assert.equal(imageWazaa?.intent?.type, 'image.generate');
