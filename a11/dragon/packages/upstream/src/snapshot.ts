@@ -103,8 +103,9 @@ async function readPackageName(projectPath: string): Promise<string | undefined>
 }
 
 export function deriveNameFromPath(projectPath: string): string {
-  const normalized = projectPath.replace(/[\\/]+$/, "");
-  return path.basename(normalized);
+  const normalized = String(projectPath || "").trim().replace(/[\\/]+$/, "");
+  const segments = normalized.split(/[\\/]+/).filter(Boolean);
+  return segments.at(-1) ?? normalized;
 }
 
 export function findCanonicalSourceByTarget(
