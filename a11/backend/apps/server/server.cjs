@@ -6789,7 +6789,7 @@ function getLocalCompletionsUrl() {
   const inferredLocalBase = (String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production')
     ? `http://127.0.0.1:${String(process.env.LLAMA_PORT || process.env.LOCAL_LLM_PORT || '8080').trim() || '8080'}`
     : '';
-  const base = explicitBase || routerBase || inferredLocalBase;
+  const base = routerBase || explicitBase || inferredLocalBase;
   if (!base) return null;
   const normalized = base.replace(/\/$/, '');
   return normalized.endsWith('/v1') ? `${normalized}/chat/completions` : `${normalized}/v1/chat/completions`;
@@ -10076,7 +10076,8 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
 }
 
 async function proxyChatToOpenAI(req, res) {
-  const provider = String(req.body?.provider || '').trim().toLowerCase();
+  const requestedProvider = String(req.body?.provider || '').trim().toLowerCase();
+  const provider = requestedProvider || (BACKEND === 'local' ? 'local' : 'openai');
   const latestUserMessage = getLatestUserMessage(req.body || {});
   const userId = String(req.user?.id || req.body?._user || '').trim();
   const conversationId = normalizeConversationId(req.body?.conversationId || req.body?.convId || req.body?.sessionId);
@@ -10193,6 +10194,9 @@ async function proxyChatToOpenAI(req, res) {
   }
 
   let upstreamBody = req.body ? { ...req.body } : {};
+  if (!String(upstreamBody.provider || '').trim()) {
+    upstreamBody.provider = provider;
+  }
   if (remoteProviderConfig) {
     upstreamBody.providerConfig = remoteProviderConfig;
     upstreamBody.model = getResolvedRemoteModelForRequest(upstreamBody, remoteProviderConfig.model);
