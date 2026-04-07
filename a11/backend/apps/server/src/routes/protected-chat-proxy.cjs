@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { ensureRequestId } = require('../../lib/request-context.cjs');
+const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
 const {
   extractLatestUserMessage,
 } = require('../mask/image-chat-runtime.cjs');
@@ -8,6 +9,12 @@ const {
   createIntentResolver,
   isIntentRouterV2Enabled,
 } = require('../resolve-user-request.cjs');
+const {
+  t_list_resources: defaultListResources,
+  t_generate_pdf: defaultGeneratePdf,
+  t_share_file: defaultShareFile,
+  t_email_latest_resource: defaultEmailLatestResource,
+} = require('../a11/tools-dispatcher.cjs');
 
 function defaultHasLocalChatUpstreamConfigured() {
   return Boolean(
@@ -107,6 +114,222 @@ function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
   return payload;
 }
 
+function buildExecutionContext(req) {
+  return {
+    authToken: extractRequestAuthToken(req),
+    userId: String(req?.user?.id || req?.body?._user || '').trim(),
+    conversationId: String(req?.body?.conversationId || req?.body?.conversation_id || '').trim(),
+    convId: String(req?.body?.conversationId || req?.body?.conversation_id || '').trim(),
+    sessionId: String(req?.body?.conversationId || req?.body?.conversation_id || '').trim(),
+  };
+}
+
+function extractEmailRecipientsFromText(text = '') {
+  const matches = String(text || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
+  return [...new Set((matches || []).map((entry) => String(entry || '').trim()).filter(Boolean))];
+}
+
+function isImageLikeResource(resource) {
+  const contentType = String(resource?.contentType || resource?.content_type || '').trim().toLowerCase();
+  const filename = String(resource?.filename || '').trim();
+  const url = String(resource?.url || '').trim();
+  return contentType.startsWith('image/')
+    || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filename)
+    || /\.(png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(url);
+}
+
+function detectCompoundActionRequest(text = '') {
+  const sourceText = String(text || '').trim();
+  const normalizedText = sourceText
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const recipients = extractEmailRecipientsFromText(sourceText);
+  const hasMailAction = /\b(envoie|envoyer|envoi|mail|email|courriel)\b/.test(normalizedText);
+  const hasPdfAction = /\b(pdf|document pdf|fichier pdf|rapport pdf)\b/.test(normalizedText);
+  const hasImageMention = /\b(image|images|illustration|photo|photos)\b/.test(normalizedText);
+
+  if (hasMailAction && recipients.length && hasImageMention) {
+    return {
+      kind: 'compound.mail_with_latest_image',
+      recipients,
+      sourceText,
+    };
+  }
+
+  if (hasPdfAction && hasImageMention) {
+    return {
+      kind: 'compound.pdf_with_latest_images',
+      recipients,
+      sourceText,
+    };
+  }
+
+  return null;
+}
+
+function buildCompoundPayload(payload, resolution) {
+  return {
+    ...payload,
+    traceId: resolution.traceId,
+    pipeline: resolution.pipeline,
+    kind: resolution.kind,
+  };
+}
+
+function buildAssistantChoice(content) {
+  return [
+    {
+      index: 0,
+      message: {
+        role: 'assistant',
+        content,
+      },
+      finish_reason: 'stop',
+    },
+  ];
+}
+
+async function executeCompoundActionRequest({
+  req,
+  compound,
+  listResources,
+  generatePdf,
+  shareFile,
+  emailLatestResource,
+}) {
+  const context = buildExecutionContext(req);
+  const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const resolution = {
+    traceId,
+    pipeline: 'intent-router-v2',
+    kind: compound.kind,
+  };
+
+  if (compound.kind === 'compound.mail_with_latest_image') {
+    const result = await emailLatestResource({
+      to: compound.recipients,
+      conversationId: context.conversationId || null,
+      kind: 'image',
+      attachToEmail: true,
+      subject: 'A11 - image',
+      message: "Image jointe depuis la conversation A11.",
+      _context: context,
+    });
+
+    if (!result?.ok) {
+      const error = new Error(result?.error || 'compound_mail_with_image_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_mail_with_image_failed',
+        details: result,
+      };
+      throw error;
+    }
+
+    const attachedUrl = String(
+      result?.resource?.url
+      || result?.resource?.downloadUrl
+      || ''
+    ).trim() || null;
+    const content = `C'est fait. Le mail a ete envoye avec la derniere image de la conversation${attachedUrl ? ` et son apercu est disponible ici: ${attachedUrl}` : '.'}`;
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'email',
+      content,
+      recipients: compound.recipients,
+      resource: result?.resource || null,
+      mail: result?.mail || null,
+      choices: buildAssistantChoice(content),
+    }, resolution);
+  }
+
+  if (compound.kind === 'compound.pdf_with_latest_images') {
+    const listed = await listResources({
+      conversationId: context.conversationId || null,
+      limit: 12,
+      _context: context,
+    });
+    const imageResources = Array.isArray(listed?.resources)
+      ? listed.resources.filter(isImageLikeResource).slice(0, 4)
+      : [];
+
+    if (!imageResources.length) {
+      const error = new Error('compound_pdf_with_images_missing_images');
+      error.statusCode = 404;
+      error.payload = {
+        ok: false,
+        error: 'compound_pdf_with_images_missing_images',
+        message: "Aucune image recente n'a ete trouvee dans cette conversation pour construire le PDF.",
+      };
+      throw error;
+    }
+
+    const pdf = await generatePdf({
+      conversationId: context.conversationId || null,
+      title: 'Document A11',
+      author: 'A11',
+      sections: [
+        {
+          heading: 'Images de la conversation',
+          text: compound.sourceText,
+          images: imageResources.map((resource) => String(resource.id || resource.url || resource.filename || '').trim()).filter(Boolean),
+        },
+      ],
+      _context: context,
+    });
+
+    if (!pdf?.ok || !String(pdf?.outputPath || '').trim()) {
+      const error = new Error(pdf?.error || 'compound_pdf_with_images_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_pdf_with_images_failed',
+        details: pdf,
+      };
+      throw error;
+    }
+
+    const shared = await shareFile({
+      path: pdf.outputPath,
+      conversationId: context.conversationId || null,
+      filename: String(pdf.filename || '').trim() || 'a11-images.pdf',
+      _context: context,
+    });
+
+    if (!shared?.ok) {
+      const error = new Error(shared?.error || 'compound_pdf_share_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_pdf_share_failed',
+        details: shared,
+      };
+      throw error;
+    }
+
+    const pdfUrl = String(shared?.url || shared?.conversationResource?.url || shared?.conversationResource?.downloadUrl || '').trim() || null;
+    const content = pdfUrl
+      ? `C'est fait. Le PDF avec les images est pret. [ouvrir le PDF](${pdfUrl})`
+      : "C'est fait. Le PDF avec les images est pret.";
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'pdf',
+      content,
+      file_url: pdfUrl,
+      filePath: pdfUrl,
+      pdf,
+      shared: shared?.conversationResource || shared || null,
+      choices: buildAssistantChoice(content),
+    }, resolution);
+  }
+
+  return null;
+}
+
 function createProtectedChatProxyRouter({
   verifyJWT,
   proxyChatToOpenAI,
@@ -114,6 +337,10 @@ function createProtectedChatProxyRouter({
   detectWebImageIntent,
   duckduckgoImageSearch,
   generateSd,
+  listResources = defaultListResources,
+  generatePdf = defaultGeneratePdf,
+  shareFile = defaultShareFile,
+  emailLatestResource = defaultEmailLatestResource,
   hasLocalChatUpstreamConfigured = defaultHasLocalChatUpstreamConfigured,
   shouldDefaultToLocalProvider = defaultShouldDefaultToLocalProvider,
   intentRouterV2Enabled = isIntentRouterV2Enabled(),
@@ -142,6 +369,19 @@ function createProtectedChatProxyRouter({
   async function tryHandleIntentRequest(req, res) {
     const latestUserMessage = extractLatestUserMessage(req.body || {});
     if (!latestUserMessage) return false;
+
+    const compoundRequest = detectCompoundActionRequest(latestUserMessage);
+    if (compoundRequest) {
+      const compoundPayload = await executeCompoundActionRequest({
+        req,
+        compound: compoundRequest,
+        listResources,
+        generatePdf,
+        shareFile,
+        emailLatestResource,
+      });
+      return res.status(200).json(compoundPayload);
+    }
 
     const resolution = await intentResolver.resolveUserRequest({
       req,

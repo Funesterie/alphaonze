@@ -417,6 +417,127 @@ test('POST /api/llm/chat returns the same image payload without requiring dev mo
   );
 });
 
+test('POST /api/llm/chat executes compound mail plus latest image requests', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        emailLatestResource: async ({ to, kind, attachToEmail, conversationId }) => ({
+          ok: true,
+          to,
+          latest: true,
+          resource: {
+            id: 42,
+            kind,
+            url: 'https://files.example.com/latest-image.png',
+          },
+          mail: {
+            ok: true,
+            attachToEmail,
+            conversationId,
+          },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-mail',
+        messages: [{ role: 'user', content: "envoi un mail à cellaurojeffrey@gmail.com avec l'image de dragon" }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.artifact_type, 'email');
+      assert.equal(json.kind, 'compound.mail_with_latest_image');
+      assert.equal(Array.isArray(json.recipients), true);
+      assert.equal(json.recipients[0], 'cellaurojeffrey@gmail.com');
+      assert.match(String(json.content || ''), /mail a ete envoye/i);
+      assert.match(String(json.resource?.url || ''), /latest-image\.png/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat executes compound pdf with latest images requests', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        listResources: async () => ({
+          ok: true,
+          resources: [
+            { id: 7, filename: 'dragon.png', contentType: 'image/png', url: 'https://files.example.com/dragon.png' },
+            { id: 8, filename: 'castle.jpg', contentType: 'image/jpeg', url: 'https://files.example.com/castle.jpg' },
+          ],
+        }),
+        generatePdf: async ({ sections }) => ({
+          ok: true,
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\a11-images.pdf',
+          filename: 'a11-images.pdf',
+          sections,
+        }),
+        shareFile: async () => ({
+          ok: true,
+          url: 'https://files.example.com/a11-images.pdf',
+          conversationResource: {
+            id: 99,
+            filename: 'a11-images.pdf',
+            url: 'https://files.example.com/a11-images.pdf',
+          },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-pdf',
+        messages: [{ role: 'user', content: 'fais un pdf avec les images de cette conversation' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.artifact_type, 'pdf');
+      assert.equal(json.kind, 'compound.pdf_with_latest_images');
+      assert.match(String(json.file_url || ''), /a11-images\.pdf/i);
+      assert.match(String(json.content || ''), /ouvrir le PDF/i);
+    }
+  );
+});
+
 test('POST /api/admin/image-cardinality is admin protected and returns local debug telemetry', async () => {
   const jwtSecret = 'test-secret';
   const adminToken = jwt.sign({ id: 'admin', username: 'admin', role: 'admin', isAdmin: true }, jwtSecret, { expiresIn: '1h' });
