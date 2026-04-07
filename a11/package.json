@@ -5,6 +5,7 @@
   "description": "Unified control entrypoint for the A11 monorepo",
   "scripts": {
     "start:online": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./launchers/start-prod-a11.ps1",
+    "bootstrap:ollama:gemma": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./launchers/bootstrap-ollama-gemma.ps1",
     "build:backend": "npm --prefix ./backend/apps/server run railway:build",
     "build:frontend": "npm --prefix ./frontend/apps/web run build",
     "build:dragon": "npm --prefix ./dragon run build",
