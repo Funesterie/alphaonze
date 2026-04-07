@@ -78,9 +78,18 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const actionLike = /\b(genere|cree|dessine|cherche|trouve|montre|affiche|ecris|code|fais|prepare|generate|create|draw|search|find|show|write)\b/.test(normalizedText);
   const creationLike = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|generate|create|draw|make|render)\b/.test(normalizedText);
   const showLike = /\b(montre|montrer|affiche|afficher|fais voir|show me|show|cherche|chercher|trouve|trouver|find|search)\b/.test(normalizedText);
+  const emailActionLike = /\b(envoie|envoyer|envoi|mail|email|gmail|courriel|message)\b/.test(normalizedText);
+  const emailAddressLike = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(sourceText);
+  const attachmentLike = /\b(avec|join|joins|joint|jointe|piece jointe|pi[eè]ce jointe|attachment|attached|inclu|inclure)\b/.test(normalizedText);
   const subject = extractSubjectCandidate(wordItems.map((item) => item.word));
   const colorWordCount = wordItems.filter((item) => Array.isArray(item.tags) && item.tags.includes('color')).length;
   const codeKeywordSignal = /\b(python|script|fonction|code|programme|api|json|regex|tri|fichier|dossier|png|csv|node)\b/.test(normalizedText);
+  const mailRequestWithReferencedImage = Boolean(
+    emailActionLike
+    && (emailAddressLike || /\b(mail|email|gmail|courriel)\b/.test(normalizedText))
+    && /\bimage\b/.test(normalizedText)
+    && !creationLike
+  );
   const strongImplicitImageRequest = Boolean(
     creationLike
     && colorWordCount > 0
@@ -169,6 +178,22 @@ function scoreSemanticIntents(levels, overrides = {}) {
     rawScores['image.generate'] += 1.25;
     levelBreakdown.message['image.generate'] += 1.25;
     evidence['image.generate'].push('heuristique:visual_style_signal');
+  }
+
+  if (mailRequestWithReferencedImage) {
+    rawScores['chat.reply'] += 2.4;
+    rawScores['image.generate'] -= 2.6;
+    rawScores['web.image.search'] -= 1.8;
+    levelBreakdown.message['chat.reply'] += 2.4;
+    levelBreakdown.message['image.generate'] -= 2.6;
+    levelBreakdown.message['web.image.search'] -= 1.8;
+    evidence['chat.reply'].push('heuristique:mail_request_with_referenced_image');
+    evidence['image.generate'].push('suppression:mail_request_with_referenced_image');
+    evidence['web.image.search'].push('suppression:mail_request_with_referenced_image');
+  } else if (emailActionLike && (emailAddressLike || attachmentLike)) {
+    rawScores['chat.reply'] += 1.35;
+    levelBreakdown.message['chat.reply'] += 1.35;
+    evidence['chat.reply'].push('heuristique:mail_action');
   }
 
   rawScores['chat.reply'] += 0.25;
@@ -282,6 +307,7 @@ function scoreSemanticIntents(levels, overrides = {}) {
       showSignal: showLike,
       colorSignal: colorWordCount > 0,
       visualStyleSignal,
+      mailActionSignal: mailRequestWithReferencedImage || emailActionLike,
     },
   };
 }
