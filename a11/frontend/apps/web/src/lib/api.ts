@@ -1849,6 +1849,9 @@ export async function purgeMemoryNow(options?: { userId?: string; dryRun?: boole
 }
 
 export async function fetchTechnicalMemoSummary(): Promise<TechnicalMemoSummaryResponse> {
+  if (!hasAdminApiAccess()) {
+    throw new Error('admin_required');
+  }
   const headers = buildAuthHeaders();
   if (ADMIN_TOKEN) headers['X-NEZ-ADMIN'] = ADMIN_TOKEN;
 
@@ -1871,6 +1874,9 @@ export async function fetchTechnicalMemoSummary(): Promise<TechnicalMemoSummaryR
 }
 
 export async function purgeTechnicalMemos(): Promise<TechnicalMemoPurgeResponse> {
+  if (!hasAdminApiAccess()) {
+    throw new Error('admin_required');
+  }
   const headers = buildAuthHeaders();
   if (ADMIN_TOKEN) headers['X-NEZ-ADMIN'] = ADMIN_TOKEN;
 

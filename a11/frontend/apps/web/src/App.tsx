@@ -2010,6 +2010,11 @@ export function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
     if (activeView !== 'admin' || adminSection !== 'memory') return;
+    if (!hasAdminApiAccess()) {
+      setTechnicalMemoSummary(null);
+      setTechnicalMemoError("");
+      return;
+    }
     refreshTechnicalMemoSummary();
   }, [isAuthenticated, activeView, adminSection]);
 
@@ -2034,6 +2039,11 @@ export function App() {
   }
 
   async function refreshTechnicalMemoSummary() {
+    if (!hasAdminApiAccess()) {
+      setTechnicalMemoSummary(null);
+      setTechnicalMemoError("");
+      return;
+    }
     setLoadingTechnicalMemos(true);
     setTechnicalMemoError("");
     try {
@@ -2124,6 +2134,11 @@ export function App() {
 
   async function handlePurgeTechnicalMemos() {
     if (purgingTechnicalMemos) return;
+    if (!hasAdminApiAccess()) {
+      setTechnicalMemoError("admin_required");
+      setTechnicalMemoFeedback("Suppression impossible: acces admin requis.");
+      return;
+    }
     setPurgingTechnicalMemos(true);
     setTechnicalMemoConfirmOpen(false);
     setTechnicalMemoFeedback("Suppression des memos techniques en cours...");

@@ -115,6 +115,24 @@ test('textToWazaa and wazaaToMask preserve semantic hierarchy and emit canonical
   assert.equal(codeMask?.version, 'mask-1');
 });
 
+test('wazaaToMask ignores noisy llm image subjects when source text contains the real subject', () => {
+  const imageMask = wazaaToMask({
+    intent: { type: 'image.generate', confidence: 0.92 },
+    entities: [
+      { role: 'subject', value: 'que tu génere a image of vegeta' },
+    ],
+    meta: {
+      sourceText: "j'aimerais que tu génère une image de vegeta avec la chevelure rose",
+      translatedText: 'que tu genere a image of vegeta pink with the chevelure',
+      llmColors: ['pink'],
+    },
+  });
+
+  assert.equal(imageMask?.intent, 'image.generate');
+  assert.ok(imageMask?.inputs?.subject?.includes('vegeta'));
+  assert.ok(!imageMask?.inputs?.subject?.some((value) => /image of|g[eé]n[eè]re/i.test(String(value))));
+});
+
 test('mergeEnrichedWazaa canonicalizes legacy LLM intent aliases', () => {
   const lowConfidenceHeuristic = {
     intent: { type: 'chat.reply', confidence: 0.2 },

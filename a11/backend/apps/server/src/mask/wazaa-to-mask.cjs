@@ -69,13 +69,28 @@ function getSourceText(wazaa) {
   ).trim();
 }
 
+function sanitizeImageSubjectCandidate(value = '') {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (/\b(?:image\s+of|generate|g[eé]n[eè]re|show me|montre(?:-|\s)?moi|dessine|draw|create|cr[eée]e|je veux|i want)\b/i.test(normalized)) {
+    return '';
+  }
+  return normalized;
+}
+
 function buildImageGenerateMask(wazaa, sourceText) {
   const translatedText = String(wazaa?.meta?.translatedText || '').trim();
-  const imageAnalysis = analyzeImagePrompt(sourceText || translatedText || '');
-  const subject = imageAnalysis?.semanticBinding?.primarySubject
-    || getEntityValue(wazaa, 'subject')
-    || imageAnalysis?.subjectPromptEnglish
-    || imageAnalysis?.subjectText
+  const sourceImageAnalysis = analyzeImagePrompt(sourceText || '');
+  const translatedImageAnalysis = translatedText && translatedText !== sourceText
+    ? analyzeImagePrompt(translatedText)
+    : null;
+  const subject = sourceImageAnalysis?.semanticBinding?.primarySubject
+    || translatedImageAnalysis?.semanticBinding?.primarySubject
+    || sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'))
+    || sourceImageAnalysis?.subjectPromptEnglish
+    || sourceImageAnalysis?.subjectText
+    || translatedImageAnalysis?.subjectPromptEnglish
+    || translatedImageAnalysis?.subjectText
     || translatedText
     || sourceText;
   const environment = getEntityValue(wazaa, 'environment');
@@ -84,12 +99,14 @@ function buildImageGenerateMask(wazaa, sourceText) {
   const llmColors = Array.isArray(wazaa?.meta?.llmColors) ? wazaa.meta.llmColors : [];
   const palette = toUniqueStrings([
     ...llmColors,
-    ...(Array.isArray(imageAnalysis?.palette) ? imageAnalysis.palette : []),
+    ...(Array.isArray(sourceImageAnalysis?.palette) ? sourceImageAnalysis.palette : []),
+    ...(Array.isArray(translatedImageAnalysis?.palette) ? translatedImageAnalysis.palette : []),
     ...splitCsvValues(attribute),
   ]);
   const style = toUniqueStrings([
     styleEntity,
-    ...(Array.isArray(imageAnalysis?.styleHints) ? imageAnalysis.styleHints : []),
+    ...(Array.isArray(sourceImageAnalysis?.styleHints) ? sourceImageAnalysis.styleHints : []),
+    ...(Array.isArray(translatedImageAnalysis?.styleHints) ? translatedImageAnalysis.styleHints : []),
     'high quality',
     'detailed',
   ]);
@@ -103,7 +120,10 @@ function buildImageGenerateMask(wazaa, sourceText) {
       subject: subject ? [subject] : [],
       environment: environment ? [environment] : [],
       style,
-      composition: toUniqueStrings(Array.isArray(imageAnalysis?.compositionHints) ? imageAnalysis.compositionHints : []),
+      composition: toUniqueStrings([
+        ...(Array.isArray(sourceImageAnalysis?.compositionHints) ? sourceImageAnalysis.compositionHints : []),
+        ...(Array.isArray(translatedImageAnalysis?.compositionHints) ? translatedImageAnalysis.compositionHints : []),
+      ]),
       lighting: [],
       palette,
     },

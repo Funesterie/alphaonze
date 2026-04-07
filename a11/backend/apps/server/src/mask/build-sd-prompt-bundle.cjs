@@ -410,10 +410,11 @@ function translateImagePromptToEnglish(value = '') {
 
 function stripImageGenerationCommandPrefix(value = '') {
   return String(value || '')
-    .replace(/^(?:(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+)+(?:me\s+)?/i, '')
+    .replace(/^(?:(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+)+(?:que\s+tu\s+)?(?:me\s+)?/i, '')
+    .replace(/^que\s+tu\s+/i, '')
     .replace(/^(?:peux[- ]?tu\s+)?(?:s(?:tp|il te plait|’il te plait|il te plaît)\s+)?/i, '')
-    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|generate(?:d)?|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?(?:une?\s+)?(?:image|illustration|dessin|photo|visuel|portrait)\s+(?:de|du|de la|de l['’]?|d['’]|\bd\s+)\s*/i, '')
-    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|generate(?:d)?|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?(?:une?\s+)?(?:image|illustration|dessin|visuel)\b\s*/i, '')
+    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|generate(?:d)?|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?(?:an?\s+|une?\s+)?(?:image|illustration|dessin|photo|visuel|portrait)\s+(?:of|de|du|de la|de l['’]?|d['’]|\bd\s+)\s*/i, '')
+    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|generate(?:d)?|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?(?:an?\s+|une?\s+)?(?:image|illustration|dessin|visuel)\b\s*/i, '')
     .replace(/^(?:une?\s+)?(?:image|visuel)\s+(?:de|du|de la|de l['’]?|d['’])?\s*/i, '')
     .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|generate(?:d)?|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée))\s+(?:moi\s+)?/i, '')
     .trim();

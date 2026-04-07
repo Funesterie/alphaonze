@@ -13,6 +13,18 @@ const {
   buildCanonicalImageMaskFromText,
 } = require('./resolve-image-mask-from-text.cjs');
 
+let sharpLib;
+
+function getSharp() {
+  if (sharpLib !== undefined) return sharpLib;
+  try {
+    sharpLib = require('sharp');
+  } catch {
+    sharpLib = null;
+  }
+  return sharpLib;
+}
+
 function extractLatestUserMessage(body = {}) {
   if (typeof body?.message === 'string' && body.message.trim()) return body.message.trim();
   if (typeof body?.prompt === 'string' && body.prompt.trim()) return body.prompt.trim();
@@ -135,11 +147,79 @@ function buildCompiledPromptHash(sdBody = {}) {
     .slice(0, 16);
 }
 
+async function inspectGeneratedImage(sdResult) {
+  const imageUrl = resolveGeneratedImageUrl(sdResult);
+  if (!imageUrl) {
+    return { ok: true, skipped: true, reason: 'missing_image_url' };
+  }
+
+  const sharp = getSharp();
+  if (!sharp || typeof globalThis.fetch !== 'function') {
+    return { ok: true, skipped: true, reason: 'image_probe_unavailable' };
+  }
+
+  try {
+    const response = await globalThis.fetch(imageUrl);
+    if (!response.ok) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'image_probe_unavailable',
+        message: `image_probe_http_${response.status}`,
+      };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const probe = sharp(buffer, { failOn: 'none' });
+    const [metadata, stats] = await Promise.all([
+      probe.metadata(),
+      probe.stats(),
+    ]);
+    const rgbChannels = Array.isArray(stats?.channels) ? stats.channels.slice(0, 3) : [];
+    const solidBlack = rgbChannels.length >= 3 && rgbChannels.every((channel) => (
+      Number(channel?.max || 0) <= 2 && Number(channel?.mean || 0) <= 2
+    ));
+
+    if (solidBlack) {
+      return {
+        ok: false,
+        reason: 'solid_black_image_detected',
+        imageUrl,
+        metadata: {
+          width: Number(metadata?.width || 0),
+          height: Number(metadata?.height || 0),
+          channels: Number(metadata?.channels || 0),
+          sizeBytes: buffer.length,
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      imageUrl,
+      metadata: {
+        width: Number(metadata?.width || 0),
+        height: Number(metadata?.height || 0),
+        channels: Number(metadata?.channels || 0),
+        sizeBytes: buffer.length,
+      },
+    };
+  } catch (error_) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'image_probe_failed',
+      message: String(error_?.message || error_),
+    };
+  }
+}
+
 async function generateImageFromMask({
   req,
   rawMask,
   generateSd,
   verifyImageCardinality = verifyGeneratedImageCardinality,
+  inspectGeneratedImageResult = inspectGeneratedImage,
   imageVerificationEnabled,
   maxVerificationRetries,
 }) {
@@ -265,10 +345,27 @@ async function generateImageFromMask({
     }
   }
 
+  const imageInspection = typeof inspectGeneratedImageResult === 'function'
+    ? await inspectGeneratedImageResult(sdResult)
+    : { ok: true, skipped: true, reason: 'image_probe_disabled' };
+  if (imageInspection?.ok === false) {
+    const error = new Error('Generated image is invalid');
+    error.statusCode = 502;
+    error.payload = {
+      ok: false,
+      error: 'image_generation_invalid',
+      message: "Le backend image a renvoye une image invalide.",
+      details: imageInspection,
+      result: sdResult,
+    };
+    throw error;
+  }
+
   return {
     ...compiledState,
     sdBody: activeSdBody,
     sdResult,
+    imageInspection,
     imageGuard: {
       requestId,
       enabled: guardEnabled,
@@ -408,5 +505,6 @@ module.exports = {
   generateImageFromMask,
   generateImageFromText,
   resolveGeneratedImageUrl,
+  inspectGeneratedImage,
   toImageChatProxyPayload,
 };

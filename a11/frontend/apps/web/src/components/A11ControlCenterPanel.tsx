@@ -94,35 +94,41 @@ export function A11ControlCenterPanel() {
 
   async function loadProfiles() {
     setRefreshing(true);
-    const settled = await Promise.allSettled(
-      PROFILE_META.map(async (profile) => ({
-        key: profile.key,
-        status: await fetchControlStatus(profile.apiBase),
-      }))
-    );
+    try {
+      const profilesToLoad = PROFILE_META.filter(
+        (profile) => !(publicOnlineLocked && profile.key === "local")
+      );
+      const settled = await Promise.allSettled(
+        profilesToLoad.map(async (profile) => ({
+          key: profile.key,
+          status: await fetchControlStatus(profile.apiBase),
+        }))
+      );
 
-    const nextProfiles: Record<ProfileKey, ProfileState> = {
-      online: { status: null, error: "" },
-      local: { status: null, error: "" },
-    };
+      const nextProfiles: Record<ProfileKey, ProfileState> = {
+        online: { status: null, error: "" },
+        local: { status: null, error: "" },
+      };
 
-    settled.forEach((result, index) => {
-      const profile = PROFILE_META[index];
-      if (!profile) return;
-      if (result.status === "fulfilled") {
-        nextProfiles[profile.key] = { status: result.value.status, error: "" };
-      } else {
-        nextProfiles[profile.key] = {
-          status: null,
-          error: String(result.reason?.message || result.reason || "unreachable"),
-        };
-      }
-    });
+      settled.forEach((result, index) => {
+        const profile = profilesToLoad[index];
+        if (!profile) return;
+        if (result.status === "fulfilled") {
+          nextProfiles[profile.key] = { status: result.value.status, error: "" };
+        } else {
+          nextProfiles[profile.key] = {
+            status: null,
+            error: String(result.reason?.message || result.reason || "unreachable"),
+          };
+        }
+      });
 
-    setProfiles(nextProfiles);
-    setCurrentModeState(getCurrentApiMode());
-    setLoading(false);
-    setRefreshing(false);
+      setProfiles(nextProfiles);
+      setCurrentModeState(getCurrentApiMode());
+      setLoading(false);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => {
