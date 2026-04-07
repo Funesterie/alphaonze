@@ -186,6 +186,8 @@ test('POST /api/chat auto-searches the web for confident show-subject prompts', 
       assert.equal(json.artifact_type, 'web_image');
       assert.equal(json.title, 'goku');
       assert.match(String(json.image_url || ''), /\/goku\.png$/i);
+      assert.match(String(json.imagePath || ''), /\/goku\.png$/i);
+      assert.match(String(json.content || json.choices?.[0]?.message?.content || ''), /ouvrir l'image/i);
       assert.match(String(json.source_url || ''), /example\.com/);
     }
   );

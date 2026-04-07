@@ -719,15 +719,15 @@ function buildAnimalColorBinding(details = {}) {
           'flower field',
           'meadow flowers',
           'decorative plants',
-          `multiple ${singularSubject}`,
-          `duplicate ${singularSubject}`,
-          `extra ${singularSubject}`,
+          'multiple subjects',
+          'second subject',
+          'crowd',
           ...buildSoloAnimalExclusionHints(bareSubject),
         ]
       : [
-          `multiple ${singularSubject}`,
-          `duplicate ${singularSubject}`,
-          `extra ${singularSubject}`,
+          'multiple subjects',
+          'second subject',
+          'crowd',
           ...buildSoloAnimalExclusionHints(bareSubject),
         ],
   };
@@ -760,11 +760,10 @@ function compileSingleSubjectConstraints(rawPrompt = '', translatedPrompt = '') 
     'no duplicate instances',
   ];
   const negativeHints = [
-    `multiple ${singularSubject}`,
-    `duplicate ${singularSubject}`,
-    `extra ${singularSubject}`,
-    'duplicate subjects',
-    'clones',
+    'multiple subjects',
+    'second subject',
+    'group shot',
+    'fused anatomy',
     'crowd',
   ];
 
@@ -875,18 +874,12 @@ function buildSdPromptBundle(rawPrompt = '', options = {}) {
   }
   if (!details.pluralRequested) {
     negativeHints.push(
-      'extra character',
-      'duplicate subject',
       'multiple subjects',
-      'multiple characters',
-      'multiple animals',
+      'second subject',
       'crowd',
       'group shot',
-      'clones',
-      'twins',
-      'duplicate body',
-      'duplicate face',
-      'extra heads'
+      'fused anatomy',
+      'merged limbs'
     );
   }
   negativeHints.push(...(semanticBinding.blockedDuplicates || []));

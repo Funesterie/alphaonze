@@ -112,7 +112,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
 
   assert.equal(calls.length, 2);
   assert.match(String(calls[1]?.prompt || ''), /exactly one rabbit/i);
-  assert.match(String(calls[1]?.negative_prompt || ''), /duplicate rabbit|multiple rabbit|second animal/i);
+  assert.match(String(calls[1]?.negative_prompt || ''), /second animal|multiple subjects|crowd/i);
   assert.equal(calls[1]?.seed, 197);
   assert.equal(result.sdResult.image_url, 'https://files.example.com/rabbit-2.png');
   assert.equal(result.imageGuard?.retries?.length, 1);

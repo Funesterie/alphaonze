@@ -371,12 +371,10 @@ function buildBlockedDuplicates({ primarySubject = '', characterCountConstraints
   if (Array.isArray(singleSubjectConstraints?.negativeHints)) {
     values.push(...singleSubjectConstraints.negativeHints);
   }
-  if (primary) {
+  if (primary && characterCountConstraints) {
     values.push(`multiple ${primary}`);
-    values.push(`duplicate ${primary}`);
-    values.push(`extra ${primary}`);
   }
-  values.push('duplicate subjects', 'clones', 'crowd');
+  values.push('multiple subjects', 'second subject', 'crowd');
   return uniqueSemanticStrings(values);
 }
 
