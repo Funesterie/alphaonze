@@ -6131,7 +6131,7 @@ app.get('/api/system-prompt', (_req, res) => {
   }
 });
 
-app.use('/api', createProtectedChatProxyRouter({
+const protectedChatProxyRouter = createProtectedChatProxyRouter({
   verifyJWT,
   proxyChatToOpenAI,
   detectImageIntent,
@@ -6141,7 +6141,9 @@ app.use('/api', createProtectedChatProxyRouter({
   generateSd: sdTools.generateSdInternal,
   hasLocalChatUpstreamConfigured,
   localDefaultModel: process.env.LOCAL_DEFAULT_MODEL || 'llama3.2:latest',
-}));
+});
+
+app.use('/api', protectedChatProxyRouter);
 
 
 
@@ -10565,7 +10567,7 @@ app.post('/api/admin/dragon/chat-completions', express.json({ limit: '2mb' }), a
     nextBody.provider = 'openai';
   }
   req.body = nextBody;
-  return proxyChatToOpenAI(req, res);
+  return protectedChatProxyRouter.handleProxy(req, res);
 });
 
 app.post('/api/admin/dragon/memory-summary', express.json({ limit: '2mb' }), async (req, res) => {

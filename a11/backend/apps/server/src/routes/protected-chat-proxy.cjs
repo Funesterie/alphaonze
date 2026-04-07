@@ -285,6 +285,9 @@ function createProtectedChatProxyRouter({
     }
   });
 
+  router.handleProxy = handleProxy;
+  router.applyProviderDefaults = applyProviderDefaults;
+
   return router;
 }
 
