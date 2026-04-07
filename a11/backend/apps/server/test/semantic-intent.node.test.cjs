@@ -135,6 +135,22 @@ test('wazaaToMask ignores noisy llm image subjects when source text contains the
   assert.ok(!imageMask?.inputs?.subject?.some((value) => /image of|g[eé]n[eè]re/i.test(String(value))));
 });
 
+test("wazaaToMask rejects french connector fragments as image subjects", () => {
+  const imageMask = wazaaToMask({
+    intent: { type: 'image.generate', confidence: 0.91 },
+    entities: [
+      { role: 'subject', value: "d'une" },
+    ],
+    meta: {
+      sourceText: "genere une image d'une tortue ninja",
+    },
+  });
+
+  assert.equal(imageMask?.intent, 'image.generate');
+  assert.ok(imageMask?.inputs?.subject?.includes('turtle ninja'));
+  assert.ok(!imageMask?.inputs?.subject?.some((value) => /^d['’]?une?$/i.test(String(value))));
+});
+
 test('mergeEnrichedWazaa canonicalizes legacy LLM intent aliases', () => {
   const lowConfidenceHeuristic = {
     intent: { type: 'chat.reply', confidence: 0.2 },
