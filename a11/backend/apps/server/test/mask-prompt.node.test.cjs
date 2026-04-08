@@ -68,7 +68,7 @@ test('buildSdPromptBundle binds risky floral colors to animal fur instead of the
   const bundle = buildSdPromptBundle("genere moi un grizzli jaune");
 
   assert.match(String(bundle.prompt || ''), /one grizzly bear with golden-yellow fur/i);
-  assert.match(String(bundle.prompt || ''), /not yellow flowers|meadow plants|background elements/i);
+  assert.match(String(bundle.prompt || ''), /meadow elements|background details stay separate and secondary/i);
   assert.match(String(bundle.negativeHints.join(', ') || ''), /yellow flowers|flower field|meadow flowers/i);
 });
 
@@ -77,7 +77,7 @@ test('buildSdPromptBundle keeps hedgehog prompts on the animal subject itself', 
 
   assert.match(String(bundle.prompt || ''), /one hedgehog with green fur/i);
   assert.match(String(bundle.prompt || ''), /exactly one hedgehog/i);
-  assert.match(String(bundle.prompt || ''), /the animal itself has green fur/i);
+  assert.match(String(bundle.prompt || ''), /animal body carries the green color/i);
   assert.doesNotMatch(String(bundle.prompt || ''), /\bherisson\b/i);
 });
 

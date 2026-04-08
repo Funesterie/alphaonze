@@ -31,7 +31,7 @@ const EXACT_FRENCH_EQUIVALENTS = new Map([
   ['solo composition', 'composition solo'],
   ['single isolated subject', 'sujet isolé'],
   ['clean non-repeated composition', 'composition nette sans répétition'],
-  ['no duplicate instances', 'pas de doublons'],
+  ['no duplicate instances', 'sujet unique bien distinct'],
   ['one instance only', 'un seul exemplaire'],
 ]);
 
@@ -77,6 +77,15 @@ const TOKEN_FRENCH_EQUIVALENTS = new Map([
   ['princesses', 'princesses'],
   ['magician hat', 'chapeau de magicien'],
   ['wizard hat', 'chapeau de sorcier'],
+  ['soda can', 'canette de soda'],
+  ['soft drink can', 'canette de boisson gazeuse'],
+  ['aluminum can', 'canette en aluminium'],
+  ['aluminium can', 'canette en aluminium'],
+  ['soda', 'soda'],
+  ['cola', 'cola'],
+  ['canette', 'canette'],
+  ['canettes', 'canettes'],
+  ['boisson gazeuse', 'boisson gazeuse'],
   ['forest', 'forêt'],
   ['river', 'rivière'],
   ['mountain', 'montagne'],
@@ -136,20 +145,46 @@ function joinSection(label, values = []) {
   return `${label} : ${entries.join(', ')}`;
 }
 
+function buildSubjectSpecificInstructions(mask = {}) {
+  const source = normalizeLookup([
+    mask?.raw || '',
+    ...(Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : []),
+    ...(Array.isArray(mask?.inputs?.environment) ? mask.inputs.environment : []),
+    ...(Array.isArray(mask?.inputs?.style) ? mask.inputs.style : []),
+  ].join(' '));
+  const instructions = [];
+
+  if (/\b(canette|soda|cola|boisson gazeuse)\b/.test(source)) {
+    instructions.push("Le sujet est une canette métallique en aluminium, au format standard d'une boisson gazeuse.");
+    instructions.push('La silhouette cylindrique de la canette reste nette, simple et immédiatement reconnaissable.');
+  }
+
+  if (/\b(pokemon|pokémon)\b/.test(source)) {
+    instructions.push('La créature garde une silhouette claire, lisible et cohérente, dans un style inspiré des monsters de jeu vidéo.');
+  }
+
+  if (/\bdragon\b/.test(source) && /\b(feu|flamme|flammes|fire)\b/.test(source)) {
+    instructions.push('Le corps, les ailes et les flammes restent bien distincts avec des contours séparés et lisibles.');
+  }
+
+  return instructions;
+}
+
 function buildLiteralInstructions(mask = {}) {
   const instructions = [
     'Interprétation littérale de la demande.',
     'Respecter exactement le sujet principal, les couleurs, le style et la composition demandés.',
-    'Garder une scène simple, cohérente et lisible.',
-    "Ne pas ajouter d'accessoires, d'objets, de décorations ou de personnages supplémentaires non demandés.",
+    'Composer une scène simple, cohérente et lisible.',
+    'Inclure uniquement les éléments explicitement demandés.',
+    ...buildSubjectSpecificInstructions(mask),
   ];
 
   if (Array.isArray(mask?.inputs?.palette) && mask.inputs.palette.length > 0) {
-    instructions.push("Les couleurs demandées s'appliquent au sujet principal lui-même, pas au fond ni aux éléments secondaires.");
+    instructions.push("Les couleurs demandées s'appliquent d'abord au sujet principal. Le fond et les éléments secondaires restent sobres et cohérents.");
   }
 
   if (mask?.constraints?.no_text === true) {
-    instructions.push('Ne pas générer de texte lisible, de lettres, de logo, de signature ni de watermark.');
+    instructions.push("Image purement visuelle, sans texte lisible, sans logo, sans signature et sans watermark.");
   }
 
   return instructions.join(' ');
