@@ -32,7 +32,7 @@ function joinSection(label, values = []) {
 function buildLiteralInstructions(mask = {}) {
   const instructions = [
     'Créer une image fidèle à la demande.',
-    'Mettre le sujet principal en avant avec une scène claire et naturelle.',
+    'Composer une scène claire, lisible et naturelle autour du sujet principal.',
   ];
 
   if (Array.isArray(mask?.inputs?.palette) && mask.inputs.palette.length > 0) {
@@ -54,13 +54,21 @@ function compileMaskToImagePrompt(mask = {}) {
   const composition = localizeList(mask?.inputs?.composition || []);
   const lighting = localizeList(mask?.inputs?.lighting || []);
   const palette = localizeList(mask?.inputs?.palette || []);
+  const definitionContext = normalizeText(
+    mask?.meta?.definitionLookup?.summary
+    || mask?.meta?.definitionContext?.summary
+    || ''
+  );
 
   const promptSections = [
     rawPrompt ? `Demande : ${rawPrompt}` : '',
     joinSection('Sujet principal', subject),
     joinSection('Environnement', environment),
     joinSection('Style', style),
+    joinSection('Composition', composition),
+    joinSection('Lumière', lighting),
     joinSection('Couleurs', palette),
+    definitionContext ? `Contexte utile : ${definitionContext}` : '',
     buildLiteralInstructions(mask),
   ].filter(Boolean);
 

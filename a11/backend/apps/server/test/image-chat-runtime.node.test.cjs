@@ -15,6 +15,7 @@ test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enri
     },
     {
       prompt: 'a pink rabbit, exactly one pink rabbit only',
+      prompt_language: 'fr',
       negative_prompt: 'duplicate rabbits, crowd',
       width: 1024,
       height: 1024,
@@ -25,6 +26,7 @@ test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enri
 
   assert.equal(sdBody.prompt_prebuilt, true);
   assert.equal(sdBody.prompt, 'a pink rabbit, exactly one pink rabbit only');
+  assert.equal(sdBody.prompt_language, 'fr');
   assert.equal('negative_prompt' in sdBody, false);
   assert.equal('negative_prompt_prebuilt' in sdBody, false);
 });
@@ -99,6 +101,7 @@ test('generateImageFromMask compiles canonical masks into a french image prompt 
   assert.match(String(calls[0]?.prompt || ''), /genere un herisson vert/i);
   assert.match(String(calls[0]?.prompt || ''), /Sujet principal : herisson/i);
   assert.match(String(calls[0]?.prompt || ''), /Style : high quality, detailed/i);
+  assert.match(String(calls[0]?.prompt || ''), /Composition : single main subject, clear centered composition, simple clean background/i);
   assert.match(String(calls[0]?.prompt || ''), /Couleurs : green/i);
   assert.match(String(calls[0]?.prompt || ''), /Créer une image fidèle à la demande/i);
   assert.equal('negative_prompt' in calls[0], false);
@@ -157,14 +160,14 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
       if (String(imageUrl).includes('rabbit-1.png')) {
         return {
           ok: true,
-          expected: { subject_count: 1, subject_type: 'rabbit', subject_label: 'rabbit', allow_group: false },
+          expected: { subject_count: 1, subject_type: 'lapin', subject_label: 'lapin', allow_group: false },
           observed: { subject_count: 2, duplicate_subjects: true, fusion_detected: false, subject_match: true, confidence: 0.91 },
           decision: { retry: true, reason: 'multiple_subjects_detected', notes: '' },
         };
       }
       return {
         ok: true,
-        expected: { subject_count: 1, subject_type: 'rabbit', subject_label: 'rabbit', allow_group: false },
+        expected: { subject_count: 1, subject_type: 'lapin', subject_label: 'lapin', allow_group: false },
         observed: { subject_count: 1, duplicate_subjects: false, fusion_detected: false, subject_match: true, confidence: 0.94 },
         decision: { retry: false, reason: 'ok', notes: '' },
       };
@@ -172,7 +175,8 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
   });
 
   assert.equal(calls.length, 2);
-  assert.match(String(calls[1]?.prompt || ''), /exactly one rabbit/i);
+  assert.match(String(calls[1]?.prompt || ''), /montrer un seul lapin/i);
+  assert.match(String(calls[1]?.prompt || ''), /silhouette claire et lisible/i);
   assert.equal(calls[1]?.has_negative_prompt, false);
   assert.equal(calls[1]?.seed, 197);
   assert.equal(result.sdResult.image_url, 'https://files.example.com/rabbit-2.png');

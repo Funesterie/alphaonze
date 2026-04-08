@@ -608,30 +608,43 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const expected = verification?.expected || {};
   const subjectLabel = String(expected.subject_label || expected.subject_type || 'subject').trim() || 'subject';
   const useFrenchPrompt = String(sdBody?.prompt_language || '').trim().toLowerCase() === 'fr';
+  const fusionDetected = verification?.observed?.fusion_detected === true;
+  const duplicateSubjects = verification?.observed?.duplicate_subjects === true
+    || Number(verification?.observed?.subject_count || 0) > Number(expected?.subject_count || 0);
   const retryPromptHints = useFrenchPrompt
     ? [
-        `exactement un ${subjectLabel}`,
-        `un seul ${subjectLabel}`,
-        'sujet unique isolé',
-        'composition solo',
-        'sujet centré',
-        'aucun deuxième sujet',
-        'aucun corps dupliqué',
-        'aucun visage dupliqué',
-        'pas de jumeaux',
-        'pas de foule',
+        `montrer un seul ${subjectLabel}`,
+        'sujet principal seul dans la scène',
+        'silhouette claire et lisible',
+        'forme complète visible',
+        'corps entier bien défini',
+        'composition simple autour du sujet',
+        'sujet centré et bien détaché',
+        ...(duplicateSubjects ? [
+          'présenter uniquement le sujet principal',
+          'garder la scène épurée autour du sujet',
+        ] : []),
+        ...(fusionDetected ? [
+          'éléments du corps bien séparés et lisibles',
+          'formes du sujet nettes et distinctes',
+        ] : []),
       ]
     : [
-        `exactly one ${subjectLabel}`,
-        `one ${subjectLabel} only`,
-        'single isolated subject',
-        'solo composition',
-        'centered solo subject',
-        'no second subject',
-        'no duplicate body',
-        'no duplicate face',
-        'no twins',
-        'no crowd',
+        `show a single ${subjectLabel}`,
+        'main subject alone in the scene',
+        'clear readable silhouette',
+        'full visible form',
+        'well defined full body',
+        'simple composition around the subject',
+        'centered well separated subject',
+        ...(duplicateSubjects ? [
+          'present only the main subject',
+          'keep the scene clean around the subject',
+        ] : []),
+        ...(fusionDetected ? [
+          'body parts clearly separated and readable',
+          'clean distinct subject shapes',
+        ] : []),
       ];
   // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt
   const basePrompt = String(sdBody.prompt || '').trim();

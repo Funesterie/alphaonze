@@ -8,6 +8,7 @@ function compileMaskToSD(mask) {
   const compiled = compileMaskToImagePrompt(mask);
   const sdPayload = {
     prompt: String(compiled?.prompt || '').trim(),
+    prompt_language: String(compiled?.prompt_language || 'fr').trim() || 'fr',
     width: Number(compiled?.width || mask?.options?.width || 768),
     height: Number(compiled?.height || mask?.options?.height || 768),
     steps: Number(compiled?.num_inference_steps || mask?.options?.steps || 40),

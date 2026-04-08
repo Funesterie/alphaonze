@@ -10,7 +10,7 @@ test('compileMaskToImagePrompt keeps french prompts free of imperative negative 
       subject: ['pokemon dragon feu'],
       environment: [],
       style: ['haute qualité'],
-      composition: [],
+      composition: ['silhouette lisible', 'effets lumineux bien séparés du sujet'],
       lighting: [],
       palette: ['orange', 'red'],
     },
@@ -22,6 +22,7 @@ test('compileMaskToImagePrompt keeps french prompts free of imperative negative 
 
   assert.match(String(compiled.prompt || ''), /Demande : genere une image d un pokemon dragon feu/i);
   assert.match(String(compiled.prompt || ''), /Sujet principal : pokemon dragon feu/i);
+  assert.match(String(compiled.prompt || ''), /Composition : silhouette lisible, effets lumineux bien séparés du sujet/i);
   assert.match(String(compiled.prompt || ''), /Créer une image fidèle à la demande/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bdo not\b/i);
