@@ -5,9 +5,11 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  hasSdProxyUrl,
   resolveSdScriptPath,
   resolveSdPythonBin,
   isForeignAbsolutePath,
+  shouldAllowLocalSdFallback,
 } = require('../lib/sd-runtime.cjs');
 
 test('resolveSdPythonBin ignores a stale explicit path when a local adjacent venv exists', () => {
@@ -93,4 +95,24 @@ test('resolveSdScriptPath ignores a windows explicit path on linux runtimes', ()
     if (previousFallbackFlag === undefined) delete process.env.A11_SD_ALLOW_LOCAL_FALLBACK;
     else process.env.A11_SD_ALLOW_LOCAL_FALLBACK = previousFallbackFlag;
   }
+});
+
+test('hasSdProxyUrl only considers SD proxy variables', () => {
+  assert.equal(hasSdProxyUrl({ A11_SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd' }), true);
+  assert.equal(hasSdProxyUrl({ SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd' }), true);
+  assert.equal(hasSdProxyUrl({ A11_VISION_BASE_URL: 'https://vision.example.com' }), false);
+});
+
+test('shouldAllowLocalSdFallback keeps production proxy-only by default when SD proxy is configured', () => {
+  assert.equal(shouldAllowLocalSdFallback({
+    NODE_ENV: 'production',
+    ENABLE_SD: 'true',
+    A11_SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd',
+  }), false);
+
+  assert.equal(shouldAllowLocalSdFallback({
+    NODE_ENV: 'production',
+    A11_SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd',
+    A11_SD_ALLOW_LOCAL_FALLBACK: 'true',
+  }), true);
 });

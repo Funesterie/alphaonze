@@ -43,6 +43,14 @@ Public image flow:
 4. Local backend -> vendored SD helper in `apps/server/tools/sd`
 5. Local Python runtime -> `llm/scripts/venv`
 
+Production image policy:
+
+- Railway is `proxy-only` for SD image generation.
+- Railway must use `A11_SD_PROXY_URL` with the full route `https://sd.funesterie.me/api/tools/generate_sd`.
+- Railway should keep `A11_SD_ALLOW_LOCAL_FALLBACK=false`.
+- Railway must not define Windows-only local runtime paths such as `SD_SCRIPT_PATH` or `SD_PYTHON_PATH`.
+- `A11_VISION_BASE_URL` is reserved for remote vision/OCR and must not be reused for SD generation.
+
 Local maintenance flow:
 
 1. Browser / tools -> `api.funesterie.me`
@@ -58,6 +66,14 @@ BACKEND=local
 LLM_ROUTER_URL=https://cerbere.funesterie.me
 A11_ALLOW_PUBLIC_TUNNEL_LLM=1
 A11_SD_PROXY_URL=https://sd.funesterie.me/api/tools/generate_sd
+A11_SD_ALLOW_LOCAL_FALLBACK=false
+```
+
+Keep these empty on Railway proxy-only deployments:
+
+```env
+SD_SCRIPT_PATH=
+SD_PYTHON_PATH=
 ```
 
 Keep these empty unless you intentionally expose the raw llama server:
@@ -97,7 +113,10 @@ ingress:
 
 - `cerbere.funesterie.me` should be the only hostname exposed for the LLM path.
 - `sd.funesterie.me` should be the only hostname exposed for tunneled image generation.
+- The public SD route is `POST https://sd.funesterie.me/api/tools/generate_sd`.
+- `https://sd.funesterie.me/health` is the tunnel/service health check, not the generation route.
 - Exposing `llama-server` directly is optional and should stay off unless you really need it.
 - Keep `llm` for heavy local assets only: GGUF files, `llama.cpp`, local Python venvs, and other machine-local runtimes.
 - Keep lightweight backend-owned scripts inside `backend/apps/server`.
+- Do not copy Windows absolute paths into Railway variables.
 - The current Cloudflare tunnel in the connected account uses remote config. If you want the local `config.yml` to be the source of truth, restart `cloudflared` with the named tunnel and config file instead of the token-only process.

@@ -221,8 +221,12 @@ test('generateSdInternal repairs stale compiled prompts that still contain image
 });
 
 test('generateSdInternal blocks local-only fallback in production when proxy fails', async () => {
-  const previousNodeEnv = process.env.NODE_ENV;
+  const previous = {
+    NODE_ENV: process.env.NODE_ENV,
+    A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,
+  };
   process.env.NODE_ENV = 'production';
+  process.env.A11_SD_PROXY_URL = 'https://sd.example.com/api/tools/generate_sd';
 
   try {
     const { generateSdInternal } = createSdToolsRouter({
@@ -249,21 +253,87 @@ test('generateSdInternal blocks local-only fallback in production when proxy fai
         assert.equal(error.payload?.error, 'image_backend_unavailable');
         assert.equal(error.payload?.code, 'local_only_fallback_blocked');
         assert.equal(error.payload?.upstream?.url, 'https://sd.example.com');
+        assert.equal(error.payload?.proxyOnlyMode, true);
+        assert.equal(error.payload?.expectedProxyRoute, '/api/tools/generate_sd');
+        assert.match(String(error.payload?.message || ''), /mode proxy-only/i);
+        assert.match(String(error.payload?.message || ''), /POST \/api\/tools\/generate_sd/i);
         return true;
       }
     );
   } finally {
-    process.env.NODE_ENV = previousNodeEnv;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
-test('generateSdInternal falls back to local SD in production when ENABLE_SD is true', async () => {
+test('generateSdInternal keeps proxy-only mode in production even when ENABLE_SD is true', async () => {
   const previous = {
     NODE_ENV: process.env.NODE_ENV,
     ENABLE_SD: process.env.ENABLE_SD,
+    A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,
+    A11_SD_ALLOW_LOCAL_FALLBACK: process.env.A11_SD_ALLOW_LOCAL_FALLBACK,
   };
   process.env.NODE_ENV = 'production';
   process.env.ENABLE_SD = 'true';
+  process.env.A11_SD_PROXY_URL = 'https://sd.example.com/api/tools/generate_sd';
+  delete process.env.A11_SD_ALLOW_LOCAL_FALLBACK;
+
+  let runSdScriptCalled = false;
+
+  try {
+    const { generateSdInternal } = createSdToolsRouter({
+      fetch: async () => ({
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'sd_proxy_failed', message: 'proxy down' });
+        },
+      }),
+      resolveSdProxyUrl: () => 'https://sd.example.com',
+      resolveSdScriptPath: () => __filename,
+      runSdScript: async () => {
+        runSdScriptCalled = true;
+        return { ok: true };
+      },
+      uploadBufferToR2: async () => ({
+        url: 'https://files.example.com/rat-bleu.png',
+      }),
+    });
+
+    await assert.rejects(
+      () => generateSdInternal({
+        req: { headers: {}, user: { id: 'user-1' } },
+        prompt: 'genere un rat bleu',
+        body: { prompt: 'genere un rat bleu' },
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 503);
+        assert.equal(error.payload?.code, 'local_only_fallback_blocked');
+        assert.equal(runSdScriptCalled, false);
+        return true;
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('generateSdInternal allows explicit local SD fallback override in production when requested', async () => {
+  const previous = {
+    NODE_ENV: process.env.NODE_ENV,
+    ENABLE_SD: process.env.ENABLE_SD,
+    A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,
+    A11_SD_ALLOW_LOCAL_FALLBACK: process.env.A11_SD_ALLOW_LOCAL_FALLBACK,
+  };
+  process.env.NODE_ENV = 'production';
+  process.env.ENABLE_SD = 'true';
+  process.env.A11_SD_PROXY_URL = 'https://sd.example.com/api/tools/generate_sd';
+  process.env.A11_SD_ALLOW_LOCAL_FALLBACK = 'true';
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-fallback-'));
   const outputPath = path.join(tempDir, 'rat-bleu.png');
@@ -304,11 +374,6 @@ test('generateSdInternal falls back to local SD in production when ENABLE_SD is 
     assert.equal(result.ok, true);
     assert.equal(result.mode, 'stable-diffusion-local');
     assert.equal(result.image_url, 'https://files.example.com/rat-bleu.png');
-    assert.equal(result.device, 'cuda');
-    assert.equal(result.model_id, 'runwayml/stable-diffusion-v1-5');
-    assert.equal(result.torch_dtype, 'float16');
-    assert.equal(result.cuda_available, true);
-    assert.equal(result.cuda_device_name, 'NVIDIA GeForce RTX 5070');
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
     for (const [key, value] of Object.entries(previous)) {

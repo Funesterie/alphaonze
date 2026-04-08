@@ -22,8 +22,23 @@ Those heavy assets stay in the separate local `llm` workspace on Windows.
 - Local Windows support runtime:
   keep the Python venv in `llm/scripts/venv`
 - Public Railway backend:
-  prefer `A11_SD_PROXY_URL=https://sd.funesterie.me/api/tools/generate_sd`
+  use proxy-only mode with `A11_SD_PROXY_URL=https://sd.funesterie.me/api/tools/generate_sd`
   instead of shipping heavy SD dependencies in Railway
+
+## Production proxy-only contract
+
+- `A11_SD_PROXY_URL` is the source of truth for remote SD generation.
+- The expected public generation route is `POST /api/tools/generate_sd`.
+- `https://sd.funesterie.me/health` is only the health check for the tunnel/backend.
+- Keep `A11_SD_ALLOW_LOCAL_FALLBACK=false` on Railway unless you intentionally want a different topology.
+- Do not define `SD_SCRIPT_PATH` or `SD_PYTHON_PATH` on Railway.
+- Do not reuse `A11_VISION_BASE_URL` for image generation. It is reserved for remote vision/OCR.
+
+## Local backend contract
+
+- `sd.funesterie.me` points to the local backend on port `3000` through Cloudflare Tunnel.
+- The SD generation route is served by the backend itself on `POST /api/tools/generate_sd`.
+- The vendored helper in `apps/server/tools/sd` stays lightweight; heavy Python assets stay in the separate local `llm` workspace.
 
 ## Optional Python packages
 

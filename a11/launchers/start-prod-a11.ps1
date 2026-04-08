@@ -387,6 +387,7 @@ $ttsPublicUrl = 'https://ttssiwis-production.up.railway.app/health'
 $dragonPublicUrl = 'https://dragon-api-production.up.railway.app/health'
 $cerberePublicUrl = 'https://cerbere.funesterie.me/health'
 $sdPublicUrl = 'https://sd.funesterie.me/health'
+$sdGenerateUrl = 'https://sd.funesterie.me/api/tools/generate_sd'
 
 $backendPort = 3000
 $cerberePort = 4545
@@ -564,6 +565,7 @@ Write-Host "[A11 PROD] Status        : $statusUrl"
 Write-Host "[A11 PROD] TTS public    : $ttsPublicUrl"
 Write-Host "[A11 PROD] Dragon public : $dragonPublicUrl"
 Write-Host "[A11 PROD] SD public     : $sdPublicUrl"
+Write-Host "[A11 PROD] SD generate   : $sdGenerateUrl"
 Write-Host "[A11 PROD] Backend local : $localBackendBase"
 Write-Host "[A11 PROD] Ollama local  : $localOllamaBase"
 Write-Host "[A11 PROD] Cerbere local : $localCerbereBase"
@@ -623,6 +625,7 @@ if ($startBackend) {
       A11_LLM_REQUEST_TIMEOUT_MS = $llmRequestTimeoutMs
       A11_SD_PROXY_URL = ''
       SD_PROXY_URL = ''
+      A11_SD_ALLOW_LOCAL_FALLBACK = 'true'
       ENABLE_SD = $(if ($sdScriptPath) { 'true' } else { 'false' })
       SD_OUTPUT_DIR = $sdOutputDir
       PUBLIC_API_URL = 'https://api.funesterie.pro'
@@ -866,6 +869,7 @@ Write-Host "  - llm fallback  : $effectiveLlmFallbackProvider"
 Write-Host "  - model primaire: $ollamaPrimaryModel"
 Write-Host "  - model secours : $ollamaFallbackModel"
 Write-Host "  - sd public     : $sdPublicUrl"
+Write-Host "  - sd generate   : $sdGenerateUrl"
 Write-Host "  - downloads     : $downloadGuidePath"
 Write-Host "  - logs          : $launcherLogDir"
 Write-Host ""
@@ -886,6 +890,8 @@ Write-Host ""
 Write-Host "[A11 PROD] Le site et l'API restent en ligne ; le local sert au backend image + LLM + Cerbere + tunnel."
 Write-Host "[A11 PROD] Railway doit viser https://cerbere.funesterie.me pour le LLM routeur distant."
 Write-Host "[A11 PROD] Railway doit viser https://sd.funesterie.me/api/tools/generate_sd pour la generation d'image distante."
+Write-Host "[A11 PROD] Railway doit rester proxy-only pour SD: ne pas definir SD_SCRIPT_PATH ni SD_PYTHON_PATH sur Railway."
+Write-Host "[A11 PROD] A11_VISION_BASE_URL reste reserve au module vision/OCR, pas a la generation SD."
 Write-Host "[A11 PROD] Si cloudflared tournait deja en mode token, lance une fois avec --restart-tunnel."
 
 if ($pauseAtEnd) {

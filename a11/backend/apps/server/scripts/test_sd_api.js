@@ -4,9 +4,10 @@
 const axios = require('axios');
 
 async function testGenerateSD() {
-  const apiUrl = 'http://127.0.0.1:3000/api/tools/generate_sd'; // adapte si besoin
+  const apiUrl = process.env.A11_SD_TEST_URL || 'https://sd.funesterie.me/api/tools/generate_sd';
   const prompt = 'Un chat cyberpunk dans une ville futuriste, style illustration';
   try {
+    console.log('[A11 SD TEST] POST', apiUrl);
     const response = await axios.post(apiUrl, { prompt });
     if (response.data && response.data.url) {
       console.log('✅ Image générée ! URL :', response.data.url);
