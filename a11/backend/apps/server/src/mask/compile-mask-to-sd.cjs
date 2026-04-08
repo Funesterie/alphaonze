@@ -11,7 +11,7 @@ const {
 /**
  * Compile a validated MASK (image.generate) to a raw SD payload
  * @param {object} mask
- * @returns {object} Raw SD payload (prompt, negative_prompt, width, height, steps, guidance_scale, etc.)
+ * @returns {object} Raw SD payload (prompt, width, height, steps, guidance_scale, etc.)
  */
 function identityPrompt(value = '') {
   return String(value || '').trim();
@@ -83,18 +83,6 @@ function buildPrimaryPromptLead({ semanticBinding, subjectText, paletteValues = 
   return subject;
 }
 
-function normalizeText(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-function includesAny(text, patterns = []) {
-  const normalized = normalizeText(text);
-  return patterns.some((pattern) => pattern.test(normalized));
-}
-
 function compileMaskToSD(mask) {
   if (mask?.intent !== 'image.generate') {
     throw new Error('MASK intent must be image.generate');
@@ -143,35 +131,8 @@ function compileMaskToSD(mask) {
   ].filter(s => typeof s === 'string' && s.length > 0);
   const prompt = promptSections.join('. ');
 
-  const negativePromptParts = [
-    'blurry',
-    'abstract',
-    'deformed',
-    'bad anatomy',
-    'low quality',
-    'collage',
-    'repeated pattern',
-    'wallpaper',
-    'background clutter',
-    'random props',
-  ];
-  if (mask.constraints?.no_text) {
-    negativePromptParts.push('text', 'letters', 'watermark', 'signature', 'logo');
-  }
-  if (!includesAny(rawPrompt, [/\bfleur/, /\bbouquet\b/, /\bpetale\b/, /\bpetal\b/, /\bfloral\b/, /\bflowers?\b/])) {
-    negativePromptParts.push('flowers', 'bouquet', 'rose petals', 'floral background', 'floral pattern', 'foreground flowers', 'decorative foreground objects');
-  }
-  if (!includesAny(rawPrompt, [/\bplusieurs\b/, /\bdes\b/, /\bmany\b/, /\bmultiple\b/, /\bcrowd\b/, /\bgroup\b/, /\bgroupe\b/])) {
-    negativePromptParts.push('multiple subjects', 'second subject', 'crowd', 'group shot', 'fused anatomy', 'merged limbs');
-  }
-  if (characterCountConstraints && Array.isArray(semanticBinding?.blockedDuplicates)) {
-    negativePromptParts.push(...semanticBinding.blockedDuplicates);
-  }
-  const negativePrompt = [...new Set(negativePromptParts)].join(', ');
-
   const sdPayload = {
     prompt,
-    negative_prompt: negativePrompt,
     width: mask.options?.width,
     height: mask.options?.height,
     steps: mask.options?.steps,

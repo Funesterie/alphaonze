@@ -9,11 +9,6 @@ from diffusers import AutoPipelineForText2Image
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
-    parser.add_argument(
-        "--negative_prompt",
-        type=str,
-        default="",
-    )
     parser.add_argument("--num_inference_steps", type=int, default=35)
     parser.add_argument("--guidance_scale", type=float, default=8.0)
     parser.add_argument("--width", type=int, default=768)
@@ -45,9 +40,6 @@ def main():
         height=args.height,
         generator=generator,
     )
-    if args.negative_prompt:
-        generation_kwargs["negative_prompt"] = args.negative_prompt
-
     image = pipe(**generation_kwargs).images[0]
 
     output_path = args.output

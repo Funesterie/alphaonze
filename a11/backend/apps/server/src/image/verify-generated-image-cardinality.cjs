@@ -649,9 +649,7 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   return {
     ...sdBody,
     prompt: mergedPrompt,
-    negative_prompt: '',
     prompt_prebuilt: true,
-    negative_prompt_prebuilt: true,
     seed: retrySeedBase + 97,
   };
 }

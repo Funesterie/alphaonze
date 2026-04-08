@@ -60,26 +60,6 @@ function splitPromptFragments(value = '') {
     .filter(Boolean);
 }
 
-function mergeUniquePromptFragments(...groups) {
-  const merged = [];
-  const seen = new Set();
-
-  for (const group of groups) {
-    const entries = Array.isArray(group)
-      ? group.map((entry) => normalizePromptFragment(entry)).filter(Boolean)
-      : splitPromptFragments(group);
-
-    for (const entry of entries) {
-      const key = entry.toLowerCase();
-      if (!entry || seen.has(key)) continue;
-      seen.add(key);
-      merged.push(entry);
-    }
-  }
-
-  return merged.join(', ');
-}
-
 function looksLikeCompiledSdPrompt(value = '') {
   const normalized = normalizePromptFragment(value).toLowerCase();
   if (!normalized) return false;
@@ -95,31 +75,6 @@ function looksLikeCompiledSdPrompt(value = '') {
     'exactly one ',
     'sujet principal :',
     'only one animal in frame',
-  ];
-
-  let matches = 0;
-  for (const marker of markers) {
-    if (normalized.includes(marker)) matches += 1;
-  }
-
-  return matches >= 2;
-}
-
-function looksLikeCompiledNegativePrompt(value = '') {
-  const normalized = normalizePromptFragment(value).toLowerCase();
-  if (!normalized || !normalized.includes(',')) return false;
-
-  const markers = [
-    'duplicate subject',
-    'multiple subjects',
-    'plusieurs sujets',
-    'multiple animals',
-    'crowd',
-    'foule',
-    'group shot',
-    'prise de groupe',
-    'duplicate body',
-    'extra character',
   ];
 
   let matches = 0;
@@ -297,11 +252,7 @@ function createSdToolsRouter(overrides = {}) {
     }
 
     const promptAlreadyCompiled = requestBody?.prompt_prebuilt === true || requestBody?.skip_prompt_enrichment === true;
-    const negativePromptAlreadyCompiled = requestBody?.negative_prompt_prebuilt === true || requestBody?.skip_negative_prompt_enrichment === true;
     const inferredPromptAlreadyCompiled = !promptAlreadyCompiled && looksLikeCompiledSdPrompt(rawPrompt);
-    const inferredNegativePromptAlreadyCompiled = !negativePromptAlreadyCompiled && (
-      inferredPromptAlreadyCompiled || looksLikeCompiledNegativePrompt(requestBody?.negative_prompt)
-    );
 
     let semanticCompiledState = null;
     if (!promptAlreadyCompiled && !inferredPromptAlreadyCompiled) {
@@ -337,7 +288,6 @@ function createSdToolsRouter(overrides = {}) {
         : (semanticCompiledState?.sdBody?.prompt || promptBundle.prompt)
     );
 
-    const negative_prompt = '';
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
     const width = Number(requestBody?.width || 768);
@@ -363,9 +313,7 @@ function createSdToolsRouter(overrides = {}) {
           },
           body: JSON.stringify({
             prompt: finalPrompt,
-            negative_prompt,
             prompt_prebuilt: true,
-            negative_prompt_prebuilt: true,
             num_inference_steps,
             guidance_scale,
             width,
@@ -457,7 +405,6 @@ function createSdToolsRouter(overrides = {}) {
           image_url: openAiFallback.sourceUrl || null,
           filename: path.basename(openAiFallback.outputPath || outputPath),
           prompt: finalPrompt,
-          negative_prompt,
           num_inference_steps,
           guidance_scale,
           width,
@@ -483,7 +430,6 @@ function createSdToolsRouter(overrides = {}) {
 
     const outputJson = await runSdScript({
       prompt: finalPrompt,
-      negative_prompt,
       num_inference_steps,
       guidance_scale,
       width,
@@ -518,7 +464,6 @@ function createSdToolsRouter(overrides = {}) {
           image_url: openAiFallback.sourceUrl || null,
           filename: path.basename(openAiFallback.outputPath || outputPath),
           prompt: finalPrompt,
-          negative_prompt,
           num_inference_steps,
           guidance_scale,
           width,
@@ -563,7 +508,6 @@ function createSdToolsRouter(overrides = {}) {
         image_url: uploadResult.url || null,
         filename,
         prompt: finalPrompt,
-        negative_prompt,
         num_inference_steps,
         guidance_scale,
         width,
@@ -617,7 +561,6 @@ function createSdToolsRouter(overrides = {}) {
             image_url: openAiResult.sourceUrl || null,
             filename: path.basename(openAiResult.outputPath || outputPath),
             prompt: rawPrompt,
-            negative_prompt: String(requestBody?.negative_prompt || '').trim(),
             width,
             height,
             num_inference_steps: Number(requestBody?.num_inference_steps || requestBody?.steps || 40),

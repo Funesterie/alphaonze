@@ -2273,7 +2273,6 @@ async function t_generate_png(args = {}) {
   const allowPlaceholder = shouldAllowPlaceholderPng(args);
   let lastFailure = null;
   const promptAlreadyCompiled = args.prompt_prebuilt === true || args.skip_prompt_enrichment === true;
-  const negativePromptAlreadyCompiled = args.negative_prompt_prebuilt === true || args.skip_negative_prompt_enrichment === true;
   const numInferenceSteps = Math.max(1, Number(args.numInferenceSteps || args.num_inference_steps || 35) || 35);
   const guidanceScale = Number(args.guidanceScale || args.guidance_scale || 8.0) || 8.0;
   const seed = args.seed !== undefined && args.seed !== null && String(args.seed).trim() !== ''
@@ -2281,7 +2280,7 @@ async function t_generate_png(args = {}) {
     : '';
 
   let compiledState = null;
-  if (!promptAlreadyCompiled && !negativePromptAlreadyCompiled) {
+  if (!promptAlreadyCompiled) {
     const maskResolution = await buildCanonicalImageMaskFromText(title, {
       allowCompatFallback: true,
       maskOptions: {
@@ -2305,15 +2304,12 @@ async function t_generate_png(args = {}) {
   const finalPrompt = compiledState
     ? String(compiledState.sdBody?.prompt || title).trim() || title
     : String(promptBundle?.prompt || title).trim() || title;
-  const mergedNegativePrompt = '';
 
   const proxyUrl = resolveSdProxyUrl();
   if (proxyUrl) {
     const proxyPayload = {
       prompt: finalPrompt,
-      negative_prompt: mergedNegativePrompt,
       prompt_prebuilt: true,
-      negative_prompt_prebuilt: true,
       num_inference_steps: numInferenceSteps,
       guidance_scale: guidanceScale,
       width,
@@ -2403,7 +2399,6 @@ async function t_generate_png(args = {}) {
   if (enableSd && scriptPath && fsSync.existsSync(scriptPath)) {
     const sdResult = await runSdScript({
       prompt: finalPrompt,
-      negative_prompt: mergedNegativePrompt,
       num_inference_steps: numInferenceSteps,
       guidance_scale: guidanceScale,
       width,
@@ -2420,7 +2415,6 @@ async function t_generate_png(args = {}) {
         height,
         mode: 'stable-diffusion',
         prompt: finalPrompt,
-        negativePrompt: mergedNegativePrompt,
         compilerTarget: compiledState?.compiled?.meta?.compilerTarget || null,
         executionPlan: compiledState?.compiled?.value || null,
         numInferenceSteps,
