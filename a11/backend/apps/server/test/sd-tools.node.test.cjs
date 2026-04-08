@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { createSdToolsRouter } = require('../src/routes/sd-tools.cjs');
 
@@ -251,6 +254,56 @@ test('generateSdInternal blocks local-only fallback in production when proxy fai
     );
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
+test('generateSdInternal falls back to local SD in production when ENABLE_SD is true', async () => {
+  const previous = {
+    NODE_ENV: process.env.NODE_ENV,
+    ENABLE_SD: process.env.ENABLE_SD,
+  };
+  process.env.NODE_ENV = 'production';
+  process.env.ENABLE_SD = 'true';
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-fallback-'));
+  const outputPath = path.join(tempDir, 'rat-bleu.png');
+  fs.writeFileSync(outputPath, Buffer.from('png'));
+
+  try {
+    const { generateSdInternal } = createSdToolsRouter({
+      fetch: async () => ({
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'sd_proxy_failed', message: 'proxy down' });
+        },
+      }),
+      resolveSdProxyUrl: () => 'https://sd.example.com',
+      resolveSdScriptPath: () => __filename,
+      runSdScript: async () => ({
+        ok: true,
+        output_path: outputPath,
+      }),
+      uploadBufferToR2: async () => ({
+        url: 'https://files.example.com/rat-bleu.png',
+      }),
+    });
+
+    const result = await generateSdInternal({
+      req: { headers: {}, user: { id: 'user-1' } },
+      prompt: 'genere un rat bleu',
+      body: { prompt: 'genere un rat bleu' },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, 'stable-diffusion-local');
+    assert.equal(result.image_url, 'https://files.example.com/rat-bleu.png');
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 

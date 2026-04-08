@@ -43,6 +43,30 @@ function isProductionRuntime(env = {}) {
   return nodeEnv === 'production';
 }
 
+function shouldEnableLocalSdFallback(env = {}) {
+  if (String(env.A11_SD_ALLOW_LOCAL_FALLBACK || '').trim()) {
+    return toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK);
+  }
+
+  if (!isProductionRuntime(env)) {
+    return true;
+  }
+
+  if (toBoolean(env.ENABLE_SD)) {
+    return true;
+  }
+
+  if (toBoolean(env.A11_LOCAL_MODE) || String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local') {
+    return true;
+  }
+
+  if (String(env.SD_SCRIPT_PATH || '').trim() || String(env.SD_PYTHON_PATH || '').trim()) {
+    return true;
+  }
+
+  return false;
+}
+
 function buildRuntimeConfig(env = process.env) {
   const runtimeProfile = String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase();
   const localOnly = toBoolean(env.A11_LOCAL_MODE) || runtimeProfile === 'local';
@@ -68,7 +92,7 @@ function buildRuntimeConfig(env = process.env) {
   const openAiConfigured = hasAnyValue(env.A11_OPENAI_API_KEY, env.OPENAI_API_KEY);
   const translationConfigured = hasAnyValue(env.A11_TRANSLATION_API_KEY, env.A11_OPENAI_API_KEY);
   const sdProxyUrl = normalizeUrl(env.A11_SD_PROXY_URL || env.SD_PROXY_URL || '');
-  const sdLocalFallbackEnabled = toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK) || !productionRuntime;
+  const sdLocalFallbackEnabled = shouldEnableLocalSdFallback(env);
   const sdOpenAiFallbackEnabled = isOpenAiImageEnabled(env)
     && toBoolean(env.A11_SD_ALLOW_OPENAI_FALLBACK)
     && openAiConfigured;

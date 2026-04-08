@@ -62,6 +62,17 @@ test('buildRuntimeConfig keeps OpenAI image fallback disabled unless explicitly 
   assert.equal(config.features.sd.openAiFallbackEnabled, false);
 });
 
+test('buildRuntimeConfig enables production local SD fallback when local SD is explicitly enabled', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    ENABLE_SD: 'true',
+    A11_SD_PROXY_URL: 'https://sd.example.com',
+  });
+
+  assert.equal(config.features.sd.provider, 'proxy');
+  assert.equal(config.features.sd.localFallbackEnabled, true);
+});
+
 test('getPublicRuntimeStatus publishes feature runtime details', () => {
   const config = buildRuntimeConfig({
     NODE_ENV: 'production',
