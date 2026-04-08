@@ -633,54 +633,15 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
         'no twins',
         'no crowd',
       ];
-  const retryNegativeHints = useFrenchPrompt
-    ? [
-        `plusieurs ${subjectLabel}`,
-        `${subjectLabel} supplémentaire`,
-        `${subjectLabel} dupliqué`,
-        'deuxième animal',
-        'deuxième objet',
-        'corps dupliqué',
-        'visage dupliqué',
-        'visage fusionné',
-        'corps fusionné',
-        'jumeaux',
-        'clones',
-        'foule',
-        'prise de groupe',
-      ]
-    : [
-        `multiple ${subjectLabel}`,
-        `extra ${subjectLabel}`,
-        `duplicate ${subjectLabel}`,
-        'second animal',
-        'second object',
-        'duplicate body',
-        'duplicate face',
-        'merged face',
-        'fused body',
-        'twins',
-        'clones',
-        'crowd',
-        'group shot',
-      ];
-
-  // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt/negative_prompt
+  // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt
   const basePrompt = String(sdBody.prompt || '').trim();
-  const baseNegative = String(sdBody.negative_prompt || '').trim();
 
   const uniqueRetryPromptHints = retryPromptHints.filter((h) => {
     if (!basePrompt) return true;
     return !basePrompt.toLowerCase().includes(h.toLowerCase());
   });
 
-  const uniqueRetryNegativeHints = retryNegativeHints.filter((h) => {
-    if (!baseNegative) return true;
-    return !baseNegative.toLowerCase().includes(h.toLowerCase());
-  });
-
   const mergedPrompt = [basePrompt, uniqueRetryPromptHints.join(', ')].filter(Boolean).join('. ').trim();
-  const mergedNegativePrompt = [baseNegative, uniqueRetryNegativeHints.join(', ')].filter(Boolean).join(', ').trim();
 
   const currentSeed = Number(sdBody.seed);
   const retrySeedBase = Number.isFinite(currentSeed) ? currentSeed : Number(options.seed || Date.now());
@@ -688,7 +649,7 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   return {
     ...sdBody,
     prompt: mergedPrompt,
-    negative_prompt: mergedNegativePrompt,
+    negative_prompt: '',
     prompt_prebuilt: true,
     negative_prompt_prebuilt: true,
     seed: retrySeedBase + 97,

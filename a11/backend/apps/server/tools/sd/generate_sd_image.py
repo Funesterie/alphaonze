@@ -12,7 +12,7 @@ def main():
     parser.add_argument(
         "--negative_prompt",
         type=str,
-        default="blurry, abstract, deformed, extra limbs, bad anatomy, low quality, text, watermark",
+        default="",
     )
     parser.add_argument("--num_inference_steps", type=int, default=35)
     parser.add_argument("--guidance_scale", type=float, default=8.0)
@@ -37,15 +37,18 @@ def main():
     if args.seed is not None:
         generator = generator.manual_seed(args.seed)
 
-    image = pipe(
+    generation_kwargs = dict(
         prompt=args.prompt,
-        negative_prompt=args.negative_prompt,
         num_inference_steps=args.num_inference_steps,
         guidance_scale=args.guidance_scale,
         width=args.width,
         height=args.height,
         generator=generator,
-    ).images[0]
+    )
+    if args.negative_prompt:
+        generation_kwargs["negative_prompt"] = args.negative_prompt
+
+    image = pipe(**generation_kwargs).images[0]
 
     output_path = args.output
     if not output_path.lower().endswith(".png"):

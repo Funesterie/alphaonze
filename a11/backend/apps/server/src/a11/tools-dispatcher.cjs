@@ -2305,16 +2305,7 @@ async function t_generate_png(args = {}) {
   const finalPrompt = compiledState
     ? String(compiledState.sdBody?.prompt || title).trim() || title
     : String(promptBundle?.prompt || title).trim() || title;
-  const mergedNegativePrompt = compiledState
-    ? String(compiledState.sdBody?.negative_prompt || '').trim()
-    : [...new Set([
-      String(
-        args.negativePrompt
-        || args.negative_prompt
-        || 'blurry, abstract, deformed, extra limbs, bad anatomy, low quality, text, watermark'
-      ).trim(),
-      ...(negativePromptAlreadyCompiled ? [] : (Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints : [])),
-    ].filter(Boolean))].join(', ');
+  const mergedNegativePrompt = '';
 
   const proxyUrl = resolveSdProxyUrl();
   if (proxyUrl) {
