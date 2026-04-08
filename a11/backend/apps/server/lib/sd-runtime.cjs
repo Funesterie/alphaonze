@@ -42,9 +42,27 @@ const LEGACY_SD_VENV = path.join(
   process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
 );
 
+function isWindowsDrivePath(value = '') {
+  return /^[a-zA-Z]:[\\/]/.test(String(value || '').trim());
+}
+
+function isWindowsUncPath(value = '') {
+  return /^\\\\[^\\]+\\[^\\]+/.test(String(value || '').trim());
+}
+
+function isForeignAbsolutePath(value = '', platform = process.platform) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (platform === 'win32') {
+    return false;
+  }
+  return isWindowsDrivePath(raw) || isWindowsUncPath(raw);
+}
+
 function normalizeCandidate(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
+  if (isForeignAbsolutePath(raw)) return '';
   return path.resolve(raw);
 }
 
@@ -91,7 +109,7 @@ function resolveSdProxyUrl() {
 }
 
 function resolveSdScriptPath() {
-  const explicit = String(process.env.SD_SCRIPT_PATH || '').trim();
+  const explicit = normalizeCandidate(process.env.SD_SCRIPT_PATH || '');
   const allowLocalFallback = shouldAllowLocalSdFallback(process.env);
   const candidates = uniqueCandidates([
     ...(allowLocalFallback ? [
@@ -111,21 +129,20 @@ function resolveSdScriptPath() {
   }
 
   if (!allowLocalFallback) {
-    return explicit ? normalizeCandidate(explicit) : '';
+    return explicit || '';
   }
 
-  return explicit ? normalizeCandidate(explicit) : VENDORED_SD_SCRIPT;
+  return explicit || normalizeCandidate(VENDORED_SD_SCRIPT) || VENDORED_SD_SCRIPT;
 }
 
 function resolveSdPythonBin(scriptPath = '') {
-  const explicit = String(process.env.SD_PYTHON_PATH || '').trim();
-  const normalizedExplicit = normalizeCandidate(explicit);
-  if (normalizedExplicit && fs.existsSync(normalizedExplicit)) {
-    return normalizedExplicit;
+  const explicit = normalizeCandidate(process.env.SD_PYTHON_PATH || '');
+  if (explicit && fs.existsSync(explicit)) {
+    return explicit;
   }
 
   if (!shouldAllowLocalSdFallback(process.env)) {
-    return normalizedExplicit || '';
+    return explicit || '';
   }
 
   const scriptDir = scriptPath && fs.existsSync(scriptPath) ? path.dirname(scriptPath) : '';
@@ -136,7 +153,7 @@ function resolveSdPythonBin(scriptPath = '') {
     : '';
 
   const candidates = uniqueCandidates([
-    normalizedExplicit,
+    explicit,
     adjacentVenv,
     LAUNCHER_DIST_SD_VENV,
     DESKTOP_RESOURCES_SD_VENV,
@@ -150,7 +167,7 @@ function resolveSdPythonBin(scriptPath = '') {
     }
   }
 
-  return normalizedExplicit || (process.platform === 'win32' ? 'python' : 'python3');
+  return explicit || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
 function sanitizeProxyHeaders(headers = {}) {
@@ -285,4 +302,5 @@ module.exports = {
   sanitizeProxyHeaders,
   VENDORED_SD_SCRIPT,
   shouldAllowLocalSdFallback,
+  isForeignAbsolutePath,
 };
