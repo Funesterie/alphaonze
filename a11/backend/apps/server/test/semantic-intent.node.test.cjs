@@ -139,7 +139,7 @@ test('wazaaToMask ignores noisy llm image subjects when source text contains the
   });
 
   assert.equal(imageMask?.intent, 'image.generate');
-  assert.ok(imageMask?.inputs?.subject?.includes('vegeta'));
+  assert.ok(imageMask?.inputs?.subject?.some((value) => /vegeta/i.test(String(value))));
   assert.equal(imageMask?.meta?.promptCompiler, 'a11-semantic');
   assert.ok(!imageMask?.inputs?.subject?.some((value) => /image of|g[eé]n[eè]re/i.test(String(value))));
 });
@@ -156,7 +156,7 @@ test("wazaaToMask rejects french connector fragments as image subjects", () => {
   });
 
   assert.equal(imageMask?.intent, 'image.generate');
-  assert.ok(imageMask?.inputs?.subject?.includes('turtle ninja'));
+  assert.ok(imageMask?.inputs?.subject?.some((value) => /tortue ninja/i.test(String(value))));
   assert.ok(!imageMask?.inputs?.subject?.some((value) => /^d['’]?une?$/i.test(String(value))));
 });
 

@@ -13,6 +13,21 @@
   force = true
 
 [[redirects]]
+  from = "/installHook.js.map"
+  to = "/installHook.js.map"
+  status = 200
+
+[[redirects]]
+  from = "/react_devtools_backend_compact.js.map"
+  to = "/react_devtools_backend_compact.js.map"
+  status = 200
+
+[[redirects]]
+  from = "/%3Canonymous%20code%3E"
+  to = "/anonymous_code_placeholder.js"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

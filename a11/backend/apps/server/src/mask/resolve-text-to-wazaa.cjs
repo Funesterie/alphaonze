@@ -1,54 +1,56 @@
 // resolve-text-to-wazaa.cjs
-// LLM-based WAZAA enrichment — translates French entities to English
-// Called by text-to-wazaa.cjs as fallback when heuristic confidence is low
-// or when image.generate intent needs proper French→English translation
+// Enrichissement WAZAA par LLM, sans sortir le pipeline image.generate du français.
+// Appelé par text-to-wazaa.cjs comme fallback quand l'heuristique est trop faible
+// ou ambigüe.
 
 const {
   listSupportedIntentTypes,
   normalizeIntentType,
 } = require('./semantic/semantic-utils.cjs');
 
-const WAZAA_TRANSLATE_SYSTEM_PROMPT = `You are a structured intent analyzer and French-to-English translator for a multimodal AI.
-Given a user message (usually in French), you must:
-1. Determine the intent
-2. Extract and TRANSLATE to English: subject, colors, environment, style
+const WAZAA_TRANSLATE_SYSTEM_PROMPT = `Tu es un analyseur d'intention structuré pour A11.
+Tu reçois un message utilisateur en français.
+Tu dois :
+1. déterminer l'intention
+2. extraire le sujet, les couleurs, l'environnement et le style
+3. reformuler la demande de façon simple et fidèle, en français
 
-Respond ONLY with strict JSON, no explanation:
+Réponds UNIQUEMENT en JSON strict, sans explication :
 {
   "intent": "image.generate",
-  "subject": "the main subject translated to English",
-  "colors": ["extracted color(s) in English"],
-  "environment": "environment/background if mentioned, in English, or empty string",
-  "style": "explicit style if mentioned (e.g. pixel art, watercolor), or empty string",
-  "translatedText": "full natural English translation of the user request"
+  "subject": "sujet principal en français",
+  "colors": ["couleurs extraites en français"],
+  "environment": "environnement ou fond en français, ou chaîne vide",
+  "style": "style explicite si mentionné, ou chaîne vide",
+  "translatedText": "reformulation simple en français de la demande"
 }
 
-Valid intents: ${listSupportedIntentTypes().join(', ')}
+Intents valides : ${listSupportedIntentTypes().join(', ')}
 
-Examples:
-User: "genere une courgette rose"
-{"intent":"image.generate","subject":"pink zucchini","colors":["pink"],"environment":"","style":"","translatedText":"generate a pink zucchini"}
+Exemples :
+Utilisateur : "genere une courgette rose"
+{"intent":"image.generate","subject":"courgette rose","colors":["rose"],"environment":"","style":"","translatedText":"générer une courgette rose"}
 
-User: "dessine un lapin de pâques de couleurs rose"
-{"intent":"image.generate","subject":"pink Easter rabbit","colors":["pink"],"environment":"","style":"","translatedText":"draw a pink Easter rabbit"}
+Utilisateur : "dessine un lapin de pâques de couleurs rose"
+{"intent":"image.generate","subject":"lapin de Pâques rose","colors":["rose"],"environment":"","style":"","translatedText":"dessiner un lapin de Pâques rose"}
 
-User: "affiche un dragon bleu dans un volcan en style pixel art"
-{"intent":"image.generate","subject":"blue dragon","colors":["blue"],"environment":"in a volcano","style":"pixel art","translatedText":"display a blue dragon in a volcano in pixel art style"}
+Utilisateur : "affiche un dragon bleu dans un volcan en style pixel art"
+{"intent":"image.generate","subject":"dragon bleu","colors":["bleu"],"environment":"dans un volcan","style":"pixel art","translatedText":"afficher un dragon bleu dans un volcan en style pixel art"}
 
-User: "genere un champignon rouge avec des pois blancs"
-{"intent":"image.generate","subject":"red mushroom with white polka dots","colors":["red","white"],"environment":"","style":"","translatedText":"generate a red mushroom with white polka dots"}
+Utilisateur : "genere un champignon rouge avec des pois blancs"
+{"intent":"image.generate","subject":"champignon rouge avec des pois blancs","colors":["rouge","blanc"],"environment":"","style":"","translatedText":"générer un champignon rouge avec des pois blancs"}
 
-User: "cree une tortue violette sur une plage"
-{"intent":"image.generate","subject":"purple turtle","colors":["purple"],"environment":"on a beach","style":"","translatedText":"create a purple turtle on a beach"}
+Utilisateur : "cree une tortue violette sur une plage"
+{"intent":"image.generate","subject":"tortue violette","colors":["violet"],"environment":"sur une plage","style":"","translatedText":"créer une tortue violette sur une plage"}
 
-User: "ecris un script python qui trie des fichiers"
-{"intent":"code.python.generate","subject":"","colors":[],"environment":"","style":"","translatedText":"write a python script that sorts files"}
+Utilisateur : "ecris un script python qui trie des fichiers"
+{"intent":"code.python.generate","subject":"","colors":[],"environment":"","style":"","translatedText":"écrire un script python qui trie des fichiers"}
 
-User: "reponds-moi simplement bonjour"
-{"intent":"chat.reply","subject":"","colors":[],"environment":"","style":"","translatedText":"reply to me simply hello"}
+Utilisateur : "reponds-moi simplement bonjour"
+{"intent":"chat.reply","subject":"","colors":[],"environment":"","style":"","translatedText":"répondre simplement bonjour"}
 
-User: "montre-moi une image de goku"
-{"intent":"web.image.search","subject":"goku","colors":[],"environment":"","style":"","translatedText":"show me an image of goku"}`;
+Utilisateur : "montre-moi une image de goku"
+{"intent":"web.image.search","subject":"goku","colors":[],"environment":"","style":"","translatedText":"montrer une image de goku"}`;
 
 function resolveTranslationConfig() {
   const raw = (
@@ -141,7 +143,11 @@ function shouldEnrichWithLlm(heuristicWazaa) {
     || 0;
   const ambiguities = heuristicWazaa?.ambiguities || [];
 
-  // Always enrich image.generate — the main use case is French→English translation
+  // Pour image.generate on n'enrichit plus systématiquement :
+  // on garde le pipeline français et on n'appelle le LLM qu'en cas de doute.
+  if (intentType === 'image.generate' && confidence >= 0.72 && ambiguities.length === 0) {
+    return false;
+  }
   if (intentType === 'image.generate') return true;
 
   // For other intents: enrich only if low confidence or ambiguities
@@ -191,6 +197,7 @@ function mergeEnrichedWazaa(heuristicWazaa, llmResult, sourceText) {
       sourceText: sourceText || heuristicWazaa?.meta?.sourceText || '',
       llmEnriched: true,
       translatedText: llmResult.translatedText || '',
+      promptText: llmResult.translatedText || '',
       llmColors: Array.isArray(llmResult.colors) ? llmResult.colors : [],
       llmIntent: llmIntent || '',
     },

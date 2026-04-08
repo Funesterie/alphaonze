@@ -57,12 +57,28 @@ test('translateImagePromptToEnglish maps grizzli to grizzly bear', () => {
   assert.doesNotMatch(String(translated || ''), /\bgrizzli\b/i);
 });
 
+test('translateImagePromptToEnglish maps herisson to hedgehog', () => {
+  const translated = translateImagePromptToEnglish('genere un herisson vert');
+
+  assert.match(String(translated || ''), /\bgreen hedgehog\b/i);
+  assert.doesNotMatch(String(translated || ''), /\bherisson\b/i);
+});
+
 test('buildSdPromptBundle binds risky floral colors to animal fur instead of the scenery', () => {
   const bundle = buildSdPromptBundle("genere moi un grizzli jaune");
 
   assert.match(String(bundle.prompt || ''), /one grizzly bear with golden-yellow fur/i);
   assert.match(String(bundle.prompt || ''), /not yellow flowers|meadow plants|background elements/i);
   assert.match(String(bundle.negativeHints.join(', ') || ''), /yellow flowers|flower field|meadow flowers/i);
+});
+
+test('buildSdPromptBundle keeps hedgehog prompts on the animal subject itself', () => {
+  const bundle = buildSdPromptBundle('genere un herisson vert');
+
+  assert.match(String(bundle.prompt || ''), /one hedgehog with green fur/i);
+  assert.match(String(bundle.prompt || ''), /exactly one hedgehog/i);
+  assert.match(String(bundle.prompt || ''), /the animal itself has green fur/i);
+  assert.doesNotMatch(String(bundle.prompt || ''), /\bherisson\b/i);
 });
 
 test('buildSdPromptBundle compiles French image prompts into English SD-ready prompts', () => {

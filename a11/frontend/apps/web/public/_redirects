@@ -1,2 +1,5 @@
+/installHook.js.map /installHook.js.map 200
+/react_devtools_backend_compact.js.map /react_devtools_backend_compact.js.map 200
+/%3Canonymous%20code%3E /anonymous_code_placeholder.js 200
 /api/* /.netlify/functions/proxy/:splat 200!
 /* /index.html 200

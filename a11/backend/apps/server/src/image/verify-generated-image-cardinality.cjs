@@ -607,33 +607,63 @@ async function verifyGeneratedImageCardinality({
 function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const expected = verification?.expected || {};
   const subjectLabel = String(expected.subject_label || expected.subject_type || 'subject').trim() || 'subject';
-  const retryPromptHints = [
-    `exactly one ${subjectLabel}`,
-    `one ${subjectLabel} only`,
-    'single isolated subject',
-    'solo composition',
-    'centered solo subject',
-    'no second subject',
-    'no duplicate body',
-    'no duplicate face',
-    'no twins',
-    'no crowd',
-  ];
-  const retryNegativeHints = [
-    `multiple ${subjectLabel}`,
-    `extra ${subjectLabel}`,
-    `duplicate ${subjectLabel}`,
-    'second animal',
-    'second object',
-    'duplicate body',
-    'duplicate face',
-    'merged face',
-    'fused body',
-    'twins',
-    'clones',
-    'crowd',
-    'group shot',
-  ];
+  const useFrenchPrompt = String(sdBody?.prompt_language || '').trim().toLowerCase() === 'fr';
+  const retryPromptHints = useFrenchPrompt
+    ? [
+        `exactement un ${subjectLabel}`,
+        `un seul ${subjectLabel}`,
+        'sujet unique isolé',
+        'composition solo',
+        'sujet centré',
+        'aucun deuxième sujet',
+        'aucun corps dupliqué',
+        'aucun visage dupliqué',
+        'pas de jumeaux',
+        'pas de foule',
+      ]
+    : [
+        `exactly one ${subjectLabel}`,
+        `one ${subjectLabel} only`,
+        'single isolated subject',
+        'solo composition',
+        'centered solo subject',
+        'no second subject',
+        'no duplicate body',
+        'no duplicate face',
+        'no twins',
+        'no crowd',
+      ];
+  const retryNegativeHints = useFrenchPrompt
+    ? [
+        `plusieurs ${subjectLabel}`,
+        `${subjectLabel} supplémentaire`,
+        `${subjectLabel} dupliqué`,
+        'deuxième animal',
+        'deuxième objet',
+        'corps dupliqué',
+        'visage dupliqué',
+        'visage fusionné',
+        'corps fusionné',
+        'jumeaux',
+        'clones',
+        'foule',
+        'prise de groupe',
+      ]
+    : [
+        `multiple ${subjectLabel}`,
+        `extra ${subjectLabel}`,
+        `duplicate ${subjectLabel}`,
+        'second animal',
+        'second object',
+        'duplicate body',
+        'duplicate face',
+        'merged face',
+        'fused body',
+        'twins',
+        'clones',
+        'crowd',
+        'group shot',
+      ];
 
   // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt/negative_prompt
   const basePrompt = String(sdBody.prompt || '').trim();

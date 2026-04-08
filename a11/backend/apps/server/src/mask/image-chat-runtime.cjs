@@ -1,6 +1,7 @@
 const normalizeMaskImageGenerate = require('./normalize-mask-image-generate.cjs');
 const validateMaskImageGenerate = require('./validate-mask-image-generate.cjs');
 const compileMaskToSD = require('./compile-mask-to-sd.cjs');
+const compileMaskToImagePrompt = require('./compile-mask-to-image-prompt.cjs');
 const adaptMaskToFreelandValue = require('./adapt-mask-to-freeland-value.cjs');
 const crypto = require('node:crypto');
 const path = require('node:path');
@@ -89,9 +90,21 @@ function compileMaskImageGenerate(rawMask) {
     throw error;
   }
 
-  const compiledPayload = compileMaskToSD(mask);
+  const compilerTarget = String(mask?.compiler?.target || 'image-prompt-fr').trim() || 'image-prompt-fr';
+  const compiledPayload = compilerTarget === 'sd-payload'
+    ? compileMaskToSD(mask)
+    : compileMaskToImagePrompt(mask);
   const compiled = adaptMaskToFreelandValue(mask, compiledPayload);
-  const sdBody = buildSdRequestBody(mask, compiledPayload);
+  const sdBody = compilerTarget === 'sd-payload'
+    ? buildSdRequestBody(mask, compiledPayload)
+    : {
+        ...compiledPayload,
+        width: Number(compiledPayload?.width || mask?.options?.width || 768),
+        height: Number(compiledPayload?.height || mask?.options?.height || 768),
+        num_inference_steps: Number(compiledPayload?.num_inference_steps || mask?.options?.steps || 30),
+        guidance_scale: Number(compiledPayload?.guidance_scale || mask?.options?.guidance_scale || 7.5),
+        ...(compiledPayload?.seed !== undefined ? { seed: compiledPayload.seed } : {}),
+      };
 
   return {
     mask,
@@ -222,6 +235,7 @@ async function inspectGeneratedImage(sdResult) {
 async function generateImageFromMask({
   req,
   rawMask,
+  generateImage,
   generateSd,
   verifyImageCardinality = verifyGeneratedImageCardinality,
   inspectGeneratedImageResult = inspectGeneratedImage,
@@ -229,14 +243,17 @@ async function generateImageFromMask({
   maxVerificationRetries,
 }) {
   const compiledState = compileMaskImageGenerate(rawMask);
+  const imageGenerator = typeof generateImage === 'function'
+    ? generateImage
+    : generateSd;
 
-  if (typeof generateSd !== 'function') {
-    const error = new Error('generateSd handler unavailable');
+  if (typeof imageGenerator !== 'function') {
+    const error = new Error('generateImage handler unavailable');
     error.statusCode = 500;
     error.payload = {
       ok: false,
-      error: 'sd_unavailable',
-      message: 'generateSd handler unavailable',
+      error: 'image_engine_unavailable',
+      message: 'generateImage handler unavailable',
     };
     throw error;
   }
@@ -255,7 +272,7 @@ async function generateImageFromMask({
   console.log(
     `[A11][image-guard] start requestId=${requestId} enabled=${guardEnabled} promptHash=${compiledPromptHash} seed=${activeSdBody.seed ?? 'none'}`
   );
-  let sdResult = await generateSd({
+  let sdResult = await imageGenerator({
     req,
     prompt: activeSdBody.prompt,
     body: activeSdBody,
@@ -313,7 +330,7 @@ async function generateImageFromMask({
         seed: Date.now(),
       });
       compiledPromptHash = buildCompiledPromptHash(activeSdBody);
-      sdResult = await generateSd({
+      sdResult = await imageGenerator({
         req,
         prompt: activeSdBody.prompt,
         body: activeSdBody,
@@ -470,8 +487,9 @@ function toImageChatProxyPayload({ sdResult, mask, compiled, sdBody, imageGuard 
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model: 'a11-mask-image',
-    mode: 'generate_sd',
-    tool: 'generate_sd',
+    mode: 'generate_image',
+    tool: sdResult?.tool || 'generate_image',
+    engine: sdResult?.mode || null,
     artifact_type: sdResult?.artifact_type || 'image',
     image_url: imageUrl || null,
     imagePath: imageUrl || null,
@@ -490,7 +508,7 @@ function toImageChatProxyPayload({ sdResult, mask, compiled, sdBody, imageGuard 
       imageGuard: imageGuard || null,
       results: [
         {
-          action: 'generate_sd',
+          action: sdResult?.tool || 'generate_image',
           ok: sdResult?.ok !== false,
           result: sdResult,
         },

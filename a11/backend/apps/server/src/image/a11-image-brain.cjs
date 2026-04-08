@@ -190,7 +190,7 @@ function buildGenerateIntent({ text, promptSeed, semanticAnalysis, semanticConfi
     ambiguities: Array.isArray(semanticAnalysis?.ambiguities) ? semanticAnalysis.ambiguities : [],
     execution: {
       mode: 'generate',
-      target: 'sd-payload',
+      target: 'image-prompt-fr',
       width: 768,
       height: 768,
       steps: 40,

@@ -43,7 +43,7 @@ test('resolveUserRequest emits a valid mask-1 image.generate mask and compiles i
   assert.equal(resolution.mask.intent, 'image.generate');
   assert.equal(resolution.mask.version, 'mask-1');
   assert.equal(validateMaskUnified(resolution.mask).valid, true);
-  assert.equal(resolution.compiled.target, 'sd-payload');
+  assert.equal(resolution.compiled.target, 'image-prompt-fr');
   assert.equal(typeof resolution.compiled.value.prompt, 'string');
 });
 

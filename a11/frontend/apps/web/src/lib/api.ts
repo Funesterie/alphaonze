@@ -736,6 +736,15 @@ function isLikelyHtmlDocument(rawValue: unknown) {
   return /^<!doctype html/i.test(raw) || /^<html/i.test(raw);
 }
 
+function shouldLogRawChatPayload() {
+  if (import.meta.env?.DEV) return true;
+  try {
+    return globalThis.localStorage?.getItem('a11:debug-raw-chat') === '1';
+  } catch {
+    return false;
+  }
+}
+
 function extractAssistantContentFromPayload(payload: unknown, depth = 0): string {
   if (depth > 5 || payload == null) return '';
 
@@ -910,8 +919,9 @@ async function apiPost(body: unknown) {
             const lines = p.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
             for (const line of lines) {
               if (line.startsWith('data:')) {
-                // Log raw data for debugging
-                console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+                if (shouldLogRawChatPayload()) {
+                  console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+                }
                 processDataLine(line);
               }
             }
@@ -922,7 +932,9 @@ async function apiPost(body: unknown) {
         const finalLines = buf.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         for (const line of finalLines) {
           if (line.startsWith('data:')) {
-            console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+            if (shouldLogRawChatPayload()) {
+              console.log('[A11][RAW] 200 data:', line.slice(5).trim());
+            }
             processDataLine(line);
           }
         }
@@ -940,7 +952,9 @@ async function apiPost(body: unknown) {
 
   // Try streaming text if needed; for now read full text
   const text = await res.text();
-  console.log('[A11][RAW]', res.status, text);
+  if (shouldLogRawChatPayload()) {
+    console.log('[A11][RAW]', res.status, text);
+  }
 
   if (!res.ok) {
     const message = isLikelyHtmlDocument(text)

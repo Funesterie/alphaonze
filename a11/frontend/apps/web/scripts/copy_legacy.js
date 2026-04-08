@@ -4,6 +4,31 @@ const path = require('path');
 const projectRoot = path.resolve(__dirname, '..');
 const distLegacy = path.join(projectRoot, 'dist', 'legacy');
 const publicLegacy = path.join(projectRoot, 'public', 'legacy');
+const distRoot = path.join(projectRoot, 'dist');
+
+const PLACEHOLDER_ASSETS = {
+  'anonymous_code_placeholder.js': [
+    '// Placeholder for anonymous injected script',
+    '// The devtools or an injected script requested this path; provide a harmless placeholder',
+    '',
+  ].join('\n'),
+  'installHook.js.map': JSON.stringify({
+    version: 3,
+    file: 'installHook.js',
+    sources: ['installHook.js'],
+    sourcesContent: ['// placeholder source for injected installHook.js'],
+    names: [],
+    mappings: '',
+  }),
+  'react_devtools_backend_compact.js.map': JSON.stringify({
+    version: 3,
+    file: 'react_devtools_backend_compact.js',
+    sources: ['react_devtools_backend_compact.js'],
+    sourcesContent: ['// placeholder source for injected react devtools backend'],
+    names: [],
+    mappings: '',
+  }),
+};
 
 function copyRecursive(src, dest) {
   if (!fs.existsSync(src)) return;
@@ -17,10 +42,20 @@ function copyRecursive(src, dest) {
   }
 }
 
+function ensurePlaceholderAssets(dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const [fileName, contents] of Object.entries(PLACEHOLDER_ASSETS)) {
+    fs.writeFileSync(path.join(dest, fileName), contents, 'utf8');
+  }
+}
+
 try {
+  ensurePlaceholderAssets(distRoot);
+  ensurePlaceholderAssets(distLegacy);
   if (fs.existsSync(distLegacy)) {
     console.log('Copying dist/legacy -> public/legacy');
     copyRecursive(distLegacy, publicLegacy);
+    ensurePlaceholderAssets(publicLegacy);
     console.log('Done.');
   } else {
     console.log('No dist/legacy folder to copy.');

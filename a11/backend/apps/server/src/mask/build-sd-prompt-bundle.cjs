@@ -60,6 +60,8 @@ const FLORAL_LEAK_COLORS = new Set(['yellow', 'pink', 'orange', 'purple']);
 const ANIMAL_SUBJECT_TERMS = [
   'grizzly bear',
   'grizzly bears',
+  'hedgehog',
+  'hedgehogs',
   'rabbit',
   'rabbits',
   'cow',
@@ -176,6 +178,8 @@ const IMAGE_TOKEN_TRANSLATIONS = new Map([
   ['lapin', 'rabbit'],
   ['lapins', 'rabbits'],
   ['lapine', 'rabbit'],
+  ['herisson', 'hedgehog'],
+  ['herissons', 'hedgehogs'],
   ['vache', 'cow'],
   ['vaches', 'cows'],
   ['cochon', 'pig'],

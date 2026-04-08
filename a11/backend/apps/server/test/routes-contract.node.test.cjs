@@ -86,7 +86,7 @@ test('POST /api/mask/compile returns 400 for invalid masks and compiles image ma
         version: 'mask-1',
         intent: 'image.generate',
         task: { domain: 'image', action: 'generate' },
-        compiler: { target: 'sd-payload', version: '1.0' },
+        compiler: { target: 'image-prompt-fr', version: '1.0' },
         inputs: {
           subject: ['orange cat'],
           environment: [],
@@ -101,9 +101,10 @@ test('POST /api/mask/compile returns 400 for invalid masks and compiles image ma
         raw: 'genere une image de chat orange',
       });
       assert.equal(imageMask.response.status, 200);
-      assert.equal(imageMask.json.target, 'sd-payload');
+      assert.equal(imageMask.json.target, 'image-prompt-fr');
       assert.equal(typeof imageMask.json.compiled?.prompt, 'string');
       assert.equal(typeof imageMask.json.compiled?.negative_prompt, 'string');
+      assert.match(String(imageMask.json.compiled?.prompt || ''), /Demande utilisateur|Sujet principal/i);
     }
   );
 });
@@ -203,7 +204,7 @@ test('POST /api/llm/chat returns an image completion payload for authenticated i
       });
 
       assert.equal(response.status, 200);
-      assert.equal(json.mode, 'generate_sd');
+      assert.equal(json.mode, 'generate_image');
       assert.equal(json.artifact_type, 'image');
       assert.equal(json.imagePath, 'https://files.example.com/generated.png');
       assert.equal(json.a11Agent.imagePath, 'https://files.example.com/generated.png');
@@ -311,7 +312,7 @@ test('POST /api/llm/chat uses the image brain for non-explicit but visual prompt
       });
 
       assert.equal(response.status, 200);
-      assert.equal(json.mode, 'generate_sd');
+      assert.equal(json.mode, 'generate_image');
       assert.equal(json.imagePath, 'https://files.example.com/donkey-kong.png');
       assert.match(String(json.choices?.[0]?.message?.content || ''), /image est pr[êe]te/i);
       assert.equal(json.kind, 'image.generate');
@@ -410,7 +411,7 @@ test('POST /api/llm/chat returns the same image payload without requiring dev mo
 
       assert.equal(response.status, 200);
       assert.equal(json.kind, 'image.generate');
-      assert.equal(json.mode, 'generate_sd');
+      assert.equal(json.mode, 'generate_image');
       assert.equal(json.imagePath, 'https://files.example.com/generated-without-dev.png');
       assert.equal(json.pipeline, 'intent-router-v2');
     }
