@@ -52,6 +52,16 @@ test('buildRuntimeConfig exposes production-safe feature providers', () => {
   assert.equal(config.features.tts.provider, 'http');
 });
 
+test('buildRuntimeConfig keeps OpenAI image fallback disabled unless explicitly enabled', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    OPENAI_API_KEY: 'sk-test',
+    A11_SD_ALLOW_OPENAI_FALLBACK: 'true',
+  });
+
+  assert.equal(config.features.sd.openAiFallbackEnabled, false);
+});
+
 test('getPublicRuntimeStatus publishes feature runtime details', () => {
   const config = buildRuntimeConfig({
     NODE_ENV: 'production',

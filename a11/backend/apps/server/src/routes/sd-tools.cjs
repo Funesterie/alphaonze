@@ -14,6 +14,7 @@ const {
   tryGeneratePngWithOpenAI,
   looksLikeOpenAiQuotaError,
   resolveOpenAiImageConfig,
+  isOpenAiImageEnabled,
 } = require('../../lib/openai-image.cjs');
 
 function defaultFetch(...args) {
@@ -28,6 +29,8 @@ function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
 }
 
 function resolveOpenAiPreferredForImage(requestBody = {}) {
+  if (!isOpenAiImageEnabled(process.env)) return false;
+
   const explicitEngine = String(
     requestBody?.engine
     || requestBody?.image_engine
@@ -207,6 +210,7 @@ function buildSdUnavailablePayload({ localResult = null, openAiResult = null } =
   const reasons = [];
   if (localResult?.error === 'python_spawn_failed') reasons.push('le runtime Python SD local est introuvable');
   if (isMissingTorchFailure(localResult)) reasons.push('torch manque sur le backend image');
+  if (openAiResult?.error === 'openai_image_disabled') reasons.push('OpenAI image est desactive');
   if (openAiResult?.error === 'openai_image_unconfigured') reasons.push('OPENAI_API_KEY image n est pas configuree');
   if (looksLikeOpenAiQuotaError(openAiResult)) reasons.push('le quota OpenAI image est depasse');
   if (!reasons.length && localResult?.message) reasons.push(String(localResult.message));
@@ -592,7 +596,7 @@ function createSdToolsRouter(overrides = {}) {
     const openAiFirst = resolveOpenAiPreferredForImage(requestBody);
     const openAiConfig = resolveOpenAiImageConfig();
 
-    if (openAiFirst && openAiConfig.apiKey) {
+    if (openAiFirst && openAiConfig.enabled && openAiConfig.apiKey) {
       try {
         const tempDir = String(process.env.SD_OUTPUT_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/a11-images' : path.join(process.cwd(), 'tmp', 'generated')));
         fs.mkdirSync(tempDir, { recursive: true });

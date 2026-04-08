@@ -257,3 +257,53 @@ test('generateSdInternal blocks local-only fallback in production when proxy fai
     process.env.NODE_ENV = previousNodeEnv;
   }
 });
+
+test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is explicitly enabled', async () => {
+  const previous = {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_ENABLE_OPENAI_IMAGE: process.env.A11_ENABLE_OPENAI_IMAGE,
+    A11_IMAGE_PROVIDER_ORDER: process.env.A11_IMAGE_PROVIDER_ORDER,
+  };
+
+  let capturedBody = null;
+  process.env.OPENAI_API_KEY = 'sk-stray-key';
+  delete process.env.A11_ENABLE_OPENAI_IMAGE;
+  process.env.A11_IMAGE_PROVIDER_ORDER = 'openai,sd';
+
+  try {
+    const { generateImageInternal } = createSdToolsRouter({
+      fetch: async (_url, options = {}) => {
+        capturedBody = JSON.parse(String(options.body || '{}'));
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              ok: true,
+              image_url: 'https://files.example.com/sd-only-rabbit.png',
+              mode: 'stable-diffusion-proxy',
+            });
+          },
+        };
+      },
+      resolveSdProxyUrl: () => 'http://proxy.test/generate',
+      resolveSdScriptPath: () => '',
+    });
+
+    const response = await generateImageInternal({
+      req: { headers: {} },
+      prompt: 'genere une image lapin rose',
+      body: { prompt: 'genere une image lapin rose' },
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.mode, 'stable-diffusion-proxy');
+    assert.match(String(capturedBody?.prompt || ''), /Demande utilisateur : genere une image lapin rose/i);
+    assert.match(String(capturedBody?.negative_prompt || ''), /flou|fleurs/i);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
