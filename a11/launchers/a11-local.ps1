@@ -1206,9 +1206,9 @@ function Build-ServiceDefinitions {
     A11_LOCAL_MODE = '1'
     A11_RUNTIME_PROFILE = 'local'
     BACKEND = $(if ($useRemoteProvider) { 'openai' } else { 'local' })
-    APP_URL = $LocalUiUrl
-    FRONT_URL = $LocalUiUrl
-    PUBLIC_API_URL = $LocalApiUrl
+    APP_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
+    FRONT_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
+    PUBLIC_API_URL = $(if ([string]::IsNullOrWhiteSpace($PublicApiUrl)) { $LocalApiUrl } else { $PublicApiUrl })
     API_URL = $LocalApiUrl
     LOCAL_LLM_URL = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
     LLAMA_BASE = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })

@@ -2145,7 +2145,7 @@ export function App() {
     }
     setPurgingTechnicalMemos(true);
     setTechnicalMemoConfirmOpen(false);
-    setTechnicalMemoFeedback("Suppression des memos techniques en cours...");
+    setTechnicalMemoFeedback("Reinitialisation de la memoire non cruciale en cours...");
     setTechnicalMemoError("");
 
     try {
@@ -2154,8 +2154,8 @@ export function App() {
       const removedFiles = Number(result?.removedFiles || 0);
       setTechnicalMemoFeedback(
         removedEntries > 0
-          ? `Memos techniques supprimes. ${removedEntries} entree(s), ${removedFiles} fichier(s).`
-          : "Les memos techniques etaient deja vides."
+          ? `Memoire non cruciale reinitialisee. ${removedEntries} entree(s), ${removedFiles} fichier(s).`
+          : "La memoire non cruciale etait deja vide."
       );
       setTechnicalMemoSummary({
         total: 0,
@@ -2903,9 +2903,9 @@ export function App() {
                       }}
                     >
                       <div>
-                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: 15 }}>Memos techniques</h4>
+                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: 15 }}>Memoire non cruciale</h4>
                         <p style={{ color: '#94a3b8', margin: '6px 0 0', fontSize: 13 }}>
-                          Journal technique admin: snapshots d&apos;env, etat Qflush et traces internes. Ce n&apos;est pas l&apos;historique global du chat utilisateur.
+                          Snapshots techniques admin, etat Qflush et traces internes. Cela n&apos;efface pas l&apos;historique global du chat utilisateur ni la memoire critique.
                         </p>
                       </div>
 
@@ -2987,7 +2987,7 @@ export function App() {
                             fontSize: 12,
                           }}
                         >
-                          {purgingTechnicalMemos ? 'Suppression...' : 'Vider les memos techniques'}
+                          {purgingTechnicalMemos ? 'Reinitialisation...' : 'Reinitialiser la memoire non cruciale'}
                         </button>
                       </div>
                     </div>
@@ -3342,9 +3342,9 @@ export function App() {
       />
       <ConfirmModal
         open={technicalMemoConfirmOpen}
-        title="Supprimer les memos techniques"
-        message="Cette action efface les snapshots techniques locaux d'A11 (env, qflush, journaux memo). Cela ne touche pas l'historique de conversation utilisateur."
-        confirmLabel="Tout supprimer"
+        title="Reinitialiser la memoire non cruciale"
+        message="Cette action efface les snapshots techniques locaux d'A11 (env, qflush, journaux memo). Cela ne touche pas l'historique de conversation utilisateur ni la memoire critique."
+        confirmLabel="Reinitialiser"
         confirmTone="danger"
         loading={purgingTechnicalMemos}
         onClose={() => setTechnicalMemoConfirmOpen(false)}
