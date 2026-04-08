@@ -1,3 +1,5 @@
+const { isOpenAiImageEnabled } = require('./openai-image.cjs');
+
 function normalizeUrl(value, fallback = '') {
   const raw = String(value || '').trim();
   if (!raw) return fallback;
@@ -67,7 +69,9 @@ function buildRuntimeConfig(env = process.env) {
   const translationConfigured = hasAnyValue(env.A11_TRANSLATION_API_KEY, env.A11_OPENAI_API_KEY);
   const sdProxyUrl = normalizeUrl(env.A11_SD_PROXY_URL || env.SD_PROXY_URL || '');
   const sdLocalFallbackEnabled = toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK) || !productionRuntime;
-  const sdOpenAiFallbackEnabled = toBoolean(env.A11_SD_ALLOW_OPENAI_FALLBACK) && openAiConfigured;
+  const sdOpenAiFallbackEnabled = isOpenAiImageEnabled(env)
+    && toBoolean(env.A11_SD_ALLOW_OPENAI_FALLBACK)
+    && openAiConfigured;
   const explicitWazaaLlm = String(env.A11_WAZAA_LLM_ENRICH || '').trim();
   const wazaaLlmEnabled = explicitWazaaLlm
     ? toBoolean(explicitWazaaLlm)

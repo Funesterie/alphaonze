@@ -3,7 +3,14 @@ const fsp = require('node:fs/promises');
 const axios = require('axios');
 const { uploadBufferToR2 } = require('./file-storage.cjs');
 
+function isOpenAiImageEnabled(env = process.env) {
+  return ['1', 'true', 'yes', 'on'].includes(
+    String(env.A11_ENABLE_OPENAI_IMAGE || '').trim().toLowerCase()
+  );
+}
+
 function resolveOpenAiImageConfig() {
+  const enabled = isOpenAiImageEnabled(process.env);
   const apiKey = String(
     process.env.A11_OPENAI_IMAGE_API_KEY
     || process.env.OPENAI_API_KEY
@@ -20,7 +27,7 @@ function resolveOpenAiImageConfig() {
     || 'gpt-image-1-mini'
   ).trim() || 'gpt-image-1-mini';
   const quality = String(process.env.A11_OPENAI_IMAGE_QUALITY || 'medium').trim() || 'medium';
-  return { apiKey, baseUrl, model, quality };
+  return { enabled, apiKey, baseUrl, model, quality };
 }
 
 function resolveOpenAiImageSize(width, height) {
@@ -48,6 +55,13 @@ async function tryGeneratePngWithOpenAI({
   userId = 'image-tool',
 }) {
   const config = resolveOpenAiImageConfig();
+  if (!config.enabled) {
+    return {
+      ok: false,
+      error: 'openai_image_disabled',
+      message: 'La génération image OpenAI est désactivée sur cet environnement.',
+    };
+  }
   if (!config.apiKey) {
     return {
       ok: false,
@@ -176,4 +190,5 @@ module.exports = {
   looksLikeOpenAiQuotaError,
   resolveOpenAiImageConfig,
   resolveOpenAiImageSize,
+  isOpenAiImageEnabled,
 };
