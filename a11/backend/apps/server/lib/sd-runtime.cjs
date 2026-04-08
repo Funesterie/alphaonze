@@ -56,11 +56,31 @@ function isProductionRuntime(env = process.env) {
   return String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
 }
 
+function toBoolean(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
 function shouldAllowLocalSdFallback(env = process.env) {
   if (String(env.A11_SD_ALLOW_LOCAL_FALLBACK || '').trim() !== '') {
-    return ['1', 'true', 'yes', 'on'].includes(String(env.A11_SD_ALLOW_LOCAL_FALLBACK).trim().toLowerCase());
+    return toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK);
   }
-  return !isProductionRuntime(env);
+  if (!isProductionRuntime(env)) {
+    return true;
+  }
+
+  if (toBoolean(env.ENABLE_SD)) {
+    return true;
+  }
+
+  if (toBoolean(env.A11_LOCAL_MODE) || String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local') {
+    return true;
+  }
+
+  if (String(env.SD_SCRIPT_PATH || '').trim() || String(env.SD_PYTHON_PATH || '').trim()) {
+    return true;
+  }
+
+  return false;
 }
 
 function resolveSdProxyUrl() {
