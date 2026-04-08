@@ -514,6 +514,12 @@ function createSdToolsRouter(overrides = {}) {
         height,
         seed: seed !== undefined ? Number(seed) : undefined,
         mode: 'stable-diffusion-local',
+        device: outputJson.device || null,
+        model_id: outputJson.model_id || null,
+        torch_dtype: outputJson.torch_dtype || null,
+        cuda_available: outputJson.cuda_available === true,
+        cuda_device_name: outputJson.cuda_device_name || null,
+        xformers_enabled: outputJson.xformers_enabled === true,
       };
     } catch (error_) {
       const error = new Error(String(error_?.message || error_));
