@@ -20,6 +20,8 @@ RUN python3 -m venv /opt/venv \
 
 COPY . .
 
+RUN /opt/venv/bin/pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r tools/sd/requirements.txt
+
 EXPOSE 8080
 
 CMD ["bash", "start.sh"]
