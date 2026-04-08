@@ -65,6 +65,7 @@ async function buildCanonicalImageMaskFromText(text, opts = {}) {
     rawMask = wazaaToMask(effectiveWazaa, {
       intentType: 'image.generate',
       sourceText,
+      semanticAnalysis: opts.analysis || null,
     });
   }
 

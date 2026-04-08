@@ -1,4 +1,12 @@
 const { normalizeIntentType } = require('./semantic/semantic-utils.cjs');
+const {
+  collectUniqueColorsFromWordItems,
+  detectColorMatchesFromText,
+  stripTrailingColorPhrase,
+} = require('./semantic/color-library.cjs');
+const {
+  stripTrailingStylePhrase,
+} = require('./semantic/style-library.cjs');
 
 function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -27,116 +35,6 @@ function splitCsvValues(value) {
   );
 }
 
-const SIMPLE_COLOR_WORDS = [
-  'rouge',
-  'bleu',
-  'vert',
-  'jaune',
-  'violet',
-  'orange',
-  'rose',
-  'blanc',
-  'noir',
-  'marron',
-  'gris',
-  'doré',
-  'dorée',
-  'argent',
-  'argenté',
-  'argentée',
-];
-
-const CHARACTER_OR_CREATURE_TERMS = [
-  'pokemon',
-  'dragon',
-  'spectre',
-  'fantome',
-  'fantôme',
-  'creature',
-  'créature',
-  'monstre',
-  'personnage',
-  'hero',
-  'héros',
-  'heros',
-  'vegeta',
-  'pikachu',
-  'batman',
-  'robin',
-];
-
-const WINGED_TERMS = [
-  'dragon',
-  'phoenix',
-  'phénix',
-  'phenix',
-  'oiseau',
-  'ailes',
-  'aile',
-];
-
-const FIRE_OR_ENERGY_TERMS = [
-  'feu',
-  'flamme',
-  'flammes',
-  'energie',
-  'énergie',
-  'electrique',
-  'électrique',
-  'lumiere',
-  'lumière',
-];
-
-const WATER_OR_WET_TERMS = [
-  'poisson',
-  'fish',
-  'tortue',
-  'turtle',
-  'grenouille',
-  'frog',
-  'rivière',
-  'riviere',
-  'lac',
-  'mer',
-  'océan',
-  'ocean',
-  'eau',
-  'plage',
-];
-
-const LAND_ANIMAL_TERMS = [
-  'lapin',
-  'rabbit',
-  'renard',
-  'fox',
-  'ours',
-  'bear',
-  'lion',
-  'tigre',
-  'panda',
-  'chat',
-  'cat',
-  'chien',
-  'dog',
-  'herisson',
-  'hérisson',
-  'rat',
-  'vache',
-  'cow',
-  'cochon',
-  'pig',
-];
-
-const MYTHIC_TERMS = [
-  'mythique',
-  'mythical',
-  'legendaire',
-  'légendaire',
-  'fantastique',
-  'mystique',
-  'noble',
-];
-
 function normalizeLookupText(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -147,20 +45,69 @@ function normalizeLookupText(value = '') {
     .toLowerCase();
 }
 
-function containsAnyTerm(sourceText = '', terms = []) {
-  const normalized = normalizeLookupText(sourceText);
-  if (!normalized) return false;
-  return terms.some((entry) => {
-    const token = normalizeLookupText(entry);
-    return token && new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(normalized);
-  });
+function getSemanticMeta(wazaa = null, opts = {}) {
+  if (opts?.semanticAnalysis && typeof opts.semanticAnalysis === 'object') {
+    const wordItems = Array.isArray(opts.semanticAnalysis?.levels?.words?.items)
+      ? opts.semanticAnalysis.levels.words.items
+      : [];
+    const semanticColors = collectUniqueColorsFromWordItems(wordItems).slice(0, 6);
+    const semanticStyles = wordItems
+      .filter((item) => item?.style?.label)
+      .map((item) => item.style)
+      .filter((entry, index, items) => entry?.key && items.findIndex((candidate) => candidate?.key === entry.key) === index)
+      .slice(0, 6);
+    const semanticScenes = wordItems
+      .filter((item) => item?.scene?.label)
+      .map((item) => item.scene)
+      .filter((entry, index, items) => entry?.key && items.findIndex((candidate) => candidate?.key === entry.key) === index)
+      .slice(0, 6);
+    const colorWords = semanticColors.map((entry) => entry.label).slice(0, 6);
+    const styleWords = semanticStyles.map((entry) => String(entry.label || '').trim()).filter(Boolean);
+    const sceneWords = semanticScenes.map((entry) => String(entry.label || '').trim()).filter(Boolean);
+    return {
+      subject: String(opts.semanticAnalysis?.subject || '').trim(),
+      confidence: Number(opts.semanticAnalysis?.summary?.confidence || 0),
+      activeModuleIds: Array.isArray(opts.semanticAnalysis?.knowledge?.activeModules)
+        ? opts.semanticAnalysis.knowledge.activeModules.map((entry) => String(entry?.id || '').trim()).filter(Boolean)
+        : [],
+      colors: semanticColors,
+      colorWords,
+      styles: semanticStyles,
+      styleWords,
+      scenes: semanticScenes,
+      sceneWords,
+      wordTags: wordItems
+        .map((item) => ({
+          word: String(item.word || '').trim(),
+          tags: Array.isArray(item.tags) ? item.tags.filter(Boolean) : [],
+        }))
+        .filter((item) => item.word),
+    };
+  }
+  return wazaa?.meta?.semantic && typeof wazaa.meta.semantic === 'object'
+    ? wazaa.meta.semantic
+    : {};
 }
 
-function buildPositiveCompositionHints(subject = '', sourceText = '') {
-  const mergedSource = `${String(subject || '')} ${String(sourceText || '')}`.trim();
-  const hints = [];
+function semanticHasWordTag(semanticMeta = {}, tag = '') {
+  const normalizedTag = String(tag || '').trim();
+  if (!normalizedTag) return false;
+  const wordTags = Array.isArray(semanticMeta?.wordTags) ? semanticMeta.wordTags : [];
+  return wordTags.some((entry) => Array.isArray(entry?.tags) && entry.tags.includes(normalizedTag));
+}
 
-  if (containsAnyTerm(mergedSource, CHARACTER_OR_CREATURE_TERMS)) {
+function semanticHasModule(semanticMeta = {}, moduleId = '') {
+  const normalizedModuleId = String(moduleId || '').trim();
+  if (!normalizedModuleId) return false;
+  const activeModuleIds = Array.isArray(semanticMeta?.activeModuleIds) ? semanticMeta.activeModuleIds : [];
+  return activeModuleIds.includes(normalizedModuleId);
+}
+
+function buildPositiveCompositionHints(subject = '', sourceText = '', semanticMeta = {}) {
+  const hints = [];
+  const hasSubject = Boolean(String(subject || semanticMeta?.subject || '').trim());
+
+  if (hasSubject) {
     hints.push(
       'sujet unique bien cadré',
       'silhouette lisible',
@@ -168,16 +115,21 @@ function buildPositiveCompositionHints(subject = '', sourceText = '') {
     );
   }
 
-  if (containsAnyTerm(mergedSource, WINGED_TERMS)) {
-    hints.push('ailes bien lisibles');
+  if (semanticHasModule(semanticMeta, 'image.composition.core')) {
+    hints.push('espace visuel équilibré');
   }
 
-  if (containsAnyTerm(mergedSource, FIRE_OR_ENERGY_TERMS)) {
-    hints.push('effets lumineux bien séparés du sujet');
+  if (semanticHasModule(semanticMeta, 'image.reference.characters')) {
+    hints.push('silhouette reconnaissable');
+    hints.push('focus sur le sujet');
   }
 
-  if (containsAnyTerm(mergedSource, ['spectre', 'fantome', 'fantôme', 'esprit'])) {
-    hints.push('contours du sujet bien visibles');
+  if (semanticHasWordTag(semanticMeta, 'color')) {
+    hints.push('couleurs lisibles sur le sujet');
+  }
+
+  if (Number(semanticMeta?.confidence || 0) >= 0.58) {
+    hints.push('lecture simple et claire');
   }
 
   return toUniqueStrings(hints);
@@ -222,34 +174,20 @@ function extractFallbackEnvironmentFromSourceText(sourceText = '') {
 }
 
 function buildCoherentEnvironmentHints(subject = '', sourceText = '', definitionSummary = '') {
-  const mergedSource = `${String(subject || '')} ${String(sourceText || '')} ${String(definitionSummary || '')}`.trim();
   const hints = [];
+  const normalizedDefinitionSummary = normalizeLookupText(definitionSummary);
+  const normalizedSource = normalizeLookupText(sourceText);
+  const hasSubject = Boolean(String(subject || '').trim());
 
-  if (containsAnyTerm(mergedSource, ['spectre', 'fantome', 'fantôme', 'esprit'])) {
-    hints.push('brume légère dans une ambiance nocturne');
+  if (normalizedDefinitionSummary) {
+    hints.push('décor cohérent avec le sujet décrit');
   }
 
-  if (containsAnyTerm(mergedSource, FIRE_OR_ENERGY_TERMS)) {
-    hints.push('décor rocheux baigné d une lueur chaude');
+  if (!hints.length && /\b(dans|sur|sous|devant|derriere|derrière|milieu|bord)\b/.test(normalizedSource)) {
+    hints.push('décor cohérent avec la scène demandée');
   }
 
-  if (containsAnyTerm(mergedSource, WINGED_TERMS)) {
-    hints.push('ciel ouvert avec de la profondeur');
-  }
-
-  if (containsAnyTerm(mergedSource, WATER_OR_WET_TERMS)) {
-    hints.push('bord d eau calme et décor naturel');
-  }
-
-  if (containsAnyTerm(mergedSource, MYTHIC_TERMS)) {
-    hints.push('décor mythique simple et lisible');
-  }
-
-  if (!hints.length && containsAnyTerm(mergedSource, LAND_ANIMAL_TERMS)) {
-    hints.push('décor naturel simple et cohérent');
-  }
-
-  if (!hints.length && containsAnyTerm(mergedSource, CHARACTER_OR_CREATURE_TERMS)) {
+  if (!hints.length && hasSubject) {
     hints.push('décor simple et cohérent avec le sujet');
   }
 
@@ -257,10 +195,8 @@ function buildCoherentEnvironmentHints(subject = '', sourceText = '', definition
 }
 
 function extractSimplePalette(sourceText = '') {
-  const text = String(sourceText || '').trim().toLowerCase();
-  if (!text) return [];
   return toUniqueStrings(
-    SIMPLE_COLOR_WORDS.filter((entry) => new RegExp(`\\b${entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text))
+    detectColorMatchesFromText(sourceText).map((entry) => entry.label)
   );
 }
 
@@ -349,22 +285,43 @@ function extractFallbackSubjectFromSourceText(sourceText = '') {
 }
 
 function stripPaletteSuffixFromSubject(value = '', palette = []) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const tokens = raw.split(/\s+/).filter(Boolean);
-  if (tokens.length <= 1) return raw;
-  const paletteSet = new Set((Array.isArray(palette) ? palette : []).map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean));
-  if (!paletteSet.size) return raw;
+  let output = stripTrailingStylePhrase(stripTrailingColorPhrase(value));
+  if (!output) return '';
 
-  while (tokens.length > 1 && paletteSet.has(String(tokens[tokens.length - 1] || '').trim().toLowerCase())) {
-    tokens.pop();
+  const phrases = toUniqueStrings(Array.isArray(palette) ? palette : [])
+    .map((entry) => normalizeLookupText(entry))
+    .filter(Boolean)
+    .map((entry) => entry.split(/\s+/).filter(Boolean))
+    .sort((left, right) => right.length - left.length);
+
+  if (!phrases.length) return output;
+
+  let tokens = String(output || '').trim().split(/\s+/).filter(Boolean);
+  let normalizedTokens = tokens.map((entry) => normalizeLookupText(entry));
+  let changed = true;
+
+  while (tokens.length > 1 && changed) {
+    changed = false;
+    for (const phraseTokens of phrases) {
+      if (!phraseTokens.length || phraseTokens.length >= tokens.length) continue;
+      const startIndex = normalizedTokens.length - phraseTokens.length;
+      const matches = phraseTokens.every((entry, index) => normalizedTokens[startIndex + index] === entry);
+      if (!matches) continue;
+      tokens = tokens.slice(0, startIndex);
+      normalizedTokens = normalizedTokens.slice(0, startIndex);
+      changed = true;
+      break;
+    }
   }
-  return tokens.join(' ').trim() || raw;
+
+  output = tokens.join(' ').trim();
+  return output || String(value || '').trim();
 }
 
-function buildImageGenerateMask(wazaa, sourceText) {
+function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
   const promptText = String(wazaa?.meta?.promptText || '').trim();
   const promptSeedText = String(sourceText || promptText || wazaa?.meta?.translatedText || '').trim();
+  const semanticMeta = getSemanticMeta(wazaa, opts);
   const subject = sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'))
     || extractFallbackSubjectFromSourceText(sourceText)
     || extractFallbackSubjectFromSourceText(promptText)
@@ -379,18 +336,23 @@ function buildImageGenerateMask(wazaa, sourceText) {
   const definitionSummary = String(wazaa?.meta?.definitionLookup?.summary || '').trim();
   const palette = toUniqueStrings([
     ...llmColors,
+    ...(Array.isArray(semanticMeta?.colorWords) ? semanticMeta.colorWords : []),
     ...extractSimplePalette(sourceText),
     ...splitCsvValues(attribute),
   ]);
   const normalizedSubject = sanitizeImageSubjectCandidate(stripPaletteSuffixFromSubject(subject, palette));
   const style = toUniqueStrings([
     styleEntity,
+    ...(Array.isArray(semanticMeta?.styleWords) ? semanticMeta.styleWords : []),
     'haute qualité',
   ]);
-  const composition = buildPositiveCompositionHints(normalizedSubject, promptSeedText);
+  const composition = buildPositiveCompositionHints(normalizedSubject, promptSeedText, semanticMeta);
   const environment = explicitEnvironment
     ? [explicitEnvironment]
-    : buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary);
+    : toUniqueStrings([
+        ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+        ...buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary),
+      ]);
 
   return {
     version: 'mask-1',
@@ -568,7 +530,7 @@ function wazaaToMask(wazaa, opts = {}) {
   const intent = normalizeIntentType(opts.intentType || getWazaaIntent(wazaa), 'chat.reply');
   const sourceText = String(opts.sourceText || getSourceText(wazaa)).trim();
 
-  if (intent === 'image.generate') return buildImageGenerateMask(wazaa, sourceText);
+  if (intent === 'image.generate') return buildImageGenerateMask(wazaa, sourceText, opts);
   if (intent === 'web.image.search') return buildWebImageSearchMask(wazaa, sourceText);
   if (intent === 'web.search') return buildWebSearchMask(wazaa, sourceText);
   if (intent === 'code.python.generate') return buildCodePythonMask(wazaa, sourceText);

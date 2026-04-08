@@ -1,3 +1,7 @@
+const { findColorDefinition } = require('./color-library.cjs');
+const { findStyleDefinition } = require('./style-library.cjs');
+const { findSceneDefinition } = require('./scene-library.cjs');
+
 const STOPWORDS = new Set([
   'a', 'alors', 'au', 'aucun', 'aussi', 'autre', 'aux', 'avec',
   'ce', 'ces', 'cette', 'cet', 'cela', 'ca', 'car', 'comme',
@@ -172,8 +176,25 @@ function classifyWordSemanticTags(word) {
     if (definition.keywords.includes(normalized)) tags.push(`${intentType}:keyword`);
   }
 
-  if (/\b(orange|rouge|bleu|vert|jaune|violet|purple|red|blue|green|yellow|black|white|blanc|noir|rose|pink|marron|brown|gris|gray|grey|dore|doré|gold|golden|argent|silver)\b/.test(normalized)) {
+  const colorDefinition = findColorDefinition(normalized);
+  if (colorDefinition) {
     tags.push('color');
+    tags.push(`color:${colorDefinition.key}`);
+    if (colorDefinition.family) tags.push(`color-family:${colorDefinition.family}`);
+  }
+
+  const styleDefinition = findStyleDefinition(normalized);
+  if (styleDefinition) {
+    tags.push('style');
+    tags.push(`style:${styleDefinition.key}`);
+    if (styleDefinition.family) tags.push(`style-family:${styleDefinition.family}`);
+  }
+
+  const sceneDefinition = findSceneDefinition(normalized);
+  if (sceneDefinition) {
+    tags.push('scene');
+    tags.push(`scene:${sceneDefinition.key}`);
+    if (sceneDefinition.family) tags.push(`scene-family:${sceneDefinition.family}`);
   }
 
   return [...new Set(tags)];

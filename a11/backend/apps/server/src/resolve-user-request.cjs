@@ -299,6 +299,7 @@ function createIntentResolver(overrides = {}) {
     const mask = wazaaToMask(effectiveWazaa, {
       sourceText: userText,
       intentType: clarification?.selectedIntentType || semantic?.topIntents?.[0]?.type || 'chat.reply',
+      semanticAnalysis: semantic,
     });
 
     if (!mask) {

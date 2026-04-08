@@ -6,6 +6,15 @@ const {
   splitSentences,
   classifyWordSemanticTags,
 } = require('./semantic-utils.cjs');
+const {
+  detectColorMatchesFromWordItems,
+} = require('./color-library.cjs');
+const {
+  detectStyleMatchesFromWordItems,
+} = require('./style-library.cjs');
+const {
+  detectSceneMatchesFromWordItems,
+} = require('./scene-library.cjs');
 
 function toRgba(r, g, b, a) {
   return {
@@ -97,6 +106,64 @@ function buildSemanticLevels(text) {
       };
     })
     : [];
+
+  for (const colorMatch of detectColorMatchesFromWordItems(wordItems)) {
+    for (let index = colorMatch.startIndex; index <= colorMatch.endIndex; index += 1) {
+      const current = wordItems[index];
+      if (!current) continue;
+      current.color = {
+        key: colorMatch.key,
+        canonical: colorMatch.canonical,
+        label: colorMatch.label,
+        family: colorMatch.family,
+        hex: colorMatch.hex,
+      };
+      current.tags = [...new Set([
+        ...(Array.isArray(current.tags) ? current.tags : []),
+        'color',
+        `color:${colorMatch.key}`,
+        colorMatch.family ? `color-family:${colorMatch.family}` : '',
+      ].filter(Boolean))];
+    }
+  }
+
+  for (const styleMatch of detectStyleMatchesFromWordItems(wordItems)) {
+    for (let index = styleMatch.startIndex; index <= styleMatch.endIndex; index += 1) {
+      const current = wordItems[index];
+      if (!current) continue;
+      current.style = {
+        key: styleMatch.key,
+        canonical: styleMatch.canonical,
+        label: styleMatch.label,
+        family: styleMatch.family,
+      };
+      current.tags = [...new Set([
+        ...(Array.isArray(current.tags) ? current.tags : []),
+        'style',
+        `style:${styleMatch.key}`,
+        styleMatch.family ? `style-family:${styleMatch.family}` : '',
+      ].filter(Boolean))];
+    }
+  }
+
+  for (const sceneMatch of detectSceneMatchesFromWordItems(wordItems)) {
+    for (let index = sceneMatch.startIndex; index <= sceneMatch.endIndex; index += 1) {
+      const current = wordItems[index];
+      if (!current) continue;
+      current.scene = {
+        key: sceneMatch.key,
+        canonical: sceneMatch.canonical,
+        label: sceneMatch.label,
+        family: sceneMatch.family,
+      };
+      current.tags = [...new Set([
+        ...(Array.isArray(current.tags) ? current.tags : []),
+        'scene',
+        `scene:${sceneMatch.key}`,
+        sceneMatch.family ? `scene-family:${sceneMatch.family}` : '',
+      ].filter(Boolean))];
+    }
+  }
 
   const sentenceItems = sentences.map((sentence, index) => {
     const sentenceWords = wordItems.filter((item) => item.start >= 0 && item.end < rawText.length)
