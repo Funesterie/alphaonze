@@ -172,6 +172,58 @@ test('generateImageFromMask skips retry when image verification is unavailable',
   assert.equal(result.imageGuard?.retries?.length, 0);
 });
 
+test('generateImageFromMask enables image cardinality verification by default', async () => {
+  let verificationCalls = 0;
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['lapin bleu'],
+        environment: [],
+        style: ['high quality'],
+        composition: [],
+        lighting: [],
+        palette: ['blue'],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 30,
+        guidance_scale: 7.5,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      ambiguities: [],
+      raw: "genere une image d'un lapin bleu",
+    },
+    generateSd: async () => ({
+      ok: true,
+      image_url: 'https://files.example.com/blue-rabbit.png',
+      filename: 'blue-rabbit.png',
+    }),
+    verifyImageCardinality: async () => {
+      verificationCalls += 1;
+      return {
+        ok: true,
+        expected: { subject_count: 1, subject_type: 'rabbit', subject_label: 'rabbit', allow_group: false },
+        observed: { subject_count: 1, duplicate_subjects: false, fusion_detected: false, subject_match: true, confidence: 0.93 },
+        decision: { retry: false, reason: 'ok', notes: '' },
+      };
+    },
+  });
+
+  assert.equal(verificationCalls, 1);
+  assert.equal(result.imageGuard?.enabled, true);
+  assert.equal(result.imageGuard?.verification?.decision?.retry, false);
+});
+
 test('generateImageFromMask rejects invalid solid-black generations before returning success', async () => {
   await assert.rejects(
     () => generateImageFromMask({

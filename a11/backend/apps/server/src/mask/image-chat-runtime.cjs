@@ -117,13 +117,18 @@ function isTruthyEnv(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function isFalsyEnv(value) {
+  return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
 function isImageVerificationEnabled(explicitValue) {
   if (typeof explicitValue === 'boolean') return explicitValue;
-  return isTruthyEnv(
-    process.env.A11_IMAGE_CARDINALITY_GUARD
+  const envValue = process.env.A11_IMAGE_CARDINALITY_GUARD
     || process.env.A11_IMAGE_VERIFY_CARDINALITY
-    || ''
-  );
+    || '';
+  if (!String(envValue).trim()) return true;
+  if (isFalsyEnv(envValue)) return false;
+  return isTruthyEnv(envValue);
 }
 
 function resolveMaxVerificationRetries(explicitValue) {

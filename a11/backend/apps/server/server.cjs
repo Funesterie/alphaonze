@@ -5042,12 +5042,23 @@ const emailService = createEmailService({
   resendApiKey: process.env.RESEND_API_KEY,
   fromEmail: process.env.EMAIL_FROM || 'A11 <onboarding@resend.dev>',
   appUrl: normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://a11.funesterie.pro'),
+  smtpUrl: process.env.SMTP_URL || process.env.MAIL_URL,
+  smtpHost: process.env.SMTP_HOST,
+  smtpPort: process.env.SMTP_PORT,
+  smtpUser: process.env.SMTP_USER,
+  smtpPass: process.env.SMTP_PASS,
+  smtpSecure: process.env.SMTP_SECURE,
+  smtpIgnoreTLS: process.env.SMTP_IGNORE_TLS,
+  smtpRequireTLS: process.env.SMTP_REQUIRE_TLS,
+  smtpRejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED,
+  gmailUser: process.env.GMAIL_USER,
+  gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
 });
-const resendClient = emailService.isConfigured();
-if (resendClient) {
-  console.log('[MAIL] ✅ Resend provider activé');
+const emailStatus = emailService.getStatus();
+if (emailStatus.configured) {
+  console.log(`[MAIL] ✅ Provider mail active: ${emailStatus.provider || 'unknown'}`);
 } else {
-  console.warn('[MAIL] Aucun provider mail configuré (RESEND_API_KEY manquant)');
+  console.warn('[MAIL] Aucun provider mail configure (RESEND_API_KEY / SMTP / Gmail manquants)');
 }
 
 async function sendFileEmail({ to, subject, message, fileUrl, attachment }) {
