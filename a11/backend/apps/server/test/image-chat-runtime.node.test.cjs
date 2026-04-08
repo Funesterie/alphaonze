@@ -98,11 +98,11 @@ test('generateImageFromMask compiles canonical masks into a french image prompt 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /genere un herisson vert/i);
   assert.match(String(calls[0]?.prompt || ''), /Sujet principal : herisson/i);
-  assert.match(String(calls[0]?.prompt || ''), /Style : haute qualité, détaillé/i);
-  assert.match(String(calls[0]?.prompt || ''), /Composition : un seul sujet principal, composition centrée claire, fond simple et propre/i);
-  assert.match(String(calls[0]?.prompt || ''), /Palette : vert/i);
+  assert.match(String(calls[0]?.prompt || ''), /Style : high quality, detailed/i);
+  assert.match(String(calls[0]?.prompt || ''), /Couleurs : green/i);
+  assert.match(String(calls[0]?.prompt || ''), /Créer une image fidèle à la demande/i);
   assert.equal('negative_prompt' in calls[0], false);
-  assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bhigh quality\b|\bdetailed\b|\bsingle main subject\b|\bgreen\b/i);
+  assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bNe pas\b|\bdo not\b/i);
   assert.equal(calls[0]?.prompt_language, 'fr');
   assert.equal(result.sdResult.mode, 'openai-image');
 });

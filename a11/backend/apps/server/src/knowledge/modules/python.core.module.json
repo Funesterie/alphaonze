@@ -9,8 +9,8 @@
   },
   "knowledge": {
     "concepts": ["script", "fonction", "module", "entrees/sorties"],
-    "methods": ["separer orchestration et logique metier", "capturer les erreurs pres des I/O", "raisonner en pipeline entree transformation sortie"],
-    "commonErrors": ["melanger transport et logique", "exceptions avalees", "etat global mutable"]
+    "methods": ["separer orchestration et logique metier", "rendre les entrées et sorties lisibles", "raisonner en pipeline entree transformation sortie"],
+    "commonErrors": []
   },
   "apply": {},
   "semantic": {

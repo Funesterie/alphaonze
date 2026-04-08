@@ -1,7 +1,12 @@
-const {
-  analyzeImagePrompt,
-  normalizeImagePromptLiteral,
-} = require('../mask/build-sd-prompt-bundle.cjs');
+function normalizeImagePromptLiteral(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+)+(?:que\s+tu\s+)?(?:me\s+)?/i, '')
+    .replace(/^que\s+tu\s+/i, '')
+    .replace(/^(?:peux[- ]?tu\s+)?(?:s(?:tp|il te plait|’il te plait|il te plaît)\s+)?/i, '')
+    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?(?:an?\s+|une?\s+)?(?:image|illustration|dessin|photo|visuel|portrait)\s+(?:de|du|de la|de l['’]?|d['’]|\bd\s+)\s*/i, '')
+    .trim();
+}
 
 const RENDER_HINT_PATTERNS = [
   { key: 'cartoon', pattern: /\b(cartoon|cartoonesque|dessin anime|toon)\b/i },
@@ -121,6 +126,23 @@ function looksLikeShowRequest(text = '') {
   return SHOW_REQUEST_PATTERN.test(normalized);
 }
 
+const SIMPLE_COLOR_PATTERN = /\b(orange|rouge|bleu|vert|jaune|violet|blanc|noir|rose|marron|gris|doré|dorée|argent|argenté|argentée)\b/gi;
+
+function extractSimplePalette(text = '') {
+  const matches = String(text || '').match(SIMPLE_COLOR_PATTERN);
+  return mergeUniqueStrings(matches || []);
+}
+
+function buildSimplePromptDetails(text = '') {
+  const source = normalizeImagePromptLiteral(text);
+  return {
+    subjectText: source,
+    palette: extractSimplePalette(source),
+    styleHints: [],
+    compositionHints: [],
+  };
+}
+
 // ----- anatomy / inventory normalization helpers (minimal, in-file) -----
 const ANATOMY_TOKENS = [
   'head','heads','body','bodies','leg','legs','arm','arms',
@@ -179,20 +201,10 @@ function normalizeAnatomyPrompt(original = '', subjectHint = '') {
 // ----- end anatomy helpers -----
 
 function buildPromptSeed(text = '', semanticAnalysis = null) {
-  const details = analyzeImagePrompt(text, { preferLiteralColor: true });
+  const details = buildSimplePromptDetails(text);
   const normalized = normalizeText(text);
   const renderHints = mergeUniqueStrings([
     ...extractRenderHints(normalized),
-    ...(details?.styleHints || [])
-      .map((entry) => {
-        const lower = normalizeText(entry);
-        if (lower.includes('anime') || lower.includes('manga')) return 'anime';
-        if (lower.includes('cartoon')) return 'cartoon';
-        if (lower.includes('fantasy')) return 'fantasy';
-        if (lower.includes('photorealistic')) return 'photorealistic';
-        return '';
-      })
-      .filter(Boolean),
   ]);
   const referenceHints = extractReferenceHints(normalized);
   const sceneDescription = extractSceneDescription(text);
@@ -216,8 +228,8 @@ function buildPromptSeed(text = '', semanticAnalysis = null) {
     sceneDescription,
     palette,
     subjectEntity,
-    styleHints: mergeUniqueStrings(details?.styleHints || []),
-    compositionHints: mergeUniqueStrings([...(details?.compositionHints || []), ...additionalCompositionHints]),
+    styleHints: [],
+    compositionHints: mergeUniqueStrings(additionalCompositionHints),
     showIntent: looksLikeShowRequest(text),
   };
 }

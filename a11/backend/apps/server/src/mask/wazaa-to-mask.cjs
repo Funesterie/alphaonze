@@ -1,5 +1,4 @@
 const { normalizeIntentType } = require('./semantic/semantic-utils.cjs');
-const { analyzeImagePrompt } = require('./build-sd-prompt-bundle.cjs');
 
 function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -25,6 +24,33 @@ function splitCsvValues(value) {
       .split(',')
       .map((entry) => entry.trim())
       .filter(Boolean)
+  );
+}
+
+const SIMPLE_COLOR_WORDS = [
+  'rouge',
+  'bleu',
+  'vert',
+  'jaune',
+  'violet',
+  'orange',
+  'rose',
+  'blanc',
+  'noir',
+  'marron',
+  'gris',
+  'doré',
+  'dorée',
+  'argent',
+  'argenté',
+  'argentée',
+];
+
+function extractSimplePalette(sourceText = '') {
+  const text = String(sourceText || '').trim().toLowerCase();
+  if (!text) return [];
+  return toUniqueStrings(
+    SIMPLE_COLOR_WORDS.filter((entry) => new RegExp(`\\b${entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text))
   );
 }
 
@@ -97,6 +123,20 @@ function sanitizeImageSubjectCandidate(value = '') {
   return normalized;
 }
 
+function extractFallbackSubjectFromSourceText(sourceText = '') {
+  const raw = String(sourceText || '').trim();
+  if (!raw) return '';
+
+  return sanitizeImageSubjectCandidate(
+    raw
+      .replace(/^(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+/i, '')
+      .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?/i, '')
+      .replace(/^(?:une?\s+)?(?:image|illustration|dessin|photo|visuel|portrait)\s+(?:de|du|de la|de l['’]?|d['’])?\s*/i, '')
+      .replace(/\b(?:avec|dans|sur|au milieu de|au bord de|sous|portant|tenant|sortant|sorti|sortie)\b.*$/i, '')
+      .trim()
+  );
+}
+
 function stripPaletteSuffixFromSubject(value = '', palette = []) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -113,22 +153,8 @@ function stripPaletteSuffixFromSubject(value = '', palette = []) {
 
 function buildImageGenerateMask(wazaa, sourceText) {
   const promptText = String(wazaa?.meta?.promptText || wazaa?.meta?.translatedText || '').trim();
-  const semanticPromptDriven = shouldPreferSemanticPrompt(wazaa);
-  const sourceImageAnalysis = sourceText
-    ? analyzeImagePrompt(sourceText)
-    : null;
-  const semanticSeedText = promptText || sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'));
-  const semanticImageAnalysis = semanticPromptDriven && semanticSeedText
-    ? analyzeImagePrompt(semanticSeedText)
-    : null;
-  const legacyImageAnalysis = !semanticPromptDriven ? sourceImageAnalysis : null;
   const subject = sanitizeImageSubjectCandidate(getEntityValue(wazaa, 'subject'))
-    || sourceImageAnalysis?.subjectText
-    || sourceImageAnalysis?.semanticBinding?.primarySubject
-    || semanticImageAnalysis?.subjectText
-    || legacyImageAnalysis?.subjectText
-    || semanticImageAnalysis?.semanticBinding?.primarySubject
-    || legacyImageAnalysis?.semanticBinding?.primarySubject
+    || extractFallbackSubjectFromSourceText(promptText || sourceText)
     || promptText
     || sourceText;
   const environment = getEntityValue(wazaa, 'environment');
@@ -137,19 +163,13 @@ function buildImageGenerateMask(wazaa, sourceText) {
   const llmColors = Array.isArray(wazaa?.meta?.llmColors) ? wazaa.meta.llmColors : [];
   const palette = toUniqueStrings([
     ...llmColors,
-    ...(Array.isArray(semanticImageAnalysis?.palette) ? semanticImageAnalysis.palette : []),
-    ...(Array.isArray(legacyImageAnalysis?.palette) ? legacyImageAnalysis.palette : []),
+    ...extractSimplePalette(sourceText),
     ...splitCsvValues(attribute),
   ]);
-  const normalizedSubject = semanticPromptDriven
-    ? sanitizeImageSubjectCandidate(stripPaletteSuffixFromSubject(subject, palette))
-    : sanitizeImageSubjectCandidate(subject);
+  const normalizedSubject = sanitizeImageSubjectCandidate(stripPaletteSuffixFromSubject(subject, palette));
   const style = toUniqueStrings([
     styleEntity,
-    ...(Array.isArray(semanticImageAnalysis?.styleHints) ? semanticImageAnalysis.styleHints : []),
-    ...(Array.isArray(legacyImageAnalysis?.styleHints) ? legacyImageAnalysis.styleHints : []),
     'haute qualité',
-    'détaillé',
   ]);
 
   return {
@@ -161,10 +181,7 @@ function buildImageGenerateMask(wazaa, sourceText) {
       subject: normalizedSubject ? [normalizedSubject] : [],
       environment: environment ? [environment] : [],
       style,
-      composition: toUniqueStrings([
-        ...(Array.isArray(semanticImageAnalysis?.compositionHints) ? semanticImageAnalysis.compositionHints : []),
-        ...(Array.isArray(legacyImageAnalysis?.compositionHints) ? legacyImageAnalysis.compositionHints : []),
-      ]),
+      composition: [],
       lighting: [],
       palette,
     },
@@ -181,9 +198,9 @@ function buildImageGenerateMask(wazaa, sourceText) {
     ambiguities: Array.isArray(wazaa?.ambiguities) ? wazaa.ambiguities : [],
     meta: {
       ...(wazaa?.meta && typeof wazaa.meta === 'object' ? wazaa.meta : {}),
-      promptCompiler: semanticPromptDriven ? 'a11-semantic' : 'legacy-fallback',
+      promptCompiler: 'a11-fr-minimal',
       canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
-      promptSeedText: semanticPromptDriven ? (semanticSeedText || sourceText) : sourceText,
+      promptSeedText: promptText || sourceText,
       promptText: promptText || sourceText,
     },
     raw: sourceText,

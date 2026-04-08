@@ -9,8 +9,8 @@
   },
   "knowledge": {
     "concepts": ["attachement adjectival", "lecture litterale du sujet", "ambiguite semantique"],
-    "methods": ["rattacher les couleurs au sujet principal", "preferer le show web si la demande est de voir", "laisser les modificateurs douteux en ambiguite"],
-    "commonErrors": ["melanger sujet et decor", "forcer une generation alors que l utilisateur veut voir", "perdre le sens d une phrase sale mais recuperable"]
+    "methods": ["rattacher les couleurs au sujet principal", "passer en recherche web quand la demande est surtout de voir", "garder une lecture simple quand la phrase est bruitée"],
+    "commonErrors": []
   },
   "apply": {
     "constraints": {
@@ -20,7 +20,7 @@
   "impacts": {
     "generate": [
       "privilegie une lecture litterale du sujet et de ses adjectifs",
-      "conserve les zones ambiguës pour eviter d inventer"
+      "conserve une lecture simple quand le message reste ambigu"
     ],
     "web_search": [
       "favorise une image existante quand la demande ressemble a montre-moi ou je veux voir"

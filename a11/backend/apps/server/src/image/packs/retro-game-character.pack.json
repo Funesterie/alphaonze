@@ -6,8 +6,8 @@
   },
   "apply": {
     "style": {
-      "modifiers": ["iconic video game character art", "clean readable silhouette", "hero character framing"]
+      "modifiers": ["style jeu vidéo", "silhouette lisible", "présence de personnage"]
     },
-    "composition": ["hero shot"]
+    "composition": ["personnage bien cadré"]
   }
 }

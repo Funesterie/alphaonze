@@ -81,11 +81,11 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal('negative_prompt_prebuilt' in capturedBody, false);
-  assert.match(String(capturedBody?.prompt || ''), /Demande utilisateur : genere une image lapin rose/i);
+  assert.match(String(capturedBody?.prompt || ''), /Demande : genere une image lapin rose/i);
   assert.match(String(capturedBody?.prompt || ''), /Sujet principal : lapin/i);
-  assert.match(String(capturedBody?.prompt || ''), /Palette : rose/i);
-  assert.match(String(capturedBody?.prompt || ''), /Interprétation littérale/i);
-  assert.doesNotMatch(String(capturedBody?.prompt || ''), /\brabbit\b|\bpink\b|literal interpretation/i);
+  assert.match(String(capturedBody?.prompt || ''), /Couleurs : rose/i);
+  assert.match(String(capturedBody?.prompt || ''), /Créer une image fidèle à la demande/i);
+  assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bNe pas\b|\bdo not\b|literal interpretation/i);
   assert.equal('negative_prompt' in capturedBody, false);
 });
 
@@ -155,11 +155,11 @@ test('generateSdInternal infers prebuilt prompts when compiled french image text
   });
 
   const compiledPrompt = [
-    'Demande utilisateur : genere un lapin rose',
+    'Demande : genere un lapin rose',
     'Sujet principal : lapin rose',
-    'Style : haute qualité, détaillé',
-    'Composition : composition solo, fond simple et propre',
-    'Interprétation littérale de la demande',
+    'Style : haute qualité',
+    'Couleurs : rose',
+    'Créer une image fidèle à la demande.',
   ].join('. ');
 
   await generateSdInternal({
@@ -358,7 +358,7 @@ test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is exp
 
     assert.equal(response.ok, true);
     assert.equal(response.mode, 'stable-diffusion-proxy');
-    assert.match(String(capturedBody?.prompt || ''), /Demande utilisateur : genere une image lapin rose/i);
+    assert.match(String(capturedBody?.prompt || ''), /Demande : genere une image lapin rose/i);
     assert.equal('negative_prompt' in capturedBody, false);
   } finally {
     for (const [key, value] of Object.entries(previous)) {

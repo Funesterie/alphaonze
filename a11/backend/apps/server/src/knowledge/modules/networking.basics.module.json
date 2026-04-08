@@ -8,7 +8,7 @@
   "knowledge": {
     "concepts": ["transport reseau", "edge", "proxy", "timeout", "origine"],
     "methods": ["raisonner par hop reseau", "distinguer erreur applicative et erreur transport", "verifier le chemin complet navigateur -> api -> upstream"],
-    "commonErrors": ["accuser le mauvais service", "confondre CORS et auth", "oublier l impact des tunnels et proxies"]
+    "commonErrors": []
   },
   "semantic": {
     "scoreAdjustments": {
@@ -21,7 +21,7 @@
   "impacts": {
     "semantic": [
       "oriente vers du diagnostic ou de la recherche quand le prompt parle de CORS, proxy, DNS ou timeout",
-      "rappelle qu un mauvais choix reseau peut faire accuser le mauvais hop"
+      "aide a suivre le bon hop reseau du premier coup"
     ]
   }
 }

@@ -184,8 +184,6 @@ function buildGenerateIntent({ text, promptSeed, semanticAnalysis, semanticConfi
       safeMode: true,
       noText: true,
       literalInterpretation: true,
-      noExtraProps: true,
-      singleMainSubject: true,
     },
     ambiguities: Array.isArray(semanticAnalysis?.ambiguities) ? semanticAnalysis.ambiguities : [],
     execution: {
