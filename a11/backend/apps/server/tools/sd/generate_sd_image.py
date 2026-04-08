@@ -1,9 +1,14 @@
 import argparse
 import json
 import os
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=".*Siglip2ImageProcessorFast.*",
+)
 
 import torch
-from diffusers import AutoPipelineForText2Image
 
 
 def resolve_device():
@@ -71,6 +76,8 @@ def maybe_enable_pipeline_memory_optimizations(pipe):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
+    # Legacy callers may still send this flag. We intentionally ignore it.
+    parser.add_argument("--negative_prompt", type=str, default=None)
     parser.add_argument("--num_inference_steps", type=int, default=35)
     parser.add_argument("--guidance_scale", type=float, default=8.0)
     parser.add_argument("--width", type=int, default=768)
@@ -78,6 +85,8 @@ def main():
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--output", type=str, default="output.png")
     args = parser.parse_args()
+
+    from diffusers import AutoPipelineForText2Image
 
     model_id = os.environ.get("SD_MODEL_ID", "runwayml/stable-diffusion-v1-5")
     device = resolve_device()
