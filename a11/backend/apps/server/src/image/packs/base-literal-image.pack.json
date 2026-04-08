@@ -6,15 +6,13 @@
   },
   "apply": {
     "style": {
-      "modifiers": ["high quality", "detailed"]
+      "modifiers": ["haute qualité"]
     },
-    "composition": ["clear centered composition", "clear subject focus", "simple clean background"],
+    "composition": ["sujet bien visible", "composition simple"],
     "constraints": {
       "literalInterpretation": true,
-      "noExtraProps": true,
       "safeMode": true,
-      "noText": true,
-      "singleMainSubject": true
+      "noText": true
     }
   }
 }

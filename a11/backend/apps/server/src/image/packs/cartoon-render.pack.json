@@ -6,8 +6,8 @@
   },
   "apply": {
     "style": {
-      "render": "cartoon illustration",
-      "modifiers": ["bold outlines", "stylized character design", "playful cartoon shading"]
+      "render": "illustration cartoon",
+      "modifiers": ["contours lisibles", "forme stylisée", "couleurs franches"]
     }
   }
 }

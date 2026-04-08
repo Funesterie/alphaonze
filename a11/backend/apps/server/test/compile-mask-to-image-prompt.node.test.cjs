@@ -9,8 +9,8 @@ test('compileMaskToImagePrompt keeps french prompts free of imperative negative 
     inputs: {
       subject: ['pokemon dragon feu'],
       environment: [],
-      style: ['high quality', 'detailed'],
-      composition: ['single main subject', 'solo composition', 'clear centered composition'],
+      style: ['haute qualité'],
+      composition: [],
       lighting: [],
       palette: ['orange', 'red'],
     },
@@ -20,20 +20,22 @@ test('compileMaskToImagePrompt keeps french prompts free of imperative negative 
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Le corps, les ailes et les flammes restent bien distincts/i);
+  assert.match(String(compiled.prompt || ''), /Demande : genere une image d un pokemon dragon feu/i);
+  assert.match(String(compiled.prompt || ''), /Sujet principal : pokemon dragon feu/i);
+  assert.match(String(compiled.prompt || ''), /Créer une image fidèle à la demande/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bdo not\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /pas au fond|pas au background|not to the background/i);
 });
 
-test('compileMaskToImagePrompt makes soda cans explicit as metal cans', () => {
+test('compileMaskToImagePrompt stays simple and keeps user wording for soda cans', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image d une canette de soda',
     inputs: {
       subject: ['canette de soda'],
       environment: [],
-      style: ['high quality'],
-      composition: ['single main subject'],
+      style: ['haute qualité'],
+      composition: [],
       lighting: [],
       palette: [],
     },
@@ -43,7 +45,7 @@ test('compileMaskToImagePrompt makes soda cans explicit as metal cans', () => {
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /canette métallique en aluminium/i);
-  assert.match(String(compiled.prompt || ''), /silhouette cylindrique/i);
+  assert.match(String(compiled.prompt || ''), /Sujet principal : canette de soda/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /aluminium|silhouette cylindrique/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });

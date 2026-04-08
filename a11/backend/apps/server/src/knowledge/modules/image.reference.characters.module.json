@@ -10,12 +10,12 @@
   },
   "knowledge": {
     "concepts": ["personnage iconique", "silhouette reconnaissable", "fidelite de reference"],
-    "methods": ["preserver le personnage principal avant le decor", "signaler le risque de drift du modele", "choisir une lecture reconnaissable et simple"],
-    "commonErrors": ["perdre le personnage au profit d un decor joli", "sortir un mashup confus", "inventer trop d objets autour d une reference connue"]
+    "methods": ["mettre le personnage en avant", "garder une silhouette reconnaissable", "choisir une lecture simple et claire"],
+    "commonErrors": []
   },
   "apply": {
     "style": {
-      "modifiers": ["recognizable character silhouette", "franchise-inspired character focus"]
+      "modifiers": ["silhouette reconnaissable", "focus sur le personnage"]
     }
   },
   "impacts": {

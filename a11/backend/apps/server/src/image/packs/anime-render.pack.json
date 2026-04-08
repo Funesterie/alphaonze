@@ -7,8 +7,8 @@
   },
   "apply": {
     "style": {
-      "render": "anime illustration",
-      "modifiers": ["clean linework", "cel shading", "expressive anime color palette"]
+      "render": "illustration anime",
+      "modifiers": ["traits nets", "couleurs anime", "silhouette lisible"]
     }
   }
 }

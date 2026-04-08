@@ -67,6 +67,8 @@ function looksLikeCompiledSdPrompt(value = '') {
   const markers = [
     'literal interpretation',
     'interprétation littérale',
+    'demande :',
+    'créer une image fidèle à la demande',
     'solo composition',
     'composition solo',
     'simple clean background',
@@ -74,6 +76,7 @@ function looksLikeCompiledSdPrompt(value = '') {
     'centered subject',
     'exactly one ',
     'sujet principal :',
+    'couleurs :',
     'only one animal in frame',
   ];
 

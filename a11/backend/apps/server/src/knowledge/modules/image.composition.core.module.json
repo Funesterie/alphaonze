@@ -8,20 +8,16 @@
   },
   "knowledge": {
     "concepts": ["sujet principal", "lisibilite", "hierarchie visuelle"],
-    "methods": ["centrer l attention sur un seul sujet", "reduire le clutter non demande", "garder une composition lisible avant le style"],
-    "commonErrors": ["wallpaper de motifs repetes", "trop d accessoires non demandes", "sujet perdu dans le decor"]
+    "methods": ["mettre le sujet principal en avant", "garder une scène simple et lisible", "poser une composition claire avant les détails de style"],
+    "commonErrors": []
   },
   "apply": {
-    "composition": ["subject fills the frame", "balanced negative space"],
-    "constraints": {
-      "singleMainSubject": true,
-      "noExtraProps": true
-    }
+    "composition": ["sujet bien visible", "espace visuel équilibré"]
   },
   "impacts": {
     "generate": [
       "renforce la lisibilite du sujet principal",
-      "reduit le risque d image decor/pattern au lieu du vrai sujet"
+      "aide le modèle à construire une scène plus claire et plus naturelle"
     ]
   }
 }

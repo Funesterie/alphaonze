@@ -9,8 +9,8 @@
   },
   "knowledge": {
     "concepts": ["lot de fichiers", "entree/sortie disque", "tri", "renommage"],
-    "methods": ["preciser le dossier source", "eviter les actions destructives implicites", "traiter les extensions comme des contraintes de lot"],
-    "commonErrors": ["renommer le mauvais lot", "melanger tri et suppression", "agir sans verifier le chemin cible"]
+    "methods": ["preciser le dossier source", "décrire clairement l action attendue", "traiter les extensions comme des contraintes de lot"],
+    "commonErrors": []
   },
   "semantic": {
     "scoreAdjustments": {

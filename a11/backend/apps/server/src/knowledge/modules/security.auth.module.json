@@ -7,8 +7,8 @@
   },
   "knowledge": {
     "concepts": ["authentification", "session", "jeton", "controle d acces"],
-    "methods": ["traiter les identifiants comme sensibles", "distinguer bug de config et bug logique", "raisonner par surface d acces et expiration"],
-    "commonErrors": ["journaliser un secret", "confondre auth et permission", "modifier un flux auth sans verifier les consequences"]
+    "methods": ["traiter les identifiants comme sensibles", "distinguer configuration et logique métier", "raisonner par surface d acces et durée de session"],
+    "commonErrors": []
   },
   "semantic": {
     "scoreAdjustments": {
@@ -21,7 +21,7 @@
   "impacts": {
     "semantic": [
       "rappelle qu un choix auth touche l acces utilisateur et la securite",
-      "ecarte les chemins image quand le vocabulaire parle de jetons, login ou session"
+      "oriente vers le bon domaine quand le vocabulaire parle de jetons, login ou session"
     ]
   }
 }

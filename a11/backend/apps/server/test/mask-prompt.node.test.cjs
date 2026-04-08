@@ -10,211 +10,92 @@ const {
 const buildMaskImageGenerateFromText = require('../src/mask/text-to-mask-image-generate.cjs');
 const compileMaskToSD = require('../src/mask/compile-mask-to-sd.cjs');
 
-test('buildSdPromptBundle steers ambiguous color prompts toward literal subject colors', () => {
-  const bundle = buildSdPromptBundle('genere une image d un lapin violet', {
-    preferLiteralColor: true,
-  });
+test('buildSdPromptBundle keeps a minimal french prompt with no negative hints', () => {
+  const bundle = buildSdPromptBundle('genere une image d un lapin violet');
 
-  assert.match(String(bundle.prompt || ''), /one rabbit with purple fur/i);
-  assert.match(String(bundle.prompt || ''), /literal interpretation/i);
-  assert.match(String(bundle.prompt || ''), /exactly one rabbit/i);
-  assert.match(String(bundle.prompt || ''), /solo composition/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /one instance only|single main subject/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /flowers/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /multiple subjects|second subject|crowd/i);
+  assert.match(String(bundle.prompt || ''), /Demande : un lapin violet/i);
+  assert.match(String(bundle.prompt || ''), /Sujet principal : lapin/i);
+  assert.match(String(bundle.prompt || ''), /Couleurs : violet/i);
+  assert.match(String(bundle.prompt || ''), /Créer une image fidèle à la demande/i);
+  assert.match(String(bundle.prompt || ''), /Mettre en avant un seul sujet principal bien visible|Garder une scène simple/i);
+  assert.equal(Array.isArray(bundle.negativeHints), true);
+  assert.equal(bundle.negativeHints.length, 0);
+  assert.doesNotMatch(String(bundle.prompt || ''), /\bdo not\b|literal interpretation|exactly one/i);
 });
 
-test('buildSdPromptBundle keeps english color ordering natural for solo prompts', () => {
-  const bundle = buildSdPromptBundle("Genere une image d'un lapin de couleur rose");
+test('buildSdPromptBundle strips bare generation prefixes without translating the prompt', () => {
+  const bundle = buildSdPromptBundle("j'aimerais que tu génère une image de vegeta avec la chevelure rose");
 
-  assert.match(String(bundle.prompt || ''), /\bone rabbit with pink fur\b/i);
-  assert.match(String(bundle.prompt || ''), /\bexactly one rabbit\b/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /\bpink a rabbit\b/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /one subject only|one instance only|single main subject/i);
+  assert.match(String(bundle.prompt || ''), /Demande : vegeta avec la chevelure rose/i);
+  assert.match(String(bundle.prompt || ''), /Sujet principal : vegeta/i);
+  assert.match(String(bundle.prompt || ''), /Couleurs : rose/i);
+  assert.doesNotMatch(String(bundle.prompt || ''), /\bgenerate\b|\bimage of\b|\bpink\b/i);
 });
 
-test('buildSdPromptBundle strips bare image request prefixes before extracting the subject', () => {
-  for (const rawPrompt of ['genere une image lapin rose', 'je veux une image lapin rose', "j'aimerais que tu génère une image de vegeta avec la chevelure rose"]) {
-    const bundle = buildSdPromptBundle(rawPrompt);
+test('translateImagePromptToEnglish keeps the french wording and only normalizes request prefixes', () => {
+  const translated = translateImagePromptToEnglish('tu peux me générer une image du héros batman en vélo');
 
-    if (/vegeta/i.test(rawPrompt)) {
-      assert.match(String(bundle.prompt || ''), /\bvegeta\b/i);
-      assert.doesNotMatch(String(bundle.prompt || ''), /\bimage of vegeta\b/i);
-      assert.doesNotMatch(String(bundle.prompt || ''), /\bque tu génère a image of\b/i);
-      continue;
-    }
-
-    assert.match(String(bundle.prompt || ''), /\bone rabbit with pink fur\b/i);
-    assert.doesNotMatch(String(bundle.prompt || ''), /\bimage rabbit\b/i);
-    assert.doesNotMatch(String(bundle.prompt || ''), /\be image rabbit\b/i);
-  }
+  assert.match(String(translated || ''), /batman en vélo/i);
+  assert.doesNotMatch(String(translated || ''), /\bon a bicycle\b|\bhero\b|\bimage of\b/i);
 });
 
-test('translateImagePromptToEnglish maps grizzli to grizzly bear', () => {
-  const translated = translateImagePromptToEnglish("genere moi un grizzli jaune");
-
-  assert.match(String(translated || ''), /\byellow grizzly bear\b/i);
-  assert.doesNotMatch(String(translated || ''), /\bgrizzli\b/i);
-});
-
-test('translateImagePromptToEnglish maps herisson to hedgehog', () => {
-  const translated = translateImagePromptToEnglish('genere un herisson vert');
-
-  assert.match(String(translated || ''), /\bgreen hedgehog\b/i);
-  assert.doesNotMatch(String(translated || ''), /\bherisson\b/i);
-});
-
-test('buildSdPromptBundle binds risky floral colors to animal fur instead of the scenery', () => {
-  const bundle = buildSdPromptBundle("genere moi un grizzli jaune");
-
-  assert.match(String(bundle.prompt || ''), /one grizzly bear with golden-yellow fur/i);
-  assert.match(String(bundle.prompt || ''), /meadow elements|background details stay separate and secondary/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /yellow flowers|flower field|meadow flowers/i);
-});
-
-test('buildSdPromptBundle keeps hedgehog prompts on the animal subject itself', () => {
-  const bundle = buildSdPromptBundle('genere un herisson vert');
-
-  assert.match(String(bundle.prompt || ''), /one hedgehog with green fur/i);
-  assert.match(String(bundle.prompt || ''), /exactly one hedgehog/i);
-  assert.match(String(bundle.prompt || ''), /animal body carries the green color/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /\bherisson\b/i);
-});
-
-test('buildSdPromptBundle compiles French image prompts into English SD-ready prompts', () => {
-  const bundle = buildSdPromptBundle('genere une image de vache bleue dans une riviere sombre');
-
-  assert.match(String(bundle.prompt || ''), /one cow with blue fur/i);
-  assert.match(String(bundle.prompt || ''), /in a river dark|in the river dark|river/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /\bvache\b/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /\bbleue?\b/i);
-});
-
-test('buildSdPromptBundle strengthens solo character riding prompts and translates common french nouns', () => {
-  const bundle = buildSdPromptBundle('tu peux me générer une image du héros batman en vélo');
-
-  assert.match(String(bundle.prompt || ''), /^batman\./i);
-  assert.match(String(bundle.prompt || ''), /bicycle|bike/i);
-  assert.match(String(bundle.prompt || ''), /on a bicycle/i);
-  assert.match(String(bundle.prompt || ''), /single character focus|solo composition|exactly one/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /crowd|group shot|multiple subjects/i);
-});
-
-test('compileCharacterCountConstraints enforces exactly two distinct characters for paired prompts', () => {
+test('compileCharacterCountConstraints detects two clear requested subjects', () => {
   const constraints = compileCharacterCountConstraints('génère une image de batman et robin');
   const bundle = buildSdPromptBundle('génère une image de batman et robin');
 
   assert.equal(constraints?.count, 2);
-  assert.match(String(constraints?.promptHints?.join(' ') || ''), /exactly two distinct characters/i);
-  assert.match(String(constraints?.promptHints?.join(' ') || ''), /one batman and one robin only/i);
-  assert.match(String(bundle.prompt || ''), /exactly two distinct characters: batman and robin/i);
-  assert.match(String(bundle.prompt || ''), /separate bodies/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /multiple batman|multiple robin|fused bodies|merged faces/i);
+  assert.deepEqual(constraints?.subjects, ['batman', 'robin']);
+  assert.match(String(bundle.prompt || ''), /Sujet principal : batman et robin/i);
+  assert.match(String(bundle.prompt || ''), /Montrer clairement les deux sujets demandés/i);
 });
 
-test('compileSingleSubjectConstraints enforces one distinct object for singular prompts', () => {
+test('compileSingleSubjectConstraints keeps a simple single-subject contract', () => {
   const constraints = compileSingleSubjectConstraints('génère une image de vélo bleu');
   const bundle = buildSdPromptBundle('génère une image de vélo bleu');
 
   assert.equal(constraints?.count, 1);
-  assert.match(String(constraints?.promptHints?.join(' ') || ''), /exactly one blue bicycle/i);
-  assert.match(String(constraints?.promptHints?.join(' ') || ''), /one blue bicycle only|one blue bicycle/i);
-  assert.match(String(bundle.prompt || ''), /exactly one blue bicycle/i);
-  assert.match(String(bundle.negativeHints.join(', ') || ''), /multiple subjects|second subject|group shot/i);
+  assert.equal(String(constraints?.subject || ''), 'vélo');
+  assert.match(String(bundle.prompt || ''), /Sujet principal : vélo/i);
+  assert.match(String(bundle.prompt || ''), /Couleurs : bleu/i);
 });
 
-test('buildMaskImageGenerateFromText enriches MASK fields for image prompts', () => {
+test('buildMaskImageGenerateFromText enriches MASK fields for image prompts without heavy composition guards', () => {
   const mask = buildMaskImageGenerateFromText('genere une image de one piece avec un chapeau de magicien');
   const compiled = compileMaskToSD(mask);
 
   assert.equal(mask.intent, 'image.generate');
   assert.ok(mask.inputs.subject.some((value) => /one piece/i.test(String(value))));
-  assert.ok(mask.inputs.style.some((value) => /anime illustration/i.test(String(value))));
-  assert.ok(mask.inputs.composition.some((value) => /clear centered composition/i.test(String(value))));
-  assert.match(String(compiled.prompt || ''), /literal interpretation/i);
-  assert.match(String(compiled.prompt || ''), /with a magician hat/i);
+  assert.ok(mask.inputs.style.some((value) => /haute qualité/i.test(String(value))));
+  assert.deepEqual(mask.inputs.composition, []);
+  assert.match(String(compiled.prompt || ''), /Demande : genere une image de one piece avec un chapeau de magicien/i);
+  assert.match(String(compiled.prompt || ''), /Sujet principal : one piece/i);
   assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);
 });
 
-test('compileMaskToSD keeps singular object constraints for solo prompts', () => {
+test('compileMaskToSD keeps a simple french prompt for solo prompts', () => {
   const mask = buildMaskImageGenerateFromText('génère une image de vélo bleu');
   const compiled = compileMaskToSD(mask);
 
-  assert.match(String(compiled.prompt || ''), /exactly one blue bicycle/i);
-  assert.match(String(compiled.prompt || ''), /solo composition/i);
-  assert.doesNotMatch(String(compiled.prompt || ''), /one subject only|one instance only|single main subject/i);
+  assert.match(String(compiled.prompt || ''), /Demande : génère une image de vélo bleu/i);
+  assert.match(String(compiled.prompt || ''), /Sujet principal : vélo/i);
+  assert.match(String(compiled.prompt || ''), /Couleurs : bleu/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bdo not\b|literal interpretation|exactly one/i);
   assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);
 });
 
-test('translateImagePromptToEnglish binds ultraviolet compounds before token splitting', () => {
-  const translated = translateImagePromptToEnglish('genere une image de rayon ultra violet');
-
-  assert.match(String(translated || ''), /ultraviolet ray/i);
-  assert.doesNotMatch(String(translated || ''), /\bultra violet\b/i);
-  assert.doesNotMatch(String(translated || ''), /\bpurple ray\b/i);
-});
-
-test('translateImagePromptToEnglish strips natural French request prefixes for riding prompts', () => {
-  const translated = translateImagePromptToEnglish('tu peux me générer une image du héros batman en vélo');
-
-  assert.match(String(translated || ''), /^batman on a bicycle$/i);
-  assert.doesNotMatch(String(translated || ''), /\bimage of\b/i);
-  assert.doesNotMatch(String(translated || ''), /\bhero\b/i);
-});
-
-test('buildSdPromptBundle does not misclassify ultraviolet as a free color adjective', () => {
-  const bundle = buildSdPromptBundle('genere une image de rayon ultra violet');
-
-  assert.match(String(bundle.prompt || ''), /ultraviolet ray/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /\bpurple ray\b/i);
-  assert.equal(bundle.ambiguity, null);
-});
-
-test('buildSdPromptBundle binds scene relations as stable atoms', () => {
-  const bundle = buildSdPromptBundle("genere une image d'un lapin rose sortant d'un chapeau de magicien dans une foret sombre");
-
-  assert.match(String(bundle.prompt || ''), /\bone rabbit with pink fur\b/i);
-  assert.match(String(bundle.prompt || ''), /\bexactly one rabbit\b/i);
-  assert.match(String(bundle.prompt || ''), /coming out of a magician hat/i);
-  assert.match(String(bundle.prompt || ''), /in a forest dark|in the forest dark|forest/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /a pink rabbit coming out of a magician hat.*coming out of a magician hat/i);
-});
-
-test('buildSdPromptBundle binds wearing and holding relations without flattening the subject', () => {
-  const bundle = buildSdPromptBundle("genere une image d'un chevalier portant une cape tenant un sabre sur une montagne");
-
-  assert.match(String(bundle.prompt || ''), /\bknight\b/i);
-  assert.match(String(bundle.prompt || ''), /wearing a cape/i);
-  assert.match(String(bundle.prompt || ''), /holding a sword/i);
-  assert.match(String(bundle.prompt || ''), /on a mountain/i);
-  assert.match(String(bundle.prompt || ''), /exactly one knight/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /exactly one a knight/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /knight wearing a cape.*wearing a cape/i);
-  assert.doesNotMatch(String(bundle.prompt || ''), /holding a sword.*holding a sword/i);
-});
-
-test('compileMaskToSD preserves with and under relations as separate atoms', () => {
-  const mask = buildMaskImageGenerateFromText("genere une image d'un ours avec un chapeau sous une lune");
-  const compiled = compileMaskToSD(mask);
-
-  assert.match(String(compiled.prompt || ''), /\bbear\b/i);
-  assert.match(String(compiled.prompt || ''), /with a hat/i);
-  assert.match(String(compiled.prompt || ''), /under a moon/i);
-});
-
-test('compileMaskToSD prefers semantic prompt metadata over local translation patches', () => {
+test('compileMaskToSD keeps mask wording as-is instead of preferring translated metadata', () => {
   const compiled = compileMaskToSD({
     version: 'mask-1',
     intent: 'image.generate',
     task: { domain: 'image', action: 'generate' },
     compiler: { target: 'sd-payload', version: '1.0' },
     inputs: {
-      subject: ['pink pokemon'],
-      environment: ['in a cave'],
-      style: ['anime illustration'],
-      composition: ['solo composition', 'clear centered composition'],
+      subject: ['pokemon rose'],
+      environment: ['dans une grotte'],
+      style: ['haute qualité'],
+      composition: [],
       lighting: [],
-      palette: ['pink'],
+      palette: ['rose'],
     },
     options: { width: 768, height: 768, steps: 40, guidance_scale: 8 },
     constraints: { safe_mode: true, no_text: true },
@@ -228,10 +109,8 @@ test('compileMaskToSD prefers semantic prompt metadata over local translation pa
     },
   });
 
-  assert.match(String(compiled.prompt || ''), /\bpink pokemon\b/i);
-  assert.match(String(compiled.prompt || ''), /\bin a cave\b/i);
-  assert.doesNotMatch(String(compiled.prompt || ''), /\bpokemon rose\b/i);
-  assert.doesNotMatch(String(compiled.prompt || ''), /\bgenerate un\b/i);
-  assert.match(String(compiled.prompt || ''), /color palette: pink/i);
-  assert.doesNotMatch(String(compiled.prompt || ''), /color palette: pink, pink/i);
+  assert.match(String(compiled.prompt || ''), /Demande : genere un pokemon rose dans une grotte/i);
+  assert.match(String(compiled.prompt || ''), /Sujet principal : pokemon rose/i);
+  assert.match(String(compiled.prompt || ''), /Couleurs : rose/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bpink pokemon\b|\bin a cave\b/i);
 });
