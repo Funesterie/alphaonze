@@ -597,8 +597,8 @@ function compileCharacterCountConstraints(rawPrompt = '') {
     'separate bodies',
     'separate faces',
     'clean non-overlapping composition',
-    'no character fusion',
-    'no duplicate identities',
+    'separate character silhouettes',
+    'distinct identities',
   ];
   const negativeHints = [
     `multiple ${left}`,
@@ -709,11 +709,11 @@ function buildAnimalColorBinding(details = {}) {
       'centered subject',
       'simple clean background',
       'only one animal in frame',
-      'no other animals visible',
+      'single animal clearly visible',
     ],
     literalColorSentence: floralLeakRisk
-      ? `the animal itself has ${stabilizedColor} ${surface}, not ${primaryColor} flowers, petals, meadow plants, or background elements`
-      : `the animal itself has ${stabilizedColor} ${surface}, the color belongs to the animal body and not to the background, props, or decorative elements`,
+      ? `the animal itself has ${stabilizedColor} ${surface}, while petals, meadow elements, and background details stay separate and secondary`
+      : `the animal body carries the ${stabilizedColor} color, while background elements and props stay neutral and secondary`,
     negativeHints: floralLeakRisk
       ? [
           `${primaryColor} flowers`,
@@ -761,7 +761,7 @@ function compileSingleSubjectConstraints(rawPrompt = '', translatedPrompt = '') 
     'solo composition',
     'single isolated subject',
     'clean non-repeated composition',
-    'no duplicate instances',
+    'single clearly defined instance',
   ];
   const negativeHints = [
     'multiple subjects',
@@ -844,7 +844,7 @@ function buildSdPromptBundle(rawPrompt = '', options = {}) {
     ));
   const literalColorSentence = animalColorBinding?.literalColorSentence || (
     details.palette.length
-      ? 'the requested color applies to the main subject itself, not to the background, foreground, props, or decorative elements'
+      ? 'the requested color belongs to the main subject, while background, props, and decorative elements stay secondary'
       : ''
   );
   const finalPromptParts = [
@@ -853,7 +853,7 @@ function buildSdPromptBundle(rawPrompt = '', options = {}) {
     (semanticBinding.styleAtoms || details.styleHints || []).join(', '),
     structuralAtoms.join(', '),
     literalColorSentence,
-    'literal interpretation, apply the requested colors to the main subject only, do not add extra props, flowers, decorative patterns, or extra characters unless requested',
+    'literal interpretation, coherent single scene, only the requested props, flowers, patterns, or characters appear in the image',
   ].filter(Boolean);
 
   const negativeHints = [
