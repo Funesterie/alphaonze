@@ -1,0 +1,106 @@
+*** a11/backend/apps/server/src/image/verify-generated-image-cardinality.cjs
+*** Update File
+@@
+   const fusionDetected = expectedCount === 1
+     && observedCount === 1
+     && largest
+     && largest.width > largest.height * 1.18
+     && horizontalPeaks >= 2;
+-  const subjectMatch = !busyFullFrameScene && observedCount >= Math.min(expectedCount || 1, 1);
++  // --- overflow / framing detection (minimal) ---
++  const touchesBorder = Boolean(
++    largest
++    && (largest.minX <= 1 || largest.minY <= 1 || largest.maxX >= width - 2 || largest.maxY >= height - 2)
++  );
++
++  const frameCoverage = largest
++    ? (largest.width * largest.height) / Math.max(width * height, 1)
++    : 0;
++
++  const oversizedSingleSubject = expectedCount === 1 && (
++    frameCoverage >= 0.88 ||
++    foregroundRatio >= 0.82 ||
++    touchesBorder
++  );
++
++  const unstableSilhouette = expectedCount === 1 && (
++    horizontalPeaks >= 12 ||
++    (largest && largest.width >= width * 0.95 && largest.height >= height * 0.95)
++  );
++
++  const overflowDetected = oversizedSingleSubject && unstableSilhouette;
++  // --- end overflow detection ---
++
++  const subjectMatch = !busyFullFrameScene && observedCount >= Math.min(expectedCount || 1, 1);
+   const confidence = clamp01(
+     observedCount === 0
+       ? 0.08
+       : 0.46 + Math.min(0.38, foregroundRatio * 1.6) + (duplicateSubjects || fusionDetected ? 0.1 : 0.04) - (busyFullFrameScene ? 0.26 : 0)
+   );
+ 
+   return {
+     observed_subject_count: observedCount,
+     observed_subject_label: subjectMatch
+       ? String(expected?.subjectLabel || expected?.subjectType || 'subject').trim()
+       : '',
+     duplicate_subjects: duplicateSubjects,
+-    fusion_detected: fusionDetected || busyFullFrameScene,
++    fusion_detected: fusionDetected || busyFullFrameScene,
++    overflow_detected: overflowDetected,
+     subject_match: subjectMatch,
+     confidence,
+     notes: `local_heuristic fg_ratio=${foregroundRatio.toFixed(3)} components=${observedCount} peaks=${horizontalPeaks}${busyFullFrameScene ? ' busy_full_frame_scene=1' : ''}`,
+     components: topComponents.map((component) => ({
+       area: component.area,
+       width: component.width,
+       height: component.height,
+       minX: component.minX,
+       minY: component.minY,
+       maxX: component.maxX,
+       maxY: component.maxY,
+     })),
+   };
+ }
+@@
+   const observedSubjectCount = Math.max(0, Number(parsed.observed_subject_count || parsed.subject_count || 0) || 0);
+   const duplicateSubjects = parsed.duplicate_subjects === true;
+   const fusionDetected = parsed.fusion_detected === true;
++  const overflowDetected = parsed.overflow_detected === true;
+   const subjectMatch = parsed.subject_match !== false;
+   const confidence = Number(clamp01(parsed.confidence));
+-  const normalizedReason = String(parsed.reason || '').trim() || (
+-    fusionDetected ? 'fusion_detected' : (
+-      observedSubjectCount > Number(expected.subjectCount || 0)
+-        ? 'multiple_subjects_detected'
+-        : 'ok'
+-    )
+-  );
+-
+-  const shouldRetry = expected.subjectCount === 1
+-    && confidence >= 0.55
+-    && (
+-      observedSubjectCount > 1
+-      || duplicateSubjects
+-      || fusionDetected
+-    );
++  // prefer explicit parsed.reason, otherwise surface overflow / fusion / multiple subjects
++  const normalizedReason = String(parsed.reason || '').trim() || (
++    overflowDetected ? 'overflow_detected' : (
++      fusionDetected ? 'fusion_detected' : (
++        observedSubjectCount > Number(expected.subjectCount || 0)
++          ? 'multiple_subjects_detected'
++          : 'ok'
++      )
++    )
++  );
++
++  // Lower the retry threshold and include overflowDetected as a retry reason for single-subject cases.
++  const shouldRetry = expected.subjectCount === 1
++    && confidence >= 0.45
++    && (
++      observedSubjectCount > 1
++      || duplicateSubjects
++      || fusionDetected
++      || overflowDetected
++    );
+*** End Patch
