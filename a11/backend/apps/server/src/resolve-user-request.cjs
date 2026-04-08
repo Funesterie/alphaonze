@@ -12,6 +12,12 @@ const {
 const textToWazaa = require('./mask/text-to-wazaa.cjs');
 const validateMaskUnified = require('./mask/validate-mask-unified.cjs');
 const wazaaToMask = require('./mask/wazaa-to-mask.cjs');
+const {
+  buildDefinitionLookupQuery,
+  lookupDefinitionContext: defaultLookupDefinitionContext,
+  mergeDefinitionContextIntoWazaa,
+  shouldLookupDefinitionContext,
+} = require('./knowledge/definition-context.cjs');
 
 const {
   detectImageIntent: defaultDetectImageIntent,
@@ -181,6 +187,8 @@ function resolveIntentDependencies(overrides = {}) {
     detectWebImageIntent: overrides.detectWebImageIntent || defaultDetectWebImageIntent,
     duckduckgoImageSearch: overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch,
     generateSd: overrides.generateSd,
+    textToWazaa: overrides.textToWazaa || textToWazaa,
+    lookupDefinitionContext: overrides.lookupDefinitionContext || defaultLookupDefinitionContext,
   };
 }
 
@@ -257,11 +265,36 @@ function createIntentResolver(overrides = {}) {
       };
     }
 
-    const heuristicWazaa = typeof textToWazaa.sync === 'function'
-      ? textToWazaa.sync(userText, { analysis: semantic, source: 'resolve-user-request' })
+    const textToWazaaAdapter = deps.textToWazaa || textToWazaa;
+    const heuristicWazaa = typeof textToWazaaAdapter?.sync === 'function'
+      ? textToWazaaAdapter.sync(userText, { analysis: semantic, source: 'resolve-user-request' })
       : null;
-    const wazaa = await textToWazaa(userText, { analysis: semantic, source: 'resolve-user-request' });
-    const effectiveWazaa = wazaa || heuristicWazaa;
+    let definitionContext = null;
+    if (shouldLookupDefinitionContext({
+      userText,
+      semanticAnalysis: semantic,
+      heuristicWazaa,
+    })) {
+      const lookupQuery = buildDefinitionLookupQuery({
+        userText,
+        semanticAnalysis: semantic,
+        heuristicWazaa,
+      });
+      if (lookupQuery && typeof deps.lookupDefinitionContext === 'function') {
+        try {
+          definitionContext = await deps.lookupDefinitionContext({
+            query: lookupQuery,
+            userText,
+            traceId,
+          });
+        } catch (error_) {
+          console.warn(`[A11][definition-lookup] traceId=${traceId} query=${lookupQuery} error=${String(error_?.message || error_)}`);
+        }
+      }
+    }
+
+    const wazaa = await textToWazaaAdapter(userText, { analysis: semantic, source: 'resolve-user-request' });
+    const effectiveWazaa = mergeDefinitionContextIntoWazaa(wazaa || heuristicWazaa, definitionContext, userText);
 
     const mask = wazaaToMask(effectiveWazaa, {
       sourceText: userText,

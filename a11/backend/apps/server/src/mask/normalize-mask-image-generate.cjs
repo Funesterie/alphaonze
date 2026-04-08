@@ -25,6 +25,7 @@ const DEFAULTS = {
     no_text: true
   },
   ambiguities: [],
+  meta: {},
   raw: ''
 };
 

@@ -114,7 +114,7 @@ test('textToWazaa and wazaaToMask preserve semantic hierarchy and emit canonical
   const imageMask = wazaaToMask(imageWazaa);
   assert.equal(imageMask?.intent, 'image.generate');
   assert.equal(imageMask?.raw, 'genere une image de goku dans le ciel');
-  assert.equal(imageMask?.meta?.promptCompiler, 'legacy-fallback');
+  assert.equal(imageMask?.meta?.promptCompiler, 'a11-fr-minimal');
   assert.ok(Array.isArray(imageMask?.inputs?.subject));
   assert.ok(imageMask.inputs.subject.includes('goku'));
 
@@ -140,8 +140,39 @@ test('wazaaToMask ignores noisy llm image subjects when source text contains the
 
   assert.equal(imageMask?.intent, 'image.generate');
   assert.ok(imageMask?.inputs?.subject?.some((value) => /vegeta/i.test(String(value))));
-  assert.equal(imageMask?.meta?.promptCompiler, 'a11-semantic');
+  assert.equal(imageMask?.meta?.promptCompiler, 'a11-fr-minimal');
+  assert.ok(imageMask?.inputs?.composition?.includes('sujet unique bien cadré'));
   assert.ok(!imageMask?.inputs?.subject?.some((value) => /image of|g[eé]n[eè]re/i.test(String(value))));
+});
+
+test('wazaaToMask extracts an explicit decor from source text when the environment entity is missing', () => {
+  const imageMask = wazaaToMask({
+    intent: { type: 'image.generate', confidence: 0.91 },
+    entities: [
+      { role: 'subject', value: 'dragon bleu' },
+    ],
+    meta: {
+      sourceText: 'genere une image de dragon bleu dans une grotte',
+    },
+  });
+
+  assert.equal(imageMask?.intent, 'image.generate');
+  assert.ok(imageMask?.inputs?.environment?.some((value) => /dans une grotte/i.test(String(value))));
+});
+
+test('wazaaToMask infers a coherent decor for creature prompts without explicit environment', () => {
+  const imageMask = wazaaToMask({
+    intent: { type: 'image.generate', confidence: 0.91 },
+    entities: [
+      { role: 'subject', value: 'dragon bleu' },
+    ],
+    meta: {
+      sourceText: 'genere une image de dragon bleu',
+    },
+  });
+
+  assert.equal(imageMask?.intent, 'image.generate');
+  assert.ok(imageMask?.inputs?.environment?.some((value) => /ciel ouvert avec de la profondeur/i.test(String(value))));
 });
 
 test("wazaaToMask rejects french connector fragments as image subjects", () => {

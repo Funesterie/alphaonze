@@ -43,8 +43,11 @@ test('resolveUserRequest emits a valid mask-1 image.generate mask and compiles i
   assert.equal(resolution.mask.intent, 'image.generate');
   assert.equal(resolution.mask.version, 'mask-1');
   assert.equal(validateMaskUnified(resolution.mask).valid, true);
+  assert.ok(Array.isArray(resolution.mask.inputs.environment));
+  assert.ok(resolution.mask.inputs.environment.length >= 1);
   assert.equal(resolution.compiled.target, 'image-prompt-fr');
   assert.equal(typeof resolution.compiled.value.prompt, 'string');
+  assert.match(String(resolution.compiled.value.prompt || ''), /Environnement :/i);
 });
 
 test('resolveUserRequest emits canonical code.python.generate masks that compile to python', async () => {
@@ -60,4 +63,70 @@ test('resolveUserRequest emits canonical code.python.generate masks that compile
   assert.equal(validateMaskUnified(resolution.mask).valid, true);
   assert.equal(resolution.compiled.target, 'python');
   assert.match(String(resolution.code || resolution.compiled.value || ''), /def main|Path/);
+});
+
+test('resolveUserRequest enriches doubtful image prompts with concise web definition context', async () => {
+  const fakeTextToWazaa = async (text) => ({
+    wazaa: '1.1',
+    meta: {
+      source: 'test',
+      timestamp: 1,
+      sourceText: text,
+    },
+    signal: { confidence: 0.41 },
+    hierarchy: {},
+    entities: [],
+    relations: [],
+    intents: [{ type: 'image.generate', score: 0.51, label: 'Generer une image' }],
+    ambiguities: [],
+    intent: {
+      type: 'image.generate',
+      confidence: 0.41,
+    },
+  });
+  fakeTextToWazaa.sync = (text) => ({
+    wazaa: '1.1',
+    meta: {
+      source: 'test',
+      timestamp: 1,
+      sourceText: text,
+    },
+    signal: { confidence: 0.41 },
+    hierarchy: {},
+    entities: [],
+    relations: [],
+    intents: [{ type: 'image.generate', score: 0.51, label: 'Generer une image' }],
+    ambiguities: [],
+    intent: {
+      type: 'image.generate',
+      confidence: 0.41,
+    },
+  });
+
+  const lookupCalls = [];
+  const resolver = createIntentResolver({
+    textToWazaa: fakeTextToWazaa,
+    lookupDefinitionContext: async ({ query }) => {
+      lookupCalls.push(query);
+      return {
+        term: query,
+        title: 'qilin',
+        summary: 'Créature mythique chinoise proche du dragon, souvent représentée comme un être noble et fantastique.',
+        url: 'https://example.com/qilin',
+        source: 'test',
+        language: 'fr',
+      };
+    },
+  });
+
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une image de qilin violet',
+    executeRuntime: false,
+  });
+
+  assert.equal(lookupCalls.length, 1);
+  assert.equal(lookupCalls[0], 'qilin');
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.mask.meta.definitionLookup.title, 'qilin');
+  assert.match(String(resolution.compiled.value.prompt || ''), /Contexte utile : Créature mythique chinoise proche du dragon/i);
 });
