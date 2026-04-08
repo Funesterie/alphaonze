@@ -190,14 +190,20 @@ function runSdScript(payload = {}, options = {}) {
     return Promise.resolve({ ok: false, error: 'missing_output_path', scriptPath });
   }
 
+  const hasExplicitNegativePrompt = Object.prototype.hasOwnProperty.call(payload || {}, 'negative_prompt')
+    || Object.prototype.hasOwnProperty.call(payload || {}, 'negativePrompt');
+  const resolvedNegativePrompt = hasExplicitNegativePrompt
+    ? String(
+        Object.prototype.hasOwnProperty.call(payload || {}, 'negative_prompt')
+          ? (payload.negative_prompt ?? '')
+          : (payload.negativePrompt ?? '')
+      ).trim()
+    : '';
+
   const args = [
     scriptPath,
     '--prompt', String(payload.prompt || '').trim(),
-    '--negative_prompt', String(
-      payload.negative_prompt ||
-      payload.negativePrompt ||
-      'blurry, abstract, deformed, extra limbs, bad anatomy, low quality, text, watermark'
-    ).trim(),
+    '--negative_prompt', resolvedNegativePrompt,
     '--num_inference_steps', String(Number(payload.num_inference_steps || payload.numInferenceSteps || 35) || 35),
     '--guidance_scale', String(Number(payload.guidance_scale || payload.guidanceScale || 8.0) || 8.0),
     '--width', String(Number(payload.width || 768) || 768),

@@ -63,7 +63,7 @@ function buildSdRequestBody(mask, compiledPayload) {
 
   return {
     prompt: String(payload.prompt || mask?.raw || '').trim(),
-    negative_prompt: String(payload.negative_prompt || '').trim(),
+    negative_prompt: '',
     prompt_prebuilt: true,
     negative_prompt_prebuilt: true,
     width: Number(payload.width || mask?.options?.width || 768),

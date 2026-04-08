@@ -166,52 +166,7 @@ function buildLiteralInstructions(mask = {}) {
 }
 
 function buildFrenchNegativePrompt(mask = {}) {
-  const negativeHints = [
-    'flou',
-    'abstrait',
-    'difforme',
-    'mauvaise anatomie',
-    'basse qualité',
-    'collage',
-    'motif répété',
-    'papier peint',
-    'fond encombré',
-    'accessoires aléatoires',
-    'texte',
-    'lettres',
-    'watermark',
-    'signature',
-    'logo',
-  ];
-
-  if (!mentionsExplicitFloralElements(mask)) {
-    negativeHints.push(
-      'fleurs',
-      'bouquet',
-      'fond floral',
-      'motif floral',
-      'objets décoratifs au premier plan'
-    );
-  }
-
-  if (mask?.constraints?.no_text === true) {
-    negativeHints.push('texte lisible');
-  }
-
-  const normalizedComposition = normalizeList(mask?.inputs?.composition || []).join(' ').toLowerCase();
-  const explicitMultiSubject = /\b(deux|trois|plusieurs|groupe|duo|pair|multiple|crowd|group)\b/.test(normalizedComposition);
-  if (!explicitMultiSubject) {
-    negativeHints.push(
-      'plusieurs sujets',
-      'deuxième sujet',
-      'foule',
-      'prise de groupe',
-      'anatomie fusionnée',
-      'membres fusionnés'
-    );
-  }
-
-  return normalizeList(negativeHints).join(', ');
+  return '';
 }
 
 function compileMaskToImagePrompt(mask = {}) {

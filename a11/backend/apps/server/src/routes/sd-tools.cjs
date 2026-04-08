@@ -337,10 +337,7 @@ function createSdToolsRouter(overrides = {}) {
         : (semanticCompiledState?.sdBody?.prompt || promptBundle.prompt)
     );
 
-    const negative_prompt = repairCompiledSdPromptArtifacts(mergeUniquePromptFragments(
-      requestBody?.negative_prompt || (semanticCompiledState?.sdBody?.negative_prompt || 'blurry, abstract, deformed, extra limbs, bad anatomy, low quality, text, watermark'),
-      negativePromptAlreadyCompiled || inferredNegativePromptAlreadyCompiled || semanticCompiledState ? [] : promptBundle.negativeHints,
-    ));
+    const negative_prompt = '';
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
     const width = Number(requestBody?.width || 768);
