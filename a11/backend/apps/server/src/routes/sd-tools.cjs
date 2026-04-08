@@ -191,25 +191,34 @@ function buildSdBackendUnavailablePayload({
   reason = 'backend image unavailable',
   localFallbackBlocked = false,
 } = {}) {
+  const expectedProxyRoute = '/api/tools/generate_sd';
   const upstreamMessage = String(
     proxyResult?.body?.message
     || proxyResult?.text
     || reason
     || 'backend image unavailable'
   ).trim();
+  const routeHint = proxyUrl
+    ? `Proxy attendu: ${proxyUrl}. Route attendue: POST ${expectedProxyRoute}.`
+    : `Route attendue: POST ${expectedProxyRoute} via A11_SD_PROXY_URL.`;
+  const proxyOnlyHint = localFallbackBlocked
+    ? 'Mode proxy-only actif: le fallback local est volontairement desactive en production.'
+    : '';
 
   return {
     ok: false,
     error: 'image_backend_unavailable',
     code: localFallbackBlocked ? 'local_only_fallback_blocked' : 'sd_backend_unavailable',
     message: localFallbackBlocked
-      ? `Generation image indisponible: backend SD proxy en echec et fallback local bloque en production. ${upstreamMessage}`.trim()
-      : `Generation image indisponible: ${upstreamMessage}`.trim(),
+      ? `Generation image indisponible: backend SD proxy en echec en production. ${proxyOnlyHint} ${upstreamMessage} ${routeHint}`.trim()
+      : `Generation image indisponible: ${upstreamMessage} ${routeHint}`.trim(),
     upstream: proxyUrl ? {
       provider: 'sd-proxy',
       url: proxyUrl,
       status: Number(proxyResult?.status || 0) || null,
     } : null,
+    proxyOnlyMode: localFallbackBlocked,
+    expectedProxyRoute,
   };
 }
 
@@ -299,8 +308,11 @@ function createSdToolsRouter(overrides = {}) {
 
     const proxyUrl = resolveSdProxyUrl();
     const scriptPath = resolveSdScriptPath();
+    const sdFallbackEnv = proxyUrl && !process.env.A11_SD_PROXY_URL && !process.env.SD_PROXY_URL
+      ? { ...process.env, A11_SD_PROXY_URL: proxyUrl }
+      : process.env;
     const allowLocalFallback = typeof shouldAllowLocalSdFallback === 'function'
-      ? shouldAllowLocalSdFallback(process.env)
+      ? shouldAllowLocalSdFallback(sdFallbackEnv)
       : String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
     const hasLocalScript = allowLocalFallback && !!scriptPath && fs.existsSync(scriptPath);
 

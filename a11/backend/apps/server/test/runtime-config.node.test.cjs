@@ -48,6 +48,8 @@ test('buildRuntimeConfig exposes production-safe feature providers', () => {
   assert.equal(config.features.semantic.provider, 'heuristic');
   assert.equal(config.features.memory.provider, 'local');
   assert.equal(config.features.sd.provider, 'proxy');
+  assert.equal(config.features.sd.mode, 'proxy-only');
+  assert.equal(config.features.sd.expectedRoute, '/api/tools/generate_sd');
   assert.equal(config.features.sd.localFallbackEnabled, false);
   assert.equal(config.features.tts.provider, 'http');
 });
@@ -62,7 +64,7 @@ test('buildRuntimeConfig keeps OpenAI image fallback disabled unless explicitly 
   assert.equal(config.features.sd.openAiFallbackEnabled, false);
 });
 
-test('buildRuntimeConfig enables production local SD fallback when local SD is explicitly enabled', () => {
+test('buildRuntimeConfig keeps production SD proxy-only even if ENABLE_SD is set', () => {
   const config = buildRuntimeConfig({
     NODE_ENV: 'production',
     ENABLE_SD: 'true',
@@ -70,7 +72,30 @@ test('buildRuntimeConfig enables production local SD fallback when local SD is e
   });
 
   assert.equal(config.features.sd.provider, 'proxy');
+  assert.equal(config.features.sd.mode, 'proxy-only');
+  assert.equal(config.features.sd.localFallbackEnabled, false);
+});
+
+test('buildRuntimeConfig allows explicit SD local fallback override in production when requested', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    A11_SD_PROXY_URL: 'https://sd.example.com',
+    A11_SD_ALLOW_LOCAL_FALLBACK: 'true',
+  });
+
+  assert.equal(config.features.sd.provider, 'proxy');
+  assert.equal(config.features.sd.mode, 'proxy+local-fallback');
   assert.equal(config.features.sd.localFallbackEnabled, true);
+});
+
+test('buildRuntimeConfig never treats A11_VISION_BASE_URL as the SD proxy source of truth', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    A11_VISION_BASE_URL: 'https://vision.example.com',
+  });
+
+  assert.equal(config.features.sd.provider, 'unconfigured');
+  assert.equal(config.features.sd.proxyUrl, '');
 });
 
 test('getPublicRuntimeStatus publishes feature runtime details', () => {
@@ -92,5 +117,7 @@ test('getPublicRuntimeStatus publishes feature runtime details', () => {
   assert.equal(status.features.chat.provider, 'qflush');
   assert.equal(status.features.semantic.llmEnrichmentEnabled, true);
   assert.equal(status.features.sd.proxyUrl, 'https://sd.example.com');
+  assert.equal(status.features.sd.mode, 'proxy-only');
+  assert.equal(status.features.sd.expectedRoute, '/api/tools/generate_sd');
   assert.equal(status.features.memory.provider, 'local');
 });

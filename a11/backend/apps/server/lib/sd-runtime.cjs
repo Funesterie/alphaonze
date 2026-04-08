@@ -78,6 +78,16 @@ function toBoolean(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function hasSdProxyUrl(env = process.env) {
+  return [env.A11_SD_PROXY_URL, env.SD_PROXY_URL]
+    .map((value) => String(value || '').trim())
+    .some(Boolean);
+}
+
+function isExplicitLocalRuntime(env = process.env) {
+  return toBoolean(env.A11_LOCAL_MODE) || String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local';
+}
+
 function shouldAllowLocalSdFallback(env = process.env) {
   if (String(env.A11_SD_ALLOW_LOCAL_FALLBACK || '').trim() !== '') {
     return toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK);
@@ -86,11 +96,15 @@ function shouldAllowLocalSdFallback(env = process.env) {
     return true;
   }
 
+  if (hasSdProxyUrl(env) && !isExplicitLocalRuntime(env)) {
+    return false;
+  }
+
   if (toBoolean(env.ENABLE_SD)) {
     return true;
   }
 
-  if (toBoolean(env.A11_LOCAL_MODE) || String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local') {
+  if (isExplicitLocalRuntime(env)) {
     return true;
   }
 
@@ -303,4 +317,5 @@ module.exports = {
   VENDORED_SD_SCRIPT,
   shouldAllowLocalSdFallback,
   isForeignAbsolutePath,
+  hasSdProxyUrl,
 };

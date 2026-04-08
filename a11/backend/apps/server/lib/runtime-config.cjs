@@ -43,6 +43,14 @@ function isProductionRuntime(env = {}) {
   return nodeEnv === 'production';
 }
 
+function hasSdProxyUrl(env = {}) {
+  return hasAnyValue(env.A11_SD_PROXY_URL, env.SD_PROXY_URL);
+}
+
+function isExplicitLocalRuntime(env = {}) {
+  return toBoolean(env.A11_LOCAL_MODE) || String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local';
+}
+
 function shouldEnableLocalSdFallback(env = {}) {
   if (String(env.A11_SD_ALLOW_LOCAL_FALLBACK || '').trim()) {
     return toBoolean(env.A11_SD_ALLOW_LOCAL_FALLBACK);
@@ -52,11 +60,15 @@ function shouldEnableLocalSdFallback(env = {}) {
     return true;
   }
 
+  if (hasSdProxyUrl(env) && !isExplicitLocalRuntime(env)) {
+    return false;
+  }
+
   if (toBoolean(env.ENABLE_SD)) {
     return true;
   }
 
-  if (toBoolean(env.A11_LOCAL_MODE) || String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local') {
+  if (isExplicitLocalRuntime(env)) {
     return true;
   }
 
@@ -96,6 +108,9 @@ function buildRuntimeConfig(env = process.env) {
   const sdOpenAiFallbackEnabled = isOpenAiImageEnabled(env)
     && toBoolean(env.A11_SD_ALLOW_OPENAI_FALLBACK)
     && openAiConfigured;
+  const sdMode = sdProxyUrl
+    ? (sdLocalFallbackEnabled ? 'proxy+local-fallback' : 'proxy-only')
+    : (sdLocalFallbackEnabled ? 'local-only' : (sdOpenAiFallbackEnabled ? 'openai-only' : 'unconfigured'));
   const explicitWazaaLlm = String(env.A11_WAZAA_LLM_ENRICH || '').trim();
   const wazaaLlmEnabled = explicitWazaaLlm
     ? toBoolean(explicitWazaaLlm)
@@ -181,7 +196,9 @@ function buildRuntimeConfig(env = process.env) {
         provider: sdProxyUrl
           ? 'proxy'
           : (sdLocalFallbackEnabled ? 'local' : (sdOpenAiFallbackEnabled ? 'openai' : 'unconfigured')),
+        mode: sdMode,
         proxyUrl: sdProxyUrl,
+        expectedRoute: sdProxyUrl ? '/api/tools/generate_sd' : null,
         localFallbackEnabled: sdLocalFallbackEnabled,
         openAiFallbackEnabled: sdOpenAiFallbackEnabled,
       },
@@ -255,7 +272,9 @@ function getPublicRuntimeStatus(options = {}) {
       },
       sd: {
         provider: config.features.sd.provider,
+        mode: config.features.sd.mode,
         proxyUrl: config.features.sd.proxyUrl || null,
+        expectedRoute: config.features.sd.expectedRoute || null,
         localFallbackEnabled: config.features.sd.localFallbackEnabled,
         openAiFallbackEnabled: config.features.sd.openAiFallbackEnabled,
       },
