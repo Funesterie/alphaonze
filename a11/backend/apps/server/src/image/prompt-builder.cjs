@@ -121,6 +121,63 @@ function looksLikeShowRequest(text = '') {
   return SHOW_REQUEST_PATTERN.test(normalized);
 }
 
+// ----- anatomy / inventory normalization helpers (minimal, in-file) -----
+const ANATOMY_TOKENS = [
+  'head','heads','body','bodies','leg','legs','arm','arms',
+  'wing','wings','tail','tails','eye','eyes','ear','ears',
+  'mouth','mouths','nose','noses','paw','paws','hand','hands',
+  'foot','feet','wheel','wheels','door','doors','handle','handles'
+];
+
+function looksLikeInventoryAnatomy(text = '') {
+  if (!text) return false;
+  const normalized = String(text || '').toLowerCase();
+  // number-word + anatomy (e.g. "one head", "2 legs")
+  if (/\b(?:one|two|three|four|five|six|seven|eight|nine|\d+)\b\s+(?:head|body|leg|arm|wing|tail|eye|ear|wheel|door|handle)s?\b/i.test(normalized)) {
+    return true;
+  }
+  // list style: "head, body, legs"
+  const listRegex = new RegExp(`\\b(?:${ANATOMY_TOKENS.join('|')})s?\\b(?:\\s*,\\s*(?:${ANATOMY_TOKENS.join('|')})s?)+`, 'i');
+  if (listRegex.test(normalized)) return true;
+
+  // count how many comma-separated segments contain anatomy tokens
+  const parts = normalized.split(',').map((s) => s.trim());
+  const anatomyParts = parts.filter((p) => ANATOMY_TOKENS.some((t) => p.includes(t)));
+  return anatomyParts.length >= 2;
+}
+
+function hasExplicitMultiIntent(text = '') {
+  if (!text) return false;
+  const normalized = String(text || '').toLowerCase();
+  // e.g. "two-headed", "three-wheeled", "two-headed dragon", "multi-headed"
+  if (/\b(two|three|four|\d+)[-\s]*(headed|wheeled|tailed|legged)\b/i.test(normalized)) return true;
+  if (/\b(multi|dual|triple|two-headed|three-headed|hydra)\b/i.test(normalized)) return true;
+  return false;
+}
+
+function normalizeAnatomyPrompt(original = '', subjectHint = '') {
+  const p = String(original || '').trim();
+  if (!p) return p;
+  if (!looksLikeInventoryAnatomy(p)) return p;
+  if (hasExplicitMultiIntent(p)) return p; // respect explicit multi-head/wheel intent
+
+  // Try to remove pure anatomy lists like "one head, one body, four legs" or "head, body, legs"
+  const numAnatRegex = /\b(?:one|two|three|four|five|six|seven|eight|nine|\d+)\b\s+(?:head|body|leg|arm|wing|tail|eye|ear|wheel|door|handle)s?\b/ig;
+  let cleaned = p.replace(numAnatRegex, '').replace(/\s{2,}/g, ' ').trim();
+
+  // remove plain lists "head, body, legs"
+  const simpleListRegex = new RegExp(`\\b(?:${ANATOMY_TOKENS.join('|')})s?\\b(?:\\s*,\\s*(?:${ANATOMY_TOKENS.join('|')})s?)+`, 'ig');
+  cleaned = cleaned.replace(simpleListRegex, '').replace(/\s{2,}/g, ' ').trim();
+
+  const atom = subjectHint
+    ? `${subjectHint}, single subject, full body, natural anatomy, coherent silhouette`
+    : 'single subject, full body, natural anatomy, coherent silhouette';
+
+  const final = cleaned ? `${cleaned}. ${atom}` : atom;
+  return final.replace(/\s+\./g, '.').replace(/\s{2,}/g, ' ').trim();
+}
+// ----- end anatomy helpers -----
+
 function buildPromptSeed(text = '', semanticAnalysis = null) {
   const details = analyzeImagePrompt(text, { preferLiteralColor: true });
   const normalized = normalizeText(text);
@@ -144,8 +201,15 @@ function buildPromptSeed(text = '', semanticAnalysis = null) {
     || String(semanticAnalysis?.subject || '').trim()
     || String(details?.subjectText || '').trim();
 
+  // Normalize prompts that look like an "inventory" of anatomy parts
+  // to favor a single coherent subject description.
+  const anatomyNormalizedText = normalizeAnatomyPrompt(normalized, subjectEntity);
+  const additionalCompositionHints = looksLikeInventoryAnatomy(normalized) && !hasExplicitMultiIntent(normalized)
+    ? ['single subject', 'full body', 'natural anatomy', 'coherent silhouette']
+    : [];
+
   return {
-    normalizedText: normalized,
+    normalizedText: anatomyNormalizedText,
     promptDetails: details,
     renderHints,
     referenceHints,
@@ -153,7 +217,7 @@ function buildPromptSeed(text = '', semanticAnalysis = null) {
     palette,
     subjectEntity,
     styleHints: mergeUniqueStrings(details?.styleHints || []),
-    compositionHints: mergeUniqueStrings(details?.compositionHints || []),
+    compositionHints: mergeUniqueStrings([...(details?.compositionHints || []), ...additionalCompositionHints]),
     showIntent: looksLikeShowRequest(text),
   };
 }
