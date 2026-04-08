@@ -635,15 +635,22 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
     'group shot',
   ];
 
-  const mergedPrompt = [
-    String(sdBody.prompt || '').trim(),
-    retryPromptHints.join(', '),
-  ].filter(Boolean).join('. ').trim();
+  // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt/negative_prompt
+  const basePrompt = String(sdBody.prompt || '').trim();
+  const baseNegative = String(sdBody.negative_prompt || '').trim();
 
-  const mergedNegativePrompt = [
-    String(sdBody.negative_prompt || '').trim(),
-    retryNegativeHints.join(', '),
-  ].filter(Boolean).join(', ').trim();
+  const uniqueRetryPromptHints = retryPromptHints.filter((h) => {
+    if (!basePrompt) return true;
+    return !basePrompt.toLowerCase().includes(h.toLowerCase());
+  });
+
+  const uniqueRetryNegativeHints = retryNegativeHints.filter((h) => {
+    if (!baseNegative) return true;
+    return !baseNegative.toLowerCase().includes(h.toLowerCase());
+  });
+
+  const mergedPrompt = [basePrompt, uniqueRetryPromptHints.join(', ')].filter(Boolean).join('. ').trim();
+  const mergedNegativePrompt = [baseNegative, uniqueRetryNegativeHints.join(', ')].filter(Boolean).join(', ').trim();
 
   const currentSeed = Number(sdBody.seed);
   const retrySeedBase = Number.isFinite(currentSeed) ? currentSeed : Number(options.seed || Date.now());
