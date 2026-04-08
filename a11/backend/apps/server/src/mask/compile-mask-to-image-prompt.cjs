@@ -136,16 +136,6 @@ function joinSection(label, values = []) {
   return `${label} : ${entries.join(', ')}`;
 }
 
-function mentionsExplicitFloralElements(mask = {}) {
-  const haystack = normalizeText([
-    mask?.raw || '',
-    ...(Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : []),
-    ...(Array.isArray(mask?.inputs?.environment) ? mask.inputs.environment : []),
-  ].join(' ')).toLowerCase();
-
-  return /\b(fleur|fleurs|bouquet|p[eé]tale|p[eé]tales|floral|rose petals?|flowers?|petals?)\b/.test(haystack);
-}
-
 function buildLiteralInstructions(mask = {}) {
   const instructions = [
     'Interprétation littérale de la demande.',
@@ -163,10 +153,6 @@ function buildLiteralInstructions(mask = {}) {
   }
 
   return instructions.join(' ');
-}
-
-function buildFrenchNegativePrompt(mask = {}) {
-  return '';
 }
 
 function compileMaskToImagePrompt(mask = {}) {
@@ -191,10 +177,8 @@ function compileMaskToImagePrompt(mask = {}) {
 
   return {
     prompt: promptSections.join('. '),
-    negative_prompt: buildFrenchNegativePrompt(mask),
     prompt_language: 'fr',
     prompt_prebuilt: true,
-    negative_prompt_prebuilt: true,
     width: Number(mask?.options?.width || 768),
     height: Number(mask?.options?.height || 768),
     num_inference_steps: Number(mask?.options?.steps || 40),

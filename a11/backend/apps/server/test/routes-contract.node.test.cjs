@@ -103,7 +103,7 @@ test('POST /api/mask/compile returns 400 for invalid masks and compiles image ma
       assert.equal(imageMask.response.status, 200);
       assert.equal(imageMask.json.target, 'image-prompt-fr');
       assert.equal(typeof imageMask.json.compiled?.prompt, 'string');
-      assert.equal(typeof imageMask.json.compiled?.negative_prompt, 'string');
+      assert.equal(Object.prototype.hasOwnProperty.call(imageMask.json.compiled || {}, 'negative_prompt'), false);
       assert.match(String(imageMask.json.compiled?.prompt || ''), /Demande utilisateur|Sujet principal/i);
     }
   );
@@ -865,6 +865,7 @@ test('compileMaskToSD returns a raw payload and adaptMaskToFreelandValue wraps i
 
   const compiledPayload = compileMaskToSD(mask);
   assert.equal(typeof compiledPayload.prompt, 'string');
+  assert.equal(Object.prototype.hasOwnProperty.call(compiledPayload, 'negative_prompt'), false);
   assert.equal(compiledPayload.kind, undefined);
   assert.equal(compiledPayload.value, undefined);
 

@@ -133,7 +133,7 @@ test('buildMaskImageGenerateFromText enriches MASK fields for image prompts', ()
   assert.ok(mask.inputs.composition.some((value) => /clear centered composition/i.test(String(value))));
   assert.match(String(compiled.prompt || ''), /literal interpretation/i);
   assert.match(String(compiled.prompt || ''), /with a magician hat/i);
-  assert.match(String(compiled.negative_prompt || ''), /flowers/i);
+  assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);
 });
 
 test('compileMaskToSD keeps singular object constraints for solo prompts', () => {
@@ -143,7 +143,7 @@ test('compileMaskToSD keeps singular object constraints for solo prompts', () =>
   assert.match(String(compiled.prompt || ''), /exactly one blue bicycle/i);
   assert.match(String(compiled.prompt || ''), /solo composition/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /one subject only|one instance only|single main subject/i);
-  assert.match(String(compiled.negative_prompt || ''), /multiple subjects|second subject|group shot/i);
+  assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);
 });
 
 test('translateImagePromptToEnglish binds ultraviolet compounds before token splitting', () => {

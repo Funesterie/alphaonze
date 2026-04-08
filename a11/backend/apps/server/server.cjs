@@ -9037,7 +9037,6 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
           id: 'gen-image-1',
           arguments: {
             prompt: promptBundle.prompt,
-            ...(promptBundle.negativeHints.length ? { negative_prompt: promptBundle.negativeHints.join(', ') } : {}),
           },
         },
         {

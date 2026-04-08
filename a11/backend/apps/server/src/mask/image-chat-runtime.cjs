@@ -63,9 +63,7 @@ function buildSdRequestBody(mask, compiledPayload) {
 
   return {
     prompt: String(payload.prompt || mask?.raw || '').trim(),
-    negative_prompt: '',
     prompt_prebuilt: true,
-    negative_prompt_prebuilt: true,
     width: Number(payload.width || mask?.options?.width || 768),
     height: Number(payload.height || mask?.options?.height || 768),
     num_inference_steps: Number(payload.steps || mask?.options?.steps || 30),
@@ -160,7 +158,7 @@ function resolveMaxVerificationRetries(explicitValue) {
 function buildCompiledPromptHash(sdBody = {}) {
   return crypto
     .createHash('sha1')
-    .update(`${String(sdBody?.prompt || '').trim()}\n--\n${String(sdBody?.negative_prompt || '').trim()}`)
+    .update(String(sdBody?.prompt || '').trim())
     .digest('hex')
     .slice(0, 16);
 }
@@ -281,7 +279,6 @@ async function generateImageFromMask({
     attempt: 1,
     prompt_hash: compiledPromptHash,
     prompt: String(activeSdBody.prompt || '').trim(),
-    negative_prompt: String(activeSdBody.negative_prompt || '').trim(),
     seed: activeSdBody.seed,
     image_url: resolveGeneratedImageUrl(sdResult),
   });
@@ -339,7 +336,6 @@ async function generateImageFromMask({
         attempt: retryCount + 1,
         prompt_hash: compiledPromptHash,
         prompt: String(activeSdBody.prompt || '').trim(),
-        negative_prompt: String(activeSdBody.negative_prompt || '').trim(),
         seed: activeSdBody.seed,
         image_url: resolveGeneratedImageUrl(sdResult),
       });

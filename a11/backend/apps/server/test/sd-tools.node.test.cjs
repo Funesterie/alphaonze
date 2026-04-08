@@ -42,9 +42,9 @@ test('generateSdInternal preserves prebuilt prompts without re-enriching them', 
     capturedBody?.prompt,
     'a pink rabbit. exactly one pink rabbit only. no duplicate subjects.'
   );
-  assert.equal(capturedBody?.negative_prompt, '');
   assert.equal(capturedBody?.prompt_prebuilt, true);
-  assert.equal(capturedBody?.negative_prompt_prebuilt, true);
+  assert.equal('negative_prompt' in capturedBody, false);
+  assert.equal('negative_prompt_prebuilt' in capturedBody, false);
 });
 
 test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupes negative hints', async () => {
@@ -77,13 +77,13 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
 
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.prompt_prebuilt, true);
-  assert.equal(capturedBody?.negative_prompt_prebuilt, true);
+  assert.equal('negative_prompt_prebuilt' in capturedBody, false);
   assert.match(String(capturedBody?.prompt || ''), /Demande utilisateur : genere une image lapin rose/i);
   assert.match(String(capturedBody?.prompt || ''), /Sujet principal : lapin/i);
   assert.match(String(capturedBody?.prompt || ''), /Palette : rose/i);
   assert.match(String(capturedBody?.prompt || ''), /Interprétation littérale/i);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\brabbit\b|\bpink\b|literal interpretation/i);
-  assert.equal(String(capturedBody?.negative_prompt || ''), '');
+  assert.equal('negative_prompt' in capturedBody, false);
 });
 
 test('generateSdInternal infers prebuilt prompts when compiled SD text arrives without flags', async () => {
@@ -126,8 +126,8 @@ test('generateSdInternal infers prebuilt prompts when compiled SD text arrives w
 
   assert.equal(capturedBody?.prompt, compiledPrompt);
   assert.equal(capturedBody?.prompt_prebuilt, true);
-  assert.equal(capturedBody?.negative_prompt_prebuilt, true);
-  assert.equal(capturedBody?.negative_prompt, '');
+  assert.equal('negative_prompt_prebuilt' in capturedBody, false);
+  assert.equal('negative_prompt' in capturedBody, false);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bone one rabbit\b/i);
 });
 
@@ -170,8 +170,8 @@ test('generateSdInternal infers prebuilt prompts when compiled french image text
 
   assert.equal(capturedBody?.prompt, compiledPrompt);
   assert.equal(capturedBody?.prompt_prebuilt, true);
-  assert.equal(capturedBody?.negative_prompt_prebuilt, true);
-  assert.equal(capturedBody?.negative_prompt, '');
+  assert.equal('negative_prompt_prebuilt' in capturedBody, false);
+  assert.equal('negative_prompt' in capturedBody, false);
 });
 
 test('generateSdInternal repairs stale compiled prompts that still contain image rabbit artifacts', async () => {
@@ -214,7 +214,7 @@ test('generateSdInternal repairs stale compiled prompts that still contain image
 
   assert.match(String(capturedBody?.prompt || ''), /\bone rabbit with pink fur\b/i);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bimage rabbit\b/i);
-  assert.equal(String(capturedBody?.negative_prompt || ''), '');
+  assert.equal('negative_prompt' in capturedBody, false);
 });
 
 test('generateSdInternal blocks local-only fallback in production when proxy fails', async () => {
@@ -295,7 +295,7 @@ test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is exp
     assert.equal(response.ok, true);
     assert.equal(response.mode, 'stable-diffusion-proxy');
     assert.match(String(capturedBody?.prompt || ''), /Demande utilisateur : genere une image lapin rose/i);
-    assert.equal(String(capturedBody?.negative_prompt || ''), '');
+    assert.equal('negative_prompt' in capturedBody, false);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];

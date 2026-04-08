@@ -24,9 +24,9 @@ test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enri
   );
 
   assert.equal(sdBody.prompt_prebuilt, true);
-  assert.equal(sdBody.negative_prompt_prebuilt, true);
   assert.equal(sdBody.prompt, 'a pink rabbit, exactly one pink rabbit only');
-  assert.equal(sdBody.negative_prompt, '');
+  assert.equal('negative_prompt' in sdBody, false);
+  assert.equal('negative_prompt_prebuilt' in sdBody, false);
 });
 
 test('toImageChatProxyPayload synthesizes a png filename when the image URL has no extension', () => {
@@ -101,7 +101,7 @@ test('generateImageFromMask compiles canonical masks into a french image prompt 
   assert.match(String(calls[0]?.prompt || ''), /Style : haute qualité, détaillé/i);
   assert.match(String(calls[0]?.prompt || ''), /Composition : un seul sujet principal, composition centrée claire, fond simple et propre/i);
   assert.match(String(calls[0]?.prompt || ''), /Palette : vert/i);
-  assert.equal(String(calls[0]?.negative_prompt || ''), '');
+  assert.equal('negative_prompt' in calls[0], false);
   assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bhigh quality\b|\bdetailed\b|\bsingle main subject\b|\bgreen\b/i);
   assert.equal(calls[0]?.prompt_language, 'fr');
   assert.equal(result.sdResult.mode, 'openai-image');
@@ -144,7 +144,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
     generateSd: async ({ body }) => {
       calls.push({
         prompt: body.prompt,
-        negative_prompt: body.negative_prompt,
+        has_negative_prompt: Object.prototype.hasOwnProperty.call(body, 'negative_prompt'),
         seed: body.seed,
       });
       return {
@@ -173,7 +173,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
 
   assert.equal(calls.length, 2);
   assert.match(String(calls[1]?.prompt || ''), /exactly one rabbit/i);
-  assert.equal(String(calls[1]?.negative_prompt || ''), '');
+  assert.equal(calls[1]?.has_negative_prompt, false);
   assert.equal(calls[1]?.seed, 197);
   assert.equal(result.sdResult.image_url, 'https://files.example.com/rabbit-2.png');
   assert.equal(result.imageGuard?.retries?.length, 1);
