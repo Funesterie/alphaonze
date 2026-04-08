@@ -7,7 +7,8 @@ cmds = [
 	"python3 -m venv /opt/venv",
 	"/opt/venv/bin/python -m ensurepip --upgrade || true",
 	"/opt/venv/bin/pip --version",
-	"/opt/venv/bin/pip install --no-cache-dir piper-tts"
+	"/opt/venv/bin/pip install --no-cache-dir piper-tts",
+	"/opt/venv/bin/pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r tools/sd/requirements.txt"
 ]
 
 [phases.build]
