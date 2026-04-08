@@ -283,6 +283,12 @@ test('generateSdInternal falls back to local SD in production when ENABLE_SD is 
       runSdScript: async () => ({
         ok: true,
         output_path: outputPath,
+        device: 'cuda',
+        model_id: 'runwayml/stable-diffusion-v1-5',
+        torch_dtype: 'float16',
+        cuda_available: true,
+        cuda_device_name: 'NVIDIA GeForce RTX 5070',
+        xformers_enabled: false,
       }),
       uploadBufferToR2: async () => ({
         url: 'https://files.example.com/rat-bleu.png',
@@ -298,6 +304,11 @@ test('generateSdInternal falls back to local SD in production when ENABLE_SD is 
     assert.equal(result.ok, true);
     assert.equal(result.mode, 'stable-diffusion-local');
     assert.equal(result.image_url, 'https://files.example.com/rat-bleu.png');
+    assert.equal(result.device, 'cuda');
+    assert.equal(result.model_id, 'runwayml/stable-diffusion-v1-5');
+    assert.equal(result.torch_dtype, 'float16');
+    assert.equal(result.cuda_available, true);
+    assert.equal(result.cuda_device_name, 'NVIDIA GeForce RTX 5070');
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
     for (const [key, value] of Object.entries(previous)) {
