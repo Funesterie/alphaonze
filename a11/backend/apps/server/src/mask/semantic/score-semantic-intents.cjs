@@ -7,6 +7,15 @@ const {
 const {
   applySemanticKnowledgeModules,
 } = require('../../knowledge/a11-knowledge-operator.cjs');
+const {
+  collectUniqueColorsFromWordItems,
+} = require('./color-library.cjs');
+const {
+  collectUniqueStylesFromWordItems,
+} = require('./style-library.cjs');
+const {
+  collectUniqueScenesFromWordItems,
+} = require('./scene-library.cjs');
 
 function scoreSemanticIntents(levels, overrides = {}) {
   if (!levels || typeof levels !== 'object') return null;
@@ -82,7 +91,10 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const emailAddressLike = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(sourceText);
   const attachmentLike = /\b(avec|join|joins|joint|jointe|piece jointe|pi[eè]ce jointe|attachment|attached|inclu|inclure)\b/.test(normalizedText);
   const subject = extractSubjectCandidate(wordItems.map((item) => item.word));
-  const colorWordCount = wordItems.filter((item) => Array.isArray(item.tags) && item.tags.includes('color')).length;
+  const detectedColors = collectUniqueColorsFromWordItems(wordItems);
+  const detectedStyles = collectUniqueStylesFromWordItems(wordItems);
+  const detectedScenes = collectUniqueScenesFromWordItems(wordItems);
+  const colorWordCount = detectedColors.length;
   const codeKeywordSignal = /\b(python|script|fonction|code|programme|api|json|regex|tri|fichier|dossier|png|csv|node)\b/.test(normalizedText);
   const mailRequestWithReferencedImage = Boolean(
     emailActionLike
@@ -96,7 +108,8 @@ function scoreSemanticIntents(levels, overrides = {}) {
     && subject
     && !codeKeywordSignal
   );
-  const visualStyleSignal = /\b(cartoon|anime|pixel art|watercolor|cinematic|illustration|portrait|render|3d|manga)\b/.test(normalizedText);
+  const visualStyleSignal = detectedStyles.length > 0
+    || /\b(cartoon|anime|pixel art|watercolor|cinematic|illustration|portrait|render|3d|manga)\b/.test(normalizedText);
   const shortShowRequest = /^(montre|affiche|fais voir|show me)\b/.test(normalizedText)
     && !/\b(web|internet|google|bing|source)\b/.test(normalizedText)
     && wordItems.length > 0
@@ -306,6 +319,11 @@ function scoreSemanticIntents(levels, overrides = {}) {
       questionSignal: questionLike || explicitQuestion,
       showSignal: showLike,
       colorSignal: colorWordCount > 0,
+      detectedColors: detectedColors.map((entry) => entry.label),
+      styleSignal: detectedStyles.length > 0,
+      detectedStyles: detectedStyles.map((entry) => entry.label),
+      sceneSignal: detectedScenes.length > 0,
+      detectedScenes: detectedScenes.map((entry) => entry.label),
       visualStyleSignal,
       mailActionSignal: mailRequestWithReferencedImage || emailActionLike,
     },

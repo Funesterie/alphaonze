@@ -66,7 +66,7 @@ test('buildMaskImageGenerateFromText enriches MASK fields for image prompts with
   assert.equal(mask.intent, 'image.generate');
   assert.ok(mask.inputs.subject.some((value) => /one piece/i.test(String(value))));
   assert.ok(mask.inputs.style.some((value) => /haute qualité/i.test(String(value))));
-  assert.deepEqual(mask.inputs.composition, []);
+  assert.ok(mask.inputs.composition.some((value) => /sujet unique bien cadré/i.test(String(value))));
   assert.match(String(compiled.prompt || ''), /Demande : genere une image de one piece avec un chapeau de magicien/i);
   assert.match(String(compiled.prompt || ''), /Sujet principal : one piece/i);
   assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);

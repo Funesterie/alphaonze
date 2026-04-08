@@ -1,3 +1,11 @@
+const {
+  findColorDefinition,
+  stripTrailingColorPhrase,
+} = require('../mask/semantic/color-library.cjs');
+const {
+  stripTrailingStylePhrase,
+} = require('../mask/semantic/style-library.cjs');
+
 function normalizeText(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -25,47 +33,6 @@ const LOOKUP_ELIGIBLE_INTENTS = new Set([
   'image.generate',
   'web.search',
   'web.image.search',
-]);
-
-const SIMPLE_COLOR_WORDS = new Set([
-  'rouge',
-  'bleu',
-  'bleue',
-  'vert',
-  'verte',
-  'jaune',
-  'violet',
-  'violette',
-  'orange',
-  'rose',
-  'blanc',
-  'blanche',
-  'noir',
-  'noire',
-  'marron',
-  'gris',
-  'grise',
-  'dore',
-  'doré',
-  'dorée',
-  'argent',
-  'argente',
-  'argenté',
-  'argentée',
-  'red',
-  'blue',
-  'green',
-  'yellow',
-  'purple',
-  'pink',
-  'white',
-  'black',
-  'brown',
-  'gray',
-  'grey',
-  'gold',
-  'golden',
-  'silver',
 ]);
 
 const KNOWN_IMAGE_SUBJECT_TERMS = new Set([
@@ -163,12 +130,7 @@ function sanitizeLookupCandidate(value = '') {
     .replace(/^(?:un|une|des|du|de la|de l['’]?|d['’]|le|la|les)\s+/i, '')
     .trim();
 
-  const tokens = candidate.split(/\s+/).filter(Boolean);
-  while (tokens.length > 1 && SIMPLE_COLOR_WORDS.has(normalizeText(tokens[tokens.length - 1]))) {
-    tokens.pop();
-  }
-
-  candidate = tokens.join(' ').trim();
+  candidate = stripTrailingStylePhrase(stripTrailingColorPhrase(candidate));
   if (!candidate) return '';
   if (/\b(?:image of|generate|genere|dessine|create|draw|show me|search|find)\b/i.test(candidate)) return '';
   return candidate;
@@ -189,7 +151,7 @@ function buildDefinitionLookupQuery({
 function looksLikeUnknownSubject(query = '') {
   const tokens = normalizeText(query).split(/\s+/).filter(Boolean);
   if (!tokens.length || tokens.length > 3) return false;
-  const lexicalTokens = tokens.filter((entry) => !SIMPLE_COLOR_WORDS.has(entry));
+  const lexicalTokens = tokens.filter((entry) => !findColorDefinition(entry));
   if (!lexicalTokens.length) return false;
   return lexicalTokens.every((entry) => !KNOWN_IMAGE_SUBJECT_TERMS.has(entry));
 }

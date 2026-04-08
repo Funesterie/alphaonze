@@ -11,6 +11,7 @@ function buildMaskImageGenerateFromText(message, opts = {}) {
   const mask = wazaaToMask(wazaa, {
     intentType: 'image.generate',
     sourceText,
+    semanticAnalysis: opts.analysis || null,
   });
 
   if (!mask || mask.intent !== 'image.generate') return null;

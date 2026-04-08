@@ -172,7 +172,7 @@ test('wazaaToMask infers a coherent decor for creature prompts without explicit 
   });
 
   assert.equal(imageMask?.intent, 'image.generate');
-  assert.ok(imageMask?.inputs?.environment?.some((value) => /ciel ouvert avec de la profondeur/i.test(String(value))));
+  assert.ok(imageMask?.inputs?.environment?.some((value) => /décor simple et cohérent avec le sujet/i.test(String(value))));
 });
 
 test("wazaaToMask rejects french connector fragments as image subjects", () => {
