@@ -43,7 +43,67 @@ test('toImageChatProxyPayload synthesizes a png filename when the image URL has 
   });
 
   assert.equal(payload.imagePath, 'https://files.example.com/generated/linux-image');
+  assert.equal(payload.mode, 'generate_image');
+  assert.equal(payload.tool, 'generate_image');
   assert.match(String(payload.choices?.[0]?.message?.content || ''), /\[ouvrir l'image\]/i);
+});
+
+test('generateImageFromMask compiles canonical masks into a french image prompt by default', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      inputs: {
+        subject: ['herisson'],
+        environment: [],
+        style: ['high quality', 'detailed'],
+        composition: ['single main subject', 'clear centered composition', 'simple clean background'],
+        lighting: [],
+        palette: ['green'],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 30,
+        guidance_scale: 7.5,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      ambiguities: [],
+      raw: 'genere un herisson vert',
+    },
+    generateImage: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/herisson.png',
+        filename: 'herisson.png',
+        mode: 'openai-image',
+        tool: 'generate_image',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.prompt || ''), /genere un herisson vert/i);
+  assert.match(String(calls[0]?.prompt || ''), /Sujet principal : herisson/i);
+  assert.match(String(calls[0]?.prompt || ''), /Style : haute qualité, détaillé/i);
+  assert.match(String(calls[0]?.prompt || ''), /Composition : un seul sujet principal, composition centrée claire, fond simple et propre/i);
+  assert.match(String(calls[0]?.prompt || ''), /Palette : vert/i);
+  assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bhigh quality\b|\bdetailed\b|\bsingle main subject\b|\bgreen\b/i);
+  assert.equal(calls[0]?.prompt_language, 'fr');
+  assert.equal(result.sdResult.mode, 'openai-image');
 });
 
 test('generateImageFromMask retries once when the verifier detects multiple subjects', async () => {

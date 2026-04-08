@@ -28,7 +28,7 @@ function buildMaskFromCanonicalImageIntent(intent = {}) {
     version: 'mask-1',
     intent: 'image.generate',
     task: { domain: 'image', action: 'generate' },
-    compiler: { target: 'sd-payload', version: '1.0' },
+    compiler: { target: 'image-prompt-fr', version: '1.0' },
     inputs: {
       subject: subject ? [subject] : [],
       environment: mergeUniqueStrings([

@@ -1,3 +1,4 @@
+const compileMaskToImagePrompt = require('./compile-mask-to-image-prompt.cjs');
 const compileMaskToSD = require('./compile-mask-to-sd.cjs');
 const compileMaskToPython = require('./compile-mask-to-python.cjs');
 const normalizeMaskImageGenerate = require('./normalize-mask-image-generate.cjs');
@@ -31,8 +32,10 @@ function compileMaskUnified(mask) {
   if (intent === 'image.generate') {
     const normalized = normalizeMaskImageGenerate(mask);
     return {
-      target: normalized?.compiler?.target || 'sd-payload',
-      value: compileMaskToSD(normalized),
+      target: normalized?.compiler?.target || 'image-prompt-fr',
+      value: normalized?.compiler?.target === 'sd-payload'
+        ? compileMaskToSD(normalized)
+        : compileMaskToImagePrompt(normalized),
     };
   }
 

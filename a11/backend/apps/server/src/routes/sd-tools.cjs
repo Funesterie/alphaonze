@@ -10,7 +10,11 @@ const {
   shouldAllowLocalSdFallback: defaultShouldAllowLocalSdFallback,
 } = require('../../lib/sd-runtime.cjs');
 const { uploadBufferToR2: defaultUploadBufferToR2 } = require('../../lib/file-storage.cjs');
-const { tryGeneratePngWithOpenAI, looksLikeOpenAiQuotaError } = require('../../lib/openai-image.cjs');
+const {
+  tryGeneratePngWithOpenAI,
+  looksLikeOpenAiQuotaError,
+  resolveOpenAiImageConfig,
+} = require('../../lib/openai-image.cjs');
 
 function defaultFetch(...args) {
   if (typeof globalThis.fetch === 'function') {
@@ -21,6 +25,23 @@ function defaultFetch(...args) {
 
 function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
   return buildSharedSdPromptBundle(rawPrompt, options);
+}
+
+function resolveOpenAiPreferredForImage(requestBody = {}) {
+  const explicitEngine = String(
+    requestBody?.engine
+    || requestBody?.image_engine
+    || requestBody?.provider
+    || ''
+  ).trim().toLowerCase();
+  if (explicitEngine === 'sd' || explicitEngine === 'stable-diffusion') return false;
+  if (explicitEngine === 'openai' || explicitEngine === 'openai-image') return true;
+
+  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'openai,sd')
+    .split(',')
+    .map((entry) => String(entry || '').trim().toLowerCase())
+    .filter(Boolean);
+  return order[0] === 'openai' || order[0] === 'openai-image';
 }
 
 function normalizePromptFragment(value = '') {
@@ -62,10 +83,14 @@ function looksLikeCompiledSdPrompt(value = '') {
 
   const markers = [
     'literal interpretation',
+    'interprétation littérale',
     'solo composition',
+    'composition solo',
     'simple clean background',
+    'fond simple et propre',
     'centered subject',
     'exactly one ',
+    'sujet principal :',
     'only one animal in frame',
   ];
 
@@ -84,9 +109,12 @@ function looksLikeCompiledNegativePrompt(value = '') {
   const markers = [
     'duplicate subject',
     'multiple subjects',
+    'plusieurs sujets',
     'multiple animals',
     'crowd',
+    'foule',
     'group shot',
+    'prise de groupe',
     'duplicate body',
     'extra character',
   ];
@@ -550,6 +578,65 @@ function createSdToolsRouter(overrides = {}) {
     }
   }
 
+  async function generateImageInternal({ req, prompt, body = null }) {
+    const requestBody = body || req?.body || {};
+    const rawPrompt = String(prompt || requestBody?.prompt || '').trim();
+    if (!rawPrompt) {
+      const error = new Error('missing_prompt');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const width = Number(requestBody?.width || 768);
+    const height = Number(requestBody?.height || 768);
+    const openAiFirst = resolveOpenAiPreferredForImage(requestBody);
+    const openAiConfig = resolveOpenAiImageConfig();
+
+    if (openAiFirst && openAiConfig.apiKey) {
+      try {
+        const tempDir = String(process.env.SD_OUTPUT_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/a11-images' : path.join(process.cwd(), 'tmp', 'generated')));
+        fs.mkdirSync(tempDir, { recursive: true });
+        const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
+        const outputPath = path.join(tempDir, outputName);
+
+        const openAiResult = await tryGeneratePngWithOpenAI({
+          prompt: rawPrompt,
+          outputPath,
+          width,
+          height,
+          userId: req?.user?.id || 'image-tool',
+        });
+
+        if (openAiResult?.ok) {
+          return {
+            ok: true,
+            artifact_type: 'image',
+            tool: 'generate_image',
+            url: openAiResult.sourceUrl || null,
+            image_url: openAiResult.sourceUrl || null,
+            filename: path.basename(openAiResult.outputPath || outputPath),
+            prompt: rawPrompt,
+            negative_prompt: String(requestBody?.negative_prompt || '').trim(),
+            width,
+            height,
+            num_inference_steps: Number(requestBody?.num_inference_steps || requestBody?.steps || 40),
+            guidance_scale: Number(requestBody?.guidance_scale || 8),
+            seed: requestBody?.seed !== undefined ? Number(requestBody.seed) : undefined,
+            mode: openAiResult.mode || 'openai-image',
+          };
+        }
+      } catch (error_) {
+        console.warn('[A11][generate_image] OpenAI image failed, fallback to SD:', error_?.message);
+      }
+    }
+
+    const sdResult = await generateSdInternal({ req, prompt: rawPrompt, body: requestBody });
+    return {
+      ...sdResult,
+      tool: sdResult?.tool || 'generate_image',
+    };
+  }
+
   router.post('/tools/generate_sd', express.json({ limit: '2mb' }), async (req, res) => {
     console.log('[DEBUG] Entrée dans /api/tools/generate_sd', {
       ip: req.ip,
@@ -558,7 +645,7 @@ function createSdToolsRouter(overrides = {}) {
     });
 
     try {
-      const result = await generateSdInternal({
+      const result = await generateImageInternal({
         req,
         prompt: req.body?.prompt,
         body: req.body,
@@ -575,6 +662,7 @@ function createSdToolsRouter(overrides = {}) {
   return {
     router,
     generateSdInternal,
+    generateImageInternal,
   };
 }
 
@@ -608,7 +696,8 @@ function sdToolsEntrypoint(...args) {
 }
 
 sdToolsEntrypoint.router = defaultSdTools.router;
-sdToolsEntrypoint.generateSdInternal = defaultSdTools.generateSdInternal;
+sdToolsEntrypoint.generateImageInternal = defaultSdTools.generateImageInternal;
+sdToolsEntrypoint.generateSdInternal = defaultSdTools.generateImageInternal;
 sdToolsEntrypoint.createSdToolsRouter = createSdToolsRouter;
 sdToolsEntrypoint.buildSdBackendUnavailablePayload = buildSdBackendUnavailablePayload;
 

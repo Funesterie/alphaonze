@@ -10,7 +10,7 @@ function isStringArray(arr) {
 }
 
 
-const ALLOWED_TARGETS = ['sd-payload','python','comfy'];
+const ALLOWED_TARGETS = ['image-prompt-fr','sd-payload','python','comfy'];
 const ALLOWED_VERSION = '1.0';
 const MIN_WIDTH = 64, MAX_WIDTH = 1024, MIN_HEIGHT = 64, MAX_HEIGHT = 1024, MIN_STEPS = 1, MAX_STEPS = 100, MIN_GUIDANCE = 1, MAX_GUIDANCE = 30;
 

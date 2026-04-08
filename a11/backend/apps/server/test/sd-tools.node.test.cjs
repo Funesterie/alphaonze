@@ -78,17 +78,18 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
-  assert.match(String(capturedBody?.prompt || ''), /\brabbit\b/i);
-  assert.match(String(capturedBody?.prompt || ''), /color palette: pink/i);
-  assert.match(String(capturedBody?.prompt || ''), /exactly one pink rabbit|exactly one rabbit/i);
-  assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bimage rabbit\b/i);
-  assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bgenere\b|\blapin rose\b/i);
+  assert.match(String(capturedBody?.prompt || ''), /Demande utilisateur : genere une image lapin rose/i);
+  assert.match(String(capturedBody?.prompt || ''), /Sujet principal : lapin/i);
+  assert.match(String(capturedBody?.prompt || ''), /Palette : rose/i);
+  assert.match(String(capturedBody?.prompt || ''), /Interprétation littérale/i);
+  assert.doesNotMatch(String(capturedBody?.prompt || ''), /\brabbit\b|\bpink\b|literal interpretation/i);
 
   const negativeParts = String(capturedBody?.negative_prompt || '')
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
-  assert.equal(negativeParts.filter((entry) => entry === 'blurry').length, 1);
+  assert.equal(negativeParts.filter((entry) => entry === 'flou').length, 1);
+  assert.ok(negativeParts.includes('fleurs'));
 });
 
 test('generateSdInternal infers prebuilt prompts when compiled SD text arrives without flags', async () => {
@@ -133,6 +134,48 @@ test('generateSdInternal infers prebuilt prompts when compiled SD text arrives w
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bone one rabbit\b/i);
+});
+
+test('generateSdInternal infers prebuilt prompts when compiled french image text arrives without flags', async () => {
+  let capturedBody = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/lapin-fr-prebuilt.png',
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const compiledPrompt = [
+    'Demande utilisateur : genere un lapin rose',
+    'Sujet principal : lapin rose',
+    'Style : haute qualité, détaillé',
+    'Composition : composition solo, fond simple et propre',
+    'Interprétation littérale de la demande',
+  ].join('. ');
+
+  await generateSdInternal({
+    req: { headers: {} },
+    prompt: compiledPrompt,
+    body: {
+      prompt: compiledPrompt,
+      negative_prompt: 'flou, plusieurs sujets, foule',
+    },
+  });
+
+  assert.equal(capturedBody?.prompt, compiledPrompt);
+  assert.equal(capturedBody?.prompt_prebuilt, true);
+  assert.equal(capturedBody?.negative_prompt_prebuilt, true);
 });
 
 test('generateSdInternal repairs stale compiled prompts that still contain image rabbit artifacts', async () => {
