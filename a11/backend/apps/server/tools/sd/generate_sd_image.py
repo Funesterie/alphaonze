@@ -98,7 +98,13 @@ def main():
     pipe = AutoPipelineForText2Image.from_pretrained(
         model_id,
         torch_dtype=torch_dtype,
+        safety_checker=None,
+        requires_safety_checker=False,
     )
+    if hasattr(pipe, "safety_checker"):
+        pipe.safety_checker = None
+    if hasattr(pipe, "register_to_config"):
+        pipe.register_to_config(requires_safety_checker=False)
     pipe.set_progress_bar_config(disable=True)
     pipe = pipe.to(device)
     xformers_enabled = maybe_enable_pipeline_memory_optimizations(pipe)
@@ -115,6 +121,8 @@ def main():
         height=args.height,
         generator=generator,
     )
+    if args.negative_prompt and str(args.negative_prompt).strip():
+        generation_kwargs["negative_prompt"] = str(args.negative_prompt).strip()
 
     with torch.inference_mode():
         image = pipe(**generation_kwargs).images[0]
@@ -137,6 +145,7 @@ def main():
                 "cuda_available": torch.cuda.is_available(),
                 "cuda_device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
                 "xformers_enabled": xformers_enabled,
+                "safety_checker_enabled": False,
             }
         )
     )

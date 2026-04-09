@@ -60,6 +60,14 @@ function splitPromptFragments(value = '') {
     .filter(Boolean);
 }
 
+function mergeNegativePrompts(...values) {
+  const entries = values
+    .flatMap((value) => splitPromptFragments(value))
+    .map((entry) => normalizePromptFragment(entry))
+    .filter(Boolean);
+  return [...new Set(entries)].join(', ').trim();
+}
+
 function looksLikeCompiledSdPrompt(value = '') {
   const normalized = normalizePromptFragment(value).toLowerCase();
   if (!normalized) return false;
@@ -299,6 +307,11 @@ function createSdToolsRouter(overrides = {}) {
         ? (repairedRawPrompt || rawPrompt)
         : (semanticCompiledState?.sdBody?.prompt || promptBundle.prompt)
     );
+    const finalNegativePrompt = mergeNegativePrompts(
+      semanticCompiledState?.sdBody?.negative_prompt,
+      requestBody?.negative_prompt,
+      Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : ''
+    );
 
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
@@ -329,6 +342,7 @@ function createSdToolsRouter(overrides = {}) {
           body: JSON.stringify({
             prompt: finalPrompt,
             prompt_prebuilt: true,
+            ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
             num_inference_steps,
             guidance_scale,
             width,
@@ -445,6 +459,7 @@ function createSdToolsRouter(overrides = {}) {
 
     const outputJson = await runSdScript({
       prompt: finalPrompt,
+      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt } : {}),
       num_inference_steps,
       guidance_scale,
       width,

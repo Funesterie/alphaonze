@@ -65,6 +65,12 @@ function buildSdRequestBody(mask, compiledPayload) {
     prompt: String(payload.prompt || mask?.raw || '').trim(),
     prompt_prebuilt: true,
     ...(payload.prompt_language ? { prompt_language: String(payload.prompt_language).trim() } : {}),
+    ...(String(payload.negative_prompt || '').trim()
+      ? {
+          negative_prompt: String(payload.negative_prompt).trim(),
+          negative_prompt_prebuilt: true,
+        }
+      : {}),
     width: Number(payload.width || mask?.options?.width || 768),
     height: Number(payload.height || mask?.options?.height || 768),
     num_inference_steps: Number(payload.steps || mask?.options?.steps || 30),

@@ -69,7 +69,7 @@ test('buildMaskImageGenerateFromText enriches MASK fields for image prompts with
   assert.ok(mask.inputs.composition.some((value) => /sujet unique bien cadré/i.test(String(value))));
   assert.match(String(compiled.prompt || ''), /Demande : genere une image de one piece avec un chapeau de magicien/i);
   assert.match(String(compiled.prompt || ''), /Sujet principal : one piece/i);
-  assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs personnages|plusieurs sujets/i);
 });
 
 test('compileMaskToSD keeps a simple french prompt for solo prompts', () => {
@@ -80,7 +80,8 @@ test('compileMaskToSD keeps a simple french prompt for solo prompts', () => {
   assert.match(String(compiled.prompt || ''), /Sujet principal : vélo/i);
   assert.match(String(compiled.prompt || ''), /Couleurs : bleu/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bdo not\b|literal interpretation|exactly one/i);
-  assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'negative_prompt'), false);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(compiled.negative_prompt || ''), /watermark/i);
 });
 
 test('compileMaskToSD keeps mask wording as-is instead of preferring translated metadata', () => {

@@ -132,9 +132,9 @@ test('t_generate_png sends a stronger literal prompt bundle to the SD proxy', as
     assert.match(String(capturedBody?.prompt || ''), /chapeau de magicien/i);
     assert.match(String(capturedBody?.prompt || ''), /Créer une image fidèle à la demande/i);
     assert.doesNotMatch(String(capturedBody?.prompt || ''), /purple rabbit|magician hat|literal interpretation/i);
-    assert.equal('negative_prompt' in capturedBody, false);
+    assert.match(String(capturedBody?.negative_prompt || ''), /plusieurs sujets/i);
     assert.equal(capturedBody?.prompt_prebuilt, true);
-    assert.equal('negative_prompt_prebuilt' in capturedBody, false);
+    assert.equal(capturedBody?.negative_prompt_prebuilt, true);
   } finally {
     if (createdPath && fs.existsSync(createdPath)) {
       fs.unlinkSync(createdPath);

@@ -13,6 +13,7 @@ function compileMaskToSD(mask) {
     height: Number(compiled?.height || mask?.options?.height || 768),
     steps: Number(compiled?.num_inference_steps || mask?.options?.steps || 40),
     guidance_scale: Number(compiled?.guidance_scale || mask?.options?.guidance_scale || 8),
+    ...(String(compiled?.negative_prompt || '').trim() ? { negative_prompt: String(compiled.negative_prompt).trim() } : {}),
   };
 
   if (compiled?.seed !== undefined) {
