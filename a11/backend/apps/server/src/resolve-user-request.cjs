@@ -30,6 +30,9 @@ const {
 const {
   enrichImageMaskWithScratchpad,
 } = require('./mask/image-scratchpad.cjs');
+const {
+  smoothRequestText: defaultSmoothRequestText,
+} = require('./knowledge/request-text-smoother.cjs');
 
 const {
   detectImageIntent: defaultDetectImageIntent,
@@ -204,6 +207,7 @@ function resolveIntentDependencies(overrides = {}) {
     resolveImageEntityContext: overrides.resolveImageEntityContext || defaultResolveImageEntityContext,
     specialCompilerCallStructuredLlmJson: overrides.specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory: overrides.readPreferredImageHintMemory || defaultReadPreferredImageHintMemory,
+    smoothRequestText: overrides.smoothRequestText || defaultSmoothRequestText,
   };
 }
 
@@ -217,6 +221,8 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
       generateSd: deps.generateSd,
       specialCompilerCallStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
       readPreferredImageHintMemory: deps.readPreferredImageHintMemory,
+      lookupDefinitionContext: deps.lookupDefinitionContext,
+      duckduckgoImageSearch: deps.duckduckgoImageSearch,
     });
     return {
       ...resolution,
@@ -250,18 +256,33 @@ function createIntentResolver(overrides = {}) {
 
   async function resolveUserRequest(input = {}) {
     const traceId = buildTraceId(input.req);
-    const userText = normalizeUserText(input);
+    const originalUserText = normalizeUserText(input);
     const messages = Array.isArray(input.messages)
       ? input.messages
       : (Array.isArray(input.body?.messages) ? input.body.messages : []);
     const pipeline = 'intent-router-v2';
 
-    if (!userText) {
+    if (!originalUserText) {
       const error = new Error('missing_message');
       error.statusCode = 400;
       error.payload = { ok: false, error: 'missing_message' };
       throw error;
     }
+
+    const requestTextSmootherResult = typeof deps.smoothRequestText === 'function'
+      ? await deps.smoothRequestText(originalUserText, {
+        source: 'resolve-user-request',
+      })
+      : {
+        originalText: originalUserText,
+        text: originalUserText,
+        changed: false,
+        usedLlm: false,
+        localCorrections: [],
+        suspiciousTokens: [],
+        noiseScore: 0,
+      };
+    const userText = String(requestTextSmootherResult?.text || originalUserText).trim();
 
     const semantic = analyzeSemanticIntent(userText, {
       detectImageIntent: deps.detectImageIntent,
@@ -284,7 +305,11 @@ function createIntentResolver(overrides = {}) {
 
     const textToWazaaAdapter = deps.textToWazaa || textToWazaa;
     const heuristicWazaa = typeof textToWazaaAdapter?.sync === 'function'
-      ? textToWazaaAdapter.sync(userText, { analysis: semantic, source: 'resolve-user-request' })
+      ? textToWazaaAdapter.sync(userText, {
+        analysis: semantic,
+        source: 'resolve-user-request',
+        requestTextSmootherResult,
+      })
       : null;
     let definitionContext = null;
     if (shouldLookupDefinitionContext({
@@ -310,7 +335,11 @@ function createIntentResolver(overrides = {}) {
       }
     }
 
-    const wazaa = await textToWazaaAdapter(userText, { analysis: semantic, source: 'resolve-user-request' });
+    const wazaa = await textToWazaaAdapter(userText, {
+      analysis: semantic,
+      source: 'resolve-user-request',
+      requestTextSmootherResult,
+    });
     const effectiveWazaa = mergeDefinitionContextIntoWazaa(wazaa || heuristicWazaa, definitionContext, userText);
 
     let mask = wazaaToMask(effectiveWazaa, {
@@ -371,6 +400,11 @@ function createIntentResolver(overrides = {}) {
       compilerCompartmentCandidate: compilerCompartment?.compartment || 'standard',
       specialCompilerReason: Array.isArray(compilerCompartment?.reasons) ? compilerCompartment.reasons : [],
       shouldBypassImageRequestCache: compilerCompartment?.shouldBypassCache === true,
+      requestText: {
+        original: originalUserText,
+        smoothed: userText,
+        changed: requestTextSmootherResult?.changed === true,
+      },
     };
 
     if (kind === 'code.python.generate' && compiled?.target === 'python') {

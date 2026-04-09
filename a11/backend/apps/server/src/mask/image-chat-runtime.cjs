@@ -32,6 +32,15 @@ const {
   resolveImageEntityContext: defaultResolveImageEntityContext,
 } = require('../knowledge/image-entity-resolver.cjs');
 const {
+  directImageRequest: defaultDirectImageRequest,
+} = require('../knowledge/image-request-director.cjs');
+const {
+  lookupDefinitionContext: defaultLookupDefinitionContext,
+} = require('../knowledge/definition-context.cjs');
+const {
+  duckduckgoImageSearch: defaultDuckduckgoImageSearch,
+} = require('../../lib/image-search.cjs');
+const {
   enrichImageMaskWithScratchpad,
 } = require('./image-scratchpad.cjs');
 
@@ -274,12 +283,39 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
       };
     }
   }
+  let director = null;
+  if (typeof options.directImageRequest === 'function') {
+    try {
+      const directed = await options.directImageRequest({
+        mask: runtimeMask,
+        selection: baseSelection,
+        callStructuredLlm: options.callStructuredLlmJson,
+        lookupDefinitionContext: options.lookupDefinitionContext,
+        duckduckgoImageSearch: options.duckduckgoImageSearch,
+      });
+      if (directed && typeof directed === 'object') {
+        director = directed.director || null;
+        if (directed.mask && typeof directed.mask === 'object') {
+          runtimeMask = directed.mask;
+        }
+      }
+    } catch (error_) {
+      runtimeMask = {
+        ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+        meta: {
+          ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+          imageRequestDirectorError: String(error_?.message || error_),
+        },
+      };
+    }
+  }
   const enriched = await enrichMaskForSpecialImageCompiler(runtimeMask, {
     callStructuredLlmJson: options.callStructuredLlmJson,
     preferredHints: preferredHintMemory?.hints || {},
   });
   const enrichedMask = enriched?.mask || runtimeMask;
   const compiledState = compileMaskImageGenerate(enrichedMask);
+  compiledState.imageRequestDirector = director;
   compiledState.specialCompiler = {
     selection: enriched?.selection || resolveImageCompilerCompartment(runtimeMask, {
       callStructuredLlmJson: options.callStructuredLlmJson,
@@ -423,6 +459,9 @@ async function generateImageFromMask({
   recordSuccessfulImageHintMemory,
   callStructuredVisionJudgeJson,
   resolveImageEntityContext = defaultResolveImageEntityContext,
+  directImageRequest = defaultDirectImageRequest,
+  lookupDefinitionContext = defaultLookupDefinitionContext,
+  duckduckgoImageSearch = defaultDuckduckgoImageSearch,
   lookupImageHintWebContext = defaultLookupImageHintWebContext,
   resolveImageWebDraft = defaultResolveImageWebDraft,
   imageVerificationEnabled,
@@ -432,6 +471,9 @@ async function generateImageFromMask({
     callStructuredLlmJson: specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory,
     resolveImageEntityContext,
+    directImageRequest,
+    lookupDefinitionContext,
+    duckduckgoImageSearch,
     lookupImageHintWebContext,
     resolveImageWebDraft,
   });
@@ -718,6 +760,7 @@ function toImageChatProxyPayload({
   imageGuard,
   imageLlmJudge,
   hintMemory,
+  imageRequestDirector,
 }) {
   const imageUrl = resolveGeneratedImageUrl(sdResult);
   const filename = ensureImageFilename(
@@ -753,6 +796,7 @@ function toImageChatProxyPayload({
     a11Agent: {
       imagePath: imageUrl || null,
       imageDraft: mask?.meta?.webImageDraft || null,
+      imageRequestDirector: imageRequestDirector || mask?.meta?.imageRequestDirector || null,
       imageGuard: imageGuard || null,
       imageLlmJudge: imageLlmJudge || null,
       hintMemory: hintMemory || null,

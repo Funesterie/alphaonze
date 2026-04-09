@@ -174,3 +174,19 @@ test('resolveUserRequest attaches a temporary image scratchpad when an entity is
   assert.equal(resolution.mask.meta.imageScratchpad.canonicalSubject, 'Master Chief');
   assert.match(String(resolution.compiled.value.prompt || ''), /Ardoise utile :/i);
 });
+
+test('resolveUserRequest smooths noisy image requests before building the canonical mask', async () => {
+  const resolver = createIntentResolver();
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une imag de pikachuu bleu',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.requestText.changed, true);
+  assert.equal(resolution.requestText.original, 'genere une imag de pikachuu bleu');
+  assert.match(String(resolution.requestText.smoothed || ''), /image de pikachu bleu/i);
+  assert.equal(resolution.mask.meta.originalSourceText, 'genere une imag de pikachuu bleu');
+  assert.match(String(resolution.mask.meta.requestTextSmoother?.smoothedText || ''), /image de pikachu bleu/i);
+  assert.match(String(resolution.mask.inputs.subject?.[0] || ''), /pikachu/i);
+});

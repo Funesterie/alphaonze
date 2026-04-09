@@ -76,7 +76,7 @@ const RAW_SUBJECT_PROFILES = [
   {
     type: 'reference_character',
     label: 'Personnage de référence',
-    aliases: ['gohan', 'goku', 'vegeta', 'pikachu', 'batman', 'robin', 'donkey kong', 'one piece'],
+    aliases: ['gohan', 'goku', 'vegeta', 'naruto', 'boruto', 'sasuke', 'pikachu', 'batman', 'robin', 'donkey kong', 'one piece'],
     definitionKeywords: ['personnage', 'héros', 'hero', 'anime', 'manga', 'fiction'],
     composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
     environment: ['fond simple cohérent avec le personnage'],

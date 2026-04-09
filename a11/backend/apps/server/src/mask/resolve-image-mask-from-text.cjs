@@ -1,6 +1,9 @@
 const buildMaskImageGenerateFromText = require('./text-to-mask-image-generate.cjs');
 const textToWazaa = require('./text-to-wazaa.cjs');
 const wazaaToMask = require('./wazaa-to-mask.cjs');
+const {
+  smoothRequestText: defaultSmoothRequestText,
+} = require('../knowledge/request-text-smoother.cjs');
 
 function toNumberOr(value, fallback) {
   const numeric = Number(value);
@@ -39,6 +42,21 @@ function applyImageMaskOverrides(rawMask, maskOptions = {}) {
 async function buildCanonicalImageMaskFromText(text, opts = {}) {
   const sourceText = String(text || '').trim();
   if (!sourceText) return null;
+  const smoothRequestText = opts.smoothRequestText || defaultSmoothRequestText;
+  const requestTextSmootherResult = typeof smoothRequestText === 'function'
+    ? await smoothRequestText(sourceText, {
+      source: 'resolve-image-mask-from-text',
+    })
+    : {
+      originalText: sourceText,
+      text: sourceText,
+      changed: false,
+      usedLlm: false,
+      localCorrections: [],
+      suspiciousTokens: [],
+      noiseScore: 0,
+    };
+  const effectiveSourceText = String(requestTextSmootherResult?.text || sourceText).trim();
 
   let heuristicWazaa = null;
   let wazaa = null;
@@ -48,14 +66,20 @@ async function buildCanonicalImageMaskFromText(text, opts = {}) {
 
   try {
     heuristicWazaa = typeof textToWazaa.sync === 'function'
-      ? textToWazaa.sync(sourceText, opts)
+      ? textToWazaa.sync(effectiveSourceText, {
+        ...opts,
+        requestTextSmootherResult,
+      })
       : null;
   } catch (error_) {
     errorMessage = String(error_?.message || error_);
   }
 
   try {
-    wazaa = await textToWazaa(sourceText, opts);
+    wazaa = await textToWazaa(effectiveSourceText, {
+      ...opts,
+      requestTextSmootherResult,
+    });
   } catch (error_) {
     if (!errorMessage) errorMessage = String(error_?.message || error_);
   }
@@ -64,13 +88,16 @@ async function buildCanonicalImageMaskFromText(text, opts = {}) {
   if (effectiveWazaa) {
     rawMask = wazaaToMask(effectiveWazaa, {
       intentType: 'image.generate',
-      sourceText,
+      sourceText: effectiveSourceText,
       semanticAnalysis: opts.analysis || null,
     });
   }
 
   if ((!rawMask || rawMask.intent !== 'image.generate') && opts.allowCompatFallback !== false) {
-    rawMask = buildMaskImageGenerateFromText(sourceText, opts.maskOptions || {});
+    rawMask = buildMaskImageGenerateFromText(effectiveSourceText, {
+      ...opts,
+      requestTextSmootherResult,
+    });
     if (rawMask) {
       fallbackUsed = 'text-to-mask-image-generate';
     }
@@ -92,6 +119,7 @@ async function buildCanonicalImageMaskFromText(text, opts = {}) {
     wazaa: effectiveWazaa,
     fallbackUsed,
     source: fallbackUsed ? 'compat' : 'wazaa',
+    requestTextSmootherResult,
   };
 }
 
