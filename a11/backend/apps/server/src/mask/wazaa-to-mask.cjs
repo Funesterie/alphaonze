@@ -7,6 +7,9 @@ const {
 const {
   stripTrailingStylePhrase,
 } = require('./semantic/style-library.cjs');
+const {
+  resolveSubjectProfile,
+} = require('./semantic/subject-profile-library.cjs');
 
 function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -76,6 +79,9 @@ function getSemanticMeta(wazaa = null, opts = {}) {
       styleWords,
       scenes: semanticScenes,
       sceneWords,
+      subjectProfile: resolveSubjectProfile({
+        subject: String(opts.semanticAnalysis?.subject || '').trim(),
+      }),
       wordTags: wordItems
         .map((item) => ({
           word: String(item.word || '').trim(),
@@ -341,18 +347,34 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     ...splitCsvValues(attribute),
   ]);
   const normalizedSubject = sanitizeImageSubjectCandidate(stripPaletteSuffixFromSubject(subject, palette));
+  const subjectProfile = semanticMeta?.subjectProfile || resolveSubjectProfile({
+    subject: normalizedSubject || subject,
+    definitionSummary,
+  });
   const style = toUniqueStrings([
     styleEntity,
     ...(Array.isArray(semanticMeta?.styleWords) ? semanticMeta.styleWords : []),
+    ...(Array.isArray(subjectProfile?.styleHints) ? subjectProfile.styleHints : []),
     'haute qualité',
   ]);
-  const composition = buildPositiveCompositionHints(normalizedSubject, promptSeedText, semanticMeta);
+  const composition = toUniqueStrings([
+    ...buildPositiveCompositionHints(normalizedSubject, promptSeedText, semanticMeta),
+    ...(Array.isArray(subjectProfile?.composition) ? subjectProfile.composition : []),
+  ]);
+  const profileEnvironment = Array.isArray(subjectProfile?.environment) ? subjectProfile.environment : [];
   const environment = explicitEnvironment
     ? [explicitEnvironment]
-    : toUniqueStrings([
-        ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
-        ...buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary),
-      ]);
+    : (
+      profileEnvironment.length > 0
+        ? toUniqueStrings([
+            ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+            ...profileEnvironment,
+          ])
+        : toUniqueStrings([
+            ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+            ...buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary),
+          ])
+    );
 
   return {
     version: 'mask-1',
@@ -384,6 +406,7 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
       promptSeedText,
       promptText: promptSeedText,
+      ...(subjectProfile ? { subjectProfile } : {}),
     },
     raw: sourceText,
   };
