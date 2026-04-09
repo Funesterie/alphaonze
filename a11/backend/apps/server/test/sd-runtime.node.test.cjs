@@ -10,6 +10,7 @@ const {
   resolveSdPythonBin,
   isForeignAbsolutePath,
   shouldAllowLocalSdFallback,
+  runSdScript,
 } = require('../lib/sd-runtime.cjs');
 
 test('resolveSdPythonBin ignores a stale explicit path when a local adjacent venv exists', () => {
@@ -115,4 +116,45 @@ test('shouldAllowLocalSdFallback keeps production proxy-only by default when SD 
     A11_SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd',
     A11_SD_ALLOW_LOCAL_FALLBACK: 'true',
   }), true);
+});
+
+test('runSdScript forwards init_image and strength arguments to the SD script', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-'));
+  const scriptPath = path.join(tempRoot, 'echo-argv.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({ ok: true, output_path: output, argv: args }));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  try {
+    const result = await runSdScript({
+      prompt: 'zelda heroique',
+      init_image_url: 'https://images.example.com/zelda-ref.png',
+      strength: 0.4,
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(String(result.stdout || ''), /--init_image/);
+    assert.match(String(result.stdout || ''), /https:\/\/images\.example\.com\/zelda-ref\.png/);
+    assert.match(String(result.stdout || ''), /--strength/);
+    assert.match(String(result.stdout || ''), /0\.4/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

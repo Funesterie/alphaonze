@@ -266,6 +266,23 @@ function runSdScript(payload = {}, options = {}) {
     }
   }
 
+  const initImage = String(
+    payload.init_image
+    || payload.initImage
+    || payload.init_image_url
+    || payload.initImageUrl
+    || payload.reference_image_url
+    || payload.referenceImageUrl
+    || ''
+  ).trim();
+  if (initImage) {
+    args.push('--init_image', initImage);
+  }
+
+  if (payload.strength !== undefined && payload.strength !== null && String(payload.strength).trim() !== '') {
+    args.push('--strength', String(payload.strength).trim());
+  }
+
   if (payload.seed !== undefined && payload.seed !== null && String(payload.seed).trim() !== '') {
     args.push('--seed', String(payload.seed).trim());
   }
