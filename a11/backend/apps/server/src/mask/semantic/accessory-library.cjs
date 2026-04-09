@@ -23,6 +23,7 @@ function toUniqueStrings(values = []) {
 
 const RAW_ACCESSORY_LIBRARY = [
   { label: 'carotte', family: 'food_prop', aliases: ['carotte', 'carrot'] },
+  { label: 'cigarette', family: 'smoking_prop', aliases: ['cigarette', 'clope', 'smoke', 'cigarillo'] },
   { label: 'épée', family: 'weapon', aliases: ['epee', 'épée', 'épées', 'sword', 'swords'] },
   { label: 'bouclier', family: 'weapon', aliases: ['bouclier', 'shield'] },
   { label: 'lance', family: 'weapon', aliases: ['lance', 'spear'] },

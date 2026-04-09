@@ -85,6 +85,66 @@ test('compileMaskToImagePrompt includes positive profile instructions for single
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
+test('compileMaskToImagePrompt keeps explicit named reference character cues for bugs bunny like prompts', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de bugsbunny avec une cigarette',
+    inputs: {
+      subject: ['Bugs Bunny'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['dessin animé classique', 'illustration nette', 'haute qualité'],
+      composition: ['un seul personnage complet', 'visage unique bien lisible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        promptInstruction: 'Représenter un seul personnage de lapin de dessin animé gris et blanc, avec de longues oreilles et un visage reconnaissable.',
+      },
+      promptInstructions: [
+        'Inclure clairement une cigarette avec le sujet principal.',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Sujet principal : Bugs Bunny/i);
+  assert.match(String(compiled.prompt || ''), /dessin animé classique/i);
+  assert.match(String(compiled.prompt || ''), /lapin de dessin animé gris et blanc/i);
+  assert.match(String(compiled.prompt || ''), /cigarette avec le sujet principal/i);
+});
+
+test('compileMaskToImagePrompt keeps explicit named reference character cues for zelda like prompts', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de zelda',
+    inputs: {
+      subject: ['Princesse Zelda'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['illustration fantasy nette', 'illustration nette', 'haute qualité'],
+      composition: ['un seul personnage complet', 'visage unique bien lisible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        promptInstruction: 'Représenter clairement le personnage nommé Zelda, une seule femme héroïne fantasy complète et reconnaissable.',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Sujet principal : Princesse Zelda/i);
+  assert.match(String(compiled.prompt || ''), /illustration fantasy nette/i);
+  assert.match(String(compiled.prompt || ''), /personnage nommé Zelda/i);
+});
+
 test('compileMaskToImagePrompt includes single human instructions for warrior prompts', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'génère une image de guerriere nordique',

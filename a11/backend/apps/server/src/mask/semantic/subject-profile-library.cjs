@@ -20,8 +20,30 @@ function toUniqueStrings(values = []) {
 const RAW_SUBJECT_PROFILES = [
   {
     type: 'reference_character',
+    label: 'Personnage de référence Bugs Bunny',
+    aliases: ['bugs bunny', 'bugsbunny', 'bugs-bunny'],
+    definitionKeywords: ['bugs bunny', 'lapin de dessin animé', 'cartoon rabbit'],
+    canonicalSubject: 'Bugs Bunny',
+    composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
+    environment: ['fond simple cohérent avec le personnage'],
+    styleHints: ['dessin animé classique', 'illustration nette'],
+    promptInstruction: 'Représenter un seul personnage de lapin de dessin animé gris et blanc, avec de longues oreilles et un visage reconnaissable.',
+  },
+  {
+    type: 'reference_character',
+    label: 'Personnage de référence Zelda',
+    aliases: ['zelda', 'princesse zelda', 'princess zelda'],
+    definitionKeywords: ['zelda', 'princesse fantasy', 'heroine fantasy', 'héroïne fantasy'],
+    canonicalSubject: 'Princesse Zelda',
+    composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
+    environment: ['fond simple cohérent avec le personnage'],
+    styleHints: ['illustration fantasy nette', 'illustration nette'],
+    promptInstruction: 'Représenter clairement le personnage nommé Zelda, une seule femme héroïne fantasy complète et reconnaissable.',
+  },
+  {
+    type: 'reference_character',
     label: 'Personnage de référence',
-    aliases: ['gohan', 'goku', 'vegeta', 'pikachu', 'batman', 'robin', 'mario', 'zelda', 'donkey kong', 'one piece'],
+    aliases: ['gohan', 'goku', 'vegeta', 'pikachu', 'batman', 'robin', 'mario', 'donkey kong', 'one piece'],
     definitionKeywords: ['personnage', 'héros', 'hero', 'anime', 'manga', 'fiction'],
     composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
     environment: ['fond simple cohérent avec le personnage'],
@@ -116,6 +138,7 @@ const SUBJECT_PROFILE_LIBRARY = RAW_SUBJECT_PROFILES.map((entry) => ({
   label: String(entry.label || '').trim(),
   aliases: toUniqueStrings(entry.aliases || []),
   definitionKeywords: toUniqueStrings(entry.definitionKeywords || []),
+  canonicalSubject: String(entry.canonicalSubject || '').trim(),
   composition: toUniqueStrings(entry.composition || []),
   environment: toUniqueStrings(entry.environment || []),
   styleHints: toUniqueStrings(entry.styleHints || []),
@@ -137,14 +160,14 @@ function resolveSubjectProfile({ subject = '', definitionSummary = '', sourceTex
 
   for (const profile of SUBJECT_PROFILE_LIBRARY) {
     if (profile.aliases.some((alias) => textContainsAlias(normalizedSubject, alias))) {
-      return { ...profile };
+      return { ...profile, matchedSource: 'subject' };
     }
   }
 
   if (normalizedSourceText) {
     for (const profile of SUBJECT_PROFILE_LIBRARY) {
       if (profile.aliases.some((alias) => textContainsAlias(normalizedSourceText, alias))) {
-        return { ...profile };
+        return { ...profile, matchedSource: 'sourceText' };
       }
     }
   }
@@ -152,7 +175,7 @@ function resolveSubjectProfile({ subject = '', definitionSummary = '', sourceTex
   if (normalizedDefinition) {
     for (const profile of SUBJECT_PROFILE_LIBRARY) {
       if (profile.definitionKeywords.some((alias) => textContainsAlias(normalizedDefinition, alias))) {
-        return { ...profile };
+        return { ...profile, matchedSource: 'definitionSummary' };
       }
     }
   }
