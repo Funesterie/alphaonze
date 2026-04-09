@@ -318,6 +318,18 @@ function createSdToolsRouter(overrides = {}) {
     const width = Number(requestBody?.width || 768);
     const height = Number(requestBody?.height || 768);
     const seed = requestBody?.seed !== undefined ? String(requestBody.seed) : undefined;
+    const initImage = String(
+      requestBody?.init_image
+      || requestBody?.initImage
+      || requestBody?.init_image_url
+      || requestBody?.initImageUrl
+      || requestBody?.reference_image_url
+      || requestBody?.referenceImageUrl
+      || ''
+    ).trim();
+    const strength = requestBody?.strength !== undefined && requestBody?.strength !== null && String(requestBody?.strength).trim() !== ''
+      ? Number(requestBody.strength)
+      : undefined;
 
     const proxyUrl = resolveSdProxyUrl();
     const scriptPath = resolveSdScriptPath();
@@ -347,6 +359,8 @@ function createSdToolsRouter(overrides = {}) {
             guidance_scale,
             width,
             height,
+            ...(initImage ? { init_image_url: initImage } : {}),
+            ...(Number.isFinite(strength) ? { strength } : {}),
             ...(seed !== undefined ? { seed } : {}),
           }),
         });
@@ -438,6 +452,8 @@ function createSdToolsRouter(overrides = {}) {
           guidance_scale,
           width,
           height,
+          ...(initImage ? { init_image_url: initImage } : {}),
+          ...(Number.isFinite(strength) ? { strength } : {}),
           seed: seed !== undefined ? Number(seed) : undefined,
           mode: openAiFallback.mode || 'openai-image',
         };
@@ -464,6 +480,8 @@ function createSdToolsRouter(overrides = {}) {
       guidance_scale,
       width,
       height,
+      ...(initImage ? { init_image_url: initImage } : {}),
+      ...(Number.isFinite(strength) ? { strength } : {}),
       ...(seed !== undefined ? { seed } : {}),
       output: outputPath,
     }, { scriptPath });
@@ -498,6 +516,8 @@ function createSdToolsRouter(overrides = {}) {
           guidance_scale,
           width,
           height,
+          ...(initImage ? { init_image_url: initImage } : {}),
+          ...(Number.isFinite(strength) ? { strength } : {}),
           seed: seed !== undefined ? Number(seed) : undefined,
           mode: openAiFallback.mode || 'openai-image',
         };
@@ -542,6 +562,8 @@ function createSdToolsRouter(overrides = {}) {
         guidance_scale,
         width,
         height,
+        ...(initImage ? { init_image_url: initImage } : {}),
+        ...(Number.isFinite(strength) ? { strength } : {}),
         seed: seed !== undefined ? Number(seed) : undefined,
         mode: 'stable-diffusion-local',
         device: outputJson.device || null,
@@ -550,6 +572,8 @@ function createSdToolsRouter(overrides = {}) {
         cuda_available: outputJson.cuda_available === true,
         cuda_device_name: outputJson.cuda_device_name || null,
         xformers_enabled: outputJson.xformers_enabled === true,
+        init_image_used: outputJson.init_image_used === true,
+        init_image_source: outputJson.init_image_source || null,
       };
     } catch (error_) {
       const error = new Error(String(error_?.message || error_));

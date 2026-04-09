@@ -32,6 +32,28 @@ test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enri
   assert.equal(sdBody.negative_prompt_prebuilt, true);
 });
 
+test('buildSdRequestBody forwards web draft init image settings from the mask runtime meta', () => {
+  const sdBody = buildSdRequestBody(
+    {
+      raw: "genere une image de zelda",
+      meta: {
+        webImageDraft: {
+          initImageUrl: 'https://images.example.com/zelda-ref.png',
+          strength: 0.42,
+        },
+      },
+      options: { width: 768, height: 768, steps: 30, guidance_scale: 7.5 },
+    },
+    {
+      prompt: 'princesse zelda heroique',
+      prompt_language: 'fr',
+    }
+  );
+
+  assert.equal(sdBody.init_image_url, 'https://images.example.com/zelda-ref.png');
+  assert.equal(sdBody.strength, 0.42);
+});
+
 test('toImageChatProxyPayload synthesizes a png filename when the image URL has no extension', () => {
   const payload = toImageChatProxyPayload({
     sdResult: {
@@ -705,4 +727,100 @@ test('generateImageFromMask stores working hints when the llm image judge valida
   });
   assert.equal(result.imageLlmJudge?.decision?.accepted, true);
   assert.equal(result.hintMemory?.ok, true);
+});
+
+test('generateImageFromMask provides web hint context to the special compiler for complex prompts', async () => {
+  let llmPayloadText = '';
+  const calls = [];
+
+  await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['Bugs Bunny'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['dessin animé classique', 'haute qualité'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.42,
+          accessories: [{ key: 'cigarette', label: 'cigarette', family: 'smoking_prop' }],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: {
+          type: 'reference_character',
+          promptInstruction: 'Représenter un seul personnage de lapin de dessin animé gris et blanc, avec de longues oreilles et un visage reconnaissable.',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de bugsbunny avec une cigarette',
+    },
+    lookupImageHintWebContext: async () => ({
+      query: 'Bugs Bunny cigarette',
+      title: 'Bugs Bunny',
+      summary: 'Bugs Bunny est un lapin de dessin animé gris et blanc avec de longues oreilles.',
+      sourceDomain: 'wikipedia.org',
+      imageTitle: 'Bugs Bunny cartoon rabbit',
+      imageUrl: 'https://images.example.com/bugs-bunny-ref.png',
+      imageSourceUrl: 'https://example.com/bugs-bunny',
+      hintFacts: [
+        'Sujet recherché : Bugs Bunny',
+        'Contexte web : Bugs Bunny est un lapin de dessin animé gris et blanc avec de longues oreilles.',
+      ],
+    }),
+    specialCompilerCallStructuredLlmJson: async ({ text }) => {
+      llmPayloadText = String(text || '');
+      return {
+        composition_hints: ['oreilles longues bien visibles'],
+        environment_hints: [],
+        style_hints: ['dessin animé fidèle'],
+        prompt_instructions: ['Montrer clairement un lapin de dessin animé gris et blanc.'],
+      };
+    },
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/bugs.png',
+        filename: 'bugs.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  });
+
+  assert.match(llmPayloadText, /contexte_web/i);
+  assert.match(llmPayloadText, /lapin de dessin animé gris et blanc/i);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.init_image_url, 'https://images.example.com/bugs-bunny-ref.png');
+  assert.equal(calls[0]?.strength, 0.45);
+  assert.match(String(calls[0]?.prompt || ''), /oreilles longues bien visibles/i);
+  assert.match(String(calls[0]?.prompt || ''), /Montrer clairement un lapin de dessin animé gris et blanc/i);
 });

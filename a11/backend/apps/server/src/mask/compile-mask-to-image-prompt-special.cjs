@@ -148,6 +148,16 @@ function resolveImageCompilerCompartment(rawMask = {}, options = {}) {
 
 function buildSpecialCompilerUserPrompt(mask = {}) {
   const rememberedHints = normalizeSpecialCompilerHints(mask?.meta?.specialCompilerHintMemory || {});
+  const webHintContext = mask?.meta?.webHintContext && typeof mask.meta.webHintContext === 'object'
+    ? {
+        query: normalizeText(mask.meta.webHintContext.query || ''),
+        title: normalizeText(mask.meta.webHintContext.title || ''),
+        summary: normalizeText(mask.meta.webHintContext.summary || ''),
+        source_domain: normalizeText(mask.meta.webHintContext.sourceDomain || ''),
+        image_title: normalizeText(mask.meta.webHintContext.imageTitle || ''),
+        hint_facts: toUniqueStrings(mask.meta.webHintContext.hintFacts || []).slice(0, 4),
+      }
+    : null;
   const payload = {
     demande: normalizeText(mask?.raw || ''),
     sujet_principal: toUniqueStrings(mask?.inputs?.subject || []).slice(0, 3),
@@ -158,6 +168,7 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
     profil_sujet: normalizeText(mask?.meta?.subjectProfile?.type || ''),
     instructions_existantes: toUniqueStrings(mask?.meta?.promptInstructions || []).slice(0, 5),
     hints_memoires_utiles: rememberedHints,
+    contexte_web: webHintContext,
   };
 
   return JSON.stringify(payload, null, 2);

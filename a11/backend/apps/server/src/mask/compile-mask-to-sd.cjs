@@ -6,6 +6,15 @@ function compileMaskToSD(mask) {
   }
 
   const compiled = compileMaskToImagePrompt(mask);
+  const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
+    ? mask.meta.webImageDraft
+    : {};
+  const initImage = String(
+    webImageDraft.initImagePath
+    || webImageDraft.initImageUrl
+    || ''
+  ).trim();
+  const strength = Number(webImageDraft.strength);
   const sdPayload = {
     prompt: String(compiled?.prompt || '').trim(),
     prompt_language: String(compiled?.prompt_language || 'fr').trim() || 'fr',
@@ -14,6 +23,8 @@ function compileMaskToSD(mask) {
     steps: Number(compiled?.num_inference_steps || mask?.options?.steps || 40),
     guidance_scale: Number(compiled?.guidance_scale || mask?.options?.guidance_scale || 8),
     ...(String(compiled?.negative_prompt || '').trim() ? { negative_prompt: String(compiled.negative_prompt).trim() } : {}),
+    ...(initImage ? { init_image_url: initImage } : {}),
+    ...(Number.isFinite(strength) ? { strength } : {}),
   };
 
   if (compiled?.seed !== undefined) {

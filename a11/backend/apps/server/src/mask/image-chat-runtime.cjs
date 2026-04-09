@@ -24,6 +24,10 @@ const {
 const {
   buildCanonicalImageMaskFromText,
 } = require('./resolve-image-mask-from-text.cjs');
+const {
+  lookupImageHintWebContext: defaultLookupImageHintWebContext,
+  resolveImageWebDraft: defaultResolveImageWebDraft,
+} = require('../knowledge/image-hint-web-context.cjs');
 
 let sharpLib;
 
@@ -71,6 +75,21 @@ function buildSdRequestBody(mask, compiledPayload) {
   const payload = compiledPayload && typeof compiledPayload === 'object'
     ? compiledPayload
     : {};
+  const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
+    ? mask.meta.webImageDraft
+    : {};
+  const initImage = String(
+    payload.init_image
+    || payload.initImage
+    || payload.init_image_url
+    || payload.initImageUrl
+    || webImageDraft.initImagePath
+    || webImageDraft.initImageUrl
+    || ''
+  ).trim();
+  const strength = payload.strength !== undefined
+    ? Number(payload.strength)
+    : Number(webImageDraft.strength);
 
   return {
     prompt: String(payload.prompt || mask?.raw || '').trim(),
@@ -88,6 +107,8 @@ function buildSdRequestBody(mask, compiledPayload) {
     guidance_scale: Number(payload.guidance_scale || mask?.options?.guidance_scale || 7.5),
     ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
     ...(payload.sampler ? { sampler: payload.sampler } : {}),
+    ...(initImage ? { init_image_url: initImage } : {}),
+    ...(Number.isFinite(strength) ? { strength } : {}),
   };
 }
 
@@ -120,6 +141,27 @@ function compileMaskImageGenerate(rawMask) {
         num_inference_steps: Number(compiledPayload?.num_inference_steps || mask?.options?.steps || 30),
         guidance_scale: Number(compiledPayload?.guidance_scale || mask?.options?.guidance_scale || 7.5),
         ...(compiledPayload?.seed !== undefined ? { seed: compiledPayload.seed } : {}),
+        ...(() => {
+          const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
+            ? mask.meta.webImageDraft
+            : {};
+          const initImage = String(
+            compiledPayload?.init_image
+            || compiledPayload?.initImage
+            || compiledPayload?.init_image_url
+            || compiledPayload?.initImageUrl
+            || webImageDraft.initImagePath
+            || webImageDraft.initImageUrl
+            || ''
+          ).trim();
+          const strength = compiledPayload?.strength !== undefined
+            ? Number(compiledPayload.strength)
+            : Number(webImageDraft.strength);
+          return {
+            ...(initImage ? { init_image_url: initImage } : {}),
+            ...(Number.isFinite(strength) ? { strength } : {}),
+          };
+        })(),
       };
 
   return {
@@ -150,14 +192,73 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
       },
     };
   }
-  const enriched = await enrichMaskForSpecialImageCompiler(rawMask, {
+  const baseSelection = resolveImageCompilerCompartment(rawMask, {
     callStructuredLlmJson: options.callStructuredLlmJson,
     preferredHints: preferredHintMemory?.hints || {},
   });
-  const compiledState = compileMaskImageGenerate(enriched?.mask || rawMask);
+  let runtimeMask = rawMask;
+  let webHintContext = null;
+  if (typeof options.lookupImageHintWebContext === 'function') {
+    try {
+      webHintContext = await options.lookupImageHintWebContext({
+        mask: rawMask,
+        selection: baseSelection,
+      });
+      if (webHintContext && typeof webHintContext === 'object') {
+        runtimeMask = {
+          ...(rawMask && typeof rawMask === 'object' ? rawMask : {}),
+          meta: {
+            ...((rawMask && rawMask.meta && typeof rawMask.meta === 'object') ? rawMask.meta : {}),
+            webHintContext,
+          },
+        };
+      }
+    } catch (error_) {
+      runtimeMask = {
+        ...(rawMask && typeof rawMask === 'object' ? rawMask : {}),
+        meta: {
+          ...((rawMask && rawMask.meta && typeof rawMask.meta === 'object') ? rawMask.meta : {}),
+          webHintContextError: String(error_?.message || error_),
+        },
+      };
+    }
+  }
+  if (typeof options.resolveImageWebDraft === 'function') {
+    try {
+      const webImageDraft = await options.resolveImageWebDraft({
+        mask: runtimeMask,
+        selection: baseSelection,
+        webHintContext,
+      });
+      if (webImageDraft && typeof webImageDraft === 'object') {
+        runtimeMask = {
+          ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+          meta: {
+            ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+            webImageDraft,
+          },
+        };
+      }
+    } catch (error_) {
+      runtimeMask = {
+        ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+        meta: {
+          ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+          webImageDraftError: String(error_?.message || error_),
+        },
+      };
+    }
+  }
+  const enriched = await enrichMaskForSpecialImageCompiler(runtimeMask, {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+    preferredHints: preferredHintMemory?.hints || {},
+  });
+  const enrichedMask = enriched?.mask || runtimeMask;
+  const compiledState = compileMaskImageGenerate(enrichedMask);
   compiledState.specialCompiler = {
-      selection: enriched?.selection || resolveImageCompilerCompartment(rawMask, {
+    selection: enriched?.selection || resolveImageCompilerCompartment(runtimeMask, {
       callStructuredLlmJson: options.callStructuredLlmJson,
+      preferredHints: preferredHintMemory?.hints || {},
     }),
     appliedHints: enriched?.appliedHints || null,
     fallbackReason: String(enriched?.fallbackReason || '').trim(),
@@ -296,12 +397,16 @@ async function generateImageFromMask({
   readPreferredImageHintMemory,
   recordSuccessfulImageHintMemory,
   callStructuredVisionJudgeJson,
+  lookupImageHintWebContext = defaultLookupImageHintWebContext,
+  resolveImageWebDraft = defaultResolveImageWebDraft,
   imageVerificationEnabled,
   maxVerificationRetries,
 }) {
   const compiledState = await compileMaskImageGenerateRuntime(rawMask, {
     callStructuredLlmJson: specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory,
+    lookupImageHintWebContext,
+    resolveImageWebDraft,
   });
   const imageGenerator = typeof generateImage === 'function'
     ? generateImage
@@ -620,6 +725,7 @@ function toImageChatProxyPayload({
     ],
     a11Agent: {
       imagePath: imageUrl || null,
+      imageDraft: mask?.meta?.webImageDraft || null,
       imageGuard: imageGuard || null,
       imageLlmJudge: imageLlmJudge || null,
       hintMemory: hintMemory || null,

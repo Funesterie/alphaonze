@@ -1,6 +1,8 @@
 import argparse
+import io
 import json
 import os
+import urllib.request
 import warnings
 
 warnings.filterwarnings(
@@ -9,6 +11,7 @@ warnings.filterwarnings(
 )
 
 import torch
+from PIL import Image
 
 
 MODEL_PROFILES = {
@@ -127,19 +130,87 @@ def maybe_enable_pipeline_memory_optimizations(pipe):
     return xformers_enabled
 
 
-def load_text_to_image_pipeline(model_config, torch_dtype):
+def is_remote_image(value):
+    text = str(value or "").strip().lower()
+    return text.startswith("http://") or text.startswith("https://")
+
+
+def clamp_strength(value, fallback=0.45):
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(0.18, min(0.78, numeric))
+
+
+def crop_and_resize_cover(image, width, height):
+    source = image.convert("RGB")
+    src_width, src_height = source.size
+    target_ratio = float(width) / float(height)
+    source_ratio = float(src_width) / float(src_height)
+
+    if source_ratio > target_ratio:
+        cropped_width = max(1, int(round(src_height * target_ratio)))
+        offset_x = max(0, (src_width - cropped_width) // 2)
+        source = source.crop((offset_x, 0, offset_x + cropped_width, src_height))
+    elif source_ratio < target_ratio:
+        cropped_height = max(1, int(round(src_width / target_ratio)))
+        offset_y = max(0, (src_height - cropped_height) // 2)
+        source = source.crop((0, offset_y, src_width, offset_y + cropped_height))
+
+    return source.resize((int(width), int(height)), Image.LANCZOS)
+
+
+def load_init_image(source, width, height):
+    raw_source = str(source or "").strip()
+    if not raw_source:
+        return None, "", ""
+
+    try:
+        if is_remote_image(raw_source):
+            request = urllib.request.Request(
+                raw_source,
+                headers={
+                    "User-Agent": "A11-SD/1.0",
+                    "Accept": "image/*,*/*;q=0.8",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                content = response.read()
+            image = Image.open(io.BytesIO(content))
+            source_kind = "url"
+        else:
+            image = Image.open(raw_source)
+            source_kind = "file"
+
+        return crop_and_resize_cover(image, width, height), source_kind, ""
+    except Exception as error:
+        return None, "", str(error)
+
+
+def load_pipeline(model_config, torch_dtype, generation_mode):
     pipeline_kind = str(model_config.get("pipeline") or "auto").strip().lower()
     model_id = str(model_config.get("model_id") or "").strip()
     revision = model_config.get("revision")
 
     if pipeline_kind == "alt":
-        from diffusers import AltDiffusionPipeline
+        if generation_mode == "img2img":
+            from diffusers import AltDiffusionImg2ImgPipeline
 
-        pipeline_class = AltDiffusionPipeline
+            pipeline_class = AltDiffusionImg2ImgPipeline
+        else:
+            from diffusers import AltDiffusionPipeline
+
+            pipeline_class = AltDiffusionPipeline
     else:
-        from diffusers import AutoPipelineForText2Image
+        if generation_mode == "img2img":
+            from diffusers import AutoPipelineForImage2Image
 
-        pipeline_class = AutoPipelineForText2Image
+            pipeline_class = AutoPipelineForImage2Image
+        else:
+            from diffusers import AutoPipelineForText2Image
+
+            pipeline_class = AutoPipelineForText2Image
 
     load_kwargs = {
         "torch_dtype": torch_dtype,
@@ -152,7 +223,7 @@ def load_text_to_image_pipeline(model_config, torch_dtype):
     return pipeline_class.from_pretrained(model_id, **load_kwargs)
 
 
-def load_pipeline_with_fallback(model_config, torch_dtype):
+def load_pipeline_with_fallback(model_config, torch_dtype, generation_mode):
     candidates = [model_config]
 
     should_fallback_to_classic = (
@@ -172,7 +243,7 @@ def load_pipeline_with_fallback(model_config, torch_dtype):
     last_error = None
     for index, candidate in enumerate(candidates):
         try:
-            pipe = load_text_to_image_pipeline(candidate, torch_dtype)
+            pipe = load_pipeline(candidate, torch_dtype, generation_mode)
             fallback_used = index > 0
             return pipe, candidate, fallback_used, (str(last_error) if last_error else "")
         except Exception as error:
@@ -180,7 +251,7 @@ def load_pipeline_with_fallback(model_config, torch_dtype):
             if index + 1 >= len(candidates):
                 raise
             print(
-                f"[A11][sd] model load failed for {candidate['model_id']}: {error}. "
+                f"[A11][sd] model load failed for {candidate['model_id']} ({generation_mode}): {error}. "
                 f"Falling back to {candidates[index + 1]['model_id']}.",
                 file=os.sys.stderr,
             )
@@ -191,27 +262,42 @@ def load_pipeline_with_fallback(model_config, torch_dtype):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
-    # Legacy callers may still send this flag. We intentionally ignore it.
     parser.add_argument("--negative_prompt", type=str, default=None)
     parser.add_argument("--num_inference_steps", type=int, default=35)
     parser.add_argument("--guidance_scale", type=float, default=8.0)
     parser.add_argument("--width", type=int, default=768)
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--init_image", type=str, default=None)
+    parser.add_argument("--strength", type=float, default=None)
     parser.add_argument("--output", type=str, default="output.png")
     args = parser.parse_args()
 
     model_config = resolve_model_config()
-    model_id = model_config["model_id"]
     device = resolve_device()
     torch_dtype = resolve_dtype(device)
-    has_cuda = device == "cuda"
 
     maybe_enable_cuda_fast_paths()
+
+    init_image_source = str(args.init_image or "").strip()
+    init_image, init_image_kind, init_image_error = load_init_image(
+        init_image_source,
+        args.width,
+        args.height,
+    )
+    generation_mode = "img2img" if init_image is not None else "txt2img"
+    resolved_strength = clamp_strength(args.strength, 0.45) if generation_mode == "img2img" else None
+
+    if init_image_source and init_image is None and init_image_error:
+        print(
+            f"[A11][sd] init image unavailable, fallback to text-to-image: {init_image_error}",
+            file=os.sys.stderr,
+        )
 
     pipe, resolved_model_config, fallback_used, fallback_reason = load_pipeline_with_fallback(
         model_config,
         torch_dtype,
+        generation_mode,
     )
     if hasattr(pipe, "safety_checker"):
         pipe.safety_checker = None
@@ -229,10 +315,15 @@ def main():
         prompt=args.prompt,
         num_inference_steps=args.num_inference_steps,
         guidance_scale=args.guidance_scale,
-        width=args.width,
-        height=args.height,
         generator=generator,
     )
+    if generation_mode == "img2img":
+        generation_kwargs["image"] = init_image
+        generation_kwargs["strength"] = resolved_strength
+    else:
+        generation_kwargs["width"] = args.width
+        generation_kwargs["height"] = args.height
+
     if args.negative_prompt and str(args.negative_prompt).strip():
         generation_kwargs["negative_prompt"] = str(args.negative_prompt).strip()
 
@@ -263,6 +354,13 @@ def main():
                 "cuda_device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
                 "xformers_enabled": xformers_enabled,
                 "safety_checker_enabled": False,
+                "generation_mode": generation_mode,
+                "init_image_requested": bool(init_image_source),
+                "init_image_used": init_image is not None,
+                "init_image_source": init_image_source or None,
+                "init_image_kind": init_image_kind or None,
+                "init_image_error": init_image_error or None,
+                "strength": resolved_strength,
             }
         )
     )

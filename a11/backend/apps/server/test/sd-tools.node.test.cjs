@@ -50,6 +50,43 @@ test('generateSdInternal preserves prebuilt prompts without re-enriching them', 
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
 });
 
+test('generateSdInternal forwards init image draft settings to the SD proxy', async () => {
+  let capturedBody = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/zelda-draft.png',
+            init_image_used: true,
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const response = await generateSdInternal({
+    req: { headers: {} },
+    prompt: 'princesse zelda heroique',
+    body: {
+      prompt: 'princesse zelda heroique',
+      prompt_prebuilt: true,
+      init_image_url: 'https://images.example.com/zelda-ref.png',
+      strength: 0.41,
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(capturedBody?.init_image_url, 'https://images.example.com/zelda-ref.png');
+  assert.equal(capturedBody?.strength, 0.41);
+});
+
 test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupes negative hints', async () => {
   let capturedBody = null;
   const { generateSdInternal } = createSdToolsRouter({
