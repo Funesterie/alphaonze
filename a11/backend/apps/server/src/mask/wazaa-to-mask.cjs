@@ -285,7 +285,7 @@ function buildAccessorySemanticHints(semanticMeta = {}, sourceText = '') {
         break;
       case 'wearable':
         if (!explicitlyRequestedWithSubject) {
-          hints.promptInstructions.push(`Montrer clairement l accessoire ${label} porté par le sujet principal.`);
+          hints.promptInstructions.push(`Montrer clairement ${label} porté par le sujet principal.`);
         }
         break;
       case 'food_prop':

@@ -28,6 +28,12 @@ const {
   lookupImageHintWebContext: defaultLookupImageHintWebContext,
   resolveImageWebDraft: defaultResolveImageWebDraft,
 } = require('../knowledge/image-hint-web-context.cjs');
+const {
+  resolveImageEntityContext: defaultResolveImageEntityContext,
+} = require('../knowledge/image-entity-resolver.cjs');
+const {
+  enrichImageMaskWithScratchpad,
+} = require('./image-scratchpad.cjs');
 
 let sharpLib;
 
@@ -197,6 +203,25 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     preferredHints: preferredHintMemory?.hints || {},
   });
   let runtimeMask = rawMask;
+  if (typeof options.resolveImageEntityContext === 'function') {
+    try {
+      const imageEntityContext = await options.resolveImageEntityContext({
+        mask: runtimeMask,
+        selection: baseSelection,
+      });
+      if (imageEntityContext && typeof imageEntityContext === 'object') {
+        runtimeMask = enrichImageMaskWithScratchpad(runtimeMask, { entityContext: imageEntityContext });
+      }
+    } catch (error_) {
+      runtimeMask = {
+        ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+        meta: {
+          ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+          imageEntityContextError: String(error_?.message || error_),
+        },
+      };
+    }
+  }
   let webHintContext = null;
   if (typeof options.lookupImageHintWebContext === 'function') {
     try {
@@ -397,6 +422,7 @@ async function generateImageFromMask({
   readPreferredImageHintMemory,
   recordSuccessfulImageHintMemory,
   callStructuredVisionJudgeJson,
+  resolveImageEntityContext = defaultResolveImageEntityContext,
   lookupImageHintWebContext = defaultLookupImageHintWebContext,
   resolveImageWebDraft = defaultResolveImageWebDraft,
   imageVerificationEnabled,
@@ -405,6 +431,7 @@ async function generateImageFromMask({
   const compiledState = await compileMaskImageGenerateRuntime(rawMask, {
     callStructuredLlmJson: specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory,
+    resolveImageEntityContext,
     lookupImageHintWebContext,
     resolveImageWebDraft,
   });

@@ -238,6 +238,40 @@ test('wazaaToMask canonicalizes zelda into a more explicit named reference chara
   assert.match(String(imageMask?.meta?.subjectProfile?.promptInstruction || ''), /Zelda/i);
 });
 
+test('wazaaToMask canonicalizes mario with wearable prompts into a named reference character', () => {
+  const text = 'genere une image de mario en pull';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.subject?.includes('Mario'));
+  assert.ok(imageMask?.meta?.semantic?.accessories?.some((entry) => /pull/i.test(String(entry?.label || ''))));
+  assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /pull/i.test(String(value))));
+});
+
+test('wazaaToMask canonicalizes princess peach into a named reference character', () => {
+  const text = 'genere un dessin de la princesse peach avec une cigarette';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.subject?.includes('Princesse Peach'));
+  assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /cigarette/i.test(String(value))));
+});
+
+test('wazaaToMask canonicalizes john 117 into master chief', () => {
+  const text = "génère une image de john 117 avec l'armure bleue";
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.subject?.includes('Master Chief'));
+  assert.match(String(imageMask?.meta?.subjectProfile?.promptInstruction || ''), /Master Chief|super-soldat/i);
+});
+
 test('wazaaToMask applies a single human profile for warrior prompts', () => {
   const text = 'génère une image de guerriere nordique';
   const analysis = analyzeSemanticIntent(text, {});

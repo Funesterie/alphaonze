@@ -152,3 +152,25 @@ test('resolveUserRequest enriches doubtful image prompts with concise web defini
   assert.equal(resolution.mask.meta.definitionLookup.title, 'qilin');
   assert.match(String(resolution.compiled.value.prompt || ''), /Contexte utile : Créature mythique chinoise proche du dragon/i);
 });
+
+test('resolveUserRequest attaches a temporary image scratchpad when an entity is resolved', async () => {
+  const resolver = createIntentResolver({
+    resolveImageEntityContext: async () => ({
+      canonicalSubject: 'Master Chief',
+      description: "personnage de fiction de l'univers Halo",
+      summary: 'Super-soldat fictif de la franchise Halo.',
+      universe: 'Halo',
+      entityType: 'fictional_character',
+    }),
+  });
+
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une image de john 117 en armure bleue',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.mask.meta.imageEntityContext.canonicalSubject, 'Master Chief');
+  assert.equal(resolution.mask.meta.imageScratchpad.canonicalSubject, 'Master Chief');
+  assert.match(String(resolution.compiled.value.prompt || ''), /Ardoise utile :/i);
+});

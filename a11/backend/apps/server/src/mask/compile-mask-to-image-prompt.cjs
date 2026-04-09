@@ -62,6 +62,14 @@ function buildLiteralInstructions(mask = {}) {
   return instructions.join(' ');
 }
 
+function buildScratchpadContext(mask = {}) {
+  return normalizeList(
+    mask?.meta?.imageScratchpad?.promptFacts
+    || mask?.meta?.imageScratchpad?.facts
+    || []
+  ).slice(0, 4);
+}
+
 function splitPromptFragments(value = '') {
   return String(value || '')
     .split(',')
@@ -145,6 +153,7 @@ function compileMaskToImagePrompt(mask = {}) {
     || mask?.meta?.definitionContext?.summary
     || ''
   );
+  const scratchpadContext = buildScratchpadContext(mask);
 
   const promptSections = [
     rawPrompt ? `Demande : ${rawPrompt}` : '',
@@ -155,6 +164,7 @@ function compileMaskToImagePrompt(mask = {}) {
     joinSection('Lumière', lighting),
     joinSection('Couleurs', palette),
     definitionContext ? `Contexte utile : ${definitionContext}` : '',
+    scratchpadContext.length ? `Ardoise utile : ${scratchpadContext.join(' | ')}` : '',
     buildLiteralInstructions(mask),
   ].filter(Boolean);
 
