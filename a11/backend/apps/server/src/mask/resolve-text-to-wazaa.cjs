@@ -8,6 +8,33 @@ const {
   normalizeIntentType,
 } = require('./semantic/semantic-utils.cjs');
 
+function normalizeBaseUrl(value = '') {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function buildChatCompletionsUrl(value = '') {
+  const baseUrl = normalizeBaseUrl(value);
+  if (!baseUrl) return '';
+  if (/\/v1\/chat\/completions$/i.test(baseUrl) || /\/chat\/completions$/i.test(baseUrl)) {
+    return baseUrl;
+  }
+  return baseUrl.endsWith('/v1')
+    ? `${baseUrl}/chat/completions`
+    : `${baseUrl}/v1/chat/completions`;
+}
+
+function isRouterLikeBaseUrl(value = '') {
+  const normalized = normalizeBaseUrl(value).toLowerCase();
+  if (!normalized) return false;
+  const configuredRouter = normalizeBaseUrl(process.env.LLM_ROUTER_URL || '').toLowerCase();
+  if (configuredRouter && normalized === configuredRouter) return true;
+  return (
+    normalized.includes('cerbere.funesterie.me')
+    || normalized.includes('127.0.0.1:4545')
+    || normalized.includes('localhost:4545')
+  );
+}
+
 const WAZAA_TRANSLATE_SYSTEM_PROMPT = `Tu es un analyseur d'intention structuré pour A11.
 Tu reçois un message utilisateur en français.
 Tu dois :
@@ -53,32 +80,56 @@ Utilisateur : "montre-moi une image de goku"
 {"intent":"web.image.search","subject":"goku","colors":[],"environment":"","style":"","translatedText":"montrer une image de goku"}`;
 
 function resolveTranslationConfig() {
-  const raw = (
-    process.env.A11_TRANSLATION_BASE_URL
-    || process.env.A11_OPENAI_BASE_URL
+  const explicitTranslationBaseUrl = normalizeBaseUrl(process.env.A11_TRANSLATION_BASE_URL || '');
+  const routerBaseUrl = normalizeBaseUrl(process.env.LLM_ROUTER_URL || '');
+  const openAiBaseUrl = normalizeBaseUrl(
+    process.env.A11_OPENAI_BASE_URL
     || process.env.OPENAI_BASE_URL
-    || 'https://api.openai.com/v1'
+    || ''
   );
-  const baseUrl = raw.replace(/\/+$/, '');
-  const url = baseUrl.endsWith('/v1')
-    ? `${baseUrl}/chat/completions`
-    : `${baseUrl}/v1/chat/completions`;
+  const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || openAiBaseUrl || 'https://api.openai.com/v1';
+  const url = buildChatCompletionsUrl(baseUrl);
 
+  const allowGenericOpenAiKey = ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI || '').trim().toLowerCase()
+  );
   const apiKey = (
     process.env.A11_TRANSLATION_API_KEY
     || process.env.A11_OPENAI_API_KEY
-    || process.env.OPENAI_API_KEY
+    || (allowGenericOpenAiKey ? process.env.OPENAI_API_KEY : '')
     || ''
+  );
+
+  const usesRouterLikeBaseUrl = isRouterLikeBaseUrl(baseUrl);
+  const allowAnonymous = usesRouterLikeBaseUrl || ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.A11_TRANSLATION_ALLOW_ANON || '').trim().toLowerCase()
   );
 
   const model = (
     process.env.A11_TRANSLATION_MODEL
+    || (usesRouterLikeBaseUrl ? process.env.A11_OLLAMA_PRIMARY_MODEL : '')
     || process.env.A11_OPENAI_MODEL
     || process.env.OPENAI_MODEL
-    || 'gpt-4o-mini'
+    || (usesRouterLikeBaseUrl ? 'gemma4:e4b' : 'gpt-4o-mini')
   );
 
-  return { url, apiKey, model };
+  const nezToken = (
+    process.env.A11_TRANSLATION_NEZ_TOKEN
+    || process.env.NEZ_ALLOWED_TOKEN
+    || process.env.NEZ_TOKENS
+    || ''
+  );
+
+  return {
+    url,
+    baseUrl,
+    apiKey,
+    model,
+    allowAnonymous,
+    usesRouterLikeBaseUrl,
+    nezToken,
+    isConfigured: Boolean(url && (allowAnonymous || apiKey)),
+  };
 }
 
 function isLlmEnrichmentEnabled() {
@@ -86,12 +137,8 @@ function isLlmEnrichmentEnabled() {
   if (explicit !== undefined && explicit !== '') {
     return ['1', 'true', 'yes', 'on'].includes(String(explicit).trim().toLowerCase());
   }
-  const explicitScopedKey = (
-    process.env.A11_TRANSLATION_API_KEY
-    || process.env.A11_OPENAI_API_KEY
-    || ''
-  );
-  return Boolean(String(explicitScopedKey).trim());
+  const config = resolveTranslationConfig();
+  return config.isConfigured;
 }
 
 async function callStructuredLlmJson({
@@ -102,7 +149,7 @@ async function callStructuredLlmJson({
   timeoutMs = 8000,
 } = {}) {
   const config = resolveTranslationConfig();
-  if (!config.apiKey) return null;
+  if (!config.isConfigured) return null;
 
   const controller = typeof AbortController === 'function'
     ? new AbortController()
@@ -122,12 +169,19 @@ async function callStructuredLlmJson({
   };
 
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (config.apiKey) {
+      headers.Authorization = `Bearer ${config.apiKey}`;
+    }
+    if (config.nezToken) {
+      headers['X-NEZ-TOKEN'] = config.nezToken;
+    }
+
     const resp = await fetch(config.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
+      headers,
       body: JSON.stringify(body),
       ...(controller ? { signal: controller.signal } : {}),
     });
