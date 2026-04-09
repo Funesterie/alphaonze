@@ -293,6 +293,12 @@ function buildAccessorySemanticHints(semanticMeta = {}, sourceText = '') {
           hints.promptInstructions.push(`Montrer clairement l accessoire ${label} avec le sujet principal.`);
         }
         break;
+      case 'smoking_prop':
+        hints.composition.push('geste de l accessoire lisible');
+        if (!explicitlyRequestedWithSubject) {
+          hints.promptInstructions.push(`Montrer clairement l accessoire ${label} tenu par le sujet principal.`);
+        }
+        break;
       default:
         if (!explicitlyRequestedWithSubject) {
           hints.promptInstructions.push(`Inclure clairement l accessoire ${label} avec le sujet principal.`);
@@ -546,6 +552,10 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     sourceText: promptSeedText,
   });
   const subjectProfile = resolvedSubjectProfile || semanticMeta?.subjectProfile || null;
+  const canonicalSubject = sanitizeImageSubjectCandidate(
+    String(subjectProfile?.canonicalSubject || '').trim()
+  );
+  const finalSubject = canonicalSubject || normalizedSubject;
   const metierHints = buildMetierSemanticHints(semanticMeta, subjectProfile);
   const elementHints = buildElementSemanticHints(semanticMeta, subjectProfile);
   const accessoryHints = buildAccessorySemanticHints(semanticMeta, promptSeedText);
@@ -560,7 +570,7 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     'haute qualité',
   ]);
   const composition = toUniqueStrings([
-    ...buildPositiveCompositionHints(normalizedSubject, promptSeedText, semanticMeta),
+    ...buildPositiveCompositionHints(finalSubject, promptSeedText, semanticMeta),
     ...metierHints.composition,
     ...elementHints.composition,
     ...accessoryHints.composition,
@@ -583,7 +593,7 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
             ...metierHints.environment,
             ...elementHints.environment,
             ...accessoryHints.environment,
-            ...buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary),
+            ...buildCoherentEnvironmentHints(finalSubject, promptSeedText, definitionSummary),
           ])
     );
 
@@ -593,7 +603,7 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     task: { domain: 'image', action: 'generate' },
     compiler: { target: 'image-prompt-fr', version: '1.0' },
     inputs: {
-      subject: normalizedSubject ? [normalizedSubject] : [],
+      subject: finalSubject ? [finalSubject] : [],
       environment,
       style,
       composition,
@@ -617,6 +627,9 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
       promptSeedText,
       promptText: promptSeedText,
+      ...(canonicalSubject && canonicalSubject !== normalizedSubject
+        ? { canonicalSubject }
+        : {}),
       ...(metierHints.promptInstructions.length || elementHints.promptInstructions.length || accessoryHints.promptInstructions.length || accessoryPromptInstructions.length
         ? {
             promptInstructions: toUniqueStrings([

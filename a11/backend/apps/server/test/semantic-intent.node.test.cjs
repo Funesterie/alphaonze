@@ -214,6 +214,30 @@ test('wazaaToMask applies a reference character profile for gohan-like prompts',
   assert.ok(imageMask?.inputs?.environment?.includes('fond simple cohérent avec le personnage'));
 });
 
+test('wazaaToMask canonicalizes bugsbunny into a stronger named reference character prompt', () => {
+  const text = 'genere une image de bugsbunny avec une cigarette';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.subject?.includes('Bugs Bunny'));
+  assert.ok(imageMask?.inputs?.style?.includes('dessin animé classique'));
+  assert.match(String(imageMask?.meta?.subjectProfile?.promptInstruction || ''), /lapin de dessin animé gris et blanc/i);
+});
+
+test('wazaaToMask canonicalizes zelda into a more explicit named reference character', () => {
+  const text = 'genere une image de zelda';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.subject?.includes('Princesse Zelda'));
+  assert.ok(imageMask?.inputs?.style?.includes('illustration fantasy nette'));
+  assert.match(String(imageMask?.meta?.subjectProfile?.promptInstruction || ''), /Zelda/i);
+});
+
 test('wazaaToMask applies a single human profile for warrior prompts', () => {
   const text = 'génère une image de guerriere nordique';
   const analysis = analyzeSemanticIntent(text, {});
