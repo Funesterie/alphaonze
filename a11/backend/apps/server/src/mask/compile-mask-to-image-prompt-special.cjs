@@ -216,6 +216,13 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
           : null,
       }
     : null;
+  const imageRequestDirector = mask?.meta?.imageRequestDirector && typeof mask.meta.imageRequestDirector === 'object'
+    ? {
+        action_candidates: toUniqueStrings(mask.meta.imageRequestDirector.actionCandidates || []).slice(0, 5),
+        web_queries: toUniqueStrings(mask.meta.imageRequestDirector.webQueries || []).slice(0, 3),
+        summary_facts: toUniqueStrings(mask.meta.imageRequestDirector.summaryFacts || []).slice(0, 6),
+      }
+    : null;
   const payload = {
     demande: normalizeText(mask?.raw || ''),
     sujet_principal: toUniqueStrings(mask?.inputs?.subject || []).slice(0, 3),
@@ -228,6 +235,7 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
     hints_memoires_utiles: rememberedHints,
     contexte_entite: imageEntityContext,
     ardoise_temporaire: imageScratchpad,
+    direction_llm: imageRequestDirector,
     contexte_web: webHintContext,
   };
 

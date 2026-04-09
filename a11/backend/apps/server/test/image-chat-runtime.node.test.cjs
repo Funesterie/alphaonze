@@ -1004,3 +1004,96 @@ test('generateImageFromMask carries gentle scratchpad embellishment into the spe
   assert.match(String(calls[0]?.prompt || ''), /virage de circuit lisible|virage dynamique lisible/i);
   assert.match(String(calls[0]?.prompt || ''), /petites flammes à l échappement/i);
 });
+
+test('generateImageFromMask applies image-request director enrichments before final compilation', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['Boruto'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['illustration nette'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.48,
+          accessories: [{ label: 'cigarette', family: 'smoking_prop' }],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: {
+          type: 'reference_character',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de boruto en train de fumer',
+    },
+    directImageRequest: async ({ mask }) => ({
+      skipped: false,
+      director: {
+        action_candidates: ['cigarette visible près de la bouche', 'personnage unique complet'],
+        web_queries: ['Boruto Uzumaki character art'],
+        web_contexts: [],
+        summary_facts: ['Action utile : cigarette visible près de la bouche'],
+      },
+      mask: {
+        ...mask,
+        meta: {
+          ...(mask.meta || {}),
+          promptInstructions: [
+            ...(Array.isArray(mask?.meta?.promptInstructions) ? mask.meta.promptInstructions : []),
+            'Montrer clairement Boruto en train de fumer avec cigarette visible près de la bouche.',
+          ],
+          imageRequestDirector: {
+            actionCandidates: ['cigarette visible près de la bouche', 'personnage unique complet'],
+            webQueries: ['Boruto Uzumaki character art'],
+            summaryFacts: ['Action utile : cigarette visible près de la bouche'],
+          },
+        },
+      },
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/boruto.png',
+        filename: 'boruto.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.prompt || ''), /Boruto en train de fumer/i);
+  assert.match(String(calls[0]?.prompt || ''), /Action utile : cigarette visible près de la bouche/i);
+  assert.deepEqual(result.imageRequestDirector?.action_candidates, ['cigarette visible près de la bouche', 'personnage unique complet']);
+});

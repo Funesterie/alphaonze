@@ -63,11 +63,14 @@ function buildLiteralInstructions(mask = {}) {
 }
 
 function buildScratchpadContext(mask = {}) {
-  return normalizeList(
-    mask?.meta?.imageScratchpad?.promptFacts
-    || mask?.meta?.imageScratchpad?.facts
-    || []
-  ).slice(0, 4);
+  return normalizeList([
+    ...(mask?.meta?.imageScratchpad?.promptFacts
+      || mask?.meta?.imageScratchpad?.facts
+      || []),
+    ...(Array.isArray(mask?.meta?.imageRequestDirector?.summaryFacts)
+      ? mask.meta.imageRequestDirector.summaryFacts
+      : []),
+  ]).slice(0, 6);
 }
 
 function splitPromptFragments(value = '') {

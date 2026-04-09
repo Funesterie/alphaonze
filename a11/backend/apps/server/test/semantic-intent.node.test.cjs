@@ -261,6 +261,16 @@ test('wazaaToMask canonicalizes princess peach into a named reference character'
   assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /cigarette/i.test(String(value))));
 });
 
+test('wazaaToMask keeps boruto as a reference character for anime action prompts', () => {
+  const text = 'genere une image de boruto en train de fumer';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.subject?.some((value) => /boruto/i.test(String(value))));
+});
+
 test('wazaaToMask canonicalizes john 117 into master chief', () => {
   const text = "génère une image de john 117 avec l'armure bleue";
   const analysis = analyzeSemanticIntent(text, {});

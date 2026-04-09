@@ -17,6 +17,9 @@ const {
 const {
   applyImageKnowledgeModules,
 } = require('../knowledge/a11-knowledge-operator.cjs');
+const {
+  smoothRequestTextSync,
+} = require('../knowledge/request-text-smoother.cjs');
 const textToWazaa = require('../mask/text-to-wazaa.cjs');
 
 const PACKS = [
@@ -329,8 +332,13 @@ function createA11ImageBrain(overrides = {}) {
         mode: 'none',
       };
     }
+    const requestTextSmootherResult = smoothRequestTextSync(sourceText, {
+      source: 'image-brain',
+      enableLlm: false,
+    });
+    const effectiveSourceText = String(requestTextSmootherResult?.text || sourceText).trim();
 
-    const semanticAnalysis = analyzeSemanticIntent(sourceText, {
+    const semanticAnalysis = analyzeSemanticIntent(effectiveSourceText, {
       detectImageIntent,
       detectWebImageIntent,
     });
@@ -342,9 +350,9 @@ function createA11ImageBrain(overrides = {}) {
       || semanticAnalysis?.topIntents?.[0]?.type
       || ''
     ).trim();
-    const promptSeed = buildPromptSeed(sourceText, semanticAnalysis);
-    const explicitImageIntent = typeof detectImageIntent === 'function' && detectImageIntent(sourceText);
-    const explicitWebImageIntent = typeof detectWebImageIntent === 'function' && detectWebImageIntent(sourceText);
+    const promptSeed = buildPromptSeed(effectiveSourceText, semanticAnalysis);
+    const explicitImageIntent = typeof detectImageIntent === 'function' && detectImageIntent(effectiveSourceText);
+    const explicitWebImageIntent = typeof detectWebImageIntent === 'function' && detectWebImageIntent(effectiveSourceText);
     const trace = [
       `selected=${selectedIntentType || 'none'}`,
       `semantic_confidence=${semanticConfidence.toFixed(3)}`,
@@ -403,25 +411,31 @@ function createA11ImageBrain(overrides = {}) {
 
     const canonicalIntent = mode === 'web_search'
       ? buildWebSearchIntent({
-          text: sourceText,
+          text: effectiveSourceText,
           promptSeed,
           semanticAnalysis,
           extractWebImageSubject,
           semanticConfidence,
         })
       : buildGenerateIntent({
-          text: sourceText,
+          text: effectiveSourceText,
           promptSeed,
           semanticAnalysis,
           semanticConfidence,
         });
-    const wazaaHint = buildWazaaHint(sourceText, semanticAnalysis);
+    const wazaaHint = buildWazaaHint(effectiveSourceText, semanticAnalysis);
     canonicalIntent.meta = {
       ...(canonicalIntent.meta && typeof canonicalIntent.meta === 'object' ? canonicalIntent.meta : {}),
       pipelineRole: 'enrichment-only',
       canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
       compatMaskWrappers: ['text-to-mask-image-generate', 'image/mask-first'],
       wazaaIntentType: String(wazaaHint?.intent?.type || '').trim() || selectedIntentType || '',
+      originalSourceText: sourceText,
+      requestTextSmoother: {
+        applied: requestTextSmootherResult?.changed === true,
+        usedLlm: false,
+        smoothedText: effectiveSourceText,
+      },
     };
 
     for (const pack of PACKS) {
