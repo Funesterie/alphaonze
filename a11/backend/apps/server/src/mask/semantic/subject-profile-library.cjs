@@ -42,8 +42,41 @@ const RAW_SUBJECT_PROFILES = [
   },
   {
     type: 'reference_character',
+    label: 'Personnage de référence Mario',
+    aliases: ['mario', 'super mario'],
+    definitionKeywords: ['mario', 'plombier de jeu vidéo', 'personnage nintendo', 'nintendo character'],
+    canonicalSubject: 'Mario',
+    composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
+    environment: ['fond simple cohérent avec le personnage'],
+    styleHints: ['illustration de jeu vidéo nette', 'illustration nette'],
+    promptInstruction: 'Représenter clairement Mario, un seul personnage moustachu de jeu vidéo, reconnaissable et complet.',
+  },
+  {
+    type: 'reference_character',
+    label: 'Personnage de référence Peach',
+    aliases: ['princesse peach', 'princess peach', 'peach'],
+    definitionKeywords: ['princesse peach', 'princess peach', 'princesse de jeu vidéo', 'nintendo character'],
+    canonicalSubject: 'Princesse Peach',
+    composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
+    environment: ['fond simple cohérent avec le personnage'],
+    styleHints: ['illustration de jeu vidéo nette', 'illustration nette'],
+    promptInstruction: 'Représenter clairement la princesse Peach, une seule princesse blonde de jeu vidéo, complète et reconnaissable.',
+  },
+  {
+    type: 'reference_character',
+    label: 'Personnage de référence Master Chief',
+    aliases: ['master chief', 'john 117', 'john-117', 'spartan 117', 'spartan-117'],
+    definitionKeywords: ['master chief', 'halo', 'spartan super soldier', 'super soldat de science fiction'],
+    canonicalSubject: 'Master Chief',
+    composition: ['un seul personnage complet', 'silhouette reconnaissable', 'armure complète bien lisible', 'pose claire et lisible'],
+    environment: ['fond simple cohérent avec le personnage'],
+    styleHints: ['illustration science-fiction nette', 'illustration nette'],
+    promptInstruction: 'Représenter clairement Master Chief, un seul super-soldat de science-fiction en armure complète, reconnaissable et bien lisible.',
+  },
+  {
+    type: 'reference_character',
     label: 'Personnage de référence',
-    aliases: ['gohan', 'goku', 'vegeta', 'pikachu', 'batman', 'robin', 'mario', 'donkey kong', 'one piece'],
+    aliases: ['gohan', 'goku', 'vegeta', 'pikachu', 'batman', 'robin', 'donkey kong', 'one piece'],
     definitionKeywords: ['personnage', 'héros', 'hero', 'anime', 'manga', 'fiction'],
     composition: ['un seul personnage complet', 'visage unique bien lisible', 'pose claire et lisible', 'silhouette reconnaissable'],
     environment: ['fond simple cohérent avec le personnage'],
@@ -158,26 +191,54 @@ function resolveSubjectProfile({ subject = '', definitionSummary = '', sourceTex
   const normalizedSourceText = normalizeSubjectProfileText(sourceText);
   if (!normalizedSubject && !normalizedDefinition && !normalizedSourceText) return null;
 
-  for (const profile of SUBJECT_PROFILE_LIBRARY) {
-    if (profile.aliases.some((alias) => textContainsAlias(normalizedSubject, alias))) {
-      return { ...profile, matchedSource: 'subject' };
-    }
-  }
+  const candidates = [];
 
-  if (normalizedSourceText) {
-    for (const profile of SUBJECT_PROFILE_LIBRARY) {
-      if (profile.aliases.some((alias) => textContainsAlias(normalizedSourceText, alias))) {
-        return { ...profile, matchedSource: 'sourceText' };
+  const registerMatches = (normalizedText, matchedSource, aliases, profiles, weight) => {
+    if (!normalizedText) return;
+    for (const profile of profiles) {
+      for (const alias of aliases(profile)) {
+        const normalizedAlias = normalizeSubjectProfileText(alias);
+        if (!normalizedAlias || !textContainsAlias(normalizedText, normalizedAlias)) continue;
+        const tokenCount = normalizedAlias.split(/\s+/).filter(Boolean).length;
+        const specificityBonus = tokenCount > 1 ? 120 : 0;
+        const numericBonus = /\d/.test(normalizedAlias) ? 80 : 0;
+        const canonicalBonus = String(profile?.canonicalSubject || '').trim() ? 20 : 0;
+        candidates.push({
+          profile,
+          matchedSource,
+          normalizedAlias,
+          score: weight + normalizedAlias.length + specificityBonus + numericBonus + canonicalBonus,
+        });
       }
     }
-  }
+  };
 
-  if (normalizedDefinition) {
-    for (const profile of SUBJECT_PROFILE_LIBRARY) {
-      if (profile.definitionKeywords.some((alias) => textContainsAlias(normalizedDefinition, alias))) {
-        return { ...profile, matchedSource: 'definitionSummary' };
-      }
-    }
+  registerMatches(
+    normalizedSourceText,
+    'sourceText',
+    (profile) => profile.aliases,
+    SUBJECT_PROFILE_LIBRARY,
+    200
+  );
+  registerMatches(
+    normalizedSubject,
+    'subject',
+    (profile) => profile.aliases,
+    SUBJECT_PROFILE_LIBRARY,
+    300
+  );
+  registerMatches(
+    normalizedDefinition,
+    'definitionSummary',
+    (profile) => profile.definitionKeywords,
+    SUBJECT_PROFILE_LIBRARY,
+    100
+  );
+
+  if (candidates.length > 0) {
+    const winner = candidates
+      .sort((left, right) => right.score - left.score || right.normalizedAlias.length - left.normalizedAlias.length)[0];
+    return { ...winner.profile, matchedSource: winner.matchedSource };
   }
 
   return null;

@@ -24,6 +24,12 @@ const {
   mergeDefinitionContextIntoWazaa,
   shouldLookupDefinitionContext,
 } = require('./knowledge/definition-context.cjs');
+const {
+  resolveImageEntityContext: defaultResolveImageEntityContext,
+} = require('./knowledge/image-entity-resolver.cjs');
+const {
+  enrichImageMaskWithScratchpad,
+} = require('./mask/image-scratchpad.cjs');
 
 const {
   detectImageIntent: defaultDetectImageIntent,
@@ -195,6 +201,7 @@ function resolveIntentDependencies(overrides = {}) {
     generateSd: overrides.generateSd,
     textToWazaa: overrides.textToWazaa || textToWazaa,
     lookupDefinitionContext: overrides.lookupDefinitionContext || defaultLookupDefinitionContext,
+    resolveImageEntityContext: overrides.resolveImageEntityContext || defaultResolveImageEntityContext,
     specialCompilerCallStructuredLlmJson: overrides.specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory: overrides.readPreferredImageHintMemory || defaultReadPreferredImageHintMemory,
   };
@@ -306,7 +313,7 @@ function createIntentResolver(overrides = {}) {
     const wazaa = await textToWazaaAdapter(userText, { analysis: semantic, source: 'resolve-user-request' });
     const effectiveWazaa = mergeDefinitionContextIntoWazaa(wazaa || heuristicWazaa, definitionContext, userText);
 
-    const mask = wazaaToMask(effectiveWazaa, {
+    let mask = wazaaToMask(effectiveWazaa, {
       sourceText: userText,
       intentType: clarification?.selectedIntentType || semantic?.topIntents?.[0]?.type || 'chat.reply',
       semanticAnalysis: semantic,
@@ -321,6 +328,17 @@ function createIntentResolver(overrides = {}) {
         message: 'Impossible de produire un MASK canonique pour cette requete.',
       };
       throw error;
+    }
+
+    if (String(mask?.intent || '').trim() === 'image.generate' && typeof deps.resolveImageEntityContext === 'function') {
+      try {
+        const imageEntityContext = await deps.resolveImageEntityContext({ mask });
+        if (imageEntityContext && typeof imageEntityContext === 'object') {
+          mask = enrichImageMaskWithScratchpad(mask, { entityContext: imageEntityContext });
+        }
+      } catch (error_) {
+        console.warn(`[A11][image-entity] traceId=${traceId} resolve failed: ${String(error_?.message || error_)}`);
+      }
     }
 
     const { compiled } = validateAndCompileMask(mask);

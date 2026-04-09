@@ -68,6 +68,10 @@ function hasNonTrivialSemanticFamilies(mask = {}) {
   );
 }
 
+function hasResolvedEntityContext(mask = {}) {
+  return Boolean(mask?.meta?.imageEntityContext && typeof mask.meta.imageEntityContext === 'object');
+}
+
 function hasSceneRelation(rawText = '') {
   return /\b(avec|dans|sur|tenant|portant|sortant|sorti|sortie)\b/i.test(String(rawText || ''));
 }
@@ -116,6 +120,11 @@ function resolveImageCompilerCompartment(rawMask = {}, options = {}) {
     reasons.push('existing_prompt_instructions');
   }
 
+  if (hasResolvedEntityContext(mask)) {
+    score += 1;
+    reasons.push('resolved_entity_context');
+  }
+
   if (hasNonTrivialSemanticFamilies(mask)) {
     score += 1;
     reasons.push('semantic_family_detected');
@@ -158,6 +167,29 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
         hint_facts: toUniqueStrings(mask.meta.webHintContext.hintFacts || []).slice(0, 4),
       }
     : null;
+  const imageEntityContext = mask?.meta?.imageEntityContext && typeof mask.meta.imageEntityContext === 'object'
+    ? {
+        canonical_subject: normalizeText(mask.meta.imageEntityContext.canonicalSubject || ''),
+        label: normalizeText(mask.meta.imageEntityContext.label || ''),
+        description: normalizeText(mask.meta.imageEntityContext.description || ''),
+        summary: normalizeText(mask.meta.imageEntityContext.summary || ''),
+        universe: normalizeText(mask.meta.imageEntityContext.universe || ''),
+        entity_type: normalizeText(mask.meta.imageEntityContext.entityType || ''),
+        wikipedia_title: normalizeText(mask.meta.imageEntityContext.wikipediaTitle || ''),
+      }
+    : null;
+  const imageScratchpad = mask?.meta?.imageScratchpad && typeof mask.meta.imageScratchpad === 'object'
+    ? {
+        canonical_subject: normalizeText(mask.meta.imageScratchpad.canonicalSubject || ''),
+        universe: normalizeText(mask.meta.imageScratchpad.universe || ''),
+        subject_profile_type: normalizeText(mask.meta.imageScratchpad.subjectProfileType || ''),
+        accessories: toUniqueStrings(mask.meta.imageScratchpad.accessories || []).slice(0, 4),
+        elements: toUniqueStrings(mask.meta.imageScratchpad.elements || []).slice(0, 4),
+        metiers: toUniqueStrings(mask.meta.imageScratchpad.metiers || []).slice(0, 4),
+        scenes: toUniqueStrings(mask.meta.imageScratchpad.scenes || []).slice(0, 4),
+        facts: toUniqueStrings(mask.meta.imageScratchpad.promptFacts || mask.meta.imageScratchpad.facts || []).slice(0, 5),
+      }
+    : null;
   const payload = {
     demande: normalizeText(mask?.raw || ''),
     sujet_principal: toUniqueStrings(mask?.inputs?.subject || []).slice(0, 3),
@@ -168,6 +200,8 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
     profil_sujet: normalizeText(mask?.meta?.subjectProfile?.type || ''),
     instructions_existantes: toUniqueStrings(mask?.meta?.promptInstructions || []).slice(0, 5),
     hints_memoires_utiles: rememberedHints,
+    contexte_entite: imageEntityContext,
+    ardoise_temporaire: imageScratchpad,
     contexte_web: webHintContext,
   };
 

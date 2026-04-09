@@ -824,3 +824,91 @@ test('generateImageFromMask provides web hint context to the special compiler fo
   assert.match(String(calls[0]?.prompt || ''), /oreilles longues bien visibles/i);
   assert.match(String(calls[0]?.prompt || ''), /Montrer clairement un lapin de dessin animé gris et blanc/i);
 });
+
+test('generateImageFromMask injects the temporary entity scratchpad before special compilation', async () => {
+  let llmPayloadText = '';
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['john 117'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['haute qualité'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.41,
+          accessories: [{ key: 'armure', label: 'armure', family: 'wearable' }],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: {
+          type: 'reference_character',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de john 117 en armure bleue',
+    },
+    resolveImageEntityContext: async () => ({
+      canonicalSubject: 'Master Chief',
+      description: "personnage de fiction de l'univers Halo",
+      summary: 'Super-soldat fictif de la franchise Halo.',
+      universe: 'Halo',
+      entityType: 'fictional_character',
+    }),
+    lookupImageHintWebContext: async () => null,
+    specialCompilerCallStructuredLlmJson: async ({ text }) => {
+      llmPayloadText = String(text || '');
+      return {
+        composition_hints: ['armure complète bien lisible'],
+        environment_hints: [],
+        style_hints: ['illustration science-fiction nette'],
+        prompt_instructions: [],
+      };
+    },
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/master-chief.png',
+        filename: 'master-chief.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  });
+
+  assert.equal(result.mask?.meta?.imageScratchpad?.canonicalSubject, 'Master Chief');
+  assert.match(llmPayloadText, /ardoise_temporaire/i);
+  assert.match(llmPayloadText, /Master Chief/i);
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.prompt || ''), /Master Chief/i);
+});

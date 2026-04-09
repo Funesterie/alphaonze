@@ -51,14 +51,84 @@ function extractSourceDomain(url = '') {
   }
 }
 
+function normalizeArrayLabels(values = []) {
+  return toUniqueStrings(
+    (Array.isArray(values) ? values : [])
+      .map((entry) => entry?.label || entry?.key || entry)
+  );
+}
+
+function resolveEntityUniverse(mask = {}) {
+  return normalizeText(
+    mask?.meta?.imageEntityContext?.universe
+    || mask?.meta?.imageScratchpad?.universe
+    || ''
+  );
+}
+
+function looksLikePhotoRequest(mask = {}) {
+  const raw = normalizeLookup(mask?.raw || '');
+  const styleWords = normalizeArrayLabels(mask?.meta?.semantic?.styles || [])
+    .map((entry) => normalizeLookup(entry))
+    .filter(Boolean);
+  return (
+    /\b(photo|photorealiste|photorealistic|realiste|realistic|portrait photo)\b/.test(raw)
+    || styleWords.some((entry) => /\b(photo|photorealiste|photorealistic|realiste|realistic)\b/.test(entry))
+  );
+}
+
+function buildReferenceCharacterQuery(mask = {}, subject = '') {
+  const canonicalSubject = normalizeText(subject);
+  const normalizedSubject = normalizeLookup(canonicalSubject);
+  const entityUniverse = resolveEntityUniverse(mask);
+  if (!canonicalSubject) return '';
+  const artBias = looksLikePhotoRequest(mask) ? 'photo reference' : 'character art';
+
+  if (entityUniverse && !new RegExp(`\\b${normalizeLookup(entityUniverse).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(normalizedSubject)) {
+    return `${canonicalSubject} ${entityUniverse} ${artBias}`.trim();
+  }
+
+  if (/\bmaster chief\b|\bjohn 117\b|\bspartan 117\b/.test(normalizedSubject)) {
+    return `${canonicalSubject} Halo ${artBias}`.trim();
+  }
+
+  if (/\bmario\b/.test(normalizedSubject)) {
+    return `${canonicalSubject} Nintendo ${artBias}`.trim();
+  }
+
+  if (/\bprincesse peach\b|\bprincess peach\b|\bpeach\b/.test(normalizedSubject)) {
+    return `${canonicalSubject} Nintendo ${artBias}`.trim();
+  }
+
+  if (/\bzelda\b/.test(normalizedSubject)) {
+    return `${canonicalSubject} Nintendo ${artBias}`.trim();
+  }
+
+  return `${canonicalSubject} ${artBias}`.trim();
+}
+
 function buildImageHintLookupQuery(mask = {}) {
-  const subject = normalizeText(mask?.meta?.canonicalSubject || mask?.inputs?.subject?.[0] || '');
-  const accessories = toUniqueStrings((mask?.meta?.semantic?.accessories || []).map((entry) => entry?.label || entry?.key || entry));
-  const elements = toUniqueStrings((mask?.meta?.semantic?.elements || []).map((entry) => entry?.label || entry?.key || entry));
-  const metiers = toUniqueStrings((mask?.meta?.semantic?.metiers || []).map((entry) => entry?.label || entry?.key || entry));
+  const subject = normalizeText(
+    mask?.meta?.imageEntityContext?.canonicalSubject
+    || mask?.meta?.imageScratchpad?.canonicalSubject
+    || mask?.meta?.subjectProfile?.canonicalSubject
+    || mask?.meta?.canonicalSubject
+    || mask?.inputs?.subject?.[0]
+    || ''
+  );
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const accessories = normalizeArrayLabels(mask?.meta?.semantic?.accessories || []);
+  const elements = normalizeArrayLabels(mask?.meta?.semantic?.elements || []);
+  const metiers = normalizeArrayLabels(mask?.meta?.semantic?.metiers || []);
+  const entityUniverse = resolveEntityUniverse(mask);
+
+  if (subjectProfileType === 'reference_character') {
+    return buildReferenceCharacterQuery(mask, subject);
+  }
 
   const pieces = [
     subject,
+    entityUniverse,
     accessories[0] || '',
     elements[0] || '',
     metiers[0] || '',
@@ -154,6 +224,25 @@ function normalizeStrength(value, fallback = 0.45) {
   return Math.max(0.18, Math.min(0.78, numeric));
 }
 
+function shouldRejectCharacterDraftImage(mask = {}, webHintContext = null) {
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  if (!['reference_character', 'pokemon_creature'].includes(subjectProfileType)) {
+    return false;
+  }
+
+  const combinedText = normalizeLookup([
+    webHintContext?.title,
+    webHintContext?.imageTitle,
+    webHintContext?.sourceUrl,
+    webHintContext?.imageSourceUrl,
+    webHintContext?.sourceDomain,
+  ].filter(Boolean).join(' '));
+
+  if (!combinedText) return false;
+
+  return /\b(cosplay|costume|peluche|plush|figurine|toy|doll|poupee|poupee|girl|woman|boy|man|person|people|costumed)\b/.test(combinedText);
+}
+
 function shouldUseImageWebDraft({
   mask = {},
   selection = null,
@@ -194,6 +283,7 @@ function resolveImageWebDraft({
 
   const initImageUrl = normalizeText(webHintContext?.imageUrl || '');
   if (!initImageUrl) return null;
+  if (shouldRejectCharacterDraftImage(mask, webHintContext)) return null;
 
   const configuredStrength = strength !== undefined
     ? strength
