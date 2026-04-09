@@ -96,6 +96,22 @@ test('analyzeSemanticIntent activates auth and network knowledge for token and c
   assert.notEqual(result?.decision?.selectedIntentType, 'image.generate');
 });
 
+test("analyzeSemanticIntent keeps image troubleshooting questions on chat.reply instead of image generation", () => {
+  const result = analyzeSemanticIntent("explique le probleme avec le generateur d'image", {});
+
+  assert.equal(result?.decision?.selectedIntentType, 'chat.reply');
+  assert.equal(result?.topIntents?.[0]?.type, 'chat.reply');
+  assert.equal(result?.summary?.metaImageDiscussion, true);
+});
+
+test("analyzeSemanticIntent keeps non-conforming drawing questions on chat.reply instead of image generation", () => {
+  const result = analyzeSemanticIntent('pourquoi le dessin de truc pas conforme ?', {});
+
+  assert.equal(result?.decision?.selectedIntentType, 'chat.reply');
+  assert.equal(result?.topIntents?.[0]?.type, 'chat.reply');
+  assert.equal(result?.summary?.metaImageDiscussion, true);
+});
+
 test("analyzeSemanticIntent does not route mail requests with referenced images to image generation", () => {
   const result = analyzeSemanticIntent("envoi un mail à cellaurojeffrey@gmail.com avec l'image de dragon", {});
 

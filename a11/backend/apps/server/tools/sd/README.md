@@ -20,7 +20,7 @@ Those heavy assets stay in the separate local `llm` workspace on Windows.
 ## Recommended usage
 
 - Local Windows support runtime:
-  keep the Python venv in `llm/scripts/venv`
+  prefer the backend-owned Python venv in `apps/server/tools/sd/venv`
 - Public Railway backend:
   use proxy-only mode with `A11_SD_PROXY_URL=https://sd.funesterie.me/api/tools/generate_sd`
   instead of shipping heavy SD dependencies in Railway
@@ -38,7 +38,15 @@ Those heavy assets stay in the separate local `llm` workspace on Windows.
 
 - `sd.funesterie.me` points to the local backend on port `3000` through Cloudflare Tunnel.
 - The SD generation route is served by the backend itself on `POST /api/tools/generate_sd`.
-- The vendored helper in `apps/server/tools/sd` stays lightweight; heavy Python assets stay in the separate local `llm` workspace.
+- The helper in `apps/server/tools/sd` uses the backend-owned venv and can select different SD model profiles.
+
+## Model profiles
+
+- Default local profile: `SD_MODEL_PROFILE=multilingual`
+  uses `BAAI/AltDiffusion-m18`, which is designed for multilingual prompts including French.
+- Legacy profile: `SD_MODEL_PROFILE=classic`
+  uses `runwayml/stable-diffusion-v1-5`.
+- You can still override everything with `SD_MODEL_ID=<hugging-face-repo-id>`.
 
 ## Optional Python packages
 

@@ -65,6 +65,28 @@ test('resolveUserRequest emits canonical code.python.generate masks that compile
   assert.match(String(resolution.code || resolution.compiled.value || ''), /def main|Path/);
 });
 
+test("resolveUserRequest keeps image troubleshooting requests in text mode", async () => {
+  const resolver = createIntentResolver();
+  const resolution = await resolver.resolveUserRequest({
+    userText: "explique le probleme avec le generateur d'image",
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'chat.reply');
+  assert.equal(resolution.mask.intent, 'chat.reply');
+});
+
+test("resolveUserRequest keeps non-conforming drawing questions in text mode", async () => {
+  const resolver = createIntentResolver();
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'pourquoi le dessin de truc pas conforme ?',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'chat.reply');
+  assert.equal(resolution.mask.intent, 'chat.reply');
+});
+
 test('resolveUserRequest enriches doubtful image prompts with concise web definition context', async () => {
   const fakeTextToWazaa = async (text) => ({
     wazaa: '1.1',
