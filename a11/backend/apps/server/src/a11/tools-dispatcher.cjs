@@ -13,6 +13,11 @@ const {
   resolveSdScriptPath,
   runSdScript,
 } = require('../../lib/sd-runtime.cjs');
+const {
+  callJanusVisionText,
+  resolveJanusVisionConfig,
+  resolveVisionProvider,
+} = require('../../lib/janus-vision-runtime.cjs');
 const { buildSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
 const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
 const {
@@ -675,6 +680,44 @@ async function describeImageWithRemoteVision(source, args = {}) {
   }
 
   return extractVisionTextContent(parsed?.choices?.[0]?.message?.content || parsed?.output_text || '');
+}
+
+async function describeImageWithConfiguredVision(source, args = {}) {
+  const provider = resolveVisionProvider({ provider: args.provider || args.visionProvider });
+  const task = String(args.task || 'describe').trim().toLowerCase();
+  const janusPrompt = task === 'ocr'
+    ? "Lis tout le texte visible dans cette image. Si aucun texte n'est visible, dis-le clairement en francais."
+    : "Decris tres brievement ce qui est visible dans cette image, en francais, sans inventer. Si le contenu est incertain, dis-le.";
+
+  if (provider === 'janus') {
+    try {
+      const janus = resolveJanusVisionConfig({
+        modelRef: args.janusModelRef,
+        device: args.janusDevice,
+        torchDtype: args.janusTorchDtype,
+      });
+      const result = await callJanusVisionText({
+        imageBuffer: source?.buffer,
+        contentType: source?.contentType,
+        prompt: janusPrompt,
+        maxNewTokens: Math.min(janus.maxNewTokens, 220),
+        timeoutMs: janus.timeoutMs,
+        modelRef: janus.modelRef,
+        device: janus.device,
+        torchDtype: janus.torchDtype,
+      });
+      const text = String(result?.text || result || '').trim();
+      if (text) return text;
+    } catch (error_) {
+      if (provider !== 'janus') return '';
+    }
+  }
+
+  try {
+    return String(await describeImageWithRemoteVision(source, args) || '').trim();
+  } catch {
+    return '';
+  }
 }
 
 function buildVisionSummary(source, analysis, remoteDescription, task = '') {
@@ -2541,11 +2584,7 @@ async function t_vision_analyze(args = {}) {
   });
 
   let remoteDescription = '';
-  try {
-    remoteDescription = String(await describeImageWithRemoteVision(source, args) || '').trim();
-  } catch (error_) {
-    remoteDescription = '';
-  }
+  remoteDescription = String(await describeImageWithConfiguredVision(source, args) || '').trim();
 
   return {
     ok: true,
