@@ -18,6 +18,12 @@ const {
 const {
   detectElementMatchesFromWordItems,
 } = require('./element-library.cjs');
+const {
+  detectMetierMatchesFromWordItems,
+} = require('./metier-library.cjs');
+const {
+  detectAccessoryMatchesFromWordItems,
+} = require('./accessory-library.cjs');
 
 function toRgba(r, g, b, a) {
   return {
@@ -183,6 +189,46 @@ function buildSemanticLevels(text) {
         'element',
         `element:${elementMatch.key}`,
         elementMatch.family ? `element-family:${elementMatch.family}` : '',
+      ].filter(Boolean))];
+    }
+  }
+
+  for (const metierMatch of detectMetierMatchesFromWordItems(wordItems)) {
+    for (let index = metierMatch.startIndex; index <= metierMatch.endIndex; index += 1) {
+      const current = wordItems[index];
+      if (!current) continue;
+      current.metier = {
+        key: metierMatch.key,
+        canonical: metierMatch.canonical,
+        label: metierMatch.label,
+        family: metierMatch.family,
+        profileType: metierMatch.profileType,
+      };
+      current.tags = [...new Set([
+        ...(Array.isArray(current.tags) ? current.tags : []),
+        'metier',
+        `metier:${metierMatch.key}`,
+        metierMatch.family ? `metier-family:${metierMatch.family}` : '',
+        metierMatch.profileType ? `profile:${metierMatch.profileType}` : '',
+      ].filter(Boolean))];
+    }
+  }
+
+  for (const accessoryMatch of detectAccessoryMatchesFromWordItems(wordItems)) {
+    for (let index = accessoryMatch.startIndex; index <= accessoryMatch.endIndex; index += 1) {
+      const current = wordItems[index];
+      if (!current) continue;
+      current.accessory = {
+        key: accessoryMatch.key,
+        canonical: accessoryMatch.canonical,
+        label: accessoryMatch.label,
+        family: accessoryMatch.family,
+      };
+      current.tags = [...new Set([
+        ...(Array.isArray(current.tags) ? current.tags : []),
+        'accessory',
+        `accessory:${accessoryMatch.key}`,
+        accessoryMatch.family ? `accessory-family:${accessoryMatch.family}` : '',
       ].filter(Boolean))];
     }
   }

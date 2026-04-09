@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildSdRequestBody,
   generateImageFromMask,
+  resolveImageCompilerCompartment,
   toImageChatProxyPayload,
 } = require('../src/mask/image-chat-runtime.cjs');
 
@@ -339,4 +340,369 @@ test('generateImageFromMask rejects invalid solid-black generations before retur
       return true;
     }
   );
+});
+
+test('resolveImageCompilerCompartment keeps simple object prompts on the standard compiler', () => {
+  const decision = resolveImageCompilerCompartment({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    inputs: {
+      subject: ['pomme'],
+      environment: ['fond neutre simple'],
+      style: ['haute qualité'],
+      composition: ['objet unique isolé'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      semantic: {
+        confidence: 0.91,
+        scenes: [],
+        elements: [],
+        accessories: [],
+        metiers: [],
+      },
+      subjectProfile: { type: 'simple_food_object' },
+    },
+    raw: 'genere une image de pomme',
+  });
+
+  assert.equal(decision.compartment, 'standard');
+  assert.equal(decision.shouldBypassCache, false);
+});
+
+test('generateImageFromMask applies the special compiler for complex prompts with positive llm hints', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['lapin'],
+        environment: ['décor naturel simple'],
+        style: ['haute qualité'],
+        composition: ['un seul animal complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.52,
+          accessories: [{ key: 'carotte', label: 'carotte', family: 'food_prop' }],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        promptInstructions: ['Montrer clairement une carotte dans la bouche du sujet principal.'],
+        subjectProfile: { type: 'single_animal' },
+      },
+      ambiguities: [],
+      raw: 'genere une image d un lapin avec une carotte dans la bouche',
+    },
+    specialCompilerCallStructuredLlmJson: async () => ({
+      composition_hints: ['accessoire bien visible'],
+      environment_hints: ['décor simple et lisible'],
+      style_hints: ['illustration nette'],
+      prompt_instructions: ['Montrer clairement la carotte attachée au sujet principal.'],
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: '',
+        filename: 'rabbit.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
+  assert.match(String(calls[0]?.prompt || ''), /Montrer clairement la carotte attachée au sujet principal/i);
+  assert.equal(result.mask?.meta?.compilerCompartment, 'special');
+  assert.equal(result.specialCompiler?.selection?.compartment, 'special');
+  assert.equal(result.mask?.meta?.specialCompilerAppliedHintsCount, 4);
+});
+
+test('generateImageFromMask falls back to the standard compiler when special hints are empty', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['guerriere'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['haute qualité'],
+        composition: ['une seule personne complète'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.4,
+          accessories: [],
+          elements: [],
+          metiers: [{ key: 'guerrier', label: 'guerrier', family: 'human_role' }],
+          scenes: [],
+        },
+        subjectProfile: { type: 'single_human_figure' },
+      },
+      ambiguities: [],
+      raw: 'génère une image de guerriere nordique',
+    },
+    specialCompilerCallStructuredLlmJson: async () => ({
+      composition_hints: [],
+      environment_hints: [],
+      style_hints: [],
+      prompt_instructions: [],
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: '',
+        filename: 'warrior.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(result.mask?.meta?.compilerCompartment, 'standard');
+  assert.equal(result.specialCompiler?.fallbackReason, 'empty_or_invalid_hints');
+  assert.doesNotMatch(String(calls[0]?.prompt || ''), /special/i);
+});
+
+test('generateImageFromMask reuses remembered hint memory for complex prompts', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['lapin'],
+        environment: ['décor naturel simple'],
+        style: ['haute qualité'],
+        composition: ['un seul animal complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.49,
+          accessories: [{ key: 'carotte', label: 'carotte', family: 'food_prop' }],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: { type: 'single_animal' },
+      },
+      ambiguities: [],
+      raw: 'genere une image d un lapin avec une carotte dans la bouche',
+    },
+    readPreferredImageHintMemory: async () => ({
+      available: true,
+      hints: {
+        composition_hints: ['accessoire bien visible'],
+        environment_hints: ['décor simple et lisible'],
+        style_hints: ['illustration nette'],
+        prompt_instructions: ['Montrer clairement une carotte dans la bouche du sujet principal.'],
+      },
+    }),
+    specialCompilerCallStructuredLlmJson: async () => ({
+      composition_hints: [],
+      environment_hints: [],
+      style_hints: [],
+      prompt_instructions: [],
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/rabbit-memory.png',
+        filename: 'rabbit-memory.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
+  assert.match(String(calls[0]?.prompt || ''), /Montrer clairement une carotte dans la bouche du sujet principal/i);
+  assert.equal(result.mask?.meta?.compilerCompartment, 'special');
+  assert.equal(result.mask?.meta?.specialCompilerMemoryHintsAppliedCount, 4);
+  assert.equal(result.specialCompiler?.fallbackReason, 'empty_or_invalid_hints');
+});
+
+test('generateImageFromMask stores working hints when the llm image judge validates the result', async () => {
+  let storedPayload = null;
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['guerriere'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['haute qualité'],
+        composition: ['une seule personne complète'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.45,
+          accessories: [{ key: 'epee', label: 'épée', family: 'weapon' }],
+          elements: [],
+          metiers: [{ key: 'guerrier', label: 'guerrier', family: 'human_role' }],
+          scenes: [],
+        },
+        subjectProfile: { type: 'single_human_figure' },
+        promptInstructions: ['Montrer clairement l épée tenue par le personnage principal.'],
+      },
+      ambiguities: [],
+      raw: 'génère une image de guerriere nordique avec une épée',
+    },
+    specialCompilerCallStructuredLlmJson: async () => ({
+      composition_hints: ['silhouette héroïque lisible'],
+      environment_hints: ['décor sobre et lisible'],
+      style_hints: [],
+      prompt_instructions: [],
+    }),
+    generateSd: async () => ({
+      ok: true,
+      image_url: 'https://files.example.com/warrior.png',
+      filename: 'warrior.png',
+    }),
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: true,
+      available: true,
+      decision: {
+        accepted: true,
+        subject_ok: true,
+        composition_ok: true,
+        reason: 'ok',
+        confidence: 0.84,
+      },
+      workingHints: {
+        composition_hints: ['une seule personne complète'],
+        environment_hints: ['fond simple cohérent avec le personnage'],
+        style_hints: [],
+        prompt_instructions: ['Montrer clairement l épée tenue par le personnage principal.'],
+      },
+      failingHints: {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      },
+      observation: 'Le personnage principal est unique et lisible.',
+    }),
+    recordSuccessfulImageHintMemory: async (payload) => {
+      storedPayload = payload;
+      return {
+        ok: true,
+        addedCount: 3,
+      };
+    },
+  });
+
+  assert.ok(storedPayload);
+  assert.deepEqual(storedPayload.workingHints, {
+    composition_hints: ['une seule personne complète'],
+    environment_hints: ['fond simple cohérent avec le personnage'],
+    style_hints: [],
+    prompt_instructions: ['Montrer clairement l épée tenue par le personnage principal.'],
+  });
+  assert.equal(result.imageLlmJudge?.decision?.accepted, true);
+  assert.equal(result.hintMemory?.ok, true);
 });

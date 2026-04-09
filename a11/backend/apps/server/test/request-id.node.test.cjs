@@ -107,3 +107,105 @@ test('admin run returns requestId and upstream diagnostics on remote failures', 
     }
   );
 });
+
+test('protected chat proxy reuses short cache for standard image requests', async () => {
+  const previousGuard = process.env.A11_IMAGE_CARDINALITY_GUARD;
+  process.env.A11_IMAGE_CARDINALITY_GUARD = 'false';
+  let callCount = 0;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouter({
+          verifyJWT(_req, _res, next) {
+            next();
+          },
+          proxyChatToOpenAI() {
+            throw new Error('should_not_hit_openai_proxy');
+          },
+          generateSd: async () => {
+            callCount += 1;
+            return {
+              ok: true,
+              image_url: '',
+              filename: 'apple.png',
+            };
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const body = {
+          messages: [{ role: 'user', content: 'genere une image de pomme' }],
+        };
+
+        const first = await postJson(baseUrl, '/api/llm/chat', body, {
+          'X-Request-Id': 'req-proxy-cache-1',
+        });
+        const second = await postJson(baseUrl, '/api/llm/chat', body, {
+          'X-Request-Id': 'req-proxy-cache-2',
+        });
+
+        assert.equal(first.response.status, 200);
+        assert.equal(second.response.status, 200);
+        assert.equal(callCount, 1);
+      }
+    );
+  } finally {
+    if (previousGuard === undefined) delete process.env.A11_IMAGE_CARDINALITY_GUARD;
+    else process.env.A11_IMAGE_CARDINALITY_GUARD = previousGuard;
+  }
+});
+
+test('protected chat proxy bypasses short cache for special compiler image requests', async () => {
+  const previousGuard = process.env.A11_IMAGE_CARDINALITY_GUARD;
+  process.env.A11_IMAGE_CARDINALITY_GUARD = 'false';
+  let callCount = 0;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouter({
+          verifyJWT(_req, _res, next) {
+            next();
+          },
+          proxyChatToOpenAI() {
+            throw new Error('should_not_hit_openai_proxy');
+          },
+          specialCompilerCallStructuredLlmJson: async () => ({
+            composition_hints: ['accessoire bien visible'],
+            environment_hints: ['décor simple et lisible'],
+            style_hints: [],
+            prompt_instructions: ['Montrer clairement une carotte dans la bouche du sujet principal.'],
+          }),
+          generateSd: async () => {
+            callCount += 1;
+            return {
+              ok: true,
+              image_url: '',
+              filename: 'rabbit.png',
+            };
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const body = {
+          messages: [{ role: 'user', content: 'genere une image d un lapin avec une carotte dans la bouche' }],
+        };
+
+        const first = await postJson(baseUrl, '/api/llm/chat', body, {
+          'X-Request-Id': 'req-proxy-special-1',
+        });
+        const second = await postJson(baseUrl, '/api/llm/chat', body, {
+          'X-Request-Id': 'req-proxy-special-2',
+        });
+
+        assert.equal(first.response.status, 200);
+        assert.equal(second.response.status, 200);
+        assert.equal(callCount, 2);
+      }
+    );
+  } finally {
+    if (previousGuard === undefined) delete process.env.A11_IMAGE_CARDINALITY_GUARD;
+    else process.env.A11_IMAGE_CARDINALITY_GUARD = previousGuard;
+  }
+});

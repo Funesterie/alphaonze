@@ -2,6 +2,8 @@ const { findColorDefinition } = require('./color-library.cjs');
 const { findStyleDefinition } = require('./style-library.cjs');
 const { findSceneDefinition } = require('./scene-library.cjs');
 const { findElementDefinition } = require('./element-library.cjs');
+const { findMetierDefinition } = require('./metier-library.cjs');
+const { findAccessoryDefinition } = require('./accessory-library.cjs');
 
 const STOPWORDS = new Set([
   'a', 'alors', 'au', 'aucun', 'aussi', 'autre', 'aux', 'avec',
@@ -13,7 +15,7 @@ const STOPWORDS = new Set([
   'ne', 'ni', 'notre', 'nos',
   'on', 'ou', 'où', 'par', 'pas', 'pour',
   'que', 'qui', 'quoi', 'quand', 'quel', 'quelle', 'quelles', 'quels',
-  'qu',
+  'qu', 'd', 'l',
   'sa', 'se', 'ses', 'si', 'son', 'sur',
   'ta', 'te', 'tes', 'toi', 'ton', 'tu',
   'un', 'une', 'vos', 'votre', 'vous', 'y',
@@ -203,6 +205,21 @@ function classifyWordSemanticTags(word) {
     tags.push('element');
     tags.push(`element:${elementDefinition.key}`);
     if (elementDefinition.family) tags.push(`element-family:${elementDefinition.family}`);
+  }
+
+  const metierDefinition = findMetierDefinition(normalized);
+  if (metierDefinition) {
+    tags.push('metier');
+    tags.push(`metier:${metierDefinition.key}`);
+    if (metierDefinition.family) tags.push(`metier-family:${metierDefinition.family}`);
+    if (metierDefinition.profileType) tags.push(`profile:${metierDefinition.profileType}`);
+  }
+
+  const accessoryDefinition = findAccessoryDefinition(normalized);
+  if (accessoryDefinition) {
+    tags.push('accessory');
+    tags.push(`accessory:${accessoryDefinition.key}`);
+    if (accessoryDefinition.family) tags.push(`accessory-family:${accessoryDefinition.family}`);
   }
 
   return [...new Set(tags)];

@@ -214,6 +214,41 @@ test('wazaaToMask applies a reference character profile for gohan-like prompts',
   assert.ok(imageMask?.inputs?.environment?.includes('fond simple cohérent avec le personnage'));
 });
 
+test('wazaaToMask applies a single human profile for warrior prompts', () => {
+  const text = 'génère une image de guerriere nordique';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'single_human_figure');
+  assert.ok(imageMask?.inputs?.composition?.includes('une seule personne complète'));
+  assert.ok(imageMask?.inputs?.environment?.includes('fond simple cohérent avec le personnage'));
+});
+
+test('semantic libraries expose metier and accessory hints for warrior props prompts', () => {
+  const text = 'genere une image de guerriere nordique avec une épée';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.ok(wazaa?.meta?.semantic?.metiers?.some((entry) => /guerrier|viking/i.test(String(entry?.label || ''))));
+  assert.ok(wazaa?.meta?.semantic?.accessories?.some((entry) => /épée|epee/i.test(String(entry?.label || ''))));
+  assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /épée|epee/i.test(String(value))));
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'single_human_figure');
+});
+
+test('wazaaToMask keeps subject and accessory relation for rabbit with carrot prompts', () => {
+  const text = 'genere une image d un lapin avec une carotte dans la bouche';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.ok(imageMask?.inputs?.subject?.some((value) => /lapin/i.test(String(value))));
+  assert.ok(!imageMask?.inputs?.environment?.some((value) => /dans la bouche/i.test(String(value))));
+  assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /carotte dans la bouche du sujet principal/i.test(String(value))));
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'single_animal');
+});
+
 test('wazaaToMask applies ice phoenix guidance for phoenix glacé prompts', () => {
   const text = 'genere une photo d un phoenix glacé';
   const analysis = analyzeSemanticIntent(text, {});

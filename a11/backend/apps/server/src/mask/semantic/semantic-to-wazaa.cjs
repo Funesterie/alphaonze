@@ -12,6 +12,12 @@ const {
   collectUniqueElementsFromWordItems,
 } = require('./element-library.cjs');
 const {
+  collectUniqueMetiersFromWordItems,
+} = require('./metier-library.cjs');
+const {
+  collectUniqueAccessoriesFromWordItems,
+} = require('./accessory-library.cjs');
+const {
   resolveSubjectProfile,
 } = require('./subject-profile-library.cjs');
 
@@ -27,11 +33,15 @@ function semanticToWazaa(text, opts = {}) {
   const semanticStyles = collectUniqueStylesFromWordItems(wordItems).slice(0, 6);
   const semanticScenes = collectUniqueScenesFromWordItems(wordItems).slice(0, 6);
   const semanticElements = collectUniqueElementsFromWordItems(wordItems).slice(0, 6);
+  const semanticMetiers = collectUniqueMetiersFromWordItems(wordItems).slice(0, 6);
+  const semanticAccessories = collectUniqueAccessoriesFromWordItems(wordItems).slice(0, 6);
   const subjectProfile = resolveSubjectProfile({ subject, sourceText: analysis.sourceText });
   const colorWords = semanticColors.map((entry) => entry.label).slice(0, 3);
   const styleWords = semanticStyles.map((entry) => entry.label).slice(0, 3);
   const sceneWords = semanticScenes.map((entry) => entry.label).slice(0, 3);
   const elementWords = semanticElements.map((entry) => entry.label).slice(0, 3);
+  const metierWords = semanticMetiers.map((entry) => entry.label).slice(0, 3);
+  const accessoryWords = semanticAccessories.map((entry) => entry.label).slice(0, 3);
   const semanticWordTags = wordItems
     .map((item) => ({
       word: String(item.word || '').trim(),
@@ -48,6 +58,8 @@ function semanticToWazaa(text, opts = {}) {
   if (styleWords.length) entities.push({ value: styleWords.join(', '), role: 'style', weight: 0.62 });
   if (sceneWords.length) entities.push({ value: sceneWords.join(', '), role: 'environment', weight: 0.58 });
   if (elementWords.length) entities.push({ value: elementWords.join(', '), role: 'attribute', weight: 0.57 });
+  if (metierWords.length) entities.push({ value: metierWords.join(', '), role: 'attribute', weight: 0.56 });
+  if (accessoryWords.length) entities.push({ value: accessoryWords.join(', '), role: 'accessory', weight: 0.59 });
 
   return {
     wazaa: '1.1',
@@ -67,6 +79,10 @@ function semanticToWazaa(text, opts = {}) {
         scenes: semanticScenes,
         elementWords,
         elements: semanticElements,
+        metierWords,
+        metiers: semanticMetiers,
+        accessoryWords,
+        accessories: semanticAccessories,
         subjectProfile,
         activeModuleIds,
         wordTags: semanticWordTags,

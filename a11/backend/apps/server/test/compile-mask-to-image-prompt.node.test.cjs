@@ -85,6 +85,34 @@ test('compileMaskToImagePrompt includes positive profile instructions for single
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
+test('compileMaskToImagePrompt includes single human instructions for warrior prompts', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'génère une image de guerriere nordique',
+    inputs: {
+      subject: ['guerriere nordique'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['illustration nette', 'haute qualité'],
+      composition: ['une seule personne complète', 'visage unique bien lisible', 'silhouette humaine complète'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'single_human_figure',
+        promptInstruction: 'Représenter une seule personne complète et reconnaissable.',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Représenter une seule personne complète et reconnaissable/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs personnages/i);
+  assert.match(String(compiled.negative_prompt || ''), /visages dupliqués/i);
+});
+
 test('compileMaskToImagePrompt includes extra prompt instructions for elemental creatures', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une photo d un phoenix glacé',
@@ -117,4 +145,34 @@ test('compileMaskToImagePrompt includes extra prompt instructions for elemental 
   assert.match(String(compiled.prompt || ''), /phénix de glace/i);
   assert.match(String(compiled.negative_prompt || ''), /créatures multiples|animaux multiples/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
+});
+
+test('compileMaskToImagePrompt keeps accessory instructions as positive subject details', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image d un lapin avec une carotte dans la bouche',
+    inputs: {
+      subject: ['lapin'],
+      environment: ['décor naturel simple'],
+      style: ['haute qualité'],
+      composition: ['un seul animal complet', 'corps complet bien visible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'single_animal',
+        promptInstruction: 'Montrer un seul animal complet et bien lisible.',
+      },
+      promptInstructions: [
+        'Montrer clairement une carotte dans la bouche du sujet principal.',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /carotte dans la bouche du sujet principal/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /Environnement : dans la bouche/i);
 });

@@ -539,6 +539,7 @@ function createProtectedChatProxyRouter({
   detectWebImageIntent,
   duckduckgoImageSearch,
   generateSd,
+  specialCompilerCallStructuredLlmJson,
   listResources = defaultListResources,
   generatePdf = defaultGeneratePdf,
   shareFile = defaultShareFile,
@@ -564,6 +565,7 @@ function createProtectedChatProxyRouter({
     detectWebImageIntent,
     duckduckgoImageSearch,
     generateSd,
+    specialCompilerCallStructuredLlmJson,
   });
   const inFlightImageRequests = new Map();
   const recentImageResponses = new Map();
@@ -607,14 +609,27 @@ function createProtectedChatProxyRouter({
       return res.status(200).json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
     }
 
-    cleanupExpiredImageCache(recentImageResponses);
-    const requestKey = buildResolvedRequestKey(req, latestUserMessage, resolution);
     const isCacheable = resolution.kind === 'image.generate' || resolution.kind === 'web.image.search';
+    const shouldBypassCache = resolution.kind === 'image.generate' && resolution.shouldBypassImageRequestCache === true;
 
     if (!isCacheable) {
       return res.status(200).json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
     }
 
+    if (shouldBypassCache) {
+      console.log('[A11][intent-sync] bypass short cache for special image compiler');
+      const payload = resolution.responsePayload
+        || (await intentResolver.executeResolvedRuntime(resolution, {
+          req,
+          body: req.body || {},
+          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+        }))?.responsePayload
+        || null;
+      return res.status(200).json(attachIntentDebug(payload, resolution, req.body || {}));
+    }
+
+    cleanupExpiredImageCache(recentImageResponses);
+    const requestKey = buildResolvedRequestKey(req, latestUserMessage, resolution);
     const cachedExecution = recentImageResponses.get(requestKey);
     if (cachedExecution) {
       console.log(`[A11][intent-sync] reuse recent result key=${requestKey.slice(0, 10)} kind=${resolution.kind}`);

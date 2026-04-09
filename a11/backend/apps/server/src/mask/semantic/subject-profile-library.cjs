@@ -39,6 +39,22 @@ const RAW_SUBJECT_PROFILES = [
     promptInstruction: 'Représenter un seul pokémon complet et reconnaissable.',
   },
   {
+    type: 'single_human_figure',
+    label: 'Personne unique',
+    aliases: [
+      'guerrier', 'guerriere', 'guerrière', 'viking', 'vikinge',
+      'chevalier', 'chevaliere', 'chevalière', 'ninja', 'pirate',
+      'mage', 'magicien', 'magicienne', 'sorcier', 'sorciere', 'sorcière', 'archer',
+      'samourai', 'samurai', 'roi', 'reine', 'prince', 'princesse',
+      'guerriere nordique', 'guerrière nordique', 'guerrier nordique',
+    ],
+    definitionKeywords: ['personne', 'humain', 'humaine', 'guerrier', 'guerrière', 'viking', 'personnage'],
+    composition: ['une seule personne complète', 'visage unique bien lisible', 'silhouette humaine complète', 'posture claire et lisible'],
+    environment: ['fond simple cohérent avec le personnage'],
+    styleHints: ['illustration nette'],
+    promptInstruction: 'Représenter une seule personne complète et reconnaissable.',
+  },
+  {
     type: 'simple_food_object',
     label: 'Objet ou aliment simple',
     aliases: [
