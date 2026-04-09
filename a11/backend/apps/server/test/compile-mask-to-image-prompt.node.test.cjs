@@ -78,3 +78,36 @@ test('compileMaskToImagePrompt includes positive profile instructions for single
   assert.match(String(compiled.prompt || ''), /Environnement : fond simple cohérent avec le personnage/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
+
+test('compileMaskToImagePrompt includes extra prompt instructions for elemental creatures', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une photo d un phoenix glacé',
+    inputs: {
+      subject: ['phoenix glacé'],
+      environment: ['atmosphère froide et cristalline'],
+      style: ['photorealiste', 'textures cristallines', 'haute qualité'],
+      composition: ['un seul phénix complet', 'ailes bien lisibles', 'givre visible sur le sujet'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'phoenix_creature',
+        promptInstruction: 'Représenter un seul phénix complet avec des ailes bien lisibles.',
+      },
+      promptInstructions: [
+        'Montrer clairement la matière glacée sur le sujet.',
+        'Représenter un phénix de glace avec des ailes claires, complètes et bien visibles.',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Style : photorealiste, textures cristallines, haute qualité/i);
+  assert.match(String(compiled.prompt || ''), /Montrer clairement la matière glacée sur le sujet/i);
+  assert.match(String(compiled.prompt || ''), /phénix de glace/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
+});

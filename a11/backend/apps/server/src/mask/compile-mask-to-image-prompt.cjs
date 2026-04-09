@@ -35,6 +35,7 @@ function buildLiteralInstructions(mask = {}) {
     'Composer une scène claire, lisible et naturelle autour du sujet principal.',
   ];
   const subjectProfileInstruction = normalizeText(mask?.meta?.subjectProfile?.promptInstruction || '');
+  const extraPromptInstructions = normalizeList(mask?.meta?.promptInstructions || []);
 
   if (Array.isArray(mask?.inputs?.palette) && mask.inputs.palette.length > 0) {
     instructions.push("Utiliser les couleurs demandées sur le sujet principal.");
@@ -42,6 +43,10 @@ function buildLiteralInstructions(mask = {}) {
 
   if (subjectProfileInstruction) {
     instructions.push(subjectProfileInstruction);
+  }
+
+  if (extraPromptInstructions.length) {
+    instructions.push(...extraPromptInstructions);
   }
 
   if (mask?.constraints?.no_text === true) {

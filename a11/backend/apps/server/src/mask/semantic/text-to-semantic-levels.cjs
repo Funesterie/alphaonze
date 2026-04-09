@@ -15,6 +15,9 @@ const {
 const {
   detectSceneMatchesFromWordItems,
 } = require('./scene-library.cjs');
+const {
+  detectElementMatchesFromWordItems,
+} = require('./element-library.cjs');
 
 function toRgba(r, g, b, a) {
   return {
@@ -161,6 +164,25 @@ function buildSemanticLevels(text) {
         'scene',
         `scene:${sceneMatch.key}`,
         sceneMatch.family ? `scene-family:${sceneMatch.family}` : '',
+      ].filter(Boolean))];
+    }
+  }
+
+  for (const elementMatch of detectElementMatchesFromWordItems(wordItems)) {
+    for (let index = elementMatch.startIndex; index <= elementMatch.endIndex; index += 1) {
+      const current = wordItems[index];
+      if (!current) continue;
+      current.element = {
+        key: elementMatch.key,
+        canonical: elementMatch.canonical,
+        label: elementMatch.label,
+        family: elementMatch.family,
+      };
+      current.tags = [...new Set([
+        ...(Array.isArray(current.tags) ? current.tags : []),
+        'element',
+        `element:${elementMatch.key}`,
+        elementMatch.family ? `element-family:${elementMatch.family}` : '',
       ].filter(Boolean))];
     }
   }

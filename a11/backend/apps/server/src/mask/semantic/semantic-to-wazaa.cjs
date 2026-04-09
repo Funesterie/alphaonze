@@ -9,6 +9,9 @@ const {
   collectUniqueScenesFromWordItems,
 } = require('./scene-library.cjs');
 const {
+  collectUniqueElementsFromWordItems,
+} = require('./element-library.cjs');
+const {
   resolveSubjectProfile,
 } = require('./subject-profile-library.cjs');
 
@@ -23,10 +26,12 @@ function semanticToWazaa(text, opts = {}) {
   const semanticColors = collectUniqueColorsFromWordItems(wordItems).slice(0, 6);
   const semanticStyles = collectUniqueStylesFromWordItems(wordItems).slice(0, 6);
   const semanticScenes = collectUniqueScenesFromWordItems(wordItems).slice(0, 6);
-  const subjectProfile = resolveSubjectProfile({ subject });
+  const semanticElements = collectUniqueElementsFromWordItems(wordItems).slice(0, 6);
+  const subjectProfile = resolveSubjectProfile({ subject, sourceText: analysis.sourceText });
   const colorWords = semanticColors.map((entry) => entry.label).slice(0, 3);
   const styleWords = semanticStyles.map((entry) => entry.label).slice(0, 3);
   const sceneWords = semanticScenes.map((entry) => entry.label).slice(0, 3);
+  const elementWords = semanticElements.map((entry) => entry.label).slice(0, 3);
   const semanticWordTags = wordItems
     .map((item) => ({
       word: String(item.word || '').trim(),
@@ -42,6 +47,7 @@ function semanticToWazaa(text, opts = {}) {
   if (colorWords.length) entities.push({ value: colorWords.join(', '), role: 'attribute', weight: 0.66 });
   if (styleWords.length) entities.push({ value: styleWords.join(', '), role: 'style', weight: 0.62 });
   if (sceneWords.length) entities.push({ value: sceneWords.join(', '), role: 'environment', weight: 0.58 });
+  if (elementWords.length) entities.push({ value: elementWords.join(', '), role: 'attribute', weight: 0.57 });
 
   return {
     wazaa: '1.1',
@@ -59,6 +65,8 @@ function semanticToWazaa(text, opts = {}) {
         styles: semanticStyles,
         sceneWords,
         scenes: semanticScenes,
+        elementWords,
+        elements: semanticElements,
         subjectProfile,
         activeModuleIds,
         wordTags: semanticWordTags,

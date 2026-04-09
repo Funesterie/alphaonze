@@ -1,6 +1,7 @@
 const { findColorDefinition } = require('./color-library.cjs');
 const { findStyleDefinition } = require('./style-library.cjs');
 const { findSceneDefinition } = require('./scene-library.cjs');
+const { findElementDefinition } = require('./element-library.cjs');
 
 const STOPWORDS = new Set([
   'a', 'alors', 'au', 'aucun', 'aussi', 'autre', 'aux', 'avec',
@@ -195,6 +196,13 @@ function classifyWordSemanticTags(word) {
     tags.push('scene');
     tags.push(`scene:${sceneDefinition.key}`);
     if (sceneDefinition.family) tags.push(`scene-family:${sceneDefinition.family}`);
+  }
+
+  const elementDefinition = findElementDefinition(normalized);
+  if (elementDefinition) {
+    tags.push('element');
+    tags.push(`element:${elementDefinition.key}`);
+    if (elementDefinition.family) tags.push(`element-family:${elementDefinition.family}`);
   }
 
   return [...new Set(tags)];

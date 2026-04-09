@@ -8,6 +8,9 @@ const {
   stripTrailingStylePhrase,
 } = require('./semantic/style-library.cjs');
 const {
+  collectUniqueElementsFromWordItems,
+} = require('./semantic/element-library.cjs');
+const {
   resolveSubjectProfile,
 } = require('./semantic/subject-profile-library.cjs');
 
@@ -64,9 +67,11 @@ function getSemanticMeta(wazaa = null, opts = {}) {
       .map((item) => item.scene)
       .filter((entry, index, items) => entry?.key && items.findIndex((candidate) => candidate?.key === entry.key) === index)
       .slice(0, 6);
+    const semanticElements = collectUniqueElementsFromWordItems(wordItems).slice(0, 6);
     const colorWords = semanticColors.map((entry) => entry.label).slice(0, 6);
     const styleWords = semanticStyles.map((entry) => String(entry.label || '').trim()).filter(Boolean);
     const sceneWords = semanticScenes.map((entry) => String(entry.label || '').trim()).filter(Boolean);
+    const elementWords = semanticElements.map((entry) => String(entry.label || '').trim()).filter(Boolean);
     return {
       subject: String(opts.semanticAnalysis?.subject || '').trim(),
       confidence: Number(opts.semanticAnalysis?.summary?.confidence || 0),
@@ -79,8 +84,11 @@ function getSemanticMeta(wazaa = null, opts = {}) {
       styleWords,
       scenes: semanticScenes,
       sceneWords,
+      elements: semanticElements,
+      elementWords,
       subjectProfile: resolveSubjectProfile({
         subject: String(opts.semanticAnalysis?.subject || '').trim(),
+        sourceText: String(opts.semanticAnalysis?.sourceText || '').trim(),
       }),
       wordTags: wordItems
         .map((item) => ({
@@ -139,6 +147,65 @@ function buildPositiveCompositionHints(subject = '', sourceText = '', semanticMe
   }
 
   return toUniqueStrings(hints);
+}
+
+function buildElementSemanticHints(semanticMeta = {}, subjectProfile = null) {
+  const elements = Array.isArray(semanticMeta?.elements) ? semanticMeta.elements : [];
+  const hints = {
+    style: [],
+    composition: [],
+    environment: [],
+    promptInstructions: [],
+  };
+
+  for (const element of elements) {
+    const family = String(element?.family || '').trim().toLowerCase();
+    switch (family) {
+      case 'ice':
+        hints.style.push('matière glacée lisible', 'textures cristallines');
+        hints.composition.push('givre visible sur le sujet', 'formes nettes et froides');
+        hints.environment.push('atmosphère froide et cristalline');
+        hints.promptInstructions.push('Montrer clairement la matière glacée sur le sujet.');
+        break;
+      case 'fire':
+        hints.style.push('énergie chaude lisible');
+        hints.composition.push('flammes lisibles autour du sujet');
+        hints.environment.push('lueur chaude simple');
+        hints.promptInstructions.push('Montrer clairement le feu autour du sujet sans le rendre confus.');
+        break;
+      case 'ghost':
+        hints.composition.push('forme spectrale lisible', 'contours bien visibles');
+        hints.environment.push('ambiance surnaturelle simple');
+        hints.promptInstructions.push('Montrer clairement une présence spectrale complète et lisible.');
+        break;
+      case 'electric':
+        hints.composition.push('énergie électrique lisible');
+        hints.environment.push('lueur électrique simple');
+        hints.promptInstructions.push('Montrer clairement l énergie électrique autour du sujet.');
+        break;
+      case 'water':
+        hints.composition.push('matière fluide lisible');
+        hints.environment.push('ambiance fraîche et fluide');
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (subjectProfile?.type === 'phoenix_creature' && elements.some((entry) => String(entry?.family || '').trim().toLowerCase() === 'ice')) {
+    hints.promptInstructions.push('Représenter un phénix de glace avec des ailes claires, complètes et bien visibles.');
+  }
+
+  if (subjectProfile?.type === 'pokemon_creature' && elements.some((entry) => String(entry?.family || '').trim().toLowerCase() === 'ghost')) {
+    hints.promptInstructions.push('Représenter un seul pokémon spectre complet, reconnaissable et bien lisible.');
+  }
+
+  return {
+    style: toUniqueStrings(hints.style),
+    composition: toUniqueStrings(hints.composition),
+    environment: toUniqueStrings(hints.environment),
+    promptInstructions: toUniqueStrings(hints.promptInstructions),
+  };
 }
 
 function sanitizeEnvironmentCandidate(value = '') {
@@ -350,15 +417,19 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
   const subjectProfile = semanticMeta?.subjectProfile || resolveSubjectProfile({
     subject: normalizedSubject || subject,
     definitionSummary,
+    sourceText: promptSeedText,
   });
+  const elementHints = buildElementSemanticHints(semanticMeta, subjectProfile);
   const style = toUniqueStrings([
     styleEntity,
     ...(Array.isArray(semanticMeta?.styleWords) ? semanticMeta.styleWords : []),
+    ...elementHints.style,
     ...(Array.isArray(subjectProfile?.styleHints) ? subjectProfile.styleHints : []),
     'haute qualité',
   ]);
   const composition = toUniqueStrings([
     ...buildPositiveCompositionHints(normalizedSubject, promptSeedText, semanticMeta),
+    ...elementHints.composition,
     ...(Array.isArray(subjectProfile?.composition) ? subjectProfile.composition : []),
   ]);
   const profileEnvironment = Array.isArray(subjectProfile?.environment) ? subjectProfile.environment : [];
@@ -368,10 +439,12 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       profileEnvironment.length > 0
         ? toUniqueStrings([
             ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+            ...elementHints.environment,
             ...profileEnvironment,
           ])
         : toUniqueStrings([
             ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+            ...elementHints.environment,
             ...buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary),
           ])
     );
@@ -406,6 +479,7 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
       promptSeedText,
       promptText: promptSeedText,
+      ...(elementHints.promptInstructions.length ? { promptInstructions: elementHints.promptInstructions } : {}),
       ...(subjectProfile ? { subjectProfile } : {}),
     },
     raw: sourceText,
