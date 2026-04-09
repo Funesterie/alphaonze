@@ -27,8 +27,8 @@ test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enri
   assert.equal(sdBody.prompt_prebuilt, true);
   assert.equal(sdBody.prompt, 'a pink rabbit, exactly one pink rabbit only');
   assert.equal(sdBody.prompt_language, 'fr');
-  assert.equal('negative_prompt' in sdBody, false);
-  assert.equal('negative_prompt_prebuilt' in sdBody, false);
+  assert.equal(sdBody.negative_prompt, 'duplicate rabbits, crowd');
+  assert.equal(sdBody.negative_prompt_prebuilt, true);
 });
 
 test('toImageChatProxyPayload synthesizes a png filename when the image URL has no extension', () => {
@@ -104,7 +104,8 @@ test('generateImageFromMask compiles canonical masks into a french image prompt 
   assert.match(String(calls[0]?.prompt || ''), /Composition : single main subject, clear centered composition, simple clean background/i);
   assert.match(String(calls[0]?.prompt || ''), /Couleurs : green/i);
   assert.match(String(calls[0]?.prompt || ''), /Créer une image fidèle à la demande/i);
-  assert.equal('negative_prompt' in calls[0], false);
+  assert.match(String(calls[0]?.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(calls[0]?.negative_prompt || ''), /watermark/i);
   assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bNe pas\b|\bdo not\b/i);
   assert.equal(calls[0]?.prompt_language, 'fr');
   assert.equal(result.sdResult.mode, 'openai-image');
@@ -177,7 +178,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
   assert.equal(calls.length, 2);
   assert.match(String(calls[1]?.prompt || ''), /montrer un seul lapin/i);
   assert.match(String(calls[1]?.prompt || ''), /silhouette claire et lisible/i);
-  assert.equal(calls[1]?.has_negative_prompt, false);
+  assert.equal(calls[1]?.has_negative_prompt, true);
   assert.equal(calls[1]?.seed, 197);
   assert.equal(result.sdResult.image_url, 'https://files.example.com/rabbit-2.png');
   assert.equal(result.imageGuard?.retries?.length, 1);

@@ -658,11 +658,26 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
 
   const currentSeed = Number(sdBody.seed);
   const retrySeedBase = Number.isFinite(currentSeed) ? currentSeed : Number(options.seed || Date.now());
+  const retryNegativeHints = useFrenchPrompt
+    ? [
+        ...(duplicateSubjects ? ['plusieurs sujets', 'doublon du sujet', 'foule'] : []),
+        ...(fusionDetected ? ['anatomie fusionnée', 'membres fusionnés'] : []),
+      ]
+    : [
+        ...(duplicateSubjects ? ['multiple subjects', 'duplicate subject', 'crowd'] : []),
+        ...(fusionDetected ? ['fused anatomy', 'merged limbs'] : []),
+      ];
+  const baseNegativeHints = String(sdBody.negative_prompt || '')
+    .split(',')
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+  const mergedNegativePrompt = [...new Set([...baseNegativeHints, ...retryNegativeHints])].join(', ').trim();
 
   return {
     ...sdBody,
     prompt: mergedPrompt,
     prompt_prebuilt: true,
+    ...(mergedNegativePrompt ? { negative_prompt: mergedNegativePrompt } : {}),
     seed: retrySeedBase + 97,
   };
 }

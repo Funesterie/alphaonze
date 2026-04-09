@@ -24,6 +24,8 @@ test('compileMaskToImagePrompt keeps french prompts free of imperative negative 
   assert.match(String(compiled.prompt || ''), /Sujet principal : pokemon dragon feu/i);
   assert.match(String(compiled.prompt || ''), /Composition : silhouette lisible, effets lumineux bien séparés du sujet/i);
   assert.match(String(compiled.prompt || ''), /Créer une image fidèle à la demande/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(compiled.negative_prompt || ''), /watermark/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bdo not\b/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /pas au fond|pas au background|not to the background/i);
@@ -47,6 +49,8 @@ test('compileMaskToImagePrompt stays simple and keeps user wording for soda cans
   });
 
   assert.match(String(compiled.prompt || ''), /Sujet principal : canette de soda/i);
+  assert.match(String(compiled.negative_prompt || ''), /objets multiples/i);
+  assert.match(String(compiled.negative_prompt || ''), /décor encombré/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /aluminium|silhouette cylindrique/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
@@ -76,6 +80,8 @@ test('compileMaskToImagePrompt includes positive profile instructions for single
 
   assert.match(String(compiled.prompt || ''), /Représenter un seul personnage complet et reconnaissable/i);
   assert.match(String(compiled.prompt || ''), /Environnement : fond simple cohérent avec le personnage/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs personnages/i);
+  assert.match(String(compiled.negative_prompt || ''), /visages dupliqués/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
@@ -109,5 +115,6 @@ test('compileMaskToImagePrompt includes extra prompt instructions for elemental 
   assert.match(String(compiled.prompt || ''), /Style : photorealiste, textures cristallines, haute qualité/i);
   assert.match(String(compiled.prompt || ''), /Montrer clairement la matière glacée sur le sujet/i);
   assert.match(String(compiled.prompt || ''), /phénix de glace/i);
+  assert.match(String(compiled.negative_prompt || ''), /créatures multiples|animaux multiples/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });

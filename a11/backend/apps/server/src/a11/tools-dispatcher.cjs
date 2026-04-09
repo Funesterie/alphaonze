@@ -2304,12 +2304,19 @@ async function t_generate_png(args = {}) {
   const finalPrompt = compiledState
     ? String(compiledState.sdBody?.prompt || title).trim() || title
     : String(promptBundle?.prompt || title).trim() || title;
+  const finalNegativePrompt = String(
+    args.negative_prompt
+    || compiledState?.sdBody?.negative_prompt
+    || (Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : '')
+    || ''
+  ).trim();
 
   const proxyUrl = resolveSdProxyUrl();
   if (proxyUrl) {
     const proxyPayload = {
       prompt: finalPrompt,
       prompt_prebuilt: true,
+      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
       num_inference_steps: numInferenceSteps,
       guidance_scale: guidanceScale,
       width,
@@ -2399,6 +2406,7 @@ async function t_generate_png(args = {}) {
   if (enableSd && scriptPath && fsSync.existsSync(scriptPath)) {
     const sdResult = await runSdScript({
       prompt: finalPrompt,
+      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt } : {}),
       num_inference_steps: numInferenceSteps,
       guidance_scale: guidanceScale,
       width,

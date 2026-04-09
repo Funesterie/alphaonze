@@ -259,6 +259,13 @@ function runSdScript(payload = {}, options = {}) {
     '--output', outputPath,
   ];
 
+  if (payload.negative_prompt !== undefined && payload.negative_prompt !== null) {
+    const negativePrompt = String(payload.negative_prompt || '').trim();
+    if (negativePrompt) {
+      args.push('--negative_prompt', negativePrompt);
+    }
+  }
+
   if (payload.seed !== undefined && payload.seed !== null && String(payload.seed).trim() !== '') {
     args.push('--seed', String(payload.seed).trim());
   }
