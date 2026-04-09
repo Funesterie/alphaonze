@@ -19,6 +19,22 @@ function hasAnyValue(...values) {
   return values.some((value) => String(value || '').trim());
 }
 
+function resolveSemanticTranslationMode(env = {}) {
+  const explicitBaseUrl = normalizeUrl(env.A11_TRANSLATION_BASE_URL || '');
+  const routerBaseUrl = normalizeUrl(env.LLM_ROUTER_URL || '');
+  const openAiBaseUrl = normalizeUrl(env.A11_OPENAI_BASE_URL || env.OPENAI_BASE_URL || '');
+  const hasScopedKey = hasAnyValue(env.A11_TRANSLATION_API_KEY, env.A11_OPENAI_API_KEY);
+  const usesRouter = Boolean(explicitBaseUrl || routerBaseUrl);
+  const baseUrl = explicitBaseUrl || routerBaseUrl || openAiBaseUrl;
+  const configured = usesRouter || hasScopedKey;
+
+  return {
+    configured,
+    provider: usesRouter ? 'llm-router' : (configured ? 'openai-compatible' : 'heuristic'),
+    baseUrl,
+  };
+}
+
 function resolveLlmProvider(value, fallback = 'none') {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return fallback;
@@ -102,7 +118,8 @@ function buildRuntimeConfig(env = process.env) {
   const publicApiUrl = normalizeUrl(env.PUBLIC_API_URL || env.API_URL || env.A11_SERVER_URL || '');
   const r2Bucket = String(env.R2_BUCKET || env.R2_BUCKET_NAME || '').trim();
   const openAiConfigured = hasAnyValue(env.A11_OPENAI_API_KEY, env.OPENAI_API_KEY);
-  const translationConfigured = hasAnyValue(env.A11_TRANSLATION_API_KEY, env.A11_OPENAI_API_KEY);
+  const semanticTranslationMode = resolveSemanticTranslationMode(env);
+  const translationConfigured = semanticTranslationMode.configured;
   const sdProxyUrl = normalizeUrl(env.A11_SD_PROXY_URL || env.SD_PROXY_URL || '');
   const sdLocalFallbackEnabled = shouldEnableLocalSdFallback(env);
   const sdOpenAiFallbackEnabled = isOpenAiImageEnabled(env)
@@ -184,7 +201,7 @@ function buildRuntimeConfig(env = process.env) {
         llmProvider: defaultLlmProvider,
       },
       semantic: {
-        provider: wazaaLlmEnabled ? 'openai-compatible' : 'heuristic',
+        provider: wazaaLlmEnabled ? semanticTranslationMode.provider : 'heuristic',
         llmEnrichmentEnabled: wazaaLlmEnabled,
         translationConfigured,
       },

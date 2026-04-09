@@ -121,3 +121,15 @@ test('getPublicRuntimeStatus publishes feature runtime details', () => {
   assert.equal(status.features.sd.expectedRoute, '/api/tools/generate_sd');
   assert.equal(status.features.memory.provider, 'local');
 });
+
+test('buildRuntimeConfig marks semantic enrichment as llm-router when Cerbere is configured', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    LLM_ROUTER_URL: 'https://cerbere.funesterie.me',
+    A11_WAZAA_LLM_ENRICH: 'true',
+  });
+
+  assert.equal(config.features.semantic.provider, 'llm-router');
+  assert.equal(config.features.semantic.llmEnrichmentEnabled, true);
+  assert.equal(config.features.semantic.translationConfigured, true);
+});
