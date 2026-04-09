@@ -609,21 +609,17 @@ async function describeImageWithRemoteVision(source, args = {}) {
   const apiKey = String(
     args.apiKey ||
     process.env.A11_VISION_API_KEY ||
-    process.env.OPENAI_API_KEY ||
     ''
   ).trim();
   const baseUrl = String(
     args.baseUrl ||
     process.env.A11_VISION_BASE_URL ||
-    process.env.A11_OPENAI_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
     ''
   ).trim();
   const model = String(
     args.model ||
     process.env.A11_VISION_MODEL ||
     process.env.OPENAI_VISION_MODEL ||
-    process.env.OPENAI_MODEL ||
     'gpt-4o-mini'
   ).trim();
 
