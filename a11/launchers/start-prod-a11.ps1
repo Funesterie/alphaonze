@@ -520,10 +520,14 @@ $sdScriptPath = Resolve-FirstExistingPath @(
 )
 
 $sdPythonExe = Resolve-FirstExistingPath @(
+  $env:SD_PYTHON_PATH,
+  $env:A11_SD_PYTHON_PATH,
+  (Join-Path $workspaceRoot 'backend\apps\server\tools\sd\venv\Scripts\python.exe'),
   (Join-Path $workspaceRoot 'llm\scripts\venv\Scripts\python.exe'),
   (Join-Path $workspaceRoot 'a11llm\scripts\venv\Scripts\python.exe'),
   (Join-Path $workspaceRoot 'launchers\dist\a11-local\llm\scripts\venv\Scripts\python.exe'),
   (Join-Path $workspaceRoot 'a11desktoptauri\resources\a11-local\llm\scripts\venv\Scripts\python.exe'),
+  'D:\funesterie\a11\backend\apps\server\tools\sd\venv\Scripts\python.exe',
   'D:\funesterie\a11\llm\scripts\venv\Scripts\python.exe',
   'D:\funesterie\a11\a11llm\scripts\venv\Scripts\python.exe',
   'D:\funesterie\a11\launchers\dist\a11-local\llm\scripts\venv\Scripts\python.exe',
@@ -670,6 +674,8 @@ if ($startBackend) {
 if ($startLlm) {
   $portInfo = Get-ListeningProcessInfo -Port $llmPort
   $llmHealthUrl = "$localLlmBase/health"
+  $llamaIsPrimaryProvider = $effectiveLlmProvider -eq 'llama_server'
+  $llamaIsFallbackProvider = $effectiveLlmFallbackProvider -eq 'llama_server'
   if ($portInfo -and (Test-HttpHealthy -Url $llmHealthUrl)) {
     Write-Host "[WARN] LLM deja actif sur $llmPort (PID $($portInfo.Pid)). Lancement saute."
   } elseif ($portInfo) {
@@ -681,9 +687,21 @@ if ($startLlm) {
       Mark-Error "[ERR] Impossible de redemarrer le LLM sur $llmPort : $($_.Exception.Message)"
     }
   } elseif (-not $llmExe) {
-    Mark-Error '[ERR] LLM non trouve.'
+    if ($llamaIsPrimaryProvider) {
+      Mark-Error '[ERR] LLM non trouve.'
+    } elseif ($llamaIsFallbackProvider) {
+      Write-Host '[WARN] LLM local non trouve. Le fallback llama_server restera indisponible.'
+    } else {
+      Write-Host '[A11 PROD] LLM local inutile pour ce profil. Lancement saute.'
+    }
   } elseif (-not $modelPath) {
-    Mark-Error '[ERR] Modele LLM introuvable.'
+    if ($llamaIsPrimaryProvider) {
+      Mark-Error '[ERR] Modele LLM introuvable.'
+    } elseif ($llamaIsFallbackProvider) {
+      Write-Host '[WARN] Modele LLM introuvable. Le fallback llama_server restera indisponible.'
+    } else {
+      Write-Host '[A11 PROD] Modele LLM local non requis pour ce profil.'
+    }
   } elseif ($checkOnly) {
     Write-Host "[CHECK] LLM pret : $llmExe"
   } else {
