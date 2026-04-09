@@ -77,36 +77,40 @@ function buildOpenAiCompatibleUrl(baseUrl = '') {
     : `${normalizedBase}/v1/chat/completions`;
 }
 
-function resolveVisionJudgeConfig(overrides = {}) {
-  const provider = resolveVisionProvider({ provider: overrides.provider });
+function resolveExplicitRemoteVisionConfig(overrides = {}) {
   const baseUrl = String(
     overrides.baseUrl
     || process.env.A11_VISION_BASE_URL
-    || process.env.A11_OPENAI_BASE_URL
-    || process.env.OPENAI_BASE_URL
     || ''
   ).trim();
   const apiKey = String(
     overrides.apiKey
     || process.env.A11_VISION_API_KEY
-    || process.env.A11_OPENAI_API_KEY
-    || process.env.OPENAI_API_KEY
     || ''
   ).trim();
   const model = String(
     overrides.model
     || process.env.A11_VISION_MODEL
     || process.env.OPENAI_VISION_MODEL
-    || process.env.OPENAI_MODEL
     || 'gpt-4o-mini'
   ).trim();
+  return {
+    baseUrl,
+    apiKey,
+    model,
+  };
+}
+
+function resolveVisionJudgeConfig(overrides = {}) {
+  const provider = resolveVisionProvider({ provider: overrides.provider });
+  const remote = resolveExplicitRemoteVisionConfig(overrides);
 
   return {
     provider,
-    baseUrl,
-    url: buildOpenAiCompatibleUrl(baseUrl),
-    apiKey,
-    model,
+    baseUrl: remote.baseUrl,
+    url: (remote.baseUrl && remote.apiKey) ? buildOpenAiCompatibleUrl(remote.baseUrl) : '',
+    apiKey: remote.apiKey,
+    model: remote.model,
     janus: resolveJanusVisionConfig({
       modelRef: overrides.janusModelRef,
       device: overrides.janusDevice,

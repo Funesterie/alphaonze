@@ -102,6 +102,11 @@ function resolveJanusPythonBin() {
   return explicit || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
+function canWriteToWorkerStdin(worker) {
+  const stdin = worker?.process?.stdin;
+  return Boolean(stdin && !stdin.destroyed && !stdin.writableEnded);
+}
+
 function resolveJanusModelRef() {
   const explicitDir = normalizeCandidate(process.env.A11_JANUS_MODEL_DIR || process.env.A11_LOCAL_VISION_MODEL_DIR || '');
   if (explicitDir && fs.existsSync(explicitDir)) return explicitDir;
@@ -223,6 +228,11 @@ function ensureJanusWorker(config = {}) {
     const next = `${workerState.stderrBuffer || ''}${String(chunk || '')}`;
     workerState.stderrBuffer = next.slice(-4000);
   });
+  if (child.stdin) {
+    child.stdin.on('error', (error_) => {
+      resetWorkerState(String(error_?.message || error_ || 'janus_worker_stdin_failed'));
+    });
+  }
   child.on('error', (error_) => {
     resetWorkerState(String(error_?.message || error_ || 'janus_worker_spawn_failed'));
   });
@@ -269,7 +279,14 @@ async function callJanusVisionText({
     }, config.timeoutMs);
 
     worker.pending.set(id, { resolve, reject, timeout });
-    worker.process.stdin.write(`${JSON.stringify({
+    if (!canWriteToWorkerStdin(worker)) {
+      clearTimeout(timeout);
+      worker.pending.delete(id);
+      reject(new Error('janus_worker_stdin_unavailable'));
+      return;
+    }
+
+    const line = `${JSON.stringify({
       id,
       action: 'vision_text',
       prompt: String(prompt || '').trim(),
@@ -278,7 +295,14 @@ async function callJanusVisionText({
       image_base64: imageBuffer.toString('base64'),
       max_new_tokens: config.maxNewTokens,
       temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
-    })}\n`);
+    })}\n`;
+
+    worker.process.stdin.write(line, (error_) => {
+      if (!error_) return;
+      clearTimeout(timeout);
+      worker.pending.delete(id);
+      reject(new Error(String(error_?.message || error_ || 'janus_worker_write_failed')));
+    });
   });
 }
 
