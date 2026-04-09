@@ -207,6 +207,65 @@ test('compileMaskToImagePrompt includes extra prompt instructions for elemental 
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
+test('compileMaskToImagePrompt keeps single plant prompts constrained to one visible plant', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de sapin blanc en hiver',
+    inputs: {
+      subject: ['sapin'],
+      environment: ['hiver', 'décor naturel simple'],
+      style: ['haute qualité'],
+      composition: ['une seule plante complète', 'forme complète visible', 'sujet centré'],
+      lighting: [],
+      palette: ['blanc'],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'single_plant_object',
+        promptInstruction: 'Montrer une seule plante ou un seul arbre complet, bien lisible et centré.',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Montrer une seule plante ou un seul arbre complet/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs arbres/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs plantes/i);
+});
+
+test('compileMaskToImagePrompt keeps smoking prompts explicit and positive', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de pikachu fumant une cigarette',
+    inputs: {
+      subject: ['pikachu'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['illustration nette', 'haute qualité'],
+      composition: ['un seul personnage complet', 'cigarette bien visible près de la bouche'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        promptInstruction: 'Représenter un seul personnage complet et reconnaissable.',
+      },
+      promptInstructions: [
+        'Montrer clairement le sujet principal en train de fumer avec cigarette visible près de la bouche.',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /train de fumer/i);
+  assert.match(String(compiled.prompt || ''), /cigarette visible près de la bouche/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
+});
+
 test('compileMaskToImagePrompt keeps accessory instructions as positive subject details', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image d un lapin avec une carotte dans la bouche',

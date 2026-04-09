@@ -320,6 +320,28 @@ test('wazaaToMask applies ice phoenix guidance for phoenix glacé prompts', () =
   assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /phénix de glace/i.test(String(value))));
 });
 
+test('wazaaToMask applies a single plant profile for winter fir prompts', () => {
+  const text = 'genere une image de sapin blanc en hiver';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'single_plant_object');
+  assert.ok(imageMask?.inputs?.composition?.includes('une seule plante complète'));
+  assert.ok(imageMask?.inputs?.environment?.some((value) => /hiver/i.test(String(value))));
+});
+
+test('wazaaToMask turns smoking prompts into explicit cigarette action guidance', () => {
+  const text = 'genere une image de pikachu fumant une cigarette';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.ok(imageMask?.meta?.semantic?.accessories?.some((entry) => /cigarette/i.test(String(entry?.label || ''))));
+  assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /train de fumer/i.test(String(value))));
+  assert.ok(imageMask?.inputs?.composition?.some((value) => /cigarette bien visible près de la bouche/i.test(String(value))));
+});
+
 test('wazaaToMask applies pokemon spectre guidance for anime ghost pokemon prompts', () => {
   const text = 'genere une image anime d un pokemon spectre rouge';
   const analysis = analyzeSemanticIntent(text, {});

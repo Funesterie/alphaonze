@@ -258,6 +258,7 @@ function buildElementSemanticHints(semanticMeta = {}, subjectProfile = null) {
 function buildAccessorySemanticHints(semanticMeta = {}, sourceText = '') {
   const accessories = Array.isArray(semanticMeta?.accessories) ? semanticMeta.accessories : [];
   const normalizedSource = normalizeLookupText(sourceText);
+  const hasSmokingAction = /\b(fume|fumer|fumant|fumante|smoking)\b/.test(normalizedSource);
   const hints = {
     style: [],
     composition: [],
@@ -295,7 +296,10 @@ function buildAccessorySemanticHints(semanticMeta = {}, sourceText = '') {
         break;
       case 'smoking_prop':
         hints.composition.push('geste de l accessoire lisible');
-        if (!explicitlyRequestedWithSubject) {
+        if (hasSmokingAction) {
+          hints.composition.push('cigarette bien visible près de la bouche');
+          hints.promptInstructions.push(`Montrer clairement le sujet principal en train de fumer avec ${label} visible près de la bouche.`);
+        } else if (!explicitlyRequestedWithSubject) {
           hints.promptInstructions.push(`Montrer clairement l accessoire ${label} tenu par le sujet principal.`);
         }
         break;

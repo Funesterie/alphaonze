@@ -122,6 +122,10 @@ function buildNegativePrompt(mask = {}) {
     hints.push('objets multiples', 'décor encombré', 'arrière-plan chargé');
   }
 
+  if (subjectProfileType === 'single_plant_object') {
+    hints.push('plusieurs plantes', 'plusieurs arbres', 'forêt dense', 'arrière-plan chargé');
+  }
+
   const mergedSceneHints = [...environment, ...composition].join(' ');
   if (/(fond neutre simple|fond simple|décor simple|objet centré|sujet centré)/i.test(mergedSceneHints)) {
     hints.push('arrière-plan chargé', 'décor encombré');

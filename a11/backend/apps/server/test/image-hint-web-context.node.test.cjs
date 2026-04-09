@@ -73,3 +73,33 @@ test('resolveImageWebDraft rejects cosplay or plush-like drafts for named refere
 
   assert.equal(result, null);
 });
+
+test('resolveImageWebDraft skips transformed reference-character prompts and keeps web only as context', () => {
+  const result = resolveImageWebDraft({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une image de zelda en bikini',
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Princesse Zelda',
+        },
+        semantic: {
+          accessories: [{ label: 'bikini', family: 'wearable' }],
+        },
+      },
+    },
+    selection: {
+      compartment: 'special',
+      candidate: true,
+    },
+    webHintContext: {
+      imageUrl: 'https://images.example.com/zelda-ref.png',
+      imageTitle: 'Princess Zelda character art',
+      sourceUrl: 'https://example.com/zelda',
+      sourceDomain: 'example.com',
+    },
+  });
+
+  assert.equal(result, null);
+});
