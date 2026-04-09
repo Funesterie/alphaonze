@@ -1,6 +1,11 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const {
+  callJanusVisionText,
+  resolveJanusVisionConfig,
+  resolveVisionProvider,
+} = require('../../lib/janus-vision-runtime.cjs');
 
 const ALLOWED_REASONS = new Set([
   'ok',
@@ -73,6 +78,7 @@ function buildOpenAiCompatibleUrl(baseUrl = '') {
 }
 
 function resolveVisionJudgeConfig(overrides = {}) {
+  const provider = resolveVisionProvider({ provider: overrides.provider });
   const baseUrl = String(
     overrides.baseUrl
     || process.env.A11_VISION_BASE_URL
@@ -96,10 +102,18 @@ function resolveVisionJudgeConfig(overrides = {}) {
   ).trim();
 
   return {
+    provider,
     baseUrl,
     url: buildOpenAiCompatibleUrl(baseUrl),
     apiKey,
     model,
+    janus: resolveJanusVisionConfig({
+      modelRef: overrides.janusModelRef,
+      device: overrides.janusDevice,
+      torchDtype: overrides.janusTorchDtype,
+      timeoutMs: overrides.timeoutMs,
+      maxNewTokens: overrides.maxTokens,
+    }),
     timeoutMs: Math.max(1000, Number(overrides.timeoutMs || process.env.A11_IMAGE_LLM_JUDGE_TIMEOUT_MS || 9000) || 9000),
     maxTokens: Math.max(160, Number(overrides.maxTokens || process.env.A11_IMAGE_LLM_JUDGE_MAX_TOKENS || 320) || 320),
   };
@@ -134,9 +148,24 @@ function guessContentTypeFromPath(filePath = '') {
 }
 
 async function loadImageAsDataUrl(imageRef = '') {
+  const loaded = await loadImageSource(imageRef);
+  return loaded?.dataUrl || null;
+}
+
+async function loadImageSource(imageRef = '') {
   const source = String(imageRef || '').trim();
   if (!source) return null;
-  if (/^data:/i.test(source)) return source;
+  if (/^data:/i.test(source)) {
+    const match = source.match(/^data:([^;,]+)?(?:;base64)?,(.*)$/i);
+    const contentType = String(match?.[1] || 'image/png').trim() || 'image/png';
+    const encoded = String(match?.[2] || '').trim();
+    if (!encoded) return null;
+    return {
+      buffer: Buffer.from(encoded, 'base64'),
+      contentType,
+      dataUrl: source,
+    };
+  }
 
   if (/^https?:\/\//i.test(source)) {
     const response = await fetch(source);
@@ -145,13 +174,21 @@ async function loadImageAsDataUrl(imageRef = '') {
     }
     const buffer = Buffer.from(await response.arrayBuffer());
     const contentType = String(response.headers.get('content-type') || 'image/png').split(';')[0].trim() || 'image/png';
-    return `data:${contentType};base64,${buffer.toString('base64')}`;
+    return {
+      buffer,
+      contentType,
+      dataUrl: `data:${contentType};base64,${buffer.toString('base64')}`,
+    };
   }
 
   const resolvedPath = path.resolve(source);
   const buffer = await fsp.readFile(resolvedPath);
   const contentType = guessContentTypeFromPath(resolvedPath);
-  return `data:${contentType};base64,${buffer.toString('base64')}`;
+  return {
+    buffer,
+    contentType,
+    dataUrl: `data:${contentType};base64,${buffer.toString('base64')}`,
+  };
 }
 
 function buildCandidateHintBundle(mask = {}) {
@@ -201,6 +238,15 @@ function extractJsonString(value = '') {
   return fenced ? String(fenced[1] || '').trim() : raw;
 }
 
+function buildJanusJudgePrompt(systemPrompt = IMAGE_LLM_JUDGE_SYSTEM_PROMPT, payload = {}) {
+  return [
+    String(systemPrompt || IMAGE_LLM_JUDGE_SYSTEM_PROMPT).trim(),
+    'Contexte JSON a juger :',
+    JSON.stringify(payload, null, 2),
+    'Reponds uniquement avec le JSON final, sans phrase autour.',
+  ].join('\n\n').trim();
+}
+
 async function callStructuredVisionJudgeJson({
   imageUrl = '',
   payload = {},
@@ -210,6 +256,8 @@ async function callStructuredVisionJudgeJson({
   model,
   timeoutMs,
   maxTokens,
+  provider,
+  callLocalVisionText,
 } = {}) {
   const config = resolveVisionJudgeConfig({
     baseUrl,
@@ -217,10 +265,47 @@ async function callStructuredVisionJudgeJson({
     model,
     timeoutMs,
     maxTokens,
+    provider,
   });
+  const loadedImage = await loadImageSource(imageUrl);
+  if (!loadedImage?.buffer?.length) return null;
+
+  if (config.provider === 'janus') {
+    try {
+      const rawLocal = typeof callLocalVisionText === 'function'
+        ? await callLocalVisionText({
+          imageBuffer: loadedImage.buffer,
+          contentType: loadedImage.contentType,
+          prompt: buildJanusJudgePrompt(systemPrompt, payload),
+          maxNewTokens: config.janus.maxNewTokens,
+          timeoutMs: config.janus.timeoutMs,
+        })
+        : await callJanusVisionText({
+          imageBuffer: loadedImage.buffer,
+          contentType: loadedImage.contentType,
+          prompt: buildJanusJudgePrompt(systemPrompt, payload),
+          maxNewTokens: config.janus.maxNewTokens,
+          timeoutMs: config.janus.timeoutMs,
+          modelRef: config.janus.modelRef,
+          device: config.janus.device,
+          torchDtype: config.janus.torchDtype,
+        });
+      const localText = typeof rawLocal === 'string'
+        ? rawLocal
+        : String(rawLocal?.text || '').trim();
+      const jsonText = extractJsonString(localText);
+      if (jsonText) {
+        return JSON.parse(jsonText);
+      }
+      if (!config.url) return null;
+    } catch (error_) {
+      if (!config.url) throw error_;
+    }
+  }
+
   if (!config.url || !config.model) return null;
 
-  const dataUrl = await loadImageAsDataUrl(imageUrl);
+  const dataUrl = loadedImage.dataUrl || await loadImageAsDataUrl(imageUrl);
   if (!dataUrl) return null;
 
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -324,6 +409,8 @@ async function verifyGeneratedImageWithLlmJudge({
   seed,
   enabled,
   callStructuredVisionJson,
+  callLocalVisionText,
+  visionProvider,
 } = {}) {
   if (!isImageLlmJudgeEnabled(enabled)) {
     return {
@@ -362,6 +449,8 @@ async function verifyGeneratedImageWithLlmJudge({
       : await callStructuredVisionJudgeJson({
         imageUrl: normalizedImageUrl,
         payload,
+        callLocalVisionText,
+        provider: visionProvider,
       });
   } catch (error_) {
     return {
@@ -412,6 +501,7 @@ async function verifyGeneratedImageWithLlmJudge({
 module.exports = {
   IMAGE_LLM_JUDGE_SYSTEM_PROMPT,
   buildCandidateHintBundle,
+  buildJanusJudgePrompt,
   buildVisionJudgePayload,
   callStructuredVisionJudgeJson,
   isImageLlmJudgeEnabled,
