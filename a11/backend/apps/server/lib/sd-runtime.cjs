@@ -7,6 +7,13 @@ const A11_ROOT = path.join(SERVER_ROOT, '..', '..', '..');
 const CANONICAL_A11LLM_ROOT = path.join(A11_ROOT, 'llm');
 const LEGACY_A11LLM_ROOT = path.join(A11_ROOT, 'a11llm');
 const VENDORED_SD_SCRIPT = path.join(SERVER_ROOT, 'tools', 'sd', 'generate_sd_image.py');
+const BACKEND_SD_VENV = path.join(
+  SERVER_ROOT,
+  'tools',
+  'sd',
+  'venv',
+  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
+);
 const CANONICAL_SD_SCRIPT = path.join(CANONICAL_A11LLM_ROOT, 'scripts', 'generate_sd_image.py');
 const CANONICAL_SD_VENV = path.join(
   CANONICAL_A11LLM_ROOT,
@@ -169,6 +176,7 @@ function resolveSdPythonBin(scriptPath = '') {
   const candidates = uniqueCandidates([
     explicit,
     adjacentVenv,
+    BACKEND_SD_VENV,
     LAUNCHER_DIST_SD_VENV,
     DESKTOP_RESOURCES_SD_VENV,
     CANONICAL_SD_VENV,
@@ -315,6 +323,7 @@ module.exports = {
   runSdScript,
   sanitizeProxyHeaders,
   VENDORED_SD_SCRIPT,
+  BACKEND_SD_VENV,
   shouldAllowLocalSdFallback,
   isForeignAbsolutePath,
   hasSdProxyUrl,
