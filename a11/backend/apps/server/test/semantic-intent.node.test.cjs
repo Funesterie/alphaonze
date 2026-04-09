@@ -172,7 +172,30 @@ test('wazaaToMask infers a coherent decor for creature prompts without explicit 
   });
 
   assert.equal(imageMask?.intent, 'image.generate');
-  assert.ok(imageMask?.inputs?.environment?.some((value) => /décor simple et cohérent avec le sujet/i.test(String(value))));
+  assert.ok(imageMask?.inputs?.environment?.some((value) => /décor simple cohérent avec le sujet/i.test(String(value))));
+});
+
+test('wazaaToMask applies a simple object profile for apple-like prompts', () => {
+  const text = 'genere une image de pomme';
+  const analysis = analyzeSemanticIntent(text, {});
+  const imageMask = wazaaToMask(textToWazaa.sync(text, {}), { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.intent, 'image.generate');
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'simple_food_object');
+  assert.ok(imageMask?.inputs?.composition?.includes('objet unique isolé'));
+  assert.ok(imageMask?.inputs?.environment?.includes('fond neutre simple'));
+});
+
+test('wazaaToMask applies a reference character profile for gohan-like prompts', () => {
+  const text = 'genere une image de gohan';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(wazaa?.meta?.semantic?.subjectProfile?.type, 'reference_character');
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'reference_character');
+  assert.ok(imageMask?.inputs?.composition?.includes('un seul personnage complet'));
+  assert.ok(imageMask?.inputs?.environment?.includes('fond simple cohérent avec le personnage'));
 });
 
 test("wazaaToMask rejects french connector fragments as image subjects", () => {

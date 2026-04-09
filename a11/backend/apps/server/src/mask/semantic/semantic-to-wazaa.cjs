@@ -8,6 +8,9 @@ const {
 const {
   collectUniqueScenesFromWordItems,
 } = require('./scene-library.cjs');
+const {
+  resolveSubjectProfile,
+} = require('./subject-profile-library.cjs');
 
 function semanticToWazaa(text, opts = {}) {
   const analysis = opts.analysis || analyzeSemanticIntent(text, opts);
@@ -20,6 +23,7 @@ function semanticToWazaa(text, opts = {}) {
   const semanticColors = collectUniqueColorsFromWordItems(wordItems).slice(0, 6);
   const semanticStyles = collectUniqueStylesFromWordItems(wordItems).slice(0, 6);
   const semanticScenes = collectUniqueScenesFromWordItems(wordItems).slice(0, 6);
+  const subjectProfile = resolveSubjectProfile({ subject });
   const colorWords = semanticColors.map((entry) => entry.label).slice(0, 3);
   const styleWords = semanticStyles.map((entry) => entry.label).slice(0, 3);
   const sceneWords = semanticScenes.map((entry) => entry.label).slice(0, 3);
@@ -55,6 +59,7 @@ function semanticToWazaa(text, opts = {}) {
         styles: semanticStyles,
         sceneWords,
         scenes: semanticScenes,
+        subjectProfile,
         activeModuleIds,
         wordTags: semanticWordTags,
       },

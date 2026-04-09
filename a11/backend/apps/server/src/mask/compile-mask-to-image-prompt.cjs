@@ -34,9 +34,14 @@ function buildLiteralInstructions(mask = {}) {
     'Créer une image fidèle à la demande.',
     'Composer une scène claire, lisible et naturelle autour du sujet principal.',
   ];
+  const subjectProfileInstruction = normalizeText(mask?.meta?.subjectProfile?.promptInstruction || '');
 
   if (Array.isArray(mask?.inputs?.palette) && mask.inputs.palette.length > 0) {
     instructions.push("Utiliser les couleurs demandées sur le sujet principal.");
+  }
+
+  if (subjectProfileInstruction) {
+    instructions.push(subjectProfileInstruction);
   }
 
   if (mask?.constraints?.no_text === true) {

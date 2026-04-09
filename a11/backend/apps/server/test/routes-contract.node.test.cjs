@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const createChatRouter = require('../src/routes/chat.cjs');
 const createProtectedChatProxyRouter = require('../src/routes/protected-chat-proxy.cjs');
 const createImageCardinalityDebugRouter = require('../src/routes/image-cardinality-debug.cjs');
+const createImageAtelierRouter = require('../src/routes/image-atelier.cjs');
 const maskRouter = require('../src/routes/mask.cjs');
 const createDecommissionedDevRoutesRouter = require('../src/routes/decommissioned-dev-routes.cjs');
 const compileMaskToSD = require('../src/mask/compile-mask-to-sd.cjs');
@@ -136,6 +137,154 @@ test('POST /api/mask/from-text validates missing, empty, recognized, and unknown
       assert.equal(unknown.response.status, 400);
       assert.equal(unknown.json.error, 'no_mask_match');
 
+    }
+  );
+});
+
+test('POST /api/image/atelier rejects requests without message or mask', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createImageAtelierRouter({
+        runImageAtelier: async () => {
+          throw new Error('should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/image/atelier', {});
+      assert.equal(response.status, 400);
+      assert.equal(json.error, 'missing_image_input');
+    }
+  );
+});
+
+test('POST /api/image/atelier supports message-only requests and returns atelier metadata', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createImageAtelierRouter({
+        runImageAtelier: async ({ message }) => {
+          assert.equal(message, 'genere une image de pomme');
+          return {
+            sdResult: {
+              ok: true,
+              tool: 'generate_image',
+              artifact_type: 'image',
+              image_url: 'https://files.example.com/atelier-apple.png',
+              filename: 'atelier-apple.png',
+            },
+            mask: {
+              intent: 'image.generate',
+              raw: 'genere une image de pomme',
+            },
+            compiled: { kind: 'image.generate', state: 'ready', value: {} },
+            sdBody: { prompt: 'Prompt atelier pomme', prompt_language: 'fr' },
+            atelier: {
+              mode: 'assisted',
+              request_id: 'atelier-1',
+              rounds: 1,
+              final_round: 1,
+              stop_reason: 'accepted',
+              summary: {
+                accepted_round: 1,
+                stop_reason: 'accepted',
+                profile_type: 'simple_food_object',
+                round_count: 1,
+              },
+              trace: {
+                summary: {
+                  accepted_round: 1,
+                  stop_reason: 'accepted',
+                  profile_type: 'simple_food_object',
+                  round_count: 1,
+                },
+                rounds: [],
+              },
+            },
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/image/atelier', {
+        message: 'genere une image de pomme',
+      });
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'generate_image');
+      assert.equal(json.imagePath, 'https://files.example.com/atelier-apple.png');
+      assert.equal(json.atelier.mode, 'assisted');
+      assert.equal(json.atelier.summary.profile_type, 'simple_food_object');
+    }
+  );
+});
+
+test('POST /api/image/atelier supports mask-only requests and can hide trace rounds', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createImageAtelierRouter({
+        runImageAtelier: async ({ rawMask, return_trace }) => {
+          assert.equal(rawMask.intent, 'image.generate');
+          assert.equal(return_trace, false);
+          return {
+            sdResult: {
+              ok: true,
+              tool: 'generate_image',
+              artifact_type: 'image',
+              image_url: 'https://files.example.com/atelier-gohan.png',
+              filename: 'atelier-gohan.png',
+            },
+            mask: rawMask,
+            compiled: { kind: 'image.generate', state: 'ready', value: {} },
+            sdBody: { prompt: 'Prompt atelier gohan', prompt_language: 'fr' },
+            atelier: {
+              mode: 'assisted',
+              request_id: 'atelier-2',
+              rounds: 2,
+              final_round: 2,
+              stop_reason: 'accepted',
+              summary: {
+                accepted_round: 2,
+                stop_reason: 'accepted',
+                profile_type: 'reference_character',
+                round_count: 2,
+              },
+              trace: {
+                summary: {
+                  accepted_round: 2,
+                  stop_reason: 'accepted',
+                  profile_type: 'reference_character',
+                  round_count: 2,
+                },
+              },
+            },
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/image/atelier', {
+        mask: {
+          version: 'mask-1',
+          intent: 'image.generate',
+          task: { domain: 'image', action: 'generate' },
+          compiler: { target: 'image-prompt-fr', version: '1.0' },
+          inputs: {
+            subject: ['gohan'],
+            environment: [],
+            style: ['haute qualité'],
+            composition: [],
+            lighting: [],
+            palette: [],
+          },
+          options: { width: 768, height: 768, steps: 40, guidance_scale: 8 },
+          constraints: { safe_mode: true, no_text: true },
+          ambiguities: [],
+          raw: 'genere une image de gohan',
+        },
+        return_trace: false,
+      });
+      assert.equal(response.status, 200);
+      assert.equal(json.atelier.summary.profile_type, 'reference_character');
+      assert.equal(Object.prototype.hasOwnProperty.call(json.atelier.trace || {}, 'rounds'), false);
     }
   );
 });

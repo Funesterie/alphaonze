@@ -5439,6 +5439,7 @@ app.use('/api', createChatRouter({
 app.use('/api', sdTools.router);
 app.use('/api/mask', require('./src/routes/mask.cjs'));
 app.use('/api', require('./src/routes/image-generate-mask.cjs'));
+app.use('/api', require('./src/routes/image-atelier.cjs'));
 
 function getSupervisorInstance() {
   return globalThis.__A11_SUPERVISOR || globalThis.__A11_QFLUSH_SUPERVISOR || null;

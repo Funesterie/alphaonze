@@ -50,3 +50,31 @@ test('compileMaskToImagePrompt stays simple and keeps user wording for soda cans
   assert.doesNotMatch(String(compiled.prompt || ''), /aluminium|silhouette cylindrique/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
+
+test('compileMaskToImagePrompt includes positive profile instructions for single reference characters', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de gohan',
+    inputs: {
+      subject: ['gohan'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['illustration nette', 'haute qualité'],
+      composition: ['un seul personnage complet', 'visage unique bien lisible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        promptInstruction: 'Représenter un seul personnage complet et reconnaissable.',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Représenter un seul personnage complet et reconnaissable/i);
+  assert.match(String(compiled.prompt || ''), /Environnement : fond simple cohérent avec le personnage/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
+});
