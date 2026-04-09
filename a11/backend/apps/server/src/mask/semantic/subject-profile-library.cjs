@@ -29,6 +29,16 @@ const RAW_SUBJECT_PROFILES = [
     promptInstruction: 'Représenter un seul personnage complet et reconnaissable.',
   },
   {
+    type: 'pokemon_creature',
+    label: 'Pokémon unique',
+    aliases: ['pokemon', 'pokémon'],
+    definitionKeywords: ['pokemon', 'pokémon'],
+    composition: ['un seul pokémon complet', 'visage bien lisible', 'silhouette reconnaissable'],
+    environment: ['fond simple cohérent avec le pokémon'],
+    styleHints: ['illustration nette'],
+    promptInstruction: 'Représenter un seul pokémon complet et reconnaissable.',
+  },
+  {
     type: 'simple_food_object',
     label: 'Objet ou aliment simple',
     aliases: [
@@ -64,9 +74,19 @@ const RAW_SUBJECT_PROFILES = [
     promptInstruction: 'Montrer un seul animal complet et bien lisible.',
   },
   {
+    type: 'phoenix_creature',
+    label: 'Phénix unique',
+    aliases: ['phoenix', 'phénix', 'phenix'],
+    definitionKeywords: ['phénix', 'phoenix', 'oiseau mythique'],
+    composition: ['un seul phénix complet', 'ailes bien lisibles', 'silhouette majestueuse'],
+    environment: ['ciel simple avec profondeur'],
+    styleHints: [],
+    promptInstruction: 'Représenter un seul phénix complet avec des ailes bien lisibles.',
+  },
+  {
     type: 'mythic_creature',
     label: 'Créature unique',
-    aliases: ['dragon', 'phoenix', 'phénix', 'phenix', 'pokemon'],
+    aliases: ['dragon'],
     definitionKeywords: ['créature', 'creature', 'mythique', 'légendaire', 'legendaire'],
     composition: ['créature unique complète', 'silhouette lisible', 'forme complète visible'],
     environment: ['décor simple cohérent avec le sujet'],
@@ -93,14 +113,23 @@ function textContainsAlias(normalizedText = '', alias = '') {
   return pattern.test(normalizedText);
 }
 
-function resolveSubjectProfile({ subject = '', definitionSummary = '' } = {}) {
+function resolveSubjectProfile({ subject = '', definitionSummary = '', sourceText = '' } = {}) {
   const normalizedSubject = normalizeSubjectProfileText(subject);
   const normalizedDefinition = normalizeSubjectProfileText(definitionSummary);
-  if (!normalizedSubject && !normalizedDefinition) return null;
+  const normalizedSourceText = normalizeSubjectProfileText(sourceText);
+  if (!normalizedSubject && !normalizedDefinition && !normalizedSourceText) return null;
 
   for (const profile of SUBJECT_PROFILE_LIBRARY) {
     if (profile.aliases.some((alias) => textContainsAlias(normalizedSubject, alias))) {
       return { ...profile };
+    }
+  }
+
+  if (normalizedSourceText) {
+    for (const profile of SUBJECT_PROFILE_LIBRARY) {
+      if (profile.aliases.some((alias) => textContainsAlias(normalizedSourceText, alias))) {
+        return { ...profile };
+      }
     }
   }
 

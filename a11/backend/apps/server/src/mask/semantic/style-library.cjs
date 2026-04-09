@@ -26,7 +26,7 @@ const RAW_STYLE_LIBRARY = [
   { label: 'cartoon', family: 'illustration', aliases: ['cartoon', 'dessin animé', 'dessin anime', 'style cartoon'] },
   { label: 'pixel art', family: 'digital', aliases: ['pixel art', 'pixel-art'] },
   { label: 'illustration', family: 'illustration', aliases: ['illustration', 'illustré', 'illustre'] },
-  { label: 'photorealiste', family: 'realism', aliases: ['photorealiste', 'photo réaliste', 'photo realiste', 'photorealistic'] },
+  { label: 'photorealiste', family: 'realism', aliases: ['photorealiste', 'photo réaliste', 'photo realiste', 'photorealistic', 'photo', 'style photo'] },
   { label: 'realiste', family: 'realism', aliases: ['realiste', 'réaliste', 'realistic'] },
   { label: 'cinematique', family: 'cinematic', aliases: ['cinematique', 'cinématique', 'cinematic'] },
   { label: '3d', family: 'digital', aliases: ['3d', 'rendu 3d', 'render 3d'] },

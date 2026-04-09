@@ -198,6 +198,32 @@ test('wazaaToMask applies a reference character profile for gohan-like prompts',
   assert.ok(imageMask?.inputs?.environment?.includes('fond simple cohérent avec le personnage'));
 });
 
+test('wazaaToMask applies ice phoenix guidance for phoenix glacé prompts', () => {
+  const text = 'genere une photo d un phoenix glacé';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'phoenix_creature');
+  assert.ok(imageMask?.inputs?.style?.includes('photorealiste'));
+  assert.ok(imageMask?.inputs?.style?.includes('textures cristallines'));
+  assert.ok(imageMask?.inputs?.environment?.includes('atmosphère froide et cristalline'));
+  assert.ok(imageMask?.meta?.promptInstructions?.some((value) => /phénix de glace/i.test(String(value))));
+});
+
+test('wazaaToMask applies pokemon spectre guidance for anime ghost pokemon prompts', () => {
+  const text = 'genere une image anime d un pokemon spectre rouge';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'pokemon_creature');
+  assert.ok(imageMask?.inputs?.style?.includes('anime'));
+  assert.ok(imageMask?.inputs?.composition?.includes('un seul pokémon complet'));
+  assert.ok(imageMask?.inputs?.composition?.includes('forme spectrale lisible'));
+  assert.ok(imageMask?.inputs?.environment?.includes('fond simple cohérent avec le pokémon'));
+});
+
 test("wazaaToMask rejects french connector fragments as image subjects", () => {
   const imageMask = wazaaToMask({
     intent: { type: 'image.generate', confidence: 0.91 },
