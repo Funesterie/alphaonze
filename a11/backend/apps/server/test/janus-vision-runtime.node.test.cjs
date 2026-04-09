@@ -47,6 +47,6 @@ test('resolveVisionProvider keeps remote mode when only remote vision is configu
 test('resolveJanusVisionConfig defaults to Janus-Pro-1B and backend venv python', () => {
   const config = resolveJanusVisionConfig({});
   assert.match(String(config.modelRef || ''), /Janus-Pro-1B|deepseek-ai\/Janus-Pro-1B/i);
-  assert.match(String(config.pythonBin || ''), /tools[\\/](vision|sd)[\\/]venv/i);
+  assert.match(String(config.pythonBin || ''), /(tools[\\/](vision|sd)[\\/]venv|[\\/]opt[\\/]janus-venv)/i);
   assert.equal(config.provider, 'janus');
 });

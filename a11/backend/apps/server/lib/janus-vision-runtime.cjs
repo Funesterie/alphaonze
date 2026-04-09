@@ -12,6 +12,9 @@ const DEFAULT_VISION_PYTHON = path.join(
   'venv',
   process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
 );
+const DEFAULT_CONTAINER_VISION_PYTHON = process.platform === 'win32'
+  ? ''
+  : path.join('/opt', 'janus-venv', 'bin', 'python');
 const FALLBACK_SD_PYTHON = path.join(
   SERVER_ROOT,
   'tools',
@@ -87,7 +90,12 @@ function resolveJanusPythonBin() {
     || process.env.SD_PYTHON_PATH
     || ''
   );
-  const candidates = uniqueCandidates([explicit, DEFAULT_VISION_PYTHON, FALLBACK_SD_PYTHON]);
+  const candidates = uniqueCandidates([
+    explicit,
+    DEFAULT_CONTAINER_VISION_PYTHON,
+    DEFAULT_VISION_PYTHON,
+    FALLBACK_SD_PYTHON,
+  ]);
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }

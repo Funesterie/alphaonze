@@ -28,6 +28,34 @@ A11_JANUS_DEVICE=cuda
 A11_JANUS_TORCH_DTYPE=auto
 ```
 
+Recommended Railway/Linux env with the bundled Docker Janus venv:
+
+```env
+A11_VISION_PROVIDER=janus
+A11_JANUS_ENABLED=true
+A11_JANUS_PYTHON_PATH=/opt/janus-venv/bin/python
+A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-1B
+A11_JANUS_DEVICE=cpu
+A11_JANUS_TORCH_DTYPE=auto
+A11_VISION_BASE_URL=https://api.openai.com/v1
+A11_VISION_API_KEY=sk-...
+A11_VISION_MODEL=gpt-4o-mini
+A11_OPENAI_API_KEY=sk-...
+A11_OPENAI_BASE_URL=https://api.openai.com/v1
+A11_OPENAI_MODEL=gpt-4o-mini
+A11_TRANSLATION_API_KEY=sk-...
+A11_TRANSLATION_BASE_URL=https://api.openai.com/v1
+A11_TRANSLATION_MODEL=gpt-4o-mini
+A11_WAZAA_LLM_ENRICH=true
+```
+
+Notes for Railway:
+
+- the Docker image can now bundle a dedicated `/opt/janus-venv`
+- `Janus-Pro-1B` remains the realistic default on CPU-only containers
+- keep an OpenAI-compatible fallback configured for translation and remote vision judge
+- first Janus request may still download model weights unless you bake or mount them separately
+
 Recommended install in the dedicated Janus venv:
 
 ```powershell
