@@ -38,9 +38,15 @@ function detectImageIntent(message) {
   const normalized = normalizeMessageForIntent(message);
   if (!normalized) return false;
 
+  const hasCreationVerb = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|produire|prepare|preparer|generate|create|draw|make|produce|render)\b/i.test(normalized);
+  const discussesImageOutput = /\b(image|illustration|dessin|photo|visuel|portrait|art|generateur|moteur)\b/i.test(normalized);
+  const troubleshootingLike = /\b(explique|expliquer|pourquoi|probleme|probleme|probl[eè]me|bug|erreur|souci|conforme|incorrect|fonctionne|marche)\b/i.test(normalized);
+  if (discussesImageOutput && troubleshootingLike && !hasCreationVerb) {
+    return false;
+  }
+
   const patterns = [
     /\b(genere|generer|generation|generee|generee|genere-moi|cree|creer|dessine|dessiner|fais|faire|fabrique|produis|produire|prepare|preparer)\b.*\b(image|illustration|dessin|photo|visuel|visu|art)\b/i,
-    /\b(image|illustration|drawing|picture|photo|visual|art|generate|create|draw|make|produce)\b.*\b(cat|dog|scene|city|robot|animal|person|character|landscape|object|thing|photo|picture|illustration|drawing|art)\b/i,
     /\b(generate|create|draw|make|produce)\b.*\b(image|illustration|drawing|picture|photo|visual|art)\b/i,
     /\b(genere|cree|dessine|fabrique|produis|prepare)\s+(moi\s+)?(une\s+)?image\b/i,
     /\b(genere|cree|dessine|fabrique|produis|prepare)\s+(moi\s+)?(un\s+|une\s+)?(portrait|visuel|dessin|illustration|photo)\b/i,
@@ -51,7 +57,6 @@ function detectImageIntent(message) {
   }
 
   const hasVisualWord = /\b(image|illustration|dessin|photo|visuel|portrait|art)\b/.test(normalized);
-  const hasCreationVerb = /\b(genere|generee|cree|dessine|fabrique|produis|prepare|make|create|draw|generate)\b/.test(normalized);
   return hasVisualWord && hasCreationVerb;
 }
 

@@ -87,6 +87,13 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const actionLike = /\b(genere|cree|dessine|cherche|trouve|montre|affiche|ecris|code|fais|prepare|generate|create|draw|search|find|show|write)\b/.test(normalizedText);
   const creationLike = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|generate|create|draw|make|render)\b/.test(normalizedText);
   const showLike = /\b(montre|montrer|affiche|afficher|fais voir|show me|show|cherche|chercher|trouve|trouver|find|search)\b/.test(normalizedText);
+  const troubleshootingLike = /\b(explique|expliquer|probleme|probl[eè]me|bug|erreur|souci|conforme|incorrect|fonctionne|marche)\b/.test(normalizedText);
+  const discussesImageSystem = /\b(image|illustration|dessin|photo|visuel|portrait|art|generateur|g[eé]n[eé]rateur|moteur)\b/.test(normalizedText);
+  const metaImageDiscussion = Boolean(
+    discussesImageSystem
+    && !creationLike
+    && (explicitQuestion || troubleshootingLike)
+  );
   const emailActionLike = /\b(envoie|envoyer|envoi|mail|email|gmail|courriel|message)\b/.test(normalizedText);
   const emailAddressLike = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(sourceText);
   const attachmentLike = /\b(avec|join|joins|joint|jointe|piece jointe|pi[eè]ce jointe|attachment|attached|inclu|inclure)\b/.test(normalizedText);
@@ -209,6 +216,21 @@ function scoreSemanticIntents(levels, overrides = {}) {
     evidence['chat.reply'].push('heuristique:mail_action');
   }
 
+  if (metaImageDiscussion) {
+    rawScores['chat.reply'] += 2.2;
+    rawScores['web.search'] += explicitQuestion ? 0.55 : 0.18;
+    rawScores['image.generate'] -= 2.8;
+    rawScores['web.image.search'] -= 1.6;
+    levelBreakdown.message['chat.reply'] += 2.2;
+    levelBreakdown.message['web.search'] += explicitQuestion ? 0.55 : 0.18;
+    levelBreakdown.message['image.generate'] -= 2.8;
+    levelBreakdown.message['web.image.search'] -= 1.6;
+    evidence['chat.reply'].push('heuristique:meta_image_discussion');
+    evidence['web.search'].push('heuristique:meta_image_discussion');
+    evidence['image.generate'].push('suppression:meta_image_discussion');
+    evidence['web.image.search'].push('suppression:meta_image_discussion');
+  }
+
   rawScores['chat.reply'] += 0.25;
   levelBreakdown.message['chat.reply'] += 0.25;
 
@@ -326,6 +348,7 @@ function scoreSemanticIntents(levels, overrides = {}) {
       detectedScenes: detectedScenes.map((entry) => entry.label),
       visualStyleSignal,
       mailActionSignal: mailRequestWithReferencedImage || emailActionLike,
+      metaImageDiscussion,
     },
   };
 }

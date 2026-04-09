@@ -11,6 +11,52 @@ warnings.filterwarnings(
 import torch
 
 
+MODEL_PROFILES = {
+    "multilingual": {
+        "model_id": "BAAI/AltDiffusion-m18",
+        "pipeline": "alt",
+        "revision": None,
+    },
+    "classic": {
+        "model_id": "runwayml/stable-diffusion-v1-5",
+        "pipeline": "auto",
+        "revision": None,
+    },
+}
+
+
+def normalize_env_text(value, default=""):
+    text = str(value or "").strip().lower()
+    return text or default
+
+
+def resolve_model_config():
+    explicit_model_id = str(os.environ.get("SD_MODEL_ID", "")).strip()
+    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "multilingual")
+    explicit_pipeline = normalize_env_text(os.environ.get("SD_MODEL_PIPELINE"), "")
+    explicit_revision = str(os.environ.get("SD_MODEL_REVISION", "")).strip() or None
+
+    if explicit_model_id:
+        pipeline = explicit_pipeline or (
+            "alt" if "altdiffusion" in explicit_model_id.lower() else "auto"
+        )
+        return {
+            "profile": explicit_profile if explicit_profile in MODEL_PROFILES else "custom",
+            "model_id": explicit_model_id,
+            "pipeline": pipeline,
+            "revision": explicit_revision,
+        }
+
+    selected_profile = explicit_profile if explicit_profile in MODEL_PROFILES else "multilingual"
+    profile = MODEL_PROFILES[selected_profile]
+    return {
+        "profile": selected_profile,
+        "model_id": profile["model_id"],
+        "pipeline": explicit_pipeline or profile["pipeline"],
+        "revision": explicit_revision or profile.get("revision"),
+    }
+
+
 def resolve_device():
     requested = str(os.environ.get("SD_DEVICE", "")).strip().lower()
     if requested:
@@ -54,11 +100,17 @@ def maybe_enable_cuda_fast_paths():
 def maybe_enable_pipeline_memory_optimizations(pipe):
     xformers_enabled = False
     try:
-        pipe.enable_vae_slicing()
+        if hasattr(pipe, "vae") and pipe.vae is not None and hasattr(pipe.vae, "enable_slicing"):
+            pipe.vae.enable_slicing()
+        else:
+            pipe.enable_vae_slicing()
     except Exception:
         pass
     try:
-        pipe.enable_vae_tiling()
+        if hasattr(pipe, "vae") and pipe.vae is not None and hasattr(pipe.vae, "enable_tiling"):
+            pipe.vae.enable_tiling()
+        else:
+            pipe.enable_vae_tiling()
     except Exception:
         pass
     try:
@@ -71,6 +123,31 @@ def maybe_enable_pipeline_memory_optimizations(pipe):
     except Exception:
         xformers_enabled = False
     return xformers_enabled
+
+
+def load_text_to_image_pipeline(model_config, torch_dtype):
+    pipeline_kind = str(model_config.get("pipeline") or "auto").strip().lower()
+    model_id = str(model_config.get("model_id") or "").strip()
+    revision = model_config.get("revision")
+
+    if pipeline_kind == "alt":
+        from diffusers import AltDiffusionPipeline
+
+        pipeline_class = AltDiffusionPipeline
+    else:
+        from diffusers import AutoPipelineForText2Image
+
+        pipeline_class = AutoPipelineForText2Image
+
+    load_kwargs = {
+        "torch_dtype": torch_dtype,
+        "safety_checker": None,
+        "requires_safety_checker": False,
+    }
+    if revision:
+        load_kwargs["revision"] = revision
+
+    return pipeline_class.from_pretrained(model_id, **load_kwargs)
 
 
 def main():
@@ -86,21 +163,15 @@ def main():
     parser.add_argument("--output", type=str, default="output.png")
     args = parser.parse_args()
 
-    from diffusers import AutoPipelineForText2Image
-
-    model_id = os.environ.get("SD_MODEL_ID", "runwayml/stable-diffusion-v1-5")
+    model_config = resolve_model_config()
+    model_id = model_config["model_id"]
     device = resolve_device()
     torch_dtype = resolve_dtype(device)
     has_cuda = device == "cuda"
 
     maybe_enable_cuda_fast_paths()
 
-    pipe = AutoPipelineForText2Image.from_pretrained(
-        model_id,
-        torch_dtype=torch_dtype,
-        safety_checker=None,
-        requires_safety_checker=False,
-    )
+    pipe = load_text_to_image_pipeline(model_config, torch_dtype)
     if hasattr(pipe, "safety_checker"):
         pipe.safety_checker = None
     if hasattr(pipe, "register_to_config"):
@@ -139,7 +210,9 @@ def main():
             {
                 "ok": True,
                 "output_path": os.path.abspath(output_path),
+                "model_profile": model_config["profile"],
                 "model_id": model_id,
+                "model_pipeline": model_config["pipeline"],
                 "device": device,
                 "torch_dtype": dtype_label(torch_dtype),
                 "cuda_available": torch.cuda.is_available(),
