@@ -45,6 +45,7 @@ def resolve_model_config():
             "model_id": explicit_model_id,
             "pipeline": pipeline,
             "revision": explicit_revision,
+            "is_explicit_model": True,
         }
 
     selected_profile = explicit_profile if explicit_profile in MODEL_PROFILES else "multilingual"
@@ -54,6 +55,7 @@ def resolve_model_config():
         "model_id": profile["model_id"],
         "pipeline": explicit_pipeline or profile["pipeline"],
         "revision": explicit_revision or profile.get("revision"),
+        "is_explicit_model": False,
     }
 
 
@@ -150,6 +152,42 @@ def load_text_to_image_pipeline(model_config, torch_dtype):
     return pipeline_class.from_pretrained(model_id, **load_kwargs)
 
 
+def load_pipeline_with_fallback(model_config, torch_dtype):
+    candidates = [model_config]
+
+    should_fallback_to_classic = (
+        not model_config.get("is_explicit_model")
+        and str(model_config.get("profile") or "").strip().lower() == "multilingual"
+    )
+    if should_fallback_to_classic:
+        classic = MODEL_PROFILES["classic"]
+        candidates.append({
+            "profile": "classic",
+            "model_id": classic["model_id"],
+            "pipeline": classic["pipeline"],
+            "revision": classic.get("revision"),
+            "is_explicit_model": False,
+        })
+
+    last_error = None
+    for index, candidate in enumerate(candidates):
+        try:
+            pipe = load_text_to_image_pipeline(candidate, torch_dtype)
+            fallback_used = index > 0
+            return pipe, candidate, fallback_used, (str(last_error) if last_error else "")
+        except Exception as error:
+            last_error = error
+            if index + 1 >= len(candidates):
+                raise
+            print(
+                f"[A11][sd] model load failed for {candidate['model_id']}: {error}. "
+                f"Falling back to {candidates[index + 1]['model_id']}.",
+                file=os.sys.stderr,
+            )
+
+    raise last_error or RuntimeError("Unable to load any Stable Diffusion pipeline.")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
@@ -171,7 +209,10 @@ def main():
 
     maybe_enable_cuda_fast_paths()
 
-    pipe = load_text_to_image_pipeline(model_config, torch_dtype)
+    pipe, resolved_model_config, fallback_used, fallback_reason = load_pipeline_with_fallback(
+        model_config,
+        torch_dtype,
+    )
     if hasattr(pipe, "safety_checker"):
         pipe.safety_checker = None
     if hasattr(pipe, "register_to_config"):
@@ -210,9 +251,12 @@ def main():
             {
                 "ok": True,
                 "output_path": os.path.abspath(output_path),
-                "model_profile": model_config["profile"],
-                "model_id": model_id,
-                "model_pipeline": model_config["pipeline"],
+                "requested_model_profile": model_config["profile"],
+                "model_profile": resolved_model_config["profile"],
+                "model_id": resolved_model_config["model_id"],
+                "model_pipeline": resolved_model_config["pipeline"],
+                "model_fallback_used": fallback_used,
+                "model_fallback_reason": fallback_reason or None,
                 "device": device,
                 "torch_dtype": dtype_label(torch_dtype),
                 "cuda_available": torch.cuda.is_available(),
