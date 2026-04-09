@@ -36,6 +36,7 @@ const RAW_SCENE_LIBRARY = [
   { label: 'bord de mer', family: 'water', aliases: ['mer', 'ocean', 'océan', 'bord de mer', 'seaside'] },
   { label: 'rivière', family: 'water', aliases: ['riviere', 'rivière', 'river'] },
   { label: 'neige', family: 'climate', aliases: ['neige', 'snow', 'enneigé', 'enneige'] },
+  { label: 'hiver', family: 'climate', aliases: ['hiver', 'winter', 'hivernal', 'hivernale'] },
   { label: 'nuit', family: 'time', aliases: ['nuit', 'night', 'nocturne'] },
 ];
 

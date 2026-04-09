@@ -34,6 +34,7 @@ const RAW_ACCESSORY_LIBRARY = [
   { label: 'couronne', family: 'wearable', aliases: ['couronne', 'crown'] },
   { label: 'cape', family: 'wearable', aliases: ['cape', 'cloak'] },
   { label: 'pull', family: 'wearable', aliases: ['pull', 'pullover', 'sweater', 'sweat', 'hoodie'] },
+  { label: 'bikini', family: 'wearable', aliases: ['bikini', 'maillot de bain', 'swimsuit', 'swimwear'] },
 ];
 
 const ACCESSORY_LIBRARY = RAW_ACCESSORY_LIBRARY.map((entry) => {

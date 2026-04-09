@@ -72,6 +72,17 @@ function hasResolvedEntityContext(mask = {}) {
   return Boolean(mask?.meta?.imageEntityContext && typeof mask.meta.imageEntityContext === 'object');
 }
 
+function hasScratchpadEmbellishment(mask = {}) {
+  const embellishment = mask?.meta?.imageScratchpad?.embellishment;
+  if (!embellishment || typeof embellishment !== 'object') return false;
+  return (
+    countTruthyEntries(embellishment?.composition) > 0
+    || countTruthyEntries(embellishment?.environment) > 0
+    || countTruthyEntries(embellishment?.style) > 0
+    || countTruthyEntries(embellishment?.promptInstructions) > 0
+  );
+}
+
 function hasSceneRelation(rawText = '') {
   return /\b(avec|dans|sur|tenant|portant|sortant|sorti|sortie)\b/i.test(String(rawText || ''));
 }
@@ -123,6 +134,11 @@ function resolveImageCompilerCompartment(rawMask = {}, options = {}) {
   if (hasResolvedEntityContext(mask)) {
     score += 1;
     reasons.push('resolved_entity_context');
+  }
+
+  if (hasScratchpadEmbellishment(mask)) {
+    score += 1;
+    reasons.push('scratchpad_embellishment');
   }
 
   if (hasNonTrivialSemanticFamilies(mask)) {
@@ -188,6 +204,16 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
         metiers: toUniqueStrings(mask.meta.imageScratchpad.metiers || []).slice(0, 4),
         scenes: toUniqueStrings(mask.meta.imageScratchpad.scenes || []).slice(0, 4),
         facts: toUniqueStrings(mask.meta.imageScratchpad.promptFacts || mask.meta.imageScratchpad.facts || []).slice(0, 5),
+        embellishment: mask.meta.imageScratchpad.embellishment && typeof mask.meta.imageScratchpad.embellishment === 'object'
+          ? {
+              family: normalizeText(mask.meta.imageScratchpad.embellishment.family || ''),
+              reason: normalizeText(mask.meta.imageScratchpad.embellishment.reason || ''),
+              composition: toUniqueStrings(mask.meta.imageScratchpad.embellishment.composition || []).slice(0, 3),
+              environment: toUniqueStrings(mask.meta.imageScratchpad.embellishment.environment || []).slice(0, 3),
+              style: toUniqueStrings(mask.meta.imageScratchpad.embellishment.style || []).slice(0, 3),
+              prompt_instructions: toUniqueStrings(mask.meta.imageScratchpad.embellishment.promptInstructions || []).slice(0, 3),
+            }
+          : null,
       }
     : null;
   const payload = {

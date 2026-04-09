@@ -58,6 +58,22 @@ function normalizeArrayLabels(values = []) {
   );
 }
 
+function hasStrongPromptTransform(mask = {}) {
+  const raw = normalizeLookup(mask?.raw || '');
+  const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
+    ? mask.meta.semantic
+    : {};
+  const accessoryLabels = normalizeArrayLabels(semantic?.accessories || []);
+  const elementLabels = normalizeArrayLabels(semantic?.elements || []);
+
+  return (
+    accessoryLabels.length > 0
+    || elementLabels.length > 0
+    || /\b(fume|fumer|fumant|fumante|portant|tenant)\b/.test(raw)
+    || /\bdans la bouche\b/.test(raw)
+  );
+}
+
 function resolveEntityUniverse(mask = {}) {
   return normalizeText(
     mask?.meta?.imageEntityContext?.universe
@@ -255,6 +271,25 @@ function shouldUseImageWebDraft({
 
   const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '');
   const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
+  const hasStrongTransform = hasStrongPromptTransform(mask);
+
+  if (['simple_food_object', 'container_object', 'single_plant_object'].includes(subjectProfileType)) {
+    return false;
+  }
+
+  if (
+    hasStrongTransform
+    && [
+      'reference_character',
+      'single_human_figure',
+      'pokemon_creature',
+      'phoenix_creature',
+      'mythic_creature',
+      'single_animal',
+    ].includes(subjectProfileType)
+  ) {
+    return false;
+  }
 
   return (
     selection?.compartment === 'special'

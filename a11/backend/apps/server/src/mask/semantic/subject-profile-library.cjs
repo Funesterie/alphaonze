@@ -125,6 +125,20 @@ const RAW_SUBJECT_PROFILES = [
     promptInstruction: "Présenter l'objet seul, bien centré, comme unique sujet principal.",
   },
   {
+    type: 'single_plant_object',
+    label: 'Plante ou arbre unique',
+    aliases: [
+      'sapin', 'arbre', 'tree', 'pine tree', 'fir tree', 'fleur', 'flower',
+      'plante', 'plant', 'bonsai', 'bonsaï', 'rose', 'orchidee', 'orchidée',
+      'tournesol', 'sunflower',
+    ],
+    definitionKeywords: ['plante', 'arbre', 'végétal', 'vegetal', 'fleur', 'sapin'],
+    composition: ['une seule plante complète', 'forme complète visible', 'sujet centré'],
+    environment: ['décor naturel simple'],
+    styleHints: [],
+    promptInstruction: 'Montrer une seule plante ou un seul arbre complet, bien lisible et centré.',
+  },
+  {
     type: 'container_object',
     label: 'Objet contenant',
     aliases: ['canette', 'canette de soda', 'soda', 'bouteille', 'bottle', 'can'],

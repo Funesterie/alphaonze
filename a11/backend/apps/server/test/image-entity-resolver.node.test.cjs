@@ -158,3 +158,57 @@ test('enrichImageMaskWithScratchpad keeps a temporary scratchpad and promotes th
   assert.ok(enriched.meta.promptInstructions.some((entry) => /Master Chief|Halo/i.test(String(entry))));
   assert.equal(scratchpad.canonicalSubject, 'Master Chief');
 });
+
+test('buildImageScratchpad creates a gentle racing embellishment for very basic mario kart prompts', () => {
+  const enriched = enrichImageMaskWithScratchpad({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    inputs: {
+      subject: ['Mario'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['illustration nette'],
+      composition: ['un seul personnage complet'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        canonicalSubject: 'Mario',
+      },
+      semantic: {
+        confidence: 0.89,
+        accessories: [],
+        elements: [],
+        metiers: [],
+        scenes: [],
+      },
+    },
+    raw: 'genere une image de mario kart',
+  }, {
+    entityContext: {
+      canonicalSubject: 'Mario',
+      description: 'personnage de jeu vidéo Nintendo',
+      summary: 'Pilote emblématique de la série Mario Kart.',
+      universe: 'Mario Kart',
+      entityType: 'fictional_character',
+    },
+  });
+
+  assert.equal(enriched.meta.imageScratchpad?.embellishment?.family, 'racing_arcade');
+  assert.ok(enriched.inputs.composition.includes('dérapage visible'));
+  assert.ok(enriched.inputs.environment.includes('virage de circuit lisible'));
+  assert.ok(enriched.inputs.style.includes('énergie arcade nette'));
+  assert.ok(enriched.meta.promptInstructions.some((entry) => /pleine course|dérapage visible/i.test(String(entry))));
+});

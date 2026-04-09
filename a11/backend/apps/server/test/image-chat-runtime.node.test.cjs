@@ -729,7 +729,7 @@ test('generateImageFromMask stores working hints when the llm image judge valida
   assert.equal(result.hintMemory?.ok, true);
 });
 
-test('generateImageFromMask provides web hint context to the special compiler for complex prompts', async () => {
+test('generateImageFromMask provides web hint context to the special compiler and avoids unsafe draft anchoring for transformed reference prompts', async () => {
   let llmPayloadText = '';
   const calls = [];
 
@@ -819,8 +819,8 @@ test('generateImageFromMask provides web hint context to the special compiler fo
   assert.match(llmPayloadText, /contexte_web/i);
   assert.match(llmPayloadText, /lapin de dessin animé gris et blanc/i);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.init_image_url, 'https://images.example.com/bugs-bunny-ref.png');
-  assert.equal(calls[0]?.strength, 0.45);
+  assert.equal(calls[0]?.init_image_url, undefined);
+  assert.equal(calls[0]?.strength, undefined);
   assert.match(String(calls[0]?.prompt || ''), /oreilles longues bien visibles/i);
   assert.match(String(calls[0]?.prompt || ''), /Montrer clairement un lapin de dessin animé gris et blanc/i);
 });
@@ -911,4 +911,96 @@ test('generateImageFromMask injects the temporary entity scratchpad before speci
   assert.match(llmPayloadText, /Master Chief/i);
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /Master Chief/i);
+});
+
+test('generateImageFromMask carries gentle scratchpad embellishment into the special compiler for basic mario kart prompts', async () => {
+  let llmPayloadText = '';
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['Mario'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['illustration nette'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.86,
+          accessories: [],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Mario',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de mario kart',
+    },
+    resolveImageEntityContext: async () => ({
+      canonicalSubject: 'Mario',
+      description: 'personnage de jeu vidéo Nintendo',
+      summary: 'Pilote emblématique de la série Mario Kart.',
+      universe: 'Mario Kart',
+      entityType: 'fictional_character',
+    }),
+    lookupImageHintWebContext: async () => null,
+    specialCompilerCallStructuredLlmJson: async ({ text }) => {
+      llmPayloadText = String(text || '');
+      return {
+        composition_hints: ['vitesse lisible'],
+        environment_hints: ['virage dynamique lisible'],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/mario-kart.png',
+        filename: 'mario-kart.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  });
+
+  assert.equal(result.mask?.meta?.compilerCompartment, 'special');
+  assert.equal(result.mask?.meta?.imageScratchpad?.embellishment?.family, 'racing_arcade');
+  assert.match(llmPayloadText, /embellishment/i);
+  assert.match(llmPayloadText, /dérapage visible/i);
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.prompt || ''), /dérapage visible/i);
+  assert.match(String(calls[0]?.prompt || ''), /virage de circuit lisible|virage dynamique lisible/i);
+  assert.match(String(calls[0]?.prompt || ''), /petites flammes à l échappement/i);
 });

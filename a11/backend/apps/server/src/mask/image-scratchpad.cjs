@@ -27,6 +27,152 @@ function toUniqueStrings(values = []) {
   )];
 }
 
+function countEntries(values = []) {
+  return (Array.isArray(values) ? values : []).filter(Boolean).length;
+}
+
+function extractCoreImageRequestText(mask = {}) {
+  return normalizeText(mask?.raw || '')
+    .replace(/^(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+/i, '')
+    .replace(/^que\s+tu\s+/i, '')
+    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?/i, '')
+    .replace(/^(?:une?\s+)?(?:image|illustration|dessin|photo|visuel|portrait)\s+(?:de|du|de la|de l['’]?|d['’])?\s*/i, '')
+    .replace(/[.!?]+$/g, '')
+    .trim();
+}
+
+function hasExplicitSceneRelation(value = '') {
+  return /\b(avec|dans|sur|sous|tenant|portant|devant|derriere|derrière|au milieu de|au bord de|pres de|près de|en train de)\b/i.test(String(value || ''));
+}
+
+function buildScratchpadEmbellishment(scratchpad = {}, mask = {}) {
+  const coreRequestText = extractCoreImageRequestText(mask);
+  const normalizedCoreRequest = normalizeLookup(coreRequestText);
+  const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
+    ? mask.meta.semantic
+    : {};
+  const subjectProfileType = normalizeText(scratchpad?.subjectProfileType || mask?.meta?.subjectProfile?.type || '');
+  const hasPromptInstructions = Array.isArray(mask?.meta?.promptInstructions) && mask.meta.promptInstructions.length > 0;
+  const semanticComplexity = (
+    countEntries(semantic?.accessories)
+    + countEntries(semantic?.elements)
+    + countEntries(semantic?.metiers)
+    + countEntries(semantic?.scenes)
+  );
+  const tokenCount = normalizedCoreRequest.split(/\s+/).filter(Boolean).length;
+  const isBasicRequest = Boolean(
+    normalizedCoreRequest
+    && tokenCount > 0
+    && tokenCount <= 4
+    && !hasExplicitSceneRelation(coreRequestText)
+    && semanticComplexity === 0
+    && !hasPromptInstructions
+  );
+
+  if (!isBasicRequest) return null;
+
+  const lookupText = normalizeLookup([
+    coreRequestText,
+    scratchpad?.canonicalSubject,
+    scratchpad?.universe,
+    scratchpad?.entityType,
+    ...(Array.isArray(scratchpad?.facts) ? scratchpad.facts : []),
+  ].filter(Boolean).join(' '));
+
+  const racingArcadeRequest = /\b(mario kart|kart|circuit|course|racing|race|drift|derapage)\b/.test(lookupText);
+  if (racingArcadeRequest) {
+    return {
+      family: 'racing_arcade',
+      reason: 'basic_racing_request',
+      composition: [
+        'action dynamique lisible',
+        'dérapage visible',
+        'kart bien lisible',
+      ],
+      environment: [
+        'virage de circuit lisible',
+        'circuit coloré cohérent avec l univers',
+      ],
+      style: [
+        'énergie arcade nette',
+      ],
+      promptInstructions: [
+        'Montrer le sujet en pleine course sur un circuit cohérent, simple et lisible.',
+        'Ajouter un dérapage visible avec légère fumée sur les pneus et de petites flammes à l échappement.',
+      ],
+    };
+  }
+
+  if (subjectProfileType === 'reference_character' || subjectProfileType === 'single_human_figure') {
+    return {
+      family: 'character_simple',
+      reason: 'basic_character_request',
+      composition: [
+        'pose dynamique simple',
+        'présence héroïque lisible',
+      ],
+      environment: [
+        'décor cohérent avec l univers',
+      ],
+      style: [
+        'mise en scène nette',
+      ],
+      promptInstructions: [
+        'Ajouter une petite énergie visuelle cohérente avec le personnage, tout en gardant une scène simple et lisible.',
+      ],
+    };
+  }
+
+  if ([
+    'pokemon_creature',
+    'single_animal',
+    'mythic_creature',
+    'phoenix_creature',
+  ].includes(subjectProfileType)) {
+    return {
+      family: 'living_subject_simple',
+      reason: 'basic_living_subject_request',
+      composition: [
+        'élan vivant mais lisible',
+      ],
+      environment: [
+        'ambiance simple cohérente avec le sujet',
+      ],
+      style: [
+        'touche artistique légère',
+      ],
+      promptInstructions: [
+        'Donner au sujet une petite fibre artistique avec un mouvement léger et naturel, sans surcharger la scène.',
+      ],
+    };
+  }
+
+  if ([
+    'simple_food_object',
+    'container_object',
+    'single_plant_object',
+  ].includes(subjectProfileType)) {
+    return {
+      family: 'still_life_simple',
+      reason: 'basic_object_request',
+      composition: [
+        'mise en scène sobre et élégante',
+      ],
+      environment: [
+        'arrière-plan propre et harmonieux',
+      ],
+      style: [
+        'lumière douce',
+      ],
+      promptInstructions: [
+        'Ajouter une touche artistique simple par la lumière et la composition, sans surcharger la scène.',
+      ],
+    };
+  }
+
+  return null;
+}
+
 function extractSemanticLabels(values = []) {
   return toUniqueStrings(
     (Array.isArray(values) ? values : [])
@@ -66,6 +212,18 @@ function buildImageScratchpad(mask = {}, entityContext = null) {
     metiers.length ? `Rôle demandé : ${metiers.join(', ')}` : '',
     scenes.length ? `Décor demandé : ${scenes.join(', ')}` : '',
   ]);
+  const embellishment = buildScratchpadEmbellishment({
+    canonicalSubject,
+    subjectProfileType,
+    entityType: normalizeText(entityContext?.entityType || ''),
+    universe,
+    accessories,
+    elements,
+    metiers,
+    scenes,
+    styles,
+    facts,
+  }, normalizedMask);
 
   return {
     canonicalSubject,
@@ -79,6 +237,7 @@ function buildImageScratchpad(mask = {}, entityContext = null) {
     styles,
     facts,
     promptFacts: facts.slice(0, 4),
+    embellishment,
     draftAllowed: [
       'reference_character',
       'pokemon_creature',
@@ -105,7 +264,11 @@ function buildScratchpadPromptInstructions(scratchpad = {}, mask = {}) {
     instructions.push(`Rester cohérent avec l univers ${universe}.`);
   }
 
-  return toUniqueStrings(instructions).slice(0, 2);
+  if (scratchpad?.embellishment && typeof scratchpad.embellishment === 'object') {
+    instructions.push(...toUniqueStrings(scratchpad.embellishment.promptInstructions || []));
+  }
+
+  return toUniqueStrings(instructions).slice(0, 3);
 }
 
 function looksLikeNoisySubject(value = '') {
@@ -135,6 +298,7 @@ function enrichImageMaskWithScratchpad(rawMask = {}, {
 } = {}) {
   const mask = deepClone(normalizeMaskImageGenerate(rawMask));
   mask.meta = mask.meta && typeof mask.meta === 'object' ? mask.meta : {};
+  mask.inputs = mask.inputs && typeof mask.inputs === 'object' ? mask.inputs : {};
 
   if (entityContext && typeof entityContext === 'object') {
     mask.meta.imageEntityContext = entityContext;
@@ -146,6 +310,20 @@ function enrichImageMaskWithScratchpad(rawMask = {}, {
 
   if (nextScratchpad && typeof nextScratchpad === 'object') {
     mask.meta.imageScratchpad = nextScratchpad;
+    if (nextScratchpad.embellishment && typeof nextScratchpad.embellishment === 'object') {
+      mask.inputs.composition = toUniqueStrings([
+        ...(Array.isArray(mask.inputs.composition) ? mask.inputs.composition : []),
+        ...toUniqueStrings(nextScratchpad.embellishment.composition || []),
+      ]);
+      mask.inputs.environment = toUniqueStrings([
+        ...(Array.isArray(mask.inputs.environment) ? mask.inputs.environment : []),
+        ...toUniqueStrings(nextScratchpad.embellishment.environment || []),
+      ]);
+      mask.inputs.style = toUniqueStrings([
+        ...(Array.isArray(mask.inputs.style) ? mask.inputs.style : []),
+        ...toUniqueStrings(nextScratchpad.embellishment.style || []),
+      ]);
+    }
   }
 
   const extraInstructions = buildScratchpadPromptInstructions(nextScratchpad, mask);
