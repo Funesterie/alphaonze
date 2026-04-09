@@ -11,6 +11,12 @@ const {
   collectUniqueElementsFromWordItems,
 } = require('./semantic/element-library.cjs');
 const {
+  collectUniqueMetiersFromWordItems,
+} = require('./semantic/metier-library.cjs');
+const {
+  collectUniqueAccessoriesFromWordItems,
+} = require('./semantic/accessory-library.cjs');
+const {
   resolveSubjectProfile,
 } = require('./semantic/subject-profile-library.cjs');
 
@@ -68,10 +74,14 @@ function getSemanticMeta(wazaa = null, opts = {}) {
       .filter((entry, index, items) => entry?.key && items.findIndex((candidate) => candidate?.key === entry.key) === index)
       .slice(0, 6);
     const semanticElements = collectUniqueElementsFromWordItems(wordItems).slice(0, 6);
+    const semanticMetiers = collectUniqueMetiersFromWordItems(wordItems).slice(0, 6);
+    const semanticAccessories = collectUniqueAccessoriesFromWordItems(wordItems).slice(0, 6);
     const colorWords = semanticColors.map((entry) => entry.label).slice(0, 6);
     const styleWords = semanticStyles.map((entry) => String(entry.label || '').trim()).filter(Boolean);
     const sceneWords = semanticScenes.map((entry) => String(entry.label || '').trim()).filter(Boolean);
     const elementWords = semanticElements.map((entry) => String(entry.label || '').trim()).filter(Boolean);
+    const metierWords = semanticMetiers.map((entry) => String(entry.label || '').trim()).filter(Boolean);
+    const accessoryWords = semanticAccessories.map((entry) => String(entry.label || '').trim()).filter(Boolean);
     return {
       subject: String(opts.semanticAnalysis?.subject || '').trim(),
       confidence: Number(opts.semanticAnalysis?.summary?.confidence || 0),
@@ -86,6 +96,10 @@ function getSemanticMeta(wazaa = null, opts = {}) {
       sceneWords,
       elements: semanticElements,
       elementWords,
+      metiers: semanticMetiers,
+      metierWords,
+      accessories: semanticAccessories,
+      accessoryWords,
       subjectProfile: resolveSubjectProfile({
         subject: String(opts.semanticAnalysis?.subject || '').trim(),
         sourceText: String(opts.semanticAnalysis?.sourceText || '').trim(),
@@ -149,6 +163,39 @@ function buildPositiveCompositionHints(subject = '', sourceText = '', semanticMe
   return toUniqueStrings(hints);
 }
 
+function buildMetierSemanticHints(semanticMeta = {}, subjectProfile = null) {
+  const metiers = Array.isArray(semanticMeta?.metiers) ? semanticMeta.metiers : [];
+  const hints = {
+    style: [],
+    composition: [],
+    environment: [],
+    promptInstructions: [],
+  };
+
+  for (const metier of metiers) {
+    const family = String(metier?.family || '').trim().toLowerCase();
+    const label = String(metier?.label || '').trim();
+    if (family !== 'human_role') continue;
+
+    hints.composition.push('figure humaine lisible', 'présence humaine claire');
+    if (label) {
+      hints.promptInstructions.push(`Montrer clairement une figure de ${label} unique et reconnaissable.`);
+    }
+  }
+
+  if (subjectProfile?.type === 'single_human_figure' && metiers.length) {
+    hints.composition.push('une seule personne complète', 'posture claire et lisible');
+    hints.environment.push('fond simple cohérent avec le personnage');
+  }
+
+  return {
+    style: toUniqueStrings(hints.style),
+    composition: toUniqueStrings(hints.composition),
+    environment: toUniqueStrings(hints.environment),
+    promptInstructions: toUniqueStrings(hints.promptInstructions),
+  };
+}
+
 function buildElementSemanticHints(semanticMeta = {}, subjectProfile = null) {
   const elements = Array.isArray(semanticMeta?.elements) ? semanticMeta.elements : [];
   const hints = {
@@ -208,6 +255,60 @@ function buildElementSemanticHints(semanticMeta = {}, subjectProfile = null) {
   };
 }
 
+function buildAccessorySemanticHints(semanticMeta = {}, sourceText = '') {
+  const accessories = Array.isArray(semanticMeta?.accessories) ? semanticMeta.accessories : [];
+  const normalizedSource = normalizeLookupText(sourceText);
+  const hints = {
+    style: [],
+    composition: [],
+    environment: [],
+    promptInstructions: [],
+  };
+
+  for (const accessory of accessories) {
+    const family = String(accessory?.family || '').trim().toLowerCase();
+    const label = String(accessory?.label || '').trim();
+    const normalizedLabel = normalizeLookupText(label);
+    const explicitlyRequestedWithSubject = normalizedLabel
+      && /\bavec\b/.test(normalizedSource)
+      && new RegExp(`\\b${normalizedLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(normalizedSource);
+    if (!label) continue;
+
+    hints.composition.push('accessoire bien visible');
+
+    switch (family) {
+      case 'weapon':
+        hints.composition.push('prise claire de l accessoire');
+        if (!explicitlyRequestedWithSubject) {
+          hints.promptInstructions.push(`Montrer clairement l accessoire ${label} avec le sujet principal.`);
+        }
+        break;
+      case 'wearable':
+        if (!explicitlyRequestedWithSubject) {
+          hints.promptInstructions.push(`Montrer clairement l accessoire ${label} porté par le sujet principal.`);
+        }
+        break;
+      case 'food_prop':
+        if (!/\bdans la bouche\b/.test(normalizedSource) && !explicitlyRequestedWithSubject) {
+          hints.promptInstructions.push(`Montrer clairement l accessoire ${label} avec le sujet principal.`);
+        }
+        break;
+      default:
+        if (!explicitlyRequestedWithSubject) {
+          hints.promptInstructions.push(`Inclure clairement l accessoire ${label} avec le sujet principal.`);
+        }
+        break;
+    }
+  }
+
+  return {
+    style: toUniqueStrings(hints.style),
+    composition: toUniqueStrings(hints.composition),
+    environment: toUniqueStrings(hints.environment),
+    promptInstructions: toUniqueStrings(hints.promptInstructions),
+  };
+}
+
 function sanitizeEnvironmentCandidate(value = '') {
   const normalized = String(value || '')
     .trim()
@@ -216,6 +317,10 @@ function sanitizeEnvironmentCandidate(value = '') {
     .replace(/[,.!?;:]+$/g, '')
     .trim();
   if (!normalized) return '';
+  const normalizedLookup = normalizeLookupText(normalized);
+  if (/^(?:dans|sur|sous)\s+(?:la|le|les|un|une|des|sa|son|ses)\s+(?:bouche|gueule|main|mains|bec|tete|tête|dos|bras|jambe|jambes|patte|pattes|epaule|épaule|epaules|épaules|visage|oeil|oeils|yeux)$/.test(normalizedLookup)) {
+    return '';
+  }
   if (normalized.split(/\s+/).length > 12) return '';
   return normalized;
 }
@@ -325,7 +430,7 @@ function shouldPreferSemanticPrompt(wazaa) {
 function sanitizeImageSubjectCandidate(value = '') {
   const normalized = String(value || '')
     .trim()
-    .replace(/^(?:un|une|des|du|de la|de l['’]?|d['’]|le|la|les)\s+/i, '');
+    .replace(/^(?:d['’]\s*un|d['’]\s*une|d['’]\s*des|d\s+un|d\s+une|d\s+des|de\s+la|de\s+l['’]?|du|des|un|une|le|la|les)\s+/i, '');
   if (!normalized) return '';
   if (/\b(?:image\s+of|generate|g[eé]n[eè]re|show me|montre(?:-|\s)?moi|dessine|draw|create|cr[eée]e|je veux|i want)\b/i.test(normalized)) {
     return '';
@@ -340,6 +445,27 @@ function sanitizeImageSubjectCandidate(value = '') {
     return '';
   }
   return normalized;
+}
+
+function extractAccessoryPromptInstructions(sourceText = '') {
+  const raw = String(sourceText || '').trim();
+  if (!raw) return [];
+
+  const bodyAttachmentMatch = raw.match(
+    /\bavec\s+((?:un|une|des)\s+[^,.!?;:]+?)\s+(dans\s+(?:la|le|les)\s+(?:bouche|gueule|main|mains|bec)|sur\s+(?:la|le|les)\s+(?:tete|tête|dos|epaule|épaule|epaules|épaules))\b/i
+  );
+  if (bodyAttachmentMatch) {
+    const phrase = `${String(bodyAttachmentMatch[1] || '').trim()} ${String(bodyAttachmentMatch[2] || '').trim()}`.trim();
+    if (phrase) return [`Montrer clairement ${phrase} du sujet principal.`];
+  }
+
+  const genericAccessoryMatch = raw.match(
+    /\bavec\s+((?:un|une|des)\s+[^,.!?;:]+?)(?=\s+(?:dans|sur|sous|au milieu de|au bord de|près de|pres de)\b|[,.!?;:]|$)/i
+  );
+  if (!genericAccessoryMatch) return [];
+  const phrase = String(genericAccessoryMatch[1] || '').trim();
+  if (!phrase || phrase.split(/\s+/).length > 7) return [];
+  return [`Inclure clairement ${phrase} avec le sujet principal.`];
 }
 
 function extractFallbackSubjectFromSourceText(sourceText = '') {
@@ -414,22 +540,30 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     ...splitCsvValues(attribute),
   ]);
   const normalizedSubject = sanitizeImageSubjectCandidate(stripPaletteSuffixFromSubject(subject, palette));
-  const subjectProfile = semanticMeta?.subjectProfile || resolveSubjectProfile({
+  const resolvedSubjectProfile = resolveSubjectProfile({
     subject: normalizedSubject || subject,
     definitionSummary,
     sourceText: promptSeedText,
   });
+  const subjectProfile = resolvedSubjectProfile || semanticMeta?.subjectProfile || null;
+  const metierHints = buildMetierSemanticHints(semanticMeta, subjectProfile);
   const elementHints = buildElementSemanticHints(semanticMeta, subjectProfile);
+  const accessoryHints = buildAccessorySemanticHints(semanticMeta, promptSeedText);
+  const accessoryPromptInstructions = extractAccessoryPromptInstructions(promptSeedText);
   const style = toUniqueStrings([
     styleEntity,
     ...(Array.isArray(semanticMeta?.styleWords) ? semanticMeta.styleWords : []),
+    ...metierHints.style,
     ...elementHints.style,
+    ...accessoryHints.style,
     ...(Array.isArray(subjectProfile?.styleHints) ? subjectProfile.styleHints : []),
     'haute qualité',
   ]);
   const composition = toUniqueStrings([
     ...buildPositiveCompositionHints(normalizedSubject, promptSeedText, semanticMeta),
+    ...metierHints.composition,
     ...elementHints.composition,
+    ...accessoryHints.composition,
     ...(Array.isArray(subjectProfile?.composition) ? subjectProfile.composition : []),
   ]);
   const profileEnvironment = Array.isArray(subjectProfile?.environment) ? subjectProfile.environment : [];
@@ -439,12 +573,16 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       profileEnvironment.length > 0
         ? toUniqueStrings([
             ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+            ...metierHints.environment,
             ...elementHints.environment,
+            ...accessoryHints.environment,
             ...profileEnvironment,
           ])
         : toUniqueStrings([
             ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+            ...metierHints.environment,
             ...elementHints.environment,
+            ...accessoryHints.environment,
             ...buildCoherentEnvironmentHints(normalizedSubject, promptSeedText, definitionSummary),
           ])
     );
@@ -479,7 +617,16 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       canonicalMaskProducer: 'text-to-wazaa -> wazaa-to-mask',
       promptSeedText,
       promptText: promptSeedText,
-      ...(elementHints.promptInstructions.length ? { promptInstructions: elementHints.promptInstructions } : {}),
+      ...(metierHints.promptInstructions.length || elementHints.promptInstructions.length || accessoryHints.promptInstructions.length || accessoryPromptInstructions.length
+        ? {
+            promptInstructions: toUniqueStrings([
+              ...metierHints.promptInstructions,
+              ...elementHints.promptInstructions,
+              ...accessoryHints.promptInstructions,
+              ...accessoryPromptInstructions,
+            ]),
+          }
+        : {}),
       ...(subjectProfile ? { subjectProfile } : {}),
     },
     raw: sourceText,

@@ -9,6 +9,12 @@ const {
   generateImageFromMask,
   toImageChatProxyPayload,
 } = require('./mask/image-chat-runtime.cjs');
+const {
+  resolveImageCompilerCompartment,
+} = require('./mask/compile-mask-to-image-prompt-special.cjs');
+const {
+  readPreferredImageHintMemory: defaultReadPreferredImageHintMemory,
+} = require('./image/image-hint-memory.cjs');
 const textToWazaa = require('./mask/text-to-wazaa.cjs');
 const validateMaskUnified = require('./mask/validate-mask-unified.cjs');
 const wazaaToMask = require('./mask/wazaa-to-mask.cjs');
@@ -189,6 +195,8 @@ function resolveIntentDependencies(overrides = {}) {
     generateSd: overrides.generateSd,
     textToWazaa: overrides.textToWazaa || textToWazaa,
     lookupDefinitionContext: overrides.lookupDefinitionContext || defaultLookupDefinitionContext,
+    specialCompilerCallStructuredLlmJson: overrides.specialCompilerCallStructuredLlmJson,
+    readPreferredImageHintMemory: overrides.readPreferredImageHintMemory || defaultReadPreferredImageHintMemory,
   };
 }
 
@@ -200,6 +208,8 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
       req: input.req,
       rawMask: resolution.mask,
       generateSd: deps.generateSd,
+      specialCompilerCallStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
+      readPreferredImageHintMemory: deps.readPreferredImageHintMemory,
     });
     return {
       ...resolution,
@@ -315,6 +325,20 @@ function createIntentResolver(overrides = {}) {
 
     const { compiled } = validateAndCompileMask(mask);
     const kind = String(mask.intent || '').trim() || 'chat.reply';
+    let preferredHintMemory = null;
+    if (kind === 'image.generate' && typeof deps.readPreferredImageHintMemory === 'function') {
+      try {
+        preferredHintMemory = await deps.readPreferredImageHintMemory(mask);
+      } catch (error_) {
+        console.warn(`[A11][hint-memory] traceId=${traceId} read failed: ${String(error_?.message || error_)}`);
+      }
+    }
+    const compilerCompartment = kind === 'image.generate'
+      ? resolveImageCompilerCompartment(mask, {
+        callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
+        preferredHints: preferredHintMemory?.hints || {},
+      })
+      : null;
     let resolution = {
       traceId,
       pipeline,
@@ -326,6 +350,9 @@ function createIntentResolver(overrides = {}) {
       maskSource: 'wazaa',
       fallbackUsed: null,
       responsePayload: null,
+      compilerCompartmentCandidate: compilerCompartment?.compartment || 'standard',
+      specialCompilerReason: Array.isArray(compilerCompartment?.reasons) ? compilerCompartment.reasons : [],
+      shouldBypassImageRequestCache: compilerCompartment?.shouldBypassCache === true,
     };
 
     if (kind === 'code.python.generate' && compiled?.target === 'python') {

@@ -94,42 +94,69 @@ function isLlmEnrichmentEnabled() {
   return Boolean(String(explicitScopedKey).trim());
 }
 
-async function callTranslationLlm(text) {
+async function callStructuredLlmJson({
+  text = '',
+  systemPrompt = '',
+  temperature = 0,
+  maxTokens = 256,
+  timeoutMs = 8000,
+} = {}) {
   const config = resolveTranslationConfig();
   if (!config.apiKey) return null;
 
+  const controller = typeof AbortController === 'function'
+    ? new AbortController()
+    : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 8000))
+    : null;
+
   const body = {
     model: config.model,
-    temperature: 0,
-    max_tokens: 256,
+    temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
+    max_tokens: Number.isFinite(Number(maxTokens)) ? Number(maxTokens) : 256,
     messages: [
-      { role: 'system', content: WAZAA_TRANSLATE_SYSTEM_PROMPT },
+      { role: 'system', content: String(systemPrompt || '').trim() },
       { role: 'user', content: text },
     ],
   };
 
-  const resp = await fetch(config.url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  try {
+    const resp = await fetch(config.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
 
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => '');
-    console.error(`[resolve-text-to-wazaa] LLM HTTP ${resp.status}: ${errText.slice(0, 200)}`);
-    return null;
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error(`[resolve-text-to-wazaa] LLM HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+      return null;
+    }
+
+    const json = await resp.json();
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) return null;
+
+    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    return JSON.parse(cleaned);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
+}
 
-  const json = await resp.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) return null;
-
-  // Handle markdown code blocks wrapping the JSON
-  const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  return JSON.parse(cleaned);
+async function callTranslationLlm(text) {
+  return callStructuredLlmJson({
+    text,
+    systemPrompt: WAZAA_TRANSLATE_SYSTEM_PROMPT,
+    temperature: 0,
+    maxTokens: 256,
+    timeoutMs: Number(process.env.A11_WAZAA_LLM_TIMEOUT_MS || 8000),
+  });
 }
 
 function shouldEnrichWithLlm(heuristicWazaa) {
@@ -221,6 +248,7 @@ module.exports = {
   shouldEnrichWithLlm,
   isLlmEnrichmentEnabled,
   resolveTranslationConfig,
+  callStructuredLlmJson,
   mergeEnrichedWazaa,
   WAZAA_TRANSLATE_SYSTEM_PROMPT,
 };

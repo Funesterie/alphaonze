@@ -2,6 +2,10 @@ const normalizeMaskImageGenerate = require('./normalize-mask-image-generate.cjs'
 const validateMaskImageGenerate = require('./validate-mask-image-generate.cjs');
 const compileMaskToSD = require('./compile-mask-to-sd.cjs');
 const compileMaskToImagePrompt = require('./compile-mask-to-image-prompt.cjs');
+const {
+  enrichMaskForSpecialImageCompiler,
+  resolveImageCompilerCompartment,
+} = require('./compile-mask-to-image-prompt-special.cjs');
 const adaptMaskToFreelandValue = require('./adapt-mask-to-freeland-value.cjs');
 const crypto = require('node:crypto');
 const path = require('node:path');
@@ -10,6 +14,13 @@ const {
   verifyGeneratedImageCardinality,
   buildRetrySdBody,
 } = require('../image/verify-generated-image-cardinality.cjs');
+const {
+  readPreferredImageHintMemory,
+  recordSuccessfulImageHintMemory,
+} = require('../image/image-hint-memory.cjs');
+const {
+  verifyGeneratedImageWithLlmJudge,
+} = require('../image/verify-generated-image-with-llm.cjs');
 const {
   buildCanonicalImageMaskFromText,
 } = require('./resolve-image-mask-from-text.cjs');
@@ -117,6 +128,42 @@ function compileMaskImageGenerate(rawMask) {
     compiled,
     sdBody,
   };
+}
+
+async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
+  let preferredHintMemory = null;
+  try {
+    preferredHintMemory = typeof options.readPreferredImageHintMemory === 'function'
+      ? await options.readPreferredImageHintMemory(rawMask)
+      : await readPreferredImageHintMemory(rawMask);
+  } catch (error_) {
+    preferredHintMemory = {
+      available: false,
+      skipped: true,
+      reason: 'hint_memory_read_failed',
+      message: String(error_?.message || error_),
+      hints: {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      },
+    };
+  }
+  const enriched = await enrichMaskForSpecialImageCompiler(rawMask, {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+    preferredHints: preferredHintMemory?.hints || {},
+  });
+  const compiledState = compileMaskImageGenerate(enriched?.mask || rawMask);
+  compiledState.specialCompiler = {
+      selection: enriched?.selection || resolveImageCompilerCompartment(rawMask, {
+      callStructuredLlmJson: options.callStructuredLlmJson,
+    }),
+    appliedHints: enriched?.appliedHints || null,
+    fallbackReason: String(enriched?.fallbackReason || '').trim(),
+    preferredHintMemory: preferredHintMemory || null,
+  };
+  return compiledState;
 }
 
 function buildImageVerificationRequestId(compiledState = {}) {
@@ -242,12 +289,20 @@ async function generateImageFromMask({
   rawMask,
   generateImage,
   generateSd,
+  specialCompilerCallStructuredLlmJson,
   verifyImageCardinality = verifyGeneratedImageCardinality,
+  verifyImageWithLlmJudge = verifyGeneratedImageWithLlmJudge,
   inspectGeneratedImageResult = inspectGeneratedImage,
+  readPreferredImageHintMemory,
+  recordSuccessfulImageHintMemory,
+  callStructuredVisionJudgeJson,
   imageVerificationEnabled,
   maxVerificationRetries,
 }) {
-  const compiledState = compileMaskImageGenerate(rawMask);
+  const compiledState = await compileMaskImageGenerateRuntime(rawMask, {
+    callStructuredLlmJson: specialCompilerCallStructuredLlmJson,
+    readPreferredImageHintMemory,
+  });
   const imageGenerator = typeof generateImage === 'function'
     ? generateImage
     : generateSd;
@@ -386,11 +441,60 @@ async function generateImageFromMask({
     throw error;
   }
 
+  const imageUrl = resolveGeneratedImageUrl(sdResult);
+  const shouldRunLlmJudge = Boolean(
+    imageUrl
+    && typeof verifyImageWithLlmJudge === 'function'
+    && (
+      compiledState?.specialCompiler?.selection?.candidate === true
+      || compiledState?.specialCompiler?.selection?.compartment === 'special'
+      || retryHistory.length > 0
+    )
+  );
+  const imageLlmJudge = shouldRunLlmJudge
+    ? await verifyImageWithLlmJudge({
+      imageUrl,
+      mask: compiledState.mask,
+      requestId,
+      prompt: String(activeSdBody.prompt || '').trim(),
+      seed: activeSdBody.seed,
+      callStructuredVisionJson: callStructuredVisionJudgeJson,
+    })
+    : {
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_not_needed',
+    };
+
+  let hintMemory = null;
+  if (
+    imageLlmJudge?.ok === true
+    && imageLlmJudge?.decision?.accepted === true
+    && typeof recordSuccessfulImageHintMemory === 'function'
+  ) {
+    try {
+      hintMemory = await recordSuccessfulImageHintMemory({
+        mask: compiledState.mask,
+        workingHints: imageLlmJudge.workingHints,
+        judgeResult: imageLlmJudge,
+      });
+    } catch (error_) {
+      hintMemory = {
+        ok: false,
+        skipped: true,
+        reason: 'hint_memory_record_failed',
+        message: String(error_?.message || error_),
+      };
+    }
+  }
+
   return {
     ...compiledState,
     sdBody: activeSdBody,
     sdResult,
     imageInspection,
+    imageLlmJudge,
+    hintMemory,
     imageGuard: {
       requestId,
       enabled: guardEnabled,
@@ -474,7 +578,15 @@ function buildImageAssistantMessage({ imageUrl, filename }) {
   return "C'est fait. L'image a été générée.";
 }
 
-function toImageChatProxyPayload({ sdResult, mask, compiled, sdBody, imageGuard }) {
+function toImageChatProxyPayload({
+  sdResult,
+  mask,
+  compiled,
+  sdBody,
+  imageGuard,
+  imageLlmJudge,
+  hintMemory,
+}) {
   const imageUrl = resolveGeneratedImageUrl(sdResult);
   const filename = ensureImageFilename(
     sdResult?.filename || sdResult?.conversationResource?.filename || sdResult?.file?.filename,
@@ -509,6 +621,8 @@ function toImageChatProxyPayload({ sdResult, mask, compiled, sdBody, imageGuard 
     a11Agent: {
       imagePath: imageUrl || null,
       imageGuard: imageGuard || null,
+      imageLlmJudge: imageLlmJudge || null,
+      hintMemory: hintMemory || null,
       results: [
         {
           action: sdResult?.tool || 'generate_image',
@@ -528,9 +642,11 @@ module.exports = {
   extractLatestUserMessage,
   buildSdRequestBody,
   compileMaskImageGenerate,
+  compileMaskImageGenerateRuntime,
   generateImageFromMask,
   generateImageFromText,
   resolveGeneratedImageUrl,
   inspectGeneratedImage,
+  resolveImageCompilerCompartment,
   toImageChatProxyPayload,
 };

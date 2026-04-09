@@ -94,7 +94,11 @@ function buildNegativePrompt(mask = {}) {
     hints.push('plusieurs sujets', 'doublon du sujet', 'foule');
   }
 
-  if (subjectProfileType === 'reference_character' || subjectProfileType === 'pokemon_creature') {
+  if (
+    subjectProfileType === 'reference_character'
+    || subjectProfileType === 'pokemon_creature'
+    || subjectProfileType === 'single_human_figure'
+  ) {
     hints.push('plusieurs personnages', 'visages dupliqués', 'personnage coupé');
   }
 
