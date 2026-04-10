@@ -56,6 +56,20 @@ function countTruthyEntries(values = []) {
   return (Array.isArray(values) ? values : []).filter(Boolean).length;
 }
 
+function isTruthyEnv(value = '') {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function resolveImagePipelineMode(explicitValue = '') {
+  const raw = String(explicitValue || process.env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
+  if (raw === 'orchestrated' || raw === 'orchestrateur') return 'orchestrated';
+  return 'creative';
+}
+
+function isImageOrchestratorEnabled(explicitValue = '') {
+  return resolveImagePipelineMode(explicitValue) === 'orchestrated';
+}
+
 function hasNonTrivialSemanticFamilies(mask = {}) {
   const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
     ? mask.meta.semantic
@@ -157,8 +171,23 @@ function resolveImageCompilerCompartment(rawMask = {}, options = {}) {
     reasons.push('short_or_noisy_subject');
   }
 
-  const candidate = score >= 3;
   const llmAvailable = hasSpecialCompilerLlmSupport(options);
+  const pipelineMode = resolveImagePipelineMode(options.pipelineMode);
+
+  if (!isImageOrchestratorEnabled(pipelineMode)) {
+    reasons.unshift('creative_image_pipeline');
+    return {
+      compartment: 'standard',
+      score,
+      reasons,
+      candidate: false,
+      llmAvailable,
+      shouldBypassCache: false,
+      aggressive: false,
+      pipelineMode,
+    };
+  }
+  const candidate = score >= 3;
   const compartment = candidate && llmAvailable ? 'special' : 'standard';
 
   return {
@@ -168,6 +197,8 @@ function resolveImageCompilerCompartment(rawMask = {}, options = {}) {
     candidate,
     llmAvailable,
     shouldBypassCache: compartment === 'special',
+    aggressive: false,
+    pipelineMode,
   };
 }
 
@@ -316,6 +347,7 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
 
   const selection = resolveImageCompilerCompartment(baseMask, options);
   const reasonText = selection.reasons.join(', ');
+  baseMask.meta.imagePipelineMode = selection.pipelineMode;
 
   if (selection.compartment !== 'special') {
     baseMask.meta.compilerCompartment = 'standard';
@@ -339,6 +371,29 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
   let workingMask = baseMask;
   if (memoryHintCount > 0) {
     workingMask = mergeSpecialCompilerHints(workingMask, memoryHints);
+  }
+
+  if (!selection.llmAvailable) {
+    workingMask.meta.compilerCompartment = 'special';
+    if (reasonText) workingMask.meta.specialCompilerReason = reasonText;
+    workingMask.meta.specialCompilerFallback = 'llm_unavailable';
+    workingMask.meta.specialCompilerAppliedHintsCount = memoryHintCount;
+    if (memoryHintCount > 0) {
+      workingMask.meta.specialCompilerMemoryHintsAppliedCount = memoryHintCount;
+    }
+    return {
+      mask: workingMask,
+      selection,
+      appliedHints: memoryHintCount > 0
+        ? memoryHints
+        : {
+          composition_hints: [],
+          environment_hints: [],
+          style_hints: [],
+          prompt_instructions: [],
+        },
+      fallbackReason: 'llm_unavailable',
+    };
   }
 
   const llmCaller = typeof options.callStructuredLlmJson === 'function'
@@ -372,12 +427,12 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
 
   if (!normalizedHints || appliedCount === 0) {
     const fallbackMask = workingMask;
-    fallbackMask.meta.compilerCompartment = memoryHintCount > 0 ? 'special' : 'standard';
+    fallbackMask.meta.compilerCompartment = 'special';
     if (reasonText) fallbackMask.meta.specialCompilerReason = reasonText;
     if (!fallbackReason) fallbackReason = 'empty_or_invalid_hints';
     fallbackMask.meta.specialCompilerFallback = fallbackReason;
+    fallbackMask.meta.specialCompilerAppliedHintsCount = memoryHintCount;
     if (memoryHintCount > 0) {
-      fallbackMask.meta.specialCompilerAppliedHintsCount = memoryHintCount;
       fallbackMask.meta.specialCompilerMemoryHintsAppliedCount = memoryHintCount;
     }
     return {
@@ -415,6 +470,7 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
   };
   const enrichedMask = mergeSpecialCompilerHints(baseMask, combinedHints);
   enrichedMask.meta.compilerCompartment = 'special';
+  enrichedMask.meta.imagePipelineMode = selection.pipelineMode;
   if (reasonText) enrichedMask.meta.specialCompilerReason = reasonText;
   const totalAppliedCount = (
     combinedHints.composition_hints.length
@@ -437,6 +493,8 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
 
 module.exports = {
   SPECIAL_IMAGE_COMPILER_SYSTEM_PROMPT,
+  resolveImagePipelineMode,
+  isImageOrchestratorEnabled,
   resolveImageCompilerCompartment,
   normalizeSpecialCompilerHints,
   enrichMaskForSpecialImageCompiler,

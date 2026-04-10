@@ -8,6 +8,16 @@ const {
   toImageChatProxyPayload,
 } = require('../src/mask/image-chat-runtime.cjs');
 
+async function withImagePipelineMode(mode, fn) {
+  const previous = process.env.A11_IMAGE_PIPELINE_MODE;
+  process.env.A11_IMAGE_PIPELINE_MODE = mode;
+  try {
+    return await fn();
+  } finally {
+    process.env.A11_IMAGE_PIPELINE_MODE = previous;
+  }
+}
+
 test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enrichment', () => {
   const sdBody = buildSdRequestBody(
     {
@@ -364,7 +374,7 @@ test('generateImageFromMask rejects invalid solid-black generations before retur
   );
 });
 
-test('resolveImageCompilerCompartment keeps simple object prompts on the standard compiler', () => {
+test('resolveImageCompilerCompartment keeps simple object prompts on the standard compiler in creative mode', () => {
   const decision = resolveImageCompilerCompartment({
     version: 'mask-1',
     intent: 'image.generate',
@@ -402,12 +412,14 @@ test('resolveImageCompilerCompartment keeps simple object prompts on the standar
 
   assert.equal(decision.compartment, 'standard');
   assert.equal(decision.shouldBypassCache, false);
+  assert.equal(decision.candidate, false);
+  assert.equal(decision.pipelineMode, 'creative');
 });
 
 test('generateImageFromMask applies the special compiler for complex prompts with positive llm hints', async () => {
   const calls = [];
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -465,7 +477,7 @@ test('generateImageFromMask applies the special compiler for complex prompts wit
       skipped: true,
       reason: 'vision_unavailable',
     }),
-  });
+  }));
 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
@@ -475,10 +487,10 @@ test('generateImageFromMask applies the special compiler for complex prompts wit
   assert.equal(result.mask?.meta?.specialCompilerAppliedHintsCount, 4);
 });
 
-test('generateImageFromMask falls back to the standard compiler when special hints are empty', async () => {
+test('generateImageFromMask stays on the special compiler when llm hints are empty', async () => {
   const calls = [];
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -535,18 +547,81 @@ test('generateImageFromMask falls back to the standard compiler when special hin
       skipped: true,
       reason: 'vision_unavailable',
     }),
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(result.mask?.meta?.compilerCompartment, 'special');
+  assert.equal(result.specialCompiler?.fallbackReason, 'empty_or_invalid_hints');
+  assert.doesNotMatch(String(calls[0]?.prompt || ''), /special/i);
+});
+
+test('generateImageFromMask injects an operational seed even when the request did not provide one', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['licorne'],
+        environment: ['forêt magique simple'],
+        style: ['haute qualité'],
+        composition: ['créature unique complète'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.88,
+          accessories: [],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: { type: 'mythic_creature' },
+      },
+      ambiguities: [],
+      raw: 'genere une image de licorne',
+    },
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/unicorn.png',
+        filename: 'unicorn.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(result.mask?.meta?.compilerCompartment, 'standard');
-  assert.equal(result.specialCompiler?.fallbackReason, 'empty_or_invalid_hints');
-  assert.doesNotMatch(String(calls[0]?.prompt || ''), /special/i);
+  assert.equal(Number.isInteger(calls[0]?.seed), true);
+  assert.ok(calls[0]?.seed > 0);
+  assert.equal(result.sdBody?.seed, calls[0]?.seed);
+  assert.equal(result.imageGuard?.attempts?.[0]?.seed, calls[0]?.seed);
 });
 
 test('generateImageFromMask reuses remembered hint memory for complex prompts', async () => {
   const calls = [];
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -617,7 +692,7 @@ test('generateImageFromMask reuses remembered hint memory for complex prompts', 
       skipped: true,
       reason: 'vision_llm_unavailable',
     }),
-  });
+  }));
 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
@@ -630,7 +705,7 @@ test('generateImageFromMask reuses remembered hint memory for complex prompts', 
 test('generateImageFromMask stores working hints when the llm image judge validates the result', async () => {
   let storedPayload = null;
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -716,7 +791,7 @@ test('generateImageFromMask stores working hints when the llm image judge valida
         addedCount: 3,
       };
     },
-  });
+  }));
 
   assert.ok(storedPayload);
   assert.deepEqual(storedPayload.workingHints, {
@@ -733,7 +808,7 @@ test('generateImageFromMask provides web hint context to the special compiler an
   let llmPayloadText = '';
   const calls = [];
 
-  await generateImageFromMask({
+  await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -814,7 +889,7 @@ test('generateImageFromMask provides web hint context to the special compiler an
       skipped: true,
       reason: 'vision_llm_unavailable',
     }),
-  });
+  }));
 
   assert.match(llmPayloadText, /contexte_web/i);
   assert.match(llmPayloadText, /lapin de dessin animé gris et blanc/i);
@@ -829,7 +904,7 @@ test('generateImageFromMask injects the temporary entity scratchpad before speci
   let llmPayloadText = '';
   const calls = [];
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -904,7 +979,7 @@ test('generateImageFromMask injects the temporary entity scratchpad before speci
       skipped: true,
       reason: 'vision_llm_unavailable',
     }),
-  });
+  }));
 
   assert.equal(result.mask?.meta?.imageScratchpad?.canonicalSubject, 'Master Chief');
   assert.match(llmPayloadText, /ardoise_temporaire/i);
@@ -917,7 +992,7 @@ test('generateImageFromMask carries gentle scratchpad embellishment into the spe
   let llmPayloadText = '';
   const calls = [];
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -993,7 +1068,7 @@ test('generateImageFromMask carries gentle scratchpad embellishment into the spe
       skipped: true,
       reason: 'vision_llm_unavailable',
     }),
-  });
+  }));
 
   assert.equal(result.mask?.meta?.compilerCompartment, 'special');
   assert.equal(result.mask?.meta?.imageScratchpad?.embellishment?.family, 'racing_arcade');
@@ -1008,7 +1083,7 @@ test('generateImageFromMask carries gentle scratchpad embellishment into the spe
 test('generateImageFromMask applies image-request director enrichments before final compilation', async () => {
   const calls = [];
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -1090,7 +1165,7 @@ test('generateImageFromMask applies image-request director enrichments before fi
       skipped: true,
       reason: 'vision_llm_unavailable',
     }),
-  });
+  }));
 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /Boruto en train de fumer/i);
