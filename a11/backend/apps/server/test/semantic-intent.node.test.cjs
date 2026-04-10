@@ -341,6 +341,16 @@ test('wazaaToMask applies a single plant profile for winter fir prompts', () => 
   assert.ok(imageMask?.inputs?.environment?.some((value) => /hiver/i.test(String(value))));
 });
 
+test('wazaaToMask applies a mythic creature profile for unicorn prompts', () => {
+  const text = 'genere une image de licorne';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wazaa = textToWazaa.sync(text, {});
+  const imageMask = wazaaToMask(wazaa, { semanticAnalysis: analysis });
+
+  assert.equal(imageMask?.meta?.subjectProfile?.type, 'mythic_creature');
+  assert.ok(imageMask?.inputs?.composition?.includes('créature unique complète'));
+});
+
 test('wazaaToMask turns smoking prompts into explicit cigarette action guidance', () => {
   const text = 'genere une image de pikachu fumant une cigarette';
   const analysis = analyzeSemanticIntent(text, {});
