@@ -101,6 +101,9 @@ function buildNegativePrompt(mask = {}) {
 
   if (pair?.count === 2) {
     hints.push('troisième sujet', 'personnage supplémentaire', 'foule');
+    if (Array.isArray(pair?.negativeHints)) {
+      hints.push(...pair.negativeHints);
+    }
   } else if (single?.count === 1 || subject.length <= 1) {
     hints.push('plusieurs sujets', 'doublon du sujet', 'foule');
   }
@@ -161,10 +164,12 @@ function compileMaskToImagePrompt(mask = {}) {
     || ''
   );
   const scratchpadContext = buildScratchpadContext(mask);
+  const pair = rawPrompt ? compileCharacterCountConstraints(rawPrompt) : null;
 
   const promptSections = [
     rawPrompt ? `Demande : ${rawPrompt}` : '',
     joinSection('Sujet principal', subject),
+    pair?.promptHints?.length ? `Contraintes de scène : ${normalizeList(pair.promptHints).join(', ')}` : '',
     joinSection('Environnement', environment),
     joinSection('Style', style),
     joinSection('Composition', composition),

@@ -49,6 +49,16 @@ test('compileCharacterCountConstraints detects two clear requested subjects', ()
   assert.match(String(bundle.prompt || ''), /Montrer clairement les deux sujets demandés/i);
 });
 
+test('compileCharacterCountConstraints detects relational pair prompts with a patient second subject', () => {
+  const constraints = compileCharacterCountConstraints('génère une image de mario docteur avec un patient skeletrex');
+  const bundle = buildSdPromptBundle('génère une image de mario docteur avec un patient skeletrex');
+
+  assert.equal(constraints?.count, 2);
+  assert.deepEqual(constraints?.subjects, ['mario docteur', 'patient skeletrex']);
+  assert.match(String(bundle.prompt || ''), /Sujet principal : mario docteur et patient skeletrex/i);
+  assert.match(String(constraints?.promptHints?.join(' ') || ''), /mario docteur avec patient skeletrex/i);
+});
+
 test('compileSingleSubjectConstraints keeps a simple single-subject contract', () => {
   const constraints = compileSingleSubjectConstraints('génère une image de vélo bleu');
   const bundle = buildSdPromptBundle('génère une image de vélo bleu');

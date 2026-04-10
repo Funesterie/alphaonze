@@ -42,7 +42,11 @@ Those heavy assets stay in the separate local `llm` workspace on Windows.
 
 ## Model profiles
 
-- Default local profile: `SD_MODEL_PROFILE=multilingual`
+- Default local profile: `SD_MODEL_PROFILE=sd35`
+  uses `stabilityai/stable-diffusion-3.5-medium`.
+- This gives A11 a much stronger default raster model than SD 1.5, but the first
+  download may require Hugging Face access to the Stability AI model card.
+- Multilingual legacy profile: `SD_MODEL_PROFILE=multilingual`
   uses `BAAI/AltDiffusion-m18`, which is designed for multilingual prompts including French.
 - Legacy profile: `SD_MODEL_PROFILE=classic`
   uses `runwayml/stable-diffusion-v1-5`.
