@@ -424,6 +424,42 @@ test('resolveImageRequestMode defaults simple image prompts to raw', () => {
       intent: 'image.generate',
       task: { domain: 'image', action: 'generate' },
       inputs: {
+        subject: ['pomme'],
+        environment: [],
+        style: ['haute qualité'],
+        composition: [],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        subjectProfile: { type: 'simple_food_object' },
+      },
+      ambiguities: [],
+      raw: 'genere une image de pomme',
+    },
+  });
+
+  assert.equal(decision.mode, 'raw');
+  assert.equal(decision.explicit, false);
+});
+
+test('resolveImageRequestMode promotes mythic creature prompts to smart for model safety', () => {
+  const decision = resolveImageRequestMode({
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      inputs: {
         subject: ['licorne'],
         environment: [],
         style: ['haute qualité'],
@@ -441,13 +477,56 @@ test('resolveImageRequestMode defaults simple image prompts to raw', () => {
         safe_mode: true,
         no_text: true,
       },
+      meta: {
+        subjectProfile: { type: 'mythic_creature' },
+      },
       ambiguities: [],
       raw: 'genere une image de licorne',
     },
   });
 
-  assert.equal(decision.mode, 'raw');
-  assert.equal(decision.explicit, false);
+  assert.equal(decision.mode, 'smart');
+  assert.equal(decision.reason, 'model_sensitive_profile');
+});
+
+test('resolveImageRequestMode promotes named character wearable prompts to smart', () => {
+  const decision = resolveImageRequestMode({
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      inputs: {
+        subject: ['Princesse Zelda'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['illustration fantasy nette'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.86,
+          accessories: [{ label: 'bikini', family: 'wearable' }],
+        },
+        subjectProfile: { type: 'reference_character' },
+      },
+      ambiguities: [],
+      raw: 'genere une image de zelda en bikini',
+    },
+  });
+
+  assert.equal(decision.mode, 'smart');
+  assert.equal(decision.reason, 'reference_character_variation');
 });
 
 test('generateImageFromMask applies the special compiler for complex prompts with positive llm hints', async () => {
@@ -663,7 +742,7 @@ test('generateImageFromMask raw mode never retries even when the verifier would 
       task: { domain: 'image', action: 'generate' },
       compiler: { target: 'sd-payload', version: '1.0' },
       inputs: {
-        subject: ['licorne'],
+        subject: ['pomme'],
         environment: [],
         style: ['haute qualité'],
         composition: [],
@@ -680,20 +759,23 @@ test('generateImageFromMask raw mode never retries even when the verifier would 
         safe_mode: true,
         no_text: true,
       },
+      meta: {
+        subjectProfile: { type: 'simple_food_object' },
+      },
       ambiguities: [],
-      raw: 'genere une image de licorne',
+      raw: 'genere une image de pomme',
     },
     generateSd: async ({ body }) => {
       calls.push(body);
       return {
         ok: true,
-        image_url: 'https://files.example.com/unicorn-raw.png',
-        filename: 'unicorn-raw.png',
+        image_url: 'https://files.example.com/apple-raw.png',
+        filename: 'apple-raw.png',
       };
     },
     verifyImageCardinality: async () => ({
       ok: true,
-      expected: { subject_count: 1, subject_type: 'licorne', subject_label: 'licorne', allow_group: false },
+      expected: { subject_count: 1, subject_type: 'pomme', subject_label: 'pomme', allow_group: false },
       observed: { subject_count: 2, duplicate_subjects: true, fusion_detected: false, subject_match: true, confidence: 0.93 },
       decision: { retry: true, reason: 'multiple_subjects_detected', notes: '' },
     }),

@@ -197,7 +197,7 @@ test('resolveUserRequest marks simple single-subject prompts as raw by default',
   });
 
   const resolution = await resolver.resolveUserRequest({
-    userText: 'genere une image de licorne',
+    userText: 'genere une image de pomme',
     executeRuntime: false,
   });
 
@@ -205,6 +205,34 @@ test('resolveUserRequest marks simple single-subject prompts as raw by default',
   assert.equal(resolution.imageRequestMode, 'raw');
   assert.equal(resolution.mask.meta.imageRequestMode, 'raw');
   assert.equal(resolution.mask.meta.imageScratchpad, undefined);
+});
+
+test('resolveUserRequest promotes mythic creature prompts to smart mode', async () => {
+  const resolver = createIntentResolver();
+
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une image de licorne',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.imageRequestMode, 'smart');
+  assert.equal(resolution.mask.meta.imageRequestMode, 'smart');
+  assert.equal(resolution.mask.meta.subjectProfile?.type, 'mythic_creature');
+});
+
+test('resolveUserRequest promotes named character wardrobe prompts to smart mode', async () => {
+  const resolver = createIntentResolver();
+
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une image de zelda en bikini',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.imageRequestMode, 'smart');
+  assert.equal(resolution.mask.meta.imageRequestMode, 'smart');
+  assert.equal(resolution.mask.meta.subjectProfile?.type, 'reference_character');
 });
 
 test('resolveUserRequest smooths noisy image requests before building the canonical mask', async () => {

@@ -111,11 +111,40 @@ function countImageSemanticFamilies(mask = {}) {
   );
 }
 
+function getImageSubjectProfileType(mask = {}) {
+  const directType = String(mask?.meta?.subjectProfile?.type || '').trim();
+  if (directType) return directType;
+  return String(mask?.meta?.semantic?.subjectProfile?.type || '').trim();
+}
+
+function getImageAccessoryFamilies(mask = {}) {
+  const accessories = Array.isArray(mask?.meta?.semantic?.accessories)
+    ? mask.meta.semantic.accessories
+    : [];
+  return new Set(
+    accessories
+      .map((entry) => String(entry?.family || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function isModelSensitiveImageProfile(profileType = '') {
+  return [
+    'reference_character',
+    'single_human_figure',
+    'pokemon_creature',
+    'mythic_creature',
+    'phoenix_creature',
+  ].includes(String(profileType || '').trim());
+}
+
 function inferAutoImageRequestMode(rawMask = {}) {
   const mask = normalizeMaskImageGenerate(rawMask);
   const rawText = String(mask?.raw || '').trim();
   const normalizedText = rawText.toLowerCase();
   const tokenCount = normalizedText.split(/\s+/).filter(Boolean).length;
+  const subjectProfileType = getImageSubjectProfileType(mask);
+  const accessoryFamilies = getImageAccessoryFamilies(mask);
   const hasPair = Boolean(compileCharacterCountConstraints(rawText));
   const hasInitImage = Boolean(
     String(mask?.meta?.webImageDraft?.initImageUrl || mask?.meta?.webImageDraft?.initImagePath || '').trim()
@@ -130,11 +159,35 @@ function inferAutoImageRequestMode(rawMask = {}) {
     || countImageSemanticFamilies(mask) >= 3
   );
   const hasSceneAttachment = /\b(avec|dans|sur|sous|tenant|portant|en train de|devant|derriere|derrière)\b/i.test(rawText);
+  const hasHumanFigureAccessory = (
+    ['reference_character', 'single_human_figure'].includes(subjectProfileType)
+    && ['wearable', 'weapon', 'smoking_prop'].some((family) => accessoryFamilies.has(family))
+  );
+  const hasNamedCharacterVariation = (
+    subjectProfileType === 'reference_character'
+    && (hasSceneAttachment || accessoryFamilies.size > 0 || tokenCount >= 5)
+  );
 
   if (hasInitImage || hasWorkflowSignal || hasPair) {
     return {
       mode: 'smart',
       reason: hasInitImage ? 'init_image_requested' : (hasPair ? 'multiple_subjects_requested' : 'workflow_signal'),
+      explicit: false,
+    };
+  }
+
+  if (hasNamedCharacterVariation || hasHumanFigureAccessory) {
+    return {
+      mode: 'smart',
+      reason: hasNamedCharacterVariation ? 'reference_character_variation' : 'human_figure_accessory_variation',
+      explicit: false,
+    };
+  }
+
+  if (isModelSensitiveImageProfile(subjectProfileType)) {
+    return {
+      mode: 'smart',
+      reason: 'model_sensitive_profile',
       explicit: false,
     };
   }

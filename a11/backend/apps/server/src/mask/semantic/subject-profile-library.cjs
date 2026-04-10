@@ -171,7 +171,7 @@ const RAW_SUBJECT_PROFILES = [
   {
     type: 'mythic_creature',
     label: 'Créature unique',
-    aliases: ['dragon'],
+    aliases: ['dragon', 'licorne', 'unicorn'],
     definitionKeywords: ['créature', 'creature', 'mythique', 'légendaire', 'legendaire'],
     composition: ['créature unique complète', 'silhouette lisible', 'forme complète visible'],
     environment: ['décor simple cohérent avec le sujet'],
