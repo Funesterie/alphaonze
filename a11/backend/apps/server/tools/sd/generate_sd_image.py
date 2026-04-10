@@ -15,6 +15,11 @@ from PIL import Image
 
 
 MODEL_PROFILES = {
+    "sd35": {
+        "model_id": "stabilityai/stable-diffusion-3.5-medium",
+        "pipeline": "sd3",
+        "revision": None,
+    },
     "multilingual": {
         "model_id": "BAAI/AltDiffusion-m18",
         "pipeline": "alt",
@@ -27,6 +32,19 @@ MODEL_PROFILES = {
     },
 }
 
+MODEL_PROFILE_ALIASES = {
+    "sd35": "sd35",
+    "sd3.5": "sd35",
+    "sd35-medium": "sd35",
+    "stable-diffusion-3.5": "sd35",
+    "stable-diffusion-3.5-medium": "sd35",
+    "multilingual": "multilingual",
+    "alt": "multilingual",
+    "classic": "classic",
+    "sd15": "classic",
+    "v1.5": "classic",
+}
+
 
 def normalize_env_text(value, default=""):
     text = str(value or "").strip().lower()
@@ -35,7 +53,7 @@ def normalize_env_text(value, default=""):
 
 def resolve_model_config():
     explicit_model_id = str(os.environ.get("SD_MODEL_ID", "")).strip()
-    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "multilingual")
+    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "sd35")
     explicit_pipeline = normalize_env_text(os.environ.get("SD_MODEL_PIPELINE"), "")
     explicit_revision = str(os.environ.get("SD_MODEL_REVISION", "")).strip() or None
 
@@ -43,15 +61,19 @@ def resolve_model_config():
         pipeline = explicit_pipeline or (
             "alt" if "altdiffusion" in explicit_model_id.lower() else "auto"
         )
+        if not explicit_pipeline and "stable-diffusion-3" in explicit_model_id.lower():
+            pipeline = "sd3"
         return {
-            "profile": explicit_profile if explicit_profile in MODEL_PROFILES else "custom",
+            "profile": MODEL_PROFILE_ALIASES.get(explicit_profile, explicit_profile) if explicit_profile in MODEL_PROFILE_ALIASES else "custom",
             "model_id": explicit_model_id,
             "pipeline": pipeline,
             "revision": explicit_revision,
             "is_explicit_model": True,
         }
 
-    selected_profile = explicit_profile if explicit_profile in MODEL_PROFILES else "multilingual"
+    selected_profile = MODEL_PROFILE_ALIASES.get(explicit_profile, "")
+    if selected_profile not in MODEL_PROFILES:
+        selected_profile = "sd35"
     profile = MODEL_PROFILES[selected_profile]
     return {
         "profile": selected_profile,
@@ -193,7 +215,16 @@ def load_pipeline(model_config, torch_dtype, generation_mode):
     model_id = str(model_config.get("model_id") or "").strip()
     revision = model_config.get("revision")
 
-    if pipeline_kind == "alt":
+    if pipeline_kind == "sd3":
+        if generation_mode == "img2img":
+            from diffusers import StableDiffusion3Img2ImgPipeline
+
+            pipeline_class = StableDiffusion3Img2ImgPipeline
+        else:
+            from diffusers import StableDiffusion3Pipeline
+
+            pipeline_class = StableDiffusion3Pipeline
+    elif pipeline_kind == "alt":
         if generation_mode == "img2img":
             from diffusers import AltDiffusionImg2ImgPipeline
 
@@ -214,9 +245,10 @@ def load_pipeline(model_config, torch_dtype, generation_mode):
 
     load_kwargs = {
         "torch_dtype": torch_dtype,
-        "safety_checker": None,
-        "requires_safety_checker": False,
     }
+    if pipeline_kind != "sd3":
+        load_kwargs["safety_checker"] = None
+        load_kwargs["requires_safety_checker"] = False
     if revision:
         load_kwargs["revision"] = revision
 
@@ -228,7 +260,7 @@ def load_pipeline_with_fallback(model_config, torch_dtype, generation_mode):
 
     should_fallback_to_classic = (
         not model_config.get("is_explicit_model")
-        and str(model_config.get("profile") or "").strip().lower() == "multilingual"
+        and str(model_config.get("profile") or "").strip().lower() in {"sd35", "multilingual"}
     )
     if should_fallback_to_classic:
         classic = MODEL_PROFILES["classic"]

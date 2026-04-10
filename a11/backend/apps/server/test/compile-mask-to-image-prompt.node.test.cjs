@@ -295,3 +295,34 @@ test('compileMaskToImagePrompt keeps accessory instructions as positive subject 
   assert.match(String(compiled.prompt || ''), /carotte dans la bouche du sujet principal/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /Environnement : dans la bouche/i);
 });
+
+test('compileMaskToImagePrompt keeps relational pair prompts explicit for role plus patient scenes', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de mario docteur avec un patient skeletrex',
+    inputs: {
+      subject: ['Mario'],
+      environment: ['cabinet médical simple'],
+      style: ['illustration nette', 'haute qualité'],
+      composition: ['deux sujets distincts et lisibles'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        promptInstruction: 'Représenter clairement Mario, un seul personnage moustachu de jeu vidéo, reconnaissable et complet.',
+      },
+      promptInstructions: [
+        'Montrer clairement Mario en docteur avec un patient skeletrex distinct et lisible.',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Contraintes de scène : Montrer clairement mario docteur avec patient skeletrex/i);
+  assert.match(String(compiled.prompt || ''), /deux sujets distincts et lisibles/i);
+  assert.match(String(compiled.negative_prompt || ''), /clone du premier sujet|dupliquer le premier personnage/i);
+});

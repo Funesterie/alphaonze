@@ -162,6 +162,40 @@ function looksLikeCharacterSubject(value = '') {
   return false;
 }
 
+function trimRelationalSubjectPhrase(value = '', palette = []) {
+  const subject = normalizeWhitespace(String(value || ''))
+    .replace(/^(?:un|une|des|du|de la|de l['’]?|d(?:['’]|\s+)un|d(?:['’]|\s+)une|d['’]?|le|la|les)\s+/i, '')
+    .replace(/[,.!?;:]+$/g, '')
+    .trim();
+
+  return stripPaletteSuffixFromSubject(subject, palette);
+}
+
+function extractRelationalPairConstraints(basePrompt = '', palette = []) {
+  const relationMatch = String(basePrompt || '').match(
+    /^(.+?)\s+\bavec\s+((?:un|une|des)\s+(?:patient|patiente|ennemi|ennemie|ennemie|enemy|adversaire|compagnon|compagnonne|companion|ami|amie|friend|monstre|monster|creature|créature|pokemon|pokémon|dragon|robot|zombie|squelette|skeletrex)\b[^,.!?;:]*)$/i
+  );
+  if (!relationMatch) return null;
+
+  const firstSubject = trimRelationalSubjectPhrase(relationMatch[1], palette);
+  const secondSubject = trimRelationalSubjectPhrase(relationMatch[2], palette);
+  if (!isSubjectPhraseMeaningful(firstSubject) || !isSubjectPhraseMeaningful(secondSubject)) return null;
+
+  const kind = [firstSubject, secondSubject].some(looksLikeCharacterSubject) ? 'characters' : 'subjects';
+  return {
+    count: 2,
+    kind,
+    relation: 'with',
+    subjects: [firstSubject, secondSubject],
+    promptHints: [
+      `Montrer clairement ${firstSubject} avec ${secondSubject}.`,
+      `Deux ${kind === 'characters' ? 'personnages' : 'sujets'} distincts et lisibles.`,
+      'Éviter de dupliquer le premier sujet à la place du second.',
+    ],
+    negativeHints: ['clone du premier sujet', 'dupliquer le premier personnage'],
+  };
+}
+
 function translateImagePromptToEnglish(value = '') {
   return normalizeImagePromptLiteral(value);
 }
@@ -171,6 +205,9 @@ function compileCharacterCountConstraints(rawPrompt = '') {
   if (!basePrompt || isPluralRequested(basePrompt)) return null;
 
   const palette = extractPalette(basePrompt);
+  const relationalPair = extractRelationalPairConstraints(basePrompt, palette);
+  if (relationalPair) return relationalPair;
+
   const pairParts = basePrompt
     .split(/\b(?:et|and|&)\b/i)
     .map((entry) => trimSubjectPhrase(entry, palette))
@@ -187,7 +224,7 @@ function compileCharacterCountConstraints(rawPrompt = '') {
       `Montrer clairement ${pairParts[0]} et ${pairParts[1]}.`,
       `Deux ${kind === 'characters' ? 'personnages' : 'sujets'} distincts et lisibles.`,
     ],
-    negativeHints: [],
+    negativeHints: ['clone du premier sujet', 'dupliquer le premier personnage'],
   };
 }
 
