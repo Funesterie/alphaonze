@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   isLlmEnrichmentEnabled,
   resolveTranslationConfig,
+  shouldEnrichWithLlm,
 } = require('../src/mask/resolve-text-to-wazaa.cjs');
 
 test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
@@ -109,5 +110,25 @@ test('resolveTranslationConfig prefers Cerbere router and does not require Autho
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
     process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
     process.env.A11_OLLAMA_PRIMARY_MODEL = previous.A11_OLLAMA_PRIMARY_MODEL;
+  }
+});
+
+test('shouldEnrichWithLlm always enriches image requests in orchestrated mode', () => {
+  const previous = {
+    A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
+    A11_IMAGE_PIPELINE_MODE: process.env.A11_IMAGE_PIPELINE_MODE,
+  };
+
+  process.env.A11_WAZAA_LLM_ENRICH = 'true';
+  process.env.A11_IMAGE_PIPELINE_MODE = 'orchestrated';
+
+  try {
+    assert.equal(shouldEnrichWithLlm({
+      intent: { type: 'image.generate', confidence: 0.94 },
+      ambiguities: [],
+    }), true);
+  } finally {
+    process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
+    process.env.A11_IMAGE_PIPELINE_MODE = previous.A11_IMAGE_PIPELINE_MODE;
   }
 });

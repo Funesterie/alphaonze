@@ -12,6 +12,12 @@ function normalizeBaseUrl(value = '') {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function resolveImagePipelineMode() {
+  const raw = String(process.env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
+  if (raw === 'orchestrated' || raw === 'orchestrateur') return 'orchestrated';
+  return 'creative';
+}
+
 function buildChatCompletionsUrl(value = '') {
   const baseUrl = normalizeBaseUrl(value);
   if (!baseUrl) return '';
@@ -224,12 +230,14 @@ function shouldEnrichWithLlm(heuristicWazaa) {
     || 0;
   const ambiguities = heuristicWazaa?.ambiguities || [];
 
-  // Pour image.generate on n'enrichit plus systématiquement :
-  // on garde le pipeline français et on n'appelle le LLM qu'en cas de doute.
-  if (intentType === 'image.generate' && confidence >= 0.72 && ambiguities.length === 0) {
-    return false;
+  // En mode orchestré on enrichit systématiquement les demandes image.
+  // En mode créatif on laisse d'abord la compréhension locale travailler,
+  // puis on ne fait appel au LLM qu'en cas de doute.
+  if (intentType === 'image.generate') {
+    if (resolveImagePipelineMode() === 'orchestrated') return true;
+    if (confidence >= 0.72 && ambiguities.length === 0) return false;
+    return true;
   }
-  if (intentType === 'image.generate') return true;
 
   // For other intents: enrich only if low confidence or ambiguities
   if (confidence < 0.5) return true;

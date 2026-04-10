@@ -5,6 +5,7 @@ const compileMaskToImagePrompt = require('./compile-mask-to-image-prompt.cjs');
 const {
   enrichMaskForSpecialImageCompiler,
   resolveImageCompilerCompartment,
+  isImageOrchestratorEnabled,
 } = require('./compile-mask-to-image-prompt-special.cjs');
 const adaptMaskToFreelandValue = require('./adapt-mask-to-freeland-value.cjs');
 const crypto = require('node:crypto');
@@ -188,35 +189,43 @@ function compileMaskImageGenerate(rawMask) {
 }
 
 async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
-  let preferredHintMemory = null;
-  try {
-    preferredHintMemory = typeof options.readPreferredImageHintMemory === 'function'
-      ? await options.readPreferredImageHintMemory(rawMask)
-      : await readPreferredImageHintMemory(rawMask);
-  } catch (error_) {
-    preferredHintMemory = {
-      available: false,
-      skipped: true,
-      reason: 'hint_memory_read_failed',
-      message: String(error_?.message || error_),
-      hints: {
-        composition_hints: [],
-        environment_hints: [],
-        style_hints: [],
-        prompt_instructions: [],
-      },
-    };
-  }
   const baseSelection = resolveImageCompilerCompartment(rawMask, {
     callStructuredLlmJson: options.callStructuredLlmJson,
-    preferredHints: preferredHintMemory?.hints || {},
   });
+  const orchestratorEnabled = isImageOrchestratorEnabled(baseSelection.pipelineMode);
+  let preferredHintMemory = null;
+  if (orchestratorEnabled) {
+    try {
+      preferredHintMemory = typeof options.readPreferredImageHintMemory === 'function'
+        ? await options.readPreferredImageHintMemory(rawMask)
+        : await readPreferredImageHintMemory(rawMask);
+    } catch (error_) {
+      preferredHintMemory = {
+        available: false,
+        skipped: true,
+        reason: 'hint_memory_read_failed',
+        message: String(error_?.message || error_),
+        hints: {
+          composition_hints: [],
+          environment_hints: [],
+          style_hints: [],
+          prompt_instructions: [],
+        },
+      };
+    }
+  }
+  const selection = orchestratorEnabled
+    ? resolveImageCompilerCompartment(rawMask, {
+      callStructuredLlmJson: options.callStructuredLlmJson,
+      preferredHints: preferredHintMemory?.hints || {},
+    })
+    : baseSelection;
   let runtimeMask = rawMask;
   if (typeof options.resolveImageEntityContext === 'function') {
     try {
       const imageEntityContext = await options.resolveImageEntityContext({
         mask: runtimeMask,
-        selection: baseSelection,
+        selection,
       });
       if (imageEntityContext && typeof imageEntityContext === 'object') {
         runtimeMask = enrichImageMaskWithScratchpad(runtimeMask, { entityContext: imageEntityContext });
@@ -232,36 +241,36 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     }
   }
   let webHintContext = null;
-  if (typeof options.lookupImageHintWebContext === 'function') {
+  if (orchestratorEnabled && typeof options.lookupImageHintWebContext === 'function') {
     try {
       webHintContext = await options.lookupImageHintWebContext({
-        mask: rawMask,
-        selection: baseSelection,
+        mask: runtimeMask,
+        selection,
       });
       if (webHintContext && typeof webHintContext === 'object') {
         runtimeMask = {
-          ...(rawMask && typeof rawMask === 'object' ? rawMask : {}),
+          ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
           meta: {
-            ...((rawMask && rawMask.meta && typeof rawMask.meta === 'object') ? rawMask.meta : {}),
+            ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
             webHintContext,
           },
         };
       }
     } catch (error_) {
       runtimeMask = {
-        ...(rawMask && typeof rawMask === 'object' ? rawMask : {}),
+        ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
         meta: {
-          ...((rawMask && rawMask.meta && typeof rawMask.meta === 'object') ? rawMask.meta : {}),
+          ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
           webHintContextError: String(error_?.message || error_),
         },
       };
     }
   }
-  if (typeof options.resolveImageWebDraft === 'function') {
+  if (orchestratorEnabled && typeof options.resolveImageWebDraft === 'function') {
     try {
       const webImageDraft = await options.resolveImageWebDraft({
         mask: runtimeMask,
-        selection: baseSelection,
+        selection,
         webHintContext,
       });
       if (webImageDraft && typeof webImageDraft === 'object') {
@@ -284,11 +293,11 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     }
   }
   let director = null;
-  if (typeof options.directImageRequest === 'function') {
+  if (orchestratorEnabled && typeof options.directImageRequest === 'function') {
     try {
       const directed = await options.directImageRequest({
         mask: runtimeMask,
-        selection: baseSelection,
+        selection,
         callStructuredLlm: options.callStructuredLlmJson,
         lookupDefinitionContext: options.lookupDefinitionContext,
         duckduckgoImageSearch: options.duckduckgoImageSearch,
@@ -366,9 +375,9 @@ function resolveMaxVerificationRetries(explicitValue) {
   const fromEnv = Number(
     process.env.A11_IMAGE_CARDINALITY_MAX_RETRIES
     || process.env.A11_IMAGE_VERIFY_MAX_RETRIES
-    || 1
+    || 2
   );
-  return Number.isFinite(fromEnv) ? Math.max(0, Math.floor(fromEnv)) : 1;
+  return Number.isFinite(fromEnv) ? Math.max(0, Math.floor(fromEnv)) : 2;
 }
 
 function buildCompiledPromptHash(sdBody = {}) {
@@ -377,6 +386,32 @@ function buildCompiledPromptHash(sdBody = {}) {
     .update(String(sdBody?.prompt || '').trim())
     .digest('hex')
     .slice(0, 16);
+}
+
+function deriveOperationalSeed({ mask = {}, sdBody = {} } = {}) {
+  const existingSeed = Number(sdBody?.seed);
+  if (Number.isFinite(existingSeed)) {
+    return Math.max(1, Math.floor(existingSeed));
+  }
+
+  const payload = [
+    String(sdBody?.prompt || '').trim(),
+    String(mask?.raw || '').trim(),
+    String(mask?.inputs?.subject?.join('|') || '').trim(),
+    String(mask?.meta?.canonicalSubject || mask?.meta?.imageScratchpad?.canonicalSubject || '').trim(),
+    String(mask?.meta?.subjectProfile?.type || '').trim(),
+  ].join('\n');
+
+  const digest = crypto.createHash('sha1').update(payload).digest();
+  const derived = digest.readUInt32BE(0) & 0x7fffffff;
+  return Math.max(1, derived || 1);
+}
+
+function ensureOperationalSdBody(sdBody = {}, mask = {}) {
+  return {
+    ...sdBody,
+    seed: deriveOperationalSeed({ mask, sdBody }),
+  };
 }
 
 async function inspectGeneratedImage(sdResult) {
@@ -501,7 +536,7 @@ async function generateImageFromMask({
   const resolvedMaxVerificationRetries = resolveMaxVerificationRetries(maxVerificationRetries);
   const attempts = [];
 
-  let activeSdBody = { ...compiledState.sdBody };
+  let activeSdBody = ensureOperationalSdBody(compiledState.sdBody, compiledState.mask);
   let compiledPromptHash = buildCompiledPromptHash(activeSdBody);
   console.log(
     `[A11][image-guard] start requestId=${requestId} enabled=${guardEnabled} promptHash=${compiledPromptHash} seed=${activeSdBody.seed ?? 'none'}`
