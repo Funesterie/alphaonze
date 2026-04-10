@@ -10,22 +10,25 @@ Important compatibility note:
 
 Default local model:
 
-- `deepseek-ai/Janus-Pro-1B`
+- local GPU: `deepseek-ai/Janus-Pro-7B`
+- CPU / constrained fallback: `deepseek-ai/Janus-Pro-1B`
 
-Why `1B` by default:
+Why `7B` by default on local GPU:
 
-- it is realistic on a local `12 GB` GPU
-- `Janus-Pro-7B` is still available through env override if the machine can handle it
+- it is the latest Janus-Pro tier and gives a stronger multimodal judge
+- A11 now prefers it automatically on local GPU setups
+- if it fails to load and no explicit Janus model was forced, the runtime falls back to `1B`
 
 Recommended env:
 
 ```env
 A11_VISION_PROVIDER=janus
 A11_JANUS_ENABLED=true
-A11_JANUS_MODEL_DIR=D:\funesterie\a11\backend\apps\server\tools\vision\models\Janus-Pro-1B
+A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-7B
 A11_JANUS_PYTHON_PATH=D:\funesterie\a11\backend\apps\server\tools\vision\venv\Scripts\python.exe
 A11_JANUS_DEVICE=cuda
 A11_JANUS_TORCH_DTYPE=auto
+A11_JANUS_PREFER_LATEST=true
 ```
 
 Recommended Railway/Linux env with the bundled Docker Janus venv:
@@ -72,8 +75,8 @@ Model download example:
 @'
 from huggingface_hub import snapshot_download
 snapshot_download(
-    repo_id="deepseek-ai/Janus-Pro-1B",
-    local_dir=r"D:\funesterie\a11\backend\apps\server\tools\vision\models\Janus-Pro-1B",
+    repo_id="deepseek-ai/Janus-Pro-7B",
+    local_dir=r"D:\funesterie\a11\backend\apps\server\tools\vision\models\Janus-Pro-7B",
     local_dir_use_symlinks=False,
 )
 '@ | D:\funesterie\a11\backend\apps\server\tools\sd\venv\Scripts\python.exe -

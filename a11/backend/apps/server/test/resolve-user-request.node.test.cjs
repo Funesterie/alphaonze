@@ -9,6 +9,16 @@ const {
 } = require('../src/mask/semantic/semantic-utils.cjs');
 const validateMaskUnified = require('../src/mask/validate-mask-unified.cjs');
 
+async function withImagePipelineMode(mode, fn) {
+  const previous = process.env.A11_IMAGE_PIPELINE_MODE;
+  process.env.A11_IMAGE_PIPELINE_MODE = mode;
+  try {
+    return await fn();
+  } finally {
+    process.env.A11_IMAGE_PIPELINE_MODE = previous;
+  }
+}
+
 test('semantic intent aliases normalize to canonical source-of-truth intents', () => {
   assert.equal(normalizeIntentType('code.generate'), 'code.python.generate');
   assert.equal(normalizeIntentType('text.answer'), 'chat.reply');
@@ -164,15 +174,37 @@ test('resolveUserRequest attaches a temporary image scratchpad when an entity is
     }),
   });
 
-  const resolution = await resolver.resolveUserRequest({
+  const resolution = await withImagePipelineMode('smart', () => resolver.resolveUserRequest({
     userText: 'genere une image de john 117 en armure bleue',
     executeRuntime: false,
-  });
+  }));
 
   assert.equal(resolution.kind, 'image.generate');
   assert.equal(resolution.mask.meta.imageEntityContext.canonicalSubject, 'Master Chief');
   assert.equal(resolution.mask.meta.imageScratchpad.canonicalSubject, 'Master Chief');
   assert.match(String(resolution.compiled.value.prompt || ''), /Ardoise utile :/i);
+});
+
+test('resolveUserRequest marks simple single-subject prompts as raw by default', async () => {
+  const resolver = createIntentResolver({
+    resolveImageEntityContext: async () => ({
+      canonicalSubject: 'Master Chief',
+      description: "personnage de fiction de l'univers Halo",
+      summary: 'Super-soldat fictif de la franchise Halo.',
+      universe: 'Halo',
+      entityType: 'fictional_character',
+    }),
+  });
+
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une image de licorne',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.imageRequestMode, 'raw');
+  assert.equal(resolution.mask.meta.imageRequestMode, 'raw');
+  assert.equal(resolution.mask.meta.imageScratchpad, undefined);
 });
 
 test('resolveUserRequest smooths noisy image requests before building the canonical mask', async () => {

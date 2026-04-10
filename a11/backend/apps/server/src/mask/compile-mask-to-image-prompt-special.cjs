@@ -62,12 +62,15 @@ function isTruthyEnv(value = '') {
 
 function resolveImagePipelineMode(explicitValue = '') {
   const raw = String(explicitValue || process.env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
-  if (raw === 'orchestrated' || raw === 'orchestrateur') return 'orchestrated';
-  return 'creative';
+  if (!raw) return 'auto';
+  if (raw === 'orchestrated' || raw === 'orchestrateur' || raw === 'smart') return 'smart';
+  if (raw === 'creative' || raw === 'raw') return 'raw';
+  if (raw === 'auto') return 'auto';
+  return 'auto';
 }
 
 function isImageOrchestratorEnabled(explicitValue = '') {
-  return resolveImagePipelineMode(explicitValue) === 'orchestrated';
+  return resolveImagePipelineMode(explicitValue) === 'smart';
 }
 
 function hasNonTrivialSemanticFamilies(mask = {}) {
@@ -175,7 +178,7 @@ function resolveImageCompilerCompartment(rawMask = {}, options = {}) {
   const pipelineMode = resolveImagePipelineMode(options.pipelineMode);
 
   if (!isImageOrchestratorEnabled(pipelineMode)) {
-    reasons.unshift('creative_image_pipeline');
+    reasons.unshift(pipelineMode === 'raw' ? 'raw_image_pipeline' : 'non_smart_image_pipeline');
     return {
       compartment: 'standard',
       score,

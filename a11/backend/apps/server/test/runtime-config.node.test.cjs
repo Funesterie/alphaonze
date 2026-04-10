@@ -133,3 +133,24 @@ test('buildRuntimeConfig marks semantic enrichment as llm-router when Cerbere is
   assert.equal(config.features.semantic.llmEnrichmentEnabled, true);
   assert.equal(config.features.semantic.translationConfigured, true);
 });
+
+test('buildRuntimeConfig exposes the canonical raw or smart image pipeline mode', () => {
+  const rawConfig = buildRuntimeConfig({
+    A11_IMAGE_PIPELINE_MODE: 'creative',
+  });
+  const smartConfig = buildRuntimeConfig({
+    A11_IMAGE_PIPELINE_MODE: 'smart',
+  });
+
+  assert.equal(rawConfig.features.image.pipelineMode, 'raw');
+  assert.equal(smartConfig.features.image.pipelineMode, 'smart');
+
+  const status = getPublicRuntimeStatus({
+    config: smartConfig,
+    hasDb: false,
+    hasQflush: false,
+    isR2Configured: false,
+    hasResend: false,
+  });
+  assert.equal(status.features.image.pipelineMode, 'smart');
+});
