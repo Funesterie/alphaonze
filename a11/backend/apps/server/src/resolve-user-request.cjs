@@ -7,6 +7,7 @@ const {
 } = require('./image/a11-image-brain.cjs');
 const {
   generateImageFromMask,
+  resolveImageRequestMode,
   toImageChatProxyPayload,
 } = require('./mask/image-chat-runtime.cjs');
 const {
@@ -359,7 +360,25 @@ function createIntentResolver(overrides = {}) {
       throw error;
     }
 
-    if (String(mask?.intent || '').trim() === 'image.generate' && typeof deps.resolveImageEntityContext === 'function') {
+    const imageRequestMode = String(mask?.intent || '').trim() === 'image.generate'
+      ? resolveImageRequestMode({
+        rawMask: mask,
+        req: input.req,
+        explicitMode: input.body?.mode || input.body?.image_mode || '',
+      })
+      : null;
+
+    if (imageRequestMode && String(mask?.intent || '').trim() === 'image.generate') {
+      mask.meta = mask.meta && typeof mask.meta === 'object' ? mask.meta : {};
+      mask.meta.imageRequestMode = imageRequestMode.mode;
+      mask.meta.imagePipelineMode = imageRequestMode.mode;
+    }
+
+    if (
+      String(mask?.intent || '').trim() === 'image.generate'
+      && imageRequestMode?.mode === 'smart'
+      && typeof deps.resolveImageEntityContext === 'function'
+    ) {
       try {
         const imageEntityContext = await deps.resolveImageEntityContext({ mask });
         if (imageEntityContext && typeof imageEntityContext === 'object') {
@@ -384,6 +403,7 @@ function createIntentResolver(overrides = {}) {
       ? resolveImageCompilerCompartment(mask, {
         callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
         preferredHints: preferredHintMemory?.hints || {},
+        pipelineMode: imageRequestMode?.mode || 'auto',
       })
       : null;
     let resolution = {
@@ -400,6 +420,7 @@ function createIntentResolver(overrides = {}) {
       compilerCompartmentCandidate: compilerCompartment?.compartment || 'standard',
       specialCompilerReason: Array.isArray(compilerCompartment?.reasons) ? compilerCompartment.reasons : [],
       shouldBypassImageRequestCache: compilerCompartment?.shouldBypassCache === true,
+      imageRequestMode: imageRequestMode?.mode || null,
       requestText: {
         original: originalUserText,
         smoothed: userText,

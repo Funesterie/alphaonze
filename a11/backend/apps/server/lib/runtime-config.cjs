@@ -95,6 +95,14 @@ function shouldEnableLocalSdFallback(env = {}) {
   return false;
 }
 
+function resolveImagePipelineMode(env = {}) {
+  const raw = String(env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
+  if (raw === 'creative') return 'raw';
+  if (raw === 'orchestrated' || raw === 'orchestrateur') return 'smart';
+  if (['raw', 'smart', 'auto'].includes(raw)) return raw;
+  return 'auto';
+}
+
 function buildRuntimeConfig(env = process.env) {
   const runtimeProfile = String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase();
   const localOnly = toBoolean(env.A11_LOCAL_MODE) || runtimeProfile === 'local';
@@ -205,6 +213,9 @@ function buildRuntimeConfig(env = process.env) {
         llmEnrichmentEnabled: wazaaLlmEnabled,
         translationConfigured,
       },
+      image: {
+        pipelineMode: resolveImagePipelineMode(env),
+      },
       memory: {
         provider: memorySummaryProvider,
         qflushFlow: String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim(),
@@ -282,6 +293,9 @@ function getPublicRuntimeStatus(options = {}) {
         provider: config.features.semantic.provider,
         llmEnrichmentEnabled: config.features.semantic.llmEnrichmentEnabled,
         translationConfigured: config.features.semantic.translationConfigured,
+      },
+      image: {
+        pipelineMode: config.features.image.pipelineMode,
       },
       memory: {
         provider: config.features.memory.provider,

@@ -5,8 +5,10 @@ const { spawn } = require('node:child_process');
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const TOOLS_VISION_ROOT = path.join(SERVER_ROOT, 'tools', 'vision');
 const DEFAULT_WORKER_SCRIPT = path.join(TOOLS_VISION_ROOT, 'janus_vision_worker.py');
-const DEFAULT_MODEL_DIR = path.join(TOOLS_VISION_ROOT, 'models', 'Janus-Pro-1B');
-const DEFAULT_MODEL_ID = 'deepseek-ai/Janus-Pro-1B';
+const DEFAULT_MODEL_DIR_1B = path.join(TOOLS_VISION_ROOT, 'models', 'Janus-Pro-1B');
+const DEFAULT_MODEL_DIR_7B = path.join(TOOLS_VISION_ROOT, 'models', 'Janus-Pro-7B');
+const DEFAULT_MODEL_ID_1B = 'deepseek-ai/Janus-Pro-1B';
+const DEFAULT_MODEL_ID_7B = 'deepseek-ai/Janus-Pro-7B';
 const DEFAULT_VISION_PYTHON = path.join(
   TOOLS_VISION_ROOT,
   'venv',
@@ -44,7 +46,7 @@ function isLocalRuntime(env = process.env) {
 function hasLocalJanusAssets(env = process.env) {
   const explicitModelDir = normalizeCandidate(env.A11_JANUS_MODEL_DIR || env.A11_LOCAL_VISION_MODEL_DIR || '');
   if (explicitModelDir && fs.existsSync(explicitModelDir)) return true;
-  return fs.existsSync(DEFAULT_MODEL_DIR);
+  return fs.existsSync(DEFAULT_MODEL_DIR_7B) || fs.existsSync(DEFAULT_MODEL_DIR_1B);
 }
 
 function resolveVisionProvider(overrides = {}) {
@@ -107,11 +109,28 @@ function canWriteToWorkerStdin(worker) {
   return Boolean(stdin && !stdin.destroyed && !stdin.writableEnded);
 }
 
+function shouldPreferLatestJanusGpuModel(env = process.env) {
+  const explicit = String(env.A11_JANUS_PREFER_LATEST || '').trim();
+  if (explicit) return toBoolean(explicit);
+  const device = String(env.A11_JANUS_DEVICE || 'cuda').trim().toLowerCase();
+  return isLocalRuntime(env) && device !== 'cpu';
+}
+
 function resolveJanusModelRef() {
   const explicitDir = normalizeCandidate(process.env.A11_JANUS_MODEL_DIR || process.env.A11_LOCAL_VISION_MODEL_DIR || '');
   if (explicitDir && fs.existsSync(explicitDir)) return explicitDir;
-  if (fs.existsSync(DEFAULT_MODEL_DIR)) return DEFAULT_MODEL_DIR;
-  return String(process.env.A11_JANUS_MODEL_ID || DEFAULT_MODEL_ID).trim();
+  const explicitModelId = String(process.env.A11_JANUS_MODEL_ID || '').trim();
+  if (explicitModelId) return explicitModelId;
+
+  const preferLatest = shouldPreferLatestJanusGpuModel(process.env);
+
+  if (preferLatest) {
+    if (fs.existsSync(DEFAULT_MODEL_DIR_7B)) return DEFAULT_MODEL_DIR_7B;
+    return DEFAULT_MODEL_ID_7B;
+  }
+
+  if (fs.existsSync(DEFAULT_MODEL_DIR_1B)) return DEFAULT_MODEL_DIR_1B;
+  return DEFAULT_MODEL_ID_1B;
 }
 
 function resolveJanusVisionConfig(overrides = {}) {
@@ -125,6 +144,10 @@ function resolveJanusVisionConfig(overrides = {}) {
     maxNewTokens: Math.max(64, Number(overrides.maxNewTokens || process.env.A11_JANUS_MAX_NEW_TOKENS || 320) || 320),
     timeoutMs: Math.max(5_000, Number(overrides.timeoutMs || process.env.A11_JANUS_TIMEOUT_MS || 180_000) || 180_000),
   };
+}
+
+function hasExplicitJanusModelSelection(env = process.env) {
+  return Boolean(String(env.A11_JANUS_MODEL_ID || env.A11_JANUS_MODEL_DIR || env.A11_LOCAL_VISION_MODEL_DIR || '').trim());
 }
 
 let workerState = null;
@@ -260,6 +283,46 @@ async function callJanusVisionText({
     throw new Error('janus_missing_image_buffer');
   }
 
+  async function requestWithConfig(config) {
+    const worker = ensureJanusWorker(config);
+    const id = `janus-${Date.now()}-${++requestCounter}`;
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (worker.pending.has(id)) {
+          worker.pending.delete(id);
+        }
+        reject(new Error(`janus_request_timeout:${config.timeoutMs}`));
+      }, config.timeoutMs);
+
+      worker.pending.set(id, { resolve, reject, timeout });
+      if (!canWriteToWorkerStdin(worker)) {
+        clearTimeout(timeout);
+        worker.pending.delete(id);
+        reject(new Error('janus_worker_stdin_unavailable'));
+        return;
+      }
+
+      const line = `${JSON.stringify({
+        id,
+        action: 'vision_text',
+        prompt: String(prompt || '').trim(),
+        request_id: String(requestId || '').trim(),
+        content_type: String(contentType || 'image/png').trim() || 'image/png',
+        image_base64: imageBuffer.toString('base64'),
+        max_new_tokens: config.maxNewTokens,
+        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
+      })}\n`;
+
+      worker.process.stdin.write(line, (error_) => {
+        if (!error_) return;
+        clearTimeout(timeout);
+        worker.pending.delete(id);
+        reject(new Error(String(error_?.message || error_ || 'janus_worker_write_failed')));
+      });
+    });
+  }
+
   const config = resolveJanusVisionConfig({
     modelRef,
     device,
@@ -267,43 +330,25 @@ async function callJanusVisionText({
     maxNewTokens,
     timeoutMs,
   });
-  const worker = ensureJanusWorker(config);
-  const id = `janus-${Date.now()}-${++requestCounter}`;
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      if (worker.pending.has(id)) {
-        worker.pending.delete(id);
-      }
-      reject(new Error(`janus_request_timeout:${config.timeoutMs}`));
-    }, config.timeoutMs);
+  try {
+    return await requestWithConfig(config);
+  } catch (error_) {
+    const shouldFallbackTo1B = !modelRef
+      && !hasExplicitJanusModelSelection(process.env)
+      && String(config.modelRef || '').trim() === DEFAULT_MODEL_ID_7B;
+    if (!shouldFallbackTo1B) throw error_;
 
-    worker.pending.set(id, { resolve, reject, timeout });
-    if (!canWriteToWorkerStdin(worker)) {
-      clearTimeout(timeout);
-      worker.pending.delete(id);
-      reject(new Error('janus_worker_stdin_unavailable'));
-      return;
-    }
-
-    const line = `${JSON.stringify({
-      id,
-      action: 'vision_text',
-      prompt: String(prompt || '').trim(),
-      request_id: String(requestId || '').trim(),
-      content_type: String(contentType || 'image/png').trim() || 'image/png',
-      image_base64: imageBuffer.toString('base64'),
-      max_new_tokens: config.maxNewTokens,
-      temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
-    })}\n`;
-
-    worker.process.stdin.write(line, (error_) => {
-      if (!error_) return;
-      clearTimeout(timeout);
-      worker.pending.delete(id);
-      reject(new Error(String(error_?.message || error_ || 'janus_worker_write_failed')));
+    resetWorkerState('janus_retry_1b_fallback');
+    const fallbackConfig = resolveJanusVisionConfig({
+      modelRef: DEFAULT_MODEL_ID_1B,
+      device,
+      torchDtype,
+      maxNewTokens,
+      timeoutMs,
     });
-  });
+    return requestWithConfig(fallbackConfig);
+  }
 }
 
 function shutdownJanusVisionWorker() {

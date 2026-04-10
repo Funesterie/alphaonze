@@ -8,15 +8,19 @@ if [ -x /opt/janus-venv/bin/python ] && [ -z "${A11_JANUS_PYTHON_PATH:-}" ]; the
   export A11_JANUS_PYTHON_PATH=/opt/janus-venv/bin/python
 fi
 
-if [ -z "${A11_JANUS_MODEL_DIR:-}" ] && [ -z "${A11_JANUS_MODEL_ID:-}" ] && [ "${A11_VISION_PROVIDER:-}" = "janus" ]; then
-  export A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-1B
-fi
-
 if [ -z "${A11_JANUS_DEVICE:-}" ] && [ "${A11_VISION_PROVIDER:-}" = "janus" ]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
     export A11_JANUS_DEVICE=cuda
   else
     export A11_JANUS_DEVICE=cpu
+  fi
+fi
+
+if [ -z "${A11_JANUS_MODEL_DIR:-}" ] && [ -z "${A11_JANUS_MODEL_ID:-}" ] && [ "${A11_VISION_PROVIDER:-}" = "janus" ]; then
+  if [ "${A11_JANUS_DEVICE:-cpu}" = "cpu" ]; then
+    export A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-1B
+  elif [ -z "${A11_JANUS_PREFER_LATEST:-}" ]; then
+    export A11_JANUS_PREFER_LATEST=true
   fi
 fi
 

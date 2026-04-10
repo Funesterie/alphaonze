@@ -5,6 +5,7 @@ const {
   buildSdRequestBody,
   generateImageFromMask,
   resolveImageCompilerCompartment,
+  resolveImageRequestMode,
   toImageChatProxyPayload,
 } = require('../src/mask/image-chat-runtime.cjs');
 
@@ -174,7 +175,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
     raw: "genere une image d'un lapin rose",
   };
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('smart', () => generateImageFromMask({
     req: { headers: {} },
     rawMask,
     imageVerificationEnabled: true,
@@ -206,7 +207,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
         decision: { retry: false, reason: 'ok', notes: '' },
       };
     },
-  });
+  }));
 
   assert.equal(calls.length, 2);
   assert.match(String(calls[1]?.prompt || ''), /montrer un seul lapin/i);
@@ -274,7 +275,7 @@ test('generateImageFromMask skips retry when image verification is unavailable',
 test('generateImageFromMask enables image cardinality verification by default', async () => {
   let verificationCalls = 0;
 
-  const result = await generateImageFromMask({
+  const result = await withImagePipelineMode('smart', () => generateImageFromMask({
     req: { headers: {} },
     rawMask: {
       version: 'mask-1',
@@ -316,7 +317,7 @@ test('generateImageFromMask enables image cardinality verification by default', 
         decision: { retry: false, reason: 'ok', notes: '' },
       };
     },
-  });
+  }));
 
   assert.equal(verificationCalls, 1);
   assert.equal(result.imageGuard?.enabled, true);
@@ -325,7 +326,7 @@ test('generateImageFromMask enables image cardinality verification by default', 
 
 test('generateImageFromMask rejects invalid solid-black generations before returning success', async () => {
   await assert.rejects(
-    () => generateImageFromMask({
+    () => withImagePipelineMode('smart', () => generateImageFromMask({
       req: { headers: {} },
       rawMask: {
         version: 'mask-1',
@@ -364,7 +365,7 @@ test('generateImageFromMask rejects invalid solid-black generations before retur
         imageUrl: 'https://files.example.com/black.png',
         metadata: { width: 768, height: 768, channels: 4, sizeBytes: 1795 },
       }),
-    }),
+    })),
     (error) => {
       assert.equal(error?.statusCode, 502);
       assert.equal(error?.payload?.error, 'image_generation_invalid');
@@ -413,7 +414,40 @@ test('resolveImageCompilerCompartment keeps simple object prompts on the standar
   assert.equal(decision.compartment, 'standard');
   assert.equal(decision.shouldBypassCache, false);
   assert.equal(decision.candidate, false);
-  assert.equal(decision.pipelineMode, 'creative');
+  assert.equal(decision.pipelineMode, 'auto');
+});
+
+test('resolveImageRequestMode defaults simple image prompts to raw', () => {
+  const decision = resolveImageRequestMode({
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      inputs: {
+        subject: ['licorne'],
+        environment: [],
+        style: ['haute qualité'],
+        composition: [],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      ambiguities: [],
+      raw: 'genere une image de licorne',
+    },
+  });
+
+  assert.equal(decision.mode, 'raw');
+  assert.equal(decision.explicit, false);
 });
 
 test('generateImageFromMask applies the special compiler for complex prompts with positive llm hints', async () => {
@@ -616,6 +650,60 @@ test('generateImageFromMask injects an operational seed even when the request di
   assert.ok(calls[0]?.seed > 0);
   assert.equal(result.sdBody?.seed, calls[0]?.seed);
   assert.equal(result.imageGuard?.attempts?.[0]?.seed, calls[0]?.seed);
+});
+
+test('generateImageFromMask raw mode never retries even when the verifier would request one', async () => {
+  const calls = [];
+
+  const result = await generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['licorne'],
+        environment: [],
+        style: ['haute qualité'],
+        composition: [],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      ambiguities: [],
+      raw: 'genere une image de licorne',
+    },
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/unicorn-raw.png',
+        filename: 'unicorn-raw.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: true,
+      expected: { subject_count: 1, subject_type: 'licorne', subject_label: 'licorne', allow_group: false },
+      observed: { subject_count: 2, duplicate_subjects: true, fusion_detected: false, subject_match: true, confidence: 0.93 },
+      decision: { retry: true, reason: 'multiple_subjects_detected', notes: '' },
+    }),
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(result.imageRequestMode?.mode, 'raw');
+  assert.equal(result.imageGuard?.enabled, false);
+  assert.equal(result.imageGuard?.retries?.length, 0);
+  assert.equal(result.imageGuard?.verification?.decision?.retry, true);
 });
 
 test('generateImageFromMask reuses remembered hint memory for complex prompts', async () => {

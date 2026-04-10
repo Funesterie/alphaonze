@@ -14,8 +14,9 @@ function normalizeBaseUrl(value = '') {
 
 function resolveImagePipelineMode() {
   const raw = String(process.env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
-  if (raw === 'orchestrated' || raw === 'orchestrateur') return 'orchestrated';
-  return 'creative';
+  if (raw === 'orchestrated' || raw === 'orchestrateur' || raw === 'smart') return 'smart';
+  if (raw === 'creative' || raw === 'raw') return 'raw';
+  return 'auto';
 }
 
 function buildChatCompletionsUrl(value = '') {
@@ -234,7 +235,7 @@ function shouldEnrichWithLlm(heuristicWazaa) {
   // En mode créatif on laisse d'abord la compréhension locale travailler,
   // puis on ne fait appel au LLM qu'en cas de doute.
   if (intentType === 'image.generate') {
-    if (resolveImagePipelineMode() === 'orchestrated') return true;
+    if (resolveImagePipelineMode() === 'smart') return true;
     if (confidence >= 0.72 && ambiguities.length === 0) return false;
     return true;
   }

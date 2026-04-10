@@ -44,6 +44,9 @@ const {
 const {
   enrichImageMaskWithScratchpad,
 } = require('./image-scratchpad.cjs');
+const {
+  compileCharacterCountConstraints,
+} = require('./build-sd-prompt-bundle.cjs');
 
 let sharpLib;
 
@@ -85,6 +88,104 @@ function extractLatestUserMessage(body = {}) {
   }
 
   return '';
+}
+
+function normalizeImageRequestModeValue(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'creative') return 'raw';
+  if (raw === 'orchestrated' || raw === 'orchestrateur') return 'smart';
+  if (['raw', 'smart', 'auto'].includes(raw)) return raw;
+  return '';
+}
+
+function countImageSemanticFamilies(mask = {}) {
+  const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
+    ? mask.meta.semantic
+    : {};
+  return (
+    (Array.isArray(semantic?.accessories) ? semantic.accessories.length : 0)
+    + (Array.isArray(semantic?.elements) ? semantic.elements.length : 0)
+    + (Array.isArray(semantic?.metiers) ? semantic.metiers.length : 0)
+    + (Array.isArray(semantic?.scenes) ? semantic.scenes.length : 0)
+  );
+}
+
+function inferAutoImageRequestMode(rawMask = {}) {
+  const mask = normalizeMaskImageGenerate(rawMask);
+  const rawText = String(mask?.raw || '').trim();
+  const normalizedText = rawText.toLowerCase();
+  const tokenCount = normalizedText.split(/\s+/).filter(Boolean).length;
+  const hasPair = Boolean(compileCharacterCountConstraints(rawText));
+  const hasInitImage = Boolean(
+    String(mask?.meta?.webImageDraft?.initImageUrl || mask?.meta?.webImageDraft?.initImagePath || '').trim()
+    || String(mask?.meta?.reference_image_url || mask?.meta?.init_image_url || '').trim()
+  );
+  const hasWorkflowSignal = /\b(web|internet|cherche|recherche|reference|référence|variation|variante|version|corrige|corriger|ameliore|améliore|retravaille|retouche|upscale|memoire|mémoire|workflow|plusieurs etapes|plusieurs étapes|edition|édition|edit)\b/i.test(rawText);
+  const hasRichPromptState = Boolean(
+    mask?.meta?.llmEnriched === true
+    || (mask?.meta?.definitionLookup && typeof mask.meta.definitionLookup === 'object')
+    || (mask?.meta?.imageEntityContext && typeof mask.meta.imageEntityContext === 'object')
+    || (Array.isArray(mask?.meta?.promptInstructions) && mask.meta.promptInstructions.length > 3)
+    || countImageSemanticFamilies(mask) >= 3
+  );
+  const hasSceneAttachment = /\b(avec|dans|sur|sous|tenant|portant|en train de|devant|derriere|derrière)\b/i.test(rawText);
+
+  if (hasInitImage || hasWorkflowSignal || hasPair) {
+    return {
+      mode: 'smart',
+      reason: hasInitImage ? 'init_image_requested' : (hasPair ? 'multiple_subjects_requested' : 'workflow_signal'),
+      explicit: false,
+    };
+  }
+
+  if (hasRichPromptState) {
+    return {
+      mode: 'smart',
+      reason: 'rich_prompt_state',
+      explicit: false,
+    };
+  }
+
+  if (tokenCount <= 16 && !hasSceneAttachment) {
+    return {
+      mode: 'raw',
+      reason: 'simple_single_subject_prompt',
+      explicit: false,
+    };
+  }
+
+  return {
+    mode: 'raw',
+    reason: 'default_raw',
+    explicit: false,
+  };
+}
+
+function resolveImageRequestMode({ rawMask = {}, req = null, explicitMode = '' } = {}) {
+  const mask = normalizeMaskImageGenerate(rawMask);
+  const reqMode = normalizeImageRequestModeValue(
+    explicitMode
+    || req?.body?.mode
+    || req?.body?.image_mode
+    || ''
+  );
+  const maskMode = normalizeImageRequestModeValue(
+    mask?.meta?.imageRequestMode
+    || mask?.meta?.imagePipelineMode
+    || ''
+  );
+  const envMode = normalizeImageRequestModeValue(process.env.A11_IMAGE_PIPELINE_MODE || '');
+  const selected = reqMode || maskMode || envMode;
+  if (selected === 'raw' || selected === 'smart') {
+    return {
+      mode: selected,
+      reason: `${selected}_explicit`,
+      explicit: true,
+    };
+  }
+
+  return inferAutoImageRequestMode(mask);
 }
 
 function buildSdRequestBody(mask, compiledPayload) {
@@ -189,8 +290,42 @@ function compileMaskImageGenerate(rawMask) {
 }
 
 async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
+  const imageRequestMode = resolveImageRequestMode({
+    rawMask,
+    req: options.req,
+    explicitMode: options.imageRequestMode,
+  });
+  if (imageRequestMode.mode === 'raw') {
+    const rawModeMask = normalizeMaskImageGenerate(rawMask);
+    rawModeMask.meta = rawModeMask.meta && typeof rawModeMask.meta === 'object' ? rawModeMask.meta : {};
+    rawModeMask.meta.imageRequestMode = 'raw';
+    rawModeMask.meta.imagePipelineMode = 'raw';
+    rawModeMask.meta.compilerCompartment = 'standard';
+    rawModeMask.meta.specialCompilerReason = imageRequestMode.reason;
+
+    const compiledState = compileMaskImageGenerate(rawModeMask);
+    compiledState.imageRequestMode = imageRequestMode;
+    compiledState.imageRequestDirector = null;
+    compiledState.specialCompiler = {
+      selection: {
+        compartment: 'standard',
+        candidate: false,
+        reasons: [imageRequestMode.reason],
+        llmAvailable: false,
+        shouldBypassCache: false,
+        aggressive: false,
+        pipelineMode: 'raw',
+      },
+      appliedHints: null,
+      fallbackReason: 'raw_mode',
+      preferredHintMemory: null,
+    };
+    return compiledState;
+  }
+
   const baseSelection = resolveImageCompilerCompartment(rawMask, {
     callStructuredLlmJson: options.callStructuredLlmJson,
+    pipelineMode: 'smart',
   });
   const orchestratorEnabled = isImageOrchestratorEnabled(baseSelection.pipelineMode);
   let preferredHintMemory = null;
@@ -218,6 +353,7 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     ? resolveImageCompilerCompartment(rawMask, {
       callStructuredLlmJson: options.callStructuredLlmJson,
       preferredHints: preferredHintMemory?.hints || {},
+      pipelineMode: 'smart',
     })
     : baseSelection;
   let runtimeMask = rawMask;
@@ -321,14 +457,17 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
   const enriched = await enrichMaskForSpecialImageCompiler(runtimeMask, {
     callStructuredLlmJson: options.callStructuredLlmJson,
     preferredHints: preferredHintMemory?.hints || {},
+    pipelineMode: 'smart',
   });
   const enrichedMask = enriched?.mask || runtimeMask;
   const compiledState = compileMaskImageGenerate(enrichedMask);
+  compiledState.imageRequestMode = imageRequestMode;
   compiledState.imageRequestDirector = director;
   compiledState.specialCompiler = {
     selection: enriched?.selection || resolveImageCompilerCompartment(runtimeMask, {
       callStructuredLlmJson: options.callStructuredLlmJson,
       preferredHints: preferredHintMemory?.hints || {},
+      pipelineMode: 'smart',
     }),
     appliedHints: enriched?.appliedHints || null,
     fallbackReason: String(enriched?.fallbackReason || '').trim(),
@@ -503,6 +642,7 @@ async function generateImageFromMask({
   maxVerificationRetries,
 }) {
   const compiledState = await compileMaskImageGenerateRuntime(rawMask, {
+    req,
     callStructuredLlmJson: specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory,
     resolveImageEntityContext,
@@ -532,6 +672,7 @@ async function generateImageFromMask({
     mask: compiledState.mask,
     compiledState,
   });
+  const imageRequestMode = compiledState.imageRequestMode?.mode || 'smart';
   const guardEnabled = isImageVerificationEnabled(imageVerificationEnabled);
   const resolvedMaxVerificationRetries = resolveMaxVerificationRetries(maxVerificationRetries);
   const attempts = [];
@@ -556,7 +697,35 @@ async function generateImageFromMask({
 
   let verification = null;
   const retryHistory = [];
-  if (guardEnabled && typeof verifyImageCardinality === 'function' && expectedImageContract?.enabled) {
+  if (imageRequestMode === 'raw') {
+    if (typeof verifyImageCardinality === 'function' && expectedImageContract?.enabled) {
+      try {
+        verification = await verifyImageCardinality({
+          imageUrl: resolveGeneratedImageUrl(sdResult),
+          expected: expectedImageContract,
+          requestId,
+          prompt: String(activeSdBody.prompt || '').trim(),
+          seed: activeSdBody.seed,
+        });
+      } catch (error_) {
+        verification = {
+          ok: false,
+          skipped: true,
+          reason: 'raw_non_blocking_verify_failed',
+          message: String(error_?.message || error_),
+        };
+      }
+      console.log(
+        `[A11][image-guard] raw requestId=${requestId} promptHash=${compiledPromptHash} reason=${verification?.decision?.reason || verification?.reason || 'skipped'}`
+      );
+    } else {
+      verification = {
+        ok: false,
+        skipped: true,
+        reason: 'raw_mode_no_blocking_check',
+      };
+    }
+  } else if (guardEnabled && typeof verifyImageCardinality === 'function' && expectedImageContract?.enabled) {
     try {
       verification = await verifyImageCardinality({
         imageUrl: resolveGeneratedImageUrl(sdResult),
@@ -637,7 +806,7 @@ async function generateImageFromMask({
   const imageInspection = typeof inspectGeneratedImageResult === 'function'
     ? await inspectGeneratedImageResult(sdResult)
     : { ok: true, skipped: true, reason: 'image_probe_disabled' };
-  if (imageInspection?.ok === false) {
+  if (imageInspection?.ok === false && imageRequestMode !== 'raw') {
     const error = new Error('Generated image is invalid');
     error.statusCode = 502;
     error.payload = {
@@ -652,7 +821,8 @@ async function generateImageFromMask({
 
   const imageUrl = resolveGeneratedImageUrl(sdResult);
   const shouldRunLlmJudge = Boolean(
-    imageUrl
+    imageRequestMode !== 'raw'
+    && imageUrl
     && typeof verifyImageWithLlmJudge === 'function'
     && (
       compiledState?.specialCompiler?.selection?.candidate === true
@@ -672,7 +842,7 @@ async function generateImageFromMask({
     : {
       ok: false,
       skipped: true,
-      reason: 'vision_llm_not_needed',
+      reason: imageRequestMode === 'raw' ? 'raw_mode_no_llm_judge' : 'vision_llm_not_needed',
     };
 
   let hintMemory = null;
@@ -706,7 +876,8 @@ async function generateImageFromMask({
     hintMemory,
     imageGuard: {
       requestId,
-      enabled: guardEnabled,
+      enabled: imageRequestMode === 'raw' ? false : guardEnabled,
+      mode: imageRequestMode,
       compiledPromptHash: attempts[0]?.prompt_hash || compiledPromptHash,
       expected: expectedImageContract,
       verification,
@@ -855,6 +1026,7 @@ module.exports = {
   buildSdRequestBody,
   compileMaskImageGenerate,
   compileMaskImageGenerateRuntime,
+  resolveImageRequestMode,
   generateImageFromMask,
   generateImageFromText,
   resolveGeneratedImageUrl,
