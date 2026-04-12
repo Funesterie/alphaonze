@@ -61,7 +61,12 @@ const SLOT_GRID_SIZE = REEL_COUNT * ROW_COUNT;
 const ROULETTE_ROOM_ID = 'ats-harbor';
 const ROULETTE_ROUND_DURATION_MS = 120 * 1000;
 const ROULETTE_RECENT_RESULTS_LIMIT = 8;
+const ROULETTE_ARCHIVE_KEEP_RESOLVED_ROUNDS = 24;
+const ROULETTE_STATE_CACHE_TTL_ACTIVE_MS = 2500;
+const ROULETTE_STATE_CACHE_TTL_IDLE_MS = 8000;
 const TABLE_ROOM_TTL_MS = 90 * 1000;
+const TABLE_ROOM_TOUCH_INTERVAL_MS = 15 * 1000;
+const TABLE_ROOM_PRUNE_INTERVAL_MS = 30 * 1000;
 const BLACKJACK_ROOM_IDS = ['lantern-quay', 'bat-parlor', 'scream-lounge'];
 const POKER_ROOM_IDS = ['allmight-ring', 'upstream-port', 'captains-table'];
 const JOKER_BONUS_RESPINS = 3;
@@ -69,6 +74,10 @@ const JOKER_BONUS_STAGE_HOLD_MS = 720;
 const JOKER_BONUS_TRIGGER_COUNT = 5;
 const JOKER_CROSS_INDEXES = [0, 2, 4, 6, 8, 10, 12, 14];
 const POKER_ACTION_LOG_LIMIT = 8;
+
+const tableRoomTouchCache = new Map();
+const rouletteStateCache = new Map();
+let nextTableRoomPruneAt = 0;
 
 const SYMBOLS = [
   { id: 'PIRATE', label: 'Pavillon noir', weight: 7, payouts: { 3: 12, 4: 28, 5: 75 } },
@@ -564,6 +573,29 @@ function createCasinoRouter({
     return rows.map(toTransactionRecord).filter(Boolean);
   }
 
+  async function getUsersByIds(userIds = [], client = db) {
+    const normalizedIds = [...new Set(
+      (Array.isArray(userIds) ? userIds : [userIds])
+        .map((entry) => normalizeUserId(entry))
+        .filter(Boolean)
+    )];
+    if (!normalizedIds.length) return new Map();
+
+    const { rows } = await client.query(
+      'SELECT id::text AS id, username, email FROM users WHERE id::text = ANY($1::text[])',
+      [normalizedIds]
+    );
+
+    return new Map(rows.map((row) => [
+      String(row.id || '').trim(),
+      {
+        id: String(row.id || '').trim(),
+        username: String(row.username || '').trim(),
+        email: String(row.email || '').trim() || null,
+      },
+    ]));
+  }
+
   async function loadProfile(userId) {
     const user = await getUserRow(userId);
     if (!user) return null;
@@ -602,7 +634,61 @@ function createCasinoRouter({
     );
   }
 
+  function getTableRoomTouchKey(game, roomId, userId) {
+    return `${String(game || '').trim()}::${String(roomId || '').trim()}::${normalizeUserId(userId)}`;
+  }
+
+  function shouldTouchTableRoomPresence(game, roomId, userId, minIntervalMs = TABLE_ROOM_TOUCH_INTERVAL_MS) {
+    const key = getTableRoomTouchKey(game, roomId, userId);
+    const currentTimeMs = now().getTime();
+    const lastTouchedAt = Number(tableRoomTouchCache.get(key) || 0);
+    if ((currentTimeMs - lastTouchedAt) < Math.max(1000, Number(minIntervalMs) || TABLE_ROOM_TOUCH_INTERVAL_MS)) {
+      return false;
+    }
+    tableRoomTouchCache.set(key, currentTimeMs);
+    return true;
+  }
+
+  function clearRouletteStateCache(userId = '') {
+    const normalizedUserId = normalizeUserId(userId);
+    if (!normalizedUserId) {
+      rouletteStateCache.clear();
+      return;
+    }
+    rouletteStateCache.delete(normalizedUserId);
+  }
+
+  function getRouletteStateCacheEntry(userId = '') {
+    const normalizedUserId = normalizeUserId(userId);
+    if (!normalizedUserId) return null;
+    const entry = rouletteStateCache.get(normalizedUserId);
+    if (!entry) return null;
+    if (Number(entry.expiresAt || 0) <= now().getTime()) {
+      rouletteStateCache.delete(normalizedUserId);
+      return null;
+    }
+    return entry;
+  }
+
+  function setRouletteStateCacheEntry(userId = '', payload = null) {
+    const normalizedUserId = normalizeUserId(userId);
+    if (!normalizedUserId || !payload || typeof payload !== 'object') return;
+    const remainingMs = Math.max(0, Number(payload?.room?.round?.remainingMs || 0));
+    const roomActive = Boolean(payload?.room?.roomActive);
+    const baseTtlMs = roomActive ? ROULETTE_STATE_CACHE_TTL_ACTIVE_MS : ROULETTE_STATE_CACHE_TTL_IDLE_MS;
+    const ttlMs = remainingMs > 0
+      ? Math.max(800, Math.min(baseTtlMs, remainingMs))
+      : baseTtlMs;
+    rouletteStateCache.set(normalizedUserId, {
+      payload,
+      expiresAt: now().getTime() + ttlMs,
+    });
+  }
+
   async function pruneTableRoomPresence(client) {
+    const currentTimeMs = now().getTime();
+    if (currentTimeMs < nextTableRoomPruneAt) return;
+    nextTableRoomPruneAt = currentTimeMs + TABLE_ROOM_PRUNE_INTERVAL_MS;
     const thresholdIso = new Date(now().getTime() - TABLE_ROOM_TTL_MS).toISOString();
     await client.query(
       'DELETE FROM casino_table_room_presence WHERE updated_at < $1',
@@ -636,13 +722,14 @@ function createCasinoRouter({
       `,
       [game, thresholdIso]
     );
+    const usersById = await getUsersByIds(rows.map((entry) => entry.user_id), client);
 
     const rooms = [];
     for (const roomId of roomIds) {
       const roomRows = rows.filter((entry) => String(entry.room_id || '') === roomId);
       const participants = [];
       for (const row of roomRows.slice(0, 8)) {
-        const user = await getUserRow(String(row.user_id || ''));
+        const user = usersById.get(String(row.user_id || '')) || null;
         participants.push({
           userId: String(row.user_id || ''),
           username: user?.username ? String(user.username) : `Joueur ${row.user_id}`,
@@ -675,18 +762,18 @@ function createCasinoRouter({
         WHERE game = $1 AND room_id = $2 AND updated_at >= $3
         ORDER BY updated_at ASC
       `,
-      [game, roomId, thresholdIso]
-    );
-    const participants = [];
-    for (const row of rows) {
+        [game, roomId, thresholdIso]
+      );
+    const usersById = await getUsersByIds(rows.map((entry) => entry.user_id), client);
+    const participants = rows.map((row) => {
       const userId = String(row.user_id || '');
-      const user = await getUserRow(userId);
-      participants.push({
+      const user = usersById.get(userId) || null;
+      return {
         userId,
         username: user?.username ? String(user.username) : `Joueur ${userId}`,
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
-      });
-    }
+      };
+    });
     return participants;
   }
 
@@ -771,6 +858,38 @@ function createCasinoRouter({
       [roundId]
     );
     return rows;
+  }
+
+  async function pruneRouletteArchive(client, roomId = ROULETTE_ROOM_ID, keepResolvedRounds = ROULETTE_ARCHIVE_KEEP_RESOLVED_ROUNDS) {
+    const normalizedKeep = Math.max(8, Number(keepResolvedRounds) || ROULETTE_ARCHIVE_KEEP_RESOLVED_ROUNDS);
+    await client.query(
+      `
+        DELETE FROM casino_roulette_bets
+        WHERE round_id IN (
+          SELECT id
+          FROM casino_roulette_rounds
+          WHERE room_id = $1
+            AND resolved_at IS NOT NULL
+          ORDER BY id DESC
+          OFFSET $2
+        )
+      `,
+      [roomId, normalizedKeep]
+    );
+    await client.query(
+      `
+        DELETE FROM casino_roulette_rounds
+        WHERE id IN (
+          SELECT id
+          FROM casino_roulette_rounds
+          WHERE room_id = $1
+            AND resolved_at IS NOT NULL
+          ORDER BY id DESC
+          OFFSET $2
+        )
+      `,
+      [roomId, normalizedKeep]
+    );
   }
 
   async function getRouletteActiveParticipants(client) {
@@ -865,11 +984,14 @@ function createCasinoRouter({
             roundId: Number(round.id),
             winningNumber,
             winningColor,
-            bets: entry.bets,
+            payout: Number(entry.payout || 0),
           },
         });
       }
     }
+
+    await pruneRouletteArchive(client, String(round.room_id || ROULETTE_ROOM_ID));
+    clearRouletteStateCache();
 
     return {
       ...round,
@@ -946,6 +1068,10 @@ function createCasinoRouter({
       'SELECT id, winning_number, winning_color, resolved_at FROM casino_roulette_rounds WHERE room_id = $1 AND resolved_at IS NOT NULL ORDER BY id DESC LIMIT $2',
       [ROULETTE_ROOM_ID, ROULETTE_RECENT_RESULTS_LIMIT]
     )).rows;
+    const participantUsersById = await getUsersByIds(
+      currentBets.map((bet) => bet.user_id),
+      client
+    );
 
     const participantTotals = new Map();
     currentBets.forEach((bet) => {
@@ -960,7 +1086,7 @@ function createCasinoRouter({
     for (const entry of [...participantTotals.values()]
       .sort((left, right) => right.totalAmount - left.totalAmount || left.userId.localeCompare(right.userId))
       .slice(0, 6)) {
-      const user = await getUserRow(entry.userId);
+      const user = participantUsersById.get(entry.userId) || null;
       participants.push({
         userId: entry.userId,
         username: user?.username ? String(user.username) : `Joueur ${entry.userId}`,
@@ -2113,10 +2239,13 @@ function createCasinoRouter({
         return res.status(400).json({ ok: false, error: 'invalid_room' });
       }
 
+      const shouldTouchPresence = shouldTouchTableRoomPresence('blackjack', roomId, auth.userId);
       client = await db.connect();
       await client.query('BEGIN');
-      await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
+      if (shouldTouchPresence) {
+        await pruneTableRoomPresence(client);
+        await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
+      }
       let state = await loadBlackjackTableState(client, roomId, false);
       state = await syncBlackjackRoomState(client, roomId, state);
       await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
@@ -2333,10 +2462,13 @@ function createCasinoRouter({
         return res.status(400).json({ ok: false, error: 'invalid_room' });
       }
 
+      const shouldTouchPresence = shouldTouchTableRoomPresence('poker', roomId, auth.userId);
       client = await db.connect();
       await client.query('BEGIN');
-      await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+      if (shouldTouchPresence) {
+        await pruneTableRoomPresence(client);
+        await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+      }
       let state = await loadPokerTableState(client, roomId, false);
       state = await syncPokerRoomState(client, roomId, state);
       await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
@@ -2563,18 +2695,32 @@ function createCasinoRouter({
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
 
+      const cachedState = getRouletteStateCacheEntry(auth.userId);
+      const shouldTouchPresence = shouldTouchTableRoomPresence('roulette', ROULETTE_ROOM_ID, auth.userId);
+      if (cachedState && !shouldTouchPresence) {
+        return res.json(cachedState.payload);
+      }
+
       client = await db.connect();
       await client.query('BEGIN');
-      await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId);
+      if (shouldTouchPresence) {
+        await pruneTableRoomPresence(client);
+        await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId);
+      }
+      if (cachedState) {
+        await client.query('COMMIT');
+        return res.json(cachedState.payload);
+      }
       const room = await buildRouletteRoomPayload(client, auth.userId);
       await client.query('COMMIT');
-
-      return res.json({
+      const payload = {
         ok: true,
         room,
         profile: await loadProfile(auth.userId),
-      });
+      };
+      setRouletteStateCacheEntry(auth.userId, payload);
+
+      return res.json(payload);
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
       logger?.error?.('[CASINO] roulette state failed:', error_?.message);
@@ -2647,6 +2793,7 @@ function createCasinoRouter({
 
       const room = await buildRouletteRoomPayload(client, auth.userId);
       await client.query('COMMIT');
+      clearRouletteStateCache();
 
       return res.json({
         ok: true,

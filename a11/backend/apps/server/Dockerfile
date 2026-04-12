@@ -30,7 +30,10 @@ RUN if [ "${A11_INSTALL_JANUS}" = "1" ]; then \
       && /opt/janus-venv/bin/pip install --no-cache-dir -U pip \
       && JANUS_PYTHON_VERSION="$("/opt/janus-venv/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" \
       && echo "/opt/venv/lib/python${JANUS_PYTHON_VERSION}/site-packages" > "/opt/janus-venv/lib/python${JANUS_PYTHON_VERSION}/site-packages/a11_backend_sd_sitepackages.pth" \
-      && /opt/janus-venv/bin/pip install --no-cache-dir -r tools/vision/requirements.txt; \
+      && if ! /opt/janus-venv/bin/pip install --no-cache-dir -r tools/vision/requirements.txt; then \
+           echo "[A11] Warning: bundled Janus install failed during Docker build; continuing without local Janus runtime"; \
+           rm -rf /opt/janus-venv; \
+         fi; \
     fi
 
 EXPOSE 8080

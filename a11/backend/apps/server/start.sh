@@ -4,8 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+janus_runtime_ready() {
+  local python_bin="$1"
+  if [ -z "$python_bin" ] || [ ! -x "$python_bin" ]; then
+    return 1
+  fi
+  "$python_bin" -c "import janus.models" >/dev/null 2>&1
+}
+
 if [ -x /opt/janus-venv/bin/python ] && [ -z "${A11_JANUS_PYTHON_PATH:-}" ]; then
-  export A11_JANUS_PYTHON_PATH=/opt/janus-venv/bin/python
+  if janus_runtime_ready /opt/janus-venv/bin/python; then
+    export A11_JANUS_PYTHON_PATH=/opt/janus-venv/bin/python
+  else
+    echo "[A11] Bundled Janus runtime unavailable; continuing without local Janus venv"
+  fi
 fi
 
 if [ -z "${A11_JANUS_DEVICE:-}" ] && [ "${A11_VISION_PROVIDER:-}" = "janus" ]; then
