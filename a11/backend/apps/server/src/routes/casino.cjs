@@ -2351,14 +2351,16 @@ function createCasinoRouter({
         }
       }
 
-      state.pendingSeats = candidateSeats.map((seat) => ({
+      const cappedCandidateSeats = candidateSeats.slice(0, 3);
+
+      state.pendingSeats = cappedCandidateSeats.map((seat) => ({
         userId: seat.userId,
         username: seat.username,
         wager: seat.wager,
         readyAt: seat.readyAt,
       }));
 
-      for (const seat of candidateSeats) {
+      for (const seat of cappedCandidateSeats) {
         await chargeWalletForTable(client, seat.userId, seat.wager, 'blackjack_buyin', {
           roomId,
           wager: Number(seat.wager || 0),
@@ -2368,7 +2370,7 @@ function createCasinoRouter({
 
       state = startSharedBlackjackRound({
         roomId,
-        readySeats: candidateSeats.map((seat) => ({
+        readySeats: cappedCandidateSeats.map((seat) => ({
           ...seat,
           balanceAfterBuyIn: Number(seat.currentBalance || 0) - Number(seat.wager || 0),
         })),
@@ -2403,9 +2405,11 @@ function createCasinoRouter({
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
-      const code = error_?.code === 'insufficient_credits' ? 'insufficient_credits' : 'blackjack_start_failed';
+      const code = ['insufficient_credits', 'table_full'].includes(error_?.code)
+        ? error_.code
+        : 'blackjack_start_failed';
       logger?.error?.('[CASINO] blackjack start failed:', error_?.message);
-      return res.status(code === 'insufficient_credits' ? 400 : 500).json({ ok: false, error: code });
+      return res.status(code === 'blackjack_start_failed' ? 500 : 400).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
@@ -2418,7 +2422,7 @@ function createCasinoRouter({
       if (!auth) return;
 
       const action = normalizeText(req.body?.action).toLowerCase();
-      if (!['hit', 'stand'].includes(action)) {
+      if (!['hit', 'stand', 'double', 'split'].includes(action)) {
         return res.status(400).json({ ok: false, error: 'invalid_action' });
       }
       const parsedToken = parseBlackjackToken(req.body?.token);
