@@ -19,13 +19,14 @@ export const ROULETTE_ORDER = [
 
 export const WHEEL_POCKET_ANGLE = 360 / ROULETTE_ORDER.length;
 export const BALL_START_ANGLE = 32;
-export const BALL_TARGET_ANGLE = 270;
 export const BALL_OUTER_RADIUS = 45.4;
-export const BALL_INNER_RADIUS = 37.2;
+export const BALL_INNER_RADIUS = 41.2;
 export const SPIN_DURATION_MS = 4100;
 export const HOLD_DURATION_MS = 30000;
 export const ROULETTE_TIRAGE_CANNON_DELAY_MS = 700;
 export const ROULETTE_ANNOUNCE_LEAD_IN_MS = 6200;
+export const ROULETTE_POINTER_ANGLE = 270;
+export const ROULETTE_VISUAL_ALIGNMENT_OFFSET = 0;
 
 export type RouletteSequencePhase = "idle" | "intro" | "spin" | "hold" | "reload";
 
@@ -76,6 +77,16 @@ export function getPocketIndex(number: number | null) {
   return ROULETTE_ORDER.indexOf(number);
 }
 
+export function getPocketCenterAngle(index: number) {
+  return index * WHEEL_POCKET_ANGLE - 90 + ROULETTE_VISUAL_ALIGNMENT_OFFSET;
+}
+
+export function getSettledWheelRotation(winningNumber: number) {
+  const pocketIndex = getPocketIndex(winningNumber);
+  if (pocketIndex === -1) return 0;
+  return ROULETTE_POINTER_ANGLE - getPocketCenterAngle(pocketIndex);
+}
+
 export function buildStaticAnimation(): RouletteAnimationState {
   const ball = toBallCoordinates(BALL_START_ANGLE, BALL_OUTER_RADIUS, 0);
   return {
@@ -91,11 +102,10 @@ export function buildStaticAnimation(): RouletteAnimationState {
 }
 
 export function buildSettledAnimation(winningNumber: number) {
-  const pocketIndex = getPocketIndex(winningNumber);
-  const ball = toBallCoordinates(BALL_TARGET_ANGLE, BALL_INNER_RADIUS, 0);
+  const ball = toBallCoordinates(ROULETTE_POINTER_ANGLE, BALL_INNER_RADIUS, 0);
   return {
-    wheelRotation: -(pocketIndex * WHEEL_POCKET_ANGLE),
-    ballAngle: BALL_TARGET_ANGLE,
+    wheelRotation: getSettledWheelRotation(winningNumber),
+    ballAngle: ROULETTE_POINTER_ANGLE,
     ballRadius: BALL_INNER_RADIUS,
     ballX: ball.x,
     ballY: ball.y,

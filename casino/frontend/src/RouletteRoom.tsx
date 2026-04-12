@@ -12,21 +12,22 @@ import {
   BALL_INNER_RADIUS,
   BALL_OUTER_RADIUS,
   BALL_START_ANGLE,
-  BALL_TARGET_ANGLE,
   HOLD_DURATION_MS,
   ROULETTE_ANNOUNCE_LEAD_IN_MS,
   ROULETTE_AMOUNT_PRESETS,
   ROULETTE_ORDER,
+  ROULETTE_POINTER_ANGLE,
   ROULETTE_TIRAGE_CANNON_DELAY_MS,
   SPIN_DURATION_MS,
-  WHEEL_POCKET_ANGLE,
   buildSettledAnimation,
   buildStaticAnimation,
   easeOutCubic,
   easeOutQuart,
   getNumberColor,
   getBetLabel,
+  getPocketCenterAngle,
   getPocketIndex,
+  getSettledWheelRotation,
   lerp,
   normalizeAngle,
   playVideoForward,
@@ -436,7 +437,7 @@ export default function RouletteRoom({
       ROULETTE_ORDER.map((number, index) => ({
         number,
         color: getNumberColor(number),
-        angle: index * WHEEL_POCKET_ANGLE - 90,
+        angle: getPocketCenterAngle(index),
       })),
     [],
   );
@@ -768,11 +769,12 @@ export default function RouletteRoom({
     const winningIndex = getPocketIndex(winningNumber);
     if (winningIndex === -1) return;
 
-    const targetNormalized = normalizeAngle(-(winningIndex * WHEEL_POCKET_ANGLE));
+    const settledWheelRotation = getSettledWheelRotation(winningNumber);
+    const targetNormalized = normalizeAngle(settledWheelRotation);
     const currentNormalized = normalizeAngle(currentWheel);
     const counterClockwiseDelta = normalizeAngle(currentNormalized - targetNormalized);
     const wheelTarget = currentWheel - (7 * 360 + counterClockwiseDelta);
-    const ballTravel = 8 * 360 + normalizeAngle(BALL_TARGET_ANGLE - BALL_START_ANGLE);
+    const ballTravel = 8 * 360 + normalizeAngle(ROULETTE_POINTER_ANGLE - BALL_START_ANGLE);
     const startedAt = performance.now();
 
     await new Promise<void>((resolve) => {
@@ -1015,22 +1017,16 @@ export default function RouletteRoom({
       if (lastProfile) {
         onProfileChange(
           lastProfile,
-          mode === "auto"
-            ? queue.length === 1
-              ? `Mise auto-validee sur ${queue[0].label} avant le tirage.`
-              : `${queue.length} mises auto-validees avant le tirage.`
-            : queue.length === 1
-              ? `Mise placee sur ${queue[0].label}.`
-              : `${queue.length} mises placees sur le tapis.`,
+          queue.length === 1
+            ? `Mise auto-validee sur ${queue[0].label} avant le tirage.`
+            : `${queue.length} mises auto-validees avant le tirage.`,
         );
       }
     } catch (error_) {
       if (lastProfile) {
         onProfileChange(
           lastProfile,
-          mode === "auto"
-            ? `${placedCount} mise${placedCount > 1 ? "s" : ""} auto-validee${placedCount > 1 ? "s" : ""}, le reste attend encore.`
-            : `${placedCount} mise${placedCount > 1 ? "s" : ""} envoyee${placedCount > 1 ? "s" : ""}, le reste attend encore.`,
+          `${placedCount} mise${placedCount > 1 ? "s" : ""} auto-validee${placedCount > 1 ? "s" : ""}, le reste attend encore.`,
         );
       }
       const fallbackMessage = "La mise roulette a echoue.";
@@ -1318,14 +1314,6 @@ export default function RouletteRoom({
               <div className="casino-command-dock__actions casino-command-dock__actions--roulette">
                 <button
                   type="button"
-                  className="casino-primary-button"
-                  onClick={() => void submitPendingBets()}
-                  disabled={!hasPendingBets || working}
-                >
-                  Valider {hasPendingBets ? `${pendingBets.length} mise${pendingBets.length > 1 ? "s" : ""}` : "les mises"}
-                </button>
-                <button
-                  type="button"
                   className="casino-ghost-button"
                   onClick={clearPendingBets}
                   disabled={working || (!hasPendingBets && !selectedBet)}
@@ -1348,7 +1336,7 @@ export default function RouletteRoom({
                       </article>
                     ))
                   ) : (
-                    <p className="casino-history-empty">Ajoute puis valide des mises depuis le tapis.</p>
+                    <p className="casino-history-empty">Ajoute des mises sur le tapis, elles partiront seules avant le tirage.</p>
                   )}
                 </div>
                 <div className="casino-roulette-bet-recap__footer">
