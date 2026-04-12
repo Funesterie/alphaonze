@@ -1311,17 +1311,6 @@ export default function RouletteRoom({
                 <span className="casino-chip">{selectedBet ? selectedBet.label : "Choisis une cible"}</span>
               </div>
 
-              <div className="casino-command-dock__actions casino-command-dock__actions--roulette">
-                <button
-                  type="button"
-                  className="casino-ghost-button"
-                  onClick={clearPendingBets}
-                  disabled={working || (!hasPendingBets && !selectedBet)}
-                >
-                  Effacer le tapis
-                </button>
-              </div>
-
               <div className="casino-roulette-bet-recap" aria-live="polite">
                 <div className="casino-roulette-bet-recap__header">
                   <span className="casino-chip">Mises confirmees</span>
