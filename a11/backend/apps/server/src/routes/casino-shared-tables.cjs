@@ -42,6 +42,8 @@ function buildWaitingBlackjackState(roomId, pendingSeats = [], message = "Table 
   };
 }
 
+const BLACKJACK_MAX_PLAYERS = 3;
+
 function getBlackjackSeatStatus(cards, getBlackjackScore) {
   const score = getBlackjackScore(cards);
   if (score.isBust) return "bust";
@@ -49,13 +51,117 @@ function getBlackjackSeatStatus(cards, getBlackjackScore) {
   return "active";
 }
 
-function getNextBlackjackSeatIndex(seats, startIndex, getBlackjackScore) {
-  for (let index = startIndex; index < seats.length; index += 1) {
-    const seat = seats[index];
-    const status = seat?.status || getBlackjackSeatStatus(seat?.cards || [], getBlackjackScore);
-    if (status === "active") return index;
+function buildBlackjackHand(hand, fallbackId, fallbackWager, getBlackjackScore) {
+  const cards = clone(hand?.cards || []);
+  const score = hand?.score || getBlackjackScore(cards);
+  const status = hand?.status || getBlackjackSeatStatus(cards, getBlackjackScore);
+  return {
+    id: hand?.id || fallbackId,
+    cards,
+    wager: Number(hand?.wager || fallbackWager || 0),
+    score,
+    status,
+    result: hand?.result || (status === "bust" ? "bust" : status === "stood" ? "reste" : "en jeu"),
+    payoutAmount: Number(hand?.payoutAmount || 0),
+    lastDelta: Number(hand?.lastDelta || 0),
+  };
+}
+
+function syncBlackjackSeatSummary(seat, getBlackjackScore) {
+  const baseHands = Array.isArray(seat?.hands) && seat.hands.length
+    ? seat.hands
+    : [{
+      id: `${seat?.userId || "seat"}-hand-0`,
+      cards: clone(seat?.cards || []),
+      wager: Number(seat?.wager || 0),
+      score: seat?.score || getBlackjackScore(seat?.cards || []),
+      status: seat?.status || getBlackjackSeatStatus(seat?.cards || [], getBlackjackScore),
+      result: seat?.result || "en jeu",
+      payoutAmount: Number(seat?.payoutAmount || 0),
+      lastDelta: Number(seat?.lastDelta || 0),
+    }];
+
+  const hands = baseHands.map((hand, index) => buildBlackjackHand(
+    hand,
+    hand?.id || `${seat?.userId || "seat"}-hand-${index}`,
+    hand?.wager || seat?.wager || 0,
+    getBlackjackScore,
+  ));
+
+  const requestedActiveIndex = Math.max(0, Math.min(hands.length - 1, Number(seat?.activeHandIndex || 0)));
+  const summaryHand = hands[requestedActiveIndex] || hands[0];
+  const totalWager = hands.reduce((sum, hand) => sum + Number(hand.wager || 0), 0);
+  const totalPayout = hands.reduce((sum, hand) => sum + Number(hand.payoutAmount || 0), 0);
+  const totalDelta = hands.reduce((sum, hand) => sum + Number(hand.lastDelta || 0), 0);
+
+  return {
+    ...seat,
+    hands,
+    activeHandIndex: requestedActiveIndex,
+    cards: clone(summaryHand?.cards || []),
+    score: summaryHand?.score || getBlackjackScore(summaryHand?.cards || []),
+    wager: totalWager,
+    status: summaryHand?.status || seat?.status || "active",
+    result: summaryHand?.result || seat?.result || "en jeu",
+    payoutAmount: totalPayout,
+    lastDelta: totalDelta,
+  };
+}
+
+function getNextBlackjackHandIndex(seat, startIndex, getBlackjackScore) {
+  const normalizedSeat = syncBlackjackSeatSummary(seat, getBlackjackScore);
+  for (let index = Math.max(0, startIndex); index < normalizedSeat.hands.length; index += 1) {
+    if (normalizedSeat.hands[index]?.status === "active") {
+      return index;
+    }
   }
   return -1;
+}
+
+function getNextBlackjackSeatIndex(seats, startIndex, getBlackjackScore) {
+  for (let index = startIndex; index < seats.length; index += 1) {
+    const seat = syncBlackjackSeatSummary(seats[index], getBlackjackScore);
+    seats[index] = seat;
+    const handIndex = getNextBlackjackHandIndex(seat, 0, getBlackjackScore);
+    if (handIndex >= 0) {
+      seat.activeHandIndex = handIndex;
+      seats[index] = syncBlackjackSeatSummary(seat, getBlackjackScore);
+      return index;
+    }
+  }
+  return -1;
+}
+
+function buildBlackjackLegalActions(state, userId, getBlackjackScore) {
+  if (state?.stage !== "player-turn") return [];
+
+  const activeSeat = syncBlackjackSeatSummary(state?.seats?.[state.activeSeatIndex], getBlackjackScore);
+  if (!activeSeat || String(activeSeat.userId || "") !== String(userId || "")) {
+    return [];
+  }
+
+  const activeHand = activeSeat.hands?.[activeSeat.activeHandIndex] || null;
+  if (!activeHand || activeHand.status !== "active") {
+    return [];
+  }
+
+  const cards = activeHand.cards || [];
+  const score = activeHand.score || getBlackjackScore(cards);
+  const actions = ["hit", "stand"];
+  const hasTwoCards = cards.length === 2 && !score.isBust && !score.isBlackjack;
+  const canFundExtraWager = Number(activeSeat.chips || 0) >= Number(activeHand.wager || 0);
+  const canSplit = hasTwoCards
+    && Boolean(cards[0] && cards[1] && cards[0].rank === cards[1].rank)
+    && canFundExtraWager;
+
+  if (hasTwoCards && canFundExtraWager) {
+    actions.push("double");
+  }
+  if (canSplit) {
+    actions.push("split");
+  }
+
+  return actions;
 }
 
 function finalizeBlackjackState(state, deps) {
@@ -66,16 +172,36 @@ function finalizeBlackjackState(state, deps) {
   } = deps;
   const dealerOutcome = completeDealerHand(state.deck || [], state.dealerCards || []);
   const resolvedSeats = (state.seats || []).map((seat) => {
-    const payout = getBlackjackPayout(seat.cards || [], dealerOutcome.cards || [], seat.wager || 0);
-    const score = getBlackjackScore(seat.cards || []);
+    const normalizedSeat = syncBlackjackSeatSummary(seat, getBlackjackScore);
+    const resolvedHands = normalizedSeat.hands.map((hand, handIndex) => {
+      const payout = getBlackjackPayout(hand.cards || [], dealerOutcome.cards || [], hand.wager || 0);
+      const score = getBlackjackScore(hand.cards || []);
+      return {
+        ...hand,
+        id: hand.id || `${normalizedSeat.userId || "seat"}-hand-${handIndex}`,
+        status: score.isBust ? "bust" : "resolved",
+        result: payout.label,
+        payoutAmount: Number(payout.amount || 0),
+        lastDelta: Number(payout.amount || 0) - Number(hand.wager || 0),
+        score,
+      };
+    });
+    const totalPayout = resolvedHands.reduce((sum, hand) => sum + Number(hand.payoutAmount || 0), 0);
+    const totalDelta = resolvedHands.reduce((sum, hand) => sum + Number(hand.lastDelta || 0), 0);
+    const primaryHand = resolvedHands[0] || null;
     return {
-      ...seat,
-      chips: Number(seat.chips || 0) + Number(payout.amount || 0),
-      status: score.isBust ? "bust" : "resolved",
-      result: payout.label,
-      payoutAmount: Number(payout.amount || 0),
-      lastDelta: Number(payout.amount || 0) - Number(seat.wager || 0),
-      score,
+      ...normalizedSeat,
+      hands: resolvedHands,
+      activeHandIndex: Math.max(0, Math.min(resolvedHands.length - 1, Number(normalizedSeat.activeHandIndex || 0))),
+      cards: clone(primaryHand?.cards || []),
+      chips: Number(normalizedSeat.chips || 0) + totalPayout,
+      status: primaryHand?.status || "resolved",
+      result: resolvedHands.length > 1
+        ? resolvedHands.map((hand) => hand.result).join(" / ")
+        : (primaryHand?.result || normalizedSeat.result || ""),
+      payoutAmount: totalPayout,
+      lastDelta: totalDelta,
+      score: primaryHand?.score || getBlackjackScore(primaryHand?.cards || []),
     };
   });
 
@@ -97,21 +223,33 @@ function finalizeBlackjackState(state, deps) {
 
 function startBlackjackRound({ roomId, readySeats, now, createPirateDeck, drawCards, getBlackjackScore, completeDealerHand, getBlackjackPayout }) {
   let deck = createPirateDeck();
-  const seats = readySeats.map((seatEntry) => {
+  const seats = readySeats.map((seatEntry, seatIndex) => {
     const dealt = drawCards(deck, 2);
     deck = dealt.deck;
     const score = getBlackjackScore(dealt.cards || []);
-    return {
-      userId: seatEntry.userId,
-      username: seatEntry.username,
-      wager: Number(seatEntry.wager || 0),
-      chips: Number(seatEntry.balanceAfterBuyIn || 0),
+    const openingHand = {
+      id: `${seatEntry.userId || "seat"}-hand-${seatIndex}-0`,
       cards: dealt.cards || [],
+      wager: Number(seatEntry.wager || 0),
+      score,
       status: getBlackjackSeatStatus(dealt.cards || [], getBlackjackScore),
       result: "en jeu",
       payoutAmount: 0,
       lastDelta: -Number(seatEntry.wager || 0),
-      score,
+    };
+    return {
+      userId: seatEntry.userId,
+      username: seatEntry.username,
+      wager: Number(openingHand.wager || 0),
+      chips: Number(seatEntry.balanceAfterBuyIn || 0),
+      cards: openingHand.cards,
+      hands: [openingHand],
+      activeHandIndex: 0,
+      status: openingHand.status,
+      result: openingHand.result,
+      payoutAmount: 0,
+      lastDelta: -Number(seatEntry.wager || 0),
+      score: openingHand.score,
     };
   });
 
@@ -148,6 +286,11 @@ function startBlackjackRound({ roomId, readySeats, now, createPirateDeck, drawCa
 function upsertBlackjackPendingSeat(state, seat, now) {
   const baseState = state?.kind === "blackjack_table" ? clone(state) : buildWaitingBlackjackState(seat.roomId);
   const nextPendingSeats = (baseState.pendingSeats || []).filter((entry) => entry.userId !== seat.userId);
+  if (nextPendingSeats.length >= BLACKJACK_MAX_PLAYERS) {
+    const error = new Error("table_full");
+    error.code = "table_full";
+    throw error;
+  }
   nextPendingSeats.push({
     userId: seat.userId,
     username: seat.username,
@@ -163,7 +306,7 @@ function upsertBlackjackPendingSeat(state, seat, now) {
     updatedAt: toIso(now),
     message:
       nextPendingSeats.length > 1
-        ? "Plusieurs joueurs sont prets. La prochaine manche peut demarrer."
+        ? `Plusieurs joueurs sont prets. La prochaine manche peut demarrer (${nextPendingSeats.length}/${BLACKJACK_MAX_PLAYERS}).`
         : "Mise enregistree. La table est prete a lancer la manche.",
   };
 }
@@ -194,25 +337,116 @@ function applyBlackjackAction(state, { userId, action, now, drawCards, getBlackj
     throw error;
   }
 
+  nextState.seats[nextState.activeSeatIndex] = syncBlackjackSeatSummary(activeSeat, getBlackjackScore);
+  const actingSeat = nextState.seats[nextState.activeSeatIndex];
+  const activeHandIndex = Number(actingSeat.activeHandIndex || 0);
+  const activeHand = actingSeat.hands?.[activeHandIndex];
+  if (!activeHand || activeHand.status !== "active") {
+    const error = new Error("invalid_action");
+    error.code = "invalid_action";
+    throw error;
+  }
+
+  const activeCards = activeHand.cards || [];
+  const activeScore = activeHand.score || getBlackjackScore(activeCards);
+  const canFundExtraWager = Number(actingSeat.chips || 0) >= Number(activeHand.wager || 0);
+  const isTwoCardLiveHand = activeCards.length === 2 && !activeScore.isBust && !activeScore.isBlackjack;
+
   if (action === "hit") {
     const drawn = drawCards(nextState.deck || [], 1);
     nextState.deck = drawn.deck || [];
-    activeSeat.cards = [...(activeSeat.cards || []), ...(drawn.cards || [])];
-    activeSeat.score = getBlackjackScore(activeSeat.cards || []);
-    activeSeat.status = activeSeat.score.isBust ? "bust" : "active";
-    activeSeat.result = activeSeat.score.isBust ? "bust" : "en jeu";
-    nextState.message = `${activeSeat.username} tire une carte.`;
+    activeHand.cards = [...activeCards, ...(drawn.cards || [])];
+    activeHand.score = getBlackjackScore(activeHand.cards || []);
+    activeHand.status = activeHand.score.isBust ? "bust" : "active";
+    activeHand.result = activeHand.score.isBust ? "bust" : "en jeu";
+    nextState.message = `${actingSeat.username} tire une carte.`;
+  } else if (action === "stand") {
+    activeHand.status = "stood";
+    activeHand.score = getBlackjackScore(activeHand.cards || []);
+    activeHand.result = "reste";
+    nextState.message = `${actingSeat.username} reste sur son total.`;
+  } else if (action === "double") {
+    if (!isTwoCardLiveHand || !canFundExtraWager) {
+      const error = new Error("invalid_action");
+      error.code = "invalid_action";
+      throw error;
+    }
+    actingSeat.chips = Number(actingSeat.chips || 0) - Number(activeHand.wager || 0);
+    activeHand.wager = Number(activeHand.wager || 0) * 2;
+    const drawn = drawCards(nextState.deck || [], 1);
+    nextState.deck = drawn.deck || [];
+    activeHand.cards = [...activeCards, ...(drawn.cards || [])];
+    activeHand.score = getBlackjackScore(activeHand.cards || []);
+    activeHand.status = activeHand.score.isBust ? "bust" : "stood";
+    activeHand.result = activeHand.score.isBust ? "bust" : "reste";
+    nextState.message = `${actingSeat.username} double et prend une seule carte.`;
+  } else if (action === "split") {
+    const isPair = Boolean(activeCards[0] && activeCards[1] && activeCards[0].rank === activeCards[1].rank);
+    if (!isTwoCardLiveHand || !isPair || !canFundExtraWager) {
+      const error = new Error("invalid_action");
+      error.code = "invalid_action";
+      throw error;
+    }
+
+    actingSeat.chips = Number(actingSeat.chips || 0) - Number(activeHand.wager || 0);
+    const firstBaseCard = activeCards[0];
+    const secondBaseCard = activeCards[1];
+    const firstDraw = drawCards(nextState.deck || [], 1);
+    const secondDraw = drawCards(firstDraw.deck || [], 1);
+    nextState.deck = secondDraw.deck || [];
+
+    const nextHands = [...actingSeat.hands];
+    nextHands.splice(
+      activeHandIndex,
+      1,
+      buildBlackjackHand({
+        id: `${actingSeat.userId || "seat"}-hand-${activeHandIndex}`,
+        cards: [firstBaseCard, ...(firstDraw.cards || [])],
+        wager: Number(activeHand.wager || 0),
+        result: "en jeu",
+      }, `${actingSeat.userId || "seat"}-hand-${activeHandIndex}`, Number(activeHand.wager || 0), getBlackjackScore),
+      buildBlackjackHand({
+        id: `${actingSeat.userId || "seat"}-hand-${activeHandIndex + 1}`,
+        cards: [secondBaseCard, ...(secondDraw.cards || [])],
+        wager: Number(activeHand.wager || 0),
+        result: "en jeu",
+      }, `${actingSeat.userId || "seat"}-hand-${activeHandIndex + 1}`, Number(activeHand.wager || 0), getBlackjackScore),
+    );
+    actingSeat.hands = nextHands;
+    actingSeat.activeHandIndex = activeHandIndex;
+    nextState.message = `${actingSeat.username} split sa paire.`;
   } else {
-    activeSeat.status = "stood";
-    activeSeat.score = getBlackjackScore(activeSeat.cards || []);
-    activeSeat.result = "reste";
-    nextState.message = `${activeSeat.username} reste sur son total.`;
+    const error = new Error("invalid_action");
+    error.code = "invalid_action";
+    throw error;
   }
 
-  const nextIndex = getNextBlackjackSeatIndex(nextState.seats, nextState.activeSeatIndex + 1, getBlackjackScore);
-  nextState.activeSeatIndex = nextIndex;
+  nextState.seats[nextState.activeSeatIndex] = syncBlackjackSeatSummary(actingSeat, getBlackjackScore);
+  const syncedSeat = nextState.seats[nextState.activeSeatIndex];
+  const currentSyncedHand = syncedSeat.hands?.[syncedSeat.activeHandIndex];
+  const shouldStayOnCurrentSeat = currentSyncedHand?.status === "active";
+
+  if (shouldStayOnCurrentSeat) {
+    nextState.activeSeatIndex = nextState.activeSeatIndex;
+  } else {
+    const nextHandIndex = getNextBlackjackHandIndex(
+      syncedSeat,
+      Number(syncedSeat.activeHandIndex || 0) + 1,
+      getBlackjackScore,
+    );
+
+    if (nextHandIndex >= 0) {
+      syncedSeat.activeHandIndex = nextHandIndex;
+      nextState.seats[nextState.activeSeatIndex] = syncBlackjackSeatSummary(syncedSeat, getBlackjackScore);
+      nextState.activeSeatIndex = nextState.activeSeatIndex;
+    } else {
+      const nextIndex = getNextBlackjackSeatIndex(nextState.seats, nextState.activeSeatIndex + 1, getBlackjackScore);
+      nextState.activeSeatIndex = nextIndex;
+    }
+  }
+
   nextState.updatedAt = toIso(now);
-  if (nextIndex < 0) {
+  if (nextState.activeSeatIndex < 0) {
     const resolvedState = finalizeBlackjackState(nextState, {
       completeDealerHand,
       getBlackjackPayout,
@@ -225,27 +459,52 @@ function applyBlackjackAction(state, { userId, action, now, drawCards, getBlackj
 }
 
 function serializeBlackjackState(state, userId, getBlackjackScore) {
-  const seats = (state?.seats || []).map((seat, index) => ({
-    id: seat.userId,
-    userId: seat.userId,
-    name: seat.username,
-    username: seat.username,
-    chips: Number(seat.chips || 0),
-    wager: Number(seat.wager || 0),
-    cards: seat.cards || [],
-    score: seat.score || getBlackjackScore(seat.cards || []),
-    status: seat.status || "active",
-    result: seat.result || "",
-    payoutAmount: Number(seat.payoutAmount || 0),
-    lastDelta: Number(seat.lastDelta || 0),
-    position: index,
-    isSelf: String(seat.userId || "") === String(userId || ""),
-    isActive: index === Number(state?.activeSeatIndex ?? -1),
-  }));
+  const seats = (state?.seats || []).map((seat, index) => {
+    const normalizedSeat = syncBlackjackSeatSummary(seat, getBlackjackScore);
+    return {
+      id: normalizedSeat.userId,
+      userId: normalizedSeat.userId,
+      name: normalizedSeat.username,
+      username: normalizedSeat.username,
+      chips: Number(normalizedSeat.chips || 0),
+      wager: Number(normalizedSeat.wager || 0),
+      cards: normalizedSeat.cards || [],
+      hands: (normalizedSeat.hands || []).map((hand, handIndex) => {
+        const canFundExtraWager = Number(normalizedSeat.chips || 0) >= Number(hand.wager || 0);
+        const hasTwoCards = (hand.cards || []).length === 2 && !hand.score?.isBust && !hand.score?.isBlackjack;
+        const canSplit = hasTwoCards
+          && Boolean(hand.cards?.[0] && hand.cards?.[1] && hand.cards[0].rank === hand.cards[1].rank)
+          && canFundExtraWager;
+        return {
+          id: hand.id || `${normalizedSeat.userId || "seat"}-hand-${handIndex}`,
+          cards: hand.cards || [],
+          wager: Number(hand.wager || 0),
+          score: hand.score || getBlackjackScore(hand.cards || []),
+          result: hand.result || "",
+          lastDelta: Number(hand.lastDelta || 0),
+          payoutAmount: Number(hand.payoutAmount || 0),
+          status: hand.status || "active",
+          isActive: handIndex === Number(normalizedSeat.activeHandIndex || 0) && index === Number(state?.activeSeatIndex ?? -1),
+          canDouble: hasTwoCards && canFundExtraWager,
+          canSplit,
+        };
+      }),
+      activeHandIndex: Number(normalizedSeat.activeHandIndex || 0),
+      score: normalizedSeat.score || getBlackjackScore(normalizedSeat.cards || []),
+      status: normalizedSeat.status || "active",
+      result: normalizedSeat.result || "",
+      payoutAmount: Number(normalizedSeat.payoutAmount || 0),
+      lastDelta: Number(normalizedSeat.lastDelta || 0),
+      position: index,
+      isSelf: String(normalizedSeat.userId || "") === String(userId || ""),
+      isActive: index === Number(state?.activeSeatIndex ?? -1),
+    };
+  });
   const selfSeat = seats.find((seat) => seat.isSelf) || null;
   const dealerCards = state?.dealerCards || [];
   const waiting = state?.stage === "waiting";
   const roundActive = state?.stage === "player-turn";
+  const legalActions = buildBlackjackLegalActions(state, userId, getBlackjackScore);
 
   return {
     token: roundActive ? buildBlackjackToken(state.roomId, state.roundId) : null,
@@ -260,6 +519,19 @@ function serializeBlackjackState(state, userId, getBlackjackScore) {
     dealerScore: dealerCards.length ? getBlackjackScore(dealerCards) : { total: 0, isSoft: false, isBlackjack: false, isBust: false },
     playerCards: selfSeat?.cards || [],
     playerScore: selfSeat?.score || getBlackjackScore(selfSeat?.cards || []),
+    playerHands: (selfSeat?.hands || []).map((hand) => ({
+      id: hand.id,
+      cards: hand.cards || [],
+      wager: Number(hand.wager || 0),
+      score: hand.score || getBlackjackScore(hand.cards || []),
+      result: hand.result || "",
+      lastDelta: Number(hand.lastDelta || 0),
+      isActive: Boolean(hand.isActive),
+      canDouble: Boolean(hand.canDouble),
+      canSplit: Boolean(hand.canSplit),
+    })),
+    activeHandIndex: Number(selfSeat?.activeHandIndex || 0),
+    legalActions,
     payoutAmount: Number(selfSeat?.payoutAmount || 0),
     lastDelta: Number(selfSeat?.lastDelta || 0),
     message: state?.message || "",
