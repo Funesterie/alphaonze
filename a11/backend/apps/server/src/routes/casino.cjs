@@ -649,37 +649,47 @@ function createCasinoRouter({
     return true;
   }
 
+  function getRouletteStateCacheKey(userId = '', variant = 'default') {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedVariant = String(variant || 'default').trim().toLowerCase() || 'default';
+    return normalizedUserId ? `${normalizedUserId}::${normalizedVariant}` : '';
+  }
+
   function clearRouletteStateCache(userId = '') {
     const normalizedUserId = normalizeUserId(userId);
     if (!normalizedUserId) {
       rouletteStateCache.clear();
       return;
     }
-    rouletteStateCache.delete(normalizedUserId);
+    for (const key of [...rouletteStateCache.keys()]) {
+      if (String(key || '').startsWith(`${normalizedUserId}::`)) {
+        rouletteStateCache.delete(key);
+      }
+    }
   }
 
-  function getRouletteStateCacheEntry(userId = '') {
-    const normalizedUserId = normalizeUserId(userId);
-    if (!normalizedUserId) return null;
-    const entry = rouletteStateCache.get(normalizedUserId);
+  function getRouletteStateCacheEntry(userId = '', variant = 'default') {
+    const cacheKey = getRouletteStateCacheKey(userId, variant);
+    if (!cacheKey) return null;
+    const entry = rouletteStateCache.get(cacheKey);
     if (!entry) return null;
     if (Number(entry.expiresAt || 0) <= now().getTime()) {
-      rouletteStateCache.delete(normalizedUserId);
+      rouletteStateCache.delete(cacheKey);
       return null;
     }
     return entry;
   }
 
-  function setRouletteStateCacheEntry(userId = '', payload = null) {
-    const normalizedUserId = normalizeUserId(userId);
-    if (!normalizedUserId || !payload || typeof payload !== 'object') return;
+  function setRouletteStateCacheEntry(userId = '', payload = null, variant = 'default') {
+    const cacheKey = getRouletteStateCacheKey(userId, variant);
+    if (!cacheKey || !payload || typeof payload !== 'object') return;
     const remainingMs = Math.max(0, Number(payload?.room?.round?.remainingMs || 0));
     const roomActive = Boolean(payload?.room?.roomActive);
     const baseTtlMs = roomActive ? ROULETTE_STATE_CACHE_TTL_ACTIVE_MS : ROULETTE_STATE_CACHE_TTL_IDLE_MS;
     const ttlMs = remainingMs > 0
       ? Math.max(800, Math.min(baseTtlMs, remainingMs))
       : baseTtlMs;
-    rouletteStateCache.set(normalizedUserId, {
+    rouletteStateCache.set(cacheKey, {
       payload,
       expiresAt: now().getTime() + ttlMs,
     });
@@ -900,6 +910,17 @@ function createCasinoRouter({
     return normalizeUserId(req?.user?.id || req?.user?.sub || '');
   }
 
+  function isCompactRouletteView(req) {
+    const raw = String(req?.query?.view || req?.body?.view || '').trim().toLowerCase();
+    return raw === 'compact';
+  }
+
+  function shouldIncludeRouletteProfile(req, defaultValue = true) {
+    const raw = String(req?.query?.includeProfile || req?.body?.includeProfile || '').trim().toLowerCase();
+    if (!raw) return defaultValue;
+    return ['1', 'true', 'yes', 'on'].includes(raw);
+  }
+
   async function requireCasinoUser(req, res) {
     if (!db || typeof db.query !== 'function') {
       res.status(503).json({ ok: false, error: 'database_unavailable' });
@@ -1001,24 +1022,24 @@ function createCasinoRouter({
     };
   }
 
-  async function ensureCurrentRouletteRound(client, roomId = ROULETTE_ROOM_ID) {
+  async function ensureCurrentRouletteRound(client, roomId = ROULETTE_ROOM_ID, options = {}) {
+    const activateRound = options?.activateRound === true;
     let latest = await getLatestRouletteRound(client, roomId, true);
     const currentTime = now();
-    const activeParticipants = await getRouletteActiveParticipants(client);
 
     if (!latest) {
-      if (!activeParticipants.length) {
+      if (!activateRound) {
         return {
           currentRound: null,
           latestResolved: null,
-          activeParticipants,
+          activeParticipants: [],
           roomActive: false,
         };
       }
       return {
         currentRound: await createRouletteRound(client, roomId, currentTime),
         latestResolved: null,
-        activeParticipants,
+        activeParticipants: [],
         roomActive: true,
       };
     }
@@ -1026,26 +1047,24 @@ function createCasinoRouter({
     let latestResolved = latest?.resolved_at ? latest : null;
     const closesAtMs = latest?.closes_at ? new Date(latest.closes_at).getTime() : 0;
     const latestBets = !latest?.resolved_at ? await getRouletteBetsForRound(client, latest.id) : [];
-    const hasUnresolvedBets = latestBets.length > 0;
-    const roomActive = activeParticipants.length > 0 || hasUnresolvedBets;
 
-    if (!latest.resolved_at && closesAtMs && currentTime.getTime() >= closesAtMs && roomActive) {
+    if (!latest.resolved_at && closesAtMs && currentTime.getTime() >= closesAtMs) {
       latestResolved = await resolveRouletteRound(client, latest);
-      latest = activeParticipants.length > 0 ? await createRouletteRound(client, roomId, currentTime) : null;
+      latest = activateRound ? await createRouletteRound(client, roomId, currentTime) : null;
       return {
         currentRound: latest,
         latestResolved,
-        activeParticipants,
-        roomActive: activeParticipants.length > 0,
+        activeParticipants: [],
+        roomActive: Boolean(latest),
       };
     }
 
     if (latest.resolved_at) {
-      if (!activeParticipants.length) {
+      if (!activateRound) {
         return {
           currentRound: null,
           latestResolved,
-          activeParticipants,
+          activeParticipants: [],
           roomActive: false,
         };
       }
@@ -1053,15 +1072,21 @@ function createCasinoRouter({
       return {
         currentRound: latest,
         latestResolved,
-        activeParticipants,
+        activeParticipants: [],
         roomActive: true,
       };
     }
 
-    return { currentRound: latest, latestResolved, activeParticipants, roomActive };
+    return {
+      currentRound: latest,
+      latestResolved,
+      activeParticipants: [],
+      roomActive: latestBets.length > 0,
+    };
   }
 
-  async function buildRouletteRoomPayload(client, userId) {
+  async function buildRouletteRoomPayload(client, userId, options = {}) {
+    const compact = options?.compact === true;
     const { currentRound, latestResolved, activeParticipants, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
     const currentBets = currentRound?.id ? await getRouletteBetsForRound(client, currentRound.id) : [];
     const recentResultRows = (await client.query(
@@ -1167,7 +1192,6 @@ function createCasinoRouter({
         totalPot: currentBets.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
         playerCount: participantTotals.size,
         participants,
-        activeParticipants,
         myBets: currentBets
           .filter((bet) => String(bet.user_id || '') === userId)
           .map((bet) => ({
@@ -1178,8 +1202,11 @@ function createCasinoRouter({
             payout: Number(bet.payout || 0),
             createdAt: bet.created_at ? new Date(bet.created_at).toISOString() : null,
           })),
-        visibleBetsBySpot: [...visibleBetsBySpotMap.values()],
-        visibleBetsByPlayer: [...visibleBetsByPlayerMap.values()],
+        ...(compact ? {} : {
+          activeParticipants,
+          visibleBetsBySpot: [...visibleBetsBySpotMap.values()],
+          visibleBetsByPlayer: [...visibleBetsByPlayerMap.values()],
+        }),
       },
       latestResolved: latestResolved?.resolved_at
         ? {
@@ -2695,30 +2722,30 @@ function createCasinoRouter({
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
 
-      const cachedState = getRouletteStateCacheEntry(auth.userId);
-      const shouldTouchPresence = shouldTouchTableRoomPresence('roulette', ROULETTE_ROOM_ID, auth.userId);
-      if (cachedState && !shouldTouchPresence) {
+      const compactView = isCompactRouletteView(req);
+      const includeProfile = shouldIncludeRouletteProfile(req, true);
+      const cacheVariant = compactView ? 'compact' : 'full';
+      const cachedState = getRouletteStateCacheEntry(auth.userId, cacheVariant);
+      if (cachedState && !includeProfile) {
         return res.json(cachedState.payload);
       }
 
       client = await db.connect();
       await client.query('BEGIN');
-      if (shouldTouchPresence) {
-        await pruneTableRoomPresence(client);
-        await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId);
-      }
-      if (cachedState) {
+      if (cachedState && !includeProfile) {
         await client.query('COMMIT');
         return res.json(cachedState.payload);
       }
-      const room = await buildRouletteRoomPayload(client, auth.userId);
+      const room = await buildRouletteRoomPayload(client, auth.userId, { compact: compactView });
       await client.query('COMMIT');
       const payload = {
         ok: true,
         room,
-        profile: await loadProfile(auth.userId),
+        ...(includeProfile ? { profile: await loadProfile(auth.userId) } : {}),
       };
-      setRouletteStateCacheEntry(auth.userId, payload);
+      if (!includeProfile) {
+        setRouletteStateCacheEntry(auth.userId, payload, cacheVariant);
+      }
 
       return res.json(payload);
     } catch (error_) {
@@ -2736,6 +2763,8 @@ function createCasinoRouter({
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
 
+      const compactView = isCompactRouletteView(req);
+      const includeProfile = shouldIncludeRouletteProfile(req, true);
       const normalizedBet = normalizeRouletteBet(req.body?.betType, req.body?.betValue);
       if (!normalizedBet) {
         return res.status(400).json({ ok: false, error: 'invalid_bet' });
@@ -2745,9 +2774,7 @@ function createCasinoRouter({
 
       client = await db.connect();
       await client.query('BEGIN');
-      await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId);
-      const { currentRound, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
+      const { currentRound, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID, { activateRound: true });
       if (!roomActive || !currentRound?.closes_at) {
         await client.query('ROLLBACK');
         return res.status(409).json({ ok: false, error: 'roulette_room_inactive' });
@@ -2791,14 +2818,14 @@ function createCasinoRouter({
         },
       });
 
-      const room = await buildRouletteRoomPayload(client, auth.userId);
+      const room = await buildRouletteRoomPayload(client, auth.userId, { compact: compactView });
       await client.query('COMMIT');
       clearRouletteStateCache();
 
       return res.json({
         ok: true,
         room,
-        profile: await loadProfile(auth.userId),
+        ...(includeProfile ? { profile: await loadProfile(auth.userId) } : {}),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
