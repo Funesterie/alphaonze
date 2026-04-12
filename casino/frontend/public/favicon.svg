@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="coinGlow" cx="32" cy="24" r="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3ef0ff" stop-opacity="0.95" />
+      <stop offset="0.45" stop-color="#1a9aa6" stop-opacity="0.5" />
+      <stop offset="1" stop-color="#081217" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="coinMetal" x1="10" y1="10" x2="54" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7d38b" />
+      <stop offset="0.45" stop-color="#d88f2f" />
+      <stop offset="1" stop-color="#6a3a12" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#091117" />
+  <circle cx="32" cy="32" r="28" fill="url(#coinGlow)" />
+  <circle cx="32" cy="32" r="21" fill="url(#coinMetal)" stroke="#1d1208" stroke-width="3" />
+  <circle cx="32" cy="32" r="15" fill="#22150b" stroke="#f8d28f" stroke-opacity="0.85" stroke-width="2" />
+  <path d="M32 18l4.6 9.4 10.4 1.5-7.5 7.3 1.8 10.3L32 41.4l-9.3 4.9 1.8-10.3-7.5-7.3 10.4-1.5L32 18z" fill="#3ef0ff" fill-opacity="0.88" />
+</svg>

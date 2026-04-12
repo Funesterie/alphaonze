@@ -31,6 +31,23 @@ const {
   normalizeRouletteBet,
   resolveRouletteBetPayout,
 } = require('./casino-game-logic.cjs');
+const {
+  applyBlackjackAction: applySharedBlackjackAction,
+  applyPokerAction: applySharedPokerAction,
+  buildWaitingBlackjackState,
+  buildWaitingPokerState,
+  getPokerBlindUnit: getSharedPokerBlindUnit,
+  parseBlackjackToken,
+  parsePokerToken,
+  serializeBlackjackState: serializeSharedBlackjackState,
+  serializePokerState: serializeSharedPokerState,
+  startBlackjackRound: startSharedBlackjackRound,
+  startPokerHand,
+  syncBlackjackStateWithPresence,
+  syncPokerStateWithPresence,
+  upsertBlackjackPendingSeat,
+  upsertPokerPendingSeat,
+} = require('./casino-shared-tables.cjs');
 
 const DEFAULT_STARTING_BALANCE = 5000;
 const DEFAULT_DAILY_BONUS_AMOUNT = 1200;
@@ -42,7 +59,7 @@ const REEL_COUNT = 5;
 const ROW_COUNT = 3;
 const SLOT_GRID_SIZE = REEL_COUNT * ROW_COUNT;
 const ROULETTE_ROOM_ID = 'ats-harbor';
-const ROULETTE_ROUND_DURATION_MS = 25 * 1000;
+const ROULETTE_ROUND_DURATION_MS = 120 * 1000;
 const ROULETTE_RECENT_RESULTS_LIMIT = 8;
 const TABLE_ROOM_TTL_MS = 90 * 1000;
 const BLACKJACK_ROOM_IDS = ['lantern-quay', 'bat-parlor', 'scream-lounge'];
@@ -478,10 +495,28 @@ function createCasinoRouter({
             PRIMARY KEY (game, room_id, user_id)
           )
         `);
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS casino_blackjack_tables (
+            room_id TEXT PRIMARY KEY,
+            table_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+          )
+        `);
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS casino_poker_tables (
+            room_id TEXT PRIMARY KEY,
+            table_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+          )
+        `);
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_transactions_user_created ON casino_transactions (user_id, created_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_roulette_rounds_room_created ON casino_roulette_rounds (room_id, created_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_roulette_bets_round_created ON casino_roulette_bets (round_id, created_at ASC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_table_room_presence_game_room_updated ON casino_table_room_presence (game, room_id, updated_at DESC)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_casino_blackjack_tables_updated ON casino_blackjack_tables (updated_at DESC)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_casino_poker_tables_updated ON casino_poker_tables (updated_at DESC)');
       })().catch((error_) => {
         ensureTablesPromise = null;
         throw error_;
@@ -631,6 +666,82 @@ function createCasinoRouter({
     };
   }
 
+  async function listActiveRoomPresence(client, game, roomId) {
+    const thresholdIso = new Date(now().getTime() - TABLE_ROOM_TTL_MS).toISOString();
+    const { rows } = await client.query(
+      `
+        SELECT room_id, user_id, updated_at
+        FROM casino_table_room_presence
+        WHERE game = $1 AND room_id = $2 AND updated_at >= $3
+        ORDER BY updated_at ASC
+      `,
+      [game, roomId, thresholdIso]
+    );
+    const participants = [];
+    for (const row of rows) {
+      const userId = String(row.user_id || '');
+      const user = await getUserRow(userId);
+      participants.push({
+        userId,
+        username: user?.username ? String(user.username) : `Joueur ${userId}`,
+        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+      });
+    }
+    return participants;
+  }
+
+  async function getSharedTableStateRow(client, tableName, roomId, fallbackState, lock = false) {
+    const suffix = lock ? ' FOR UPDATE' : '';
+    const { rows } = await client.query(
+      `SELECT room_id, table_state, updated_at FROM ${tableName} WHERE room_id = $1${suffix}`,
+      [roomId]
+    );
+    if (rows[0]) {
+      return rows[0];
+    }
+    const inserted = await client.query(
+      `
+        INSERT INTO ${tableName} (room_id, table_state)
+        VALUES ($1, $2::jsonb)
+        ON CONFLICT (room_id) DO NOTHING
+        RETURNING room_id, table_state, updated_at
+      `,
+      [roomId, JSON.stringify(fallbackState)]
+    );
+    if (inserted.rows[0]) return inserted.rows[0];
+    const retry = await client.query(
+      `SELECT room_id, table_state, updated_at FROM ${tableName} WHERE room_id = $1${suffix}`,
+      [roomId]
+    );
+    return retry.rows[0] || { room_id: roomId, table_state: fallbackState, updated_at: null };
+  }
+
+  async function saveSharedTableState(client, tableName, roomId, nextState) {
+    await client.query(
+      `
+        INSERT INTO ${tableName} (room_id, table_state, updated_at)
+        VALUES ($1, $2::jsonb, NOW())
+        ON CONFLICT (room_id)
+        DO UPDATE SET
+          table_state = EXCLUDED.table_state,
+          updated_at = NOW()
+      `,
+      [roomId, JSON.stringify(nextState)]
+    );
+  }
+
+  async function loadBlackjackTableState(client, roomId, lock = false) {
+    const fallback = buildWaitingBlackjackState(roomId);
+    const row = await getSharedTableStateRow(client, 'casino_blackjack_tables', roomId, fallback, lock);
+    return row?.table_state && typeof row.table_state === 'object' ? row.table_state : fallback;
+  }
+
+  async function loadPokerTableState(client, roomId, lock = false) {
+    const fallback = buildWaitingPokerState(roomId);
+    const row = await getSharedTableStateRow(client, 'casino_poker_tables', roomId, fallback, lock);
+    return row?.table_state && typeof row.table_state === 'object' ? row.table_state : fallback;
+  }
+
   async function createRouletteRound(client, roomId, openedAt) {
     const opensAtIso = new Date(openedAt).toISOString();
     const closesAtIso = new Date(new Date(openedAt).getTime() + ROULETTE_ROUND_DURATION_MS).toISOString();
@@ -660,6 +771,10 @@ function createCasinoRouter({
       [roundId]
     );
     return rows;
+  }
+
+  async function getRouletteActiveParticipants(client) {
+    return listActiveRoomPresence(client, 'roulette', ROULETTE_ROOM_ID);
   }
 
   function resolveUserId(req) {
@@ -767,34 +882,66 @@ function createCasinoRouter({
   async function ensureCurrentRouletteRound(client, roomId = ROULETTE_ROOM_ID) {
     let latest = await getLatestRouletteRound(client, roomId, true);
     const currentTime = now();
+    const activeParticipants = await getRouletteActiveParticipants(client);
 
     if (!latest) {
+      if (!activeParticipants.length) {
+        return {
+          currentRound: null,
+          latestResolved: null,
+          activeParticipants,
+          roomActive: false,
+        };
+      }
       return {
         currentRound: await createRouletteRound(client, roomId, currentTime),
         latestResolved: null,
+        activeParticipants,
+        roomActive: true,
       };
     }
 
     let latestResolved = latest?.resolved_at ? latest : null;
     const closesAtMs = latest?.closes_at ? new Date(latest.closes_at).getTime() : 0;
+    const latestBets = !latest?.resolved_at ? await getRouletteBetsForRound(client, latest.id) : [];
+    const hasUnresolvedBets = latestBets.length > 0;
+    const roomActive = activeParticipants.length > 0 || hasUnresolvedBets;
 
-    if (!latest.resolved_at && closesAtMs && currentTime.getTime() >= closesAtMs) {
+    if (!latest.resolved_at && closesAtMs && currentTime.getTime() >= closesAtMs && roomActive) {
       latestResolved = await resolveRouletteRound(client, latest);
-      latest = await createRouletteRound(client, roomId, currentTime);
-      return { currentRound: latest, latestResolved };
+      latest = activeParticipants.length > 0 ? await createRouletteRound(client, roomId, currentTime) : null;
+      return {
+        currentRound: latest,
+        latestResolved,
+        activeParticipants,
+        roomActive: activeParticipants.length > 0,
+      };
     }
 
     if (latest.resolved_at) {
+      if (!activeParticipants.length) {
+        return {
+          currentRound: null,
+          latestResolved,
+          activeParticipants,
+          roomActive: false,
+        };
+      }
       latest = await createRouletteRound(client, roomId, currentTime);
-      return { currentRound: latest, latestResolved };
+      return {
+        currentRound: latest,
+        latestResolved,
+        activeParticipants,
+        roomActive: true,
+      };
     }
 
-    return { currentRound: latest, latestResolved };
+    return { currentRound: latest, latestResolved, activeParticipants, roomActive };
   }
 
   async function buildRouletteRoomPayload(client, userId) {
-    const { currentRound, latestResolved } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
-    const currentBets = await getRouletteBetsForRound(client, currentRound.id);
+    const { currentRound, latestResolved, activeParticipants, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
+    const currentBets = currentRound?.id ? await getRouletteBetsForRound(client, currentRound.id) : [];
     const recentResultRows = (await client.query(
       'SELECT id, winning_number, winning_color, resolved_at FROM casino_roulette_rounds WHERE room_id = $1 AND resolved_at IS NOT NULL ORDER BY id DESC LIMIT $2',
       [ROULETTE_ROOM_ID, ROULETTE_RECENT_RESULTS_LIMIT]
@@ -822,16 +969,79 @@ function createCasinoRouter({
       });
     }
 
+    const participantNameMap = new Map();
+    activeParticipants.forEach((entry) => {
+      participantNameMap.set(entry.userId, entry.username);
+    });
+    participants.forEach((entry) => {
+      participantNameMap.set(entry.userId, entry.username);
+    });
+
+    const visibleBetsBySpotMap = new Map();
+    const visibleBetsByPlayerMap = new Map();
+    currentBets.forEach((bet) => {
+      const betType = String(bet.bet_type || '');
+      const betValue = String(bet.bet_value || '');
+      const playerId = String(bet.user_id || '');
+      const displayName = participantNameMap.get(playerId) || `Joueur ${playerId}`;
+      const spotKey = `${betType}::${betValue}`;
+      const spotEntry = visibleBetsBySpotMap.get(spotKey) || {
+        betType,
+        betValue,
+        totalAmount: 0,
+        playerCount: 0,
+        players: [],
+      };
+      const playerEntry = visibleBetsByPlayerMap.get(playerId) || {
+        playerId,
+        displayName,
+        totalAmount: 0,
+        bets: [],
+      };
+
+      spotEntry.totalAmount += Number(bet.amount || 0);
+      playerEntry.totalAmount += Number(bet.amount || 0);
+
+      const spotPlayer = spotEntry.players.find((entry) => entry.playerId === playerId);
+      if (spotPlayer) {
+        spotPlayer.amount += Number(bet.amount || 0);
+      } else {
+        spotEntry.players.push({
+          playerId,
+          displayName,
+          amount: Number(bet.amount || 0),
+        });
+      }
+      spotEntry.playerCount = spotEntry.players.length;
+
+      const playerBet = playerEntry.bets.find((entry) => entry.betType === betType && entry.betValue === betValue);
+      if (playerBet) {
+        playerBet.amount += Number(bet.amount || 0);
+      } else {
+        playerEntry.bets.push({
+          betType,
+          betValue,
+          amount: Number(bet.amount || 0),
+        });
+      }
+
+      visibleBetsBySpotMap.set(spotKey, spotEntry);
+      visibleBetsByPlayerMap.set(playerId, playerEntry);
+    });
+
     return {
       id: ROULETTE_ROOM_ID,
+      roomActive,
+      nextClosesAt: currentRound?.closes_at ? new Date(currentRound.closes_at).toISOString() : null,
       round: {
-        id: Number(currentRound.id),
-        opensAt: currentRound.opens_at ? new Date(currentRound.opens_at).toISOString() : null,
-        closesAt: currentRound.closes_at ? new Date(currentRound.closes_at).toISOString() : null,
-        remainingMs: Math.max(0, new Date(currentRound.closes_at).getTime() - now().getTime()),
+        id: Number(currentRound?.id || 0),
+        opensAt: currentRound?.opens_at ? new Date(currentRound.opens_at).toISOString() : null,
+        closesAt: currentRound?.closes_at ? new Date(currentRound.closes_at).toISOString() : null,
+        remainingMs: currentRound?.closes_at ? Math.max(0, new Date(currentRound.closes_at).getTime() - now().getTime()) : 0,
         totalPot: currentBets.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
         playerCount: participantTotals.size,
         participants,
+        activeParticipants,
         myBets: currentBets
           .filter((bet) => String(bet.user_id || '') === userId)
           .map((bet) => ({
@@ -842,6 +1052,8 @@ function createCasinoRouter({
             payout: Number(bet.payout || 0),
             createdAt: bet.created_at ? new Date(bet.created_at).toISOString() : null,
           })),
+        visibleBetsBySpot: [...visibleBetsBySpotMap.values()],
+        visibleBetsByPlayer: [...visibleBetsByPlayerMap.values()],
       },
       latestResolved: latestResolved?.resolved_at
         ? {
@@ -1391,6 +1603,72 @@ function createCasinoRouter({
     };
   }
 
+  async function chargeWalletForTable(client, userId, amount, kind, metadata = {}, gamesPlayed = 0) {
+    const debit = Math.max(0, Number(amount || 0));
+    if (!debit) return null;
+    const walletRow = await getWalletRow(userId, client, true);
+    const currentBalance = Number(walletRow?.balance || 0);
+    if (currentBalance < debit) {
+      const error = new Error('insufficient_credits');
+      error.code = 'insufficient_credits';
+      throw error;
+    }
+    const nextBalance = currentBalance - debit;
+    await applyWalletDeltas(client, userId, {
+      balance: nextBalance,
+      lifetimeWagered: debit,
+      lifetimeWon: 0,
+      gamesPlayed,
+    });
+    await appendTransaction(client, {
+      userId,
+      kind,
+      amount: -debit,
+      balanceAfter: nextBalance,
+      metadata,
+    });
+    return nextBalance;
+  }
+
+  async function creditWalletForTable(client, userId, amount, kind, metadata = {}) {
+    const credit = Math.max(0, Number(amount || 0));
+    if (!credit) return null;
+    const walletRow = await getWalletRow(userId, client, true);
+    const nextBalance = Number(walletRow?.balance || 0) + credit;
+    await applyWalletDeltas(client, userId, {
+      balance: nextBalance,
+      lifetimeWagered: 0,
+      lifetimeWon: credit,
+      gamesPlayed: 0,
+    });
+    await appendTransaction(client, {
+      userId,
+      kind,
+      amount: credit,
+      balanceAfter: nextBalance,
+      metadata,
+    });
+    return nextBalance;
+  }
+
+  async function syncBlackjackRoomState(client, roomId, state) {
+    const activeParticipants = await listActiveRoomPresence(client, 'blackjack', roomId);
+    return syncBlackjackStateWithPresence(
+      state,
+      activeParticipants.map((entry) => entry.userId),
+      now()
+    );
+  }
+
+  async function syncPokerRoomState(client, roomId, state) {
+    const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
+    return syncPokerStateWithPresence(
+      state,
+      activeParticipants.map((entry) => entry.userId),
+      now()
+    );
+  }
+
   router.get('/api/casino/me', verifyJWT, async (req, res) => {
     try {
       const auth = await requireCasinoUser(req, res);
@@ -1825,6 +2103,38 @@ function createCasinoRouter({
     return joinTableRoom(req, res, 'poker');
   });
 
+  router.get('/api/casino/blackjack/state', verifyJWT, async (req, res) => {
+    let client = null;
+    try {
+      const auth = await requireCasinoUser(req, res);
+      if (!auth) return;
+      const roomId = normalizeTableRoomId('blackjack', req.query?.roomId);
+      if (!roomId) {
+        return res.status(400).json({ ok: false, error: 'invalid_room' });
+      }
+
+      client = await db.connect();
+      await client.query('BEGIN');
+      await pruneTableRoomPresence(client);
+      await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
+      let state = await loadBlackjackTableState(client, roomId, false);
+      state = await syncBlackjackRoomState(client, roomId, state);
+      await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
+      await client.query('COMMIT');
+
+      return res.json({
+        ok: true,
+        state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+      });
+    } catch (error_) {
+      if (client) await client.query('ROLLBACK').catch(() => {});
+      logger?.error?.('[CASINO] blackjack state failed:', error_?.message);
+      return res.status(500).json({ ok: false, error: 'blackjack_state_failed' });
+    } finally {
+      client?.release?.();
+    }
+  });
+
   router.post('/api/casino/blackjack/start', verifyJWT, express.json({ limit: '64kb' }), async (req, res) => {
     let client = null;
     try {
@@ -1846,96 +2156,100 @@ function createCasinoRouter({
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
-      const walletRow = await getWalletRow(auth.userId, client, true);
-      const currentBalance = Number(walletRow?.balance || 0);
-      if (currentBalance < wager) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ ok: false, error: 'insufficient_credits' });
+      let state = await loadBlackjackTableState(client, roomId, true);
+      state = await syncBlackjackRoomState(client, roomId, state);
+      if (state.stage === 'player-turn') {
+        await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
+        await client.query('COMMIT');
+        return res.json({
+          ok: true,
+          state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+          profile: await loadProfile(auth.userId),
+        });
       }
 
-      const nextBalance = currentBalance - wager;
-      await applyWalletDeltas(client, auth.userId, {
-        balance: nextBalance,
-        lifetimeWagered: wager,
-        lifetimeWon: 0,
-        gamesPlayed: 1,
-      });
-      await appendTransaction(client, {
-        userId: auth.userId,
-        kind: 'blackjack_buyin',
-        amount: -wager,
-        balanceAfter: nextBalance,
-        metadata: { wager },
-      });
-      await client.query('COMMIT');
-
-      let workingDeck = createPirateDeck(random);
-      const playerOpening = drawCards(workingDeck, 2);
-      workingDeck = playerOpening.deck;
-      const dealerOpening = drawCards(workingDeck, 2);
-      workingDeck = dealerOpening.deck;
-      const aiSeats = buildBlackjackAiSeats().map((seat) => {
-        const dealt = drawCards(workingDeck, 2);
-        workingDeck = dealt.deck;
-        return {
-          ...seat,
-          chips: seat.chips - seat.wager,
-          cards: dealt.cards,
-          result: 'en jeu',
-          mood: describeHoleCards(dealt.cards),
-        };
-      });
-
-      let state = {
-        game: 'blackjack',
-        deck: workingDeck,
+      state = upsertBlackjackPendingSeat(state, {
         roomId,
-        playerCards: playerOpening.cards,
-        dealerCards: dealerOpening.cards,
-        aiSeats,
+        userId: auth.userId,
+        username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
         wager,
-        dealerHidden: true,
-        stage: 'player-turn',
-        payoutAmount: 0,
-        lastDelta: -wager,
-        message: 'Le sabot est chaud. A toi de tirer ou de rester.',
-      };
+      }, now());
 
-      if (getBlackjackScore(playerOpening.cards).isBlackjack) {
-        state = settleBlackjackState(state);
-        if (Number(state.payoutAmount || 0) > 0) {
-          await client.query('BEGIN');
-          const payoutWallet = await getWalletRow(auth.userId, client, true);
-          const payoutBalance = Number(payoutWallet?.balance || 0) + Number(state.payoutAmount || 0);
-          await applyWalletDeltas(client, auth.userId, {
-            balance: payoutBalance,
-            lifetimeWagered: 0,
-            lifetimeWon: Number(state.payoutAmount || 0),
-            gamesPlayed: 0,
+      const activeParticipants = await listActiveRoomPresence(client, 'blackjack', roomId);
+      const activeUserIds = new Set(activeParticipants.map((entry) => entry.userId));
+      const candidateSeats = [];
+      for (const seat of state.pendingSeats || []) {
+        if (!activeUserIds.has(String(seat.userId || ''))) continue;
+        const walletRow = await getWalletRow(String(seat.userId || ''), client, true);
+        const currentBalance = Number(walletRow?.balance || 0);
+        const requiredWager = Number(seat.wager || 0);
+        if (currentBalance >= requiredWager) {
+          candidateSeats.push({
+            ...seat,
+            currentBalance,
+            roundId: Number(state.roundId || 0),
           });
-          await appendTransaction(client, {
-            userId: auth.userId,
-            kind: 'blackjack_payout',
-            amount: Number(state.payoutAmount || 0),
-            balanceAfter: payoutBalance,
-            metadata: {
-              wager,
-              message: state.message,
-            },
-          });
-          await client.query('COMMIT');
+        } else if (String(seat.userId || '') === auth.userId) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ ok: false, error: 'insufficient_credits' });
         }
       }
 
+      state.pendingSeats = candidateSeats.map((seat) => ({
+        userId: seat.userId,
+        username: seat.username,
+        wager: seat.wager,
+        readyAt: seat.readyAt,
+      }));
+
+      for (const seat of candidateSeats) {
+        await chargeWalletForTable(client, seat.userId, seat.wager, 'blackjack_buyin', {
+          roomId,
+          wager: Number(seat.wager || 0),
+          roundId: Number(state.roundId || 0) + 1,
+        }, 1);
+      }
+
+      state = startSharedBlackjackRound({
+        roomId,
+        readySeats: candidateSeats.map((seat) => ({
+          ...seat,
+          balanceAfterBuyIn: Number(seat.currentBalance || 0) - Number(seat.wager || 0),
+        })),
+        now: now(),
+        createPirateDeck: () => createPirateDeck(random),
+        drawCards,
+        getBlackjackScore,
+        completeDealerHand,
+        getBlackjackPayout,
+      });
+
+      if (state.stage === 'resolved') {
+        for (const seat of state.seats || []) {
+          if (Number(seat.payoutAmount || 0) > 0) {
+            await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'blackjack_payout', {
+              roomId,
+              wager: Number(seat.wager || 0),
+              roundId: Number(state.roundId || 0),
+              message: state.message,
+            });
+          }
+        }
+      }
+
+      await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
+      await client.query('COMMIT');
+
       return res.json({
         ok: true,
-        state: serializeBlackjackState(state),
+        state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
+      const code = error_?.code === 'insufficient_credits' ? 'insufficient_credits' : 'blackjack_start_failed';
       logger?.error?.('[CASINO] blackjack start failed:', error_?.message);
-      return res.status(500).json({ ok: false, error: 'blackjack_start_failed' });
+      return res.status(code === 'insufficient_credits' ? 400 : 500).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
@@ -1951,69 +2265,91 @@ function createCasinoRouter({
       if (!['hit', 'stand'].includes(action)) {
         return res.status(400).json({ ok: false, error: 'invalid_action' });
       }
-
-      let state = decodeRoundToken(req.body?.token, roundTokenSecret);
-      if (state?.game !== 'blackjack' || state.stage !== 'player-turn') {
+      const parsedToken = parseBlackjackToken(req.body?.token);
+      if (!parsedToken?.roomId) {
         return res.status(400).json({ ok: false, error: 'invalid_round_token' });
       }
 
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'blackjack', normalizeTableRoomId('blackjack', state.roomId), auth.userId);
-      await client.query('COMMIT');
-      client.release();
-      client = null;
+      await touchTableRoomPresence(client, 'blackjack', parsedToken.roomId, auth.userId);
+      let state = await loadBlackjackTableState(client, parsedToken.roomId, true);
+      if (Number(state.roundId || 0) !== Number(parsedToken.roundId || 0)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok: false, error: 'invalid_round_token' });
+      }
 
-      if (action === 'hit') {
-        const draw = drawCards(state.deck, 1);
-        state = {
-          ...state,
-          playerCards: [...state.playerCards, ...draw.cards],
-          deck: draw.deck,
-          message: 'Encore une carte. Le croupier te regarde sans broncher.',
-        };
-        if (getBlackjackScore(state.playerCards).isBust) {
-          state = settleBlackjackState(state);
+      state = applySharedBlackjackAction(state, {
+        userId: auth.userId,
+        action,
+        now: now(),
+        drawCards,
+        getBlackjackScore,
+        completeDealerHand,
+        getBlackjackPayout,
+      });
+
+      if (state.stage === 'resolved') {
+        for (const seat of state.seats || []) {
+          if (Number(seat.payoutAmount || 0) > 0) {
+            await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'blackjack_payout', {
+              roomId: parsedToken.roomId,
+              wager: Number(seat.wager || 0),
+              roundId: Number(state.roundId || 0),
+              message: state.message,
+            });
+          }
         }
-      } else {
-        state = settleBlackjackState(state);
       }
 
-      if (state.stage === 'resolved' && Number(state.payoutAmount || 0) > 0) {
-        client = await db.connect();
-        await client.query('BEGIN');
-        const walletRow = await getWalletRow(auth.userId, client, true);
-        const nextBalance = Number(walletRow?.balance || 0) + Number(state.payoutAmount || 0);
-        await applyWalletDeltas(client, auth.userId, {
-          balance: nextBalance,
-          lifetimeWagered: 0,
-          lifetimeWon: Number(state.payoutAmount || 0),
-          gamesPlayed: 0,
-        });
-        await appendTransaction(client, {
-          userId: auth.userId,
-          kind: 'blackjack_payout',
-          amount: Number(state.payoutAmount || 0),
-          balanceAfter: nextBalance,
-          metadata: {
-            wager: Number(state.wager || 0),
-            message: state.message,
-          },
-        });
-        await client.query('COMMIT');
-      }
+      await saveSharedTableState(client, 'casino_blackjack_tables', parsedToken.roomId, state);
+      await client.query('COMMIT');
 
       return res.json({
         ok: true,
-        state: serializeBlackjackState(state),
-        profile: state.stage === 'resolved' ? await loadProfile(auth.userId) : null,
+        state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+        profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
-      const code = error_?.code === 'invalid_round_token' ? 'invalid_round_token' : 'blackjack_action_failed';
+      const code = ['invalid_round_token', 'invalid_action', 'not_your_turn'].includes(error_?.code)
+        ? error_.code
+        : 'blackjack_action_failed';
       logger?.error?.('[CASINO] blackjack action failed:', error_?.message);
-      return res.status(code === 'invalid_round_token' ? 400 : 500).json({ ok: false, error: code });
+      return res.status(code === 'blackjack_action_failed' ? 500 : 400).json({ ok: false, error: code });
+    } finally {
+      client?.release?.();
+    }
+  });
+
+  router.get('/api/casino/poker/state', verifyJWT, async (req, res) => {
+    let client = null;
+    try {
+      const auth = await requireCasinoUser(req, res);
+      if (!auth) return;
+      const roomId = normalizeTableRoomId('poker', req.query?.roomId);
+      if (!roomId) {
+        return res.status(400).json({ ok: false, error: 'invalid_room' });
+      }
+
+      client = await db.connect();
+      await client.query('BEGIN');
+      await pruneTableRoomPresence(client);
+      await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+      let state = await loadPokerTableState(client, roomId, false);
+      state = await syncPokerRoomState(client, roomId, state);
+      await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
+      await client.query('COMMIT');
+
+      return res.json({
+        ok: true,
+        state: serializeSharedPokerState(state, auth.userId),
+      });
+    } catch (error_) {
+      if (client) await client.query('ROLLBACK').catch(() => {});
+      logger?.error?.('[CASINO] poker state failed:', error_?.message);
+      return res.status(500).json({ ok: false, error: 'poker_state_failed' });
     } finally {
       client?.release?.();
     }
@@ -2040,84 +2376,98 @@ function createCasinoRouter({
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
-      const walletRow = await getWalletRow(auth.userId, client, true);
-      const currentBalance = Number(walletRow?.balance || 0);
-      if (currentBalance < ante) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ ok: false, error: 'insufficient_credits' });
+      let state = await loadPokerTableState(client, roomId, true);
+      state = await syncPokerRoomState(client, roomId, state);
+      if (state.stage && !['waiting', 'showdown'].includes(state.stage)) {
+        await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
+        await client.query('COMMIT');
+        return res.json({
+          ok: true,
+          state: serializeSharedPokerState(state, auth.userId),
+          profile: await loadProfile(auth.userId),
+        });
       }
 
-      const nextBalance = currentBalance - ante;
-      await applyWalletDeltas(client, auth.userId, {
-        balance: nextBalance,
-        lifetimeWagered: ante,
-        lifetimeWon: 0,
-        gamesPlayed: 1,
-      });
-      await appendTransaction(client, {
-        userId: auth.userId,
-        kind: 'poker_buyin',
-        amount: -ante,
-        balanceAfter: nextBalance,
-        metadata: { ante },
-      });
-      await client.query('COMMIT');
-
-      let workingDeck = createPirateDeck(random);
-      const playerDeal = drawCards(workingDeck, 2);
-      workingDeck = playerDeal.deck;
-      const aiSeats = buildPokerSeats().map((seat) => {
-        const dealt = drawCards(workingDeck, 2);
-        workingDeck = dealt.deck;
-        return {
-          ...seat,
-          chips: seat.chips - ante,
-          cards: dealt.cards,
-          hand: null,
-          read: describeHoleCards(dealt.cards),
-          isWinner: false,
-        };
-      });
-      const board = drawCards(workingDeck, 5);
-      const playerStartingStack = Math.min(currentBalance, ante * 40);
-      const state = {
-        game: 'poker',
+      state = upsertPokerPendingSeat(state, {
         roomId,
+        userId: auth.userId,
+        username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
         ante,
-        stage: 'preflop',
-        pot: ante * (aiSeats.length + 1),
-        playerCards: playerDeal.cards,
-        communityCards: [],
-        communityReserve: board.cards,
-        aiSeats,
-        playerFolded: false,
-        playerHand: null,
-        playerChips: Math.max(0, playerStartingStack - ante),
-        playerCommitted: ante,
-        playerStreetCommitted: 0,
-        currentBet: 0,
-        toCall: 0,
-        minBet: 0,
-        minRaiseTo: 0,
-        legalActions: [],
-        aggressorId: null,
-        aggressorName: null,
-        actionLog: ['Blindes posees, cartes privees servies.'],
-        payoutAmount: 0,
-        lastDelta: -ante,
-        message: 'Les blindes tombent sur le feutre. Le premier tour de decision commence.',
-      };
-      const preparedState = preparePokerDecisionState(state);
+      }, now());
+
+      const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
+      const activeUserIds = new Set(activeParticipants.map((entry) => entry.userId));
+      const sharedAnte = Number(state.ante || ante);
+      const eligibleSeats = [];
+      for (const seat of state.pendingSeats || []) {
+        if (!activeUserIds.has(String(seat.userId || ''))) continue;
+        const walletRow = await getWalletRow(String(seat.userId || ''), client, true);
+        const currentBalance = Number(walletRow?.balance || 0);
+        if (currentBalance >= sharedAnte) {
+          eligibleSeats.push({
+            ...seat,
+            ante: sharedAnte,
+            currentBalance,
+            handId: Number(state.handId || 0),
+          });
+        } else if (String(seat.userId || '') === auth.userId) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ ok: false, error: 'insufficient_credits' });
+        }
+      }
+
+      state.pendingSeats = eligibleSeats.map((seat) => ({
+        userId: seat.userId,
+        username: seat.username,
+        ante: seat.ante,
+        readyAt: seat.readyAt,
+      }));
+      state.ante = sharedAnte;
+
+      if (eligibleSeats.length < 2) {
+        state.stage = 'waiting';
+        state.message = "Un second joueur humain est requis pour lancer la main.";
+        await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
+        await client.query('COMMIT');
+        return res.json({
+          ok: true,
+          state: serializeSharedPokerState(state, auth.userId),
+          profile: await loadProfile(auth.userId),
+        });
+      }
+
+      for (const seat of eligibleSeats) {
+        await chargeWalletForTable(client, seat.userId, sharedAnte, 'poker_buyin', {
+          roomId,
+          ante: sharedAnte,
+          handId: Number(state.handId || 0) + 1,
+        }, 1);
+      }
+
+      state = startPokerHand({
+        roomId,
+        readySeats: eligibleSeats.map((seat) => ({
+          ...seat,
+          balanceAfterBuyIn: Number(seat.currentBalance || 0) - sharedAnte,
+        })),
+        now: now(),
+        createPirateDeck: () => createPirateDeck(random),
+        drawCards,
+      });
+
+      await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
+      await client.query('COMMIT');
 
       return res.json({
         ok: true,
-        state: serializePokerState(preparedState),
+        state: serializeSharedPokerState(state, auth.userId),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
+      const code = error_?.code === 'insufficient_credits' ? 'insufficient_credits' : 'poker_start_failed';
       logger?.error?.('[CASINO] poker start failed:', error_?.message);
-      return res.status(500).json({ ok: false, error: 'poker_start_failed' });
+      return res.status(code === 'insufficient_credits' ? 400 : 500).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
@@ -2130,200 +2480,78 @@ function createCasinoRouter({
       if (!auth) return;
 
       const rawAction = normalizeText(req.body?.action).toLowerCase();
-      if (!['reveal', 'showdown', 'check', 'call', 'bet', 'raise', 'fold'].includes(rawAction)) {
+      const action = rawAction === 'reveal' || rawAction === 'showdown' ? 'check' : rawAction;
+      if (!['check', 'call', 'bet', 'raise', 'fold'].includes(action)) {
         return res.status(400).json({ ok: false, error: 'invalid_action' });
       }
-
-      let state = decodeRoundToken(req.body?.token, roundTokenSecret);
-      if (state?.game !== 'poker' || state.stage === 'showdown') {
+      const parsedToken = parsePokerToken(req.body?.token);
+      if (!parsedToken?.roomId) {
         return res.status(400).json({ ok: false, error: 'invalid_round_token' });
-      }
-      state = {
-        ...state,
-        aiSeats: (state.aiSeats || []).map((seat) => ({
-          ...seat,
-          folded: Boolean(seat.folded),
-          totalCommitted: Number(seat.totalCommitted || state.ante || 0),
-          streetCommitted: Number(seat.streetCommitted || 0),
-          lastAction: seat.lastAction || 'attend',
-        })),
-        playerChips: Number(state.playerChips || Math.max(0, Math.min(Number(state.ante || 0) * 40, Number(state.pot || 0) * 2) - Number(state.ante || 0))),
-        playerCommitted: Number(state.playerCommitted || state.ante || 0),
-        playerStreetCommitted: Number(state.playerStreetCommitted || 0),
-        currentBet: Number(state.currentBet || 0),
-        toCall: Number(state.toCall || 0),
-        minBet: Number(state.minBet || 0),
-        minRaiseTo: Number(state.minRaiseTo || 0),
-        legalActions: Array.isArray(state.legalActions) ? state.legalActions : [],
-        actionLog: Array.isArray(state.actionLog) ? state.actionLog : [],
-      };
-      if (!state.legalActions.length) {
-        state = preparePokerDecisionState({
-          ...state,
-          message: state.message || 'La main reprend avec un vrai spot de decision.',
-        });
-      }
-
-      const callAmount = Math.max(0, Number(state.currentBet || 0) - Number(state.playerStreetCommitted || 0));
-      const blindUnit = getPokerBlindUnit(state.ante);
-      let action = rawAction;
-      if (action === 'reveal' || action === 'showdown') {
-        action = 'check';
-      }
-      if (action !== 'fold' && !state.legalActions.includes(action)) {
-        return res.status(400).json({ ok: false, error: 'invalid_action' });
-      }
-
-      let targetBet = Number(state.currentBet || 0);
-      let wagerAmount = 0;
-      if (action === 'check') {
-        if (callAmount > 0) {
-          return res.status(400).json({ ok: false, error: 'invalid_action' });
-        }
-      } else if (action === 'call') {
-        if (callAmount <= 0 || callAmount > Number(state.playerChips || 0)) {
-          return res.status(400).json({ ok: false, error: 'invalid_action' });
-        }
-        wagerAmount = callAmount;
-      } else if (action === 'bet') {
-        const requestedAmount = clampInteger(req.body?.amount, blindUnit, 1000000, 0);
-        const maxTarget = Number(state.playerStreetCommitted || 0) + Number(state.playerChips || 0);
-        targetBet = clampPokerBetAmount(requestedAmount, Math.max(blindUnit, Number(state.minBet || blindUnit)), maxTarget, state.ante);
-        if (!targetBet || targetBet <= Number(state.playerStreetCommitted || 0)) {
-          return res.status(400).json({ ok: false, error: 'invalid_action' });
-        }
-        wagerAmount = targetBet - Number(state.playerStreetCommitted || 0);
-      } else if (action === 'raise') {
-        const requestedAmount = clampInteger(req.body?.amount, blindUnit, 1000000, 0);
-        const maxTarget = Number(state.playerStreetCommitted || 0) + Number(state.playerChips || 0);
-        targetBet = clampPokerBetAmount(
-          requestedAmount,
-          Math.max(Number(state.minRaiseTo || (Number(state.currentBet || 0) + blindUnit)), Number(state.currentBet || 0) + blindUnit),
-          maxTarget,
-          state.ante
-        );
-        if (!targetBet || targetBet <= Number(state.currentBet || 0)) {
-          return res.status(400).json({ ok: false, error: 'invalid_action' });
-        }
-        wagerAmount = targetBet - Number(state.playerStreetCommitted || 0);
       }
 
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'poker', normalizeTableRoomId('poker', state.roomId), auth.userId);
+      await touchTableRoomPresence(client, 'poker', parsedToken.roomId, auth.userId);
+      const previousState = await loadPokerTableState(client, parsedToken.roomId, true);
+      if (Number(previousState.handId || 0) !== Number(parsedToken.handId || 0)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok: false, error: 'invalid_round_token' });
+      }
+
+      const actingSeatBefore = previousState.seats?.[previousState.actingSeatIndex] || null;
+      const nextState = applySharedPokerAction(previousState, {
+        userId: auth.userId,
+        action,
+        amount: clampInteger(req.body?.amount, 0, 1000000, 0),
+        now: now(),
+      }, {
+        evaluateBestPokerHand,
+        comparePokerScores,
+      });
+
+      const actingSeatAfter = (nextState.seats || []).find((seat) => String(seat.userId || '') === auth.userId) || null;
+      const wagerAmount = Math.max(0, Number(actingSeatAfter?.totalCommitted || 0) - Number(actingSeatBefore?.totalCommitted || 0));
       if (wagerAmount > 0) {
-        const walletRow = await getWalletRow(auth.userId, client, true);
-        const currentBalance = Number(walletRow?.balance || 0);
-        if (currentBalance < wagerAmount) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ ok: false, error: 'insufficient_credits' });
-        }
-        const nextBalance = currentBalance - wagerAmount;
-        await applyWalletDeltas(client, auth.userId, {
-          balance: nextBalance,
-          lifetimeWagered: wagerAmount,
-          lifetimeWon: 0,
-          gamesPlayed: 0,
-        });
-        await appendTransaction(client, {
-          userId: auth.userId,
-          kind: `poker_${action}`,
-          amount: -wagerAmount,
-          balanceAfter: nextBalance,
-          metadata: {
-            stage: state.stage,
-            roomId: normalizeTableRoomId('poker', state.roomId),
-            targetBet: action === 'call' ? Number(state.currentBet || 0) : targetBet,
-            potBefore: Number(state.pot || 0),
-          },
+        await chargeWalletForTable(client, auth.userId, wagerAmount, `poker_${action}`, {
+          roomId: parsedToken.roomId,
+          handId: Number(nextState.handId || 0),
+          stage: nextState.stage,
+          targetBet: Number(actingSeatAfter?.streetCommitted || 0),
+          potAfter: Number(nextState.pot || 0),
         });
       }
+
+      if (nextState.stage === 'showdown') {
+        for (const seat of nextState.seats || []) {
+          if (Number(seat.payoutAmount || 0) > 0) {
+            await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'poker_payout', {
+              roomId: parsedToken.roomId,
+              handId: Number(nextState.handId || 0),
+              ante: Number(nextState.ante || 0),
+              committed: Number(seat.totalCommitted || 0),
+              pot: Number(nextState.pot || 0),
+              message: nextState.message,
+            });
+          }
+        }
+      }
+
+      await saveSharedTableState(client, 'casino_poker_tables', parsedToken.roomId, nextState);
       await client.query('COMMIT');
-      client.release();
-      client = null;
-
-      if (action === 'fold') {
-        state = resolvePokerShowdown(
-          appendPokerLog(
-            {
-              ...state,
-              playerFolded: true,
-              legalActions: [],
-              message: 'Tu jettes tes cartes dans le muck.',
-            },
-            'Hero fold.'
-          ),
-          true
-        );
-      } else {
-        let actionLabel = 'Hero check.';
-        let actionMessage = 'Tu check.';
-        if (action === 'call') {
-          actionLabel = `Hero call ${wagerAmount}.`;
-          actionMessage = `Tu paies ${wagerAmount}.`;
-        }
-        if (action === 'bet') {
-          actionLabel = `Hero bet ${targetBet}.`;
-          actionMessage = `Tu ouvres ${targetBet}.`;
-        }
-        if (action === 'raise') {
-          actionLabel = `Hero raise ${targetBet}.`;
-          actionMessage = `Tu relances a ${targetBet}.`;
-        }
-
-        const nextState = appendPokerLog(
-          {
-            ...state,
-            playerChips: Number(state.playerChips || 0) - wagerAmount,
-            playerCommitted: Number(state.playerCommitted || 0) + wagerAmount,
-            playerStreetCommitted: Number(state.playerStreetCommitted || 0) + wagerAmount,
-            currentBet: action === 'check' ? Number(state.currentBet || 0) : Math.max(Number(state.currentBet || 0), targetBet),
-            toCall: 0,
-            legalActions: [],
-            message: actionMessage,
-          },
-          actionLabel
-        );
-        state = resolvePokerTableReaction(nextState, action);
-      }
-
-      if (state.stage === 'showdown' && Number(state.payoutAmount || 0) > 0) {
-        client = await db.connect();
-        await client.query('BEGIN');
-        const walletRow = await getWalletRow(auth.userId, client, true);
-        const nextBalance = Number(walletRow?.balance || 0) + Number(state.payoutAmount || 0);
-        await applyWalletDeltas(client, auth.userId, {
-          balance: nextBalance,
-          lifetimeWagered: 0,
-          lifetimeWon: Number(state.payoutAmount || 0),
-          gamesPlayed: 0,
-        });
-        await appendTransaction(client, {
-          userId: auth.userId,
-          kind: 'poker_payout',
-          amount: Number(state.payoutAmount || 0),
-          balanceAfter: nextBalance,
-          metadata: {
-            ante: Number(state.ante || 0),
-            committed: Number(state.playerCommitted || state.ante || 0),
-            pot: Number(state.pot || 0),
-            message: state.message,
-          },
-        });
-        await client.query('COMMIT');
-      }
 
       return res.json({
         ok: true,
-        state: serializePokerState(state),
+        state: serializeSharedPokerState(nextState, auth.userId),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
-      const code = error_?.code === 'invalid_round_token' ? 'invalid_round_token' : 'poker_action_failed';
+      const code = ['invalid_round_token', 'invalid_action', 'not_your_turn', 'insufficient_credits'].includes(error_?.code)
+        ? error_.code
+        : 'poker_action_failed';
       logger?.error?.('[CASINO] poker action failed:', error_?.message);
-      return res.status(code === 'invalid_round_token' ? 400 : 500).json({ ok: false, error: code });
+      return res.status(code === 'poker_action_failed' ? 500 : 400).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
@@ -2337,6 +2565,8 @@ function createCasinoRouter({
 
       client = await db.connect();
       await client.query('BEGIN');
+      await pruneTableRoomPresence(client);
+      await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId);
       const room = await buildRouletteRoomPayload(client, auth.userId);
       await client.query('COMMIT');
 
@@ -2369,7 +2599,13 @@ function createCasinoRouter({
 
       client = await db.connect();
       await client.query('BEGIN');
-      const { currentRound } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
+      await pruneTableRoomPresence(client);
+      await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId);
+      const { currentRound, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
+      if (!roomActive || !currentRound?.closes_at) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ ok: false, error: 'roulette_room_inactive' });
+      }
       if (now().getTime() >= new Date(currentRound.closes_at).getTime()) {
         await client.query('ROLLBACK');
         return res.status(409).json({ ok: false, error: 'roulette_round_closed' });
