@@ -1,0 +1,60 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wood" x1="86" y1="64" x2="426" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9B6A3A"/>
+      <stop offset="0.45" stop-color="#6F4524"/>
+      <stop offset="1" stop-color="#3D2413"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="140" y1="120" x2="382" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F6D78A"/>
+      <stop offset="0.5" stop-color="#D29B3D"/>
+      <stop offset="1" stop-color="#7A4A17"/>
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(150)">
+      <stop offset="0" stop-color="#1FD7E6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#1FD7E6" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="36" y="36" width="440" height="440" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <circle cx="256" cy="256" r="168" stroke="url(#gold)" stroke-width="28" fill="rgba(0,0,0,0)"/>
+    <circle cx="256" cy="256" r="122" stroke="#1C120B" stroke-opacity="0.35" stroke-width="8" fill="url(#centerGlow)"/>
+
+    <!-- spokes -->
+    <g stroke-linecap="round">
+      <g transform="translate(256 256)">
+        <g id="spoke">
+          <rect x="-10" y="-164" width="20" height="94" rx="10" fill="url(#wood)"/>
+          <rect x="-6" y="-147" width="12" height="52" rx="6" fill="#B98754" opacity="0.42"/>
+          <circle cx="0" cy="-176" r="24" fill="url(#wood)" stroke="url(#gold)" stroke-width="10"/>
+          <circle cx="0" cy="-176" r="7" fill="#E9C56E"/>
+        </g>
+        <use href="#spoke" transform="rotate(45)"/>
+        <use href="#spoke" transform="rotate(90)"/>
+        <use href="#spoke" transform="rotate(135)"/>
+        <use href="#spoke" transform="rotate(180)"/>
+        <use href="#spoke" transform="rotate(225)"/>
+        <use href="#spoke" transform="rotate(270)"/>
+        <use href="#spoke" transform="rotate(315)"/>
+      </g>
+    </g>
+
+    <!-- burger lines integrated in helm -->
+    <g>
+      <rect x="180" y="196" width="152" height="22" rx="11" fill="#F6E2B1" fill-opacity="0.96"/>
+      <rect x="164" y="245" width="184" height="22" rx="11" fill="#F6E2B1" fill-opacity="0.96"/>
+      <rect x="180" y="294" width="152" height="22" rx="11" fill="#F6E2B1" fill-opacity="0.96"/>
+      <rect x="184" y="200" width="144" height="6" rx="3" fill="#FFF5DA" opacity="0.55"/>
+      <rect x="168" y="249" width="176" height="6" rx="3" fill="#FFF5DA" opacity="0.55"/>
+      <rect x="184" y="298" width="144" height="6" rx="3" fill="#FFF5DA" opacity="0.55"/>
+    </g>
+
+    <!-- center hub -->
+    <circle cx="256" cy="256" r="54" fill="url(#wood)" stroke="url(#gold)" stroke-width="14"/>
+    <circle cx="256" cy="256" r="16" fill="#E9C56E"/>
+    <circle cx="256" cy="256" r="6" fill="#FFF2C7"/>
+  </g>
+</svg>
