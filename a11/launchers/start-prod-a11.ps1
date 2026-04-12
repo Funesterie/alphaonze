@@ -402,10 +402,10 @@ $openBrowser = -not (Has-Flag '--no-open')
 $pauseAtEnd = -not (Has-Flag '--no-pause')
 $showWindows = Has-Flag '--show-windows'
 $startBackend = -not (Has-Flag '--no-backend')
-$startLlm = -not (Has-Flag '--no-llm')
-$startOllama = -not (Has-Flag '--no-ollama')
-$startCerbere = -not (Has-Flag '--no-cerbere')
-$startTunnel = -not (Has-Flag '--no-tunnel')
+$startLlm = Has-Flag '--with-llm'
+$startOllama = Has-Flag '--with-ollama'
+$startCerbere = Has-Flag '--with-cerbere'
+$startTunnel = Has-Flag '--with-tunnel'
 $restartTunnel = Has-Flag '--restart-tunnel'
 $startNgrok = Has-Flag '--with-ngrok'
 $checkOnly = Has-Flag '--check-only'
@@ -418,16 +418,16 @@ $ollamaWarmupEnabled = if ($env:A11_OLLAMA_WARMUP -eq '0') { $false } else { $tr
 
 if ($checkOnly) {
   $openBrowser = $false
-  $startLlm = $false
-  $startOllama = $false
-  $startCerbere = $false
-  $startTunnel = $false
   $startNgrok = $false
 }
 
 if ($env:A11_PROD_NO_OPEN -eq '1') { $openBrowser = $false }
 if ($env:A11_PROD_NO_PAUSE -eq '1') { $pauseAtEnd = $false }
 if ($env:A11_PROD_NO_BACKEND -eq '1') { $startBackend = $false }
+if ($env:A11_PROD_WITH_LLM -eq '1') { $startLlm = $true }
+if ($env:A11_PROD_WITH_OLLAMA -eq '1') { $startOllama = $true }
+if ($env:A11_PROD_WITH_CERBERE -eq '1') { $startCerbere = $true }
+if ($env:A11_PROD_WITH_TUNNEL -eq '1') { $startTunnel = $true }
 if ($env:A11_PROD_NO_LLM -eq '1') { $startLlm = $false }
 if ($env:A11_PROD_NO_OLLAMA -eq '1') { $startOllama = $false }
 if ($env:A11_PROD_NO_CERBERE -eq '1') { $startCerbere = $false }
@@ -435,18 +435,10 @@ if ($env:A11_PROD_NO_TUNNEL -eq '1') { $startTunnel = $false }
 if ($env:A11_PROD_RESTART_TUNNEL -eq '1') { $restartTunnel = $true }
 if ($env:A11_PROD_USE_NGROK -eq '1') { $startNgrok = $true }
 if ($env:A11_PROD_NO_NGROK -eq '1') { $startNgrok = $false }
+if ($restartTunnel) { $startTunnel = $true }
 
-$configuredLlmEnabled = if ($checkOnly) {
-  (-not (Has-Flag '--no-llm')) -and ($env:A11_PROD_NO_LLM -ne '1')
-} else {
-  $startLlm
-}
-
-$configuredOllamaEnabled = if ($checkOnly) {
-  (-not (Has-Flag '--no-ollama')) -and ($env:A11_PROD_NO_OLLAMA -ne '1')
-} else {
-  $startOllama
-}
+$configuredLlmEnabled = $startLlm
+$configuredOllamaEnabled = $startOllama
 
 $effectiveLlmProvider = $requestedLlmProvider
 if ($effectiveLlmProvider -eq 'ollama' -and -not $configuredOllamaEnabled) {
@@ -892,14 +884,14 @@ Write-Host "  - downloads     : $downloadGuidePath"
 Write-Host "  - logs          : $launcherLogDir"
 Write-Host ""
 Write-Host "[A11 PROD] Utilisation :"
-Write-Host "  - normal        : double-clic sur ce fichier"
+Write-Host "  - normal leger  : double-clic sur ce fichier"
 Write-Host "  - check only    : start-prod-a11.bat --check-only"
 Write-Host "  - sans pause    : start-prod-a11.bat --no-pause"
 Write-Host "  - sans backend  : start-prod-a11.bat --no-backend"
-Write-Host "  - sans LLM      : start-prod-a11.bat --no-llm"
-Write-Host "  - sans Ollama   : start-prod-a11.bat --no-ollama"
-Write-Host "  - sans Cerbere  : start-prod-a11.bat --no-cerbere"
-Write-Host "  - sans tunnel   : start-prod-a11.bat --no-tunnel"
+Write-Host "  - avec LLM      : start-prod-a11.bat --with-llm"
+Write-Host "  - avec Ollama   : start-prod-a11.bat --with-ollama"
+Write-Host "  - avec Cerbere  : start-prod-a11.bat --with-cerbere"
+Write-Host "  - avec tunnel   : start-prod-a11.bat --with-tunnel"
 Write-Host "  - relance tunnel: start-prod-a11.bat --restart-tunnel"
 Write-Host "  - mode legacy   : start-prod-a11.bat --with-ngrok (fallback seulement)"
 Write-Host "  - bootstrap IA  : npm --prefix .. run bootstrap:ollama:gemma"
