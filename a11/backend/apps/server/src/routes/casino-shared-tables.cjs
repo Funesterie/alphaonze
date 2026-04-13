@@ -925,12 +925,42 @@ function upsertPokerPendingSeat(state, seat, now) {
     updatedAt: toIso(now),
     message:
       nextPendingSeats.length >= 2
-        ? "Deux joueurs ou plus sont prets. La prochaine main peut partir."
-        : "Un seul joueur est pret. En attente d'un adversaire.",
+        ? "Deux joueurs ou plus sont inscrits. La prochaine main peut partir."
+        : "Inscription enregistree. En attente d'un adversaire.",
   };
   clearTableTurnWindow(nextState);
   ensureTableBettingWindow(nextState, now);
   return nextState;
+}
+
+function buildPokerCarryoverPendingSeats(state, activeSet, now) {
+  const timestamp = toIso(now);
+  const pendingMap = new Map();
+
+  for (const entry of state?.pendingSeats || []) {
+    const userId = String(entry?.userId || "");
+    if (!userId || !activeSet.has(userId)) continue;
+    pendingMap.set(userId, {
+      userId,
+      username: entry?.username || `Joueur ${userId}`,
+      ante: Number(entry?.ante || state?.ante || 0),
+      readyAt: entry?.readyAt || timestamp,
+    });
+  }
+
+  for (const seat of state?.seats || []) {
+    const userId = String(seat?.userId || "");
+    if (!userId || !activeSet.has(userId) || seat?.isAbsent) continue;
+    const existing = pendingMap.get(userId);
+    pendingMap.set(userId, {
+      userId,
+      username: seat?.username || existing?.username || `Joueur ${userId}`,
+      ante: Number(state?.ante || existing?.ante || seat?.ante || 0),
+      readyAt: existing?.readyAt || timestamp,
+    });
+  }
+
+  return [...pendingMap.values()].sort((left, right) => String(left.readyAt || "").localeCompare(String(right.readyAt || "")));
 }
 
 function syncPokerStateWithPresence(state, activeUsers, now) {
@@ -957,7 +987,19 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
     }
   }
 
-  if (baseState.stage === "waiting" || baseState.stage === "showdown") {
+  if (baseState.stage === "showdown") {
+    baseState.pendingSeats = buildPokerCarryoverPendingSeats(baseState, activeSet, now);
+    baseState.seats = [];
+    baseState.actingSeatIndex = -1;
+    clearTableTurnWindow(baseState);
+    if ((baseState.pendingSeats || []).length) {
+      ensureTableBettingWindow(baseState, now);
+    } else {
+      clearTableBettingWindow(baseState);
+    }
+  }
+
+  if (baseState.stage === "waiting") {
     baseState.seats = [];
     baseState.actingSeatIndex = -1;
     clearTableTurnWindow(baseState);
@@ -1109,6 +1151,8 @@ function serializePokerState(state, userId) {
     streetCommitted: Number(seat.streetCommitted || 0),
     hand: seat.hand || null,
     isWinner: Boolean(seat.isWinner),
+    isAbsent: Boolean(seat.isAbsent),
+    absentAt: seat.absentAt || null,
     payoutAmount: Number(seat.payoutAmount || 0),
     lastDelta: Number(seat.lastDelta || 0),
     position: index,
@@ -1211,6 +1255,7 @@ function advanceExpiredPokerTurns(state, now, deps) {
   while (nextState && !["waiting", "showdown"].includes(String(nextState.stage || "")) && hasDeadlineElapsed(nextState.turnDeadlineAt, now) && guard < 8) {
     const actingSeat = nextState.seats?.[Number(nextState.actingSeatIndex ?? -1)] || null;
     if (!actingSeat?.userId) break;
+    const timedOutUserId = String(actingSeat.userId || "");
     const timeoutName = String(actingSeat.username || "Le joueur").trim();
     nextState = applyPokerAction(nextState, {
       userId: actingSeat.userId,
@@ -1218,6 +1263,11 @@ function advanceExpiredPokerTurns(state, now, deps) {
       amount: 0,
       now,
     }, deps);
+    const timedOutSeat = (nextState.seats || []).find((seat) => String(seat?.userId || "") === timedOutUserId);
+    if (timedOutSeat) {
+      timedOutSeat.isAbsent = true;
+      timedOutSeat.absentAt = toIso(now);
+    }
     nextState.message = `${timeoutName} depasse le chrono. La table couche automatiquement la main.`;
     guard += 1;
   }
