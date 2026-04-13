@@ -411,7 +411,11 @@ function syncBlackjackStateWithPresence(state, activeUsers, now) {
       return recoveredState;
     }
     clearTableBettingWindow(baseState);
-    if (!toTimestamp(baseState.turnDeadlineAt)) {
+    const activeSeat = baseState.seats?.[Number(baseState.activeSeatIndex ?? -1)] || null;
+    if (activeSeat?.userId && !activeSet.has(String(activeSeat.userId || ""))) {
+      baseState.turnStartedAt = toIso(now);
+      baseState.turnDeadlineAt = toIso(now);
+    } else if (!toTimestamp(baseState.turnDeadlineAt)) {
       setBlackjackTurnWindow(baseState, now);
     }
   }
@@ -967,6 +971,26 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
   const activeSet = new Set((activeUsers || []).map((value) => String(value || "")));
   const baseState = state?.kind === "poker_table" ? clone(state) : buildWaitingPokerState("");
   baseState.pendingSeats = (baseState.pendingSeats || []).filter((seat) => activeSet.has(String(seat.userId || "")));
+  const absentAtIso = toIso(now);
+  baseState.seats = (baseState.seats || []).map((seat) => {
+    const userId = String(seat?.userId || "");
+    if (!userId) return seat;
+    if (activeSet.has(userId)) {
+      if (!seat?.isAbsent && !seat?.absentAt) {
+        return seat;
+      }
+      return {
+        ...seat,
+        isAbsent: false,
+        absentAt: null,
+      };
+    }
+    return {
+      ...seat,
+      isAbsent: true,
+      absentAt: seat?.absentAt || absentAtIso,
+    };
+  });
   const hasActiveSeatedUser = (baseState.seats || []).some((seat) => activeSet.has(String(seat.userId || "")));
 
   if (!["waiting", "showdown"].includes(String(baseState.stage || ""))) {
@@ -982,7 +1006,11 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
       return recoveredState;
     }
     clearTableBettingWindow(baseState);
-    if (!toTimestamp(baseState.turnDeadlineAt)) {
+    const actingSeat = baseState.seats?.[Number(baseState.actingSeatIndex ?? -1)] || null;
+    if (actingSeat?.userId && !activeSet.has(String(actingSeat.userId || ""))) {
+      baseState.turnStartedAt = toIso(now);
+      baseState.turnDeadlineAt = toIso(now);
+    } else if (!toTimestamp(baseState.turnDeadlineAt)) {
       setPokerTurnWindow(baseState, now);
     }
   }
