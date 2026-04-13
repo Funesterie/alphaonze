@@ -397,6 +397,25 @@ function syncBlackjackStateWithPresence(state, activeUsers, now) {
   const activeSet = new Set((activeUsers || []).map((value) => String(value || "")));
   const baseState = state?.kind === "blackjack_table" ? clone(state) : buildWaitingBlackjackState("");
   baseState.pendingSeats = (baseState.pendingSeats || []).filter((seat) => activeSet.has(String(seat.userId || "")));
+  const hasActiveSeatedUser = (baseState.seats || []).some((seat) => activeSet.has(String(seat.userId || "")));
+
+  if (baseState.stage === "player-turn") {
+    if (!hasActiveSeatedUser) {
+      const recoveredState = buildWaitingBlackjackState(
+        baseState.roomId || "",
+        [],
+        "Table reinitialisee: la manche precedente n'avait plus de joueur actif.",
+      );
+      recoveredState.roundId = Number(baseState.roundId || 0);
+      recoveredState.updatedAt = toIso(now);
+      return recoveredState;
+    }
+    clearTableBettingWindow(baseState);
+    if (!toTimestamp(baseState.turnDeadlineAt)) {
+      setBlackjackTurnWindow(baseState, now);
+    }
+  }
+
   if (baseState.stage === "waiting" || baseState.stage === "resolved") {
     baseState.seats = [];
     baseState.activeSeatIndex = -1;
@@ -918,6 +937,26 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
   const activeSet = new Set((activeUsers || []).map((value) => String(value || "")));
   const baseState = state?.kind === "poker_table" ? clone(state) : buildWaitingPokerState("");
   baseState.pendingSeats = (baseState.pendingSeats || []).filter((seat) => activeSet.has(String(seat.userId || "")));
+  const hasActiveSeatedUser = (baseState.seats || []).some((seat) => activeSet.has(String(seat.userId || "")));
+
+  if (!["waiting", "showdown"].includes(String(baseState.stage || ""))) {
+    if (!hasActiveSeatedUser) {
+      const recoveredState = buildWaitingPokerState(
+        baseState.roomId || "",
+        [],
+        "Table reinitialisee: la main precedente n'avait plus de joueur actif.",
+      );
+      recoveredState.ante = Number(baseState.ante || 0);
+      recoveredState.handId = Number(baseState.handId || 0);
+      recoveredState.updatedAt = toIso(now);
+      return recoveredState;
+    }
+    clearTableBettingWindow(baseState);
+    if (!toTimestamp(baseState.turnDeadlineAt)) {
+      setPokerTurnWindow(baseState, now);
+    }
+  }
+
   if (baseState.stage === "waiting" || baseState.stage === "showdown") {
     baseState.seats = [];
     baseState.actingSeatIndex = -1;
