@@ -69,7 +69,7 @@ const ROULETTE_RECENT_RESULTS_LIMIT = 8;
 const ROULETTE_ARCHIVE_KEEP_RESOLVED_ROUNDS = 24;
 const ROULETTE_STATE_CACHE_TTL_ACTIVE_MS = 2500;
 const ROULETTE_STATE_CACHE_TTL_IDLE_MS = 8000;
-const TABLE_ROOM_TTL_MS = 90 * 1000;
+const TABLE_ROOM_TTL_MS = 5 * 60 * 1000;
 const TABLE_ROOM_TOUCH_INTERVAL_MS = 15 * 1000;
 const TABLE_ROOM_PRUNE_INTERVAL_MS = 30 * 1000;
 const BLACKJACK_TABLE_MAX_PLAYERS = 3;
@@ -2038,7 +2038,7 @@ function createCasinoRouter({
     }
 
     const currentTime = now();
-    const { activeParticipants, sharedAnte, readySeats } = await collectPokerReadySeats(client, roomId, state, strictUserId);
+    const { sharedAnte, readySeats } = await collectPokerReadySeats(client, roomId, state, strictUserId);
     const hadDeadline = Boolean(state?.bettingClosesAt);
     const deadlineReached = hasSharedTableDeadlineElapsed(state?.bettingClosesAt, currentTime);
     const nextState = {
@@ -2065,17 +2065,13 @@ function createCasinoRouter({
       ensureSharedTableBettingWindow(nextState, currentTime);
     }
 
-    const readyTargetCount = Math.min(POKER_TABLE_MAX_PLAYERS, Math.max(2, activeParticipants.length || 0 || readySeats.length));
-    const everyoneReady = readySeats.length >= readyTargetCount;
-    const canStart = readySeats.length >= 2 && (everyoneReady || deadlineReached);
+    const canStart = readySeats.length >= 2;
 
     if (!canStart) {
       if (deadlineReached && readySeats.length < 2) {
         ensureSharedTableBettingWindow(nextState, currentTime);
       }
-      nextState.message = readySeats.length >= 2
-        ? `Antes confirmees ${readySeats.length}/${readyTargetCount}. La main part quand tout le monde a mise ou a la fin du chrono.`
-        : "Un second joueur humain est requis pour lancer la main.";
+      nextState.message = "Un second joueur humain est requis pour lancer la main.";
       return nextState;
     }
 
