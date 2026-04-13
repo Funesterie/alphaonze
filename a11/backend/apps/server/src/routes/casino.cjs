@@ -72,6 +72,7 @@ const ROULETTE_STATE_CACHE_TTL_IDLE_MS = 8000;
 const TABLE_ROOM_TTL_MS = 75 * 1000;
 const TABLE_ROOM_TOUCH_INTERVAL_MS = 10 * 1000;
 const TABLE_ROOM_PRUNE_INTERVAL_MS = 10 * 1000;
+const LEGACY_TABLE_PRESENCE_CLIENT_ID = 'legacy';
 const BLACKJACK_TABLE_MAX_PLAYERS = 3;
 const BLACKJACK_ROOM_IDS = ['lantern-quay', 'bat-parlor', 'scream-lounge'];
 const POKER_ROOM_IDS = ['allmight-ring', 'upstream-port', 'captains-table'];
@@ -206,6 +207,15 @@ function normalizeUserId(value) {
 
 function normalizeText(value) {
   return String(value || '').trim();
+}
+
+function normalizeTablePresenceClientId(value) {
+  const normalized = normalizeText(value).slice(0, 120);
+  return normalized || LEGACY_TABLE_PRESENCE_CLIENT_ID;
+}
+
+function getTablePresenceClientIdFromRequest(req) {
+  return normalizeTablePresenceClientId(req?.headers?.['x-casino-tab-id']);
 }
 
 function getTableRoomIds(game) {
@@ -506,11 +516,17 @@ function createCasinoRouter({
             game TEXT NOT NULL,
             room_id TEXT NOT NULL,
             user_id TEXT NOT NULL,
+            client_id TEXT NOT NULL DEFAULT '${LEGACY_TABLE_PRESENCE_CLIENT_ID}',
             updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
             created_at TIMESTAMP DEFAULT NOW(),
-            PRIMARY KEY (game, room_id, user_id)
+            PRIMARY KEY (game, room_id, user_id, client_id)
           )
         `);
+        await db.query(
+          `ALTER TABLE casino_table_room_presence ADD COLUMN IF NOT EXISTS client_id TEXT NOT NULL DEFAULT '${LEGACY_TABLE_PRESENCE_CLIENT_ID}'`
+        );
+        await db.query('ALTER TABLE casino_table_room_presence DROP CONSTRAINT IF EXISTS casino_table_room_presence_pkey');
+        await db.query('ALTER TABLE casino_table_room_presence ADD PRIMARY KEY (game, room_id, user_id, client_id)');
         await db.query(`
           CREATE TABLE IF NOT EXISTS casino_blackjack_tables (
             room_id TEXT PRIMARY KEY,
@@ -531,6 +547,8 @@ function createCasinoRouter({
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_roulette_rounds_room_created ON casino_roulette_rounds (room_id, created_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_roulette_bets_round_created ON casino_roulette_bets (round_id, created_at ASC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_table_room_presence_game_room_updated ON casino_table_room_presence (game, room_id, updated_at DESC)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_casino_table_room_presence_game_room_user_updated ON casino_table_room_presence (game, room_id, user_id, updated_at DESC)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_casino_table_room_presence_user_client_updated ON casino_table_room_presence (user_id, client_id, updated_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_blackjack_tables_updated ON casino_blackjack_tables (updated_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_casino_poker_tables_updated ON casino_poker_tables (updated_at DESC)');
       })().catch((error_) => {
@@ -641,12 +659,12 @@ function createCasinoRouter({
     );
   }
 
-  function getTableRoomTouchKey(game, roomId, userId) {
-    return `${String(game || '').trim()}::${String(roomId || '').trim()}::${normalizeUserId(userId)}`;
+  function getTableRoomTouchKey(game, roomId, userId, clientId = LEGACY_TABLE_PRESENCE_CLIENT_ID) {
+    return `${String(game || '').trim()}::${String(roomId || '').trim()}::${normalizeUserId(userId)}::${normalizeTablePresenceClientId(clientId)}`;
   }
 
-  function shouldTouchTableRoomPresence(game, roomId, userId, minIntervalMs = TABLE_ROOM_TOUCH_INTERVAL_MS) {
-    const key = getTableRoomTouchKey(game, roomId, userId);
+  function shouldTouchTableRoomPresence(game, roomId, userId, clientId = LEGACY_TABLE_PRESENCE_CLIENT_ID, minIntervalMs = TABLE_ROOM_TOUCH_INTERVAL_MS) {
+    const key = getTableRoomTouchKey(game, roomId, userId, clientId);
     const currentTimeMs = now().getTime();
     const lastTouchedAt = Number(tableRoomTouchCache.get(key) || 0);
     if ((currentTimeMs - lastTouchedAt) < Math.max(1000, Number(minIntervalMs) || TABLE_ROOM_TOUCH_INTERVAL_MS)) {
@@ -713,20 +731,71 @@ function createCasinoRouter({
     );
   }
 
-  async function touchTableRoomPresence(client, game, roomId, userId) {
-    const updatedAtIso = now().toISOString();
+  function collapseTableRoomPresenceRows(rows = []) {
+    const latestByRoomUser = new Map();
+    for (const row of rows || []) {
+      const roomId = String(row?.room_id || '');
+      const userId = String(row?.user_id || '');
+      if (!roomId || !userId) continue;
+      const dedupeKey = `${roomId}::${userId}`;
+      const updatedAtMs = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
+      const previous = latestByRoomUser.get(dedupeKey);
+      const previousUpdatedAtMs = previous?.updated_at ? new Date(previous.updated_at).getTime() : 0;
+      if (!previous || updatedAtMs >= previousUpdatedAtMs) {
+        latestByRoomUser.set(dedupeKey, row);
+      }
+    }
+    return [...latestByRoomUser.values()];
+  }
+
+  async function clearOtherTableRoomPresenceForClient(client, userId, clientId, currentGame = null, currentRoomId = null) {
+    const normalizedUserId = normalizeUserId(userId);
+    const normalizedClientId = normalizeTablePresenceClientId(clientId);
+    if (!normalizedUserId || !normalizedClientId) return;
+
+    if (currentGame && currentRoomId) {
+      await client.query(
+        `
+          DELETE FROM casino_table_room_presence
+          WHERE user_id = $1
+            AND client_id = $2
+            AND NOT (game = $3 AND room_id = $4)
+        `,
+        [normalizedUserId, normalizedClientId, String(currentGame || ''), String(currentRoomId || '')]
+      );
+      return;
+    }
+
     await client.query(
-      `
-        INSERT INTO casino_table_room_presence (game, room_id, user_id, updated_at)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (game, room_id, user_id)
-        DO UPDATE SET updated_at = EXCLUDED.updated_at
-      `,
-      [game, roomId, userId, updatedAtIso]
+      'DELETE FROM casino_table_room_presence WHERE user_id = $1 AND client_id = $2',
+      [normalizedUserId, normalizedClientId]
     );
   }
 
-  async function removeTableRoomPresence(client, game, roomId, userId) {
+  async function touchTableRoomPresence(client, game, roomId, userId, clientId = LEGACY_TABLE_PRESENCE_CLIENT_ID) {
+    const updatedAtIso = now().toISOString();
+    const normalizedClientId = normalizeTablePresenceClientId(clientId);
+    await clearOtherTableRoomPresenceForClient(client, userId, normalizedClientId, game, roomId);
+    await client.query(
+      `
+        INSERT INTO casino_table_room_presence (game, room_id, user_id, client_id, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (game, room_id, user_id, client_id)
+        DO UPDATE SET updated_at = EXCLUDED.updated_at
+      `,
+      [game, roomId, userId, normalizedClientId, updatedAtIso]
+    );
+  }
+
+  async function removeTableRoomPresence(client, game, roomId, userId, clientId = null) {
+    if (clientId) {
+      await client.query(
+        'DELETE FROM casino_table_room_presence WHERE game = $1 AND room_id = $2 AND user_id = $3 AND client_id = $4',
+        [game, roomId, userId, normalizeTablePresenceClientId(clientId)]
+      );
+      return;
+    }
+
     await client.query(
       'DELETE FROM casino_table_room_presence WHERE game = $1 AND room_id = $2 AND user_id = $3',
       [game, roomId, userId]
@@ -737,15 +806,16 @@ function createCasinoRouter({
     const roomIds = getTableRoomIds(game);
     const effectiveRoomId = normalizeTableRoomId(game, currentRoomId);
     const thresholdIso = new Date(now().getTime() - TABLE_ROOM_TTL_MS).toISOString();
-    const { rows } = await client.query(
+    const queryResult = await client.query(
       `
-        SELECT room_id, user_id, updated_at
+        SELECT room_id, user_id, client_id, updated_at
         FROM casino_table_room_presence
         WHERE game = $1 AND updated_at >= $2
         ORDER BY updated_at DESC
       `,
       [game, thresholdIso]
     );
+    const rows = collapseTableRoomPresenceRows(queryResult.rows || []);
     const usersById = await getUsersByIds(rows.map((entry) => entry.user_id), client);
 
     const rooms = [];
@@ -779,15 +849,16 @@ function createCasinoRouter({
 
   async function listActiveRoomPresence(client, game, roomId) {
     const thresholdIso = new Date(now().getTime() - TABLE_ROOM_TTL_MS).toISOString();
-    const { rows } = await client.query(
+    const queryResult = await client.query(
       `
-        SELECT room_id, user_id, updated_at
+        SELECT room_id, user_id, client_id, updated_at
         FROM casino_table_room_presence
         WHERE game = $1 AND room_id = $2 AND updated_at >= $3
         ORDER BY updated_at ASC
       `,
         [game, roomId, thresholdIso]
       );
+    const rows = collapseTableRoomPresenceRows(queryResult.rows || []);
     const usersById = await getUsersByIds(rows.map((entry) => entry.user_id), client);
     const participants = rows.map((row) => {
       const userId = String(row.user_id || '');
@@ -2525,6 +2596,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const roomId = normalizeTableRoomId(game, req.body?.roomId);
       if (!roomId) {
@@ -2534,7 +2606,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, game, roomId, auth.userId);
+      await touchTableRoomPresence(client, game, roomId, auth.userId, presenceClientId);
       const payload = await buildTableRoomPayload(client, game, auth.userId, roomId);
       await client.query('COMMIT');
 
@@ -2559,22 +2631,52 @@ function createCasinoRouter({
     return joinTableRoom(req, res, 'poker');
   });
 
+  router.post('/api/casino/table-presence/leave', verifyJWT, express.json({ limit: '64kb' }), async (req, res) => {
+    let client = null;
+    try {
+      const auth = await requireCasinoUser(req, res);
+      if (!auth) return;
+
+      const game = normalizeText(req.body?.game).toLowerCase();
+      const roomId = normalizeTableRoomId(game, req.body?.roomId);
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
+      if (!['blackjack', 'poker'].includes(game) || !roomId) {
+        return res.status(400).json({ ok: false, error: 'invalid_room' });
+      }
+
+      client = await db.connect();
+      await client.query('BEGIN');
+      await pruneTableRoomPresence(client);
+      await removeTableRoomPresence(client, game, roomId, auth.userId, presenceClientId);
+      await client.query('COMMIT');
+
+      return res.json({ ok: true });
+    } catch (error_) {
+      if (client) await client.query('ROLLBACK').catch(() => {});
+      logger?.error?.('[CASINO] table presence leave failed:', error_?.message);
+      return res.status(500).json({ ok: false, error: 'table_presence_leave_failed' });
+    } finally {
+      client?.release?.();
+    }
+  });
+
   router.get('/api/casino/blackjack/state', verifyJWT, async (req, res) => {
     let client = null;
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
       const roomId = normalizeTableRoomId('blackjack', req.query?.roomId);
       if (!roomId) {
         return res.status(400).json({ ok: false, error: 'invalid_room' });
       }
 
-      const shouldTouchPresence = shouldTouchTableRoomPresence('blackjack', roomId, auth.userId);
+      const shouldTouchPresence = shouldTouchTableRoomPresence('blackjack', roomId, auth.userId, presenceClientId);
       client = await db.connect();
       await client.query('BEGIN');
       if (shouldTouchPresence) {
         await pruneTableRoomPresence(client);
-        await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
+        await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId, presenceClientId);
       }
       let state = await loadBlackjackTableState(client, roomId, false);
       state = await syncBlackjackRoomState(client, roomId, state);
@@ -2601,6 +2703,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const wager = clampInteger(
         req.body?.bet,
@@ -2616,7 +2719,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
+      await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId, presenceClientId);
       let state = await loadBlackjackTableState(client, roomId, true);
       state = await syncBlackjackRoomState(client, roomId, state);
       state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
@@ -2663,6 +2766,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const action = normalizeText(req.body?.action).toLowerCase();
       if (!['hit', 'stand', 'double', 'split'].includes(action)) {
@@ -2676,7 +2780,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'blackjack', parsedToken.roomId, auth.userId);
+      await touchTableRoomPresence(client, 'blackjack', parsedToken.roomId, auth.userId, presenceClientId);
       let state = await loadBlackjackTableState(client, parsedToken.roomId, true);
       if (Number(state.roundId || 0) !== Number(parsedToken.roundId || 0)) {
         await client.query('ROLLBACK');
@@ -2742,17 +2846,18 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
       const roomId = normalizeTableRoomId('poker', req.query?.roomId);
       if (!roomId) {
         return res.status(400).json({ ok: false, error: 'invalid_room' });
       }
 
-      const shouldTouchPresence = shouldTouchTableRoomPresence('poker', roomId, auth.userId);
+      const shouldTouchPresence = shouldTouchTableRoomPresence('poker', roomId, auth.userId, presenceClientId);
       client = await db.connect();
       await client.query('BEGIN');
       if (shouldTouchPresence) {
         await pruneTableRoomPresence(client);
-        await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+        await touchTableRoomPresence(client, 'poker', roomId, auth.userId, presenceClientId);
       }
       let state = await loadPokerTableState(client, roomId, false);
       state = await syncPokerRoomState(client, roomId, state);
@@ -2779,6 +2884,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const ante = clampInteger(
         req.body?.ante,
@@ -2794,7 +2900,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+      await touchTableRoomPresence(client, 'poker', roomId, auth.userId, presenceClientId);
       let state = await loadPokerTableState(client, roomId, true);
       state = await syncPokerRoomState(client, roomId, state);
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
@@ -2839,6 +2945,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const roomId = normalizeTableRoomId('poker', req.body?.roomId);
       const targetUserId = normalizeUserId(req.body?.userId);
@@ -2849,7 +2956,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+      await touchTableRoomPresence(client, 'poker', roomId, auth.userId, presenceClientId);
       let state = await loadPokerTableState(client, roomId, true);
       state = await syncPokerRoomState(client, roomId, state);
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
@@ -2903,6 +3010,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const rawAction = normalizeText(req.body?.action).toLowerCase();
       const action = rawAction === 'reveal' || rawAction === 'showdown' ? 'check' : rawAction;
@@ -2917,7 +3025,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await touchTableRoomPresence(client, 'poker', parsedToken.roomId, auth.userId);
+      await touchTableRoomPresence(client, 'poker', parsedToken.roomId, auth.userId, presenceClientId);
       const previousState = await loadPokerTableState(client, parsedToken.roomId, true);
       if (Number(previousState.handId || 0) !== Number(parsedToken.handId || 0)) {
         await client.query('ROLLBACK');
@@ -2998,14 +3106,12 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const compactView = isCompactRouletteView(req);
       const includeProfile = shouldIncludeRouletteProfile(req, true);
       const cacheVariant = compactView ? 'compact' : 'full';
       const cachedState = getRouletteStateCacheEntry(auth.userId, cacheVariant);
-      if (cachedState && !includeProfile) {
-        return res.json(cachedState.payload);
-      }
 
       client = await db.connect();
       await client.query('BEGIN');
@@ -3013,6 +3119,8 @@ function createCasinoRouter({
         await client.query('COMMIT');
         return res.json(cachedState.payload);
       }
+      await pruneTableRoomPresence(client);
+      await clearOtherTableRoomPresenceForClient(client, auth.userId, presenceClientId);
       const room = await buildRouletteRoomPayload(client, auth.userId, { compact: compactView });
       await client.query('COMMIT');
       const payload = {
@@ -3039,6 +3147,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
+      const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
       const compactView = isCompactRouletteView(req);
       const includeProfile = shouldIncludeRouletteProfile(req, true);
@@ -3051,6 +3160,8 @@ function createCasinoRouter({
 
       client = await db.connect();
       await client.query('BEGIN');
+      await pruneTableRoomPresence(client);
+      await clearOtherTableRoomPresenceForClient(client, auth.userId, presenceClientId);
       const { currentRound, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID, { activateRound: true });
       if (!roomActive || !currentRound?.closes_at) {
         await client.query('ROLLBACK');
