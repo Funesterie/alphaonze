@@ -726,6 +726,13 @@ function createCasinoRouter({
     );
   }
 
+  async function removeTableRoomPresence(client, game, roomId, userId) {
+    await client.query(
+      'DELETE FROM casino_table_room_presence WHERE game = $1 AND room_id = $2 AND user_id = $3',
+      [game, roomId, userId]
+    );
+  }
+
   async function buildTableRoomPayload(client, game, currentUserId, currentRoomId = null) {
     const roomIds = getTableRoomIds(game);
     const effectiveRoomId = normalizeTableRoomId(game, currentRoomId);
@@ -2045,13 +2052,22 @@ function createCasinoRouter({
       ...state,
       stage: 'waiting',
       ante: sharedAnte,
+      seats: [],
+      communityCards: [],
+      communityReserve: [],
       actingSeatIndex: -1,
+      dealerSeatIndex: 0,
+      pot: 0,
+      currentBet: 0,
+      minBet: getSharedPokerBlindUnit(sharedAnte),
+      minRaiseTo: getSharedPokerBlindUnit(sharedAnte),
       pendingSeats: readySeats.map((seat) => ({
         userId: seat.userId,
         username: seat.username,
         ante: seat.ante,
         readyAt: seat.readyAt,
       })),
+      actionLog: [],
       updatedAt: currentTime.toISOString(),
     };
 
@@ -2799,6 +2815,70 @@ function createCasinoRouter({
       const code = error_?.code === 'insufficient_credits' ? 'insufficient_credits' : 'poker_start_failed';
       logger?.error?.('[CASINO] poker start failed:', error_?.message);
       return res.status(code === 'insufficient_credits' ? 400 : 500).json({ ok: false, error: code });
+    } finally {
+      client?.release?.();
+    }
+  });
+
+  router.post('/api/casino/poker/remove-absent', verifyJWT, express.json({ limit: '64kb' }), async (req, res) => {
+    let client = null;
+    try {
+      const auth = await requireCasinoUser(req, res);
+      if (!auth) return;
+
+      const roomId = normalizeTableRoomId('poker', req.body?.roomId);
+      const targetUserId = normalizeUserId(req.body?.userId);
+      if (!roomId || !targetUserId || targetUserId === normalizeUserId(auth.userId)) {
+        return res.status(400).json({ ok: false, error: 'invalid_target_user' });
+      }
+
+      client = await db.connect();
+      await client.query('BEGIN');
+      await pruneTableRoomPresence(client);
+      await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
+      let state = await loadPokerTableState(client, roomId, true);
+      state = await syncPokerRoomState(client, roomId, state);
+      state = (await settleExpiredPokerTurns(client, roomId, state)).state;
+
+      const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
+      const targetParticipant = activeParticipants.find((entry) => String(entry.userId || '') === targetUserId) || null;
+      const targetSeat = (state?.seats || []).find((seat) => String(seat.userId || '') === targetUserId) || null;
+      const targetPendingSeat = (state?.pendingSeats || []).find((seat) => String(seat.userId || '') === targetUserId) || null;
+      const targetHeartbeatAt = targetParticipant?.updatedAt ? Date.parse(String(targetParticipant.updatedAt || '')) : null;
+      const participantIsStale = Number.isFinite(targetHeartbeatAt)
+        ? (now().getTime() - Number(targetHeartbeatAt || 0)) >= TABLE_ROOM_TTL_MS
+        : false;
+
+      if (!targetParticipant && !targetSeat && !targetPendingSeat) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok: false, error: 'invalid_target_user' });
+      }
+
+      if (targetPendingSeat || (!targetSeat?.isAbsent && !participantIsStale)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok: false, error: 'target_not_absent' });
+      }
+
+      await removeTableRoomPresence(client, 'poker', roomId, targetUserId);
+      state = await syncPokerRoomState(client, roomId, state);
+      state = await resolvePokerWaitingState(client, roomId, state);
+      await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
+      const lobby = await buildTableRoomPayload(client, 'poker', auth.userId, roomId);
+      await client.query('COMMIT');
+
+      return res.json({
+        ok: true,
+        state: serializeSharedPokerState(state, auth.userId),
+        rooms: lobby.rooms,
+        profile: await loadProfile(auth.userId),
+      });
+    } catch (error_) {
+      if (client) await client.query('ROLLBACK').catch(() => {});
+      const code = ['invalid_target_user', 'target_not_absent'].includes(error_?.code)
+        ? error_.code
+        : 'poker_remove_absent_failed';
+      logger?.error?.('[CASINO] poker remove absent failed:', error_?.message);
+      return res.status(code === 'poker_remove_absent_failed' ? 500 : 400).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
