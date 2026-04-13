@@ -13,7 +13,7 @@ function extractRequestAuthToken(req) {
   return bearerToken || headerToken;
 }
 
-function createVerifyJWT({ jwt, jwtSecret, logger = console } = {}) {
+function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false } = {}) {
   if (!jwt || typeof jwt.verify !== 'function') {
     throw new Error('createVerifyJWT requires jwt.verify');
   }
@@ -37,7 +37,9 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console } = {}) {
     try {
       const decoded = jwt.verify(token, resolvedSecret);
       req.user = decoded;
-      logger?.log?.('[JWT] ✅ Token vérifié');
+      if (logSuccess) {
+        logger?.log?.('[JWT] ✅ Token vérifié');
+      }
       return next();
     } catch (err) {
       logger?.warn?.('[JWT] Verification failed:', err?.message);
