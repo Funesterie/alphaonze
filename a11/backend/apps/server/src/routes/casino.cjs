@@ -69,9 +69,9 @@ const ROULETTE_RECENT_RESULTS_LIMIT = 8;
 const ROULETTE_ARCHIVE_KEEP_RESOLVED_ROUNDS = 24;
 const ROULETTE_STATE_CACHE_TTL_ACTIVE_MS = 2500;
 const ROULETTE_STATE_CACHE_TTL_IDLE_MS = 8000;
-const TABLE_ROOM_TTL_MS = 5 * 60 * 1000;
-const TABLE_ROOM_TOUCH_INTERVAL_MS = 15 * 1000;
-const TABLE_ROOM_PRUNE_INTERVAL_MS = 30 * 1000;
+const TABLE_ROOM_TTL_MS = 75 * 1000;
+const TABLE_ROOM_TOUCH_INTERVAL_MS = 10 * 1000;
+const TABLE_ROOM_PRUNE_INTERVAL_MS = 10 * 1000;
 const BLACKJACK_TABLE_MAX_PLAYERS = 3;
 const BLACKJACK_ROOM_IDS = ['lantern-quay', 'bat-parlor', 'scream-lounge'];
 const POKER_ROOM_IDS = ['allmight-ring', 'upstream-port', 'captains-table'];
@@ -2111,6 +2111,20 @@ function createCasinoRouter({
     });
   }
 
+  function serializeBlackjackClientState(state, userId) {
+    return {
+      ...serializeSharedBlackjackState(state, userId, getBlackjackScore),
+      presenceWindowMs: TABLE_ROOM_TTL_MS,
+    };
+  }
+
+  function serializePokerClientState(state, userId) {
+    return {
+      ...serializeSharedPokerState(state, userId),
+      presenceWindowMs: TABLE_ROOM_TTL_MS,
+    };
+  }
+
   router.get('/api/casino/me', verifyJWT, async (req, res) => {
     try {
       const auth = await requireCasinoUser(req, res);
@@ -2571,7 +2585,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+        state: serializeBlackjackClientState(state, auth.userId),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
@@ -2611,7 +2625,7 @@ function createCasinoRouter({
         await client.query('COMMIT');
         return res.json({
           ok: true,
-          state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+          state: serializeBlackjackClientState(state, auth.userId),
           profile: await loadProfile(auth.userId),
         });
       }
@@ -2629,7 +2643,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+        state: serializeBlackjackClientState(state, auth.userId),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
@@ -2708,7 +2722,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedBlackjackState(state, auth.userId, getBlackjackScore),
+        state: serializeBlackjackClientState(state, auth.userId),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
@@ -2749,7 +2763,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedPokerState(state, auth.userId),
+        state: serializePokerClientState(state, auth.userId),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
@@ -2789,7 +2803,7 @@ function createCasinoRouter({
         await client.query('COMMIT');
         return res.json({
           ok: true,
-          state: serializeSharedPokerState(state, auth.userId),
+          state: serializePokerClientState(state, auth.userId),
           profile: await loadProfile(auth.userId),
         });
       }
@@ -2807,7 +2821,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedPokerState(state, auth.userId),
+        state: serializePokerClientState(state, auth.userId),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
@@ -2868,7 +2882,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedPokerState(state, auth.userId),
+        state: serializePokerClientState(state, auth.userId),
         rooms: lobby.rooms,
         profile: await loadProfile(auth.userId),
       });
@@ -2964,7 +2978,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeSharedPokerState(nextState, auth.userId),
+        state: serializePokerClientState(nextState, auth.userId),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
