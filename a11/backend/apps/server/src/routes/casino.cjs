@@ -32,11 +32,16 @@ const {
   resolveRouletteBetPayout,
 } = require('./casino-game-logic.cjs');
 const {
+  advanceExpiredBlackjackTurns,
+  advanceExpiredPokerTurns,
   applyBlackjackAction: applySharedBlackjackAction,
   applyPokerAction: applySharedPokerAction,
   buildWaitingBlackjackState,
   buildWaitingPokerState,
+  clearTableBettingWindow: clearSharedTableBettingWindow,
+  ensureTableBettingWindow: ensureSharedTableBettingWindow,
   getPokerBlindUnit: getSharedPokerBlindUnit,
+  hasDeadlineElapsed: hasSharedTableDeadlineElapsed,
   parseBlackjackToken,
   parsePokerToken,
   serializeBlackjackState: serializeSharedBlackjackState,
@@ -67,8 +72,10 @@ const ROULETTE_STATE_CACHE_TTL_IDLE_MS = 8000;
 const TABLE_ROOM_TTL_MS = 90 * 1000;
 const TABLE_ROOM_TOUCH_INTERVAL_MS = 15 * 1000;
 const TABLE_ROOM_PRUNE_INTERVAL_MS = 30 * 1000;
+const BLACKJACK_TABLE_MAX_PLAYERS = 3;
 const BLACKJACK_ROOM_IDS = ['lantern-quay', 'bat-parlor', 'scream-lounge'];
 const POKER_ROOM_IDS = ['allmight-ring', 'upstream-port', 'captains-table'];
+const POKER_TABLE_MAX_PLAYERS = 6;
 const JOKER_BONUS_RESPINS = 3;
 const JOKER_BONUS_STAGE_HOLD_MS = 720;
 const JOKER_BONUS_TRIGGER_COUNT = 5;
@@ -1822,6 +1829,276 @@ function createCasinoRouter({
     );
   }
 
+  async function settleExpiredBlackjackTurns(client, roomId, state) {
+    const currentTime = now();
+    if (state?.stage !== 'player-turn' || !hasSharedTableDeadlineElapsed(state?.turnDeadlineAt, currentTime)) {
+      return { state, changed: false };
+    }
+
+    const nextState = advanceExpiredBlackjackTurns(state, currentTime, {
+      drawCards,
+      getBlackjackScore,
+      completeDealerHand,
+      getBlackjackPayout,
+    });
+
+    if (nextState.stage === 'resolved' && state.stage !== 'resolved') {
+      for (const seat of nextState.seats || []) {
+        if (Number(seat.payoutAmount || 0) > 0) {
+          await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'blackjack_payout', {
+            roomId,
+            wager: Number(seat.wager || 0),
+            roundId: Number(nextState.roundId || 0),
+            message: nextState.message,
+          });
+        }
+      }
+    }
+
+    return { state: nextState, changed: true };
+  }
+
+  async function settleExpiredPokerTurns(client, roomId, state) {
+    const currentTime = now();
+    if (!state || ['waiting', 'showdown'].includes(String(state.stage || '')) || !hasSharedTableDeadlineElapsed(state?.turnDeadlineAt, currentTime)) {
+      return { state, changed: false };
+    }
+
+    const nextState = advanceExpiredPokerTurns(state, currentTime, {
+      evaluateBestPokerHand,
+      comparePokerScores,
+    });
+
+    if (nextState.stage === 'showdown' && state.stage !== 'showdown') {
+      for (const seat of nextState.seats || []) {
+        if (Number(seat.payoutAmount || 0) > 0) {
+          await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'poker_payout', {
+            roomId,
+            handId: Number(nextState.handId || 0),
+            ante: Number(nextState.ante || 0),
+            committed: Number(seat.totalCommitted || 0),
+            pot: Number(nextState.pot || 0),
+            message: nextState.message,
+          });
+        }
+      }
+    }
+
+    return { state: nextState, changed: true };
+  }
+
+  async function collectBlackjackReadySeats(client, roomId, state, strictUserId = '') {
+    const activeParticipants = await listActiveRoomPresence(client, 'blackjack', roomId);
+    const activeUserIds = new Set(activeParticipants.map((entry) => entry.userId));
+    const readySeats = [];
+
+    for (const seat of state.pendingSeats || []) {
+      if (!activeUserIds.has(String(seat.userId || ''))) continue;
+      const walletRow = await getWalletRow(String(seat.userId || ''), client, true);
+      const currentBalance = Number(walletRow?.balance || 0);
+      const requiredWager = Number(seat.wager || 0);
+
+      if (currentBalance >= requiredWager) {
+        readySeats.push({
+          ...seat,
+          currentBalance,
+          roundId: Number(state.roundId || 0),
+        });
+        continue;
+      }
+
+      if (String(seat.userId || '') === String(strictUserId || '')) {
+        const error = new Error('insufficient_credits');
+        error.code = 'insufficient_credits';
+        throw error;
+      }
+    }
+
+    return {
+      activeParticipants,
+      readySeats: readySeats.slice(0, BLACKJACK_TABLE_MAX_PLAYERS),
+    };
+  }
+
+  async function collectPokerReadySeats(client, roomId, state, strictUserId = '') {
+    const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
+    const activeUserIds = new Set(activeParticipants.map((entry) => entry.userId));
+    const sharedAnte = Number(state.ante || state.pendingSeats?.[0]?.ante || 0);
+    const readySeats = [];
+
+    for (const seat of state.pendingSeats || []) {
+      if (!activeUserIds.has(String(seat.userId || ''))) continue;
+      const walletRow = await getWalletRow(String(seat.userId || ''), client, true);
+      const currentBalance = Number(walletRow?.balance || 0);
+
+      if (currentBalance >= sharedAnte) {
+        readySeats.push({
+          ...seat,
+          ante: sharedAnte,
+          currentBalance,
+          handId: Number(state.handId || 0),
+        });
+        continue;
+      }
+
+      if (String(seat.userId || '') === String(strictUserId || '')) {
+        const error = new Error('insufficient_credits');
+        error.code = 'insufficient_credits';
+        throw error;
+      }
+    }
+
+    return {
+      activeParticipants,
+      sharedAnte,
+      readySeats: readySeats.slice(0, POKER_TABLE_MAX_PLAYERS),
+    };
+  }
+
+  async function resolveBlackjackWaitingState(client, roomId, state, strictUserId = '') {
+    if (!['waiting', 'resolved'].includes(String(state?.stage || ''))) {
+      return state;
+    }
+
+    const currentTime = now();
+    const { activeParticipants, readySeats } = await collectBlackjackReadySeats(client, roomId, state, strictUserId);
+    const hadDeadline = Boolean(state?.bettingClosesAt);
+    const deadlineReached = hasSharedTableDeadlineElapsed(state?.bettingClosesAt, currentTime);
+    const nextState = {
+      ...state,
+      stage: 'waiting',
+      activeSeatIndex: -1,
+      pendingSeats: readySeats.map((seat) => ({
+        userId: seat.userId,
+        username: seat.username,
+        wager: seat.wager,
+        readyAt: seat.readyAt,
+      })),
+      updatedAt: currentTime.toISOString(),
+    };
+
+    if (!readySeats.length) {
+      clearSharedTableBettingWindow(nextState);
+      nextState.message = "Table au repos. Choisis une mise pour t'asseoir.";
+      return nextState;
+    }
+
+    if (!hadDeadline) {
+      ensureSharedTableBettingWindow(nextState, currentTime);
+    }
+
+    const readyTargetCount = Math.max(1, Math.min(BLACKJACK_TABLE_MAX_PLAYERS, activeParticipants.length || readySeats.length));
+    const everyoneReady = readySeats.length >= readyTargetCount;
+    if (!everyoneReady && !deadlineReached) {
+      nextState.message = `Mises confirmees ${readySeats.length}/${readyTargetCount}. La manche part quand tout le monde a mise ou a la fin du chrono.`;
+      return nextState;
+    }
+
+    for (const seat of readySeats) {
+      await chargeWalletForTable(client, seat.userId, seat.wager, 'blackjack_buyin', {
+        roomId,
+        wager: Number(seat.wager || 0),
+        roundId: Number(state.roundId || 0) + 1,
+      }, 1);
+    }
+
+    const startedState = startSharedBlackjackRound({
+      roomId,
+      readySeats: readySeats.map((seat) => ({
+        ...seat,
+        balanceAfterBuyIn: Number(seat.currentBalance || 0) - Number(seat.wager || 0),
+      })),
+      now: currentTime,
+      createPirateDeck: () => createPirateDeck(random),
+      drawCards,
+      getBlackjackScore,
+      completeDealerHand,
+      getBlackjackPayout,
+    });
+
+    if (startedState.stage === 'resolved') {
+      for (const seat of startedState.seats || []) {
+        if (Number(seat.payoutAmount || 0) > 0) {
+          await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'blackjack_payout', {
+            roomId,
+            wager: Number(seat.wager || 0),
+            roundId: Number(startedState.roundId || 0),
+            message: startedState.message,
+          });
+        }
+      }
+    }
+
+    return startedState;
+  }
+
+  async function resolvePokerWaitingState(client, roomId, state, strictUserId = '') {
+    if (!['waiting', 'showdown'].includes(String(state?.stage || ''))) {
+      return state;
+    }
+
+    const currentTime = now();
+    const { activeParticipants, sharedAnte, readySeats } = await collectPokerReadySeats(client, roomId, state, strictUserId);
+    const hadDeadline = Boolean(state?.bettingClosesAt);
+    const deadlineReached = hasSharedTableDeadlineElapsed(state?.bettingClosesAt, currentTime);
+    const nextState = {
+      ...state,
+      stage: 'waiting',
+      ante: sharedAnte,
+      actingSeatIndex: -1,
+      pendingSeats: readySeats.map((seat) => ({
+        userId: seat.userId,
+        username: seat.username,
+        ante: seat.ante,
+        readyAt: seat.readyAt,
+      })),
+      updatedAt: currentTime.toISOString(),
+    };
+
+    if (!readySeats.length) {
+      clearSharedTableBettingWindow(nextState);
+      nextState.message = "Table ouverte. Il faut deux joueurs prets pour lancer la main.";
+      return nextState;
+    }
+
+    if (!hadDeadline) {
+      ensureSharedTableBettingWindow(nextState, currentTime);
+    }
+
+    const readyTargetCount = Math.min(POKER_TABLE_MAX_PLAYERS, Math.max(2, activeParticipants.length || 0 || readySeats.length));
+    const everyoneReady = readySeats.length >= readyTargetCount;
+    const canStart = readySeats.length >= 2 && (everyoneReady || deadlineReached);
+
+    if (!canStart) {
+      if (deadlineReached && readySeats.length < 2) {
+        ensureSharedTableBettingWindow(nextState, currentTime);
+      }
+      nextState.message = readySeats.length >= 2
+        ? `Antes confirmees ${readySeats.length}/${readyTargetCount}. La main part quand tout le monde a mise ou a la fin du chrono.`
+        : "Un second joueur humain est requis pour lancer la main.";
+      return nextState;
+    }
+
+    for (const seat of readySeats) {
+      await chargeWalletForTable(client, seat.userId, sharedAnte, 'poker_buyin', {
+        roomId,
+        ante: sharedAnte,
+        handId: Number(state.handId || 0) + 1,
+      }, 1);
+    }
+
+    return startPokerHand({
+      roomId,
+      readySeats: readySeats.map((seat) => ({
+        ...seat,
+        balanceAfterBuyIn: Number(seat.currentBalance || 0) - sharedAnte,
+      })),
+      now: currentTime,
+      createPirateDeck: () => createPirateDeck(random),
+      drawCards,
+    });
+  }
+
   router.get('/api/casino/me', verifyJWT, async (req, res) => {
     try {
       const auth = await requireCasinoUser(req, res);
@@ -2275,6 +2552,8 @@ function createCasinoRouter({
       }
       let state = await loadBlackjackTableState(client, roomId, false);
       state = await syncBlackjackRoomState(client, roomId, state);
+      state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
+      state = await resolveBlackjackWaitingState(client, roomId, state);
       await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
       await client.query('COMMIT');
 
@@ -2314,6 +2593,7 @@ function createCasinoRouter({
       await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId);
       let state = await loadBlackjackTableState(client, roomId, true);
       state = await syncBlackjackRoomState(client, roomId, state);
+      state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
       if (state.stage === 'player-turn') {
         await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
         await client.query('COMMIT');
@@ -2330,70 +2610,7 @@ function createCasinoRouter({
         username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
         wager,
       }, now());
-
-      const activeParticipants = await listActiveRoomPresence(client, 'blackjack', roomId);
-      const activeUserIds = new Set(activeParticipants.map((entry) => entry.userId));
-      const candidateSeats = [];
-      for (const seat of state.pendingSeats || []) {
-        if (!activeUserIds.has(String(seat.userId || ''))) continue;
-        const walletRow = await getWalletRow(String(seat.userId || ''), client, true);
-        const currentBalance = Number(walletRow?.balance || 0);
-        const requiredWager = Number(seat.wager || 0);
-        if (currentBalance >= requiredWager) {
-          candidateSeats.push({
-            ...seat,
-            currentBalance,
-            roundId: Number(state.roundId || 0),
-          });
-        } else if (String(seat.userId || '') === auth.userId) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ ok: false, error: 'insufficient_credits' });
-        }
-      }
-
-      const cappedCandidateSeats = candidateSeats.slice(0, 3);
-
-      state.pendingSeats = cappedCandidateSeats.map((seat) => ({
-        userId: seat.userId,
-        username: seat.username,
-        wager: seat.wager,
-        readyAt: seat.readyAt,
-      }));
-
-      for (const seat of cappedCandidateSeats) {
-        await chargeWalletForTable(client, seat.userId, seat.wager, 'blackjack_buyin', {
-          roomId,
-          wager: Number(seat.wager || 0),
-          roundId: Number(state.roundId || 0) + 1,
-        }, 1);
-      }
-
-      state = startSharedBlackjackRound({
-        roomId,
-        readySeats: cappedCandidateSeats.map((seat) => ({
-          ...seat,
-          balanceAfterBuyIn: Number(seat.currentBalance || 0) - Number(seat.wager || 0),
-        })),
-        now: now(),
-        createPirateDeck: () => createPirateDeck(random),
-        drawCards,
-        getBlackjackScore,
-        completeDealerHand,
-        getBlackjackPayout,
-      });
-
-      if (state.stage === 'resolved') {
-        for (const seat of state.seats || []) {
-          if (Number(seat.payoutAmount || 0) > 0) {
-            await creditWalletForTable(client, seat.userId, seat.payoutAmount, 'blackjack_payout', {
-              roomId,
-              wager: Number(seat.wager || 0),
-              roundId: Number(state.roundId || 0),
-              message: state.message,
-            });
-          }
-        }
-      }
+      state = await resolveBlackjackWaitingState(client, roomId, state, auth.userId);
 
       await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
       await client.query('COMMIT');
@@ -2438,6 +2655,17 @@ function createCasinoRouter({
       if (Number(state.roundId || 0) !== Number(parsedToken.roundId || 0)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ ok: false, error: 'invalid_round_token' });
+      }
+
+      const blackjackTimeoutSync = await settleExpiredBlackjackTurns(client, parsedToken.roomId, state);
+      state = blackjackTimeoutSync.state;
+      if (blackjackTimeoutSync.changed) {
+        await saveSharedTableState(client, 'casino_blackjack_tables', parsedToken.roomId, state);
+        await client.query('COMMIT');
+        return res.status(400).json({
+          ok: false,
+          error: state.stage === 'player-turn' ? 'not_your_turn' : 'invalid_round_token',
+        });
       }
 
       state = applySharedBlackjackAction(state, {
@@ -2502,6 +2730,8 @@ function createCasinoRouter({
       }
       let state = await loadPokerTableState(client, roomId, false);
       state = await syncPokerRoomState(client, roomId, state);
+      state = (await settleExpiredPokerTurns(client, roomId, state)).state;
+      state = await resolvePokerWaitingState(client, roomId, state);
       await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
       await client.query('COMMIT');
 
@@ -2541,6 +2771,7 @@ function createCasinoRouter({
       await touchTableRoomPresence(client, 'poker', roomId, auth.userId);
       let state = await loadPokerTableState(client, roomId, true);
       state = await syncPokerRoomState(client, roomId, state);
+      state = (await settleExpiredPokerTurns(client, roomId, state)).state;
       if (state.stage && !['waiting', 'showdown'].includes(state.stage)) {
         await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
         await client.query('COMMIT');
@@ -2557,66 +2788,7 @@ function createCasinoRouter({
         username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
         ante,
       }, now());
-
-      const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
-      const activeUserIds = new Set(activeParticipants.map((entry) => entry.userId));
-      const sharedAnte = Number(state.ante || ante);
-      const eligibleSeats = [];
-      for (const seat of state.pendingSeats || []) {
-        if (!activeUserIds.has(String(seat.userId || ''))) continue;
-        const walletRow = await getWalletRow(String(seat.userId || ''), client, true);
-        const currentBalance = Number(walletRow?.balance || 0);
-        if (currentBalance >= sharedAnte) {
-          eligibleSeats.push({
-            ...seat,
-            ante: sharedAnte,
-            currentBalance,
-            handId: Number(state.handId || 0),
-          });
-        } else if (String(seat.userId || '') === auth.userId) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ ok: false, error: 'insufficient_credits' });
-        }
-      }
-
-      state.pendingSeats = eligibleSeats.map((seat) => ({
-        userId: seat.userId,
-        username: seat.username,
-        ante: seat.ante,
-        readyAt: seat.readyAt,
-      }));
-      state.ante = sharedAnte;
-
-      if (eligibleSeats.length < 2) {
-        state.stage = 'waiting';
-        state.message = "Un second joueur humain est requis pour lancer la main.";
-        await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
-        await client.query('COMMIT');
-        return res.json({
-          ok: true,
-          state: serializeSharedPokerState(state, auth.userId),
-          profile: await loadProfile(auth.userId),
-        });
-      }
-
-      for (const seat of eligibleSeats) {
-        await chargeWalletForTable(client, seat.userId, sharedAnte, 'poker_buyin', {
-          roomId,
-          ante: sharedAnte,
-          handId: Number(state.handId || 0) + 1,
-        }, 1);
-      }
-
-      state = startPokerHand({
-        roomId,
-        readySeats: eligibleSeats.map((seat) => ({
-          ...seat,
-          balanceAfterBuyIn: Number(seat.currentBalance || 0) - sharedAnte,
-        })),
-        now: now(),
-        createPirateDeck: () => createPirateDeck(random),
-        drawCards,
-      });
+      state = await resolvePokerWaitingState(client, roomId, state, auth.userId);
 
       await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
       await client.query('COMMIT');
@@ -2662,8 +2834,19 @@ function createCasinoRouter({
         return res.status(400).json({ ok: false, error: 'invalid_round_token' });
       }
 
-      const actingSeatBefore = previousState.seats?.[previousState.actingSeatIndex] || null;
-      const nextState = applySharedPokerAction(previousState, {
+      const pokerTimeoutSync = await settleExpiredPokerTurns(client, parsedToken.roomId, previousState);
+      const settledState = pokerTimeoutSync.state;
+      if (pokerTimeoutSync.changed) {
+        await saveSharedTableState(client, 'casino_poker_tables', parsedToken.roomId, settledState);
+        await client.query('COMMIT');
+        return res.status(400).json({
+          ok: false,
+          error: ['preflop', 'flop', 'turn', 'river'].includes(String(settledState.stage || '')) ? 'not_your_turn' : 'invalid_round_token',
+        });
+      }
+
+      const actingSeatBefore = settledState.seats?.[settledState.actingSeatIndex] || null;
+      const nextState = applySharedPokerAction(settledState, {
         userId: auth.userId,
         action,
         amount: clampInteger(req.body?.amount, 0, 1000000, 0),
