@@ -7,8 +7,9 @@ const {
   syncPokerStateWithPresence,
 } = require('../src/routes/casino-shared-tables.cjs');
 
-test('syncPokerStateWithPresence marks a disconnected acting seat absent and lets the hand advance immediately', () => {
+test('syncPokerStateWithPresence marks a disconnected acting seat absent but keeps the current timer running', () => {
   const now = new Date('2026-04-13T12:00:00.000Z');
+  const afterDeadline = new Date('2026-04-13T12:01:05.000Z');
   const state = {
     kind: 'poker_table',
     roomId: 'allmight-ring',
@@ -70,9 +71,9 @@ test('syncPokerStateWithPresence marks a disconnected acting seat absent and let
   const synced = syncPokerStateWithPresence(state, ['jj'], now);
   assert.equal(synced.seats[0].isAbsent, true);
   assert.equal(synced.seats[0].absentAt, now.toISOString());
-  assert.ok(Date.parse(synced.turnDeadlineAt) <= now.getTime());
+  assert.equal(synced.turnDeadlineAt, '2026-04-13T12:01:00.000Z');
 
-  const advanced = advanceExpiredPokerTurns(synced, now, {
+  const advanced = advanceExpiredPokerTurns(synced, afterDeadline, {
     evaluateBestPokerHand: () => ({ label: 'High card', rank: [1] }),
     comparePokerScores: () => 0,
   });
@@ -82,7 +83,7 @@ test('syncPokerStateWithPresence marks a disconnected acting seat absent and let
   assert.equal(advanced.seats[1].isWinner, true);
 });
 
-test('syncBlackjackStateWithPresence expires the active turn when the acting player disappears', () => {
+test('syncBlackjackStateWithPresence keeps the active timer when the acting player disappears', () => {
   const now = new Date('2026-04-13T12:00:00.000Z');
   const state = {
     kind: 'blackjack_table',
@@ -120,5 +121,5 @@ test('syncBlackjackStateWithPresence expires the active turn when the acting pla
   };
 
   const synced = syncBlackjackStateWithPresence(state, ['jj'], now);
-  assert.ok(Date.parse(synced.turnDeadlineAt) <= now.getTime());
+  assert.equal(synced.turnDeadlineAt, '2026-04-13T12:01:00.000Z');
 });

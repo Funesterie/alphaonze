@@ -411,11 +411,7 @@ function syncBlackjackStateWithPresence(state, activeUsers, now) {
       return recoveredState;
     }
     clearTableBettingWindow(baseState);
-    const activeSeat = baseState.seats?.[Number(baseState.activeSeatIndex ?? -1)] || null;
-    if (activeSeat?.userId && !activeSet.has(String(activeSeat.userId || ""))) {
-      baseState.turnStartedAt = toIso(now);
-      baseState.turnDeadlineAt = toIso(now);
-    } else if (!toTimestamp(baseState.turnDeadlineAt)) {
+    if (!toTimestamp(baseState.turnDeadlineAt)) {
       setBlackjackTurnWindow(baseState, now);
     }
   }
@@ -1006,11 +1002,7 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
       return recoveredState;
     }
     clearTableBettingWindow(baseState);
-    const actingSeat = baseState.seats?.[Number(baseState.actingSeatIndex ?? -1)] || null;
-    if (actingSeat?.userId && !activeSet.has(String(actingSeat.userId || ""))) {
-      baseState.turnStartedAt = toIso(now);
-      baseState.turnDeadlineAt = toIso(now);
-    } else if (!toTimestamp(baseState.turnDeadlineAt)) {
+    if (!toTimestamp(baseState.turnDeadlineAt)) {
       setPokerTurnWindow(baseState, now);
     }
   }
