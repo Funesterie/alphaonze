@@ -45,6 +45,8 @@ const {
   hasDeadlineElapsed: hasSharedTableDeadlineElapsed,
   parseBlackjackToken,
   parsePokerToken,
+  queueBlackjackPendingSeat,
+  queuePokerPendingSeat,
   serializeBlackjackState: serializeSharedBlackjackState,
   serializePokerState: serializeSharedPokerState,
   startBlackjackRound: startSharedBlackjackRound,
@@ -2750,7 +2752,16 @@ function createCasinoRouter({
       const blackjackSync = await syncBlackjackRoomState(client, roomId, state);
       state = blackjackSync.state;
       state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
+      const requesterIsSeated = (state.seats || []).some((seat) => String(seat?.userId || '') === String(auth.userId || ''));
       if (state.stage === 'player-turn') {
+        if (!requesterIsSeated) {
+          state = queueBlackjackPendingSeat(state, {
+            roomId,
+            userId: auth.userId,
+            username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
+            wager,
+          }, now());
+        }
         await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
         await client.query('COMMIT');
         return res.json({
@@ -2934,7 +2945,16 @@ function createCasinoRouter({
       const pokerSync = await syncPokerRoomState(client, roomId, state);
       state = pokerSync.state;
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
+      const requesterIsSeated = (state.seats || []).some((seat) => String(seat?.userId || '') === String(auth.userId || ''));
       if (state.stage && !['waiting', 'showdown'].includes(state.stage)) {
+        if (!requesterIsSeated) {
+          state = queuePokerPendingSeat(state, {
+            roomId,
+            userId: auth.userId,
+            username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
+            ante,
+          }, now());
+        }
         await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
         await client.query('COMMIT');
         return res.json({
@@ -2962,9 +2982,11 @@ function createCasinoRouter({
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
-      const code = error_?.code === 'insufficient_credits' ? 'insufficient_credits' : 'poker_start_failed';
+      const code = ['insufficient_credits', 'table_full'].includes(error_?.code)
+        ? error_.code
+        : 'poker_start_failed';
       logger?.error?.('[CASINO] poker start failed:', error_?.message);
-      return res.status(code === 'insufficient_credits' ? 400 : 500).json({ ok: false, error: code });
+      return res.status(code === 'poker_start_failed' ? 500 : 400).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
