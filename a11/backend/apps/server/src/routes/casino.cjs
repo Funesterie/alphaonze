@@ -41,6 +41,7 @@ const {
   clearTableBettingWindow: clearSharedTableBettingWindow,
   ensureTableBettingWindow: ensureSharedTableBettingWindow,
   getPokerBlindUnit: getSharedPokerBlindUnit,
+  getSharedReadyTargetCount,
   hasDeadlineElapsed: hasSharedTableDeadlineElapsed,
   parseBlackjackToken,
   parsePokerToken,
@@ -2071,7 +2072,12 @@ function createCasinoRouter({
       ensureSharedTableBettingWindow(nextState, currentTime);
     }
 
-    const readyTargetCount = Math.max(1, Math.min(BLACKJACK_TABLE_MAX_PLAYERS, activeParticipants.length || readySeats.length));
+    const readyTargetCount = getSharedReadyTargetCount(
+      activeParticipants.length,
+      readySeats.length,
+      BLACKJACK_TABLE_MAX_PLAYERS,
+      1,
+    );
     const everyoneReady = readySeats.length >= readyTargetCount;
     if (!everyoneReady && !deadlineReached) {
       nextState.message = `Mises confirmees ${readySeats.length}/${readyTargetCount}. La manche part quand tout le monde a mise ou a la fin du chrono.`;
@@ -2122,7 +2128,7 @@ function createCasinoRouter({
     }
 
     const currentTime = now();
-    const { sharedAnte, readySeats } = await collectPokerReadySeats(client, roomId, state, strictUserId);
+    const { activeParticipants, sharedAnte, readySeats } = await collectPokerReadySeats(client, roomId, state, strictUserId);
     const hadDeadline = Boolean(state?.bettingClosesAt);
     const deadlineReached = hasSharedTableDeadlineElapsed(state?.bettingClosesAt, currentTime);
     const nextState = {
@@ -2158,9 +2164,20 @@ function createCasinoRouter({
       ensureSharedTableBettingWindow(nextState, currentTime);
     }
 
-    const canStart = readySeats.length >= 2;
+    const readyTargetCount = getSharedReadyTargetCount(
+      activeParticipants.length,
+      readySeats.length,
+      POKER_TABLE_MAX_PLAYERS,
+      2,
+    );
+    const everyoneReady = readySeats.length >= readyTargetCount;
 
-    if (!canStart) {
+    if (!everyoneReady && !deadlineReached) {
+      nextState.message = `Inscriptions confirmees ${readySeats.length}/${readyTargetCount}. La main part quand tous les joueurs presents ont valide ou a la fin du chrono.`;
+      return nextState;
+    }
+
+    if (readySeats.length < 2) {
       if (deadlineReached && readySeats.length < 2) {
         ensureSharedTableBettingWindow(nextState, currentTime);
       }
