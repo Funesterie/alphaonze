@@ -1036,7 +1036,7 @@ const corsOptions = {
     return callback(new Error('CORS origin denied'));
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-NEZ-TOKEN', 'X-NEZ-ADMIN']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-NEZ-TOKEN', 'X-NEZ-ADMIN', 'X-Casino-Tab-Id']
 };
 
 // Use CORS middleware globally
