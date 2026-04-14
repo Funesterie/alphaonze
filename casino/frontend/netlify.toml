@@ -1,9 +1,0 @@
-[build]
-  publish = "dist"
-  command = "npm run build"
-
-[[redirects]]
-  from = "/api/*"
-  to = "https://api.funesterie.pro/api/:splat"
-  status = 200
-  force = true
