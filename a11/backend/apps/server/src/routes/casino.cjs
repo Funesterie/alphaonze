@@ -1444,7 +1444,7 @@ function createCasinoRouter({
       case 'turn':
         return 'La turn ralentit et la parole te revient. Tu peux checker ou mettre la pression.';
       case 'river':
-        return 'La river est checkee jusqua toi. Derniere decision avant le showdown.';
+        return 'La river est checkee jusqua toi. Derniere decision avant la fin de main.';
       default:
         return 'La table attend ta decision.';
     }
@@ -1486,7 +1486,7 @@ function createCasinoRouter({
       minBet: 0,
       minRaiseTo: 0,
       legalActions: [],
-      message: message || `La table passe. Tu ramasses ${state.pot} jetons sans showdown.`,
+      message: message || `La table passe. Tu ramasses ${state.pot} jetons sans contestation.`,
     };
   }
 
@@ -1550,7 +1550,7 @@ function createCasinoRouter({
       minRaiseTo: 0,
       legalActions: [],
       message: playerWins
-        ? `Showdown propre. Tu prends ${share} jetons avec ${playerHand?.label.toLowerCase()}.`
+        ? `Fin de main propre. Tu prends ${share} jetons avec ${playerHand?.label.toLowerCase()}.`
         : playerFolded
           ? 'Tu couches la main. Le pot part chez les survivants.'
           : `Le pot glisse ailleurs. La meilleure main est ${bestScore?.label.toLowerCase()}.`,
