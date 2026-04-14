@@ -3,9 +3,17 @@ const assert = require('node:assert/strict');
 
 const {
   advanceExpiredPokerTurns,
+  getSharedReadyTargetCount,
   syncBlackjackStateWithPresence,
   syncPokerStateWithPresence,
 } = require('../src/routes/casino-shared-tables.cjs');
+
+test('getSharedReadyTargetCount clamps the waiting target for shared tables', () => {
+  assert.equal(getSharedReadyTargetCount(3, 2, 6, 2), 3);
+  assert.equal(getSharedReadyTargetCount(1, 1, 6, 2), 2);
+  assert.equal(getSharedReadyTargetCount(0, 2, 6, 2), 2);
+  assert.equal(getSharedReadyTargetCount(4, 1, 3, 1), 3);
+});
 
 test('syncPokerStateWithPresence marks a disconnected acting seat absent but keeps the current timer running', () => {
   const now = new Date('2026-04-13T12:00:00.000Z');

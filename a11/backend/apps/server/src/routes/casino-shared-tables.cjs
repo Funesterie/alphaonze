@@ -698,6 +698,13 @@ function getPokerBlindUnit(ante) {
   return Math.max(10, Math.round(Number(ante || 0) / 2) || 10);
 }
 
+function getSharedReadyTargetCount(activeParticipantCount, readySeatCount, maxPlayers, minPlayers = 1) {
+  const floor = Math.max(1, Number(minPlayers || 0) || 1);
+  const ceiling = Math.max(floor, Number(maxPlayers || 0) || floor);
+  const baseline = Math.max(0, Number(activeParticipantCount || 0), Number(readySeatCount || 0));
+  return Math.max(floor, Math.min(ceiling, baseline || floor));
+}
+
 function getActivePokerSeatIndexes(state) {
   return (state.seats || [])
     .map((seat, index) => ({ seat, index }))
@@ -1308,6 +1315,7 @@ module.exports = {
   buildWaitingPokerState,
   clearTableBettingWindow,
   finalizeBlackjackState,
+  getSharedReadyTargetCount,
   hasDeadlineElapsed,
   getPokerBlindUnit,
   ensureTableBettingWindow,
