@@ -1891,20 +1891,26 @@ function createCasinoRouter({
 
   async function syncBlackjackRoomState(client, roomId, state) {
     const activeParticipants = await listActiveRoomPresence(client, 'blackjack', roomId);
-    return syncBlackjackStateWithPresence(
-      state,
-      activeParticipants.map((entry) => entry.userId),
-      now()
-    );
+    return {
+      activeParticipants,
+      state: syncBlackjackStateWithPresence(
+        state,
+        activeParticipants.map((entry) => entry.userId),
+        now()
+      ),
+    };
   }
 
   async function syncPokerRoomState(client, roomId, state) {
     const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
-    return syncPokerStateWithPresence(
-      state,
-      activeParticipants.map((entry) => entry.userId),
-      now()
-    );
+    return {
+      activeParticipants,
+      state: syncPokerStateWithPresence(
+        state,
+        activeParticipants.map((entry) => entry.userId),
+        now()
+      ),
+    };
   }
 
   async function settleExpiredBlackjackTurns(client, roomId, state) {
@@ -2182,16 +2188,18 @@ function createCasinoRouter({
     });
   }
 
-  function serializeBlackjackClientState(state, userId) {
+  function serializeBlackjackClientState(state, userId, roomParticipants = []) {
     return {
       ...serializeSharedBlackjackState(state, userId, getBlackjackScore),
+      roomParticipants: (roomParticipants || []).map((participant) => ({ ...participant })),
       presenceWindowMs: TABLE_ROOM_TTL_MS,
     };
   }
 
-  function serializePokerClientState(state, userId) {
+  function serializePokerClientState(state, userId, roomParticipants = []) {
     return {
       ...serializeSharedPokerState(state, userId),
+      roomParticipants: (roomParticipants || []).map((participant) => ({ ...participant })),
       presenceWindowMs: TABLE_ROOM_TTL_MS,
     };
   }
@@ -2679,7 +2687,8 @@ function createCasinoRouter({
         await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId, presenceClientId);
       }
       let state = await loadBlackjackTableState(client, roomId, false);
-      state = await syncBlackjackRoomState(client, roomId, state);
+      const blackjackSync = await syncBlackjackRoomState(client, roomId, state);
+      state = blackjackSync.state;
       state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
       state = await resolveBlackjackWaitingState(client, roomId, state);
       await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
@@ -2687,7 +2696,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeBlackjackClientState(state, auth.userId),
+        state: serializeBlackjackClientState(state, auth.userId, blackjackSync.activeParticipants),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
@@ -2721,14 +2730,15 @@ function createCasinoRouter({
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'blackjack', roomId, auth.userId, presenceClientId);
       let state = await loadBlackjackTableState(client, roomId, true);
-      state = await syncBlackjackRoomState(client, roomId, state);
+      const blackjackSync = await syncBlackjackRoomState(client, roomId, state);
+      state = blackjackSync.state;
       state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
       if (state.stage === 'player-turn') {
         await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
         await client.query('COMMIT');
         return res.json({
           ok: true,
-          state: serializeBlackjackClientState(state, auth.userId),
+          state: serializeBlackjackClientState(state, auth.userId, blackjackSync.activeParticipants),
           profile: await loadProfile(auth.userId),
         });
       }
@@ -2746,7 +2756,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeBlackjackClientState(state, auth.userId),
+        state: serializeBlackjackClientState(state, auth.userId, blackjackSync.activeParticipants),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
@@ -2781,6 +2791,7 @@ function createCasinoRouter({
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'blackjack', parsedToken.roomId, auth.userId, presenceClientId);
+      const blackjackParticipants = await listActiveRoomPresence(client, 'blackjack', parsedToken.roomId);
       let state = await loadBlackjackTableState(client, parsedToken.roomId, true);
       if (Number(state.roundId || 0) !== Number(parsedToken.roundId || 0)) {
         await client.query('ROLLBACK');
@@ -2826,7 +2837,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializeBlackjackClientState(state, auth.userId),
+        state: serializeBlackjackClientState(state, auth.userId, blackjackParticipants),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
@@ -2860,7 +2871,8 @@ function createCasinoRouter({
         await touchTableRoomPresence(client, 'poker', roomId, auth.userId, presenceClientId);
       }
       let state = await loadPokerTableState(client, roomId, false);
-      state = await syncPokerRoomState(client, roomId, state);
+      const pokerSync = await syncPokerRoomState(client, roomId, state);
+      state = pokerSync.state;
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
       state = await resolvePokerWaitingState(client, roomId, state);
       await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
@@ -2868,7 +2880,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializePokerClientState(state, auth.userId),
+        state: serializePokerClientState(state, auth.userId, pokerSync.activeParticipants),
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
@@ -2902,14 +2914,15 @@ function createCasinoRouter({
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'poker', roomId, auth.userId, presenceClientId);
       let state = await loadPokerTableState(client, roomId, true);
-      state = await syncPokerRoomState(client, roomId, state);
+      const pokerSync = await syncPokerRoomState(client, roomId, state);
+      state = pokerSync.state;
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
       if (state.stage && !['waiting', 'showdown'].includes(state.stage)) {
         await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
         await client.query('COMMIT');
         return res.json({
           ok: true,
-          state: serializePokerClientState(state, auth.userId),
+          state: serializePokerClientState(state, auth.userId, pokerSync.activeParticipants),
           profile: await loadProfile(auth.userId),
         });
       }
@@ -2927,7 +2940,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializePokerClientState(state, auth.userId),
+        state: serializePokerClientState(state, auth.userId, pokerSync.activeParticipants),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
@@ -2958,7 +2971,8 @@ function createCasinoRouter({
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'poker', roomId, auth.userId, presenceClientId);
       let state = await loadPokerTableState(client, roomId, true);
-      state = await syncPokerRoomState(client, roomId, state);
+      const pokerSync = await syncPokerRoomState(client, roomId, state);
+      state = pokerSync.state;
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
 
       const activeParticipants = await listActiveRoomPresence(client, 'poker', roomId);
@@ -2981,7 +2995,8 @@ function createCasinoRouter({
       }
 
       await removeTableRoomPresence(client, 'poker', roomId, targetUserId);
-      state = await syncPokerRoomState(client, roomId, state);
+      const refreshedPokerSync = await syncPokerRoomState(client, roomId, state);
+      state = refreshedPokerSync.state;
       state = await resolvePokerWaitingState(client, roomId, state);
       await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
       const lobby = await buildTableRoomPayload(client, 'poker', auth.userId, roomId);
@@ -2989,7 +3004,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializePokerClientState(state, auth.userId),
+        state: serializePokerClientState(state, auth.userId, refreshedPokerSync.activeParticipants),
         rooms: lobby.rooms,
         profile: await loadProfile(auth.userId),
       });
@@ -3026,6 +3041,7 @@ function createCasinoRouter({
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
       await touchTableRoomPresence(client, 'poker', parsedToken.roomId, auth.userId, presenceClientId);
+      const pokerParticipants = await listActiveRoomPresence(client, 'poker', parsedToken.roomId);
       const previousState = await loadPokerTableState(client, parsedToken.roomId, true);
       if (Number(previousState.handId || 0) !== Number(parsedToken.handId || 0)) {
         await client.query('ROLLBACK');
@@ -3086,7 +3102,7 @@ function createCasinoRouter({
 
       return res.json({
         ok: true,
-        state: serializePokerClientState(nextState, auth.userId),
+        state: serializePokerClientState(nextState, auth.userId, pokerParticipants),
         profile: await loadProfile(auth.userId),
       });
     } catch (error_) {
