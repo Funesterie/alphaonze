@@ -43,6 +43,7 @@ const {
   getPokerBlindUnit: getSharedPokerBlindUnit,
   getSharedReadyTargetCount,
   hasDeadlineElapsed: hasSharedTableDeadlineElapsed,
+  isTableRevealWindowOpen,
   parseBlackjackToken,
   parsePokerToken,
   queueBlackjackPendingSeat,
@@ -2048,6 +2049,9 @@ function createCasinoRouter({
     }
 
     const currentTime = now();
+    if (String(state?.stage || '') === 'resolved' && isTableRevealWindowOpen(state, currentTime)) {
+      return state;
+    }
     const { activeParticipants, readySeats } = await collectBlackjackReadySeats(client, roomId, state, strictUserId);
     const hadDeadline = Boolean(state?.bettingClosesAt);
     const deadlineReached = hasSharedTableDeadlineElapsed(state?.bettingClosesAt, currentTime);
@@ -2130,6 +2134,9 @@ function createCasinoRouter({
     }
 
     const currentTime = now();
+    if (String(state?.stage || '') === 'showdown' && isTableRevealWindowOpen(state, currentTime)) {
+      return state;
+    }
     const { activeParticipants, sharedAnte, readySeats } = await collectPokerReadySeats(client, roomId, state, strictUserId);
     const hadDeadline = Boolean(state?.bettingClosesAt);
     const deadlineReached = hasSharedTableDeadlineElapsed(state?.bettingClosesAt, currentTime);
@@ -2753,7 +2760,25 @@ function createCasinoRouter({
       state = blackjackSync.state;
       state = (await settleExpiredBlackjackTurns(client, roomId, state)).state;
       const requesterIsSeated = (state.seats || []).some((seat) => String(seat?.userId || '') === String(auth.userId || ''));
+      const revealOpen = isTableRevealWindowOpen(state, now());
       if (state.stage === 'player-turn') {
+        if (!requesterIsSeated) {
+          state = queueBlackjackPendingSeat(state, {
+            roomId,
+            userId: auth.userId,
+            username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
+            wager,
+          }, now());
+        }
+        await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
+        await client.query('COMMIT');
+        return res.json({
+          ok: true,
+          state: serializeBlackjackClientState(state, auth.userId, blackjackSync.activeParticipants),
+          profile: await loadProfile(auth.userId),
+        });
+      }
+      if (state.stage === 'resolved' && revealOpen) {
         if (!requesterIsSeated) {
           state = queueBlackjackPendingSeat(state, {
             roomId,
@@ -2946,7 +2971,25 @@ function createCasinoRouter({
       state = pokerSync.state;
       state = (await settleExpiredPokerTurns(client, roomId, state)).state;
       const requesterIsSeated = (state.seats || []).some((seat) => String(seat?.userId || '') === String(auth.userId || ''));
+      const revealOpen = isTableRevealWindowOpen(state, now());
       if (state.stage && !['waiting', 'showdown'].includes(state.stage)) {
+        if (!requesterIsSeated) {
+          state = queuePokerPendingSeat(state, {
+            roomId,
+            userId: auth.userId,
+            username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
+            ante,
+          }, now());
+        }
+        await saveSharedTableState(client, 'casino_poker_tables', roomId, state);
+        await client.query('COMMIT');
+        return res.json({
+          ok: true,
+          state: serializePokerClientState(state, auth.userId, pokerSync.activeParticipants),
+          profile: await loadProfile(auth.userId),
+        });
+      }
+      if (state.stage === 'showdown' && revealOpen) {
         if (!requesterIsSeated) {
           state = queuePokerPendingSeat(state, {
             roomId,

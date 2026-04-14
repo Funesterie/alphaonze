@@ -96,6 +96,7 @@ function buildWaitingBlackjackState(roomId, pendingSeats = [], message = "Table 
     roomId,
     roundId: 0,
     stage: "waiting",
+    revealStartedAt: null,
     pendingSeats: clone(pendingSeats),
     seats: [],
     dealerCards: [],
@@ -112,6 +113,7 @@ function buildWaitingBlackjackState(roomId, pendingSeats = [], message = "Table 
 
 const BLACKJACK_MAX_PLAYERS = 3;
 const POKER_MAX_PLAYERS = 6;
+const TABLE_RESULT_REVEAL_HOLD_MS = 8_000;
 
 function getBlackjackSeatStatus(cards, getBlackjackScore) {
   const score = getBlackjackScore(cards);
@@ -282,6 +284,7 @@ function finalizeBlackjackState(state, deps) {
     dealerHidden: false,
     activeSeatIndex: -1,
     stage: "resolved",
+    revealStartedAt: state?.revealStartedAt || null,
     bettingOpenedAt: null,
     bettingClosesAt: null,
     turnStartedAt: null,
@@ -334,6 +337,7 @@ function startBlackjackRound({ roomId, readySeats, now, createPirateDeck, drawCa
     roomId,
     roundId: Number((readySeats[0]?.roundId || 0) + 1),
     stage: "player-turn",
+    revealStartedAt: null,
     pendingSeats: [],
     seats,
     dealerCards: dealerOpening.cards || [],
@@ -354,6 +358,7 @@ function startBlackjackRound({ roomId, readySeats, now, createPirateDeck, drawCa
       getBlackjackPayout,
       getBlackjackScore,
     });
+    nextState.revealStartedAt = toIso(now);
     nextState.updatedAt = toIso(now);
     clearTableTurnWindow(nextState);
     return nextState;
@@ -440,9 +445,17 @@ function syncBlackjackStateWithPresence(state, activeUsers, now) {
     }
   }
 
+  if (baseState.stage === "resolved" && isTableRevealWindowOpen(baseState, now)) {
+    clearTableTurnWindow(baseState);
+    clearTableBettingWindow(baseState);
+    baseState.updatedAt = toIso(now);
+    return baseState;
+  }
+
   if (baseState.stage === "waiting" || baseState.stage === "resolved") {
     baseState.seats = [];
     baseState.activeSeatIndex = -1;
+    baseState.revealStartedAt = null;
     clearTableTurnWindow(baseState);
     if ((baseState.pendingSeats || []).length) {
       ensureTableBettingWindow(baseState, now);
@@ -584,6 +597,7 @@ function applyBlackjackAction(state, { userId, action, now, drawCards, getBlackj
       getBlackjackPayout,
       getBlackjackScore,
     });
+    resolvedState.revealStartedAt = toIso(now);
     resolvedState.updatedAt = toIso(now);
     clearTableTurnWindow(resolvedState);
     return resolvedState;
@@ -698,6 +712,7 @@ function buildWaitingPokerState(roomId, pendingSeats = [], message = "Table ouve
     roomId,
     handId: 0,
     stage: "waiting",
+    revealStartedAt: null,
     pendingSeats: clone(pendingSeats),
     seats: [],
     communityCards: [],
@@ -720,6 +735,18 @@ function buildWaitingPokerState(roomId, pendingSeats = [], message = "Table ouve
 
 function getPokerBlindUnit(ante) {
   return Math.max(10, Math.round(Number(ante || 0) / 2) || 10);
+}
+
+function isTableRevealWindowOpen(state, now) {
+  const stage = String(state?.stage || "");
+  if (!["resolved", "showdown"].includes(stage)) {
+    return false;
+  }
+  const revealStartedAt = toTimestamp(state?.revealStartedAt);
+  if (!revealStartedAt) {
+    return false;
+  }
+  return now.getTime() - revealStartedAt < TABLE_RESULT_REVEAL_HOLD_MS;
 }
 
 function getSharedReadyTargetCount(activeParticipantCount, readySeatCount, maxPlayers, minPlayers = 1) {
@@ -821,6 +848,7 @@ function finalizePokerShowdown(state, deps) {
   const { evaluateBestPokerHand, comparePokerScores } = deps;
   const nextState = clone(state);
   nextState.stage = "showdown";
+  nextState.revealStartedAt = nextState.revealStartedAt || toIso(deps.now || new Date());
   nextState.communityCards = nextState.communityReserve.slice(0, 5);
   nextState.actingSeatIndex = -1;
   const contenders = [];
@@ -913,6 +941,7 @@ function startPokerHand({ roomId, readySeats, now, createPirateDeck, drawCards }
     roomId,
     handId: Number((readySeats[0]?.handId || 0) + 1),
     stage: "preflop",
+    revealStartedAt: null,
     ante,
     pendingSeats: [],
     seats,
@@ -951,6 +980,7 @@ function upsertPokerPendingSeat(state, seat, now) {
     roomId: seat.roomId,
     ante: sharedAnte,
     stage: "waiting",
+    revealStartedAt: null,
     pendingSeats: nextPendingSeats.map((entry) => ({ ...entry, ante: sharedAnte })),
     actingSeatIndex: -1,
     updatedAt: toIso(now),
@@ -1065,9 +1095,15 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
 
   if (baseState.stage === "showdown") {
     baseState.pendingSeats = buildPokerCarryoverPendingSeats(baseState, activeSet, now);
-    baseState.seats = [];
     baseState.actingSeatIndex = -1;
     clearTableTurnWindow(baseState);
+    if (isTableRevealWindowOpen(baseState, now)) {
+      clearTableBettingWindow(baseState);
+      baseState.updatedAt = toIso(now);
+      return baseState;
+    }
+    baseState.seats = [];
+    baseState.revealStartedAt = null;
     if ((baseState.pendingSeats || []).length) {
       ensureTableBettingWindow(baseState, now);
     } else {
@@ -1078,6 +1114,7 @@ function syncPokerStateWithPresence(state, activeUsers, now) {
   if (baseState.stage === "waiting") {
     baseState.seats = [];
     baseState.actingSeatIndex = -1;
+    baseState.revealStartedAt = null;
     clearTableTurnWindow(baseState);
     if ((baseState.pendingSeats || []).length) {
       ensureTableBettingWindow(baseState, now);
@@ -1177,6 +1214,7 @@ function applyPokerAction(state, { userId, action, amount, now }, deps) {
   if (liveSeats.length <= 1) {
     const winner = liveSeats[0] || null;
     nextState.stage = "showdown";
+    nextState.revealStartedAt = toIso(now);
     nextState.communityCards = nextState.communityReserve.slice(0, 5);
     nextState.actingSeatIndex = -1;
     nextState.seats = nextState.seats.map((seat) => {
@@ -1207,6 +1245,7 @@ function applyPokerAction(state, { userId, action, amount, now }, deps) {
   const progressedState = maybeAdvancePokerStreet(nextState, deps);
   progressedState.updatedAt = toIso(now);
   if (progressedState.stage === "showdown") {
+    progressedState.revealStartedAt = progressedState.revealStartedAt || toIso(now);
     clearTableTurnWindow(progressedState);
     return progressedState;
   }
@@ -1366,6 +1405,7 @@ module.exports = {
   finalizeBlackjackState,
   getSharedReadyTargetCount,
   hasDeadlineElapsed,
+  isTableRevealWindowOpen,
   getPokerBlindUnit,
   ensureTableBettingWindow,
   parseBlackjackToken,
