@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const {
   advanceExpiredPokerTurns,
   getSharedReadyTargetCount,
+  queueBlackjackPendingSeat,
+  queuePokerPendingSeat,
   syncBlackjackStateWithPresence,
   syncPokerStateWithPresence,
 } = require('../src/routes/casino-shared-tables.cjs');
@@ -13,6 +15,73 @@ test('getSharedReadyTargetCount clamps the waiting target for shared tables', ()
   assert.equal(getSharedReadyTargetCount(1, 1, 6, 2), 2);
   assert.equal(getSharedReadyTargetCount(0, 2, 6, 2), 2);
   assert.equal(getSharedReadyTargetCount(4, 1, 3, 1), 3);
+});
+
+test('queueBlackjackPendingSeat keeps an active round intact while reserving the next seat', () => {
+  const now = new Date('2026-04-14T10:00:00.000Z');
+  const state = {
+    kind: 'blackjack_table',
+    roomId: 'lantern-quay',
+    roundId: 9,
+    stage: 'player-turn',
+    pendingSeats: [],
+    seats: [{ userId: 'cc', username: 'cc', wager: 50, chips: 450, cards: [], hands: [] }],
+    dealerCards: [],
+    dealerHidden: true,
+    activeSeatIndex: 0,
+    turnDeadlineAt: '2026-04-14T10:01:00.000Z',
+    updatedAt: '2026-04-14T09:59:00.000Z',
+  };
+
+  const queued = queueBlackjackPendingSeat(state, {
+    roomId: 'lantern-quay',
+    userId: 'jj',
+    username: 'jj',
+    wager: 20,
+  }, now);
+
+  assert.equal(queued.stage, 'player-turn');
+  assert.equal(queued.seats.length, 1);
+  assert.equal(queued.pendingSeats.length, 1);
+  assert.equal(queued.pendingSeats[0].userId, 'jj');
+  assert.equal(queued.turnDeadlineAt, '2026-04-14T10:01:00.000Z');
+});
+
+test('queuePokerPendingSeat keeps an active hand intact while reserving the next seat', () => {
+  const now = new Date('2026-04-14T10:00:00.000Z');
+  const state = {
+    kind: 'poker_table',
+    roomId: 'allmight-ring',
+    handId: 4,
+    stage: 'flop',
+    ante: 60,
+    pendingSeats: [],
+    seats: [{ userId: 'cc', username: 'cc', cards: [], chips: 240, folded: false, isAllIn: false, actedThisStreet: false, totalCommitted: 60, streetCommitted: 0, lastAction: 'check', hand: null, isWinner: false, payoutAmount: 0, lastDelta: -60 }],
+    communityCards: [],
+    communityReserve: [],
+    actingSeatIndex: 0,
+    dealerSeatIndex: 0,
+    pot: 60,
+    currentBet: 0,
+    minBet: 30,
+    minRaiseTo: 30,
+    turnDeadlineAt: '2026-04-14T10:01:00.000Z',
+    updatedAt: '2026-04-14T09:59:00.000Z',
+  };
+
+  const queued = queuePokerPendingSeat(state, {
+    roomId: 'allmight-ring',
+    userId: 'jj',
+    username: 'jj',
+    ante: 60,
+  }, now);
+
+  assert.equal(queued.stage, 'flop');
+  assert.equal(queued.seats.length, 1);
+  assert.equal(queued.pendingSeats.length, 1);
+  assert.equal(queued.pendingSeats[0].userId, 'jj');
+  assert.equal(queued.ante, 60);
+  assert.equal(queued.turnDeadlineAt, '2026-04-14T10:01:00.000Z');
 });
 
 test('syncPokerStateWithPresence marks a disconnected acting seat absent but keeps the current timer running', () => {

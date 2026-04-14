@@ -111,6 +111,7 @@ function buildWaitingBlackjackState(roomId, pendingSeats = [], message = "Table 
 }
 
 const BLACKJACK_MAX_PLAYERS = 3;
+const POKER_MAX_PLAYERS = 6;
 
 function getBlackjackSeatStatus(cards, getBlackjackScore) {
   const score = getBlackjackScore(cards);
@@ -391,6 +392,29 @@ function upsertBlackjackPendingSeat(state, seat, now) {
   clearTableTurnWindow(nextState);
   ensureTableBettingWindow(nextState, now);
   return nextState;
+}
+
+function queueBlackjackPendingSeat(state, seat, now) {
+  const baseState = state?.kind === "blackjack_table" ? clone(state) : buildWaitingBlackjackState(seat.roomId);
+  const nextPendingSeats = (baseState.pendingSeats || []).filter((entry) => entry.userId !== seat.userId);
+  if (nextPendingSeats.length >= BLACKJACK_MAX_PLAYERS) {
+    const error = new Error("table_full");
+    error.code = "table_full";
+    throw error;
+  }
+  nextPendingSeats.push({
+    userId: seat.userId,
+    username: seat.username,
+    wager: Number(seat.wager || 0),
+    readyAt: toIso(now),
+  });
+  nextPendingSeats.sort((left, right) => String(left.readyAt || "").localeCompare(String(right.readyAt || "")));
+  return {
+    ...baseState,
+    roomId: seat.roomId,
+    pendingSeats: nextPendingSeats,
+    updatedAt: toIso(now),
+  };
 }
 
 function syncBlackjackStateWithPresence(state, activeUsers, now) {
@@ -940,6 +964,31 @@ function upsertPokerPendingSeat(state, seat, now) {
   return nextState;
 }
 
+function queuePokerPendingSeat(state, seat, now) {
+  const baseState = state?.kind === "poker_table" ? clone(state) : buildWaitingPokerState(seat.roomId);
+  const nextPendingSeats = (baseState.pendingSeats || []).filter((entry) => entry.userId !== seat.userId);
+  if (nextPendingSeats.length >= POKER_MAX_PLAYERS) {
+    const error = new Error("table_full");
+    error.code = "table_full";
+    throw error;
+  }
+  const sharedAnte = Number(baseState.ante || seat.ante || nextPendingSeats[0]?.ante || 0);
+  nextPendingSeats.push({
+    userId: seat.userId,
+    username: seat.username,
+    ante: sharedAnte,
+    readyAt: toIso(now),
+  });
+  nextPendingSeats.sort((left, right) => String(left.readyAt || "").localeCompare(String(right.readyAt || "")));
+  return {
+    ...baseState,
+    roomId: seat.roomId,
+    ante: sharedAnte,
+    pendingSeats: nextPendingSeats.map((entry) => ({ ...entry, ante: sharedAnte })),
+    updatedAt: toIso(now),
+  };
+}
+
 function buildPokerCarryoverPendingSeats(state, activeSet, now) {
   const timestamp = toIso(now);
   const pendingMap = new Map();
@@ -1321,6 +1370,8 @@ module.exports = {
   ensureTableBettingWindow,
   parseBlackjackToken,
   parsePokerToken,
+  queueBlackjackPendingSeat,
+  queuePokerPendingSeat,
   serializeBlackjackState,
   serializePokerState,
   startBlackjackRound,
