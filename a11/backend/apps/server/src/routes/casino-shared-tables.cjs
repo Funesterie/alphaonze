@@ -903,9 +903,9 @@ function finalizePokerShowdown(state, deps) {
 
   nextState.message =
     winnerIds.length > 1
-      ? "Le pot est partage au showdown."
+      ? "Le pot est partage entre les mains gagnantes."
       : winnerIds.length === 1
-        ? "Le showdown designe un vainqueur."
+        ? "La main designe un vainqueur."
         : "La main se termine sans vainqueur declare.";
   clearTableTurnWindow(nextState);
   return nextState;
@@ -1235,7 +1235,7 @@ function applyPokerAction(state, { userId, action, amount, now }, deps) {
         lastDelta: Number(nextState.pot || 0) - Number(seat.totalCommitted || 0),
       };
     });
-    nextState.message = winner ? `${winner.username} ramasse le pot sans showdown.` : "La main se termine.";
+    nextState.message = winner ? `${winner.username} ramasse le pot sans contestation.` : "La main se termine.";
     nextState.updatedAt = toIso(now);
     clearTableTurnWindow(nextState);
     return nextState;
@@ -1289,11 +1289,11 @@ function serializePokerState(state, userId) {
           ? "Preflop"
           : state?.stage === "flop"
             ? "Flop"
-            : state?.stage === "turn"
-              ? "Turn"
-              : state?.stage === "river"
-                ? "River"
-                : "Showdown",
+              : state?.stage === "turn"
+                ? "Turn"
+                : state?.stage === "river"
+                  ? "River"
+                : "Fin de main",
     waitingForPlayers: state?.stage === "waiting",
     handId: Number(state?.handId || 0),
     bettingClosesAt: state?.bettingClosesAt || null,
