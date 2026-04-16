@@ -53,7 +53,7 @@ function inferExpectedImageContract({ mask, compiledState } = {}) {
       enabled: true,
       subjectCount: 2,
       subjectType: pair.kind === 'characters' ? 'character' : 'subject',
-      subjectLabel: pair.subjects?.join(' and ') || '',
+      subjectLabel: pair.subjects?.join(' et ') || '',
       allowGroup: false,
       mode: 'pair',
       reason: 'paired_subject_prompt',
@@ -382,26 +382,39 @@ function classifyComponents({ components, expected, mask, width, height, foregro
   const largest = topComponents[0] || null;
   const second = topComponents[1] || null;
   const areaRatio = largest && second ? second.area / Math.max(largest.area, 1) : 0;
-  const duplicateSubjects = expectedCount === 1
-    && observedCount > 1
-    && areaRatio >= 0.28;
+  const duplicateSubjects = (
+    expectedCount === 1
+      ? (observedCount > 1 && areaRatio >= 0.28)
+      : (expectedCount === 2 && observedCount > 2 && areaRatio >= 0.18)
+  );
   const horizontalPeaks = largest ? countHorizontalPeaks(mask, width, height, largest) : 0;
   const fullFrameComponent = Boolean(
     largest
     && largest.width >= Math.floor(width * 0.96)
     && largest.height >= Math.floor(height * 0.96)
   );
-  const busyFullFrameScene = expectedCount === 1
-    && observedCount === 1
+  const busyFullFrameScene = observedCount === 1
     && fullFrameComponent
     && foregroundRatio >= 0.92
-    && horizontalPeaks >= 8;
-  const fusionDetected = expectedCount === 1
-    && observedCount === 1
+    && horizontalPeaks >= (expectedCount === 2 ? 10 : 8);
+  const fusionDetected = observedCount === 1
     && largest
-    && largest.width > largest.height * 1.18
-    && horizontalPeaks >= 2;
-  const subjectMatch = !busyFullFrameScene && observedCount >= Math.min(expectedCount || 1, 1);
+    && (
+      (
+        expectedCount === 1
+        && largest.width > largest.height * 1.18
+        && horizontalPeaks >= 2
+      ) || (
+        expectedCount === 2
+        && largest.width > largest.height * 1.08
+        && horizontalPeaks >= 3
+      )
+    );
+  const subjectMatch = !busyFullFrameScene && (
+    expectedCount <= 1
+      ? observedCount >= 1
+      : observedCount >= expectedCount
+  );
   const confidence = clamp01(
     observedCount === 0
       ? 0.08
@@ -544,21 +557,37 @@ async function verifyGeneratedImageCardinality({
   const fusionDetected = parsed.fusion_detected === true;
   const subjectMatch = parsed.subject_match !== false;
   const confidence = Number(clamp01(parsed.confidence));
+  const expectedSubjectCount = Number(expected.subjectCount || 0);
   const normalizedReason = String(parsed.reason || '').trim() || (
     fusionDetected ? 'fusion_detected' : (
-      observedSubjectCount > Number(expected.subjectCount || 0)
+      observedSubjectCount > expectedSubjectCount
         ? 'multiple_subjects_detected'
-        : 'ok'
+        : (
+          observedSubjectCount < expectedSubjectCount
+            ? 'missing_expected_subject'
+            : (!subjectMatch ? 'subject_mismatch' : 'ok')
+        )
     )
   );
 
-  const shouldRetry = expected.subjectCount === 1
-    && confidence >= 0.55
-    && (
-      observedSubjectCount > 1
-      || duplicateSubjects
-      || fusionDetected
-    );
+  const shouldRetry = confidence >= 0.55 && (
+    (
+      expectedSubjectCount === 1
+      && (
+        observedSubjectCount > 1
+        || duplicateSubjects
+        || fusionDetected
+      )
+    ) || (
+      expectedSubjectCount === 2
+      && (
+        observedSubjectCount !== 2
+        || duplicateSubjects
+        || fusionDetected
+        || !subjectMatch
+      )
+    )
+  );
 
   const result = {
     ok: true,
@@ -607,51 +636,89 @@ async function verifyGeneratedImageCardinality({
 function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const expected = verification?.expected || {};
   const subjectLabel = String(expected.subject_label || expected.subject_type || 'subject').trim() || 'subject';
+  const expectedSubjectCount = Number(expected?.subject_count || 0);
   const useFrenchPrompt = String(sdBody?.prompt_language || '').trim().toLowerCase() === 'fr';
   const fusionDetected = verification?.observed?.fusion_detected === true;
   const duplicateSubjects = verification?.observed?.duplicate_subjects === true
     || Number(verification?.observed?.subject_count || 0) > Number(expected?.subject_count || 0);
-  const retryPromptHints = useFrenchPrompt
-    ? [
-        `montrer un seul ${subjectLabel}`,
-        'sujet principal seul dans la scène',
-        'silhouette claire et lisible',
-        'forme complète visible',
-        'corps entier bien défini',
-        'composition simple autour du sujet',
-        'sujet centré et bien détaché',
-        ...(duplicateSubjects ? [
-          'présenter uniquement le sujet principal',
-          'garder la scène épurée autour du sujet',
-          'aucune deuxième version du personnage',
-          'aucun personnage en double',
-        ] : []),
-        ...(fusionDetected ? [
-          'éléments du corps bien séparés et lisibles',
-          'formes du sujet nettes et distinctes',
-          'éviter tout personnage parasite autour du sujet',
-        ] : []),
-      ]
-    : [
-        `show a single ${subjectLabel}`,
-        'main subject alone in the scene',
-        'clear readable silhouette',
-        'full visible form',
-        'well defined full body',
-        'simple composition around the subject',
-        'centered well separated subject',
-        ...(duplicateSubjects ? [
-          'present only the main subject',
-          'keep the scene clean around the subject',
-          'no second version of the character',
-          'no duplicated character',
-        ] : []),
-        ...(fusionDetected ? [
-          'body parts clearly separated and readable',
-          'clean distinct subject shapes',
-          'avoid any extra character around the subject',
-        ] : []),
-      ];
+  const retryPromptHints = expectedSubjectCount === 2
+    ? (
+      useFrenchPrompt
+        ? [
+            `montrer clairement ${subjectLabel}`,
+            'exactement deux personnages distincts',
+            'une seule occurrence de chaque personnage',
+            'deux personnages complets bien séparés',
+            'composition simple sans collage',
+            ...(duplicateSubjects ? [
+              'supprimer les personnages supplémentaires',
+              'éviter les versions multiples du même personnage',
+              'pas de mosaïque de personnages',
+            ] : []),
+            ...(fusionDetected ? [
+              'deux silhouettes bien séparées et lisibles',
+              'formes nettes pour chaque personnage',
+            ] : []),
+          ]
+        : [
+            `show clearly ${subjectLabel}`,
+            'exactly two distinct characters',
+            'only one instance of each character',
+            'two fully visible well separated characters',
+            'simple composition without collage',
+            ...(duplicateSubjects ? [
+              'remove extra characters',
+              'avoid multiple versions of the same character',
+              'no character mosaic',
+            ] : []),
+            ...(fusionDetected ? [
+              'two clearly separated readable silhouettes',
+              'clean shapes for each character',
+            ] : []),
+          ]
+    ) : (
+      useFrenchPrompt
+        ? [
+            `montrer un seul ${subjectLabel}`,
+            'sujet principal seul dans la scène',
+            'silhouette claire et lisible',
+            'forme complète visible',
+            'corps entier bien défini',
+            'composition simple autour du sujet',
+            'sujet centré et bien détaché',
+            ...(duplicateSubjects ? [
+              'présenter uniquement le sujet principal',
+              'garder la scène épurée autour du sujet',
+              'aucune deuxième version du personnage',
+              'aucun personnage en double',
+            ] : []),
+            ...(fusionDetected ? [
+              'éléments du corps bien séparés et lisibles',
+              'formes du sujet nettes et distinctes',
+              'éviter tout personnage parasite autour du sujet',
+            ] : []),
+          ]
+        : [
+            `show a single ${subjectLabel}`,
+            'main subject alone in the scene',
+            'clear readable silhouette',
+            'full visible form',
+            'well defined full body',
+            'simple composition around the subject',
+            'centered well separated subject',
+            ...(duplicateSubjects ? [
+              'present only the main subject',
+              'keep the scene clean around the subject',
+              'no second version of the character',
+              'no duplicated character',
+            ] : []),
+            ...(fusionDetected ? [
+              'body parts clearly separated and readable',
+              'clean distinct subject shapes',
+              'avoid any extra character around the subject',
+            ] : []),
+          ]
+    );
   // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt
   const basePrompt = String(sdBody.prompt || '').trim();
 
@@ -666,10 +733,31 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const retrySeedBase = Number.isFinite(currentSeed) ? currentSeed : Number(options.seed || Date.now());
   const retryNegativeHints = useFrenchPrompt
     ? [
+        ...(expectedSubjectCount === 2 ? [
+          'troisième personnage',
+          'personnages supplémentaires',
+          'foule',
+          'collage',
+          'montage',
+          'mosaïque',
+          'lineup',
+          'versions multiples du même personnage',
+        ] : []),
         ...(duplicateSubjects ? ['plusieurs sujets', 'doublon du sujet', 'foule', 'jumeau du sujet', 'seconde version du personnage'] : []),
         ...(fusionDetected ? ['anatomie fusionnée', 'membres fusionnés'] : []),
       ]
     : [
+        ...(expectedSubjectCount === 2 ? [
+          'third character',
+          'extra characters',
+          'crowd',
+          'collage',
+          'montage',
+          'mosaic',
+          'lineup',
+          'multiple versions of the same character',
+          'character sheet',
+        ] : []),
         ...(duplicateSubjects ? ['multiple subjects', 'duplicate subject', 'crowd', 'subject twin', 'second version of the character'] : []),
         ...(fusionDetected ? ['fused anatomy', 'merged limbs'] : []),
       ];

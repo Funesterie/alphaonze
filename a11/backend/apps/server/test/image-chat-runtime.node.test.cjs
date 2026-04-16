@@ -286,6 +286,74 @@ test('generateImageFromMask retries once by default when verification suggests a
   assert.equal(result.imageGuard?.verification?.decision?.retry, false);
 });
 
+test('generateImageFromMask retries duo prompts when verification detects extra characters', async () => {
+  let callCount = 0;
+
+  const result = await withImagePipelineMode('smart', () => generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['zelda', 'mario'],
+        environment: [],
+        style: ['illustration fantasy nette'],
+        composition: [],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 30,
+        guidance_scale: 7.5,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      ambiguities: [],
+      raw: 'crée une image de Zelda et Mario',
+    },
+    imageVerificationEnabled: true,
+    generateSd: async ({ body }) => {
+      callCount += 1;
+      if (callCount === 2) {
+        assert.match(String(body?.prompt || ''), /exactement deux personnages distincts/i);
+        assert.match(String(body?.prompt || ''), /une seule occurrence de chaque personnage/i);
+        assert.match(String(body?.negative_prompt || ''), /collage|montage|mosaïque/i);
+      }
+      return {
+        ok: true,
+        image_url: `https://files.example.com/pair-${callCount}.png`,
+        filename: `pair-${callCount}.png`,
+      };
+    },
+    verifyImageCardinality: async ({ imageUrl }) => {
+      if (String(imageUrl).includes('pair-1.png')) {
+        return {
+          ok: true,
+          expected: { subject_count: 2, subject_type: 'character', subject_label: 'zelda et mario', allow_group: false },
+          observed: { subject_count: 3, duplicate_subjects: true, fusion_detected: false, subject_match: true, confidence: 0.87 },
+          decision: { retry: true, reason: 'multiple_subjects_detected', notes: '' },
+        };
+      }
+      return {
+        ok: true,
+        expected: { subject_count: 2, subject_type: 'character', subject_label: 'zelda et mario', allow_group: false },
+        observed: { subject_count: 2, duplicate_subjects: false, fusion_detected: false, subject_match: true, confidence: 0.92 },
+        decision: { retry: false, reason: 'ok', notes: '' },
+      };
+    },
+  }));
+
+  assert.equal(callCount, 2);
+  assert.equal(result.imageGuard?.retries?.length, 1);
+  assert.equal(result.imageGuard?.verification?.observed?.subject_count, 2);
+});
+
 test('generateImageFromMask skips retry when image verification is unavailable', async () => {
   let callCount = 0;
   const rawMask = {

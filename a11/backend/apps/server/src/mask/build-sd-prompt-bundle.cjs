@@ -207,9 +207,10 @@ function extractRelationalPairConstraints(basePrompt = '', palette = []) {
     promptHints: [
       `Montrer clairement ${firstSubject} avec ${secondSubject}.`,
       `Deux ${kind === 'characters' ? 'personnages' : 'sujets'} distincts et lisibles.`,
+      'Exactement deux personnages, une seule occurrence de chaque personnage.',
       'Éviter de dupliquer le premier sujet à la place du second.',
     ],
-    negativeHints: ['clone du premier sujet', 'dupliquer le premier personnage'],
+    negativeHints: ['clone du premier sujet', 'dupliquer le premier personnage', 'collage', 'montage', 'mosaïque de personnages'],
   };
 }
 
@@ -240,8 +241,9 @@ function compileCharacterCountConstraints(rawPrompt = '') {
     promptHints: [
       `Montrer clairement ${pairParts[0]} et ${pairParts[1]}.`,
       `Deux ${kind === 'characters' ? 'personnages' : 'sujets'} distincts et lisibles.`,
+      'Exactement deux personnages, une seule occurrence de chaque personnage.',
     ],
-    negativeHints: ['clone du premier sujet', 'dupliquer le premier personnage'],
+    negativeHints: ['clone du premier sujet', 'dupliquer le premier personnage', 'collage', 'montage', 'mosaïque de personnages'],
   };
 }
 
@@ -273,6 +275,7 @@ function buildPositiveInstructions({ palette = [], pair = null, single = null } 
 
   if (pair?.count === 2) {
     instructions.push('Montrer clairement les deux sujets demandés.');
+    instructions.push('Garder exactement deux personnages, un seul exemplaire de chaque personnage.');
   } else if (single?.count === 1) {
     instructions.push('Mettre en avant un seul sujet principal bien visible.');
   }

@@ -107,6 +107,39 @@ test('verifyGeneratedImageCardinality requests a retry when the local classifier
   });
 });
 
+test('verifyGeneratedImageCardinality requests a retry when a pair prompt produces too many subjects', async () => {
+  const image = await buildPng(`
+    <svg width="240" height="160" xmlns="http://www.w3.org/2000/svg">
+      <rect width="240" height="160" fill="white"/>
+      <circle cx="50" cy="82" r="24" fill="#ef4444"/>
+      <circle cx="120" cy="82" r="24" fill="#22c55e"/>
+      <circle cx="190" cy="82" r="24" fill="#3b82f6"/>
+    </svg>
+  `);
+
+  await withImageServer(image, async (imageUrl) => {
+    const result = await verifyGeneratedImageCardinality({
+      imageUrl,
+      expected: {
+        enabled: true,
+        subjectCount: 2,
+        subjectType: 'character',
+        subjectLabel: 'Zelda et Mario',
+        allowGroup: false,
+      },
+      requestId: 'pair-overflow-local',
+      prompt: 'exactly two characters: Zelda et Mario',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.expected.subject_count, 2);
+    assert.equal(result.observed.subject_count, 3);
+    assert.equal(result.observed.duplicate_subjects, true);
+    assert.equal(result.decision.retry, true);
+    assert.match(String(result.decision.reason || ''), /multiple_subjects_detected/i);
+  });
+});
+
 test('inferExpectedImageContract disables strict single-subject counting for named teams like avengers', () => {
   const result = inferExpectedImageContract({
     mask: {
@@ -116,4 +149,17 @@ test('inferExpectedImageContract disables strict single-subject counting for nam
 
   assert.equal(result.enabled, false);
   assert.equal(result.reason, 'no_clear_cardinality');
+});
+
+test('inferExpectedImageContract preserves pair prompts as exactly two subjects', () => {
+  const result = inferExpectedImageContract({
+    mask: {
+      raw: 'crée une image de Zelda et Mario',
+    },
+  });
+
+  assert.equal(result.enabled, true);
+  assert.equal(result.subjectCount, 2);
+  assert.equal(result.mode, 'pair');
+  assert.equal(result.subjectLabel, 'Zelda et Mario');
 });
