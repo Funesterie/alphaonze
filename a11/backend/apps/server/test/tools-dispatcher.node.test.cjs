@@ -197,6 +197,68 @@ test('t_generate_png sends a stronger literal prompt bundle to the SD proxy', as
   }
 });
 
+test('t_generate_png prefers a portrait canvas for single human figure prompts without explicit size', async () => {
+  const previous = {
+    A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,
+    SD_PROXY_URL: process.env.SD_PROXY_URL,
+    ENABLE_SD: process.env.ENABLE_SD,
+  };
+
+  const pixelPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WnF9J0AAAAASUVORK5CYII=',
+    'base64'
+  );
+
+  let createdPath = '';
+  let capturedBody = null;
+  const server = http.createServer(async (req, res) => {
+    if (req.method === 'POST' && req.url === '/generate') {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      capturedBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, image_url: `http://127.0.0.1:${server.address().port}/image.png` }));
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/image.png') {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(pixelPng);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const proxyUrl = `http://127.0.0.1:${server.address().port}/generate`;
+
+  process.env.A11_SD_PROXY_URL = proxyUrl;
+  delete process.env.SD_PROXY_URL;
+  process.env.ENABLE_SD = 'false';
+
+  try {
+    const result = await t_generate_png({
+      prompt: 'genere une image de angelina jolie en maillot de bain',
+      outputPath: 'tests/angelina-jolie-portrait-proxy.png',
+    });
+
+    createdPath = String(result.outputPath || '');
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, 'stable-diffusion-proxy');
+    assert.equal(fs.existsSync(createdPath), true);
+    assert.equal(capturedBody?.width, 768);
+    assert.equal(capturedBody?.height, 1024);
+  } finally {
+    if (createdPath && fs.existsSync(createdPath)) {
+      fs.unlinkSync(createdPath);
+    }
+    await new Promise((resolve, reject) => server.close((error_) => (error_ ? reject(error_) : resolve())));
+    restoreEnv(previous);
+  }
+});
+
 test('t_generate_png keeps generated proxy filenames short enough for linux filesystems', async () => {
   const previous = {
     A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,

@@ -147,6 +147,12 @@ function buildCompactDirectives(mask = {}, options = {}) {
     )
   ) {
     directives.push('personnage complet et reconnaissable');
+    if (
+      subjectProfileType === 'reference_character'
+      || subjectProfileType === 'single_human_figure'
+    ) {
+      directives.push('corps entier dans le cadre');
+    }
   }
 
   if (
@@ -202,6 +208,12 @@ function buildNegativePrompt(mask = {}) {
     || subjectProfileType === 'single_human_figure'
   ) {
     hints.push('visages dupliqués', 'personnage coupé');
+    if (
+      subjectProfileType === 'reference_character'
+      || subjectProfileType === 'single_human_figure'
+    ) {
+      hints.push('hors cadre', 'gros plan', 'plan poitrine');
+    }
   }
 
   if (

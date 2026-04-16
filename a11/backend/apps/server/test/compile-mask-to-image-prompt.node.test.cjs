@@ -143,6 +143,9 @@ test('compileMaskToImagePrompt keeps explicit named reference character cues for
   assert.match(String(compiled.prompt || ''), /\bzelda\b/i);
   assert.match(String(compiled.prompt || ''), /illustration fantasy nette/i);
   assert.match(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
+  assert.match(String(compiled.prompt || ''), /corps entier dans le cadre/i);
+  assert.match(String(compiled.negative_prompt || ''), /hors cadre/i);
+  assert.match(String(compiled.negative_prompt || ''), /gros plan|plan poitrine/i);
 });
 
 test('compileMaskToImagePrompt includes single human instructions for warrior prompts', () => {
