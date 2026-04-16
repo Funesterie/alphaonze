@@ -1016,6 +1016,25 @@ const CORS_ORIGINS = defaultCorsOrigins
   .filter(Boolean);
 const ALLOW_NETLIFY_PREVIEWS = String(process.env.CORS_ALLOW_NETLIFY_APP || '').trim().toLowerCase() === 'true';
 
+function isLocalDevOrigin(origin) {
+  try {
+    const parsed = new URL(normalizeOrigin(origin));
+    const hostname = String(parsed.hostname || '').trim().toLowerCase();
+    const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+    if (![3000, 4173, 5173].includes(port)) return false;
+    if (hostname === 'localhost' || hostname === '::1') return true;
+    if (/^127(?:\.\d{1,3}){3}$/.test(hostname)) return true;
+    if (/^10(?:\.\d{1,3}){3}$/.test(hostname)) return true;
+    if (/^192\.168(?:\.\d{1,3}){2}$/.test(hostname)) return true;
+    const privateRangeMatch = hostname.match(/^172\.(\d{1,3})(?:\.\d{1,3}){2}$/);
+    if (!privateRangeMatch) return false;
+    const secondOctet = Number(privateRangeMatch[1]);
+    return Number.isFinite(secondOctet) && secondOctet >= 16 && secondOctet <= 31;
+  } catch {
+    return false;
+  }
+}
+
 const corsOptions = {
   origin: function(origin, callback) {
     // Allow requests with no origin (e.g., curl, mobile clients)
@@ -1024,6 +1043,7 @@ const corsOptions = {
     
     // Check exact matches, including the canonical Netlify site URL.
     if (CORS_ORIGINS.includes(incomingOrigin)) return callback(null, true);
+    if (isLocalDevOrigin(incomingOrigin)) return callback(null, true);
     
     // Allow Netlify preview deployments for the A11 app and the casino app.
     const netlifyPreviewPattern = /https:\/\/[a-z0-9-]*--(?:a11funesterie|funesterie)\.netlify\.app$/i;
@@ -9319,6 +9339,16 @@ function getA11QflushVerificationMode() {
   return 'refuse';
 }
 
+function isA11QflushDebugEnabled() {
+  const raw = String(process.env.A11_QFLUSH_DEBUG || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on' || raw === 'debug';
+}
+
+function logA11QflushDebug(...args) {
+  if (!isA11QflushDebugEnabled()) return;
+  console.log(...args);
+}
+
 function parseQflushVerifyPrefix(text) {
   const normalized = String(text || '').trim();
   if (!normalized.startsWith('[QFLUSH VERIFY]')) {
@@ -9967,7 +9997,7 @@ async function proxyQflushChat(req, res) {
     );
 
     const qflushUrl = process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || 'not_set';
-    console.log('[A11] USING QFLUSH flow ->', qflushChatFlow, '| QFLUSH_URL =', qflushUrl, '| requestId =', requestId);
+    logA11QflushDebug('[A11] USING QFLUSH flow ->', qflushChatFlow, '| QFLUSH_URL =', qflushUrl, '| requestId =', requestId);
     const qflushResult = await runQflushFlow(qflushChatFlow, {
       prompt,
       messages: qflushMessages,
@@ -9985,7 +10015,7 @@ async function proxyQflushChat(req, res) {
       user: req.user || null,
       request: body
     }, { requestId });
-    console.log('[A11][QFLUSH][DEBUG] Qflush raw result:', JSON.stringify(qflushResult)?.slice(0, 1000));
+    logA11QflushDebug('[A11][QFLUSH][DEBUG] Qflush raw result:', JSON.stringify(qflushResult)?.slice(0, 1000));
 
     const qflushVerificationState = extractQflushVerificationState(qflushResult);
     if (qflushVerificationState && getA11QflushVerificationMode() !== 'pass') {
