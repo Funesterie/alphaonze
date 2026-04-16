@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const createCasinoRouter = require('../src/routes/casino.cjs');
 
 const {
+  applySingleJokerBonusStage,
   applyJokerBonus,
   detectJokerBonusTrigger,
   detectJokerCross,
@@ -61,6 +62,52 @@ test('applyJokerBonus grows jokers gradually across the bonus stages', () => {
 
   assert.ok(result.stages.some((stage) => stage.jokerCount > initialJokerCount));
   assert.equal(result.finalJokerCount, result.stages[result.stages.length - 1].jokerCount);
+});
+
+test('single-stage joker bonus progression matches the full five-stage simulation', () => {
+  const openingGrid = [
+    ['JOKER', 'COIN', 'MAP', 'BAT', 'PARROT'],
+    ['CHEST', 'JOKER', 'COIN', 'SOLDAT', 'BAT'],
+    ['MAP', 'COIN', 'JOKER', 'CHEST', 'ELEPHANT'],
+  ];
+  const fullRunRandom = createDeterministicRandom(42);
+  const stagedRandom = createDeterministicRandom(42);
+
+  const fullRun = applyJokerBonus({
+    grid: openingGrid,
+    randomInt: fullRunRandom,
+  });
+
+  let currentGrid = openingGrid;
+  const stages = [];
+  for (let stageIndex = 0; stageIndex < 5; stageIndex += 1) {
+    const result = applySingleJokerBonusStage({
+      grid: currentGrid,
+      randomInt: stagedRandom,
+      stageIndex,
+    });
+    currentGrid = result.nextGrid;
+    stages.push(result.stage);
+  }
+
+  assert.deepEqual(stages, fullRun.stages);
+  assert.deepEqual(currentGrid, fullRun.finalGrid);
+});
+
+test('applyJokerBonus keeps five stages even after the grid becomes fully wild', () => {
+  const openingGrid = [
+    ['JOKER', 'JOKER', 'JOKER', 'JOKER', 'JOKER'],
+    ['JOKER', 'JOKER', 'COIN', 'JOKER', 'JOKER'],
+    ['JOKER', 'JOKER', 'JOKER', 'JOKER', 'JOKER'],
+  ];
+
+  const result = applyJokerBonus({
+    grid: openingGrid,
+    randomInt: () => 0,
+  });
+
+  assert.equal(result.stages.length, 5);
+  assert.equal(result.stages.every((stage) => stage.jokerCount === 15), true);
 });
 
 test('detectJokerBonusTrigger opens the bonus with four jokers even when they are scattered', () => {
