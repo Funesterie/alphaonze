@@ -24,6 +24,19 @@ function defaultFetch(...args) {
   return import('node-fetch').then((mod) => mod.default(...args));
 }
 
+function resolveRequestOrigin(req) {
+  const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
+  const proto = forwardedProto || req?.protocol || (req?.socket?.encrypted ? 'https' : 'http');
+  const forwardedHost = String(
+    req?.headers?.['x-forwarded-host']
+    || req?.headers?.host
+    || ''
+  ).split(',')[0].trim();
+
+  if (!forwardedHost) return '';
+  return `${proto || 'http'}://${forwardedHost}`;
+}
+
 function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
   return buildSharedSdPromptBundle(rawPrompt, options);
 }
@@ -584,11 +597,15 @@ function createSdToolsRouter(overrides = {}) {
           .filter(Boolean)
           .map((segment) => encodeURIComponent(segment))
           .join('/')}`;
+        const localPublicUrl = `${resolveRequestOrigin(req)}${localPublicPath}`;
+        const resolvedLocalUrl = localPublicUrl.startsWith('http')
+          ? localPublicUrl
+          : localPublicPath;
 
         return {
           ok: true,
-          url: localPublicPath,
-          image_url: localPublicPath,
+          url: resolvedLocalUrl,
+          image_url: resolvedLocalUrl,
           filename: path.basename(outputJson.output_path || `sd_${Date.now()}.png`),
           prompt: finalPrompt,
           num_inference_steps,
