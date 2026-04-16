@@ -623,10 +623,13 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
         ...(duplicateSubjects ? [
           'présenter uniquement le sujet principal',
           'garder la scène épurée autour du sujet',
+          'aucune deuxième version du personnage',
+          'aucun personnage en double',
         ] : []),
         ...(fusionDetected ? [
           'éléments du corps bien séparés et lisibles',
           'formes du sujet nettes et distinctes',
+          'éviter tout personnage parasite autour du sujet',
         ] : []),
       ]
     : [
@@ -640,10 +643,13 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
         ...(duplicateSubjects ? [
           'present only the main subject',
           'keep the scene clean around the subject',
+          'no second version of the character',
+          'no duplicated character',
         ] : []),
         ...(fusionDetected ? [
           'body parts clearly separated and readable',
           'clean distinct subject shapes',
+          'avoid any extra character around the subject',
         ] : []),
       ];
   // Déduplication des hints : on n'ajoute que ceux qui ne sont pas déjà présents dans le prompt
@@ -660,11 +666,11 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const retrySeedBase = Number.isFinite(currentSeed) ? currentSeed : Number(options.seed || Date.now());
   const retryNegativeHints = useFrenchPrompt
     ? [
-        ...(duplicateSubjects ? ['plusieurs sujets', 'doublon du sujet', 'foule'] : []),
+        ...(duplicateSubjects ? ['plusieurs sujets', 'doublon du sujet', 'foule', 'jumeau du sujet', 'seconde version du personnage'] : []),
         ...(fusionDetected ? ['anatomie fusionnée', 'membres fusionnés'] : []),
       ]
     : [
-        ...(duplicateSubjects ? ['multiple subjects', 'duplicate subject', 'crowd'] : []),
+        ...(duplicateSubjects ? ['multiple subjects', 'duplicate subject', 'crowd', 'subject twin', 'second version of the character'] : []),
         ...(fusionDetected ? ['fused anatomy', 'merged limbs'] : []),
       ];
   const baseNegativeHints = String(sdBody.negative_prompt || '')
