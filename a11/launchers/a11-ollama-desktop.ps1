@@ -47,6 +47,7 @@ $launcherRoot = Split-Path -Parent $PSCommandPath
 $logsDirectory = Join-Path $launcherRoot 'runtime\logs'
 $ollamaBase = 'http://127.0.0.1:11434'
 $ollamaHealthUrl = "$ollamaBase/api/tags"
+$tunnelLauncher = Join-Path $launcherRoot 'start-cerbere-cloudflare-tunnel.ps1'
 $ollamaApp = Resolve-FirstExistingPath @(
   'C:\Users\cella\AppData\Local\Programs\Ollama\ollama app.exe'
 )
@@ -92,6 +93,10 @@ if (-not (Test-OllamaReady -Url $ollamaHealthUrl)) {
   if (-not $ready) {
     throw "Ollama ne repond pas sur $ollamaHealthUrl"
   }
+}
+
+if (Test-Path -LiteralPath $tunnelLauncher) {
+  & $tunnelLauncher
 }
 
 & (Join-Path $launcherRoot 'a11-desktop.ps1') @args
