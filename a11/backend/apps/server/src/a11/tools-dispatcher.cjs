@@ -18,12 +18,18 @@ const {
   resolveJanusVisionConfig,
   resolveVisionProvider,
 } = require('../../lib/janus-vision-runtime.cjs');
-const { buildSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
+const {
+  buildSdPromptBundle,
+  compileCharacterCountConstraints,
+} = require('../mask/build-sd-prompt-bundle.cjs');
 const { compileMaskImageGenerateRuntime } = require('../mask/image-chat-runtime.cjs');
 const {
   buildCanonicalImageMaskFromText,
 } = require('../mask/resolve-image-mask-from-text.cjs');
 const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
+const {
+  resolveSubjectProfile,
+} = require('../mask/semantic/subject-profile-library.cjs');
 
 // ⚠️ IMPORTANT : importer le manifest AVANT d'utiliser WORKSPACE_ROOTS
 const { TOOL_MANIFEST, WORKSPACE_ROOTS, SAFE_DATA_ROOT } = require('./tools-manifest.cjs');
@@ -852,6 +858,63 @@ function parseImageSize(value, fallbackWidth = 1024, fallbackHeight = 1024) {
   const width = Math.max(64, Math.min(2048, Number(match[1]) || fallbackWidth));
   const height = Math.max(64, Math.min(2048, Number(match[2]) || fallbackHeight));
   return { width, height };
+}
+
+function hasExplicitImageCanvasArgs(args = {}) {
+  return (
+    args.width !== undefined
+    || args.height !== undefined
+    || String(args.imageSize || '').trim() !== ''
+  );
+}
+
+function getMaskSubjectProfileType(mask = {}) {
+  return String(
+    mask?.meta?.subjectProfile?.type
+    || mask?.meta?.semantic?.subjectProfile?.type
+    || ''
+  ).trim().toLowerCase();
+}
+
+function inferAutoImageCanvas(promptText = '', mask = null) {
+  const rawPrompt = String(promptText || mask?.raw || '').trim();
+  const pair = compileCharacterCountConstraints(rawPrompt);
+  if (pair?.count === 2) {
+    return {
+      width: 1024,
+      height: 768,
+      reason: 'pair_landscape',
+    };
+  }
+
+  const subjectProfileType = getMaskSubjectProfileType(mask);
+  const resolvedProfile = subjectProfileType
+    ? { type: subjectProfileType }
+    : resolveSubjectProfile({
+      subject: rawPrompt,
+      sourceText: rawPrompt,
+    });
+  const resolvedProfileType = String(resolvedProfile?.type || '').trim().toLowerCase();
+  const hasHumanFigureCue = /\b(maillot(?:\s+de\s+bain)?|bikini|swimsuit|bathing suit|robe|dress|armure|armor|costume|tenue|lingerie|gown|cape|veste|jacket|shirt|chemise|jupe|skirt)\b/i.test(rawPrompt);
+  const hasFullBodyCue = /\b(corps entier|plein pied|en pied|full[\s-]?body|head to toe)\b/i.test(rawPrompt);
+
+  if (
+    ['reference_character', 'single_human_figure'].includes(resolvedProfileType)
+    || hasHumanFigureCue
+    || hasFullBodyCue
+  ) {
+    return {
+      width: 768,
+      height: 1024,
+      reason: 'single_figure_portrait',
+    };
+  }
+
+  return {
+    width: 1024,
+    height: 1024,
+    reason: 'default_square',
+  };
 }
 
 function ensureMemoDir() {
@@ -2293,9 +2356,6 @@ function shouldAllowPlaceholderPng(args = {}) {
 
 // PNG generation with optional placeholder fallback.
 async function t_generate_png(args = {}) {
-  const size = parseImageSize(args.imageSize, Number(args.width || 1024), Number(args.height || 1024));
-  const width = Math.max(64, Math.min(2048, Number(args.width || size.width || 1024)));
-  const height = Math.max(64, Math.min(2048, Number(args.height || size.height || 1024)));
   const title = String(
     args.text ||
     args.prompt ||
@@ -2303,6 +2363,12 @@ async function t_generate_png(args = {}) {
     args.imageType ||
     'Illustration A11'
   ).trim() || 'Illustration A11';
+  const hasExplicitCanvas = hasExplicitImageCanvasArgs(args);
+  const requestedCanvas = hasExplicitCanvas
+    ? parseImageSize(args.imageSize, Number(args.width || 1024), Number(args.height || 1024))
+    : inferAutoImageCanvas(title);
+  let width = Math.max(64, Math.min(2048, Number(args.width || requestedCanvas.width || 1024)));
+  let height = Math.max(64, Math.min(2048, Number(args.height || requestedCanvas.height || 1024)));
   const subtitle = String(args.subtitle || 'Image de secours generee par A11').trim();
   const baseName = `${slugifyAssetSegment(title, 'image', 64)}-${Date.now()}.png`;
   const outputPath = args.outputPath || args.path || args.imagePath
@@ -2324,13 +2390,22 @@ async function t_generate_png(args = {}) {
     const maskResolution = await buildCanonicalImageMaskFromText(title, {
       allowCompatFallback: true,
       maskOptions: {
-      width,
-      height,
-      steps: numInferenceSteps,
-      guidance_scale: guidanceScale,
-      ...(seed ? { seed: Number(seed) } : {}),
+        ...(hasExplicitCanvas ? { width, height } : {}),
+        steps: numInferenceSteps,
+        guidance_scale: guidanceScale,
+        ...(seed ? { seed: Number(seed) } : {}),
       },
     });
+    if (maskResolution?.rawMask && !hasExplicitCanvas) {
+      const inferredCanvas = inferAutoImageCanvas(title, maskResolution.rawMask);
+      width = Math.max(64, Math.min(2048, Number(inferredCanvas.width || width || 1024)));
+      height = Math.max(64, Math.min(2048, Number(inferredCanvas.height || height || 1024)));
+      maskResolution.rawMask.options = maskResolution.rawMask.options && typeof maskResolution.rawMask.options === 'object'
+        ? maskResolution.rawMask.options
+        : {};
+      maskResolution.rawMask.options.width = width;
+      maskResolution.rawMask.options.height = height;
+    }
     if (maskResolution?.rawMask) {
       compiledState = await compileMaskImageGenerateRuntime(maskResolution.rawMask, {
         callStructuredLlmJson,
