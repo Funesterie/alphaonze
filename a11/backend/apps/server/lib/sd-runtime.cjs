@@ -239,9 +239,17 @@ async function invokeSdProxy(payload = {}, options = {}) {
 }
 
 function runSdScript(payload = {}, options = {}) {
+
   const scriptPath = options.scriptPath || resolveSdScriptPath();
   const pythonBin = options.pythonBin || resolveSdPythonBin(scriptPath);
   const outputPath = String(payload.output || payload.outputPath || '').trim();
+  const finalPrompt = String(payload.prompt || '').trim();
+
+  console.log('[DEBUG][IMAGE][FINAL_PROMPT]', finalPrompt);
+  console.log('[DEBUG][IMAGE][OUTPUT]', outputPath || '(none)');
+  console.log('[DEBUG][IMAGE][PYTHON]', pythonBin);
+  console.log('[DEBUG][IMAGE][SCRIPT]', scriptPath);
+
   if (!scriptPath || !fs.existsSync(scriptPath)) {
     return Promise.resolve({ ok: false, error: 'sd_unavailable', scriptPath });
   }
@@ -251,7 +259,7 @@ function runSdScript(payload = {}, options = {}) {
 
   const args = [
     scriptPath,
-    '--prompt', String(payload.prompt || '').trim(),
+    '--prompt', finalPrompt,
     '--num_inference_steps', String(Number(payload.num_inference_steps || payload.numInferenceSteps || 35) || 35),
     '--guidance_scale', String(Number(payload.guidance_scale || payload.guidanceScale || 8.0) || 8.0),
     '--width', String(Number(payload.width || 768) || 768),
