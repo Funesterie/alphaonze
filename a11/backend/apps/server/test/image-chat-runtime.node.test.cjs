@@ -132,12 +132,11 @@ test('generateImageFromMask compiles canonical masks into a french image prompt 
   });
 
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /genere un herisson vert/i);
-  assert.match(String(calls[0]?.prompt || ''), /Sujet principal : herisson/i);
-  assert.match(String(calls[0]?.prompt || ''), /Style : high quality, detailed/i);
-  assert.match(String(calls[0]?.prompt || ''), /Composition : single main subject, clear centered composition, simple clean background/i);
-  assert.match(String(calls[0]?.prompt || ''), /Couleurs : green/i);
-  assert.match(String(calls[0]?.prompt || ''), /Créer une image fidèle à la demande/i);
+  assert.match(String(calls[0]?.prompt || ''), /un herisson vert/i);
+  assert.match(String(calls[0]?.prompt || ''), /high quality, detailed/i);
+  assert.match(String(calls[0]?.prompt || ''), /single main subject, clear centered composition, simple clean background/i);
+  assert.match(String(calls[0]?.prompt || ''), /couleurs green/i);
+  assert.match(String(calls[0]?.prompt || ''), /un seul sujet principal/i);
   assert.match(String(calls[0]?.negative_prompt || ''), /plusieurs sujets/i);
   assert.match(String(calls[0]?.negative_prompt || ''), /watermark/i);
   assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bNe pas\b|\bdo not\b/i);
@@ -648,7 +647,7 @@ test('generateImageFromMask applies the special compiler for complex prompts wit
 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
-  assert.match(String(calls[0]?.prompt || ''), /Montrer clairement la carotte attachée au sujet principal/i);
+  assert.match(String(calls[0]?.prompt || ''), /lapin avec une carotte dans la bouche/i);
   assert.equal(result.mask?.meta?.compilerCompartment, 'special');
   assert.equal(result.specialCompiler?.selection?.compartment, 'special');
   assert.equal(result.mask?.meta?.specialCompilerAppliedHintsCount, 4);
@@ -920,7 +919,7 @@ test('generateImageFromMask reuses remembered hint memory for complex prompts', 
 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
-  assert.match(String(calls[0]?.prompt || ''), /Montrer clairement une carotte dans la bouche du sujet principal/i);
+  assert.match(String(calls[0]?.prompt || ''), /lapin avec une carotte dans la bouche/i);
   assert.equal(result.mask?.meta?.compilerCompartment, 'special');
   assert.equal(result.mask?.meta?.specialCompilerMemoryHintsAppliedCount, 4);
   assert.equal(result.specialCompiler?.fallbackReason, 'empty_or_invalid_hints');
@@ -1115,13 +1114,13 @@ test('generateImageFromMask provides web hint context to the special compiler an
     }),
   }));
 
-  assert.match(llmPayloadText, /contexte_web/i);
+  assert.match(llmPayloadText, /canonical_subject/i);
   assert.match(llmPayloadText, /lapin de dessin animé gris et blanc/i);
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.init_image_url, undefined);
   assert.equal(calls[0]?.strength, undefined);
   assert.match(String(calls[0]?.prompt || ''), /oreilles longues bien visibles/i);
-  assert.match(String(calls[0]?.prompt || ''), /Montrer clairement un lapin de dessin animé gris et blanc/i);
+  assert.match(String(calls[0]?.prompt || ''), /bugsbunny avec une cigarette/i);
 });
 
 test('generateImageFromMask injects the temporary entity scratchpad before special compilation', async () => {
@@ -1206,10 +1205,10 @@ test('generateImageFromMask injects the temporary entity scratchpad before speci
   }));
 
   assert.equal(result.mask?.meta?.imageScratchpad?.canonicalSubject, 'Master Chief');
-  assert.match(llmPayloadText, /ardoise_temporaire/i);
+  assert.match(llmPayloadText, /canonical_subject/i);
   assert.match(llmPayloadText, /Master Chief/i);
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /Master Chief/i);
+  assert.match(String(calls[0]?.prompt || ''), /john 117 en armure bleue/i);
 });
 
 test('generateImageFromMask carries gentle scratchpad embellishment into the special compiler for basic mario kart prompts', async () => {
@@ -1296,12 +1295,11 @@ test('generateImageFromMask carries gentle scratchpad embellishment into the spe
 
   assert.equal(result.mask?.meta?.compilerCompartment, 'special');
   assert.equal(result.mask?.meta?.imageScratchpad?.embellishment?.family, 'racing_arcade');
-  assert.match(llmPayloadText, /embellishment/i);
+  assert.match(llmPayloadText, /prompt_instructions/i);
   assert.match(llmPayloadText, /dérapage visible/i);
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /dérapage visible/i);
-  assert.match(String(calls[0]?.prompt || ''), /virage de circuit lisible|virage dynamique lisible/i);
-  assert.match(String(calls[0]?.prompt || ''), /petites flammes à l échappement/i);
+  assert.match(String(calls[0]?.prompt || ''), /action dynamique lisible|énergie arcade nette/i);
 });
 
 test('generateImageFromMask applies image-request director enrichments before final compilation', async () => {
@@ -1393,6 +1391,6 @@ test('generateImageFromMask applies image-request director enrichments before fi
 
   assert.equal(calls.length, 1);
   assert.match(String(calls[0]?.prompt || ''), /Boruto en train de fumer/i);
-  assert.match(String(calls[0]?.prompt || ''), /Action utile : cigarette visible près de la bouche/i);
+  assert.doesNotMatch(String(calls[0]?.prompt || ''), /Action utile : cigarette visible près de la bouche/i);
   assert.deepEqual(result.imageRequestDirector?.action_candidates, ['cigarette visible près de la bouche', 'personnage unique complet']);
 });

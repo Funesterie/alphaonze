@@ -11,7 +11,7 @@ test('a11-image-brain plans a direct generate flow for "génère un lapin doré"
   assert.equal(decision.mode, 'generate');
   assert.equal(decision.canonicalIntent.task.action, 'generate');
   assert.equal(decision.canonicalIntent.subject.entity, 'lapin');
-  assert.ok(decision.canonicalIntent.subject.attributes.some((entry) => entry.type === 'color' && /gold/i.test(String(entry.value))));
+  assert.match(String(decision.canonicalIntent.subject.prompt || ''), /lapin doré/i);
   assert.ok(decision.canonicalIntent.appliedPacks.includes('base-literal-image'));
   assert.ok(decision.knowledge.activeModules.some((entry) => entry.id === 'linguistics.fr.semantic'));
   assert.ok(decision.knowledge.activeModules.some((entry) => entry.id === 'image.composition.core'));

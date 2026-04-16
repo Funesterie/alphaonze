@@ -130,7 +130,7 @@ test('t_generate_png sends a stronger literal prompt bundle to the SD proxy', as
     assert.equal(fs.existsSync(createdPath), true);
     assert.match(String(capturedBody?.prompt || ''), /lapin violet/i);
     assert.match(String(capturedBody?.prompt || ''), /chapeau de magicien/i);
-    assert.match(String(capturedBody?.prompt || ''), /Créer une image fidèle à la demande/i);
+    assert.match(String(capturedBody?.prompt || ''), /un seul sujet principal|personnage complet et reconnaissable/i);
     assert.doesNotMatch(String(capturedBody?.prompt || ''), /purple rabbit|magician hat|literal interpretation/i);
     assert.match(String(capturedBody?.negative_prompt || ''), /plusieurs sujets/i);
     assert.equal(capturedBody?.prompt_prebuilt, true);

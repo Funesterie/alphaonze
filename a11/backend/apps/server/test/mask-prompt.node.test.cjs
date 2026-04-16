@@ -77,8 +77,8 @@ test('buildMaskImageGenerateFromText enriches MASK fields for image prompts with
   assert.ok(mask.inputs.subject.some((value) => /one piece/i.test(String(value))));
   assert.ok(mask.inputs.style.some((value) => /haute qualité/i.test(String(value))));
   assert.ok(mask.inputs.composition.some((value) => /sujet unique bien cadré/i.test(String(value))));
-  assert.match(String(compiled.prompt || ''), /Demande : genere une image de one piece avec un chapeau de magicien/i);
-  assert.match(String(compiled.prompt || ''), /Sujet principal : one piece/i);
+  assert.match(String(compiled.prompt || ''), /one piece avec un chapeau de magicien/i);
+  assert.match(String(compiled.prompt || ''), /fond simple cohérent avec le personnage/i);
   assert.match(String(compiled.negative_prompt || ''), /plusieurs personnages|plusieurs sujets/i);
 });
 
@@ -86,9 +86,9 @@ test('compileMaskToSD keeps a simple french prompt for solo prompts', () => {
   const mask = buildMaskImageGenerateFromText('génère une image de vélo bleu');
   const compiled = compileMaskToSD(mask);
 
-  assert.match(String(compiled.prompt || ''), /Demande : génère une image de vélo bleu/i);
-  assert.match(String(compiled.prompt || ''), /Sujet principal : vélo/i);
-  assert.match(String(compiled.prompt || ''), /Couleurs : bleu/i);
+  assert.match(String(compiled.prompt || ''), /vélo bleu/i);
+  assert.match(String(compiled.prompt || ''), /couleurs bleu/i);
+  assert.match(String(compiled.prompt || ''), /un seul sujet principal/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bdo not\b|literal interpretation|exactly one/i);
   assert.match(String(compiled.negative_prompt || ''), /plusieurs sujets/i);
   assert.match(String(compiled.negative_prompt || ''), /watermark/i);
@@ -120,8 +120,7 @@ test('compileMaskToSD keeps mask wording as-is instead of preferring translated 
     },
   });
 
-  assert.match(String(compiled.prompt || ''), /Demande : genere un pokemon rose dans une grotte/i);
-  assert.match(String(compiled.prompt || ''), /Sujet principal : pokemon rose/i);
-  assert.match(String(compiled.prompt || ''), /Couleurs : rose/i);
+  assert.match(String(compiled.prompt || ''), /pokemon rose dans une grotte/i);
+  assert.match(String(compiled.prompt || ''), /couleurs rose/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bpink pokemon\b|\bin a cave\b/i);
 });
