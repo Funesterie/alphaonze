@@ -140,8 +140,8 @@ const DEFAULT_LOCAL_MODEL = String(
   process.env.LOCAL_DEFAULT_MODEL
   || process.env.DEFAULT_MODEL
   || process.env.LLAMA_MODEL
-  || "llama3.2:latest"
-).trim() || "llama3.2:latest";
+  || OLLAMA_PRIMARY_MODEL
+).trim() || OLLAMA_PRIMARY_MODEL;
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
@@ -1479,7 +1479,7 @@ async function runEnvelopeActionsWithPolicy(envelope, userPrompt, toolResults = 
 // ========================================================================
 router.post("/v1/chat/completions", async (req, res) => {
   const body = req.body || {};
-  const model = body.model || "llama3.2:latest";
+  const model = body.model || OLLAMA_PRIMARY_MODEL;
   const messages = body.messages || [];
   const stream = body.stream === true;
 
