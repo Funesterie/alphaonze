@@ -83,8 +83,7 @@ const POKER_ROOM_IDS = ['allmight-ring', 'upstream-port', 'captains-table'];
 const POKER_TABLE_MAX_PLAYERS = 6;
 const JOKER_BONUS_RESPINS = 5;
 const JOKER_BONUS_STAGE_HOLD_MS = 820;
-const JOKER_BONUS_TRIGGER_COUNT = 5;
-const JOKER_CROSS_INDEXES = [0, 2, 4, 6, 8, 10, 12, 14];
+const JOKER_BONUS_TRIGGER_COUNT = 4;
 const POKER_ACTION_LOG_LIMIT = 8;
 
 const tableRoomTouchCache = new Map();
@@ -170,11 +169,7 @@ function listJokerLineIndexes(grid, lineRows) {
 }
 
 function detectJokerCross(grid) {
-  return JOKER_CROSS_INDEXES.every((index) => {
-    const rowIndex = Math.floor(index / REEL_COUNT);
-    const columnIndex = index % REEL_COUNT;
-    return grid?.[rowIndex]?.[columnIndex] === 'JOKER';
-  });
+  return PAYLINES.some((lineRows) => listJokerLineIndexes(grid, lineRows).length >= REEL_COUNT);
 }
 
 function detectJokerBonusTrigger(grid) {
@@ -184,7 +179,7 @@ function detectJokerBonusTrigger(grid) {
   PAYLINES.forEach((lineRows, lineIndex) => {
     const indexes = listJokerLineIndexes(grid, lineRows);
     const jokerCount = indexes.length;
-    if (jokerCount < 3) return;
+    if (jokerCount < JOKER_BONUS_TRIGGER_COUNT) return;
     if (!bestLine || jokerCount > bestLine.jokerCount) {
       bestLine = {
         lineIndex,

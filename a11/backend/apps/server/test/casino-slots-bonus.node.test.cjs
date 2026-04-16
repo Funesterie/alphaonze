@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 
 const createCasinoRouter = require('../src/routes/casino.cjs');
 
-const { applyJokerBonus } = createCasinoRouter.__private;
+const {
+  applyJokerBonus,
+  detectJokerBonusTrigger,
+  detectJokerCross,
+} = createCasinoRouter.__private;
 
 function countJokers(grid) {
   return grid.flat().filter((symbolId) => symbolId === 'JOKER').length;
@@ -57,4 +61,42 @@ test('applyJokerBonus grows jokers gradually across the bonus stages', () => {
 
   assert.ok(result.stages.some((stage) => stage.jokerCount > initialJokerCount));
   assert.equal(result.finalJokerCount, result.stages[result.stages.length - 1].jokerCount);
+});
+
+test('detectJokerBonusTrigger opens the bonus with four jokers even when they are scattered', () => {
+  const openingGrid = [
+    ['JOKER', 'COIN', 'MAP', 'BAT', 'PARROT'],
+    ['CHEST', 'JOKER', 'COIN', 'SOLDAT', 'BAT'],
+    ['MAP', 'COIN', 'JOKER', 'CHEST', 'JOKER'],
+  ];
+
+  const result = detectJokerBonusTrigger(openingGrid);
+
+  assert.equal(result.triggered, true);
+  assert.equal(result.reason, 'joker_count');
+  assert.equal(result.initialJokerCount, 4);
+  assert.equal(result.jokerCount, 4);
+});
+
+test('detectJokerCross upgrades to the power feature when five jokers are aligned on a payline', () => {
+  const alignedGrid = [
+    ['JOKER', 'COIN', 'MAP', 'BAT', 'PARROT'],
+    ['JOKER', 'JOKER', 'JOKER', 'JOKER', 'JOKER'],
+    ['MAP', 'COIN', 'JOKER', 'CHEST', 'JOKER'],
+  ];
+
+  assert.equal(detectJokerCross(alignedGrid), true);
+});
+
+test('detectJokerBonusTrigger does not open the bonus with only three jokers aligned', () => {
+  const openingGrid = [
+    ['JOKER', 'COIN', 'MAP', 'BAT', 'PARROT'],
+    ['CHEST', 'JOKER', 'COIN', 'SOLDAT', 'BAT'],
+    ['MAP', 'COIN', 'JOKER', 'CHEST', 'ELEPHANT'],
+  ];
+
+  const result = detectJokerBonusTrigger(openingGrid);
+
+  assert.equal(result.triggered, false);
+  assert.equal(result.reason, 'none');
 });
