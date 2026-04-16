@@ -967,6 +967,11 @@ function startPokerHand({ roomId, readySeats, now, createPirateDeck, drawCards }
 function upsertPokerPendingSeat(state, seat, now) {
   const baseState = state?.kind === "poker_table" ? clone(state) : buildWaitingPokerState(seat.roomId);
   const nextPendingSeats = (baseState.pendingSeats || []).filter((entry) => entry.userId !== seat.userId);
+  if (nextPendingSeats.length >= POKER_MAX_PLAYERS) {
+    const error = new Error("table_full");
+    error.code = "table_full";
+    throw error;
+  }
   nextPendingSeats.push({
     userId: seat.userId,
     username: seat.username,
@@ -1253,18 +1258,19 @@ function applyPokerAction(state, { userId, action, amount, now }, deps) {
 }
 
 function serializePokerState(state, userId) {
+  const isRevealStage = String(state?.stage || "") === "showdown";
   const seats = (state?.seats || []).map((seat, index) => ({
     id: seat.userId,
     userId: seat.userId,
     name: seat.username,
     username: seat.username,
     chips: Number(seat.chips || 0),
-    cards: seat.cards || [],
+    cards: String(seat.userId || "") === String(userId || "") || isRevealStage ? (seat.cards || []) : [],
     folded: Boolean(seat.folded),
     lastAction: seat.lastAction || "",
     totalCommitted: Number(seat.totalCommitted || 0),
     streetCommitted: Number(seat.streetCommitted || 0),
-    hand: seat.hand || null,
+    hand: String(seat.userId || "") === String(userId || "") || isRevealStage ? (seat.hand || null) : null,
     isWinner: Boolean(seat.isWinner),
     isAbsent: Boolean(seat.isAbsent),
     absentAt: seat.absentAt || null,

@@ -91,14 +91,14 @@ const rouletteStateCache = new Map();
 let nextTableRoomPruneAt = 0;
 
 const SYMBOLS = [
-  { id: 'PIRATE', label: 'Pavillon noir', weight: 7, payouts: { 3: 12, 4: 28, 5: 75 } },
-  { id: 'CHEST', label: 'Coffre', weight: 10, payouts: { 3: 8, 4: 18, 5: 40 } },
-  { id: 'COIN', label: 'Piastres', weight: 14, payouts: { 3: 6, 4: 12, 5: 22 } },
-  { id: 'BAT', label: 'Chauve-souris', weight: 12, payouts: { 3: 5, 4: 10, 5: 18 } },
-  { id: 'BLUNDERBUSS', label: 'Canon court', weight: 11, payouts: { 3: 7, 4: 14, 5: 26 } },
-  { id: 'MAP', label: 'Carte au tresor', weight: 10, payouts: { 3: 9, 4: 18, 5: 34 } },
-  { id: 'PARROT', label: 'Perroquet', weight: 10, payouts: { 3: 8, 4: 16, 5: 30 } },
-  { id: 'SOLDAT', label: 'Spartiate', weight: 8, payouts: { 3: 12, 4: 26, 5: 60 } },
+  { id: 'PIRATE', label: 'Pavillon noir', weight: 18, payouts: { 3: 12, 4: 28, 5: 75 } },
+  { id: 'CHEST', label: 'Coffre', weight: 15, payouts: { 3: 8, 4: 18, 5: 40 } },
+  { id: 'COIN', label: 'Piastres', weight: 22, payouts: { 3: 6, 4: 12, 5: 22 } },
+  { id: 'BAT', label: 'Chauve-souris', weight: 14, payouts: { 3: 5, 4: 10, 5: 18 } },
+  { id: 'BLUNDERBUSS', label: 'Canon court', weight: 10, payouts: { 3: 7, 4: 14, 5: 26 } },
+  { id: 'MAP', label: 'Carte au tresor', weight: 12, payouts: { 3: 9, 4: 18, 5: 34 } },
+  { id: 'PARROT', label: 'Perroquet', weight: 5, payouts: { 3: 20, 4: 40, 5: 80 } },
+  { id: 'SOLDAT', label: 'Spartiate', weight: 9, payouts: { 3: 12, 4: 26, 5: 60 } },
   { id: 'ELEPHANT', label: 'Elephant royal', weight: 6, payouts: { 3: 15, 4: 34, 5: 90 } },
   { id: 'JOKER', label: 'Joker royal', weight: 6, payouts: { 3: 20, 4: 80, 5: 200 }, wild: true },
 ];
@@ -397,9 +397,18 @@ function evaluateSpinGrid(grid, lineBet) {
     totalPayout += lineResult.payout;
   });
 
+  let specialJackpot = false;
+  for (const win of wins) {
+    if (win.symbol === 'PARROT' && win.matchCount === 5) {
+      specialJackpot = true;
+      break;
+    }
+  }
+
   return {
     wins,
     totalPayout,
+    specialJackpot, // Ajout du flag jackpot spécial
   };
 }
 
@@ -447,6 +456,7 @@ function buildSpinOutcome({ bet, randomInt }) {
     totalPayout,
     netChange: totalPayout - safeBet,
     bonus,
+    specialJackpot, // Ajout du flag jackpot spécial
     generatedAt: new Date().toISOString(),
   };
 }
@@ -782,7 +792,7 @@ function createCasinoRouter({
       const userId = String(row?.user_id || '');
       if (!roomId || !userId) continue;
       const dedupeKey = `${roomId}::${userId}`;
-      const updatedAtMs = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
+      const updatedAtMs = row?.updated_at ? new Date(row.updatedAt).getTime() : 0;
       const previous = latestByRoomUser.get(dedupeKey);
       const previousUpdatedAtMs = previous?.updated_at ? new Date(previous.updated_at).getTime() : 0;
       if (!previous || updatedAtMs >= previousUpdatedAtMs) {
@@ -1802,7 +1812,17 @@ function createCasinoRouter({
       const willingness = strength + noise + (state.stage === 'river' ? 0.05 : 0);
       const threshold = Math.max(0.18, potOdds * (heroAction === 'raise' ? 0.95 : 0.88));
 
-      if (toMatch > Number(seat.chips || 0) || willingness < threshold) {
+      if (toMatch > Number(seat.chips || 0) || 0) {
+        folders.push(seat.name);
+        return {
+          ...seat,
+          folded: true,
+          lastAction: 'fold',
+          read: 'se couche',
+        };
+      }
+
+      if (willingness < threshold) {
         folders.push(seat.name);
         return {
           ...seat,
@@ -2465,9 +2485,9 @@ function createCasinoRouter({
 
       await applyWalletDeltas(client, auth.userId, {
         balance: nextBalance,
-        lifetimeWagered: MAP_ROOM_COST,
+        lifetimeWagered: 0,
         lifetimeWon: reward,
-        gamesPlayed: 1,
+        gamesPlayed: 0,
       });
       await appendTransaction(client, {
         userId: auth.userId,
