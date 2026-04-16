@@ -69,6 +69,14 @@ test('compileSingleSubjectConstraints keeps a simple single-subject contract', (
   assert.match(String(bundle.prompt || ''), /Couleurs : bleu/i);
 });
 
+test('compileSingleSubjectConstraints skips named team prompts like avengers', () => {
+  const pair = compileCharacterCountConstraints('les avengers');
+  const single = compileSingleSubjectConstraints('les avengers');
+
+  assert.equal(pair, null);
+  assert.equal(single, null);
+});
+
 test('buildMaskImageGenerateFromText enriches MASK fields for image prompts without heavy composition guards', () => {
   const mask = buildMaskImageGenerateFromText('genere une image de one piece avec un chapeau de magicien');
   const compiled = compileMaskToSD(mask);
