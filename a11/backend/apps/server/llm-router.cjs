@@ -96,7 +96,7 @@ function logWarn(msg) {
 }
 
 // Workspace : dossier dans lequel A-11 a le droit d’écrire
-const DEFAULT_WORKSPACE = String.raw`D:\A12`;
+const DEFAULT_WORKSPACE = path.resolve(__dirname, '../../..');
 let WORKSPACE_ROOT = path.resolve(process.env.A11_WORKSPACE_ROOT || DEFAULT_WORKSPACE);
 console.log("[Cerbère] Workspace root:", WORKSPACE_ROOT);
 
@@ -1488,8 +1488,15 @@ router.post("/v1/chat/completions", async (req, res) => {
 
   logInfo(`[Cerbère] /v1/chat/completions head=${head} | prompt="${userPrompt}"`);
 
-  const usesLegacyHead = head !== "maker";
+
+  const usesLegacyHead = head !== "maker" && head !== "raw";
   const wantsDev = /\[DEV_ENGINE\]/i.test(userPrompt) || body.dev_engine === true;
+
+  if (head === "raw") {
+    return res.json({
+      choices: [{ message: { content: userPrompt } }]
+    });
+  }
 
   if (usesLegacyHead) {
     return res.status(410).json({

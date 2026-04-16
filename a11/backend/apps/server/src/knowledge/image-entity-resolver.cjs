@@ -328,11 +328,25 @@ async function resolveImageEntityContext({
     normalizeText(best?.description || ''),
   ].filter(Boolean).join('. '));
   const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const descriptionEntityType = inferEntityTypeFromText(description, '');
+  const summaryEntityType = inferEntityTypeFromText(summary, '');
+  const normalizedDescription = normalizeLookup(description);
+  const isSurnameLikeDescription = /\b(nom de famille|patronyme|prenom|prénom)\b/.test(normalizedDescription);
+  const sanitizedDescription = (
+    subjectProfileType === 'single_animal'
+    && (
+      (descriptionEntityType && descriptionEntityType !== 'animal')
+      || isSurnameLikeDescription
+    )
+    && summaryEntityType === 'animal'
+  )
+    ? ''
+    : description;
   const entityType = inferEntityTypeFromText([description, summary].join('. '), subjectProfileType);
 
   const hintFacts = toUniqueStrings([
     canonicalSubject ? `Sujet canonique : ${canonicalSubject}` : '',
-    description ? `Repère d'entité : ${description}` : '',
+    sanitizedDescription ? `Repère d'entité : ${sanitizedDescription}` : '',
     summary ? `Contexte encyclopédique : ${summary}` : '',
     universe ? `Univers probable : ${universe}` : '',
   ]).slice(0, 4);
@@ -342,7 +356,7 @@ async function resolveImageEntityContext({
     wikidataId: normalizeText(best.id || ''),
     canonicalSubject,
     label,
-    description,
+    description: sanitizedDescription,
     aliases,
     wikipediaTitle: wikipedia.title || normalizeText(definitionContext?.title || ''),
     wikipediaUrl: wikipedia.url || normalizeText(definitionContext?.url || ''),

@@ -31,6 +31,20 @@ function Resolve-Action {
   return 'status'
 }
 
+function Resolve-LocalLauncherInvocation {
+  param([string[]]$ForwardArgs)
+
+  $knownCommands = @('start', 'desktop', 'stop', 'restart', 'status', 'status-json', 'check', 'package')
+  if ($ForwardArgs.Count -gt 0) {
+    $candidate = [string]$ForwardArgs[0]
+    if ($knownCommands -contains $candidate.ToLowerInvariant()) {
+      return ,$ForwardArgs
+    }
+  }
+
+  return @('start') + $ForwardArgs
+}
+
 function Get-ForwardArgs {
   param([string]$Action)
 
@@ -88,17 +102,20 @@ function Sync-Workspace {
 function Show-Status {
   Write-Host ('[funesterie] Racine          : {0}' -f $workspaceRoot)
   Write-Host ('[funesterie] Launchers A11   : {0}' -f $launchersRoot)
-  Write-Host ('[funesterie] Dragon A11      : D:\funesterie\a11\a11dragonrailway')
+  Write-Host ('[funesterie] Backend A11     : {0}' -f (Join-Path $workspaceRoot 'a11\backend\apps\server'))
+  Write-Host ('[funesterie] Frontend A11    : {0}' -f (Join-Path $workspaceRoot 'a11\frontend\apps\web'))
   Write-Host ''
 
   $criticalPaths = @(
     @{ Label = 'launchers local'; Path = $localLauncher },
+    @{ Label = 'launcher desktop'; Path = $desktopLauncher },
     @{ Label = 'launchers online'; Path = $onlineLauncher },
+    @{ Label = 'prod deploy'; Path = $prodDeployScript },
+    @{ Label = 'launcher config'; Path = (Join-Path $launchersRoot 'config\a11-local.env') },
     @{ Label = 'boundaries'; Path = (Join-Path $workspaceRoot 'a11\WORKSPACE_BOUNDARIES.md') },
-    @{ Label = 'backend repo'; Path = (Join-Path $workspaceRoot 'a11\a11backendrailway') },
-    @{ Label = 'frontend repo'; Path = (Join-Path $workspaceRoot 'a11\a11frontendnetlify') },
-    @{ Label = 'llm repo'; Path = (Join-Path $workspaceRoot 'a11\a11llm') },
-    @{ Label = 'qflush repo'; Path = (Join-Path $workspaceRoot 'a11\a11qflushrailway') }
+    @{ Label = 'backend app'; Path = (Join-Path $workspaceRoot 'a11\backend\apps\server') },
+    @{ Label = 'frontend app'; Path = (Join-Path $workspaceRoot 'a11\frontend\apps\web') },
+    @{ Label = 'desktop shortcut script'; Path = (Join-Path $launchersRoot 'create-desktop-shortcut.ps1') }
   )
 
   foreach ($entry in $criticalPaths) {
@@ -133,8 +150,10 @@ function Invoke-LauncherScript {
 
 $workspaceRoot = Split-Path -Parent $PSCommandPath
 $launchersRoot = Join-Path $workspaceRoot 'a11\launchers'
-$localLauncher = Join-Path $launchersRoot 'start-all-a11.ps1'
+$localLauncher = Join-Path $launchersRoot 'a11-local.ps1'
+$desktopLauncher = Join-Path $launchersRoot 'a11-desktop.ps1'
 $onlineLauncher = Join-Path $launchersRoot 'start-prod-a11.ps1'
+$prodDeployScript = Join-Path $workspaceRoot 'deploy-a11-prod.ps1'
 $powerShellExe = Get-CommandPath 'pwsh'
 if (-not $powerShellExe) {
   $powerShellExe = Get-CommandPath 'powershell'
@@ -161,7 +180,7 @@ switch ($action) {
     Write-Host ''
     Show-Status
     Write-Host ''
-    Invoke-LauncherScript -LauncherPath $localLauncher -ForwardArgs $forwardArgs
+    Invoke-LauncherScript -LauncherPath $localLauncher -ForwardArgs (Resolve-LocalLauncherInvocation -ForwardArgs $forwardArgs)
   }
   'online' {
     Sync-Workspace -UseRemote:$false

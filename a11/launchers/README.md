@@ -8,16 +8,10 @@ Ce dossier contient l'orchestration locale transverse de `A11`.
   Launcher unifie avec `start`, `desktop`, `stop`, `status`, `check`, `package`.
 - `a11-desktop.bat` / `a11-desktop.ps1`
   Ouvre A11 local dans une vraie fenetre app dediee sous Windows.
+- `a11-ollama-desktop.bat` / `a11-ollama-desktop.ps1`
+  Verifie Ollama puis ouvre le mode desktop; le tunnel reste optionnel via `-WithTunnel`.
 - `create-desktop-shortcut.ps1`
-  Cree un raccourci bureau vers le lanceur desktop local.
-- `start-all-a11.*`
-  Wrapper de compatibilite vers `a11-local start`.
-- `stop-all-a11.*`
-  Arret propre de la stack locale.
-- `status-all-a11.*`
-  Etat courant des services.
-- `check-all-a11.*`
-  Verification rapide des prerequis.
+  Regenere les raccourcis bureau canoniques.
 - `start-prod-a11.bat` / `start-prod-a11.ps1`
   Lance le mode "full en ligne" avec le minimum de local.
 
@@ -28,7 +22,6 @@ Les lanceurs essayent d'eviter l'effet "15 terminaux ouverts":
 - lancement discret des processus quand c'est possible
 - verification des ports avant de relancer un service
 - logs centralises dans `launchers\runtime\logs`
-- wrappers legacy conserves seulement pour compatibilite
 - mode UI `embedded` par defaut: build du frontend puis service par le backend local
 - Ollama est le chemin local principal pour le LLM
 - qflush reste optionnel et desactive par defaut
@@ -45,12 +38,13 @@ Ces scripts vivent ici pour eviter de melanger l'orchestration globale avec:
 
 ## Compatibilite
 
-Les anciens scripts backend restent presents comme wrappers de compatibilite et redirigent vers ce dossier.
+Les anciens wrappers ont ete retires pour ne garder que les points d'entree canoniques.
 
 ## Commandes utiles
 
 - `a11-local.bat start`
 - `a11-local.bat desktop`
+- `a11-ollama-desktop.bat`
 - `a11-desktop.bat`
 - `a11-local.bat stop`
 - `a11-local.bat status`

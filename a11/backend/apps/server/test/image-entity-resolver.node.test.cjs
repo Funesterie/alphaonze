@@ -107,6 +107,69 @@ test('resolveImageEntityContext returns a structured wikidata-backed entity cont
   assert.match(String(context?.summary || ''), /Halo/i);
 });
 
+test('resolveImageEntityContext drops conflicting surname-like descriptions for plain animal subjects', async () => {
+  const context = await resolveImageEntityContext({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une image de cheval en feu',
+      inputs: {
+        subject: ['cheval'],
+      },
+      meta: {
+        subjectProfile: {
+          type: 'single_animal',
+          canonicalSubject: 'cheval',
+        },
+        semantic: {
+          confidence: 0.44,
+        },
+      },
+    },
+    fetch: async (url) => {
+      if (String(url).includes('wbsearchentities')) {
+        return jsonResponse({
+          search: [
+            {
+              id: 'Q999',
+              label: 'Cheval',
+              description: 'nom de famille',
+              aliases: [],
+            },
+          ],
+        });
+      }
+
+      if (String(url).includes('Special:EntityData/Q999.json')) {
+        return jsonResponse({
+          entities: {
+            Q999: {
+              id: 'Q999',
+              labels: {
+                fr: { value: 'Cheval' },
+              },
+              descriptions: {
+                fr: { value: 'nom de famille' },
+              },
+            },
+          },
+        });
+      }
+
+      throw new Error(`unexpected url: ${url}`);
+    },
+    lookupDefinitionContext: async () => ({
+      title: 'Cheval',
+      summary: "Le cheval est un grand mammifère herbivore de la famille des Équidés.",
+      url: 'https://example.com/cheval',
+    }),
+  });
+
+  assert.equal(context?.description, '');
+  assert.equal(context?.entityType, 'animal');
+  assert.ok(Array.isArray(context?.hintFacts));
+  assert.ok(!context.hintFacts.some((entry) => /nom de famille/i.test(String(entry))));
+});
+
 test('enrichImageMaskWithScratchpad keeps a temporary scratchpad and promotes the canonical entity subject when useful', () => {
   const enriched = enrichImageMaskWithScratchpad({
     version: 'mask-1',

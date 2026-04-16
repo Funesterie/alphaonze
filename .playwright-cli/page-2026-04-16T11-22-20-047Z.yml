@@ -1,0 +1,72 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img "A11"
+        - img
+      - generic [ref=e7]:
+        - generic [ref=e8]: A11
+        - generic [ref=e9]: Assistant local NOSSEN
+    - button "Menu" [ref=e12] [cursor=pointer]
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: Conversations locales
+          - generic [ref=e18]:
+            - button "+ Nouvelle" [ref=e19] [cursor=pointer]
+            - button "Vider tout" [ref=e20] [cursor=pointer]
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - button "Conversation 4" [ref=e23] [cursor=pointer]
+            - generic [ref=e24]:
+              - button "✏️" [ref=e25] [cursor=pointer]
+              - button "🗑️" [ref=e26] [cursor=pointer]
+          - generic [ref=e27]:
+            - button "Conversation 3" [ref=e28] [cursor=pointer]
+            - generic [ref=e29]:
+              - button "✏️" [ref=e30] [cursor=pointer]
+              - button "🗑️" [ref=e31] [cursor=pointer]
+          - generic [ref=e32]:
+            - button "Conversation 2" [ref=e33] [cursor=pointer]
+            - generic [ref=e34]:
+              - button "✏️" [ref=e35] [cursor=pointer]
+              - button "🗑️" [ref=e36] [cursor=pointer]
+          - generic [ref=e37]:
+            - button "Session actuelle" [ref=e38] [cursor=pointer]
+            - generic [ref=e39]:
+              - button "✏️" [ref=e40] [cursor=pointer]
+              - button "🗑️" [ref=e41] [cursor=pointer]
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - text: Historique A-11
+          - button "↻" [ref=e44]
+        - generic [ref=e45]: Chargement…
+    - main [ref=e46]:
+      - generic [ref=e48]:
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]: Système / Nindo
+            - generic [ref=e52]: 16/04/2026 13:18
+          - generic [ref=e53]: Tu es A-11, assistant local. Réponds de façon concise, claire et directe. N'invente pas de contexte. Ne fais aucune action et ne proposes aucune action non demandée explicitement. Si la question est triviale, réponds en une phrase maximum.
+        - generic [ref=e54]:
+          - generic [ref=e55]:
+            - generic [ref=e56]: jeff
+            - generic [ref=e57]: 16/04/2026 13:18
+          - generic [ref=e58]: genere une image de cheval en feu
+        - generic [ref=e59]:
+          - generic [ref=e60]:
+            - generic [ref=e61]: A11
+            - generic [ref=e62]: 16/04/2026 13:19
+          - paragraph [ref=e63]: C'est fait. L'image est prête.
+          - button "Agrandir l'image" [ref=e65]:
+            - img "Résultat A11" [ref=e66]
+            - generic [ref=e67]: Agrandir l'image
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - button "Importer" [ref=e70] [cursor=pointer]
+          - textbox "Demande quelque chose à A11…" [ref=e71]
+          - button "➤" [disabled] [ref=e72]
+          - button "🎤" [ref=e73]
+        - generic [ref=e74]: Entrée pour envoyer · Shift+Entrée pour aller à la ligne
+  - contentinfo [ref=e75]: A11 local · Ollama + TTS + image · Funesterie

@@ -179,6 +179,7 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
     req: { headers: {} },
     rawMask,
     imageVerificationEnabled: true,
+    maxVerificationRetries: 1,
     generateSd: async ({ body }) => {
       calls.push({
         prompt: body.prompt,
@@ -217,6 +218,59 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
   assert.equal(result.sdResult.image_url, 'https://files.example.com/rabbit-2.png');
   assert.equal(result.imageGuard?.retries?.length, 1);
   assert.equal(result.imageGuard?.verification?.decision?.retry, false);
+});
+
+test('generateImageFromMask does not auto-retry by default even when verification suggests a retry', async () => {
+  let callCount = 0;
+
+  const result = await withImagePipelineMode('smart', () => generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['dragon obsidien'],
+        environment: [],
+        style: ['high quality'],
+        composition: [],
+        lighting: [],
+        palette: ['black'],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 30,
+        guidance_scale: 7.5,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      ambiguities: [],
+      raw: "genere une image de dragon obsidien",
+    },
+    imageVerificationEnabled: true,
+    generateSd: async () => {
+      callCount += 1;
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/dragon-1.png',
+        filename: 'dragon-1.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: true,
+      expected: { subject_count: 1, subject_type: 'dragon', subject_label: 'dragon', allow_group: false },
+      observed: { subject_count: 1, duplicate_subjects: false, fusion_detected: true, subject_match: true, confidence: 0.88 },
+      decision: { retry: true, reason: 'fusion_detected', notes: '' },
+    }),
+  }));
+
+  assert.equal(callCount, 1);
+  assert.equal(result.imageGuard?.retries?.length, 0);
+  assert.equal(result.imageGuard?.verification?.decision?.retry, true);
 });
 
 test('generateImageFromMask skips retry when image verification is unavailable', async () => {

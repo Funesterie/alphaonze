@@ -207,6 +207,40 @@ test('compileMaskToImagePrompt includes extra prompt instructions for elemental 
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
+test('compileMaskToImagePrompt hardens fire instructions for animate subjects', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de cheval en feu',
+    inputs: {
+      subject: ['cheval'],
+      environment: ['décor naturel simple'],
+      style: ['haute qualité', 'énergie chaude lisible'],
+      composition: ['un seul animal complet', 'silhouette lisible', 'flammes lisibles autour du sujet'],
+      lighting: [],
+      palette: ['feu'],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'single_animal',
+      },
+      semantic: {
+        elements: [{ label: 'feu', family: 'fire' }],
+      },
+      promptInstructions: [
+        'Montrer clairement le feu autour du sujet sans le rendre confus.',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Le sujet lui-même doit apparaître en flammes visibles et immédiates/i);
+  assert.match(String(compiled.prompt || ''), /Les flammes doivent rester l élément principal autour du sujet/i);
+  assert.match(String(compiled.prompt || ''), /Les flammes doivent être attachées directement au corps du sujet principal/i);
+  assert.match(String(compiled.prompt || ''), /Le feu porté par le sujet doit dominer visuellement le décor/i);
+});
+
 test('compileMaskToImagePrompt hardens phoenix prompts against flowers and duplicated anatomy', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image de phoenix violet',

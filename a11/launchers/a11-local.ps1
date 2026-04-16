@@ -350,6 +350,86 @@ function Get-ProcessMetadata {
   }
 }
 
+function Resolve-ServiceArgumentList {
+  param([pscustomobject]$Service)
+
+  $resolved = New-Object System.Collections.Generic.List[string]
+  foreach ($argument in @($Service.ArgumentList)) {
+    $raw = [string]$argument
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      $resolved.Add($raw)
+      continue
+    }
+    if ($raw.StartsWith('-') -or $raw -match '^\d+$') {
+      $resolved.Add($raw)
+      continue
+    }
+
+    $resolvedPath = $null
+    if ([System.IO.Path]::IsPathRooted($raw)) {
+      if (Test-Path -LiteralPath $raw) {
+        $resolvedPath = [System.IO.Path]::GetFullPath($raw)
+      }
+    } elseif ($Service.WorkingDirectory) {
+      $candidate = Join-Path $Service.WorkingDirectory $raw
+      if (Test-Path -LiteralPath $candidate) {
+        $resolvedPath = [System.IO.Path]::GetFullPath($candidate)
+      }
+    }
+
+    if ($resolvedPath) {
+      $resolved.Add($resolvedPath)
+    } else {
+      $resolved.Add($raw)
+    }
+  }
+
+  return @($resolved.ToArray())
+}
+
+function Resolve-ServiceOwnershipMarkers {
+  param([pscustomobject]$Service)
+
+  $markers = New-Object System.Collections.Generic.List[string]
+  foreach ($argument in @(Resolve-ServiceArgumentList -Service $Service)) {
+    $raw = [string]$argument
+    if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+    if ($raw.StartsWith('-')) { continue }
+    if ($raw -match '^\d+$') { continue }
+
+    if ([System.IO.Path]::IsPathRooted($raw) -or $raw.Contains('\') -or $raw.Contains('/')) {
+      $markers.Add([System.IO.Path]::GetFullPath($raw))
+      $markers.Add([System.IO.Path]::GetFileName($raw))
+      continue
+    }
+
+    $markers.Add($raw)
+  }
+
+  return @($markers.ToArray() | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-ProcessSummary {
+  param([int]$ProcessId)
+
+  $processInfo = Get-ProcessMetadata -ProcessId $ProcessId
+  if (-not $processInfo) {
+    return "PID $ProcessId"
+  }
+
+  $commandLine = [string]$processInfo.CommandLine
+  if (-not [string]::IsNullOrWhiteSpace($commandLine)) {
+    return "PID ${ProcessId}: $commandLine"
+  }
+
+  $name = [string]$processInfo.Name
+  if (-not [string]::IsNullOrWhiteSpace($name)) {
+    return "PID ${ProcessId}: $name"
+  }
+
+  return "PID $ProcessId"
+}
+
 function Test-ServiceOwnedProcess {
   param(
     [pscustomobject]$Service,
@@ -388,51 +468,28 @@ function Test-ServiceOwnedProcess {
   }
 
   $commandLine = [string]$processInfo.CommandLine
-  $commandLineLower = $commandLine.ToLowerInvariant()
-  $knownMarkers = switch ($Service.Key) {
-    'llm' { @('llama-server.exe', 'llm-router-runner.cjs') }
-    'backend' { @('server.cjs') }
-    'tts' { @('siwis.py') }
-    'qflush' { @('qflushd.js') }
-    'frontend' { @('vite') }
-    default { @() }
-  }
-
-  foreach ($marker in $knownMarkers) {
-    if ($commandLineLower.Contains($marker.ToLowerInvariant())) {
-      return $true
-    }
-  }
-
   if ([string]::IsNullOrWhiteSpace($commandLine)) {
     return $false
   }
 
-  $markers = New-Object System.Collections.Generic.List[string]
+  $commandLineLower = $commandLine.ToLowerInvariant()
+  $markers = @(Resolve-ServiceOwnershipMarkers -Service $Service)
+  $strictMarkers = @(
+    $markers | Where-Object { $_.Contains('\') -or $_.Contains('/') }
+  )
 
-  if ($Service.WorkingDirectory) {
-    $markers.Add([System.IO.Path]::GetFullPath([string]$Service.WorkingDirectory))
-  }
-
-  foreach ($argument in @($Service.ArgumentList)) {
-    $raw = [string]$argument
-    if ([string]::IsNullOrWhiteSpace($raw)) { continue }
-    if ($raw.StartsWith('-')) { continue }
-    if ($raw -match '^\d+$') { continue }
-
-    $candidate = $raw
-    if ([System.IO.Path]::IsPathRooted($candidate) -or $candidate.Contains('\') -or $candidate.Contains('/')) {
-      $markers.Add([System.IO.Path]::GetFileName($candidate))
-      continue
-    }
-
-    $markers.Add($candidate)
-  }
-
-  foreach ($marker in $markers) {
-    if ([string]::IsNullOrWhiteSpace($marker)) { continue }
+  foreach ($marker in $strictMarkers) {
     if ($commandLineLower.Contains($marker.ToLowerInvariant())) {
       return $true
+    }
+  }
+
+  if ($Service.Key -eq 'frontend') {
+    foreach ($marker in $markers) {
+      if ([string]::IsNullOrWhiteSpace($marker)) { continue }
+      if ($commandLineLower.Contains($marker.ToLowerInvariant())) {
+        return $true
+      }
     }
   }
 
@@ -793,9 +850,10 @@ function Start-ManagedProcess {
     if ($ShowWindow) {
       $windowStyle = 'Normal'
     }
+    $resolvedArgumentList = Resolve-ServiceArgumentList -Service $Service
     $startParams = @{
       FilePath = $Service.FilePath
-      ArgumentList = $Service.ArgumentList
+      ArgumentList = $resolvedArgumentList
       WorkingDirectory = $Service.WorkingDirectory
       RedirectStandardOutput = $stdoutPath
       RedirectStandardError = $stderrPath
@@ -1389,6 +1447,9 @@ function Get-ServiceStatus {
   $alive = $false
   if ($servicePid) {
     $alive = $null -ne (Get-AliveProcess -ProcessId $servicePid)
+    if ($alive -and $managedByLauncher -and -not (Test-ServiceOwnedProcess -Service $Service -ProcessId $servicePid)) {
+      $managedByLauncher = $false
+    }
   }
 
   $listeningPid = $null
@@ -1566,17 +1627,23 @@ function Start-A11Stack {
       $ownedExternal = Test-ServiceOwnedProcess -Service $service -ProcessId $externalPid
       if ($ownedExternal) {
         Write-Info "$($service.DisplayName) already active locally on port $($service.Port) (PID $externalPid)"
+        $state.services[$service.Key] = @{
+          pid = $externalPid
+          port = $service.Port
+          healthUrl = $service.HealthUrl
+          managedByLauncher = $true
+        }
+        $validationStateChanged = $true
+        continue
       } else {
-        Write-WarnLine "$($service.DisplayName) already active on port $($service.Port) (PID $externalPid)"
+        Write-ErrorLine "$($service.DisplayName) port conflict on $($service.Port). External process detected: $(Get-ProcessSummary -ProcessId $externalPid)"
+        Write-ErrorLine "$($service.DisplayName): stop this external process before relaunching A11 local, otherwise the launcher may talk to the wrong repo/runtime."
+        if ($state.services.ContainsKey($service.Key)) {
+          [void]$state.services.Remove($service.Key)
+          $validationStateChanged = $true
+        }
+        continue
       }
-      $state.services[$service.Key] = @{
-        pid = $externalPid
-        port = $service.Port
-        healthUrl = $service.HealthUrl
-        managedByLauncher = $ownedExternal
-      }
-      $validationStateChanged = $true
-      continue
     }
 
     if ($service.Issues.Count -gt 0) {
