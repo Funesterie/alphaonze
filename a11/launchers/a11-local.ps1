@@ -264,6 +264,18 @@ function Test-PortReady {
   return $null -ne (Get-ListeningProcessId -Port $Port)
 }
 
+function Get-WebRequestCompatParameters {
+  $params = @{
+    ErrorAction = 'Stop'
+  }
+
+  if ($PSVersionTable.PSVersion.Major -lt 6) {
+    $params.UseBasicParsing = $true
+  }
+
+  return $params
+}
+
 function Test-HttpReady {
   param(
     [string]$Url,
@@ -271,7 +283,8 @@ function Test-HttpReady {
   )
 
   try {
-    $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec -ErrorAction Stop
+    $webRequestParams = Get-WebRequestCompatParameters
+    $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec @webRequestParams
     return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500)
   } catch {
     return $false
@@ -285,7 +298,8 @@ function Test-UiReady {
   )
 
   try {
-    $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec -ErrorAction Stop
+    $webRequestParams = Get-WebRequestCompatParameters
+    $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec @webRequestParams
     if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
       return $false
     }
@@ -1605,9 +1619,17 @@ function Start-A11Stack {
     if ($state.services.ContainsKey($service.Key)) {
       $existingState = $state.services[$service.Key]
     }
+    $currentStatus = Get-ServiceStatus -Service $service -StateServices $state.services
+    if ($currentStatus.State -eq 'running-managed') {
+      $service | Add-Member -NotePropertyName Pid -NotePropertyValue $currentStatus.Pid -Force
+      Write-Info "$($service.DisplayName) already healthy locally on port $($service.Port) (PID $($currentStatus.Pid))"
+      continue
+    }
     if ($existingState -and ($existingState.managedByLauncher -eq $false) -and $existingState.pid) {
-      $externalStatus = Get-ServiceStatus -Service $service -StateServices $state.services
-      if ($externalStatus.State -eq 'running-external' -or $externalStatus.State -eq 'degraded-external' -or $externalStatus.State -eq 'disabled-external') {
+      if ($currentStatus.State -eq 'running-external' -or $currentStatus.State -eq 'degraded-external' -or $currentStatus.State -eq 'disabled-external') {
+        if ($currentStatus.Pid) {
+          $service | Add-Member -NotePropertyName Pid -NotePropertyValue $currentStatus.Pid -Force
+        }
         continue
       }
 
