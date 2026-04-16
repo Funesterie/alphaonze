@@ -417,6 +417,7 @@ function buildSpinOutcome({ bet, randomInt }) {
   const lineBet = Math.max(1, Math.floor(safeBet / DEFAULT_ACTIVE_LINES));
   const openingGrid = generateGrid(randomInt);
   const openingEvaluation = evaluateSpinGrid(openingGrid, lineBet);
+  let specialJackpot = Boolean(openingEvaluation.specialJackpot);
   const bonusTrigger = detectJokerBonusTrigger(openingGrid);
   let grid = openingGrid;
   let wins = openingEvaluation.wins;
@@ -443,6 +444,7 @@ function buildSpinOutcome({ bet, randomInt }) {
       holdDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
       stageDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
     };
+    specialJackpot = Boolean(bonusEvaluation.specialJackpot);
   }
 
   return {
@@ -456,7 +458,7 @@ function buildSpinOutcome({ bet, randomInt }) {
     totalPayout,
     netChange: totalPayout - safeBet,
     bonus,
-    specialJackpot, // Ajout du flag jackpot spécial
+    specialJackpot,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -1810,7 +1812,7 @@ function createCasinoRouter({
       const potOdds = toMatch / Math.max(1, nextPot + toMatch);
       const noise = (random(1000) / 1000 - 0.5) * 0.18;
       const willingness = strength + noise + (state.stage === 'river' ? 0.05 : 0);
-      const threshold = Math.max(0.18, potOdds * (heroAction === 'raise' ? 0.95 : 0.88));
+      const threshold = Math.max(0.18, potOdds * (heroAction === 'raise ? 0.95 : 0.88));
 
       if (toMatch > Number(seat.chips || 0) || 0) {
         folders.push(seat.name);
