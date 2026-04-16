@@ -6,8 +6,10 @@ const {
   getSharedReadyTargetCount,
   queueBlackjackPendingSeat,
   queuePokerPendingSeat,
+  serializePokerState,
   syncBlackjackStateWithPresence,
   syncPokerStateWithPresence,
+  upsertPokerPendingSeat,
 } = require('../src/routes/casino-shared-tables.cjs');
 
 test('getSharedReadyTargetCount clamps the waiting target for shared tables', () => {
@@ -82,6 +84,170 @@ test('queuePokerPendingSeat keeps an active hand intact while reserving the next
   assert.equal(queued.pendingSeats[0].userId, 'jj');
   assert.equal(queued.ante, 60);
   assert.equal(queued.turnDeadlineAt, '2026-04-14T10:01:00.000Z');
+});
+
+test('upsertPokerPendingSeat rejects a seventh pending player', () => {
+  const now = new Date('2026-04-14T10:00:00.000Z');
+  const state = {
+    kind: 'poker_table',
+    roomId: 'allmight-ring',
+    stage: 'waiting',
+    ante: 60,
+    pendingSeats: Array.from({ length: 6 }, (_, index) => ({
+      userId: `u${index}`,
+      username: `u${index}`,
+      ante: 60,
+      readyAt: '2026-04-14T09:59:00.000Z',
+    })),
+    seats: [],
+    communityCards: [],
+    communityReserve: [],
+    actingSeatIndex: -1,
+    dealerSeatIndex: 0,
+    pot: 0,
+    currentBet: 0,
+    minBet: 30,
+    minRaiseTo: 30,
+    message: '',
+    actionLog: [],
+    updatedAt: '2026-04-14T09:59:00.000Z',
+  };
+
+  assert.throws(() => upsertPokerPendingSeat(state, {
+    roomId: 'allmight-ring',
+    userId: 'overflow',
+    username: 'overflow',
+    ante: 60,
+  }, now), /table_full/);
+});
+
+test('serializePokerState hides opponent hole cards before showdown', () => {
+  const state = {
+    kind: 'poker_table',
+    roomId: 'allmight-ring',
+    handId: 9,
+    stage: 'turn',
+    ante: 60,
+    pendingSeats: [],
+    seats: [
+      {
+        userId: 'self',
+        username: 'self',
+        cards: [{ id: 's1' }, { id: 's2' }],
+        chips: 240,
+        folded: false,
+        isAllIn: false,
+        actedThisStreet: true,
+        totalCommitted: 60,
+        streetCommitted: 0,
+        lastAction: 'check',
+        hand: { label: 'Pair' },
+        isWinner: false,
+        payoutAmount: 0,
+        lastDelta: -60,
+      },
+      {
+        userId: 'villain',
+        username: 'villain',
+        cards: [{ id: 'v1' }, { id: 'v2' }],
+        chips: 240,
+        folded: false,
+        isAllIn: false,
+        actedThisStreet: false,
+        totalCommitted: 60,
+        streetCommitted: 0,
+        lastAction: 'bet 60',
+        hand: { label: 'Trips' },
+        isWinner: false,
+        payoutAmount: 0,
+        lastDelta: -60,
+      },
+    ],
+    communityCards: [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }, { id: 'b4' }],
+    communityReserve: [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }, { id: 'b4' }, { id: 'b5' }],
+    actingSeatIndex: 1,
+    dealerSeatIndex: 0,
+    pot: 120,
+    currentBet: 60,
+    minBet: 30,
+    minRaiseTo: 120,
+    bettingClosesAt: null,
+    turnDeadlineAt: null,
+    message: 'Tour en cours',
+    actionLog: [],
+    updatedAt: '2026-04-14T10:00:00.000Z',
+  };
+
+  const serialized = serializePokerState(state, 'self');
+  const opponent = serialized.seats.find((seat) => seat.userId === 'villain');
+
+  assert.deepEqual(serialized.playerCards, [{ id: 's1' }, { id: 's2' }]);
+  assert.deepEqual(opponent.cards, []);
+  assert.equal(opponent.hand, null);
+});
+
+test('serializePokerState reveals all hole cards during showdown', () => {
+  const state = {
+    kind: 'poker_table',
+    roomId: 'allmight-ring',
+    handId: 10,
+    stage: 'showdown',
+    ante: 60,
+    pendingSeats: [],
+    seats: [
+      {
+        userId: 'self',
+        username: 'self',
+        cards: [{ id: 's1' }, { id: 's2' }],
+        chips: 360,
+        folded: false,
+        isAllIn: false,
+        actedThisStreet: true,
+        totalCommitted: 60,
+        streetCommitted: 0,
+        lastAction: 'call 60',
+        hand: { label: 'Pair' },
+        isWinner: true,
+        payoutAmount: 180,
+        lastDelta: 120,
+      },
+      {
+        userId: 'villain',
+        username: 'villain',
+        cards: [{ id: 'v1' }, { id: 'v2' }],
+        chips: 120,
+        folded: false,
+        isAllIn: false,
+        actedThisStreet: true,
+        totalCommitted: 60,
+        streetCommitted: 0,
+        lastAction: 'call 60',
+        hand: { label: 'High card' },
+        isWinner: false,
+        payoutAmount: 0,
+        lastDelta: -60,
+      },
+    ],
+    communityCards: [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }, { id: 'b4' }, { id: 'b5' }],
+    communityReserve: [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }, { id: 'b4' }, { id: 'b5' }],
+    actingSeatIndex: -1,
+    dealerSeatIndex: 0,
+    pot: 180,
+    currentBet: 0,
+    minBet: 30,
+    minRaiseTo: 30,
+    bettingClosesAt: null,
+    turnDeadlineAt: null,
+    message: 'Showdown',
+    actionLog: [],
+    updatedAt: '2026-04-14T10:00:00.000Z',
+  };
+
+  const serialized = serializePokerState(state, 'self');
+  const opponent = serialized.seats.find((seat) => seat.userId === 'villain');
+
+  assert.deepEqual(opponent.cards, [{ id: 'v1' }, { id: 'v2' }]);
+  assert.deepEqual(opponent.hand, { label: 'High card' });
 });
 
 test('syncPokerStateWithPresence marks a disconnected acting seat absent but keeps the current timer running', () => {
