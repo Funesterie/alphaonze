@@ -124,7 +124,7 @@ export function A11OpsStatusPanel() {
         <div>
           <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 16 }}>Diagnostic runtime</h3>
           <p style={{ margin: "4px 0 0", color: "#94a3b8", fontSize: 12 }}>
-            A11Host, capacités outillées et supervision Qflush.
+            A11Host, capacites outillees et etat local.
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -158,18 +158,20 @@ export function A11OpsStatusPanel() {
         >
           A11Host {a11host?.mode || "inconnu"}
         </span>
-        <span
-          style={{
-            borderRadius: 999,
-            padding: "5px 10px",
-            fontSize: 12,
-            border: `1px solid ${statusColor(!!qflush?.available)}`,
-            color: qflush?.available ? "#bbf7d0" : "#fde68a",
-            background: qflush?.available ? "#052e1b" : "#3f2a08",
-          }}
-        >
-          Qflush {qflush?.initialized ? "initialise" : "non initialise"}
-        </span>
+        {qflush?.available ? (
+          <span
+            style={{
+              borderRadius: 999,
+              padding: "5px 10px",
+              fontSize: 12,
+              border: `1px solid ${statusColor(true)}`,
+              color: "#bbf7d0",
+              background: "#052e1b",
+            }}
+          >
+            Memoire etendue disponible
+          </span>
+        ) : null}
         <span
           style={{
             borderRadius: 999,
@@ -237,7 +239,7 @@ export function A11OpsStatusPanel() {
           <section style={cardStyle()}>
             <h4 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>Capacites agent</h4>
             <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>
-              Vue backend agregee pour A11Host + supervision Qflush.
+              Vue backend agregee pour A11Host et les briques locales actives.
             </div>
 
             <div style={{ marginTop: 10, display: "grid", gap: 6, color: "#cbd5e1", fontSize: 12 }}>
@@ -250,55 +252,57 @@ export function A11OpsStatusPanel() {
             {renderBooleanGrid(capabilities?.a11host?.capabilities)}
           </section>
 
-          <section style={cardStyle()}>
-            <h4 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>Qflush</h4>
-            <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>
-              URL: {monoValue(qflush?.remoteUrl)} · Chat flow: {monoValue(qflush?.chatFlow)}
-            </div>
-            <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>
-              Memory flow: {monoValue(qflush?.memorySummaryFlow)} · Built-in: {qflush?.memorySummaryBuiltIn ? "oui" : "non"}
-            </div>
+          {qflush?.available || qflushProcesses.length > 0 ? (
+            <section style={cardStyle()}>
+              <h4 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>Memoire etendue</h4>
+              <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>
+                URL: {monoValue(qflush?.remoteUrl)} · Chat flow: {monoValue(qflush?.chatFlow)}
+              </div>
+              <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>
+                Memory flow: {monoValue(qflush?.memorySummaryFlow)} · Built-in: {qflush?.memorySummaryBuiltIn ? "oui" : "non"}
+              </div>
 
-            {qflush?.message && (
-              <div style={{ marginTop: 10, color: "#fde68a", fontSize: 12 }}>{qflush.message}</div>
-            )}
-            {qflush?.error && (
-              <div style={{ marginTop: 10, color: "#fecaca", fontSize: 12 }}>{qflush.error}</div>
-            )}
-
-            <div style={{ marginTop: 12 }}>
-              <h5 style={{ margin: "0 0 8px", color: "#cbd5e1", fontSize: 13 }}>Processus supervisés</h5>
-              {qflushProcesses.length === 0 ? (
-                <div style={{ color: "#94a3b8", fontSize: 12 }}>Aucun processus supervise expose.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {qflushProcesses.map(([name, processInfo]) => (
-                    <div
-                      key={name}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        background: "#111827",
-                        border: "1px solid #1f2937",
-                        color: "#cbd5e1",
-                        fontSize: 12,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <strong style={{ color: "#e2e8f0" }}>{name}</strong>
-                      <span>status {monoValue(processInfo?.status)}</span>
-                      <span>pid {monoValue(processInfo?.pid)}</span>
-                      <span>restarts {monoValue(processInfo?.restarts ?? 0)}</span>
-                      <span>uptime {monoValue(processInfo?.uptime)}</span>
-                    </div>
-                  ))}
-                </div>
+              {qflush?.message && (
+                <div style={{ marginTop: 10, color: "#fde68a", fontSize: 12 }}>{qflush.message}</div>
               )}
-            </div>
-          </section>
+              {qflush?.error && (
+                <div style={{ marginTop: 10, color: "#fecaca", fontSize: 12 }}>{qflush.error}</div>
+              )}
+
+              <div style={{ marginTop: 12 }}>
+                <h5 style={{ margin: "0 0 8px", color: "#cbd5e1", fontSize: 13 }}>Processus supervises</h5>
+                {qflushProcesses.length === 0 ? (
+                  <div style={{ color: "#94a3b8", fontSize: 12 }}>Aucun processus supervise expose.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {qflushProcesses.map(([name, processInfo]) => (
+                      <div
+                        key={name}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          padding: "8px 10px",
+                          borderRadius: 8,
+                          background: "#111827",
+                          border: "1px solid #1f2937",
+                          color: "#cbd5e1",
+                          fontSize: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <strong style={{ color: "#e2e8f0" }}>{name}</strong>
+                        <span>status {monoValue(processInfo?.status)}</span>
+                        <span>pid {monoValue(processInfo?.pid)}</span>
+                        <span>restarts {monoValue(processInfo?.restarts ?? 0)}</span>
+                        <span>uptime {monoValue(processInfo?.uptime)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
     </div>

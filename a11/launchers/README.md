@@ -8,6 +8,8 @@ Ce dossier contient l'orchestration locale transverse de `A11`.
   Launcher unifie avec `start`, `desktop`, `stop`, `status`, `check`, `package`.
 - `a11-desktop.bat` / `a11-desktop.ps1`
   Ouvre A11 local dans une vraie fenetre app dediee sous Windows.
+- `create-desktop-shortcut.ps1`
+  Cree un raccourci bureau vers le lanceur desktop local.
 - `start-all-a11.*`
   Wrapper de compatibilite vers `a11-local start`.
 - `stop-all-a11.*`
@@ -28,7 +30,8 @@ Les lanceurs essayent d'eviter l'effet "15 terminaux ouverts":
 - logs centralises dans `launchers\runtime\logs`
 - wrappers legacy conserves seulement pour compatibilite
 - mode UI `embedded` par defaut: build du frontend puis service par le backend local
-- qflush optionnel et configurable via `launchers\config\a11-local.env`
+- Ollama est le chemin local principal pour le LLM
+- qflush reste optionnel et desactive par defaut
 - mode `desktop`: ouvre l'UI locale en fenetre app Edge/Chrome sans onglets ni barre classique
 
 ## Raison d'etre
