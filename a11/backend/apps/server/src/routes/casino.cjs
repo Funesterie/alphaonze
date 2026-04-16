@@ -81,8 +81,8 @@ const BLACKJACK_TABLE_MAX_PLAYERS = 3;
 const BLACKJACK_ROOM_IDS = ['lantern-quay', 'bat-parlor', 'scream-lounge'];
 const POKER_ROOM_IDS = ['allmight-ring', 'upstream-port', 'captains-table'];
 const POKER_TABLE_MAX_PLAYERS = 6;
-const JOKER_BONUS_RESPINS = 3;
-const JOKER_BONUS_STAGE_HOLD_MS = 720;
+const JOKER_BONUS_RESPINS = 5;
+const JOKER_BONUS_STAGE_HOLD_MS = 820;
 const JOKER_BONUS_TRIGGER_COUNT = 5;
 const JOKER_CROSS_INDEXES = [0, 2, 4, 6, 8, 10, 12, 14];
 const POKER_ACTION_LOG_LIMIT = 8;
@@ -131,6 +131,32 @@ function listSymbolIndexes(grid, symbolId) {
     });
   });
   return indexes;
+}
+
+function setGridSymbolAtIndex(grid, index, symbolId) {
+  const rowIndex = Math.floor(index / REEL_COUNT);
+  const columnIndex = index % REEL_COUNT;
+  if (!grid?.[rowIndex]) return;
+  grid[rowIndex][columnIndex] = symbolId;
+}
+
+function shuffleIndexes(indexes, randomInt) {
+  const shuffled = indexes.slice();
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(index + 1);
+    const current = shuffled[index];
+    shuffled[index] = shuffled[swapIndex];
+    shuffled[swapIndex] = current;
+  }
+  return shuffled;
+}
+
+function listNonJokerIndexes(grid) {
+  return Array.from({ length: SLOT_GRID_SIZE }, (_, index) => index).filter((index) => {
+    const rowIndex = Math.floor(index / REEL_COUNT);
+    const columnIndex = index % REEL_COUNT;
+    return grid?.[rowIndex]?.[columnIndex] !== 'JOKER';
+  });
 }
 
 function listJokerLineIndexes(grid, lineRows) {
@@ -202,7 +228,15 @@ function detectJokerBonusTrigger(grid) {
 
 function buildJokerConversionRatio(stageIndex, heldJokerCount) {
   const heldRatio = heldJokerCount / SLOT_GRID_SIZE;
-  return Math.min(0.78, Number((0.18 + heldRatio * 0.34 + stageIndex * 0.15).toFixed(4)));
+  const stageMomentum = stageIndex / Math.max(1, JOKER_BONUS_RESPINS - 1);
+  return Math.min(0.42, Number((0.08 + heldRatio * 0.14 + stageMomentum * 0.11).toFixed(4)));
+}
+
+function buildJokerStageConversionCap(stageIndex, heldJokerCount, availableCount) {
+  const heldRatio = heldJokerCount / SLOT_GRID_SIZE;
+  const stageMomentum = stageIndex / Math.max(1, JOKER_BONUS_RESPINS - 1);
+  const softCap = 1 + Math.round(stageMomentum + heldRatio * 2.2);
+  return Math.max(1, Math.min(availableCount, softCap));
 }
 
 function normalizeUserId(value) {
@@ -292,14 +326,25 @@ function applyJokerBonus({ grid, randomInt }) {
     const ratio = buildJokerConversionRatio(stageIndex, heldIndexes.length);
     const threshold = Math.max(1, Math.round(ratio * 10000));
     const nextGrid = cloneGrid(currentGrid);
+    const nonJokerIndexes = shuffleIndexes(listNonJokerIndexes(currentGrid), randomInt);
 
-    for (let rowIndex = 0; rowIndex < ROW_COUNT; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < REEL_COUNT; columnIndex += 1) {
-        if (currentGrid?.[rowIndex]?.[columnIndex] === 'JOKER') continue;
-        if (randomInt(10000) < threshold) {
-          nextGrid[rowIndex][columnIndex] = 'JOKER';
-        }
-      }
+    const stageConversionCap = buildJokerStageConversionCap(stageIndex, heldIndexes.length, nonJokerIndexes.length);
+    let stageConversions = 0;
+
+    nonJokerIndexes.forEach((index) => {
+      if (stageConversions >= stageConversionCap) return;
+      if (randomInt(10000) >= threshold) return;
+      setGridSymbolAtIndex(nextGrid, index, 'JOKER');
+      stageConversions += 1;
+    });
+
+    if (
+      stageConversions === 0
+      && nonJokerIndexes.length
+      && stageIndex < JOKER_BONUS_RESPINS - 1
+      && randomInt(10000) < Math.min(7500, threshold + 1800)
+    ) {
+      setGridSymbolAtIndex(nextGrid, nonJokerIndexes[0], 'JOKER');
     }
 
     currentGrid = nextGrid;
