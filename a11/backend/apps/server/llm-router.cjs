@@ -720,6 +720,7 @@ async function callMaker(input) {
 
     const json = await resp.json();
     const text = json?.choices?.[0]?.message?.content || "[Maker: Pas de sortie]";
+    console.log("[DEBUG][CERBERE][MAKER_OUTPUT]", text);
     return String(text).trim();
   } catch (err) {
     logMaker("[Cerbère][MAKER] ERREUR : " + err.message);
@@ -1486,9 +1487,12 @@ router.post("/v1/chat/completions", async (req, res) => {
   const messages = body.messages || [];
   const stream = body.stream === true;
 
+
   const head = (body.cerbereHead || "maker").toLowerCase();
   const userPrompt = extractUserPrompt(messages || []);
 
+  console.log("[DEBUG][CERBERE][HEAD]", head);
+  console.log("[DEBUG][CERBERE][USER_PROMPT]", userPrompt);
   logInfo(`[Cerbère] /v1/chat/completions head=${head} | prompt="${userPrompt}"`);
 
 
