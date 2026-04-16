@@ -421,6 +421,72 @@ test('generateSdInternal allows explicit local SD fallback override in productio
   }
 });
 
+test('generateSdInternal returns an absolute local-file URL when upload falls back to local storage', async () => {
+  const previous = {
+    NODE_ENV: process.env.NODE_ENV,
+    ENABLE_SD: process.env.ENABLE_SD,
+    A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,
+    A11_SD_ALLOW_LOCAL_FALLBACK: process.env.A11_SD_ALLOW_LOCAL_FALLBACK,
+  };
+  process.env.NODE_ENV = 'production';
+  process.env.ENABLE_SD = 'true';
+  process.env.A11_SD_PROXY_URL = 'https://sd.example.com/api/tools/generate_sd';
+  process.env.A11_SD_ALLOW_LOCAL_FALLBACK = 'true';
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-local-file-'));
+  const outputPath = path.join(tempDir, 'ballon.png');
+  fs.writeFileSync(outputPath, Buffer.from('png'));
+
+  try {
+    const { generateSdInternal } = createSdToolsRouter({
+      fetch: async () => ({
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'sd_proxy_failed', message: 'proxy down' });
+        },
+      }),
+      resolveSdProxyUrl: () => 'https://sd.example.com',
+      resolveSdScriptPath: () => __filename,
+      runSdScript: async () => ({
+        ok: true,
+        output_path: outputPath,
+        device: 'cuda',
+        model_id: 'runwayml/stable-diffusion-v1-5',
+        torch_dtype: 'float16',
+        cuda_available: true,
+        cuda_device_name: 'NVIDIA GeForce RTX 5070',
+        xformers_enabled: false,
+      }),
+      uploadBufferToR2: async () => {
+        throw new Error('R2 is not configured');
+      },
+    });
+
+    const result = await generateSdInternal({
+      req: {
+        headers: {
+          host: 'sd.funesterie.me',
+          'x-forwarded-proto': 'https',
+        },
+        user: { id: 'user-1' },
+      },
+      prompt: 'genere un ballon noir et jaune',
+      body: { prompt: 'genere un ballon noir et jaune' },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.storage, 'local-file');
+    assert.match(String(result.image_url || ''), /^https:\/\/sd\.funesterie\.me\/files\//);
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is explicitly enabled', async () => {
   const previous = {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
