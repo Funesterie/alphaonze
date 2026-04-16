@@ -34,7 +34,13 @@ const { TOOL_IMPL } = require("./src/a11/tools-dispatcher.cjs");
 
 const fsp = require("node:fs/promises");
 
-const DATA_ROOT = process.env.A11_DATA_ROOT || WORKSPACE_ROOT;
+
+// Workspace : dossier dans lequel A-11 a le droit d’écrire
+const DEFAULT_WORKSPACE = path.resolve(__dirname, '../../..');
+const WORKSPACE_ROOT = path.resolve(process.env.A11_WORKSPACE_ROOT || DEFAULT_WORKSPACE);
+console.log("[Cerbère] Workspace root:", WORKSPACE_ROOT);
+
+const DATA_ROOT = path.resolve(process.env.A11_DATA_ROOT || WORKSPACE_ROOT);
 const LTM_DIR = path.join(DATA_ROOT, "a11_memory", "long_term");
 const ARCHIVE_DIR = path.join(DATA_ROOT, "a11_memory", "archives");
 const BOOT_MEMO_PATH = path.join(DATA_ROOT, "a11_memory", "boot_memo.txt");
@@ -95,10 +101,7 @@ function logWarn(msg) {
   else console.warn(msg);
 }
 
-// Workspace : dossier dans lequel A-11 a le droit d’écrire
-const DEFAULT_WORKSPACE = path.resolve(__dirname, '../../..');
-let WORKSPACE_ROOT = path.resolve(process.env.A11_WORKSPACE_ROOT || DEFAULT_WORKSPACE);
-console.log("[Cerbère] Workspace root:", WORKSPACE_ROOT);
+
 
 function normalizeBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
