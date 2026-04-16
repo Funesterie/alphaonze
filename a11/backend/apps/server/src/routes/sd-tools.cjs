@@ -576,6 +576,42 @@ function createSdToolsRouter(overrides = {}) {
         init_image_source: outputJson.init_image_source || null,
       };
     } catch (error_) {
+      const backendWorkspaceRoot = path.resolve(process.cwd(), '..', '..');
+      const localRelativePath = String(path.relative(backendWorkspaceRoot, outputJson.output_path || '') || '').replace(/\\/g, '/');
+      if (localRelativePath && !localRelativePath.startsWith('..')) {
+        const localPublicPath = `/files/${localRelativePath
+          .split('/')
+          .filter(Boolean)
+          .map((segment) => encodeURIComponent(segment))
+          .join('/')}`;
+
+        return {
+          ok: true,
+          url: localPublicPath,
+          image_url: localPublicPath,
+          filename: path.basename(outputJson.output_path || `sd_${Date.now()}.png`),
+          prompt: finalPrompt,
+          num_inference_steps,
+          guidance_scale,
+          width,
+          height,
+          ...(initImage ? { init_image_url: initImage } : {}),
+          ...(Number.isFinite(strength) ? { strength } : {}),
+          seed: seed !== undefined ? Number(seed) : undefined,
+          mode: 'stable-diffusion-local',
+          storage: 'local-file',
+          device: outputJson.device || null,
+          model_id: outputJson.model_id || null,
+          torch_dtype: outputJson.torch_dtype || null,
+          cuda_available: outputJson.cuda_available === true,
+          cuda_device_name: outputJson.cuda_device_name || null,
+          xformers_enabled: outputJson.xformers_enabled === true,
+          init_image_used: outputJson.init_image_used === true,
+          init_image_source: outputJson.init_image_source || null,
+          upload_warning: String(error_?.message || error_),
+        };
+      }
+
       const error = new Error(String(error_?.message || error_));
       error.statusCode = 500;
       error.payload = { ok: false, error: 'upload_failed', message: error.message };

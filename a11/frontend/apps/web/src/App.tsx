@@ -142,33 +142,32 @@ const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking
 
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
+    value: "local:gemma4:e2b",
+    label: "gemma4 e2b",
+    provider: "local",
+    model: "gemma4:e2b",
+  },
+  {
+    value: "local:gemma4:e4b",
+    label: "gemma4 e4b",
+    provider: "local",
+    model: "gemma4:e4b",
+  },
+  {
     value: "local:llama3.2:latest",
-    label: "llama3.2 local",
+    label: "llama3.2",
     provider: "local",
     model: "llama3.2:latest",
   },
   {
-    value: "local:qwen2.5-coder:latest",
-    label: "qwen2.5-coder local",
+    value: "local:gpt-oss:20b",
+    label: "gpt-oss 20b",
     provider: "local",
-    model: "qwen2.5-coder:latest",
+    model: "gpt-oss:20b",
   },
 ];
 
-const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
-  {
-    value: "remote-default:gpt-4o-mini",
-    label: "gpt-4o-mini",
-    provider: "openai",
-    model: "gpt-4o-mini",
-  },
-  {
-    value: "remote-default:gpt-4.1-mini",
-    label: "gpt-4.1-mini",
-    provider: "openai",
-    model: "gpt-4.1-mini",
-  },
-];
+const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [];
 
 function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
   const remoteChoices = remoteProfiles.map((profile) => ({
@@ -178,7 +177,7 @@ function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
     model: profile.model,
     providerProfileId: profile.id,
   }));
-  return [...LOCAL_CHAT_MODEL_CHOICES, ...remoteChoices, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES];
+  return [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
 }
 
 function resolveChatModelChoice(
@@ -2905,7 +2904,7 @@ export function App() {
                       <div>
                         <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: 15 }}>Memoire non cruciale</h4>
                         <p style={{ color: '#94a3b8', margin: '6px 0 0', fontSize: 13 }}>
-                          Snapshots techniques admin, etat Qflush et traces internes. Cela n&apos;efface pas l&apos;historique global du chat utilisateur ni la memoire critique.
+                          Snapshots techniques admin et traces internes. Cela n&apos;efface pas l&apos;historique global du chat utilisateur ni la memoire critique.
                         </p>
                       </div>
 
@@ -3089,10 +3088,10 @@ export function App() {
                             color: "#fbbf24",
                           }}
                         >
-                          Réponse Qflush non vérifiée
+                          Réponse non verifiee
                         </div>
                         <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>
-                          {String(m.qflushVerification.summary || "Cette réponse a été marquée comme douteuse par le garde-fou Qflush.")}
+                          {String(m.qflushVerification.summary || "Cette reponse a ete marquee comme douteuse par le garde-fou local.")}
                         </div>
                       </div>
                     ) : null}
@@ -3284,7 +3283,7 @@ export function App() {
       </div>
       {!isCompactLayout ? (
       <footer className="footer">
-        A11 / Qflush UI · Cerbère 4545 · LLaMA local · Funesterie
+        A11 local · Ollama + TTS + image · Funesterie
       </footer>
       ) : null}
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}

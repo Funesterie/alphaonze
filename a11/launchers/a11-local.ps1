@@ -376,7 +376,7 @@ function Test-ServiceOwnedProcess {
   $commandLine = [string]$processInfo.CommandLine
   $commandLineLower = $commandLine.ToLowerInvariant()
   $knownMarkers = switch ($Service.Key) {
-    'llm' { @('llama-server.exe') }
+    'llm' { @('llama-server.exe', 'llm-router-runner.cjs') }
     'backend' { @('server.cjs') }
     'tts' { @('siwis.py') }
     'qflush' { @('qflushd.js') }
@@ -1060,12 +1060,18 @@ function Build-ServiceDefinitions {
   $ttsDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_DIR' '..\backend\apps\tts') -BaseDirectory $LauncherDirectory
   $frontendDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_FRONTEND_DIR' '..\frontend\apps\web') -BaseDirectory $LauncherDirectory
   $qflushDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_QFLUSH_DIR' '..\a11qflushrailway') -BaseDirectory $LauncherDirectory
+  $llmRunner = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_RUNNER' '..\backend\apps\server\llm-router-runner.cjs') -BaseDirectory $LauncherDirectory
   $llmExe = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_EXE' '..\llm\llm\server\llama-server.exe') -BaseDirectory $LauncherDirectory
   $llmModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_MODEL' '..\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf') -BaseDirectory $LauncherDirectory
   $ttsModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_MODEL' '..\backend\apps\tts\fr_FR-siwis-medium.onnx') -BaseDirectory $LauncherDirectory
   $ttsPiper = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_PIPER' '..\backend\apps\tts\piper.exe') -BaseDirectory $LauncherDirectory
   $ttsEspeak = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_ESPEAK' '..\backend\apps\tts\espeak-ng-data') -BaseDirectory $LauncherDirectory
   $remoteProviderCatalogFile = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_REMOTE_PROVIDER_CATALOG_FILE' 'config\remote-providers.json') -BaseDirectory $LauncherDirectory
+  $ollamaBase = (Get-ConfigValue $Config 'A11_OLLAMA_BASE' 'http://127.0.0.1:11434').Trim()
+  $ollamaPrimaryModel = (Get-ConfigValue $Config 'A11_OLLAMA_PRIMARY_MODEL' 'gemma4:e2b').Trim()
+  $ollamaFallbackModel = (Get-ConfigValue $Config 'A11_OLLAMA_FALLBACK_MODEL' 'llama3.2:latest').Trim()
+  $llmFallbackProvider = (Get-ConfigValue $Config 'A11_LLM_FALLBACK_PROVIDER' 'none').Trim()
+  $sdModelProfile = (Get-ConfigValue $Config 'A11_SD_MODEL_PROFILE' 'classic').Trim()
 
   $enableBackend = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_BACKEND' '1') $true
   $enableTts = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_TTS' '1') $true
@@ -1118,13 +1124,26 @@ function Build-ServiceDefinitions {
 
   $services += [pscustomobject]@{
     Key = 'llm'
-    DisplayName = 'A11 LLM'
+    DisplayName = 'A11 Ollama Router'
     Required = $true
     Enabled = $effectiveEnableLlm
-    FilePath = $llmExe
-    WorkingDirectory = (Split-Path -Parent $llmExe)
-    ArgumentList = @('-m', $llmModel, '--port', "$llmPort", '--host', '127.0.0.1')
-    Environment = @{}
+    FilePath = $NodeCommand
+    WorkingDirectory = (Split-Path -Parent $llmRunner)
+    ArgumentList = @((Split-Path -Leaf $llmRunner))
+    Environment = @{
+      PORT = $llmPort
+      CERBERE_PORT = $llmPort
+      LLM_ROUTER_PORT = $llmPort
+      A11_LLM_PROVIDER = 'ollama'
+      A11_LLM_FALLBACK_PROVIDER = $llmFallbackProvider
+      OLLAMA_BASE = $ollamaBase
+      A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
+      A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
+      A11_LLM_REQUEST_TIMEOUT_MS = '90000'
+      OPENAI_API_KEY = ''
+      OPENAI_BASE_URL = ''
+      OPENAI_MODEL = ''
+    }
     Port = $llmPort
     HealthUrl = "http://127.0.0.1:$llmPort/health"
     HealthMode = 'http'
@@ -1132,8 +1151,8 @@ function Build-ServiceDefinitions {
     StartupTimeoutSec = $llmStartupTimeoutSec
     LogKey = 'llm'
     Issues = @(
-      if (-not (Test-Path $llmExe)) { "Missing llama executable: $llmExe" }
-      if (-not (Test-Path $llmModel)) { "Missing llama model: $llmModel" }
+      if (-not $NodeCommand) { 'Node command not found' }
+      if (-not (Test-Path $llmRunner)) { "Missing LLM runner: $llmRunner" }
     ) | Where-Object { $_ }
   }
 
@@ -1210,14 +1229,23 @@ function Build-ServiceDefinitions {
     FRONT_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
     PUBLIC_API_URL = $(if ([string]::IsNullOrWhiteSpace($PublicApiUrl)) { $LocalApiUrl } else { $PublicApiUrl })
     API_URL = $LocalApiUrl
-    LOCAL_LLM_URL = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
-    LLAMA_BASE = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
+    LOCAL_LLM_URL = ''
+    LLAMA_BASE = ''
     LLAMA_PORT = $llmPort
     LOCAL_LLM_PORT = $llmPort
-    OPENAI_BASE_URL = $openAiBaseUrl
-    OPENAI_API_KEY = $openAiApiKey
-    OPENAI_MODEL = $openAiModel
-    A11_OPENAI_MODEL = $openAiModel
+    LLM_ROUTER_URL = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
+    A11_LLM_PROVIDER = 'ollama'
+    A11_LLM_FALLBACK_PROVIDER = $llmFallbackProvider
+    OLLAMA_BASE = $ollamaBase
+    A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
+    A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
+    A11_LLM_REQUEST_TIMEOUT_MS = '90000'
+    LOCAL_DEFAULT_MODEL = $ollamaPrimaryModel
+    DEFAULT_MODEL = $ollamaPrimaryModel
+    OPENAI_BASE_URL = $(if ($useRemoteProvider) { $openAiBaseUrl } else { '' })
+    OPENAI_API_KEY = $(if ($useRemoteProvider) { $openAiApiKey } else { '' })
+    OPENAI_MODEL = $(if ($useRemoteProvider) { $openAiModel } else { '' })
+    A11_OPENAI_MODEL = $(if ($useRemoteProvider) { $openAiModel } else { '' })
     A11_REMOTE_PROVIDER_ID = $remoteProviderId
     A11_REMOTE_PROVIDER_CATALOG_FILE = $remoteProviderCatalogFile
     A11_CHAT_PROVIDER_MODE = $chatProviderMode
@@ -1232,6 +1260,12 @@ function Build-ServiceDefinitions {
     A11_WEB_DIST_DIR = $backendWebDist
     SERVE_STATIC = $serveStatic
     A11_PACKAGE_MODE = '0'
+    ENABLE_SD = 'true'
+    A11_SD_ALLOW_LOCAL_FALLBACK = 'true'
+    A11_SD_ALLOW_OPENAI_FALLBACK = 'false'
+    A11_ENABLE_OPENAI_IMAGE = 'false'
+    A11_IMAGE_PROVIDER_ORDER = 'sd'
+    SD_MODEL_PROFILE = $sdModelProfile
   }
 
   $services += [pscustomobject]@{
@@ -1295,8 +1329,10 @@ function Build-ServiceDefinitions {
     WebDistDirectory = $WebDistDirectory
     QflushDir = $qflushDir
     QflushEntry = $qflushEntry
+    LlmRunner = $llmRunner
     LlmExe = $llmExe
     LlmModel = $llmModel
+    LlmPackageSource = ''
     BackendPort = $backendPort
     TtsPort = $ttsPort
     LlmPort = $llmPort
@@ -1773,7 +1809,7 @@ $definitionBundle = Build-ServiceDefinitions `
   -WebDistDirectory $webDistDirectory
 
 $state = Load-State -Path $stateFile
-$llmPackageSource = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $definitionBundle.LlmExe))
+$llmPackageSource = [string]$definitionBundle.LlmPackageSource
 
 switch ($Command) {
   'check' {
@@ -1834,11 +1870,13 @@ switch ($Command) {
     $plan = @(
       [pscustomobject]@{ Name = 'backend'; Source = $definitionBundle.BackendDir; Target = (Join-Path $packageRoot 'backend'); Reason = 'API locale A11' }
       [pscustomobject]@{ Name = 'tts'; Source = $definitionBundle.TtsDir; Target = (Join-Path $packageRoot 'tts'); Reason = 'Service audio local' }
-      [pscustomobject]@{ Name = 'llm'; Source = $llmPackageSource; Target = (Join-Path $packageRoot 'llm'); Reason = 'Runtime local + modeles' }
       [pscustomobject]@{ Name = 'qflush'; Source = $definitionBundle.QflushDir; Target = (Join-Path $packageRoot 'qflush'); Reason = 'Orchestration separee optionnelle' }
       [pscustomobject]@{ Name = 'launcher'; Source = $launcherDirectory; Target = (Join-Path $packageRoot 'launcher'); Reason = 'Demarrage one-click et supervision locale' }
       [pscustomobject]@{ Name = 'frontend-dist'; Source = $definitionBundle.WebDistDirectory; Target = (Join-Path $packageRoot 'backend\web\dist'); Reason = 'UI web embarquee servie par le backend local' }
     )
+    if (-not [string]::IsNullOrWhiteSpace($llmPackageSource) -and (Test-Path $llmPackageSource)) {
+      $plan += [pscustomobject]@{ Name = 'llm'; Source = $llmPackageSource; Target = (Join-Path $packageRoot 'llm'); Reason = 'Runtime local + modeles' }
+    }
 
     $generatedPlanPath = Join-Path $runtimeDirectory 'PACKAGE_LAYOUT_PLAN.generated.md'
     Write-PackagePlanFile -Path $generatedPlanPath -Plan $plan -PackageRoot $packageRoot
@@ -1872,7 +1910,9 @@ switch ($Command) {
 
     Invoke-DirectoryMirror -Source $definitionBundle.BackendDir -Target (Join-Path $packageRoot 'backend') -ExcludeDirs @('coverage')
     Invoke-DirectoryMirror -Source $definitionBundle.TtsDir -Target (Join-Path $packageRoot 'tts') -ExcludeDirs @('__pycache__', 'out')
-    Invoke-DirectoryMirror -Source $llmPackageSource -Target (Join-Path $packageRoot 'llm') -ExcludeDirs @('.git')
+    if (-not [string]::IsNullOrWhiteSpace($llmPackageSource) -and (Test-Path $llmPackageSource)) {
+      Invoke-DirectoryMirror -Source $llmPackageSource -Target (Join-Path $packageRoot 'llm') -ExcludeDirs @('.git')
+    }
     Invoke-DirectoryMirror -Source $definitionBundle.QflushDir -Target (Join-Path $packageRoot 'qflush') -ExcludeDirs @('.git', 'coverage')
     Invoke-DirectoryMirror -Source $launcherDirectory -Target (Join-Path $packageRoot 'launcher') -ExcludeDirs @('runtime', 'dist', '.git')
     Invoke-DirectoryMirror -Source $definitionBundle.WebDistDirectory -Target (Join-Path $packageRoot 'backend\web\dist')

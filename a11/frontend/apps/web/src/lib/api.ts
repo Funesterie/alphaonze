@@ -604,10 +604,10 @@ export function getModelForProvider(provider: Provider): string {
     case 'openai':
       return 'gpt-4o-mini';
     case 'ollama':
-      return 'llama3.2:latest';
+      return 'gemma4:e2b';
     case 'local':
     default:
-      return 'llama3.2:latest';
+      return 'gemma4:e2b';
   }
 }
 

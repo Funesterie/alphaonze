@@ -339,38 +339,51 @@ const BIN_DIR_FALLBACK = path.join('build', 'bin');
 let QFLUSH_AVAILABLE = false;
 let QFLUSH_MODULE = null;
 let QFLUSH_PATH = null;
-try {
-  // Avoid requiring 'qflush' at top-level because the package may auto-run its pipeline on require()
-  // Instead detect presence of the package and defer requiring it to the qflush-integration helper
-  const qflushModuleDir = path.join(BASE, 'node_modules', '@funeste38', 'qflush');
-  if (fs.existsSync(qflushModuleDir)) {
-    QFLUSH_AVAILABLE = true;
-    console.log('[QFLUSH] qflush module found in node_modules; will initialize via integration helper');
-  } else {
-    // fallback: check for a local qflush executable in project folders
-    const qflushCandidates = [
-      path.join(BASE, '.qflush', 'qflush.exe'),
-      path.join(BASE, 'qflush', 'qflush.exe'),
-      path.join(BASE, 'bin', 'qflush.exe')
-    ];
-    for (const candidate of qflushCandidates) {
-      try {
-        if (fs.existsSync(candidate)) {
-          QFLUSH_PATH = candidate;
-          QFLUSH_AVAILABLE = true;
-          console.log('[QFLUSH] Found local qflush executable at', candidate);
-          break;
+const qflushRuntimeEnabled = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.A11_ENABLE_QFLUSH || '').trim().toLowerCase()
+) || Boolean(String(
+  process.env.QFLUSH_CHAT_FLOW
+  || process.env.QFLUSH_URL
+  || process.env.QFLUSH_REMOTE_URL
+  || ''
+).trim());
+
+if (!qflushRuntimeEnabled) {
+  console.log('[QFLUSH] disabled by runtime config');
+} else {
+  try {
+    // Avoid requiring 'qflush' at top-level because the package may auto-run its pipeline on require()
+    // Instead detect presence of the package and defer requiring it to the qflush-integration helper
+    const qflushModuleDir = path.join(BASE, 'node_modules', '@funeste38', 'qflush');
+    if (fs.existsSync(qflushModuleDir)) {
+      QFLUSH_AVAILABLE = true;
+      console.log('[QFLUSH] qflush module found in node_modules; will initialize via integration helper');
+    } else {
+      // fallback: check for a local qflush executable in project folders
+      const qflushCandidates = [
+        path.join(BASE, '.qflush', 'qflush.exe'),
+        path.join(BASE, 'qflush', 'qflush.exe'),
+        path.join(BASE, 'bin', 'qflush.exe')
+      ];
+      for (const candidate of qflushCandidates) {
+        try {
+          if (fs.existsSync(candidate)) {
+            QFLUSH_PATH = candidate;
+            QFLUSH_AVAILABLE = true;
+            console.log('[QFLUSH] Found local qflush executable at', candidate);
+            break;
+          }
+        } catch (error_) {
+          console.debug('[QFLUSH] candidate check failed:', error_.message);
         }
-      } catch (error_) {
-        console.debug('[QFLUSH] candidate check failed:', error_.message);
+      }
+      if (!QFLUSH_AVAILABLE) {
+        console.log('[QFLUSH] qflush integration not available. Skipping.');
       }
     }
-    if (!QFLUSH_AVAILABLE) {
-      console.log('[QFLUSH] qflush integration not available. Skipping.');
-    }
+  } catch (e) {
+    console.log('[QFLUSH] qflush detection failed:', e?.message);
   }
-} catch (e) {
-  console.log('[QFLUSH] qflush detection failed:', e?.message);
 }
 
 // export for other modules to check
