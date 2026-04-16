@@ -26,6 +26,14 @@ test('smoothRequestTextSync keeps named references while fixing nearby typos', (
   assert.doesNotMatch(result.text, /bugs bunny/i);
 });
 
+test('smoothRequestTextSync keeps football words and does not rewrite ballon into baton', () => {
+  const result = smoothRequestTextSync('genere une image de ballon de foot noir et jaune');
+
+  assert.match(result.text, /\bballon\b/i);
+  assert.match(result.text, /\bfoot\b/i);
+  assert.doesNotMatch(result.text, /\bb[âa]ton\b/i);
+});
+
 test('smoothRequestText can use an llm fallback when the local pass stays noisy', async () => {
   const result = await smoothRequestText('genere une imag de zelda a la piscine', {
     forceLlm: true,

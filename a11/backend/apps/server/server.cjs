@@ -162,6 +162,19 @@ function normalizeEnvVars(names = []) {
   }
 }
 
+function isQflushEnabledByEnv(env = process.env) {
+  const explicit = String(env.A11_ENABLE_QFLUSH || '').trim();
+  if (explicit) {
+    return ['1', 'true', 'yes', 'on'].includes(explicit.toLowerCase());
+  }
+  return Boolean(String(
+    env.QFLUSH_CHAT_FLOW
+    || env.QFLUSH_URL
+    || env.QFLUSH_REMOTE_URL
+    || ''
+  ).trim());
+}
+
 function buildDatabaseUrlFromEnv(env = process.env) {
   const directUrl = unwrapRailwayWrappedEnvValue(
     env.DATABASE_URL
@@ -339,14 +352,7 @@ const BIN_DIR_FALLBACK = path.join('build', 'bin');
 let QFLUSH_AVAILABLE = false;
 let QFLUSH_MODULE = null;
 let QFLUSH_PATH = null;
-const qflushRuntimeEnabled = ['1', 'true', 'yes', 'on'].includes(
-  String(process.env.A11_ENABLE_QFLUSH || '').trim().toLowerCase()
-) || Boolean(String(
-  process.env.QFLUSH_CHAT_FLOW
-  || process.env.QFLUSH_URL
-  || process.env.QFLUSH_REMOTE_URL
-  || ''
-).trim());
+const qflushRuntimeEnabled = isQflushEnabledByEnv(process.env);
 
 if (!qflushRuntimeEnabled) {
   console.log('[QFLUSH] disabled by runtime config');
@@ -8300,6 +8306,7 @@ function getResolvedRemoteModelForRequest(body, fallbackModel = process.env.OPEN
 }
 
 function getQflushChatFlow() {
+  if (!isQflushEnabledByEnv(process.env)) return '';
   return String(process.env.QFLUSH_CHAT_FLOW || '').trim();
 }
 

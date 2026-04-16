@@ -54,6 +54,18 @@ function deriveDefaultLlmProvider(env = {}) {
   return 'none';
 }
 
+function isQflushEnabled(env = {}) {
+  const explicit = String(env.A11_ENABLE_QFLUSH || '').trim();
+  if (explicit) return toBoolean(explicit);
+  return hasAnyValue(
+    env.QFLUSH_URL,
+    env.QFLUSH_REMOTE_URL,
+    env.QFLUSH_BASE_URL,
+    env.QFLUSH_CHAT_FLOW,
+    (toBoolean(env.A11_QFLUSH_USE_DRAGON) ? env.DRAGON_API_URL : '')
+  );
+}
+
 function isProductionRuntime(env = {}) {
   const nodeEnv = String(env.NODE_ENV || '').trim().toLowerCase();
   return nodeEnv === 'production';
@@ -109,14 +121,17 @@ function buildRuntimeConfig(env = process.env) {
   const productionRuntime = isProductionRuntime(env);
   const dragonApiUrl = normalizeUrl(env.DRAGON_API_URL || '');
   const qflushUseDragonCompat = toBoolean(env.A11_QFLUSH_USE_DRAGON);
-  const declaredQflushRemoteUrl = normalizeUrl(
-    env.QFLUSH_URL
-      || env.QFLUSH_REMOTE_URL
-      || env.QFLUSH_BASE_URL
-      || ''
-  );
+  const qflushEnabled = isQflushEnabled(env);
+  const declaredQflushRemoteUrl = qflushEnabled
+    ? normalizeUrl(
+      env.QFLUSH_URL
+        || env.QFLUSH_REMOTE_URL
+        || env.QFLUSH_BASE_URL
+        || ''
+    )
+    : '';
   const qflushRemoteUrl = declaredQflushRemoteUrl
-    || (!localOnly && qflushUseDragonCompat ? dragonApiUrl : '');
+    || (qflushEnabled && !localOnly && qflushUseDragonCompat ? dragonApiUrl : '');
   const qflushRemoteSource = declaredQflushRemoteUrl
     ? 'qflush'
     : (qflushRemoteUrl ? 'dragon-compat' : '');
@@ -177,9 +192,9 @@ function buildRuntimeConfig(env = process.env) {
       remoteUrl: qflushRemoteUrl,
       remoteSource: qflushRemoteSource,
       useDragonCompat: qflushUseDragonCompat && !declaredQflushRemoteUrl,
-      memorySummaryFlow: String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim(),
-      ephemeralMemoryFlow: String(env.QFLUSH_EPHEMERAL_MEMORY_FLOW || 'a11.memory.ephemeral.v1').trim(),
-      chatFlow: String(env.QFLUSH_CHAT_FLOW || '').trim(),
+      memorySummaryFlow: qflushEnabled ? String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim() : '',
+      ephemeralMemoryFlow: qflushEnabled ? String(env.QFLUSH_EPHEMERAL_MEMORY_FLOW || 'a11.memory.ephemeral.v1').trim() : '',
+      chatFlow: qflushEnabled ? String(env.QFLUSH_CHAT_FLOW || '').trim() : '',
       manageTts: toBoolean(env.MANAGE_TTS),
     },
     r2: {

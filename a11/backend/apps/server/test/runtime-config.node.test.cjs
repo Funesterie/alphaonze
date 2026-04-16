@@ -34,6 +34,21 @@ test('buildRuntimeConfig only falls back to Dragon when compatibility flag is en
   assert.equal(enabledCompat.qflush.useDragonCompat, true);
 });
 
+test('buildRuntimeConfig disables qflush explicitly when A11_ENABLE_QFLUSH is false', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    A11_ENABLE_QFLUSH: 'false',
+    QFLUSH_URL: 'https://dragon.example.com',
+    QFLUSH_CHAT_FLOW: 'a11.chat.v1',
+    OLLAMA_BASE: 'http://ollama.internal:11434',
+  });
+
+  assert.equal(config.qflush.remoteUrl, '');
+  assert.equal(config.qflush.chatFlow, '');
+  assert.equal(config.features.chat.provider, 'ollama');
+  assert.equal(config.features.chat.qflushRemoteUrl, '');
+});
+
 test('buildRuntimeConfig exposes production-safe feature providers', () => {
   const config = buildRuntimeConfig({
     NODE_ENV: 'production',
