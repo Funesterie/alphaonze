@@ -19,10 +19,11 @@ const {
   resolveVisionProvider,
 } = require('../../lib/janus-vision-runtime.cjs');
 const { buildSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
-const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
+const { compileMaskImageGenerateRuntime } = require('../mask/image-chat-runtime.cjs');
 const {
   buildCanonicalImageMaskFromText,
 } = require('../mask/resolve-image-mask-from-text.cjs');
+const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
 
 // ⚠️ IMPORTANT : importer le manifest AVANT d'utiliser WORKSPACE_ROOTS
 const { TOOL_MANIFEST, WORKSPACE_ROOTS, SAFE_DATA_ROOT } = require('./tools-manifest.cjs');
@@ -2331,7 +2332,9 @@ async function t_generate_png(args = {}) {
       },
     });
     if (maskResolution?.rawMask) {
-      compiledState = compileMaskImageGenerate(maskResolution.rawMask);
+      compiledState = await compileMaskImageGenerateRuntime(maskResolution.rawMask, {
+        callStructuredLlmJson,
+      });
     }
   }
 
@@ -2400,6 +2403,7 @@ async function t_generate_png(args = {}) {
           height,
           mode: 'stable-diffusion-proxy',
           prompt: finalPrompt,
+          promptRefiner: compiledState?.promptRefiner || null,
           compilerTarget: compiledState?.compiled?.meta?.compilerTarget || null,
           executionPlan: compiledState?.compiled?.value || null,
           sourceUrl: remoteImageUrl,
@@ -2462,6 +2466,7 @@ async function t_generate_png(args = {}) {
         height,
         mode: 'stable-diffusion',
         prompt: finalPrompt,
+        promptRefiner: compiledState?.promptRefiner || null,
         compilerTarget: compiledState?.compiled?.meta?.compilerTarget || null,
         executionPlan: compiledState?.compiled?.value || null,
         numInferenceSteps,

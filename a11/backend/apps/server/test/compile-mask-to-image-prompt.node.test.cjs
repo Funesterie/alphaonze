@@ -20,10 +20,10 @@ test('compileMaskToImagePrompt keeps french prompts free of imperative negative 
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Demande : genere une image d un pokemon dragon feu/i);
-  assert.match(String(compiled.prompt || ''), /Sujet principal : pokemon dragon feu/i);
-  assert.match(String(compiled.prompt || ''), /Composition : silhouette lisible, effets lumineux bien séparés du sujet/i);
-  assert.match(String(compiled.prompt || ''), /Créer une image fidèle à la demande/i);
+  assert.match(String(compiled.prompt || ''), /pokemon dragon feu/i);
+  assert.match(String(compiled.prompt || ''), /silhouette lisible/i);
+  assert.match(String(compiled.prompt || ''), /effets lumineux bien séparés du sujet/i);
+  assert.match(String(compiled.prompt || ''), /un seul sujet principal/i);
   assert.match(String(compiled.negative_prompt || ''), /plusieurs sujets/i);
   assert.match(String(compiled.negative_prompt || ''), /watermark/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
@@ -48,9 +48,9 @@ test('compileMaskToImagePrompt stays simple and keeps user wording for soda cans
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Sujet principal : canette de soda/i);
+  assert.match(String(compiled.prompt || ''), /canette de soda/i);
   assert.match(String(compiled.negative_prompt || ''), /objets multiples/i);
-  assert.match(String(compiled.negative_prompt || ''), /décor encombré/i);
+  assert.match(String(compiled.negative_prompt || ''), /décor encombré|arrière-plan chargé/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /aluminium|silhouette cylindrique/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
@@ -78,9 +78,9 @@ test('compileMaskToImagePrompt includes positive profile instructions for single
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Représenter un seul personnage complet et reconnaissable/i);
-  assert.match(String(compiled.prompt || ''), /Environnement : fond simple cohérent avec le personnage/i);
-  assert.match(String(compiled.negative_prompt || ''), /plusieurs personnages/i);
+  assert.match(String(compiled.prompt || ''), /fond simple cohérent avec le personnage/i);
+  assert.match(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs sujets/i);
   assert.match(String(compiled.negative_prompt || ''), /visages dupliqués/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
@@ -111,10 +111,10 @@ test('compileMaskToImagePrompt keeps explicit named reference character cues for
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Sujet principal : Bugs Bunny/i);
+  assert.match(String(compiled.prompt || ''), /bugsbunny avec une cigarette/i);
   assert.match(String(compiled.prompt || ''), /dessin animé classique/i);
-  assert.match(String(compiled.prompt || ''), /lapin de dessin animé gris et blanc/i);
-  assert.match(String(compiled.prompt || ''), /cigarette avec le sujet principal/i);
+  assert.match(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
+  assert.match(String(compiled.prompt || ''), /sans texte lisible/i);
 });
 
 test('compileMaskToImagePrompt keeps explicit named reference character cues for zelda like prompts', () => {
@@ -140,9 +140,9 @@ test('compileMaskToImagePrompt keeps explicit named reference character cues for
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Sujet principal : Princesse Zelda/i);
+  assert.match(String(compiled.prompt || ''), /\bzelda\b/i);
   assert.match(String(compiled.prompt || ''), /illustration fantasy nette/i);
-  assert.match(String(compiled.prompt || ''), /personnage nommé Zelda/i);
+  assert.match(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
 });
 
 test('compileMaskToImagePrompt includes single human instructions for warrior prompts', () => {
@@ -168,8 +168,8 @@ test('compileMaskToImagePrompt includes single human instructions for warrior pr
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Représenter une seule personne complète et reconnaissable/i);
-  assert.match(String(compiled.negative_prompt || ''), /plusieurs personnages/i);
+  assert.match(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs sujets/i);
   assert.match(String(compiled.negative_prompt || ''), /visages dupliqués/i);
 });
 
@@ -200,9 +200,9 @@ test('compileMaskToImagePrompt includes extra prompt instructions for elemental 
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Style : photorealiste, textures cristallines, haute qualité/i);
-  assert.match(String(compiled.prompt || ''), /Montrer clairement la matière glacée sur le sujet/i);
-  assert.match(String(compiled.prompt || ''), /phénix de glace/i);
+  assert.match(String(compiled.prompt || ''), /photorealiste/i);
+  assert.match(String(compiled.prompt || ''), /textures cristallines/i);
+  assert.match(String(compiled.prompt || ''), /phoenix glacé/i);
   assert.match(String(compiled.negative_prompt || ''), /créatures multiples|animaux multiples/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
@@ -235,10 +235,8 @@ test('compileMaskToImagePrompt hardens fire instructions for animate subjects', 
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Le sujet lui-même doit apparaître en flammes visibles et immédiates/i);
-  assert.match(String(compiled.prompt || ''), /Les flammes doivent rester l élément principal autour du sujet/i);
-  assert.match(String(compiled.prompt || ''), /Les flammes doivent être attachées directement au corps du sujet principal/i);
-  assert.match(String(compiled.prompt || ''), /Le feu porté par le sujet doit dominer visuellement le décor/i);
+  assert.match(String(compiled.prompt || ''), /flammes lisibles autour du sujet|flammes nettes autour du sujet/i);
+  assert.match(String(compiled.prompt || ''), /créature complète et lisible/i);
 });
 
 test('compileMaskToImagePrompt hardens phoenix prompts against flowers and duplicated anatomy', () => {
@@ -264,9 +262,9 @@ test('compileMaskToImagePrompt hardens phoenix prompts against flowers and dupli
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /oiseau mythique unique/i);
-  assert.match(String(compiled.prompt || ''), /une seule tête/i);
-  assert.match(String(compiled.prompt || ''), /une seule paire d ailes/i);
+  assert.match(String(compiled.prompt || ''), /phoenix violet/i);
+  assert.match(String(compiled.prompt || ''), /ailes bien lisibles/i);
+  assert.match(String(compiled.prompt || ''), /créature complète et lisible/i);
   assert.match(String(compiled.negative_prompt || ''), /plusieurs têtes/i);
   assert.match(String(compiled.negative_prompt || ''), /ailes supplémentaires|ailes dupliquées/i);
   assert.match(String(compiled.negative_prompt || ''), /forme de fleur|pétales|bouquet/i);
@@ -295,8 +293,8 @@ test('compileMaskToImagePrompt keeps single plant prompts constrained to one vis
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Montrer une seule plante ou un seul arbre complet/i);
-  assert.match(String(compiled.negative_prompt || ''), /plusieurs arbres/i);
+  assert.match(String(compiled.prompt || ''), /sapin blanc en hiver/i);
+  assert.match(String(compiled.prompt || ''), /une seule plante complète/i);
   assert.match(String(compiled.negative_prompt || ''), /plusieurs plantes/i);
 });
 
@@ -326,8 +324,8 @@ test('compileMaskToImagePrompt keeps smoking prompts explicit and positive', () 
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /train de fumer/i);
-  assert.match(String(compiled.prompt || ''), /cigarette visible près de la bouche/i);
+  assert.match(String(compiled.prompt || ''), /pikachu fumant une cigarette/i);
+  assert.match(String(compiled.prompt || ''), /cigarette bien visible près de la/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
@@ -357,7 +355,7 @@ test('compileMaskToImagePrompt keeps accessory instructions as positive subject 
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /carotte dans la bouche du sujet principal/i);
+  assert.match(String(compiled.prompt || ''), /lapin avec une carotte dans la bouche/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /Environnement : dans la bouche/i);
 });
 
@@ -387,7 +385,7 @@ test('compileMaskToImagePrompt keeps relational pair prompts explicit for role p
     options: {},
   });
 
-  assert.match(String(compiled.prompt || ''), /Contraintes de scène : Montrer clairement mario docteur avec patient skeletrex/i);
+  assert.match(String(compiled.prompt || ''), /mario docteur avec un patient skeletrex/i);
   assert.match(String(compiled.prompt || ''), /deux sujets distincts et lisibles/i);
   assert.match(String(compiled.negative_prompt || ''), /clone du premier sujet|dupliquer le premier personnage/i);
 });

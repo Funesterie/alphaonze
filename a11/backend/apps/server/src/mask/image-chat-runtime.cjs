@@ -50,6 +50,12 @@ const {
 
 let sharpLib;
 
+function normalizeText(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function getSharp() {
   if (sharpLib !== undefined) return sharpLib;
   try {
@@ -280,6 +286,160 @@ function buildSdRequestBody(mask, compiledPayload) {
     ...(initImage ? { init_image_url: initImage } : {}),
     ...(Number.isFinite(strength) ? { strength } : {}),
   };
+}
+
+const IMAGE_PROMPT_REFINER_SYSTEM_PROMPT = `Tu es un réécrivain final de prompt Stable Diffusion pour A11.
+Tu reçois une demande image riche avec beaucoup de contexte interne.
+Ta mission est de produire un prompt FINAL court, propre et cohérent pour le générateur d'image.
+
+Règles strictes :
+- conserver exactement le sujet principal, le nombre de sujets, la relation entre eux, les couleurs importantes, le style demandé et les contraintes essentielles
+- ne jamais ajouter un nouveau personnage, un nouvel objet principal, une nouvelle action ou un nouveau décor important
+- supprimer biographies, contexte encyclopédique, redondances, répétitions, formulations bavardes et méta-instructions
+- produire un prompt positif court, fluide, orienté rendu image
+- produire aussi un negative prompt court et utile
+- français uniquement
+
+Réponds uniquement en JSON strict :
+{
+  "prompt": "prompt final concis",
+  "negative_prompt": "negative prompt concis"
+}`;
+
+function resolveImagePromptRefinerEnabled(explicitValue) {
+  if (typeof explicitValue === 'boolean') return explicitValue;
+  const envValue = String(process.env.A11_IMAGE_PROMPT_REFINER || '').trim().toLowerCase();
+  if (!envValue) return true;
+  if (['0', 'false', 'no', 'off'].includes(envValue)) return false;
+  if (['1', 'true', 'yes', 'on'].includes(envValue)) return true;
+  return true;
+}
+
+function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
+  if (!resolveImagePromptRefinerEnabled(options.imagePromptRefinerEnabled)) return false;
+  if (typeof options.callStructuredLlmJson !== 'function') return false;
+  if (String(compiledState?.imageRequestMode?.mode || '').trim().toLowerCase() === 'raw') return false;
+
+  const prompt = String(compiledState?.sdBody?.prompt || '').trim();
+  if (!prompt) return false;
+
+  return (
+    prompt.length >= 160
+    || compiledState?.specialCompiler?.selection?.candidate === true
+    || (Array.isArray(compiledState?.mask?.meta?.promptInstructions) && compiledState.mask.meta.promptInstructions.length > 2)
+    || Boolean(compiledState?.mask?.meta?.imageScratchpad)
+    || Boolean(compiledState?.mask?.meta?.definitionLookup)
+  );
+}
+
+function buildImagePromptRefinerInput(compiledState = {}) {
+  const mask = compiledState?.mask || {};
+  return JSON.stringify({
+    raw_request: String(mask?.raw || '').trim(),
+    current_prompt: String(compiledState?.sdBody?.prompt || '').trim(),
+    current_negative_prompt: String(compiledState?.sdBody?.negative_prompt || '').trim(),
+    subject: Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : [],
+    environment: Array.isArray(mask?.inputs?.environment) ? mask.inputs.environment : [],
+    style: Array.isArray(mask?.inputs?.style) ? mask.inputs.style : [],
+    composition: Array.isArray(mask?.inputs?.composition) ? mask.inputs.composition : [],
+    lighting: Array.isArray(mask?.inputs?.lighting) ? mask.inputs.lighting : [],
+    palette: Array.isArray(mask?.inputs?.palette) ? mask.inputs.palette : [],
+    prompt_instructions: Array.isArray(mask?.meta?.promptInstructions) ? mask.meta.promptInstructions.slice(0, 6) : [],
+    subject_profile_type: String(mask?.meta?.subjectProfile?.type || '').trim(),
+    canonical_subject: String(mask?.meta?.canonicalSubject || mask?.meta?.imageScratchpad?.canonicalSubject || '').trim(),
+    universe: String(mask?.meta?.imageScratchpad?.universe || '').trim(),
+    reference_init_image: String(
+      mask?.meta?.webImageDraft?.initImageUrl
+      || mask?.meta?.webImageDraft?.initImagePath
+      || mask?.meta?.reference_image_url
+      || mask?.meta?.init_image_url
+      || ''
+    ).trim(),
+  }, null, 2);
+}
+
+async function refineCompiledImagePromptWithLlm(compiledState = {}, options = {}) {
+  if (!shouldRefineCompiledImagePrompt(compiledState, options)) {
+    return {
+      compiledState,
+      promptRefiner: {
+        applied: false,
+        reason: 'disabled_or_not_needed',
+      },
+    };
+  }
+
+  try {
+    const response = await options.callStructuredLlmJson({
+      text: buildImagePromptRefinerInput(compiledState),
+      systemPrompt: IMAGE_PROMPT_REFINER_SYSTEM_PROMPT,
+      temperature: 0.1,
+      maxTokens: 320,
+      timeoutMs: Number(process.env.A11_IMAGE_PROMPT_REFINER_TIMEOUT_MS || 6000),
+    });
+
+    const nextPrompt = normalizeText(response?.prompt || '');
+    const nextNegativePrompt = normalizeText(response?.negative_prompt || '');
+
+    if (!nextPrompt) {
+      return {
+        compiledState,
+        promptRefiner: {
+          applied: false,
+          reason: 'empty_response',
+        },
+      };
+    }
+
+    const nextCompiledState = {
+      ...compiledState,
+      compiledPayload: {
+        ...(compiledState?.compiledPayload && typeof compiledState.compiledPayload === 'object' ? compiledState.compiledPayload : {}),
+        prompt: nextPrompt,
+        ...(nextNegativePrompt
+          ? { negative_prompt: nextNegativePrompt }
+          : {}),
+      },
+      compiled: (
+        compiledState?.compiled && typeof compiledState.compiled === 'object'
+          ? {
+              ...compiledState.compiled,
+              prompt: nextPrompt,
+              ...(nextNegativePrompt
+                ? { negative_prompt: nextNegativePrompt }
+                : {}),
+            }
+          : compiledState.compiled
+      ),
+      sdBody: {
+        ...(compiledState?.sdBody && typeof compiledState.sdBody === 'object' ? compiledState.sdBody : {}),
+        prompt: nextPrompt,
+        ...(nextNegativePrompt
+          ? { negative_prompt: nextNegativePrompt }
+          : {}),
+      },
+    };
+
+    return {
+      compiledState: nextCompiledState,
+      promptRefiner: {
+        applied: true,
+        reason: 'llm_refined',
+        originalPrompt: String(compiledState?.sdBody?.prompt || '').trim(),
+        refinedPrompt: nextPrompt,
+        refinedNegativePrompt: nextNegativePrompt || String(compiledState?.sdBody?.negative_prompt || '').trim(),
+      },
+    };
+  } catch (error_) {
+    return {
+      compiledState,
+      promptRefiner: {
+        applied: false,
+        reason: 'llm_refine_failed',
+        message: String(error_?.message || error_),
+      },
+    };
+  }
 }
 
 function compileMaskImageGenerate(rawMask) {
@@ -526,7 +686,9 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     fallbackReason: String(enriched?.fallbackReason || '').trim(),
     preferredHintMemory: preferredHintMemory || null,
   };
-  return compiledState;
+  const promptRefined = await refineCompiledImagePromptWithLlm(compiledState, options);
+  promptRefined.compiledState.promptRefiner = promptRefined.promptRefiner;
+  return promptRefined.compiledState;
 }
 
 function buildImageVerificationRequestId(compiledState = {}) {

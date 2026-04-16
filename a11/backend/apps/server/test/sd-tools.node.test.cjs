@@ -118,10 +118,9 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
-  assert.match(String(capturedBody?.prompt || ''), /Demande : genere une image lapin rose/i);
-  assert.match(String(capturedBody?.prompt || ''), /Sujet principal : lapin/i);
-  assert.match(String(capturedBody?.prompt || ''), /Couleurs : rose/i);
-  assert.match(String(capturedBody?.prompt || ''), /Créer une image fidèle à la demande/i);
+  assert.match(String(capturedBody?.prompt || ''), /lapin rose/i);
+  assert.match(String(capturedBody?.prompt || ''), /couleurs rose/i);
+  assert.match(String(capturedBody?.prompt || ''), /un seul sujet principal/i);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bNe pas\b|\bdo not\b|literal interpretation/i);
   assert.match(String(capturedBody?.negative_prompt || ''), /plusieurs sujets/i);
   assert.match(String(capturedBody?.negative_prompt || ''), /watermark/i);
@@ -527,7 +526,7 @@ test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is exp
 
     assert.equal(response.ok, true);
     assert.equal(response.mode, 'stable-diffusion-proxy');
-    assert.match(String(capturedBody?.prompt || ''), /Demande : genere une image lapin rose/i);
+    assert.match(String(capturedBody?.prompt || ''), /lapin rose/i);
     assert.match(String(capturedBody?.negative_prompt || ''), /plusieurs sujets/i);
   } finally {
     for (const [key, value] of Object.entries(previous)) {

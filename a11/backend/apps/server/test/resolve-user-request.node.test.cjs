@@ -57,7 +57,7 @@ test('resolveUserRequest emits a valid mask-1 image.generate mask and compiles i
   assert.ok(resolution.mask.inputs.environment.length >= 1);
   assert.equal(resolution.compiled.target, 'image-prompt-fr');
   assert.equal(typeof resolution.compiled.value.prompt, 'string');
-  assert.match(String(resolution.compiled.value.prompt || ''), /Environnement :/i);
+  assert.match(String(resolution.compiled.value.prompt || ''), /décor simple cohérent avec le sujet/i);
 });
 
 test('resolveUserRequest emits canonical code.python.generate masks that compile to python', async () => {
@@ -160,7 +160,8 @@ test('resolveUserRequest enriches doubtful image prompts with concise web defini
   assert.equal(lookupCalls[0], 'qilin');
   assert.equal(resolution.kind, 'image.generate');
   assert.equal(resolution.mask.meta.definitionLookup.title, 'qilin');
-  assert.match(String(resolution.compiled.value.prompt || ''), /Contexte utile : Créature mythique chinoise proche du dragon/i);
+  assert.match(String(resolution.compiled.value.prompt || ''), /qilin violet/i);
+  assert.doesNotMatch(String(resolution.compiled.value.prompt || ''), /Contexte utile :/i);
 });
 
 test('resolveUserRequest attaches a temporary image scratchpad when an entity is resolved', async () => {
@@ -182,7 +183,8 @@ test('resolveUserRequest attaches a temporary image scratchpad when an entity is
   assert.equal(resolution.kind, 'image.generate');
   assert.equal(resolution.mask.meta.imageEntityContext.canonicalSubject, 'Master Chief');
   assert.equal(resolution.mask.meta.imageScratchpad.canonicalSubject, 'Master Chief');
-  assert.match(String(resolution.compiled.value.prompt || ''), /Ardoise utile :/i);
+  assert.match(String(resolution.compiled.value.prompt || ''), /john 117 en armure bleue/i);
+  assert.doesNotMatch(String(resolution.compiled.value.prompt || ''), /Ardoise utile :/i);
 });
 
 test('resolveUserRequest marks simple single-subject prompts as raw by default', async () => {

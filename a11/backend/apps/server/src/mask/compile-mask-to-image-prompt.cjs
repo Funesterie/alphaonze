@@ -1,6 +1,7 @@
 const {
   compileCharacterCountConstraints,
   compileSingleSubjectConstraints,
+  normalizeImagePromptLiteral,
 } = require('./build-sd-prompt-bundle.cjs');
 const { resolveSubjectProfile } = require('./semantic/subject-profile-library.cjs');
 
@@ -10,16 +11,16 @@ function normalizeText(value = '') {
     .trim();
 }
 
-function localizeList(values = []) {
-  return normalizeList(Array.isArray(values) ? values : [values]);
-}
-
 function normalizeList(values = []) {
   return [...new Set(
     (Array.isArray(values) ? values : [values])
       .map((entry) => normalizeText(entry))
       .filter(Boolean)
   )];
+}
+
+function localizeList(values = []) {
+  return normalizeList(Array.isArray(values) ? values : [values]);
 }
 
 function hasSemanticElementFamily(mask = {}, family = '') {
@@ -41,62 +42,66 @@ function hasAnimateSubjectProfile(mask = {}) {
   ].includes(subjectProfileType);
 }
 
-function joinPromptSections(values = []) {
-  return (Array.isArray(values) ? values : [values])
-    .map((entry) => normalizeText(String(entry || '').replace(/[.。\s]+$/g, '')))
-    .filter(Boolean)
-    .join('. ');
+function limitWords(value = '', maxWords = 10) {
+  const words = normalizeText(value).split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  return words.slice(0, Math.max(1, maxWords)).join(' ');
 }
 
-function joinSection(label, values = []) {
+function trimPromptFragment(value = '', maxWords = 10) {
+  return limitWords(
+    normalizeText(String(value || '')
+      .replace(/^(?:sujet principal|environnement|style|composition|lumi[eè]re|couleurs?)\s*:\s*/i, '')
+      .replace(/^(?:cr[eé]er une image fid[eè]le [^.]+|composer une sc[eè]ne [^.]+)\.?\s*/i, '')
+      .replace(/[.。]+$/g, '')),
+    maxWords
+  );
+}
+
+function takeCompactHints(values = [], options = {}) {
+  const {
+    maxItems = 3,
+    maxWords = 8,
+    exclude = [],
+  } = options;
+  const blocked = exclude.map((entry) => normalizeText(entry).toLowerCase()).filter(Boolean);
+  const results = [];
+
+  for (const value of normalizeList(values)) {
+    const compact = trimPromptFragment(value, maxWords);
+    if (!compact) continue;
+    const lowered = compact.toLowerCase();
+    if (blocked.includes(lowered)) continue;
+    if (results.some((entry) => entry.toLowerCase() === lowered)) continue;
+    if (results.some((entry) => entry.toLowerCase().includes(lowered) || lowered.includes(entry.toLowerCase()))) {
+      continue;
+    }
+    results.push(compact);
+    if (results.length >= maxItems) break;
+  }
+
+  return results;
+}
+
+function filterConflictingCompositionHints(values = [], options = {}) {
+  const { pair = null } = options;
   const entries = normalizeList(values);
-  if (!entries.length) return '';
-  return `${label} : ${entries.join(', ')}`;
+  if (pair?.count !== 2) return entries;
+  return entries.filter((entry) => !/\b(unique|un seul|sujet unique|personnage unique)\b/i.test(entry));
 }
 
-function buildLiteralInstructions(mask = {}) {
-  const instructions = [
-    'Créer une image fidèle à la demande.',
-    'Composer une scène claire, lisible et naturelle autour du sujet principal.',
-  ];
-  const subjectProfileInstruction = normalizeText(mask?.meta?.subjectProfile?.promptInstruction || '');
-  const extraPromptInstructions = normalizeList(mask?.meta?.promptInstructions || []);
+function joinPromptFragments(values = [], maxChars = 420) {
+  const fragments = normalizeList(values);
+  if (!fragments.length) return '';
 
-  if (Array.isArray(mask?.inputs?.palette) && mask.inputs.palette.length > 0) {
-    instructions.push("Utiliser les couleurs demandées sur le sujet principal.");
+  const kept = [];
+  for (const fragment of fragments) {
+    const next = kept.length ? `${kept.join(', ')}, ${fragment}` : fragment;
+    if (next.length > maxChars) break;
+    kept.push(fragment);
   }
 
-  if (subjectProfileInstruction) {
-    instructions.push(subjectProfileInstruction);
-  }
-
-  if (extraPromptInstructions.length) {
-    instructions.push(...extraPromptInstructions);
-  }
-
-  if (hasSemanticElementFamily(mask, 'fire') && hasAnimateSubjectProfile(mask)) {
-    instructions.push('Le sujet lui-même doit apparaître en flammes visibles et immédiates.');
-    instructions.push('Les flammes doivent rester l élément principal autour du sujet, nettes, fortes et clairement séparées du décor.');
-    instructions.push('Les flammes doivent être attachées directement au corps du sujet principal, sur ses contours, ses membres et ses zones les plus visibles.');
-    instructions.push('Le feu porté par le sujet doit dominer visuellement le décor.');
-  }
-
-  if (mask?.constraints?.no_text === true) {
-    instructions.push("Garder l'image visuelle, sans texte lisible.");
-  }
-
-  return instructions.join(' ');
-}
-
-function buildScratchpadContext(mask = {}) {
-  return normalizeList([
-    ...(mask?.meta?.imageScratchpad?.promptFacts
-      || mask?.meta?.imageScratchpad?.facts
-      || []),
-    ...(Array.isArray(mask?.meta?.imageRequestDirector?.summaryFacts)
-      ? mask.meta.imageRequestDirector.summaryFacts
-      : []),
-  ]).slice(0, 6);
+  return kept.join(', ');
 }
 
 function splitPromptFragments(value = '') {
@@ -104,6 +109,63 @@ function splitPromptFragments(value = '') {
     .split(',')
     .map((entry) => normalizeText(entry))
     .filter(Boolean);
+}
+
+function buildPromptLead(rawPrompt = '', subject = []) {
+  const cleanedPrompt = normalizeImagePromptLiteral(rawPrompt);
+  if (cleanedPrompt) return cleanedPrompt;
+  return normalizeList(subject).join(' et ');
+}
+
+function buildCompactDirectives(mask = {}, options = {}) {
+  const {
+    pair = null,
+    single = null,
+    subjectProfileType = '',
+  } = options;
+  const directives = [];
+
+  if (pair?.count === 2) {
+    directives.push('deux sujets distincts et lisibles');
+    if (
+      subjectProfileType === 'reference_character'
+      || subjectProfileType === 'pokemon_creature'
+      || subjectProfileType === 'single_human_figure'
+    ) {
+      directives.push('deux personnages complets et reconnaissables');
+    }
+  } else if (single?.count === 1) {
+    directives.push('un seul sujet principal');
+  }
+
+  if (
+    !pair?.count
+    && (
+    subjectProfileType === 'reference_character'
+    || subjectProfileType === 'pokemon_creature'
+    || subjectProfileType === 'single_human_figure'
+    )
+  ) {
+    directives.push('personnage complet et reconnaissable');
+  }
+
+  if (
+    subjectProfileType === 'single_animal'
+    || subjectProfileType === 'mythic_creature'
+    || subjectProfileType === 'phoenix_creature'
+  ) {
+    directives.push('créature complète et lisible');
+  }
+
+  if (hasSemanticElementFamily(mask, 'fire') && hasAnimateSubjectProfile(mask)) {
+    directives.push('flammes nettes autour du sujet');
+  }
+
+  if (mask?.constraints?.no_text === true) {
+    directives.push('sans texte lisible');
+  }
+
+  return takeCompactHints(directives, { maxItems: 4, maxWords: 6 });
 }
 
 function buildNegativePrompt(mask = {}) {
@@ -139,7 +201,7 @@ function buildNegativePrompt(mask = {}) {
     || subjectProfileType === 'pokemon_creature'
     || subjectProfileType === 'single_human_figure'
   ) {
-    hints.push('plusieurs personnages', 'visages dupliqués', 'personnage coupé');
+    hints.push('visages dupliqués', 'personnage coupé');
   }
 
   if (
@@ -147,22 +209,11 @@ function buildNegativePrompt(mask = {}) {
     || subjectProfileType === 'mythic_creature'
     || subjectProfileType === 'phoenix_creature'
   ) {
-    hints.push('animaux multiples', 'créatures multiples', 'anatomie fusionnée');
+    hints.push('créatures multiples', 'anatomie fusionnée');
   }
 
   if (subjectProfileType === 'phoenix_creature') {
-    hints.push(
-      'plusieurs têtes',
-      'têtes dupliquées',
-      'ailes supplémentaires',
-      'ailes dupliquées',
-      'anatomie d oiseau cassée',
-      'forme de fleur',
-      'pétales',
-      'plante',
-      'bouquet',
-      'forêt de fleurs'
-    );
+    hints.push('plusieurs têtes', 'ailes supplémentaires', 'forme de fleur', 'plante');
   }
 
   if (subjectProfileType === 'simple_food_object' || subjectProfileType === 'container_object') {
@@ -170,7 +221,7 @@ function buildNegativePrompt(mask = {}) {
   }
 
   if (subjectProfileType === 'single_plant_object') {
-    hints.push('plusieurs plantes', 'plusieurs arbres', 'forêt dense', 'arrière-plan chargé');
+    hints.push('plusieurs plantes', 'forêt dense', 'arrière-plan chargé');
   }
 
   const mergedSceneHints = [...environment, ...composition].join(' ');
@@ -187,7 +238,7 @@ function buildNegativePrompt(mask = {}) {
     ...splitPromptFragments(mask?.meta?.negative_prompt || mask?.meta?.negativePrompt || ''),
   ]);
 
-  const finalHints = normalizeList([...hints, ...extraNegativeHints]);
+  const finalHints = normalizeList([...hints, ...extraNegativeHints]).slice(0, 12);
   return finalHints.length ? finalHints.join(', ') : '';
 }
 
@@ -199,32 +250,38 @@ function compileMaskToImagePrompt(mask = {}) {
   const composition = localizeList(mask?.inputs?.composition || []);
   const lighting = localizeList(mask?.inputs?.lighting || []);
   const palette = localizeList(mask?.inputs?.palette || []);
-  const definitionContext = normalizeText(
-    mask?.meta?.definitionLookup?.summary
-    || mask?.meta?.definitionContext?.summary
-    || ''
-  );
-  const scratchpadContext = buildScratchpadContext(mask);
   const pair = rawPrompt ? compileCharacterCountConstraints(rawPrompt) : null;
+  const single = pair ? null : (rawPrompt ? compileSingleSubjectConstraints(rawPrompt) : null);
+  const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '');
 
-  const promptSections = [
-    rawPrompt ? `Demande : ${rawPrompt}` : '',
-    joinSection('Sujet principal', subject),
-    pair?.promptHints?.length ? `Contraintes de scène : ${normalizeList(pair.promptHints).join(', ')}` : '',
-    joinSection('Environnement', environment),
-    joinSection('Style', style),
-    joinSection('Composition', composition),
-    joinSection('Lumière', lighting),
-    joinSection('Couleurs', palette),
-    definitionContext ? `Contexte utile : ${definitionContext}` : '',
-    scratchpadContext.length ? `Ardoise utile : ${scratchpadContext.join(' | ')}` : '',
-    buildLiteralInstructions(mask),
-  ].filter(Boolean);
+  const promptLead = buildPromptLead(rawPrompt, subject);
+  const styleHints = takeCompactHints(style, { maxItems: 2, maxWords: 6 });
+  const environmentHints = takeCompactHints(environment, { maxItems: 1, maxWords: 8 });
+  const compositionHints = takeCompactHints(filterConflictingCompositionHints(composition, { pair }), {
+    maxItems: 3,
+    maxWords: 6,
+  });
+  const lightingHints = takeCompactHints(lighting, { maxItems: 1, maxWords: 5 });
+  const paletteHints = palette.length ? [`couleurs ${palette.slice(0, 3).join(', ')}`] : [];
+  const directives = buildCompactDirectives(mask, {
+    pair,
+    single,
+    subjectProfileType,
+  });
 
+  const prompt = joinPromptFragments([
+    promptLead,
+    ...styleHints,
+    ...environmentHints,
+    ...compositionHints,
+    ...lightingHints,
+    ...paletteHints,
+    ...directives,
+  ]);
   const negativePrompt = buildNegativePrompt(mask);
 
   return {
-    prompt: joinPromptSections(promptSections),
+    prompt,
     prompt_language: 'fr',
     prompt_prebuilt: true,
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
