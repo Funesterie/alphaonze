@@ -312,55 +312,80 @@ function evaluateLineSymbols(symbols, lineBet) {
   };
 }
 
+function getJokerBonusFeatureState(grid) {
+  const finalJokerCount = listSymbolIndexes(grid, 'JOKER').length;
+  const fullJoker = finalJokerCount >= SLOT_GRID_SIZE;
+  const crossJoker = !fullJoker && detectJokerCross(grid);
+  const feature = fullJoker ? 'joker_full' : crossJoker ? 'joker_cross' : 'joker_line';
+
+  return {
+    finalJokerCount,
+    fullJoker,
+    crossJoker,
+    feature,
+  };
+}
+
+function applySingleJokerBonusStage({ grid, randomInt, stageIndex }) {
+  const currentGrid = cloneGrid(grid);
+  const heldIndexes = listSymbolIndexes(currentGrid, 'JOKER');
+  const ratio = buildJokerConversionRatio(stageIndex, heldIndexes.length);
+  const threshold = Math.max(1, Math.round(ratio * 10000));
+  const nextGrid = cloneGrid(currentGrid);
+  const nonJokerIndexes = shuffleIndexes(listNonJokerIndexes(currentGrid), randomInt);
+
+  const stageConversionCap = buildJokerStageConversionCap(stageIndex, heldIndexes.length, nonJokerIndexes.length);
+  let stageConversions = 0;
+
+  nonJokerIndexes.forEach((index) => {
+    if (stageConversions >= stageConversionCap) return;
+    if (randomInt(10000) >= threshold) return;
+    setGridSymbolAtIndex(nextGrid, index, 'JOKER');
+    stageConversions += 1;
+  });
+
+  if (
+    stageConversions === 0
+    && nonJokerIndexes.length
+    && stageIndex < JOKER_BONUS_RESPINS - 1
+    && randomInt(10000) < Math.min(7500, threshold + 1800)
+  ) {
+    setGridSymbolAtIndex(nextGrid, nonJokerIndexes[0], 'JOKER');
+  }
+
+  const nextHeldIndexes = listSymbolIndexes(nextGrid, 'JOKER');
+  return {
+    nextGrid,
+    stage: {
+      step: stageIndex + 1,
+      ratio,
+      heldIndexes: nextHeldIndexes,
+      jokerCount: nextHeldIndexes.length,
+      grid: cloneGrid(nextGrid),
+    },
+  };
+}
+
 function applyJokerBonus({ grid, randomInt }) {
   let currentGrid = cloneGrid(grid);
   const stages = [];
 
   for (let stageIndex = 0; stageIndex < JOKER_BONUS_RESPINS; stageIndex += 1) {
-    const heldIndexes = listSymbolIndexes(currentGrid, 'JOKER');
-    const ratio = buildJokerConversionRatio(stageIndex, heldIndexes.length);
-    const threshold = Math.max(1, Math.round(ratio * 10000));
-    const nextGrid = cloneGrid(currentGrid);
-    const nonJokerIndexes = shuffleIndexes(listNonJokerIndexes(currentGrid), randomInt);
-
-    const stageConversionCap = buildJokerStageConversionCap(stageIndex, heldIndexes.length, nonJokerIndexes.length);
-    let stageConversions = 0;
-
-    nonJokerIndexes.forEach((index) => {
-      if (stageConversions >= stageConversionCap) return;
-      if (randomInt(10000) >= threshold) return;
-      setGridSymbolAtIndex(nextGrid, index, 'JOKER');
-      stageConversions += 1;
+    const stageResult = applySingleJokerBonusStage({
+      grid: currentGrid,
+      randomInt,
+      stageIndex,
     });
-
-    if (
-      stageConversions === 0
-      && nonJokerIndexes.length
-      && stageIndex < JOKER_BONUS_RESPINS - 1
-      && randomInt(10000) < Math.min(7500, threshold + 1800)
-    ) {
-      setGridSymbolAtIndex(nextGrid, nonJokerIndexes[0], 'JOKER');
-    }
-
-    currentGrid = nextGrid;
-    const nextHeldIndexes = listSymbolIndexes(currentGrid, 'JOKER');
-    stages.push({
-      step: stageIndex + 1,
-      ratio,
-      heldIndexes: nextHeldIndexes,
-      jokerCount: nextHeldIndexes.length,
-      grid: cloneGrid(currentGrid),
-    });
-
-    if (nextHeldIndexes.length >= SLOT_GRID_SIZE) {
-      break;
-    }
+    currentGrid = stageResult.nextGrid;
+    stages.push(stageResult.stage);
   }
 
-  const finalJokerCount = listSymbolIndexes(currentGrid, 'JOKER').length;
-  const fullJoker = finalJokerCount >= SLOT_GRID_SIZE;
-  const crossJoker = !fullJoker && detectJokerCross(currentGrid);
-  const feature = fullJoker ? 'joker_full' : crossJoker ? 'joker_cross' : 'joker_line';
+  const {
+    finalJokerCount,
+    fullJoker,
+    crossJoker,
+    feature,
+  } = getJokerBonusFeatureState(currentGrid);
 
   return {
     stages,
@@ -408,7 +433,113 @@ function evaluateSpinGrid(grid, lineBet) {
   return {
     wins,
     totalPayout,
-    specialJackpot, // Ajout du flag jackpot spécial
+    specialJackpot,
+  };
+}
+
+function buildResolvedSpinResult({
+  bet,
+  lineBet,
+  grid,
+  evaluation,
+  generatedAt,
+  openingGrid = null,
+  bonusMeta = null,
+}) {
+  const safeBet = clampInteger(bet, DEFAULT_MIN_BET, DEFAULT_MAX_BET, DEFAULT_MIN_BET);
+  const effectiveEvaluation = evaluation || evaluateSpinGrid(grid, lineBet);
+  const {
+    finalJokerCount,
+    fullJoker,
+    crossJoker,
+    feature,
+  } = bonusMeta || getJokerBonusFeatureState(grid);
+
+  return {
+    bet: safeBet,
+    lineBet,
+    reelCount: REEL_COUNT,
+    rowCount: ROW_COUNT,
+    activeLines: DEFAULT_ACTIVE_LINES,
+    grid: cloneGrid(grid),
+    wins: effectiveEvaluation.wins,
+    totalPayout: Number(effectiveEvaluation.totalPayout || 0),
+    netChange: Number(effectiveEvaluation.totalPayout || 0) - safeBet,
+    bonus: openingGrid
+      ? {
+          triggered: true,
+          pending: false,
+          token: null,
+          stage: null,
+          totalStages: JOKER_BONUS_RESPINS,
+          completedStages: JOKER_BONUS_RESPINS,
+          trigger: bonusMeta?.trigger || 'joker_count',
+          triggerIndexes: Array.isArray(bonusMeta?.triggerIndexes) ? bonusMeta.triggerIndexes.slice() : [],
+          initialJokerCount: Number(bonusMeta?.initialJokerCount || 0),
+          openingGrid: cloneGrid(openingGrid),
+          stages: [],
+          finalJokerCount,
+          crossJoker,
+          fullJoker,
+          feature,
+          holdDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
+          stageDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
+        }
+      : null,
+    specialJackpot: Boolean(effectiveEvaluation.specialJackpot),
+    generatedAt: generatedAt || new Date().toISOString(),
+  };
+}
+
+function buildPendingBonusSpin({
+  bet,
+  lineBet,
+  openingGrid,
+  currentGrid = openingGrid,
+  generatedAt,
+  bonusToken,
+  completedStages = 0,
+  bonusTrigger,
+  stage = null,
+}) {
+  const {
+    finalJokerCount,
+    fullJoker,
+    crossJoker,
+    feature,
+  } = getJokerBonusFeatureState(currentGrid);
+
+  return {
+    bet,
+    lineBet,
+    reelCount: REEL_COUNT,
+    rowCount: ROW_COUNT,
+    activeLines: DEFAULT_ACTIVE_LINES,
+    grid: cloneGrid(currentGrid),
+    wins: [],
+    totalPayout: 0,
+    netChange: -bet,
+    bonus: {
+      triggered: true,
+      pending: true,
+      token: bonusToken,
+      stage,
+      totalStages: JOKER_BONUS_RESPINS,
+      completedStages,
+      trigger: bonusTrigger.reason,
+      triggerIndexes: bonusTrigger.triggerIndexes,
+      initialJokerCount: bonusTrigger.initialJokerCount,
+      openingGrid: cloneGrid(openingGrid),
+      stages: [],
+      finalJokerCount,
+      crossJoker,
+      fullJoker,
+      feature,
+      holdDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
+      stageDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
+    },
+    specialJackpot: false,
+    generatedAt: generatedAt || new Date().toISOString(),
   };
 }
 
@@ -444,7 +575,7 @@ function buildSpinOutcome({ bet, randomInt }) {
       holdDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
       stageDurationMs: JOKER_BONUS_STAGE_HOLD_MS,
     };
-    specialJackpot = Boolean(bonusEvaluation.specialJackpot);
+    specialJackpot = specialJackpot || Boolean(bonusEvaluation.specialJackpot);
   }
 
   return {
@@ -794,7 +925,7 @@ function createCasinoRouter({
       const userId = String(row?.user_id || '');
       if (!roomId || !userId) continue;
       const dedupeKey = `${roomId}::${userId}`;
-      const updatedAtMs = row?.updated_at ? new Date(row.updatedAt).getTime() : 0;
+      const updatedAtMs = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
       const previous = latestByRoomUser.get(dedupeKey);
       const previousUpdatedAtMs = previous?.updated_at ? new Date(previous.updated_at).getTime() : 0;
       if (!previous || updatedAtMs >= previousUpdatedAtMs) {
@@ -1812,9 +1943,9 @@ function createCasinoRouter({
       const potOdds = toMatch / Math.max(1, nextPot + toMatch);
       const noise = (random(1000) / 1000 - 0.5) * 0.18;
       const willingness = strength + noise + (state.stage === 'river' ? 0.05 : 0);
-      const threshold = Math.max(0.18, potOdds * (heroAction === 'raise ? 0.95 : 0.88));
+      const threshold = Math.max(0.18, potOdds * (heroAction === 'raise' ? 0.95 : 0.88));
 
-      if (toMatch > Number(seat.chips || 0) || 0) {
+      if (toMatch > Number(seat.chips || 0)) {
         folders.push(seat.name);
         return {
           ...seat,
@@ -2382,7 +2513,7 @@ function createCasinoRouter({
     try {
       const auth = await requireCasinoUser(req, res);
       if (!auth) return;
-
+      const bonusToken = normalizeText(req.body?.bonusToken);
       const requestedBet = clampInteger(req.body?.bet, DEFAULT_MIN_BET, DEFAULT_MAX_BET, DEFAULT_MIN_BET);
 
       client = await db.connect();
@@ -2402,6 +2533,112 @@ function createCasinoRouter({
       );
       const walletRow = walletResult.rows[0];
       const currentBalance = Number(walletRow?.balance || 0);
+
+      if (bonusToken) {
+        const bonusState = decodeRoundToken(bonusToken, roundTokenSecret);
+        if (bonusState?.kind !== 'slots_bonus' || String(bonusState.userId || '') !== String(auth.userId || '')) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ ok: false, error: 'invalid_round_token' });
+        }
+
+        const stageIndex = clampInteger(bonusState.stageIndex, 0, JOKER_BONUS_RESPINS - 1, 0);
+        const currentGrid = cloneGrid(bonusState.currentGrid);
+        const openingGrid = cloneGrid(bonusState.openingGrid);
+        const lineBet = Math.max(1, Number(bonusState.lineBet || Math.floor(Number(bonusState.bet || requestedBet) / DEFAULT_ACTIVE_LINES) || 1));
+        const bonusTrigger = {
+          reason: String(bonusState.trigger || 'joker_count'),
+          triggerIndexes: Array.isArray(bonusState.triggerIndexes) ? bonusState.triggerIndexes.slice() : [],
+          initialJokerCount: Number(bonusState.initialJokerCount || 0),
+        };
+        const stageResult = applySingleJokerBonusStage({
+          grid: currentGrid,
+          randomInt: random,
+          stageIndex,
+        });
+        const nextCompletedStages = stageIndex + 1;
+        const generatedAt = String(bonusState.generatedAt || new Date().toISOString());
+
+        if (nextCompletedStages < JOKER_BONUS_RESPINS) {
+          const nextToken = encodeRoundToken({
+            kind: 'slots_bonus',
+            userId: auth.userId,
+            bet: Number(bonusState.bet || requestedBet),
+            lineBet,
+            openingGrid,
+            currentGrid: stageResult.nextGrid,
+            stageIndex: nextCompletedStages,
+            trigger: bonusTrigger.reason,
+            triggerIndexes: bonusTrigger.triggerIndexes,
+            initialJokerCount: bonusTrigger.initialJokerCount,
+            generatedAt,
+          }, roundTokenSecret);
+
+          await client.query('COMMIT');
+          const profile = await loadProfile(auth.userId);
+          return res.json({
+            ok: true,
+            spin: buildPendingBonusSpin({
+              bet: Number(bonusState.bet || requestedBet),
+              lineBet,
+              openingGrid,
+              currentGrid: stageResult.nextGrid,
+              generatedAt,
+              bonusToken: nextToken,
+              completedStages: nextCompletedStages,
+              bonusTrigger,
+              stage: stageResult.stage,
+            }),
+            profile,
+          });
+        }
+
+        const finalEvaluation = evaluateSpinGrid(stageResult.nextGrid, lineBet);
+        const resolvedSpin = buildResolvedSpinResult({
+          bet: Number(bonusState.bet || requestedBet),
+          lineBet,
+          grid: stageResult.nextGrid,
+          evaluation: finalEvaluation,
+          generatedAt,
+          openingGrid,
+          bonusMeta: {
+            ...bonusTrigger,
+            ...getJokerBonusFeatureState(stageResult.nextGrid),
+          },
+        });
+        const nextBalance = currentBalance + Number(resolvedSpin.totalPayout || 0);
+
+        await applyWalletDeltas(client, auth.userId, {
+          balance: nextBalance,
+          lifetimeWagered: 0,
+          lifetimeWon: Number(resolvedSpin.totalPayout || 0),
+          gamesPlayed: 0,
+        });
+
+        if (Number(resolvedSpin.totalPayout || 0) > 0) {
+          await appendTransaction(client, {
+            userId: auth.userId,
+            kind: 'slots_bonus_payout',
+            amount: Number(resolvedSpin.totalPayout || 0),
+            balanceAfter: nextBalance,
+            metadata: {
+              bet: Number(bonusState.bet || requestedBet),
+              payout: Number(resolvedSpin.totalPayout || 0),
+              wins: resolvedSpin.wins,
+              grid: resolvedSpin.grid,
+              bonus: resolvedSpin.bonus,
+            },
+          });
+        }
+
+        await client.query('COMMIT');
+        const profile = await loadProfile(auth.userId);
+        return res.json({
+          ok: true,
+          spin: resolvedSpin,
+          profile,
+        });
+      }
+
       if (currentBalance < requestedBet) {
         await client.query('ROLLBACK');
         return res.status(400).json({
@@ -2411,10 +2648,114 @@ function createCasinoRouter({
         });
       }
 
-      const outcome = typeof spinCasinoOutcome === 'function'
-        ? spinCasinoOutcome({ bet: requestedBet, randomInt: random })
-        : buildSpinOutcome({ bet: requestedBet, randomInt: random });
-      const totalPayout = Number(outcome.totalPayout || 0);
+      if (typeof spinCasinoOutcome === 'function') {
+        const outcome = spinCasinoOutcome({ bet: requestedBet, randomInt: random });
+        const totalPayout = Number(outcome.totalPayout || 0);
+        const nextBalance = currentBalance - requestedBet + totalPayout;
+
+        await client.query(
+          `
+            UPDATE casino_wallets
+            SET balance = $2,
+                lifetime_wagered = COALESCE(lifetime_wagered, 0) + $3,
+                lifetime_won = COALESCE(lifetime_won, 0) + $4,
+                games_played = COALESCE(games_played, 0) + 1,
+                updated_at = NOW()
+            WHERE user_id = $1
+          `,
+          [auth.userId, nextBalance, requestedBet, totalPayout]
+        );
+
+        await appendTransaction(client, {
+          userId: auth.userId,
+          kind: 'slots_spin',
+          amount: outcome.netChange,
+          balanceAfter: nextBalance,
+          metadata: {
+            bet: requestedBet,
+            payout: totalPayout,
+            wins: outcome.wins,
+            grid: outcome.grid,
+            bonus: outcome.bonus || null,
+          },
+        });
+
+        await client.query('COMMIT');
+        const profile = await loadProfile(auth.userId);
+        return res.json({
+          ok: true,
+          spin: outcome,
+          profile,
+        });
+      }
+
+      const generatedAt = new Date().toISOString();
+      const lineBet = Math.max(1, Math.floor(requestedBet / DEFAULT_ACTIVE_LINES));
+      const openingGrid = generateGrid(random);
+      const openingEvaluation = evaluateSpinGrid(openingGrid, lineBet);
+      const bonusTrigger = detectJokerBonusTrigger(openingGrid);
+
+      if (bonusTrigger.triggered) {
+        const nextBalance = currentBalance - requestedBet;
+        await applyWalletDeltas(client, auth.userId, {
+          balance: nextBalance,
+          lifetimeWagered: requestedBet,
+          lifetimeWon: 0,
+          gamesPlayed: 1,
+        });
+        await appendTransaction(client, {
+          userId: auth.userId,
+          kind: 'slots_spin',
+          amount: -requestedBet,
+          balanceAfter: nextBalance,
+          metadata: {
+            bet: requestedBet,
+            payoutPending: true,
+            openingGrid,
+            bonusTrigger,
+          },
+        });
+
+        const encodedBonusToken = encodeRoundToken({
+          kind: 'slots_bonus',
+          userId: auth.userId,
+          bet: requestedBet,
+          lineBet,
+          openingGrid,
+          currentGrid: openingGrid,
+          stageIndex: 0,
+          trigger: bonusTrigger.reason,
+          triggerIndexes: bonusTrigger.triggerIndexes,
+          initialJokerCount: bonusTrigger.initialJokerCount,
+          generatedAt,
+        }, roundTokenSecret);
+
+        await client.query('COMMIT');
+        const profile = await loadProfile(auth.userId);
+        return res.json({
+          ok: true,
+          spin: buildPendingBonusSpin({
+            bet: requestedBet,
+            lineBet,
+            openingGrid,
+            currentGrid: openingGrid,
+            generatedAt,
+            bonusToken: encodedBonusToken,
+            completedStages: 0,
+            bonusTrigger,
+          }),
+          profile,
+        });
+      }
+
+      const resolvedSpin = buildResolvedSpinResult({
+        bet: requestedBet,
+        lineBet,
+        grid: openingGrid,
+        evaluation: openingEvaluation,
+        generatedAt,
+      });
+      const totalPayout = Number(resolvedSpin.totalPayout || 0);
       const nextBalance = currentBalance - requestedBet + totalPayout;
 
       await client.query(
@@ -2433,14 +2774,14 @@ function createCasinoRouter({
       await appendTransaction(client, {
         userId: auth.userId,
         kind: 'slots_spin',
-        amount: outcome.netChange,
+        amount: resolvedSpin.netChange,
         balanceAfter: nextBalance,
         metadata: {
           bet: requestedBet,
           payout: totalPayout,
-          wins: outcome.wins,
-          grid: outcome.grid,
-          bonus: outcome.bonus || null,
+          wins: resolvedSpin.wins,
+          grid: resolvedSpin.grid,
+          bonus: resolvedSpin.bonus || null,
         },
       });
 
@@ -2448,13 +2789,16 @@ function createCasinoRouter({
       const profile = await loadProfile(auth.userId);
       return res.json({
         ok: true,
-        spin: outcome,
+        spin: resolvedSpin,
         profile,
       });
     } catch (error_) {
       if (client) await client.query('ROLLBACK').catch(() => {});
+      const code = ['invalid_round_token', 'insufficient_credits'].includes(error_?.code)
+        ? error_.code
+        : 'casino_spin_failed';
       logger?.error?.('[CASINO] spin failed:', error_?.message);
-      return res.status(500).json({ ok: false, error: 'casino_spin_failed' });
+      return res.status(code === 'casino_spin_failed' ? 500 : 400).json({ ok: false, error: code });
     } finally {
       client?.release?.();
     }
@@ -2487,9 +2831,9 @@ function createCasinoRouter({
 
       await applyWalletDeltas(client, auth.userId, {
         balance: nextBalance,
-        lifetimeWagered: 0,
+        lifetimeWagered: MAP_ROOM_COST,
         lifetimeWon: reward,
-        gamesPlayed: 0,
+        gamesPlayed: 1,
       });
       await appendTransaction(client, {
         userId: auth.userId,
@@ -3390,10 +3734,12 @@ function createCasinoRouter({
 
 module.exports = createCasinoRouter;
 module.exports.__private = {
+  applySingleJokerBonusStage,
   applyJokerBonus,
   buildSpinOutcome,
   buildWalletPayload,
   detectJokerBonusTrigger,
   detectJokerCross,
   evaluateSpinGrid,
+  SYMBOLS,
 };
