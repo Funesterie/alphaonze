@@ -60,6 +60,19 @@ const CHARACTER_REFERENCE_WORDS = new Set([
   'héros',
 ]);
 
+const NAMED_GROUP_REFERENCE_PATTERNS = [
+  /\bavengers\b/,
+  /\bx[\s-]?men\b/,
+  /\bjustice league\b/,
+  /\bguardians? of the galaxy\b/,
+  /\bfantastic four\b/,
+  /\bteen titans\b/,
+  /\bsuicide squad\b/,
+  /\bpower rangers\b/,
+  /\bstraw hat pirates\b/,
+  /\bchapeau(?:x)? de paille\b/,
+];
+
 function normalizeWhitespace(value = '') {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -141,7 +154,11 @@ function trimSubjectPhrase(value = '', palette = []) {
 }
 
 function isPluralRequested(prompt = '') {
-  return /\b(des|plusieurs|many|multiple|crowd|group|groupe|ensemble)\b/.test(normalizeIntentText(prompt));
+  const normalized = normalizeIntentText(prompt);
+  return (
+    /\b(des|plusieurs|many|multiple|crowd|group|groupe|ensemble)\b/.test(normalized)
+    || NAMED_GROUP_REFERENCE_PATTERNS.some((pattern) => pattern.test(normalized))
+  );
 }
 
 function isSubjectPhraseMeaningful(value = '') {

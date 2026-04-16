@@ -1,5 +1,6 @@
 const { lookupDefinitionContext: defaultLookupDefinitionContext } = require('./definition-context.cjs');
 const { duckduckgoImageSearch: defaultDuckduckgoImageSearch } = require('../../lib/image-search.cjs');
+const { compileCharacterCountConstraints } = require('../mask/build-sd-prompt-bundle.cjs');
 
 function normalizeText(value = '') {
   return String(value || '')
@@ -321,9 +322,14 @@ function shouldUseImageWebDraft({
 
   const subjectProfileType = resolveSubjectProfileType(mask);
   const scratchpadEntityType = resolveScratchpadEntityType(mask);
+  const hasExplicitPair = Boolean(compileCharacterCountConstraints(String(mask?.raw || '')));
   const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
   const hasStrongTransform = hasStrongPromptTransform(mask);
   const hasVolatileTransform = hasVolatileElementTransform(mask);
+
+  if (hasExplicitPair) {
+    return false;
+  }
 
   if (['simple_food_object', 'container_object', 'single_plant_object'].includes(subjectProfileType)) {
     return false;

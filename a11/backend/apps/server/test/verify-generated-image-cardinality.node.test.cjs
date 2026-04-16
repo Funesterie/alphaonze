@@ -5,6 +5,7 @@ const http = require('node:http');
 const sharp = require('sharp');
 
 const {
+  inferExpectedImageContract,
   resolveVisionConfig,
   verifyGeneratedImageCardinality,
 } = require('../src/image/verify-generated-image-cardinality.cjs');
@@ -104,4 +105,15 @@ test('verifyGeneratedImageCardinality requests a retry when the local classifier
     assert.equal(result.decision.retry, true);
     assert.match(String(result.decision.reason || ''), /multiple_subjects_detected/i);
   });
+});
+
+test('inferExpectedImageContract disables strict single-subject counting for named teams like avengers', () => {
+  const result = inferExpectedImageContract({
+    mask: {
+      raw: 'les avengers',
+    },
+  });
+
+  assert.equal(result.enabled, false);
+  assert.equal(result.reason, 'no_clear_cardinality');
 });

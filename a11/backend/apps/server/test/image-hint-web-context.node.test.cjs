@@ -159,3 +159,33 @@ test('resolveImageWebDraft skips volatile fire transforms for animal subjects ev
 
   assert.equal(result, null);
 });
+
+test('resolveImageWebDraft skips automatic web draft anchoring for explicit two-character prompts', () => {
+  const result = resolveImageWebDraft({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une image de batman et catwoman',
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Batman',
+        },
+      },
+      inputs: {
+        subject: ['Batman', 'Catwoman'],
+      },
+    },
+    selection: {
+      compartment: 'special',
+      candidate: true,
+    },
+    webHintContext: {
+      imageUrl: 'https://images.example.com/batman-ref.png',
+      imageTitle: 'Batman character art',
+      sourceUrl: 'https://example.com/batman',
+      sourceDomain: 'example.com',
+    },
+  });
+
+  assert.equal(result, null);
+});
