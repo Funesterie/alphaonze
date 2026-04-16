@@ -74,6 +74,11 @@ const BASE_REQUEST_TERMS = [
   'route',
   'circuit',
   'kart',
+  'ballon',
+  'ballons',
+  'football',
+  'soccer',
+  'foot',
   'derapage',
   'dérapage',
   'action',
@@ -297,6 +302,7 @@ function findBestLocalCorrection(token = '') {
 
     const prefix = commonPrefixLength(normalized, candidate.normalized);
     if (distance > 1 && prefix < 2) continue;
+    if (distance >= 2 && prefix < 3) continue;
 
     ranked.push({
       candidate,

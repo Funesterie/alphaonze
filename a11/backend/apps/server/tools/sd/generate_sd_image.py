@@ -51,9 +51,16 @@ def normalize_env_text(value, default=""):
     return text or default
 
 
+def env_int(name, default):
+    try:
+        return int(str(os.environ.get(name, default)).strip())
+    except (TypeError, ValueError):
+        return int(default)
+
+
 def resolve_model_config():
     explicit_model_id = str(os.environ.get("SD_MODEL_ID", "")).strip()
-    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "sd35")
+    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "classic")
     explicit_pipeline = normalize_env_text(os.environ.get("SD_MODEL_PIPELINE"), "")
     explicit_revision = str(os.environ.get("SD_MODEL_REVISION", "")).strip() or None
 
@@ -150,6 +157,34 @@ def maybe_enable_pipeline_memory_optimizations(pipe):
     except Exception:
         xformers_enabled = False
     return xformers_enabled
+
+
+def configure_pipeline_execution(pipe, device, model_config):
+    pipeline_kind = str(model_config.get("pipeline") or "").strip().lower()
+    if device != "cuda":
+        return pipe.to(device), {
+            "execution_mode": "direct",
+            "cpu_offload": False,
+        }
+
+    if pipeline_kind == "sd3":
+        try:
+            pipe.enable_model_cpu_offload()
+            return pipe, {
+                "execution_mode": "model_cpu_offload",
+                "cpu_offload": True,
+            }
+        except Exception:
+            pipe.enable_sequential_cpu_offload()
+            return pipe, {
+                "execution_mode": "sequential_cpu_offload",
+                "cpu_offload": True,
+            }
+
+    return pipe.to(device), {
+        "execution_mode": "direct",
+        "cpu_offload": False,
+    }
 
 
 def is_remote_image(value):
@@ -309,6 +344,13 @@ def main():
     device = resolve_device()
     torch_dtype = resolve_dtype(device)
 
+    if device == "cpu":
+        max_side = max(256, env_int("SD_MAX_SIDE_CPU", 512))
+        max_steps = max(4, env_int("SD_MAX_STEPS_CPU", 20))
+        args.width = min(args.width, max_side)
+        args.height = min(args.height, max_side)
+        args.num_inference_steps = min(args.num_inference_steps, max_steps)
+
     maybe_enable_cuda_fast_paths()
 
     init_image_source = str(args.init_image or "").strip()
@@ -333,10 +375,11 @@ def main():
     )
     if hasattr(pipe, "safety_checker"):
         pipe.safety_checker = None
-    if hasattr(pipe, "register_to_config"):
-        pipe.register_to_config(requires_safety_checker=False)
+    if generation_mode != "img2img" and str(resolved_model_config.get("pipeline") or "").strip().lower() != "sd3":
+        if hasattr(pipe, "register_to_config"):
+            pipe.register_to_config(requires_safety_checker=False)
     pipe.set_progress_bar_config(disable=True)
-    pipe = pipe.to(device)
+    pipe, execution_config = configure_pipeline_execution(pipe, device, resolved_model_config)
     xformers_enabled = maybe_enable_pipeline_memory_optimizations(pipe)
 
     generator = torch.Generator(device=device)
@@ -384,9 +427,14 @@ def main():
                 "torch_dtype": dtype_label(torch_dtype),
                 "cuda_available": torch.cuda.is_available(),
                 "cuda_device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                "execution_mode": execution_config["execution_mode"],
+                "cpu_offload": execution_config["cpu_offload"],
                 "xformers_enabled": xformers_enabled,
                 "safety_checker_enabled": False,
                 "generation_mode": generation_mode,
+                "width": args.width,
+                "height": args.height,
+                "num_inference_steps": args.num_inference_steps,
                 "init_image_requested": bool(init_image_source),
                 "init_image_used": init_image is not None,
                 "init_image_source": init_image_source or None,
