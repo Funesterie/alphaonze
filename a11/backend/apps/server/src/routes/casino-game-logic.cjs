@@ -14,7 +14,7 @@ const HUNT_PRIZES = [
   { reward: 180, label: 'Saphir du sillage' },
 ];
 
-const BLACKJACK_PLAYER_BETS = [50, 100, 200, 400];
+const BLACKJACK_PLAYER_BETS = [20, 50, 100, 200];
 const BLACKJACK_AI_NAMES = ['Mira Voss', 'Blaise Flint', 'Nox Vale', 'Soren Pike'];
 
 const POKER_ANTE_PRESETS = [60, 120, 200, 320];

@@ -1359,7 +1359,8 @@ function createCasinoRouter({
 
   async function buildRouletteRoomPayload(client, userId, options = {}) {
     const compact = options?.compact === true;
-    const { currentRound, latestResolved, activeParticipants, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
+    const { currentRound, latestResolved, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID);
+    const activeParticipants = compact ? [] : await getRouletteActiveParticipants(client);
     const currentBets = currentRound?.id ? await getRouletteBetsForRound(client, currentRound.id) : [];
     const recentResultRows = (await client.query(
       'SELECT id, winning_number, winning_color, resolved_at FROM casino_roulette_rounds WHERE room_id = $1 AND resolved_at IS NOT NULL ORDER BY id DESC LIMIT $2',
@@ -3146,11 +3147,15 @@ function createCasinoRouter({
       if (!auth) return;
       const presenceClientId = getTablePresenceClientIdFromRequest(req);
 
+      const rawWager = Number(req.body?.bet);
+      if (!Number.isFinite(rawWager)) {
+        return res.status(400).json({ ok: false, error: 'invalid_bet' });
+      }
       const wager = clampInteger(
-        req.body?.bet,
+        rawWager,
         BLACKJACK_PLAYER_BETS[0],
         BLACKJACK_PLAYER_BETS[BLACKJACK_PLAYER_BETS.length - 1],
-        BLACKJACK_PLAYER_BETS[1]
+        BLACKJACK_PLAYER_BETS[0]
       );
       if (!BLACKJACK_PLAYER_BETS.includes(wager)) {
         return res.status(400).json({ ok: false, error: 'invalid_bet' });
@@ -3185,14 +3190,12 @@ function createCasinoRouter({
         });
       }
       if (state.stage === 'resolved' && revealOpen) {
-        if (!requesterIsSeated) {
-          state = queueBlackjackPendingSeat(state, {
-            roomId,
-            userId: auth.userId,
-            username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
-            wager,
-          }, now());
-        }
+        state = queueBlackjackPendingSeat(state, {
+          roomId,
+          userId: auth.userId,
+          username: auth.user?.username ? String(auth.user.username) : `Joueur ${auth.userId}`,
+          wager,
+        }, now());
         await saveSharedTableState(client, 'casino_blackjack_tables', roomId, state);
         await client.query('COMMIT');
         return res.json({
@@ -3624,7 +3627,12 @@ function createCasinoRouter({
         return res.json(cachedState.payload);
       }
       await pruneTableRoomPresence(client);
-      await clearOtherTableRoomPresenceForClient(client, auth.userId, presenceClientId);
+      const shouldTouchPresence = shouldTouchTableRoomPresence('roulette', ROULETTE_ROOM_ID, auth.userId, presenceClientId);
+      if (shouldTouchPresence) {
+        await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId, presenceClientId);
+      } else {
+        await clearOtherTableRoomPresenceForClient(client, auth.userId, presenceClientId, 'roulette', ROULETTE_ROOM_ID);
+      }
       const room = await buildRouletteRoomPayload(client, auth.userId, { compact: compactView });
       await client.query('COMMIT');
       const payload = {
@@ -3665,7 +3673,7 @@ function createCasinoRouter({
       client = await db.connect();
       await client.query('BEGIN');
       await pruneTableRoomPresence(client);
-      await clearOtherTableRoomPresenceForClient(client, auth.userId, presenceClientId);
+      await touchTableRoomPresence(client, 'roulette', ROULETTE_ROOM_ID, auth.userId, presenceClientId);
       const { currentRound, roomActive } = await ensureCurrentRouletteRound(client, ROULETTE_ROOM_ID, { activateRound: true });
       if (!roomActive || !currentRound?.closes_at) {
         await client.query('ROLLBACK');
