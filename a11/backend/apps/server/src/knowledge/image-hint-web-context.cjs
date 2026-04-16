@@ -82,6 +82,39 @@ function resolveEntityUniverse(mask = {}) {
   );
 }
 
+function resolveSubjectProfileType(mask = {}) {
+  return normalizeLookup(
+    mask?.meta?.subjectProfile?.type
+    || mask?.meta?.imageScratchpad?.subjectProfileType
+    || ''
+  );
+}
+
+function resolveScratchpadEntityType(mask = {}) {
+  return normalizeLookup(
+    mask?.meta?.imageScratchpad?.entityType
+    || mask?.meta?.imageEntityContext?.entityType
+    || ''
+  );
+}
+
+function hasVolatileElementTransform(mask = {}) {
+  const raw = normalizeLookup(mask?.raw || '');
+  const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
+    ? mask.meta.semantic
+    : {};
+  const elementFamilies = new Set(
+    (Array.isArray(semantic?.elements) ? semantic.elements : [])
+      .map((entry) => normalizeLookup(entry?.family || entry?.key || entry?.label || entry))
+      .filter(Boolean)
+  );
+
+  return (
+    elementFamilies.has('fire')
+    || /\b(en feu|feu|flamme|flammes|incendie|embrase|embrasee|embrasé|burning|on fire|flaming)\b/.test(raw)
+  );
+}
+
 function looksLikePhotoRequest(mask = {}) {
   const raw = normalizeLookup(mask?.raw || '');
   const styleWords = normalizeArrayLabels(mask?.meta?.semantic?.styles || [])
@@ -132,21 +165,38 @@ function buildImageHintLookupQuery(mask = {}) {
     || mask?.inputs?.subject?.[0]
     || ''
   );
-  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const subjectProfileType = resolveSubjectProfileType(mask);
+  const scratchpadEntityType = resolveScratchpadEntityType(mask);
   const accessories = normalizeArrayLabels(mask?.meta?.semantic?.accessories || []);
   const elements = normalizeArrayLabels(mask?.meta?.semantic?.elements || []);
   const metiers = normalizeArrayLabels(mask?.meta?.semantic?.metiers || []);
   const entityUniverse = resolveEntityUniverse(mask);
+  const hasVolatileTransform = hasVolatileElementTransform(mask);
 
   if (subjectProfileType === 'reference_character') {
     return buildReferenceCharacterQuery(mask, subject);
   }
 
+  const shouldSkipElementBias = (
+    hasVolatileTransform
+    && (
+      [
+        'single_animal',
+        'single_human_figure',
+        'reference_character',
+        'pokemon_creature',
+        'phoenix_creature',
+        'mythic_creature',
+      ].includes(subjectProfileType)
+      || ['animal', 'human'].includes(scratchpadEntityType)
+    )
+  );
+
   const pieces = [
     subject,
     entityUniverse,
     accessories[0] || '',
-    elements[0] || '',
+    shouldSkipElementBias ? '' : (elements[0] || ''),
     metiers[0] || '',
   ].filter(Boolean);
 
@@ -241,7 +291,7 @@ function normalizeStrength(value, fallback = 0.45) {
 }
 
 function shouldRejectCharacterDraftImage(mask = {}, webHintContext = null) {
-  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const subjectProfileType = resolveSubjectProfileType(mask);
   if (!['reference_character', 'pokemon_creature'].includes(subjectProfileType)) {
     return false;
   }
@@ -269,11 +319,30 @@ function shouldUseImageWebDraft({
   if (String(mask?.intent || '').trim() !== 'image.generate') return false;
   if (!normalizeText(webHintContext?.imageUrl || '')) return false;
 
-  const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '');
+  const subjectProfileType = resolveSubjectProfileType(mask);
+  const scratchpadEntityType = resolveScratchpadEntityType(mask);
   const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
   const hasStrongTransform = hasStrongPromptTransform(mask);
+  const hasVolatileTransform = hasVolatileElementTransform(mask);
 
   if (['simple_food_object', 'container_object', 'single_plant_object'].includes(subjectProfileType)) {
+    return false;
+  }
+
+  if (
+    hasVolatileTransform
+    && (
+      [
+        'single_animal',
+        'single_human_figure',
+        'reference_character',
+        'pokemon_creature',
+        'phoenix_creature',
+        'mythic_creature',
+      ].includes(subjectProfileType)
+      || ['animal', 'human'].includes(scratchpadEntityType)
+    )
+  ) {
     return false;
   }
 

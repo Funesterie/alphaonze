@@ -1,4 +1,7 @@
+
+const path = require('path');
 const express = require('express');
+const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..');
 
 function createA11HistoryRouter({
   verifyJWT,

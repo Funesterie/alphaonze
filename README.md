@@ -45,7 +45,8 @@ Depuis la racine `funesterie`, tu peux tout piloter avec:
 ```powershell
 pwsh -File .\bootstrap.ps1 status
 pwsh -File .\bootstrap.ps1 setup
-pwsh -File .\bootstrap.ps1 local --check-only --no-pause
+pwsh -File .\bootstrap.ps1 local check -NoPause
+pwsh -File .\bootstrap.ps1 local start -NoPause
 pwsh -File .\bootstrap.ps1 online --check-only --no-pause
 ```
 
@@ -54,7 +55,8 @@ Ou en double-clic / `cmd`:
 ```bat
 bootstrap.bat status
 bootstrap.bat setup
-bootstrap.bat local --check-only --no-pause
+bootstrap.bat local check -NoPause
+bootstrap.bat local start -NoPause
 bootstrap.bat online --check-only --no-pause
 ```
 
@@ -88,9 +90,17 @@ Ce flux:
 - `setup`
   Prepare le workspace local.
 - `local`
-  Delegue vers `a11\launchers\start-all-a11.ps1`.
+  Delegue vers `a11\launchers\a11-local.ps1` avec `start` par defaut.
 - `online`
   Delegue vers `a11\launchers\start-prod-a11.ps1`.
+
+## Entrees canoniques A11
+
+- local: `a11\launchers\a11-local.ps1`
+- bureau: `a11\launchers\a11-desktop.ps1`
+- bureau + Ollama: `a11\launchers\a11-ollama-desktop.ps1`
+- prod/online: `a11\launchers\start-prod-a11.ps1`
+- raccourcis bureau: `a11\launchers\create-desktop-shortcut.ps1`
 
 ## Vue IDE
 

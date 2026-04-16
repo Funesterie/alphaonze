@@ -1,3 +1,7 @@
+param(
+  [switch]$WithTunnel
+)
+
 $ErrorActionPreference = 'Stop'
 
 function Test-OllamaReady {
@@ -95,7 +99,7 @@ if (-not (Test-OllamaReady -Url $ollamaHealthUrl)) {
   }
 }
 
-if (Test-Path -LiteralPath $tunnelLauncher) {
+if ($WithTunnel -and (Test-Path -LiteralPath $tunnelLauncher)) {
   & $tunnelLauncher
 }
 

@@ -567,9 +567,9 @@ function resolveMaxVerificationRetries(explicitValue) {
   const fromEnv = Number(
     process.env.A11_IMAGE_CARDINALITY_MAX_RETRIES
     || process.env.A11_IMAGE_VERIFY_MAX_RETRIES
-    || 2
+    || 0
   );
-  return Number.isFinite(fromEnv) ? Math.max(0, Math.floor(fromEnv)) : 2;
+  return Number.isFinite(fromEnv) ? Math.max(0, Math.floor(fromEnv)) : 0;
 }
 
 function buildCompiledPromptHash(sdBody = {}) {

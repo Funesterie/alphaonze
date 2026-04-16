@@ -1,0 +1,31 @@
+[     131ms] TypeError: Cannot read properties of undefined (reading 'useCache')
+    at pe (chrome-extension://ndcileolkflehcjpmjnfbnaibdcgglog/vendor/@eyeo/webext-ad-filtering-solution/content.js:18:437173)
+[ 2564886ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3000/api/a11/history:0
+[ 2565149ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3000/api/a11/history:0
+[ 2565149ms] [WARNING] [A11] failed to refresh history TypeError: Failed to fetch
+    at Ie (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:66348)
+    at w0 (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:42:1758)
+    at Nl (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:79:496)
+    at gy (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:79:3086) @ chrome-extension://gpphkfbcpidddadnkolkpfckpihlkkil/build/installHook.js:0
+[ 2566934ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3000/api/a11/history/chat-1776340013970/activity?limit=12:0
+[ 2566935ms] [WARNING] [A11] failed to load conversation activity TypeError: Failed to fetch
+    at Ie (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:66348)
+    at C0 (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:42:2930)
+    at sr (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:65:14773)
+    at http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:79:198
+    at us (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:24263)
+    at ti (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:42318)
+    at http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:40661
+    at T (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:25:1580)
+    at MessagePort.M (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:25:1945) @ chrome-extension://gpphkfbcpidddadnkolkpfckpihlkkil/build/installHook.js:0
+[ 2566937ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3000/api/a11/history/chat-1776340013970/resources?limit=24:0
+[ 2566937ms] [WARNING] [A11] failed to load conversation resources TypeError: Failed to fetch
+    at Ie (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:66348)
+    at b0 (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:42:2635)
+    at _r (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:65:15100)
+    at http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:79:205
+    at us (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:24263)
+    at ti (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:42318)
+    at http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:40:40661
+    at T (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:25:1580)
+    at MessagePort.M (http://127.0.0.1:3000/assets/index-Pv8X-XVw.js:25:1945) @ chrome-extension://gpphkfbcpidddadnkolkpfckpihlkkil/build/installHook.js:0

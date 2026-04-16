@@ -324,46 +324,24 @@ function Invoke-RailwayRedeploy {
 
 $repoOrder = @(
   @{
-    Name = "a11backendrailway"
-    Path = "D:\funesterie\a11\a11backendrailway"
-    Branch = "main"
+    Name = "funesterie-monorepo"
+    Path = "D:\funesterie"
+    Branch = "master"
     RailwayService = "a11backend"
     Ignore = @(
-      "apps/server/.env.local",
-      "a11_memory/memos/memo_index.jsonl",
-      "a11_runtime/",
-      "tmp-*.log",
+      "a11/backend/apps/server/.env.local",
+      "a11/backend/apps/server/a11_runtime/",
+      "a11/backend/apps/server/tmp/",
+      "a11/backend/apps/server/*.log",
+      "a11/frontend/apps/web/node_modules/",
+      "a11/frontend/apps/web/dist/",
+      "a11/frontend/dist/",
+      "a11/launchers/runtime/",
+      "a11/backend/apps/tts/*.json",
       "*.log"
-    )
-  },
-  @{
-    Name = "a11frontendnetlify"
-    Path = "D:\funesterie\a11\a11frontendnetlify"
-    Branch = "main"
-    Ignore = @(
-      "node_modules/",
-      "apps/web/node_modules/",
-      "dist/",
-      "apps/web/dist/",
-      ".netlify/plugins/"
     )
   }
 )
-
-  if (-not $SkipQflush) {
-  $repoOrder += @{
-    Name = "a11qflushrailway"
-    Path = "D:\funesterie\a11\a11qflushrailway"
-    Branch = "main"
-    RailwayService = "qflush"
-    Ignore = @(
-      ".qflush/",
-      "dist/",
-      "node_modules/",
-      "*.log"
-    )
-  }
-}
 
 $results = @()
 

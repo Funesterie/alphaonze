@@ -30,10 +30,15 @@ $paths = @(
     "a11qflushrailway\docs\*",
     "llm\llm\*",
     "launchers\README.md",
-    "launchers\start-all-a11.bat",
-    "launchers\start-all-a11.ps1",
+    "launchers\a11-local.bat",
+    "launchers\a11-local.ps1",
+    "launchers\a11-desktop.bat",
+    "launchers\a11-desktop.ps1",
+    "launchers\a11-ollama-desktop.bat",
+    "launchers\a11-ollama-desktop.ps1",
     "launchers\start-prod-a11.bat",
-    "launchers\start-prod-a11.ps1"
+    "launchers\start-prod-a11.ps1",
+    "launchers\create-desktop-shortcut.ps1"
 ) | Where-Object { Test-Path $_ }
 
 if ($paths.Count -eq 0) {

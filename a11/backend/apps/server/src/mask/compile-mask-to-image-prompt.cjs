@@ -22,6 +22,25 @@ function normalizeList(values = []) {
   )];
 }
 
+function hasSemanticElementFamily(mask = {}, family = '') {
+  const normalizedFamily = normalizeText(family).toLowerCase();
+  if (!normalizedFamily) return false;
+  const elements = Array.isArray(mask?.meta?.semantic?.elements) ? mask.meta.semantic.elements : [];
+  return elements.some((entry) => normalizeText(entry?.family || entry?.key || entry?.label || entry).toLowerCase() === normalizedFamily);
+}
+
+function hasAnimateSubjectProfile(mask = {}) {
+  const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '').toLowerCase();
+  return [
+    'single_animal',
+    'single_human_figure',
+    'reference_character',
+    'pokemon_creature',
+    'phoenix_creature',
+    'mythic_creature',
+  ].includes(subjectProfileType);
+}
+
 function joinPromptSections(values = []) {
   return (Array.isArray(values) ? values : [values])
     .map((entry) => normalizeText(String(entry || '').replace(/[.。\s]+$/g, '')))
@@ -53,6 +72,13 @@ function buildLiteralInstructions(mask = {}) {
 
   if (extraPromptInstructions.length) {
     instructions.push(...extraPromptInstructions);
+  }
+
+  if (hasSemanticElementFamily(mask, 'fire') && hasAnimateSubjectProfile(mask)) {
+    instructions.push('Le sujet lui-même doit apparaître en flammes visibles et immédiates.');
+    instructions.push('Les flammes doivent rester l élément principal autour du sujet, nettes, fortes et clairement séparées du décor.');
+    instructions.push('Les flammes doivent être attachées directement au corps du sujet principal, sur ses contours, ses membres et ses zones les plus visibles.');
+    instructions.push('Le feu porté par le sujet doit dominer visuellement le décor.');
   }
 
   if (mask?.constraints?.no_text === true) {
