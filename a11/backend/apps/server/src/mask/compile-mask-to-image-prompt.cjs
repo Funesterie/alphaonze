@@ -124,6 +124,21 @@ function buildNegativePrompt(mask = {}) {
     hints.push('animaux multiples', 'créatures multiples', 'anatomie fusionnée');
   }
 
+  if (subjectProfileType === 'phoenix_creature') {
+    hints.push(
+      'plusieurs têtes',
+      'têtes dupliquées',
+      'ailes supplémentaires',
+      'ailes dupliquées',
+      'anatomie d oiseau cassée',
+      'forme de fleur',
+      'pétales',
+      'plante',
+      'bouquet',
+      'forêt de fleurs'
+    );
+  }
+
   if (subjectProfileType === 'simple_food_object' || subjectProfileType === 'container_object') {
     hints.push('objets multiples', 'décor encombré', 'arrière-plan chargé');
   }

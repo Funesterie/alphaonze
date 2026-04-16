@@ -17,7 +17,7 @@ $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $targetPath
 $shortcut.WorkingDirectory = $workingDirectory
-$shortcut.Description = 'Lance A11 local et reveille Ollama si necessaire.'
+$shortcut.Description = 'Lance A11 local, reveille Ollama et demarre le tunnel Cloudflare si necessaire.'
 if (Test-Path -LiteralPath $iconPath) {
   $shortcut.IconLocation = $iconPath
 }

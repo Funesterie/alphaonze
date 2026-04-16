@@ -163,10 +163,10 @@ const RAW_SUBJECT_PROFILES = [
     label: 'Phénix unique',
     aliases: ['phoenix', 'phénix', 'phenix'],
     definitionKeywords: ['phénix', 'phoenix', 'oiseau mythique'],
-    composition: ['un seul phénix complet', 'ailes bien lisibles', 'silhouette majestueuse'],
+    composition: ['un seul phénix complet', 'une seule tête visible', 'une seule paire d ailes bien lisibles', 'silhouette majestueuse'],
     environment: ['ciel simple avec profondeur'],
     styleHints: [],
-    promptInstruction: 'Représenter un seul phénix complet avec des ailes bien lisibles.',
+    promptInstruction: 'Représenter un seul phénix complet, clairement comme un oiseau mythique unique, avec une seule tête, une seule paire d ailes et des plumes bien lisibles.',
   },
   {
     type: 'mythic_creature',

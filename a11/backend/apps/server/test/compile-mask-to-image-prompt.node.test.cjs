@@ -207,6 +207,37 @@ test('compileMaskToImagePrompt includes extra prompt instructions for elemental 
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
+test('compileMaskToImagePrompt hardens phoenix prompts against flowers and duplicated anatomy', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de phoenix violet',
+    inputs: {
+      subject: ['phoenix violet'],
+      environment: ['ciel simple avec profondeur'],
+      style: ['haute qualité'],
+      composition: ['un seul phénix complet', 'ailes bien lisibles', 'silhouette majestueuse'],
+      lighting: [],
+      palette: ['violet'],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'phoenix_creature',
+        promptInstruction: 'Représenter un seul phénix complet, clairement comme un oiseau mythique unique, avec une seule tête, une seule paire d ailes et des plumes bien lisibles.',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /oiseau mythique unique/i);
+  assert.match(String(compiled.prompt || ''), /une seule tête/i);
+  assert.match(String(compiled.prompt || ''), /une seule paire d ailes/i);
+  assert.match(String(compiled.negative_prompt || ''), /plusieurs têtes/i);
+  assert.match(String(compiled.negative_prompt || ''), /ailes supplémentaires|ailes dupliquées/i);
+  assert.match(String(compiled.negative_prompt || ''), /forme de fleur|pétales|bouquet/i);
+});
+
 test('compileMaskToImagePrompt keeps single plant prompts constrained to one visible plant', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image de sapin blanc en hiver',
