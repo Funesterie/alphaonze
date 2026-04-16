@@ -34,7 +34,7 @@ const { TOOL_IMPL } = require("./src/a11/tools-dispatcher.cjs");
 
 const fsp = require("node:fs/promises");
 
-const DATA_ROOT = process.env.A11_DATA_ROOT || "D:/A12";
+const DATA_ROOT = process.env.A11_DATA_ROOT || WORKSPACE_ROOT;
 const LTM_DIR = path.join(DATA_ROOT, "a11_memory", "long_term");
 const ARCHIVE_DIR = path.join(DATA_ROOT, "a11_memory", "archives");
 const BOOT_MEMO_PATH = path.join(DATA_ROOT, "a11_memory", "boot_memo.txt");
