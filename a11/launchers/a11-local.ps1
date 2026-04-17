@@ -1209,7 +1209,7 @@ function Build-ServiceDefinitions {
 
   $backendPort = To-IntValue (Get-ConfigValue $Config 'A11_BACKEND_PORT' '3000') 3000
   $ttsPort = To-IntValue (Get-ConfigValue $Config 'A11_TTS_PORT' '5002') 5002
-  $llmPort = To-IntValue (Get-ConfigValue $Config 'A11_LLM_PORT' '8080') 8080
+  $llmPort = To-IntValue (Get-ConfigValue $Config 'A11_LLM_PORT' '4545') 4545
   $llmStartupTimeoutSec = To-IntValue (Get-ConfigValue $Config 'A11_LLM_STARTUP_TIMEOUT_SEC' '90') 90
   $qflushPort = To-IntValue (Get-ConfigValue $Config 'A11_QFLUSH_PORT' '43421') 43421
   $frontendPort = To-IntValue (Get-ConfigValue $Config 'A11_FRONTEND_PORT' '5173') 5173
@@ -1961,7 +1961,7 @@ $webDistDirectory = Resolve-LauncherRelativePath -Value (Get-ConfigValue $config
 
 $backendPort = To-IntValue (Get-ConfigValue $config 'A11_BACKEND_PORT' '3000') 3000
 $ttsPort = To-IntValue (Get-ConfigValue $config 'A11_TTS_PORT' '5002') 5002
-$llmPort = To-IntValue (Get-ConfigValue $config 'A11_LLM_PORT' '8080') 8080
+$llmPort = To-IntValue (Get-ConfigValue $config 'A11_LLM_PORT' '4545') 4545
 $qflushPort = To-IntValue (Get-ConfigValue $config 'A11_QFLUSH_PORT' '43421') 43421
 $frontendPort = To-IntValue (Get-ConfigValue $config 'A11_FRONTEND_PORT' '5173') 5173
 

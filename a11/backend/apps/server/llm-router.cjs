@@ -633,7 +633,7 @@ router.get("/api/llm/health", async (_req, res) => {
 // -------------------------------------------
 const STRATEGIST_BACKEND = {
   url: `${OLLAMA_BASE}/api/generate`,
-  model: process.env.CERBERE_STRATEGIST_MODEL || "llama32-64k",
+  model: process.env.CERBERE_STRATEGIST_MODEL || "gemma4:e4b",
   options: {
     num_ctx: 64000,
     temperature: 0.2,

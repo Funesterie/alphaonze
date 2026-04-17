@@ -814,7 +814,7 @@ function registerA11HostRoutes(router) {
     // TODO: Replace with real LLM stats if available
     res.json({
       backend: 'local',
-      model: 'llama3',
+      model: 'gemma4:e4b',
       gpu: true,
       lastTps: 12.3
     });

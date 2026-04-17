@@ -12,7 +12,7 @@ export default async function runA11Key(argv: string[] = []) {
   const sub = argv[0] || 'status';
 
   if (sub === 'set') {
-    // usage: qflush a11-key set --server http://127.0.0.1:3000 --ollama http://127.0.0.1:11434 --model llama3.1:8b --timeout 60000
+    // usage: qflush a11-key set --server http://127.0.0.1:3000 --ollama http://127.0.0.1:11434 --model gemma4:e4b --timeout 60000
     const opts: any = {};
     for (let i = 1; i < argv.length; i++) {
       const a = argv[i];
@@ -23,7 +23,7 @@ export default async function runA11Key(argv: string[] = []) {
       else if (a === '--enabled') opts.enabled = argv[++i] === 'true';
     }
     ensureDir();
-    const cfg = Object.assign({ enabled: true, serverUrl: 'http://127.0.0.1:3000', ollamaUrl: 'http://127.0.0.1:11434', defaultModel: 'llama3.1:8b', timeoutMs: 60000 }, opts);
+    const cfg = Object.assign({ enabled: true, serverUrl: 'http://127.0.0.1:3000', ollamaUrl: 'http://127.0.0.1:11434', defaultModel: 'gemma4:e4b', timeoutMs: 60000 }, opts);
     try {
       fs.writeFileSync(CFG, JSON.stringify(cfg, null, 2), 'utf8');
       console.log('A11 config saved to .qflush/a11.config.json');
