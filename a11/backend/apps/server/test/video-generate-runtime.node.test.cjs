@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const {
   buildFfmpegAssemblyArgs,
   createGenerateVideoHandler,
+  ensureFfmpegAvailable,
   normalizeVideoRequest,
 } = require('../src/video/video-generate-runtime.cjs');
 
@@ -253,4 +254,49 @@ test('buildFfmpegAssemblyArgs uses NVENC settings for mp4 when requested', () =>
   assert.ok(args.includes('21'));
   assert.ok(args.includes('-b:v'));
   assert.ok(args.includes('0'));
+});
+
+test('ensureFfmpegAvailable throws a tagged error when the binary is missing', () => {
+  assert.throws(
+    () => ensureFfmpegAvailable('definitely-missing-ffmpeg-binary'),
+    /ffmpeg_unavailable:/i
+  );
+});
+
+test('createGenerateVideoHandler fails fast when ffmpeg is unavailable', async () => {
+  let generateSdCalls = 0;
+
+  const generateVideo = createGenerateVideoHandler({
+    ensureFfmpegAvailable: () => {
+      const error = new Error('ffmpeg_unavailable:spawn ffmpeg ENOENT');
+      error.code = 'ffmpeg_unavailable';
+      throw error;
+    },
+    generateSd: async () => {
+      generateSdCalls += 1;
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/frame-1.png',
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => generateVideo({
+      req: { headers: {}, body: {} },
+      prompt: 'genere une video de mario',
+      body: {
+        prompt: 'genere une video de mario',
+        durationSeconds: 1,
+        fps: 2,
+      },
+    }),
+    (error) => {
+      assert.equal(error?.statusCode, 503);
+      assert.equal(error?.payload?.error, 'video_ffmpeg_unavailable');
+      return true;
+    }
+  );
+
+  assert.equal(generateSdCalls, 0);
 });

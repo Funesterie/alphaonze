@@ -90,6 +90,41 @@ function resolveFfmpegBinary(explicitValue = '') {
   return explicit || 'ffmpeg';
 }
 
+function ensureFfmpegAvailable(ffmpegBin = 'ffmpeg') {
+  const resolvedBin = String(ffmpegBin || 'ffmpeg').trim() || 'ffmpeg';
+  try {
+    const probe = spawnSync(resolvedBin, ['-version'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+
+    if (probe.error) {
+      const error = new Error(`ffmpeg_unavailable:${String(probe.error?.message || probe.error)}`);
+      error.code = 'ffmpeg_unavailable';
+      error.ffmpegBin = resolvedBin;
+      throw error;
+    }
+
+    if (typeof probe.status === 'number' && probe.status !== 0) {
+      const details = String(probe.stderr || probe.stdout || '').trim();
+      const error = new Error(`ffmpeg_unavailable:${details || `exit_${probe.status}`}`);
+      error.code = 'ffmpeg_unavailable';
+      error.ffmpegBin = resolvedBin;
+      throw error;
+    }
+  } catch (error_) {
+    if (error_?.code === 'ffmpeg_unavailable') {
+      throw error_;
+    }
+    const error = new Error(`ffmpeg_unavailable:${String(error_?.message || error_)}`);
+    error.code = 'ffmpeg_unavailable';
+    error.ffmpegBin = resolvedBin;
+    throw error;
+  }
+
+  return resolvedBin;
+}
+
 function probeFfmpegCapabilities(ffmpegBin = 'ffmpeg') {
   const cacheKey = String(ffmpegBin || 'ffmpeg').trim() || 'ffmpeg';
   if (FFMPEG_CAPABILITY_CACHE.has(cacheKey)) {
@@ -570,6 +605,7 @@ function createGenerateVideoHandler(overrides = {}) {
   const buildMask = overrides.buildCanonicalImageMaskFromText || buildCanonicalImageMaskFromText;
   const compileRuntime = overrides.compileMaskImageGenerateRuntime || compileMaskImageGenerateRuntime;
   const runFfmpeg = overrides.runFfmpeg || runFfmpegAssembly;
+  const ensureFfmpeg = overrides.ensureFfmpegAvailable || ensureFfmpegAvailable;
 
   return async function generateVideoInternal({ req, prompt, body = null }) {
     if (typeof generateSd !== 'function') {
@@ -608,6 +644,21 @@ function createGenerateVideoHandler(overrides = {}) {
         ok: false,
         error: 'unsupported_video_backend',
         backend: request.config.backend,
+      };
+      throw error;
+    }
+
+    try {
+      ensureFfmpeg(request.config.ffmpegBin);
+    } catch (error_) {
+      const error = new Error('video_ffmpeg_unavailable');
+      error.statusCode = 503;
+      error.payload = {
+        ok: false,
+        error: 'video_ffmpeg_unavailable',
+        message: 'La generation video est indisponible: ffmpeg est absent ou inutilisable sur ce backend.',
+        ffmpegBin: String(request.config.ffmpegBin || '').trim() || 'ffmpeg',
+        detail: String(error_?.message || error_),
       };
       throw error;
     }
@@ -773,6 +824,7 @@ module.exports = {
   buildVideoAssistantMessage,
   buildFfmpegAssemblyArgs,
   createGenerateVideoHandler,
+  ensureFfmpegAvailable,
   normalizeVideoRequest,
   resolveVideoEnvConfig,
   runFfmpegAssembly,
