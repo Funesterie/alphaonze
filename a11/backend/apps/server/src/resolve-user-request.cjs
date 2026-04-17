@@ -37,9 +37,12 @@ const {
 
 const {
   detectImageIntent: defaultDetectImageIntent,
+  detectVideoIntent: defaultDetectVideoIntent,
   detectWebImageIntent: defaultDetectWebImageIntent,
 } = require('../lib/intent-detection.cjs');
 const { duckduckgoImageSearch: defaultDuckduckgoImageSearch } = require('../lib/image-search.cjs');
+const { parseVideoGenerateRequest } = require('./video/video-request.cjs');
+const { toVideoChatProxyPayload } = require('./video/video-generate-runtime.cjs');
 
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
@@ -200,9 +203,11 @@ async function executeWebImageSearch(mask, duckduckgoImageSearch) {
 function resolveIntentDependencies(overrides = {}) {
   return {
     detectImageIntent: overrides.detectImageIntent || defaultDetectImageIntent,
+    detectVideoIntent: overrides.detectVideoIntent || defaultDetectVideoIntent,
     detectWebImageIntent: overrides.detectWebImageIntent || defaultDetectWebImageIntent,
     duckduckgoImageSearch: overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch,
     generateSd: overrides.generateSd,
+    generateVideo: overrides.generateVideo,
     textToWazaa: overrides.textToWazaa || textToWazaa,
     lookupDefinitionContext: overrides.lookupDefinitionContext || defaultLookupDefinitionContext,
     resolveImageEntityContext: overrides.resolveImageEntityContext || defaultResolveImageEntityContext,
@@ -236,6 +241,45 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
         resolution
       ),
       runtime: imageResult,
+    };
+  }
+
+  if (resolution.kind === 'video.generate') {
+    if (typeof deps.generateVideo !== 'function') {
+      const error = new Error('video_engine_unavailable');
+      error.statusCode = 500;
+      error.payload = {
+        ok: false,
+        error: 'video_engine_unavailable',
+        message: 'generateVideo handler unavailable',
+      };
+      throw error;
+    }
+
+    const videoResult = await deps.generateVideo({
+      req: input.req,
+      prompt: resolution.videoRequest?.prompt || input.body?.prompt || '',
+      body: {
+        ...(input.body || {}),
+        prompt: resolution.videoRequest?.prompt || input.body?.prompt || '',
+        durationSeconds: resolution.videoRequest?.durationSeconds,
+        fps: resolution.videoRequest?.fps,
+        format: resolution.videoRequest?.format,
+        width: resolution.videoRequest?.width,
+        height: resolution.videoRequest?.height,
+        sourceType: resolution.videoRequest?.sourceType,
+        sourceUrl: resolution.videoRequest?.sourceUrl,
+        sourcePath: resolution.videoRequest?.sourcePath,
+        sourceImageUrl: resolution.videoRequest?.sourceImageUrl,
+        sourceImagePath: resolution.videoRequest?.sourceImagePath,
+        sourceVideoUrl: resolution.videoRequest?.sourceVideoUrl,
+        sourceVideoPath: resolution.videoRequest?.sourceVideoPath,
+      },
+    });
+    return {
+      ...resolution,
+      responsePayload: withIntentMetadata(toVideoChatProxyPayload(videoResult), resolution),
+      runtime: videoResult,
     };
   }
 
@@ -287,11 +331,13 @@ function createIntentResolver(overrides = {}) {
 
     const semantic = analyzeSemanticIntent(userText, {
       detectImageIntent: deps.detectImageIntent,
+      detectVideoIntent: deps.detectVideoIntent,
       detectWebImageIntent: deps.detectWebImageIntent,
       messages,
       traceId,
     });
     const clarification = semantic?.decision || null;
+    const selectedIntentType = clarification?.selectedIntentType || semantic?.topIntents?.[0]?.type || 'chat.reply';
 
     if (clarification?.shouldClarify) {
       return {
@@ -302,6 +348,28 @@ function createIntentResolver(overrides = {}) {
         clarification,
         responsePayload: buildClarificationPayload(clarification, semantic, traceId, pipeline),
       };
+    }
+
+    if (selectedIntentType === 'video.generate') {
+      let resolution = {
+        traceId,
+        pipeline,
+        kind: 'video.generate',
+        semantic,
+        videoRequest: parseVideoGenerateRequest(userText, input.body || {}),
+        responsePayload: null,
+        requestText: {
+          original: originalUserText,
+          smoothed: userText,
+          changed: requestTextSmootherResult?.changed === true,
+        },
+      };
+
+      if (input.executeRuntime === true) {
+        resolution = await executeResolvedRuntime(resolution, input, deps);
+      }
+
+      return resolution;
     }
 
     const textToWazaaAdapter = deps.textToWazaa || textToWazaa;
@@ -345,7 +413,7 @@ function createIntentResolver(overrides = {}) {
 
     let mask = wazaaToMask(effectiveWazaa, {
       sourceText: userText,
-      intentType: clarification?.selectedIntentType || semantic?.topIntents?.[0]?.type || 'chat.reply',
+      intentType: selectedIntentType,
       semanticAnalysis: semantic,
     });
 

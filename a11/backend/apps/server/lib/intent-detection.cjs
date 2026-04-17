@@ -87,4 +87,31 @@ function extractWebImageSubject(message) {
   return null;
 }
 
-module.exports = { detectImageIntent, detectWebImageIntent, extractWebImageSubject };
+function detectVideoIntent(message) {
+  if (!message || typeof message !== 'string') return false;
+
+  const normalized = normalizeMessageForIntent(message);
+  if (!normalized) return false;
+
+  const hasCreationVerb = /\b(genere|generer|cree|creer|fais|faire|fabrique|produis|prepare|generate|create|make|render)\b/i.test(normalized);
+  const hasVideoWord = /\b(video|animation|anime|animee|animees|gif|mp4|clip|sequence|frames)\b/i.test(normalized);
+  const troubleshootingLike = /\b(explique|expliquer|pourquoi|probleme|bug|erreur|souci|fonctionne|marche)\b/i.test(normalized);
+
+  if (hasVideoWord && troubleshootingLike && !hasCreationVerb) {
+    return false;
+  }
+
+  const patterns = [
+    /\b(genere|generer|cree|creer|fais|faire|fabrique|produis|prepare)\b.*\b(video|animation|gif|mp4|clip)\b/i,
+    /\b(generate|create|make|render)\b.*\b(video|animation|gif|mp4|clip)\b/i,
+    /\b(video|animation|gif|mp4|clip)\b.*\b(de|du|des|d)\b/i,
+  ];
+
+  if (patterns.some((re) => re.test(normalized))) {
+    return true;
+  }
+
+  return hasCreationVerb && hasVideoWord;
+}
+
+module.exports = { detectImageIntent, detectVideoIntent, detectWebImageIntent, extractWebImageSubject };

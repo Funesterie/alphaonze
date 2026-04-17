@@ -64,6 +64,14 @@ test('analyzeSemanticIntent keeps explicit image prompts on image.generate', () 
   assert.ok(Number(result?.summary?.confidence || 0) >= 0.5);
 });
 
+test('analyzeSemanticIntent keeps explicit video prompts on video.generate', () => {
+  const result = analyzeSemanticIntent('genere une video de goku super saiyan en mp4 3 secondes 6 fps', {});
+
+  assert.equal(result?.decision?.shouldClarify, false);
+  assert.equal(result?.decision?.selectedIntentType, 'video.generate');
+  assert.equal(result?.topIntents?.[0]?.type, 'video.generate');
+});
+
 test('analyzeSemanticIntent keeps colored creation prompts on image.generate instead of code', () => {
   const result = analyzeSemanticIntent('genere un lapin violet', {});
 

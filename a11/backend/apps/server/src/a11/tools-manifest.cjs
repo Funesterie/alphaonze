@@ -5,18 +5,16 @@ const path = require("node:path");
 const configuredWorkspaceRoot = String(process.env.A11_WORKSPACE_ROOT || process.env.WORKSPACE_ROOT || '').trim();
 const defaultWorkspaceRoot = configuredWorkspaceRoot
   ? path.resolve(configuredWorkspaceRoot)
-  : path.resolve(process.cwd());
+  : path.resolve(process.cwd(), '..', '..', '..');
 
 const WORKSPACE_ROOTS = Array.from(new Set([
   defaultWorkspaceRoot,
-  "D:\\A11",
-  "D:\\A12",
 ]));
 
 const DEFAULT_WORKSPACE_ROOT = WORKSPACE_ROOTS[0];
 
 const SAFE_DATA_ROOT = path.resolve(
-  process.env.A11_SAFE_DATA_ROOT || path.join(DEFAULT_WORKSPACE_ROOT, "a11_runtime")
+  process.env.A11_SAFE_DATA_ROOT || path.join(DEFAULT_WORKSPACE_ROOT, "runtime", "files")
 );
 
 const TOOL_MANIFEST = {

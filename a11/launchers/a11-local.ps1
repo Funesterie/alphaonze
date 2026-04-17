@@ -237,6 +237,36 @@ function Resolve-CommandExecutable {
   }
 }
 
+function Resolve-OptionalExecutablePath {
+  param(
+    [string]$ConfiguredValue,
+    [string]$BaseDirectory,
+    [string]$CommandName = '',
+    [string[]]$CandidatePaths = @()
+  )
+
+  $resolvedConfigured = Resolve-LauncherRelativePath -Value $ConfiguredValue -BaseDirectory $BaseDirectory
+  if (-not [string]::IsNullOrWhiteSpace($resolvedConfigured) -and (Test-Path $resolvedConfigured)) {
+    return $resolvedConfigured
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($CommandName)) {
+    $resolvedCommand = Resolve-CommandExecutable -Name $CommandName
+    if ($resolvedCommand) {
+      return $resolvedCommand
+    }
+  }
+
+  foreach ($candidatePath in $CandidatePaths) {
+    if ([string]::IsNullOrWhiteSpace($candidatePath)) { continue }
+    if (Test-Path $candidatePath) {
+      return [System.IO.Path]::GetFullPath($candidatePath)
+    }
+  }
+
+  return ''
+}
+
 function Get-ListeningProcessId {
   param([int]$Port)
 
@@ -1062,6 +1092,7 @@ function Write-PackagedConfig {
   $content = @(
     '# A11 packaged local launcher configuration',
     'A11_LOCAL_HOST=127.0.0.1',
+    'A11_RUNTIME_ROOT=..\runtime',
     'A11_UI_MODE=embedded',
     'A11_AUTO_OPEN_UI=1',
     "A11_DESKTOP_BROWSER=$($Context.DesktopBrowser)",
@@ -1089,14 +1120,14 @@ function Write-PackagedConfig {
     'A11_FRONTEND_DIR=..\backend\web',
     'A11_WEB_DIST_DIR=..\backend\web\dist',
     'A11_QFLUSH_DIR=..\qflush',
-    'A11_LLM_EXE=..\llm\llm\server\llama-server.exe',
-    'A11_LLM_MODEL=..\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-    'A11_LLM_MODEL_CATALOG_ID=llama32-3b-q4km',
-    'A11_LLM_MODEL_URL=',
     'A11_REMOTE_PROVIDER_CATALOG_FILE=config\remote-providers.json',
     'A11_TTS_MODEL=..\tts\fr_FR-siwis-medium.onnx',
     'A11_TTS_PIPER=..\tts\piper.exe',
     'A11_TTS_ESPEAK=..\tts\espeak-ng-data',
+    "A11_OLLAMA_BASE=$($Context.OllamaBase)",
+    "A11_OLLAMA_PRIMARY_MODEL=$($Context.OllamaPrimaryModel)",
+    'A11_OLLAMA_FALLBACK_MODEL=',
+    'A11_LLM_FALLBACK_PROVIDER=none',
     "A11_REMOTE_PROVIDER_ID=$($Context.RemoteProviderId)",
     "OPENAI_BASE_URL=$($Context.OpenAiBaseUrl)",
     'OPENAI_API_KEY=',
@@ -1133,17 +1164,38 @@ function Build-ServiceDefinitions {
   $frontendDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_FRONTEND_DIR' '..\frontend\apps\web') -BaseDirectory $LauncherDirectory
   $qflushDir = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_QFLUSH_DIR' '..\a11qflushrailway') -BaseDirectory $LauncherDirectory
   $llmRunner = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_RUNNER' '..\backend\apps\server\llm-router-runner.cjs') -BaseDirectory $LauncherDirectory
-  $llmExe = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_EXE' '..\llm\llm\server\llama-server.exe') -BaseDirectory $LauncherDirectory
-  $llmModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_LLM_MODEL' '..\llm\llm\models\Llama-3.2-3B-Instruct-Q4_K_M.gguf') -BaseDirectory $LauncherDirectory
   $ttsModel = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_MODEL' '..\backend\apps\tts\fr_FR-siwis-medium.onnx') -BaseDirectory $LauncherDirectory
   $ttsPiper = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_PIPER' '..\backend\apps\tts\piper.exe') -BaseDirectory $LauncherDirectory
   $ttsEspeak = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_TTS_ESPEAK' '..\backend\apps\tts\espeak-ng-data') -BaseDirectory $LauncherDirectory
   $remoteProviderCatalogFile = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_REMOTE_PROVIDER_CATALOG_FILE' 'config\remote-providers.json') -BaseDirectory $LauncherDirectory
   $ollamaBase = (Get-ConfigValue $Config 'A11_OLLAMA_BASE' 'http://127.0.0.1:11434').Trim()
-  $ollamaPrimaryModel = (Get-ConfigValue $Config 'A11_OLLAMA_PRIMARY_MODEL' 'gemma4:e2b').Trim()
-  $ollamaFallbackModel = (Get-ConfigValue $Config 'A11_OLLAMA_FALLBACK_MODEL' 'llama3.2:latest').Trim()
-  $llmFallbackProvider = (Get-ConfigValue $Config 'A11_LLM_FALLBACK_PROVIDER' 'none').Trim()
+  $ollamaPrimaryModel = (Get-ConfigValue $Config 'A11_OLLAMA_PRIMARY_MODEL' (Get-ConfigValue $Config 'A11_OLLAMA_MODEL' 'gemma4:e4b')).Trim()
+  $ollamaFallbackModel = (Get-ConfigValue $Config 'A11_OLLAMA_FALLBACK_MODEL' '').Trim()
+  $llmFallbackProvider = (Get-ConfigValue $Config 'A11_LLM_FALLBACK_PROVIDER' 'none').Trim().ToLowerInvariant()
   $sdModelProfile = (Get-ConfigValue $Config 'A11_SD_MODEL_PROFILE' 'classic').Trim()
+  $sdDevice = (Get-ConfigValue $Config 'A11_SD_DEVICE' 'cuda').Trim()
+  $sdTorchDtype = (Get-ConfigValue $Config 'A11_SD_TORCH_DTYPE' 'auto').Trim()
+  $videoDefaultDurationSec = (Get-ConfigValue $Config 'A11_VIDEO_DEFAULT_DURATION_SEC' '3').Trim()
+  $videoMaxDurationSec = (Get-ConfigValue $Config 'A11_VIDEO_MAX_DURATION_SEC' '8').Trim()
+  $videoDefaultFps = (Get-ConfigValue $Config 'A11_VIDEO_DEFAULT_FPS' '8').Trim()
+  $videoMaxFps = (Get-ConfigValue $Config 'A11_VIDEO_MAX_FPS' '16').Trim()
+  $videoMaxRenderFrames = (Get-ConfigValue $Config 'A11_VIDEO_MAX_RENDER_FRAMES' '32').Trim()
+  $videoSdSteps = (Get-ConfigValue $Config 'A11_VIDEO_SD_STEPS' '24').Trim()
+  $videoSdGuidanceScale = (Get-ConfigValue $Config 'A11_VIDEO_SD_GUIDANCE_SCALE' '6.5').Trim()
+  $videoFrameInitStrength = (Get-ConfigValue $Config 'A11_VIDEO_FRAME_INIT_STRENGTH' '0.24').Trim()
+  $videoMp4Codec = (Get-ConfigValue $Config 'A11_VIDEO_MP4_CODEC' 'auto').Trim()
+  $videoMp4Preset = (Get-ConfigValue $Config 'A11_VIDEO_MP4_PRESET' 'p5').Trim()
+  $videoMp4Cq = (Get-ConfigValue $Config 'A11_VIDEO_MP4_CQ' '21').Trim()
+  $ffmpegBin = Resolve-OptionalExecutablePath `
+    -ConfiguredValue (Get-ConfigValue $Config 'A11_VIDEO_FFMPEG_BIN' '') `
+    -BaseDirectory $LauncherDirectory `
+    -CommandName 'ffmpeg' `
+    -CandidatePaths @(
+      (Join-Path $LauncherDirectory 'tools\ffmpeg\bin\ffmpeg.exe'),
+      'C:\Program Files\BlueStacks_nxt\ffmpeg.exe',
+      'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
+      'C:\ffmpeg\bin\ffmpeg.exe'
+    )
 
   $enableBackend = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_BACKEND' '1') $true
   $enableTts = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_TTS' '1') $true
@@ -1161,6 +1213,11 @@ function Build-ServiceDefinitions {
   $llmStartupTimeoutSec = To-IntValue (Get-ConfigValue $Config 'A11_LLM_STARTUP_TIMEOUT_SEC' '90') 90
   $qflushPort = To-IntValue (Get-ConfigValue $Config 'A11_QFLUSH_PORT' '43421') 43421
   $frontendPort = To-IntValue (Get-ConfigValue $Config 'A11_FRONTEND_PORT' '5173') 5173
+  $a11Root = [System.IO.Path]::GetFullPath((Join-Path $LauncherDirectory '..'))
+  $runtimeRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_RUNTIME_ROOT' '..\runtime') -BaseDirectory $LauncherDirectory
+  $safeDataRoot = Join-Path $runtimeRoot 'files'
+  $launcherRuntimeRoot = Join-Path $runtimeRoot 'launcher'
+  $videoWorkRoot = Join-Path $safeDataRoot 'generated\videos'
 
   $qflushChatFlow = Get-ConfigValue $Config 'A11_QFLUSH_CHAT_FLOW' ''
   $qflushMemorySummaryFlow = Get-ConfigValue $Config 'A11_QFLUSH_MEMORY_SUMMARY_FLOW' 'a11.memory.summary.v1'
@@ -1296,6 +1353,10 @@ function Build-ServiceDefinitions {
     NODE_ENV = 'development'
     A11_LOCAL_MODE = '1'
     A11_RUNTIME_PROFILE = 'local'
+    A11_WORKSPACE_ROOT = $a11Root
+    A11_RUNTIME_ROOT = $runtimeRoot
+    A11_SAFE_DATA_ROOT = $safeDataRoot
+    A11_SHELL_CWD = $a11Root
     BACKEND = $(if ($useRemoteProvider) { 'openai' } else { 'local' })
     APP_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
     FRONT_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
@@ -1338,6 +1399,22 @@ function Build-ServiceDefinitions {
     A11_ENABLE_OPENAI_IMAGE = 'false'
     A11_IMAGE_PROVIDER_ORDER = 'sd'
     SD_MODEL_PROFILE = $sdModelProfile
+    SD_DEVICE = $sdDevice
+    SD_TORCH_DTYPE = $sdTorchDtype
+    A11_VIDEO_ENABLED = 'true'
+    A11_VIDEO_DEFAULT_DURATION_SEC = $videoDefaultDurationSec
+    A11_VIDEO_MAX_DURATION_SEC = $videoMaxDurationSec
+    A11_VIDEO_DEFAULT_FPS = $videoDefaultFps
+    A11_VIDEO_MAX_FPS = $videoMaxFps
+    A11_VIDEO_MAX_RENDER_FRAMES = $videoMaxRenderFrames
+    A11_VIDEO_SD_STEPS = $videoSdSteps
+    A11_VIDEO_SD_GUIDANCE_SCALE = $videoSdGuidanceScale
+    A11_VIDEO_FRAME_INIT_STRENGTH = $videoFrameInitStrength
+    A11_VIDEO_MP4_CODEC = $videoMp4Codec
+    A11_VIDEO_MP4_PRESET = $videoMp4Preset
+    A11_VIDEO_MP4_CQ = $videoMp4Cq
+    A11_VIDEO_FFMPEG_BIN = $ffmpegBin
+    A11_VIDEO_WORK_ROOT = $videoWorkRoot
   }
 
   $services += [pscustomobject]@{
@@ -1359,6 +1436,7 @@ function Build-ServiceDefinitions {
       if (-not $NodeCommand) { 'Node command not found' }
       if (-not (Test-Path $backendDir)) { "Missing backend directory: $backendDir" }
       if (-not (Test-Path (Join-Path $backendDir 'server.cjs'))) { "Missing backend entry point: $(Join-Path $backendDir 'server.cjs')" }
+      if ([string]::IsNullOrWhiteSpace($ffmpegBin)) { 'FFmpeg executable not found; MP4 video assembly may fail.' }
     ) | Where-Object { $_ }
   }
 
@@ -1402,9 +1480,13 @@ function Build-ServiceDefinitions {
     QflushDir = $qflushDir
     QflushEntry = $qflushEntry
     LlmRunner = $llmRunner
-    LlmExe = $llmExe
-    LlmModel = $llmModel
     LlmPackageSource = ''
+    A11Root = $a11Root
+    RuntimeRoot = $runtimeRoot
+    SafeDataRoot = $safeDataRoot
+    LauncherRuntimeRoot = $launcherRuntimeRoot
+    OllamaBase = $ollamaBase
+    OllamaPrimaryModel = $ollamaPrimaryModel
     BackendPort = $backendPort
     TtsPort = $ttsPort
     LlmPort = $llmPort
@@ -1841,7 +1923,14 @@ function Stop-A11Stack {
 }
 
 $launcherDirectory = Split-Path -Parent $PSCommandPath
-$runtimeDirectory = Join-Path $launcherDirectory 'runtime'
+$previewConfigPath = if ($ConfigPath) {
+  Resolve-LauncherRelativePath -Value $ConfigPath -BaseDirectory $launcherDirectory
+} else {
+  Join-Path $launcherDirectory 'config\a11-local.env'
+}
+$config = Read-LauncherConfig -Path $previewConfigPath
+$resolvedRuntimeRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $config 'A11_RUNTIME_ROOT' '..\runtime') -BaseDirectory $launcherDirectory
+$runtimeDirectory = Join-Path $resolvedRuntimeRoot 'launcher'
 $logsDirectory = Join-Path $runtimeDirectory 'logs'
 $stateFile = Join-Path $runtimeDirectory 'a11-local.state.json'
 $snapshotFile = Join-Path $runtimeDirectory 'a11-local.snapshot.json'
@@ -1855,7 +1944,6 @@ $resolvedConfigPath = if ($ConfigPath) {
   Join-Path $launcherDirectory 'config\a11-local.env'
 }
 
-$config = Read-LauncherConfig -Path $resolvedConfigPath
 $nodeCommand = Resolve-CommandExecutable -Name 'node'
 $npmCommand = (Resolve-CommandExecutable -Name 'npm.cmd')
 if (-not $npmCommand) { $npmCommand = Resolve-CommandExecutable -Name 'npm' }
@@ -2025,6 +2113,8 @@ switch ($Command) {
       QflushChatFlow = $definitionBundle.QflushChatFlow
       QflushMemorySummaryFlow = $definitionBundle.QflushMemorySummaryFlow
       ChatProviderMode = $definitionBundle.ChatProviderMode
+      OllamaBase = $definitionBundle.OllamaBase
+      OllamaPrimaryModel = $definitionBundle.OllamaPrimaryModel
       RemoteProviderId = $definitionBundle.RemoteProviderId
       OpenAiBaseUrl = $definitionBundle.OpenAiBaseUrl
       OpenAiModel = $definitionBundle.OpenAiModel

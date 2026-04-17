@@ -119,10 +119,10 @@
   "paths": {
     "repoLauncherScript": "../launchers/a11-local.ps1",
     "repoLauncherConfig": "../launchers/config/a11-local.env",
-    "repoLogsDir": "../launchers/runtime/logs",
+    "repoLogsDir": "../runtime/launcher/logs",
     "packagedRoot": "a11-local",
     "packagedLauncherScript": "launcher/a11-local.ps1",
     "packagedLauncherConfig": "launcher/config/a11-local.env",
-    "packagedLogsDir": "launcher/runtime/logs"
+    "packagedLogsDir": "runtime/launcher/logs"
   }
 }

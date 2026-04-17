@@ -30,7 +30,7 @@ const DEFAULT_LOCAL_PROFILE_BASE = (() => {
   const explicitLocalBase = normalizeApiBase(import.meta.env?.VITE_A11_LOCAL_API_BASE_URL);
   if (explicitLocalBase) return explicitLocalBase;
   if (DEFAULT_API_BASE && DEFAULT_API_BASE !== DEFAULT_ONLINE_API_BASE) return DEFAULT_API_BASE;
-  return 'https://api.funesterie.me';
+  return 'http://127.0.0.1:3000';
 })();
 
 export const A11_API_PROFILE_BASES = {
@@ -228,6 +228,13 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
   }
   if (/^app\/.+/i.test(normalizedRaw)) {
     const normalizedRuntimePath = `/files/${normalizedRaw.replace(/^app\//i, '')}`.replace(/\/{2,}/g, '/');
+    return origin ? `${origin}${normalizedRuntimePath}` : normalizedRuntimePath;
+  }
+  const unifiedRuntimePath = normalizedRaw.replace(/^.*?\/runtime\/files\//i, '/runtime/files/');
+  if (/^\/runtime\/files\//i.test(unifiedRuntimePath)) {
+    const normalizedRuntimePath = unifiedRuntimePath
+      .replace(/^\/runtime\/files\//i, '/files/')
+      .replace(/\/{2,}/g, '/');
     return origin ? `${origin}${normalizedRuntimePath}` : normalizedRuntimePath;
   }
   const workspaceRuntimePath = normalizedRaw.replace(/^.*?\/a11_runtime\//i, '/a11_runtime/');
@@ -599,15 +606,17 @@ export const TTS_VOICES = ['fr_FR-siwis-medium'];
 
 export type Provider = "local" | "ollama" | "openai";
 
+const DEFAULT_OLLAMA_MODEL = 'gemma4:e4b';
+
 export function getModelForProvider(provider: Provider): string {
   switch (provider) {
     case 'openai':
       return 'gpt-4o-mini';
     case 'ollama':
-      return 'gemma4:e2b';
+      return DEFAULT_OLLAMA_MODEL;
     case 'local':
     default:
-      return 'gemma4:e2b';
+      return DEFAULT_OLLAMA_MODEL;
   }
 }
 
@@ -621,6 +630,7 @@ export type ChatResponse = {
 export type ChatCompletionResult = {
   content: string;
   imageUrl?: string | null;
+  videoUrl?: string | null;
   fileUrl?: string | null;
   a11Agent?: any;
   qflushVerification?: {
@@ -691,6 +701,86 @@ function extractImageUrlFromA11Agent(agent: any): string | null {
   }
 
   return null;
+}
+
+function extractImageUrlFromPayload(payload: any): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const direct = resolveApiAssetUrl(
+    payload?.imagePath ||
+    payload?.imageUrl ||
+    payload?.image_url ||
+    payload?.url ||
+    null
+  );
+
+  const directArtifactType = String(
+    payload?.artifact_type ||
+    payload?.kind ||
+    ''
+  ).trim().toLowerCase();
+
+  const directContentType = String(
+    payload?.contentType ||
+    ''
+  ).trim().toLowerCase();
+
+  const directFilename = String(
+    payload?.filename ||
+    ''
+  ).trim();
+
+  const directLooksImage = directContentType.startsWith('image/')
+    && directContentType !== 'image/gif'
+    || directArtifactType === 'image'
+    || directArtifactType === 'web_image'
+    || directArtifactType === 'image_search'
+    || /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(directFilename)
+    || /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(direct || ''))
+    || ((directArtifactType === 'image' || directArtifactType === 'web_image') && /\.gif(?:[?#].*)?$/i.test(String(direct || directFilename || '')));
+
+  if (direct && directLooksImage) return direct;
+
+  const results = Array.isArray(payload?.results)
+    ? payload.results
+    : (Array.isArray(payload?.a11Agent?.results) ? payload.a11Agent.results : []);
+
+  for (const entry of results) {
+    const result = entry?.result && typeof entry.result === "object" ? entry.result : entry;
+    const candidate = resolveApiAssetUrl(
+      result?.imagePath ||
+      result?.imageUrl ||
+      result?.image_url ||
+      result?.url ||
+      null
+    );
+    const artifactType = String(
+      result?.artifact_type ||
+      entry?.artifact_type ||
+      ''
+    ).trim().toLowerCase();
+    const contentType = String(
+      result?.contentType ||
+      ''
+    ).trim().toLowerCase();
+    const filename = String(
+      result?.filename ||
+      ''
+    ).trim();
+    const looksImage = contentType.startsWith('image/')
+      && contentType !== 'image/gif'
+      || artifactType === 'image'
+      || artifactType === 'web_image'
+      || artifactType === 'image_search'
+      || /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(filename)
+      || /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(candidate || ''))
+      || ((artifactType === 'image' || artifactType === 'web_image') && /\.gif(?:[?#].*)?$/i.test(String(candidate || filename || '')));
+    if (candidate && looksImage) {
+      return candidate;
+    }
+  }
+
+  return extractImageUrlFromA11Agent(payload?.a11Agent || null);
 }
 
 function extractFileUrlFromPayload(payload: any): string | null {
@@ -768,6 +858,78 @@ function extractFileUrlFromPayload(payload: any): string | null {
       || /\.pdf(?:[?#].*)?$/i.test(filename)
       || /\.pdf(?:[?#].*)?$/i.test(String(candidate || ''));
     if (candidate && looksPdf) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function extractVideoUrlFromPayload(payload: any): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const direct = resolveApiAssetUrl(
+    payload?.video_url ||
+    payload?.videoUrl ||
+    payload?.videoPath ||
+    payload?.url ||
+    null
+  );
+
+  const directArtifactType = String(
+    payload?.artifact_type ||
+    payload?.kind ||
+    ''
+  ).trim().toLowerCase();
+
+  const directContentType = String(
+    payload?.contentType ||
+    ''
+  ).trim().toLowerCase();
+
+  const directFilename = String(
+    payload?.filename ||
+    ''
+  ).trim();
+
+  const directLooksVideo = directContentType.startsWith('video/')
+    || directArtifactType === 'video'
+    || /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(directFilename)
+    || /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(direct || ''));
+
+  if (direct && directLooksVideo) return direct;
+
+  const entries = Array.isArray(payload?.a11Agent?.results)
+    ? payload.a11Agent.results
+    : [];
+
+  for (const entry of entries) {
+    const result = entry?.result && typeof entry.result === "object" ? entry.result : {};
+    const candidate = resolveApiAssetUrl(
+      result?.video_url ||
+      result?.videoUrl ||
+      result?.videoPath ||
+      result?.url ||
+      null
+    );
+    const artifactType = String(
+      result?.artifact_type ||
+      entry?.artifact_type ||
+      ''
+    ).trim().toLowerCase();
+    const contentType = String(
+      result?.contentType ||
+      ''
+    ).trim().toLowerCase();
+    const filename = String(
+      result?.filename ||
+      ''
+    ).trim();
+    const looksVideo = contentType.startsWith('video/')
+      || artifactType === 'video'
+      || /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(filename)
+      || /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(candidate || ''));
+    if (candidate && looksVideo) {
       return candidate;
     }
   }
@@ -869,6 +1031,11 @@ function extractAssistantContentFromPayload(payload: unknown, depth = 0): string
 
   if (typeof candidate.reply === 'string') {
     const extracted = extractAssistantContentFromPayload(candidate.reply, depth + 1);
+    if (extracted) return extracted;
+  }
+
+  if (typeof candidate.assistant === 'string') {
+    const extracted = extractAssistantContentFromPayload(candidate.assistant, depth + 1);
     if (extracted) return extracted;
   }
 
@@ -1150,20 +1317,14 @@ export async function chatCompletionDetailed(
     extractAssistantDisplayContent(data) ||
     "Je n'ai pas pu formuler une reponse exploitable.";
 
-  const imageUrl =
-    resolveApiAssetUrl(data?.a11Agent?.imagePath) ||
-    resolveApiAssetUrl(data?.imagePath) ||
-    resolveApiAssetUrl(data?.image_url) ||
-    resolveApiAssetUrl(data?.imageUrl) ||
-    resolveApiAssetUrl(data?.url) ||
-    extractImageUrlFromA11Agent(data?.a11Agent || null) ||
-    null;
-
+  const videoUrl = extractVideoUrlFromPayload(data);
+  const imageUrl = videoUrl ? null : extractImageUrlFromPayload(data);
   const fileUrl = extractFileUrlFromPayload(data);
 
   return {
     content: String(content || ''),
     imageUrl,
+    videoUrl,
     fileUrl,
     a11Agent: data?.a11Agent || null,
     qflushVerification: data?.qflushVerification || null,

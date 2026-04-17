@@ -58,6 +58,13 @@ def env_int(name, default):
         return int(default)
 
 
+def env_bool(name, default=False):
+    raw = str(os.environ.get(name, "")).strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "on"}
+
+
 def resolve_model_config():
     explicit_model_id = str(os.environ.get("SD_MODEL_ID", "")).strip()
     explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "classic")
@@ -109,7 +116,11 @@ def resolve_dtype(device):
         return torch.float16
     if requested in {"bfloat16", "bf16"} and hasattr(torch, "bfloat16"):
         return torch.bfloat16
-    return torch.float16 if device == "cuda" else torch.float32
+    if device == "cuda":
+        if hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported() and hasattr(torch, "bfloat16"):
+            return torch.bfloat16
+        return torch.float16
+    return torch.float32
 
 
 def dtype_label(value):
@@ -123,21 +134,67 @@ def dtype_label(value):
 
 
 def maybe_enable_cuda_fast_paths():
+    flags = {
+        "tf32_enabled": False,
+        "flash_sdp_enabled": False,
+        "mem_efficient_sdp_enabled": False,
+        "math_sdp_enabled": False,
+        "cudnn_benchmark_enabled": False,
+    }
     if not torch.cuda.is_available():
-        return
+        return flags
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
+    flags["tf32_enabled"] = True
+    torch.backends.cudnn.benchmark = True
+    flags["cudnn_benchmark_enabled"] = True
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision("high")
+    try:
+        if hasattr(torch.backends.cuda, "enable_flash_sdp"):
+            torch.backends.cuda.enable_flash_sdp(True)
+            flags["flash_sdp_enabled"] = True
+        if hasattr(torch.backends.cuda, "enable_mem_efficient_sdp"):
+            torch.backends.cuda.enable_mem_efficient_sdp(True)
+            flags["mem_efficient_sdp_enabled"] = True
+        if hasattr(torch.backends.cuda, "enable_math_sdp"):
+            torch.backends.cuda.enable_math_sdp(True)
+            flags["math_sdp_enabled"] = True
+    except Exception:
+        pass
+    return flags
 
 
-def maybe_enable_pipeline_memory_optimizations(pipe):
-    xformers_enabled = False
+def maybe_enable_channels_last(pipe, device):
+    if device != "cuda" or not env_bool("SD_ENABLE_CHANNELS_LAST", True):
+        return False
+
+    enabled = False
+    for attr in ("unet", "vae", "transformer"):
+        module = getattr(pipe, attr, None)
+        if module is None:
+            continue
+        try:
+            module.to(memory_format=torch.channels_last)
+            enabled = True
+        except Exception:
+            pass
+    return enabled
+
+
+def maybe_enable_pipeline_memory_optimizations(pipe, device, execution_config):
+    flags = {
+        "xformers_enabled": False,
+        "attention_slicing_enabled": False,
+        "vae_slicing_enabled": False,
+        "vae_tiling_enabled": False,
+    }
     try:
         if hasattr(pipe, "vae") and pipe.vae is not None and hasattr(pipe.vae, "enable_slicing"):
             pipe.vae.enable_slicing()
         else:
             pipe.enable_vae_slicing()
+        flags["vae_slicing_enabled"] = True
     except Exception:
         pass
     try:
@@ -145,18 +202,29 @@ def maybe_enable_pipeline_memory_optimizations(pipe):
             pipe.vae.enable_tiling()
         else:
             pipe.enable_vae_tiling()
+        flags["vae_tiling_enabled"] = True
     except Exception:
         pass
-    try:
-        pipe.enable_attention_slicing()
-    except Exception:
-        pass
-    try:
-        pipe.enable_xformers_memory_efficient_attention()
-        xformers_enabled = True
-    except Exception:
-        xformers_enabled = False
-    return xformers_enabled
+
+    should_enable_attention_slicing = env_bool(
+        "SD_ENABLE_ATTENTION_SLICING",
+        device != "cuda" or bool((execution_config or {}).get("cpu_offload")),
+    )
+    if should_enable_attention_slicing:
+        try:
+            pipe.enable_attention_slicing()
+            flags["attention_slicing_enabled"] = True
+        except Exception:
+            pass
+
+    if device == "cuda" and env_bool("SD_ENABLE_XFORMERS", True):
+        try:
+            pipe.enable_xformers_memory_efficient_attention()
+            flags["xformers_enabled"] = True
+        except Exception:
+            flags["xformers_enabled"] = False
+
+    return flags
 
 
 def configure_pipeline_execution(pipe, device, model_config):
@@ -351,7 +419,7 @@ def main():
         args.height = min(args.height, max_side)
         args.num_inference_steps = min(args.num_inference_steps, max_steps)
 
-    maybe_enable_cuda_fast_paths()
+    cuda_fast_path_flags = maybe_enable_cuda_fast_paths()
 
     init_image_source = str(args.init_image or "").strip()
     init_image, init_image_kind, init_image_error = load_init_image(
@@ -380,7 +448,8 @@ def main():
             pipe.register_to_config(requires_safety_checker=False)
     pipe.set_progress_bar_config(disable=True)
     pipe, execution_config = configure_pipeline_execution(pipe, device, resolved_model_config)
-    xformers_enabled = maybe_enable_pipeline_memory_optimizations(pipe)
+    channels_last_enabled = maybe_enable_channels_last(pipe, device)
+    optimization_flags = maybe_enable_pipeline_memory_optimizations(pipe, device, execution_config)
 
     generator = torch.Generator(device=device)
     if args.seed is not None:
@@ -429,7 +498,16 @@ def main():
                 "cuda_device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
                 "execution_mode": execution_config["execution_mode"],
                 "cpu_offload": execution_config["cpu_offload"],
-                "xformers_enabled": xformers_enabled,
+                "xformers_enabled": optimization_flags["xformers_enabled"],
+                "attention_slicing_enabled": optimization_flags["attention_slicing_enabled"],
+                "vae_slicing_enabled": optimization_flags["vae_slicing_enabled"],
+                "vae_tiling_enabled": optimization_flags["vae_tiling_enabled"],
+                "channels_last_enabled": channels_last_enabled,
+                "tf32_enabled": cuda_fast_path_flags["tf32_enabled"],
+                "flash_sdp_enabled": cuda_fast_path_flags["flash_sdp_enabled"],
+                "mem_efficient_sdp_enabled": cuda_fast_path_flags["mem_efficient_sdp_enabled"],
+                "math_sdp_enabled": cuda_fast_path_flags["math_sdp_enabled"],
+                "cudnn_benchmark_enabled": cuda_fast_path_flags["cudnn_benchmark_enabled"],
                 "safety_checker_enabled": False,
                 "generation_mode": generation_mode,
                 "width": args.width,

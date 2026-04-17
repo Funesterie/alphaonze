@@ -94,7 +94,7 @@ $ollamaBase = if ($env:OLLAMA_BASE) { [string]$env:OLLAMA_BASE } else { 'http://
 $ollamaBase = $ollamaBase.TrimEnd('/')
 $ollamaHealthUrl = $ollamaBase + '/api/tags'
 $primaryModel = if ($env:A11_OLLAMA_PRIMARY_MODEL) { [string]$env:A11_OLLAMA_PRIMARY_MODEL } else { 'gemma4:e4b' }
-$fallbackModel = if ($env:A11_OLLAMA_FALLBACK_MODEL) { [string]$env:A11_OLLAMA_FALLBACK_MODEL } else { 'gemma4:e2b' }
+$fallbackModel = if ($env:A11_OLLAMA_FALLBACK_MODEL) { [string]$env:A11_OLLAMA_FALLBACK_MODEL } else { '' }
 $targetModels = @($primaryModel, $fallbackModel) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
 $showWindow = $args -contains '--show-window'
 

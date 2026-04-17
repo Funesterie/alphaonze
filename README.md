@@ -92,14 +92,14 @@ Ce flux:
 - `local`
   Delegue vers `a11\launchers\a11-local.ps1` avec `start` par defaut.
 - `online`
-  Delegue vers `a11\launchers\start-prod-a11.ps1`.
+  Delegue vers `a11\launchers\start-online-a11.ps1`.
 
 ## Entrees canoniques A11
 
 - local: `a11\launchers\a11-local.ps1`
 - bureau: `a11\launchers\a11-desktop.ps1`
 - bureau + Ollama: `a11\launchers\a11-ollama-desktop.ps1`
-- prod/online: `a11\launchers\start-prod-a11.ps1`
+- prod/online: `a11\launchers\start-online-a11.ps1`
 - raccourcis bureau: `a11\launchers\create-desktop-shortcut.ps1`
 
 ## Vue IDE

@@ -121,7 +121,6 @@ function deriveDefaultLlmProvider() {
   const explicit = normalizeLlmProvider(process.env.A11_LLM_PROVIDER, "");
   if (explicit) return explicit;
   if (process.env.OLLAMA_BASE || process.env.OLLAMA_HOST || process.env.OLLAMA_PORT) return "ollama";
-  if (process.env.LLAMA_BASE || process.env.LOCAL_LLM_URL) return "llama_server";
   if (process.env.A11_OPENAI_API_KEY || process.env.OPENAI_API_KEY) return "openai";
   return "none";
 }
@@ -136,9 +135,9 @@ const BACKENDS = {
 };
 const OLLAMA_BASE = BACKENDS.ollama;
 const LLM_PROVIDER = deriveDefaultLlmProvider();
-const LLM_FALLBACK_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_FALLBACK_PROVIDER, "llama_server");
+const LLM_FALLBACK_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_FALLBACK_PROVIDER, "none");
 const OLLAMA_PRIMARY_MODEL = String(process.env.A11_OLLAMA_PRIMARY_MODEL || "gemma4:e4b").trim() || "gemma4:e4b";
-const OLLAMA_FALLBACK_MODEL = String(process.env.A11_OLLAMA_FALLBACK_MODEL || "gemma4:e2b").trim() || "gemma4:e2b";
+const OLLAMA_FALLBACK_MODEL = String(process.env.A11_OLLAMA_FALLBACK_MODEL || "").trim();
 const DEFAULT_LOCAL_MODEL = String(
   process.env.LOCAL_DEFAULT_MODEL
   || process.env.DEFAULT_MODEL
@@ -232,7 +231,7 @@ function normalizeOllamaModelNames(payload) {
 function getConfiguredOllamaCandidates(requestedModel = "") {
   const candidates = [];
   const explicit = String(requestedModel || "").trim();
-  if (explicit && [OLLAMA_PRIMARY_MODEL, OLLAMA_FALLBACK_MODEL].includes(explicit)) {
+  if (explicit && explicit === OLLAMA_PRIMARY_MODEL) {
     candidates.push(explicit);
   }
   for (const candidate of [OLLAMA_PRIMARY_MODEL, OLLAMA_FALLBACK_MODEL]) {

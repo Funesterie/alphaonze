@@ -70,15 +70,13 @@ function buildResolvedRequestKey(req, latestUserMessage, resolution) {
   const userId = String(req?.user?.id || req?.body?._user || 'anonymous').trim();
   const conversationId = String(req?.body?.conversationId || req?.body?.conversation_id || 'no-conversation').trim();
   const kind = String(resolution?.kind || 'unknown').trim();
-  const mask = resolution?.mask && typeof resolution.mask === 'object'
-    ? resolution.mask
-    : {};
   const fingerprintSource = {
     userId,
     conversationId,
     kind,
     latestUserMessage: String(latestUserMessage || '').trim(),
-    mask,
+    provider: String(req?.body?.provider || '').trim(),
+    model: String(req?.body?.model || '').trim(),
   };
   return crypto
     .createHash('sha1')
@@ -199,7 +197,9 @@ function buildLocalWorkspaceFileUrl(req, candidatePath) {
     return null;
   }
 
-  const workspaceRoot = path.resolve(process.cwd());
+  const workspaceRoot = path.resolve(
+    String(process.env.A11_WORKSPACE_ROOT || process.cwd()).trim() || process.cwd()
+  );
   const relativePath = path.relative(workspaceRoot, absolutePath).replace(/\\/g, '/');
   if (!relativePath || relativePath.startsWith('..')) return null;
 
@@ -1095,9 +1095,11 @@ function createProtectedChatProxyRouter({
   verifyJWT,
   proxyChatToOpenAI,
   detectImageIntent,
+  detectVideoIntent,
   detectWebImageIntent,
   duckduckgoImageSearch,
   generateSd,
+  generateVideo,
   specialCompilerCallStructuredLlmJson,
   listResources = defaultListResources,
   generatePdf = defaultGeneratePdf,
@@ -1108,7 +1110,7 @@ function createProtectedChatProxyRouter({
   hasLocalChatUpstreamConfigured = defaultHasLocalChatUpstreamConfigured,
   shouldDefaultToLocalProvider = defaultShouldDefaultToLocalProvider,
   intentRouterV2Enabled = isIntentRouterV2Enabled(),
-  localDefaultModel = String(process.env.LOCAL_DEFAULT_MODEL || 'llama3.2:latest'),
+  localDefaultModel = String(process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b'),
   remoteDefaultModel = String(
     process.env.OPENAI_MODEL
     || process.env.A11_OPENAI_MODEL
@@ -1123,9 +1125,11 @@ function createProtectedChatProxyRouter({
   }
   const intentResolver = createIntentResolver({
     detectImageIntent,
+    detectVideoIntent,
     detectWebImageIntent,
     duckduckgoImageSearch,
     generateSd,
+    generateVideo,
     specialCompilerCallStructuredLlmJson,
   });
   const inFlightImageRequests = new Map();
@@ -1213,7 +1217,14 @@ function createProtectedChatProxyRouter({
     const shouldBypassCache = resolution.kind === 'image.generate' && resolution.shouldBypassImageRequestCache === true;
 
     if (!isCacheable) {
-      return res.status(200).json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
+      const payload = resolution.responsePayload
+        || (await intentResolver.executeResolvedRuntime(resolution, {
+          req,
+          body: req.body || {},
+          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+        }))?.responsePayload
+        || null;
+      return res.status(200).json(attachIntentDebug(payload, resolution, req.body || {}));
     }
 
     if (shouldBypassCache) {
@@ -1275,7 +1286,7 @@ function createProtectedChatProxyRouter({
       req.body.provider = 'local';
     }
     if (req.body.provider === 'local' && !String(req.body.model || '').trim()) {
-      req.body.model = String(localDefaultModel || 'llama3.2:latest');
+      req.body.model = String(localDefaultModel || 'gemma4:e4b');
     }
     if (req.body.provider !== 'local' && !String(req.body.model || '').trim()) {
       req.body.model = String(remoteDefaultModel || 'gpt-4o-mini');

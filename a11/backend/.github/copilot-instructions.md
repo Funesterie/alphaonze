@@ -9,11 +9,11 @@
 - Backend: `apps/server/server.cjs`
 - Frontend: `..\frontend\apps\web`
 - Tunnel config: user `.cloudflared/config.yml` or repo `.cloudflared/config.yml`
-- Startup: `..\launchers\start-all-a11.ps1` or `..\launchers\start-prod-a11.ps1`
+- Startup: `..\launchers\a11-local.ps1` or `..\launchers\start-online-a11.ps1`
 - Supervisor integration: `apps/server/src/qflush-integration.cjs`
 
 ## Start / dev
-- Start everything: `pwsh -File ..\launchers\start-all-a11.ps1`
+- Start local stack: `pwsh -File ..\launchers\a11-local.ps1 start`
 - Backend dev: `cd apps/server && npm run dev`
 - Frontend dev: `cd ..\frontend\apps\web && npm run dev`
 
