@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python311", "python311Packages.virtualenv", "stdenv.cc.cc.lib"]
+nixPkgs = ["nodejs_20", "python311", "python311Packages.virtualenv", "stdenv.cc.cc.lib", "ffmpeg"]
 
 [phases.install]
 cmds = [

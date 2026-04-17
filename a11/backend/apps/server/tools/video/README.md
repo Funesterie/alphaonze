@@ -73,6 +73,7 @@ A11_VIDEO_USE_JANUS_FRAME_ANALYSIS=false
 
 - Windows: install ffmpeg and expose it in `PATH`, or set `A11_VIDEO_FFMPEG_BIN=C:\\path\\to\\ffmpeg.exe`
 - Linux/Railway: install ffmpeg in the image, or provide a valid binary path through `A11_VIDEO_FFMPEG_BIN`
+- The Railway Docker image in `apps/server/Dockerfile` is expected to ship with `ffmpeg`
 
 ### Image backend
 
