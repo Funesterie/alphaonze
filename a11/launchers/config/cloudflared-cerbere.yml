@@ -3,7 +3,7 @@ credentials-file: C:\Users\cella\.cloudflared\64e2c232-609c-45db-bf37-9bd7747133
 
 ingress:
   - hostname: sd.funesterie.me
-    service: http://localhost:3000
+    service: http://127.0.0.1:3000
   - hostname: cerbere.funesterie.me
-    service: http://localhost:4545
+    service: http://127.0.0.1:4545
   - service: http_status:404
