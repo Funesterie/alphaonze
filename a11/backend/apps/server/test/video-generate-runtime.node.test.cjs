@@ -173,6 +173,71 @@ test('createGenerateVideoHandler can bootstrap the first frame from an existing 
   assert.equal(calls[0].init_image_url, 'https://files.example.com/source-image.png');
 });
 
+test('createGenerateVideoHandler falls back to libx264 when NVENC is unavailable at runtime', async () => {
+  const ffmpegCalls = [];
+
+  const generateVideo = createGenerateVideoHandler({
+    generateSd: async () => ({
+      ok: true,
+      image_url: 'https://files.example.com/frame-1.png',
+    }),
+    fetch: async () => ({
+      ok: true,
+      async arrayBuffer() {
+        return TINY_PNG;
+      },
+    }),
+    uploadBufferToR2: async ({ filename, buffer }) => ({
+      url: `https://files.example.com/${filename}`,
+      filename,
+      sizeBytes: buffer.length,
+    }),
+    buildCanonicalImageMaskFromText: async () => ({
+      rawMask: {
+        version: 'mask-1',
+        intent: 'image.generate',
+        raw: 'mario',
+      },
+    }),
+    compileMaskImageGenerateRuntime: async () => ({
+      sdBody: {
+        prompt: 'compiled mario prompt',
+      },
+    }),
+    runFfmpeg: async ({ outputPath, mp4Codec, mp4Preset, mp4Quality }) => {
+      ffmpegCalls.push({ mp4Codec, mp4Preset, mp4Quality });
+      if (ffmpegCalls.length === 1) {
+        throw new Error('ffmpeg_failed:1:[h264_nvenc] Cannot load libcuda.so.1');
+      }
+      fs.writeFileSync(outputPath, Buffer.from('fake-video'));
+      return {
+        ok: true,
+        codec: mp4Codec,
+      };
+    },
+  });
+
+  const result = await generateVideo({
+    req: { headers: {}, body: {} },
+    prompt: 'genere une video de mario',
+    body: {
+      prompt: 'genere une video de mario',
+      durationSeconds: 1,
+      fps: 2,
+      format: 'mp4',
+      width: 256,
+      height: 256,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(ffmpegCalls.length, 2);
+  assert.equal(ffmpegCalls[0].mp4Codec, 'h264_nvenc');
+  assert.equal(ffmpegCalls[1].mp4Codec, 'libx264');
+  assert.equal(ffmpegCalls[1].mp4Preset, 'medium');
+  assert.equal(result.videoCodec, 'libx264');
+});
+
 test('createGenerateVideoHandler reuses a local source image path without republishing between frames', async () => {
   const calls = [];
   const sourceImagePath = 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\video-source-test.png';

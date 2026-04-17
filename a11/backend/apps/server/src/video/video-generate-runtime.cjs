@@ -531,6 +531,25 @@ function buildFfmpegAssemblyArgs({
     );
 }
 
+function shouldRetryFfmpegWithCpu(error_, codec = '') {
+  if (!/_nvenc$/i.test(String(codec || '').trim())) {
+    return false;
+  }
+  const message = String(error_?.message || error_ || '').toLowerCase();
+  return message.includes('libcuda.so.1')
+    || message.includes('cannot load libcuda')
+    || message.includes('cuda')
+    || message.includes('nvenc');
+}
+
+function buildCpuFallbackFfmpegConfig(config = {}) {
+  return {
+    mp4Codec: 'libx264',
+    mp4Preset: 'medium',
+    mp4Quality: clampNumber(config.mp4Quality, 0, 51, 19),
+  };
+}
+
 async function maybeDescribeFirstFrameWithJanus(framePath, contentType = 'image/png', config = {}) {
   if (!config.useJanusFrameAnalysis) return null;
   try {
@@ -762,7 +781,7 @@ function createGenerateVideoHandler(overrides = {}) {
 
     const filename = ensureVideoFilename(request.format);
     const outputPath = path.join(workingPaths.jobRoot, filename);
-    await runFfmpeg({
+    const ffmpegOptions = {
       ffmpegBin: request.config.ffmpegBin,
       fps: request.fps,
       format: request.format,
@@ -771,7 +790,32 @@ function createGenerateVideoHandler(overrides = {}) {
       mp4Codec: request.config.mp4Codec,
       mp4Preset: request.config.mp4Preset,
       mp4Quality: request.config.mp4Quality,
-    });
+    };
+
+    let ffmpegResult = null;
+    try {
+      ffmpegResult = await runFfmpeg(ffmpegOptions);
+    } catch (error_) {
+      if (request.format !== 'mp4' || !shouldRetryFfmpegWithCpu(error_, request.config.mp4Codec)) {
+        throw error_;
+      }
+
+      const cpuFallback = buildCpuFallbackFfmpegConfig(request.config);
+      console.warn(
+        `[A11][video] ffmpeg nvenc unavailable, retrying with ${cpuFallback.mp4Codec}: ${String(error_?.message || error_)}`
+      );
+      ffmpegResult = await runFfmpeg({
+        ...ffmpegOptions,
+        ...cpuFallback,
+      });
+    }
+
+    const resolvedVideoCodec = String(
+      ffmpegResult?.codec
+      || ffmpegOptions.mp4Codec
+      || request.config.mp4Codec
+      || ''
+    ).trim() || null;
 
     let uploaded = null;
     try {
@@ -795,7 +839,7 @@ function createGenerateVideoHandler(overrides = {}) {
       artifact_type: 'video',
       backend: request.config.backend,
       ffmpegBin: request.config.ffmpegBin,
-      videoCodec: request.config.mp4Codec || null,
+      videoCodec: resolvedVideoCodec,
       mode: request.config.backend,
       prompt: request.prompt,
       compiledPrompt: String(baseSdBody.prompt || request.prompt).trim(),
