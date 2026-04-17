@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createEmailService } = require('../lib/email-service.cjs');
+const { createEmailService, resolveEmailServiceConfigFromEnv } = require('../lib/email-service.cjs');
 
 test('email service enables SMTP fallback when Resend is absent', async () => {
   let capturedTransportOptions = null;
@@ -75,4 +75,38 @@ test('email service uses Gmail fallback when configured', async () => {
   assert.equal(capturedTransportOptions.auth.user, 'robot@gmail.com');
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'gmail');
+});
+
+test('email service exposes diagnostics when no provider is configured', async () => {
+  const service = createEmailService({});
+
+  const result = await service.sendEmail({
+    to: 'dest@example.com',
+    subject: 'No provider',
+    text: 'hello',
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'mail_provider_not_configured');
+  assert.equal(result.diagnostics.configured, false);
+  assert.equal(Array.isArray(result.diagnostics.missing), true);
+  assert.ok(result.diagnostics.missing.includes('resend_api_key'));
+});
+
+test('resolveEmailServiceConfigFromEnv supports resend and smtp aliases', () => {
+  const config = resolveEmailServiceConfigFromEnv({
+    A11_RESEND_API_KEY: 're_test_alias',
+    MAIL_FROM: 'A11 <mail@example.com>',
+    MAIL_HOST: 'smtp.example.com',
+    MAIL_PORT: '2525',
+    MAIL_USERNAME: 'robot',
+    MAIL_PASSWORD: 'secret',
+  });
+
+  assert.equal(config.resendApiKey, 're_test_alias');
+  assert.equal(config.fromEmail, 'A11 <mail@example.com>');
+  assert.equal(config.smtpHost, 'smtp.example.com');
+  assert.equal(config.smtpPort, '2525');
+  assert.equal(config.smtpUser, 'robot');
+  assert.equal(config.smtpPass, 'secret');
 });

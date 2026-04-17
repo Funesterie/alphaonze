@@ -1,4 +1,5 @@
 const { isOpenAiImageEnabled } = require('./openai-image.cjs');
+const { resolveEmailServiceConfigFromEnv } = require('./email-service.cjs');
 
 function normalizeUrl(value, fallback = '') {
   const raw = String(value || '').trim();
@@ -116,6 +117,7 @@ function resolveImagePipelineMode(env = {}) {
 }
 
 function buildRuntimeConfig(env = process.env) {
+  const resolvedMailConfig = resolveEmailServiceConfigFromEnv(env);
   const runtimeProfile = String(env.A11_RUNTIME_PROFILE || '').trim().toLowerCase();
   const localOnly = toBoolean(env.A11_LOCAL_MODE) || runtimeProfile === 'local';
   const productionRuntime = isProductionRuntime(env);
@@ -203,8 +205,10 @@ function buildRuntimeConfig(env = process.env) {
       publicBaseUrl: normalizeUrl(env.R2_PUBLIC_BASE_URL || ''),
     },
     mail: {
-      from: String(env.EMAIL_FROM || 'A11 <onboarding@resend.dev>').trim(),
-      hasResend: Boolean(String(env.RESEND_API_KEY || '').trim()),
+      from: String(resolvedMailConfig.fromEmail || 'A11 <onboarding@resend.dev>').trim(),
+      hasResend: Boolean(String(resolvedMailConfig.resendApiKey || '').trim()),
+      hasSmtp: Boolean(String(resolvedMailConfig.smtpUrl || '').trim() || String(resolvedMailConfig.smtpHost || '').trim()),
+      hasGmail: Boolean(String(resolvedMailConfig.gmailUser || '').trim() && String(resolvedMailConfig.gmailAppPassword || '').trim()),
     },
     auth: {
       hasJwtSecret: Boolean(String(env.JWT_SECRET || '').trim()),

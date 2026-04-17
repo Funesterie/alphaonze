@@ -333,7 +333,7 @@ const { createVerifyJWT, extractRequestAuthToken } = require('./src/middleware/j
 // Removed duplicate createFileStorage declaration
 const { ingestUploadedFile } = require('./lib/file-ingestion.cjs');
 const { createArtifact, normalizeArtifactKind, buildArtifactOrigin } = require('./lib/artifact-manager.cjs');
-const { createEmailService } = require('./lib/email-service.cjs');
+const { createEmailService, resolveEmailServiceConfigFromEnv } = require('./lib/email-service.cjs');
 const { analyzeUploadedResource, buildConversationResourceContext } = require('./lib/resource-reader.cjs');
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
@@ -5082,27 +5082,24 @@ ensureExpiredSharedFilesCleanupTimer();
 // Email providers
 // Priority: Resend API, then SMTP/Gmail fallback
 // ============================================================
+const resolvedEmailConfig = resolveEmailServiceConfigFromEnv(process.env);
 const emailService = createEmailService({
-  resendApiKey: process.env.RESEND_API_KEY,
-  fromEmail: process.env.EMAIL_FROM || 'A11 <onboarding@resend.dev>',
-  appUrl: normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://a11.funesterie.pro'),
-  smtpUrl: process.env.SMTP_URL || process.env.MAIL_URL,
-  smtpHost: process.env.SMTP_HOST,
-  smtpPort: process.env.SMTP_PORT,
-  smtpUser: process.env.SMTP_USER,
-  smtpPass: process.env.SMTP_PASS,
-  smtpSecure: process.env.SMTP_SECURE,
-  smtpIgnoreTLS: process.env.SMTP_IGNORE_TLS,
-  smtpRequireTLS: process.env.SMTP_REQUIRE_TLS,
-  smtpRejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED,
-  gmailUser: process.env.GMAIL_USER,
-  gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
+  ...resolvedEmailConfig,
+  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://a11.funesterie.pro'),
 });
 const emailStatus = emailService.getStatus();
 if (emailStatus.configured) {
   console.log(`[MAIL] ✅ Provider mail active: ${emailStatus.provider || 'unknown'}`);
 } else {
-  console.warn('[MAIL] Aucun provider mail configure (RESEND_API_KEY / SMTP / Gmail manquants)');
+  console.warn('[MAIL] Aucun provider mail configure', emailStatus.diagnostics || {});
+}
+
+function buildMailUnavailablePayload() {
+  return {
+    ok: false,
+    error: 'mail_provider_not_configured',
+    details: emailService.getStatus()?.diagnostics || emailService.getStatus() || null,
+  };
 }
 
 async function sendFileEmail({ to, subject, message, fileUrl, attachment }) {
@@ -5111,6 +5108,7 @@ async function sendFileEmail({ to, subject, message, fileUrl, attachment }) {
 
 const mailRouter = createMailRouter({
   isMailConfigured: () => emailService.isConfigured(),
+  getMailStatus: () => emailService.getStatus(),
   sendPlainEmailNow,
   sendConversationResourceEmailNow,
   sendLatestConversationResourceEmailNow,
@@ -6053,7 +6051,7 @@ app.post('/api/resources/email', express.json({ limit: '1mb' }), async (req, res
     if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
     if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ ok: false, error: 'mail_provider_not_configured' });
+      return res.status(503).json(buildMailUnavailablePayload());
     }
 
     const result = await sendConversationResourceEmailNow({
@@ -6090,7 +6088,7 @@ app.post('/api/resources/latest/email', express.json({ limit: '1mb' }), async (r
     if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
     if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ ok: false, error: 'mail_provider_not_configured' });
+      return res.status(503).json(buildMailUnavailablePayload());
     }
 
     const result = await sendLatestConversationResourceEmailNow({

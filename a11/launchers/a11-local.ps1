@@ -1731,7 +1731,8 @@ function Start-A11Stack {
   if (-not $script:HadErrors) {
     Set-LauncherProgress -Path $progressFile -Phase 'finalizing' -Message 'Finalisation de la stack locale...'
     Update-LauncherSnapshotCache
-    Write-Info "UI: $localUiUrl"
+    $uiLaunchUrl = '{0}?launcher=1&a11-reset-api-override=1&a11-force-api-mode=online&v={1}' -f $localUiUrl, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    Write-Info "UI: $uiLaunchUrl"
     Write-Info "API: $localApiUrl"
     Write-Info "TTS: $localTtsUrl"
     Write-Info "LLM: $localLlmUrl"
@@ -1740,13 +1741,13 @@ function Start-A11Stack {
     if (-not $NoOpen) {
       if ($DesktopWindow) {
         Open-A11DesktopWindow `
-          -Url $localUiUrl `
+          -Url $uiLaunchUrl `
           -BrowserPreference $desktopBrowserPreference `
           -Width $desktopWindowWidth `
           -Height $desktopWindowHeight `
           -RuntimeDirectory $runtimeDirectory
       } elseif ($autoOpenUi) {
-        Start-Process $localUiUrl | Out-Null
+        Start-Process $uiLaunchUrl | Out-Null
       }
     }
   }
