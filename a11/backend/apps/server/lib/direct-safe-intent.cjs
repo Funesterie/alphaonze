@@ -117,6 +117,58 @@ function parsePdfEmailIntent(value = '') {
   };
 }
 
+function extractSimpleEmailMessage(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  const quotedMatch = text.match(/["“'`](.+?)["”'`]/);
+  if (quotedMatch?.[1]) {
+    return String(quotedMatch[1] || '').trim();
+  }
+
+  const patterns = [
+    /\b(?:en\s+disant|disant|pour\s+dire|en\s+lui\s+disant|en\s+leur\s+disant|qui\s+dit|avec\s+ce\s+message|avec\s+le\s+message|avec\s+comme\s+message|message\s*[:\-])\s+(.+)$/i,
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b\s+(?:que|qu['’]il\s+dit|en\s+disant|disant|pour\s+dire)\s+(.+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const candidate = String(match?.[1] || '')
+      .trim()
+      .replace(/^["“'`]+/, '')
+      .replace(/["”'`]+$/g, '')
+      .trim();
+    if (candidate) return candidate;
+  }
+
+  return '';
+}
+
+function parseSimpleEmailIntent(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const normalized = normalizeIntentText(text);
+  const recipients = extractEmailRecipients(text);
+  const asksEmail = /\b(envoi|envois|envoie|envoyer|mail|email|e-mail|courriel|transmet|transmets|expedie|expedier|adresse)\b/.test(normalized);
+  const mentionsAttachmentLikeArtifact = /\b(pdf|document|piece jointe|pieces jointes|fichier|archive|zip|image|illustration|photo|ressource|dernier fichier|derniere ressource|pi[eè]ce jointe)\b/.test(normalized);
+
+  if (!recipients.length || !asksEmail || mentionsAttachmentLikeArtifact) {
+    return null;
+  }
+
+  const message = extractSimpleEmailMessage(text);
+  if (!message) {
+    return null;
+  }
+
+  return {
+    recipients,
+    subject: 'A11',
+    message,
+  };
+}
+
 function classifyAssistantCapabilityRefusal(value = '') {
   const normalized = normalizeIntentText(value);
   if (!normalized) return { any: false, image: false, email: false, generic: false };
@@ -202,6 +254,7 @@ module.exports = {
   extractPdfTopic,
   buildAutoPdfSections,
   parsePdfEmailIntent,
+  parseSimpleEmailIntent,
   classifyAssistantCapabilityRefusal,
   hasRecentAssistantCapabilityRefusal,
   extractImplicitImageGenerationPrompt,

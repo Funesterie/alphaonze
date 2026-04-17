@@ -10,10 +10,14 @@ const {
   isIntentRouterV2Enabled,
 } = require('../resolve-user-request.cjs');
 const {
+  parseSimpleEmailIntent,
+} = require('../../lib/direct-safe-intent.cjs');
+const {
   t_list_resources: defaultListResources,
   t_generate_pdf: defaultGeneratePdf,
   t_share_file: defaultShareFile,
   t_email_latest_resource: defaultEmailLatestResource,
+  t_send_email: defaultSendEmail,
 } = require('../a11/tools-dispatcher.cjs');
 
 function defaultHasLocalChatUpstreamConfigured() {
@@ -532,6 +536,55 @@ async function executeCompoundActionRequest({
   return null;
 }
 
+async function executeSimpleEmailIntentRequest({
+  req,
+  intent,
+  sendEmail,
+}) {
+  const context = buildExecutionContext(req);
+  const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const resolution = {
+    traceId,
+    pipeline: 'intent-router-v2',
+    kind: 'compound.simple_email',
+  };
+
+  const result = await sendEmail({
+    to: intent.recipients,
+    subject: intent.subject || 'A11',
+    message: intent.message || '',
+    conversationId: context.conversationId || null,
+    _context: context,
+  });
+
+  if (!result?.ok) {
+    const error = new Error(result?.error || 'compound_simple_email_failed');
+    error.statusCode = result?.error === 'mail_provider_not_configured' ? 503 : 502;
+    error.payload = {
+      ok: false,
+      error: result?.error || 'compound_simple_email_failed',
+      details: result,
+    };
+    throw error;
+  }
+
+  const recipients = Array.isArray(result?.to) ? result.to : intent.recipients;
+  const recipientLabel = recipients.join(', ');
+  const content = recipientLabel
+    ? `C'est fait. Le mail a bien ete envoye a ${recipientLabel}.`
+    : "C'est fait. Le mail a bien ete envoye.";
+
+  return buildCompoundPayload({
+    ok: true,
+    mode: 'compound_action',
+    artifact_type: 'email',
+    content,
+    recipients,
+    mail: result?.mail || null,
+    choices: buildAssistantChoice(content),
+  }, resolution);
+}
+
 function createProtectedChatProxyRouter({
   verifyJWT,
   proxyChatToOpenAI,
@@ -544,6 +597,7 @@ function createProtectedChatProxyRouter({
   generatePdf = defaultGeneratePdf,
   shareFile = defaultShareFile,
   emailLatestResource = defaultEmailLatestResource,
+  sendEmail = defaultSendEmail,
   hasLocalChatUpstreamConfigured = defaultHasLocalChatUpstreamConfigured,
   shouldDefaultToLocalProvider = defaultShouldDefaultToLocalProvider,
   intentRouterV2Enabled = isIntentRouterV2Enabled(),
@@ -573,6 +627,16 @@ function createProtectedChatProxyRouter({
   async function tryHandleIntentRequest(req, res) {
     const latestUserMessage = extractLatestUserMessage(req.body || {});
     if (!latestUserMessage) return false;
+
+    const simpleEmailIntent = parseSimpleEmailIntent(latestUserMessage);
+    if (simpleEmailIntent) {
+      const simpleEmailPayload = await executeSimpleEmailIntentRequest({
+        req,
+        intent: simpleEmailIntent,
+        sendEmail,
+      });
+      return res.status(200).json(simpleEmailPayload);
+    }
 
     const compoundRequest = detectCompoundActionRequest(latestUserMessage);
     if (compoundRequest) {
