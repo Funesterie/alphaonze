@@ -5,6 +5,7 @@ const {
   parsePdfEmailIntent,
   parseSimpleEmailIntent,
   parseSimplePdfIntent,
+  extractIllustratedPdfTopic,
   normalizeGeneratedImagePrompt,
   extractImplicitImageGenerationPrompt,
   detectCapabilityDiagnosticIntent,
@@ -41,6 +42,11 @@ test('parseSimplePdfIntent extracts a plain pdf creation request', () => {
   assert.equal(intent.title, 'Les fourmis');
   assert.equal(Array.isArray(intent.sections), true);
   assert.match(intent.filename, /\.pdf$/i);
+});
+
+test('extractIllustratedPdfTopic strips image wording around an illustrated pdf request', () => {
+  const topic = extractIllustratedPdfTopic('genere un pdf de dbz avec des images');
+  assert.equal(topic, 'dbz');
 });
 
 test('normalizeGeneratedImagePrompt strips mail wording from chained image requests', () => {
