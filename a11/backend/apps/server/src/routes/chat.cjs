@@ -9,10 +9,12 @@ try {
 
 const {
   detectImageIntent: defaultDetectImageIntent,
+  detectVideoIntent: defaultDetectVideoIntent,
   detectWebImageIntent: defaultDetectWebImageIntent,
 } = require('../../lib/intent-detection.cjs');
 const { duckduckgoImageSearch: defaultDuckduckgoImageSearch } = require('../../lib/image-search.cjs');
 const sdToolsModule = require('./sd-tools.cjs');
+const videoToolsModule = require('./video-generate.cjs');
 const {
   createIntentResolver: createUnifiedIntentResolver,
   isIntentRouterV2Enabled,
@@ -33,9 +35,11 @@ function resolveChatDependencies(overrides = {}) {
   return {
     openaiClient: overrides.openaiClient || createOpenAIClient(),
     detectImageIntent: overrides.detectImageIntent || defaultDetectImageIntent,
+    detectVideoIntent: overrides.detectVideoIntent || defaultDetectVideoIntent,
     detectWebImageIntent: overrides.detectWebImageIntent || defaultDetectWebImageIntent,
     duckduckgoImageSearch: overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch,
     generateSd: overrides.generateSd || sdToolsModule.generateSdInternal,
+    generateVideo: overrides.generateVideo || videoToolsModule.generateVideoInternal,
     intentRouterV2Enabled: isIntentRouterV2Enabled(overrides.intentRouterV2Enabled),
   };
 }
@@ -44,15 +48,19 @@ function createChatRouter(overrides = {}) {
   const {
     openaiClient,
     detectImageIntent,
+    detectVideoIntent,
     detectWebImageIntent,
     duckduckgoImageSearch,
     generateSd,
+    generateVideo,
   } = resolveChatDependencies(overrides);
   const intentResolver = createUnifiedIntentResolver({
     detectImageIntent,
+    detectVideoIntent,
     detectWebImageIntent,
     duckduckgoImageSearch,
     generateSd,
+    generateVideo,
   });
 
   const router = express.Router();
@@ -127,10 +135,12 @@ function looksLikeDependencyBag(value) {
     && (
       'openaiClient' in value
       || 'detectImageIntent' in value
+      || 'detectVideoIntent' in value
       || 'detectWebImageIntent' in value
       || 'extractWebImageSubject' in value
       || 'duckduckgoImageSearch' in value
       || 'generateSd' in value
+      || 'generateVideo' in value
       || 'intentRouterV2Enabled' in value
     )
   );

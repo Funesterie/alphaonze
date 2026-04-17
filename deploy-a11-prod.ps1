@@ -330,13 +330,12 @@ $repoOrder = @(
     RailwayService = "a11backend"
     Ignore = @(
       "a11/backend/apps/server/.env.local",
-      "a11/backend/apps/server/a11_runtime/",
+      "a11/runtime/",
       "a11/backend/apps/server/tmp/",
       "a11/backend/apps/server/*.log",
       "a11/frontend/apps/web/node_modules/",
       "a11/frontend/apps/web/dist/",
       "a11/frontend/dist/",
-      "a11/launchers/runtime/",
       "a11/backend/apps/tts/*.json",
       "*.log"
     )

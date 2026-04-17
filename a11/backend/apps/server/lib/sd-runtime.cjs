@@ -3,48 +3,11 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
-const A11_ROOT = path.join(SERVER_ROOT, '..', '..', '..');
-const CANONICAL_A11LLM_ROOT = path.join(A11_ROOT, 'llm');
-const LEGACY_A11LLM_ROOT = path.join(A11_ROOT, 'a11llm');
 const VENDORED_SD_SCRIPT = path.join(SERVER_ROOT, 'tools', 'sd', 'generate_sd_image.py');
 const BACKEND_SD_VENV = path.join(
   SERVER_ROOT,
   'tools',
   'sd',
-  'venv',
-  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
-);
-const CANONICAL_SD_SCRIPT = path.join(CANONICAL_A11LLM_ROOT, 'scripts', 'generate_sd_image.py');
-const CANONICAL_SD_VENV = path.join(
-  CANONICAL_A11LLM_ROOT,
-  'scripts',
-  'venv',
-  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
-);
-const LAUNCHER_DIST_SD_VENV = path.join(
-  A11_ROOT,
-  'launchers',
-  'dist',
-  'a11-local',
-  'llm',
-  'scripts',
-  'venv',
-  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
-);
-const DESKTOP_RESOURCES_SD_VENV = path.join(
-  A11_ROOT,
-  'a11desktoptauri',
-  'resources',
-  'a11-local',
-  'llm',
-  'scripts',
-  'venv',
-  process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
-);
-const LEGACY_SD_SCRIPT = path.join(LEGACY_A11LLM_ROOT, 'scripts', 'generate_sd_image.py');
-const LEGACY_SD_VENV = path.join(
-  LEGACY_A11LLM_ROOT,
-  'scripts',
   'venv',
   process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
 );
@@ -136,10 +99,6 @@ function resolveSdScriptPath() {
     ...(allowLocalFallback ? [
       explicit,
       VENDORED_SD_SCRIPT,
-      CANONICAL_SD_SCRIPT,
-      LEGACY_SD_SCRIPT,
-      'D:\\funesterie\\a11\\llm\\scripts\\generate_sd_image.py',
-      'D:\\funesterie\\a11\\a11llm\\scripts\\generate_sd_image.py',
     ] : [explicit]),
   ]);
 
@@ -177,10 +136,6 @@ function resolveSdPythonBin(scriptPath = '') {
     explicit,
     adjacentVenv,
     BACKEND_SD_VENV,
-    LAUNCHER_DIST_SD_VENV,
-    DESKTOP_RESOURCES_SD_VENV,
-    CANONICAL_SD_VENV,
-    LEGACY_SD_VENV,
   ]);
 
   for (const candidate of candidates) {

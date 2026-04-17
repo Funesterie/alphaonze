@@ -236,85 +236,17 @@ function Process-Repo {
 
 $repoOrder = @(
   @{
-    Name = "a11backendrailway"
-    Path = "D:\funesterie\a11\a11backendrailway"
-    Branch = "main"
-    Ignore = @(
-      "apps/server/.env.local",
-      "a11_memory/memos/memo_index.jsonl",
-      "a11_runtime/",
-      "tmp-*.log",
-      "*.log"
-    )
-  },
-  @{
-    Name = "a11frontendnetlify"
-    Path = "D:\funesterie\a11\a11frontendnetlify"
-    Branch = "main"
-    Ignore = @()
-  },
-  @{
-    Name = "a11llm"
-    Path = "D:\funesterie\a11\a11llm"
-    Branch = "main"
-    Ignore = @(
-      "llm/models/",
-      "llm/server/",
-      "llama.cpp/",
-      "scripts/*.png",
-      "scripts/generate_sd_image.py",
-      "*.gguf",
-      "*.dll",
-      "*.exe"
-    )
-  },
-  @{
-    Name = "a11qflushrailway"
-    Path = "D:\funesterie\a11\a11qflushrailway"
-    Branch = "main"
-    Ignore = @(
-      ".qflush/logic-config.json",
-      ".qflush/safe-modes.json",
-      ".qflush/logs/",
-      "tmp-*.log",
-      "*.log"
-    )
-  },
-  @{
-    Name = "scream"
-    Path = "D:\scream"
-    Branch = "main"
-    Ignore = @(
-      "tmp-*.log",
-      "*.log"
-    )
-  },
-  @{
-    Name = "funesterie"
+    Name = "funesterie-monorepo"
     Path = "D:\funesterie"
-    Branch = "main"
+    Branch = "master"
     Ignore = @(
       "a11_runtime/",
+      "a11/runtime/",
       "a11/launchers/dist/",
-      "a11/a11desktoptauri/node_modules/",
-      "a11/a11desktoptauri/dist/",
-      "a11/a11desktoptauri/resources/a11-local/",
-      "a11/a11desktoptauri/src-tauri/target/",
-      "a11/a11desktoptauri/src-tauri/target-alt/",
       ".codex-tmp/",
       "a11/tmp/",
       "dump-a11-prep/",
       "pour copilot/",
-      "tmp-*.log",
-      "*.log"
-    )
-  },
-  @{
-    Name = "a11dragonrailway"
-    Path = "D:\funesterie\a11\a11dragonrailway"
-    Branch = "main"
-    Ignore = @(
-      ".dragon/runtime/",
       "tmp-*.log",
       "*.log"
     )

@@ -1,12 +1,13 @@
 # Workspace runtime and temp files
 /a11_runtime/
+/a11/runtime/
 /tmp-*.log
 /dist/
 /funesterie.local.code-workspace
 
 # Local launcher runtime
-/a11/launchers/runtime/
 /a11/launchers/dist/
+/a11/launchers/tools/
 
 # Desktop wrapper generated files
 /a11/a11desktoptauri/node_modules/
@@ -41,6 +42,7 @@ Thumbs.db
 !**/.env.*.example
 
 # A11 monorepo generated state
+/a11/a11_memory/
 /a11/backend/a11_memory/memos/
 /a11/backend/apps/server/.a11_state/
 /a11/backend/apps/server/.qflash/

@@ -30,7 +30,7 @@ const PROFILE_META: Array<{ key: ProfileKey; label: string; apiBase: string; hin
     key: "local",
     label: "Lancement local",
     apiBase: A11_API_PROFILE_BASES.local,
-    hint: "Utilise ton backend tunnelé et les services locaux déjà démarrés chez toi.",
+    hint: "Utilise la meme app qu'en prod, mais branchee sur ton backend local et Ollama.",
   },
 ];
 
@@ -365,7 +365,7 @@ export function A11ControlCenterPanel() {
                   </div>
                   {profile.key === "local" && controlEnabled && supervisorTargets.length === 0 ? (
                     <div style={{ marginTop: 8, color: "#fcd34d", fontSize: 12 }}>
-                      Aucun service pilotable n'est encore detecte. Pour un demarrage a froid, utilise le raccourci local complet ou laisse le backend local exposer cerbere, TTS et llama-server.
+                      Aucun service pilotable n'est encore detecte. Pour un demarrage a froid, utilise le raccourci local complet ou laisse le backend local exposer Cerbere, TTS et Ollama.
                     </div>
                   ) : null}
 

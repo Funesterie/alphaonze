@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 
 const createChatRouter = require('../src/routes/chat.cjs');
 const createProtectedChatProxyRouter = require('../src/routes/protected-chat-proxy.cjs');
+const createVideoGenerateRouter = require('../src/routes/video-generate.cjs');
 const createImageCardinalityDebugRouter = require('../src/routes/image-cardinality-debug.cjs');
 const createImageAtelierRouter = require('../src/routes/image-atelier.cjs');
 const maskRouter = require('../src/routes/mask.cjs');
@@ -515,6 +516,59 @@ test('POST /api/llm/chat returns a web image payload for image search prompts', 
       assert.match(String(json.image_url || ''), /mario%2064\.png$/i);
       assert.match(String(json.imagePath || ''), /mario%2064\.png$/i);
       assert.match(String(json.content || json.choices?.[0]?.message?.content || ''), /ouvrir l'image/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat returns a video payload for explicit video requests', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        hasLocalChatUpstreamConfigured: () => true,
+        generateVideo: async ({ prompt, body }) => ({
+          ok: true,
+          tool: 'generate_video',
+          artifact_type: 'video',
+          prompt,
+          format: body.format || 'mp4',
+          durationSeconds: body.durationSeconds || 3,
+          fps: body.fps || 6,
+          frameCount: 18,
+          video_url: 'https://files.example.com/generated-video.mp4',
+          filename: 'generated-video.mp4',
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        a11Dev: true,
+        messages: [{ role: 'user', content: 'genere une video de kurosaki en combat' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.artifact_type, 'video');
+      assert.equal(json.video_url, 'https://files.example.com/generated-video.mp4');
+      assert.equal(json.kind, 'video.generate');
+      assert.match(String(json.choices?.[0]?.message?.content || ''), /ouvrir la video/i);
     }
   );
 });
@@ -1374,4 +1428,108 @@ test('compileMaskToSD returns a raw payload and adaptMaskToFreelandValue wraps i
   const adaptedAgain = adaptMaskToFreelandValue(mask, adapted);
   assert.deepEqual(adaptedAgain.value, compiledPayload);
   assert.equal(adaptedAgain.kind, 'image.generate');
+});
+
+test('POST /api/video/generate returns a dedicated video payload', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createVideoGenerateRouter({
+        generateVideo: async ({ prompt, body }) => ({
+          ok: true,
+          tool: 'generate_video',
+          artifact_type: 'video',
+          prompt,
+          format: body.format,
+          durationSeconds: body.durationSeconds,
+          fps: body.fps,
+          frameCount: 6,
+          video_url: 'https://files.example.com/demo-video.mp4',
+          filename: 'demo-video.mp4',
+        }),
+      }).router);
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/video/generate', {
+        prompt: 'dragon bleu',
+        durationSeconds: 3,
+        fps: 6,
+        format: 'mp4',
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.artifact_type, 'video');
+      assert.equal(json.video_url, 'https://files.example.com/demo-video.mp4');
+      assert.equal(json.format, 'mp4');
+    }
+  );
+});
+
+test('POST /api/chat returns a video completion payload for explicit video requests', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createChatRouter({
+        detectVideoIntent: () => true,
+        generateVideo: async () => ({
+          ok: true,
+          tool: 'generate_video',
+          artifact_type: 'video',
+          format: 'gif',
+          durationSeconds: 2,
+          fps: 4,
+          frameCount: 8,
+          video_url: 'https://files.example.com/demo-video.gif',
+          filename: 'demo-video.gif',
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/chat', {
+        message: 'genere une video de dragon bleu en gif 2 secondes 4 fps',
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.artifact_type, 'video');
+      assert.equal(json.video_url, 'https://files.example.com/demo-video.gif');
+      assert.equal(json.kind, 'video.generate');
+      assert.match(String(json.choices?.[0]?.message?.content || ''), /ouvrir la video/i);
+    }
+  );
+});
+
+test('POST /api/chat forwards source images to the video runtime', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createChatRouter({
+        detectImageIntent: () => false,
+        detectVideoIntent: () => true,
+        generateVideo: async ({ body }) => {
+          assert.equal(body.sourceImageUrl, 'https://files.example.com/source-image.png');
+          return {
+            ok: true,
+            tool: 'generate_video',
+            artifact_type: 'video',
+            format: 'mp4',
+            durationSeconds: 2,
+            fps: 4,
+            frameCount: 8,
+            video_url: 'https://files.example.com/source-video.mp4',
+            filename: 'source-video.mp4',
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/chat', {
+        message: 'genere une video en travelling doux',
+        sourceImageUrl: 'https://files.example.com/source-image.png',
+        durationSeconds: 2,
+        fps: 4,
+        format: 'mp4',
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.artifact_type, 'video');
+      assert.equal(json.video_url, 'https://files.example.com/source-video.mp4');
+    }
+  );
 });

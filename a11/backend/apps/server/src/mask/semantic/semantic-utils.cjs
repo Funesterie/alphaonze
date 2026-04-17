@@ -52,6 +52,16 @@ const INTENT_DEFINITIONS = {
       /\b(generate|create|draw|make|produce)\b.*\b(image|illustration|drawing|photo|visual|art)\b/i,
     ],
   },
+  'video.generate': {
+    label: 'Generer une video',
+    kind: 'action',
+    verbs: ['genere', 'generer', 'cree', 'creer', 'fais', 'faire', 'fabrique', 'produis', 'prepare', 'generate', 'create', 'make', 'render'],
+    keywords: ['video', 'animation', 'gif', 'mp4', 'clip', 'sequence', 'frames'],
+    phrases: [
+      /\b(genere|generer|cree|creer|fais|faire|fabrique|produis|prepare)\b.*\b(video|animation|gif|mp4|clip)\b/i,
+      /\b(generate|create|make|render)\b.*\b(video|animation|gif|mp4|clip)\b/i,
+    ],
+  },
   'web.image.search': {
     label: 'Chercher une image sur le web',
     kind: 'action',

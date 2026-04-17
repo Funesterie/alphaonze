@@ -43,7 +43,7 @@ async function callPayloadAssistant(message) {
   }
 
   const body = {
-    model: "llama3.2:latest",
+    model: "gemma4:e4b",
     stream: false,
     messages: [
       { role: "system", content: buildSystemPrompt() },

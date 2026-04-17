@@ -152,7 +152,7 @@ $workspaceRoot = Split-Path -Parent $PSCommandPath
 $launchersRoot = Join-Path $workspaceRoot 'a11\launchers'
 $localLauncher = Join-Path $launchersRoot 'a11-local.ps1'
 $desktopLauncher = Join-Path $launchersRoot 'a11-desktop.ps1'
-$onlineLauncher = Join-Path $launchersRoot 'start-prod-a11.ps1'
+$onlineLauncher = Join-Path $launchersRoot 'start-online-a11.ps1'
 $prodDeployScript = Join-Path $workspaceRoot 'deploy-a11-prod.ps1'
 $powerShellExe = Get-CommandPath 'pwsh'
 if (-not $powerShellExe) {

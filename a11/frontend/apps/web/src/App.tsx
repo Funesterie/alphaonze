@@ -67,6 +67,7 @@ interface ChatMessage {
   role: Role;
   content: string;
   imageUrl?: string | null;
+  videoUrl?: string | null;
   fileUrl?: string | null;
   qflushVerification?: {
     suspicious?: boolean;
@@ -94,6 +95,7 @@ type A11HistoryMessage = {
   content: string;
   ts?: string;
   imageUrl?: string | null;
+  videoUrl?: string | null;
   fileUrl?: string | null;
   qflushVerification?: {
     suspicious?: boolean;
@@ -144,28 +146,10 @@ const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking
 
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
-    value: "local:gemma4:e2b",
-    label: "gemma4 e2b",
-    provider: "local",
-    model: "gemma4:e2b",
-  },
-  {
     value: "local:gemma4:e4b",
     label: "gemma4 e4b",
     provider: "local",
     model: "gemma4:e4b",
-  },
-  {
-    value: "local:llama3.2:latest",
-    label: "llama3.2",
-    provider: "local",
-    model: "llama3.2:latest",
-  },
-  {
-    value: "local:gpt-oss:20b",
-    label: "gpt-oss 20b",
-    provider: "local",
-    model: "gpt-oss:20b",
   },
 ];
 
@@ -297,9 +281,11 @@ function isAssistantHistoryPoisoned(value: string) {
 function normalizeAssistantMessagePayload(
   content: string,
   explicitImageUrl?: string | null,
+  explicitVideoUrl?: string | null,
   explicitFileUrl?: string | null
 ) {
   let resolvedImageUrl = explicitImageUrl ? resolveApiAssetUrl(explicitImageUrl) : null;
+  let resolvedVideoUrl = explicitVideoUrl ? resolveApiAssetUrl(explicitVideoUrl) : null;
   let resolvedFileUrl = explicitFileUrl ? resolveApiAssetUrl(explicitFileUrl) : null;
   const rawContent = String(content || "");
   let cleanedContent = extractAssistantDisplayContent(rawContent) || rawContent.trim();
@@ -329,20 +315,28 @@ function normalizeAssistantMessagePayload(
   cleanedContent = cleanedContent.replace(MARKDOWN_LINK_PATTERN, (fullMatch, rawLabel: string, rawUrl: string) => {
     const resolvedCandidate = resolveApiAssetUrl(rawUrl);
     const label = String(rawLabel || "").trim().toLowerCase();
-    const looksImageLink = /\.(?:png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
+    const looksImageLink = /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("image")
       || label.includes("apercu")
       || label.includes("aperçu");
+    const looksVideoLink = /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
+      || label.includes("video")
+      || label.includes("vidéo")
+      || label.includes("animation")
+      || label.includes("gif");
     const looksPdfLink = /\.pdf(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("pdf")
       || label.includes("document");
     if (!resolvedImageUrl && resolvedCandidate && looksImageLink) {
       resolvedImageUrl = resolvedCandidate;
     }
+    if (!resolvedVideoUrl && resolvedCandidate && looksVideoLink) {
+      resolvedVideoUrl = resolvedCandidate;
+    }
     if (!resolvedFileUrl && resolvedCandidate && looksPdfLink) {
       resolvedFileUrl = resolvedCandidate;
     }
-    if (looksImageLink) {
+    if (looksImageLink || looksVideoLink) {
       return "";
     }
     return fullMatch;
@@ -375,6 +369,8 @@ function normalizeAssistantMessagePayload(
   cleanedContent = cleanedContent.replace(/\n{3,}/g, "\n\n").trim();
   if (!cleanedContent && resolvedImageUrl) {
     cleanedContent = "Image générée par A-11.";
+  } else if (!cleanedContent && resolvedVideoUrl) {
+    cleanedContent = "Vidéo générée par A-11.";
   } else if (!cleanedContent && rawContent.trim()) {
     cleanedContent = "A11 a traité la demande.";
   }
@@ -382,6 +378,7 @@ function normalizeAssistantMessagePayload(
   return {
     content: cleanedContent,
     imageUrl: resolvedImageUrl || null,
+    videoUrl: resolvedVideoUrl || null,
     fileUrl: resolvedFileUrl || null,
     qflushVerification,
   };
@@ -1171,7 +1168,7 @@ export function App() {
     [isAuthenticated]
   );
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
-  const [model, setModel] = useState("local:llama3.2:latest");
+  const [model, setModel] = useState("local:gemma4:e4b");
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
@@ -1330,16 +1327,25 @@ export function App() {
               const role = sanitizeRole(m.role);
               const rawContent = String(m.content || '');
               const normalizedAssistant = role === 'assistant'
-                ? normalizeAssistantMessagePayload(rawContent, typeof m.imageUrl === 'string' ? m.imageUrl : null)
+                ? normalizeAssistantMessagePayload(
+                    rawContent,
+                    typeof m.imageUrl === 'string' ? m.imageUrl : null,
+                    typeof m.videoUrl === 'string' ? m.videoUrl : null,
+                    typeof m.fileUrl === 'string' ? m.fileUrl : null
+                  )
                 : {
                     content: rawContent,
                     imageUrl: typeof m.imageUrl === 'string' ? resolveApiAssetUrl(m.imageUrl) : null,
+                    videoUrl: typeof m.videoUrl === 'string' ? resolveApiAssetUrl(m.videoUrl) : null,
+                    fileUrl: typeof m.fileUrl === 'string' ? resolveApiAssetUrl(m.fileUrl) : null,
                   };
               return {
                 id: String(m.id || (`m-${Date.now()}`)),
                 role,
                 content: role === 'system' ? normalizeSystemContent(rawContent) : normalizedAssistant.content,
                 imageUrl: role === 'system' ? null : normalizedAssistant.imageUrl,
+                videoUrl: role === 'system' ? null : normalizedAssistant.videoUrl,
+                fileUrl: role === 'system' ? null : normalizedAssistant.fileUrl,
                 ts: normalizeMessageTimestamp(m.ts),
               };
             }) : [{ id: `sys-${Date.now()}`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO, ts: new Date().toISOString() }]
@@ -1457,6 +1463,9 @@ export function App() {
             typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
               ? (message?.imageUrl || message?.image_url || message?.imagePath)
               : null,
+            typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
+              ? (message?.videoUrl || message?.video_url || message?.videoPath)
+              : null,
             typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
               ? (message?.fileUrl || message?.file_url || message?.filePath)
               : null
@@ -1465,6 +1474,9 @@ export function App() {
             content: String(message?.content || ""),
             imageUrl: typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
               ? resolveApiAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
+              : null,
+            videoUrl: typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
+              ? resolveApiAssetUrl(message?.videoUrl || message?.video_url || message?.videoPath)
               : null,
             fileUrl: typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
               ? resolveApiAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
@@ -1475,6 +1487,7 @@ export function App() {
         role,
         content: normalizedAssistant.content,
         imageUrl: normalizedAssistant.imageUrl,
+        videoUrl: normalizedAssistant.videoUrl,
         fileUrl: normalizedAssistant.fileUrl,
         qflushVerification: role === "assistant"
           ? (message?.qflushVerification || normalizedAssistant.qflushVerification || null)
@@ -1831,6 +1844,7 @@ export function App() {
       const normalizedAssistant = normalizeAssistantMessagePayload(
         String(assistantReply.content || ""),
         assistantReply.imageUrl || null,
+        assistantReply.videoUrl || null,
         assistantReply.fileUrl || null
       );
 
@@ -1839,6 +1853,7 @@ export function App() {
         role: "assistant",
         content: normalizedAssistant.content,
         imageUrl: normalizedAssistant.imageUrl,
+        videoUrl: normalizedAssistant.videoUrl,
         fileUrl: normalizedAssistant.fileUrl,
         qflushVerification: assistantReply.qflushVerification || normalizedAssistant.qflushVerification || null,
         ts: assistantReply.createdAt || new Date().toISOString(),
@@ -3135,7 +3150,52 @@ export function App() {
                         </button>
                       </div>
                     )}
-                    {m.fileUrl && !m.imageUrl && (
+                    {m.videoUrl && !m.imageUrl && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        {/\.gif(?:[?#].*)?$/i.test(String(m.videoUrl || "")) ? (
+                          <a
+                            href={m.videoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: "inline-block", width: "fit-content" }}
+                          >
+                            <img
+                              src={m.videoUrl}
+                              alt="Animation générée par A11"
+                              style={{ maxWidth: "320px", borderRadius: 12 }}
+                            />
+                          </a>
+                        ) : (
+                          <video
+                            src={m.videoUrl}
+                            controls
+                            preload="metadata"
+                            playsInline
+                            style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
+                          />
+                        )}
+                        <a
+                          href={m.videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            fontSize: 12,
+                            color: "#93c5fd",
+                            textDecoration: "none",
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          Ouvrir la vidéo
+                        </a>
+                      </div>
+                    )}
+                    {m.fileUrl && !m.imageUrl && !m.videoUrl && (
                       <div
                         style={{
                           marginTop: 12,

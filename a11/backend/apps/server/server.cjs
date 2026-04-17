@@ -45,7 +45,7 @@ if (allowDevRoutes && !intentRouterV2Enabled) {
 
 
 // --- Chat principal (web image intent + fallback LLM) ---
-const { detectWebImageIntent, extractWebImageSubject } = require('./lib/intent-detection.cjs');
+const { detectVideoIntent, detectWebImageIntent, extractWebImageSubject } = require('./lib/intent-detection.cjs');
 const { duckduckgoImageSearch } = require('./lib/image-search.cjs');
 const {
   parsePdfEmailIntent,
@@ -63,6 +63,7 @@ const createDecommissionedDevRoutesRouter = require('./src/routes/decommissioned
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const createAdminRouter = require('./src/routes/admin.cjs');
+const createVideoGenerateRouter = require('./src/routes/video-generate.cjs');
 // ...existing code...
 // --- .env first ---
 const path = require('node:path');
@@ -430,7 +431,7 @@ const pathMem = require('node:path');
 
 const A11_WORKSPACE_ROOT =
   process.env.A11_WORKSPACE_ROOT ||
-  pathMem.resolve(__dirname, '..', '..'); // ex: D:\A11
+  pathMem.resolve(__dirname, '..', '..', '..');
 
 const A11_MEMORY_ROOT = pathMem.join(A11_WORKSPACE_ROOT, 'a11_memory');
 const A11_CONV_DIR = pathMem.join(A11_MEMORY_ROOT, 'conversations');
@@ -896,7 +897,7 @@ app.post('/api/tts', express.json({ limit: '1mb' }), async (req, res) => {
 const router = Router();
 
 // Racine de travail (doit pointer sur D:\A12 chez toi en .env)
-const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..');
+const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..', '..');
 
 // Exposer le workspace en lecture seule sous /files
 app.use('/files', express.static(WORKSPACE_ROOT, {
@@ -908,7 +909,7 @@ console.log('[A11] Static /files ->', WORKSPACE_ROOT);
 // Config headless A11Host (active même sans Visual Studio/VSIX)
 setHeadlessConfig({
   // Racine du workspace : adapte si besoin (ex: D:\A11, D:\A12, etc.)
-  workspaceRoot: process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..'),
+  workspaceRoot: process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..', '..'),
   // Commande de build par défaut en mode headless
   // (tu peux mettre "dotnet build", "npm run build", etc.)
   buildCommand: process.env.A11_BUILD_COMMAND || null,
@@ -5472,16 +5473,23 @@ app.use('/api/admin', createImageCardinalityDebugRouter({
   isAdminRequest,
 }));
 
+const videoTools = createVideoGenerateRouter({
+  generateSd: sdTools.generateImageInternal,
+});
+
 app.use('/api', createChatRouter({
   openaiClient,
   detectImageIntent,
+  detectVideoIntent,
   detectWebImageIntent,
   extractWebImageSubject,
   duckduckgoImageSearch,
   generateSd: sdTools.generateSdInternal,
+  generateVideo: videoTools.generateVideoInternal,
 }));
 
 app.use('/api', sdTools.router);
+app.use('/api', videoTools.router);
 app.use('/api/mask', require('./src/routes/mask.cjs'));
 app.use('/api', require('./src/routes/image-generate-mask.cjs'));
 app.use('/api', require('./src/routes/image-atelier.cjs'));
@@ -6198,12 +6206,14 @@ const protectedChatProxyRouter = createProtectedChatProxyRouter({
   verifyJWT,
   proxyChatToOpenAI,
   detectImageIntent,
+  detectVideoIntent,
   detectWebImageIntent,
   extractWebImageSubject,
   duckduckgoImageSearch,
   generateSd: sdTools.generateSdInternal,
+  generateVideo: videoTools.generateVideoInternal,
   hasLocalChatUpstreamConfigured,
-  localDefaultModel: process.env.LOCAL_DEFAULT_MODEL || 'llama3.2:latest',
+  localDefaultModel: process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b',
 });
 
 app.use('/api', protectedChatProxyRouter);
@@ -8391,7 +8401,7 @@ async function callChatBackend(messages, options = {}) {
           url: localChatUrl,
           headers: { 'content-type': 'application/json' },
           data: {
-            model: String(process.env.LOCAL_DEFAULT_MODEL || model || 'llama3.2:latest'),
+            model: String(process.env.LOCAL_DEFAULT_MODEL || model || 'gemma4:e4b'),
             messages: sanitizedMessages,
             stream: false,
             temperature: 0.2,
@@ -10229,7 +10239,7 @@ async function proxyQflushChat(req, res) {
       a11SkipQflush: true,
       dragonCompat: true,
       provider: 'local',
-      model: String(process.env.LOCAL_DEFAULT_MODEL || req.body?.model || 'llama3.2:latest'),
+      model: String(process.env.LOCAL_DEFAULT_MODEL || req.body?.model || 'gemma4:e4b'),
     };
     const localChatFallbackUrl = getCompletionsUrlForRequest(localProviderFallbackBody);
     if (localChatFallbackUrl && shouldFallbackToLocalOnOpenAIError(err)) {
@@ -10594,7 +10604,7 @@ async function proxyChatToOpenAI(req, res) {
           const localRequestBody = {
             ...upstreamBody,
             provider: 'local',
-            model: String(process.env.LOCAL_DEFAULT_MODEL || upstreamBody?.model || 'llama3.2:latest'),
+            model: String(process.env.LOCAL_DEFAULT_MODEL || upstreamBody?.model || 'gemma4:e4b'),
           };
           const { upstreamRes: localUpstreamRes, data: localData } = await requestChatUpstream(
             localChatFallbackUrl,
@@ -10639,7 +10649,7 @@ async function proxyChatToOpenAI(req, res) {
           {
             ...upstreamBody,
             provider: 'local',
-            model: String(process.env.LOCAL_DEFAULT_MODEL || upstreamBody?.model || 'llama3.2:latest'),
+            model: String(process.env.LOCAL_DEFAULT_MODEL || upstreamBody?.model || 'gemma4:e4b'),
           }
         );
       }
@@ -10925,7 +10935,7 @@ app.post('/ai', async (req, res) => {
       const upstreamUrl = String(upstreamHost).replace(/\/$/, '') + '/v1/chat/completions';
 
       const upstreamRes = await axios.post(upstreamUrl, {
-        model: 'llama3.2:latest',
+        model: 'gemma4:e4b',
         messages: [{ role: 'user', content: input }],
         stream: false
       }, { timeout: 60000 });
@@ -10949,7 +10959,7 @@ function buildA11AgentInjectedContext(messages, toolResults = [], options = {}) 
   const maxTotalChars = compactMode ? 2200 : 4200;
   const maxToolResults = compactMode ? 3 : 6;
   const workspaceRoot = String(
-    process.env.A11_WORKSPACE_ROOT || process.env.WORKSPACE_ROOT || path.resolve(__dirname, '..', '..')
+    process.env.A11_WORKSPACE_ROOT || process.env.WORKSPACE_ROOT || path.resolve(__dirname, '..', '..', '..')
   ).trim();
   const temporalContext = buildTemporalContextBlock(messages);
   const restrictedActions = Array.isArray(options.allowedActions)
@@ -11069,7 +11079,7 @@ async function callA11LLMAttempt(messages, options = {}) {
     { role: 'user', content: injectedContext }
   ];
   const body = {
-    model: 'llama3.2:latest',
+    model: 'gemma4:e4b',
     messages: promptMessages,
     stream: false,
     a11Passthrough: true,

@@ -26,6 +26,7 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const sentenceItems = Array.isArray(levels.levels?.sentences?.items) ? levels.levels.sentences.items : [];
 
   const detectImageIntent = typeof overrides.detectImageIntent === 'function' ? overrides.detectImageIntent : null;
+  const detectVideoIntent = typeof overrides.detectVideoIntent === 'function' ? overrides.detectVideoIntent : null;
   const detectWebImageIntent = typeof overrides.detectWebImageIntent === 'function' ? overrides.detectWebImageIntent : null;
 
   const rawScores = Object.fromEntries(Object.keys(INTENT_DEFINITIONS).map((intentType) => [intentType, 0]));
@@ -86,6 +87,8 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const explicitQuestion = /\b(comment|pourquoi|quand|qui|quoi|ou|où|what|how|why|when|who)\b/.test(normalizedText);
   const actionLike = /\b(genere|cree|dessine|cherche|trouve|montre|affiche|ecris|code|fais|prepare|generate|create|draw|search|find|show|write)\b/.test(normalizedText);
   const creationLike = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|generate|create|draw|make|render)\b/.test(normalizedText);
+  const videoKeywordLike = /\b(video|animation|gif|mp4|clip|sequence|frames)\b/.test(normalizedText);
+  const explicitImageKeywordLike = /\b(image|illustration|dessin|photo|visuel|portrait|art)\b/.test(normalizedText);
   const showLike = /\b(montre|montrer|affiche|afficher|fais voir|show me|show|cherche|chercher|trouve|trouver|find|search)\b/.test(normalizedText);
   const troubleshootingLike = /\b(explique|expliquer|probleme|probl[eè]me|bug|erreur|souci|conforme|incorrect|fonctionne|marche)\b/.test(normalizedText);
   const discussesImageSystem = /\b(image|illustration|dessin|photo|visuel|portrait|art|generateur|g[eé]n[eé]rateur|moteur)\b/.test(normalizedText);
@@ -147,6 +150,11 @@ function scoreSemanticIntents(levels, overrides = {}) {
     levelBreakdown.message['image.generate'] += 1.8;
     evidence['image.generate'].push('heuristique:image.generate');
   }
+  if (detectVideoIntent && detectVideoIntent(sourceText)) {
+    rawScores['video.generate'] += 2.1;
+    levelBreakdown.message['video.generate'] += 2.1;
+    evidence['video.generate'].push('heuristique:video.generate');
+  }
   if (detectWebImageIntent && detectWebImageIntent(sourceText)) {
     rawScores['web.image.search'] += 2.1;
     levelBreakdown.message['web.image.search'] += 2.1;
@@ -169,6 +177,24 @@ function scoreSemanticIntents(levels, overrides = {}) {
     levelBreakdown.message['web.image.search'] += 0.22;
     levelBreakdown.message['code.python.generate'] += 0.22;
     levelBreakdown.message['web.search'] += 0.14;
+  }
+
+  if (videoKeywordLike) {
+    rawScores['video.generate'] += 1.25;
+    levelBreakdown.message['video.generate'] += 1.25;
+    evidence['video.generate'].push('heuristique:video_keyword_signal');
+    if (!explicitImageKeywordLike) {
+      rawScores['image.generate'] -= 1.6;
+      rawScores['web.image.search'] -= 0.9;
+      levelBreakdown.message['image.generate'] -= 1.6;
+      levelBreakdown.message['web.image.search'] -= 0.9;
+      evidence['image.generate'].push('suppression:explicit_video_keyword_signal');
+      evidence['web.image.search'].push('suppression:explicit_video_keyword_signal');
+    }
+  } else {
+    rawScores['video.generate'] -= 1.5;
+    levelBreakdown.message['video.generate'] -= 1.5;
+    evidence['video.generate'].push('suppression:no_video_keyword_signal');
   }
 
   if (shortShowRequest) {

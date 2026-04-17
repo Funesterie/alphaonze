@@ -13,10 +13,6 @@
       "path": "a11/backend"
     },
     {
-      "name": "A11 Dragon",
-      "path": "a11/dragon"
-    },
-    {
       "name": "A11 Frontend",
       "path": "a11/frontend"
     }
@@ -35,7 +31,7 @@
       "**/a11_memory/conversations": true,
       "**/a11_memory/memos/memo_env_snapshot_*.json": true,
       "**/public/tts": true,
-      "a11/launchers/runtime": true,
+      "a11/runtime": true,
       "a11_runtime": true
     },
     "search.exclude": {
@@ -50,7 +46,7 @@
       "**/apps/logs": true,
       "**/a11_memory/conversations": true,
       "**/public/tts": true,
-      "a11/launchers/runtime": true,
+      "a11/runtime": true,
       "a11_runtime": true
     },
     "github.copilot.chat.agent.autoFix": true,

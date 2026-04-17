@@ -10,10 +10,10 @@ Ce dossier contient l'orchestration locale transverse de `A11`.
   Ouvre A11 local dans une vraie fenetre app dediee sous Windows.
 - `a11-ollama-desktop.bat` / `a11-ollama-desktop.ps1`
   Verifie Ollama puis ouvre le mode desktop; le tunnel reste optionnel via `-WithTunnel`.
+- `start-online-a11.bat` / `start-online-a11.ps1`
+  Verifie Railway/Netlify puis ouvre simplement le site de prod.
 - `create-desktop-shortcut.ps1`
   Regenere les raccourcis bureau canoniques.
-- `start-prod-a11.bat` / `start-prod-a11.ps1`
-  Lance le mode "full en ligne" avec le minimum de local.
 
 ## Comportement
 
@@ -21,9 +21,9 @@ Les lanceurs essayent d'eviter l'effet "15 terminaux ouverts":
 
 - lancement discret des processus quand c'est possible
 - verification des ports avant de relancer un service
-- logs centralises dans `launchers\runtime\logs`
+- logs centralises dans `runtime\launcher\logs`
 - mode UI `embedded` par defaut: build du frontend puis service par le backend local
-- Ollama est le chemin local principal pour le LLM
+- Ollama + `gemma4:e4b` est le chemin local principal pour le LLM
 - qflush reste optionnel et desactive par defaut
 - mode `desktop`: ouvre l'UI locale en fenetre app Edge/Chrome sans onglets ni barre classique
 
@@ -33,12 +33,13 @@ Ces scripts vivent ici pour eviter de melanger l'orchestration globale avec:
 
 - `backend` pour le backend
 - `frontend` pour le frontend
-- une cible LLM locale externe configuree au runtime
+- le runtime partage `a11\runtime`
 - `a11qflushrailway` pour qflush
 
 ## Compatibilite
 
-Les anciens wrappers ont ete retires pour ne garder que les points d'entree canoniques.
+Les chemins canoniques sont maintenant `backend/apps/server`, `frontend/apps/web`, `launchers` et `runtime`.
+`a11desktoptauri` et `dragon` restent legacy et ne doivent plus etre pris comme structure principale.
 
 ## Commandes utiles
 
@@ -46,6 +47,7 @@ Les anciens wrappers ont ete retires pour ne garder que les points d'entree cano
 - `a11-local.bat desktop`
 - `a11-ollama-desktop.bat`
 - `a11-desktop.bat`
+- `start-online-a11.bat`
 - `a11-local.bat stop`
 - `a11-local.bat status`
 - `a11-local.bat check`
@@ -57,7 +59,7 @@ La config centrale locale se trouve dans:
 
 - `launchers\config\a11-local.env`
 
-Ports, chemins, mode UI et activation de qflush vivent ici.
+Ports, chemins, runtime root, mode UI et activation de qflush vivent ici.
 
 ## Packaging
 
