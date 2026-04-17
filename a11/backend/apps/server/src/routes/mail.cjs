@@ -5,6 +5,7 @@ const path = require('node:path');
 
 function createMailRouter({
   isMailConfigured,
+  getMailStatus,
   sendPlainEmailNow,
   sendConversationResourceEmailNow,
   sendLatestConversationResourceEmailNow,
@@ -202,12 +203,21 @@ function createMailRouter({
     }
   }
 
+  function buildMailUnavailablePayload() {
+    const status = typeof getMailStatus === 'function' ? getMailStatus() : null;
+    return {
+      ok: false,
+      error: 'mail_provider_not_configured',
+      details: status?.diagnostics || status || null,
+    };
+  }
+
   router.post('/api/mail/send', express.json({ limit: '20mb' }), async (req, res) => {
     try {
       const userId = String(req.user?.id || '').trim();
       if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
       if (typeof isMailConfigured === 'function' && !isMailConfigured()) {
-        return res.status(503).json({ ok: false, error: 'mail_provider_not_configured' });
+        return res.status(503).json(buildMailUnavailablePayload());
       }
 
       const attachments = normalizeInlineAttachments(req.body?.attachments);
@@ -245,7 +255,7 @@ function createMailRouter({
       const userId = String(req.user?.id || '').trim();
       if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
       if (typeof isMailConfigured === 'function' && !isMailConfigured()) {
-        return res.status(503).json({ ok: false, error: 'mail_provider_not_configured' });
+        return res.status(503).json(buildMailUnavailablePayload());
       }
 
       const kind = normalizeScheduledMailKind(req.body?.kind);
