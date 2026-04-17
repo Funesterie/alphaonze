@@ -169,6 +169,49 @@ function parseSimpleEmailIntent(value = '') {
   };
 }
 
+function parseSimplePdfIntent(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  const normalized = normalizeIntentText(text);
+  const mentionsPdf = /\b(pdf|document)\b/.test(normalized);
+  const asksCreate = /\b(fais|fait|cree|creer|genere|generer|prepare|preparer|produis|fabrique|realise|realiser)\b/.test(normalized);
+  const asksEmail = /\b(mail|email|e-mail|envoi|envoie|envois|envoyer|courriel)\b/.test(normalized);
+  const mentionsImageFlow = /\b(image|images|photo|photos|illustration|web|internet)\b/.test(normalized);
+
+  if (!mentionsPdf || !asksCreate || asksEmail || mentionsImageFlow) {
+    return null;
+  }
+
+  const topic = extractPdfTopic(text) || 'document';
+  const title = capitalizeTopic(topic);
+
+  return {
+    topic,
+    title,
+    sections: buildAutoPdfSections(topic),
+    filename: `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'document'}.pdf`,
+  };
+}
+
+function normalizeGeneratedImagePrompt(value = '') {
+  let text = String(value || '')
+    .replace(/\b(?:puis|et)\s+(?:envoie|envois|envoyer|envoi|mail|email|adresse|partage|transmets?)\b[\s\S]*$/i, '')
+    .trim();
+  if (!text) return '';
+
+  text = text
+    .replace(/^(?:peux-tu\s+|tu peux\s+|merci de\s+)?(?:moi\s+)?(?:envoie|envois|envoyer|nvois|adresse|partage|transmets?)\s+(?:moi\s+)?(?:une?\s+)?(?:image|illustration|photo)\s+/i, 'genere une image de ')
+    .replace(/^(?:peux-tu\s+|tu peux\s+|merci de\s+)?(?:fais|fait|cree|crée|creer|genere|génère|generer|dessine|dessiner)\s+(?:moi\s+)?(?:une?\s+)?(?:image|illustration|photo)\s*/i, 'genere une image ')
+    .replace(/^genere une image\s+(?!de\b)/i, 'genere une image de ')
+    .replace(/^genere une image de\s+de\b/i, 'genere une image de')
+    .replace(/^cr[eé]e une image\s+(?!de\b)/i, 'genere une image de ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text;
+}
+
 function classifyAssistantCapabilityRefusal(value = '') {
   const normalized = normalizeIntentText(value);
   if (!normalized) return { any: false, image: false, email: false, generic: false };
@@ -255,6 +298,8 @@ module.exports = {
   buildAutoPdfSections,
   parsePdfEmailIntent,
   parseSimpleEmailIntent,
+  parseSimplePdfIntent,
+  normalizeGeneratedImagePrompt,
   classifyAssistantCapabilityRefusal,
   hasRecentAssistantCapabilityRefusal,
   extractImplicitImageGenerationPrompt,
