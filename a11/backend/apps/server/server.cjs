@@ -47,6 +47,11 @@ if (allowDevRoutes && !intentRouterV2Enabled) {
 // --- Chat principal (web image intent + fallback LLM) ---
 const { detectWebImageIntent, extractWebImageSubject } = require('./lib/intent-detection.cjs');
 const { duckduckgoImageSearch } = require('./lib/image-search.cjs');
+const {
+  parsePdfEmailIntent,
+  extractImplicitImageGenerationPrompt,
+  detectCapabilityDiagnosticIntent,
+} = require('./lib/direct-safe-intent.cjs');
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('./src/mask/build-sd-prompt-bundle.cjs');
 const createDecommissionedDevRoutesRouter = require('./src/routes/decommissioned-dev-routes.cjs');
 
@@ -8881,6 +8886,11 @@ function detectCapabilityDiagnosticReason(body) {
   const latestUserMessage = getLatestUserMessage(body || {});
   const text = String(latestUserMessage || '').trim().toLowerCase();
   if (!text) return null;
+  const conversationalDiagnostic = detectCapabilityDiagnosticIntent({
+    latestUserMessage,
+    messages: Array.isArray(body?.messages) ? body.messages : [],
+  });
+  if (conversationalDiagnostic) return conversationalDiagnostic;
   const asksDiagnostic = /(fonctionne pas|fonctionnent pas|qu['’]est ce qui|qu['’]est-ce qui|detaille|d[eé]taille|diagnostic|debug|problemes|probl[eè]mes|capacites|capacités|capabilites|capabilities)/i.test(text);
   if (!asksDiagnostic) return null;
   return 'diagnostiquer les capacites A11';
@@ -8956,6 +8966,14 @@ function detectDirectImageGenerationReason(body) {
   if (detectConversationImageReason(body)) return null;
   if (detectWebImageLookupReason(body)) return null;
   if (detectDownloadLinkRequestReason(body)) return null;
+  const implicitFollowupPrompt = extractImplicitImageGenerationPrompt({
+    latestUserMessage: text,
+    messages: Array.isArray(body?.messages) ? body.messages : [],
+    detectImageIntent,
+  });
+  if (implicitFollowupPrompt) {
+    return 'generer une image';
+  }
   if (typeof detectImageIntent === 'function' && detectImageIntent(text)) {
     return 'generer une image';
   }
@@ -8976,6 +8994,7 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
   const latestUserMessage = stripDevEnginePrefix(getLatestUserMessage(body || {}));
   if (!latestUserMessage) return null;
   const resolvedImagePrompt = normalizeImagePromptLiteral(overrideImagePrompt || latestUserMessage);
+  const pdfEmailIntent = parsePdfEmailIntent(latestUserMessage);
 
   if (forceImageGeneration && resolvedImagePrompt) {
     return {
@@ -8996,6 +9015,37 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
           id: 'share-image-1',
           arguments: {
             conversationId,
+          },
+        },
+      ],
+    };
+  }
+
+  if (pdfEmailIntent) {
+    return {
+      version: 'a11-envelope-1',
+      mode: 'actions',
+      conversationId,
+      userId,
+      actions: [
+        {
+          name: 'generate_pdf',
+          id: 'gen-pdf-1',
+          arguments: {
+            title: pdfEmailIntent.title,
+            author: 'A11',
+            sections: pdfEmailIntent.sections,
+          },
+        },
+        {
+          name: 'share_file',
+          id: 'share-pdf-1',
+          arguments: {
+            conversationId,
+            emailTo: pdfEmailIntent.recipients,
+            emailSubject: pdfEmailIntent.emailSubject,
+            emailMessage: pdfEmailIntent.emailMessage,
+            attachToEmail: true,
           },
         },
       ],
@@ -9507,8 +9557,6 @@ async function tryRunDirectSafeUserIntent({ body, userId, conversationId, reques
     }
   }
 
-  const devModeEnabled = isDevModeEnabled(effectiveBody);
-
   const pendingImageClarification = normalizedUserId
     ? await getPendingClarification(normalizedUserId, normalizedConversationId, 'image_generation').catch((error_) => {
       console.warn('[A11][clarification] pending lookup failed:', error_?.message);
@@ -9660,31 +9708,21 @@ async function tryRunDirectSafeUserIntent({ body, userId, conversationId, reques
     : '';
   const preferLiteralColor = /literal_color/i.test(preferredImageInterpretation);
 
+  if (!forcedImagePrompt) {
+    const inferredFollowupImagePrompt = extractImplicitImageGenerationPrompt({
+      latestUserMessage,
+      messages: Array.isArray(effectiveBody?.messages) ? effectiveBody.messages : [],
+      detectImageIntent,
+    });
+    if (inferredFollowupImagePrompt) {
+      forcedImagePrompt = inferredFollowupImagePrompt;
+    }
+  }
+
   const shouldGenerateImage = !forcedImagePrompt && (
     semanticSelectedIntentType === 'image.generate'
     || detectDirectImageGenerationReason(effectiveBody)
   );
-
-  if ((forcedImagePrompt || shouldGenerateImage) && !devModeEnabled) {
-    return {
-      content: normalizeAssistantOutput(buildDevModeRequiredReply('generer une image')),
-      imagePath: null,
-      cerbere: {
-        ok: true,
-        results: [
-          {
-            action: 'dev_mode_required',
-            ok: true,
-            result: {
-              ok: true,
-              reason: 'generer une image',
-            },
-          },
-        ],
-      },
-      envelope: null,
-    };
-  }
 
   if (shouldGenerateImage) {
     const semanticImageSeed = (
