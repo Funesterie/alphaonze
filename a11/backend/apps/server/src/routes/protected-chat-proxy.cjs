@@ -562,6 +562,7 @@ async function executeCompoundActionRequest({
     const imageRefs = imageResources
       .map((resource) => String(resource.id || resource.url || resource.filename || '').trim())
       .filter(Boolean);
+    const hasConversationImageRefs = imageRefs.length > 0;
     let fallbackMode = '';
     let fallbackImagePayload = null;
     let pdfTopic = extractIllustratedPdfTopic(compound.sourceText);
@@ -607,7 +608,7 @@ async function executeCompoundActionRequest({
       intentResolver,
       context,
       downloadFile,
-      maxGeneratedIllustrations: imageRefs.length ? 0 : 1,
+      maxGeneratedIllustrations: hasConversationImageRefs ? 0 : 2,
     });
 
     const pdf = await generatePdf({
