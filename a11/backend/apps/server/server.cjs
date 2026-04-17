@@ -50,8 +50,10 @@ const { duckduckgoImageSearch } = require('./lib/image-search.cjs');
 const {
   parsePdfEmailIntent,
   parseSimpleEmailIntent,
+  parseSimplePdfIntent,
   extractImplicitImageGenerationPrompt,
   detectCapabilityDiagnosticIntent,
+  normalizeGeneratedImagePrompt,
 } = require('./lib/direct-safe-intent.cjs');
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('./src/mask/build-sd-prompt-bundle.cjs');
 const createDecommissionedDevRoutesRouter = require('./src/routes/decommissioned-dev-routes.cjs');
@@ -8992,9 +8994,10 @@ function shouldAutoUseResourceAgent(body) {
 function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideImagePrompt = '', forceImageGeneration = false } = {}) {
   const latestUserMessage = stripDevEnginePrefix(getLatestUserMessage(body || {}));
   if (!latestUserMessage) return null;
-  const resolvedImagePrompt = normalizeImagePromptLiteral(overrideImagePrompt || latestUserMessage);
+  const resolvedImagePrompt = normalizeImagePromptLiteral(normalizeGeneratedImagePrompt(overrideImagePrompt || latestUserMessage));
   const pdfEmailIntent = parsePdfEmailIntent(latestUserMessage);
   const simpleEmailIntent = parseSimpleEmailIntent(latestUserMessage);
+  const simplePdfIntent = parseSimplePdfIntent(latestUserMessage);
 
   if (forceImageGeneration && resolvedImagePrompt) {
     return {
@@ -9067,6 +9070,35 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
             subject: simpleEmailIntent.subject,
             message: simpleEmailIntent.message,
             conversationId,
+          },
+        },
+      ],
+    };
+  }
+
+  if (simplePdfIntent) {
+    return {
+      version: 'a11-envelope-1',
+      mode: 'actions',
+      conversationId,
+      userId,
+      actions: [
+        {
+          name: 'generate_pdf',
+          id: 'gen-pdf-1',
+          arguments: {
+            title: simplePdfIntent.title,
+            author: 'A11',
+            sections: simplePdfIntent.sections,
+          },
+        },
+        {
+          name: 'share_file',
+          id: 'share-pdf-1',
+          arguments: {
+            conversationId,
+            filename: simplePdfIntent.filename,
+            attachToEmail: false,
           },
         },
       ],

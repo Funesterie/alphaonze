@@ -1,5 +1,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
 const { ensureRequestId } = require('../../lib/request-context.cjs');
 const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
 const {
@@ -11,6 +13,8 @@ const {
 } = require('../resolve-user-request.cjs');
 const {
   parseSimpleEmailIntent,
+  parseSimplePdfIntent,
+  normalizeGeneratedImagePrompt,
 } = require('../../lib/direct-safe-intent.cjs');
 const {
   t_list_resources: defaultListResources,
@@ -18,6 +22,7 @@ const {
   t_share_file: defaultShareFile,
   t_email_latest_resource: defaultEmailLatestResource,
   t_send_email: defaultSendEmail,
+  t_download_file: defaultDownloadFile,
 } = require('../a11/tools-dispatcher.cjs');
 
 function defaultHasLocalChatUpstreamConfigured() {
@@ -142,6 +147,69 @@ function isImageLikeResource(resource) {
     || /\.(png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(url);
 }
 
+function extractGeneratedArtifactPath(value) {
+  return String(
+    value?.outputPath
+    || value?.path
+    || value?.filePath
+    || value?.savedAs
+    || value?.localPath
+    || value?.result?.outputPath
+    || value?.result?.path
+    || value?.result?.filePath
+    || value?.sdResult?.outputPath
+    || value?.sdResult?.path
+    || value?.runtime?.sdResult?.outputPath
+    || value?.runtime?.sdResult?.path
+    || ''
+  ).trim();
+}
+
+function extractGeneratedImageUrl(value) {
+  return String(
+    value?.image_url
+    || value?.imagePath
+    || value?.url
+    || value?.result?.image_url
+    || value?.result?.url
+    || value?.runtime?.sdResult?.image_url
+    || value?.runtime?.sdResult?.imagePath
+    || value?.runtime?.sdResult?.url
+    || ''
+  ).trim();
+}
+
+function getRequestOrigin(req) {
+  const proto = String(req?.headers?.['x-forwarded-proto'] || req?.protocol || 'http').trim() || 'http';
+  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').trim();
+  return host ? `${proto}://${host}` : '';
+}
+
+function buildLocalWorkspaceFileUrl(req, candidatePath) {
+  const raw = String(candidatePath || '').trim();
+  if (!raw) return null;
+  const absolutePath = path.resolve(raw);
+  try {
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const workspaceRoot = path.resolve(process.cwd());
+  const relativePath = path.relative(workspaceRoot, absolutePath).replace(/\\/g, '/');
+  if (!relativePath || relativePath.startsWith('..')) return null;
+
+  const encodedRelativePath = relativePath
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  const publicPath = `/files/${encodedRelativePath}`;
+  const origin = getRequestOrigin(req);
+  return origin ? `${origin}${publicPath}` : publicPath;
+}
+
 function detectCompoundActionRequest(text = '') {
   const sourceText = String(text || '').trim();
   const normalizedText = sourceText
@@ -241,6 +309,8 @@ async function executeCompoundActionRequest({
   generatePdf,
   shareFile,
   emailLatestResource,
+  sendEmail,
+  downloadFile,
 }) {
   const context = buildExecutionContext(req);
   const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -291,7 +361,9 @@ async function executeCompoundActionRequest({
   }
 
   if (compound.kind === 'compound.generate_image_then_mail') {
-    const imagePromptText = String(compound.imagePromptText || '').trim() || compound.sourceText;
+    const imagePromptText = normalizeGeneratedImagePrompt(
+      String(compound.imagePromptText || '').trim() || compound.sourceText
+    );
     const imageResolution = await intentResolver.resolveUserRequest({
       req,
       body: req.body || {},
@@ -311,13 +383,34 @@ async function executeCompoundActionRequest({
       throw error;
     }
 
-    const mailResult = await emailLatestResource({
+    let generatedImagePath = extractGeneratedArtifactPath(imageResolution);
+    const imageUrl = extractGeneratedImageUrl(imageResolution?.responsePayload || imageResolution);
+
+    if (!generatedImagePath && imageUrl && typeof downloadFile === 'function') {
+      const downloadedImage = await downloadFile({ url: imageUrl, _context: context });
+      if (downloadedImage?.ok) {
+        generatedImagePath = String(downloadedImage.outputPath || downloadedImage.path || '').trim();
+      }
+    }
+
+    if (!generatedImagePath) {
+      const error = new Error('compound_generate_image_missing_artifact');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_generate_image_missing_artifact',
+        details: imageResolution,
+      };
+      throw error;
+    }
+
+    const mailResult = await sendEmail({
       to: compound.recipients,
-      conversationId: context.conversationId || null,
-      kind: 'image',
-      attachToEmail: true,
       subject: 'A11 - image generee',
       message: "Image generee et jointe depuis la conversation A11.",
+      path: generatedImagePath,
+      filename: 'a11-generated-image.png',
+      conversationId: context.conversationId || null,
       _context: context,
     });
 
@@ -332,23 +425,19 @@ async function executeCompoundActionRequest({
       throw error;
     }
 
-    const imageUrl = String(
-      imageResolution?.responsePayload?.image_url
-      || imageResolution?.responsePayload?.imagePath
-      || ''
-    ).trim() || null;
-    const content = `C'est fait. L'image a ete generee puis envoyee par mail${imageUrl ? `. [ouvrir l'image](${imageUrl})` : '.'}`;
+    const resolvedImageUrl = String(imageUrl || '').trim() || null;
+    const content = `C'est fait. L'image a ete generee puis envoyee par mail${resolvedImageUrl ? `. [ouvrir l'image](${resolvedImageUrl})` : '.'}`;
     return buildCompoundPayload({
       ok: true,
       mode: 'compound_action',
       artifact_type: 'email',
       content,
       recipients: compound.recipients,
-      image_url: imageUrl,
-      imagePath: imageUrl,
+      image_url: resolvedImageUrl,
+      imagePath: resolvedImageUrl,
       image: imageResolution?.responsePayload || null,
       mail: mailResult?.mail || null,
-      resource: mailResult?.resource || null,
+      attachmentPath: generatedImagePath,
       choices: buildAssistantChoice(content),
     }, resolution);
   }
@@ -399,14 +488,16 @@ async function executeCompoundActionRequest({
       throw error;
     }
 
-    const shared = await shareFile({
-      path: pdf.outputPath,
-      conversationId: context.conversationId || null,
-      filename: String(pdf.filename || '').trim() || 'a11-images.pdf',
-      _context: context,
-    });
+  const shared = await shareFile({
+    path: pdf.outputPath,
+    conversationId: context.conversationId || null,
+    filename: String(pdf.filename || '').trim() || 'a11-images.pdf',
+    _context: context,
+  });
 
-    if (!shared?.ok) {
+  if (!shared?.ok) {
+    const localPdfUrl = buildLocalWorkspaceFileUrl(req, pdf.outputPath);
+    if (!localPdfUrl) {
       const error = new Error(shared?.error || 'compound_pdf_share_failed');
       error.statusCode = 502;
       error.payload = {
@@ -416,6 +507,21 @@ async function executeCompoundActionRequest({
       };
       throw error;
     }
+
+    const localContent = `C'est fait. Le PDF avec les images est pret. [ouvrir le PDF](${localPdfUrl})`;
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'pdf',
+      content: localContent,
+      file_url: localPdfUrl,
+      filePath: localPdfUrl,
+      pdf,
+      shared: null,
+      storageFallbackReason: shared?.error || 'local_file_fallback',
+      choices: buildAssistantChoice(localContent),
+    }, resolution);
+  }
 
     const pdfUrl = String(shared?.url || shared?.conversationResource?.url || shared?.conversationResource?.downloadUrl || '').trim() || null;
     const content = pdfUrl
@@ -496,14 +602,16 @@ async function executeCompoundActionRequest({
       throw error;
     }
 
-    const shared = await shareFile({
-      path: pdf.outputPath,
-      conversationId: context.conversationId || null,
-      filename: String(pdf.filename || '').trim() || 'a11-web-images.pdf',
-      _context: context,
-    });
+  const shared = await shareFile({
+    path: pdf.outputPath,
+    conversationId: context.conversationId || null,
+    filename: String(pdf.filename || '').trim() || 'a11-web-images.pdf',
+    _context: context,
+  });
 
-    if (!shared?.ok) {
+  if (!shared?.ok) {
+    const localPdfUrl = buildLocalWorkspaceFileUrl(req, pdf.outputPath);
+    if (!localPdfUrl) {
       const error = new Error(shared?.error || 'compound_web_image_pdf_share_failed');
       error.statusCode = 502;
       error.payload = {
@@ -513,6 +621,23 @@ async function executeCompoundActionRequest({
       };
       throw error;
     }
+
+    const localContent = `C'est fait. J'ai trouve une image sur le web puis cree le PDF. [ouvrir le PDF](${localPdfUrl})`;
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'pdf',
+      content: localContent,
+      file_url: localPdfUrl,
+      filePath: localPdfUrl,
+      source_image_url: webImageUrl,
+      web_image: webImageResolution?.responsePayload || null,
+      pdf,
+      shared: null,
+      storageFallbackReason: shared?.error || 'local_file_fallback',
+      choices: buildAssistantChoice(localContent),
+    }, resolution);
+  }
 
     const pdfUrl = String(shared?.url || shared?.conversationResource?.url || shared?.conversationResource?.downloadUrl || '').trim() || null;
     const content = pdfUrl
@@ -585,6 +710,92 @@ async function executeSimpleEmailIntentRequest({
   }, resolution);
 }
 
+async function executeSimplePdfIntentRequest({
+  req,
+  intent,
+  generatePdf,
+  shareFile,
+}) {
+  const context = buildExecutionContext(req);
+  const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const resolution = {
+    traceId,
+    pipeline: 'intent-router-v2',
+    kind: 'compound.simple_pdf',
+  };
+
+  const pdf = await generatePdf({
+    conversationId: context.conversationId || null,
+    title: intent.title,
+    author: 'A11',
+    sections: intent.sections,
+    _context: context,
+  });
+
+  if (!pdf?.ok || !String(pdf?.outputPath || '').trim()) {
+    const error = new Error(pdf?.error || 'compound_simple_pdf_failed');
+    error.statusCode = 502;
+    error.payload = {
+      ok: false,
+      error: 'compound_simple_pdf_failed',
+      details: pdf,
+    };
+    throw error;
+  }
+
+  const shared = await shareFile({
+    path: pdf.outputPath,
+    conversationId: context.conversationId || null,
+    filename: String(intent.filename || pdf.filename || '').trim() || 'a11-document.pdf',
+    attachToEmail: false,
+    _context: context,
+  });
+
+  if (!shared?.ok) {
+    const localPdfUrl = buildLocalWorkspaceFileUrl(req, pdf.outputPath);
+    if (!localPdfUrl) {
+      const error = new Error(shared?.error || 'compound_simple_pdf_share_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_simple_pdf_share_failed',
+        details: shared,
+      };
+      throw error;
+    }
+
+    const localContent = `C'est fait. Le PDF est pret. [ouvrir le PDF](${localPdfUrl})`;
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'pdf',
+      content: localContent,
+      file_url: localPdfUrl,
+      filePath: localPdfUrl,
+      pdf,
+      shared: null,
+      storageFallbackReason: shared?.error || 'local_file_fallback',
+      choices: buildAssistantChoice(localContent),
+    }, resolution);
+  }
+
+  const pdfUrl = String(shared?.url || shared?.conversationResource?.url || shared?.conversationResource?.downloadUrl || '').trim() || null;
+  const content = pdfUrl
+    ? `C'est fait. Le PDF est pret. [ouvrir le PDF](${pdfUrl})`
+    : "C'est fait. Le PDF est pret.";
+  return buildCompoundPayload({
+    ok: true,
+    mode: 'compound_action',
+    artifact_type: 'pdf',
+    content,
+    file_url: pdfUrl,
+    filePath: pdfUrl,
+    pdf,
+    shared: shared?.conversationResource || shared || null,
+    choices: buildAssistantChoice(content),
+  }, resolution);
+}
+
 function createProtectedChatProxyRouter({
   verifyJWT,
   proxyChatToOpenAI,
@@ -598,6 +809,7 @@ function createProtectedChatProxyRouter({
   shareFile = defaultShareFile,
   emailLatestResource = defaultEmailLatestResource,
   sendEmail = defaultSendEmail,
+  downloadFile = defaultDownloadFile,
   hasLocalChatUpstreamConfigured = defaultHasLocalChatUpstreamConfigured,
   shouldDefaultToLocalProvider = defaultShouldDefaultToLocalProvider,
   intentRouterV2Enabled = isIntentRouterV2Enabled(),
@@ -638,6 +850,17 @@ function createProtectedChatProxyRouter({
       return res.status(200).json(simpleEmailPayload);
     }
 
+    const simplePdfIntent = parseSimplePdfIntent(latestUserMessage);
+    if (simplePdfIntent) {
+      const simplePdfPayload = await executeSimplePdfIntentRequest({
+        req,
+        intent: simplePdfIntent,
+        generatePdf,
+        shareFile,
+      });
+      return res.status(200).json(simplePdfPayload);
+    }
+
     const compoundRequest = detectCompoundActionRequest(latestUserMessage);
     if (compoundRequest) {
       const compoundPayload = await executeCompoundActionRequest({
@@ -648,6 +871,8 @@ function createProtectedChatProxyRouter({
         generatePdf,
         shareFile,
         emailLatestResource,
+        sendEmail,
+        downloadFile,
       });
       return res.status(200).json(compoundPayload);
     }

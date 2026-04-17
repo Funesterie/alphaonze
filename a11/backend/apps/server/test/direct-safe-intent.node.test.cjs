@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const {
   parsePdfEmailIntent,
   parseSimpleEmailIntent,
+  parseSimplePdfIntent,
+  normalizeGeneratedImagePrompt,
   extractImplicitImageGenerationPrompt,
   detectCapabilityDiagnosticIntent,
 } = require('../lib/direct-safe-intent.cjs');
@@ -29,6 +31,21 @@ test('parseSimpleEmailIntent extracts recipients and plain text mail body', () =
   assert.deepEqual(intent.recipients, ['cellaurojeffrey@gmail.com']);
   assert.equal(intent.subject, 'A11');
   assert.equal(intent.message, 'salut bg');
+});
+
+test('parseSimplePdfIntent extracts a plain pdf creation request', () => {
+  const intent = parseSimplePdfIntent('genere un pdf sur les fourmis');
+
+  assert.ok(intent);
+  assert.equal(intent.topic, 'les fourmis');
+  assert.equal(intent.title, 'Les fourmis');
+  assert.equal(Array.isArray(intent.sections), true);
+  assert.match(intent.filename, /\.pdf$/i);
+});
+
+test('normalizeGeneratedImagePrompt strips mail wording from chained image requests', () => {
+  const prompt = normalizeGeneratedImagePrompt('envoie une image de son goku super saiyan 6 et envois la par mail à cellaurojeffrey@gmail.com');
+  assert.equal(prompt, 'genere une image de son goku super saiyan 6');
 });
 
 test('extractImplicitImageGenerationPrompt recovers a concrete image request after an assistant refusal', () => {

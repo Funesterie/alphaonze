@@ -767,17 +767,13 @@ test('POST /api/llm/chat generates an image then sends it by mail in one request
           ok: true,
           artifact_type: 'image',
           image_url: 'https://files.example.com/generated-dragon.png',
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\generated-dragon.png',
           filename: 'generated-dragon.png',
         }),
-        emailLatestResource: async ({ to }) => ({
+        sendEmail: async ({ to, path }) => ({
           ok: true,
           to,
-          latest: true,
-          resource: {
-            id: 51,
-            kind: 'image',
-            url: 'https://files.example.com/generated-dragon.png',
-          },
+          path,
           mail: { ok: true },
         }),
       }));
@@ -796,6 +792,64 @@ test('POST /api/llm/chat generates an image then sends it by mail in one request
       assert.equal(json.artifact_type, 'email');
       assert.match(String(json.image_url || ''), /generated-dragon\.png/i);
       assert.match(String(json.content || ''), /image a ete generee puis envoyee par mail/i);
+      assert.match(String(json.attachmentPath || ''), /generated-dragon\.png/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat generates a simple PDF request without falling back to the LLM', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        generatePdf: async ({ title, sections }) => ({
+          ok: true,
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\fourmis.pdf',
+          filename: 'fourmis.pdf',
+          title,
+          sections,
+        }),
+        shareFile: async () => ({
+          ok: true,
+          url: 'https://files.example.com/fourmis.pdf',
+          conversationResource: {
+            id: 101,
+            filename: 'fourmis.pdf',
+            url: 'https://files.example.com/fourmis.pdf',
+          },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-simple-pdf',
+        messages: [{ role: 'user', content: 'genere un pdf sur les fourmis' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.kind, 'compound.simple_pdf');
+      assert.equal(json.artifact_type, 'pdf');
+      assert.match(String(json.file_url || ''), /fourmis\.pdf/i);
+      assert.match(String(json.content || ''), /ouvrir le PDF/i);
     }
   );
 });
