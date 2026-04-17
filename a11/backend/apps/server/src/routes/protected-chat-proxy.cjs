@@ -14,6 +14,8 @@ const {
 const {
   parseSimpleEmailIntent,
   parseSimplePdfIntent,
+  extractIllustratedPdfTopic,
+  buildAutoPdfSections,
   normalizeGeneratedImagePrompt,
 } = require('../../lib/direct-safe-intent.cjs');
 const {
@@ -301,6 +303,12 @@ function buildAssistantChoice(content) {
   ];
 }
 
+function buildIllustratedPdfFallbackPrompt(sourceText = '') {
+  const topic = extractIllustratedPdfTopic(sourceText);
+  if (!topic) return '';
+  return normalizeGeneratedImagePrompt(`genere une image de ${topic}`);
+}
+
 async function executeCompoundActionRequest({
   req,
   compound,
@@ -451,29 +459,69 @@ async function executeCompoundActionRequest({
     const imageResources = Array.isArray(listed?.resources)
       ? listed.resources.filter(isImageLikeResource).slice(0, 4)
       : [];
+    const imageRefs = imageResources
+      .map((resource) => String(resource.id || resource.url || resource.filename || '').trim())
+      .filter(Boolean);
+    let fallbackMode = '';
+    let fallbackImagePayload = null;
+    let pdfTopic = extractIllustratedPdfTopic(compound.sourceText);
 
-    if (!imageResources.length) {
-      const error = new Error('compound_pdf_with_images_missing_images');
-      error.statusCode = 404;
-      error.payload = {
-        ok: false,
-        error: 'compound_pdf_with_images_missing_images',
-        message: "Aucune image recente n'a ete trouvee dans cette conversation pour construire le PDF.",
-      };
-      throw error;
+    if (!imageRefs.length) {
+      const fallbackPrompt = buildIllustratedPdfFallbackPrompt(compound.sourceText);
+      if (fallbackPrompt) {
+        const imageResolution = await intentResolver.resolveUserRequest({
+          req,
+          body: req.body || {},
+          userText: fallbackPrompt,
+          messages: [{ role: 'user', content: fallbackPrompt }],
+          executeRuntime: true,
+        });
+        const generatedImagePayload = imageResolution?.responsePayload || imageResolution || null;
+        const generatedImageUrl = extractGeneratedImageUrl(generatedImagePayload);
+        let generatedImagePath = extractGeneratedArtifactPath(imageResolution);
+
+        if (!generatedImagePath && generatedImageUrl && typeof downloadFile === 'function') {
+          const downloadedImage = await downloadFile({ url: generatedImageUrl, _context: context });
+          if (downloadedImage?.ok) {
+            generatedImagePath = String(downloadedImage.outputPath || downloadedImage.path || '').trim();
+          }
+        }
+
+        const resolvedImageRef = String(generatedImagePath || generatedImageUrl || '').trim();
+        if (resolvedImageRef) {
+          imageRefs.push(resolvedImageRef);
+          fallbackMode = 'generated_image';
+          fallbackImagePayload = generatedImagePayload;
+        }
+      }
+
+      if (!imageRefs.length) {
+        fallbackMode = 'text_only';
+      }
     }
 
     const pdf = await generatePdf({
       conversationId: context.conversationId || null,
-      title: 'Document A11',
+      title: pdfTopic ? `Document A11 - ${pdfTopic}` : 'Document A11',
       author: 'A11',
-      sections: [
-        {
-          heading: 'Images de la conversation',
-          text: compound.sourceText,
-          images: imageResources.map((resource) => String(resource.id || resource.url || resource.filename || '').trim()).filter(Boolean),
-        },
-      ],
+      sections: imageRefs.length
+        ? [
+            ...buildAutoPdfSections(pdfTopic || 'document'),
+            {
+              heading: fallbackMode === 'generated_image' ? 'Illustration' : 'Images de la conversation',
+              text: fallbackMode === 'generated_image'
+                ? `A11 a genere une illustration sur le theme demande pour completer ce PDF : ${pdfTopic || compound.sourceText}.`
+                : compound.sourceText,
+              images: imageRefs,
+            },
+          ]
+        : [
+            ...buildAutoPdfSections(pdfTopic || 'document'),
+            {
+              heading: 'Note',
+              text: "Aucune image recente n'etait disponible dans cette conversation. A11 a donc produit une version PDF textuelle sur le theme demande.",
+            },
+          ],
       _context: context,
     });
 
@@ -508,7 +556,9 @@ async function executeCompoundActionRequest({
       throw error;
     }
 
-    const localContent = `C'est fait. Le PDF avec les images est pret. [ouvrir le PDF](${localPdfUrl})`;
+    const localContent = imageRefs.length
+      ? `C'est fait. Le PDF avec illustration est pret. [ouvrir le PDF](${localPdfUrl})`
+      : `C'est fait. Le PDF est pret. [ouvrir le PDF](${localPdfUrl})`;
     return buildCompoundPayload({
       ok: true,
       mode: 'compound_action',
@@ -519,14 +569,16 @@ async function executeCompoundActionRequest({
       pdf,
       shared: null,
       storageFallbackReason: shared?.error || 'local_file_fallback',
+      imageFallback: fallbackMode || null,
+      source_image: fallbackImagePayload,
       choices: buildAssistantChoice(localContent),
     }, resolution);
   }
 
     const pdfUrl = String(shared?.url || shared?.conversationResource?.url || shared?.conversationResource?.downloadUrl || '').trim() || null;
     const content = pdfUrl
-      ? `C'est fait. Le PDF avec les images est pret. [ouvrir le PDF](${pdfUrl})`
-      : "C'est fait. Le PDF avec les images est pret.";
+      ? `C'est fait. Le PDF${imageRefs.length ? ' avec illustration' : ''} est pret. [ouvrir le PDF](${pdfUrl})`
+      : `C'est fait. Le PDF${imageRefs.length ? ' avec illustration' : ''} est pret.`;
     return buildCompoundPayload({
       ok: true,
       mode: 'compound_action',
@@ -536,6 +588,8 @@ async function executeCompoundActionRequest({
       filePath: pdfUrl,
       pdf,
       shared: shared?.conversationResource || shared || null,
+      imageFallback: fallbackMode || null,
+      source_image: fallbackImagePayload,
       choices: buildAssistantChoice(content),
     }, resolution);
   }

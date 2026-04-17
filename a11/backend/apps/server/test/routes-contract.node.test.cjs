@@ -742,6 +742,76 @@ test('POST /api/llm/chat executes compound pdf with latest images requests', asy
   );
 });
 
+test('POST /api/llm/chat falls back to a generated illustration when an illustrated PDF request has no recent conversation images', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        listResources: async () => ({
+          ok: true,
+          resources: [],
+        }),
+        generateSd: async ({ body }) => ({
+          ok: true,
+          artifact_type: 'image',
+          image_url: 'https://files.example.com/dbz-cover.png',
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\dbz-cover.png',
+          filename: 'dbz-cover.png',
+          prompt: body?.prompt,
+        }),
+        generatePdf: async ({ title, sections }) => ({
+          ok: true,
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\dbz.pdf',
+          filename: 'dbz.pdf',
+          title,
+          sections,
+        }),
+        shareFile: async () => ({
+          ok: true,
+          url: 'https://files.example.com/dbz.pdf',
+          conversationResource: {
+            id: 109,
+            filename: 'dbz.pdf',
+            url: 'https://files.example.com/dbz.pdf',
+          },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-pdf-fallback',
+        messages: [{ role: 'user', content: 'genere un pdf de dbz avec des images' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.kind, 'compound.pdf_with_latest_images');
+      assert.equal(json.artifact_type, 'pdf');
+      assert.equal(json.imageFallback, 'generated_image');
+      assert.match(String(json.file_url || ''), /dbz\.pdf/i);
+      assert.match(String(json.source_image?.image_url || ''), /dbz-cover\.png/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat generates an image then sends it by mail in one request', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });

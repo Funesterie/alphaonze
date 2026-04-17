@@ -64,6 +64,23 @@ function capitalizeTopic(value = '') {
   return topic.charAt(0).toUpperCase() + topic.slice(1);
 }
 
+function extractIllustratedPdfTopic(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  let topic = extractPdfTopic(text) || text;
+  topic = String(topic || '')
+    .replace(/\bavec\s+(?:des?|les)\s+(?:images?|photos?|illustrations?)\b[\s\S]*$/i, '')
+    .replace(/\b(?:en|avec)\s+images?\b[\s\S]*$/i, '')
+    .replace(/\b(?:genere|g[eé]n[eè]re|cree|cr[eé]e|creer|fais|fait|prepare|pr[eé]pare|realise|r[eé]alise|produis|fabrique)\s+(?:moi\s+)?(?:un|une)\s+(?:document\s+)?pdf\b/i, '')
+    .replace(/\b(?:avec|des)\s+(?:images?|photos?|illustrations?)\b/gi, '')
+    .replace(/\b(?:images?|photos?|illustrations?)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleanupPdfTopicFragment(topic);
+}
+
 function buildAutoPdfSections(topic = '') {
   const rawTopic = String(topic || '').trim();
   const normalizedTopic = normalizeIntentText(rawTopic);
@@ -295,6 +312,7 @@ module.exports = {
   normalizeIntentText,
   extractEmailRecipients,
   extractPdfTopic,
+  extractIllustratedPdfTopic,
   buildAutoPdfSections,
   parsePdfEmailIntent,
   parseSimpleEmailIntent,
