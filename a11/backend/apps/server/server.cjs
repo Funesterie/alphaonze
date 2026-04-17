@@ -49,6 +49,7 @@ const { detectWebImageIntent, extractWebImageSubject } = require('./lib/intent-d
 const { duckduckgoImageSearch } = require('./lib/image-search.cjs');
 const {
   parsePdfEmailIntent,
+  parseSimpleEmailIntent,
   extractImplicitImageGenerationPrompt,
   detectCapabilityDiagnosticIntent,
 } = require('./lib/direct-safe-intent.cjs');
@@ -8993,6 +8994,7 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
   if (!latestUserMessage) return null;
   const resolvedImagePrompt = normalizeImagePromptLiteral(overrideImagePrompt || latestUserMessage);
   const pdfEmailIntent = parsePdfEmailIntent(latestUserMessage);
+  const simpleEmailIntent = parseSimpleEmailIntent(latestUserMessage);
 
   if (forceImageGeneration && resolvedImagePrompt) {
     return {
@@ -9044,6 +9046,27 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
             emailSubject: pdfEmailIntent.emailSubject,
             emailMessage: pdfEmailIntent.emailMessage,
             attachToEmail: true,
+          },
+        },
+      ],
+    };
+  }
+
+  if (simpleEmailIntent) {
+    return {
+      version: 'a11-envelope-1',
+      mode: 'actions',
+      conversationId,
+      userId,
+      actions: [
+        {
+          name: 'send_email',
+          id: 'send-email-1',
+          arguments: {
+            to: simpleEmailIntent.recipients,
+            subject: simpleEmailIntent.subject,
+            message: simpleEmailIntent.message,
+            conversationId,
           },
         },
       ],

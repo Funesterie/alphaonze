@@ -625,6 +625,60 @@ test('POST /api/llm/chat executes compound mail plus latest image requests', asy
   );
 });
 
+test('POST /api/llm/chat executes simple text email requests without falling back to the LLM', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        sendEmail: async ({ to, message, subject, conversationId }) => ({
+          ok: true,
+          to,
+          subject,
+          conversationId,
+          mail: {
+            ok: true,
+            provider: 'resend',
+            to,
+          },
+          echoedMessage: message,
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-simple-mail',
+        messages: [{ role: 'user', content: 'envois un mail a cellaurojeffrey@gmail.com en disant salut bg' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.artifact_type, 'email');
+      assert.equal(json.kind, 'compound.simple_email');
+      assert.equal(Array.isArray(json.recipients), true);
+      assert.equal(json.recipients[0], 'cellaurojeffrey@gmail.com');
+      assert.match(String(json.content || ''), /mail a bien ete envoye/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat executes compound pdf with latest images requests', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
