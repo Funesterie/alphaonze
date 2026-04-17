@@ -892,6 +892,82 @@ test('POST /api/llm/chat falls back to a generated illustration when an illustra
   );
 });
 
+test('POST /api/llm/chat cleans giraffe illustrated PDF topics and injects relevant generated images', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        listResources: async () => ({
+          ok: true,
+          resources: [],
+        }),
+        generateSd: async ({ body }) => ({
+          ok: true,
+          artifact_type: 'image',
+          image_url: `https://files.example.com/${String(body?.prompt || '').includes('plusieurs girafes') ? 'giraffes-group' : 'giraffe-cover'}.png`,
+          outputPath: `D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\${String(body?.prompt || '').includes('plusieurs girafes') ? 'giraffes-group' : 'giraffe-cover'}.png`,
+          filename: `${String(body?.prompt || '').includes('plusieurs girafes') ? 'giraffes-group' : 'giraffe-cover'}.png`,
+          prompt: body?.prompt,
+        }),
+        generatePdf: async ({ title, sections }) => ({
+          ok: true,
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\giraffes.pdf',
+          filename: 'giraffes.pdf',
+          title,
+          sections,
+        }),
+        shareFile: async () => ({
+          ok: true,
+          url: 'https://files.example.com/giraffes.pdf',
+          conversationResource: {
+            id: 111,
+            filename: 'giraffes.pdf',
+            url: 'https://files.example.com/giraffes.pdf',
+          },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-giraffes-pdf',
+        messages: [{ role: 'user', content: 'genere un pdf sur les giraffes avec des images,' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.kind, 'compound.pdf_with_latest_images');
+      assert.equal(json.pdf?.title, 'Document A11 - Les giraffes');
+      assert.equal(Array.isArray(json.pdf?.sections), true);
+      assert.equal(json.pdf.sections.some((section) => String(section.heading || '').trim() === 'Morphologie'), true);
+      assert.equal(
+        json.pdf.sections.filter((section) => Array.isArray(section.images) && section.images.length > 0).length >= 2,
+        true
+      );
+      assert.equal(Array.isArray(json.generatedIllustrations), true);
+      assert.equal(json.generatedIllustrations.length >= 1, true);
+      assert.match(String(json.file_url || ''), /giraffes\.pdf/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat generates an image then sends it by mail in one request', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });

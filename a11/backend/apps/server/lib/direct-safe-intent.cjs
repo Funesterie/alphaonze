@@ -21,6 +21,15 @@ function extractEmailRecipients(value = '') {
   return toUniqueTrimmedList(matches.map((entry) => entry.toLowerCase()));
 }
 
+function stripPdfTopicNoise(value = '') {
+  return String(value || '')
+    .replace(/\bavec\s+(?:des?|les)\s+(?:images?|photos?|illustrations?|visuels?)\b[\s,;:.-]*$/i, '')
+    .replace(/\b(?:en|avec)\s+images?\b[\s,;:.-]*$/i, '')
+    .replace(/\b(?:illustre|illustr[eé])\b[\s,;:.-]*$/i, '')
+    .replace(/[,\s;:.-]+$/g, '')
+    .trim();
+}
+
 function cleanupPdfTopicFragment(value = '') {
   let topic = String(value || '')
     .replace(/[?.!]+$/g, '')
@@ -37,15 +46,15 @@ function cleanupPdfTopicFragment(value = '') {
     .replace(/^(?:un|une)\s+/i, '')
     .trim();
 
-  return topic;
+  return stripPdfTopicNoise(topic);
 }
 
 function normalizePdfThemeTopic(value = '') {
-  return String(value || '')
+  return stripPdfTopicNoise(String(value || '')
     .replace(/^(?:le|la|les)\s+theme\s+(?:de\s+|du\s+|des\s+)?/i, '')
     .replace(/^(?:theme|th[eè]me)\s+(?:de\s+|du\s+|des\s+)?/i, '')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim());
 }
 
 function extractPdfTopic(value = '') {
@@ -148,6 +157,33 @@ function buildAutoPdfSections(topic = '') {
     ];
   }
 
+  if (/\b(girafe|girafes|giraffe|giraffes)\b/.test(normalizedTopic)) {
+    return [
+      {
+        heading: 'Introduction',
+        text: "Les girafes sont de grands mammiferes herbivores vivant principalement dans les savanes africaines. Leur cou tres long, leurs pattes hautes et leur robe tachetee les rendent immediatement reconnaissables.",
+        illustrationPrompt: "une girafe majestueuse dans la savane africaine au coucher du soleil, style documentaire realiste, sans texte",
+      },
+      {
+        heading: 'Morphologie',
+        text: "Leur anatomie est adaptee a la vie en milieu ouvert. Le long cou leur permet d atteindre les feuilles hautes des acacias, tandis que leur taille leur offre une vue tres large sur leur environnement.",
+      },
+      {
+        heading: 'Habitat et mode de vie',
+        text: "Les girafes vivent dans des regions chaudes et se deplacent en petits groupes souples. Elles passent une grande partie de leur temps a se nourrir, a surveiller les predateurs et a parcourir de longues distances.",
+        illustrationPrompt: "plusieurs girafes dans une savane avec acacias, ambiance naturelle, lumiere chaude, style documentaire, sans texte",
+      },
+      {
+        heading: 'Alimentation',
+        text: "Elles se nourrissent surtout de feuilles, de bourgeons et de jeunes pousses. Leur langue sombre et prehensile leur permet de saisir les branches epineuses sans trop de difficulte.",
+      },
+      {
+        heading: 'Protection et sensibilisation',
+        text: "Comme beaucoup d especes sauvages, les girafes peuvent etre fragilisees par la perte d habitat et certaines pressions humaines. Mieux connaitre leur role dans l ecosysteme aide a mieux les proteger.",
+      },
+    ];
+  }
+
   if (/\blapin(s)?\b/.test(normalizedTopic)) {
     return [
       {
@@ -165,11 +201,12 @@ function buildAutoPdfSections(topic = '') {
     {
       heading: 'Introduction',
       text: `Ce document presente une synthese claire sur le theme ${safeTopic}. Il a ete structure automatiquement par A11 pour fournir une vue d ensemble utile et lisible.`,
-      illustrationPrompt: `une illustration editoriale propre sur le theme ${safeTopic}, composition claire, sans texte`,
+      illustrationPrompt: `une illustration claire et fidele du sujet ${safeTopic}, style documentaire propre, sans texte`,
     },
     {
       heading: 'Contexte',
       text: `Le sujet demande est ${safeTopic}. Cette section sert a cadrer le theme, a rappeler son importance et a fournir un point de depart pour la lecture du document.`,
+      illustrationPrompt: `une scene representative du sujet ${safeTopic}, composition simple, sans texte`,
     },
     {
       heading: 'Points essentiels',

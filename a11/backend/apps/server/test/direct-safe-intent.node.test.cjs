@@ -82,6 +82,22 @@ test('extractIllustratedPdfTopic strips image wording around an illustrated pdf 
   assert.equal(topic, 'dbz');
 });
 
+test('extractIllustratedPdfTopic strips trailing punctuation and image wording for giraffe requests', () => {
+  const topic = extractIllustratedPdfTopic('genere un pdf sur les giraffes avec des images,');
+  assert.equal(topic, 'les giraffes');
+});
+
+test('parseSimplePdfIntent prepares a richer giraffe document plan with multiple animal-focused sections', () => {
+  const intent = parseSimplePdfIntent('genere un pdf sur les giraffes');
+
+  assert.ok(intent);
+  assert.equal(intent.topic, 'les giraffes');
+  assert.equal(Array.isArray(intent.sections), true);
+  assert.equal(intent.sections.length >= 5, true);
+  assert.match(String(intent.sections[0].text || ''), /girafes|giraffes/i);
+  assert.equal(intent.sections.filter((section) => String(section.illustrationPrompt || '').trim()).length >= 2, true);
+});
+
 test('normalizeGeneratedImagePrompt strips mail wording from chained image requests', () => {
   const prompt = normalizeGeneratedImagePrompt('envoie une image de son goku super saiyan 6 et envois la par mail à cellaurojeffrey@gmail.com');
   assert.equal(prompt, 'genere une image de son goku super saiyan 6');
