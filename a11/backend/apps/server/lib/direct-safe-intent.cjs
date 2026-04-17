@@ -30,6 +30,7 @@ function cleanupPdfTopicFragment(value = '') {
   if (!topic) return '';
 
   topic = topic
+    .replace(/\b(?:et|puis)\s+(?:envoi|envois|envoie|envoyer|mail|email|e-mail|partage|transmet|transmets|adresse)\b[\s\S]*$/i, '')
     .replace(/\b(?:par\s+mail|mail|email|e-mail)\b[\s\S]*$/i, '')
     .replace(/\b(?:a|à)\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '')
     .replace(/^(?:de|du|des|d['’]|sur|avec)\s+/i, '')
