@@ -32,15 +32,40 @@ function Get-CommandPath {
   }
 }
 
+function Get-TunnelHealthSnapshot {
+  param(
+    [string]$PublicBackendUrl,
+    [string]$PublicRouterUrl,
+    [string]$LocalBackendUrl,
+    [string]$LocalRouterUrl
+  )
+
+  $backendPublicHealthy = Test-HttpHealth -Url $PublicBackendUrl
+  $backendLocalHealthy = Test-HttpHealth -Url $LocalBackendUrl
+  $routerPublicHealthy = Test-HttpHealth -Url $PublicRouterUrl
+  $routerLocalHealthy = Test-HttpHealth -Url $LocalRouterUrl
+
+  return [pscustomobject]@{
+    BackendPublicHealthy = $backendPublicHealthy
+    BackendLocalHealthy = $backendLocalHealthy
+    RouterPublicHealthy = $routerPublicHealthy
+    RouterLocalHealthy = $routerLocalHealthy
+    TunnelReady = $backendPublicHealthy -and $backendLocalHealthy
+  }
+}
+
 $cloudflared = Get-CommandPath 'cloudflared'
 $tunnelName = 'funesterie-cerbere-local'
 $configPath = Join-Path $PSScriptRoot 'config\cloudflared-cerbere.yml'
-$runtimeDir = Join-Path $PSScriptRoot 'runtime'
+$runtimeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\runtime'))
+$runtimeDir = Join-Path $runtimeRoot 'launcher'
 $logDir = Join-Path $runtimeDir 'logs'
 $stdoutPath = Join-Path $logDir 'cerbere-cloudflared.out.log'
 $stderrPath = Join-Path $logDir 'cerbere-cloudflared.err.log'
-$publicHealthUrl = 'https://cerbere.funesterie.me/health'
-$localHealthUrl = 'http://127.0.0.1:4545/health'
+$publicBackendHealthUrl = 'https://sd.funesterie.me/health'
+$publicRouterHealthUrl = 'https://cerbere.funesterie.me/health'
+$localBackendHealthUrl = 'http://127.0.0.1:3000/health'
+$localRouterHealthUrl = 'http://127.0.0.1:4545/health'
 
 if (-not $cloudflared) {
   throw 'cloudflared.exe introuvable dans le PATH.'
@@ -61,17 +86,21 @@ $matching = @(
 )
 
 if ($matching.Count -gt 0) {
-  $publicHealthy = Test-HttpHealth -Url $publicHealthUrl
-  $localHealthy = Test-HttpHealth -Url $localHealthUrl
+  $snapshot = Get-TunnelHealthSnapshot `
+    -PublicBackendUrl $publicBackendHealthUrl `
+    -PublicRouterUrl $publicRouterHealthUrl `
+    -LocalBackendUrl $localBackendHealthUrl `
+    -LocalRouterUrl $localRouterHealthUrl
 
-  if ($publicHealthy -and $localHealthy) {
+  if ($snapshot.TunnelReady -and $snapshot.RouterLocalHealthy) {
     Write-Host "[Tunnel Cerbere] deja actif et sain (public + local OK, PID(s): $($matching.ProcessId -join ', '))." -ForegroundColor Yellow
     exit 0
   }
 
-  if (-not $RestartExisting) {
-    Write-Host "[Tunnel Cerbere] deja actif (PID(s): $($matching.ProcessId -join ', '))." -ForegroundColor Yellow
-    exit 0
+  if ($RestartExisting) {
+    Write-Host "[Tunnel Cerbere] redemarrage force demande (PID(s): $($matching.ProcessId -join ', '))." -ForegroundColor Yellow
+  } else {
+    Write-Host "[Tunnel Cerbere] process detecte mais tunnel non sain, redemarrage automatique (PID(s): $($matching.ProcessId -join ', '))." -ForegroundColor Yellow
   }
 
   foreach ($proc in $matching) {
@@ -109,14 +138,18 @@ Write-Host "[Tunnel Cerbere] PID: $($process.Id)"
 Write-Host "[Tunnel Cerbere] Logs stdout: $stdoutPath"
 Write-Host "[Tunnel Cerbere] Logs stderr: $stderrPath"
 
-Start-Sleep -Seconds 2
+for ($attempt = 0; $attempt -lt 20; $attempt++) {
+  Start-Sleep -Seconds 2
+  $snapshot = Get-TunnelHealthSnapshot `
+    -PublicBackendUrl $publicBackendHealthUrl `
+    -PublicRouterUrl $publicRouterHealthUrl `
+    -LocalBackendUrl $localBackendHealthUrl `
+    -LocalRouterUrl $localRouterHealthUrl
 
-$publicHealthy = Test-HttpHealth -Url $publicHealthUrl
-$localHealthy = Test-HttpHealth -Url $localHealthUrl
-
-if ($publicHealthy -or $localHealthy) {
-  Write-Host "[Tunnel Cerbere] Healthcheck initial OK (local=$localHealthy public=$publicHealthy)."
-  exit 0
+  if ($snapshot.TunnelReady) {
+    Write-Host "[Tunnel Cerbere] Healthcheck OK (backend public/local OK, router public=$($snapshot.RouterPublicHealthy) local=$($snapshot.RouterLocalHealthy))."
+    exit 0
+  }
 }
 
 if (Test-Path $stderrPath) {
@@ -126,4 +159,4 @@ if (Test-Path $stderrPath) {
   }
 }
 
-Write-Host "[Tunnel Cerbere] Demarre mais endpoints pas encore verifies (local=$localHealthy public=$publicHealthy)." -ForegroundColor Yellow
+Write-Host "[Tunnel Cerbere] Demarre mais le backend tunnel n'est pas encore verifie sur sd.funesterie.me." -ForegroundColor Yellow
