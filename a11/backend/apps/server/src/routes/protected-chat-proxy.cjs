@@ -12,6 +12,7 @@ const {
   isIntentRouterV2Enabled,
 } = require('../resolve-user-request.cjs');
 const {
+  parsePdfEmailIntent,
   parseSimpleEmailIntent,
   parseSimplePdfIntent,
   extractIllustratedPdfTopic,
@@ -764,6 +765,109 @@ async function executeSimpleEmailIntentRequest({
   }, resolution);
 }
 
+async function executePdfEmailIntentRequest({
+  req,
+  intent,
+  generatePdf,
+  shareFile,
+  sendEmail,
+}) {
+  const context = buildExecutionContext(req);
+  const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const resolution = {
+    traceId,
+    pipeline: 'intent-router-v2',
+    kind: 'compound.pdf_email',
+  };
+
+  const pdf = await generatePdf({
+    conversationId: context.conversationId || null,
+    title: intent.title,
+    author: 'A11',
+    sections: intent.sections,
+    _context: context,
+  });
+
+  if (!pdf?.ok || !String(pdf?.outputPath || '').trim()) {
+    const error = new Error(pdf?.error || 'compound_pdf_email_generate_failed');
+    error.statusCode = 502;
+    error.payload = {
+      ok: false,
+      error: 'compound_pdf_email_generate_failed',
+      details: pdf,
+    };
+    throw error;
+  }
+
+  const shared = await shareFile({
+    path: pdf.outputPath,
+    conversationId: context.conversationId || null,
+    filename: String(intent.filename || pdf.filename || '').trim() || 'a11-document.pdf',
+    emailTo: intent.recipients,
+    emailSubject: intent.emailSubject || `A11 - PDF ${intent.title || 'Document'}`,
+    emailMessage: intent.emailMessage || '',
+    attachToEmail: true,
+    _context: context,
+  });
+
+  if (!shared?.ok) {
+    const mailFallback = await sendEmail({
+      to: intent.recipients,
+      subject: intent.emailSubject || `A11 - PDF ${intent.title || 'Document'}`,
+      message: intent.emailMessage || '',
+      path: pdf.outputPath,
+      filename: String(intent.filename || pdf.filename || '').trim() || 'a11-document.pdf',
+      conversationId: context.conversationId || null,
+      _context: context,
+    });
+
+    if (!mailFallback?.ok) {
+      const error = new Error(mailFallback?.error || shared?.error || 'compound_pdf_email_send_failed');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'compound_pdf_email_send_failed',
+        details: {
+          share: shared,
+          mail: mailFallback,
+        },
+      };
+      throw error;
+    }
+
+    const content = `C'est fait. Le PDF a ete genere puis envoye par mail a ${intent.recipients.join(', ')}.`;
+    return buildCompoundPayload({
+      ok: true,
+      mode: 'compound_action',
+      artifact_type: 'email',
+      content,
+      recipients: intent.recipients,
+      pdf,
+      shared: null,
+      mail: mailFallback?.mail || null,
+      attachmentPath: pdf.outputPath,
+      storageFallbackReason: shared?.error || 'mail_only_fallback',
+      choices: buildAssistantChoice(content),
+    }, resolution);
+  }
+
+  const content = `C'est fait. Le PDF a ete genere puis envoye par mail a ${intent.recipients.join(', ')}.`;
+  return buildCompoundPayload({
+    ok: true,
+    mode: 'compound_action',
+    artifact_type: 'email',
+    content,
+    recipients: intent.recipients,
+    pdf,
+    shared: shared?.conversationResource || shared || null,
+    mail: shared?.mail || null,
+    file_url: String(shared?.url || shared?.conversationResource?.downloadUrl || shared?.conversationResource?.url || '').trim() || null,
+    filePath: String(shared?.url || shared?.conversationResource?.downloadUrl || shared?.conversationResource?.url || '').trim() || null,
+    attachmentPath: pdf.outputPath,
+    choices: buildAssistantChoice(content),
+  }, resolution);
+}
+
 async function executeSimplePdfIntentRequest({
   req,
   intent,
@@ -902,6 +1006,18 @@ function createProtectedChatProxyRouter({
         sendEmail,
       });
       return res.status(200).json(simpleEmailPayload);
+    }
+
+    const pdfEmailIntent = parsePdfEmailIntent(latestUserMessage);
+    if (pdfEmailIntent) {
+      const pdfEmailPayload = await executePdfEmailIntentRequest({
+        req,
+        intent: pdfEmailIntent,
+        generatePdf,
+        shareFile,
+        sendEmail,
+      });
+      return res.status(200).json(pdfEmailPayload);
     }
 
     const simplePdfIntent = parseSimplePdfIntent(latestUserMessage);

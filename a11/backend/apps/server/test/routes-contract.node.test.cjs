@@ -679,6 +679,74 @@ test('POST /api/llm/chat executes simple text email requests without falling bac
   );
 });
 
+test('POST /api/llm/chat generates a PDF then sends it by mail without falling back to the LLM', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        generatePdf: async ({ title, sections }) => ({
+          ok: true,
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\tmnt.pdf',
+          filename: 'tmnt.pdf',
+          title,
+          sections,
+        }),
+        shareFile: async ({ emailTo }) => ({
+          ok: true,
+          url: 'https://files.example.com/tmnt.pdf',
+          mail: {
+            ok: true,
+            provider: 'resend',
+            to: emailTo,
+          },
+          conversationResource: {
+            id: 131,
+            filename: 'tmnt.pdf',
+            downloadUrl: 'https://files.example.com/tmnt.pdf',
+          },
+        }),
+        sendEmail: async () => ({
+          ok: true,
+          mail: { ok: true, provider: 'resend' },
+        }),
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'conv-pdf-mail',
+        messages: [{ role: 'user', content: 'genere un pdf sur les tortues ninja et envois le par mail à cellaurojeffrey@gmail.com' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.mode, 'compound_action');
+      assert.equal(json.kind, 'compound.pdf_email');
+      assert.equal(json.artifact_type, 'email');
+      assert.equal(Array.isArray(json.recipients), true);
+      assert.equal(json.recipients[0], 'cellaurojeffrey@gmail.com');
+      assert.match(String(json.file_url || ''), /tmnt\.pdf/i);
+      assert.match(String(json.content || ''), /pdf a ete genere puis envoye par mail/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat executes compound pdf with latest images requests', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });

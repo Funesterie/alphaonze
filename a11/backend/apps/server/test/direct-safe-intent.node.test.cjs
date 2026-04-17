@@ -25,6 +25,15 @@ test('parsePdfEmailIntent extracts recipients and builds a rabbit PDF plan', () 
   assert.match(intent.sections[0].text, /lapins/i);
 });
 
+test('parsePdfEmailIntent strips trailing mail wording from the PDF topic', () => {
+  const intent = parsePdfEmailIntent('genere un pdf sur les tortues ninja et envois le par mail à cellaurojeffrey@gmail.com');
+
+  assert.ok(intent);
+  assert.equal(intent.topic, 'les tortues ninja');
+  assert.equal(intent.title, 'Les tortues ninja');
+  assert.match(intent.emailSubject, /PDF Les tortues ninja/i);
+});
+
 test('parseSimpleEmailIntent extracts recipients and plain text mail body', () => {
   const intent = parseSimpleEmailIntent('envois un mail a cellaurojeffrey@gmail.com en disant salut bg');
 

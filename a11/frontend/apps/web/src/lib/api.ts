@@ -621,6 +621,7 @@ export type ChatResponse = {
 export type ChatCompletionResult = {
   content: string;
   imageUrl?: string | null;
+  fileUrl?: string | null;
   a11Agent?: any;
   qflushVerification?: {
     suspicious?: boolean;
@@ -686,6 +687,88 @@ function extractImageUrlFromA11Agent(agent: any): string | null {
       || /\.(?:png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(String(maybeUrl || ''));
     if (maybeUrl && looksImage) {
       return maybeUrl;
+    }
+  }
+
+  return null;
+}
+
+function extractFileUrlFromPayload(payload: any): string | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const direct = resolveApiAssetUrl(
+    payload?.file_url ||
+    payload?.filePath ||
+    payload?.shared?.downloadUrl ||
+    payload?.shared?.url ||
+    payload?.conversationResource?.downloadUrl ||
+    payload?.conversationResource?.url ||
+    null
+  );
+
+  const directArtifactType = String(
+    payload?.artifact_type ||
+    payload?.kind ||
+    ''
+  ).trim().toLowerCase();
+
+  const directContentType = String(
+    payload?.contentType ||
+    payload?.shared?.contentType ||
+    payload?.conversationResource?.contentType ||
+    ''
+  ).trim().toLowerCase();
+
+  const directFilename = String(
+    payload?.filename ||
+    payload?.shared?.filename ||
+    payload?.conversationResource?.filename ||
+    ''
+  ).trim();
+
+  const directLooksPdf = directContentType === 'application/pdf'
+    || directArtifactType === 'pdf'
+    || /\.pdf(?:[?#].*)?$/i.test(directFilename)
+    || /\.pdf(?:[?#].*)?$/i.test(String(direct || ''));
+
+  if (direct && directLooksPdf) return direct;
+
+  const entries = Array.isArray(payload?.a11Agent?.results)
+    ? payload.a11Agent.results
+    : [];
+
+  for (const entry of entries) {
+    const result = entry?.result && typeof entry.result === "object" ? entry.result : {};
+    const candidate = resolveApiAssetUrl(
+      result?.file?.downloadUrl ||
+      result?.file?.url ||
+      result?.conversationResource?.downloadUrl ||
+      result?.conversationResource?.url ||
+      result?.url ||
+      null
+    );
+    const artifactType = String(
+      result?.artifact_type ||
+      entry?.artifact_type ||
+      ''
+    ).trim().toLowerCase();
+    const contentType = String(
+      result?.file?.contentType ||
+      result?.conversationResource?.contentType ||
+      result?.contentType ||
+      ''
+    ).trim().toLowerCase();
+    const filename = String(
+      result?.file?.filename ||
+      result?.conversationResource?.filename ||
+      ''
+    ).trim();
+    const looksPdf = contentType === 'application/pdf'
+      || artifactType === 'pdf'
+      || /\.pdf(?:[?#].*)?$/i.test(filename)
+      || /\.pdf(?:[?#].*)?$/i.test(String(candidate || ''));
+    if (candidate && looksPdf) {
+      return candidate;
     }
   }
 
@@ -1076,9 +1159,12 @@ export async function chatCompletionDetailed(
     extractImageUrlFromA11Agent(data?.a11Agent || null) ||
     null;
 
+  const fileUrl = extractFileUrlFromPayload(data);
+
   return {
     content: String(content || ''),
     imageUrl,
+    fileUrl,
     a11Agent: data?.a11Agent || null,
     qflushVerification: data?.qflushVerification || null,
     createdAt: normalizeCreatedAt(data?.created) || new Date().toISOString(),

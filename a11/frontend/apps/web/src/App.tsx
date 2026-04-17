@@ -67,6 +67,7 @@ interface ChatMessage {
   role: Role;
   content: string;
   imageUrl?: string | null;
+  fileUrl?: string | null;
   qflushVerification?: {
     suspicious?: boolean;
     summary?: string;
@@ -93,6 +94,7 @@ type A11HistoryMessage = {
   content: string;
   ts?: string;
   imageUrl?: string | null;
+  fileUrl?: string | null;
   qflushVerification?: {
     suspicious?: boolean;
     summary?: string;
@@ -292,8 +294,13 @@ function isAssistantHistoryPoisoned(value: string) {
   ].includes(text);
 }
 
-function normalizeAssistantMessagePayload(content: string, explicitImageUrl?: string | null) {
+function normalizeAssistantMessagePayload(
+  content: string,
+  explicitImageUrl?: string | null,
+  explicitFileUrl?: string | null
+) {
   let resolvedImageUrl = explicitImageUrl ? resolveApiAssetUrl(explicitImageUrl) : null;
+  let resolvedFileUrl = explicitFileUrl ? resolveApiAssetUrl(explicitFileUrl) : null;
   const rawContent = String(content || "");
   let cleanedContent = extractAssistantDisplayContent(rawContent) || rawContent.trim();
   let qflushVerification: ChatMessage["qflushVerification"] = null;
@@ -325,10 +332,15 @@ function normalizeAssistantMessagePayload(content: string, explicitImageUrl?: st
     const looksImageLink = /\.(?:png|jpe?g|gif|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("image")
       || label.includes("apercu")
-      || label.includes("aperçu")
-      || label.includes("ouvrir");
+      || label.includes("aperçu");
+    const looksPdfLink = /\.pdf(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
+      || label.includes("pdf")
+      || label.includes("document");
     if (!resolvedImageUrl && resolvedCandidate && looksImageLink) {
       resolvedImageUrl = resolvedCandidate;
+    }
+    if (!resolvedFileUrl && resolvedCandidate && looksPdfLink) {
+      resolvedFileUrl = resolvedCandidate;
     }
     if (looksImageLink) {
       return "";
@@ -370,6 +382,7 @@ function normalizeAssistantMessagePayload(content: string, explicitImageUrl?: st
   return {
     content: cleanedContent,
     imageUrl: resolvedImageUrl || null,
+    fileUrl: resolvedFileUrl || null,
     qflushVerification,
   };
 }
@@ -1443,6 +1456,9 @@ export function App() {
             String(message?.content || ""),
             typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
               ? (message?.imageUrl || message?.image_url || message?.imagePath)
+              : null,
+            typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
+              ? (message?.fileUrl || message?.file_url || message?.filePath)
               : null
           )
         : {
@@ -1450,12 +1466,16 @@ export function App() {
             imageUrl: typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
               ? resolveApiAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
               : null,
+            fileUrl: typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
+              ? resolveApiAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
+              : null,
           };
       return {
         id: String(message?.id || `backend-msg-${Date.now()}-${index}`),
         role,
         content: normalizedAssistant.content,
         imageUrl: normalizedAssistant.imageUrl,
+        fileUrl: normalizedAssistant.fileUrl,
         qflushVerification: role === "assistant"
           ? (message?.qflushVerification || normalizedAssistant.qflushVerification || null)
           : null,
@@ -1810,7 +1830,8 @@ export function App() {
       );
       const normalizedAssistant = normalizeAssistantMessagePayload(
         String(assistantReply.content || ""),
-        assistantReply.imageUrl || null
+        assistantReply.imageUrl || null,
+        assistantReply.fileUrl || null
       );
 
       const aiMsg: ChatMessage = {
@@ -1818,6 +1839,7 @@ export function App() {
         role: "assistant",
         content: normalizedAssistant.content,
         imageUrl: normalizedAssistant.imageUrl,
+        fileUrl: normalizedAssistant.fileUrl,
         qflushVerification: assistantReply.qflushVerification || normalizedAssistant.qflushVerification || null,
         ts: assistantReply.createdAt || new Date().toISOString(),
       };
@@ -3111,6 +3133,55 @@ export function App() {
                           />
                           <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
                         </button>
+                      </div>
+                    )}
+                    {m.fileUrl && !m.imageUrl && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          border: "1px solid rgba(148, 163, 184, 0.28)",
+                          background: "rgba(15, 23, 42, 0.72)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 10,
+                            display: "grid",
+                            placeItems: "center",
+                            background: "rgba(59, 130, 246, 0.14)",
+                            color: "#93c5fd",
+                            fontSize: 16,
+                            fontWeight: 800,
+                            flexShrink: 0,
+                          }}
+                        >
+                          PDF
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
+                            Document genere
+                          </div>
+                          <a
+                            href={m.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              fontSize: 12,
+                              color: "#93c5fd",
+                              textDecoration: "none",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            Ouvrir le PDF
+                          </a>
+                        </div>
                       </div>
                     )}
                     {exportSuggestion ? (
