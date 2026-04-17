@@ -1813,7 +1813,7 @@ function Start-A11Stack {
   if (-not $script:HadErrors) {
     Set-LauncherProgress -Path $progressFile -Phase 'finalizing' -Message 'Finalisation de la stack locale...'
     Update-LauncherSnapshotCache
-    $uiLaunchUrl = '{0}?launcher=1&a11-reset-api-override=1&a11-force-api-mode=online&v={1}' -f $localUiUrl, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    $uiLaunchUrl = '{0}?launcher=1&a11-reset-api-override=1&a11-force-api-mode=local&v={1}' -f $localUiUrl, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
     Write-Info "UI: $uiLaunchUrl"
     Write-Info "API: $localApiUrl"
     Write-Info "TTS: $localTtsUrl"

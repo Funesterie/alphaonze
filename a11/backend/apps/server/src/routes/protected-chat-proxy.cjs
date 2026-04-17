@@ -28,6 +28,15 @@ const {
   t_download_file: defaultDownloadFile,
 } = require('../a11/tools-dispatcher.cjs');
 
+function resolvePublicWorkspaceRoot() {
+  const configuredRoot = String(
+    process.env.A11_WORKSPACE_ROOT
+    || process.env.WORKSPACE_ROOT
+    || path.resolve(__dirname, '..', '..', '..', '..', '..')
+  ).trim();
+  return path.resolve(configuredRoot || path.resolve(__dirname, '..', '..', '..', '..', '..'));
+}
+
 function defaultHasLocalChatUpstreamConfigured() {
   return Boolean(
     String(process.env.LOCAL_LLM_URL || '').trim()
@@ -197,9 +206,7 @@ function buildLocalWorkspaceFileUrl(req, candidatePath) {
     return null;
   }
 
-  const workspaceRoot = path.resolve(
-    String(process.env.A11_WORKSPACE_ROOT || process.cwd()).trim() || process.cwd()
-  );
+  const workspaceRoot = resolvePublicWorkspaceRoot();
   const relativePath = path.relative(workspaceRoot, absolutePath).replace(/\\/g, '/');
   if (!relativePath || relativePath.startsWith('..')) return null;
 

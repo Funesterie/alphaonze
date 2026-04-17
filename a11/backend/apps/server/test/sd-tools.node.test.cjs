@@ -426,6 +426,7 @@ test('generateSdInternal returns an absolute local-file URL when upload falls ba
     ENABLE_SD: process.env.ENABLE_SD,
     A11_SD_PROXY_URL: process.env.A11_SD_PROXY_URL,
     A11_SD_ALLOW_LOCAL_FALLBACK: process.env.A11_SD_ALLOW_LOCAL_FALLBACK,
+    A11_WORKSPACE_ROOT: process.env.A11_WORKSPACE_ROOT,
   };
   process.env.NODE_ENV = 'production';
   process.env.ENABLE_SD = 'true';
@@ -433,7 +434,10 @@ test('generateSdInternal returns an absolute local-file URL when upload falls ba
   process.env.A11_SD_ALLOW_LOCAL_FALLBACK = 'true';
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-local-file-'));
-  const outputPath = path.join(tempDir, 'ballon.png');
+  process.env.A11_WORKSPACE_ROOT = tempDir;
+  const outputDir = path.join(tempDir, 'backend', 'apps', 'server', 'tmp', 'generated');
+  fs.mkdirSync(outputDir, { recursive: true });
+  const outputPath = path.join(outputDir, 'ballon.png');
   fs.writeFileSync(outputPath, Buffer.from('png'));
 
   try {
@@ -476,7 +480,10 @@ test('generateSdInternal returns an absolute local-file URL when upload falls ba
 
     assert.equal(result.ok, true);
     assert.equal(result.storage, 'local-file');
-    assert.match(String(result.image_url || ''), /^https:\/\/sd\.funesterie\.me\/files\//);
+    assert.equal(
+      result.image_url,
+      'https://sd.funesterie.me/files/backend/apps/server/tmp/generated/ballon.png'
+    );
   } finally {
     try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
     for (const [key, value] of Object.entries(previous)) {

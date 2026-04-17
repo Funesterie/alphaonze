@@ -37,6 +37,17 @@ function resolveRequestOrigin(req) {
   return `${proto || 'http'}://${forwardedHost}`;
 }
 
+function resolvePublicWorkspaceRoot() {
+  const configuredRoot = String(
+    process.env.A11_WORKSPACE_ROOT
+    || process.env.WORKSPACE_ROOT
+    || defaultPath.resolve(__dirname, '..', '..', '..', '..', '..')
+  ).trim();
+  return defaultPath.resolve(
+    configuredRoot || defaultPath.resolve(__dirname, '..', '..', '..', '..', '..')
+  );
+}
+
 function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
   return buildSharedSdPromptBundle(rawPrompt, options);
 }
@@ -589,8 +600,8 @@ function createSdToolsRouter(overrides = {}) {
         init_image_source: outputJson.init_image_source || null,
       };
     } catch (error_) {
-      const backendWorkspaceRoot = path.resolve(process.cwd(), '..', '..');
-      const localRelativePath = String(path.relative(backendWorkspaceRoot, outputJson.output_path || '') || '').replace(/\\/g, '/');
+      const publicWorkspaceRoot = resolvePublicWorkspaceRoot();
+      const localRelativePath = String(path.relative(publicWorkspaceRoot, outputJson.output_path || '') || '').replace(/\\/g, '/');
       if (localRelativePath && !localRelativePath.startsWith('..')) {
         const localPublicPath = `/files/${localRelativePath
           .split('/')
