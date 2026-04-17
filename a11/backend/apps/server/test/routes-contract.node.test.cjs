@@ -700,6 +700,14 @@ test('POST /api/llm/chat generates a PDF then sends it by mail without falling b
             choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
           });
         },
+        generateSd: async ({ body }) => ({
+          ok: true,
+          artifact_type: 'image',
+          image_url: 'https://files.example.com/tmnt-cover.png',
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\tmnt-cover.png',
+          filename: 'tmnt-cover.png',
+          prompt: body?.prompt,
+        }),
         generatePdf: async ({ title, sections }) => ({
           ok: true,
           outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\tmnt.pdf',
@@ -743,6 +751,10 @@ test('POST /api/llm/chat generates a PDF then sends it by mail without falling b
       assert.equal(json.recipients[0], 'cellaurojeffrey@gmail.com');
       assert.match(String(json.file_url || ''), /tmnt\.pdf/i);
       assert.match(String(json.content || ''), /pdf a ete genere puis envoye par mail/i);
+      assert.equal(Array.isArray(json.pdf?.sections), true);
+      assert.equal(json.pdf.sections.some((section) => Array.isArray(section.images) && section.images.length > 0), true);
+      assert.equal(Array.isArray(json.generatedIllustrations), true);
+      assert.equal(json.generatedIllustrations.length >= 1, true);
     }
   );
 });
@@ -956,20 +968,28 @@ test('POST /api/llm/chat generates a simple PDF request without falling back to 
             choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
           });
         },
+        generateSd: async ({ body }) => ({
+          ok: true,
+          artifact_type: 'image',
+          image_url: 'https://files.example.com/dbz-cover.png',
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\dbz-cover.png',
+          filename: 'dbz-cover.png',
+          prompt: body?.prompt,
+        }),
         generatePdf: async ({ title, sections }) => ({
           ok: true,
-          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\fourmis.pdf',
-          filename: 'fourmis.pdf',
+          outputPath: 'D:\\funesterie\\a11\\backend\\apps\\server\\data\\generated\\dbz.pdf',
+          filename: 'dbz.pdf',
           title,
           sections,
         }),
         shareFile: async () => ({
           ok: true,
-          url: 'https://files.example.com/fourmis.pdf',
+          url: 'https://files.example.com/dbz.pdf',
           conversationResource: {
             id: 101,
-            filename: 'fourmis.pdf',
-            url: 'https://files.example.com/fourmis.pdf',
+            filename: 'dbz.pdf',
+            url: 'https://files.example.com/dbz.pdf',
           },
         }),
       }));
@@ -977,7 +997,7 @@ test('POST /api/llm/chat generates a simple PDF request without falling back to 
     async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
         conversationId: 'conv-simple-pdf',
-        messages: [{ role: 'user', content: 'genere un pdf sur les fourmis' }],
+        messages: [{ role: 'user', content: 'genere un pdf sur le theme dbz' }],
       }, {
         authorization: `Bearer ${token}`,
       });
@@ -986,8 +1006,14 @@ test('POST /api/llm/chat generates a simple PDF request without falling back to 
       assert.equal(json.mode, 'compound_action');
       assert.equal(json.kind, 'compound.simple_pdf');
       assert.equal(json.artifact_type, 'pdf');
-      assert.match(String(json.file_url || ''), /fourmis\.pdf/i);
+      assert.match(String(json.file_url || ''), /dbz\.pdf/i);
       assert.match(String(json.content || ''), /ouvrir le PDF/i);
+      assert.equal(json.pdf?.title, 'DBZ');
+      assert.equal(Array.isArray(json.pdf?.sections), true);
+      assert.equal(json.pdf.sections.length >= 5, true);
+      assert.equal(json.pdf.sections.some((section) => Array.isArray(section.images) && section.images.length > 0), true);
+      assert.equal(Array.isArray(json.generatedIllustrations), true);
+      assert.equal(json.generatedIllustrations.length >= 1, true);
     }
   );
 });

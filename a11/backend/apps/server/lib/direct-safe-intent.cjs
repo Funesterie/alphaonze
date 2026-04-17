@@ -40,6 +40,14 @@ function cleanupPdfTopicFragment(value = '') {
   return topic;
 }
 
+function normalizePdfThemeTopic(value = '') {
+  return String(value || '')
+    .replace(/^(?:le|la|les)\s+theme\s+(?:de\s+|du\s+|des\s+)?/i, '')
+    .replace(/^(?:theme|th[eè]me)\s+(?:de\s+|du\s+|des\s+)?/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function extractPdfTopic(value = '') {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -60,8 +68,11 @@ function extractPdfTopic(value = '') {
 }
 
 function capitalizeTopic(value = '') {
-  const topic = String(value || '').trim();
+  const topic = normalizePdfThemeTopic(String(value || '').trim());
   if (!topic) return 'Document';
+  if (/^[a-z0-9]{2,5}$/i.test(topic)) {
+    return topic.toUpperCase();
+  }
   return topic.charAt(0).toUpperCase() + topic.slice(1);
 }
 
@@ -79,13 +90,63 @@ function extractIllustratedPdfTopic(value = '') {
     .replace(/\s+/g, ' ')
     .trim();
 
-  return cleanupPdfTopicFragment(topic);
+  return normalizePdfThemeTopic(cleanupPdfTopicFragment(topic));
 }
 
 function buildAutoPdfSections(topic = '') {
-  const rawTopic = String(topic || '').trim();
+  const rawTopic = normalizePdfThemeTopic(String(topic || '').trim());
   const normalizedTopic = normalizeIntentText(rawTopic);
   const safeTopic = rawTopic || 'document';
+
+  if (/\b(dbz|dragon ball z)\b/.test(normalizedTopic)) {
+    return [
+      {
+        heading: 'Introduction',
+        text: "Dragon Ball Z est une serie d animation japonaise adaptee du manga d Akira Toriyama. Elle met en scene des combats spectaculaires, des transformations celebres et un imaginaire fonde sur le depassement de soi.",
+        illustrationPrompt: "un visuel epique inspire de dragon ball z, aura d energie, paysage rocheux, style anime dynamique, sans texte",
+      },
+      {
+        heading: 'Univers',
+        text: "L univers de DBZ melange arts martiaux, science-fiction et mythologie. On y trouve la Terre, Namek et de nombreuses autres planetes, avec des ennemis puissants comme Freezer, Cell ou Boo.",
+      },
+      {
+        heading: 'Personnages',
+        text: "Parmi les figures les plus connues, on retrouve Goku, Vegeta, Gohan, Piccolo et Trunks. Chacun joue un role precis dans l evolution du recit, entre rivalite, transmission et protection du monde.",
+        illustrationPrompt: "une scene heroique inspiree de dragon ball z avec un combattant a l aura lumineuse, pose de combat, ciel dramatique, style anime propre, sans texte",
+      },
+      {
+        heading: 'Themes',
+        text: "DBZ insiste sur la perseverance, l entrainement, l amitie et le sacrifice. Les affrontements servent souvent a montrer comment les heros progressent face a des limites toujours plus hautes.",
+      },
+      {
+        heading: 'Impact culturel',
+        text: "Dragon Ball Z a marque plusieurs generations de spectateurs. Son style visuel, ses musiques, ses attaques speciales et ses transformations sont devenus des references majeures de la culture populaire.",
+      },
+    ];
+  }
+
+  if (/\b(tortues ninja|tmnt|teenage mutant ninja turtles)\b/.test(normalizedTopic)) {
+    return [
+      {
+        heading: 'Introduction',
+        text: "Les Tortues Ninja sont une equipe de heros fictifs vivant a New York. Elles combinent humour, arts martiaux et aventure dans un univers melangeant science-fiction, mutation et culture pop.",
+        illustrationPrompt: "une illustration dynamique inspiree des tortues ninja dans une ruelle urbaine, style bande dessinee energique, sans texte",
+      },
+      {
+        heading: 'Equipe',
+        text: "Leonardo, Raphael, Donatello et Michelangelo ont chacun une personnalite bien distincte. Cette complementarite renforce l identite du groupe et rend leurs interactions memorables.",
+      },
+      {
+        heading: 'Univers',
+        text: "Autour des tortues gravitent Splinter, April O Neil, Casey Jones et le Shredder. Les egouts, les toits de New York et les repaires ennemis donnent au recit une ambiance urbaine reconnaissable.",
+        illustrationPrompt: "une scene nocturne inspiree des tortues ninja sur les toits de new york, ambiance neon, action, sans texte",
+      },
+      {
+        heading: 'Themes',
+        text: "L oeuvre parle de fraternite, de discipline, de transmission et d esprit d equipe. Sous son apparence legerement absurde, elle repose sur des valeurs simples mais fortes.",
+      },
+    ];
+  }
 
   if (/\blapin(s)?\b/.test(normalizedTopic)) {
     return [
@@ -102,12 +163,21 @@ function buildAutoPdfSections(topic = '') {
 
   return [
     {
-      heading: 'Sujet',
-      text: `Document genere automatiquement par A11 sur le theme suivant : ${safeTopic}.`,
+      heading: 'Introduction',
+      text: `Ce document presente une synthese claire sur le theme ${safeTopic}. Il a ete structure automatiquement par A11 pour fournir une vue d ensemble utile et lisible.`,
+      illustrationPrompt: `une illustration editoriale propre sur le theme ${safeTopic}, composition claire, sans texte`,
     },
     {
-      heading: 'Resume',
-      text: `Ce PDF a ete prepare a partir de la demande utilisateur. Sujet demande : ${safeTopic}.`,
+      heading: 'Contexte',
+      text: `Le sujet demande est ${safeTopic}. Cette section sert a cadrer le theme, a rappeler son importance et a fournir un point de depart pour la lecture du document.`,
+    },
+    {
+      heading: 'Points essentiels',
+      text: `A11 a prepare un resume des idees principales liees a ${safeTopic}, avec une organisation simple en sections pour faciliter la comprehension.`,
+    },
+    {
+      heading: 'Conclusion',
+      text: `En resume, ${safeTopic} peut etre aborde sous plusieurs angles. Le but de ce PDF est d offrir une base exploitable, concise et presentable.`,
     },
   ];
 }
@@ -122,7 +192,7 @@ function parsePdfEmailIntent(value = '') {
   const asksEmail = /\b(envoi|envois|envoie|envoyer|mail|email|e-mail|transmet|transmets|partage|expedie|expedier)\b/.test(normalized);
   if (!recipients.length || !mentionsPdf || !asksEmail) return null;
 
-  const topic = extractPdfTopic(text) || 'document';
+  const topic = normalizePdfThemeTopic(extractPdfTopic(text) || 'document');
   const title = capitalizeTopic(topic);
 
   return {
@@ -201,7 +271,7 @@ function parseSimplePdfIntent(value = '') {
     return null;
   }
 
-  const topic = extractPdfTopic(text) || 'document';
+  const topic = normalizePdfThemeTopic(extractPdfTopic(text) || 'document');
   const title = capitalizeTopic(topic);
 
   return {

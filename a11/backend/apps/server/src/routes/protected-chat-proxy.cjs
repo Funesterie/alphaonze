@@ -310,6 +310,105 @@ function buildIllustratedPdfFallbackPrompt(sourceText = '') {
   return normalizeGeneratedImagePrompt(`genere une image de ${topic}`);
 }
 
+function formatPdfTopicTitle(topic = '') {
+  const value = String(topic || '').trim();
+  if (!value) return 'Document';
+  if (/^[a-z0-9]{2,5}$/i.test(value)) {
+    return value.toUpperCase();
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function buildDocumentPdfTitle(topic = '') {
+  const label = formatPdfTopicTitle(topic);
+  return label ? `Document A11 - ${label}` : 'Document A11';
+}
+
+function buildIllustrationGenerationPrompt(prompt = '') {
+  const value = String(prompt || '').trim();
+  if (!value) return '';
+  if (/\b(genere|g[eé]n[eè]re|cree|cr[eé]e|creer|dessine|dessiner|fais|fait|prepare|pr[eé]pare)\b/i.test(value)) {
+    return normalizeGeneratedImagePrompt(value);
+  }
+  return normalizeGeneratedImagePrompt(`genere une image de ${value}`);
+}
+
+async function materializePdfSectionsWithGeneratedIllustrations({
+  req,
+  sections = [],
+  intentResolver,
+  context = {},
+  downloadFile,
+  maxGeneratedIllustrations = 0,
+}) {
+  const normalizedSections = Array.isArray(sections) ? sections : [];
+  const resolvedSections = [];
+  const generatedIllustrations = [];
+  let generatedCount = 0;
+
+  for (const section of normalizedSections) {
+    const nextSection = {
+      ...section,
+      heading: String(section?.heading || section?.title || '').trim() || 'Section',
+      text: String(section?.text || section?.content || '').trim(),
+      images: Array.isArray(section?.images)
+        ? section.images.map((entry) => String(entry || '').trim()).filter(Boolean)
+        : [],
+    };
+
+    const illustrationPrompt = buildIllustrationGenerationPrompt(section?.illustrationPrompt || '');
+    if (
+      !nextSection.images.length
+      && illustrationPrompt
+      && intentResolver
+      && generatedCount < Math.max(0, Number(maxGeneratedIllustrations || 0))
+    ) {
+      try {
+        const imageResolution = await intentResolver.resolveUserRequest({
+          req,
+          body: req?.body || {},
+          userText: illustrationPrompt,
+          messages: [{ role: 'user', content: illustrationPrompt }],
+          executeRuntime: true,
+        });
+
+        if (imageResolution?.kind === 'image.generate' && imageResolution?.responsePayload) {
+          const generatedPayload = imageResolution.responsePayload;
+          let imageRef = extractGeneratedArtifactPath(imageResolution);
+          const imageUrl = extractGeneratedImageUrl(generatedPayload);
+
+          if (!imageRef && imageUrl && typeof downloadFile === 'function') {
+            const downloadedImage = await downloadFile({ url: imageUrl, _context: context });
+            if (downloadedImage?.ok) {
+              imageRef = String(downloadedImage.outputPath || downloadedImage.path || '').trim();
+            }
+          }
+
+          imageRef = String(imageRef || imageUrl || '').trim();
+          if (imageRef) {
+            nextSection.images = [imageRef];
+            generatedIllustrations.push({
+              heading: nextSection.heading,
+              imageRef,
+              image: generatedPayload,
+            });
+            generatedCount += 1;
+          }
+        }
+      } catch (_error) {
+        // Leave the section text-only if illustration generation fails.
+      }
+    }
+
+    resolvedSections.push(nextSection);
+  }
+
+  return {
+    sections: resolvedSections,
+    generatedIllustrations,
+  };
+}
+
 async function executeCompoundActionRequest({
   req,
   compound,
@@ -501,13 +600,23 @@ async function executeCompoundActionRequest({
       }
     }
 
+    const baseSections = buildAutoPdfSections(pdfTopic || 'document');
+    const enrichedPdf = await materializePdfSectionsWithGeneratedIllustrations({
+      req,
+      sections: baseSections,
+      intentResolver,
+      context,
+      downloadFile,
+      maxGeneratedIllustrations: imageRefs.length ? 0 : 1,
+    });
+
     const pdf = await generatePdf({
       conversationId: context.conversationId || null,
-      title: pdfTopic ? `Document A11 - ${pdfTopic}` : 'Document A11',
+      title: buildDocumentPdfTitle(pdfTopic || 'document'),
       author: 'A11',
       sections: imageRefs.length
         ? [
-            ...buildAutoPdfSections(pdfTopic || 'document'),
+            ...enrichedPdf.sections,
             {
               heading: fallbackMode === 'generated_image' ? 'Illustration' : 'Images de la conversation',
               text: fallbackMode === 'generated_image'
@@ -517,7 +626,7 @@ async function executeCompoundActionRequest({
             },
           ]
         : [
-            ...buildAutoPdfSections(pdfTopic || 'document'),
+            ...enrichedPdf.sections,
             {
               heading: 'Note',
               text: "Aucune image recente n'etait disponible dans cette conversation. A11 a donc produit une version PDF textuelle sur le theme demande.",
@@ -572,6 +681,7 @@ async function executeCompoundActionRequest({
       storageFallbackReason: shared?.error || 'local_file_fallback',
       imageFallback: fallbackMode || null,
       source_image: fallbackImagePayload,
+      generatedIllustrations: enrichedPdf.generatedIllustrations,
       choices: buildAssistantChoice(localContent),
     }, resolution);
   }
@@ -591,6 +701,7 @@ async function executeCompoundActionRequest({
       shared: shared?.conversationResource || shared || null,
       imageFallback: fallbackMode || null,
       source_image: fallbackImagePayload,
+      generatedIllustrations: enrichedPdf.generatedIllustrations,
       choices: buildAssistantChoice(content),
     }, resolution);
   }
@@ -768,9 +879,11 @@ async function executeSimpleEmailIntentRequest({
 async function executePdfEmailIntentRequest({
   req,
   intent,
+  intentResolver,
   generatePdf,
   shareFile,
   sendEmail,
+  downloadFile,
 }) {
   const context = buildExecutionContext(req);
   const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -780,11 +893,20 @@ async function executePdfEmailIntentRequest({
     kind: 'compound.pdf_email',
   };
 
+  const enrichedPdf = await materializePdfSectionsWithGeneratedIllustrations({
+    req,
+    sections: intent.sections,
+    intentResolver,
+    context,
+    downloadFile,
+    maxGeneratedIllustrations: 2,
+  });
+
   const pdf = await generatePdf({
     conversationId: context.conversationId || null,
     title: intent.title,
     author: 'A11',
-    sections: intent.sections,
+    sections: enrichedPdf.sections,
     _context: context,
   });
 
@@ -864,6 +986,7 @@ async function executePdfEmailIntentRequest({
     file_url: String(shared?.url || shared?.conversationResource?.downloadUrl || shared?.conversationResource?.url || '').trim() || null,
     filePath: String(shared?.url || shared?.conversationResource?.downloadUrl || shared?.conversationResource?.url || '').trim() || null,
     attachmentPath: pdf.outputPath,
+    generatedIllustrations: enrichedPdf.generatedIllustrations,
     choices: buildAssistantChoice(content),
   }, resolution);
 }
@@ -871,8 +994,10 @@ async function executePdfEmailIntentRequest({
 async function executeSimplePdfIntentRequest({
   req,
   intent,
+  intentResolver,
   generatePdf,
   shareFile,
+  downloadFile,
 }) {
   const context = buildExecutionContext(req);
   const traceId = `compound_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -882,11 +1007,20 @@ async function executeSimplePdfIntentRequest({
     kind: 'compound.simple_pdf',
   };
 
+  const enrichedPdf = await materializePdfSectionsWithGeneratedIllustrations({
+    req,
+    sections: intent.sections,
+    intentResolver,
+    context,
+    downloadFile,
+    maxGeneratedIllustrations: 2,
+  });
+
   const pdf = await generatePdf({
     conversationId: context.conversationId || null,
     title: intent.title,
     author: 'A11',
-    sections: intent.sections,
+    sections: enrichedPdf.sections,
     _context: context,
   });
 
@@ -932,6 +1066,7 @@ async function executeSimplePdfIntentRequest({
       filePath: localPdfUrl,
       pdf,
       shared: null,
+      generatedIllustrations: enrichedPdf.generatedIllustrations,
       storageFallbackReason: shared?.error || 'local_file_fallback',
       choices: buildAssistantChoice(localContent),
     }, resolution);
@@ -950,6 +1085,7 @@ async function executeSimplePdfIntentRequest({
     filePath: pdfUrl,
     pdf,
     shared: shared?.conversationResource || shared || null,
+    generatedIllustrations: enrichedPdf.generatedIllustrations,
     choices: buildAssistantChoice(content),
   }, resolution);
 }
@@ -1013,9 +1149,11 @@ function createProtectedChatProxyRouter({
       const pdfEmailPayload = await executePdfEmailIntentRequest({
         req,
         intent: pdfEmailIntent,
+        intentResolver,
         generatePdf,
         shareFile,
         sendEmail,
+        downloadFile,
       });
       return res.status(200).json(pdfEmailPayload);
     }
@@ -1025,8 +1163,10 @@ function createProtectedChatProxyRouter({
       const simplePdfPayload = await executeSimplePdfIntentRequest({
         req,
         intent: simplePdfIntent,
+        intentResolver,
         generatePdf,
         shareFile,
+        downloadFile,
       });
       return res.status(200).json(simplePdfPayload);
     }

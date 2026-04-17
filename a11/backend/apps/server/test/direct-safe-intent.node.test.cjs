@@ -53,6 +53,30 @@ test('parseSimplePdfIntent extracts a plain pdf creation request', () => {
   assert.match(intent.filename, /\.pdf$/i);
 });
 
+test('parseSimplePdfIntent prepares a richer DBZ document plan with manual sections and uppercase title', () => {
+  const intent = parseSimplePdfIntent('genere un pdf sur le theme dbz');
+
+  assert.ok(intent);
+  assert.equal(intent.topic, 'dbz');
+  assert.equal(intent.title, 'DBZ');
+  assert.equal(Array.isArray(intent.sections), true);
+  assert.equal(intent.sections.length >= 5, true);
+  assert.equal(intent.sections[0].heading, 'Introduction');
+  assert.match(String(intent.sections[0].illustrationPrompt || ''), /dragon ball z|visuel epique/i);
+  assert.equal(intent.sections.some((section) => String(section.heading || '').trim() === 'Impact culturel'), true);
+});
+
+test('parsePdfEmailIntent prepares a richer tortues ninja document plan with illustration prompts', () => {
+  const intent = parsePdfEmailIntent('genere un pdf sur les tortues ninja et envois le par mail à cellaurojeffrey@gmail.com');
+
+  assert.ok(intent);
+  assert.equal(intent.topic, 'les tortues ninja');
+  assert.equal(Array.isArray(intent.sections), true);
+  assert.equal(intent.sections.length >= 4, true);
+  assert.match(String(intent.sections[0].illustrationPrompt || ''), /tortues ninja/i);
+  assert.equal(intent.sections.some((section) => String(section.heading || '').trim() === 'Themes'), true);
+});
+
 test('extractIllustratedPdfTopic strips image wording around an illustrated pdf request', () => {
   const topic = extractIllustratedPdfTopic('genere un pdf de dbz avec des images');
   assert.equal(topic, 'dbz');
