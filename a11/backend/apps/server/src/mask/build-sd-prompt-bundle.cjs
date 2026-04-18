@@ -76,6 +76,18 @@ const NAMED_GROUP_REFERENCE_PATTERNS = [
   /\bequipage\b/,
 ];
 
+const NON_SUBJECT_DETAIL_PATTERNS = [
+  /\b(?:cigarette|cigare|pipe|joint|clope|fumee|fumée)\b/,
+  /\b(?:sombrero|chapeau|casquette|couronne|capuche|helmet|helm|masque|lunettes)\b/,
+  /\b(?:epee|épée|sabre|katana|pistolet|fusil|arme|bouclier)\b/,
+  /\b(?:costume|tenue|robe|veste|manteau|cape|armure|uniforme)\b/,
+  /\b(?:guitare|micro|instrument|sac|sacoche|accessoire|objet)\b/,
+  /\b(?:bouche|levres|l[eè]vres|mouth|head|tete|tête|visage|face|main|mains|hand|hands|bras|arm|jambes|legs?)\b/,
+  /\b(?:visible|visibles|lisible|lisibles)\b.+\b(?:bouche|mouth|main|hand|tete|tête|head|visage|face)\b/,
+  /\b(?:pres|près)\s+de\s+(?:la|le|l|du)\s+(?:bouche|main|tete|tête|visage)\b/,
+  /\b(?:dans|sur)\s+(?:la|le|l|du)\s+(?:main|mains|hand|head|tete|tête|visage|bouche)\b/,
+];
+
 function normalizeWhitespace(value = '') {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -194,6 +206,12 @@ function looksLikeCharacterSubject(value = '') {
   return false;
 }
 
+function looksLikeNonSubjectDetailPhrase(value = '') {
+  const normalized = normalizeIntentText(value);
+  if (!normalized) return false;
+  return NON_SUBJECT_DETAIL_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 function trimRelationalSubjectPhrase(value = '', palette = []) {
   const subject = normalizeWhitespace(String(value || ''))
     .replace(/^(?:un|une|des|du|de la|de l['’]?|d(?:['’]|\s+)un|d(?:['’]|\s+)une|d['’]?|le|la|les)\s+/i, '')
@@ -247,6 +265,7 @@ function compileCharacterCountConstraints(rawPrompt = '') {
     .filter(Boolean);
 
   if (pairParts.length !== 2 || !pairParts.every(isSubjectPhraseMeaningful)) return null;
+  if (pairParts.some(looksLikeNonSubjectDetailPhrase)) return null;
 
   const kind = pairParts.some(looksLikeCharacterSubject) ? 'characters' : 'subjects';
   return {
