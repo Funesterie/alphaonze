@@ -19,11 +19,13 @@ test('normalizeVideoRequest clamps duration, fps, frame count and format', () =>
     A11_VIDEO_MAX_DURATION_SEC: process.env.A11_VIDEO_MAX_DURATION_SEC,
     A11_VIDEO_MAX_FPS: process.env.A11_VIDEO_MAX_FPS,
     A11_VIDEO_MAX_RENDER_FRAMES: process.env.A11_VIDEO_MAX_RENDER_FRAMES,
+    A11_VIDEO_MIN_RENDER_SIDE: process.env.A11_VIDEO_MIN_RENDER_SIDE,
   };
 
   process.env.A11_VIDEO_MAX_DURATION_SEC = '5';
   process.env.A11_VIDEO_MAX_FPS = '10';
   process.env.A11_VIDEO_MAX_RENDER_FRAMES = '12';
+  process.env.A11_VIDEO_MIN_RENDER_SIDE = '768';
 
   try {
     const request = normalizeVideoRequest({
@@ -37,10 +39,71 @@ test('normalizeVideoRequest clamps duration, fps, frame count and format', () =>
     assert.equal(request.fps, 10);
     assert.equal(request.frameCount, 12);
     assert.equal(request.format, 'gif');
+    assert.equal(request.width, 768);
+    assert.equal(request.height, 768);
   } finally {
     process.env.A11_VIDEO_MAX_DURATION_SEC = previousEnv.A11_VIDEO_MAX_DURATION_SEC;
     process.env.A11_VIDEO_MAX_FPS = previousEnv.A11_VIDEO_MAX_FPS;
     process.env.A11_VIDEO_MAX_RENDER_FRAMES = previousEnv.A11_VIDEO_MAX_RENDER_FRAMES;
+    process.env.A11_VIDEO_MIN_RENDER_SIDE = previousEnv.A11_VIDEO_MIN_RENDER_SIDE;
+  }
+});
+
+test('normalizeVideoRequest upgrades suspiciously low video dimensions to a safe minimum', () => {
+  const previousEnv = {
+    A11_VIDEO_MIN_RENDER_SIDE: process.env.A11_VIDEO_MIN_RENDER_SIDE,
+  };
+
+  process.env.A11_VIDEO_MIN_RENDER_SIDE = '768';
+
+  try {
+    const request = normalizeVideoRequest({
+      prompt: 'genere une video de goku',
+      width: 256,
+      height: 320,
+    });
+
+    assert.equal(request.width, 768);
+    assert.equal(request.height, 768);
+  } finally {
+    process.env.A11_VIDEO_MIN_RENDER_SIDE = previousEnv.A11_VIDEO_MIN_RENDER_SIDE;
+  }
+});
+
+test('normalizeVideoRequest defaults to the maximum render size in local runtime mode', () => {
+  const previousEnv = {
+    A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
+    A11_RUNTIME_PROFILE: process.env.A11_RUNTIME_PROFILE,
+    A11_VIDEO_DEFAULT_WIDTH: process.env.A11_VIDEO_DEFAULT_WIDTH,
+    A11_VIDEO_DEFAULT_HEIGHT: process.env.A11_VIDEO_DEFAULT_HEIGHT,
+    A11_VIDEO_MAX_RENDER_SIDE: process.env.A11_VIDEO_MAX_RENDER_SIDE,
+  };
+
+  process.env.A11_LOCAL_MODE = '1';
+  process.env.A11_RUNTIME_PROFILE = 'local';
+  delete process.env.A11_VIDEO_DEFAULT_WIDTH;
+  delete process.env.A11_VIDEO_DEFAULT_HEIGHT;
+  process.env.A11_VIDEO_MAX_RENDER_SIDE = '2048';
+
+  try {
+    const request = normalizeVideoRequest({
+      prompt: 'genere une video de goku',
+    });
+
+    assert.equal(request.width, 2048);
+    assert.equal(request.height, 2048);
+    assert.equal(request.config.localRuntime, true);
+  } finally {
+    if (previousEnv.A11_LOCAL_MODE === undefined) delete process.env.A11_LOCAL_MODE;
+    else process.env.A11_LOCAL_MODE = previousEnv.A11_LOCAL_MODE;
+    if (previousEnv.A11_RUNTIME_PROFILE === undefined) delete process.env.A11_RUNTIME_PROFILE;
+    else process.env.A11_RUNTIME_PROFILE = previousEnv.A11_RUNTIME_PROFILE;
+    if (previousEnv.A11_VIDEO_DEFAULT_WIDTH === undefined) delete process.env.A11_VIDEO_DEFAULT_WIDTH;
+    else process.env.A11_VIDEO_DEFAULT_WIDTH = previousEnv.A11_VIDEO_DEFAULT_WIDTH;
+    if (previousEnv.A11_VIDEO_DEFAULT_HEIGHT === undefined) delete process.env.A11_VIDEO_DEFAULT_HEIGHT;
+    else process.env.A11_VIDEO_DEFAULT_HEIGHT = previousEnv.A11_VIDEO_DEFAULT_HEIGHT;
+    if (previousEnv.A11_VIDEO_MAX_RENDER_SIDE === undefined) delete process.env.A11_VIDEO_MAX_RENDER_SIDE;
+    else process.env.A11_VIDEO_MAX_RENDER_SIDE = previousEnv.A11_VIDEO_MAX_RENDER_SIDE;
   }
 });
 
@@ -297,6 +360,72 @@ test('createGenerateVideoHandler reuses a local source image path without republ
     assert.equal(calls[0].init_image_url, sourceImagePath);
     assert.match(String(calls[1].init_image_url || ''), /frame-0000\.png$/i);
   } finally {
+    fs.rmSync(sourceImagePath, { force: true });
+  }
+});
+
+test('createGenerateVideoHandler prefers remotely accessible frame references when an SD proxy is configured', async () => {
+  const previousProxyEnv = process.env.A11_SD_PROXY_URL;
+  const calls = [];
+  const sourceImagePath = 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\video-source-proxy-test.png';
+  fs.mkdirSync('D:\\funesterie\\a11\\backend\\apps\\server\\tmp', { recursive: true });
+  fs.writeFileSync(sourceImagePath, TINY_PNG);
+  process.env.A11_SD_PROXY_URL = 'https://sd.funesterie.me/api/tools/generate_sd';
+
+  try {
+    const generateVideo = createGenerateVideoHandler({
+      generateSd: async ({ body }) => {
+        calls.push(body);
+        return {
+          ok: true,
+          image_url: `https://files.example.com/frame-${calls.length}.png`,
+        };
+      },
+      fetch: async () => ({
+        ok: true,
+        async arrayBuffer() {
+          return TINY_PNG;
+        },
+      }),
+      uploadBufferToR2: async ({ filename, buffer }) => ({
+        url: `https://files.example.com/${filename}`,
+        filename,
+        sizeBytes: buffer.length,
+      }),
+      buildCanonicalImageMaskFromText: async () => ({
+        rawMask: {
+          version: 'mask-1',
+          intent: 'image.generate',
+          raw: 'heroic monkey',
+        },
+      }),
+      compileMaskImageGenerateRuntime: async () => ({
+        sdBody: {
+          prompt: 'compiled monkey prompt',
+        },
+      }),
+      runFfmpeg: async ({ outputPath }) => {
+        fs.writeFileSync(outputPath, Buffer.from('fake-video'));
+      },
+    });
+
+    const result = await generateVideo({
+      req: { headers: {}, body: {} },
+      prompt: 'anime cette image',
+      body: {
+        prompt: 'anime cette image',
+        durationSeconds: 1,
+        fps: 2,
+        sourceImagePath,
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.sourceMode, 'image_path');
+    assert.equal(calls[0].init_image_url, 'https://files.example.com/video-source-proxy-test.png');
+    assert.equal(calls[1].init_image_url, 'https://files.example.com/frame-1.png');
+  } finally {
+    process.env.A11_SD_PROXY_URL = previousProxyEnv;
     fs.rmSync(sourceImagePath, { force: true });
   }
 });

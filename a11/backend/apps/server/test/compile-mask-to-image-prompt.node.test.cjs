@@ -392,3 +392,34 @@ test('compileMaskToImagePrompt keeps relational pair prompts explicit for role p
   assert.match(String(compiled.prompt || ''), /deux sujets distincts et lisibles/i);
   assert.match(String(compiled.negative_prompt || ''), /clone du premier sujet|dupliquer le premier personnage/i);
 });
+
+test('compileMaskToImagePrompt removes solo framing constraints for named group scenes', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image des Mugiwaras',
+    inputs: {
+      subject: ['Mugiwaras'],
+      environment: ['fond simple cohérent avec le personnage'],
+      style: ['illustration nette', 'haute qualité'],
+      composition: ['sujet unique bien cadré', 'silhouette lisible', 'forme complète visible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /mugiwaras/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /sujet unique bien cadré/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /silhouette lisible/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /forme complète visible/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /un seul sujet principal/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /corps entier dans le cadre/i);
+});

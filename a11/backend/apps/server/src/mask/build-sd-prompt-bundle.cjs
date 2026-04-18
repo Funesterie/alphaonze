@@ -71,6 +71,9 @@ const NAMED_GROUP_REFERENCE_PATTERNS = [
   /\bpower rangers\b/,
   /\bstraw hat pirates\b/,
   /\bchapeau(?:x)? de paille\b/,
+  /\bmugiwaras?\b/,
+  /\béquipage\b/,
+  /\bequipage\b/,
 ];
 
 function normalizeWhitespace(value = '') {
@@ -158,6 +161,18 @@ function isPluralRequested(prompt = '') {
   return (
     /\b(des|plusieurs|many|multiple|crowd|group|groupe|ensemble)\b/.test(normalized)
     || NAMED_GROUP_REFERENCE_PATTERNS.some((pattern) => pattern.test(normalized))
+  );
+}
+
+function isMultiSubjectSceneRequest(prompt = '') {
+  const normalized = normalizeIntentText(prompt);
+  if (!normalized) return false;
+  return (
+    isPluralRequested(prompt)
+    || /\b(crew|team|squad|party|band|bande|troupe|alliance|league)\b/.test(normalized)
+    || /\b(scene de groupe|composition de groupe|scene multi|multi personnages|multi personnage|multi character|multi characters)\b/.test(normalized)
+    || /\b(groupe|equipage|équipage)\b/.test(normalized)
+    || /\b(personnages|characters)\b/.test(normalized)
   );
 }
 
@@ -249,7 +264,7 @@ function compileCharacterCountConstraints(rawPrompt = '') {
 
 function compileSingleSubjectConstraints(rawPrompt = '') {
   const basePrompt = normalizeImagePromptLiteral(rawPrompt);
-  if (!basePrompt || isPluralRequested(basePrompt)) return null;
+  if (!basePrompt || isMultiSubjectSceneRequest(basePrompt)) return null;
   if (compileCharacterCountConstraints(basePrompt)) return null;
 
   const palette = extractPalette(basePrompt);
@@ -353,6 +368,7 @@ module.exports = {
   buildSdPromptBundle,
   compileCharacterCountConstraints,
   compileSingleSubjectConstraints,
+  isMultiSubjectSceneRequest,
   translateImagePromptToEnglish,
   bindSemanticAtoms,
 };

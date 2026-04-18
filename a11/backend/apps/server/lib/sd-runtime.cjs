@@ -202,6 +202,12 @@ function runSdScript(payload = {}, options = {}) {
 
   console.log('[DEBUG][IMAGE][FINAL_PROMPT]', finalPrompt);
   console.log('[DEBUG][IMAGE][OUTPUT]', outputPath || '(none)');
+  console.log(
+    '[DEBUG][IMAGE][SIZE]',
+    `${Number(payload.width || 0) || 0}x${Number(payload.height || 0) || 0}`,
+    `source=${String(payload.size_source || 'unknown').trim() || 'unknown'}`,
+    `reason=${String(payload.size_reason || 'n/a').trim() || 'n/a'}`
+  );
   console.log('[DEBUG][IMAGE][PYTHON]', pythonBin);
   console.log('[DEBUG][IMAGE][SCRIPT]', scriptPath);
 
@@ -280,6 +286,8 @@ function runSdScript(payload = {}, options = {}) {
       }
       try {
         const parsed = JSON.parse(stdout.toString() || '{}');
+        // Log the full JSON output from the Python script
+        console.log('[SD][PYTHON][JSON_OUTPUT]', JSON.stringify(parsed, null, 2));
         return resolve({
           ...parsed,
           stdout: stdout.toString(),

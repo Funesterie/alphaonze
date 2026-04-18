@@ -34,6 +34,27 @@ test('smoothRequestTextSync keeps football words and does not rewrite ballon int
   assert.doesNotMatch(result.text, /\bb[âa]ton\b/i);
 });
 
+test('smoothRequestTextSync keeps valid motion verbs and does not rewrite danse into dans', () => {
+  const result = smoothRequestTextSync('genere une video d\'un singe qui danse');
+
+  assert.match(result.text, /\bdanse\b/i);
+  assert.doesNotMatch(result.text, /\bqui dans\b/i);
+});
+
+test('smoothRequestTextSync keeps combat phrasing and does not rewrite battant into batman', () => {
+  const result = smoothRequestTextSync('genere une video de goku se battant contre freezer');
+
+  assert.match(result.text, /\bbattant\b/i);
+  assert.doesNotMatch(result.text, /\bbatman\b/i);
+});
+
+test('smoothRequestTextSync preserves dotted proper names like Monkey D. Luffy', () => {
+  const result = smoothRequestTextSync('genere une image de Monkey D. Luffy');
+
+  assert.match(result.text, /Monkey D\. Luffy/i);
+  assert.equal(result.changed, false);
+});
+
 test('smoothRequestText can use an llm fallback when the local pass stays noisy', async () => {
   const result = await smoothRequestText('genere une imag de zelda a la piscine', {
     forceLlm: true,

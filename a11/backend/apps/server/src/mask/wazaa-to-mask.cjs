@@ -19,6 +19,9 @@ const {
 const {
   resolveSubjectProfile,
 } = require('./semantic/subject-profile-library.cjs');
+const {
+  resolveImageDimensionConfig,
+} = require('./normalize-mask-image-generate.cjs');
 
 function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -528,6 +531,7 @@ function stripPaletteSuffixFromSubject(value = '', palette = []) {
 }
 
 function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
+  const imageDimensionConfig = resolveImageDimensionConfig(process.env);
   const promptText = String(wazaa?.meta?.promptText || '').trim();
   const promptSeedText = String(sourceText || promptText || wazaa?.meta?.translatedText || '').trim();
   const semanticMeta = getSemanticMeta(wazaa, opts);
@@ -615,8 +619,8 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       palette,
     },
     options: {
-      width: 768,
-      height: 768,
+      width: imageDimensionConfig.defaultWidth,
+      height: imageDimensionConfig.defaultHeight,
       steps: 40,
       guidance_scale: 8,
     },

@@ -91,7 +91,7 @@ async function fetchJsonWithRetry(url, options = {}, {
         return payload;
       }
 
-      const retryableStatus = [502, 503, 504].includes(response.status);
+      const retryableStatus = [408, 502, 503, 504, 524].includes(response.status);
       if (!retryableStatus || attempt === retries) {
         return payload;
       }

@@ -50,11 +50,55 @@ function isTruthyEnv(value) {
   return ['1', 'true', 'yes', 'on'].includes(normalized);
 }
 
+function normalizeErrorText(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function summarizeHtmlUpstreamError(value = '') {
+  const raw = String(value || '');
+  if (!/<!doctype html|<html/i.test(raw)) return '';
+  if (/error code 524|a timeout occurred/i.test(raw)) {
+    return 'Upstream timeout (Cloudflare 524)';
+  }
+  const titleMatch = raw.match(/<title[^>]*>([^<]+)<\/title>/i);
+  const title = normalizeErrorText(titleMatch?.[1] || '');
+  if (title) return title;
+  return 'Upstream HTML error response';
+}
+
+function sanitizeProxyMessage(value = '') {
+  const htmlSummary = summarizeHtmlUpstreamError(value);
+  if (htmlSummary) return htmlSummary;
+  return normalizeErrorText(value);
+}
+
+function sanitizeUpstreamPayload(upstream = null) {
+  if (!upstream || typeof upstream !== 'object') return upstream;
+  const next = { ...upstream };
+  if ('body' in next) {
+    next.body = sanitizeProxyMessage(next.body);
+  }
+  return next;
+}
+
+function summarizeProxyError(error_, fallbackError = 'proxy_error') {
+  const candidate = error_?.payload?.message || error_?.message || error_?.upstream?.body || fallbackError;
+  return sanitizeProxyMessage(candidate) || String(fallbackError);
+}
+
 function attachIntentDebug(payload, _resolution, _body = {}) {
   return payload;
 }
 
-const IMAGE_REQUEST_CACHE_TTL_MS = 15000;
+function resolveImageRequestCacheTtlMs(env = process.env) {
+  const numeric = Number(env.A11_IMAGE_REQUEST_CACHE_TTL_MS || 60000);
+  if (!Number.isFinite(numeric)) return 60000;
+  return Math.max(5000, Math.min(300000, Math.floor(numeric)));
+}
+
+const IMAGE_REQUEST_CACHE_TTL_MS = resolveImageRequestCacheTtlMs();
 
 function stableStringify(value) {
   if (Array.isArray(value)) {
@@ -93,6 +137,29 @@ function buildResolvedRequestKey(req, latestUserMessage, resolution) {
     .digest('hex');
 }
 
+function normalizeIntentRequestText(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function buildResolvedRequestKeys(req, latestUserMessage, resolution) {
+  const strictKey = buildResolvedRequestKey(req, latestUserMessage, resolution);
+  const userId = String(req?.user?.id || req?.body?._user || 'anonymous').trim();
+  const kind = String(resolution?.kind || 'unknown').trim();
+  const normalizedMessage = normalizeIntentRequestText(latestUserMessage);
+  const semanticKey = crypto
+    .createHash('sha1')
+    .update(stableStringify({
+      userId,
+      kind,
+      latestUserMessage: normalizedMessage,
+    }))
+    .digest('hex');
+  return [...new Set([strictKey, semanticKey].filter(Boolean))];
+}
+
 function defaultShouldDefaultToLocalProvider({
   hasLocalChatUpstreamConfigured = defaultHasLocalChatUpstreamConfigured,
 } = {}) {
@@ -115,7 +182,7 @@ function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
       ...error_.payload,
       requestId: String(error_.payload.requestId || requestId),
       error: String(error_.payload.error || fallbackError),
-      message: String(error_.payload.message || error_?.message || error_),
+      message: summarizeProxyError(error_, fallbackError),
     };
   }
 
@@ -123,11 +190,11 @@ function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
     ok: false,
     error: String(error_?.error || fallbackError),
     requestId,
-    message: String(error_?.message || error_),
+    message: summarizeProxyError(error_, fallbackError),
   };
 
   if (error_?.upstream && typeof error_.upstream === 'object') {
-    payload.upstream = error_.upstream;
+    payload.upstream = sanitizeUpstreamPayload(error_.upstream);
   }
 
   return payload;
@@ -1247,14 +1314,19 @@ function createProtectedChatProxyRouter({
     }
 
     cleanupExpiredImageCache(recentImageResponses);
-    const requestKey = buildResolvedRequestKey(req, latestUserMessage, resolution);
-    const cachedExecution = recentImageResponses.get(requestKey);
+    const requestKeys = buildResolvedRequestKeys(req, latestUserMessage, resolution);
+    const requestKey = requestKeys[0];
+    const cachedExecution = requestKeys
+      .map((key) => recentImageResponses.get(key))
+      .find(Boolean);
     if (cachedExecution) {
       console.log(`[A11][intent-sync] reuse recent result key=${requestKey.slice(0, 10)} kind=${resolution.kind}`);
       return res.status(200).json(attachIntentDebug(cachedExecution.result, resolution, req.body || {}));
     }
 
-    const existing = inFlightImageRequests.get(requestKey);
+    const existing = requestKeys
+      .map((key) => inFlightImageRequests.get(key))
+      .find(Boolean);
     if (existing) {
       console.log(`[A11][intent-sync] join in-flight request key=${requestKey.slice(0, 10)} kind=${resolution.kind}`);
       const payload = await existing;
@@ -1272,16 +1344,22 @@ function createProtectedChatProxyRouter({
         return executed?.responsePayload || null;
       })
       .then((payload) => {
-        recentImageResponses.set(requestKey, {
-          expiresAt: Date.now() + IMAGE_REQUEST_CACHE_TTL_MS,
-          result: payload,
-        });
+        for (const key of requestKeys) {
+          recentImageResponses.set(key, {
+            expiresAt: Date.now() + IMAGE_REQUEST_CACHE_TTL_MS,
+            result: payload,
+          });
+        }
         return payload;
       })
       .finally(() => {
-        inFlightImageRequests.delete(requestKey);
+        for (const key of requestKeys) {
+          inFlightImageRequests.delete(key);
+        }
       });
-    inFlightImageRequests.set(requestKey, executionPromise);
+    for (const key of requestKeys) {
+      inFlightImageRequests.set(key, executionPromise);
+    }
 
     const payload = await executionPromise;
     return res.status(200).json(attachIntentDebug(payload, resolution, req.body || {}));
@@ -1315,7 +1393,7 @@ function createProtectedChatProxyRouter({
     try {
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error(`[A11][/api/llm/chat] requestId=${requestId} Error:`, error_?.message || error_);
+      console.error(`[A11][/api/llm/chat] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
       const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
         ? Number(error_.status)
         : 502;
@@ -1332,7 +1410,7 @@ function createProtectedChatProxyRouter({
       };
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error(`[A11][AuthChat] requestId=${requestId} Proxy error:`, error_?.message || error_);
+      console.error(`[A11][AuthChat] requestId=${requestId} Proxy error: ${summarizeProxyError(error_, 'upstream_unreachable')}`);
       const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
         ? Number(error_.status)
         : 502;
@@ -1349,7 +1427,7 @@ function createProtectedChatProxyRouter({
       };
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error(`[A11][/api/ai] requestId=${requestId} Error:`, error_?.message || error_);
+      console.error(`[A11][/api/ai] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
       const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
         ? Number(error_.status)
         : 502;
@@ -1362,7 +1440,7 @@ function createProtectedChatProxyRouter({
     try {
       return await handleProxy(req, res);
     } catch (error_) {
-      console.error(`[A11][/api/completions] requestId=${requestId} Error:`, error_?.message || error_);
+      console.error(`[A11][/api/completions] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
       const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
         ? Number(error_.status)
         : 502;

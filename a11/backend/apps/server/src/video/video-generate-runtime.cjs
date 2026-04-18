@@ -40,6 +40,18 @@ function resolveRequestOrigin(req) {
   return `${proto || 'http'}://${forwardedHost}`;
 }
 
+function hasSdProxyConfigured(env = process.env) {
+  return [
+    env?.A11_SD_PROXY_URL,
+    env?.SD_PROXY_URL,
+  ].map((value) => String(value || '').trim()).some(Boolean);
+}
+
+function isLocalVideoRuntime(env = process.env) {
+  return isTruthy(env?.A11_LOCAL_MODE)
+    || String(env?.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local';
+}
+
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
@@ -48,6 +60,36 @@ function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(min, Math.min(max, numeric));
+}
+
+function roundDimensionToMultiple(value, multiple = 64) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.max(multiple, Math.round(numeric / multiple) * multiple);
+}
+
+function resolveVideoFrameMaxSize(env = process.env) {
+  const raw = env?.A11_VIDEO_FRAME_MAX_SIZE || env?.A11_VIDEO_MAX_RENDER_SIDE || 1024;
+  return roundDimensionToMultiple(clampNumber(raw, 64, 4096, 1024));
+}
+
+function resolveVideoFrameMinSize(env = process.env, maxRenderSide = resolveVideoFrameMaxSize(env)) {
+  const raw = env?.A11_VIDEO_MIN_RENDER_SIDE;
+  return roundDimensionToMultiple(clampNumber(raw, 64, maxRenderSide, 64));
+}
+
+function normalizeVideoDimension(value, {
+  fallback = resolveVideoFrameMaxSize(process.env),
+  min = resolveVideoFrameMinSize(process.env),
+  max = resolveVideoFrameMaxSize(process.env),
+} = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return roundDimensionToMultiple(fallback);
+  }
+
+  const rounded = roundDimensionToMultiple(numeric);
+  return Math.max(min, Math.min(max, rounded));
 }
 
 const FFMPEG_CAPABILITY_CACHE = new Map();
@@ -175,14 +217,36 @@ function resolveMp4CodecConfig(env = process.env, ffmpegBin = 'ffmpeg') {
 function resolveVideoEnvConfig(env = process.env) {
   const ffmpegBin = resolveFfmpegBinary(env.A11_VIDEO_FFMPEG_BIN || env.FFMPEG_BIN || '');
   const mp4Config = resolveMp4CodecConfig(env, ffmpegBin);
+  const localRuntime = isLocalVideoRuntime(env);
+  const maxRenderSide = resolveVideoFrameMaxSize(env);
+  const minRenderSide = resolveVideoFrameMinSize(env, maxRenderSide);
+  const hasExplicitMinRenderSide = Number.isFinite(Number(env.A11_VIDEO_MIN_RENDER_SIDE));
+  const defaultRenderSide = localRuntime
+    ? maxRenderSide
+    : (hasExplicitMinRenderSide
+        ? minRenderSide
+        : Math.max(minRenderSide, Math.min(maxRenderSide, 1024)));
   return {
     enabled: env.A11_VIDEO_ENABLED === undefined ? true : isTruthy(env.A11_VIDEO_ENABLED),
+    localRuntime,
     backend: String(env.A11_VIDEO_BACKEND || 'sd-frame-sequence').trim().toLowerCase() || 'sd-frame-sequence',
     defaultDurationSeconds: clampNumber(env.A11_VIDEO_DEFAULT_DURATION_SEC, 1, 30, 3),
     maxDurationSeconds: clampNumber(env.A11_VIDEO_MAX_DURATION_SEC, 1, 60, 8),
     defaultFps: clampNumber(env.A11_VIDEO_DEFAULT_FPS, 1, 30, 6),
     maxFps: clampNumber(env.A11_VIDEO_MAX_FPS, 1, 60, 12),
     maxRenderFrames: clampNumber(env.A11_VIDEO_MAX_RENDER_FRAMES, 2, 240, 24),
+    maxRenderSide,
+    minRenderSide,
+    defaultWidth: normalizeVideoDimension(env.A11_VIDEO_DEFAULT_WIDTH, {
+      fallback: defaultRenderSide,
+      min: minRenderSide,
+      max: maxRenderSide,
+    }),
+    defaultHeight: normalizeVideoDimension(env.A11_VIDEO_DEFAULT_HEIGHT, {
+      fallback: defaultRenderSide,
+      min: minRenderSide,
+      max: maxRenderSide,
+    }),
     defaultFormat: normalizeVideoFormat(env.A11_VIDEO_DEFAULT_FORMAT || 'mp4', 'mp4'),
     sdSteps: clampNumber(env.A11_VIDEO_SD_STEPS, 4, 80, 24),
     sdGuidanceScale: clampNumber(env.A11_VIDEO_SD_GUIDANCE_SCALE, 1, 20, 6.5),
@@ -223,6 +287,19 @@ function buildVideoWorkingPaths(config = {}) {
   };
 }
 
+function resolveFrameReferenceCandidate({
+  preferRemoteReference = false,
+  localPath = '',
+  remoteUrl = '',
+} = {}) {
+  const normalizedPath = String(localPath || '').trim();
+  const normalizedUrl = String(remoteUrl || '').trim();
+  if (preferRemoteReference) {
+    return normalizedUrl || normalizedPath;
+  }
+  return normalizedPath || normalizedUrl;
+}
+
 function buildFramePrompt(basePrompt = '', { frameIndex = 0, frameCount = 1 } = {}) {
   const phase = frameCount <= 1
     ? 'single key frame'
@@ -249,8 +326,23 @@ function normalizeVideoRequest(body = {}, promptOverride = '') {
     config.defaultDurationSeconds
   );
   const fps = clampNumber(parsed.fps || body?.fps, 1, config.maxFps, config.defaultFps);
-  const width = clampNumber(parsed.width || body?.width, 256, 2048, 768);
-  const height = clampNumber(parsed.height || body?.height, 256, 2048, 768);
+  function clampFrameDimension(val, fallback) {
+    let n = Number(val);
+    if (!Number.isFinite(n)) n = fallback;
+    n = Math.round(n);
+    if (n > 1 && n % 2 !== 0) n = n - 1;
+    return Math.max(config.minRenderSide, Math.min(config.maxRenderSide, n));
+  }
+  const requestedWidth = Number(parsed.width || body?.width || config.defaultWidth);
+  const requestedHeight = Number(parsed.height || body?.height || config.defaultHeight);
+  const width = clampFrameDimension(requestedWidth, config.defaultWidth);
+  const height = clampFrameDimension(requestedHeight, config.defaultHeight);
+  if (requestedWidth !== undefined && width !== requestedWidth) {
+    console.warn(`[A11][video-runtime] width requested=${requestedWidth} effective=${width} (clamp min=${config.minRenderSide} max=${config.maxRenderSide})`);
+  }
+  if (requestedHeight !== undefined && height !== requestedHeight) {
+    console.warn(`[A11][video-runtime] height requested=${requestedHeight} effective=${height} (clamp min=${config.minRenderSide} max=${config.maxRenderSide})`);
+  }
   const frameCount = Math.max(2, Math.min(config.maxRenderFrames, Math.round(durationSeconds * fps)));
   const prompt = String(parsed.prompt || promptOverride || body?.prompt || body?.message || '').trim();
 
@@ -270,6 +362,10 @@ function normalizeVideoRequest(body = {}, promptOverride = '') {
     sourceImagePath: parsed.sourceImagePath || '',
     sourceVideoUrl: parsed.sourceVideoUrl || '',
     sourceVideoPath: parsed.sourceVideoPath || '',
+    // Pour traçabilité
+    requestedWidth,
+    requestedHeight,
+    VIDEO_FRAME_MAX_SIZE: config.maxRenderSide,
   };
 }
 
@@ -683,7 +779,7 @@ function createGenerateVideoHandler(overrides = {}) {
     }
 
     console.log(
-      `[A11][video] start prompt="${request.prompt}" duration=${request.durationSeconds}s fps=${request.fps} format=${request.format} frames=${request.frameCount}`
+      `[A11][video] start prompt="${request.prompt}" duration=${request.durationSeconds}s fps=${request.fps} format=${request.format} frames=${request.frameCount} size=${request.width}x${request.height}`
     );
 
     const workingPaths = buildVideoWorkingPaths(request.config);
@@ -710,6 +806,7 @@ function createGenerateVideoHandler(overrides = {}) {
     let previousFrameUrl = '';
     let previousFramePath = '';
     let firstFrameAnalysis = null;
+    const preferRemoteFrameReferences = hasSdProxyConfigured(process.env);
     const initialReference = await resolveInitialReferenceFrame({
       req,
       request,
@@ -736,8 +833,16 @@ function createGenerateVideoHandler(overrides = {}) {
         ...(((frameIndex > 0 && (previousFramePath || previousFrameUrl)) || (frameIndex === 0 && (initialReference.initImagePath || initialReference.initImageUrl)))
           ? {
               init_image_url: frameIndex > 0
-                ? (previousFramePath || previousFrameUrl)
-                : (initialReference.initImagePath || initialReference.initImageUrl),
+                ? resolveFrameReferenceCandidate({
+                    preferRemoteReference: preferRemoteFrameReferences,
+                    localPath: previousFramePath,
+                    remoteUrl: previousFrameUrl,
+                  })
+                : resolveFrameReferenceCandidate({
+                    preferRemoteReference: preferRemoteFrameReferences,
+                    localPath: initialReference.initImagePath,
+                    remoteUrl: initialReference.initImageUrl,
+                  }),
               strength: request.config.frameInitStrength,
             }
           : {}),
@@ -764,7 +869,14 @@ function createGenerateVideoHandler(overrides = {}) {
 
       const frameBuffer = await downloadBinary(frameUrl, fetchImpl);
       const framePath = path.join(workingPaths.framesDir, `frame-${String(frameIndex).padStart(4, '0')}.png`);
-      await fsp.writeFile(framePath, frameBuffer);
+      try {
+        await fsp.writeFile(framePath, frameBuffer);
+        // Log explicite pour traçabilité
+        console.log(`[A11][video-runtime] Frame ${frameIndex + 1}/${request.frameCount} written: ${framePath} (${frameBuffer.length} bytes, ${request.width}x${request.height})`);
+      } catch (err) {
+        console.error(`[A11][video-runtime] Erreur lors de l'écriture de la frame ${frameIndex + 1}: ${err && err.message}`);
+        throw err;
+      }
       if (frameIndex === 0) {
         firstFrameAnalysis = await maybeDescribeFirstFrameWithJanus(framePath, 'image/png', request.config);
       }

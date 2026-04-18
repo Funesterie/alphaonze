@@ -21,6 +21,15 @@ function normalizeText(value = '') {
     .trim();
 }
 
+function normalizeLookup(value = '') {
+  return normalizeText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/[-/]/g, ' ')
+    .toLowerCase();
+}
+
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
@@ -28,6 +37,36 @@ function isTruthy(value) {
 function isRemoteImage(value = '') {
   const text = String(value || '').trim().toLowerCase();
   return text.startsWith('http://') || text.startsWith('https://');
+}
+
+function isCompositeRiskyReference(entry = {}) {
+  const haystack = normalizeLookup([
+    entry?.title,
+    entry?.sourceDomain,
+    entry?.sourceUrl,
+    entry?.label,
+  ].filter(Boolean).join(' '));
+  if (!haystack) return false;
+
+  return /\b(?:poster|wallpaper|cover|lineup|line up|collage|mosaic|sheet|sprite\s*sheet|compilation|collection|group|crew|characters|personnages|ensemble|all\s+characters|manga\s*page|comic\s*page|page|panel|silhouette|sticker|logo|emblem|plaque)\b/i.test(haystack);
+}
+
+function hasAcceptableCompositeScore(entry = {}, { minScore = 0 } = {}) {
+  const numericScore = Number(entry?.selectionScore || 0) || 0;
+  if (numericScore <= 0) return true;
+  return numericScore >= minScore;
+}
+
+function isUsableCompositeReference(entry = {}, { subject = false } = {}) {
+  if (!normalizeText(entry?.imageUrl || '')) return false;
+  if (isCompositeRiskyReference(entry)) return false;
+  if (!hasAcceptableCompositeScore(entry, { minScore: subject ? 7 : 5 })) return false;
+
+  const width = Number(entry?.width || 0) || 0;
+  const height = Number(entry?.height || 0) || 0;
+  if ((width > 0 && width < 192) || (height > 0 && height < 192)) return false;
+
+  return true;
 }
 
 function isImageReferenceCompositeEnabled(explicitValue) {
@@ -178,8 +217,17 @@ async function buildImageReferenceComposite({
     .slice(0, Number(process.env.A11_IMAGE_REFERENCE_COMPOSITE_MAX_REFS || 4) || 4);
   if (refs.length < 2) return null;
 
-  const subjectRef = refs.find((entry) => String(entry?.role || '').trim() === 'subject') || refs[0];
+  const subjectRef = refs.find((entry) => (
+    String(entry?.role || '').trim() === 'subject'
+    && isUsableCompositeReference(entry, { subject: true })
+  )) || null;
   if (!subjectRef?.imageUrl) return null;
+
+  const usableRefs = refs.filter((entry) => (
+    entry === subjectRef
+      || isUsableCompositeReference(entry, { subject: false })
+  ));
+  if (usableRefs.length < 2) return null;
 
   const canvas = resolveCanvasSize(referencePack, process.env);
   const outputDir = resolveCompositeOutputDir(outDir);
@@ -196,7 +244,7 @@ async function buildImageReferenceComposite({
   const margin = Math.max(24, Math.round(Math.min(canvas.width, canvas.height) * 0.03));
   const placementOffsets = new Map();
 
-  for (const entry of refs.filter((item) => item !== subjectRef).slice(0, 3)) {
+  for (const entry of usableRefs.filter((item) => item !== subjectRef).slice(0, 3)) {
     try {
       const buffer = await readImageBuffer(entry.imageUrl, fetch);
       const card = await createInsetCard(sharp, buffer, insetWidth, insetHeight);

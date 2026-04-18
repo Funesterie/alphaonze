@@ -71,6 +71,46 @@ test('protected chat proxy returns requestId in header and body when upstream th
   );
 });
 
+test('protected chat proxy sanitizes upstream html timeout pages', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(_req, _res, next) {
+          next();
+        },
+        proxyChatToOpenAI() {
+          const error = new Error('<!DOCTYPE html><html><head><title>funesterie.me | 524: A timeout occurred</title></head><body>Error code 524</body></html>');
+          error.status = 504;
+          error.upstream = {
+            url: 'https://sd.funesterie.me/v1/chat/completions',
+            status: 524,
+            body: '<!DOCTYPE html><html><head><title>funesterie.me | 524: A timeout occurred</title></head><body>Error code 524</body></html>',
+          };
+          throw error;
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        generateSd: async () => {
+          throw new Error('should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: 'hello' }],
+      }, {
+        'X-Request-Id': 'req-proxy-html-1',
+      });
+
+      assert.equal(response.status, 504);
+      assert.equal(json.requestId, 'req-proxy-html-1');
+      assert.equal(json.message, 'Upstream timeout (Cloudflare 524)');
+      assert.equal(json.upstream.status, 524);
+      assert.equal(json.upstream.body, 'Upstream timeout (Cloudflare 524)');
+    }
+  );
+});
+
 test('admin run returns requestId and upstream diagnostics on remote failures', async () => {
   await withServer(
     (app) => {

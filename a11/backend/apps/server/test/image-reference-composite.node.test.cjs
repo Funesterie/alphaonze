@@ -25,6 +25,39 @@ test('shouldBuildImageReferenceComposite requires a multi-part reference pack', 
   }), false);
 });
 
+test('buildImageReferenceComposite refuses risky poster-like subject references', async () => {
+  const result = await buildImageReferenceComposite({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une image de luffy avec un grand sombrero mexicain',
+    },
+    referencePack: {
+      references: [
+        {
+          role: 'subject',
+          label: 'Luffy',
+          title: 'One Piece poster collage',
+          imageUrl: 'https://images.example.com/poster.png',
+          selectionScore: 11,
+          width: 1024,
+          height: 1024,
+        },
+        {
+          role: 'accessory',
+          label: 'grand sombrero mexicain',
+          placement: 'head',
+          imageUrl: 'https://images.example.com/hat.png',
+          selectionScore: 10,
+          width: 640,
+          height: 480,
+        },
+      ],
+    },
+  });
+
+  assert.equal(result, null);
+});
+
 test('buildImageReferenceComposite creates a local init image from subject and accessory references', async (t) => {
   if (!sharp) {
     t.skip('sharp_unavailable');
