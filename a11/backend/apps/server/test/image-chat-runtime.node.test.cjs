@@ -65,6 +65,80 @@ test('buildSdRequestBody forwards web draft init image settings from the mask ru
   assert.equal(sdBody.strength, 0.42);
 });
 
+test('generateImageFromMask preserves the source ratio for web init images instead of forcing a square fallback', async () => {
+  const calls = [];
+
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
+    req: { headers: {}, body: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['Sanji'],
+        environment: ['fond simple cohérent avec le personnage'],
+        style: ['illustration nette'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de sanji',
+    },
+    lookupImageHintWebContext: async () => null,
+    resolveImageWebDraft: async () => ({
+      mode: 'web-image-draft',
+      initImageUrl: 'https://images.example.com/sanji-ref.png',
+      width: 757,
+      height: 1055,
+      strength: 0.45,
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/sanji.png',
+        filename: 'sanji.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.init_image_url, 'https://images.example.com/sanji-ref.png');
+  assert.equal(calls[0]?.width, 960);
+  assert.equal(calls[0]?.height, 1344);
+  assert.equal(calls[0]?.size_source, 'web_init_image');
+  assert.equal(calls[0]?.size_reason, 'preserve_init_image_ratio');
+  assert.equal(result.mask?.meta?.renderSizing?.resolvedWidth, 960);
+  assert.equal(result.mask?.meta?.renderSizing?.resolvedHeight, 1344);
+});
+
 test('toImageChatProxyPayload synthesizes a png filename when the image URL has no extension', () => {
   const payload = toImageChatProxyPayload({
     sdResult: {
@@ -284,6 +358,68 @@ test('generateImageFromMask retries once by default when verification suggests a
   assert.equal(callCount, 2);
   assert.equal(result.imageGuard?.retries?.length, 1);
   assert.equal(result.imageGuard?.verification?.decision?.retry, false);
+});
+
+test('generateImageFromMask relaxes fusion retries for automatic web init drafts', async () => {
+  let callCount = 0;
+
+  const result = await withImagePipelineMode('smart', () => generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['brook'],
+        environment: ['concert rock'],
+        style: ['illustration anime nette'],
+        composition: [],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 1344,
+        height: 1024,
+        steps: 30,
+        guidance_scale: 7.5,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        webImageDraft: {
+          initImageUrl: 'https://images.example.com/brook-bad-ref.jpg',
+          strength: 0.45,
+          reason: 'automatic_web_anchor',
+          compositeRisk: true,
+        },
+      },
+      ambiguities: [],
+      raw: 'genere une image de brook dans un concert rock',
+    },
+    imageVerificationEnabled: true,
+    generateSd: async () => {
+      callCount += 1;
+      return {
+        ok: true,
+        image_url: `https://files.example.com/brook-${callCount}.png`,
+        filename: `brook-${callCount}.png`,
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: true,
+      expected: { subject_count: 1, subject_type: 'brook', subject_label: 'brook', allow_group: false },
+      observed: { subject_count: 1, duplicate_subjects: false, fusion_detected: true, subject_match: true, confidence: 0.9 },
+      decision: { retry: true, reason: 'fusion_detected', notes: '' },
+    }),
+  }));
+
+  assert.equal(callCount, 1);
+  assert.equal(result.imageGuard?.retries?.length, 0);
+  assert.equal(result.imageGuard?.verification?.decision?.retry, false);
+  assert.equal(result.imageGuard?.verification?.decision?.reason, 'fusion_detected_web_init_tolerated');
 });
 
 test('generateImageFromMask retries duo prompts when verification detects extra characters', async () => {
@@ -1167,6 +1303,7 @@ test('generateImageFromMask provides web hint context to the special compiler an
         'Contexte web : Bugs Bunny est un lapin de dessin animé gris et blanc avec de longues oreilles.',
       ],
     }),
+    resolveImageReferencePack: async () => null,
     specialCompilerCallStructuredLlmJson: async ({ text }) => {
       llmPayloadText = String(text || '');
       return {
@@ -1475,4 +1612,236 @@ test('generateImageFromMask applies image-request director enrichments before fi
   assert.match(String(calls[0]?.prompt || ''), /Boruto en train de fumer/i);
   assert.doesNotMatch(String(calls[0]?.prompt || ''), /Action utile : cigarette visible près de la bouche/i);
   assert.deepEqual(result.imageRequestDirector?.action_candidates, ['cigarette visible près de la bouche', 'personnage unique complet']);
+});
+
+test('generateImageFromMask forwards multi-part web references to the special compiler context', async () => {
+  const llmCalls = [];
+
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['Luffy'],
+        environment: ['fond simple'],
+        style: ['anime propre'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.44,
+          accessories: [
+            { label: 'grand sombrero mexicain', family: 'wearable' },
+            { label: 'cigarette', family: 'smoking_prop' },
+          ],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: {
+          type: 'reference_character',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de luffy avec un grand sombrero mexicain et une cigarette visible près de la bouche',
+    },
+    resolveImageReferencePack: async () => ({
+      subject: 'Luffy',
+      universe: 'One Piece',
+      summaryFacts: [
+        'Référence accessory grand sombrero mexicain : anime outfit reference',
+        'Référence accessory cigarette : mouth smoking pose anime',
+      ],
+      references: [
+        {
+          role: 'subject',
+          label: 'Luffy',
+          family: 'reference_character',
+          placement: '',
+          query: 'Luffy One Piece character art',
+          title: 'Luffy official character art',
+          sourceDomain: 'example.com',
+          selectionScore: 11,
+        },
+        {
+          role: 'accessory',
+          label: 'grand sombrero mexicain',
+          family: 'wearable',
+          placement: 'head_or_body',
+          query: 'Luffy grand sombrero mexicain wearing headwear anime reference',
+          title: 'Luffy sombrero reference',
+          sourceDomain: 'example.com',
+          selectionScore: 10,
+        },
+        {
+          role: 'accessory',
+          label: 'cigarette',
+          family: 'smoking_prop',
+          placement: 'mouth',
+          query: 'Luffy cigarette mouth smoking pose anime',
+          title: 'Luffy smoking pose reference',
+          sourceDomain: 'example.com',
+          selectionScore: 9,
+        },
+      ],
+    }),
+    specialCompilerCallStructuredLlmJson: async ({ text }) => {
+      llmCalls.push(text);
+      if (/references_web/.test(String(text || ''))) {
+        assert.match(String(text), /Luffy sombrero reference/i);
+        assert.match(String(text), /Luffy smoking pose reference/i);
+        return {
+          composition_hints: ['accessoires lisibles'],
+          environment_hints: [],
+          style_hints: [],
+          prompt_instructions: ['Montrer clairement le sombrero et la cigarette près de la bouche.'],
+        };
+      }
+      return {
+        prompt: 'Luffy avec un grand sombrero mexicain et une cigarette visible près de la bouche, anime propre, fond simple',
+        negative_prompt: 'texte, watermark',
+      };
+    },
+    generateSd: async () => ({
+      ok: true,
+      image_url: 'https://files.example.com/luffy.png',
+      filename: 'luffy.png',
+    }),
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  }));
+
+  assert.ok(llmCalls.length >= 1);
+  assert.ok(result.mask?.meta?.webReferencePack);
+  assert.match(String(result.sdBody?.prompt || ''), /sombrero mexicain/i);
+  assert.match(String(result.sdBody?.prompt || ''), /cigarette visible près de la bouche/i);
+});
+
+test('generateImageFromMask uses a local reference composite as init image when no single web draft is available', async () => {
+  const calls = [];
+
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['Luffy'],
+        environment: ['fond simple'],
+        style: ['anime propre'],
+        composition: ['un seul personnage complet'],
+        lighting: [],
+        palette: [],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        semantic: {
+          confidence: 0.44,
+          accessories: [
+            { label: 'grand sombrero mexicain', family: 'wearable' },
+          ],
+          elements: [],
+          metiers: [],
+          scenes: [],
+        },
+        subjectProfile: {
+          type: 'reference_character',
+        },
+      },
+      ambiguities: [],
+      raw: 'génère une image de luffy avec un grand sombrero mexicain',
+    },
+    resolveImageWebDraft: async () => null,
+    resolveImageReferencePack: async () => ({
+      subject: 'Luffy',
+      universe: 'One Piece',
+      summaryFacts: [],
+      references: [
+        {
+          role: 'subject',
+          label: 'Luffy',
+          imageUrl: 'https://images.example.com/luffy.png',
+          width: 768,
+          height: 1024,
+        },
+        {
+          role: 'accessory',
+          label: 'grand sombrero mexicain',
+          placement: 'head',
+          imageUrl: 'https://images.example.com/hat.png',
+          width: 512,
+          height: 384,
+        },
+      ],
+    }),
+    buildImageReferenceComposite: async () => ({
+      mode: 'web-reference-composite',
+      reason: 'reference_pack_composite',
+      initImagePath: 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\reference-composites\\luffy-hat.png',
+      initImageUrl: 'D:\\funesterie\\a11\\backend\\apps\\server\\tmp\\generated\\reference-composites\\luffy-hat.png',
+      width: 1024,
+      height: 1344,
+      strength: 0.28,
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/luffy-hat.png',
+        filename: 'luffy-hat.png',
+      };
+    },
+    verifyImageCardinality: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_unavailable',
+    }),
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0]?.init_image_url || ''), /reference-composites\\luffy-hat\.png$/i);
+  assert.equal(calls[0]?.width, 1024);
+  assert.equal(calls[0]?.height, 1344);
+  assert.equal(calls[0]?.size_source, 'web_init_image');
+  assert.equal(calls[0]?.size_reason, 'preserve_init_image_ratio');
+  assert.equal(result.mask?.meta?.webImageDraft?.mode, 'web-reference-composite');
 });

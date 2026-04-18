@@ -189,3 +189,97 @@ test('resolveImageWebDraft skips automatic web draft anchoring for explicit two-
 
   assert.equal(result, null);
 });
+
+test('resolveImageWebDraft skips automatic web draft anchoring for compositional accessory scenes', () => {
+  const result = resolveImageWebDraft({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une image de brook avec sa guitare electrique dans un concert rock',
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Brook',
+        },
+        semantic: {
+          accessories: [{ label: 'guitare electrique', family: 'instrument' }],
+          scenes: [{ label: 'concert rock', family: 'performance_scene' }],
+        },
+      },
+    },
+    selection: {
+      compartment: 'special',
+      candidate: true,
+    },
+    webHintContext: {
+      imageUrl: 'https://images.example.com/brook-character-art.png',
+      imageTitle: 'Brook One Piece character art',
+      sourceUrl: 'https://example.com/brook-character-art',
+      sourceDomain: 'example.com',
+      imageSelectionScore: 12,
+    },
+  });
+
+  assert.equal(result, null);
+});
+
+test('resolveImageWebDraft skips automatic web draft anchoring for composite web images', () => {
+  const result = resolveImageWebDraft({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une illustration heroique de luffy en contre plongee dramatique',
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Luffy',
+        },
+      },
+    },
+    selection: {
+      compartment: 'special',
+      candidate: true,
+    },
+    webHintContext: {
+      imageUrl: 'https://images.example.com/luffy-crew-poster.jpg',
+      imageTitle: 'Luffy crew poster wallpaper',
+      sourceUrl: 'https://example.com/luffy-crew-poster',
+      sourceDomain: 'example.com',
+      imageWidth: 1600,
+      imageHeight: 900,
+      imageSelectionScore: 10,
+    },
+  });
+
+  assert.equal(result, null);
+});
+
+test('resolveImageWebDraft keeps explicit reference anchors even for composite web images', () => {
+  const result = resolveImageWebDraft({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une variation de luffy a partir de cette reference officielle',
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Luffy',
+        },
+      },
+    },
+    selection: {
+      compartment: 'special',
+      candidate: true,
+    },
+    webHintContext: {
+      imageUrl: 'https://images.example.com/luffy-crew-poster.jpg',
+      imageTitle: 'Luffy crew poster wallpaper',
+      sourceUrl: 'https://example.com/luffy-crew-poster',
+      sourceDomain: 'example.com',
+      imageWidth: 1600,
+      imageHeight: 900,
+      imageSelectionScore: 10,
+    },
+  });
+
+  assert.equal(result?.initImageUrl, 'https://images.example.com/luffy-crew-poster.jpg');
+  assert.equal(result?.explicitReferenceAnchor, true);
+  assert.equal(result?.compositeRisk, true);
+});
