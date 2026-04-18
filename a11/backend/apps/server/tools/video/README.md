@@ -63,7 +63,17 @@ A11_VIDEO_DEFAULT_FORMAT=mp4
 A11_VIDEO_FFMPEG_BIN=ffmpeg
 A11_VIDEO_FRAME_INIT_STRENGTH=0.28
 A11_VIDEO_USE_JANUS_FRAME_ANALYSIS=false
+A11_VIDEO_PROXY_URL=
+A11_VIDEO_PROXY_TIMEOUT_MS=600000
 ```
+
+For the current production topology on Railway, prefer:
+
+```env
+A11_VIDEO_PROXY_URL=https://sd.funesterie.me/api/tools/generate_video
+```
+
+This keeps Railway as the public API while the local Windows backend performs the actual GPU render and NVENC encode.
 
 ## Installation
 
@@ -81,6 +91,7 @@ Video generation depends on the existing image backend:
 
 - `A11_SD_PROXY_URL`
 - or local SD runtime if allowed
+- when `A11_VIDEO_PROXY_URL` is set, the backend proxies the full video request to the remote/local GPU runtime before attempting local generation
 
 ### Optional Janus
 
