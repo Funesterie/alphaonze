@@ -962,15 +962,25 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
   return promptRefined.compiledState;
 }
 
-function buildImageVerificationRequestId(compiledState = {}) {
-  const subject = String(compiledState?.mask?.inputs?.subject?.[0] || compiledState?.mask?.raw || 'image').trim();
-  const slug = subject
+function slugifyImageVerificationLabel(value = '') {
+  return String(value || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48) || 'image';
+}
+
+function buildImageVerificationRequestId(compiledState = {}, expectedImageContract = null) {
+  const contractLabel = String(expectedImageContract?.subjectLabel || '').trim();
+  const subject = String(
+    contractLabel
+    || compiledState?.mask?.inputs?.subject?.[0]
+    || compiledState?.mask?.raw
+    || 'image'
+  ).trim();
+  const slug = slugifyImageVerificationLabel(subject);
   return `img-${slug}-${Date.now()}`;
 }
 
@@ -1163,11 +1173,11 @@ async function generateImageFromMask({
     throw error;
   }
 
-  const requestId = buildImageVerificationRequestId(compiledState);
   const expectedImageContract = inferExpectedImageContract({
     mask: compiledState.mask,
     compiledState,
   });
+  const requestId = buildImageVerificationRequestId(compiledState, expectedImageContract);
   const imageRequestMode = compiledState.imageRequestMode?.mode || 'smart';
   const guardEnabled = isImageVerificationEnabled(imageVerificationEnabled);
   const resolvedMaxVerificationRetries = resolveMaxVerificationRetries(maxVerificationRetries);
@@ -1175,8 +1185,11 @@ async function generateImageFromMask({
 
   let activeSdBody = ensureOperationalSdBody(compiledState.sdBody, compiledState.mask);
   let compiledPromptHash = buildCompiledPromptHash(activeSdBody);
+  const expectedSubjectCount = Number(expectedImageContract?.subjectCount || 0) || 0;
+  const expectedMode = String(expectedImageContract?.mode || expectedImageContract?.reason || 'none').trim() || 'none';
+  const expectedLabel = String(expectedImageContract?.subjectLabel || '').trim() || '-';
   console.log(
-    `[A11][image-guard] start requestId=${requestId} enabled=${guardEnabled} promptHash=${compiledPromptHash} seed=${activeSdBody.seed ?? 'none'}`
+    `[A11][image-guard] start requestId=${requestId} enabled=${guardEnabled} promptHash=${compiledPromptHash} seed=${activeSdBody.seed ?? 'none'} expected=${expectedSubjectCount || 'none'} mode=${expectedMode} label=${expectedLabel}`
   );
   let sdResult = await imageGenerator({
     req,
@@ -1523,6 +1536,7 @@ function toImageChatProxyPayload({
 module.exports = {
   extractLatestUserMessage,
   buildSdRequestBody,
+  buildImageVerificationRequestId,
   compileMaskImageGenerate,
   compileMaskImageGenerateRuntime,
   resolveMaxVerificationRetries,

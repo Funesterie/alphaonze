@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildSdRequestBody,
+  buildImageVerificationRequestId,
   generateImageFromMask,
   resolveImageCompilerCompartment,
   resolveImageRequestMode,
@@ -41,6 +42,24 @@ test('buildSdRequestBody marks compiled prompts as prebuilt to avoid double enri
   assert.equal(sdBody.prompt_language, 'fr');
   assert.equal(sdBody.negative_prompt, 'duplicate rabbits, crowd');
   assert.equal(sdBody.negative_prompt_prebuilt, true);
+});
+
+test('buildImageVerificationRequestId uses the explicit pair label when available', () => {
+  const requestId = buildImageVerificationRequestId({
+    mask: {
+      inputs: {
+        subject: ['Princesse Zelda'],
+      },
+      raw: 'crée une image de Princesse Zelda et Mario',
+    },
+  }, {
+    enabled: true,
+    subjectCount: 2,
+    mode: 'pair',
+    subjectLabel: 'Princesse Zelda et Mario',
+  });
+
+  assert.match(requestId, /^img-princesse-zelda-et-mario-\d+$/);
 });
 
 test('buildSdRequestBody forwards web draft init image settings from the mask runtime meta', () => {

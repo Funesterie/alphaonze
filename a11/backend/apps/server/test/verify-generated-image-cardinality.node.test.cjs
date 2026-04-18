@@ -163,3 +163,16 @@ test('inferExpectedImageContract preserves pair prompts as exactly two subjects'
   assert.equal(result.mode, 'pair');
   assert.equal(result.subjectLabel, 'Zelda et Mario');
 });
+
+test('inferExpectedImageContract does not confuse accessory detail phrases with a second subject', () => {
+  const result = inferExpectedImageContract({
+    mask: {
+      raw: 'génère une image de luffy avec un grand sombrero mexicain et une cigarette visible près de la bouche',
+    },
+  });
+
+  assert.equal(result.enabled, true);
+  assert.equal(result.subjectCount, 1);
+  assert.equal(result.mode, 'single');
+  assert.equal(result.subjectLabel, 'luffy');
+});
