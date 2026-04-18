@@ -43,6 +43,13 @@ Public image flow:
 4. Local backend -> vendored SD helper in `apps/server/tools/sd`
 5. Local Python runtime -> `llm/scripts/venv`
 
+Public video flow:
+
+1. Browser -> `a11.funesterie.pro`
+2. Frontend -> `api.funesterie.pro`
+3. Railway backend -> `sd.funesterie.me/api/tools/generate_video`
+4. Local backend -> local SD + FFmpeg/NVENC pipeline on Windows
+
 Production image policy:
 
 - Railway is `proxy-only` for SD image generation.
@@ -50,6 +57,12 @@ Production image policy:
 - Railway should keep `A11_SD_ALLOW_LOCAL_FALLBACK=false`.
 - Railway must not define Windows-only local runtime paths such as `SD_SCRIPT_PATH` or `SD_PYTHON_PATH`.
 - `A11_VISION_BASE_URL` is reserved for remote vision/OCR and must not be reused for SD generation.
+
+Production video policy:
+
+- Railway should delegate video generation through `A11_VIDEO_PROXY_URL=https://sd.funesterie.me/api/tools/generate_video`.
+- Railway should keep local Linux rendering only as a fallback path of last resort, not as the primary topology.
+- The local Windows backend remains the source of truth for GPU video encoding with NVENC.
 
 Local maintenance flow:
 
@@ -67,6 +80,8 @@ LLM_ROUTER_URL=https://cerbere.funesterie.me
 A11_ALLOW_PUBLIC_TUNNEL_LLM=1
 A11_SD_PROXY_URL=https://sd.funesterie.me/api/tools/generate_sd
 A11_SD_ALLOW_LOCAL_FALLBACK=false
+A11_VIDEO_PROXY_URL=https://sd.funesterie.me/api/tools/generate_video
+A11_VIDEO_PROXY_TIMEOUT_MS=600000
 ```
 
 Keep these empty on Railway proxy-only deployments:
@@ -101,11 +116,11 @@ Recommended local config:
 ```yaml
 ingress:
   - hostname: sd.funesterie.me
-    service: http://localhost:3000
+    service: http://127.0.0.1:3000
   - hostname: api.funesterie.me
-    service: http://localhost:3000
+    service: http://127.0.0.1:3000
   - hostname: cerbere.funesterie.me
-    service: http://localhost:4545
+    service: http://127.0.0.1:4545
   - service: http_status:404
 ```
 
@@ -114,6 +129,7 @@ ingress:
 - `cerbere.funesterie.me` should be the only hostname exposed for the LLM path.
 - `sd.funesterie.me` should be the only hostname exposed for tunneled image generation.
 - The public SD route is `POST https://sd.funesterie.me/api/tools/generate_sd`.
+- The public video route is `POST https://sd.funesterie.me/api/tools/generate_video`.
 - `https://sd.funesterie.me/health` is the tunnel/service health check, not the generation route.
 - Exposing `llama-server` directly is optional and should stay off unless you really need it.
 - Keep `llm` for heavy local assets only: GGUF files, `llama.cpp`, local Python venvs, and other machine-local runtimes.
