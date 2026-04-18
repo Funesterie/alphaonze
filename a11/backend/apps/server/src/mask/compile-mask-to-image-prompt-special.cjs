@@ -257,6 +257,25 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
         summary_facts: toUniqueStrings(mask.meta.imageRequestDirector.summaryFacts || []).slice(0, 6),
       }
     : null;
+  const webReferencePack = mask?.meta?.webReferencePack && typeof mask.meta.webReferencePack === 'object'
+    ? {
+        subject: normalizeText(mask.meta.webReferencePack.subject || ''),
+        universe: normalizeText(mask.meta.webReferencePack.universe || ''),
+        summary_facts: toUniqueStrings(mask.meta.webReferencePack.summaryFacts || []).slice(0, 6),
+        references: (Array.isArray(mask.meta.webReferencePack.references) ? mask.meta.webReferencePack.references : [])
+          .slice(0, 6)
+          .map((entry) => ({
+            role: normalizeText(entry?.role || ''),
+            label: normalizeText(entry?.label || ''),
+            family: normalizeText(entry?.family || ''),
+            placement: normalizeText(entry?.placement || ''),
+            query: normalizeText(entry?.query || ''),
+            title: normalizeText(entry?.title || ''),
+            source_domain: normalizeText(entry?.sourceDomain || ''),
+            selection_score: Number(entry?.selectionScore || 0) || 0,
+          })),
+      }
+    : null;
   const payload = {
     demande: normalizeText(mask?.raw || ''),
     sujet_principal: toUniqueStrings(mask?.inputs?.subject || []).slice(0, 3),
@@ -271,6 +290,7 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
     ardoise_temporaire: imageScratchpad,
     direction_llm: imageRequestDirector,
     contexte_web: webHintContext,
+    references_web: webReferencePack,
   };
 
   return JSON.stringify(payload, null, 2);

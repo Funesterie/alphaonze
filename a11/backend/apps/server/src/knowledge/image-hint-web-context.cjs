@@ -75,6 +75,23 @@ function hasStrongPromptTransform(mask = {}) {
   );
 }
 
+function hasCompositionalSceneRequest(mask = {}) {
+  const raw = normalizeLookup(mask?.raw || '');
+  const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
+    ? mask.meta.semantic
+    : {};
+  const accessories = normalizeArrayLabels(semantic?.accessories || []);
+  const scenes = normalizeArrayLabels(semantic?.scenes || []);
+  const metiers = normalizeArrayLabels(semantic?.metiers || []);
+
+  return (
+    /\b(avec|dans|sur|sous|devant|derriere|derrière|tenant|portant|en train de)\b/.test(raw)
+    || accessories.length > 0
+    || scenes.length > 0
+    || metiers.length > 0
+  );
+}
+
 function resolveEntityUniverse(mask = {}) {
   return normalizeText(
     mask?.meta?.imageEntityContext?.universe
@@ -281,6 +298,8 @@ async function lookupImageHintWebContext({
     imageSourceUrl: normalizeText(imageResult?.source_url || ''),
     imageWidth: Number(imageResult?.width || 0) || null,
     imageHeight: Number(imageResult?.height || 0) || null,
+    imageSelectionScore: Number(imageResult?.selection_score || 0) || 0,
+    imageSelectionReason: normalizeText(imageResult?.selection_reason || ''),
     hintFacts,
   };
 }
@@ -289,6 +308,64 @@ function normalizeStrength(value, fallback = 0.45) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(0.18, Math.min(0.78, numeric));
+}
+
+function hasExplicitReferenceAnchorRequest(mask = {}) {
+  const raw = normalizeLookup(mask?.raw || '');
+  if (!raw) return false;
+  return (
+    /\b(reference|reference officielle|reference officiel|ref officielle|official art|art officiel)\b/.test(raw)
+    || /\b(a partir de|a partir d une image|a partir d un visuel|depuis une image|depuis l image)\b/.test(raw)
+    || /\b(inspire de|inspire toi de|base toi sur|reprends|retravaille|retouche)\b/.test(raw)
+    || /\b(variation|variante|version alternative|meme pose|meme cadrage|pose similaire|same pose|same framing)\b/.test(raw)
+  );
+}
+
+function isSimpleOriginalCharacterRequest(mask = {}) {
+  const raw = normalizeLookup(mask?.raw || '');
+  const tokenCount = raw.split(/\s+/).filter(Boolean).length;
+  const subjectProfileType = resolveSubjectProfileType(mask);
+  const hasExplicitPair = Boolean(compileCharacterCountConstraints(String(mask?.raw || '')));
+  const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
+
+  if (![
+    'reference_character',
+    'single_human_figure',
+    'pokemon_creature',
+    'single_animal',
+    'mythic_creature',
+    'phoenix_creature',
+  ].includes(subjectProfileType)) {
+    return false;
+  }
+
+  return (
+    !hasExplicitPair
+    && !hasRelation
+    && !hasStrongPromptTransform(mask)
+    && !hasVolatileElementTransform(mask)
+    && tokenCount <= 8
+  );
+}
+
+function looksLikeCompositeWebImageContext(webHintContext = null) {
+  const width = Number(webHintContext?.imageWidth || 0);
+  const height = Number(webHintContext?.imageHeight || 0);
+  const longestSide = Math.max(width, height, 0);
+  const shortestSide = Math.max(1, Math.min(width || 1, height || 1));
+  const aspectRatio = longestSide / shortestSide;
+  const combinedText = normalizeLookup([
+    webHintContext?.title,
+    webHintContext?.imageTitle,
+    webHintContext?.sourceUrl,
+    webHintContext?.imageSourceUrl,
+    webHintContext?.sourceDomain,
+  ].filter(Boolean).join(' '));
+
+  return (
+    /\b(lineup|sheet|sprite|spritesheet|collage|mosaic|panel|poster|wallpaper|crew|group|team|characters|personnages|cover)\b/.test(combinedText)
+    || (longestSide >= 1000 && aspectRatio >= 1.5)
+  );
 }
 
 function shouldRejectCharacterDraftImage(mask = {}, webHintContext = null) {
@@ -325,7 +402,12 @@ function shouldUseImageWebDraft({
   const hasExplicitPair = Boolean(compileCharacterCountConstraints(String(mask?.raw || '')));
   const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
   const hasStrongTransform = hasStrongPromptTransform(mask);
+  const hasCompositionalScene = hasCompositionalSceneRequest(mask);
   const hasVolatileTransform = hasVolatileElementTransform(mask);
+  const explicitReferenceAnchor = hasExplicitReferenceAnchorRequest(mask);
+  const simpleOriginalCharacterRequest = isSimpleOriginalCharacterRequest(mask);
+  const compositeRisk = looksLikeCompositeWebImageContext(webHintContext);
+  const imageSelectionScore = Number(webHintContext?.imageSelectionScore || 0);
 
   if (hasExplicitPair) {
     return false;
@@ -366,17 +448,39 @@ function shouldUseImageWebDraft({
     return false;
   }
 
+  if (compositeRisk && !explicitReferenceAnchor) {
+    return false;
+  }
+
+  if (hasCompositionalScene && !explicitReferenceAnchor) {
+    return false;
+  }
+
+  if (imageSelectionScore < 2 && !explicitReferenceAnchor) {
+    return false;
+  }
+
+  if (simpleOriginalCharacterRequest && !explicitReferenceAnchor) {
+    return false;
+  }
+
   return (
-    selection?.compartment === 'special'
-    || selection?.candidate === true
-    || hasRelation
-    || [
-      'reference_character',
-      'single_human_figure',
-      'pokemon_creature',
-      'phoenix_creature',
-      'mythic_creature',
-    ].includes(subjectProfileType)
+    explicitReferenceAnchor
+    || (
+      !simpleOriginalCharacterRequest
+      && (
+        selection?.compartment === 'special'
+        || selection?.candidate === true
+        || hasRelation
+        || [
+          'reference_character',
+          'single_human_figure',
+          'pokemon_creature',
+          'phoenix_creature',
+          'mythic_creature',
+        ].includes(subjectProfileType)
+      )
+    )
   );
 }
 
@@ -398,9 +502,12 @@ function resolveImageWebDraft({
   const configuredStrength = strength !== undefined
     ? strength
     : (mask?.options?.strength ?? process.env.A11_IMAGE_WEB_DRAFT_STRENGTH);
+  const explicitReferenceAnchor = hasExplicitReferenceAnchorRequest(mask);
+  const compositeRisk = looksLikeCompositeWebImageContext(webHintContext);
 
   return {
     mode: 'web-image-draft',
+    reason: explicitReferenceAnchor ? 'explicit_reference_anchor' : 'automatic_web_anchor',
     query: normalizeText(webHintContext?.query || ''),
     title: normalizeText(webHintContext?.imageTitle || webHintContext?.title || ''),
     initImageUrl,
@@ -409,6 +516,10 @@ function resolveImageWebDraft({
     strength: normalizeStrength(configuredStrength, 0.45),
     width: Number(webHintContext?.imageWidth || 0) || null,
     height: Number(webHintContext?.imageHeight || 0) || null,
+    imageSelectionScore: Number(webHintContext?.imageSelectionScore || 0) || 0,
+    imageSelectionReason: normalizeText(webHintContext?.imageSelectionReason || ''),
+    explicitReferenceAnchor,
+    compositeRisk,
   };
 }
 

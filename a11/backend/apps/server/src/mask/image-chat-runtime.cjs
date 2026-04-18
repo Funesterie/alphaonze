@@ -30,6 +30,12 @@ const {
   resolveImageWebDraft: defaultResolveImageWebDraft,
 } = require('../knowledge/image-hint-web-context.cjs');
 const {
+  resolveImageReferencePack: defaultResolveImageReferencePack,
+} = require('../knowledge/image-reference-pack.cjs');
+const {
+  buildImageReferenceComposite: defaultBuildImageReferenceComposite,
+} = require('../knowledge/image-reference-composite.cjs');
+const {
   resolveImageEntityContext: defaultResolveImageEntityContext,
 } = require('../knowledge/image-entity-resolver.cjs');
 const {
@@ -47,6 +53,7 @@ const {
 const {
   compileCharacterCountConstraints,
 } = require('./build-sd-prompt-bundle.cjs');
+const resolveImageDimensionConfig = normalizeMaskImageGenerate.resolveImageDimensionConfig;
 
 let sharpLib;
 
@@ -54,6 +61,124 @@ function normalizeText(value = '') {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function roundDimensionToMultiple(value, multiple = 64) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.max(multiple, Math.round(numeric / multiple) * multiple);
+}
+
+function clampRenderDimension(value, max = 2048) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.max(64, Math.min(max, roundDimensionToMultiple(numeric, 64)));
+}
+
+function promptMentionsExplicitCanvas(raw = '') {
+  return /\b\d{3,4}\s*[xX]\s*\d{3,4}\b/.test(String(raw || '').trim());
+}
+
+function resolveWebDraftCanvasPlan(mask = {}, webImageDraft = {}, env = process.env) {
+  const sourceWidth = Number(webImageDraft?.width || 0);
+  const sourceHeight = Number(webImageDraft?.height || 0);
+  if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+    return null;
+  }
+
+  const imageConfig = typeof resolveImageDimensionConfig === 'function'
+    ? resolveImageDimensionConfig(env)
+    : { maxRenderSide: 2048 };
+  const maxRenderSide = Number(imageConfig?.maxRenderSide || 2048) || 2048;
+  const currentWidth = Number(mask?.options?.width || 0);
+  const currentHeight = Number(mask?.options?.height || 0);
+  const sourceLongestSide = Math.max(sourceWidth, sourceHeight, 1);
+  const currentLongestSide = Math.max(currentWidth, currentHeight, 0);
+  const preferredLongestSide = Number(process.env.A11_IMAGE_WEB_DRAFT_TARGET_SIDE || 1344) || 1344;
+  const targetLongestSide = Math.min(
+    maxRenderSide,
+    Math.max(sourceLongestSide, currentLongestSide, preferredLongestSide)
+  );
+  const scale = targetLongestSide / sourceLongestSide;
+
+  return {
+    source: 'web_init_image',
+    reason: 'preserve_init_image_ratio',
+    requestedWidth: sourceWidth,
+    requestedHeight: sourceHeight,
+    width: clampRenderDimension(Math.max(64, Math.floor(sourceWidth * scale)), maxRenderSide),
+    height: clampRenderDimension(Math.max(64, Math.floor(sourceHeight * scale)), maxRenderSide),
+  };
+}
+
+function applyWebDraftCanvasToMask(mask = {}, webImageDraft = {}) {
+  if (!webImageDraft || typeof webImageDraft !== 'object') return mask;
+  if (promptMentionsExplicitCanvas(mask?.raw || '')) return mask;
+
+  const canvasPlan = resolveWebDraftCanvasPlan(mask, webImageDraft, process.env);
+  if (!canvasPlan) return mask;
+
+  return {
+    ...(mask && typeof mask === 'object' ? mask : {}),
+    options: {
+      ...((mask && mask.options && typeof mask.options === 'object') ? mask.options : {}),
+      width: canvasPlan.width,
+      height: canvasPlan.height,
+    },
+    meta: {
+      ...((mask && mask.meta && typeof mask.meta === 'object') ? mask.meta : {}),
+      renderSizing: {
+        source: canvasPlan.source,
+        reason: canvasPlan.reason,
+        requestedWidth: canvasPlan.requestedWidth,
+        requestedHeight: canvasPlan.requestedHeight,
+        resolvedWidth: canvasPlan.width,
+        resolvedHeight: canvasPlan.height,
+        maxRenderSide: Number(resolveImageDimensionConfig(process.env)?.maxRenderSide || 2048) || 2048,
+      },
+    },
+  };
+}
+
+function shouldRelaxWebInitFusionRetry(mask = {}, verification = {}) {
+  const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
+    ? mask.meta.webImageDraft
+    : null;
+  if (!webImageDraft) return false;
+
+  const fusionDetected = verification?.observed?.fusion_detected === true
+    || String(verification?.decision?.reason || '').trim() === 'fusion_detected';
+  if (!fusionDetected) return false;
+
+  return (
+    webImageDraft.compositeRisk === true
+    || (
+      webImageDraft.explicitReferenceAnchor !== true
+      && String(webImageDraft.reason || '').trim() === 'automatic_web_anchor'
+    )
+  );
+}
+
+function relaxVerificationForWebInit(mask = {}, verification = {}) {
+  if (!verification || typeof verification !== 'object') return verification;
+  if (!shouldRelaxWebInitFusionRetry(mask, verification)) return verification;
+
+  return {
+    ...verification,
+    decision: {
+      ...(verification.decision && typeof verification.decision === 'object' ? verification.decision : {}),
+      retry: false,
+      reason: 'fusion_detected_web_init_tolerated',
+      notes: [
+        String(verification?.decision?.notes || '').trim(),
+        'web_init_relaxed=1',
+      ].filter(Boolean).join(' ').trim(),
+    },
+    raw: {
+      ...(verification.raw && typeof verification.raw === 'object' ? verification.raw : {}),
+      fusion_retry_relaxed: true,
+    },
+  };
 }
 
 function getSharp() {
@@ -267,6 +392,28 @@ function buildSdRequestBody(mask, compiledPayload) {
     ? Number(payload.strength)
     : Number(webImageDraft.strength);
 
+  const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || 2048);
+  const IMAGE_MIN_SIZE = 64;
+  function clampDimension(val, fallback) {
+    let n = Number(val);
+    if (!Number.isFinite(n)) n = fallback;
+    n = Math.round(n);
+    if (n > 1 && n % 2 !== 0) n = n - 1;
+    return Math.max(IMAGE_MIN_SIZE, Math.min(IMAGE_MAX_SIZE, n));
+  }
+  const requestedWidth = Number(payload.width || mask?.options?.width);
+  const requestedHeight = Number(payload.height || mask?.options?.height);
+  const width = clampDimension(requestedWidth, IMAGE_MAX_SIZE);
+  const height = clampDimension(requestedHeight, IMAGE_MAX_SIZE);
+  const renderSizing = mask?.meta?.renderSizing && typeof mask.meta.renderSizing === 'object'
+    ? mask.meta.renderSizing
+    : null;
+  if (requestedWidth !== undefined && width !== requestedWidth) {
+    console.warn(`[A11][image-chat-runtime] width requested=${requestedWidth} effective=${width} (clamp)`);
+  }
+  if (requestedHeight !== undefined && height !== requestedHeight) {
+    console.warn(`[A11][image-chat-runtime] height requested=${requestedHeight} effective=${height} (clamp)`);
+  }
   return {
     prompt: String(payload.prompt || mask?.raw || '').trim(),
     prompt_prebuilt: true,
@@ -277,14 +424,20 @@ function buildSdRequestBody(mask, compiledPayload) {
           negative_prompt_prebuilt: true,
         }
       : {}),
-    width: Number(payload.width || mask?.options?.width || 768),
-    height: Number(payload.height || mask?.options?.height || 768),
+    width,
+    height,
     num_inference_steps: Number(payload.steps || mask?.options?.steps || 30),
     guidance_scale: Number(payload.guidance_scale || mask?.options?.guidance_scale || 7.5),
     ...(payload.seed !== undefined ? { seed: payload.seed } : {}),
     ...(payload.sampler ? { sampler: payload.sampler } : {}),
     ...(initImage ? { init_image_url: initImage } : {}),
     ...(Number.isFinite(strength) ? { strength } : {}),
+    ...(renderSizing ? {
+      size_source: renderSizing.source,
+      size_reason: renderSizing.reason,
+      requested_width: renderSizing.requestedWidth,
+      requested_height: renderSizing.requestedHeight,
+    } : {}),
   };
 }
 
@@ -329,6 +482,7 @@ function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
     || (Array.isArray(compiledState?.mask?.meta?.promptInstructions) && compiledState.mask.meta.promptInstructions.length > 2)
     || Boolean(compiledState?.mask?.meta?.imageScratchpad)
     || Boolean(compiledState?.mask?.meta?.definitionLookup)
+    || Boolean(compiledState?.mask?.meta?.webReferencePack)
   );
 }
 
@@ -355,6 +509,26 @@ function buildImagePromptRefinerInput(compiledState = {}) {
       || mask?.meta?.init_image_url
       || ''
     ).trim(),
+    web_reference_pack: mask?.meta?.webReferencePack && typeof mask.meta.webReferencePack === 'object'
+      ? {
+          subject: String(mask.meta.webReferencePack.subject || '').trim(),
+          universe: String(mask.meta.webReferencePack.universe || '').trim(),
+          summary_facts: Array.isArray(mask.meta.webReferencePack.summaryFacts)
+            ? mask.meta.webReferencePack.summaryFacts.slice(0, 6)
+            : [],
+          references: Array.isArray(mask.meta.webReferencePack.references)
+            ? mask.meta.webReferencePack.references.slice(0, 6).map((entry) => ({
+                role: String(entry?.role || '').trim(),
+                label: String(entry?.label || '').trim(),
+                family: String(entry?.family || '').trim(),
+                placement: String(entry?.placement || '').trim(),
+                query: String(entry?.query || '').trim(),
+                title: String(entry?.title || '').trim(),
+                source_domain: String(entry?.sourceDomain || '').trim(),
+              }))
+            : [],
+        }
+      : null,
   }, null, 2);
 }
 
@@ -462,12 +636,49 @@ function compileMaskImageGenerate(rawMask) {
     ? compileMaskToSD(mask)
     : compileMaskToImagePrompt(mask);
   const compiled = adaptMaskToFreelandValue(mask, compiledPayload);
+  // Aligner width/height sur la politique globale
+  const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || 2048);
+  const IMAGE_MIN_SIZE = 64;
+  function clampDimension(val, fallback) {
+    let n = Number(val);
+    if (!Number.isFinite(n)) n = fallback;
+    n = Math.round(n);
+    if (n > 1 && n % 2 !== 0) n = n - 1;
+    return Math.max(IMAGE_MIN_SIZE, Math.min(IMAGE_MAX_SIZE, n));
+  }
+  const requestedWidth = Number(compiledPayload?.width || mask?.options?.width);
+  const requestedHeight = Number(compiledPayload?.height || mask?.options?.height);
+  const width = clampDimension(requestedWidth, IMAGE_MAX_SIZE);
+  const height = clampDimension(requestedHeight, IMAGE_MAX_SIZE);
+  const renderSizing = mask?.meta?.renderSizing && typeof mask.meta.renderSizing === 'object'
+    ? mask.meta.renderSizing
+    : null;
+  if (requestedWidth !== undefined && width !== requestedWidth) {
+    console.warn(`[A11][image-chat-runtime] width requested=${requestedWidth} effective=${width} (clamp)`);
+  }
+  if (requestedHeight !== undefined && height !== requestedHeight) {
+    console.warn(`[A11][image-chat-runtime] height requested=${requestedHeight} effective=${height} (clamp)`);
+  }
+  if (renderSizing) {
+    console.log(
+      `[A11][image-size] source=${renderSizing.source || 'unknown'}`
+      + ` reason=${renderSizing.reason || 'n/a'}`
+      + ` requested=${renderSizing.requestedWidth || 'auto'}x${renderSizing.requestedHeight || 'auto'}`
+      + ` resolved=${width}x${height}`
+    );
+  }
   const sdBody = compilerTarget === 'sd-payload'
     ? buildSdRequestBody(mask, compiledPayload)
     : {
         ...compiledPayload,
-        width: Number(compiledPayload?.width || mask?.options?.width || 768),
-        height: Number(compiledPayload?.height || mask?.options?.height || 768),
+        width,
+        height,
+        ...(renderSizing ? {
+          size_source: renderSizing.source,
+          size_reason: renderSizing.reason,
+          requested_width: renderSizing.requestedWidth,
+          requested_height: renderSizing.requestedHeight,
+        } : {}),
         num_inference_steps: Number(compiledPayload?.num_inference_steps || mask?.options?.steps || 30),
         guidance_scale: Number(compiledPayload?.guidance_scale || mask?.options?.guidance_scale || 7.5),
         ...(compiledPayload?.seed !== undefined ? { seed: compiledPayload.seed } : {}),
@@ -615,19 +826,19 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
       };
     }
   }
-  if (orchestratorEnabled && typeof options.resolveImageWebDraft === 'function') {
+  if (orchestratorEnabled && typeof options.resolveImageReferencePack === 'function') {
     try {
-      const webImageDraft = await options.resolveImageWebDraft({
+      const webReferencePack = await options.resolveImageReferencePack({
         mask: runtimeMask,
         selection,
-        webHintContext,
+        duckduckgoImageSearch: options.duckduckgoImageSearch,
       });
-      if (webImageDraft && typeof webImageDraft === 'object') {
+      if (webReferencePack && typeof webReferencePack === 'object') {
         runtimeMask = {
           ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
           meta: {
             ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
-            webImageDraft,
+            webReferencePack,
           },
         };
       }
@@ -636,7 +847,67 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
         ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
         meta: {
           ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+          webReferencePackError: String(error_?.message || error_),
+        },
+      };
+    }
+  }
+  if (orchestratorEnabled && typeof options.resolveImageWebDraft === 'function') {
+    try {
+      const webImageDraft = await options.resolveImageWebDraft({
+        mask: runtimeMask,
+        selection,
+        webHintContext,
+      });
+      if (webImageDraft && typeof webImageDraft === 'object') {
+        runtimeMask = applyWebDraftCanvasToMask({
+          ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+          meta: {
+            ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+            webImageDraft,
+          },
+        }, webImageDraft);
+      }
+    } catch (error_) {
+      runtimeMask = {
+        ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+        meta: {
+          ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
           webImageDraftError: String(error_?.message || error_),
+        },
+      };
+    }
+  }
+  const existingInitImage = String(
+    runtimeMask?.meta?.webImageDraft?.initImageUrl
+    || runtimeMask?.meta?.webImageDraft?.initImagePath
+    || ''
+  ).trim();
+  if (
+    orchestratorEnabled
+    && !existingInitImage
+    && typeof options.buildImageReferenceComposite === 'function'
+  ) {
+    try {
+      const referenceCompositeDraft = await options.buildImageReferenceComposite({
+        mask: runtimeMask,
+        referencePack: runtimeMask?.meta?.webReferencePack || null,
+      });
+      if (referenceCompositeDraft && typeof referenceCompositeDraft === 'object') {
+        runtimeMask = applyWebDraftCanvasToMask({
+          ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+          meta: {
+            ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+            webImageDraft: referenceCompositeDraft,
+          },
+        }, referenceCompositeDraft);
+      }
+    } catch (error_) {
+      runtimeMask = {
+        ...(runtimeMask && typeof runtimeMask === 'object' ? runtimeMask : {}),
+        meta: {
+          ...((runtimeMask && runtimeMask.meta && typeof runtimeMask.meta === 'object') ? runtimeMask.meta : {}),
+          imageReferenceCompositeError: String(error_?.message || error_),
         },
       };
     }
@@ -711,6 +982,11 @@ function isFalsyEnv(value) {
   return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
 }
 
+function isLocalImageRuntime(env = process.env) {
+  return isTruthyEnv(env?.A11_LOCAL_MODE)
+    || String(env?.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local';
+}
+
 function isImageVerificationEnabled(explicitValue) {
   if (typeof explicitValue === 'boolean') return explicitValue;
   const envValue = process.env.A11_IMAGE_CARDINALITY_GUARD
@@ -726,10 +1002,11 @@ function resolveMaxVerificationRetries(explicitValue) {
     const numeric = Number(explicitValue);
     return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
   }
+  const fallbackRetries = isLocalImageRuntime(process.env) ? 0 : 1;
   const fromEnv = Number(
     process.env.A11_IMAGE_CARDINALITY_MAX_RETRIES
     || process.env.A11_IMAGE_VERIFY_MAX_RETRIES
-    || 1
+    || fallbackRetries
   );
   return Number.isFinite(fromEnv) ? Math.max(0, Math.floor(fromEnv)) : 0;
 }
@@ -852,6 +1129,8 @@ async function generateImageFromMask({
   lookupDefinitionContext = defaultLookupDefinitionContext,
   duckduckgoImageSearch = defaultDuckduckgoImageSearch,
   lookupImageHintWebContext = defaultLookupImageHintWebContext,
+  resolveImageReferencePack = defaultResolveImageReferencePack,
+  buildImageReferenceComposite = defaultBuildImageReferenceComposite,
   resolveImageWebDraft = defaultResolveImageWebDraft,
   imageVerificationEnabled,
   maxVerificationRetries,
@@ -865,6 +1144,8 @@ async function generateImageFromMask({
     lookupDefinitionContext,
     duckduckgoImageSearch,
     lookupImageHintWebContext,
+    resolveImageReferencePack,
+    buildImageReferenceComposite,
     resolveImageWebDraft,
   });
   const imageGenerator = typeof generateImage === 'function'
@@ -949,6 +1230,7 @@ async function generateImageFromMask({
         prompt: String(activeSdBody.prompt || '').trim(),
         seed: activeSdBody.seed,
       });
+      verification = relaxVerificationForWebInit(compiledState.mask, verification);
     } catch (error_) {
       verification = {
         ok: false,
@@ -1003,6 +1285,7 @@ async function generateImageFromMask({
           prompt: String(activeSdBody.prompt || '').trim(),
           seed: activeSdBody.seed,
         });
+        verification = relaxVerificationForWebInit(compiledState.mask, verification);
       } catch (error_) {
         verification = {
           ok: false,
@@ -1217,6 +1500,7 @@ function toImageChatProxyPayload({
     a11Agent: {
       imagePath: imageUrl || null,
       imageDraft: mask?.meta?.webImageDraft || null,
+      webReferencePack: mask?.meta?.webReferencePack || null,
       imageRequestDirector: imageRequestDirector || mask?.meta?.imageRequestDirector || null,
       imageGuard: imageGuard || null,
       imageLlmJudge: imageLlmJudge || null,
@@ -1241,6 +1525,7 @@ module.exports = {
   buildSdRequestBody,
   compileMaskImageGenerate,
   compileMaskImageGenerateRuntime,
+  resolveMaxVerificationRetries,
   resolveImageRequestMode,
   generateImageFromMask,
   generateImageFromText,
