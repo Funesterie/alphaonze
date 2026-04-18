@@ -7,6 +7,9 @@ const {
   listSupportedIntentTypes,
   normalizeIntentType,
 } = require('./semantic/semantic-utils.cjs');
+const {
+  fetchJsonWithRetry,
+} = require('../../lib/fetch-json-retry.cjs');
 
 function normalizeBaseUrl(value = '') {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -158,13 +161,6 @@ async function callStructuredLlmJson({
   const config = resolveTranslationConfig();
   if (!config.isConfigured) return null;
 
-  const controller = typeof AbortController === 'function'
-    ? new AbortController()
-    : null;
-  const timeout = controller
-    ? setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 8000))
-    : null;
-
   const body = {
     model: config.model,
     temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
@@ -175,39 +171,47 @@ async function callStructuredLlmJson({
     ],
   };
 
-  try {
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    if (config.apiKey) {
-      headers.Authorization = `Bearer ${config.apiKey}`;
-    }
-    if (config.nezToken) {
-      headers['X-NEZ-TOKEN'] = config.nezToken;
-    }
-
-    const resp = await fetch(config.url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      ...(controller ? { signal: controller.signal } : {}),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      console.error(`[resolve-text-to-wazaa] LLM HTTP ${resp.status}: ${errText.slice(0, 200)}`);
-      return null;
-    }
-
-    const json = await resp.json();
-    const content = json?.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    return JSON.parse(cleaned);
-  } finally {
-    if (timeout) clearTimeout(timeout);
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
   }
+  if (config.nezToken) {
+    headers['X-NEZ-TOKEN'] = config.nezToken;
+  }
+
+  const result = await fetchJsonWithRetry(config.url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  }, {
+    timeoutMs: Math.max(1000, Number(timeoutMs) || 8000),
+    retries: Math.max(0, Number(process.env.A11_WAZAA_LLM_RETRIES || 2) || 0),
+    logger: console,
+  });
+
+  if (!result?.ok) {
+    const status = Number(result?.status || 0) || 0;
+    const rawText = String(result?.text || '').trim();
+    const normalizedText = rawText.replace(/\s+/g, ' ').trim();
+    const isHtmlTimeout = /<!doctype html|<html/i.test(rawText)
+      && /error code 524|a timeout occurred/i.test(rawText);
+    const summary = isHtmlTimeout
+      ? 'upstream timeout (cloudflare 524)'
+      : (normalizedText || 'upstream request failed');
+    console.error(`[resolve-text-to-wazaa] LLM HTTP ${status || '0'}: ${summary.slice(0, 200)}`);
+    return null;
+  }
+
+  const json = result?.data && typeof result.data === 'object'
+    ? result.data
+    : null;
+  const content = json?.choices?.[0]?.message?.content;
+  if (!content) return null;
+
+  const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  return JSON.parse(cleaned);
 }
 
 async function callTranslationLlm(text) {

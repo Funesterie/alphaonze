@@ -1133,6 +1133,8 @@ export function App() {
       setIsAuthenticated(false);
       setSending(false);
       sendLockRef.current = false;
+      pendingMessageKeyRef.current = "";
+      lastCompletedMessageRef.current = { key: "", at: 0 };
       setLoadingHistory(false);
       setLoadingActivity(false);
       setLoadingResources(false);
@@ -1163,6 +1165,8 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toggleLockRef = useRef(false);
   const sendLockRef = useRef(false);
+  const pendingMessageKeyRef = useRef("");
+  const lastCompletedMessageRef = useRef({ key: "", at: 0 });
   const authStorageScope = useMemo(
     () => (isAuthenticated ? getAuthStorageScope() : ""),
     [isAuthenticated]
@@ -1801,11 +1805,26 @@ export function App() {
     });
   }, []);
 
+  function normalizeOutgoingMessageKey(value: string) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
   // Modifie la fonction sendMessage pour accepter un texte forcé
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
+    const messageKey = normalizeOutgoingMessageKey(text);
+    const now = Date.now();
     if (!text || sending || sendLockRef.current) return;
+    if (messageKey && pendingMessageKeyRef.current === messageKey) return;
+    if (
+      messageKey
+      && lastCompletedMessageRef.current.key === messageKey
+      && now - lastCompletedMessageRef.current.at < 10000
+    ) {
+      return;
+    }
     sendLockRef.current = true;
+    pendingMessageKeyRef.current = messageKey;
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -1870,7 +1889,9 @@ export function App() {
       if (shouldAutoplayAssistantMessage(spokenText)) {
         speak(spokenText, { lang: "fr-FR" });
       }
+      lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
     } catch (err: any) {
+        lastCompletedMessageRef.current = { key: "", at: 0 };
         const errMsg: ChatMessage = {
           id: `e-${Date.now()}`,
           role: "assistant",
@@ -1886,6 +1907,7 @@ export function App() {
     } finally {
       setSending(false);
       sendLockRef.current = false;
+      pendingMessageKeyRef.current = "";
     }
   }
 

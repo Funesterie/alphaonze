@@ -3,6 +3,7 @@ const defaultPath = require('node:path');
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
 const { buildCanonicalImageMaskFromText } = require('../mask/resolve-image-mask-from-text.cjs');
 const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
+const { resolveImageDimensionConfig, resolveImageCanvasPlan } = require('../mask/normalize-mask-image-generate.cjs');
 const {
   resolveSdProxyUrl: defaultResolveSdProxyUrl,
   resolveSdScriptPath: defaultResolveSdScriptPath,
@@ -46,6 +47,25 @@ function resolvePublicWorkspaceRoot() {
   return defaultPath.resolve(
     configuredRoot || defaultPath.resolve(__dirname, '..', '..', '..', '..', '..')
   );
+}
+
+function resolveGeneratedImageWorkRoot() {
+  const explicitRoot = String(process.env.A11_IMAGE_WORK_ROOT || '').trim();
+  if (explicitRoot) return defaultPath.resolve(explicitRoot);
+
+  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+  if (runtimeRoot) {
+    return defaultPath.resolve(runtimeRoot, 'files', 'generated', 'images');
+  }
+
+  const legacySdOutputDir = String(process.env.SD_OUTPUT_DIR || '').trim();
+  if (legacySdOutputDir) return defaultPath.resolve(legacySdOutputDir);
+
+  if (String(process.env.NODE_ENV || '').trim() === 'production') {
+    return '/tmp/a11-images';
+  }
+
+  return defaultPath.join(resolvePublicWorkspaceRoot(), 'runtime', 'files', 'generated', 'images');
 }
 
 function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
@@ -288,6 +308,7 @@ function createSdToolsRouter(overrides = {}) {
 
   async function generateSdInternal({ req, prompt, body = null }) {
     const requestBody = body || req?.body || {};
+    const imageDimensionConfig = resolveImageDimensionConfig(process.env);
     const rawPrompt = String(prompt || requestBody?.prompt || '').trim();
     if (!rawPrompt) {
       const error = new Error('missing_prompt');
@@ -304,8 +325,8 @@ function createSdToolsRouter(overrides = {}) {
         const maskResolution = await buildCanonicalImageMaskFromText(rawPrompt, {
           allowCompatFallback: true,
           maskOptions: {
-            width: Number(requestBody?.width || 768),
-            height: Number(requestBody?.height || 768),
+            width: Number(requestBody?.width || imageDimensionConfig.defaultWidth),
+            height: Number(requestBody?.height || imageDimensionConfig.defaultHeight),
             steps: Number(requestBody?.num_inference_steps || requestBody?.steps || 35),
             guidance_scale: Number(requestBody?.guidance_scale || 8.0),
             ...(requestBody?.seed !== undefined ? { seed: Number(requestBody.seed) } : {}),
@@ -339,8 +360,49 @@ function createSdToolsRouter(overrides = {}) {
 
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
-    const width = Number(requestBody?.width || 768);
-    const height = Number(requestBody?.height || 768);
+    const IMAGE_MIN_SIZE = 64;
+    const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || 2048);
+    function clampDimension(val, fallback) {
+      let n = Number(val);
+      if (!Number.isFinite(n)) n = fallback;
+      n = Math.round(n);
+      if (n > 1 && n % 2 !== 0) n = n - 1;
+      return Math.max(IMAGE_MIN_SIZE, Math.min(IMAGE_MAX_SIZE, n));
+    }
+    const directCanvasPlan = resolveImageCanvasPlan({
+      prompt: rawPrompt,
+      width: requestBody?.width,
+      height: requestBody?.height,
+      env: process.env,
+    });
+    const requestedWidth = Number(
+      requestBody?.requested_width !== undefined ? requestBody.requested_width : directCanvasPlan.requestedWidth
+    );
+    const requestedHeight = Number(
+      requestBody?.requested_height !== undefined ? requestBody.requested_height : directCanvasPlan.requestedHeight
+    );
+    const width = clampDimension(
+      Number(requestBody?.width !== undefined ? requestBody.width : directCanvasPlan.width),
+      IMAGE_MAX_SIZE
+    );
+    const height = clampDimension(
+      Number(requestBody?.height !== undefined ? requestBody.height : directCanvasPlan.height),
+      IMAGE_MAX_SIZE
+    );
+    const sizeSource = String(requestBody?.size_source || directCanvasPlan.source || 'request').trim() || 'request';
+    const sizeReason = String(requestBody?.size_reason || directCanvasPlan.reason || 'n/a').trim() || 'n/a';
+    if (requestedWidth !== undefined && width !== requestedWidth) {
+      console.warn(`[A11][sd-tools] width requested=${requestedWidth} effective=${width} (clamp)`);
+    }
+    if (requestedHeight !== undefined && height !== requestedHeight) {
+      console.warn(`[A11][sd-tools] height requested=${requestedHeight} effective=${height} (clamp)`);
+    }
+    console.log(
+      `[A11][sd-tools] final request size source=${sizeSource}`
+      + ` reason=${sizeReason}`
+      + ` requested=${Number.isFinite(requestedWidth) ? requestedWidth : 'auto'}x${Number.isFinite(requestedHeight) ? requestedHeight : 'auto'}`
+      + ` effective=${width}x${height}`
+    );
     const seed = requestBody?.seed !== undefined ? String(requestBody.seed) : undefined;
     const initImage = String(
       requestBody?.init_image
@@ -383,6 +445,10 @@ function createSdToolsRouter(overrides = {}) {
             guidance_scale,
             width,
             height,
+            size_source: sizeSource,
+            size_reason: sizeReason,
+            requested_width: Number.isFinite(requestedWidth) ? requestedWidth : null,
+            requested_height: Number.isFinite(requestedHeight) ? requestedHeight : null,
             ...(initImage ? { init_image_url: initImage } : {}),
             ...(Number.isFinite(strength) ? { strength } : {}),
             ...(seed !== undefined ? { seed } : {}),
@@ -453,7 +519,7 @@ function createSdToolsRouter(overrides = {}) {
         throw error;
       }
 
-      const tempDir = String(process.env.SD_OUTPUT_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/a11-images' : path.join(process.cwd(), 'tmp', 'generated')));
+      const tempDir = resolveGeneratedImageWorkRoot();
       fs.mkdirSync(tempDir, { recursive: true });
       const outputName = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
       const outputPath = path.join(tempDir, outputName);
@@ -492,7 +558,7 @@ function createSdToolsRouter(overrides = {}) {
       throw error;
     }
 
-    const tempDir = String(process.env.SD_OUTPUT_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/a11-images' : path.join(process.cwd(), 'tmp', 'generated')));
+    const tempDir = resolveGeneratedImageWorkRoot();
     fs.mkdirSync(tempDir, { recursive: true });
     const outputName = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
     const outputPath = path.join(tempDir, outputName);
@@ -504,6 +570,10 @@ function createSdToolsRouter(overrides = {}) {
       guidance_scale,
       width,
       height,
+      size_source: sizeSource,
+      size_reason: sizeReason,
+      requested_width: Number.isFinite(requestedWidth) ? requestedWidth : null,
+      requested_height: Number.isFinite(requestedHeight) ? requestedHeight : null,
       ...(initImage ? { init_image_url: initImage } : {}),
       ...(Number.isFinite(strength) ? { strength } : {}),
       ...(seed !== undefined ? { seed } : {}),
@@ -649,6 +719,7 @@ function createSdToolsRouter(overrides = {}) {
 
   async function generateImageInternal({ req, prompt, body = null }) {
     const requestBody = body || req?.body || {};
+    const imageDimensionConfig = resolveImageDimensionConfig(process.env);
     const rawPrompt = String(prompt || requestBody?.prompt || '').trim();
     if (!rawPrompt) {
       const error = new Error('missing_prompt');
@@ -656,14 +727,14 @@ function createSdToolsRouter(overrides = {}) {
       throw error;
     }
 
-    const width = Number(requestBody?.width || 768);
-    const height = Number(requestBody?.height || 768);
+    const width = Number(requestBody?.width || imageDimensionConfig.defaultWidth);
+    const height = Number(requestBody?.height || imageDimensionConfig.defaultHeight);
     const openAiFirst = resolveOpenAiPreferredForImage(requestBody);
     const openAiConfig = resolveOpenAiImageConfig();
 
     if (openAiFirst && openAiConfig.enabled && openAiConfig.apiKey) {
       try {
-        const tempDir = String(process.env.SD_OUTPUT_DIR || (process.env.NODE_ENV === 'production' ? '/tmp/a11-images' : path.join(process.cwd(), 'tmp', 'generated')));
+        const tempDir = resolveGeneratedImageWorkRoot();
         fs.mkdirSync(tempDir, { recursive: true });
         const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
         const outputPath = path.join(tempDir, outputName);

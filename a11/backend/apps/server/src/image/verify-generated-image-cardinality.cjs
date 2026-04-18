@@ -1,6 +1,7 @@
 const {
   compileCharacterCountConstraints,
   compileSingleSubjectConstraints,
+  isMultiSubjectSceneRequest,
 } = require('../mask/build-sd-prompt-bundle.cjs');
 
 let sharpLib;
@@ -638,6 +639,7 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const subjectLabel = String(expected.subject_label || expected.subject_type || 'subject').trim() || 'subject';
   const expectedSubjectCount = Number(expected?.subject_count || 0);
   const useFrenchPrompt = String(sdBody?.prompt_language || '').trim().toLowerCase() === 'fr';
+  const requestedMultiSubjectScene = isMultiSubjectSceneRequest(String(sdBody?.prompt || '').trim());
   const fusionDetected = verification?.observed?.fusion_detected === true;
   const duplicateSubjects = verification?.observed?.duplicate_subjects === true
     || Number(verification?.observed?.subject_count || 0) > Number(expected?.subject_count || 0);
@@ -676,7 +678,38 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
               'clean shapes for each character',
             ] : []),
           ]
-    ) : (
+    ) : requestedMultiSubjectScene
+      ? (
+        useFrenchPrompt
+          ? [
+              `montrer clairement ${subjectLabel}`,
+              'garder la scène de groupe demandée lisible',
+              'personnages distincts et bien séparés',
+              'composition de groupe cohérente',
+              ...(duplicateSubjects ? [
+                'supprimer les copies parasites',
+                'éviter les personnages répétés en trop',
+              ] : []),
+              ...(fusionDetected ? [
+                'séparer clairement les silhouettes',
+                'formes nettes pour chaque personnage',
+              ] : []),
+            ]
+          : [
+              `show clearly ${subjectLabel}`,
+              'keep the requested group scene readable',
+              'distinct well separated characters',
+              'coherent group composition',
+              ...(duplicateSubjects ? [
+                'remove stray duplicate copies',
+                'avoid extra repeated characters',
+              ] : []),
+              ...(fusionDetected ? [
+                'separate silhouettes clearly',
+                'clean shapes for each character',
+              ] : []),
+            ]
+      ) : (
       useFrenchPrompt
         ? [
             `montrer un seul ${subjectLabel}`,
@@ -743,8 +776,9 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
           'lineup',
           'versions multiples du même personnage',
         ] : []),
+        ...(requestedMultiSubjectScene && duplicateSubjects ? ['personnages dupliqués', 'copies parasites'] : []),
         ...(duplicateSubjects ? ['plusieurs sujets', 'doublon du sujet', 'foule', 'jumeau du sujet', 'seconde version du personnage'] : []),
-        ...(fusionDetected ? ['anatomie fusionnée', 'membres fusionnés'] : []),
+        ...(fusionDetected ? ['anatomie fusionnée', 'membres fusionnés', 'silhouettes fusionnées'] : []),
       ]
     : [
         ...(expectedSubjectCount === 2 ? [
@@ -758,8 +792,9 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
           'multiple versions of the same character',
           'character sheet',
         ] : []),
+        ...(requestedMultiSubjectScene && duplicateSubjects ? ['duplicated characters', 'stray duplicate copies'] : []),
         ...(duplicateSubjects ? ['multiple subjects', 'duplicate subject', 'crowd', 'subject twin', 'second version of the character'] : []),
-        ...(fusionDetected ? ['fused anatomy', 'merged limbs'] : []),
+        ...(fusionDetected ? ['fused anatomy', 'merged limbs', 'merged silhouettes'] : []),
       ];
   const baseNegativeHints = String(sdBody.negative_prompt || '')
     .split(',')

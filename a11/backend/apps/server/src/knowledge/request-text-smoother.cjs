@@ -113,7 +113,14 @@ function extractWordTokens(text = '') {
   return String(text || '').match(/[A-Za-zÀ-ÿ0-9]+(?:['’-][A-Za-zÀ-ÿ0-9]+)?/g) || [];
 }
 
-function addToLexiconIndex(index, byInitial, value = '', priority = 50) {
+function mergeLexiconCategories(existing = [], next = []) {
+  return [...new Set([
+    ...(Array.isArray(existing) ? existing : []),
+    ...(Array.isArray(next) ? next : []),
+  ].filter(Boolean))];
+}
+
+function addToLexiconIndex(index, byInitial, value = '', priority = 50, category = 'generic') {
   for (const token of extractWordTokens(value)) {
     const normalized = normalizeSemanticText(token);
     if (!normalized || normalized.length < 3) continue;
@@ -125,7 +132,10 @@ function addToLexiconIndex(index, byInitial, value = '', priority = 50) {
         normalized,
         exemplar,
         priority,
+        categories: mergeLexiconCategories(current?.categories, [category]),
       });
+    } else if (current) {
+      current.categories = mergeLexiconCategories(current.categories, [category]);
     }
 
     const initial = normalized[0];
@@ -142,52 +152,52 @@ function buildRequestLexicon() {
   const byInitial = new Map();
 
   for (const term of BASE_REQUEST_TERMS) {
-    addToLexiconIndex(index, byInitial, term, 10);
+    addToLexiconIndex(index, byInitial, term, 10, 'base_term');
   }
 
   for (const word of ACTION_VERBS) {
-    addToLexiconIndex(index, byInitial, word, 12);
+    addToLexiconIndex(index, byInitial, word, 12, 'action_verb');
   }
   for (const word of QUESTION_WORDS) {
-    addToLexiconIndex(index, byInitial, word, 20);
+    addToLexiconIndex(index, byInitial, word, 20, 'question_word');
   }
   for (const word of STOPWORDS) {
-    addToLexiconIndex(index, byInitial, word, 40);
+    addToLexiconIndex(index, byInitial, word, 40, 'stopword');
   }
 
   for (const definition of Object.values(INTENT_DEFINITIONS)) {
-    for (const word of definition.verbs || []) addToLexiconIndex(index, byInitial, word, 12);
-    for (const word of definition.keywords || []) addToLexiconIndex(index, byInitial, word, 14);
+    for (const word of definition.verbs || []) addToLexiconIndex(index, byInitial, word, 12, 'intent_verb');
+    for (const word of definition.keywords || []) addToLexiconIndex(index, byInitial, word, 14, 'intent_keyword');
   }
 
   for (const entry of COLOR_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.label, 12);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 12);
+    addToLexiconIndex(index, byInitial, entry.label, 12, 'color');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 12, 'color');
   }
   for (const entry of STYLE_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.label, 14);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 14);
+    addToLexiconIndex(index, byInitial, entry.label, 14, 'style');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 14, 'style');
   }
   for (const entry of SCENE_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.label, 15);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 15);
+    addToLexiconIndex(index, byInitial, entry.label, 15, 'scene');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 15, 'scene');
   }
   for (const entry of ELEMENT_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.label, 14);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 14);
+    addToLexiconIndex(index, byInitial, entry.label, 14, 'element');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 14, 'element');
   }
   for (const entry of METIER_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.label, 13);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 13);
+    addToLexiconIndex(index, byInitial, entry.label, 13, 'metier');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 13, 'metier');
   }
   for (const entry of ACCESSORY_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.label, 13);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 13);
+    addToLexiconIndex(index, byInitial, entry.label, 13, 'accessory');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 13, 'accessory');
   }
   for (const entry of SUBJECT_PROFILE_LIBRARY) {
-    addToLexiconIndex(index, byInitial, entry.canonicalSubject || '', 11);
-    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 11);
-    for (const keyword of entry.definitionKeywords || []) addToLexiconIndex(index, byInitial, keyword, 16);
+    addToLexiconIndex(index, byInitial, entry.canonicalSubject || '', 11, 'subject_canonical');
+    for (const alias of entry.aliases || []) addToLexiconIndex(index, byInitial, alias, 11, 'subject_alias');
+    for (const keyword of entry.definitionKeywords || []) addToLexiconIndex(index, byInitial, keyword, 16, 'subject_keyword');
   }
 
   return {
@@ -269,6 +279,44 @@ function isWordToken(token = '') {
   return /^[A-Za-zÀ-ÿ0-9]+(?:['’-][A-Za-zÀ-ÿ0-9]+)?$/.test(String(token || ''));
 }
 
+function isCapitalizedToken(token = '') {
+  const raw = String(token || '').trim();
+  return !!raw && raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase();
+}
+
+function hasRiskyLexiconCategory(candidate = null, categories = []) {
+  const candidateCategories = Array.isArray(categories) && categories.length
+    ? categories
+    : (Array.isArray(candidate?.categories) ? candidate.categories : []);
+  return candidateCategories.some((entry) => [
+    'question_word',
+    'stopword',
+    'subject_alias',
+    'subject_canonical',
+    'subject_keyword',
+  ].includes(String(entry || '').trim()));
+}
+
+function isSafeLocalCorrectionCandidate(sourceToken = '', candidate = null, distance = Infinity, prefix = 0) {
+  if (!candidate?.normalized) return false;
+  const categories = Array.isArray(candidate.categories) ? candidate.categories : [];
+  if (categories.includes('stopword') || categories.includes('question_word')) {
+    return false;
+  }
+
+  if (hasRiskyLexiconCategory(candidate, categories)) {
+    if (distance > 1 || prefix < 4) {
+      return false;
+    }
+  }
+
+  if (isCapitalizedToken(sourceToken) && !isCapitalizedToken(candidate.exemplar) && distance > 1) {
+    return false;
+  }
+
+  return true;
+}
+
 function getSuspiciousTokens(text = '') {
   const suspicious = [];
   for (const token of extractWordTokens(text)) {
@@ -318,6 +366,10 @@ function findBestLocalCorrection(token = '') {
   const winner = ranked[0];
   const second = ranked[1] || null;
   if (second && Math.abs(second.score - winner.score) < 0.14 && second.distance === winner.distance) {
+    return null;
+  }
+
+  if (!isSafeLocalCorrectionCandidate(token, winner.candidate, winner.distance, winner.prefix)) {
     return null;
   }
 

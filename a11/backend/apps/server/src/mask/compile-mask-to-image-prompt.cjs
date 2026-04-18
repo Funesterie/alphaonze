@@ -1,6 +1,7 @@
 const {
   compileCharacterCountConstraints,
   compileSingleSubjectConstraints,
+  isMultiSubjectSceneRequest,
   normalizeImagePromptLiteral,
 } = require('./build-sd-prompt-bundle.cjs');
 const { resolveSubjectProfile } = require('./semantic/subject-profile-library.cjs');
@@ -90,6 +91,32 @@ function filterConflictingCompositionHints(values = [], options = {}) {
   return entries.filter((entry) => !/\b(unique|un seul|sujet unique|personnage unique)\b/i.test(entry));
 }
 
+function isSoloCompositionHint(value = '') {
+  const entry = normalizeText(value).toLowerCase();
+  if (!entry) return false;
+  return [
+    /sujet unique bien cadr[eé]/i,
+    /silhouette lisible/i,
+    /forme compl[eè]te visible/i,
+    /un seul sujet principal/i,
+    /personnage complet et reconnaissable/i,
+    /corps entier dans le cadre/i,
+    /un seul personnage complet/i,
+    /une seule personne compl[eè]te/i,
+    /visage unique bien lisible/i,
+    /corps complet bien visible/i,
+    /cr[eé]ature unique compl[eè]te/i,
+    /cr[eé]ature compl[eè]te et lisible/i,
+  ].some((pattern) => pattern.test(entry));
+}
+
+function filterSceneCompositionHints(values = [], options = {}) {
+  const { pair = null, multiSubjectScene = false } = options;
+  const entries = filterConflictingCompositionHints(values, { pair });
+  if (!multiSubjectScene) return entries;
+  return entries.filter((entry) => !isSoloCompositionHint(entry));
+}
+
 function joinPromptFragments(values = [], maxChars = 420) {
   const fragments = normalizeList(values);
   if (!fragments.length) return '';
@@ -122,6 +149,7 @@ function buildCompactDirectives(mask = {}, options = {}) {
     pair = null,
     single = null,
     subjectProfileType = '',
+    multiSubjectScene = false,
   } = options;
   const directives = [];
 
@@ -134,12 +162,13 @@ function buildCompactDirectives(mask = {}, options = {}) {
     ) {
       directives.push('deux personnages complets et reconnaissables');
     }
-  } else if (single?.count === 1) {
+  } else if (single?.count === 1 && !multiSubjectScene) {
     directives.push('un seul sujet principal');
   }
 
   if (
-    !pair?.count
+    !multiSubjectScene
+    && !pair?.count
     && (
     subjectProfileType === 'reference_character'
     || subjectProfileType === 'pokemon_creature'
@@ -156,9 +185,13 @@ function buildCompactDirectives(mask = {}, options = {}) {
   }
 
   if (
-    subjectProfileType === 'single_animal'
-    || subjectProfileType === 'mythic_creature'
-    || subjectProfileType === 'phoenix_creature'
+    !multiSubjectScene
+    && !pair?.count
+    && (
+      subjectProfileType === 'single_animal'
+      || subjectProfileType === 'mythic_creature'
+      || subjectProfileType === 'phoenix_creature'
+    )
   ) {
     directives.push('créature complète et lisible');
   }
@@ -187,6 +220,7 @@ function buildNegativePrompt(mask = {}) {
   const rawPrompt = normalizeText(mask?.raw || '');
   const pair = rawPrompt ? compileCharacterCountConstraints(rawPrompt) : null;
   const single = pair ? null : (rawPrompt ? compileSingleSubjectConstraints(rawPrompt) : null);
+  const multiSubjectScene = Boolean(pair?.count >= 2) || isMultiSubjectSceneRequest(rawPrompt);
   const hints = [];
 
   if (mask?.constraints?.no_text === true) {
@@ -198,14 +232,17 @@ function buildNegativePrompt(mask = {}) {
     if (Array.isArray(pair?.negativeHints)) {
       hints.push(...pair.negativeHints);
     }
-  } else if (single?.count === 1 || subject.length <= 1) {
+  } else if (!multiSubjectScene && (single?.count === 1 || subject.length <= 1)) {
     hints.push('plusieurs sujets', 'doublon du sujet', 'foule');
   }
 
   if (
+    !multiSubjectScene
+    && (
     subjectProfileType === 'reference_character'
     || subjectProfileType === 'pokemon_creature'
     || subjectProfileType === 'single_human_figure'
+    )
   ) {
     hints.push('visages dupliqués', 'personnage coupé');
     if (
@@ -217,9 +254,12 @@ function buildNegativePrompt(mask = {}) {
   }
 
   if (
-    subjectProfileType === 'single_animal'
-    || subjectProfileType === 'mythic_creature'
-    || subjectProfileType === 'phoenix_creature'
+    !multiSubjectScene
+    && (
+      subjectProfileType === 'single_animal'
+      || subjectProfileType === 'mythic_creature'
+      || subjectProfileType === 'phoenix_creature'
+    )
   ) {
     hints.push('créatures multiples', 'anatomie fusionnée');
   }
@@ -240,7 +280,10 @@ function buildNegativePrompt(mask = {}) {
   if (/(fond neutre simple|fond simple|décor simple|objet centré|sujet centré)/i.test(mergedSceneHints)) {
     hints.push('arrière-plan chargé', 'décor encombré');
   }
-  if (/(forme complète visible|corps complet|sujet unique bien cadré|silhouette lisible|sujet centré|objet centré)/i.test(mergedSceneHints)) {
+  if (
+    !multiSubjectScene
+    && /(forme complète visible|corps complet|sujet unique bien cadré|silhouette lisible|sujet centré|objet centré)/i.test(mergedSceneHints)
+  ) {
     hints.push('sujet coupé', 'hors cadre');
   }
 
@@ -265,11 +308,12 @@ function compileMaskToImagePrompt(mask = {}) {
   const pair = rawPrompt ? compileCharacterCountConstraints(rawPrompt) : null;
   const single = pair ? null : (rawPrompt ? compileSingleSubjectConstraints(rawPrompt) : null);
   const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '');
+  const multiSubjectScene = Boolean(pair?.count >= 2) || isMultiSubjectSceneRequest(rawPrompt);
 
   const promptLead = buildPromptLead(rawPrompt, subject);
   const styleHints = takeCompactHints(style, { maxItems: 2, maxWords: 6 });
   const environmentHints = takeCompactHints(environment, { maxItems: 1, maxWords: 8 });
-  const compositionHints = takeCompactHints(filterConflictingCompositionHints(composition, { pair }), {
+  const compositionHints = takeCompactHints(filterSceneCompositionHints(composition, { pair, multiSubjectScene }), {
     maxItems: 3,
     maxWords: 6,
   });
@@ -279,6 +323,7 @@ function compileMaskToImagePrompt(mask = {}) {
     pair,
     single,
     subjectProfileType,
+    multiSubjectScene,
   });
 
   const prompt = joinPromptFragments([

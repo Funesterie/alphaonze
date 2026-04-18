@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $targets = @(
   @{
     Name = "Launcher logs"
-    Path = "D:\funesterie\a11\launchers\runtime\logs"
+    Path = "D:\funesterie\a11\runtime\launcher\logs"
   },
   @{
     Name = "Qflush logs"

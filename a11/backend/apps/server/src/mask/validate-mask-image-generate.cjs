@@ -10,9 +10,14 @@ function isStringArray(arr) {
 }
 
 
+
 const ALLOWED_TARGETS = ['image-prompt-fr','sd-payload','python','comfy'];
 const ALLOWED_VERSION = '1.0';
-const MIN_WIDTH = 64, MAX_WIDTH = 1024, MIN_HEIGHT = 64, MAX_HEIGHT = 1024, MIN_STEPS = 1, MAX_STEPS = 100, MIN_GUIDANCE = 1, MAX_GUIDANCE = 30;
+const IMAGE_MIN_SIZE = 64;
+const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || 2048);
+const MIN_WIDTH = IMAGE_MIN_SIZE, MAX_WIDTH = IMAGE_MAX_SIZE;
+const MIN_HEIGHT = IMAGE_MIN_SIZE, MAX_HEIGHT = IMAGE_MAX_SIZE;
+const MIN_STEPS = 1, MAX_STEPS = 100, MIN_GUIDANCE = 1, MAX_GUIDANCE = 30;
 
 
 function checkCompiler(compiler, errors) {
@@ -33,7 +38,7 @@ function checkInputs(inputs, errors) {
     errors.push({ path: 'inputs', message: 'inputs required' });
     return;
   }
-  if (!isStringArray(inputs?.subject) || inputs.subject.length === 0 || inputs.subject.every(value => !String(value || '').trim())) {
+  if (!isStringArray(inputs?.subject) || inputs.subject.length === 0) {
     errors.push({ path: 'inputs.subject', message: 'must be non-empty array<string>' });
   }
   const fields = ['environment','style','composition','lighting','palette'];
