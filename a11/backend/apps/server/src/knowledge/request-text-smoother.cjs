@@ -83,6 +83,9 @@ const BASE_REQUEST_TERMS = [
   'dérapage',
   'action',
   'dynamique',
+  'plan',
+  'americain',
+  'américain',
   'scene',
   'scène',
   'heroique',
@@ -221,9 +224,14 @@ function applyFrenchContractions(text = '') {
     .replace(/\bqu\s+elle\b/gi, "qu'elle");
 }
 
+function normalizeFramingTypos(text = '') {
+  return String(text || '')
+    .replace(/\bplant\s+am[eé]ricain\b/gi, 'plan americain');
+}
+
 function normalizeSurfaceSpacing(text = '') {
   return applyFrenchContractions(
-    String(text || '')
+    normalizeFramingTypos(String(text || ''))
       .replace(/[’]/g, '\'')
       .replace(/\s+([,.;!?])/g, '$1')
       .replace(/([(\[{])\s+/g, '$1')

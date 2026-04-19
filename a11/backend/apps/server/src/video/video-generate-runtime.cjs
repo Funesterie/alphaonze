@@ -17,6 +17,28 @@ const {
   resolveJanusVisionConfig,
 } = require('../../lib/janus-vision-runtime.cjs');
 const {
+  lookupImageHintWebContext: defaultLookupImageHintWebContext,
+  resolveImageWebDraft: defaultResolveImageWebDraft,
+} = require('../knowledge/image-hint-web-context.cjs');
+const {
+  resolveImageReferencePack: defaultResolveImageReferencePack,
+} = require('../knowledge/image-reference-pack.cjs');
+const {
+  buildImageReferenceComposite: defaultBuildImageReferenceComposite,
+} = require('../knowledge/image-reference-composite.cjs');
+const {
+  resolveImageEntityContext: defaultResolveImageEntityContext,
+} = require('../knowledge/image-entity-resolver.cjs');
+const {
+  directImageRequest: defaultDirectImageRequest,
+} = require('../knowledge/image-request-director.cjs');
+const {
+  lookupDefinitionContext: defaultLookupDefinitionContext,
+} = require('../knowledge/definition-context.cjs');
+const {
+  duckduckgoImageSearch: defaultDuckduckgoImageSearch,
+} = require('../../lib/image-search.cjs');
+const {
   normalizeVideoFormat,
   parseVideoGenerateRequest,
 } = require('./video-request.cjs');
@@ -298,6 +320,36 @@ function resolveFrameReferenceCandidate({
     return normalizedUrl || normalizedPath;
   }
   return normalizedPath || normalizedUrl;
+}
+
+function resolveReferencePackInitImage(compiledState = {}) {
+  const references = Array.isArray(compiledState?.mask?.meta?.webReferencePack?.references)
+    ? compiledState.mask.meta.webReferencePack.references
+    : [];
+  const subjectReference = references.find((entry) => String(entry?.role || '').trim() === 'subject') || null;
+  const imageUrl = String(subjectReference?.imageUrl || '').trim();
+  if (!imageUrl) return null;
+  return {
+    initImageUrl: imageUrl,
+    initImagePath: '',
+    sourceMode: 'web_reference_subject',
+  };
+}
+
+function hasExplicitVideoVisualSource(request = {}) {
+  return Boolean(
+    String(request?.sourceImageUrl || '').trim()
+    || String(request?.sourceImagePath || '').trim()
+    || String(request?.sourceVideoUrl || '').trim()
+    || String(request?.sourceVideoPath || '').trim()
+    || (
+      String(request?.sourceType || '').trim()
+      && (
+        String(request?.sourceUrl || '').trim()
+        || String(request?.sourcePath || '').trim()
+      )
+    )
+  );
 }
 
 function buildFramePrompt(basePrompt = '', { frameIndex = 0, frameCount = 1 } = {}) {
@@ -719,6 +771,14 @@ function createGenerateVideoHandler(overrides = {}) {
   const uploadBufferToR2 = overrides.uploadBufferToR2 || defaultUploadBufferToR2;
   const buildMask = overrides.buildCanonicalImageMaskFromText || buildCanonicalImageMaskFromText;
   const compileRuntime = overrides.compileMaskImageGenerateRuntime || compileMaskImageGenerateRuntime;
+  const lookupImageHintWebContext = overrides.lookupImageHintWebContext || defaultLookupImageHintWebContext;
+  const resolveImageWebDraft = overrides.resolveImageWebDraft || defaultResolveImageWebDraft;
+  const resolveImageReferencePack = overrides.resolveImageReferencePack || defaultResolveImageReferencePack;
+  const buildImageReferenceComposite = overrides.buildImageReferenceComposite || defaultBuildImageReferenceComposite;
+  const resolveImageEntityContext = overrides.resolveImageEntityContext || defaultResolveImageEntityContext;
+  const directImageRequest = overrides.directImageRequest || defaultDirectImageRequest;
+  const lookupDefinitionContext = overrides.lookupDefinitionContext || defaultLookupDefinitionContext;
+  const duckduckgoImageSearch = overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch;
   const runFfmpeg = overrides.runFfmpeg || runFfmpegAssembly;
   const ensureFfmpeg = overrides.ensureFfmpegAvailable || ensureFfmpegAvailable;
 
@@ -792,9 +852,18 @@ function createGenerateVideoHandler(overrides = {}) {
         height: request.height,
       },
     });
+    const hasExplicitSource = hasExplicitVideoVisualSource(request);
     const compiledState = await compileRuntime(maskResolution.rawMask, {
       req,
-      imageRequestMode: 'raw',
+      ...(hasExplicitSource ? { imageRequestMode: 'raw' } : {}),
+      lookupImageHintWebContext,
+      resolveImageWebDraft,
+      resolveImageReferencePack,
+      buildImageReferenceComposite,
+      resolveImageEntityContext,
+      directImageRequest,
+      lookupDefinitionContext,
+      duckduckgoImageSearch,
     });
     const baseSdBody = {
       ...(compiledState?.sdBody && typeof compiledState.sdBody === 'object' ? compiledState.sdBody : {}),
@@ -814,6 +883,11 @@ function createGenerateVideoHandler(overrides = {}) {
       fetchImpl,
       uploadBufferToR2,
     });
+    const effectiveInitialReference = (
+      initialReference.initImageUrl || initialReference.initImagePath
+        ? initialReference
+        : (resolveReferencePackInitImage(compiledState) || initialReference)
+    );
 
     for (let frameIndex = 0; frameIndex < request.frameCount; frameIndex += 1) {
       const framePrompt = buildFramePrompt(baseSdBody.prompt || request.prompt, {
@@ -830,7 +904,7 @@ function createGenerateVideoHandler(overrides = {}) {
         width: request.width,
         height: request.height,
         seed: Number(baseSdBody.seed || 0) ? Number(baseSdBody.seed) + frameIndex : undefined,
-        ...(((frameIndex > 0 && (previousFramePath || previousFrameUrl)) || (frameIndex === 0 && (initialReference.initImagePath || initialReference.initImageUrl)))
+        ...(((frameIndex > 0 && (previousFramePath || previousFrameUrl)) || (frameIndex === 0 && (effectiveInitialReference.initImagePath || effectiveInitialReference.initImageUrl)))
           ? {
               init_image_url: frameIndex > 0
                 ? resolveFrameReferenceCandidate({
@@ -840,8 +914,8 @@ function createGenerateVideoHandler(overrides = {}) {
                   })
                 : resolveFrameReferenceCandidate({
                     preferRemoteReference: preferRemoteFrameReferences,
-                    localPath: initialReference.initImagePath,
-                    remoteUrl: initialReference.initImageUrl,
+                    localPath: effectiveInitialReference.initImagePath,
+                    remoteUrl: effectiveInitialReference.initImageUrl,
                   }),
               strength: request.config.frameInitStrength,
             }
@@ -967,7 +1041,7 @@ function createGenerateVideoHandler(overrides = {}) {
       video_url: videoUrl || null,
       outputPath,
       firstFrameAnalysis,
-      sourceMode: initialReference.sourceMode || null,
+      sourceMode: effectiveInitialReference.sourceMode || null,
       frames: frames.map((frame) => ({
         index: frame.index,
         url: frame.url,
