@@ -55,6 +55,13 @@ test('smoothRequestTextSync preserves dotted proper names like Monkey D. Luffy',
   assert.equal(result.changed, false);
 });
 
+test('smoothRequestTextSync fixes framing typos like plant americain without turning them into plants', () => {
+  const result = smoothRequestTextSync('genere une video de Sanji, plant americain, style anime');
+
+  assert.match(result.text, /\bplan americain\b/i);
+  assert.doesNotMatch(result.text, /\bplante?\b/i);
+});
+
 test('smoothRequestText can use an llm fallback when the local pass stays noisy', async () => {
   const result = await smoothRequestText('genere une imag de zelda a la piscine', {
     forceLlm: true,

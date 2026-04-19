@@ -110,6 +110,7 @@ test('normalizeVideoRequest defaults to the maximum render size in local runtime
 test('createGenerateVideoHandler reuses compiled SD prompts and assembles a video artifact', async () => {
   const calls = [];
   let ffmpegInvocation = null;
+  let compileOptions = null;
 
   const generateVideo = createGenerateVideoHandler({
     generateSd: async ({ body }) => {
@@ -138,7 +139,9 @@ test('createGenerateVideoHandler reuses compiled SD prompts and assembles a vide
         raw: 'dragon bleu',
       },
     }),
-    compileMaskImageGenerateRuntime: async () => ({
+    compileMaskImageGenerateRuntime: async (_rawMask, options) => {
+      compileOptions = options;
+      return {
       mask: { intent: 'image.generate' },
       compiled: { target: 'image-prompt-fr' },
       sdBody: {
@@ -146,7 +149,8 @@ test('createGenerateVideoHandler reuses compiled SD prompts and assembles a vide
         negative_prompt: 'blurry, duplicate',
         seed: 11,
       },
-    }),
+      };
+    },
     runFfmpeg: async ({ fps, format, framesDir, outputPath }) => {
       ffmpegInvocation = { fps, format, framesDir, outputPath };
       fs.writeFileSync(outputPath, Buffer.from('fake-video'));
@@ -176,10 +180,80 @@ test('createGenerateVideoHandler reuses compiled SD prompts and assembles a vide
   assert.equal(calls[0].num_inference_steps, 24);
   assert.equal(calls[0].guidance_scale, 6.5);
   assert.equal(typeof ffmpegInvocation?.outputPath, 'string');
+  assert.equal(compileOptions?.imageRequestMode, undefined);
+  assert.equal(typeof compileOptions?.resolveImageWebDraft, 'function');
+  assert.equal(typeof compileOptions?.resolveImageReferencePack, 'function');
+});
+
+test('createGenerateVideoHandler can bootstrap the first frame from a subject web reference pack when no explicit source is provided', async () => {
+  const calls = [];
+
+  const generateVideo = createGenerateVideoHandler({
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: `https://files.example.com/frame-${calls.length}.png`,
+      };
+    },
+    fetch: async () => ({
+      ok: true,
+      async arrayBuffer() {
+        return TINY_PNG;
+      },
+    }),
+    uploadBufferToR2: async ({ filename, buffer }) => ({
+      url: `https://files.example.com/${filename}`,
+      filename,
+      sizeBytes: buffer.length,
+    }),
+    buildCanonicalImageMaskFromText: async () => ({
+      rawMask: {
+        version: 'mask-1',
+        intent: 'image.generate',
+        raw: 'Sanji donnant un coup de pied enflamme',
+      },
+    }),
+    compileMaskImageGenerateRuntime: async () => ({
+      mask: {
+        meta: {
+          webReferencePack: {
+            references: [
+              {
+                role: 'subject',
+                imageUrl: 'https://images.example.com/sanji-ref.png',
+              },
+            ],
+          },
+        },
+      },
+      sdBody: {
+        prompt: 'compiled sanji prompt',
+      },
+    }),
+    runFfmpeg: async ({ outputPath }) => {
+      fs.writeFileSync(outputPath, Buffer.from('fake-video'));
+    },
+  });
+
+  const result = await generateVideo({
+    req: { headers: {}, body: {} },
+    prompt: 'genere une video de sanji',
+    body: {
+      prompt: 'genere une video de sanji',
+      durationSeconds: 1,
+      fps: 2,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceMode, 'web_reference_subject');
+  assert.equal(calls[0].init_image_url, 'https://images.example.com/sanji-ref.png');
 });
 
 test('createGenerateVideoHandler can bootstrap the first frame from an existing image url', async () => {
   const calls = [];
+  let compileOptions = null;
 
   const generateVideo = createGenerateVideoHandler({
     generateSd: async ({ body }) => {
@@ -209,12 +283,15 @@ test('createGenerateVideoHandler can bootstrap the first frame from an existing 
         raw: 'singe qui danse',
       },
     }),
-    compileMaskImageGenerateRuntime: async () => ({
+    compileMaskImageGenerateRuntime: async (_rawMask, options) => {
+      compileOptions = options;
+      return {
       sdBody: {
         prompt: 'compiled monkey prompt',
         negative_prompt: 'blurry',
       },
-    }),
+      };
+    },
     runFfmpeg: async ({ outputPath }) => {
       fs.writeFileSync(outputPath, Buffer.from('fake-video'));
     },
@@ -234,6 +311,7 @@ test('createGenerateVideoHandler can bootstrap the first frame from an existing 
   assert.equal(result.ok, true);
   assert.equal(result.sourceMode, 'image_url');
   assert.equal(calls[0].init_image_url, 'https://files.example.com/source-image.png');
+  assert.equal(compileOptions?.imageRequestMode, 'raw');
 });
 
 test('createGenerateVideoHandler falls back to libx264 when NVENC is unavailable at runtime', async () => {
