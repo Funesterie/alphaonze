@@ -94,11 +94,12 @@ def upload_image(image: Image.Image) -> Optional[str]:
 
 
 def build_user_content(prompt: str, image: Optional[Image.Image], image_url: Optional[str]) -> str:
+    size_hint = " [size:512x512]"
     if image_url:
-        return f"[image:{image_url}] {prompt}"
+        return f"[image:{image_url}] {prompt}{size_hint}"
     if image:
-        return f"[image-data:{image_to_base64(image)}] {prompt}"
-    return prompt
+        return f"[image-data:{image_to_base64(image)}] {prompt}{size_hint}"
+    return prompt + size_hint
 
 
 def resolve_output_image(data: dict) -> Optional[str]:
@@ -139,8 +140,8 @@ def build_preview(
     style_hint = "" if style_preset == "Aucun preset" else f" Style: {style_preset}."
     system_prompt = {
         "chat": "Tu es A-11, assistant concis et direct.",
-        "image": f"Tu es A-11. Genere une image de haute qualite a partir du prompt utilisateur.{style_hint}",
-        "video": f"Tu es A-11. Genere une video a partir du prompt utilisateur.{style_hint}",
+        "image": f"Tu es A-11. Genere une image 512x512 de haute qualite a partir du prompt utilisateur.{style_hint} Utilise une taille de 512x512 pixels.",
+        "video": f"Tu es A-11. Genere une video 512x512 a partir du prompt utilisateur.{style_hint} Utilise une taille de 512x512 pixels.",
     }.get(request_mode, "Tu es A-11, assistant concis et direct.")
 
     messages = [
