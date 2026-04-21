@@ -48,10 +48,12 @@ function buildSearchHeaders(referer = '') {
   };
 }
 
-function toSearchTokens(query = '') {
+function toSearchTokens(query = '', options = {}) {
   const stopwords = new Set([
     'art', 'character', 'anime', 'manga', 'official', 'reference', 'photo',
     'illustration', 'image', 'render', 'fanart', 'clean', 'style',
+    'full', 'body', 'pose', 'solo', 'scene', 'background',
+    ...((Array.isArray(options?.extraStopwords) ? options.extraStopwords : [])),
   ]);
   return [...new Set(
     normalizeLookup(query)
@@ -70,7 +72,19 @@ function mapImageCandidate(result = {}) {
   };
 }
 
-function scoreImageCandidate(candidate = {}, query = '') {
+function queryAllowsCompositeCandidate(query = '') {
+  return /\b(poster|wallpaper|cover|collage|mosaic|sheet|sprite\s*sheet|lineup|line up|group|team|crew|characters|personnages|all characters|panel|page|sticker)\b/.test(String(query || ''));
+}
+
+function queryAllowsLineartCandidate(query = '') {
+  return /\b(coloriage|coloring page|colouring page|line art|lineart|outline|black and white|dessin a colorier|dessin a coloriage)\b/.test(String(query || ''));
+}
+
+function looksLikeCompositeCandidate(text = '') {
+  return /\b(lineup|sheet|sprite|spritesheet|collage|mosaic|poster|wallpaper|crew|group|team|characters|personnages|cover|all characters|panel|page)\b/.test(String(text || ''));
+}
+
+function scoreImageCandidate(candidate = {}, query = '', options = {}) {
   const combined = normalizeLookup([
     candidate.title,
     candidate.source_url,
@@ -79,9 +93,15 @@ function scoreImageCandidate(candidate = {}, query = '') {
   ].filter(Boolean).join(' '));
   const queryLookup = normalizeLookup(query);
   const tokens = toSearchTokens(query);
+  const subjectTokens = toSearchTokens(options?.subject || '');
+  const universeTokens = toSearchTokens(options?.universe || '');
   const longestSide = Math.max(Number(candidate.width || 0), Number(candidate.height || 0), 0);
   const shortestSide = Math.max(1, Math.min(Number(candidate.width || 1), Number(candidate.height || 1)));
   const aspectRatio = longestSide / shortestSide;
+  const compositeCandidate = looksLikeCompositeCandidate(combined);
+  const lineartCandidate = /\b(coloriage|coloring page|colouring page|line art|lineart|outline|black and white|dessin a colorier|dessin a coloriage)\b/.test(combined);
+  const wantsComposite = queryAllowsCompositeCandidate(queryLookup);
+  const wantsLineart = queryAllowsLineartCandidate(queryLookup);
 
   let score = 0;
   const reasons = [];
@@ -90,6 +110,28 @@ function scoreImageCandidate(candidate = {}, query = '') {
     if (combined.includes(token)) {
       score += token.length >= 5 ? 4 : 3;
       reasons.push(`token:${token}`);
+    }
+  }
+
+  if (subjectTokens.length > 0) {
+    const matchedSubjectTokens = subjectTokens.filter((token) => combined.includes(token));
+    if (matchedSubjectTokens.length === subjectTokens.length) {
+      score += 10;
+      reasons.push('full_subject_match');
+    } else if (matchedSubjectTokens.length === 0) {
+      score -= 18;
+      reasons.push('subject_mismatch');
+    } else {
+      score -= 6;
+      reasons.push('partial_subject_match');
+    }
+  }
+
+  if (universeTokens.length > 0) {
+    const matchedUniverseTokens = universeTokens.filter((token) => combined.includes(token));
+    if (matchedUniverseTokens.length > 0) {
+      score += 4;
+      reasons.push('universe_match');
     }
   }
 
@@ -107,6 +149,10 @@ function scoreImageCandidate(candidate = {}, query = '') {
   if (shortestSide >= 384) {
     score += 2;
     reasons.push('min_side_ok');
+  }
+  if (shortestSide > 0 && shortestSide < 320) {
+    score -= 12;
+    reasons.push('small_image_penalty');
   }
   if (longestSide >= 896) {
     score += 2;
@@ -130,9 +176,42 @@ function scoreImageCandidate(candidate = {}, query = '') {
     reasons.push('commerce_penalty');
   }
 
-  if (/\b(lineup|sheet|sprite|spritesheet|collage|mosaic|poster|wallpaper|crew|group|team|characters|personnages|cover)\b/.test(combined)) {
-    score -= 6;
+  if (/\b(stl|3d model|modele 3d|mod[eè]le 3d|figurine|miniature|printable|3d print|impression 3d|cults3d|thingiverse|myminifactory|cgtrader)\b/.test(combined)) {
+    score -= 32;
+    reasons.push('model3d_penalty');
+  }
+
+  if (/\b(anniversaire|birthday|celebrite|celebrity)\b/.test(combined)) {
+    score -= 26;
+    reasons.push('birthday_card_penalty');
+  }
+
+  if (/\b(statue|sculpture|medieval|wax figure|cire|mannequin|effigie|figurine de cire)\b/.test(combined)) {
+    score -= 28;
+    reasons.push('statue_penalty');
+  }
+  if (lineartCandidate && !wantsLineart) {
+    score -= 24;
+    reasons.push('lineart_penalty');
+  }
+
+  if (/\b(coloriage\.info|supercoloring|justcolor|coloringonly|hellokids)\b/.test(combined) && !wantsLineart) {
+    score -= 28;
+    reasons.push('coloring_domain_penalty');
+  }
+
+  if (compositeCandidate && !wantsComposite) {
+    score -= 18;
     reasons.push('composite_penalty');
+  }
+
+  if (
+    /\b(character art|pose reference|animal reference|reference|illustration|render|portrait)\b/.test(queryLookup)
+    && !compositeCandidate
+    && !lineartCandidate
+  ) {
+    score += 4;
+    reasons.push('solo_subject_bias');
   }
 
   if (!candidate.image_url || !candidate.source_url) {
@@ -148,9 +227,9 @@ function scoreImageCandidate(candidate = {}, query = '') {
   };
 }
 
-function selectBestImageCandidate(results = [], query = '') {
+function selectBestImageCandidate(results = [], query = '', options = {}) {
   const ranked = (Array.isArray(results) ? results : [])
-    .map((entry) => scoreImageCandidate(mapImageCandidate(entry), query))
+    .map((entry) => scoreImageCandidate(mapImageCandidate(entry), query, options))
     .filter((entry) => entry.image_url)
     .sort((left, right) => right.selection_score - left.selection_score);
 
@@ -191,11 +270,15 @@ async function duckduckgoImageSearch(query, options = {}) {
   const data = await requestText(apiUrl, buildSearchHeaders(searchUrl));
   const json = JSON.parse(data);
   const results = Array.isArray(json?.results) ? json.results.slice(0, limit) : [];
-  const selected = selectBestImageCandidate(results, normalizedQuery);
+  const selected = selectBestImageCandidate(results, normalizedQuery, options);
   if (!selected) {
     throw new Error('No image found');
   }
   return selected;
 }
 
-module.exports = { duckduckgoImageSearch };
+module.exports = {
+  duckduckgoImageSearch,
+  scoreImageCandidate,
+  selectBestImageCandidate,
+};

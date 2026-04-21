@@ -342,7 +342,7 @@ async function directImageRequest({
       systemPrompt: IMAGE_REQUEST_DIRECTOR_SYSTEM_PROMPT,
       temperature: 0,
       maxTokens: 420,
-      timeoutMs: Number(process.env.A11_IMAGE_REQUEST_DIRECTOR_TIMEOUT_MS || 9000),
+      timeoutMs: Number(process.env.A11_IMAGE_REQUEST_DIRECTOR_TIMEOUT_MS || 90000),
     });
   } catch (error_) {
     return {

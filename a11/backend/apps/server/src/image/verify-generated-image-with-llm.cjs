@@ -19,10 +19,10 @@ const ALLOWED_REASONS = new Set([
   'uncertain',
 ]);
 
-const IMAGE_LLM_JUDGE_SYSTEM_PROMPT = `Tu es un juge vision strict pour A11.
-Tu regardes une image générée et tu vérifies si elle respecte le sujet principal et les hints fournis.
+const IMAGE_LLM_JUDGE_SYSTEM_PROMPT = `You are a strict vision judge for A11.
+You look at a generated image and verify if it matches the main subject and provided hints.
 
-Réponds uniquement en JSON strict :
+Respond only in strict JSON:
 {
   "subject_ok": true,
   "composition_ok": true,
@@ -33,13 +33,12 @@ Réponds uniquement en JSON strict :
   "observation": "..."
 }
 
-Règles strictes :
-- français uniquement
-- "reason" doit être l'une de ces valeurs :
-  ok, duplicate_subject, scene_too_busy, object_not_isolated, character_not_unique, subject_not_fully_visible, profile_not_satisfied, subject_mismatch, uncertain
-- "working_hints" et "failing_hints" doivent réutiliser uniquement des formulations déjà présentes dans les hints candidats
-- maximum 3 entrées par tableau
-- pas d'invention, pas de négation ajoutée, pas de nouveau sujet`;
+Strict rules:
+- English only
+- "reason" must be one of: ok, duplicate_subject, scene_too_busy, object_not_isolated, character_not_unique, subject_not_fully_visible, profile_not_satisfied, subject_mismatch, uncertain
+- "working_hints" and "failing_hints" must reuse only formulations already present in candidate hints
+- maximum 3 entries per array
+- no invention, no added negation, no new subject`;
 
 function normalizeText(value = '') {
   return String(value || '')
@@ -305,6 +304,40 @@ async function callStructuredVisionJudgeJson({
     } catch (error_) {
       if (!config.url) throw error_;
     }
+  }
+
+  // Provider ollama multimodal (gemma4, llava, etc.)
+  if (config.provider === 'ollama' || (!config.provider && !config.url)) {
+    const ollamaBase = String(process.env.OLLAMA_BASE || 'http://127.0.0.1:11434').trim();
+    const ollamaModel = String(process.env.A11_OLLAMA_PRIMARY_MODEL || 'gemma4:e4b').trim();
+    const imageBase64 = loadedImage.buffer.toString('base64');
+    try {
+      const resp = await fetch(`${ollamaBase}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: ollamaModel,
+          stream: false,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: JSON.stringify(payload, null, 2),
+              images: [imageBase64],
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(config.timeoutMs),
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const text = String(data?.message?.content || '').trim();
+      const jsonText = extractJsonString(text);
+      if (jsonText) return JSON.parse(jsonText);
+    } catch {
+      return null;
+    }
+    return null;
   }
 
   if (!config.url || !config.model) return null;

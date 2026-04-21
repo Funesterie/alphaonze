@@ -49,7 +49,7 @@ test('analyzeSemanticIntent auto-selects web image search for confident show-sub
   const result = analyzeSemanticIntent('montre moi goku', {});
 
   assert.equal(result?.decision?.shouldClarify, false);
-  assert.equal(result?.subject, 'goku');
+  assert.match(String(result?.subject || ''), /^goku$/i);
   assert.equal(result?.decision?.selectedIntentType, 'web.image.search');
   assert.equal(result?.topIntents?.[0]?.type, 'web.image.search');
   assert.ok(Number(result?.summary?.confidence || 0) >= 0.6);
@@ -70,6 +70,13 @@ test('analyzeSemanticIntent keeps explicit video prompts on video.generate', () 
   assert.equal(result?.decision?.shouldClarify, false);
   assert.equal(result?.decision?.selectedIntentType, 'video.generate');
   assert.equal(result?.topIntents?.[0]?.type, 'video.generate');
+});
+
+test('analyzeSemanticIntent keeps multi-word named subjects intact for video prompts', () => {
+  const result = analyzeSemanticIntent('genere une video de James Bond marchant', {});
+
+  assert.equal(result?.decision?.selectedIntentType, 'video.generate');
+  assert.equal(result?.subject, 'James Bond');
 });
 
 test('analyzeSemanticIntent keeps colored creation prompts on image.generate instead of code', () => {
@@ -140,7 +147,7 @@ test('textToWazaa and wazaaToMask preserve semantic hierarchy and emit canonical
   assert.equal(imageMask?.raw, 'genere une image de goku dans le ciel');
   assert.equal(imageMask?.meta?.promptCompiler, 'a11-fr-minimal');
   assert.ok(Array.isArray(imageMask?.inputs?.subject));
-  assert.ok(imageMask.inputs.subject.includes('goku'));
+  assert.ok(imageMask.inputs.subject.some((entry) => String(entry || '').toLowerCase() === 'goku'));
 
   const codeWazaa = textToWazaa.sync('ecris un script python pour trier des png', {});
   assert.equal(codeWazaa?.intent?.type, 'code.python.generate');

@@ -609,7 +609,7 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     version: 'mask-1',
     intent: 'image.generate',
     task: { domain: 'image', action: 'generate' },
-    compiler: { target: 'image-prompt-fr', version: '1.0' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
     inputs: {
       subject: finalSubject ? [finalSubject] : [],
       environment,

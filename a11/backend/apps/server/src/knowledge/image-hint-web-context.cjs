@@ -16,6 +16,23 @@ function normalizeLookup(value = '') {
     .toLowerCase();
 }
 
+function resolveMaskTechniqueText(mask = {}) {
+  return normalizeText(
+    mask?.meta?.techniqueAnalysisPrompt
+    || mask?.meta?.promptSeedText
+    || mask?.raw
+    || ''
+  );
+}
+
+function resolveMaskTechniqueLookup(mask = {}) {
+  return normalizeLookup(resolveMaskTechniqueText(mask));
+}
+
+function hasSceneRelationText(value = '') {
+  return /\b(avec|dans|sur|sous|devant|derriere|derrière|tenant|portant|en train de|with|in|on|under|holding|wearing|in front of|while)\b/i.test(String(value || ''));
+}
+
 function toUniqueStrings(values = []) {
   return [...new Set(
     (Array.isArray(values) ? values : [values])
@@ -59,8 +76,23 @@ function normalizeArrayLabels(values = []) {
   );
 }
 
+function hasPinnedChatSourceInitImage(mask = {}) {
+  const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
+    ? mask.meta.webImageDraft
+    : {};
+  if (webImageDraft.fromChatSourceImage !== true) return false;
+
+  return Boolean(normalizeText(
+    webImageDraft.initImageUrl
+    || webImageDraft.initImagePath
+    || mask?.meta?.reference_image_url
+    || mask?.meta?.init_image_url
+    || ''
+  ));
+}
+
 function hasStrongPromptTransform(mask = {}) {
-  const raw = normalizeLookup(mask?.raw || '');
+  const raw = resolveMaskTechniqueLookup(mask);
   const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
     ? mask.meta.semantic
     : {};
@@ -70,13 +102,13 @@ function hasStrongPromptTransform(mask = {}) {
   return (
     accessoryLabels.length > 0
     || elementLabels.length > 0
-    || /\b(fume|fumer|fumant|fumante|portant|tenant)\b/.test(raw)
-    || /\bdans la bouche\b/.test(raw)
+    || /\b(fume|fumer|fumant|fumante|smoking|portant|tenant|wearing|holding)\b/.test(raw)
+    || /\b(dans la bouche|in the mouth)\b/.test(raw)
   );
 }
 
 function hasCompositionalSceneRequest(mask = {}) {
-  const raw = normalizeLookup(mask?.raw || '');
+  const rawText = resolveMaskTechniqueText(mask);
   const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
     ? mask.meta.semantic
     : {};
@@ -85,7 +117,7 @@ function hasCompositionalSceneRequest(mask = {}) {
   const metiers = normalizeArrayLabels(semantic?.metiers || []);
 
   return (
-    /\b(avec|dans|sur|sous|devant|derriere|derrière|tenant|portant|en train de)\b/.test(raw)
+    hasSceneRelationText(rawText)
     || accessories.length > 0
     || scenes.length > 0
     || metiers.length > 0
@@ -117,7 +149,7 @@ function resolveScratchpadEntityType(mask = {}) {
 }
 
 function hasVolatileElementTransform(mask = {}) {
-  const raw = normalizeLookup(mask?.raw || '');
+  const raw = resolveMaskTechniqueLookup(mask);
   const semantic = mask?.meta?.semantic && typeof mask.meta.semantic === 'object'
     ? mask.meta.semantic
     : {};
@@ -134,7 +166,7 @@ function hasVolatileElementTransform(mask = {}) {
 }
 
 function looksLikePhotoRequest(mask = {}) {
-  const raw = normalizeLookup(mask?.raw || '');
+  const raw = resolveMaskTechniqueLookup(mask);
   const styleWords = normalizeArrayLabels(mask?.meta?.semantic?.styles || [])
     .map((entry) => normalizeLookup(entry))
     .filter(Boolean);
@@ -157,6 +189,10 @@ function buildReferenceCharacterQuery(mask = {}, subject = '') {
 
   if (/\bmaster chief\b|\bjohn 117\b|\bspartan 117\b/.test(normalizedSubject)) {
     return `${canonicalSubject} Halo ${artBias}`.trim();
+  }
+
+  if (/\bjames bond\b|\bagent 007\b/.test(normalizedSubject)) {
+    return `${canonicalSubject} James Bond ${artBias}`.trim();
   }
 
   if (/\bmario\b/.test(normalizedSubject)) {
@@ -228,7 +264,8 @@ function shouldLookupImageHintWebContext({ mask = {}, selection = null, enabled 
   const confidence = Number(mask?.meta?.semantic?.confidence || 0);
   const hasDefinition = Boolean(mask?.meta?.definitionLookup && typeof mask.meta.definitionLookup === 'object');
   const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '');
-  const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
+  const hasRelation = hasSceneRelationText(resolveMaskTechniqueText(mask))
+    || /\b(sortant|sortie|sorti|coming out)\b/i.test(resolveMaskTechniqueText(mask));
 
   return (
     selection?.candidate === true
@@ -311,22 +348,26 @@ function normalizeStrength(value, fallback = 0.45) {
 }
 
 function hasExplicitReferenceAnchorRequest(mask = {}) {
-  const raw = normalizeLookup(mask?.raw || '');
+  const raw = resolveMaskTechniqueLookup(mask);
   if (!raw) return false;
   return (
     /\b(reference|reference officielle|reference officiel|ref officielle|official art|art officiel)\b/.test(raw)
     || /\b(a partir de|a partir d une image|a partir d un visuel|depuis une image|depuis l image)\b/.test(raw)
+    || /\b(from|using|based on)\s+(?:this\s+)?(?:reference\s+)?(?:image|photo|portrait)\b/.test(raw)
     || /\b(inspire de|inspire toi de|base toi sur|reprends|retravaille|retouche)\b/.test(raw)
+    || /\b(rework|retouch|revisit)\b/.test(raw)
     || /\b(variation|variante|version alternative|meme pose|meme cadrage|pose similaire|same pose|same framing)\b/.test(raw)
   );
 }
 
 function isSimpleOriginalCharacterRequest(mask = {}) {
-  const raw = normalizeLookup(mask?.raw || '');
+  const rawText = resolveMaskTechniqueText(mask);
+  const raw = normalizeLookup(rawText);
   const tokenCount = raw.split(/\s+/).filter(Boolean).length;
   const subjectProfileType = resolveSubjectProfileType(mask);
-  const hasExplicitPair = Boolean(compileCharacterCountConstraints(String(mask?.raw || '')));
-  const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
+  const hasExplicitPair = Boolean(compileCharacterCountConstraints(rawText));
+  const hasRelation = hasSceneRelationText(rawText)
+    || /\b(sortant|sortie|sorti|coming out)\b/i.test(rawText);
 
   if (![
     'reference_character',
@@ -384,7 +425,7 @@ function shouldRejectCharacterDraftImage(mask = {}, webHintContext = null) {
 
   if (!combinedText) return false;
 
-  return /\b(cosplay|costume|peluche|plush|figurine|toy|doll|poupee|poupee|girl|woman|boy|man|person|people|costumed)\b/.test(combinedText);
+  return /\b(cosplay|costume|peluche|plush|figurine|toy|doll|poupee|girl|woman|boy|man|person|people|costumed|statue|sculpture|medieval|wax|cire|mannequin|effigie)\b/.test(combinedText);
 }
 
 function shouldUseImageWebDraft({
@@ -396,11 +437,14 @@ function shouldUseImageWebDraft({
   if (!isImageWebDraftEnabled(enabled)) return false;
   if (String(mask?.intent || '').trim() !== 'image.generate') return false;
   if (!normalizeText(webHintContext?.imageUrl || '')) return false;
+  if (hasPinnedChatSourceInitImage(mask)) return false;
 
   const subjectProfileType = resolveSubjectProfileType(mask);
   const scratchpadEntityType = resolveScratchpadEntityType(mask);
-  const hasExplicitPair = Boolean(compileCharacterCountConstraints(String(mask?.raw || '')));
-  const hasRelation = /\b(avec|dans|sur|tenant|portant|sortant|sortie|sorti)\b/i.test(String(mask?.raw || ''));
+  const techniqueText = resolveMaskTechniqueText(mask);
+  const hasExplicitPair = Boolean(compileCharacterCountConstraints(techniqueText));
+  const hasRelation = hasSceneRelationText(techniqueText)
+    || /\b(sortant|sortie|sorti|coming out)\b/i.test(techniqueText);
   const hasStrongTransform = hasStrongPromptTransform(mask);
   const hasCompositionalScene = hasCompositionalSceneRequest(mask);
   const hasVolatileTransform = hasVolatileElementTransform(mask);
@@ -501,7 +545,38 @@ function resolveImageWebDraft({
 
   const configuredStrength = strength !== undefined
     ? strength
-    : (mask?.options?.strength ?? process.env.A11_IMAGE_WEB_DRAFT_STRENGTH);
+    : mask?.options?.strength;
+  const configuredStrengthSource = strength !== undefined
+    ? 'call'
+    : (mask?.options?.strength !== undefined ? 'mask' : '');
+  const envStrength = process.env.A11_IMAGE_WEB_DRAFT_STRENGTH;
+  const forceEnvStrength = isTruthy(process.env.A11_IMAGE_WEB_DRAFT_FORCE_STRENGTH);
+  const hasExplicitStrengthOverride = (
+    configuredStrengthSource !== ''
+    && configuredStrength !== undefined
+    && configuredStrength !== null
+    && String(configuredStrength).trim() !== ''
+  );
+  const hasForcedEnvStrength = (
+    !hasExplicitStrengthOverride
+    && forceEnvStrength
+    && envStrength !== undefined
+    && envStrength !== null
+    && String(envStrength).trim() !== ''
+  );
+  const resolvedStrength = (() => {
+    if (hasExplicitStrengthOverride) {
+      return String(configuredStrength || '').trim().toLowerCase() === 'auto'
+        ? 'auto'
+        : normalizeStrength(configuredStrength, 0.45);
+    }
+    if (hasForcedEnvStrength) {
+      return String(envStrength || '').trim().toLowerCase() === 'auto'
+        ? 'auto'
+        : normalizeStrength(envStrength, 0.45);
+    }
+    return 'auto';
+  })();
   const explicitReferenceAnchor = hasExplicitReferenceAnchorRequest(mask);
   const compositeRisk = looksLikeCompositeWebImageContext(webHintContext);
 
@@ -513,7 +588,7 @@ function resolveImageWebDraft({
     initImageUrl,
     sourceUrl: normalizeText(webHintContext?.imageSourceUrl || webHintContext?.sourceUrl || ''),
     sourceDomain: normalizeText(webHintContext?.sourceDomain || ''),
-    strength: normalizeStrength(configuredStrength, 0.45),
+    strength: resolvedStrength,
     width: Number(webHintContext?.imageWidth || 0) || null,
     height: Number(webHintContext?.imageHeight || 0) || null,
     imageSelectionScore: Number(webHintContext?.imageSelectionScore || 0) || 0,

@@ -170,6 +170,70 @@ test('resolveImageEntityContext drops conflicting surname-like descriptions for 
   assert.ok(!context.hintFacts.some((entry) => /nom de famille/i.test(String(entry))));
 });
 
+test('resolveImageEntityContext trims noisy created-by tails from Zelda universe hints', async () => {
+  const context = await resolveImageEntityContext({
+    mask: {
+      intent: 'image.generate',
+      raw: 'genere une image de zelda marchant dans une foret',
+      inputs: {
+        subject: ['Princesse Zelda'],
+      },
+      meta: {
+        subjectProfile: {
+          type: 'reference_character',
+          canonicalSubject: 'Princesse Zelda',
+        },
+        semantic: {
+          confidence: 0.48,
+        },
+      },
+    },
+    fetch: async (url) => {
+      if (String(url).includes('wbsearchentities')) {
+        return jsonResponse({
+          search: [
+            {
+              id: 'Q123',
+              label: 'Princesse Zelda',
+              description: "personnage de fiction de l'univers The Legend of Zelda",
+              aliases: ['Zelda'],
+            },
+          ],
+        });
+      }
+
+      if (String(url).includes('Special:EntityData/Q123.json')) {
+        return jsonResponse({
+          entities: {
+            Q123: {
+              id: 'Q123',
+              labels: {
+                fr: { value: 'Princesse Zelda' },
+              },
+              descriptions: {
+                fr: { value: "personnage de fiction de l'univers The Legend of Zelda" },
+              },
+              aliases: {
+                fr: [{ value: 'Zelda' }],
+              },
+            },
+          },
+        });
+      }
+
+      throw new Error(`unexpected url: ${url}`);
+    },
+    lookupDefinitionContext: async () => ({
+      title: 'Princesse Zelda',
+      summary: "Princesse de la série The Legend of Zelda créée par Shigeru Miyamoto.",
+      url: 'https://example.com/zelda',
+    }),
+  });
+
+  assert.equal(context?.universe, 'The Legend Of Zelda');
+  assert.doesNotMatch(String(context?.universe || ''), /Shigeru|Miyamoto|cree/i);
+});
+
 test('enrichImageMaskWithScratchpad keeps a temporary scratchpad and promotes the canonical entity subject when useful', () => {
   const enriched = enrichImageMaskWithScratchpad({
     version: 'mask-1',
@@ -274,4 +338,53 @@ test('buildImageScratchpad creates a gentle racing embellishment for very basic 
   assert.ok(enriched.inputs.environment.includes('virage de circuit lisible'));
   assert.ok(enriched.inputs.style.includes('énergie arcade nette'));
   assert.ok(enriched.meta.promptInstructions.some((entry) => /pleine course|dérapage visible/i.test(String(entry))));
+});
+
+test('enrichImageMaskWithScratchpad does not turn noisy universe strings into prompt instructions', () => {
+  const enriched = enrichImageMaskWithScratchpad({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    inputs: {
+      subject: ['Zelda'],
+      environment: ['foret'],
+      style: ['illustration fantasy nette'],
+      composition: ['un seul personnage complet'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        canonicalSubject: 'Princesse Zelda',
+      },
+      semantic: {
+        confidence: 0.66,
+        accessories: [],
+        elements: [],
+        metiers: [],
+        scenes: [{ label: 'foret' }],
+      },
+    },
+    raw: 'genere une image de zelda marchant dans une foret',
+  }, {
+    entityContext: {
+      canonicalSubject: 'Princesse Zelda',
+      universe: 'The Legend Of Zelda Creee Par Shigeru Miy',
+      entityType: 'fictional_character',
+    },
+  });
+
+  assert.ok(Array.isArray(enriched.meta.promptInstructions));
+  assert.ok(!enriched.meta.promptInstructions.some((entry) => /Shigeru|Miyamoto|Creee/i.test(String(entry))));
 });

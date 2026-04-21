@@ -26,6 +26,7 @@ const RAW_SCENE_LIBRARY = [
   { label: 'volcan', family: 'natural', aliases: ['volcan', 'volcano'] },
   { label: 'plage', family: 'natural', aliases: ['plage', 'beach'] },
   { label: 'foret', family: 'natural', aliases: ['foret', 'forêt', 'forest'] },
+  { label: 'sentier', family: 'natural', aliases: ['sentier', 'chemin', 'trail', 'path', 'route'] },
   { label: 'montagne', family: 'natural', aliases: ['montagne', 'montagnes', 'mountain', 'mountains'] },
   { label: 'ciel ouvert', family: 'open', aliases: ['ciel', 'sky', 'ciel ouvert'] },
   { label: 'espace', family: 'cosmic', aliases: ['espace', 'space', 'galaxie', 'galaxy'] },

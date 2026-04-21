@@ -213,26 +213,89 @@ function getPreferredWikipediaLink(entity = null) {
   };
 }
 
+function titleCaseWords(value = '') {
+  return normalizeText(value)
+    .split(/\s+/)
+    .map((entry) => entry ? entry[0].toUpperCase() + entry.slice(1) : entry)
+    .join(' ');
+}
+
+function cleanUniverseCandidate(value = '') {
+  const normalized = normalizeLookup(value);
+  if (!normalized) return '';
+
+  let candidate = normalized
+    .replace(/^(?:de|du|des|d|la|le|les|l)\s+/i, '')
+    .replace(/\b(?:cree|creee|created|developpe|developed|edite|edited|publie|published|imagine|invente|concu|compose|introduit|apparu|apparue|sorti|sortie)\b.*$/i, '')
+    .replace(/\b(?:par|by)\b.*$/i, '')
+    .replace(/\b(?:personnage|fiction|hero|heros|heroine|super soldat|super hero|jeu video|video game|anime|manga|cartoon)\b.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!candidate) return '';
+
+  const knownUniverses = [
+    { pattern: /\bthe legend of zelda\b/i, label: 'The Legend Of Zelda' },
+    { pattern: /\bsuper mario(?: bros)?\b/i, label: 'Super Mario' },
+    { pattern: /\bmario kart\b/i, label: 'Mario Kart' },
+    { pattern: /\bdragon ball(?: z| super| gt)?\b/i, label: 'Dragon Ball' },
+    { pattern: /\bone piece\b/i, label: 'One Piece' },
+    { pattern: /\bhalo\b/i, label: 'Halo' },
+    { pattern: /\bjames bond\b/i, label: 'James Bond' },
+    { pattern: /\bpokemon\b/i, label: 'Pokemon' },
+    { pattern: /\bboruto\b/i, label: 'Boruto' },
+    { pattern: /\bnaruto\b/i, label: 'Naruto' },
+  ];
+
+  const knownMatch = knownUniverses.find((entry) => entry.pattern.test(candidate));
+  if (knownMatch) return knownMatch.label;
+
+  const blockedTokens = [
+    'creee', 'cree', 'created', 'developpe', 'developed', 'publie', 'published',
+    'shigeru', 'miyamoto', 'nintendo', 'personnage', 'fiction', 'jeu', 'video',
+  ];
+  if (blockedTokens.some((token) => candidate.includes(token))) {
+    return '';
+  }
+
+  const wordCount = candidate.split(/\s+/).filter(Boolean).length;
+  if (wordCount === 0 || wordCount > 5) return '';
+
+  return titleCaseWords(candidate);
+}
+
 function inferUniverseFromText(value = '') {
   const normalized = normalizeLookup(value);
   if (!normalized) return '';
 
+  const knownUniversePatterns = [
+    { pattern: /\bthe legend of zelda\b/i, label: 'The Legend Of Zelda' },
+    { pattern: /\bsuper mario(?: bros)?\b/i, label: 'Super Mario' },
+    { pattern: /\bmario kart\b/i, label: 'Mario Kart' },
+    { pattern: /\bdragon ball(?: z| super| gt)?\b/i, label: 'Dragon Ball' },
+    { pattern: /\bone piece\b/i, label: 'One Piece' },
+    { pattern: /\bhalo\b/i, label: 'Halo' },
+    { pattern: /\bjames bond\b/i, label: 'James Bond' },
+    { pattern: /\bpokemon\b/i, label: 'Pokemon' },
+    { pattern: /\bboruto\b/i, label: 'Boruto' },
+    { pattern: /\bnaruto\b/i, label: 'Naruto' },
+  ];
+
+  for (const entry of knownUniversePatterns) {
+    if (entry.pattern.test(normalized)) return entry.label;
+  }
+
   const patterns = [
-    /\bunivers\s+([a-z0-9][a-z0-9 '\-]{1,40})/i,
-    /\bfranchise\s+([a-z0-9][a-z0-9 '\-]{1,40})/i,
-    /\bsaga\s+([a-z0-9][a-z0-9 '\-]{1,40})/i,
-    /\bserie\s+([a-z0-9][a-z0-9 '\-]{1,40})/i,
+    /\bunivers(?:\s+de)?\s+([a-z0-9][a-z0-9 '\-]{1,80})/i,
+    /\bfranchise\s+([a-z0-9][a-z0-9 '\-]{1,80})/i,
+    /\bsaga\s+([a-z0-9][a-z0-9 '\-]{1,80})/i,
+    /\bserie\s+([a-z0-9][a-z0-9 '\-]{1,80})/i,
   ];
 
   for (const pattern of patterns) {
     const match = pattern.exec(normalized);
-    const candidate = normalizeText(match?.[1] || '');
-    if (candidate) {
-      return candidate
-        .split(/\s+/)
-        .map((entry) => entry ? entry[0].toUpperCase() + entry.slice(1) : entry)
-        .join(' ');
-    }
+    const candidate = cleanUniverseCandidate(match?.[1] || '');
+    if (candidate) return candidate;
   }
 
   return '';

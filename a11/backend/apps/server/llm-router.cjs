@@ -5,11 +5,20 @@
  * `server.cjs`. It can also be mounted by a standalone runner, but it should
  * remain a pure router module and not create its own HTTP server directly.
  */
-require("dotenv").config();
 const path = require("node:path");
+const fs = require("node:fs");
+// Charge .env.local en priorité, puis .env comme fallback
+{
+  const _envLocalPath = path.resolve(__dirname, ".env.local");
+  const _envPath = path.resolve(__dirname, ".env");
+  if (fs.existsSync(_envLocalPath)) {
+    require("dotenv").config({ path: _envLocalPath });
+  } else {
+    require("dotenv").config({ path: _envPath });
+  }
+}
 const express = require("express");
 const cors = require("cors");
-const fs = require("node:fs");
 const child_process = require("node:child_process");
 
 // -------------------------------------------
@@ -147,7 +156,7 @@ const DEFAULT_LOCAL_MODEL = String(
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
-const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 15000) || 15000;
+const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 120000) || 120000;
 const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
 
 const llmRuntimeState = {

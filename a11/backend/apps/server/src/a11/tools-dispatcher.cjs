@@ -30,6 +30,9 @@ const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
 const {
   resolveSubjectProfile,
 } = require('../mask/semantic/subject-profile-library.cjs');
+const {
+  resolveImageDimensionConfig,
+} = require('../mask/normalize-mask-image-generate.cjs');
 
 // ⚠️ IMPORTANT : importer le manifest AVANT d'utiliser WORKSPACE_ROOTS
 const { TOOL_MANIFEST, WORKSPACE_ROOTS, SAFE_DATA_ROOT } = require('./tools-manifest.cjs');
@@ -849,15 +852,69 @@ async function resolveWriteTarget(filePath, options = {}) {
   };
 }
 
-function parseImageSize(value, fallbackWidth = 1024, fallbackHeight = 1024) {
+function roundDispatcherDimension(value, multiple = 64) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return multiple;
+  return Math.max(multiple, Math.round(numeric / multiple) * multiple);
+}
+
+function fitDispatcherCanvasToLimits(width, height, imageConfig = resolveImageDimensionConfig(process.env)) {
+  const safeMaxSide = Number(imageConfig?.maxRenderSide || 2048) || 2048;
+  let resolvedWidth = roundDispatcherDimension(width, 64);
+  let resolvedHeight = roundDispatcherDimension(height, 64);
+  const largestSide = Math.max(resolvedWidth, resolvedHeight, 1);
+  if (largestSide > safeMaxSide) {
+    const ratio = safeMaxSide / largestSide;
+    resolvedWidth = roundDispatcherDimension(Math.max(64, resolvedWidth * ratio), 64);
+    resolvedHeight = roundDispatcherDimension(Math.max(64, resolvedHeight * ratio), 64);
+  }
+  return {
+    width: Math.max(64, Math.min(safeMaxSide, resolvedWidth)),
+    height: Math.max(64, Math.min(safeMaxSide, resolvedHeight)),
+  };
+}
+
+function buildDispatcherAspectCanvas(aspectRatio = 1, imageConfig = resolveImageDimensionConfig(process.env)) {
+  const longestSide = Math.max(
+    Number(imageConfig?.defaultWidth || 0) || 0,
+    Number(imageConfig?.defaultHeight || 0) || 0,
+    Number(imageConfig?.maxRenderSide || 0) || 0,
+  );
+  if (!(longestSide > 0)) {
+    return fitDispatcherCanvasToLimits(768, 768, imageConfig);
+  }
+
+  if (aspectRatio > 1) {
+    return fitDispatcherCanvasToLimits(longestSide, longestSide / aspectRatio, imageConfig);
+  }
+  if (aspectRatio < 1) {
+    return fitDispatcherCanvasToLimits(longestSide * aspectRatio, longestSide, imageConfig);
+  }
+  return fitDispatcherCanvasToLimits(
+    imageConfig.defaultWidth || longestSide,
+    imageConfig.defaultHeight || longestSide,
+    imageConfig,
+  );
+}
+
+function parseImageSize(value, fallbackWidth, fallbackHeight) {
+  const imageConfig = resolveImageDimensionConfig(process.env);
+  const resolvedFallbackWidth = Number.isFinite(Number(fallbackWidth)) && Number(fallbackWidth) > 0
+    ? Number(fallbackWidth)
+    : Number(imageConfig.defaultWidth || imageConfig.maxRenderSide || 2048);
+  const resolvedFallbackHeight = Number.isFinite(Number(fallbackHeight)) && Number(fallbackHeight) > 0
+    ? Number(fallbackHeight)
+    : Number(imageConfig.defaultHeight || imageConfig.maxRenderSide || 2048);
   const raw = String(value || '').trim().toLowerCase();
   const match = /^(\d{2,4})\s*[xX]\s*(\d{2,4})$/.exec(raw);
   if (!match) {
-    return { width: fallbackWidth, height: fallbackHeight };
+    return fitDispatcherCanvasToLimits(resolvedFallbackWidth, resolvedFallbackHeight, imageConfig);
   }
-  const width = Math.max(64, Math.min(2048, Number(match[1]) || fallbackWidth));
-  const height = Math.max(64, Math.min(2048, Number(match[2]) || fallbackHeight));
-  return { width, height };
+  return fitDispatcherCanvasToLimits(
+    Number(match[1]) || resolvedFallbackWidth,
+    Number(match[2]) || resolvedFallbackHeight,
+    imageConfig,
+  );
 }
 
 function hasExplicitImageCanvasArgs(args = {}) {
@@ -880,9 +937,10 @@ function inferAutoImageCanvas(promptText = '', mask = null) {
   const rawPrompt = String(promptText || mask?.raw || '').trim();
   const pair = compileCharacterCountConstraints(rawPrompt);
   if (pair?.count === 2) {
+    const pairCanvas = buildDispatcherAspectCanvas(4 / 3);
     return {
-      width: 1024,
-      height: 768,
+      width: pairCanvas.width,
+      height: pairCanvas.height,
       reason: 'pair_landscape',
     };
   }
@@ -903,16 +961,18 @@ function inferAutoImageCanvas(promptText = '', mask = null) {
     || hasHumanFigureCue
     || hasFullBodyCue
   ) {
+    const portraitCanvas = buildDispatcherAspectCanvas(3 / 4);
     return {
-      width: 768,
-      height: 1024,
+      width: portraitCanvas.width,
+      height: portraitCanvas.height,
       reason: 'single_figure_portrait',
     };
   }
 
+  const squareCanvas = buildDispatcherAspectCanvas(1);
   return {
-    width: 1024,
-    height: 1024,
+    width: squareCanvas.width,
+    height: squareCanvas.height,
     reason: 'default_square',
   };
 }
@@ -2356,6 +2416,7 @@ function shouldAllowPlaceholderPng(args = {}) {
 
 // PNG generation with optional placeholder fallback.
 async function t_generate_png(args = {}) {
+  const imageConfig = resolveImageDimensionConfig(process.env);
   const title = String(
     args.text ||
     args.prompt ||
@@ -2365,10 +2426,19 @@ async function t_generate_png(args = {}) {
   ).trim() || 'Illustration A11';
   const hasExplicitCanvas = hasExplicitImageCanvasArgs(args);
   const requestedCanvas = hasExplicitCanvas
-    ? parseImageSize(args.imageSize, Number(args.width || 1024), Number(args.height || 1024))
+    ? parseImageSize(
+        args.imageSize,
+        Number(args.width || imageConfig.defaultWidth || imageConfig.maxRenderSide || 2048),
+        Number(args.height || imageConfig.defaultHeight || imageConfig.maxRenderSide || 2048),
+      )
     : inferAutoImageCanvas(title);
-  let width = Math.max(64, Math.min(2048, Number(args.width || requestedCanvas.width || 1024)));
-  let height = Math.max(64, Math.min(2048, Number(args.height || requestedCanvas.height || 1024)));
+  const fittedCanvas = fitDispatcherCanvasToLimits(
+    Number(args.width || requestedCanvas.width || imageConfig.defaultWidth || imageConfig.maxRenderSide || 2048),
+    Number(args.height || requestedCanvas.height || imageConfig.defaultHeight || imageConfig.maxRenderSide || 2048),
+    imageConfig,
+  );
+  let width = fittedCanvas.width;
+  let height = fittedCanvas.height;
   const subtitle = String(args.subtitle || 'Image de secours generee par A11').trim();
   const baseName = `${slugifyAssetSegment(title, 'image', 64)}-${Date.now()}.png`;
   const outputPath = args.outputPath || args.path || args.imagePath
@@ -2398,8 +2468,13 @@ async function t_generate_png(args = {}) {
     });
     if (maskResolution?.rawMask && !hasExplicitCanvas) {
       const inferredCanvas = inferAutoImageCanvas(title, maskResolution.rawMask);
-      width = Math.max(64, Math.min(2048, Number(inferredCanvas.width || width || 1024)));
-      height = Math.max(64, Math.min(2048, Number(inferredCanvas.height || height || 1024)));
+      const inferredFittedCanvas = fitDispatcherCanvasToLimits(
+        Number(inferredCanvas.width || width || imageConfig.defaultWidth || imageConfig.maxRenderSide || 2048),
+        Number(inferredCanvas.height || height || imageConfig.defaultHeight || imageConfig.maxRenderSide || 2048),
+        imageConfig,
+      );
+      width = inferredFittedCanvas.width;
+      height = inferredFittedCanvas.height;
       maskResolution.rawMask.options = maskResolution.rawMask.options && typeof maskResolution.rawMask.options === 'object'
         ? maskResolution.rawMask.options
         : {};

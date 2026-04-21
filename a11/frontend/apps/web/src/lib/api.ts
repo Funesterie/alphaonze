@@ -1,4 +1,4 @@
-// --- Génération d'image via backend DALL·E ---
+﻿// --- Génération d'image via backend DALL·E ---
 export async function generatePngWithPrompt(prompt: string): Promise<{ url: string, filename: string, prompt: string }> {
   const res = await authFetch(getApiUrl('/api/tools/generate_png'), {
     method: 'POST',
@@ -221,6 +221,9 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
   }
   const origin = getApiOrigin();
   const normalizedRaw = raw.replace(/\\/g, '/');
+  if (/^\/files\//i.test(normalizedRaw)) {
+    return origin ? `${origin}${normalizedRaw}` : normalizedRaw;
+  }
   const containerPathMatch = normalizedRaw.match(/^\/app\/(.+)$/i);
   if (containerPathMatch?.[1]) {
     const normalizedRuntimePath = `/files/${containerPathMatch[1]}`.replace(/\/{2,}/g, '/');
@@ -1139,7 +1142,7 @@ async function apiPost(body: unknown) {
         let aggregated = '';
 
         // Helper to process a full line starting with 'data:'
-        const processDataLine = (line) => {
+        const processDataLine = (line: string) => {
           const payload = line.slice(5).trim(); // after 'data:'
           if (!payload) return;
           if (payload === '[DONE]') {
@@ -1260,18 +1263,17 @@ export async function chatCompletion(
   const result = await chatCompletionDetailed(messages, provider, systemPromptOrOptions);
   return result.content;
 }
-
 export async function chatCompletionDetailed(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string }
 ) {
-  // Support both old signature (systemPrompt string) and new options object
   let systemPrompt: string | undefined;
   let turboFlag = false;
   let modelOverride: string | undefined;
   let conversationId: string | undefined;
   let providerProfileId: string | undefined;
+  let sourceImageUrl: string | undefined;
   if (typeof systemPromptOrOptions === 'string') {
     systemPrompt = systemPromptOrOptions;
   } else if (typeof systemPromptOrOptions === 'object' && systemPromptOrOptions !== null) {
@@ -1284,12 +1286,14 @@ export async function chatCompletionDetailed(
     providerProfileId = typeof systemPromptOrOptions.providerProfileId === 'string'
       ? systemPromptOrOptions.providerProfileId.trim()
       : undefined;
+    sourceImageUrl = typeof systemPromptOrOptions.sourceImageUrl === 'string'
+      ? systemPromptOrOptions.sourceImageUrl.trim() || undefined
+      : undefined;
   }
-
-  // Ajout du systemPrompt si fourni
   let msgs = messages;
   if (systemPrompt) {
     msgs = [{ role: 'system', content: systemPrompt }, ...messages.filter(m => m.role !== 'system')];
+
   }
 
   // Filtre les tokens spéciaux Llama (<|...|>) dans tous les messages
@@ -1307,8 +1311,8 @@ export async function chatCompletionDetailed(
     top_p: 0.9,
     conversationId,
     providerProfileId,
+    ...(sourceImageUrl ? { sourceImageUrl } : {}),
   };
-
   // Always post to router (apiPost ignores the path and uses router endpoint)
   const data = await apiPost(payload);
 

@@ -6,7 +6,17 @@
  * still lives in `llm-router.cjs`, which remains the canonical implementation.
  */
 
-require("dotenv").config();
+const path = require("path");
+const fs = require("fs");
+
+// Charge .env.local en priorité, puis .env comme fallback
+const envLocalPath = path.resolve(__dirname, ".env.local");
+const envPath = path.resolve(__dirname, ".env");
+if (fs.existsSync(envLocalPath)) {
+  require("dotenv").config({ path: envLocalPath });
+} else {
+  require("dotenv").config({ path: envPath });
+}
 
 const express = require("express");
 const cors = require("cors");

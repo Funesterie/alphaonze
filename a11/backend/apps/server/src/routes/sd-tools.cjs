@@ -3,7 +3,11 @@ const defaultPath = require('node:path');
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
 const { buildCanonicalImageMaskFromText } = require('../mask/resolve-image-mask-from-text.cjs');
 const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
-const { resolveImageDimensionConfig, resolveImageCanvasPlan } = require('../mask/normalize-mask-image-generate.cjs');
+const {
+  resolveImageDimensionConfig,
+  resolveImageCanvasPlan,
+  resolveSdLocalRenderLimits,
+} = require('../mask/normalize-mask-image-generate.cjs');
 const {
   resolveSdProxyUrl: defaultResolveSdProxyUrl,
   resolveSdScriptPath: defaultResolveSdScriptPath,
@@ -17,12 +21,101 @@ const {
   resolveOpenAiImageConfig,
   isOpenAiImageEnabled,
 } = require('../../lib/openai-image.cjs');
+const {
+  resolveImg2ImgStrengthPlan,
+} = require('../image/img2img-strength.cjs');
 
 function defaultFetch(...args) {
   if (typeof globalThis.fetch === 'function') {
     return globalThis.fetch(...args);
   }
   return import('node-fetch').then((mod) => mod.default(...args));
+}
+
+function normalizeLookup(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeSdModelProfile(value = '') {
+  const profile = String(value || '').trim().toLowerCase();
+  if (!profile) return '';
+  if (['sd35', 'sd3.5', 'sd35-medium', 'stable-diffusion-3.5', 'stable-diffusion-3.5-medium'].includes(profile)) {
+    return 'sd35';
+  }
+  if (['sd35large', 'sd35-large', 'sd3.5-large', 'stable-diffusion-3.5-large'].includes(profile)) {
+    return 'sd35large';
+  }
+  if (['sd35turbo', 'sd35-turbo', 'sd3.5-turbo', 'stable-diffusion-3.5-large-turbo'].includes(profile)) {
+    return 'sd35turbo';
+  }
+  if (['multilingual', 'alt'].includes(profile)) {
+    return 'multilingual';
+  }
+  if (['classic', 'sd15', 'v1.5'].includes(profile)) {
+    return 'classic';
+  }
+  return profile;
+}
+
+function resolveDefaultSdModelProfile() {
+  return normalizeSdModelProfile(process.env.SD_MODEL_PROFILE || '') || 'sd35';
+}
+
+function normalizeSourceMode(value = '') {
+  return normalizeLookup(value).replace(/\s+/g, '_');
+}
+
+function isVideoContinuationSourceMode(value = '') {
+  return [
+    'previous_frame',
+    'checkpoint_chain',
+    'segment_anchor',
+    'video_first_frame',
+  ].includes(normalizeSourceMode(value));
+}
+
+function isReferenceAnchorSourceMode(value = '') {
+  return [
+    'web_reference_subject',
+    'reference_anchor',
+    'reference_reanchor',
+    'image_url',
+    'image_path',
+    'image_data_url',
+    'uploaded_image',
+    'upload',
+    'init_image',
+  ].includes(normalizeSourceMode(value));
+}
+
+function looksLikeHumanReferencePrompt(value = '') {
+  return /\b(personne|humain|humaine|enfant|garcon|garçon|fille|homme|femme|ado|adolescent|adolescente|portrait|visage|selfie|photo|coiffure|cheveux|tenue|veste|same person|same face|child|boy|girl|man|woman|face|portrait|hair|outfit|this image|reference image|cette image|photo de reference|image de reference)\b/i.test(String(value || ''));
+}
+
+async function unloadOllamaModelIfNeeded(modelProfile = '') {
+  const profile = normalizeSdModelProfile(modelProfile || process.env.SD_MODEL_PROFILE || '');
+  if (!profile.includes('turbo') && !profile.includes('large')) return;
+  const ollamaBase = String(process.env.OLLAMA_BASE || 'http://127.0.0.1:11434').trim();
+  const primaryModel = String(process.env.A11_OLLAMA_PRIMARY_MODEL || 'gemma4:e4b').trim();
+  if (!primaryModel) return;
+  try {
+    await defaultFetch(`${ollamaBase}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: primaryModel, keep_alive: 0 }),
+      signal: AbortSignal.timeout(5000),
+    });
+    console.log(`[A11][sd-tools] Ollama model ${primaryModel} unloaded from VRAM before SD generation`);
+  } catch {
+    // ignore - Ollama peut ne pas etre disponible
+  }
 }
 
 function resolveRequestOrigin(req) {
@@ -66,6 +159,191 @@ function resolveGeneratedImageWorkRoot() {
   }
 
   return defaultPath.join(resolvePublicWorkspaceRoot(), 'runtime', 'files', 'generated', 'images');
+}
+
+function resolveSdImg2ImgStrengthPlan(requestBody = {}, {
+  initImage = '',
+  prompt = '',
+  modelProfile = '',
+  ignorePrecomputedAutoStrength = false,
+} = {}) {
+  if (!String(initImage || '').trim()) return null;
+
+  const rawStrength = requestBody?.strength !== undefined && requestBody?.strength !== null
+    ? requestBody.strength
+    : 'auto';
+  const precomputedStrength = Number(
+    requestBody?.strength_value
+    ?? requestBody?.strengthValue
+    ?? requestBody?.resolved_strength
+    ?? requestBody?.resolvedStrength
+  );
+  const profile = String(requestBody?.strength_profile || requestBody?.strengthProfile || '').trim();
+  const reason = String(requestBody?.strength_reason || requestBody?.strengthReason || '').trim();
+  const components = (
+    requestBody?.strength_components
+    || requestBody?.strengthComponents
+    || null
+  );
+  const componentStrengths = (
+    requestBody?.strength_component_strengths
+    || requestBody?.strengthComponentStrengths
+    || null
+  );
+  const componentProfiles = (
+    requestBody?.strength_component_profiles
+    || requestBody?.strengthComponentProfiles
+    || null
+  );
+  const componentReasons = (
+    requestBody?.strength_component_reasons
+    || requestBody?.strengthComponentReasons
+    || null
+  );
+  const initSourceMode = String(
+    requestBody?.source_mode
+    || requestBody?.sourceMode
+    || requestBody?.init_source_mode
+    || requestBody?.initSourceMode
+    || (String(initImage || '').trim() ? 'init_image' : '')
+  ).trim();
+
+  if (
+    !ignorePrecomputedAutoStrength
+    && String(rawStrength || '').trim().toLowerCase() === 'auto'
+    && Number.isFinite(precomputedStrength)
+  ) {
+    return {
+      mode: 'auto',
+      profile: profile || 'balanced',
+      reason: reason || 'precomputed_auto_strength',
+      strength: precomputedStrength,
+      retryStrength: Number.isFinite(Number(requestBody?.retryStrength))
+        ? Number(requestBody.retryStrength)
+        : precomputedStrength,
+      ...(components && typeof components === 'object' ? { components } : {}),
+      ...(componentStrengths && typeof componentStrengths === 'object' ? { componentStrengths } : {}),
+      ...(componentProfiles && typeof componentProfiles === 'object' ? { componentProfiles } : {}),
+      ...(componentReasons && typeof componentReasons === 'object' ? { componentReasons } : {}),
+    };
+  }
+
+  return resolveImg2ImgStrengthPlan({
+    explicitStrength: rawStrength,
+    prompt,
+    scene: {
+      sceneKey: String(requestBody?.sceneKey || requestBody?.scene_key || '').trim(),
+      compositeRisk: requestBody?.compositeRisk === true,
+    },
+    taskType: String(requestBody?.task_type || requestBody?.taskType || 'image_generate').trim(),
+    initSourceMode,
+    motionProfile: String(
+      requestBody?.motion_profile
+      || requestBody?.motionProfile
+      || requestBody?.video_motion_profile
+      || requestBody?.videoMotionProfile
+      || ''
+    ).trim(),
+    profileHint: profile,
+    modelProfile,
+    bias: requestBody?.strength_bias ?? requestBody?.strengthBias,
+  });
+}
+
+function buildStrengthPlanPayload(strengthPlan = null, strength = Number.NaN) {
+  if (!strengthPlan || typeof strengthPlan !== 'object') {
+    return Number.isFinite(Number(strength)) ? { strength: Number(strength) } : {};
+  }
+
+  return {
+    ...(Number.isFinite(Number(strength)) ? { strength: Number(strength) } : {}),
+    ...(strengthPlan?.mode ? { strength_mode: strengthPlan.mode } : {}),
+    ...(strengthPlan?.profile ? { strength_profile: strengthPlan.profile } : {}),
+    ...(strengthPlan?.reason ? { strength_reason: strengthPlan.reason } : {}),
+    ...(Number.isFinite(Number(strength)) ? { strength_value: Number(strength) } : {}),
+    ...(strengthPlan?.components && typeof strengthPlan.components === 'object' ? { strength_components: strengthPlan.components } : {}),
+    ...(strengthPlan?.componentStrengths && typeof strengthPlan.componentStrengths === 'object' ? { strength_component_strengths: strengthPlan.componentStrengths } : {}),
+    ...(strengthPlan?.componentProfiles && typeof strengthPlan.componentProfiles === 'object' ? { strength_component_profiles: strengthPlan.componentProfiles } : {}),
+    ...(strengthPlan?.componentReasons && typeof strengthPlan.componentReasons === 'object' ? { strength_component_reasons: strengthPlan.componentReasons } : {}),
+  };
+}
+
+function resolveSdModelProfilePlan({
+  requestBody = {},
+  initImage = '',
+  rawPrompt = '',
+  finalPrompt = '',
+  semanticCompiledState = null,
+} = {}) {
+  const explicitProfile = normalizeSdModelProfile(
+    requestBody?.model_profile
+    || requestBody?.modelProfile
+    || requestBody?.sd_model_profile
+    || requestBody?.sdModelProfile
+    || ''
+  );
+  if (explicitProfile) {
+    return {
+      profile: explicitProfile,
+      reason: 'request_explicit',
+      explicit: true,
+      dynamic: false,
+    };
+  }
+
+  const defaultProfile = resolveDefaultSdModelProfile();
+  if (!String(initImage || '').trim()) {
+    return {
+      profile: defaultProfile,
+      reason: 'env_default',
+      explicit: false,
+      dynamic: false,
+    };
+  }
+
+  const sourceMode = String(
+    requestBody?.source_mode
+    || requestBody?.sourceMode
+    || requestBody?.init_source_mode
+    || requestBody?.initSourceMode
+    || ''
+  ).trim();
+  const taskType = normalizeSourceMode(requestBody?.task_type || requestBody?.taskType || '');
+  const semanticProfileType = normalizeLookup(
+    semanticCompiledState?.mask?.meta?.subjectProfile?.type
+    || semanticCompiledState?.mask?.meta?.semantic?.subjectProfile?.type
+    || ''
+  );
+  const combinedPrompt = `${String(rawPrompt || '').trim()} ${String(finalPrompt || '').trim()}`.trim();
+
+  if (
+    defaultProfile === 'sd35turbo'
+    && !isVideoContinuationSourceMode(sourceMode)
+    && (
+      ['single_human_figure', 'reference_character'].includes(semanticProfileType)
+      || isReferenceAnchorSourceMode(sourceMode)
+      || looksLikeHumanReferencePrompt(combinedPrompt)
+      || !taskType.includes('video_frame_sequence')
+    )
+  ) {
+    return {
+      profile: 'sd35large',
+      reason: ['single_human_figure', 'reference_character'].includes(semanticProfileType)
+        ? 'init_image_sensitive_subject'
+        : (isReferenceAnchorSourceMode(sourceMode)
+          ? `init_image_source_mode:${normalizeSourceMode(sourceMode)}`
+          : 'init_image_quality_guard'),
+      explicit: false,
+      dynamic: true,
+    };
+  }
+
+  return {
+    profile: defaultProfile,
+    reason: 'env_default',
+    explicit: false,
+    dynamic: false,
+  };
 }
 
 function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
@@ -216,14 +494,45 @@ function isMissingTorchFailure(result = {}) {
   return text.includes('no module named') && text.includes('torch');
 }
 
+function summarizeLocalSdFailure(localResult = null) {
+  if (!localResult || typeof localResult !== 'object') return '';
+  if (localResult.error === 'python_spawn_failed') {
+    return 'le runtime Python SD local est introuvable';
+  }
+  if (isMissingTorchFailure(localResult)) {
+    return 'torch manque sur le backend image';
+  }
+
+  const stderrText = String(localResult.stderr || '').trim();
+  const messageText = String(localResult.message || '').trim();
+  const signalText = String(localResult.signal || '').trim().toUpperCase();
+
+  if (localResult.error === 'python_failed') {
+    if (signalText) {
+      return `le process Python SD local a ete interrompu (${signalText})`;
+    }
+    if (/out of memory|cuda.*memory|not enough memory|oom/i.test(stderrText)) {
+      return 'le backend SD local a manque de memoire pendant le chargement ou le rendu';
+    }
+    if (/python_exit_/i.test(messageText) || stderrText) {
+      return 'le backend SD local s est interrompu pendant le chargement ou le rendu';
+    }
+  }
+
+  if (localResult.error === 'bad_python_output') {
+    return 'le backend SD local a renvoye une sortie invalide';
+  }
+
+  return messageText;
+}
+
 function buildSdUnavailablePayload({ localResult = null, openAiResult = null } = {}) {
   const reasons = [];
-  if (localResult?.error === 'python_spawn_failed') reasons.push('le runtime Python SD local est introuvable');
-  if (isMissingTorchFailure(localResult)) reasons.push('torch manque sur le backend image');
+  const localFailure = summarizeLocalSdFailure(localResult);
+  if (localFailure) reasons.push(localFailure);
   if (openAiResult?.error === 'openai_image_disabled') reasons.push('OpenAI image est desactive');
   if (openAiResult?.error === 'openai_image_unconfigured') reasons.push('OPENAI_API_KEY image n est pas configuree');
   if (looksLikeOpenAiQuotaError(openAiResult)) reasons.push('le quota OpenAI image est depasse');
-  if (!reasons.length && localResult?.message) reasons.push(String(localResult.message));
   if (!reasons.length && openAiResult?.message) reasons.push(String(openAiResult.message));
 
   return {
@@ -315,6 +624,15 @@ function createSdToolsRouter(overrides = {}) {
       error.statusCode = 400;
       throw error;
     }
+    const initImage = String(
+      requestBody?.init_image
+      || requestBody?.initImage
+      || requestBody?.init_image_url
+      || requestBody?.initImageUrl
+      || requestBody?.reference_image_url
+      || requestBody?.referenceImageUrl
+      || ''
+    ).trim();
 
     const promptAlreadyCompiled = requestBody?.prompt_prebuilt === true || requestBody?.skip_prompt_enrichment === true;
     const inferredPromptAlreadyCompiled = !promptAlreadyCompiled && looksLikeCompiledSdPrompt(rawPrompt);
@@ -333,6 +651,15 @@ function createSdToolsRouter(overrides = {}) {
           },
         });
         if (maskResolution?.rawMask) {
+          if (initImage) {
+            maskResolution.rawMask.meta = {
+              ...(maskResolution.rawMask.meta && typeof maskResolution.rawMask.meta === 'object'
+                ? maskResolution.rawMask.meta
+                : {}),
+              init_image_url: initImage,
+              reference_image_url: initImage,
+            };
+          }
           semanticCompiledState = compileMaskImageGenerate(maskResolution.rawMask);
         }
       } catch {
@@ -352,22 +679,118 @@ function createSdToolsRouter(overrides = {}) {
         ? (repairedRawPrompt || rawPrompt)
         : (semanticCompiledState?.sdBody?.prompt || promptBundle.prompt)
     );
+    const finalPrompt2 = repairCompiledSdPromptArtifacts(
+      String(requestBody?.prompt_2 || requestBody?.prompt2 || '').trim()
+    );
+    const finalPrompt3 = repairCompiledSdPromptArtifacts(
+      String(requestBody?.prompt_3 || requestBody?.prompt3 || '').trim()
+    );
     const finalNegativePrompt = mergeNegativePrompts(
       semanticCompiledState?.sdBody?.negative_prompt,
       requestBody?.negative_prompt,
       Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : ''
     );
+    const finalNegativePrompt2 = String(
+      requestBody?.negative_prompt_2 || requestBody?.negativePrompt2 || ''
+    ).trim();
+    const finalNegativePrompt3 = String(
+      requestBody?.negative_prompt_3 || requestBody?.negativePrompt3 || ''
+    ).trim();
+    const modelProfilePlan = resolveSdModelProfilePlan({
+      requestBody,
+      initImage,
+      rawPrompt,
+      finalPrompt,
+      semanticCompiledState,
+    });
+    if (modelProfilePlan?.profile) {
+      console.log(
+        `[A11][sd-model] profile=${String(modelProfilePlan.profile).trim()}`
+        + ` reason=${String(modelProfilePlan.reason || 'n/a').trim() || 'n/a'}`
+        + (modelProfilePlan.dynamic ? ' dynamic=1' : '')
+      );
+    }
 
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
-    const IMAGE_MIN_SIZE = 64;
-    const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || 2048);
-    function clampDimension(val, fallback) {
+    function clampDimension(val, fallback, { min = 64, max = 2048 } = {}) {
       let n = Number(val);
       if (!Number.isFinite(n)) n = fallback;
       n = Math.round(n);
       if (n > 1 && n % 2 !== 0) n = n - 1;
-      return Math.max(IMAGE_MIN_SIZE, Math.min(IMAGE_MAX_SIZE, n));
+      return Math.max(min, Math.min(max, n));
+    }
+    function fitDimensions(widthValue, heightValue, fallbackWidth, fallbackHeight) {
+      let width = Number(widthValue);
+      let height = Number(heightValue);
+      const renderLimits = typeof resolveSdLocalRenderLimits === 'function'
+        ? resolveSdLocalRenderLimits({
+          env: process.env,
+          width,
+          height,
+        })
+        : {
+          minSide: 64,
+          maxSide: Number(process.env.A11_IMAGE_MAX_SIZE || 2048),
+          maxPixels: Number(process.env.A11_IMAGE_MAX_PIXELS || (Number(process.env.A11_IMAGE_MAX_SIZE || 2048) ** 2)),
+          policy: 'default',
+          profile: null,
+        };
+      const IMAGE_MIN_SIZE = Number(renderLimits.minSide || 64) || 64;
+      const IMAGE_MAX_SIZE = Number(renderLimits.maxSide || 2048) || 2048;
+      const IMAGE_MAX_PIXELS = Number(renderLimits.maxPixels || (IMAGE_MAX_SIZE * IMAGE_MAX_SIZE)) || (IMAGE_MAX_SIZE * IMAGE_MAX_SIZE);
+      if (!Number.isFinite(width) || width <= 0) width = fallbackWidth;
+      if (!Number.isFinite(height) || height <= 0) height = fallbackHeight;
+      width = Math.max(IMAGE_MIN_SIZE, width);
+      height = Math.max(IMAGE_MIN_SIZE, height);
+
+      let scale = 1;
+      if (width > IMAGE_MAX_SIZE || height > IMAGE_MAX_SIZE) {
+        scale = Math.min(scale, IMAGE_MAX_SIZE / width, IMAGE_MAX_SIZE / height);
+      }
+      if ((width * height) > IMAGE_MAX_PIXELS) {
+        scale = Math.min(scale, Math.sqrt(IMAGE_MAX_PIXELS / Math.max(width * height, 1)));
+      }
+      if (scale < 1) {
+        width *= scale;
+        height *= scale;
+      }
+
+      width = clampDimension(width, fallbackWidth, {
+        min: IMAGE_MIN_SIZE,
+        max: IMAGE_MAX_SIZE,
+      });
+      height = clampDimension(height, fallbackHeight, {
+        min: IMAGE_MIN_SIZE,
+        max: IMAGE_MAX_SIZE,
+      });
+
+      let guard = 0;
+      while ((width * height) > IMAGE_MAX_PIXELS && guard < 4) {
+        const areaScale = Math.sqrt(IMAGE_MAX_PIXELS / Math.max(width * height, 1));
+        if (!(areaScale > 0 && areaScale < 1)) break;
+        const nextWidth = clampDimension(width * areaScale, fallbackWidth, {
+          min: IMAGE_MIN_SIZE,
+          max: IMAGE_MAX_SIZE,
+        });
+        const nextHeight = clampDimension(height * areaScale, fallbackHeight, {
+          min: IMAGE_MIN_SIZE,
+          max: IMAGE_MAX_SIZE,
+        });
+        if (nextWidth === width && nextHeight === height) break;
+        width = nextWidth;
+        height = nextHeight;
+        guard += 1;
+      }
+
+      return {
+        width,
+        height,
+        policy: renderLimits.policy,
+        profile: renderLimits.profile,
+        maxSide: IMAGE_MAX_SIZE,
+        maxPixels: IMAGE_MAX_PIXELS,
+      };
     }
     const directCanvasPlan = resolveImageCanvasPlan({
       prompt: rawPrompt,
@@ -381,41 +804,56 @@ function createSdToolsRouter(overrides = {}) {
     const requestedHeight = Number(
       requestBody?.requested_height !== undefined ? requestBody.requested_height : directCanvasPlan.requestedHeight
     );
-    const width = clampDimension(
+    const fittedDimensions = fitDimensions(
       Number(requestBody?.width !== undefined ? requestBody.width : directCanvasPlan.width),
-      IMAGE_MAX_SIZE
-    );
-    const height = clampDimension(
       Number(requestBody?.height !== undefined ? requestBody.height : directCanvasPlan.height),
-      IMAGE_MAX_SIZE
+      Number(directCanvasPlan.width || imageDimensionConfig.defaultWidth || imageDimensionConfig.maxRenderSide || 2048),
+      Number(directCanvasPlan.height || imageDimensionConfig.defaultHeight || imageDimensionConfig.maxRenderSide || 2048)
     );
+    const width = fittedDimensions.width;
+    const height = fittedDimensions.height;
+    const sizePolicy = String(fittedDimensions.policy || 'default').trim() || 'default';
+    const sizeProfile = String(fittedDimensions.profile || '').trim() || null;
     const sizeSource = String(requestBody?.size_source || directCanvasPlan.source || 'request').trim() || 'request';
     const sizeReason = String(requestBody?.size_reason || directCanvasPlan.reason || 'n/a').trim() || 'n/a';
     if (requestedWidth !== undefined && width !== requestedWidth) {
-      console.warn(`[A11][sd-tools] width requested=${requestedWidth} effective=${width} (clamp)`);
+      console.warn(`[A11][sd-tools] width requested=${requestedWidth} effective=${width} (fit)`);
     }
     if (requestedHeight !== undefined && height !== requestedHeight) {
-      console.warn(`[A11][sd-tools] height requested=${requestedHeight} effective=${height} (clamp)`);
+      console.warn(`[A11][sd-tools] height requested=${requestedHeight} effective=${height} (fit)`);
     }
     console.log(
       `[A11][sd-tools] final request size source=${sizeSource}`
       + ` reason=${sizeReason}`
       + ` requested=${Number.isFinite(requestedWidth) ? requestedWidth : 'auto'}x${Number.isFinite(requestedHeight) ? requestedHeight : 'auto'}`
       + ` effective=${width}x${height}`
+      + (sizePolicy !== 'default' ? ` policy=${sizePolicy}` : '')
     );
+    if (sizePolicy !== 'default') {
+      console.warn(
+        `[A11][sd-tools] applying size guard policy=${sizePolicy}`
+        + ` profile=${sizeProfile || 'unknown'}`
+        + ` max_side=${Number(fittedDimensions.maxSide || 0) || width}`
+        + ` max_pixels=${Number(fittedDimensions.maxPixels || 0) || (width * height)}`
+      );
+    }
     const seed = requestBody?.seed !== undefined ? String(requestBody.seed) : undefined;
-    const initImage = String(
-      requestBody?.init_image
-      || requestBody?.initImage
-      || requestBody?.init_image_url
-      || requestBody?.initImageUrl
-      || requestBody?.reference_image_url
-      || requestBody?.referenceImageUrl
-      || ''
-    ).trim();
-    const strength = requestBody?.strength !== undefined && requestBody?.strength !== null && String(requestBody?.strength).trim() !== ''
-      ? Number(requestBody.strength)
-      : undefined;
+    const strengthPlan = resolveSdImg2ImgStrengthPlan(requestBody, {
+      initImage,
+      prompt: finalPrompt,
+      modelProfile: modelProfilePlan?.profile || '',
+      ignorePrecomputedAutoStrength: modelProfilePlan?.dynamic === true,
+    });
+    const strength = Number(strengthPlan?.strength);
+    if (strengthPlan) {
+      console.log(
+        `[A11][sd-strength] mode=${String(strengthPlan.mode || 'auto').trim() || 'auto'}`
+        + ` profile=${String(strengthPlan.profile || 'manual').trim() || 'manual'}`
+        + ` reason=${String(strengthPlan.reason || 'n/a').trim() || 'n/a'}`
+        + ` value=${Number.isFinite(strength) ? strength.toFixed(2) : 'n/a'}`
+        + (modelProfilePlan?.profile ? ` model_profile=${String(modelProfilePlan.profile).trim()}` : '')
+      );
+    }
 
     const proxyUrl = resolveSdProxyUrl();
     const scriptPath = resolveSdScriptPath();
@@ -440,7 +878,11 @@ function createSdToolsRouter(overrides = {}) {
           body: JSON.stringify({
             prompt: finalPrompt,
             prompt_prebuilt: true,
+            ...(finalPrompt2 ? { prompt_2: finalPrompt2, prompt_2_prebuilt: true } : {}),
+            ...(finalPrompt3 ? { prompt_3: finalPrompt3, prompt_3_prebuilt: true } : {}),
             ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
+            ...(finalNegativePrompt2 ? { negative_prompt_2: finalNegativePrompt2, negative_prompt_2_prebuilt: true } : {}),
+            ...(finalNegativePrompt3 ? { negative_prompt_3: finalNegativePrompt3, negative_prompt_3_prebuilt: true } : {}),
             num_inference_steps,
             guidance_scale,
             width,
@@ -449,8 +891,9 @@ function createSdToolsRouter(overrides = {}) {
             size_reason: sizeReason,
             requested_width: Number.isFinite(requestedWidth) ? requestedWidth : null,
             requested_height: Number.isFinite(requestedHeight) ? requestedHeight : null,
+            ...(modelProfilePlan?.profile ? { model_profile: modelProfilePlan.profile } : {}),
             ...(initImage ? { init_image_url: initImage } : {}),
-            ...(Number.isFinite(strength) ? { strength } : {}),
+            ...buildStrengthPlanPayload(strengthPlan, strength),
             ...(seed !== undefined ? { seed } : {}),
           }),
         });
@@ -543,7 +986,7 @@ function createSdToolsRouter(overrides = {}) {
           width,
           height,
           ...(initImage ? { init_image_url: initImage } : {}),
-          ...(Number.isFinite(strength) ? { strength } : {}),
+          ...buildStrengthPlanPayload(strengthPlan, strength),
           seed: seed !== undefined ? Number(seed) : undefined,
           mode: openAiFallback.mode || 'openai-image',
         };
@@ -563,9 +1006,15 @@ function createSdToolsRouter(overrides = {}) {
     const outputName = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
     const outputPath = path.join(tempDir, outputName);
 
-    const outputJson = await runSdScript({
+    const outputJson = await (async () => {
+      await unloadOllamaModelIfNeeded(modelProfilePlan?.profile || '');
+      return runSdScript({
       prompt: finalPrompt,
+      ...(finalPrompt2 ? { prompt_2: finalPrompt2 } : {}),
+      ...(finalPrompt3 ? { prompt_3: finalPrompt3 } : {}),
       ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt } : {}),
+      ...(finalNegativePrompt2 ? { negative_prompt_2: finalNegativePrompt2 } : {}),
+      ...(finalNegativePrompt3 ? { negative_prompt_3: finalNegativePrompt3 } : {}),
       num_inference_steps,
       guidance_scale,
       width,
@@ -574,11 +1023,22 @@ function createSdToolsRouter(overrides = {}) {
       size_reason: sizeReason,
       requested_width: Number.isFinite(requestedWidth) ? requestedWidth : null,
       requested_height: Number.isFinite(requestedHeight) ? requestedHeight : null,
+      ...(modelProfilePlan?.profile ? { model_profile: modelProfilePlan.profile } : {}),
       ...(initImage ? { init_image_url: initImage } : {}),
-      ...(Number.isFinite(strength) ? { strength } : {}),
+      ...buildStrengthPlanPayload(strengthPlan, strength),
       ...(seed !== undefined ? { seed } : {}),
       output: outputPath,
     }, { scriptPath });
+    })();
+    const actualWidth = Number(outputJson?.output_width || outputJson?.width || 0) || width;
+    const actualHeight = Number(outputJson?.output_height || outputJson?.height || 0) || height;
+    if (actualWidth !== width || actualHeight !== height) {
+      console.warn(
+        `[A11][sd-tools] output size mismatch requested=${width}x${height}`
+        + ` actual=${actualWidth}x${actualHeight}`
+        + ` model=${String(outputJson?.model_id || 'unknown')}`
+      );
+    }
 
     if (!outputJson?.ok || !outputJson?.output_path || !fs.existsSync(outputJson.output_path)) {
       if (!allowLocalFallback) {
@@ -610,8 +1070,10 @@ function createSdToolsRouter(overrides = {}) {
           guidance_scale,
           width,
           height,
+          actual_width: width,
+          actual_height: height,
           ...(initImage ? { init_image_url: initImage } : {}),
-          ...(Number.isFinite(strength) ? { strength } : {}),
+          ...buildStrengthPlanPayload(strengthPlan, strength),
           seed: seed !== undefined ? Number(seed) : undefined,
           mode: openAiFallback.mode || 'openai-image',
         };
@@ -656,10 +1118,13 @@ function createSdToolsRouter(overrides = {}) {
         guidance_scale,
         width,
         height,
+        actual_width: actualWidth,
+        actual_height: actualHeight,
         ...(initImage ? { init_image_url: initImage } : {}),
-        ...(Number.isFinite(strength) ? { strength } : {}),
+        ...buildStrengthPlanPayload(strengthPlan, strength),
         seed: seed !== undefined ? Number(seed) : undefined,
         mode: 'stable-diffusion-local',
+        size_policy: sizePolicy !== 'default' ? sizePolicy : null,
         device: outputJson.device || null,
         model_id: outputJson.model_id || null,
         torch_dtype: outputJson.torch_dtype || null,
@@ -693,10 +1158,13 @@ function createSdToolsRouter(overrides = {}) {
           guidance_scale,
           width,
           height,
+          actual_width: actualWidth,
+          actual_height: actualHeight,
           ...(initImage ? { init_image_url: initImage } : {}),
-          ...(Number.isFinite(strength) ? { strength } : {}),
+          ...buildStrengthPlanPayload(strengthPlan, strength),
           seed: seed !== undefined ? Number(seed) : undefined,
           mode: 'stable-diffusion-local',
+          size_policy: sizePolicy !== 'default' ? sizePolicy : null,
           storage: 'local-file',
           device: outputJson.device || null,
           model_id: outputJson.model_id || null,

@@ -20,6 +20,16 @@ MODEL_PROFILES = {
         "pipeline": "sd3",
         "revision": None,
     },
+    "sd35large": {
+        "model_id": "stabilityai/stable-diffusion-3.5-large",
+        "pipeline": "sd3",
+        "revision": None,
+    },
+    "sd35turbo": {
+        "model_id": "stabilityai/stable-diffusion-3.5-large-turbo",
+        "pipeline": "sd3",
+        "revision": None,
+    },
     "multilingual": {
         "model_id": "BAAI/AltDiffusion-m18",
         "pipeline": "alt",
@@ -38,6 +48,14 @@ MODEL_PROFILE_ALIASES = {
     "sd35-medium": "sd35",
     "stable-diffusion-3.5": "sd35",
     "stable-diffusion-3.5-medium": "sd35",
+    "sd35large": "sd35large",
+    "sd35-large": "sd35large",
+    "sd3.5-large": "sd35large",
+    "stable-diffusion-3.5-large": "sd35large",
+    "sd35turbo": "sd35turbo",
+    "sd35-turbo": "sd35turbo",
+    "sd3.5-turbo": "sd35turbo",
+    "stable-diffusion-3.5-large-turbo": "sd35turbo",
     "multilingual": "multilingual",
     "alt": "multilingual",
     "classic": "classic",
@@ -67,7 +85,7 @@ def env_bool(name, default=False):
 
 def resolve_model_config():
     explicit_model_id = str(os.environ.get("SD_MODEL_ID", "")).strip()
-    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "classic")
+    explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "sd35")
     explicit_pipeline = normalize_env_text(os.environ.get("SD_MODEL_PIPELINE"), "")
     explicit_revision = str(os.environ.get("SD_MODEL_REVISION", "")).strip() or None
 
@@ -121,6 +139,32 @@ def resolve_dtype(device):
             return torch.bfloat16
         return torch.float16
     return torch.float32
+
+
+def resolve_cuda_total_memory_gb():
+    if not torch.cuda.is_available():
+        return 0.0
+    try:
+        total_memory = torch.cuda.get_device_properties(0).total_memory
+    except Exception:
+        return 0.0
+    return float(total_memory) / float(1024 ** 3)
+
+
+def resolve_sd3_execution_mode():
+    requested = normalize_env_text(os.environ.get("SD_SD3_EXECUTION_MODE"), "")
+    if requested in {"direct", "model_cpu_offload", "sequential_cpu_offload"}:
+        return requested
+
+    if os.name == "nt":
+        return "sequential_cpu_offload"
+
+    low_vram_threshold_gb = env_int("SD_SD3_LOW_VRAM_THRESHOLD_GB", 16)
+    total_memory_gb = resolve_cuda_total_memory_gb()
+    if total_memory_gb and total_memory_gb <= float(low_vram_threshold_gb):
+        return "sequential_cpu_offload"
+
+    return "model_cpu_offload"
 
 
 def dtype_label(value):
@@ -236,18 +280,36 @@ def configure_pipeline_execution(pipe, device, model_config):
         }
 
     if pipeline_kind == "sd3":
-        try:
-            pipe.enable_model_cpu_offload()
-            return pipe, {
-                "execution_mode": "model_cpu_offload",
-                "cpu_offload": True,
+        preferred_mode = resolve_sd3_execution_mode()
+        if preferred_mode == "direct":
+            return pipe.to(device), {
+                "execution_mode": "direct",
+                "cpu_offload": False,
             }
-        except Exception:
-            pipe.enable_sequential_cpu_offload()
-            return pipe, {
-                "execution_mode": "sequential_cpu_offload",
-                "cpu_offload": True,
-            }
+
+        if preferred_mode == "sequential_cpu_offload":
+            try:
+                pipe.enable_sequential_cpu_offload()
+                return pipe, {
+                    "execution_mode": "sequential_cpu_offload",
+                    "cpu_offload": True,
+                }
+            except Exception:
+                preferred_mode = "model_cpu_offload"
+
+        if preferred_mode == "model_cpu_offload":
+            try:
+                pipe.enable_model_cpu_offload()
+                return pipe, {
+                    "execution_mode": "model_cpu_offload",
+                    "cpu_offload": True,
+                }
+            except Exception:
+                pipe.enable_sequential_cpu_offload()
+                return pipe, {
+                    "execution_mode": "sequential_cpu_offload",
+                    "cpu_offload": True,
+                }
 
     return pipe.to(device), {
         "execution_mode": "direct",
@@ -266,6 +328,29 @@ def clamp_strength(value, fallback=0.45):
     except (TypeError, ValueError):
         return fallback
     return max(0.18, min(0.78, numeric))
+
+
+def resolve_init_resize_mode():
+    mode = str(os.environ.get("SD_INIT_IMAGE_RESIZE_MODE", "contain")).strip().lower()
+    return mode if mode in {"contain", "cover"} else "contain"
+
+
+def resize_with_padding(image, width, height, background=(255, 255, 255)):
+    source = image.convert("RGB")
+    src_width, src_height = source.size
+    if src_width <= 0 or src_height <= 0:
+        return source.resize((int(width), int(height)), Image.LANCZOS)
+
+    scale = min(float(width) / float(src_width), float(height) / float(src_height))
+    resized_width = max(1, int(round(src_width * scale)))
+    resized_height = max(1, int(round(src_height * scale)))
+    resized = source.resize((resized_width, resized_height), Image.LANCZOS)
+
+    canvas = Image.new("RGB", (int(width), int(height)), background)
+    offset_x = max(0, (int(width) - resized_width) // 2)
+    offset_y = max(0, (int(height) - resized_height) // 2)
+    canvas.paste(resized, (offset_x, offset_y))
+    return canvas
 
 
 def crop_and_resize_cover(image, width, height):
@@ -308,7 +393,14 @@ def load_init_image(source, width, height):
             image = Image.open(raw_source)
             source_kind = "file"
 
-        return crop_and_resize_cover(image, width, height), source_kind, ""
+        resize_mode = resolve_init_resize_mode()
+        prepared = (
+            crop_and_resize_cover(image, width, height)
+            if resize_mode == "cover"
+            else resize_with_padding(image, width, height)
+        )
+
+        return prepared, source_kind, ""
     except Exception as error:
         return None, "", str(error)
 
@@ -361,19 +453,31 @@ def load_pipeline(model_config, torch_dtype, generation_mode):
 def load_pipeline_with_fallback(model_config, torch_dtype, generation_mode):
     candidates = [model_config]
 
-    should_fallback_to_classic = (
-        not model_config.get("is_explicit_model")
-        and str(model_config.get("profile") or "").strip().lower() in {"sd35", "multilingual"}
-    )
-    if should_fallback_to_classic:
-        classic = MODEL_PROFILES["classic"]
-        candidates.append({
-            "profile": "classic",
-            "model_id": classic["model_id"],
-            "pipeline": classic["pipeline"],
-            "revision": classic.get("revision"),
-            "is_explicit_model": False,
-        })
+    if not model_config.get("is_explicit_model"):
+        requested_profile = str(model_config.get("profile") or "").strip().lower()
+        fallback_profiles = []
+        if requested_profile in {"sd35large", "sd35turbo"}:
+            fallback_profiles.extend(["sd35", "classic"])
+        elif requested_profile in {"sd35", "multilingual"}:
+            fallback_profiles.append("classic")
+
+        for fallback_profile in fallback_profiles:
+            profile = MODEL_PROFILES.get(fallback_profile)
+            if not profile:
+                continue
+            if any(
+                str(candidate.get("profile") or "").strip().lower() == fallback_profile
+                or str(candidate.get("model_id") or "").strip() == str(profile.get("model_id") or "").strip()
+                for candidate in candidates
+            ):
+                continue
+            candidates.append({
+                "profile": fallback_profile,
+                "model_id": profile["model_id"],
+                "pipeline": profile["pipeline"],
+                "revision": profile.get("revision"),
+                "is_explicit_model": False,
+            })
 
     last_error = None
     for index, candidate in enumerate(candidates):
@@ -397,7 +501,11 @@ def load_pipeline_with_fallback(model_config, torch_dtype, generation_mode):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
+    parser.add_argument("--prompt_2", type=str, default=None)
+    parser.add_argument("--prompt_3", type=str, default=None)
     parser.add_argument("--negative_prompt", type=str, default=None)
+    parser.add_argument("--negative_prompt_2", type=str, default=None)
+    parser.add_argument("--negative_prompt_3", type=str, default=None)
     parser.add_argument("--num_inference_steps", type=int, default=35)
     parser.add_argument("--guidance_scale", type=float, default=8.0)
     parser.add_argument("--width", type=int, default=768)
@@ -461,18 +569,48 @@ def main():
         guidance_scale=args.guidance_scale,
         generator=generator,
     )
+    if str(resolved_model_config.get("pipeline") or "").strip().lower() == "sd3":
+        if args.prompt_2 and str(args.prompt_2).strip():
+            generation_kwargs["prompt_2"] = str(args.prompt_2).strip()
+        if args.prompt_3 and str(args.prompt_3).strip():
+            generation_kwargs["prompt_3"] = str(args.prompt_3).strip()
     if generation_mode == "img2img":
         generation_kwargs["image"] = init_image
         generation_kwargs["strength"] = resolved_strength
+        generation_kwargs["width"] = args.width
+        generation_kwargs["height"] = args.height
     else:
         generation_kwargs["width"] = args.width
         generation_kwargs["height"] = args.height
 
     if args.negative_prompt and str(args.negative_prompt).strip():
         generation_kwargs["negative_prompt"] = str(args.negative_prompt).strip()
+    if str(resolved_model_config.get("pipeline") or "").strip().lower() == "sd3":
+        if args.negative_prompt_2 and str(args.negative_prompt_2).strip():
+            generation_kwargs["negative_prompt_2"] = str(args.negative_prompt_2).strip()
+        if args.negative_prompt_3 and str(args.negative_prompt_3).strip():
+            generation_kwargs["negative_prompt_3"] = str(args.negative_prompt_3).strip()
+
+    # Turbo : guidance_scale reduit mais pas zero pour img2img
+    is_turbo = str(resolved_model_config.get("profile") or "").strip().lower() == "sd35turbo"
+    if is_turbo:
+        if generation_mode == "img2img":
+            # Pour img2img, garder un guidance_scale minimal pour respecter le prompt
+            generation_kwargs["guidance_scale"] = max(1.5, float(generation_kwargs.get("guidance_scale", 1.5)))
+        else:
+            generation_kwargs["guidance_scale"] = 0.0
+        generation_kwargs["num_inference_steps"] = min(
+            generation_kwargs.get("num_inference_steps", 8), 8
+        )
 
     with torch.inference_mode():
         image = pipe(**generation_kwargs).images[0]
+    output_width, output_height = image.size
+    if output_width != args.width or output_height != args.height:
+        print(
+            f"[A11][sd] output size mismatch requested={args.width}x{args.height} actual={output_width}x{output_height}",
+            file=os.sys.stderr,
+        )
 
     output_path = args.output
     if not output_path.lower().endswith(".png"):
@@ -512,7 +650,13 @@ def main():
                 "generation_mode": generation_mode,
                 "width": args.width,
                 "height": args.height,
+                "output_width": output_width,
+                "output_height": output_height,
                 "num_inference_steps": args.num_inference_steps,
+                "prompt_2_used": bool(generation_kwargs.get("prompt_2")),
+                "prompt_3_used": bool(generation_kwargs.get("prompt_3")),
+                "negative_prompt_2_used": bool(generation_kwargs.get("negative_prompt_2")),
+                "negative_prompt_3_used": bool(generation_kwargs.get("negative_prompt_3")),
                 "init_image_requested": bool(init_image_source),
                 "init_image_used": init_image is not None,
                 "init_image_source": init_image_source or None,

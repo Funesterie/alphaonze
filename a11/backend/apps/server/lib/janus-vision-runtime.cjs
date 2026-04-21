@@ -59,6 +59,7 @@ function resolveVisionProvider(overrides = {}) {
   if (['janus', 'local-janus', 'janus-local'].includes(explicit)) return 'janus';
   if (['remote', 'openai', 'http'].includes(explicit)) return 'remote';
   if (['none', 'off', 'disabled'].includes(explicit)) return 'none';
+  if (['ollama', 'ollama-vision', 'local-ollama'].includes(explicit)) return 'ollama';
 
   const janusRequested = toBoolean(process.env.A11_JANUS_ENABLED)
     || Boolean(String(process.env.A11_JANUS_MODEL_ID || process.env.A11_JANUS_MODEL_DIR || '').trim())
@@ -283,46 +284,6 @@ async function callJanusVisionText({
     throw new Error('janus_missing_image_buffer');
   }
 
-  async function requestWithConfig(config) {
-    const worker = ensureJanusWorker(config);
-    const id = `janus-${Date.now()}-${++requestCounter}`;
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        if (worker.pending.has(id)) {
-          worker.pending.delete(id);
-        }
-        reject(new Error(`janus_request_timeout:${config.timeoutMs}`));
-      }, config.timeoutMs);
-
-      worker.pending.set(id, { resolve, reject, timeout });
-      if (!canWriteToWorkerStdin(worker)) {
-        clearTimeout(timeout);
-        worker.pending.delete(id);
-        reject(new Error('janus_worker_stdin_unavailable'));
-        return;
-      }
-
-      const line = `${JSON.stringify({
-        id,
-        action: 'vision_text',
-        prompt: String(prompt || '').trim(),
-        request_id: String(requestId || '').trim(),
-        content_type: String(contentType || 'image/png').trim() || 'image/png',
-        image_base64: imageBuffer.toString('base64'),
-        max_new_tokens: config.maxNewTokens,
-        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
-      })}\n`;
-
-      worker.process.stdin.write(line, (error_) => {
-        if (!error_) return;
-        clearTimeout(timeout);
-        worker.pending.delete(id);
-        reject(new Error(String(error_?.message || error_ || 'janus_worker_write_failed')));
-      });
-    });
-  }
-
   const config = resolveJanusVisionConfig({
     modelRef,
     device,
@@ -332,7 +293,17 @@ async function callJanusVisionText({
   });
 
   try {
-    return await requestWithConfig(config);
+    return await callJanusWorkerAction({
+      action: 'vision_text',
+      prompt,
+      requestId,
+      contentType,
+      imageBuffer,
+      maxNewTokens: config.maxNewTokens,
+      timeoutMs: config.timeoutMs,
+      temperature,
+      config,
+    });
   } catch (error_) {
     const shouldFallbackTo1B = !modelRef
       && !hasExplicitJanusModelSelection(process.env)
@@ -347,7 +318,130 @@ async function callJanusVisionText({
       maxNewTokens,
       timeoutMs,
     });
-    return requestWithConfig(fallbackConfig);
+    return callJanusWorkerAction({
+      action: 'vision_text',
+      prompt,
+      requestId,
+      contentType,
+      imageBuffer,
+      maxNewTokens: fallbackConfig.maxNewTokens,
+      timeoutMs: fallbackConfig.timeoutMs,
+      temperature,
+      config: fallbackConfig,
+    });
+  }
+}
+
+function callJanusWorkerAction({
+  action = 'text',
+  prompt = '',
+  requestId = '',
+  contentType = 'image/png',
+  imageBuffer = null,
+  maxNewTokens,
+  timeoutMs,
+  temperature,
+  config = {},
+} = {}) {
+  const worker = ensureJanusWorker(config);
+  const id = `janus-${Date.now()}-${++requestCounter}`;
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      if (worker.pending.has(id)) {
+        worker.pending.delete(id);
+      }
+      const timeoutLabel = `janus_request_timeout:${config.timeoutMs || timeoutMs || 0}`;
+      resetWorkerState(timeoutLabel);
+      reject(new Error(timeoutLabel));
+    }, config.timeoutMs || timeoutMs || 0);
+
+    worker.pending.set(id, { resolve, reject, timeout });
+    if (!canWriteToWorkerStdin(worker)) {
+      clearTimeout(timeout);
+      worker.pending.delete(id);
+      reject(new Error('janus_worker_stdin_unavailable'));
+      return;
+    }
+
+    const line = `${JSON.stringify({
+      id,
+      action: String(action || 'text').trim() || 'text',
+      prompt: String(prompt || '').trim(),
+      request_id: String(requestId || '').trim(),
+      content_type: String(contentType || 'image/png').trim() || 'image/png',
+      ...(Buffer.isBuffer(imageBuffer) && imageBuffer.length
+        ? { image_base64: imageBuffer.toString('base64') }
+        : {}),
+      max_new_tokens: config.maxNewTokens || maxNewTokens,
+      temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
+    })}\n`;
+
+    worker.process.stdin.write(line, (error_) => {
+      if (!error_) return;
+      clearTimeout(timeout);
+      worker.pending.delete(id);
+      reject(new Error(String(error_?.message || error_ || 'janus_worker_write_failed')));
+    });
+  });
+}
+
+async function callJanusText({
+  prompt = '',
+  requestId = '',
+  maxNewTokens,
+  timeoutMs,
+  temperature,
+  modelRef,
+  device,
+  torchDtype,
+} = {}) {
+  const normalizedPrompt = String(prompt || '').trim();
+  if (!normalizedPrompt) {
+    throw new Error('janus_missing_prompt');
+  }
+
+  const config = resolveJanusVisionConfig({
+    modelRef,
+    device,
+    torchDtype,
+    maxNewTokens,
+    timeoutMs,
+  });
+
+  try {
+    return await callJanusWorkerAction({
+      action: 'planner_text',
+      prompt: normalizedPrompt,
+      requestId,
+      maxNewTokens: config.maxNewTokens,
+      timeoutMs: config.timeoutMs,
+      temperature,
+      config,
+    });
+  } catch (error_) {
+    const shouldFallbackTo1B = !modelRef
+      && !hasExplicitJanusModelSelection(process.env)
+      && String(config.modelRef || '').trim() === DEFAULT_MODEL_ID_7B;
+    if (!shouldFallbackTo1B) throw error_;
+
+    resetWorkerState('janus_retry_1b_fallback');
+    const fallbackConfig = resolveJanusVisionConfig({
+      modelRef: DEFAULT_MODEL_ID_1B,
+      device,
+      torchDtype,
+      maxNewTokens,
+      timeoutMs,
+    });
+    return callJanusWorkerAction({
+      action: 'planner_text',
+      prompt: normalizedPrompt,
+      requestId,
+      maxNewTokens: fallbackConfig.maxNewTokens,
+      timeoutMs: fallbackConfig.timeoutMs,
+      temperature,
+      config: fallbackConfig,
+    });
   }
 }
 
@@ -356,6 +450,7 @@ function shutdownJanusVisionWorker() {
 }
 
 module.exports = {
+  callJanusText,
   callJanusVisionText,
   resolveJanusPythonBin,
   resolveJanusVisionConfig,

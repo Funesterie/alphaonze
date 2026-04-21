@@ -2,18 +2,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const normalizeMaskImageGenerate = require('../src/mask/normalize-mask-image-generate.cjs');
-const { resolveImageCanvasPlan } = require('../src/mask/normalize-mask-image-generate.cjs');
+const {
+  resolveImageCanvasPlan,
+  resolveSdLocalRenderLimits,
+} = require('../src/mask/normalize-mask-image-generate.cjs');
 const {
   resolveMaxVerificationRetries,
 } = require('../src/mask/image-chat-runtime.cjs');
 
-test('normalizeMaskImageGenerate uses local max render side by default', () => {
+test('normalizeMaskImageGenerate keeps a 2048 local square canvas for classic SD profiles', () => {
   const previous = {
     A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
     A11_RUNTIME_PROFILE: process.env.A11_RUNTIME_PROFILE,
     A11_IMAGE_MAX_RENDER_SIDE: process.env.A11_IMAGE_MAX_RENDER_SIDE,
     A11_IMAGE_DEFAULT_WIDTH: process.env.A11_IMAGE_DEFAULT_WIDTH,
     A11_IMAGE_DEFAULT_HEIGHT: process.env.A11_IMAGE_DEFAULT_HEIGHT,
+    SD_MODEL_PROFILE: process.env.SD_MODEL_PROFILE,
   };
 
   process.env.A11_LOCAL_MODE = '1';
@@ -21,6 +25,7 @@ test('normalizeMaskImageGenerate uses local max render side by default', () => {
   process.env.A11_IMAGE_MAX_RENDER_SIDE = '2048';
   process.env.A11_IMAGE_DEFAULT_WIDTH = '2048';
   process.env.A11_IMAGE_DEFAULT_HEIGHT = '2048';
+  process.env.SD_MODEL_PROFILE = 'classic';
 
   try {
     const normalized = normalizeMaskImageGenerate({
@@ -40,13 +45,14 @@ test('normalizeMaskImageGenerate uses local max render side by default', () => {
   }
 });
 
-test('normalizeMaskImageGenerate no longer clamps local sizes down to 1024', () => {
+test('normalizeMaskImageGenerate applies the sd35 square guard to 2048x2048 requests', () => {
   const previous = {
     A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
     A11_RUNTIME_PROFILE: process.env.A11_RUNTIME_PROFILE,
     A11_IMAGE_MAX_RENDER_SIDE: process.env.A11_IMAGE_MAX_RENDER_SIDE,
     A11_IMAGE_DEFAULT_WIDTH: process.env.A11_IMAGE_DEFAULT_WIDTH,
     A11_IMAGE_DEFAULT_HEIGHT: process.env.A11_IMAGE_DEFAULT_HEIGHT,
+    SD_MODEL_PROFILE: process.env.SD_MODEL_PROFILE,
   };
 
   process.env.A11_LOCAL_MODE = '1';
@@ -54,6 +60,7 @@ test('normalizeMaskImageGenerate no longer clamps local sizes down to 1024', () 
   process.env.A11_IMAGE_MAX_RENDER_SIDE = '2048';
   process.env.A11_IMAGE_DEFAULT_WIDTH = '2048';
   process.env.A11_IMAGE_DEFAULT_HEIGHT = '2048';
+  process.env.SD_MODEL_PROFILE = 'sd35';
 
   try {
     const normalized = normalizeMaskImageGenerate({
@@ -63,8 +70,9 @@ test('normalizeMaskImageGenerate no longer clamps local sizes down to 1024', () 
       },
     });
 
-    assert.equal(normalized.options.width, 2048);
-    assert.equal(normalized.options.height, 2048);
+    assert.equal(normalized.options.width, 1536);
+    assert.equal(normalized.options.height, 1536);
+    assert.equal(normalized.meta?.renderSizing?.renderPolicy, 'sd35_area_guard+square_guard');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) {
@@ -74,6 +82,26 @@ test('normalizeMaskImageGenerate no longer clamps local sizes down to 1024', () 
       }
     }
   }
+});
+
+test('resolveSdLocalRenderLimits keeps 1536x2048 portraits but guards sd35 square canvases', () => {
+  const portrait = resolveSdLocalRenderLimits({
+    env: { SD_MODEL_PROFILE: 'sd35', A11_IMAGE_MAX_SIZE: '2048' },
+    width: 1536,
+    height: 2048,
+  });
+  assert.equal(portrait.maxSide, 2048);
+  assert.equal(portrait.maxPixels, 2048 * 1536);
+  assert.equal(portrait.policy, 'sd35_area_guard');
+
+  const square = resolveSdLocalRenderLimits({
+    env: { SD_MODEL_PROFILE: 'sd35', A11_IMAGE_MAX_SIZE: '2048' },
+    width: 2048,
+    height: 2048,
+  });
+  assert.equal(square.maxSide, 1536);
+  assert.equal(square.maxPixels, 2048 * 1536);
+  assert.equal(square.policy, 'sd35_area_guard+square_guard');
 });
 
 test('local image runtime disables automatic verification retries by default', () => {

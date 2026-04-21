@@ -27,6 +27,13 @@ function toUniqueStrings(values = []) {
   )];
 }
 
+function shouldPromoteUniverseInstruction(value = '') {
+  const normalized = normalizeLookup(value);
+  if (!normalized) return false;
+  if (normalized.split(/\s+/).filter(Boolean).length > 5) return false;
+  return !/\b(cree|creee|created|developpe|developed|publie|published|shigeru|miyamoto|personnage|fiction|wikipedia)\b/.test(normalized);
+}
+
 function countEntries(values = []) {
   return (Array.isArray(values) ? values : []).filter(Boolean).length;
 }
@@ -260,7 +267,7 @@ function buildScratchpadPromptInstructions(scratchpad = {}, mask = {}) {
     instructions.push(`Rester fidèle au sujet canonique nommé ${canonicalSubject}.`);
   }
 
-  if (universe && subjectProfileType === 'reference_character') {
+  if (universe && subjectProfileType === 'reference_character' && shouldPromoteUniverseInstruction(universe)) {
     instructions.push(`Rester cohérent avec l univers ${universe}.`);
   }
 

@@ -51,6 +51,65 @@ function resolveImageDimensionConfig(env = process.env) {
   };
 }
 
+function normalizeSdModelProfileHint(env = process.env) {
+  const explicitProfile = String(env?.SD_MODEL_PROFILE || '').trim().toLowerCase();
+  if (['sd35', 'sd3.5', 'sd35-medium', 'stable-diffusion-3.5', 'stable-diffusion-3.5-medium'].includes(explicitProfile)) {
+    return 'sd35';
+  }
+  if (['classic', 'sd15', 'v1.5'].includes(explicitProfile)) {
+    return 'classic';
+  }
+  if (['multilingual', 'alt'].includes(explicitProfile)) {
+    return 'multilingual';
+  }
+
+  const explicitModelId = String(env?.SD_MODEL_ID || '').trim().toLowerCase();
+  if (explicitModelId.includes('stable-diffusion-3')) return 'sd35';
+  if (explicitModelId.includes('altdiffusion')) return 'multilingual';
+  if (explicitModelId.includes('stable-diffusion-v1-5')) return 'classic';
+
+  return explicitProfile || 'sd35';
+}
+
+function resolveSdLocalRenderLimits({ env = process.env, width = 0, height = 0 } = {}) {
+  const imageConfig = resolveImageDimensionConfig(env);
+  const minSide = 64;
+  const configuredMaxSide = clampNumber(env?.A11_IMAGE_MAX_SIZE, 256, 4096, imageConfig.maxRenderSide || 2048);
+  const explicitMaxPixels = Number(env?.A11_IMAGE_MAX_PIXELS);
+  const profile = normalizeSdModelProfileHint(env);
+  const longestSide = Math.max(Number(width || 0), Number(height || 0), 0);
+  const shortestSide = Math.max(1, Math.min(Number(width || 0) || 1, Number(height || 0) || 1));
+  const squareish = longestSide > 0 && (longestSide / shortestSide) <= 1.15;
+
+  let maxSide = configuredMaxSide;
+  let maxPixels = Number.isFinite(explicitMaxPixels) && explicitMaxPixels > 0
+    ? explicitMaxPixels
+    : (configuredMaxSide * configuredMaxSide);
+  let policy = 'default';
+
+  if (!(Number.isFinite(explicitMaxPixels) && explicitMaxPixels > 0) && profile === 'sd35') {
+    maxPixels = Math.min(maxPixels, 2048 * 1536);
+    policy = 'sd35_area_guard';
+  }
+
+  const explicitSquareCap = Number(env?.A11_IMAGE_MAX_SQUARE_SIZE);
+  const squareCap = Number.isFinite(explicitSquareCap) && explicitSquareCap > 0
+    ? explicitSquareCap
+    : (profile === 'sd35' ? 1536 : configuredMaxSide);
+  if (squareish && squareCap < maxSide) {
+    maxSide = squareCap;
+    policy = policy === 'default' ? 'square_guard' : `${policy}+square_guard`;
+  }
+
+  return {
+    minSide,
+    maxSide,
+    maxPixels,
+    profile,
+    policy,
+  };
+}
+
 function hasExplicitDimension(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0;
@@ -168,7 +227,7 @@ function buildDefaults(env = process.env) {
     version: 'mask-1',
     intent: 'image.generate',
     task: { domain: 'image', action: 'generate' },
-    compiler: { target: 'image-prompt-fr', version: '1.0' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
     inputs: {
       subject: [],
       environment: [],
@@ -215,15 +274,76 @@ function normalizeMaskImageGenerate(mask) {
     out.inputs[arr] = out.inputs[arr].map(x => String(x).trim()).filter(Boolean);
   }
   // Clamp options (aligné sur validate-mask-image-generate.cjs)
-  const IMAGE_MIN_SIZE = 64;
-  const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || imageConfig.maxRenderSide || 2048);
-  function clampAndRoundDimension(val, fallback) {
+  function clampAndRoundDimension(val, fallback, { min = 64, max = 2048 } = {}) {
     let n = Number(val);
     if (!Number.isFinite(n)) n = fallback;
     n = Math.round(n);
-    // Pair uniquement si > 1
     if (n > 1 && n % 2 !== 0) n = n - 1;
-    return Math.max(IMAGE_MIN_SIZE, Math.min(IMAGE_MAX_SIZE, n));
+    return Math.max(min, Math.min(max, n));
+  }
+  function fitCanvasDimensions(width, height, fallbackWidth, fallbackHeight) {
+    let resolvedWidth = Number(width);
+    let resolvedHeight = Number(height);
+    if (!Number.isFinite(resolvedWidth) || resolvedWidth <= 0) resolvedWidth = fallbackWidth;
+    if (!Number.isFinite(resolvedHeight) || resolvedHeight <= 0) resolvedHeight = fallbackHeight;
+    const renderLimits = resolveSdLocalRenderLimits({
+      env: process.env,
+      width: resolvedWidth,
+      height: resolvedHeight,
+    });
+    const IMAGE_MIN_SIZE = Number(renderLimits.minSide || 64) || 64;
+    const IMAGE_MAX_SIZE = Number(renderLimits.maxSide || imageConfig.maxRenderSide || 2048) || 2048;
+    const IMAGE_MAX_PIXELS = Number(renderLimits.maxPixels || (IMAGE_MAX_SIZE * IMAGE_MAX_SIZE)) || (IMAGE_MAX_SIZE * IMAGE_MAX_SIZE);
+    resolvedWidth = Math.max(IMAGE_MIN_SIZE, resolvedWidth);
+    resolvedHeight = Math.max(IMAGE_MIN_SIZE, resolvedHeight);
+
+    let scale = 1;
+    if (resolvedWidth > IMAGE_MAX_SIZE || resolvedHeight > IMAGE_MAX_SIZE) {
+      scale = Math.min(scale, IMAGE_MAX_SIZE / resolvedWidth, IMAGE_MAX_SIZE / resolvedHeight);
+    }
+    if ((resolvedWidth * resolvedHeight) > IMAGE_MAX_PIXELS) {
+      scale = Math.min(scale, Math.sqrt(IMAGE_MAX_PIXELS / Math.max(resolvedWidth * resolvedHeight, 1)));
+    }
+    if (scale < 1) {
+      resolvedWidth *= scale;
+      resolvedHeight *= scale;
+    }
+
+    resolvedWidth = clampAndRoundDimension(resolvedWidth, fallbackWidth, {
+      min: IMAGE_MIN_SIZE,
+      max: IMAGE_MAX_SIZE,
+    });
+    resolvedHeight = clampAndRoundDimension(resolvedHeight, fallbackHeight, {
+      min: IMAGE_MIN_SIZE,
+      max: IMAGE_MAX_SIZE,
+    });
+
+    let guard = 0;
+    while ((resolvedWidth * resolvedHeight) > IMAGE_MAX_PIXELS && guard < 4) {
+      const areaScale = Math.sqrt(IMAGE_MAX_PIXELS / Math.max(resolvedWidth * resolvedHeight, 1));
+      if (!(areaScale > 0 && areaScale < 1)) break;
+      const nextWidth = clampAndRoundDimension(resolvedWidth * areaScale, fallbackWidth, {
+        min: IMAGE_MIN_SIZE,
+        max: IMAGE_MAX_SIZE,
+      });
+      const nextHeight = clampAndRoundDimension(resolvedHeight * areaScale, fallbackHeight, {
+        min: IMAGE_MIN_SIZE,
+        max: IMAGE_MAX_SIZE,
+      });
+      if (nextWidth === resolvedWidth && nextHeight === resolvedHeight) break;
+      resolvedWidth = nextWidth;
+      resolvedHeight = nextHeight;
+      guard += 1;
+    }
+
+    return {
+      width: resolvedWidth,
+      height: resolvedHeight,
+      maxSide: IMAGE_MAX_SIZE,
+      maxPixels: IMAGE_MAX_PIXELS,
+      policy: renderLimits.policy,
+      profile: renderLimits.profile,
+    };
   }
   const existingRenderSizing = mask?.meta?.renderSizing && typeof mask.meta.renderSizing === 'object'
     ? mask.meta.renderSizing
@@ -248,8 +368,14 @@ function normalizeMaskImageGenerate(mask) {
         height: mask?.options?.height,
         env: process.env,
       });
-  out.options.width = clampAndRoundDimension(canvasPlan.width, imageConfig.defaultWidth);
-  out.options.height = clampAndRoundDimension(canvasPlan.height, imageConfig.defaultHeight);
+  const fittedCanvas = fitCanvasDimensions(
+    canvasPlan.width,
+    canvasPlan.height,
+    imageConfig.defaultWidth,
+    imageConfig.defaultHeight
+  );
+  out.options.width = fittedCanvas.width;
+  out.options.height = fittedCanvas.height;
   out.options.steps = Math.max(1, Math.min(100, Number(out.options.steps)||30));
   out.options.guidance_scale = Math.max(1, Math.min(30, Number(out.options.guidance_scale)||7.5));
   out.meta = out.meta && typeof out.meta === 'object' ? out.meta : {};
@@ -260,7 +386,10 @@ function normalizeMaskImageGenerate(mask) {
     requestedHeight: canvasPlan.requestedHeight,
     resolvedWidth: out.options.width,
     resolvedHeight: out.options.height,
-    maxRenderSide: imageConfig.maxRenderSide,
+    maxRenderSide: fittedCanvas.maxSide || imageConfig.maxRenderSide,
+    maxRenderPixels: fittedCanvas.maxPixels || null,
+    renderPolicy: fittedCanvas.policy || 'default',
+    modelProfile: fittedCanvas.profile || null,
   };
   return out;
 }
@@ -269,3 +398,4 @@ module.exports = normalizeMaskImageGenerate;
 module.exports.resolveImageDimensionConfig = resolveImageDimensionConfig;
 module.exports.resolveAutoImageCanvas = resolveAutoImageCanvas;
 module.exports.resolveImageCanvasPlan = resolveImageCanvasPlan;
+module.exports.resolveSdLocalRenderLimits = resolveSdLocalRenderLimits;

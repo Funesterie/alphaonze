@@ -77,6 +77,7 @@ def upload_image(image: Image.Image) -> Optional[str]:
         resp = httpx.post(
             A11_UPLOAD_ENDPOINT,
             json={"contentBase64": image_to_base64(image), "filename": "space-upload.png"},
+            headers=auth_headers(),
             timeout=30,
         )
         if resp.is_success:
@@ -100,7 +101,7 @@ def fetch_image_from_url(url: str) -> Optional[Image.Image]:
     return None
 
 
-def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
+def call_image_async(prompt: str, init_image_url: Optional[str] = None) -> tuple[str, Optional[Image.Image]]:
     """Lance SD via job async, poll toutes les 5s jusqu'a 4 minutes."""
     body = {
         "prompt": prompt,
@@ -108,9 +109,9 @@ def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
         "height": 512,
         "model_profile": "sd35turbo",
         "num_inference_steps": 8,
-        "prompt_prebuilt": True,
-        "skip_prompt_enrichment": True,
     }
+    if init_image_url:
+        body["init_image_url"] = init_image_url
 
     try:
         # 1. Lance le job, retour immediat
@@ -171,10 +172,9 @@ def build_preview(
         image_url = upload_image(source_image)
 
     if request_mode in ("image", "video"):
-        style_hint = "" if style_preset == "Aucun preset" else f", {style_preset} style"
-        # Prompt en anglais direct pour SD
-        full_prompt = f"{cleaned_prompt}{style_hint}, high quality, detailed illustration"
-        status_text, generated_image = call_image_async(full_prompt)
+        style_hint = "" if style_preset == "Aucun preset" else f", style {style_preset}"
+        full_prompt = f"{cleaned_prompt}{style_hint}"
+        status_text, generated_image = call_image_async(full_prompt, init_image_url=image_url)
         summary = "\n\n".join(filter(None, [
             f"**{status_text}**",
             f"**Mode:** `{request_mode}` | **Preset:** `{style_preset}`",

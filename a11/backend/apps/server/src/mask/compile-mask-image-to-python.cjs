@@ -17,7 +17,11 @@ function pushArg(args, flag, value) {
 function buildPythonArgv(sdPayload = {}, outputPlaceholder = '$OUTPUT_PNG') {
   const argv = [DEFAULT_SD_ENTRYPOINT];
   pushArg(argv, '--prompt', sdPayload.prompt);
+  pushArg(argv, '--prompt_2', sdPayload.prompt_2 || sdPayload.prompt2);
+  pushArg(argv, '--prompt_3', sdPayload.prompt_3 || sdPayload.prompt3);
   pushArg(argv, '--negative_prompt', sdPayload.negative_prompt);
+  pushArg(argv, '--negative_prompt_2', sdPayload.negative_prompt_2 || sdPayload.negativePrompt2);
+  pushArg(argv, '--negative_prompt_3', sdPayload.negative_prompt_3 || sdPayload.negativePrompt3);
   pushArg(argv, '--num_inference_steps', sdPayload.steps);
   pushArg(argv, '--guidance_scale', sdPayload.guidance_scale);
   pushArg(argv, '--width', sdPayload.width);

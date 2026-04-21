@@ -109,6 +109,91 @@ function withIntentMetadata(payload, resolution) {
   };
 }
 
+function extractSourceImageUrl(body = {}) {
+  const candidates = [
+    body?.sourceImageUrl,
+    body?.source_image_url,
+    body?.referenceImageUrl,
+    body?.reference_image_url,
+    body?.initImageUrl,
+    body?.init_image_url,
+    body?.imageUrl,
+    body?.image_url,
+  ];
+  return candidates
+    .map((value) => String(value || '').trim())
+    .find(Boolean) || '';
+}
+
+function normalizeLookup(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/[-/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function isPlaceholderSourceImageSubject(value = '') {
+  const normalized = normalizeLookup(value);
+  if (!normalized) return false;
+  if (/^(?:ce|cet|cette)\s+(?:fichier|photo|image|portrait|visuel)$/.test(normalized)) return true;
+  return [
+    'fichier',
+    'photo',
+    'image',
+    'portrait',
+    'visuel',
+    'theme',
+    'style',
+    'sujet de reference',
+    'personne de reference',
+  ].includes(normalized);
+}
+
+function shouldSkipEntityResolutionForDirectSourceImage(mask = {}) {
+  if (mask?.meta?.webImageDraft?.fromChatSourceImage !== true) return false;
+  const firstSubject = Array.isArray(mask?.inputs?.subject) ? String(mask.inputs.subject[0] || '').trim() : '';
+  return !firstSubject || isPlaceholderSourceImageSubject(firstSubject);
+}
+
+function attachDirectSourceImageToMask(mask = {}, body = {}) {
+  const sourceImageUrl = extractSourceImageUrl(body);
+  if (!sourceImageUrl) return mask;
+  if (String(mask?.intent || '').trim() !== 'image.generate') return mask;
+
+  const nextMask = {
+    ...(mask && typeof mask === 'object' ? mask : {}),
+    meta: {
+      ...((mask && mask.meta && typeof mask.meta === 'object') ? mask.meta : {}),
+    },
+  };
+  const existingWebDraft = nextMask.meta.webImageDraft && typeof nextMask.meta.webImageDraft === 'object'
+    ? nextMask.meta.webImageDraft
+    : {};
+
+  nextMask.meta.init_image_url = String(nextMask.meta.init_image_url || sourceImageUrl).trim() || sourceImageUrl;
+  nextMask.meta.reference_image_url = String(nextMask.meta.reference_image_url || sourceImageUrl).trim() || sourceImageUrl;
+  nextMask.meta.webImageDraft = {
+    ...existingWebDraft,
+    initImageUrl: String(existingWebDraft.initImageUrl || sourceImageUrl).trim() || sourceImageUrl,
+    sourceUsed: String(existingWebDraft.sourceUsed || sourceImageUrl).trim() || sourceImageUrl,
+    mode: String(existingWebDraft.mode || 'image_url').trim() || 'image_url',
+    reason: String(existingWebDraft.reason || 'chat_source_image_url').trim() || 'chat_source_image_url',
+    explicitReferenceAnchor: existingWebDraft.explicitReferenceAnchor !== false,
+    fromChatSourceImage: true,
+  };
+  if (Array.isArray(nextMask.inputs?.subject) && isPlaceholderSourceImageSubject(nextMask.inputs.subject[0] || '')) {
+    nextMask.inputs.subject = ['sujet de référence'];
+    if (nextMask.meta.canonicalSubject && isPlaceholderSourceImageSubject(nextMask.meta.canonicalSubject)) {
+      delete nextMask.meta.canonicalSubject;
+    }
+  }
+  return nextMask;
+}
+
 function buildClarificationPayload(clarification, semantic, traceId, pipeline) {
   const resolution = {
     traceId,
@@ -416,6 +501,7 @@ function createIntentResolver(overrides = {}) {
       intentType: selectedIntentType,
       semanticAnalysis: semantic,
     });
+    mask = attachDirectSourceImageToMask(mask, input.body || {});
 
     if (!mask) {
       const error = new Error('invalid_mask');
@@ -445,6 +531,7 @@ function createIntentResolver(overrides = {}) {
     if (
       String(mask?.intent || '').trim() === 'image.generate'
       && imageRequestMode?.mode === 'smart'
+      && !shouldSkipEntityResolutionForDirectSourceImage(mask)
       && typeof deps.resolveImageEntityContext === 'function'
     ) {
       try {

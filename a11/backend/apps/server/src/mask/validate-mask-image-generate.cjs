@@ -11,7 +11,7 @@ function isStringArray(arr) {
 
 
 
-const ALLOWED_TARGETS = ['image-prompt-fr','sd-payload','python','comfy'];
+const ALLOWED_TARGETS = ['image-prompt-fr','image-prompt-en','sd-payload','python','comfy'];
 const ALLOWED_VERSION = '1.0';
 const IMAGE_MIN_SIZE = 64;
 const IMAGE_MAX_SIZE = Number(process.env.A11_IMAGE_MAX_SIZE || 2048);

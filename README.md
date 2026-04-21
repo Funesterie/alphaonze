@@ -10,6 +10,8 @@ Ce depot sert maintenant de source de verite pour:
 
 ## Structure
 
+- `spaces/a11`
+  Space Hugging Face Gradio minimal pour `funeste/a11`.
 - `a11/launchers`
   Lanceurs globaux A11 et scripts d'orchestration locale.
 - `a11/WORKSPACE_BOUNDARIES.md`

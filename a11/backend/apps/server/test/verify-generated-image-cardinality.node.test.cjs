@@ -164,6 +164,24 @@ test('inferExpectedImageContract preserves pair prompts as exactly two subjects'
   assert.equal(result.subjectLabel, 'Zelda et Mario');
 });
 
+test('inferExpectedImageContract disables strict mono-subject heuristics when the init source is a group scene', () => {
+  const result = inferExpectedImageContract({
+    mask: {
+      raw: 'genere une variation propre a partir de cette image de groupe',
+      meta: {
+        webImageDraft: {
+          sceneKey: 'duo_group',
+          sceneType: 'duo/groupe',
+          disableMonoSubjectHeuristics: true,
+        },
+      },
+    },
+  });
+
+  assert.equal(result.enabled, false);
+  assert.equal(result.reason, 'source_scene_multi_subject');
+});
+
 test('inferExpectedImageContract does not confuse accessory detail phrases with a second subject', () => {
   const result = inferExpectedImageContract({
     mask: {
@@ -175,4 +193,27 @@ test('inferExpectedImageContract does not confuse accessory detail phrases with 
   assert.equal(result.subjectCount, 1);
   assert.equal(result.mode, 'single');
   assert.equal(result.subjectLabel, 'luffy');
+});
+
+test('inferExpectedImageContract keeps source-image transformation prompts as a single subject', () => {
+  const result = inferExpectedImageContract({
+    mask: {
+      raw: 'utilise ma photo comme reference et transforme moi en joker avec une batte custom visible',
+      meta: {
+        init_image_url: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+        reference_image_url: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+        webImageDraft: {
+          initImageUrl: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+          fromChatSourceImage: true,
+          sceneKey: 'solo_face',
+          sceneType: 'visage solo',
+        },
+      },
+    },
+  });
+
+  assert.equal(result.enabled, true);
+  assert.equal(result.subjectCount, 1);
+  assert.equal(result.mode, 'single');
+  assert.equal(result.subjectLabel, 'joker');
 });

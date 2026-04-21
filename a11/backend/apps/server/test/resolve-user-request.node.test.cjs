@@ -55,9 +55,10 @@ test('resolveUserRequest emits a valid mask-1 image.generate mask and compiles i
   assert.equal(validateMaskUnified(resolution.mask).valid, true);
   assert.ok(Array.isArray(resolution.mask.inputs.environment));
   assert.ok(resolution.mask.inputs.environment.length >= 1);
-  assert.equal(resolution.compiled.target, 'image-prompt-fr');
+  assert.equal(resolution.compiled.target, 'image-prompt-en');
   assert.equal(typeof resolution.compiled.value.prompt, 'string');
-  assert.match(String(resolution.compiled.value.prompt || ''), /décor simple cohérent avec le sujet/i);
+  assert.match(String(resolution.compiled.value.prompt || ''), /dragon blue/i);
+  assert.match(String(resolution.compiled.value.prompt || ''), /single main subject/i);
 });
 
 test('resolveUserRequest emits canonical code.python.generate masks that compile to python', async () => {
@@ -183,7 +184,7 @@ test('resolveUserRequest attaches a temporary image scratchpad when an entity is
   assert.equal(resolution.kind, 'image.generate');
   assert.equal(resolution.mask.meta.imageEntityContext.canonicalSubject, 'Master Chief');
   assert.equal(resolution.mask.meta.imageScratchpad.canonicalSubject, 'Master Chief');
-  assert.match(String(resolution.compiled.value.prompt || ''), /john 117 en armure bleue/i);
+  assert.match(String(resolution.compiled.value.prompt || ''), /john 117.*blue armor/i);
   assert.doesNotMatch(String(resolution.compiled.value.prompt || ''), /Ardoise utile :/i);
 });
 
@@ -251,4 +252,25 @@ test('resolveUserRequest smooths noisy image requests before building the canoni
   assert.equal(resolution.mask.meta.originalSourceText, 'genere une imag de pikachuu bleu');
   assert.match(String(resolution.mask.meta.requestTextSmoother?.smoothedText || ''), /image de pikachu bleu/i);
   assert.match(String(resolution.mask.inputs.subject?.[0] || ''), /pikachu/i);
+});
+
+test('resolveUserRequest injects sourceImageUrl into image masks for direct img2img requests', async () => {
+  const resolver = createIntentResolver();
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'genere une photo de ce fichier au theme dragon ball z',
+    body: {
+      sourceImageUrl: 'http://127.0.0.1:3000/files/runtime/files/uploads/demo.png',
+    },
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.imageRequestMode, 'smart');
+  assert.equal(resolution.mask.meta.init_image_url, 'http://127.0.0.1:3000/files/runtime/files/uploads/demo.png');
+  assert.equal(resolution.mask.meta.reference_image_url, 'http://127.0.0.1:3000/files/runtime/files/uploads/demo.png');
+  assert.equal(resolution.mask.meta.webImageDraft.initImageUrl, 'http://127.0.0.1:3000/files/runtime/files/uploads/demo.png');
+  assert.equal(resolution.mask.meta.webImageDraft.mode, 'image_url');
+  assert.equal(resolution.mask.meta.webImageDraft.fromChatSourceImage, true);
+  assert.equal(Array.isArray(resolution.mask.inputs.subject), true);
+  assert.deepEqual(resolution.mask.inputs.subject, ['sujet de référence']);
 });

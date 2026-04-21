@@ -3,12 +3,18 @@
 
 declare global {
   interface Window {
+    A11Avatar?: {
+      showIdle: () => void;
+      showTalking: () => void;
+      setSpeaking?: (speaking: boolean) => void;
+    };
     A11AvatarUI?: {
       playGifWhileAudio: (
         audio: HTMLAudioElement,
         gifSrc: string,
         durationMs?: number
       ) => void;
+      _cleanup?: () => void;
     };
   }
 }
@@ -56,7 +62,7 @@ export function mountA11AvatarUI() {
     }
     // État initial : idle devant
     showIdle();
-    (window as any).A11Avatar = { showIdle, showTalking };
+    window.A11Avatar = { showIdle, showTalking };
 
     // Listen to global speech events to toggle avatar image
     const onSpeechStart = showTalking;
@@ -65,21 +71,30 @@ export function mountA11AvatarUI() {
     window.addEventListener('a11:speechstart', onSpeechStart);
     window.addEventListener('a11:speechend', onSpeechEnd);
 
-    // Expose a cleanup function for HMR
-    (window as any).A11AvatarUI._cleanup = () => {
-      try { window.removeEventListener('a11:speechstart', onSpeechStart); } catch {};
-      try { window.removeEventListener('a11:speechend', onSpeechEnd); } catch {};
+    window.A11AvatarUI = {
+      playGifWhileAudio: (audio: HTMLAudioElement) => {
+        showTalking();
+        const reset = () => showIdle();
+        audio.addEventListener('ended', reset, { once: true });
+        audio.addEventListener('pause', reset, { once: true });
+      },
+      _cleanup: () => {
+        try { window.removeEventListener('a11:speechstart', onSpeechStart); } catch {}
+        try { window.removeEventListener('a11:speechend', onSpeechEnd); } catch {}
+      },
     };
   })();
 }
 
 // À placer dans apps/web/src/lib/avatar-ui.ts ou dans un useEffect global
 if (typeof window !== 'undefined') {
-  const idle = document.getElementById("a11-avatar-idle");
-  const gif  = document.getElementById("a11-avatar-gif");
+  const idle = document.getElementById("a11-avatar-idle") as HTMLElement | null;
+  const gif  = document.getElementById("a11-avatar-gif") as HTMLElement | null;
   if (idle && gif) {
-    function showIdle()  { idle.style.opacity = "1"; gif.style.opacity = "0"; }
-    function showTalking() { idle.style.opacity = "0"; gif.style.opacity = "1"; }
+    const idleEl = idle;
+    const gifEl = gif;
+    function showIdle()  { idleEl.style.opacity = "1"; gifEl.style.opacity = "0"; }
+    function showTalking() { idleEl.style.opacity = "0"; gifEl.style.opacity = "1"; }
     window.A11Avatar = { showIdle, showTalking };
   }
 }

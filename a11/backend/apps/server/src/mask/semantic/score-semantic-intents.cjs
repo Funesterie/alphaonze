@@ -100,7 +100,10 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const emailActionLike = /\b(envoie|envoyer|envoi|mail|email|gmail|courriel|message)\b/.test(normalizedText);
   const emailAddressLike = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(sourceText);
   const attachmentLike = /\b(avec|join|joins|joint|jointe|piece jointe|pi[eè]ce jointe|attachment|attached|inclu|inclure)\b/.test(normalizedText);
-  const subject = extractSubjectCandidate(wordItems.map((item) => item.word));
+  const subject = extractSubjectCandidate(
+    wordItems.map((item) => item.word),
+    { sourceText }
+  );
   const detectedColors = collectUniqueColorsFromWordItems(wordItems);
   const detectedStyles = collectUniqueStylesFromWordItems(wordItems);
   const detectedScenes = collectUniqueScenesFromWordItems(wordItems);

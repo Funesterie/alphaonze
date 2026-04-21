@@ -71,3 +71,14 @@ test('semantic style and scene libraries propagate to wazaa and mask', () => {
   assert.ok(mask?.inputs?.style?.includes('pixel art'));
   assert.ok(mask?.inputs?.environment?.some((entry) => /grotte/i.test(String(entry))));
 });
+
+test('scene library detects path-like outdoor scenes such as sentiers and chemins', () => {
+  const text = 'genere une image de zelda marchant sur un sentier dans une foret';
+  const analysis = analyzeSemanticIntent(text, {});
+  const wordItems = Array.isArray(analysis?.levels?.words?.items) ? analysis.levels.words.items : [];
+
+  const detectedScenes = collectUniqueScenesFromWordItems(wordItems).map((entry) => entry.label);
+
+  assert.ok(detectedScenes.includes('sentier'));
+  assert.ok(detectedScenes.includes('foret'));
+});
