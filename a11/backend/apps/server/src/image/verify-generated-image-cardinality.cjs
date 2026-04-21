@@ -41,6 +41,12 @@ function clamp01(value) {
 
 function inferExpectedImageContract({ mask, compiledState } = {}) {
   const rawPrompt = String(mask?.raw || compiledState?.mask?.raw || '').trim();
+  const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
+    ? mask.meta.webImageDraft
+    : {};
+  const sourceSceneKey = String(webImageDraft?.sceneKey || '').trim().toLowerCase();
+  const disableMonoSubjectHeuristics = webImageDraft?.disableMonoSubjectHeuristics === true
+    || ['duo_group', 'composite'].includes(sourceSceneKey);
   if (!rawPrompt) {
     return {
       enabled: false,
@@ -58,6 +64,13 @@ function inferExpectedImageContract({ mask, compiledState } = {}) {
       allowGroup: false,
       mode: 'pair',
       reason: 'paired_subject_prompt',
+    };
+  }
+
+  if (disableMonoSubjectHeuristics) {
+    return {
+      enabled: false,
+      reason: 'source_scene_multi_subject',
     };
   }
 
@@ -801,12 +814,17 @@ function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
     .map((entry) => String(entry || '').trim())
     .filter(Boolean);
   const mergedNegativePrompt = [...new Set([...baseNegativeHints, ...retryNegativeHints])].join(', ').trim();
+  const currentStrength = Number(sdBody?.strength);
+  const nextStrength = Number.isFinite(currentStrength)
+    ? Math.max(0.18, currentStrength - (fusionDetected ? 0.1 : 0.06))
+    : undefined;
 
   return {
     ...sdBody,
     prompt: mergedPrompt,
     prompt_prebuilt: true,
     ...(mergedNegativePrompt ? { negative_prompt: mergedNegativePrompt } : {}),
+    ...(Number.isFinite(nextStrength) ? { strength: nextStrength } : {}),
     seed: retrySeedBase + 97,
   };
 }

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  callJanusText,
   resolveJanusVisionConfig,
   resolveVisionProvider,
 } = require('../lib/janus-vision-runtime.cjs');
@@ -75,4 +76,8 @@ test('resolveJanusVisionConfig keeps Janus-Pro-1B as the default cpu-safe profil
     assert.match(String(config.modelRef || ''), /Janus-Pro-1B|deepseek-ai\/Janus-Pro-1B/i);
     assert.equal(config.device, 'cpu');
   });
+});
+
+test('janus runtime exports a text-only call helper for sequence planning', () => {
+  assert.equal(typeof callJanusText, 'function');
 });

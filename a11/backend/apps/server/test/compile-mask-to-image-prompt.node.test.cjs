@@ -148,6 +148,38 @@ test('compileMaskToImagePrompt keeps explicit named reference character cues for
   assert.match(String(compiled.negative_prompt || ''), /gros plan|plan poitrine/i);
 });
 
+test('compileMaskToImagePrompt promotes the canonical Zelda subject in the prompt lead', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de zelda marchant sur un sentier dans la foret',
+    inputs: {
+      subject: ['Princesse Zelda'],
+      environment: ['foret', 'sentier'],
+      style: ['illustration fantasy nette'],
+      composition: ['un seul personnage complet'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      canonicalSubject: 'Princesse Zelda',
+      subjectProfile: {
+        type: 'reference_character',
+        canonicalSubject: 'Princesse Zelda',
+      },
+      imageEntityContext: {
+        canonicalSubject: 'Princesse Zelda',
+        aliases: ['Zelda'],
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /Princesse Zelda marchant sur un sentier dans la foret/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /^zelda marchant/i);
+});
+
 test('compileMaskToImagePrompt includes single human instructions for warrior prompts', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'génère une image de guerriere nordique',
@@ -332,6 +364,38 @@ test('compileMaskToImagePrompt keeps smoking prompts explicit and positive', () 
   assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas\b/i);
 });
 
+test('compileMaskToImagePrompt strips placeholder source-file wording from init-image style prompts', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: "Créer une image épique de 'contenu du fichier' dans un style Dragon Ball Z",
+    inputs: {
+      subject: ['sujet de référence'],
+      environment: ['décor cohérent avec le sujet décrit'],
+      style: ['style dragonball z', 'photorealiste'],
+      composition: ['sujet unique bien cadré', 'silhouette lisible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      webImageDraft: {
+        initImageUrl: 'http://127.0.0.1:3000/files/runtime/files/uploads/demo.png',
+        fromChatSourceImage: true,
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /style dragonball z/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /contenu du fichier/i);
+  assert.match(String(compiled.negative_prompt || ''), /capture d écran|interface mobile/i);
+  assert.match(String(compiled.negative_prompt || ''), /texte incrusté|date incrustée/i);
+});
+
 test('compileMaskToImagePrompt keeps accessory instructions as positive subject details', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image d un lapin avec une carotte dans la bouche',
@@ -393,6 +457,65 @@ test('compileMaskToImagePrompt keeps relational pair prompts explicit for role p
   assert.match(String(compiled.negative_prompt || ''), /clone du premier sujet|dupliquer le premier personnage/i);
 });
 
+test('compileMaskToImagePrompt strips video phrasing and promotes reference-character identity hints', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une video de mario marchant devant un chateau',
+    inputs: {
+      subject: ['Mario'],
+      environment: ['chateau'],
+      style: ['illustration de jeu vidéo nette', 'illustration nette'],
+      composition: ['sujet unique bien cadré', 'silhouette lisible'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+        promptInstruction: 'Représenter clairement Mario, un seul personnage moustachu de jeu vidéo, reconnaissable et complet.',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bune video de\b/i);
+  assert.match(String(compiled.prompt || ''), /^mario marchant devant un chateau/i);
+  assert.match(String(compiled.prompt || ''), /mario, un seul personnage moustachu de jeu vidéo|personnage moustachu de jeu vidéo/i);
+  assert.match(String(compiled.prompt || ''), /illustration de jeu vidéo nette/i);
+});
+
+test('compileMaskToImagePrompt removes solo framing constraints for versus prompts', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de goku faisant un kamehameha contre broly',
+    inputs: {
+      subject: ['Goku', 'Broly'],
+      environment: ['energie bleue dramatique'],
+      style: ['illustration nette', 'haute qualité'],
+      composition: ['sujet unique bien cadré', 'silhouette lisible', 'corps entier dans le cadre'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /goku faisant un kamehameha contre broly/i);
+  assert.match(String(compiled.prompt || ''), /deux sujets distincts et lisibles/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /sujet unique bien cadré/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /un seul sujet principal/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /corps entier dans le cadre/i);
+  assert.match(String(compiled.negative_prompt || ''), /fusion des personnages|clone du premier sujet/i);
+});
+
 test('compileMaskToImagePrompt removes solo framing constraints for named group scenes', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image des Mugiwaras',
@@ -422,4 +545,65 @@ test('compileMaskToImagePrompt removes solo framing constraints for named group 
   assert.doesNotMatch(String(compiled.prompt || ''), /un seul sujet principal/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /personnage complet et reconnaissable/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /corps entier dans le cadre/i);
+});
+
+test('compileMaskToImagePrompt filters negative imperative prompt instructions from the positive prompt', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de lapin blanc',
+    inputs: {
+      subject: ['lapin blanc'],
+      environment: ['décor naturel simple'],
+      style: ['haute qualité'],
+      composition: ['un seul animal complet'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      promptInstructions: [
+        'Ne pas ajouter de foule derrière le sujet.',
+        'Montrer clairement le sujet principal avec une pose simple.',
+      ],
+      subjectProfile: {
+        type: 'single_animal',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /lapin blanc/i);
+  assert.match(String(compiled.prompt || ''), /Montrer clairement le sujet principal avec une pose simple/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\bNe pas ajouter de foule\b/i);
+});
+
+test('compileMaskToImagePrompt normalizes invalid numeric options to safe defaults', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'genere une image de renard',
+    inputs: {
+      subject: ['renard'],
+      environment: [],
+      style: ['haute qualité'],
+      composition: [],
+      lighting: [],
+      palette: [],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {
+      width: -32,
+      height: '999999',
+      steps: 'abc',
+      guidance_scale: -4,
+      seed: 'not-a-number',
+    },
+  });
+
+  assert.equal(compiled.width, 64);
+  assert.equal(compiled.height, 4096);
+  assert.equal(compiled.num_inference_steps, 40);
+  assert.equal(compiled.guidance_scale, 0);
+  assert.equal(Object.prototype.hasOwnProperty.call(compiled, 'seed'), false);
 });

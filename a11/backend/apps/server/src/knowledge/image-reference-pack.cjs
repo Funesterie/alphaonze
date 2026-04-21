@@ -89,22 +89,187 @@ function resolveUniverse(mask = {}) {
   );
 }
 
-function buildSubjectReferenceQuery(mask = {}, subject = '', universe = '') {
+function escapeRegex(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveReferenceCharacterUniverseHint(mask = {}, subject = '', universe = '') {
   const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const resolvedUniverse = normalizeText(universe);
+  if (subjectProfileType !== 'reference_character') return resolvedUniverse;
+
+  const normalizedSubject = normalizeLookup(subject);
+  if (!normalizedSubject) return resolvedUniverse;
+
+  if (/\bmaster chief\b|\bjohn 117\b|\bspartan 117\b/.test(normalizedSubject)) return 'Halo';
+  if (/\bjames bond\b|\bagent 007\b/.test(normalizedSubject)) return 'James Bond';
+  if (/\bmario\b/.test(normalizedSubject)) return 'Nintendo';
+  if (/\bprincesse peach\b|\bprincess peach\b|\bpeach\b/.test(normalizedSubject)) return 'Nintendo';
+  if (/\bzelda\b/.test(normalizedSubject)) return 'Nintendo';
+  return resolvedUniverse;
+}
+
+function extractDistinctiveSubjectTokens(value = '') {
+  const genericTokens = new Set([
+    'princess',
+    'princesse',
+    'prince',
+    'king',
+    'queen',
+    'lord',
+    'lady',
+    'sir',
+    'master',
+    'mr',
+    'mrs',
+    'ms',
+    'miss',
+    'dr',
+    'doctor',
+    'captain',
+    'capitaine',
+    'super',
+  ]);
+  const tokens = normalizeLookup(value)
+    .split(/\s+/)
+    .filter(Boolean);
+  const distinctive = tokens.filter((token) => token.length >= 4 && !genericTokens.has(token));
+  return distinctive.length
+    ? [...new Set(distinctive)]
+    : [...new Set(tokens.filter((token) => token.length >= 3))];
+}
+
+function hasTokenBoundaryMatch(haystack = '', token = '') {
+  if (!haystack || !token) return false;
+  return new RegExp(`(^|\\b)${escapeRegex(token)}(\\b|$)`, 'i').test(haystack);
+}
+
+const AMBIGUOUS_REFERENCE_SUBJECT_TOKENS = new Set([
+  'mario',
+  'peach',
+  'robin',
+]);
+
+function looksLikeSubjectReferenceMatch(entry = {}, options = {}) {
+  const combined = normalizeLookup([
+    entry?.title,
+    entry?.sourceUrl,
+    entry?.sourceDomain,
+    entry?.imageUrl,
+  ].filter(Boolean).join(' '));
+  if (!combined) return false;
+
+  const subjectTokens = extractDistinctiveSubjectTokens(options?.subject || entry?.label || '');
+  if (!subjectTokens.length) return true;
+  if (!subjectTokens.some((token) => hasTokenBoundaryMatch(combined, token))) {
+    return false;
+  }
+
+  if (!options?.strictSubject || subjectTokens.length !== 1) {
+    return true;
+  }
+
+  const ambiguousToken = subjectTokens[0];
+  if (!AMBIGUOUS_REFERENCE_SUBJECT_TOKENS.has(ambiguousToken)) {
+    return true;
+  }
+
+  const universeTokens = extractDistinctiveSubjectTokens(options?.universe || '');
+  if (universeTokens.some((token) => hasTokenBoundaryMatch(combined, token))) {
+    return true;
+  }
+
+  if (ambiguousToken === 'mario') {
+    return /\b(super mario|mario bros|nintendo|video game|jeu video)\b/.test(combined);
+  }
+  if (ambiguousToken === 'peach') {
+    return /\b(princess peach|princesse peach|super mario|mario bros|nintendo|video game|jeu video)\b/.test(combined);
+  }
+  if (ambiguousToken === 'robin') {
+    return /\b(one piece|batman|dc comics|teen titans|anime|manga|cartoon)\b/.test(combined);
+  }
+
+  return true;
+}
+
+function resolveSubjectReferenceQuerySuffix(mask = {}, options = {}) {
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const motionProfile = normalizeLookup(options?.motionProfile || '').replace(/\s+/g, '_');
   const bodyAnchors = extractBodyAnchors(mask);
   const wantsFullBody = bodyAnchors.some((entry) => entry.key === 'full_body');
 
-  if (!subject) return '';
+  if (['mounted_archery', 'archery_shot'].includes(motionProfile)) {
+    if (subjectProfileType === 'reference_character') return 'archer pose full body character art';
+    if (subjectProfileType === 'single_human_figure') return 'archer pose full body reference';
+    return 'archer pose full body reference';
+  }
+  if (['action_burst', 'power_up_loop', 'transformation_rise'].includes(motionProfile)) {
+    if (subjectProfileType === 'reference_character') return 'battle pose full body character art';
+    if (subjectProfileType === 'single_human_figure') return 'battle pose full body reference';
+    return 'battle pose full body reference';
+  }
+  if (['walk_cycle', 'run_cycle', 'dance_cycle', 'gesture_loop', 'subtle_loop'].includes(motionProfile)) {
+    if (subjectProfileType === 'reference_character') return 'full body pose character art';
+    if (subjectProfileType === 'single_human_figure') return 'full body pose reference';
+    if (subjectProfileType === 'single_animal') return 'full body animal reference';
+    return 'full body reference';
+  }
+
   if (subjectProfileType === 'reference_character') {
-    return [subject, universe, wantsFullBody ? 'full body character art' : 'character art'].filter(Boolean).join(' ');
+    return wantsFullBody ? 'solo full body character art' : 'solo character art';
   }
   if (subjectProfileType === 'single_human_figure') {
-    return [subject, wantsFullBody ? 'full body pose reference' : 'pose reference'].filter(Boolean).join(' ');
+    return wantsFullBody ? 'solo full body pose reference' : 'solo pose reference';
   }
   if (subjectProfileType === 'single_animal') {
-    return [subject, wantsFullBody ? 'full body animal reference' : 'animal reference'].filter(Boolean).join(' ');
+    return wantsFullBody ? 'solo full body animal reference' : 'solo animal reference';
   }
-  return [subject, wantsFullBody ? 'full body reference' : 'reference'].filter(Boolean).join(' ');
+  return wantsFullBody ? 'full body reference' : 'reference';
+}
+
+function buildSubjectReferenceQuery(mask = {}, subject = '', universe = '', options = {}) {
+  if (!subject) return '';
+  const suffix = resolveSubjectReferenceQuerySuffix(mask, options);
+  const resolvedUniverse = resolveReferenceCharacterUniverseHint(mask, subject, universe);
+  return [subject, resolvedUniverse, suffix].filter(Boolean).join(' ');
+}
+
+function looksRiskyReferenceResult(entry = {}) {
+  const haystack = normalizeLookup([
+    entry?.title,
+    entry?.sourceUrl,
+    entry?.sourceDomain,
+    entry?.imageUrl,
+    entry?.label,
+  ].filter(Boolean).join(' '));
+  if (!haystack) return false;
+
+  return /\b(?:poster|wallpaper|cover|lineup|line up|collage|mosaic|sheet|sprite\s*sheet|compilation|collection|group|crew|team|characters|personnages|all\s+characters|manga\s*page|comic\s*page|page|panel|sticker|logo|emblem|coloriage|coloring page|colouring page|line art|lineart|outline|black and white|stl|3d model|modele 3d|mod[eè]le 3d|figurine|miniature|printable|3d print|impression 3d|cults3d|thingiverse|myminifactory|cgtrader|anniversaire|birthday|celebrite|celebrity|statue|sculpture|medieval|wax|cire|mannequin|effigie)\b/i.test(haystack);
+}
+
+function shouldRejectReferenceResult(entry = {}, options = {}) {
+  if (!normalizeText(entry?.imageUrl || '')) return true;
+  if (looksRiskyReferenceResult(entry)) return true;
+
+  const role = normalizeLookup(entry?.role || '');
+  if (role === 'subject' && !looksLikeSubjectReferenceMatch(entry, options)) {
+    return true;
+  }
+
+  const selectionScore = Number(entry?.selectionScore || 0) || 0;
+  if (selectionScore > 0) {
+    const minimumScore = role === 'subject' ? 8 : 5;
+    if (selectionScore < minimumScore) return true;
+  }
+
+  const width = Number(entry?.width || 0) || 0;
+  const height = Number(entry?.height || 0) || 0;
+  const minimumSide = (role === 'subject' && options?.strictSubject) ? 320 : 192;
+  if ((width > 0 && width < minimumSide) || (height > 0 && height < minimumSide)) {
+    return true;
+  }
+
+  return false;
 }
 
 function buildAccessoryQuery({ subject = '', universe = '', entry = {}, anchors = [] } = {}) {
@@ -158,7 +323,8 @@ function buildBodyAnchorQueries(mask = {}, subject = '', universe = '', anchors 
     }));
 }
 
-function buildImageReferenceQueries(mask = {}) {
+function buildImageReferenceQueries(mask = {}, options = {}) {
+  const subjectOnly = options?.subjectOnly === true;
   const subject = resolvePrimarySubject(mask);
   const universe = resolveUniverse(mask);
   const accessories = extractSemanticEntries(mask?.meta?.semantic?.accessories || []);
@@ -174,8 +340,18 @@ function buildImageReferenceQueries(mask = {}) {
     label: subject,
     family: normalizeLookup(mask?.meta?.subjectProfile?.type || ''),
     placement: '',
-    query: buildSubjectReferenceQuery(mask, subject, universe),
+    query: buildSubjectReferenceQuery(mask, subject, universe, options),
   });
+
+  if (subjectOnly) {
+    return queries
+      .map((entry) => ({
+        ...entry,
+        query: normalizeText(entry.query),
+      }))
+      .filter((entry) => entry.query)
+      .slice(0, 1);
+  }
 
   for (const entry of accessories.slice(0, 3)) {
     queries.push({
@@ -229,6 +405,7 @@ function shouldResolveImageReferencePack({
   mask = {},
   selection = null,
   enabled,
+  forceSubjectLookup = false,
 } = {}) {
   if (!isImageReferencePackEnabled(enabled)) return false;
   if (String(mask?.intent || '').trim() !== 'image.generate') return false;
@@ -243,6 +420,22 @@ function shouldResolveImageReferencePack({
   const scenes = extractSemanticEntries(mask?.meta?.semantic?.scenes || []);
   const anchors = extractBodyAnchors(mask);
   const hasPromptInstructions = Array.isArray(mask?.meta?.promptInstructions) && mask.meta.promptInstructions.length > 0;
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const canonicalSubject = normalizeText(
+    mask?.meta?.canonicalSubject
+    || mask?.meta?.imageScratchpad?.canonicalSubject
+    || mask?.meta?.imageEntityContext?.canonicalSubject
+    || mask?.meta?.subjectProfile?.canonicalSubject
+    || ''
+  );
+
+  if (
+    forceSubjectLookup
+    && canonicalSubject
+    && ['reference_character', 'pokemon_creature'].includes(subjectProfileType)
+  ) {
+    return true;
+  }
 
   return Boolean(
     selection?.candidate === true
@@ -259,18 +452,29 @@ async function resolveImageReferencePack({
   selection = null,
   duckduckgoImageSearch = defaultDuckduckgoImageSearch,
   enabled,
+  forceSubjectLookup = false,
+  subjectOnly = false,
+  motionProfile = '',
 } = {}) {
-  if (!shouldResolveImageReferencePack({ mask, selection, enabled })) return null;
+  if (!shouldResolveImageReferencePack({ mask, selection, enabled, forceSubjectLookup })) return null;
   if (typeof duckduckgoImageSearch !== 'function') return null;
 
-  const queries = buildImageReferenceQueries(mask);
+  const queries = buildImageReferenceQueries(mask, { subjectOnly, motionProfile });
   if (!queries.length) return null;
 
   const references = [];
+  const subject = resolvePrimarySubject(mask);
+  const universe = resolveUniverse(mask);
+  const subjectUniverseHint = resolveReferenceCharacterUniverseHint(mask, subject, universe);
   for (const entry of queries) {
     try {
-      const result = await duckduckgoImageSearch(entry.query, { limit: 8 });
-      references.push({
+      const result = await duckduckgoImageSearch(entry.query, {
+        limit: 8,
+        subject: entry.role === 'subject' ? entry.label : subject,
+        universe: subjectUniverseHint || universe,
+        strictSubject: entry.role === 'subject' && (forceSubjectLookup || subjectOnly),
+      });
+      const resolvedEntry = {
         role: entry.role,
         label: entry.label,
         family: entry.family,
@@ -283,7 +487,13 @@ async function resolveImageReferencePack({
         width: Number(result?.width || 0) || null,
         height: Number(result?.height || 0) || null,
         selectionScore: Number(result?.selection_score || 0) || 0,
-      });
+      };
+      if (shouldRejectReferenceResult(resolvedEntry, {
+        subject: entry.role === 'subject' ? entry.label : subject,
+        universe: subjectUniverseHint || universe,
+        strictSubject: entry.role === 'subject' && (forceSubjectLookup || subjectOnly),
+      })) continue;
+      references.push(resolvedEntry);
     } catch {
       continue;
     }

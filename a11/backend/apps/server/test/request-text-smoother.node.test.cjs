@@ -55,6 +55,13 @@ test('smoothRequestTextSync preserves dotted proper names like Monkey D. Luffy',
   assert.equal(result.changed, false);
 });
 
+test('smoothRequestTextSync preserves multi-word proper names like James Bond', () => {
+  const result = smoothRequestTextSync('genere une video de James Bond marchant');
+
+  assert.match(result.text, /\bJames Bond\b/);
+  assert.doesNotMatch(result.text, /\bJames Bord\b/);
+});
+
 test('smoothRequestTextSync fixes framing typos like plant americain without turning them into plants', () => {
   const result = smoothRequestTextSync('genere une video de Sanji, plant americain, style anime');
 

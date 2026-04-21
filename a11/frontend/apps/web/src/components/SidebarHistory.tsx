@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { getAuthToken } from '../lib/api';
 
-export function SidebarHistory({ onSelect }) {
-  const [convs, setConvs] = useState([]);
+type SidebarConversation = {
+  conversationId?: string | null;
+  ts?: string | null;
+};
+
+type SidebarHistoryProps = {
+  onSelect: (conversation: SidebarConversation) => void;
+};
+
+export function SidebarHistory({ onSelect }: SidebarHistoryProps) {
+  const [convs, setConvs] = useState<SidebarConversation[]>([]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -13,7 +22,7 @@ export function SidebarHistory({ onSelect }) {
       },
     })
       .then(r => r.json())
-      .then(data => setConvs(data.entries || []))
+      .then((data: { entries?: SidebarConversation[] }) => setConvs(Array.isArray(data.entries) ? data.entries : []))
       .catch(() => setConvs([]));
   }, []);
 
@@ -22,7 +31,7 @@ export function SidebarHistory({ onSelect }) {
       <h3 style={{ marginTop: 0, marginBottom: 16 }}>Historique</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {convs
-          .filter(c => c.conversationId)
+          .filter((c) => !!c.conversationId)
           .map((conv, idx) => (
             <li key={idx} style={{ marginBottom: 12 }}>
               <button

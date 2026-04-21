@@ -248,8 +248,8 @@ test('t_generate_png prefers a portrait canvas for single human figure prompts w
     assert.equal(result.ok, true);
     assert.equal(result.mode, 'stable-diffusion-proxy');
     assert.equal(fs.existsSync(createdPath), true);
-    assert.equal(capturedBody?.width, 768);
-    assert.equal(capturedBody?.height, 1024);
+    assert.equal(capturedBody?.width, 1536);
+    assert.equal(capturedBody?.height, 2048);
   } finally {
     if (createdPath && fs.existsSync(createdPath)) {
       fs.unlinkSync(createdPath);

@@ -4,6 +4,10 @@ const { findSceneDefinition } = require('./scene-library.cjs');
 const { findElementDefinition } = require('./element-library.cjs');
 const { findMetierDefinition } = require('./metier-library.cjs');
 const { findAccessoryDefinition } = require('./accessory-library.cjs');
+const {
+  normalizeSubjectProfileText,
+  resolveSubjectProfile,
+} = require('./subject-profile-library.cjs');
 
 const STOPWORDS = new Set([
   'a', 'alors', 'au', 'aucun', 'aussi', 'autre', 'aux', 'avec',
@@ -28,6 +32,9 @@ const SUBJECT_NOISE_WORDS = new Set([
   'va', 'vas', 'allez', 'allons',
   'peux', 'peut', 'pourrais', 'voudrais', 'aimerais',
   'genre', 'juste', 'simplement',
+  'studio', 'fond', 'background', 'lumiere', 'lumière', 'lighting',
+  'light', 'neutre', 'neutral', 'soft', 'douce', 'doux',
+  'petit', 'petite', 'grand', 'grande',
 ]);
 
 const QUESTION_WORDS = [
@@ -235,20 +242,126 @@ function classifyWordSemanticTags(word) {
   return [...new Set(tags)];
 }
 
-function extractSubjectCandidate(words = []) {
-  const filtered = words
+function escapeRegex(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeSubjectEntries(words = []) {
+  return (Array.isArray(words) ? words : [words])
+    .map((entry) => {
+      if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+        const raw = String(entry.word || entry.raw || '').trim();
+        return {
+          raw,
+          normalized: normalizeSemanticText(entry.normalized || raw),
+          tags: Array.isArray(entry.tags) ? entry.tags.filter(Boolean) : [],
+        };
+      }
+      const raw = String(entry || '').trim();
+      return {
+        raw,
+        normalized: normalizeSemanticText(raw),
+        tags: [],
+      };
+    })
+    .filter((entry) => entry.raw && entry.normalized);
+}
+
+function normalizeSubjectAliasForLookup(value = '') {
+  return normalizeSubjectProfileText(value)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sourceTextContainsSubjectAlias(sourceText = '', alias = '') {
+  const normalizedSource = normalizeSubjectAliasForLookup(sourceText);
+  const normalizedAlias = normalizeSubjectAliasForLookup(alias);
+  if (!normalizedSource || !normalizedAlias) return false;
+  const pattern = new RegExp(
+    `(^|\\b)${escapeRegex(normalizedAlias).replace(/\s+/g, '\\s+')}(\\b|$)`,
+    'i'
+  );
+  return pattern.test(normalizedSource);
+}
+
+function resolveProfileSubjectCandidate(sourceText = '') {
+  const raw = String(sourceText || '').trim();
+  if (!raw) return '';
+
+  const profile = resolveSubjectProfile({ sourceText: raw });
+  if (!profile) return '';
+
+  const aliases = (Array.isArray(profile.aliases) ? profile.aliases : [])
     .map((entry) => String(entry || '').trim())
     .filter(Boolean)
-    .map((entry) => ({
-      raw: entry,
-      normalized: normalizeSemanticText(entry),
-    }))
-    .filter((entry) => entry.normalized && !STOPWORDS.has(entry.normalized))
-    .filter((entry) => !SUBJECT_NOISE_WORDS.has(entry.normalized))
-    .filter((entry) => !ACTION_VERBS.includes(entry.normalized))
-    .filter((entry) => !QUESTION_WORDS.includes(entry.normalized))
-    .filter((entry) => !Object.values(INTENT_DEFINITIONS).some((definition) => definition.keywords.includes(entry.normalized)))
-    .filter((entry) => !Object.values(INTENT_DEFINITIONS).some((definition) => definition.verbs.includes(entry.normalized)));
+    .sort((left, right) => right.length - left.length);
+  const matchedAlias = aliases.find((entry) => sourceTextContainsSubjectAlias(raw, entry));
+  return String(profile.canonicalSubject || matchedAlias || '').trim();
+}
+
+function sanitizeStructuredSubjectCandidate(value = '') {
+  const cleaned = String(value || '')
+    .replace(/[,.!?;:]+$/g, '')
+    .replace(/^(?:d['’]\s*un|d['’]\s*une|d['’]\s*des|d\s+un|d\s+une|d\s+des|de\s+la|de\s+l['’]?|du|des|un|une|le|la|les)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  const normalized = normalizeSemanticText(cleaned);
+  if (!normalized) return '';
+  if (STOPWORDS.has(normalized) || SUBJECT_NOISE_WORDS.has(normalized)) return '';
+  if (/^(?:studio|photo|portrait|image|illustration|dessin|visuel|fond|background|lumiere|lighting)$/.test(normalized)) {
+    return '';
+  }
+
+  return cleaned;
+}
+
+function extractStructuredSubjectCandidate(sourceText = '') {
+  const raw = String(sourceText || '').trim();
+  if (!raw) return '';
+
+  const stripped = raw
+    .replace(/^(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+/i, '')
+    .replace(/^que\s+tu\s+/i, '')
+    .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)?|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche|show|generate|create|draw|render|make)\s+(?:moi\s+)?/i, '')
+    .replace(/^(?:une?\s+)?(?:image|illustration|dessin|photo|visuel|portrait|vid[eé]o|video|animation|clip)\s+(?:de|du|de la|de l['’]?|d['’]?)?\s*/i, '')
+    .replace(/^(?:photo(?:\s+studio)?|studio\s+photo|portrait(?:\s+photo)?|studio)\s+(?:de|du|de la|de l['’]?|d['’]?)?\s*/i, '')
+    .trim();
+
+  if (!stripped) return '';
+
+  const match = /^(.+?)(?=\s+(?:avec|sans|dans|sur|sous|au milieu de|au bord de|près de|pres de|devant|derriere|derrière|contre|versus|vs|en train de|portant|tenant|assis|assise|marchant|marchante|courant|courante|fumant|fumante|lumi[eè]re|fond|background|lighting|style|couleurs?|palette)\b|[,.!?;:]|$)/i.exec(stripped);
+  return sanitizeStructuredSubjectCandidate(match?.[1] || stripped);
+}
+
+function shouldRejectWordAsSubject(entry = {}) {
+  const normalized = String(entry.normalized || '').trim();
+  const tags = Array.isArray(entry.tags) ? entry.tags : [];
+  if (!normalized) return true;
+  if (STOPWORDS.has(normalized) || SUBJECT_NOISE_WORDS.has(normalized)) return true;
+  if (ACTION_VERBS.includes(normalized) || QUESTION_WORDS.includes(normalized)) return true;
+  if (/^(?:d\s+un|d\s+une|d\s+des|de\s+la|de\s+l|de|du|des)$/.test(normalized)) return true;
+  if (tags.some((tag) => ['color', 'style', 'scene', 'element', 'accessory'].includes(tag))) return true;
+  if (tags.some((tag) => /^(?:color|style|scene|element|accessory|image\.generate|web\.image\.search|web\.search|code\.python\.generate):/.test(tag))) {
+    return true;
+  }
+  if (Object.values(INTENT_DEFINITIONS).some((definition) => definition.keywords.includes(normalized))) return true;
+  if (Object.values(INTENT_DEFINITIONS).some((definition) => definition.verbs.includes(normalized))) return true;
+  return false;
+}
+
+function extractSubjectCandidate(words = [], options = {}) {
+  const sourceText = String(options?.sourceText || '').trim();
+  const structuredCandidate = extractStructuredSubjectCandidate(sourceText);
+
+  const profileCandidate = resolveProfileSubjectCandidate(structuredCandidate || sourceText);
+  if (profileCandidate) return profileCandidate;
+
+  if (structuredCandidate) return structuredCandidate;
+
+  const filtered = normalizeSubjectEntries(words)
+    .filter((entry) => !shouldRejectWordAsSubject(entry));
 
   return filtered[0]?.raw || '';
 }

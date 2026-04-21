@@ -5,7 +5,14 @@ function compileMaskToSD(mask) {
     throw new Error('MASK intent must be image.generate');
   }
 
-  const compiled = compileMaskToImagePrompt(mask);
+  const compiled = compileMaskToImagePrompt({
+    ...(mask && typeof mask === 'object' ? mask : {}),
+    compiler: {
+      ...(mask?.compiler && typeof mask.compiler === 'object' ? mask.compiler : {}),
+      target: 'sd-payload',
+      version: String(mask?.compiler?.version || '1.0').trim() || '1.0',
+    },
+  });
   const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
     ? mask.meta.webImageDraft
     : {};
@@ -17,7 +24,7 @@ function compileMaskToSD(mask) {
   const strength = Number(webImageDraft.strength);
   const sdPayload = {
     prompt: String(compiled?.prompt || '').trim(),
-    prompt_language: String(compiled?.prompt_language || 'fr').trim() || 'fr',
+    prompt_language: String(compiled?.prompt_language || 'en').trim() || 'en',
     width: Number(compiled?.width || mask?.options?.width || 768),
     height: Number(compiled?.height || mask?.options?.height || 768),
     steps: Number(compiled?.num_inference_steps || mask?.options?.steps || 40),

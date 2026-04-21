@@ -88,7 +88,7 @@ test('POST /api/mask/compile returns 400 for invalid masks and compiles image ma
         version: 'mask-1',
         intent: 'image.generate',
         task: { domain: 'image', action: 'generate' },
-        compiler: { target: 'image-prompt-fr', version: '1.0' },
+        compiler: { target: 'image-prompt-en', version: '1.0' },
         inputs: {
           subject: ['orange cat'],
           environment: [],
@@ -103,10 +103,10 @@ test('POST /api/mask/compile returns 400 for invalid masks and compiles image ma
         raw: 'genere une image de chat orange',
       });
       assert.equal(imageMask.response.status, 200);
-      assert.equal(imageMask.json.target, 'image-prompt-fr');
+      assert.equal(imageMask.json.target, 'image-prompt-en');
       assert.equal(typeof imageMask.json.compiled?.prompt, 'string');
-      assert.match(String(imageMask.json.compiled?.negative_prompt || ''), /plusieurs sujets/i);
-      assert.match(String(imageMask.json.compiled?.prompt || ''), /Demande utilisateur|Sujet principal/i);
+      assert.match(String(imageMask.json.compiled?.negative_prompt || ''), /multiple subjects/i);
+      assert.match(String(imageMask.json.compiled?.prompt || ''), /orange cat|single main subject/i);
     }
   );
 });
@@ -1416,7 +1416,7 @@ test('compileMaskToSD returns a raw payload and adaptMaskToFreelandValue wraps i
 
   const compiledPayload = compileMaskToSD(mask);
   assert.equal(typeof compiledPayload.prompt, 'string');
-  assert.match(String(compiledPayload?.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(compiledPayload?.negative_prompt || ''), /multiple subjects/i);
   assert.equal(compiledPayload.kind, undefined);
   assert.equal(compiledPayload.value, undefined);
 

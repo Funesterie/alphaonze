@@ -156,7 +156,7 @@ async function callStructuredLlmJson({
   systemPrompt = '',
   temperature = 0,
   maxTokens = 256,
-  timeoutMs = 8000,
+  timeoutMs = 90000,
 } = {}) {
   const config = resolveTranslationConfig();
   if (!config.isConfigured) return null;
@@ -186,7 +186,7 @@ async function callStructuredLlmJson({
     headers,
     body: JSON.stringify(body),
   }, {
-    timeoutMs: Math.max(1000, Number(timeoutMs) || 8000),
+    timeoutMs: Math.max(1000, Number(timeoutMs) || 90000),
     retries: Math.max(0, Number(process.env.A11_WAZAA_LLM_RETRIES || 2) || 0),
     logger: console,
   });
@@ -220,7 +220,7 @@ async function callTranslationLlm(text) {
     systemPrompt: WAZAA_TRANSLATE_SYSTEM_PROMPT,
     temperature: 0,
     maxTokens: 256,
-    timeoutMs: Number(process.env.A11_WAZAA_LLM_TIMEOUT_MS || 8000),
+    timeoutMs: Number(process.env.A11_WAZAA_LLM_TIMEOUT_MS || 90000),
   });
 }
 

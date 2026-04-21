@@ -137,27 +137,37 @@ def run_vision_text(model, processor, tokenizer, image, prompt, max_new_tokens=3
     return tokenizer.decode(outputs[0].cpu().tolist(), skip_special_tokens=True).strip()
 
 
-def handle_request(request, cli_args):
-    if request.get("action") != "vision_text":
-        return {
-            "id": request.get("id"),
-            "ok": False,
-            "error": "unsupported_action",
-        }
+@torch.inference_mode()
+def run_text_only(model, tokenizer, prompt, max_new_tokens=320, temperature=0.0):
+    prepared = tokenizer(prompt, return_tensors="pt").to(model.device)
+    do_sample = float(temperature or 0) > 0.01
+    generate_kwargs = {
+        "input_ids": prepared.input_ids,
+        "attention_mask": prepared.attention_mask,
+        "pad_token_id": tokenizer.eos_token_id,
+        "bos_token_id": tokenizer.bos_token_id,
+        "eos_token_id": tokenizer.eos_token_id,
+        "max_new_tokens": max(64, min(int(max_new_tokens or 320), 1024)),
+        "do_sample": do_sample,
+        "use_cache": True,
+    }
+    if do_sample:
+        generate_kwargs["temperature"] = max(float(temperature or 0), 0.1)
+    outputs = model.language_model.generate(
+        **generate_kwargs,
+    )
+    generated_tokens = outputs[0][prepared.input_ids.shape[-1]:]
+    return tokenizer.decode(generated_tokens.cpu().tolist(), skip_special_tokens=True).strip()
 
+
+def handle_request(request, cli_args):
+    action = str(request.get("action") or "").strip()
     prompt = str(request.get("prompt") or "").strip()
-    image_b64 = str(request.get("image_base64") or "").strip()
     if not prompt:
         return {
             "id": request.get("id"),
             "ok": False,
             "error": "missing_prompt",
-        }
-    if not image_b64:
-        return {
-            "id": request.get("id"),
-            "ok": False,
-            "error": "missing_image",
         }
 
     model, processor, tokenizer, device, dtype_name = ensure_model(
@@ -165,6 +175,40 @@ def handle_request(request, cli_args):
         cli_args.device,
         cli_args.dtype,
     )
+
+    if action in ("text", "planner_text"):
+        text = run_text_only(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_new_tokens=request.get("max_new_tokens", 320),
+            temperature=request.get("temperature", 0.0),
+        )
+        return {
+            "id": request.get("id"),
+            "ok": True,
+            "text": text,
+            "model_ref": cli_args.model,
+            "device": device,
+            "dtype": dtype_name,
+            "request_id": str(request.get("request_id") or "").strip(),
+        }
+
+    if action != "vision_text":
+        return {
+            "id": request.get("id"),
+            "ok": False,
+            "error": "unsupported_action",
+        }
+
+    image_b64 = str(request.get("image_base64") or "").strip()
+    if not image_b64:
+        return {
+            "id": request.get("id"),
+            "ok": False,
+            "error": "missing_image",
+        }
+
     image = decode_image(image_b64)
     text = run_vision_text(
         model,

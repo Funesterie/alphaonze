@@ -1485,6 +1485,7 @@ export function App() {
             fileUrl: typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
               ? resolveApiAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
               : null,
+            qflushVerification: null,
           };
       return {
         id: String(message?.id || `backend-msg-${Date.now()}-${index}`),
@@ -1738,11 +1739,10 @@ export function App() {
     fileInputRef.current?.click();
   }
 
-  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
+  async function handleImportedFiles(files: FileList | null) {
     handleImportFiles(files, (txt: string) => {
       setInput((prev) => (prev ? prev + "\n" + txt : txt));
-    }).catch(console.error);
+    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined }).catch(console.error);
 
     if (!files || files.length === 0) return;
 
@@ -1772,8 +1772,18 @@ export function App() {
     } else if (failed.length) {
       setUploadFeedback(`Echec import: ${failed.join(", ")}`);
     }
+  }
 
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    await handleImportedFiles(files);
     e.target.value = "";
+  }
+
+  async function onComposerDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const files = e.dataTransfer?.files || null;
+    await handleImportedFiles(files);
   }
 
   // New conversation handler
@@ -1810,11 +1820,24 @@ export function App() {
   }
 
   // Modifie la fonction sendMessage pour accepter un texte forcé
+
+  function extractImageUrlsFromText(text: string): { cleanText: string; imageUrls: string[] } {
+    const imageUrls: string[] = [];
+    const cleanText = text
+      .replace(/\[image:([^\]]+)\]/g, (_match, url) => { imageUrls.push(url.trim()); return ''; })
+      .replace(/\[image-data:(data:image\/[^;]+;base64,[^\]]+)\]/g, (_match, dataUrl) => { imageUrls.push(dataUrl.trim()); return ''; })
+      .trim();
+    return { cleanText, imageUrls };
+  }
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
-    const messageKey = normalizeOutgoingMessageKey(text);
+    const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
+    const previewImageUrl = imageUrls[0] ? String(imageUrls[0]).trim() : "";
+    const sourceImageUrl = previewImageUrl ? (resolveApiAssetUrl(previewImageUrl) || previewImageUrl) : undefined;
+    const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
+    const messageKey = normalizeOutgoingMessageKey([effectiveText, sourceImageUrl || previewImageUrl || ""].join("\n"));
     const now = Date.now();
-    if (!text || sending || sendLockRef.current) return;
+    if (!effectiveText || sending || sendLockRef.current) return;
     if (messageKey && pendingMessageKeyRef.current === messageKey) return;
     if (
       messageKey
@@ -1829,7 +1852,8 @@ export function App() {
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
-      content: text,
+      content: effectiveText,
+      imageUrl: previewImageUrl || sourceImageUrl || null,
       ts: new Date().toISOString(),
     };
     setMessages((prev) => {
@@ -1840,11 +1864,11 @@ export function App() {
     setInput("");
     setSending(true);
 
-    const suggestion = suggestConsoleCommandForDiagnosticRequest(text);
+
+    const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
     if (suggestion) {
       openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
     }
-
     try {
       // Utilisation de chatCompletion pour transmettre le prompt et le flag dev
       // On reconstruit l'historique sans les messages système (le prompt système est passé séparément)
@@ -1858,6 +1882,7 @@ export function App() {
           systemPrompt: systemPrompt,
           conversationId: selectedChatId || undefined,
           providerProfileId: resolvedChatModelChoice.providerProfileId,
+          sourceImageUrl,
         }
       );
       const normalizedAssistant = normalizeAssistantMessagePayload(
@@ -3296,13 +3321,17 @@ export function App() {
             style={{
               padding: isCompactLayout ? "8px 10px calc(10px + env(safe-area-inset-bottom))" : undefined,
             }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              void onComposerDrop(e);
+            }}
           >
             <div className="row">
               <button
                 type="button"
                 className="btn ghost import-inline"
                 onClick={onImportClick}
-                title="Importer un fichier texte"
+                title="Importer un fichier ou une image"
                 style={{ marginRight: 8, padding: isCompactLayout ? "0 10px" : undefined }}
               >
                 {isCompactLayout ? "Import" : "Importer"}
@@ -3327,12 +3356,12 @@ export function App() {
 
               <button
                 type="button"
-                className={`nossen-mic-btn inline ${(voiceListening || ttsFallback || audioPlaying) ? 'listening' : ''}`}
+                className={`nossen-mic-btn inline ${(voiceListening || ttsFallback || audioPlaying) ? "listening" : ""}`}
                 onClick={toggleMic}
                 title="Toggle microphone / TTS"
                 style={{ marginLeft: 8 }}
               >
-                {(voiceListening || ttsFallback || audioPlaying) ? '🎙️' : '🎤'}
+                {(voiceListening || ttsFallback || audioPlaying) ? "🎙️" : "🎤"}
               </button>
             </div>
             <div className="hint">

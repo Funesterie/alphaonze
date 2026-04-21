@@ -50,6 +50,58 @@ test('generateSdInternal preserves prebuilt prompts without re-enriching them', 
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
 });
 
+test('generateSdInternal preserves SD3 multi-prompt payload layers', async () => {
+  let capturedBody = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/sd3-multiprompt.png',
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const response = await generateSdInternal({
+    req: { headers: {} },
+    prompt: 'base structure stable: vegeta, posture droite stable',
+    body: {
+      prompt: 'base structure stable: vegeta, posture droite stable',
+      prompt_2: 'decor et composition stables: meme visage, meme tenue, fond simple',
+      prompt_3: 'variation visible de cette frame: cheveux se dressent, aura rouge apparait',
+      negative_prompt: 'low quality',
+      negative_prompt_2: 'drift identitaire',
+      negative_prompt_3: 'variation insuffisante',
+      prompt_prebuilt: true,
+      width: 1536,
+      height: 896,
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(capturedBody?.prompt, 'base structure stable: vegeta, posture droite stable');
+  assert.equal(capturedBody?.prompt_2, 'decor et composition stables: meme visage, meme tenue, fond simple');
+  assert.equal(capturedBody?.prompt_3, 'variation visible de cette frame: cheveux se dressent, aura rouge apparait');
+  assert.equal(capturedBody?.prompt_prebuilt, true);
+  assert.equal(capturedBody?.prompt_2_prebuilt, true);
+  assert.equal(capturedBody?.prompt_3_prebuilt, true);
+  assert.equal(capturedBody?.negative_prompt, 'low quality');
+  assert.equal(capturedBody?.negative_prompt_2, 'drift identitaire');
+  assert.equal(capturedBody?.negative_prompt_3, 'variation insuffisante');
+  assert.equal(capturedBody?.negative_prompt_2_prebuilt, true);
+  assert.equal(capturedBody?.negative_prompt_3_prebuilt, true);
+  assert.equal(capturedBody?.width, 1536);
+  assert.equal(capturedBody?.height, 896);
+});
+
 test('generateSdInternal forwards init image draft settings to the SD proxy', async () => {
   let capturedBody = null;
   const { generateSdInternal } = createSdToolsRouter({
@@ -87,6 +139,90 @@ test('generateSdInternal forwards init image draft settings to the SD proxy', as
   assert.equal(capturedBody?.strength, 0.41);
 });
 
+test('generateSdInternal defaults img2img strength to auto and forwards the resolved plan to the SD proxy', async () => {
+  let capturedBody = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/zelda-auto.png',
+            init_image_used: true,
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const response = await generateSdInternal({
+    req: { headers: {} },
+    prompt: 'princesse zelda heroique avec une couronne differente',
+    body: {
+      prompt: 'princesse zelda heroique avec une couronne differente',
+      prompt_prebuilt: true,
+      init_image_url: 'https://images.example.com/zelda-ref.png',
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(capturedBody?.init_image_url, 'https://images.example.com/zelda-ref.png');
+  assert.equal(capturedBody?.strength_mode, 'auto');
+  assert.equal(capturedBody?.strength_profile, 'preserve');
+  assert.ok(Number(capturedBody?.strength_value || 0) >= 0.22);
+  assert.ok(Number(capturedBody?.strength_value || 0) <= 0.38);
+  assert.equal(capturedBody?.strength, capturedBody?.strength_value);
+  assert.equal(capturedBody?.strength_components?.identity?.profile, 'preserve');
+  assert.equal(capturedBody?.strength_components?.background?.profile, 'preserve');
+});
+
+test('generateSdInternal boosts img2img strength for reference scene rewrites', async () => {
+  let capturedBody = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/bond-rewrite.png',
+            init_image_used: true,
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const response = await generateSdInternal({
+    req: { headers: {} },
+    prompt: 'keep the same face and hairstyle, James Bond 007 style, equipped with a silenced pistol, 007 movie introduction decor',
+    body: {
+      prompt: 'keep the same face and hairstyle, James Bond 007 style, equipped with a silenced pistol, 007 movie introduction decor',
+      prompt_prebuilt: true,
+      init_image_url: 'https://images.example.com/portrait-ref.png',
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(capturedBody?.init_image_url, 'https://images.example.com/portrait-ref.png');
+  assert.equal(capturedBody?.strength_mode, 'auto');
+  assert.equal(capturedBody?.strength_profile, 'balanced');
+  assert.equal(capturedBody?.strength_reason, 'reference_subject_scene_rewrite');
+  assert.ok(Number(capturedBody?.strength_value || 0) >= 0.6);
+  assert.equal(capturedBody?.strength, capturedBody?.strength_value);
+  assert.equal(capturedBody?.strength_components?.identity?.profile, 'preserve');
+  assert.equal(capturedBody?.strength_components?.background?.profile, 'restyle');
+});
+
 test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupes negative hints', async () => {
   let capturedBody = null;
   const { generateSdInternal } = createSdToolsRouter({
@@ -118,11 +254,11 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
-  assert.match(String(capturedBody?.prompt || ''), /lapin rose/i);
-  assert.match(String(capturedBody?.prompt || ''), /couleurs rose/i);
-  assert.match(String(capturedBody?.prompt || ''), /un seul sujet principal/i);
+  assert.match(String(capturedBody?.prompt || ''), /rabbit pink/i);
+  assert.match(String(capturedBody?.prompt || ''), /colors pink/i);
+  assert.match(String(capturedBody?.prompt || ''), /single main subject/i);
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bNe pas\b|\bdo not\b|literal interpretation/i);
-  assert.match(String(capturedBody?.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(capturedBody?.negative_prompt || ''), /multiple subjects/i);
   assert.match(String(capturedBody?.negative_prompt || ''), /watermark/i);
 });
 
@@ -533,8 +669,8 @@ test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is exp
 
     assert.equal(response.ok, true);
     assert.equal(response.mode, 'stable-diffusion-proxy');
-    assert.match(String(capturedBody?.prompt || ''), /lapin rose/i);
-    assert.match(String(capturedBody?.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(capturedBody?.prompt || ''), /rabbit pink/i);
+  assert.match(String(capturedBody?.negative_prompt || ''), /multiple subjects/i);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];

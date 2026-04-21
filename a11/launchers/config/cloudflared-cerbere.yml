@@ -2,6 +2,8 @@ tunnel: 64e2c232-609c-45db-bf37-9bd77471334f
 credentials-file: C:\Users\cella\.cloudflared\64e2c232-609c-45db-bf37-9bd77471334f.json
 
 ingress:
+  - hostname: api.funesterie.me
+    service: http://127.0.0.1:3000
   - hostname: sd.funesterie.me
     service: http://127.0.0.1:3000
   - hostname: cerbere.funesterie.me

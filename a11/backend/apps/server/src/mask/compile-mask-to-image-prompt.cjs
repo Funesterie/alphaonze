@@ -3,6 +3,7 @@ const {
   compileSingleSubjectConstraints,
   isMultiSubjectSceneRequest,
   normalizeImagePromptLiteral,
+  translateImagePromptToEnglish,
 } = require('./build-sd-prompt-bundle.cjs');
 const { resolveSubjectProfile } = require('./semantic/subject-profile-library.cjs');
 
@@ -12,12 +13,41 @@ function normalizeText(value = '') {
     .trim();
 }
 
+function normalizeLookup(value = '') {
+  return normalizeText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/[-/]/g, ' ')
+    .toLowerCase();
+}
+
 function normalizeList(values = []) {
   return [...new Set(
     (Array.isArray(values) ? values : [values])
       .map((entry) => normalizeText(entry))
       .filter(Boolean)
   )];
+}
+
+function sanitizePositivePromptHint(value = '') {
+  const text = normalizeText(value);
+  if (!text) return '';
+
+  const lookup = normalizeLookup(text);
+  if (!lookup) return '';
+  if (/\b(ne pas|pas de|sans|eviter|do not|don t|avoid)\b/.test(lookup)) return '';
+  if (/negative prompt/.test(lookup)) return '';
+
+  return text;
+}
+
+function normalizePositivePromptHints(values = []) {
+  return normalizeList(
+    (Array.isArray(values) ? values : [values])
+      .map((entry) => sanitizePositivePromptHint(entry))
+      .filter(Boolean)
+  );
 }
 
 function localizeList(values = []) {
@@ -138,10 +168,153 @@ function splitPromptFragments(value = '') {
     .filter(Boolean);
 }
 
-function buildPromptLead(rawPrompt = '', subject = []) {
+function resolvePromptLanguage(mask = {}) {
+  const compilerTarget = String(mask?.compiler?.target || '').trim().toLowerCase();
+  return ['image-prompt-en', 'sd-payload'].includes(compilerTarget) ? 'en' : 'fr';
+}
+
+function localizePromptFragment(value = '', language = 'fr') {
+  return language === 'en'
+    ? translateImagePromptToEnglish(value)
+    : normalizeText(value);
+}
+
+function localizePromptList(values = [], language = 'fr') {
+  return normalizeList(Array.isArray(values) ? values : [values])
+    .map((entry) => localizePromptFragment(entry, language))
+    .filter(Boolean);
+}
+
+function resolveImageOptionNumber(value, {
+  min = Number.NEGATIVE_INFINITY,
+  max = Number.POSITIVE_INFINITY,
+  fallback = 0,
+  integer = false,
+} = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const normalized = integer ? Math.round(numeric) : numeric;
+  return Math.max(min, Math.min(max, normalized));
+}
+
+function resolveOptionalSeed(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return Math.max(0, Math.min(4294967295, Math.round(numeric)));
+}
+
+function buildFallbackImagePrompt(mask = {}, language = 'fr') {
+  const subjectFallback = normalizeList(mask?.inputs?.subject || [])[0];
+  if (subjectFallback) {
+    return localizePromptFragment(subjectFallback, language);
+  }
+
+  const rawFallback = normalizeImagePromptLiteral(mask?.raw || '');
+  if (rawFallback) {
+    return localizePromptFragment(rawFallback, language);
+  }
+
+  return language === 'en' ? 'coherent detailed scene' : 'scene cohérente détaillée';
+}
+
+function escapeRegex(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveCanonicalLeadSubject(mask = {}) {
+  return normalizeText(
+    mask?.meta?.canonicalSubject
+    || mask?.meta?.imageScratchpad?.canonicalSubject
+    || mask?.meta?.imageEntityContext?.canonicalSubject
+    || mask?.meta?.subjectProfile?.canonicalSubject
+    || ''
+  );
+}
+
+function resolveCanonicalLeadAliases(mask = {}, canonicalSubject = '') {
+  const aliases = normalizeList([
+    mask?.inputs?.subject?.[0],
+    ...(Array.isArray(mask?.meta?.imageEntityContext?.aliases) ? mask.meta.imageEntityContext.aliases : []),
+    canonicalSubject.split(/\s+/).length >= 2 ? canonicalSubject.split(/\s+/).slice(-1)[0] : '',
+  ]);
+  const canonicalLookup = normalizeLookup(canonicalSubject);
+  return aliases.filter((entry) => normalizeLookup(entry) !== canonicalLookup);
+}
+
+function promoteCanonicalLeadSubject(lead = '', mask = {}) {
+  const cleanedLead = normalizeText(lead);
+  if (!cleanedLead) return '';
+
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  if (subjectProfileType !== 'reference_character') return cleanedLead;
+
+  const canonicalSubject = resolveCanonicalLeadSubject(mask);
+  if (!canonicalSubject) return cleanedLead;
+  if (normalizeLookup(cleanedLead).startsWith(normalizeLookup(canonicalSubject))) {
+    return cleanedLead;
+  }
+
+  for (const alias of resolveCanonicalLeadAliases(mask, canonicalSubject)) {
+    const pattern = new RegExp(`^${escapeRegex(alias)}(?=\\b|\\s|,)`, 'i');
+    if (pattern.test(cleanedLead)) {
+      return normalizeText(cleanedLead.replace(pattern, canonicalSubject));
+    }
+  }
+
+  return cleanedLead;
+}
+
+function hasReferenceInitImage(mask = {}) {
+  return Boolean(normalizeText(
+    mask?.meta?.reference_image_url
+    || mask?.meta?.init_image_url
+    || mask?.meta?.webImageDraft?.initImageUrl
+    || mask?.meta?.webImageDraft?.initImagePath
+    || ''
+  ));
+}
+
+function hasChatSourceReference(mask = {}) {
+  return mask?.meta?.webImageDraft?.fromChatSourceImage === true;
+}
+
+function resolveInitImageLeadAnchor(mask = {}) {
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  return (
+    subjectProfileType === 'reference_character'
+    || subjectProfileType === 'single_human_figure'
+  )
+    ? 'la même personne que sur l image de référence'
+    : 'le même sujet que sur l image de référence';
+}
+
+function shouldPrefixInitImageLead(lead = '', subject = [], mask = {}) {
+  if (!hasReferenceInitImage(mask)) return false;
+
+  const normalizedLead = normalizeLookup(lead);
+  if (!normalizedLead) return true;
+  if (/\b(meme|same|reference|photo de reference|image de reference|personne de reference|sujet de reference)\b/i.test(normalizedLead)) {
+    return false;
+  }
+
+  return normalizeList(subject).length === 0;
+}
+
+function buildPromptLead(rawPrompt = '', subject = [], mask = {}) {
   const cleanedPrompt = normalizeImagePromptLiteral(rawPrompt);
-  if (cleanedPrompt) return cleanedPrompt;
-  return normalizeList(subject).join(' et ');
+  const baseLead = cleanedPrompt
+    ? promoteCanonicalLeadSubject(cleanedPrompt, mask)
+    : normalizeList(subject).join(' et ');
+
+  if (shouldPrefixInitImageLead(baseLead, subject, mask)) {
+    return normalizeText(
+      [resolveInitImageLeadAnchor(mask), baseLead]
+        .filter(Boolean)
+        .join(', ')
+    );
+  }
+
+  return baseLead;
 }
 
 function buildCompactDirectives(mask = {}, options = {}) {
@@ -207,6 +380,44 @@ function buildCompactDirectives(mask = {}, options = {}) {
   return takeCompactHints(directives, { maxItems: 4, maxWords: 6 });
 }
 
+function buildPositiveInstructionHints(mask = {}, options = {}) {
+  const {
+    maxItems = 2,
+    maxWords = 14,
+    exclude = [],
+  } = options;
+
+  const profileInstruction = sanitizePositivePromptHint(mask?.meta?.subjectProfile?.promptInstruction || '');
+  const promptInstructions = normalizePositivePromptHints(mask?.meta?.promptInstructions || []);
+  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
+  const referencePreservationHints = hasReferenceInitImage(mask)
+    ? (
+        subjectProfileType === 'reference_character'
+        || subjectProfileType === 'single_human_figure'
+      )
+      ? [
+          'garder le même visage et la même coiffure',
+          'préserver la silhouette et la tenue principale',
+        ]
+      : [
+          'préserver le sujet de référence',
+        ]
+    : [];
+
+  return takeCompactHints(
+    [
+      profileInstruction,
+      ...referencePreservationHints,
+      ...promptInstructions,
+    ],
+    {
+      maxItems,
+      maxWords,
+      exclude,
+    }
+  );
+}
+
 function buildNegativePrompt(mask = {}) {
   const subject = localizeList(mask?.inputs?.subject || []);
   const environment = localizeList(mask?.inputs?.environment || []);
@@ -225,6 +436,29 @@ function buildNegativePrompt(mask = {}) {
 
   if (mask?.constraints?.no_text === true) {
     hints.push('texte lisible', 'watermark', 'logo', 'signature');
+  }
+
+  if (hasReferenceInitImage(mask)) {
+    if (
+      subjectProfileType === 'reference_character'
+      || subjectProfileType === 'single_human_figure'
+    ) {
+      hints.push('autre personne', 'visage différent', 'identité différente');
+    } else {
+      hints.push('sujet différent');
+    }
+  }
+
+  if (hasChatSourceReference(mask)) {
+    hints.push(
+      'texte incrusté',
+      'date incrustée',
+      'capture d écran',
+      'interface mobile',
+      'barre de statut',
+      'icônes de téléphone',
+      'cadre de smartphone'
+    );
   }
 
   if (pair?.count === 2) {
@@ -298,6 +532,7 @@ function buildNegativePrompt(mask = {}) {
 }
 
 function compileMaskToImagePrompt(mask = {}) {
+  const promptLanguage = resolvePromptLanguage(mask);
   const rawPrompt = normalizeText(mask?.raw || '');
   const subject = localizeList(mask?.inputs?.subject || []);
   const environment = localizeList(mask?.inputs?.environment || []);
@@ -310,7 +545,7 @@ function compileMaskToImagePrompt(mask = {}) {
   const subjectProfileType = normalizeText(mask?.meta?.subjectProfile?.type || '');
   const multiSubjectScene = Boolean(pair?.count >= 2) || isMultiSubjectSceneRequest(rawPrompt);
 
-  const promptLead = buildPromptLead(rawPrompt, subject);
+  const promptLead = buildPromptLead(rawPrompt, subject, mask);
   const styleHints = takeCompactHints(style, { maxItems: 2, maxWords: 6 });
   const environmentHints = takeCompactHints(environment, { maxItems: 1, maxWords: 8 });
   const compositionHints = takeCompactHints(filterSceneCompositionHints(composition, { pair, multiSubjectScene }), {
@@ -325,28 +560,69 @@ function compileMaskToImagePrompt(mask = {}) {
     subjectProfileType,
     multiSubjectScene,
   });
+  const instructionHints = buildPositiveInstructionHints(mask, {
+    maxItems: 2,
+    maxWords: 14,
+    exclude: [
+      promptLead,
+      ...styleHints,
+      ...environmentHints,
+      ...compositionHints,
+      ...lightingHints,
+      ...paletteHints,
+      ...directives,
+    ],
+  });
 
-  const prompt = joinPromptFragments([
+  const prompt = joinPromptFragments(localizePromptList([
     promptLead,
+    ...instructionHints,
     ...styleHints,
     ...environmentHints,
     ...compositionHints,
     ...lightingHints,
     ...paletteHints,
     ...directives,
-  ]);
-  const negativePrompt = buildNegativePrompt(mask);
+  ], promptLanguage)) || buildFallbackImagePrompt(mask, promptLanguage);
+  const negativePrompt = localizePromptList(
+    splitPromptFragments(buildNegativePrompt(mask)),
+    promptLanguage
+  ).join(', ');
+  const width = resolveImageOptionNumber(mask?.options?.width, {
+    min: 64,
+    max: 4096,
+    fallback: 768,
+    integer: true,
+  });
+  const height = resolveImageOptionNumber(mask?.options?.height, {
+    min: 64,
+    max: 4096,
+    fallback: 768,
+    integer: true,
+  });
+  const numInferenceSteps = resolveImageOptionNumber(mask?.options?.steps, {
+    min: 1,
+    max: 150,
+    fallback: 40,
+    integer: true,
+  });
+  const guidanceScale = resolveImageOptionNumber(mask?.options?.guidance_scale, {
+    min: 0,
+    max: 30,
+    fallback: 8,
+  });
+  const seed = resolveOptionalSeed(mask?.options?.seed);
 
   return {
     prompt,
-    prompt_language: 'fr',
+    prompt_language: promptLanguage,
     prompt_prebuilt: true,
     ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
-    width: Number(mask?.options?.width || 768),
-    height: Number(mask?.options?.height || 768),
-    num_inference_steps: Number(mask?.options?.steps || 40),
-    guidance_scale: Number(mask?.options?.guidance_scale || 8),
-    ...(mask?.options?.seed !== undefined ? { seed: Number(mask.options.seed) } : {}),
+    width,
+    height,
+    num_inference_steps: numInferenceSteps,
+    guidance_scale: guidanceScale,
+    ...(seed !== undefined ? { seed } : {}),
   };
 }
 

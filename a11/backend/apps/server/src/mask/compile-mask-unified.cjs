@@ -32,7 +32,7 @@ function compileMaskUnified(mask) {
   if (intent === 'image.generate') {
     const normalized = normalizeMaskImageGenerate(mask);
     return {
-      target: normalized?.compiler?.target || 'image-prompt-fr',
+      target: normalized?.compiler?.target || 'image-prompt-en',
       value: normalized?.compiler?.target === 'sd-payload'
         ? compileMaskToSD(normalized)
         : compileMaskToImagePrompt(normalized),

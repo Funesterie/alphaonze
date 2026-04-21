@@ -292,6 +292,42 @@ function isCapitalizedToken(token = '') {
   return !!raw && raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase();
 }
 
+function isSentenceBoundaryToken(token = '') {
+  return /[.!?]/.test(String(token || ''));
+}
+
+function isSentenceStartWordToken(tokens = [], index = 0) {
+  for (let cursor = Number(index) - 1; cursor >= 0; cursor -= 1) {
+    const token = String(tokens[cursor] || '');
+    if (!token.trim()) continue;
+    if (isWordToken(token)) return false;
+    if (isSentenceBoundaryToken(token)) return true;
+  }
+  return true;
+}
+
+function hasAdjacentCapitalizedWordToken(tokens = [], index = 0) {
+  for (let cursor = Number(index) - 1; cursor >= 0; cursor -= 1) {
+    const token = String(tokens[cursor] || '');
+    if (!token.trim()) continue;
+    if (isWordToken(token)) {
+      return isCapitalizedToken(token);
+    }
+    if (isSentenceBoundaryToken(token)) break;
+  }
+
+  for (let cursor = Number(index) + 1; cursor < tokens.length; cursor += 1) {
+    const token = String(tokens[cursor] || '');
+    if (!token.trim()) continue;
+    if (isWordToken(token)) {
+      return isCapitalizedToken(token);
+    }
+    if (isSentenceBoundaryToken(token)) break;
+  }
+
+  return false;
+}
+
 function hasRiskyLexiconCategory(candidate = null, categories = []) {
   const candidateCategories = Array.isArray(categories) && categories.length
     ? categories
@@ -305,7 +341,7 @@ function hasRiskyLexiconCategory(candidate = null, categories = []) {
   ].includes(String(entry || '').trim()));
 }
 
-function isSafeLocalCorrectionCandidate(sourceToken = '', candidate = null, distance = Infinity, prefix = 0) {
+function isSafeLocalCorrectionCandidate(sourceToken = '', candidate = null, distance = Infinity, prefix = 0, context = {}) {
   if (!candidate?.normalized) return false;
   const categories = Array.isArray(candidate.categories) ? candidate.categories : [];
   if (categories.includes('stopword') || categories.includes('question_word')) {
@@ -318,8 +354,14 @@ function isSafeLocalCorrectionCandidate(sourceToken = '', candidate = null, dist
     }
   }
 
-  if (isCapitalizedToken(sourceToken) && !isCapitalizedToken(candidate.exemplar) && distance > 1) {
-    return false;
+  if (isCapitalizedToken(sourceToken)) {
+    const candidateLooksProper = isCapitalizedToken(candidate.exemplar) || hasRiskyLexiconCategory(candidate, categories);
+    if (context?.sentenceStart !== true && !candidateLooksProper) {
+      return false;
+    }
+    if (!candidateLooksProper && !isCapitalizedToken(candidate.exemplar) && distance > 1) {
+      return false;
+    }
   }
 
   return true;
@@ -337,7 +379,7 @@ function getSuspiciousTokens(text = '') {
   return suspicious;
 }
 
-function findBestLocalCorrection(token = '') {
+function findBestLocalCorrection(token = '', context = {}) {
   const normalized = normalizeSemanticText(token);
   if (!normalized || normalized.length < 4) return null;
   if (/\d/.test(normalized)) return null;
@@ -377,7 +419,7 @@ function findBestLocalCorrection(token = '') {
     return null;
   }
 
-  if (!isSafeLocalCorrectionCandidate(token, winner.candidate, winner.distance, winner.prefix)) {
+  if (!isSafeLocalCorrectionCandidate(token, winner.candidate, winner.distance, winner.prefix, context)) {
     return null;
   }
 
@@ -417,9 +459,12 @@ function smoothRequestTextSync(text = '', opts = {}) {
 
   const tokens = tokenizeForSmoother(originalText);
   const corrections = [];
-  const output = tokens.map((token) => {
+  const output = tokens.map((token, index) => {
     if (!isWordToken(token)) return token;
-    const candidate = findBestLocalCorrection(token);
+    const candidate = findBestLocalCorrection(token, {
+      sentenceStart: isSentenceStartWordToken(tokens, index),
+      adjacentCapitalizedWord: hasAdjacentCapitalizedWordToken(tokens, index),
+    });
     if (!candidate || candidate === token) return token;
     corrections.push({ from: token, to: candidate });
     return candidate;
