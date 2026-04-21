@@ -108,6 +108,8 @@ def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
         "height": 512,
         "model_profile": "sd35turbo",
         "num_inference_steps": 8,
+        "prompt_prebuilt": True,
+        "skip_prompt_enrichment": True,
     }
 
     try:
@@ -169,8 +171,9 @@ def build_preview(
         image_url = upload_image(source_image)
 
     if request_mode in ("image", "video"):
-        style_hint = "" if style_preset == "Aucun preset" else f", style {style_preset}"
-        full_prompt = f"{cleaned_prompt}{style_hint}"
+        style_hint = "" if style_preset == "Aucun preset" else f", {style_preset} style"
+        # Prompt en anglais direct pour SD
+        full_prompt = f"{cleaned_prompt}{style_hint}, high quality, detailed illustration"
         status_text, generated_image = call_image_async(full_prompt)
         summary = "\n\n".join(filter(None, [
             f"**{status_text}**",
