@@ -59,6 +59,13 @@ CSS = """
 A11_API_BASE = (os.environ.get("A11_API_BASE") or "https://api.funesterie.pro").rstrip("/")
 A11_CHAT_ENDPOINT = f"{A11_API_BASE}/api/ai/chat"
 A11_UPLOAD_ENDPOINT = f"{A11_API_BASE}/api/upload/image-local"
+A11_JWT_TOKEN = os.environ.get("A11_JWT_TOKEN") or ""
+
+
+def auth_headers() -> dict:
+    if A11_JWT_TOKEN:
+        return {"Authorization": f"Bearer {A11_JWT_TOKEN}"}
+    return {}
 
 
 def image_to_base64(image: Image.Image) -> str:
@@ -73,6 +80,7 @@ def upload_image(image: Image.Image) -> Optional[str]:
         resp = httpx.post(
             A11_UPLOAD_ENDPOINT,
             json={"contentBase64": image_to_base64(image), "filename": "space-upload.png"},
+            headers=auth_headers(),
             timeout=30,
         )
         if resp.is_success:
@@ -150,6 +158,7 @@ def build_preview(
                 "stream": False,
                 "sourceImageUrl": image_url,
             },
+            headers=auth_headers(),
             timeout=180,
         )
         resp.raise_for_status()
