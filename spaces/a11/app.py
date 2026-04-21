@@ -104,9 +104,8 @@ def call_image(prompt: str, image_url: Optional[str]) -> tuple[str, Optional[Ima
         "model_profile": "sd35turbo",
         "num_inference_steps": 8,
     }
-    if image_url:
-        body["init_image_url"] = image_url
-        body["reference_image_url"] = image_url
+    # init_image desactive sur sd35turbo (crash img2img Windows)
+    # L'image de reference est utilisee pour le prompt uniquement
 
     try:
         resp = httpx.post(A11_SD_ENDPOINT, json=body, headers=auth_headers(), timeout=180)
