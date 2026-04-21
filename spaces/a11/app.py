@@ -106,8 +106,8 @@ def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
         "prompt": prompt,
         "width": 512,
         "height": 512,
-        "model_profile": "sd35large",
-        "num_inference_steps": 20,
+        "model_profile": "sd35turbo",
+        "num_inference_steps": 8,
     }
 
     try:
@@ -118,8 +118,8 @@ def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
         if not job_id:
             return "Pas de jobId retourne", None
 
-        # 2. Poll toutes les 5s, max 48 fois = 4 minutes
-        for attempt in range(48):
+        # 2. Poll toutes les 5s, max 72 fois = 6 minutes
+        for attempt in range(72):
             time.sleep(5)
             try:
                 poll = httpx.get(
@@ -145,7 +145,7 @@ def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
             except Exception:
                 continue
 
-        return "Timeout (4 min depasse)", None
+        return "Timeout (6 min depasse)", None
 
     except httpx.HTTPStatusError as exc:
         return f"HTTP {exc.response.status_code}: {exc.response.text[:300]}", None
