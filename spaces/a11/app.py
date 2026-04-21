@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import base64
 import io
 import json
+import time
 from typing import Optional
 import os
 
@@ -11,7 +12,7 @@ import httpx
 from PIL import Image
 
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 CSS = """
 :root {
@@ -24,7 +25,6 @@ CSS = """
   --a11-text: #f3f7ff;
   --a11-muted: #9cb7d6;
 }
-
 .gradio-container {
   background:
     radial-gradient(circle at top left, rgba(83, 240, 199, 0.18), transparent 28%),
@@ -32,7 +32,6 @@ CSS = """
     linear-gradient(145deg, var(--a11-bg-1), var(--a11-bg-2));
   color: var(--a11-text);
 }
-
 .a11-shell {
   border: 1px solid var(--a11-line);
   border-radius: 24px;
@@ -40,7 +39,6 @@ CSS = """
   background: var(--a11-panel);
   backdrop-filter: blur(14px);
 }
-
 .a11-kicker {
   display: inline-block;
   padding: 6px 10px;
@@ -52,13 +50,13 @@ CSS = """
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-
 .a11-muted { color: var(--a11-muted); }
 """
 
 A11_API_BASE = (os.environ.get("A11_API_BASE") or "https://api.funesterie.pro").rstrip("/")
 A11_CHAT_ENDPOINT = f"{A11_API_BASE}/api/ai/chat"
 A11_UPLOAD_ENDPOINT = f"{A11_API_BASE}/api/upload/image-local"
+A11_SD_JOB_ENDPOINT = f"{A11_API_BASE}/api/jobs/sd"
 A11_JWT_TOKEN = os.environ.get("A11_JWT_TOKEN") or ""
 
 
@@ -75,17 +73,14 @@ def image_to_base64(image: Image.Image) -> str:
 
 
 def upload_image(image: Image.Image) -> Optional[str]:
-    """Upload l'image sur le backend local, retourne l'URL publique."""
     try:
         resp = httpx.post(
             A11_UPLOAD_ENDPOINT,
             json={"contentBase64": image_to_base64(image), "filename": "space-upload.png"},
-            headers=auth_headers(),
             timeout=30,
         )
         if resp.is_success:
-            data = resp.json()
-            url = data.get("url", "")
+            url = resp.json().get("url", "")
             if url:
                 return f"{A11_API_BASE}{url}" if url.startswith("/") else url
     except Exception:
@@ -93,10 +88,20 @@ def upload_image(image: Image.Image) -> Optional[str]:
     return None
 
 
-A11_SD_ENDPOINT = f"{A11_API_BASE}/api/tools/generate_sd"
+def fetch_image_from_url(url: str) -> Optional[Image.Image]:
+    try:
+        if url.startswith("/"):
+            url = f"{A11_API_BASE}{url}"
+        r = httpx.get(url, headers=auth_headers(), timeout=30)
+        if r.is_success:
+            return Image.open(io.BytesIO(r.content))
+    except Exception:
+        pass
+    return None
 
 
-def call_image(prompt: str, image_url: Optional[str]) -> tuple[str, Optional[Image.Image]]:
+def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
+    """Lance SD via job async, poll toutes les 5s jusqu'a 4 minutes."""
     body = {
         "prompt": prompt,
         "width": 512,
@@ -104,46 +109,48 @@ def call_image(prompt: str, image_url: Optional[str]) -> tuple[str, Optional[Ima
         "model_profile": "sd35turbo",
         "num_inference_steps": 8,
     }
-    # init_image desactive sur sd35turbo (crash img2img Windows)
-    # L'image de reference est utilisee pour le prompt uniquement
 
     try:
-        resp = httpx.post(A11_SD_ENDPOINT, json=body, headers=auth_headers(), timeout=180)
+        # 1. Lance le job, retour immediat
+        resp = httpx.post(A11_SD_JOB_ENDPOINT, json=body, headers=auth_headers(), timeout=15)
         resp.raise_for_status()
-        data = resp.json()
-        out_url = data.get("image_url") or data.get("url") or ""
-        if out_url and out_url.startswith("/"):
-            out_url = f"{A11_API_BASE}{out_url}"
-        img = None
-        if out_url:
+        job_id = resp.json().get("jobId")
+        if not job_id:
+            return "Pas de jobId retourne", None
+
+        # 2. Poll toutes les 5s, max 48 fois = 4 minutes
+        for attempt in range(48):
+            time.sleep(5)
             try:
-                r = httpx.get(out_url, timeout=30)
-                if r.is_success:
-                    img = Image.open(io.BytesIO(r.content))
+                poll = httpx.get(
+                    f"{A11_SD_JOB_ENDPOINT}/{job_id}",
+                    headers=auth_headers(),
+                    timeout=10,
+                )
+                if not poll.is_success:
+                    continue
+                data = poll.json()
+                status = data.get("status")
+
+                if status == "done":
+                    result = data.get("result") or {}
+                    out_url = result.get("image_url") or result.get("url") or ""
+                    img = fetch_image_from_url(out_url) if out_url else None
+                    label = f"OK apres {(attempt + 1) * 5}s"
+                    return label, img
+
+                if status == "error":
+                    return f"Erreur SD: {data.get('error', 'unknown')}", None
+
             except Exception:
-                pass
-        return f"✅ SD — `{out_url}`", img
+                continue
+
+        return "Timeout (4 min depasse)", None
+
     except httpx.HTTPStatusError as exc:
-        return f"❌ HTTP {exc.response.status_code}: {exc.response.text[:300]}", None
+        return f"HTTP {exc.response.status_code}: {exc.response.text[:300]}", None
     except Exception as exc:
-        return f"❌ {type(exc).__name__}: {exc}", None
-
-
-def resolve_output_image(data: dict) -> Optional[str]:
-    """Extrait l'URL de l'image générée depuis la réponse backend."""
-    for key in ("image_url", "imageUrl", "imagePath", "url"):
-        val = data.get(key)
-        if val and isinstance(val, str):
-            return val
-    choices = data.get("choices") or []
-    if choices:
-        content = (choices[0].get("message") or {}).get("content") or ""
-        if "![" in content:
-            import re
-            m = re.search(r"!\[.*?\]\((.*?)\)", content)
-            if m:
-                return m.group(1)
-    return None
+        return f"{type(exc).__name__}: {exc}", None
 
 
 def build_preview(
@@ -157,25 +164,26 @@ def build_preview(
     if not cleaned_prompt:
         raise gr.Error("Ajoute un prompt avant de lancer A11.")
 
-    # Upload l'image si présente
     image_url = None
     if source_image is not None:
         image_url = upload_image(source_image)
 
-    # Mode image ou vidéo → appel direct SD
     if request_mode in ("image", "video"):
         style_hint = "" if style_preset == "Aucun preset" else f", style {style_preset}"
         full_prompt = f"{cleaned_prompt}{style_hint}"
-        status_text, generated_image = call_image(full_prompt, image_url)
+        status_text, generated_image = call_image_async(full_prompt)
         summary = "\n\n".join(filter(None, [
             f"**{status_text}**",
             f"**Mode:** `{request_mode}` | **Preset:** `{style_preset}`",
-            f"**Image uploadée:** `{image_url}`" if image_url else None,
+            f"**Image uploadee:** `{image_url}`" if image_url else None,
         ]))
-        debug = json.dumps({"endpoint": A11_SD_ENDPOINT, "prompt": full_prompt, "image_url": image_url}, ensure_ascii=False, indent=2)
+        debug = json.dumps(
+            {"endpoint": A11_SD_JOB_ENDPOINT, "prompt": full_prompt},
+            ensure_ascii=False, indent=2
+        )
         return summary, debug, generated_image
 
-    # Mode chat → /api/ai/chat
+    # Mode chat
     style_hint = "" if style_preset == "Aucun preset" else f" Style: {style_preset}."
     system_prompt = f"Tu es A-11, assistant concis et direct.{style_hint}"
     user_content = f"[image:{image_url}] {cleaned_prompt}" if image_url else cleaned_prompt
@@ -183,7 +191,6 @@ def build_preview(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
-    generated_image = None
     try:
         resp = httpx.post(
             A11_CHAT_ENDPOINT,
@@ -198,16 +205,16 @@ def build_preview(
             or (data.get("choices") or [{}])[0].get("message", {}).get("content")
             or ""
         )
-        status = f"✅ HTTP {resp.status_code}"
+        status = f"HTTP {resp.status_code}"
     except httpx.HTTPStatusError as exc:
         reply = f"Erreur HTTP {exc.response.status_code}: {exc.response.text[:300]}"
-        status = f"❌ HTTP {exc.response.status_code}"
+        status = f"HTTP {exc.response.status_code}"
     except Exception as exc:
         reply = f"Erreur: {exc}"
-        status = f"❌ {type(exc).__name__}"
+        status = f"{type(exc).__name__}"
 
     summary = "\n\n".join(filter(None, [
-        f"**{status}** — `{A11_API_BASE}`",
+        f"**{status}** - `{A11_API_BASE}`",
         f"**Mode:** `chat` | **Preset:** `{style_preset}`",
         reply or None,
     ]))
@@ -226,7 +233,6 @@ def runtime_snapshot():
     summary = "\n".join([
         "## Runtime",
         f"- Gradio: `{snapshot['gradio']}`",
-        f"- huggingface_hub: `{snapshot['huggingface_hub']}`",
         f"- Version A11 Space: `{snapshot['app_version']}`",
         f"- API: `{snapshot['api_base']}`",
     ])
@@ -238,7 +244,7 @@ with gr.Blocks(title="A11", css=CSS) as demo:
         <div class="a11-shell">
           <span class="a11-kicker">A11 Space</span>
           <h1>A11</h1>
-          <p class="a11-muted">Génération image et vidéo via ta machine locale.</p>
+          <p class="a11-muted">Generation image et video via ta machine locale.</p>
         </div>
     """)
 
@@ -247,7 +253,7 @@ with gr.Blocks(title="A11", css=CSS) as demo:
             with gr.Column(scale=3):
                 prompt = gr.Textbox(
                     label="Prompt",
-                    placeholder="Ex: genere une image de ce portrait au style dragon ball z",
+                    placeholder="Ex: genere une image de zelda et mario qui se tiennent la main",
                     lines=4,
                 )
                 with gr.Row():
@@ -263,17 +269,17 @@ with gr.Blocks(title="A11", css=CSS) as demo:
                     )
                 creativity = gr.Slider(minimum=0.0, maximum=1.0, value=0.45, step=0.05, label="Creativite")
                 source_image = gr.Image(label="Image de reference", type="pil", sources=["upload", "clipboard"])
-                launch = gr.Button("🚀 Lancer A11", variant="primary")
+                launch = gr.Button("Lancer A11", variant="primary")
 
             with gr.Column(scale=2):
                 summary = gr.Markdown(label="Statut")
-                result_image = gr.Image(label="Image générée", type="pil")
+                result_image = gr.Image(label="Image generee", type="pil")
                 payload = gr.Code(label="Debug", language="json")
 
         gr.Examples(
             examples=[
-                ["genere une image de ce portrait au style dragon ball z", "image", "Anime energy", 0.55],
-                ["prepare une video courte a partir de cette photo avec une aura rouge", "video", "A11 cinematic", 0.4],
+                ["genere zelda et mario qui se tiennent la main", "image", "Anime energy", 0.55],
+                ["prepare une video courte avec une aura rouge", "video", "A11 cinematic", 0.4],
                 ["resume ce concept et propose une reponse claire", "chat", "Aucun preset", 0.2],
             ],
             inputs=[prompt, request_mode, style_preset, creativity],

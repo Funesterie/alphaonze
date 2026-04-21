@@ -1,4 +1,4 @@
-
+﻿
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
@@ -898,6 +898,25 @@ const router = Router();
 
 // Racine de travail (doit pointer sur D:\A12 chez toi en .env)
 const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..', '..');
+const PUBLIC_RUNTIME_ROOT = path.resolve(
+  String(process.env.A11_RUNTIME_ROOT || path.join(WORKSPACE_ROOT, 'runtime')).trim()
+);
+const PUBLIC_RUNTIME_UPLOADS_ROOT = path.join(PUBLIC_RUNTIME_ROOT, 'files', 'uploads');
+
+// Exposer explicitement le runtime local, même s'il vit hors du workspace.
+app.use('/files/runtime', express.static(PUBLIC_RUNTIME_ROOT, {
+  dotfiles: 'ignore',
+  maxAge: '1d'
+}));
+console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT);
+
+// Compat legacy: certains flux img2img utilisent encore /files/uploads/... au lieu de
+// /files/runtime/files/uploads/..., donc on expose aussi cet alias vers le runtime.
+app.use('/files/uploads', express.static(PUBLIC_RUNTIME_UPLOADS_ROOT, {
+  dotfiles: 'ignore',
+  maxAge: '1d'
+}));
+console.log('[A11] Static /files/uploads ->', PUBLIC_RUNTIME_UPLOADS_ROOT);
 
 // Exposer le workspace en lecture seule sous /files
 app.use('/files', express.static(WORKSPACE_ROOT, {
@@ -5490,6 +5509,32 @@ app.use('/api', createChatRouter({
 
 app.use('/api', sdTools.router);
 app.use('/api', videoTools.router);
+
+// === Async SD job queue (pour Space HF / clients avec timeout court) ===
+const _sdJobQueue = new Map();
+app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, async (req, res) => {
+  const jobId = `sdjob_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  _sdJobQueue.set(jobId, { status: 'pending', createdAt: Date.now() });
+  res.json({ ok: true, jobId, status: 'pending' });
+  // Lance SD en arrière-plan
+  sdTools.generateSdInternal({ req, prompt: req.body?.prompt, body: req.body })
+    .then((result) => {
+      _sdJobQueue.set(jobId, { status: 'done', result, completedAt: Date.now() });
+    })
+    .catch((error_) => {
+      _sdJobQueue.set(jobId, { status: 'error', error: String(error_?.message || error_), completedAt: Date.now() });
+    });
+});
+app.get('/api/jobs/sd/:jobId', verifyJWT, (req, res) => {
+  const job = _sdJobQueue.get(req.params.jobId);
+  if (!job) return res.status(404).json({ ok: false, error: 'job_not_found' });
+  // Nettoyage auto après 10 min
+  if (job.completedAt && Date.now() - job.completedAt > 600000) {
+    _sdJobQueue.delete(req.params.jobId);
+    return res.status(404).json({ ok: false, error: 'job_expired' });
+  }
+  return res.json({ ok: true, jobId: req.params.jobId, ...job });
+});
 app.use('/api/mask', require('./src/routes/mask.cjs'));
 app.use('/api', require('./src/routes/image-generate-mask.cjs'));
 app.use('/api', require('./src/routes/image-atelier.cjs'));
@@ -5730,6 +5775,29 @@ app.use('/api/mail', verifyJWT);
 app.use(mailRouter);
 app.use(casinoRouter);
 
+
+
+app.post('/api/upload/image-local', express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    const { contentBase64, filename } = req.body || {};
+    if (!contentBase64 || !filename) return res.status(400).json({ ok: false, error: 'missing_content_or_filename' });
+    const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+    const workspaceRoot = String(process.env.A11_WORKSPACE_ROOT || '').trim();
+    const uploadDir = runtimeRoot ? path.join(runtimeRoot, 'files', 'uploads') : (workspaceRoot ? path.join(workspaceRoot, 'runtime', 'files', 'uploads') : path.join(__dirname, '..', '..', '..', 'runtime', 'files', 'uploads'));
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const base64Data = String(contentBase64).replace(/^data:image\/[a-z]+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    const sanitizedFilename = String(filename).replace(/[^a-z0-9._-]/gi, '_');
+    const outputFilename = `upload_${Date.now()}_${sanitizedFilename}`;
+    const outputPath = path.join(uploadDir, outputFilename);
+    fs.writeFileSync(outputPath, buffer);
+    const publicUrl = `/files/runtime/files/uploads/${encodeURIComponent(outputFilename)}`;
+    return res.json({ ok: true, url: publicUrl, filename: outputFilename, sizeBytes: buffer.length });
+  } catch (error_) {
+    console.error('[A11][upload-image-local] error:', error_);
+    return res.status(500).json({ ok: false, error: 'upload_failed', message: String(error_?.message || error_) });
+  }
+});
 
 app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) => {
   try {
