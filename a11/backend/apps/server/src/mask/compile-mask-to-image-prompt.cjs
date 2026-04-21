@@ -1,6 +1,7 @@
 const {
   compileCharacterCountConstraints,
   compileSingleSubjectConstraints,
+  detectPromptLanguageProfile,
   isMultiSubjectSceneRequest,
   normalizeImagePromptLiteral,
   translateImagePromptToEnglish,
@@ -170,6 +171,22 @@ function splitPromptFragments(value = '') {
 
 function resolvePromptLanguage(mask = {}) {
   const compilerTarget = String(mask?.compiler?.target || '').trim().toLowerCase();
+  const deferEnglishLocalization = mask?.meta?.deferEnglishPromptLocalization === true;
+  if (deferEnglishLocalization && compilerTarget === 'image-prompt-en') {
+    const languageSample = normalizeText([
+      mask?.raw,
+      ...(Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : []),
+      ...(Array.isArray(mask?.inputs?.environment) ? mask.inputs.environment : []),
+      ...(Array.isArray(mask?.inputs?.style) ? mask.inputs.style : []),
+      ...(Array.isArray(mask?.inputs?.composition) ? mask.inputs.composition : []),
+      ...(Array.isArray(mask?.inputs?.lighting) ? mask.inputs.lighting : []),
+      ...(Array.isArray(mask?.inputs?.palette) ? mask.inputs.palette : []),
+    ].filter(Boolean).join(' '));
+    const profile = typeof detectPromptLanguageProfile === 'function'
+      ? detectPromptLanguageProfile(languageSample)
+      : { dominant: 'unknown' };
+    return profile?.dominant === 'en' ? 'en' : 'fr';
+  }
   return ['image-prompt-en', 'sd-payload'].includes(compilerTarget) ? 'en' : 'fr';
 }
 

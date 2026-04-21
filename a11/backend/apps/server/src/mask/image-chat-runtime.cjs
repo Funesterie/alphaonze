@@ -1924,6 +1924,7 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     rawModeMask.meta.imagePipelineMode = 'raw';
     rawModeMask.meta.compilerCompartment = 'standard';
     rawModeMask.meta.specialCompilerReason = imageRequestMode.reason;
+    rawModeMask.meta.deferEnglishPromptLocalization = true;
 
     const compiledState = compileMaskImageGenerate(rawModeMask);
     compiledState.imageRequestMode = imageRequestMode;
@@ -2152,6 +2153,10 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     pipelineMode: 'smart',
   });
   const enrichedMask = enriched?.mask || runtimeMask;
+  enrichedMask.meta = enrichedMask.meta && typeof enrichedMask.meta === 'object'
+    ? enrichedMask.meta
+    : {};
+  enrichedMask.meta.deferEnglishPromptLocalization = true;
   const compiledState = compileMaskImageGenerate(enrichedMask);
   compiledState.imageRequestMode = imageRequestMode;
   compiledState.imageRequestDirector = director;

@@ -148,6 +148,43 @@ test('compileMaskToImagePrompt keeps explicit named reference character cues for
   assert.match(String(compiled.negative_prompt || ''), /gros plan|plan poitrine/i);
 });
 
+test('compileMaskToImagePrompt defers english localization for image runtime prompts when requested', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'utilise ma photo comme reference et transforme moi en joker cinematographique',
+    compiler: {
+      target: 'image-prompt-en',
+      version: '1.0',
+    },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['decor sombre'],
+      style: ['haute qualité'],
+      composition: ['portrait propre'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      deferEnglishPromptLocalization: true,
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/portrait-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.equal(compiled.prompt_language, 'fr');
+  assert.match(String(compiled.prompt || ''), /joker cinematographique/i);
+  assert.match(String(compiled.prompt || ''), /decor sombre/i);
+  assert.match(String(compiled.prompt || ''), /garder le même visage et la même coiffure/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /the same person from the reference image|cinematic joker/i);
+});
+
 test('compileMaskToImagePrompt promotes the canonical Zelda subject in the prompt lead', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image de zelda marchant sur un sentier dans la foret',
