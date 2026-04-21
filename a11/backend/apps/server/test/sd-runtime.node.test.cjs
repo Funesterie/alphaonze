@@ -141,6 +141,10 @@ test('runSdScript forwards init_image and strength arguments to the SD script', 
   try {
     const result = await runSdScript({
       prompt: 'zelda heroique',
+      prompt_2: 'princesse zelda, meme visage, meme tenue',
+      prompt_3: 'variation visible: lumiere plus forte sur la frame',
+      negative_prompt_2: 'drift identitaire',
+      negative_prompt_3: 'frame plate',
       init_image_url: 'https://images.example.com/zelda-ref.png',
       strength: 0.4,
       output: outputPath,
@@ -154,7 +158,177 @@ test('runSdScript forwards init_image and strength arguments to the SD script', 
     assert.match(String(result.stdout || ''), /https:\/\/images\.example\.com\/zelda-ref\.png/);
     assert.match(String(result.stdout || ''), /--strength/);
     assert.match(String(result.stdout || ''), /0\.4/);
+    assert.match(String(result.stdout || ''), /--prompt_2/);
+    assert.match(String(result.stdout || ''), /princesse zelda, meme visage, meme tenue/);
+    assert.match(String(result.stdout || ''), /--prompt_3/);
+    assert.match(String(result.stdout || ''), /variation visible: lumiere plus forte sur la frame/);
+    assert.match(String(result.stdout || ''), /--negative_prompt_2/);
+    assert.match(String(result.stdout || ''), /drift identitaire/);
+    assert.match(String(result.stdout || ''), /--negative_prompt_3/);
+    assert.match(String(result.stdout || ''), /frame plate/);
   } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('runSdScript prefers strength_value when strength mode stays auto upstream', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-auto-'));
+  const scriptPath = path.join(tempRoot, 'echo-argv.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({ ok: true, output_path: output, argv: args }));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  try {
+    const result = await runSdScript({
+      prompt: 'goku heroique',
+      init_image_url: 'https://images.example.com/goku-ref.png',
+      strength: 'auto',
+      strength_value: 0.27,
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    const argv = Array.isArray(parsed.argv) ? parsed.argv : [];
+    const strengthIndex = argv.indexOf('--strength');
+
+    assert.ok(strengthIndex >= 0);
+    assert.equal(argv[strengthIndex + 1], '0.27');
+    assert.equal(argv.includes('auto'), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('runSdScript normalizes mixed french-english prompts before invoking the SD script', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-mixed-'));
+  const scriptPath = path.join(tempRoot, 'echo-argv.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+  const previousFetch = global.fetch;
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({ ok: true, output_path: output, argv: args }));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      message: {
+        content: 'character as the Joker, keeping the same face, facial structure, build, and posture of the reference person, wearing a chaotic Joker outfit and unsettling makeup. keep exactly the same face and identity. preserve natural anatomy and stable proportions. preserve the silhouette and main outfit',
+      },
+    }),
+  });
+
+  try {
+    const result = await runSdScript({
+      prompt: 'character en tant que joker, conservant the face, the structure faciale, the corpulence and the posture de the person de reference, wearing a tenue de joker chaotique and a maquillage inquietant. garder strictement le meme visage et la meme identite. preserver une anatomie naturelle et des proportions stables. preserver la silhouette et la tenue principale',
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    const argv = Array.isArray(parsed.argv) ? parsed.argv : [];
+    const promptIndex = argv.indexOf('--prompt');
+    const promptArg = promptIndex >= 0 ? String(argv[promptIndex + 1] || '') : '';
+
+    assert.match(promptArg, /character as the Joker/i);
+    assert.match(promptArg, /same face/i);
+    assert.doesNotMatch(promptArg, /\bgarder\b|\bvisage\b|\btenue\b|\bmaquillage\b|\bcorpulence\b/i);
+  } finally {
+    global.fetch = previousFetch;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('runSdScript retries rich prompt translation when the first english candidate is too compressed', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-rich-'));
+  const scriptPath = path.join(tempRoot, 'echo-argv.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+  const previousFetch = global.fetch;
+  let fetchCalls = 0;
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({ ok: true, output_path: output, argv: args }));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  global.fetch = async () => {
+    fetchCalls += 1;
+    return {
+      ok: true,
+      json: async () => ({
+        message: {
+          content: fetchCalls === 1
+            ? 'A Joker-inspired character keeping the same face.'
+            : 'Use the input image as the identity, pose, and framing reference. Transform the person into a character inspired by the Joker in a dark, cinematic, realistic style while keeping the same recognizable face, facial structure, body build, posture, and overall presence as the original photo. Replace the wooden bat with a custom decorated threatening theatrical bat in the spirit of the Joker, personalized with paint, visual markings, chaotic details, dirty colors, and iconic criminal styling. Transform the background into a gritty Harlem-inspired urban street with a worn building entrance, city textures, graffiti, dirty pavement, tense atmosphere, dramatic cinematic lighting, strong contrast, and violet and green neon reflections. Keep a single full-body subject, clear silhouette, clean composition, high quality rendering, faithful face, clearly visible bat, and clearly readable outfit.',
+        },
+      }),
+    };
+  };
+
+  try {
+    const result = await runSdScript({
+      prompt: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker, dans un style sombre, cinematographique et realiste, tout en conservant un visage reconnaissable, la meme structure faciale, la meme corpulence, la meme posture et la meme presence generale que sur la photo d origine. Remplace la batte en bois par une batte custom dans l esprit du Joker: decoree, menacante, theatrale, personnalisee avec peinture, marques visuelles, details chaotiques, couleurs sales, style criminel iconique. Transforme le decor en environnement urbain inspire de Harlem: rue brute, ambiance de quartier, entree d immeuble usee, textures de ville, graffitis, sol sale, atmosphere tendue, lumiere cinematographique, contrastes marques, reflets de neons violets et verts. Sujet unique, personnage entier visible, silhouette claire, composition propre, haute qualite, visage fidele, batte visible, tenue bien lisible.',
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(fetchCalls, 2);
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    const argv = Array.isArray(parsed.argv) ? parsed.argv : [];
+    const promptIndex = argv.indexOf('--prompt');
+    const promptArg = promptIndex >= 0 ? String(argv[promptIndex + 1] || '') : '';
+
+    assert.match(promptArg, /custom decorated threatening(?: theatrical)? bat/i);
+    assert.match(promptArg, /Harlem-inspired urban street/i);
+    assert.match(promptArg, /graffiti/i);
+    assert.match(promptArg, /single full-body subject/i);
+    assert.doesNotMatch(promptArg, /^A Joker-inspired character keeping the same face\.?$/i);
+  } finally {
+    global.fetch = previousFetch;
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
