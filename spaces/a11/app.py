@@ -29,7 +29,7 @@ CSS = """
   background:
     radial-gradient(circle at top left, rgba(83, 240, 199, 0.18), transparent 28%),
     radial-gradient(circle at top right, rgba(141, 208, 255, 0.18), transparent 25%),
-    linear-gradient(145deg, var(--a11-bg-1), var(--a11-bg-2)));
+    linear-gradient(145deg, var(--a11-bg-1), var(--a11-bg-2));
   color: var(--a11-text);
 }
 
@@ -277,4 +277,6 @@ with gr.Blocks(title="A11", css=CSS) as demo:
 
 
 if __name__ == "__main__":
+    demo.launch(server_name="0.0.0.0", server_port=7860, show_api=False, share=False)
+else:
     demo.launch(server_name="0.0.0.0", server_port=7860, show_api=False)
