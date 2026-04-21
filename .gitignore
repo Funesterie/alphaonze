@@ -1,6 +1,8 @@
 # Workspace runtime and temp files
 /a11_runtime/
 /a11/runtime/
+/tmp/
+/.tmp-video-tests/
 /tmp-*.log
 /dist/
 /funesterie.local.code-workspace
@@ -32,6 +34,8 @@ Thumbs.db
 
 # Monorepo-wide local dependencies and secrets
 **/node_modules/
+**/.venv/
+**/__pycache__/
 **/.env
 **/.env.local
 **/.env.*.local
@@ -107,3 +111,4 @@ Thumbs.db
 /a11/backend/libs/src/**/*.map
 /a11/backend/libs/Cartes de pirate au coucher du soleil.png
 /a11/backend/libs/Logo et personnage Funesterie.png
+/spaces/a11/.gradio-local*.log
