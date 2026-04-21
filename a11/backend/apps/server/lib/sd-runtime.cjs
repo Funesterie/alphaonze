@@ -3,7 +3,6 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const {
   detectPromptLanguageProfile,
-  translateImagePromptToEnglish: deterministicTranslateImagePromptToEnglish,
 } = require('../src/mask/build-sd-prompt-bundle.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
@@ -88,44 +87,10 @@ function isAcceptableEnglishTranslation(value = '', { allowMixed = false } = {})
   return false;
 }
 
-function translatePromptSegmentsToEnglish(prompt = '') {
-  const tokens = String(prompt || '').split(/([.!?\n]+)/);
-  const rebuilt = tokens
-    .map((token) => {
-      if (!token || /^[.!?\n]+$/.test(token)) return token;
-      const translated = String(
-        typeof deterministicTranslateImagePromptToEnglish === 'function'
-          ? deterministicTranslateImagePromptToEnglish(token)
-          : ''
-      ).trim();
-      return translated || normalizePromptText(token);
-    })
-    .join('')
-    .replace(/\s+([.!?])/g, '$1');
-  return normalizePromptText(rebuilt);
-}
-
-function selectBestDeterministicTranslation(prompt = '') {
-  const candidates = [
-    String(
-      typeof deterministicTranslateImagePromptToEnglish === 'function'
-        ? deterministicTranslateImagePromptToEnglish(prompt)
-        : ''
-    ).trim(),
-    translatePromptSegmentsToEnglish(prompt),
-  ]
-    .map((entry) => normalizePromptText(entry))
-    .filter(Boolean);
-
-  if (!candidates.length) return '';
-  return candidates.sort((left, right) => analyzePromptDensity(right).length - analyzePromptDensity(left).length)[0];
-}
-
 async function requestEnglishPromptTranslation({
   ollamaBase = '',
   model = '',
   raw = '',
-  deterministic = '',
   previousRejected = '',
 } = {}) {
   const systemPrompt = previousRejected
@@ -158,9 +123,6 @@ async function requestEnglishPromptTranslation({
     previousRejected ? '' : '',
     'Source prompt:',
     raw,
-    deterministic ? '' : '',
-    deterministic ? 'Literal fallback scaffold:' : '',
-    deterministic || '',
   ].filter(Boolean).join('\n');
 
   const resp = await fetch(`${ollamaBase}/api/chat`, {
@@ -192,21 +154,6 @@ async function translatePromptToEnglish(prompt) {
     : { dominant: 'unknown', mixed: false };
   const needsEnglishNormalization = sourceProfile?.dominant === 'fr' || sourceProfile?.mixed === true;
   if (!needsEnglishNormalization) return raw;
-  const richPrompt = isRichPromptForTranslation(raw);
-  const deterministic = selectBestDeterministicTranslation(raw);
-  const deterministicProfile = typeof detectPromptLanguageProfile === 'function'
-    ? detectPromptLanguageProfile(deterministic)
-    : { dominant: 'unknown', mixed: false };
-  if (
-    !richPrompt
-    && deterministic
-    && deterministic.length > 3
-    && deterministicProfile?.dominant === 'en'
-    && deterministicProfile?.mixed !== true
-  ) {
-    console.log('[SD][PROMPT_TRANSLATE]', deterministic);
-    return deterministic;
-  }
 
   const ollamaBase = String(process.env.OLLAMA_BASE || 'http://127.0.0.1:11434').trim();
   const model = String(process.env.A11_OLLAMA_PRIMARY_MODEL || 'gemma4:e4b').trim();
@@ -215,7 +162,6 @@ async function translatePromptToEnglish(prompt) {
       ollamaBase,
       model,
       raw,
-      deterministic,
     });
     if (
       translated
@@ -230,7 +176,6 @@ async function translatePromptToEnglish(prompt) {
       ollamaBase,
       model,
       raw,
-      deterministic,
       previousRejected: translated,
     });
     if (
@@ -245,15 +190,7 @@ async function translatePromptToEnglish(prompt) {
   } catch {
     // fallback silencieux
   }
-  if (
-    deterministic
-    && isAcceptableEnglishTranslation(deterministic, { allowMixed: richPrompt })
-    && !isOvercompressedPromptTranslation(raw, deterministic)
-  ) {
-    console.log('[SD][PROMPT_TRANSLATE]', deterministic);
-    return deterministic;
-  }
-  return deterministic || raw;
+  return raw;
 }
 
 function isWindowsDrivePath(value = '') {
