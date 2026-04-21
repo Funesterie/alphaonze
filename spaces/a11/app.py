@@ -93,13 +93,41 @@ def upload_image(image: Image.Image) -> Optional[str]:
     return None
 
 
-def build_user_content(prompt: str, image: Optional[Image.Image], image_url: Optional[str]) -> str:
-    size_hint = " [size:512x512]"
+A11_SD_ENDPOINT = f"{A11_API_BASE}/api/tools/generate_sd"
+
+
+def call_image(prompt: str, image_url: Optional[str]) -> tuple[str, Optional[Image.Image]]:
+    body = {
+        "prompt": prompt,
+        "width": 512,
+        "height": 512,
+        "model_profile": "sd35turbo",
+        "num_inference_steps": 8,
+    }
     if image_url:
-        return f"[image:{image_url}] {prompt}{size_hint}"
-    if image:
-        return f"[image-data:{image_to_base64(image)}] {prompt}{size_hint}"
-    return prompt + size_hint
+        body["init_image_url"] = image_url
+        body["reference_image_url"] = image_url
+
+    try:
+        resp = httpx.post(A11_SD_ENDPOINT, json=body, headers=auth_headers(), timeout=180)
+        resp.raise_for_status()
+        data = resp.json()
+        out_url = data.get("image_url") or data.get("url") or ""
+        if out_url and out_url.startswith("/"):
+            out_url = f"{A11_API_BASE}{out_url}"
+        img = None
+        if out_url:
+            try:
+                r = httpx.get(out_url, timeout=30)
+                if r.is_success:
+                    img = Image.open(io.BytesIO(r.content))
+            except Exception:
+                pass
+        return f"✅ SD — `{out_url}`", img
+    except httpx.HTTPStatusError as exc:
+        return f"❌ HTTP {exc.response.status_code}: {exc.response.text[:300]}", None
+    except Exception as exc:
+        return f"❌ {type(exc).__name__}: {exc}", None
 
 
 def resolve_output_image(data: dict) -> Optional[str]:
@@ -135,60 +163,45 @@ def build_preview(
     if source_image is not None:
         image_url = upload_image(source_image)
 
-    user_content = build_user_content(cleaned_prompt, source_image, image_url)
+    # Mode image ou vidéo → appel direct SD
+    if request_mode in ("image", "video"):
+        style_hint = "" if style_preset == "Aucun preset" else f", style {style_preset}"
+        full_prompt = f"{cleaned_prompt}{style_hint}"
+        status_text, generated_image = call_image(full_prompt, image_url)
+        summary = "\n\n".join(filter(None, [
+            f"**{status_text}**",
+            f"**Mode:** `{request_mode}` | **Preset:** `{style_preset}`",
+            f"**Image uploadée:** `{image_url}`" if image_url else None,
+        ]))
+        debug = json.dumps({"endpoint": A11_SD_ENDPOINT, "prompt": full_prompt, "image_url": image_url}, ensure_ascii=False, indent=2)
+        return summary, debug, generated_image
 
+    # Mode chat → /api/ai/chat
     style_hint = "" if style_preset == "Aucun preset" else f" Style: {style_preset}."
-    system_prompt = {
-        "chat": "Tu es A-11, assistant concis et direct.",
-        "image": f"Tu es A-11. Genere une image 512x512 de haute qualite a partir du prompt utilisateur.{style_hint} Utilise une taille de 512x512 pixels.",
-        "video": f"Tu es A-11. Genere une video 512x512 a partir du prompt utilisateur.{style_hint} Utilise une taille de 512x512 pixels.",
-    }.get(request_mode, "Tu es A-11, assistant concis et direct.")
-
+    system_prompt = f"Tu es A-11, assistant concis et direct.{style_hint}"
+    user_content = f"[image:{image_url}] {cleaned_prompt}" if image_url else cleaned_prompt
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
-
     generated_image = None
     try:
         resp = httpx.post(
             A11_CHAT_ENDPOINT,
-            json={
-                "messages": messages,
-                "provider": "local",
-                "stream": False,
-                "sourceImageUrl": image_url,
-                "model_profile": "sd35turbo",
-                "width": 512,
-                "height": 512,
-            },
+            json={"messages": messages, "provider": "local", "stream": False},
             headers=auth_headers(),
-            timeout=180,
+            timeout=120,
         )
         resp.raise_for_status()
         data = resp.json()
-
         reply = (
             data.get("content")
             or (data.get("choices") or [{}])[0].get("message", {}).get("content")
             or ""
         )
         status = f"✅ HTTP {resp.status_code}"
-
-        # Récupérer l'image générée
-        out_url = resolve_output_image(data)
-        if out_url:
-            if out_url.startswith("/"):
-                out_url = f"{A11_API_BASE}{out_url}"
-            try:
-                img_resp = httpx.get(out_url, timeout=30)
-                if img_resp.is_success:
-                    generated_image = Image.open(io.BytesIO(img_resp.content))
-            except Exception:
-                pass
-
     except httpx.HTTPStatusError as exc:
-        reply = f"Erreur HTTP {exc.response.status_code}: {exc.response.text[:400]}"
+        reply = f"Erreur HTTP {exc.response.status_code}: {exc.response.text[:300]}"
         status = f"❌ HTTP {exc.response.status_code}"
     except Exception as exc:
         reply = f"Erreur: {exc}"
@@ -196,17 +209,11 @@ def build_preview(
 
     summary = "\n\n".join(filter(None, [
         f"**{status}** — `{A11_API_BASE}`",
-        f"**Mode:** `{request_mode}` | **Preset:** `{style_preset}`",
-        f"**Image uploadée:** `{image_url}`" if image_url else None,
+        f"**Mode:** `chat` | **Preset:** `{style_preset}`",
         reply or None,
     ]))
-
-    debug = json.dumps(
-        {"endpoint": A11_CHAT_ENDPOINT, "image_url": image_url, "messages": messages},
-        ensure_ascii=False, indent=2
-    )
-
-    return summary, debug, generated_image or source_image
+    debug = json.dumps({"endpoint": A11_CHAT_ENDPOINT, "messages": messages}, ensure_ascii=False, indent=2)
+    return summary, debug, None
 
 
 def runtime_snapshot():
