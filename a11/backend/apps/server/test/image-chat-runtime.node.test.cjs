@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildSdRequestBody,
   buildImageVerificationRequestId,
+  compileMaskImageGenerateRuntime,
   generateImageFromMask,
   resolveImageCompilerCompartment,
   resolveImageRequestMode,
@@ -84,6 +85,441 @@ test('buildSdRequestBody forwards web draft init image settings from the mask ru
   assert.equal(sdBody.strength, 0.42);
 });
 
+test('buildSdRequestBody injects face-protection negatives for img2img web drafts', () => {
+  const sdBody = buildSdRequestBody(
+    {
+      raw: 'genere un portrait de zelda',
+      meta: {
+        webImageDraft: {
+          initImageUrl: 'https://images.example.com/zelda-ref.png',
+          strength: 0.34,
+          faceProtectionNegativeHints: ['visage fusionne', 'visage duplique'],
+        },
+      },
+      options: { width: 896, height: 1344, steps: 30, guidance_scale: 7.5 },
+    },
+    {
+      prompt: 'portrait heroique de zelda',
+      prompt_language: 'fr',
+      negative_prompt: 'texte, watermark',
+    }
+  );
+
+  assert.match(String(sdBody.negative_prompt || ''), /texte, watermark/i);
+  assert.match(String(sdBody.negative_prompt || ''), /visage fusionne/i);
+  assert.match(String(sdBody.negative_prompt || ''), /visage duplique/i);
+});
+
+test('compileMaskImageGenerateRuntime recalculates img2img technique from the final refined prompt', async () => {
+  const draftCalls = [];
+
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['fond simple'],
+      style: ['haute qualité'],
+      composition: ['portrait propre'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    ambiguities: [],
+    raw: 'fais une variation à partir de cette image de référence',
+  }, {
+    callStructuredLlmJson: async ({ systemPrompt }) => {
+      if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
+        return {
+          target_language: 'english',
+          raw_request: 'make a variation from this reference image',
+          current_prompt: 'the same person from the reference image, clean portrait, simple background, high quality',
+          current_negative_prompt: 'text, watermark',
+          reference_init_image: 'https://images.example.com/portrait-ref.png',
+          global_strength_profile: 'balanced',
+          global_strength_reason: 'reference_subject_scene_rewrite',
+          scene_type: '',
+          strength_components: {
+            identity: { profile: 'preserve', reason: 'identity_lock', strength: 0.22 },
+            background: { profile: 'restyle', reason: 'scene_rewrite', strength: 0.72 },
+          },
+          guidance_positive_hints: [
+            'keep exactly the same face and identity',
+            'dramatically redesign the background and atmosphere',
+          ],
+          guidance_negative_hints: [
+            'different identity',
+          ],
+        };
+      }
+      if (/réécrivain final/i.test(String(systemPrompt || ''))) {
+        return {
+          prompt: 'the same person from the reference image, James Bond 007 inspired style, silenced pistol, film-intro backdrop, simple clear composition',
+          negative_prompt: 'text, watermark',
+        };
+      }
+      if (/directeur final/i.test(String(systemPrompt || ''))) {
+        return {
+          prompt: 'the same person from the reference image, keep exactly the same face and identity, dramatically redesigned 007 backdrop, silenced pistol clearly visible, simple clear composition',
+          negative_prompt: 'different identity, different person, text, watermark',
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    lookupImageHintWebContext: async () => ({
+      imageUrl: 'https://images.example.com/portrait-ref.png',
+      imageTitle: 'portrait reference',
+      sourceUrl: 'https://example.com/portrait-ref',
+      sourceDomain: 'example.com',
+      imageSelectionScore: 12,
+      imageWidth: 768,
+      imageHeight: 1024,
+    }),
+    resolveImageReferencePack: async () => null,
+    resolveImageWebDraft: async ({ mask }) => {
+      draftCalls.push(String(mask?.meta?.techniqueAnalysisPrompt || '').trim());
+      return {
+        mode: 'web-image-draft',
+        reason: 'explicit_reference_anchor',
+        initImageUrl: 'https://images.example.com/portrait-ref.png',
+        sourceUrl: 'https://example.com/portrait-ref',
+        sourceDomain: 'example.com',
+        width: 768,
+        height: 1024,
+      };
+    },
+  }));
+
+  assert.equal(draftCalls.length, 2);
+  assert.equal(draftCalls[0], '');
+  assert.match(draftCalls[1], /James Bond 007/i);
+  assert.match(String(result.mask?.meta?.techniqueAnalysisPrompt || ''), /James Bond 007/i);
+  assert.equal(result.mask?.meta?.webImageDraft?.strengthProfile, 'balanced');
+  assert.equal(result.mask?.meta?.webImageDraft?.strengthReason, 'reference_subject_scene_rewrite');
+  assert.ok(Number(result.mask?.meta?.webImageDraft?.strengthValue || 0) >= 0.6);
+  assert.equal(result.mask?.meta?.webImageDraft?.strengthComponents?.identity?.profile, 'preserve');
+  assert.equal(result.mask?.meta?.webImageDraft?.strengthComponents?.background?.profile, 'restyle');
+  assert.equal(result.sdBody?.strength, 'auto');
+  assert.equal(result.sdBody?.strength_profile, 'balanced');
+  assert.equal(result.sdBody?.strength_reason, 'reference_subject_scene_rewrite');
+  assert.equal(result.sdBody?.strength_value, undefined);
+  assert.equal(result.sdBody?.strength_components?.identity?.profile, 'preserve');
+  assert.equal(result.sdBody?.strength_components?.background?.profile, 'restyle');
+  assert.equal(result.techniqueReconciler?.promptGuidance?.reason, 'component_strength_llm_director');
+  assert.equal(result.sdBody?.prompt_language, 'en');
+  assert.match(String(result.sdBody?.prompt || ''), /keep exactly the same face and identity/i);
+  assert.match(String(result.sdBody?.prompt || ''), /dramatically redesigned 007 backdrop/i);
+  assert.match(String(result.sdBody?.negative_prompt || ''), /different identity/i);
+});
+
+test('compileMaskImageGenerateRuntime keeps prompt llm refinement enabled for short init-image prompts', async () => {
+  let refinerCalls = 0;
+
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['fond simple'],
+      style: ['haute qualité'],
+      composition: [],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/portrait-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    ambiguities: [],
+    raw: 'portrait propre',
+  }, {
+    callStructuredLlmJson: async ({ systemPrompt }) => {
+      if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
+        return {
+          target_language: 'english',
+          raw_request: 'clean portrait',
+          current_prompt: 'the same person from the reference image, clean portrait, simple background, high quality',
+          current_negative_prompt: 'text, watermark',
+          subject: ['male portrait'],
+          environment: ['simple background'],
+          style: ['high quality'],
+          composition: [],
+          lighting: [],
+          palette: [],
+          prompt_instructions: [],
+          subject_profile_type: 'single_human_figure',
+          canonical_subject: '',
+          universe: '',
+          reference_init_image: 'https://images.example.com/portrait-ref.png',
+          web_reference_pack: null,
+        };
+      }
+      if (/réécrivain final/i.test(String(systemPrompt || ''))) {
+        refinerCalls += 1;
+        return {
+          prompt: 'the same person from the reference image, clean portrait, dark suit, clear composition',
+          negative_prompt: 'text, watermark',
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    lookupImageHintWebContext: async () => null,
+    resolveImageReferencePack: async () => null,
+  }));
+
+  assert.equal(refinerCalls, 1);
+  assert.equal(result.promptRefiner?.applied, true);
+  assert.equal(result.promptRefiner?.reason, 'llm_refined');
+  assert.equal(result.sdBody?.prompt_language, 'en');
+  assert.match(String(result.sdBody?.prompt || ''), /clean portrait/i);
+});
+
+test('compileMaskImageGenerateRuntime asks the prompt refiner to stay in english for sd payload prompts', async () => {
+  let capturedSystemPrompt = '';
+  let capturedText = '';
+  let capturedTranslatorPrompt = '';
+  let capturedTranslatorText = '';
+
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['decor sombre'],
+      style: ['haute qualité'],
+      composition: ['portrait propre'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/portrait-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    ambiguities: [],
+    raw: 'utilise ma photo comme reference et transforme moi en joker cinematographique',
+  }, {
+    callStructuredLlmJson: async ({ systemPrompt, text }) => {
+      if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
+        capturedTranslatorPrompt = String(systemPrompt || '');
+        capturedTranslatorText = String(text || '');
+        return {
+          target_language: 'english',
+          raw_request: 'use my reference photo and transform me into a cinematic Joker-inspired character',
+          current_prompt: 'the same person from the reference image, dark decor, high quality, clean portrait',
+          current_negative_prompt: 'text, watermark',
+          subject: ['male portrait'],
+          environment: ['dark decor'],
+          style: ['high quality'],
+          composition: ['clean portrait'],
+          lighting: [],
+          palette: [],
+          prompt_instructions: [
+            'keep exactly the same face and identity',
+            'preserve the silhouette and main outfit',
+            'make the lighting and effects clearly visible',
+          ],
+          subject_profile_type: 'single_human_figure',
+          canonical_subject: '',
+          universe: '',
+          reference_init_image: 'https://images.example.com/portrait-ref.png',
+          web_reference_pack: null,
+        };
+      }
+      if (/réécrivain final/i.test(String(systemPrompt || ''))) {
+        capturedSystemPrompt = String(systemPrompt || '');
+        capturedText = String(text || '');
+        return {
+          prompt: 'the same person from the reference image, cinematic Joker-inspired character, keep exactly the same face and identity, preserve the silhouette and main outfit, make the lighting and effects clearly visible',
+          negative_prompt: 'text, watermark',
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    lookupImageHintWebContext: async () => null,
+    resolveImageReferencePack: async () => null,
+  }));
+
+  assert.match(capturedTranslatorPrompt, /multilingual prompt-context translator/i);
+  assert.match(capturedTranslatorText, /utilise ma photo comme reference/i);
+  assert.match(capturedSystemPrompt, /english only/i);
+  assert.match(capturedText, /"target_language": "english"/i);
+  assert.match(capturedText, /"raw_request": "use my reference photo and transform me into a cinematic Joker-inspired character"/i);
+  assert.equal(result.sdBody?.prompt_language, 'en');
+  assert.match(String(result.sdBody?.prompt || ''), /the same person from the reference image/i);
+  assert.match(String(result.sdBody?.prompt || ''), /keep exactly the same face and identity/i);
+  assert.match(String(result.sdBody?.prompt || ''), /preserve the silhouette and main outfit/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the lighting and effects clearly visible/i);
+  assert.doesNotMatch(String(result.sdBody?.prompt || ''), /\bgarder\b|\bvisage\b|\btenue\b/i);
+  assert.doesNotMatch(String(result.sdBody?.negative_prompt || ''), /\btexte\b/i);
+});
+
+test('compileMaskImageGenerateRuntime preserves a rich final prompt instead of compressing it again', async () => {
+  let llmCalls = 0;
+
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: [
+        'decor urbain inspire de Harlem',
+        'rue brute avec graffitis et immeubles uses',
+        'ambiance de quartier tendue et realiste',
+      ],
+      style: [
+        'portrait live action sombre et credible',
+        'cinematographique',
+        'contrastes marques',
+      ],
+      composition: [
+        'sujet unique personnage entier visible',
+        'batte custom clairement visible',
+        'composition propre et puissante',
+      ],
+      lighting: [
+        'lumiere dramatique',
+        'reflets de neons violets et verts',
+      ],
+      palette: [
+        'violet',
+        'vert',
+        'rouge sale',
+      ],
+    },
+    options: {
+      width: 768,
+      height: 1024,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      promptInstructions: [
+        'conserver strictement le meme visage',
+        'garder la meme corpulence et la meme posture',
+        'costume joker elegant mais chaotique',
+        'maquillage de clown inquietant mais credible',
+        'la batte custom doit etre visible et theatrale',
+        'le decor doit rester secondaire mais immersif',
+      ],
+      webImageDraft: {
+        initImageUrl: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+        mode: 'image_url',
+        fromChatSourceImage: true,
+        width: 768,
+        height: 1024,
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+      semantic: {
+        accessories: [{ label: 'batte custom joker', family: 'weapon' }],
+        elements: [{ label: 'maquillage de clown', family: 'makeup' }],
+        scenes: [{ label: 'quartier urbain inspire de Harlem', family: 'urban_scene' }],
+      },
+    },
+    ambiguities: [],
+    raw: 'Utilise ma photo comme reference d identite et transforme moi en personnage inspire du Joker dans un decor urbain sombre a la Harlem avec une vraie batte custom visible, lumiere dramatique, ambiance tendue, tenue theatrale et rendu live action credible.',
+  }, {
+    callStructuredLlmJson: async ({ systemPrompt }) => {
+      if (/réécrivain final|directeur final/i.test(String(systemPrompt || ''))) {
+        llmCalls += 1;
+        return {
+          prompt: 'Character inspired by the Joker with a recognizable face and a personalized baton.',
+          negative_prompt: 'text, watermark',
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    lookupImageHintWebContext: async () => null,
+    resolveImageReferencePack: async () => null,
+    directImageRequest: async ({ mask }) => ({
+      mask,
+      director: null,
+    }),
+  }));
+
+  assert.equal(llmCalls, 0);
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.mask?.meta?.webImageDraft?.initImageUrl, 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png');
+  assert.equal(result.techniqueReconciler?.promptGuidance?.preservedRichPrompt, true);
+  assert.ok(String(result.sdBody?.prompt || '').length >= 260);
+  assert.match(String(result.sdBody?.prompt || ''), /Harlem|graffiti|batte|joker/i);
+});
+
 test('generateImageFromMask preserves the source ratio for web init images instead of forcing a square fallback', async () => {
   const calls = [];
 
@@ -156,6 +592,119 @@ test('generateImageFromMask preserves the source ratio for web init images inste
   assert.equal(calls[0]?.size_reason, 'preserve_init_image_ratio');
   assert.equal(result.mask?.meta?.renderSizing?.resolvedWidth, 960);
   assert.equal(result.mask?.meta?.renderSizing?.resolvedHeight, 1344);
+});
+
+test('generateImageFromMask keeps the uploaded chat source image as init image instead of replacing it with a web accessory preview', async () => {
+  const calls = [];
+  let verificationExpected = null;
+
+  const result = await withImagePipelineMode('orchestrated', () => generateImageFromMask({
+    req: { headers: {} },
+    rawMask: {
+      version: 'mask-1',
+      intent: 'image.generate',
+      task: { domain: 'image', action: 'generate' },
+      compiler: { target: 'sd-payload', version: '1.0' },
+      inputs: {
+        subject: ['sujet de reference'],
+        environment: ['decor urbain sombre'],
+        style: ['portrait live action credible'],
+        composition: ['personnage entier visible'],
+        lighting: ['lumiere dramatique'],
+        palette: ['violet', 'vert'],
+      },
+      options: {
+        width: 768,
+        height: 768,
+        steps: 40,
+        guidance_scale: 8,
+      },
+      constraints: {
+        safe_mode: true,
+        no_text: true,
+      },
+      meta: {
+        init_image_url: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+        reference_image_url: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+        webImageDraft: {
+          initImageUrl: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+          mode: 'image_url',
+          sourceUsed: 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png',
+          fromChatSourceImage: true,
+          width: 768,
+          height: 1024,
+        },
+        subjectProfile: {
+          type: 'single_human_figure',
+        },
+        semantic: {
+          accessories: [{ label: 'batte custom joker', family: 'weapon' }],
+        },
+      },
+      ambiguities: [],
+      raw: 'utilise ma photo comme reference et transforme moi en joker avec une batte custom visible',
+    },
+    lookupImageHintWebContext: async () => ({
+      imageUrl: 'https://stem.example.com/resources/previews/golden-and-purple-baton-with-joker-mask-free-png.png',
+      imageTitle: 'golden and purple baton with joker mask free png',
+      sourceUrl: 'https://stem.example.com/resources/previews/joker-baton',
+      sourceDomain: 'stem.example.com',
+      imageWidth: 980,
+      imageHeight: 980,
+      imageSelectionScore: 11,
+    }),
+    resolveImageReferencePack: async () => null,
+    directImageRequest: async ({ mask }) => ({
+      mask,
+      director: null,
+    }),
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      return {
+        ok: true,
+        image_url: 'https://files.example.com/joker-source.png',
+        filename: 'joker-source.png',
+      };
+    },
+    verifyImageCardinality: async ({ expected }) => {
+      verificationExpected = expected;
+      return {
+        ok: true,
+        expected: {
+          subject_count: Number(expected?.subjectCount || 0) || 1,
+          subject_type: expected?.subjectType || 'subject',
+          subject_label: expected?.subjectLabel || 'joker',
+          allow_group: false,
+        },
+        observed: {
+          subject_count: 1,
+          duplicate_subjects: false,
+          fusion_detected: false,
+          subject_match: true,
+          confidence: 0.94,
+        },
+        decision: {
+          retry: false,
+          reason: 'single_subject_confirmed',
+        },
+      };
+    },
+    verifyImageWithLlmJudge: async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'vision_llm_unavailable',
+    }),
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.init_image_url, 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png');
+  assert.doesNotMatch(String(calls[0]?.init_image_url || ''), /joker-mask-free-png/i);
+  assert.equal(result.mask?.meta?.webImageDraft?.fromChatSourceImage, true);
+  assert.equal(result.mask?.meta?.webImageDraft?.initImageUrl, 'http://127.0.0.1:3000/files/runtime/files/uploads/joker-source.png');
+  assert.notEqual(result.mask?.meta?.webImageDraft?.sceneType, 'duo/groupe');
+  assert.equal(Number(verificationExpected?.subjectCount || 0), 1);
+  assert.equal(String(verificationExpected?.mode || ''), 'single');
+  assert.equal(String(verificationExpected?.subjectLabel || ''), 'joker');
 });
 
 test('toImageChatProxyPayload synthesizes a png filename when the image URL has no extension', () => {

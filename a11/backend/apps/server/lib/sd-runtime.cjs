@@ -1,6 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const {
+  detectPromptLanguageProfile,
+  translateImagePromptToEnglish: deterministicTranslateImagePromptToEnglish,
+} = require('../src/mask/build-sd-prompt-bundle.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..');
 const VENDORED_SD_SCRIPT = path.join(SERVER_ROOT, 'tools', 'sd', 'generate_sd_image.py');
@@ -11,6 +15,246 @@ const BACKEND_SD_VENV = path.join(
   'venv',
   process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python')
 );
+
+function normalizePromptText(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function countPromptClauses(value = '') {
+  return normalizePromptText(value)
+    .split(/[.!?;:\n]+/)
+    .map((entry) => normalizePromptText(entry))
+    .filter(Boolean)
+    .length;
+}
+
+function analyzePromptDensity(value = '') {
+  const text = normalizePromptText(value);
+  return {
+    length: text.length,
+    words: text ? text.split(/\s+/).filter(Boolean).length : 0,
+    clauses: countPromptClauses(text),
+    commas: (text.match(/,/g) || []).length,
+  };
+}
+
+function isRichPromptForTranslation(value = '') {
+  const density = analyzePromptDensity(value);
+  return (
+    density.length >= 260
+    || density.words >= 45
+    || density.clauses >= 5
+    || (density.length >= 220 && density.commas >= 5)
+  );
+}
+
+function isOvercompressedPromptTranslation(source = '', translated = '') {
+  const sourceDensity = analyzePromptDensity(source);
+  const translatedDensity = analyzePromptDensity(translated);
+  if (!sourceDensity.length || !translatedDensity.length) return false;
+  if (!isRichPromptForTranslation(source)) return false;
+
+  if (translatedDensity.length < Math.max(220, Math.round(sourceDensity.length * 0.72))) {
+    return true;
+  }
+  if (translatedDensity.words < Math.max(38, Math.round(sourceDensity.words * 0.7))) {
+    return true;
+  }
+  if (translatedDensity.clauses < Math.max(4, Math.round(sourceDensity.clauses * 0.72))) {
+    return true;
+  }
+
+  return false;
+}
+
+function isAcceptableEnglishTranslation(value = '', { allowMixed = false } = {}) {
+  const text = normalizePromptText(value);
+  if (!text) return false;
+  const profile = typeof detectPromptLanguageProfile === 'function'
+    ? detectPromptLanguageProfile(text)
+    : { dominant: 'unknown', mixed: false };
+  if (
+    profile?.dominant === 'en'
+    && (
+      allowMixed
+      || profile?.mixed !== true
+      || Number(profile?.englishScore || 0) >= Number(profile?.frenchScore || 0) + 6
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function translatePromptSegmentsToEnglish(prompt = '') {
+  const tokens = String(prompt || '').split(/([.!?\n]+)/);
+  const rebuilt = tokens
+    .map((token) => {
+      if (!token || /^[.!?\n]+$/.test(token)) return token;
+      const translated = String(
+        typeof deterministicTranslateImagePromptToEnglish === 'function'
+          ? deterministicTranslateImagePromptToEnglish(token)
+          : ''
+      ).trim();
+      return translated || normalizePromptText(token);
+    })
+    .join('')
+    .replace(/\s+([.!?])/g, '$1');
+  return normalizePromptText(rebuilt);
+}
+
+function selectBestDeterministicTranslation(prompt = '') {
+  const candidates = [
+    String(
+      typeof deterministicTranslateImagePromptToEnglish === 'function'
+        ? deterministicTranslateImagePromptToEnglish(prompt)
+        : ''
+    ).trim(),
+    translatePromptSegmentsToEnglish(prompt),
+  ]
+    .map((entry) => normalizePromptText(entry))
+    .filter(Boolean);
+
+  if (!candidates.length) return '';
+  return candidates.sort((left, right) => analyzePromptDensity(right).length - analyzePromptDensity(left).length)[0];
+}
+
+async function requestEnglishPromptTranslation({
+  ollamaBase = '',
+  model = '',
+  raw = '',
+  deterministic = '',
+  previousRejected = '',
+} = {}) {
+  const systemPrompt = previousRejected
+    ? [
+        'You translate image-generation prompts into natural English for Stable Diffusion.',
+        'A previous translation attempt was rejected because it was too short or lost important details.',
+        'Rewrite from the original source, not from the rejected candidate.',
+        'Preserve every concrete detail and constraint from the source prompt.',
+        'Do not summarize, condense, simplify, shorten, merge away details, or omit constraints.',
+        'Preserve subject count, identity locks, face, body, pose, framing, outfit, props, environment, lighting, palette, mood, style, and all negative constraints.',
+        'If the source is rich and long, the translation must stay rich and long.',
+        'Output only the final English prompt.',
+      ].join(' ')
+    : [
+        'You translate image-generation prompts into natural English for Stable Diffusion.',
+        'Preserve every concrete detail and constraint from the source prompt.',
+        'Do not summarize, condense, simplify, shorten, merge away details, or omit constraints.',
+        'Preserve subject count, identity locks, face, body, pose, framing, outfit, props, environment, lighting, palette, mood, style, and all negative constraints.',
+        'If the source is rich and long, the translation should stay rich and long.',
+        'Output only the final English prompt.',
+      ].join(' ');
+
+  const userPrompt = [
+    'Translate the following image-generation prompt into clean natural English for Stable Diffusion.',
+    'Keep all useful concrete details.',
+    'Never summarize or compress it.',
+    '',
+    previousRejected ? 'Rejected translation candidate (too short, do not imitate it):' : '',
+    previousRejected || '',
+    previousRejected ? '' : '',
+    'Source prompt:',
+    raw,
+    deterministic ? '' : '',
+    deterministic ? 'Literal fallback scaffold:' : '',
+    deterministic || '',
+  ].filter(Boolean).join('\n');
+
+  const resp = await fetch(`${ollamaBase}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      options: {
+        temperature: 0.1,
+      },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!resp.ok) return '';
+  const data = await resp.json();
+  return normalizePromptText(data?.message?.content || '');
+}
+
+async function translatePromptToEnglish(prompt) {
+  const raw = String(prompt || '').trim();
+  if (!raw) return raw;
+  const sourceProfile = typeof detectPromptLanguageProfile === 'function'
+    ? detectPromptLanguageProfile(raw)
+    : { dominant: 'unknown', mixed: false };
+  const needsEnglishNormalization = sourceProfile?.dominant === 'fr' || sourceProfile?.mixed === true;
+  if (!needsEnglishNormalization) return raw;
+  const richPrompt = isRichPromptForTranslation(raw);
+  const deterministic = selectBestDeterministicTranslation(raw);
+  const deterministicProfile = typeof detectPromptLanguageProfile === 'function'
+    ? detectPromptLanguageProfile(deterministic)
+    : { dominant: 'unknown', mixed: false };
+  if (
+    !richPrompt
+    && deterministic
+    && deterministic.length > 3
+    && deterministicProfile?.dominant === 'en'
+    && deterministicProfile?.mixed !== true
+  ) {
+    console.log('[SD][PROMPT_TRANSLATE]', deterministic);
+    return deterministic;
+  }
+
+  const ollamaBase = String(process.env.OLLAMA_BASE || 'http://127.0.0.1:11434').trim();
+  const model = String(process.env.A11_OLLAMA_PRIMARY_MODEL || 'gemma4:e4b').trim();
+  try {
+    let translated = await requestEnglishPromptTranslation({
+      ollamaBase,
+      model,
+      raw,
+      deterministic,
+    });
+    if (
+      translated
+      && translated.length > 3
+      && isAcceptableEnglishTranslation(translated)
+      && !isOvercompressedPromptTranslation(raw, translated)
+    ) {
+      console.log('[SD][PROMPT_TRANSLATE]', translated);
+      return translated;
+    }
+    translated = await requestEnglishPromptTranslation({
+      ollamaBase,
+      model,
+      raw,
+      deterministic,
+      previousRejected: translated,
+    });
+    if (
+      translated
+      && translated.length > 3
+      && isAcceptableEnglishTranslation(translated)
+      && !isOvercompressedPromptTranslation(raw, translated)
+    ) {
+      console.log('[SD][PROMPT_TRANSLATE]', translated);
+      return translated;
+    }
+  } catch {
+    // fallback silencieux
+  }
+  if (
+    deterministic
+    && isAcceptableEnglishTranslation(deterministic, { allowMixed: richPrompt })
+    && !isOvercompressedPromptTranslation(raw, deterministic)
+  ) {
+    console.log('[SD][PROMPT_TRANSLATE]', deterministic);
+    return deterministic;
+  }
+  return deterministic || raw;
+}
 
 function isWindowsDrivePath(value = '') {
   return /^[a-zA-Z]:[\\/]/.test(String(value || '').trim());
@@ -158,6 +402,27 @@ function sanitizeProxyHeaders(headers = {}) {
   return forwarded;
 }
 
+function normalizeSdModelProfile(value = '') {
+  const profile = String(value || '').trim().toLowerCase();
+  if (!profile) return '';
+  if (['sd35', 'sd3.5', 'sd35-medium', 'stable-diffusion-3.5', 'stable-diffusion-3.5-medium'].includes(profile)) {
+    return 'sd35';
+  }
+  if (['sd35large', 'sd35-large', 'sd3.5-large', 'stable-diffusion-3.5-large'].includes(profile)) {
+    return 'sd35large';
+  }
+  if (['sd35turbo', 'sd35-turbo', 'sd3.5-turbo', 'stable-diffusion-3.5-large-turbo'].includes(profile)) {
+    return 'sd35turbo';
+  }
+  if (['multilingual', 'alt'].includes(profile)) {
+    return 'multilingual';
+  }
+  if (['classic', 'sd15', 'v1.5'].includes(profile)) {
+    return 'classic';
+  }
+  return profile;
+}
+
 async function invokeSdProxy(payload = {}, options = {}) {
   const proxyUrl = resolveSdProxyUrl();
   if (!proxyUrl) {
@@ -193,14 +458,25 @@ async function invokeSdProxy(payload = {}, options = {}) {
   };
 }
 
-function runSdScript(payload = {}, options = {}) {
+async function runSdScript(payload = {}, options = {}) {
 
   const scriptPath = options.scriptPath || resolveSdScriptPath();
   const pythonBin = options.pythonBin || resolveSdPythonBin(scriptPath);
   const outputPath = String(payload.output || payload.outputPath || '').trim();
-  const finalPrompt = String(payload.prompt || '').trim();
+  const rawPrompt = String(payload.prompt || '').trim();
+  const finalPrompt = await translatePromptToEnglish(rawPrompt);
+  const finalPrompt2 = String(payload.prompt_2 || payload.prompt2 || '').trim();
+  const finalPrompt3 = String(payload.prompt_3 || payload.prompt3 || '').trim();
+  const finalNegativePrompt2 = String(payload.negative_prompt_2 || payload.negativePrompt2 || '').trim();
+  const finalNegativePrompt3 = String(payload.negative_prompt_3 || payload.negativePrompt3 || '').trim();
 
   console.log('[DEBUG][IMAGE][FINAL_PROMPT]', finalPrompt);
+  if (finalPrompt2) {
+    console.log('[DEBUG][IMAGE][FINAL_PROMPT_2]', finalPrompt2);
+  }
+  if (finalPrompt3) {
+    console.log('[DEBUG][IMAGE][FINAL_PROMPT_3]', finalPrompt3);
+  }
   console.log('[DEBUG][IMAGE][OUTPUT]', outputPath || '(none)');
   console.log(
     '[DEBUG][IMAGE][SIZE]',
@@ -208,6 +484,14 @@ function runSdScript(payload = {}, options = {}) {
     `source=${String(payload.size_source || 'unknown').trim() || 'unknown'}`,
     `reason=${String(payload.size_reason || 'n/a').trim() || 'n/a'}`
   );
+  const requestedModelProfile = normalizeSdModelProfile(
+    payload.model_profile
+    || payload.modelProfile
+    || payload.sd_model_profile
+  );
+  if (requestedModelProfile) {
+    console.log('[DEBUG][IMAGE][MODEL_PROFILE]', requestedModelProfile);
+  }
   console.log('[DEBUG][IMAGE][PYTHON]', pythonBin);
   console.log('[DEBUG][IMAGE][SCRIPT]', scriptPath);
 
@@ -227,12 +511,24 @@ function runSdScript(payload = {}, options = {}) {
     '--height', String(Number(payload.height || 768) || 768),
     '--output', outputPath,
   ];
+  if (finalPrompt2) {
+    args.push('--prompt_2', finalPrompt2);
+  }
+  if (finalPrompt3) {
+    args.push('--prompt_3', finalPrompt3);
+  }
 
   if (payload.negative_prompt !== undefined && payload.negative_prompt !== null) {
     const negativePrompt = String(payload.negative_prompt || '').trim();
     if (negativePrompt) {
       args.push('--negative_prompt', negativePrompt);
     }
+  }
+  if (finalNegativePrompt2) {
+    args.push('--negative_prompt_2', finalNegativePrompt2);
+  }
+  if (finalNegativePrompt3) {
+    args.push('--negative_prompt_3', finalNegativePrompt3);
   }
 
   const initImage = String(
@@ -248,8 +544,13 @@ function runSdScript(payload = {}, options = {}) {
     args.push('--init_image', initImage);
   }
 
-  if (payload.strength !== undefined && payload.strength !== null && String(payload.strength).trim() !== '') {
-    args.push('--strength', String(payload.strength).trim());
+  const resolvedStrength = Number(
+    payload.strength_value !== undefined
+      ? payload.strength_value
+      : payload.strength
+  );
+  if (Number.isFinite(resolvedStrength)) {
+    args.push('--strength', String(resolvedStrength).trim());
   }
 
   if (payload.seed !== undefined && payload.seed !== null && String(payload.seed).trim() !== '') {
@@ -257,7 +558,11 @@ function runSdScript(payload = {}, options = {}) {
   }
 
   return new Promise((resolve) => {
-    const py = spawn(pythonBin, args, { cwd: path.dirname(scriptPath) });
+    const sdEnv = {
+      ...process.env,
+      SD_MODEL_PROFILE: requestedModelProfile || String(process.env.SD_MODEL_PROFILE || 'sd35').trim(),
+    };
+    const py = spawn(pythonBin, args, { cwd: path.dirname(scriptPath), env: sdEnv });
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
 
@@ -272,14 +577,20 @@ function runSdScript(payload = {}, options = {}) {
         pythonBin,
       });
     });
-    py.on('close', (code) => {
+    py.on('close', (code, signal) => {
       if (code !== 0) {
+        const exitCode = Number.isInteger(code) ? code : null;
+        const signalLabel = String(signal || '').trim() || null;
         return resolve({
           ok: false,
           error: 'python_failed',
-          message: stderr.toString() || `python_exit_${code}`,
+          message: signalLabel
+            ? `python_signal_${signalLabel}`
+            : `python_exit_${exitCode ?? 'unknown'}`,
           stderr: stderr.toString(),
           stdout: stdout.toString(),
+          exitCode,
+          signal: signalLabel,
           scriptPath,
           pythonBin,
         });
