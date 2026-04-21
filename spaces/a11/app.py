@@ -106,8 +106,8 @@ def call_image_async(prompt: str) -> tuple[str, Optional[Image.Image]]:
         "prompt": prompt,
         "width": 512,
         "height": 512,
-        "model_profile": "sd35turbo",
-        "num_inference_steps": 8,
+        "model_profile": "sd35large",
+        "num_inference_steps": 20,
     }
 
     try:
