@@ -358,8 +358,8 @@ test('compileMaskImageGenerateRuntime asks the prompt refiner to stay in english
   }, {
     callStructuredLlmJson: async ({ systemPrompt, text }) => {
       if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
-        capturedTranslatorPrompt = String(systemPrompt || '');
-        capturedTranslatorText = String(text || '');
+        if (!capturedTranslatorPrompt) capturedTranslatorPrompt = String(systemPrompt || '');
+        if (!capturedTranslatorText) capturedTranslatorText = String(text || '');
         return {
           target_language: 'english',
           raw_request: 'use my reference photo and transform me into a cinematic Joker-inspired character',
@@ -404,6 +404,9 @@ test('compileMaskImageGenerateRuntime asks the prompt refiner to stay in english
 
   assert.match(capturedTranslatorPrompt, /multilingual prompt-context translator/i);
   assert.match(capturedTranslatorText, /utilise ma photo comme reference/i);
+  assert.match(capturedTranslatorText, /joker cinematographique/i);
+  assert.match(capturedTranslatorText, /garder le même visage et la même coiffure/i);
+  assert.doesNotMatch(capturedTranslatorText, /the same person from the reference image, dark decor, high quality, clean portrait/i);
   assert.match(capturedSystemPrompt, /english only/i);
   assert.match(capturedText, /"target_language": "english"/i);
   assert.match(capturedText, /"raw_request": "use my reference photo and transform me into a cinematic Joker-inspired character"/i);

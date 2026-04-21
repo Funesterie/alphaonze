@@ -19,7 +19,6 @@ const {
   resolveVisionProvider,
 } = require('../../lib/janus-vision-runtime.cjs');
 const {
-  buildSdPromptBundle,
   compileCharacterCountConstraints,
 } = require('../mask/build-sd-prompt-bundle.cjs');
 const { compileMaskImageGenerateRuntime } = require('../mask/image-chat-runtime.cjs');
@@ -2488,18 +2487,12 @@ async function t_generate_png(args = {}) {
     }
   }
 
-  const promptBundle = compiledState || promptAlreadyCompiled
-    ? null
-    : buildSdPromptBundle(title, {
-      preferLiteralColor: true,
-    });
   const finalPrompt = compiledState
     ? String(compiledState.sdBody?.prompt || title).trim() || title
-    : String(promptBundle?.prompt || title).trim() || title;
+    : String(title || '').trim() || title;
   const finalNegativePrompt = String(
     args.negative_prompt
     || compiledState?.sdBody?.negative_prompt
-    || (Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : '')
     || ''
   ).trim();
 

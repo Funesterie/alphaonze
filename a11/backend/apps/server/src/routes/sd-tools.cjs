@@ -1,6 +1,5 @@
 const defaultFs = require('node:fs');
 const defaultPath = require('node:path');
-const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
 const { buildCanonicalImageMaskFromText } = require('../mask/resolve-image-mask-from-text.cjs');
 const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
 const {
@@ -347,7 +346,11 @@ function resolveSdModelProfilePlan({
 }
 
 function buildSdPromptBundleFallback(rawPrompt = '', options = {}) {
-  return buildSharedSdPromptBundle(rawPrompt, options);
+  return {
+    prompt: normalizePromptFragment(rawPrompt),
+    negativeHints: [],
+    options,
+  };
 }
 
 function resolveOpenAiPreferredForImage(requestBody = {}) {
