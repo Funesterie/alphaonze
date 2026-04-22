@@ -51,6 +51,174 @@ async function postJson(baseUrl, path, body, headers = {}) {
   return { response, json };
 }
 
+async function getJson(baseUrl, path, headers = {}) {
+  const response = await fetch(baseUrl + path, {
+    headers,
+  });
+
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = { raw: text };
+  }
+
+  return { response, json };
+}
+
+function buildImageStructuredLlmStub() {
+  return async ({ systemPrompt, text }) => {
+    const prompt = String(systemPrompt || '');
+    const sourceText = String(text || '');
+
+    if (/canonical request normalizer for A11 image\.generate/i.test(prompt)) {
+      if (/girafe|giraffe/i.test(sourceText)) {
+        return {
+          canonicalEnglishInput: 'a giraffe',
+          structuredFields: {
+            subject: ['giraffe'],
+            environment: ['simple background'],
+            style: ['high quality'],
+            composition: ['single well-framed subject'],
+            lighting: [],
+            palette: [],
+            constraints: {
+              promptInstructions: [],
+              negativeHints: [],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'single',
+            explicitSubjectCount: 1,
+          },
+        };
+      }
+
+      if (/(lapin|rabbit)/i.test(sourceText) && /(carotte|carrot)/i.test(sourceText)) {
+        return {
+          canonicalEnglishInput: 'a rabbit with a carrot in the mouth',
+          structuredFields: {
+            subject: ['rabbit'],
+            environment: ['simple natural setting'],
+            style: ['high quality'],
+            composition: ['single well-framed subject', 'accessory clearly visible'],
+            lighting: [],
+            palette: [],
+            constraints: {
+              promptInstructions: ['show clearly the carrot attached to the main subject'],
+              negativeHints: [],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'single',
+            explicitSubjectCount: 1,
+          },
+        };
+      }
+
+      if (/lapin|rabbit/i.test(sourceText)) {
+        return {
+          canonicalEnglishInput: 'a rabbit',
+          structuredFields: {
+            subject: ['rabbit'],
+            environment: ['simple background'],
+            style: ['high quality'],
+            composition: ['single well-framed subject'],
+            lighting: [],
+            palette: [],
+            constraints: {
+              promptInstructions: [],
+              negativeHints: [],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'single',
+            explicitSubjectCount: 1,
+          },
+        };
+      }
+
+      if (/donkey kong/i.test(sourceText)) {
+        return {
+          canonicalEnglishInput: 'donkey kong cartoon',
+          structuredFields: {
+            subject: ['donkey kong'],
+            environment: ['simple cartoon background'],
+            style: ['cartoon'],
+            composition: ['single well-framed subject'],
+            lighting: [],
+            palette: [],
+            constraints: {
+              promptInstructions: [],
+              negativeHints: [],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'single',
+            explicitSubjectCount: 1,
+          },
+        };
+      }
+
+      return {
+        canonicalEnglishInput: 'an apple',
+        structuredFields: {
+          subject: ['apple'],
+          environment: ['simple background'],
+          style: ['high quality'],
+          composition: ['single well-framed subject'],
+          lighting: [],
+          palette: [],
+          constraints: {
+            promptInstructions: [],
+            negativeHints: [],
+            noText: true,
+            safeMode: true,
+          },
+        },
+        scenePolicy: {
+          subjectMode: 'single',
+          explicitSubjectCount: 1,
+        },
+      };
+    }
+
+    if (/raffineur de compilateur image/i.test(prompt)) {
+      return {
+        composition_hints: ['accessoire bien visible'],
+        environment_hints: ['decor simple et lisible'],
+        style_hints: [],
+        prompt_instructions: ['Montrer clairement un accessoire utile.'],
+      };
+    }
+
+    return null;
+  };
+}
+
+function createProtectedChatProxyRouterForTests(overrides = {}) {
+  return createProtectedChatProxyRouter({
+    specialCompilerCallStructuredLlmJson: buildImageStructuredLlmStub(),
+    ...overrides,
+  });
+}
+
+function createChatRouterForTests(overrides = {}) {
+  return createChatRouter({
+    specialCompilerCallStructuredLlmJson: buildImageStructuredLlmStub(),
+    ...overrides,
+  });
+}
+
 test('POST /api/mask/compile returns 200 for a valid mask', async () => {
   await withServer(
     (app) => {
@@ -319,7 +487,7 @@ test('POST /api/llm/chat returns an image completion payload for authenticated i
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -363,6 +531,89 @@ test('POST /api/llm/chat returns an image completion payload for authenticated i
   );
 });
 
+test('POST /api/llm/chat queues an async image job when requested and exposes a polling endpoint', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  let generateCalls = 0;
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: 'fallback llm' } }],
+          });
+        },
+        detectImageIntent: () => true,
+        detectWebImageIntent: () => false,
+        hasLocalChatUpstreamConfigured: () => true,
+        generateSd: async () => {
+          generateCalls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          return {
+            ok: true,
+            artifact_type: 'image',
+            image_url: 'https://files.example.com/queued-image.png',
+            filename: 'queued-image.png',
+          };
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const body = {
+        a11Dev: true,
+        acceptAsyncImageJob: true,
+        conversationId: 'conv-async-1',
+        messages: [{ role: 'user', content: 'genere une image de chat orange' }],
+      };
+
+      const first = await postJson(baseUrl, '/api/llm/chat', body, {
+        authorization: `Bearer ${token}`,
+      });
+      const second = await postJson(baseUrl, '/api/llm/chat', body, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(first.response.status, 200);
+      assert.equal(first.json.status, 'pending');
+      assert.equal(first.json.mode, 'generate_image_async');
+      assert.equal(typeof first.json.asyncJob?.jobId, 'string');
+      assert.match(String(first.json.asyncJob?.poll_url || ''), /\/api\/llm\/jobs\/image\//);
+
+      assert.equal(second.response.status, 200);
+      assert.match(String(second.json.status || ''), /^(pending|running)$/);
+      assert.equal(second.json.asyncJob?.jobId, first.json.asyncJob?.jobId);
+
+      let polled = null;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        polled = await getJson(
+          baseUrl,
+          `/api/llm/jobs/image/${encodeURIComponent(first.json.asyncJob.jobId)}`,
+          { authorization: `Bearer ${token}` }
+        );
+        if (polled.json?.status === 'done') break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      assert.ok(polled);
+      assert.equal(polled.response.status, 200);
+      assert.equal(polled.json.status, 'done');
+      assert.equal(polled.json.result.imagePath, 'https://files.example.com/queued-image.png');
+      assert.equal(polled.json.result.mode, 'generate_image');
+      assert.equal(generateCalls, 1);
+    }
+  );
+});
+
 test('POST /api/llm/chat reuses a recent identical image request instead of generating twice', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
@@ -370,7 +621,7 @@ test('POST /api/llm/chat reuses a recent identical image request instead of gene
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -428,7 +679,7 @@ test('POST /api/llm/chat uses the image brain for non-explicit but visual prompt
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -477,7 +728,7 @@ test('POST /api/llm/chat returns a web image payload for image search prompts', 
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -526,7 +777,7 @@ test('POST /api/llm/chat returns a video payload for explicit video requests', a
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -579,7 +830,7 @@ test('POST /api/llm/chat returns the same image payload without requiring dev mo
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -627,7 +878,7 @@ test('POST /api/llm/chat executes compound mail plus latest image requests', asy
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -685,7 +936,7 @@ test('POST /api/llm/chat executes simple text email requests without falling bac
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -739,7 +990,7 @@ test('POST /api/llm/chat generates a PDF then sends it by mail without falling b
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -819,7 +1070,7 @@ test('POST /api/llm/chat executes compound pdf with latest images requests', asy
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -882,7 +1133,7 @@ test('POST /api/llm/chat falls back to a generated illustration when an illustra
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -952,7 +1203,7 @@ test('POST /api/llm/chat cleans giraffe illustrated PDF topics and injects relev
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -1028,7 +1279,7 @@ test('POST /api/llm/chat generates an image then sends it by mail in one request
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -1083,7 +1334,7 @@ test('POST /api/llm/chat generates a simple PDF request without falling back to 
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -1154,7 +1405,7 @@ test('POST /api/llm/chat finds a web image then creates a PDF in one request', a
 
   await withServer(
     (app) => {
-      app.use('/api', createProtectedChatProxyRouter({
+      app.use('/api', createProtectedChatProxyRouterForTests({
         verifyJWT(req, res, next) {
           try {
             const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -1300,7 +1551,7 @@ test('POST /api/llm/chat does not force provider=local when a remote provider is
   try {
     await withServer(
       (app) => {
-        app.use('/api', createProtectedChatProxyRouter({
+        app.use('/api', createProtectedChatProxyRouterForTests({
           verifyJWT(req, res, next) {
             try {
               const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -1354,7 +1605,7 @@ test('POST /api/llm/chat does not force provider=local when a remote provider is
 test('POST /api/chat propagates SD errors instead of returning a generic 500', async () => {
   await withServer(
     (app) => {
-      app.use('/api', createChatRouter({
+      app.use('/api', createChatRouterForTests({
         openaiClient: null,
         detectImageIntent: () => true,
         detectWebImageIntent: () => false,
@@ -1467,7 +1718,7 @@ test('POST /api/video/generate returns a dedicated video payload', async () => {
 test('POST /api/chat returns a video completion payload for explicit video requests', async () => {
   await withServer(
     (app) => {
-      app.use('/api', createChatRouter({
+      app.use('/api', createChatRouterForTests({
         detectVideoIntent: () => true,
         generateVideo: async () => ({
           ok: true,
@@ -1499,7 +1750,7 @@ test('POST /api/chat returns a video completion payload for explicit video reque
 test('POST /api/chat forwards source images to the video runtime', async () => {
   await withServer(
     (app) => {
-      app.use('/api', createChatRouter({
+      app.use('/api', createChatRouterForTests({
         detectImageIntent: () => false,
         detectVideoIntent: () => true,
         generateVideo: async ({ body }) => {

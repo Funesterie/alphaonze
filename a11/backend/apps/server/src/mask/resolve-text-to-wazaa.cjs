@@ -8,11 +8,19 @@ const {
   normalizeIntentType,
 } = require('./semantic/semantic-utils.cjs');
 const {
+  createUpstreamHttpError,
   fetchJsonWithRetry,
 } = require('../../lib/fetch-json-retry.cjs');
 
 function normalizeBaseUrl(value = '') {
   return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function normalizeEnvValue(value = '') {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (normalized.toLowerCase() === 'undefined' || normalized.toLowerCase() === 'null') return '';
+  return normalized;
 }
 
 function resolveImagePipelineMode() {
@@ -42,6 +50,41 @@ function isRouterLikeBaseUrl(value = '') {
     normalized.includes('cerbere.funesterie.me')
     || normalized.includes('127.0.0.1:4545')
     || normalized.includes('localhost:4545')
+  );
+}
+
+function resolveLocalStructuredLlmBaseUrl(env = process.env) {
+  const explicitOllamaBase = normalizeBaseUrl(normalizeEnvValue(env.OLLAMA_BASE));
+  if (explicitOllamaBase) return explicitOllamaBase;
+
+  const ollamaHost = normalizeEnvValue(env.OLLAMA_HOST);
+  const ollamaPort = normalizeEnvValue(env.OLLAMA_PORT);
+  if (ollamaHost || ollamaPort) {
+    return `http://${ollamaHost || '127.0.0.1'}:${ollamaPort || '11434'}`;
+  }
+
+  return normalizeBaseUrl(
+    normalizeEnvValue(env.LLAMA_BASE)
+    || normalizeEnvValue(env.LOCAL_LLM_URL)
+    || ''
+  );
+}
+
+function isLocalStructuredLlmBaseUrl(value = '', env = process.env) {
+  const normalized = normalizeBaseUrl(value).toLowerCase();
+  if (!normalized) return false;
+  const localCandidates = [
+    resolveLocalStructuredLlmBaseUrl(env),
+    'http://127.0.0.1:11434',
+    'http://localhost:11434',
+  ]
+    .map((entry) => normalizeBaseUrl(entry).toLowerCase())
+    .filter(Boolean);
+  if (localCandidates.includes(normalized)) return true;
+  return (
+    normalized.includes('127.0.0.1:11434')
+    || normalized.includes('localhost:11434')
+    || normalized.includes('/ollama')
   );
 }
 
@@ -92,35 +135,27 @@ Utilisateur : "montre-moi une image de goku"
 function resolveTranslationConfig() {
   const explicitTranslationBaseUrl = normalizeBaseUrl(process.env.A11_TRANSLATION_BASE_URL || '');
   const routerBaseUrl = normalizeBaseUrl(process.env.LLM_ROUTER_URL || '');
-  const openAiBaseUrl = normalizeBaseUrl(
-    process.env.A11_OPENAI_BASE_URL
-    || process.env.OPENAI_BASE_URL
-    || ''
-  );
-  const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || openAiBaseUrl || 'https://api.openai.com/v1';
+  const localStructuredLlmBaseUrl = resolveLocalStructuredLlmBaseUrl(process.env);
+  const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || localStructuredLlmBaseUrl || '';
   const url = buildChatCompletionsUrl(baseUrl);
 
-  const allowGenericOpenAiKey = ['1', 'true', 'yes', 'on'].includes(
-    String(process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI || '').trim().toLowerCase()
-  );
   const apiKey = (
     process.env.A11_TRANSLATION_API_KEY
-    || process.env.A11_OPENAI_API_KEY
-    || (allowGenericOpenAiKey ? process.env.OPENAI_API_KEY : '')
     || ''
   );
 
   const usesRouterLikeBaseUrl = isRouterLikeBaseUrl(baseUrl);
-  const allowAnonymous = usesRouterLikeBaseUrl || ['1', 'true', 'yes', 'on'].includes(
+  const allowAnonymous = usesRouterLikeBaseUrl || isLocalStructuredLlmBaseUrl(baseUrl) || ['1', 'true', 'yes', 'on'].includes(
     String(process.env.A11_TRANSLATION_ALLOW_ANON || '').trim().toLowerCase()
   );
 
   const model = (
     process.env.A11_TRANSLATION_MODEL
-    || (usesRouterLikeBaseUrl ? process.env.A11_OLLAMA_PRIMARY_MODEL : '')
-    || process.env.A11_OPENAI_MODEL
-    || process.env.OPENAI_MODEL
-    || (usesRouterLikeBaseUrl ? 'gemma4:e4b' : 'gpt-4o-mini')
+    || process.env.A11_OLLAMA_PRIMARY_MODEL
+    || process.env.LOCAL_DEFAULT_MODEL
+    || process.env.DEFAULT_MODEL
+    || process.env.LLAMA_MODEL
+    || 'gemma4:e4b'
   );
 
   const nezToken = (
@@ -142,6 +177,38 @@ function resolveTranslationConfig() {
   };
 }
 
+function resolveStructuredLlmRoute(config = {}) {
+  if (config?.usesRouterLikeBaseUrl) return 'router';
+  const baseUrl = normalizeBaseUrl(config?.baseUrl || '');
+  if (!baseUrl) return 'unconfigured';
+  if (isLocalStructuredLlmBaseUrl(baseUrl)) return 'direct_local_llm';
+  return 'direct_remote_llm';
+}
+
+function buildStructuredLlmTraceMeta(config = {}, stage = 'structured_llm') {
+  return {
+    stage: String(stage || 'structured_llm').trim() || 'structured_llm',
+    route: resolveStructuredLlmRoute(config),
+    baseUrl: normalizeBaseUrl(config?.baseUrl || '') || null,
+    model: String(config?.model || '').trim() || null,
+    allowAnonymous: config?.allowAnonymous === true,
+    apiKeyConfigured: Boolean(String(config?.apiKey || '').trim()),
+    usesRouterLikeBaseUrl: config?.usesRouterLikeBaseUrl === true,
+  };
+}
+
+function logStructuredLlmDispatch(traceMeta = {}) {
+  const parts = [
+    `stage=${String(traceMeta?.stage || 'structured_llm').trim() || 'structured_llm'}`,
+    `route=${String(traceMeta?.route || 'unknown').trim() || 'unknown'}`,
+    `model=${String(traceMeta?.model || 'unknown').trim() || 'unknown'}`,
+    `baseUrl=${String(traceMeta?.baseUrl || 'unconfigured').trim() || 'unconfigured'}`,
+    `auth=${traceMeta?.apiKeyConfigured === true ? 'true' : 'false'}`,
+    `anon=${traceMeta?.allowAnonymous === true ? 'true' : 'false'}`,
+  ];
+  console.info(`[A11][structured-llm][dispatch] ${parts.join(' ')}`);
+}
+
 function isLlmEnrichmentEnabled() {
   const explicit = process.env.A11_WAZAA_LLM_ENRICH;
   if (explicit !== undefined && explicit !== '') {
@@ -151,15 +218,48 @@ function isLlmEnrichmentEnabled() {
   return config.isConfigured;
 }
 
+function buildStructuredLlmError(code, message, {
+  statusCode = 502,
+  upstream = null,
+} = {}) {
+  const error = new Error(String(message || code || 'structured_llm_error'));
+  error.code = String(code || 'structured_llm_error');
+  error.statusCode = Number.isFinite(Number(statusCode)) ? Number(statusCode) : 502;
+  error.status = error.statusCode;
+  if (upstream && typeof upstream === 'object') {
+    error.upstream = upstream;
+  }
+  return error;
+}
+
 async function callStructuredLlmJson({
   text = '',
   systemPrompt = '',
   temperature = 0,
   maxTokens = 256,
   timeoutMs = 90000,
+  responseFormat = null,
+  strict = false,
+  stage = 'structured_llm',
 } = {}) {
   const config = resolveTranslationConfig();
-  if (!config.isConfigured) return null;
+  const traceMeta = buildStructuredLlmTraceMeta(config, stage);
+  logStructuredLlmDispatch(traceMeta);
+  if (!config.isConfigured) {
+    if (!strict) return null;
+    throw buildStructuredLlmError(
+      'structured_llm_unconfigured',
+      `Structured LLM is not configured for stage ${stage}.`,
+      {
+        statusCode: 503,
+        upstream: {
+          url: config.url || null,
+          status: null,
+          body: 'Structured LLM is not configured for this environment.',
+        },
+      }
+    );
+  }
 
   const body = {
     model: config.model,
@@ -169,6 +269,7 @@ async function callStructuredLlmJson({
       { role: 'system', content: String(systemPrompt || '').trim() },
       { role: 'user', content: text },
     ],
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   };
 
   const headers = {
@@ -176,6 +277,11 @@ async function callStructuredLlmJson({
   };
   if (config.apiKey) {
     headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+  if (config.usesRouterLikeBaseUrl) {
+    headers['X-A11-Structured-Stage'] = traceMeta.stage;
+    headers['X-A11-Structured-Route'] = traceMeta.route;
+    headers['X-A11-Structured-Origin'] = 'resolve-text-to-wazaa';
   }
   if (config.nezToken) {
     headers['X-NEZ-TOKEN'] = config.nezToken;
@@ -201,6 +307,12 @@ async function callStructuredLlmJson({
       ? 'upstream timeout (cloudflare 524)'
       : (normalizedText || 'upstream request failed');
     console.error(`[resolve-text-to-wazaa] LLM HTTP ${status || '0'}: ${summary.slice(0, 200)}`);
+    if (strict) {
+      throw createUpstreamHttpError(result, {
+        error: 'structured_llm_upstream_failed',
+        message: `Structured LLM request failed during ${stage}.`,
+      });
+    }
     return null;
   }
 
@@ -208,10 +320,42 @@ async function callStructuredLlmJson({
     ? result.data
     : null;
   const content = json?.choices?.[0]?.message?.content;
-  if (!content) return null;
+  if (!content) {
+    if (!strict) return null;
+    throw buildStructuredLlmError(
+      'structured_llm_empty_content',
+      `Structured LLM returned an empty content payload during ${stage}.`,
+      {
+        statusCode: 502,
+        upstream: {
+          url: config.url || null,
+          status: Number(result?.status || 200) || 200,
+          body: 'Structured LLM returned no message content.',
+          requestId: result?.requestId || null,
+        },
+      }
+    );
+  }
 
   const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (error_) {
+    if (!strict) throw error_;
+    throw buildStructuredLlmError(
+      'structured_llm_invalid_json',
+      `Structured LLM returned invalid JSON during ${stage}.`,
+      {
+        statusCode: 502,
+        upstream: {
+          url: config.url || null,
+          status: Number(result?.status || 200) || 200,
+          body: cleaned.slice(0, 2000) || null,
+          requestId: result?.requestId || null,
+        },
+      }
+    );
+  }
 }
 
 async function callTranslationLlm(text) {
@@ -315,6 +459,8 @@ module.exports = {
   shouldEnrichWithLlm,
   isLlmEnrichmentEnabled,
   resolveTranslationConfig,
+  resolveStructuredLlmRoute,
+  buildStructuredLlmTraceMeta,
   callStructuredLlmJson,
   mergeEnrichedWazaa,
   WAZAA_TRANSLATE_SYSTEM_PROMPT,

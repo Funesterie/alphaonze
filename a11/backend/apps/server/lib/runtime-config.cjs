@@ -20,18 +20,29 @@ function hasAnyValue(...values) {
   return values.some((value) => String(value || '').trim());
 }
 
+function resolveLocalLlmBaseUrl(env = {}) {
+  const explicitOllamaBase = normalizeUrl(env.OLLAMA_BASE || '');
+  if (explicitOllamaBase) return explicitOllamaBase;
+  if (hasAnyValue(env.OLLAMA_HOST, env.OLLAMA_PORT)) {
+    const host = String(env.OLLAMA_HOST || '127.0.0.1').trim() || '127.0.0.1';
+    const port = String(env.OLLAMA_PORT || '11434').trim() || '11434';
+    return normalizeUrl(`http://${host}:${port}`);
+  }
+  return normalizeUrl(env.LLAMA_BASE || env.LOCAL_LLM_URL || '');
+}
+
 function resolveSemanticTranslationMode(env = {}) {
   const explicitBaseUrl = normalizeUrl(env.A11_TRANSLATION_BASE_URL || '');
   const routerBaseUrl = normalizeUrl(env.LLM_ROUTER_URL || '');
-  const openAiBaseUrl = normalizeUrl(env.A11_OPENAI_BASE_URL || env.OPENAI_BASE_URL || '');
-  const hasScopedKey = hasAnyValue(env.A11_TRANSLATION_API_KEY, env.A11_OPENAI_API_KEY);
+  const localBaseUrl = resolveLocalLlmBaseUrl(env);
+  const hasScopedKey = hasAnyValue(env.A11_TRANSLATION_API_KEY);
   const usesRouter = Boolean(explicitBaseUrl || routerBaseUrl);
-  const baseUrl = explicitBaseUrl || routerBaseUrl || openAiBaseUrl;
-  const configured = usesRouter || hasScopedKey;
+  const baseUrl = explicitBaseUrl || routerBaseUrl || localBaseUrl;
+  const configured = usesRouter || Boolean(localBaseUrl) || hasScopedKey;
 
   return {
     configured,
-    provider: usesRouter ? 'llm-router' : (configured ? 'openai-compatible' : 'heuristic'),
+    provider: usesRouter ? 'llm-router' : (configured ? 'local-llm' : 'heuristic'),
     baseUrl,
   };
 }

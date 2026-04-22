@@ -13,9 +13,9 @@ const fs = require("fs");
 const envLocalPath = path.resolve(__dirname, ".env.local");
 const envPath = path.resolve(__dirname, ".env");
 if (fs.existsSync(envLocalPath)) {
-  require("dotenv").config({ path: envLocalPath });
+  require("dotenv").config({ path: envLocalPath, override: true });
 } else {
-  require("dotenv").config({ path: envPath });
+  require("dotenv").config({ path: envPath, override: true });
 }
 
 const express = require("express");

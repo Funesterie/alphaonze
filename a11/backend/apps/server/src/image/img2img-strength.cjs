@@ -76,6 +76,10 @@ function hasStylizedReferenceTransformationSignal(prompt = '') {
   return /\b(dragon ?ball(?: ?z)?|dbz|one piece|naruto|bleach|ghibli|anime|manga|comic book|comic-book|bande dessinee|bande-dessinee|cel shading|cel-shading|toon shading|toon-shading|pixar|disney)\b/i.test(String(prompt || ''));
 }
 
+function hasJokerStyleTransformationSignal(prompt = '') {
+  return /\b(joker(?:[ -]?style|[ -]?themed)?|joker-inspired|joker inspired|character inspired by the joker|personnage inspire du joker|transform(?:ed|ing)? .* joker|joker-style transformation|joker style transformation)\b/i.test(String(prompt || ''));
+}
+
 function hasAccessoryEditSignal(prompt = '') {
   return /\b(accessoire|accessory|chapeau|hat|lunettes|glasses|cape|cigarette|bijou|jewel|sword|epee|arc|bow|sac|bag|collier|necklace|bracelet|earring|boucles d oreilles|gants|gloves|weapon|firearm|gun|pistol|revolver|rifle|shotgun|silenced pistol|silencer|suppressor|pistolet|arme a feu|fusil|silencieux)\b/i.test(String(prompt || ''));
 }
@@ -85,7 +89,13 @@ function hasSceneRewriteSignal(prompt = '') {
 }
 
 function hasIdentityPreservationSignal(prompt = '') {
-  return /\b(same face|same person|same identity|same hairstyle|same hair|keep the same face|maintain the same face|maintain the same identity|meme visage|meme personne|meme identite|meme coiffure|meme coupe|garder le meme visage|garder la meme identite|garder la meme personne)\b/i.test(String(prompt || ''));
+  const text = normalizeText(prompt);
+  return /\b(same face|same person|same identity|same hairstyle|same hair|same facial structure|same face shape|same body type|exact same face|exact same person|exact same identity|recognizable face|faithful face|face faithful|keep the same face|keep the same identity|keep the same person|maintain the same face|maintain the same identity|maintain the recognizable face|maintain facial identity|maintain facial structure|maintain the same facial structure|preserve facial identity|preserve the same face|preserve the same identity|strictly maintained|replicated exactly from the provided reference image|replicated exactly from the reference image|meme visage|meme personne|meme identite|meme coiffure|meme coupe|meme structure faciale|visage reconnaissable|visage fidele|garder le meme visage|garder la meme identite|garder la meme personne|garder la meme structure faciale|conserver le meme visage|conserver la meme identite|conserver la meme personne|conserver la meme structure faciale|maintenir l identite|maintenir la meme identite|maintenir la meme structure faciale|maintenir les traits du visage)\b/i.test(text);
+}
+
+function hasExactReferenceLockSignal(prompt = '') {
+  const text = normalizeText(prompt);
+  return /\b(exact same person|exact same face|exact same identity|exact identity|exact pose|exact framing|exact pose and framing|preserve exact pose|preserve exact framing|preserve laterality|preserve hand laterality|preserve body angle|preserve arm placement|same side bandaged hand|same side wrapped hand|bandaged hand on the same side|wrapped hand on the same side|same side as in the reference image|main bandee du meme cote|main bandee du meme côté|main enveloppee du meme cote|main enveloppee du meme côté|meme cote que l image de reference|meme côté que l image de reference|preserver la lateralite|preserver la latéralité|preserver l angle du corps|preserver le placement des bras|preserver la pose exacte|preserver le cadrage exact)\b/i.test(text);
 }
 
 function hasOutfitPreservationSignal(prompt = '') {
@@ -129,19 +139,25 @@ function resolveComponentEntryProfile(component = '', {
 } = {}) {
   const referenceSourceMode = isReferenceSourceMode(initSourceMode);
   const sameIdentity = hasIdentityPreservationSignal(prompt);
+  const exactReferenceLock = hasExactReferenceLockSignal(prompt);
   const sameOutfit = hasOutfitPreservationSignal(prompt);
   const outfitRewrite = hasOutfitRewriteSignal(prompt);
   const backgroundPreserve = hasBackgroundPreservationSignal(prompt);
   const sceneRewrite = hasSceneRewriteSignal(prompt);
   const accessoryEdit = hasAccessoryEditSignal(prompt);
   const effectsSignal = hasEffectsSignal(prompt);
-  const strongStylization = hasExplicitStrongStylization(prompt) || hasStylizedReferenceTransformationSignal(prompt);
+  const strongStylization = (
+    hasExplicitStrongStylization(prompt)
+    || hasStylizedReferenceTransformationSignal(prompt)
+    || hasJokerStyleTransformationSignal(prompt)
+  );
   const normalizedGlobalProfile = VALID_IMG2IMG_STRENGTH_PROFILES.includes(globalProfile)
     ? globalProfile
     : 'balanced';
 
   switch (component) {
     case 'identity':
+      if (exactReferenceLock) return { profile: 'preserve', reason: 'exact_reference_identity_lock' };
       if (sameIdentity) return { profile: 'preserve', reason: 'same_identity_preservation' };
       if (scene?.sceneKey === 'solo_face') return { profile: 'preserve', reason: 'solo_face_identity_preservation' };
       if (referenceSourceMode) return { profile: 'preserve', reason: 'reference_identity_preservation' };
@@ -149,6 +165,7 @@ function resolveComponentEntryProfile(component = '', {
       if (normalizedGlobalProfile === 'motion_continuity') return { profile: 'preserve', reason: 'motion_identity_preservation' };
       return { profile: normalizedGlobalProfile, reason: 'inherit_global_identity' };
     case 'anatomy':
+      if (exactReferenceLock) return { profile: 'preserve', reason: 'exact_reference_pose_lock' };
       if (scene?.sceneKey === 'solo_face') return { profile: 'preserve', reason: 'solo_face_anatomy_preservation' };
       if (normalizedGlobalProfile === 'motion_continuity') return { profile: 'balanced', reason: 'motion_anatomy_stability' };
       if (referenceSourceMode) {
@@ -221,11 +238,16 @@ function resolveComponentBias(component = '', profile = 'balanced', {
 } = {}) {
   const referenceSourceMode = isReferenceSourceMode(initSourceMode);
   const sameIdentity = hasIdentityPreservationSignal(prompt);
+  const exactReferenceLock = hasExactReferenceLockSignal(prompt);
   const sameOutfit = hasOutfitPreservationSignal(prompt);
   const sceneRewrite = hasSceneRewriteSignal(prompt);
   const accessoryEdit = hasAccessoryEditSignal(prompt);
   const effectsSignal = hasEffectsSignal(prompt);
-  const strongStylization = hasExplicitStrongStylization(prompt) || hasStylizedReferenceTransformationSignal(prompt);
+  const strongStylization = (
+    hasExplicitStrongStylization(prompt)
+    || hasStylizedReferenceTransformationSignal(prompt)
+    || hasJokerStyleTransformationSignal(prompt)
+  );
   const baseBias = ({
     identity: { preserve: 0.14, balanced: 0.36, restyle: 0.42, motion_continuity: 0.24 },
     anatomy: { preserve: 0.20, balanced: 0.42, restyle: 0.48, motion_continuity: 0.28 },
@@ -236,11 +258,11 @@ function resolveComponentBias(component = '', profile = 'balanced', {
   }[component] || { preserve: 0.22, balanced: 0.50, restyle: 0.66, motion_continuity: 0.40 })[profile] ?? 0.5;
 
   let resolvedBias = baseBias;
-  if (component === 'identity' && (sameIdentity || scene?.sceneKey === 'solo_face')) {
+  if (component === 'identity' && (exactReferenceLock || sameIdentity || scene?.sceneKey === 'solo_face')) {
     resolvedBias = Math.min(resolvedBias, 0.12);
   }
-  if (component === 'anatomy' && scene?.sceneKey === 'solo_face') {
-    resolvedBias = Math.min(resolvedBias, 0.16);
+  if (component === 'anatomy' && (exactReferenceLock || scene?.sceneKey === 'solo_face')) {
+    resolvedBias = Math.min(resolvedBias, exactReferenceLock ? 0.12 : 0.16);
   }
   if (component === 'outfit' && sameOutfit) {
     resolvedBias = Math.min(resolvedBias, 0.18);
@@ -394,6 +416,11 @@ function resolveAutoStrengthProfile({
   const normalizedMotionProfile = normalizeText(motionProfile).replace(/\s+/g, '_');
   const requestedProfile = String(profileHint || '').trim();
   const referenceSourceMode = isReferenceSourceMode(initSourceMode);
+  const sameIdentity = hasIdentityPreservationSignal(prompt);
+  const exactReferenceLock = hasExactReferenceLockSignal(prompt);
+  const sceneRewriteSignal = hasSceneRewriteSignal(prompt);
+  const accessoryEditSignal = hasAccessoryEditSignal(prompt);
+  const jokerTransformationSignal = hasJokerStyleTransformationSignal(prompt);
 
   if (VALID_IMG2IMG_STRENGTH_PROFILES.includes(requestedProfile)) {
     return {
@@ -437,14 +464,35 @@ function resolveAutoStrengthProfile({
     };
   }
 
-  if (referenceSourceMode && hasSceneRewriteSignal(prompt)) {
+  if (referenceSourceMode && exactReferenceLock) {
+    return {
+      profile: 'preserve',
+      reason: 'reference_subject_exact_lock',
+    };
+  }
+
+  if (referenceSourceMode && sameIdentity && jokerTransformationSignal) {
+    return {
+      profile: 'balanced',
+      reason: 'reference_subject_joker_transformation',
+    };
+  }
+
+  if (referenceSourceMode && sameIdentity) {
+    return {
+      profile: 'preserve',
+      reason: 'reference_subject_identity_lock',
+    };
+  }
+
+  if (referenceSourceMode && sceneRewriteSignal) {
     return {
       profile: 'balanced',
       reason: 'reference_subject_scene_rewrite',
     };
   }
 
-  if (hasAccessoryEditSignal(prompt)) {
+  if (accessoryEditSignal) {
     return {
       profile: 'balanced',
       reason: referenceSourceMode
@@ -504,8 +552,11 @@ function resolveProfileBias({
   const normalizedSourceMode = normalizeText(initSourceMode).replace(/\s+/g, '_');
   const normalizedMotionProfile = normalizeText(motionProfile).replace(/\s+/g, '_');
   const referenceSourceMode = isReferenceSourceMode(initSourceMode);
+  const sameIdentity = hasIdentityPreservationSignal(prompt);
+  const exactReferenceLock = hasExactReferenceLockSignal(prompt);
   const sceneRewriteSignal = hasSceneRewriteSignal(prompt);
   const accessoryEditSignal = hasAccessoryEditSignal(prompt);
+  const jokerTransformationSignal = hasJokerStyleTransformationSignal(prompt);
   const highMotion = [
     'run_cycle',
     'power_up_loop',
@@ -535,8 +586,18 @@ function resolveProfileBias({
   if (highMotion && ['motion_continuity', 'balanced'].includes(profile)) {
     resolvedBias += 0.08;
   }
+  if (profile === 'preserve' && referenceSourceMode && exactReferenceLock) {
+    resolvedBias = scene?.sceneKey === 'solo_face' ? 0.06 : 0.1;
+  }
   if (profile === 'balanced' && referenceSourceMode && (sceneRewriteSignal || accessoryEditSignal)) {
-    resolvedBias = Math.max(resolvedBias, scene?.sceneKey === 'solo_face' ? 0.64 : 0.58);
+    if (sameIdentity) {
+      resolvedBias = Math.min(resolvedBias, scene?.sceneKey === 'solo_face' ? 0.24 : 0.32);
+    } else {
+      resolvedBias = Math.max(resolvedBias, scene?.sceneKey === 'solo_face' ? 0.64 : 0.58);
+    }
+  }
+  if (profile === 'balanced' && referenceSourceMode && sameIdentity && jokerTransformationSignal) {
+    resolvedBias = Math.min(resolvedBias, scene?.sceneKey === 'solo_face' ? 0.02 : 0.06);
   }
   if (normalizedTaskType.includes('accessory')) {
     resolvedBias = Math.min(resolvedBias, 0.38);
@@ -674,8 +735,10 @@ module.exports = {
   VALID_IMG2IMG_STRENGTH_PROFILES,
   hasAccessoryEditSignal,
   hasExplicitStrongStylization,
+  hasExactReferenceLockSignal,
   hasEffectsSignal,
   hasIdentityPreservationSignal,
+  hasJokerStyleTransformationSignal,
   hasOutfitPreservationSignal,
   hasOutfitRewriteSignal,
   hasBackgroundPreservationSignal,

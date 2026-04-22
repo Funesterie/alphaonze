@@ -4,6 +4,12 @@ const express = require('express');
 const app = express();
 const { createFileStorage } = require('./lib/file-storage.cjs');
 let fileStorage = null;
+const {
+  deleteLocalUploadObject,
+  isLocalUploadStorageKey,
+  readLocalUploadBuffer,
+  saveBufferToLocalUploadStorage,
+} = require('./lib/local-upload-storage.cjs');
 
 // Slack notification dashboard
 const { safeSlack, SlackDashboard } = require('./utils/slackNotify');
@@ -56,6 +62,7 @@ const {
   normalizeGeneratedImagePrompt,
 } = require('./lib/direct-safe-intent.cjs');
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('./src/mask/build-sd-prompt-bundle.cjs');
+const { callStructuredLlmJson } = require('./src/mask/resolve-text-to-wazaa.cjs');
 const createDecommissionedDevRoutesRouter = require('./src/routes/decommissioned-dev-routes.cjs');
 
 
@@ -97,11 +104,11 @@ const shouldLoadDotenv =
   || String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
 if (shouldLoadDotenv && fs.existsSync(localEnvPath)) {
   console.log('[A11] Chargement des variables d\'environnement depuis', localEnvPath);
-  dotenv.config({ path: localEnvPath });
+  dotenv.config({ path: localEnvPath, override: true });
   envSource = localEnvPath;
 } else if (shouldLoadDotenv && fs.existsSync(repoEnvPath)) {
   console.log('[A11] Chargement des variables d\'environnement depuis', repoEnvPath);
-  dotenv.config({ path: repoEnvPath });
+  dotenv.config({ path: repoEnvPath, override: true });
   envSource = repoEnvPath;
 } else if (!shouldLoadDotenv) {
   console.log('[A11] Production runtime detected: skipping repo .env loading');
@@ -4429,7 +4436,7 @@ async function sendConversationResourceEmailNow({
   let attachment = null;
   let attachmentIncluded = false;
   let attachmentFallbackReason = null;
-  if (attachToEmail && resolvedResource.storageKey && isR2Configured()) {
+  if (attachToEmail && isStoredResourceDownloadAvailable(resolvedResource.storageKey)) {
     try {
       const downloaded = await downloadBufferFromR2(resolvedResource.storageKey);
       attachment = {
@@ -4941,6 +4948,33 @@ function isR2Configured() {
   return !!(R2_ENDPOINT && R2_ACCESS_KEY && R2_SECRET_KEY && R2_BUCKET);
 }
 
+function isStoredResourceDownloadAvailable(storageKey) {
+  const normalizedStorageKey = String(storageKey || '').trim();
+  if (!normalizedStorageKey) return false;
+  if (isLocalUploadStorageKey(normalizedStorageKey)) return true;
+  return isR2Configured();
+}
+
+function resolveFileUploadWriter() {
+  if (isR2Configured()) {
+    return {
+      backend: 'r2',
+      uploadBuffer: uploadBufferToR2,
+    };
+  }
+
+  return {
+    backend: 'local-file',
+    uploadBuffer: ({ filename, buffer, contentType }) => saveBufferToLocalUploadStorage({
+      uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
+      filename,
+      buffer,
+      contentType,
+      sanitizeFileName,
+    }),
+  };
+}
+
 let r2ClientSingleton = null;
 // Removed duplicate fileStorage initialization
 
@@ -4981,11 +5015,25 @@ const verifyJWT = createVerifyJWT({
 
 
 async function downloadBufferFromR2(storageKey) {
-  return fileStorage.downloadBuffer(storageKey);
+  const normalizedStorageKey = String(storageKey || '').trim();
+  if (isLocalUploadStorageKey(normalizedStorageKey)) {
+    return readLocalUploadBuffer({
+      storageKey: normalizedStorageKey,
+      uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
+    });
+  }
+  return fileStorage.downloadBuffer(normalizedStorageKey);
 }
 
 async function deleteObjectFromR2(storageKey) {
-  return fileStorage.deleteObject(storageKey);
+  const normalizedStorageKey = String(storageKey || '').trim();
+  if (isLocalUploadStorageKey(normalizedStorageKey)) {
+    return deleteLocalUploadObject({
+      storageKey: normalizedStorageKey,
+      uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
+    });
+  }
+  return fileStorage.deleteObject(normalizedStorageKey);
 }
 
 async function saveFileRecord({ userId, filename, storageKey, url, contentType, sizeBytes, expiresAt }) {
@@ -5781,18 +5829,25 @@ app.post('/api/upload/image-local', express.json({ limit: '20mb' }), async (req,
   try {
     const { contentBase64, filename } = req.body || {};
     if (!contentBase64 || !filename) return res.status(400).json({ ok: false, error: 'missing_content_or_filename' });
-    const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
-    const workspaceRoot = String(process.env.A11_WORKSPACE_ROOT || '').trim();
-    const uploadDir = runtimeRoot ? path.join(runtimeRoot, 'files', 'uploads') : (workspaceRoot ? path.join(workspaceRoot, 'runtime', 'files', 'uploads') : path.join(__dirname, '..', '..', '..', 'runtime', 'files', 'uploads'));
-    fs.mkdirSync(uploadDir, { recursive: true });
-    const base64Data = String(contentBase64).replace(/^data:image\/[a-z]+;base64,/, '');
+    const dataUrlMatch = String(contentBase64 || '').match(/^data:([^;,]+)[^,]*,/i);
+    const normalizedContentType = String(dataUrlMatch?.[1] || 'application/octet-stream').trim() || 'application/octet-stream';
+    const base64Data = String(contentBase64).replace(/^data:[^,]+,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    const sanitizedFilename = String(filename).replace(/[^a-z0-9._-]/gi, '_');
-    const outputFilename = `upload_${Date.now()}_${sanitizedFilename}`;
-    const outputPath = path.join(uploadDir, outputFilename);
-    fs.writeFileSync(outputPath, buffer);
-    const publicUrl = `/files/runtime/files/uploads/${encodeURIComponent(outputFilename)}`;
-    return res.json({ ok: true, url: publicUrl, filename: outputFilename, sizeBytes: buffer.length });
+    const saved = saveBufferToLocalUploadStorage({
+      uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
+      filename,
+      buffer,
+      contentType: normalizedContentType,
+      sanitizeFileName,
+    });
+    return res.json({
+      ok: true,
+      url: saved.url,
+      filename: path.basename(saved.outputPath || saved.filename || ''),
+      storageKey: saved.storageKey,
+      sizeBytes: buffer.length,
+      storageBackend: 'local-file',
+    });
   } catch (error_) {
     console.error('[A11][upload-image-local] error:', error_);
     return res.status(500).json({ ok: false, error: 'upload_failed', message: String(error_?.message || error_) });
@@ -5809,10 +5864,6 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
       userId = 'internal-tool';
     }
     if (!userId && !isInternal) return res.status(401).json({ ok: false, error: 'missing_user' });
-
-    if (!isR2Configured()) {
-      return res.status(503).json({ ok: false, error: 'r2_not_configured' });
-    }
 
     const {
       filename,
@@ -5831,6 +5882,7 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
     const normalizedConversationId = normalizeConversationId(conversationId || convId || sessionId);
     const resolvedExpiresAt = normalizeOptionalTimestamp(expiresAt)
       || buildTemporaryFileExpiryDate(Number(ttlSeconds || 0) > 0 ? Number(ttlSeconds) * 1000 : TEMP_SHARED_FILE_TTL_MS);
+    const uploadWriter = resolveFileUploadWriter();
     const ingestion = await ingestUploadedFile({
       userId,
       filename,
@@ -5845,7 +5897,7 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
       },
       linkConversationResource,
       analyzeResourceContent: analyzeUploadedResource,
-      uploadBufferToR2,
+      uploadBufferToR2: uploadWriter.uploadBuffer,
       saveFileRecord,
       saveUserFileMemory,
       sanitizeFileName,
@@ -5922,6 +5974,7 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
           }
         : null,
       mail,
+      storageBackend: uploadWriter.backend,
     });
   } catch (e) {
     if (e?.code === 'missing_content_base64' || e?.code === 'invalid_base64_content') {
@@ -5993,7 +6046,7 @@ app.get('/api/resources/:id/download', async (req, res) => {
     if (isResourceExpired(resource)) {
       return res.status(410).json({ ok: false, error: 'resource_expired' });
     }
-    if (!resource.storageKey || !isR2Configured()) {
+    if (!isStoredResourceDownloadAvailable(resource.storageKey)) {
       return res.status(409).json({ ok: false, error: 'resource_download_not_available' });
     }
 
@@ -6069,7 +6122,7 @@ app.get('/api/public/resources/:id/download', async (req, res) => {
     if (isResourceExpired(resource)) {
       return res.status(410).json({ ok: false, error: 'resource_expired' });
     }
-    if (!resource.storageKey || !isR2Configured()) {
+    if (!isStoredResourceDownloadAvailable(resource.storageKey)) {
       return res.status(409).json({ ok: false, error: 'resource_download_not_available' });
     }
 
@@ -6280,6 +6333,7 @@ const protectedChatProxyRouter = createProtectedChatProxyRouter({
   duckduckgoImageSearch,
   generateSd: sdTools.generateSdInternal,
   generateVideo: videoTools.generateVideoInternal,
+  specialCompilerCallStructuredLlmJson: callStructuredLlmJson,
   hasLocalChatUpstreamConfigured,
   localDefaultModel: process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b',
 });
@@ -6492,10 +6546,6 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
     const userId = String(req.user?.id || '').trim();
     if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
 
-    if (!isR2Configured()) {
-      return res.status(503).json({ ok: false, error: 'r2_not_configured' });
-    }
-
     const {
       filename,
       contentBase64,
@@ -6508,6 +6558,7 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
       emailMessage,
       attachToEmail,
     } = req.body || {};
+    const uploadWriter = resolveFileUploadWriter();
 
     const result = await createArtifact({
       userId,
@@ -6527,7 +6578,7 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
         ...payload,
         linkConversationResource,
         analyzeResourceContent: analyzeUploadedResource,
-        uploadBufferToR2,
+        uploadBufferToR2: uploadWriter.uploadBuffer,
         saveFileRecord,
         saveUserFileMemory,
         sanitizeFileName,
@@ -6543,6 +6594,7 @@ app.post('/api/artifacts/create', express.json({ limit: '20mb' }), async (req, r
       record: result.record,
       mail: result.mail,
       conversationResource: result.conversationResource || null,
+      storageBackend: uploadWriter.backend,
     });
   } catch (e) {
     if (e?.code === 'missing_content_base64' || e?.code === 'invalid_base64_content') {

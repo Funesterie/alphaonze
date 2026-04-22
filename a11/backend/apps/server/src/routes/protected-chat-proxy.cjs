@@ -100,6 +100,205 @@ function resolveImageRequestCacheTtlMs(env = process.env) {
 
 const IMAGE_REQUEST_CACHE_TTL_MS = resolveImageRequestCacheTtlMs();
 
+function resolveAsyncImageJobTtlMs(env = process.env) {
+  const numeric = Number(env.A11_ASYNC_IMAGE_JOB_TTL_MS || 600000);
+  if (!Number.isFinite(numeric)) return 600000;
+  return Math.max(30000, Math.min(3600000, Math.floor(numeric)));
+}
+
+function resolveAsyncImageJobPollIntervalMs(env = process.env) {
+  const numeric = Number(env.A11_ASYNC_IMAGE_JOB_POLL_INTERVAL_MS || 5000);
+  if (!Number.isFinite(numeric)) return 5000;
+  return Math.max(1000, Math.min(30000, Math.floor(numeric)));
+}
+
+const ASYNC_IMAGE_JOB_TTL_MS = resolveAsyncImageJobTtlMs();
+const ASYNC_IMAGE_JOB_POLL_INTERVAL_MS = resolveAsyncImageJobPollIntervalMs();
+
+function resolveAsyncImageJobStorePath(env = process.env) {
+  const explicit = String(env.A11_ASYNC_IMAGE_JOB_STORE_PATH || '').trim();
+  if (explicit) return path.resolve(explicit);
+  return path.join(resolvePublicWorkspaceRoot(), 'runtime', 'cache', 'async-image-jobs.json');
+}
+
+function toSerializableClone(value) {
+  if (value === undefined) return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
+}
+
+function serializeAsyncImageJobForStore(job = {}) {
+  if (!job || typeof job !== 'object') return null;
+  return {
+    id: String(job.id || '').trim(),
+    kind: String(job.kind || 'image.generate').trim() || 'image.generate',
+    status: String(job.status || 'pending').trim() || 'pending',
+    userId: String(job.userId || 'anonymous').trim() || 'anonymous',
+    requestKeys: Array.isArray(job.requestKeys) ? [...new Set(job.requestKeys.map((entry) => String(entry || '').trim()).filter(Boolean))] : [],
+    pollIntervalMs: Number(job.pollIntervalMs || ASYNC_IMAGE_JOB_POLL_INTERVAL_MS),
+    maxPollAttempts: Number(job.maxPollAttempts || Math.max(1, Math.floor(ASYNC_IMAGE_JOB_TTL_MS / ASYNC_IMAGE_JOB_POLL_INTERVAL_MS))),
+    createdAt: Number(job.createdAt || Date.now()),
+    updatedAt: Number(job.updatedAt || Date.now()),
+    completedAt: Number(job.completedAt || 0) || null,
+    result: toSerializableClone(job.result),
+    error: String(job.error || '').trim(),
+    message: String(job.message || '').trim(),
+    details: toSerializableClone(job.details),
+    upstream: toSerializableClone(job.upstream),
+  };
+}
+
+function loadAsyncImageJobsFromStore(storePath = '') {
+  const normalizedStorePath = String(storePath || '').trim();
+  if (!normalizedStorePath || !fs.existsSync(normalizedStorePath)) return [];
+  try {
+    const raw = fs.readFileSync(normalizedStorePath, 'utf8');
+    if (!raw.trim()) return [];
+    const parsed = JSON.parse(raw);
+    const entries = Array.isArray(parsed)
+      ? parsed
+      : (Array.isArray(parsed?.jobs) ? parsed.jobs : []);
+    return entries
+      .map((entry) => serializeAsyncImageJobForStore(entry))
+      .filter((entry) => entry && entry.id);
+  } catch {
+    return [];
+  }
+}
+
+function persistAsyncImageJobsToStore(storePath = '', jobs = new Map()) {
+  const normalizedStorePath = String(storePath || '').trim();
+  if (!normalizedStorePath) return;
+  const snapshot = Array.from(jobs.values())
+    .map((job) => serializeAsyncImageJobForStore(job))
+    .filter((entry) => entry && entry.id);
+  try {
+    fs.mkdirSync(path.dirname(normalizedStorePath), { recursive: true });
+    const tempPath = `${normalizedStorePath}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify({ jobs: snapshot }, null, 2), 'utf8');
+    fs.renameSync(tempPath, normalizedStorePath);
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function isAsyncImageJobRequested(body = {}) {
+  return body?.acceptAsyncImageJob === true || isTruthyEnv(body?.acceptAsyncImageJob);
+}
+
+function buildAsyncImageJobPath(jobId = '') {
+  return `/api/llm/jobs/image/${encodeURIComponent(String(jobId || '').trim())}`;
+}
+
+function buildAsyncImageJobEnvelope(job = {}, resolution = null) {
+  const jobId = String(job.id || '').trim();
+  const status = String(job.status || 'pending').trim() || 'pending';
+  return {
+    id: jobId,
+    jobId,
+    kind: String(job.kind || resolution?.kind || 'image.generate').trim() || 'image.generate',
+    status,
+    poll_url: buildAsyncImageJobPath(jobId),
+    pollUrl: buildAsyncImageJobPath(jobId),
+    pollIntervalMs: Number(job.pollIntervalMs || ASYNC_IMAGE_JOB_POLL_INTERVAL_MS),
+    maxPollAttempts: Number(job.maxPollAttempts || Math.max(1, Math.floor(ASYNC_IMAGE_JOB_TTL_MS / ASYNC_IMAGE_JOB_POLL_INTERVAL_MS))),
+    createdAt: Number(job.createdAt || Date.now()),
+    updatedAt: Number(job.updatedAt || job.createdAt || Date.now()),
+    completedAt: Number(job.completedAt || 0) || null,
+  };
+}
+
+function buildPendingImageJobPayload(job = {}, resolution = {}) {
+  const asyncJob = buildAsyncImageJobEnvelope(job, resolution);
+  const content = "Je lance la generation de l'image. Je reviens des qu'elle est prete.";
+  return {
+    ok: true,
+    id: `a11-img-job-${asyncJob.jobId}`,
+    jobId: asyncJob.jobId,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: 'a11-mask-image',
+    mode: 'generate_image_async',
+    tool: 'generate_image',
+    artifact_type: 'image_pending',
+    status: asyncJob.status,
+    poll_url: asyncJob.poll_url,
+    pollUrl: asyncJob.pollUrl,
+    pollIntervalMs: asyncJob.pollIntervalMs,
+    maxPollAttempts: asyncJob.maxPollAttempts,
+    content,
+    asyncJob,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content,
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    a11Agent: {
+      imagePath: null,
+      asyncJob,
+      results: [],
+    },
+  };
+}
+
+function serializeAsyncImageJob(job = {}) {
+  const asyncJob = buildAsyncImageJobEnvelope(job);
+  if (asyncJob.status === 'done') {
+    return {
+      ok: true,
+      jobId: asyncJob.jobId,
+      status: asyncJob.status,
+      poll_url: asyncJob.poll_url,
+      pollUrl: asyncJob.pollUrl,
+      pollIntervalMs: asyncJob.pollIntervalMs,
+      createdAt: asyncJob.createdAt,
+      updatedAt: asyncJob.updatedAt,
+      completedAt: asyncJob.completedAt,
+      asyncJob,
+      result: job.result || null,
+    };
+  }
+
+  if (asyncJob.status === 'error') {
+    return {
+      ok: false,
+      jobId: asyncJob.jobId,
+      status: asyncJob.status,
+      poll_url: asyncJob.poll_url,
+      pollUrl: asyncJob.pollUrl,
+      pollIntervalMs: asyncJob.pollIntervalMs,
+      error: String(job.error || 'image_job_failed'),
+      message: String(job.message || job.error || 'image_job_failed'),
+      createdAt: asyncJob.createdAt,
+      updatedAt: asyncJob.updatedAt,
+      completedAt: asyncJob.completedAt,
+      asyncJob,
+      ...(job.details ? { details: job.details } : {}),
+      ...(job.upstream ? { upstream: job.upstream } : {}),
+    };
+  }
+
+  return {
+    ok: true,
+    jobId: asyncJob.jobId,
+    status: asyncJob.status,
+    poll_url: asyncJob.poll_url,
+    pollUrl: asyncJob.pollUrl,
+    pollIntervalMs: asyncJob.pollIntervalMs,
+    createdAt: asyncJob.createdAt,
+    updatedAt: asyncJob.updatedAt,
+    asyncJob,
+  };
+}
+
 function stableStringify(value) {
   if (Array.isArray(value)) {
     return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
@@ -198,6 +397,14 @@ function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
   }
 
   return payload;
+}
+
+function resolveErrorHttpStatus(error_, fallbackStatus = 502) {
+  const status = Number(error_?.status || error_?.statusCode || 0);
+  if (Number.isFinite(status) && status >= 400) {
+    return status;
+  }
+  return fallbackStatus;
 }
 
 function buildExecutionContext(req) {
@@ -1208,6 +1415,174 @@ function createProtectedChatProxyRouter({
   });
   const inFlightImageRequests = new Map();
   const recentImageResponses = new Map();
+  const asyncImageJobs = new Map();
+  const asyncImageJobsByRequestKey = new Map();
+  const asyncImageJobStorePath = resolveAsyncImageJobStorePath(process.env);
+
+  function persistAsyncImageJobsSnapshot() {
+    persistAsyncImageJobsToStore(asyncImageJobStorePath, asyncImageJobs);
+  }
+
+  function hydrateAsyncImageJobsFromStore() {
+    const persistedJobs = loadAsyncImageJobsFromStore(asyncImageJobStorePath);
+    for (const persistedJob of persistedJobs) {
+      const currentJob = asyncImageJobs.get(persistedJob.id);
+      const currentUpdatedAt = Number(currentJob?.updatedAt || 0);
+      const persistedUpdatedAt = Number(persistedJob?.updatedAt || 0);
+      if (currentJob?.promise && currentUpdatedAt >= persistedUpdatedAt) {
+        continue;
+      }
+      if (currentJob && currentUpdatedAt > persistedUpdatedAt) {
+        continue;
+      }
+      asyncImageJobs.set(persistedJob.id, {
+        ...currentJob,
+        ...persistedJob,
+      });
+      if (Array.isArray(persistedJob.requestKeys)) {
+        for (const key of persistedJob.requestKeys) {
+          if (key) asyncImageJobsByRequestKey.set(key, persistedJob.id);
+        }
+      }
+    }
+  }
+
+  hydrateAsyncImageJobsFromStore();
+
+  function dropAsyncImageJob(jobId) {
+    const normalizedJobId = String(jobId || '').trim();
+    if (!normalizedJobId) return;
+    const job = asyncImageJobs.get(normalizedJobId);
+    if (job && Array.isArray(job.requestKeys)) {
+      for (const key of job.requestKeys) {
+        if (asyncImageJobsByRequestKey.get(key) === normalizedJobId) {
+          asyncImageJobsByRequestKey.delete(key);
+        }
+      }
+    }
+    asyncImageJobs.delete(normalizedJobId);
+    persistAsyncImageJobsSnapshot();
+  }
+
+  function cleanupExpiredAsyncImageJobs() {
+    hydrateAsyncImageJobsFromStore();
+    const now = Date.now();
+    for (const [jobId, job] of asyncImageJobs.entries()) {
+      if (!job || typeof job !== 'object') {
+        dropAsyncImageJob(jobId);
+        continue;
+      }
+      const expiresAt = Number(
+        job.completedAt
+          ? job.completedAt + ASYNC_IMAGE_JOB_TTL_MS
+          : job.createdAt + ASYNC_IMAGE_JOB_TTL_MS
+      );
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+        dropAsyncImageJob(jobId);
+      }
+    }
+  }
+
+  function findPendingAsyncImageJob(requestKeys = []) {
+    cleanupExpiredAsyncImageJobs();
+    for (const key of requestKeys) {
+      const jobId = asyncImageJobsByRequestKey.get(key);
+      if (!jobId) continue;
+      const job = asyncImageJobs.get(jobId);
+      if (!job) {
+        asyncImageJobsByRequestKey.delete(key);
+        continue;
+      }
+      if (job.status === 'pending' || job.status === 'running') {
+        return job;
+      }
+      asyncImageJobsByRequestKey.delete(key);
+    }
+    return null;
+  }
+
+  function createAsyncImageJob(req, resolution, requestKeys = []) {
+    const now = Date.now();
+    const jobId = `imgjob_${now}_${crypto.randomBytes(4).toString('hex')}`;
+    const maxPollAttempts = Math.max(1, Math.floor(ASYNC_IMAGE_JOB_TTL_MS / ASYNC_IMAGE_JOB_POLL_INTERVAL_MS));
+    const job = {
+      id: jobId,
+      kind: String(resolution?.kind || 'image.generate').trim() || 'image.generate',
+      status: 'pending',
+      userId: String(req?.user?.id || req?.body?._user || 'anonymous').trim() || 'anonymous',
+      requestKeys: [...new Set(requestKeys.filter(Boolean))],
+      pollIntervalMs: ASYNC_IMAGE_JOB_POLL_INTERVAL_MS,
+      maxPollAttempts,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      result: null,
+      error: '',
+      message: '',
+      details: null,
+      upstream: null,
+    };
+
+    asyncImageJobs.set(jobId, job);
+    for (const key of job.requestKeys) {
+      asyncImageJobsByRequestKey.set(key, jobId);
+    }
+    persistAsyncImageJobsSnapshot();
+    return job;
+  }
+
+  function startAsyncImageJob(job, resolution, req, shouldCacheResult) {
+    const executionPromise = Promise.resolve(resolution.responsePayload)
+      .then(async (payload) => {
+        job.status = 'running';
+        job.updatedAt = Date.now();
+        persistAsyncImageJobsSnapshot();
+        if (payload) return payload;
+        const executed = await intentResolver.executeResolvedRuntime(resolution, {
+          req,
+          body: req.body || {},
+          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+        });
+        return executed?.responsePayload || null;
+      })
+      .then((payload) => {
+        job.status = 'done';
+        job.result = payload;
+        job.updatedAt = Date.now();
+        job.completedAt = job.updatedAt;
+        persistAsyncImageJobsSnapshot();
+        if (shouldCacheResult) {
+          for (const key of job.requestKeys) {
+            recentImageResponses.set(key, {
+              expiresAt: Date.now() + IMAGE_REQUEST_CACHE_TTL_MS,
+              result: payload,
+            });
+          }
+        }
+        return payload;
+      })
+      .catch((error_) => {
+        job.status = 'error';
+        job.error = String(error_?.payload?.error || error_?.error || 'image_job_failed');
+        job.message = summarizeProxyError(error_, 'image_job_failed');
+        job.details = error_?.payload?.details || null;
+        job.upstream = sanitizeUpstreamPayload(error_?.upstream || error_?.payload?.upstream || null);
+        job.updatedAt = Date.now();
+        job.completedAt = job.updatedAt;
+        persistAsyncImageJobsSnapshot();
+        return null;
+      })
+      .finally(() => {
+        for (const key of job.requestKeys) {
+          if (asyncImageJobsByRequestKey.get(key) === job.id) {
+            asyncImageJobsByRequestKey.delete(key);
+          }
+        }
+      });
+
+    job.promise = executionPromise;
+    return executionPromise;
+  }
 
   async function tryHandleIntentRequest(req, res) {
     const latestUserMessage = extractLatestUserMessage(req.body || {});
@@ -1289,6 +1664,7 @@ function createProtectedChatProxyRouter({
 
     const isCacheable = resolution.kind === 'image.generate' || resolution.kind === 'web.image.search';
     const shouldBypassCache = resolution.kind === 'image.generate' && resolution.shouldBypassImageRequestCache === true;
+    const acceptsAsyncImageJob = resolution.kind === 'image.generate' && isAsyncImageJobRequested(req.body || {});
 
     if (!isCacheable) {
       const payload = resolution.responsePayload
@@ -1301,7 +1677,7 @@ function createProtectedChatProxyRouter({
       return res.status(200).json(attachIntentDebug(payload, resolution, req.body || {}));
     }
 
-    if (shouldBypassCache) {
+    if (shouldBypassCache && !acceptsAsyncImageJob) {
       console.log('[A11][intent-sync] bypass short cache for special image compiler');
       const payload = resolution.responsePayload
         || (await intentResolver.executeResolvedRuntime(resolution, {
@@ -1314,14 +1690,29 @@ function createProtectedChatProxyRouter({
     }
 
     cleanupExpiredImageCache(recentImageResponses);
+    cleanupExpiredAsyncImageJobs();
     const requestKeys = buildResolvedRequestKeys(req, latestUserMessage, resolution);
     const requestKey = requestKeys[0];
-    const cachedExecution = requestKeys
-      .map((key) => recentImageResponses.get(key))
-      .find(Boolean);
-    if (cachedExecution) {
-      console.log(`[A11][intent-sync] reuse recent result key=${requestKey.slice(0, 10)} kind=${resolution.kind}`);
-      return res.status(200).json(attachIntentDebug(cachedExecution.result, resolution, req.body || {}));
+    if (!shouldBypassCache) {
+      const cachedExecution = requestKeys
+        .map((key) => recentImageResponses.get(key))
+        .find(Boolean);
+      if (cachedExecution) {
+        console.log(`[A11][intent-sync] reuse recent result key=${requestKey.slice(0, 10)} kind=${resolution.kind}`);
+        return res.status(200).json(attachIntentDebug(cachedExecution.result, resolution, req.body || {}));
+      }
+    }
+    if (acceptsAsyncImageJob) {
+      const pendingJob = findPendingAsyncImageJob(requestKeys);
+      if (pendingJob) {
+        console.log(`[A11][intent-async] reuse pending job key=${requestKey.slice(0, 10)} job=${pendingJob.id}`);
+        return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(pendingJob, resolution), resolution, req.body || {}));
+      }
+
+      const job = createAsyncImageJob(req, resolution, requestKeys);
+      startAsyncImageJob(job, resolution, req, !shouldBypassCache);
+      console.log(`[A11][intent-async] queued image job key=${requestKey.slice(0, 10)} job=${job.id}`);
+      return res.status(200).json(attachIntentDebug(buildPendingImageJobPayload(job, resolution), resolution, req.body || {}));
     }
 
     const existing = requestKeys
@@ -1388,15 +1779,32 @@ function createProtectedChatProxyRouter({
 
   const router = express.Router();
 
+  router.get('/llm/jobs/image/:jobId', verifyJWT, (req, res) => {
+    hydrateAsyncImageJobsFromStore();
+    cleanupExpiredAsyncImageJobs();
+    const jobId = String(req.params?.jobId || '').trim();
+    const job = asyncImageJobs.get(jobId);
+    if (!job) {
+      console.warn(`[A11][intent-async] job_not_found job=${jobId} known=${asyncImageJobs.size} store=${asyncImageJobStorePath}`);
+      return res.status(404).json({ ok: false, error: 'job_not_found' });
+    }
+
+    const requesterId = String(req?.user?.id || req?.body?._user || 'anonymous').trim() || 'anonymous';
+    if (job.userId && requesterId && job.userId !== requesterId) {
+      console.warn(`[A11][intent-async] job_user_mismatch job=${jobId} requester=${requesterId} owner=${job.userId}`);
+      return res.status(404).json({ ok: false, error: 'job_not_found' });
+    }
+
+    return res.status(200).json(serializeAsyncImageJob(job));
+  });
+
   router.post('/llm/chat', verifyJWT, express.json({ limit: '10mb' }), async (req, res) => {
     const requestId = ensureRequestId(req, res);
     try {
       return await handleProxy(req, res);
     } catch (error_) {
       console.error(`[A11][/api/llm/chat] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
-      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
-        ? Number(error_.status)
-        : 502;
+      const status = resolveErrorHttpStatus(error_, 502);
       return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
     }
   });
@@ -1411,9 +1819,7 @@ function createProtectedChatProxyRouter({
       return await handleProxy(req, res);
     } catch (error_) {
       console.error(`[A11][AuthChat] requestId=${requestId} Proxy error: ${summarizeProxyError(error_, 'upstream_unreachable')}`);
-      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
-        ? Number(error_.status)
-        : 502;
+      const status = resolveErrorHttpStatus(error_, 502);
       return res.status(status).json(buildProxyErrorBody(error_, requestId, 'upstream_unreachable'));
     }
   });
@@ -1428,9 +1834,7 @@ function createProtectedChatProxyRouter({
       return await handleProxy(req, res);
     } catch (error_) {
       console.error(`[A11][/api/ai] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
-      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
-        ? Number(error_.status)
-        : 502;
+      const status = resolveErrorHttpStatus(error_, 502);
       return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
     }
   });
@@ -1441,9 +1845,7 @@ function createProtectedChatProxyRouter({
       return await handleProxy(req, res);
     } catch (error_) {
       console.error(`[A11][/api/completions] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
-      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
-        ? Number(error_.status)
-        : 502;
+      const status = resolveErrorHttpStatus(error_, 502);
       return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
     }
   });

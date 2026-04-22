@@ -60,7 +60,7 @@ test('buildRuntimeConfig exposes production-safe feature providers', () => {
 
   assert.equal(config.features.chat.provider, 'qflush');
   assert.equal(config.features.chat.llmProvider, 'ollama');
-  assert.equal(config.features.semantic.provider, 'heuristic');
+  assert.equal(config.features.semantic.provider, 'local-llm');
   assert.equal(config.features.memory.provider, 'local');
   assert.equal(config.features.sd.provider, 'proxy');
   assert.equal(config.features.sd.mode, 'proxy-only');
@@ -145,6 +145,18 @@ test('buildRuntimeConfig marks semantic enrichment as llm-router when Cerbere is
   });
 
   assert.equal(config.features.semantic.provider, 'llm-router');
+  assert.equal(config.features.semantic.llmEnrichmentEnabled, true);
+  assert.equal(config.features.semantic.translationConfigured, true);
+});
+
+test('buildRuntimeConfig reports local-llm semantic enrichment when Ollama is the direct structured backend', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'production',
+    OLLAMA_BASE: 'http://127.0.0.1:11434',
+    A11_WAZAA_LLM_ENRICH: 'true',
+  });
+
+  assert.equal(config.features.semantic.provider, 'local-llm');
   assert.equal(config.features.semantic.llmEnrichmentEnabled, true);
   assert.equal(config.features.semantic.translationConfigured, true);
 });

@@ -48,6 +48,14 @@ test('translateImagePromptToEnglish translates requested-scene helper phrases fu
   assert.doesNotMatch(String(translated || ''), /\bdemandée?\b|\bclaire\b|\blecture\b/i);
 });
 
+test('translateImagePromptToEnglish keeps reference-photo Joker transformations anchored to the same person', () => {
+  const translated = translateImagePromptToEnglish('utilise ma photo comme reference et transforme la personne en personnage inspire du joker');
+
+  assert.match(String(translated || ''), /same person from the reference image/i);
+  assert.match(String(translated || ''), /joker-style version/i);
+  assert.doesNotMatch(String(translated || ''), /joker-inspired character/i);
+});
+
 test('detectPromptLanguageProfile keeps french dominant prompts french even with embedded english product terms', () => {
   const profile = detectPromptLanguageProfile('dessine moi un jeu type buy to play avec un héros rouge');
 

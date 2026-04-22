@@ -34,6 +34,17 @@ const {
 const {
   smoothRequestText: defaultSmoothRequestText,
 } = require('./knowledge/request-text-smoother.cjs');
+const {
+  applyCanonicalizedImageGenerateRequestToMask,
+  buildCanonicalizedRequestTextSmootherResult,
+  canonicalizeImageGenerateRequest: defaultCanonicalizeImageGenerateRequest,
+} = require('./mask/canonicalize-image-generate-request.cjs');
+const {
+  applyImageReferenceDecisionToMask,
+  buildAutomaticImageReferenceFallbackDecision,
+  classifyReferenceImages: defaultClassifyReferenceImages,
+  extractRequestImageReferences,
+} = require('./image/janus-image-manifest.cjs');
 
 const {
   detectImageIntent: defaultDetectImageIntent,
@@ -109,20 +120,12 @@ function withIntentMetadata(payload, resolution) {
   };
 }
 
-function extractSourceImageUrl(body = {}) {
-  const candidates = [
-    body?.sourceImageUrl,
-    body?.source_image_url,
-    body?.referenceImageUrl,
-    body?.reference_image_url,
-    body?.initImageUrl,
-    body?.init_image_url,
-    body?.imageUrl,
-    body?.image_url,
-  ];
-  return candidates
-    .map((value) => String(value || '').trim())
-    .find(Boolean) || '';
+function extractSourceImageUrl(body = {}, messages = []) {
+  const references = extractRequestImageReferences({
+    body,
+    messages,
+  });
+  return String(references[0]?.locator || '').trim();
 }
 
 function normalizeLookup(value = '') {
@@ -150,17 +153,21 @@ function isPlaceholderSourceImageSubject(value = '') {
     'style',
     'sujet de reference',
     'personne de reference',
+    'reference subject',
+    'reference person',
   ].includes(normalized);
 }
 
 function shouldSkipEntityResolutionForDirectSourceImage(mask = {}) {
   if (mask?.meta?.webImageDraft?.fromChatSourceImage !== true) return false;
+  const referenceRole = normalizeLookup(mask?.meta?.webImageDraft?.imageReferenceRole || '');
+  if (referenceRole && !['identity', 'pose'].includes(referenceRole)) return false;
   const firstSubject = Array.isArray(mask?.inputs?.subject) ? String(mask.inputs.subject[0] || '').trim() : '';
   return !firstSubject || isPlaceholderSourceImageSubject(firstSubject);
 }
 
-function attachDirectSourceImageToMask(mask = {}, body = {}) {
-  const sourceImageUrl = extractSourceImageUrl(body);
+function attachDirectSourceImageToMask(mask = {}, body = {}, messages = []) {
+  const sourceImageUrl = extractSourceImageUrl(body, messages);
   if (!sourceImageUrl) return mask;
   if (String(mask?.intent || '').trim() !== 'image.generate') return mask;
 
@@ -173,9 +180,14 @@ function attachDirectSourceImageToMask(mask = {}, body = {}) {
   const existingWebDraft = nextMask.meta.webImageDraft && typeof nextMask.meta.webImageDraft === 'object'
     ? nextMask.meta.webImageDraft
     : {};
+  const imageReferences = extractRequestImageReferences({
+    body,
+    messages,
+  });
 
   nextMask.meta.init_image_url = String(nextMask.meta.init_image_url || sourceImageUrl).trim() || sourceImageUrl;
   nextMask.meta.reference_image_url = String(nextMask.meta.reference_image_url || sourceImageUrl).trim() || sourceImageUrl;
+  nextMask.meta.imageReferences = imageReferences;
   nextMask.meta.webImageDraft = {
     ...existingWebDraft,
     initImageUrl: String(existingWebDraft.initImageUrl || sourceImageUrl).trim() || sourceImageUrl,
@@ -186,7 +198,7 @@ function attachDirectSourceImageToMask(mask = {}, body = {}) {
     fromChatSourceImage: true,
   };
   if (Array.isArray(nextMask.inputs?.subject) && isPlaceholderSourceImageSubject(nextMask.inputs.subject[0] || '')) {
-    nextMask.inputs.subject = ['sujet de référence'];
+    nextMask.inputs.subject = ['reference subject'];
     if (nextMask.meta.canonicalSubject && isPlaceholderSourceImageSubject(nextMask.meta.canonicalSubject)) {
       delete nextMask.meta.canonicalSubject;
     }
@@ -208,6 +220,73 @@ function buildClarificationPayload(clarification, semantic, traceId, pipeline) {
     semantic: {
       topIntents: Array.isArray(semantic?.topIntents) ? semantic.topIntents.slice(0, 3) : [],
       confidence: Number(semantic?.summary?.confidence || 0),
+    },
+  }, resolution);
+}
+
+function shouldSurfaceCanonicalizerDiagnostic(error_ = null) {
+  if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
+  const reasons = Array.isArray(error_?.payload?.details?.reasons) ? error_.payload.details.reasons : [];
+  return reasons.some((entry) => /canonicalized_request_not_english_only/i.test(String(entry || '')));
+}
+
+function buildCanonicalizerDiagnosticSummary(error_ = null) {
+  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
+    ? error_.payload.details
+    : {};
+  const reasons = Array.isArray(details.reasons) ? details.reasons : [];
+  const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
+  const lastRejected = rejectedPayloads.length ? rejectedPayloads[rejectedPayloads.length - 1] : null;
+  return {
+    failedBecause: 'english_only_validation_failed_after_retry',
+    retryCount: Math.max(0, rejectedPayloads.length - 1),
+    lastAttempt: String(lastRejected?.attempt || '').trim(),
+    lastReason: String(lastRejected?.reason || '').trim(),
+    lastCanonicalEnglishInput: String(lastRejected?.payload?.canonicalEnglishInput || '').trim(),
+    reasons,
+  };
+}
+
+function buildCanonicalizerDiagnosticAssistant(error_ = null) {
+  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
+    ? error_.payload.details
+    : {};
+  const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
+  const summary = buildCanonicalizerDiagnosticSummary(error_);
+  const lines = [
+    "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.",
+    summary.retryCount > 0
+      ? "J'ai deja tente une seconde passe automatique, sans arriver a produire un anglais canonique propre."
+      : '',
+    "Tu peux retenter avec une version plus decoupee, par exemple: sujet, decor, style, contraintes.",
+    rejectedPayloads.length ? "Le detail technique complet reste disponible dans `diagnostic.rejectedPayloads`." : '',
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
+function buildCanonicalizerDiagnosticPayload(error_ = null, traceId = '', pipeline = '', rawUserInput = '') {
+  const resolution = {
+    traceId,
+    pipeline,
+    kind: 'image.generate.diagnostic',
+  };
+  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
+    ? error_.payload.details
+    : {};
+  return withIntentMetadata({
+    ok: true,
+    mode: 'image_canonicalizer_diagnostic',
+    assistant: buildCanonicalizerDiagnosticAssistant(error_),
+    diagnostic: {
+      error: String(error_?.code || 'image_request_canonicalizer_failed').trim() || 'image_request_canonicalizer_failed',
+      message: String(error_?.message || 'image_request_canonicalizer_failed').trim() || 'image_request_canonicalizer_failed',
+      rawUserInput: String(rawUserInput || '').trim(),
+      stage: String(details.stage || '').trim(),
+      summary: buildCanonicalizerDiagnosticSummary(error_),
+      reasons: Array.isArray(details.reasons) ? details.reasons : [],
+      policy: String(details.policy || '').trim(),
+      rejectedPayloads: Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [],
+      upstream: details.upstream || null,
     },
   }, resolution);
 }
@@ -299,6 +378,8 @@ function resolveIntentDependencies(overrides = {}) {
     specialCompilerCallStructuredLlmJson: overrides.specialCompilerCallStructuredLlmJson,
     readPreferredImageHintMemory: overrides.readPreferredImageHintMemory || defaultReadPreferredImageHintMemory,
     smoothRequestText: overrides.smoothRequestText || defaultSmoothRequestText,
+    canonicalizeImageGenerateRequest: overrides.canonicalizeImageGenerateRequest || defaultCanonicalizeImageGenerateRequest,
+    classifyReferenceImages: overrides.classifyReferenceImages || defaultClassifyReferenceImages,
   };
 }
 
@@ -458,21 +539,78 @@ function createIntentResolver(overrides = {}) {
     }
 
     const textToWazaaAdapter = deps.textToWazaa || textToWazaa;
+    const imageReferences = extractRequestImageReferences({
+      body: input.body || {},
+      messages: Array.isArray(input.messages) ? input.messages : [],
+    });
+    const sourceImageUrl = String(imageReferences[0]?.locator || '').trim();
+    let canonicalizedImageRequest = null;
+    let wazaaSourceText = userText;
+    let wazaaRequestTextSmootherResult = requestTextSmootherResult;
+
+    if (selectedIntentType === 'image.generate') {
+      try {
+        canonicalizedImageRequest = await deps.canonicalizeImageGenerateRequest(originalUserText, {
+          stage: 'resolve-user-request',
+          callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
+          referenceImagePresent: Boolean(sourceImageUrl),
+          referenceImageUrl: sourceImageUrl,
+        });
+      } catch (error_) {
+        if (shouldSurfaceCanonicalizerDiagnostic(error_)) {
+          return {
+            traceId,
+            pipeline,
+            kind: 'image.generate.diagnostic',
+            semantic,
+            responsePayload: buildCanonicalizerDiagnosticPayload(
+              error_,
+              traceId,
+              pipeline,
+              originalUserText
+            ),
+          };
+        }
+        throw error_;
+      }
+
+      if (canonicalizedImageRequest?.needsClarification === true) {
+        const canonicalClarification = {
+          shouldClarify: true,
+          selectedIntentType: 'image.generate',
+          question: canonicalizedImageRequest.clarificationQuestion || 'Please clarify the image request before generation.',
+          reason: 'image_generate_canonicalization_requires_clarification',
+        };
+        return {
+          traceId,
+          pipeline,
+          kind: 'clarification',
+          semantic,
+          clarification: canonicalClarification,
+          responsePayload: buildClarificationPayload(canonicalClarification, semantic, traceId, pipeline),
+        };
+      }
+
+      wazaaSourceText = String(canonicalizedImageRequest?.canonicalEnglishInput || '').trim();
+      wazaaRequestTextSmootherResult = buildCanonicalizedRequestTextSmootherResult(canonicalizedImageRequest);
+    }
+
     const heuristicWazaa = typeof textToWazaaAdapter?.sync === 'function'
-      ? textToWazaaAdapter.sync(userText, {
+      ? textToWazaaAdapter.sync(wazaaSourceText, {
         analysis: semantic,
         source: 'resolve-user-request',
-        requestTextSmootherResult,
+        canonicalizedRequest: canonicalizedImageRequest,
+        requestTextSmootherResult: wazaaRequestTextSmootherResult,
       })
       : null;
     let definitionContext = null;
     if (shouldLookupDefinitionContext({
-      userText,
+      userText: wazaaSourceText,
       semanticAnalysis: semantic,
       heuristicWazaa,
     })) {
       const lookupQuery = buildDefinitionLookupQuery({
-        userText,
+        userText: wazaaSourceText,
         semanticAnalysis: semantic,
         heuristicWazaa,
       });
@@ -480,7 +618,7 @@ function createIntentResolver(overrides = {}) {
         try {
           definitionContext = await deps.lookupDefinitionContext({
             query: lookupQuery,
-            userText,
+            userText: wazaaSourceText,
             traceId,
           });
         } catch (error_) {
@@ -489,19 +627,30 @@ function createIntentResolver(overrides = {}) {
       }
     }
 
-    const wazaa = await textToWazaaAdapter(userText, {
+    const wazaa = await textToWazaaAdapter(wazaaSourceText, {
       analysis: semantic,
       source: 'resolve-user-request',
-      requestTextSmootherResult,
+      canonicalizedRequest: canonicalizedImageRequest,
+      requestTextSmootherResult: wazaaRequestTextSmootherResult,
     });
-    const effectiveWazaa = mergeDefinitionContextIntoWazaa(wazaa || heuristicWazaa, definitionContext, userText);
+    const baseWazaa = selectedIntentType === 'image.generate'
+      ? wazaa
+      : (wazaa || heuristicWazaa);
+    const effectiveWazaa = mergeDefinitionContextIntoWazaa(baseWazaa, definitionContext, wazaaSourceText);
 
     let mask = wazaaToMask(effectiveWazaa, {
-      sourceText: userText,
+      sourceText: wazaaSourceText,
       intentType: selectedIntentType,
       semanticAnalysis: semantic,
     });
-    mask = attachDirectSourceImageToMask(mask, input.body || {});
+    if (selectedIntentType === 'image.generate' && canonicalizedImageRequest) {
+      mask = applyCanonicalizedImageGenerateRequestToMask(mask, canonicalizedImageRequest);
+    }
+    mask = attachDirectSourceImageToMask(
+      mask,
+      input.body || {},
+      Array.isArray(input.messages) ? input.messages : []
+    );
 
     if (!mask) {
       const error = new Error('invalid_mask');
@@ -526,6 +675,55 @@ function createIntentResolver(overrides = {}) {
       mask.meta = mask.meta && typeof mask.meta === 'object' ? mask.meta : {};
       mask.meta.imageRequestMode = imageRequestMode.mode;
       mask.meta.imagePipelineMode = imageRequestMode.mode;
+    }
+
+    let imageReferenceResolution = null;
+    if (
+      String(mask?.intent || '').trim() === 'image.generate'
+      && imageReferences.length > 0
+      && typeof deps.classifyReferenceImages === 'function'
+    ) {
+      try {
+        imageReferenceResolution = await deps.classifyReferenceImages({
+          references: imageReferences,
+          requestId: traceId,
+        });
+        if (imageReferenceResolution?.clarification_required === true) {
+          const clarification = {
+            shouldClarify: true,
+            selectedIntentType: 'image.generate',
+            question: String(
+              imageReferenceResolution?.clarification_question
+              || 'Please clarify which reference image should be primary.'
+            ).trim() || 'Please clarify which reference image should be primary.',
+            reason: 'image_reference_roles_ambiguous',
+          };
+          return {
+            traceId,
+            pipeline,
+            kind: 'clarification',
+            semantic,
+            clarification,
+            responsePayload: buildClarificationPayload(clarification, semantic, traceId, pipeline),
+          };
+        }
+        if (Array.isArray(imageReferenceResolution?.manifests) && imageReferenceResolution.manifests.length > 0) {
+          mask = applyImageReferenceDecisionToMask(mask, imageReferenceResolution, imageReferences);
+        } else {
+          imageReferenceResolution = buildAutomaticImageReferenceFallbackDecision({
+            references: imageReferences,
+            reason: imageReferenceResolution?.reason || 'classification_unavailable',
+          });
+          mask = applyImageReferenceDecisionToMask(mask, imageReferenceResolution, imageReferences);
+        }
+      } catch (error_) {
+        console.warn(`[A11][image-reference] traceId=${traceId} classification failed: ${String(error_?.message || error_)}`);
+        imageReferenceResolution = buildAutomaticImageReferenceFallbackDecision({
+          references: imageReferences,
+          reason: 'classification_error',
+        });
+        mask = applyImageReferenceDecisionToMask(mask, imageReferenceResolution, imageReferences);
+      }
     }
 
     if (
@@ -576,9 +774,11 @@ function createIntentResolver(overrides = {}) {
       specialCompilerReason: Array.isArray(compilerCompartment?.reasons) ? compilerCompartment.reasons : [],
       shouldBypassImageRequestCache: compilerCompartment?.shouldBypassCache === true,
       imageRequestMode: imageRequestMode?.mode || null,
+      imageReferenceResolution,
       requestText: {
         original: originalUserText,
         smoothed: userText,
+        canonicalEnglish: canonicalizedImageRequest?.canonicalEnglishInput || null,
         changed: requestTextSmootherResult?.changed === true,
       },
     };

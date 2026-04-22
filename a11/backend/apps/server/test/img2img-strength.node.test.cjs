@@ -99,7 +99,7 @@ test('resolveImg2ImgStrengthPlan increases preserve strength slightly for anime-
   assert.ok(result.strength >= 0.3);
 });
 
-test('resolveImg2ImgStrengthPlan promotes reference scene rewrites to balanced for cinematic restaging', () => {
+test('resolveImg2ImgStrengthPlan keeps identity-locked reference scene rewrites in preserve mode', () => {
   const result = resolveImg2ImgStrengthPlan({
     explicitStrength: 'auto',
     prompt: 'keep the same face and hairstyle, keep the same outfit, James Bond 007 style, equipped with a silenced pistol, 007 movie introduction decor',
@@ -109,10 +109,10 @@ test('resolveImg2ImgStrengthPlan promotes reference scene rewrites to balanced f
     modelProfile: 'sd35large',
   });
 
-  assert.equal(result.profile, 'balanced');
-  assert.equal(result.reason, 'reference_subject_scene_rewrite');
-  assert.ok(result.strength >= 0.6);
-  assert.ok(result.strength <= 0.68);
+  assert.equal(result.profile, 'preserve');
+  assert.equal(result.reason, 'reference_subject_identity_lock');
+  assert.ok(result.strength >= 0.24);
+  assert.ok(result.strength <= 0.26);
   assert.equal(result.components?.identity?.profile, 'preserve');
   assert.equal(result.components?.anatomy?.profile, 'preserve');
   assert.equal(result.components?.outfit?.profile, 'preserve');
@@ -120,4 +120,59 @@ test('resolveImg2ImgStrengthPlan promotes reference scene rewrites to balanced f
   assert.equal(result.components?.props?.profile, 'balanced');
   assert.ok(Number(result.components?.background?.strength || 0) > Number(result.components?.identity?.strength || 0));
   assert.ok(Number(result.components?.props?.strength || 0) > Number(result.components?.identity?.strength || 0));
+});
+
+test('resolveImg2ImgStrengthPlan treats recognizable-face reference prompts as identity-locked photo transformations', () => {
+  const result = resolveImg2ImgStrengthPlan({
+    explicitStrength: 'auto',
+    prompt: 'maintain the recognizable face, the same facial structure, the same body type, and the overall identity from the reference image while changing the costume and background',
+    scene: { sceneKey: 'solo_subject' },
+    initSourceMode: 'uploaded_image',
+    taskType: 'image_generate',
+    modelProfile: 'sd35large',
+  });
+
+  assert.equal(result.profile, 'preserve');
+  assert.equal(result.reason, 'reference_subject_identity_lock');
+  assert.ok(result.strength >= 0.25);
+  assert.ok(result.strength <= 0.27);
+  assert.equal(result.components?.identity?.profile, 'preserve');
+  assert.equal(result.components?.background?.profile, 'restyle');
+});
+
+test('resolveImg2ImgStrengthPlan keeps exact-lock Joker reference transforms in preserve mode', () => {
+  const result = resolveImg2ImgStrengthPlan({
+    explicitStrength: 'auto',
+    prompt: 'the exact same person from the reference image in a Joker-style transformation, keep exactly the same face and identity, custom bat clearly visible, Harlem-inspired street',
+    scene: { sceneKey: 'solo_subject' },
+    initSourceMode: 'uploaded_image',
+    taskType: 'image_generate',
+    modelProfile: 'sd35large',
+  });
+
+  assert.equal(result.profile, 'preserve');
+  assert.equal(result.reason, 'reference_subject_exact_lock');
+  assert.ok(result.strength >= 0.23);
+  assert.ok(result.strength <= 0.25);
+  assert.equal(result.components?.identity?.profile, 'preserve');
+  assert.equal(result.components?.anatomy?.profile, 'preserve');
+  assert.equal(result.components?.background?.profile, 'restyle');
+});
+
+test('resolveImg2ImgStrengthPlan keeps softer Joker reference transforms in balanced mode when exact-lock wording is absent', () => {
+  const result = resolveImg2ImgStrengthPlan({
+    explicitStrength: 'auto',
+    prompt: 'the same person from the reference image in a Joker-style transformation, keep the recognizable face, custom bat clearly visible, Harlem-inspired street',
+    scene: { sceneKey: 'solo_subject' },
+    initSourceMode: 'uploaded_image',
+    taskType: 'image_generate',
+    modelProfile: 'sd35large',
+  });
+
+  assert.equal(result.profile, 'balanced');
+  assert.equal(result.reason, 'reference_subject_joker_transformation');
+  assert.ok(result.strength >= 0.48);
+  assert.ok(result.strength <= 0.5);
+  assert.equal(result.components?.identity?.profile, 'preserve');
+  assert.equal(result.components?.background?.profile, 'restyle');
 });

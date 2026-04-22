@@ -181,7 +181,7 @@ test('generateSdInternal defaults img2img strength to auto and forwards the reso
   assert.equal(capturedBody?.strength_components?.background?.profile, 'preserve');
 });
 
-test('generateSdInternal boosts img2img strength for reference scene rewrites', async () => {
+test('generateSdInternal keeps img2img strength in preserve mode for identity-locked reference scene rewrites', async () => {
   let capturedBody = null;
   const { generateSdInternal } = createSdToolsRouter({
     fetch: async (_url, options = {}) => {
@@ -215,10 +215,52 @@ test('generateSdInternal boosts img2img strength for reference scene rewrites', 
   assert.equal(response.ok, true);
   assert.equal(capturedBody?.init_image_url, 'https://images.example.com/portrait-ref.png');
   assert.equal(capturedBody?.strength_mode, 'auto');
-  assert.equal(capturedBody?.strength_profile, 'balanced');
-  assert.equal(capturedBody?.strength_reason, 'reference_subject_scene_rewrite');
-  assert.ok(Number(capturedBody?.strength_value || 0) >= 0.6);
+  assert.equal(capturedBody?.strength_profile, 'preserve');
+  assert.equal(capturedBody?.strength_reason, 'reference_subject_identity_lock');
+  assert.ok(Number(capturedBody?.strength_value || 0) >= 0.24);
+  assert.ok(Number(capturedBody?.strength_value || 0) <= 0.26);
   assert.equal(capturedBody?.strength, capturedBody?.strength_value);
+  assert.equal(capturedBody?.strength_components?.identity?.profile, 'preserve');
+  assert.equal(capturedBody?.strength_components?.background?.profile, 'restyle');
+});
+
+test('generateSdInternal raises Joker-style img2img rewrites into balanced transform strength', async () => {
+  let capturedBody = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/joker-rewrite.png',
+            init_image_used: true,
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const response = await generateSdInternal({
+    req: { headers: {} },
+    prompt: 'the exact same person from the reference image in a Joker-style transformation, keep exactly the same face and identity, custom bat clearly visible, Harlem-inspired street',
+    body: {
+      prompt: 'the exact same person from the reference image in a Joker-style transformation, keep exactly the same face and identity, custom bat clearly visible, Harlem-inspired street',
+      prompt_prebuilt: true,
+      init_image_url: 'https://images.example.com/joker-ref.png',
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(capturedBody?.strength_mode, 'auto');
+  assert.equal(capturedBody?.strength_profile, 'balanced');
+  assert.equal(capturedBody?.strength_reason, 'reference_subject_joker_transformation');
+  assert.ok(Number(capturedBody?.strength_value || 0) >= 0.48);
+  assert.ok(Number(capturedBody?.strength_value || 0) <= 0.5);
   assert.equal(capturedBody?.strength_components?.identity?.profile, 'preserve');
   assert.equal(capturedBody?.strength_components?.background?.profile, 'restyle');
 });
@@ -260,6 +302,95 @@ test('generateSdInternal forwards compiled proxy payloads as prebuilt and dedupe
   assert.doesNotMatch(String(capturedBody?.prompt || ''), /\bNe pas\b|\bdo not\b|literal interpretation/i);
   assert.match(String(capturedBody?.negative_prompt || ''), /multiple subjects/i);
   assert.match(String(capturedBody?.negative_prompt || ''), /watermark/i);
+});
+
+test('generateSdInternal uses the image runtime compiler for rich init-image prompts instead of the legacy compact compiler', async () => {
+  let capturedBody = null;
+  let runtimeCompilerCalls = 0;
+  let legacyCompilerCalls = 0;
+
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/joker-runtime.png',
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+    buildCanonicalImageMaskFromText: async () => ({
+      rawMask: {
+        version: 'mask-1',
+        intent: 'image.generate',
+        task: { domain: 'image', action: 'generate' },
+        compiler: { target: 'image-prompt-en', version: '1.0' },
+        inputs: {
+          subject: ['portrait homme'],
+          environment: ['rue urbaine sale'],
+          style: ['haute qualité'],
+          composition: ['personnage entier visible'],
+          lighting: ['lumiere cinematographique'],
+          palette: ['violet', 'vert', 'rouge'],
+        },
+        options: { width: 1024, height: 1024, steps: 35, guidance_scale: 8 },
+        constraints: { safe_mode: true, no_text: true },
+        ambiguities: [],
+        raw: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker avec costume complet, maquillage inquietant, batte custom menaceante et decor urbain de Harlem.',
+        meta: {},
+      },
+    }),
+    compileMaskImageGenerateRuntime: async () => {
+      runtimeCompilerCalls += 1;
+      return {
+        mask: {},
+        compiledPayload: {},
+        compiled: {},
+        sdBody: {
+          prompt: 'Use the input image as the identity, pose, and framing reference. Transform the person into a Joker-inspired character with a complete chaotic purple and green suit, unsettling detailed clown makeup, a custom threatening decorated bat, and a gritty Harlem-inspired street environment with graffiti, dirty pavement, dramatic cinematic lighting, and strong neon reflections. Keep a single full-body subject, a faithful face, a clearly visible bat, a readable outfit, and a powerful dark live-action comic-book atmosphere.',
+          prompt_language: 'en',
+          negative_prompt: 'blur, low quality, deformed face, bad hands, extra fingers, incorrect anatomy, multiple characters, duplicated bat, cropped head, cropped feet, empty background, flat lighting, weak makeup, unreadable costume, text, watermark, logo, badly generated background',
+        },
+      };
+    },
+    compileMaskImageGenerate: () => {
+      legacyCompilerCalls += 1;
+      return {
+        sdBody: {
+          prompt: 'joker cinematographique, garder le meme visage et la meme identite',
+          negative_prompt: 'plusieurs personnages, texte',
+        },
+      };
+    },
+  });
+
+  const response = await generateSdInternal({
+    req: { headers: {} },
+    prompt: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker dans un style sombre, cinematographique et realiste, avec costume complet, maquillage inquietant, batte custom menaceante et decor urbain de Harlem.',
+    body: {
+      prompt: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker dans un style sombre, cinematographique et realiste, avec costume complet, maquillage inquietant, batte custom menaceante et decor urbain de Harlem.',
+      init_image_url: 'https://images.example.com/joker-ref.png',
+      negative_prompt: 'flou, basse qualite, visage deforme, texte',
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(runtimeCompilerCalls, 1);
+  assert.equal(legacyCompilerCalls, 0);
+  assert.equal(capturedBody?.prompt_prebuilt, true);
+  assert.equal(capturedBody?.prompt_language, 'en');
+  assert.match(String(capturedBody?.prompt || ''), /identity, pose, and framing reference/i);
+  assert.match(String(capturedBody?.prompt || ''), /custom threatening decorated bat/i);
+  assert.match(String(capturedBody?.prompt || ''), /Harlem-inspired street environment/i);
+  assert.doesNotMatch(String(capturedBody?.prompt || ''), /garder le meme visage|joker cinematographique/i);
+  assert.match(String(capturedBody?.negative_prompt || ''), /deformed face/i);
+  assert.match(String(capturedBody?.negative_prompt || ''), /text, watermark/i);
 });
 
 test('generateSdInternal infers prebuilt prompts when compiled SD text arrives without flags', async () => {

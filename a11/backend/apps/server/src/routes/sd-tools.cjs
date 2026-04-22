@@ -1,7 +1,12 @@
 const defaultFs = require('node:fs');
 const defaultPath = require('node:path');
 const { buildCanonicalImageMaskFromText } = require('../mask/resolve-image-mask-from-text.cjs');
-const { compileMaskImageGenerate } = require('../mask/image-chat-runtime.cjs');
+const { buildSdPromptBundle: defaultBuildSdPromptBundle } = require('../mask/build-sd-prompt-bundle.cjs');
+const {
+  compileMaskImageGenerate: defaultCompileMaskImageGenerate,
+  compileMaskImageGenerateRuntime: defaultCompileMaskImageGenerateRuntime,
+} = require('../mask/image-chat-runtime.cjs');
+const { callStructuredLlmJson: defaultCallStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
 const {
   resolveImageDimensionConfig,
   resolveImageCanvasPlan,
@@ -393,6 +398,66 @@ function mergeNegativePrompts(...values) {
   return [...new Set(entries)].join(', ').trim();
 }
 
+function buildBundleFallbackNegativeHints(promptBundle = null) {
+  const details = promptBundle?.details && typeof promptBundle.details === 'object'
+    ? promptBundle.details
+    : null;
+  if (!details) return [];
+
+  const hints = ['readable text', 'watermark', 'logo', 'signature'];
+  if (Number(details?.singleSubjectConstraints?.count || 0) === 1) {
+    hints.push('multiple subjects', 'duplicate subject', 'crowd');
+  } else if (Number(details?.characterCountConstraints?.count || 0) === 2) {
+    hints.push('third subject', 'extra character', 'crowd', 'collage', 'montage');
+  }
+  return [...new Set(hints.map((entry) => normalizePromptFragment(entry)).filter(Boolean))];
+}
+
+function normalizeBundledProxyPrompt(value = '') {
+  return normalizePromptFragment(value)
+    .replace(/\b(request|main subject|colors)\s*:\s*/gi, '$1 ')
+    .replace(/\bHighlight a single clearly visible main subject\.?/gi, 'single main subject.')
+    .replace(/\bShow the two requested subjects clearly\.?/gi, 'two distinct readable subjects.')
+    .replace(
+      /\bKeep exactly two characters, with only one instance of each character\.?/gi,
+      'exactly two characters, one instance of each.'
+    );
+}
+
+function analyzePromptDensity(value = '') {
+  const text = normalizePromptFragment(value);
+  return {
+    length: text.length,
+    words: text ? text.split(/\s+/).filter(Boolean).length : 0,
+    clauses: text
+      ? text
+        .split(/[.!?;:\n]+/)
+        .map((entry) => normalizePromptFragment(entry))
+        .filter(Boolean)
+        .length
+      : 0,
+    commas: (text.match(/,/g) || []).length,
+  };
+}
+
+function shouldUseRuntimeImagePromptCompiler({
+  rawPrompt = '',
+  negativePrompt = '',
+  initImage = '',
+} = {}) {
+  if (String(initImage || '').trim()) return true;
+  const promptDensity = analyzePromptDensity(rawPrompt);
+  const negativeDensity = analyzePromptDensity(negativePrompt);
+  return (
+    promptDensity.length >= 320
+    || promptDensity.words >= 55
+    || promptDensity.clauses >= 6
+    || promptDensity.commas >= 6
+    || negativeDensity.length >= 120
+    || negativeDensity.words >= 18
+  );
+}
+
 function looksLikeCompiledSdPrompt(value = '') {
   const normalized = normalizePromptFragment(value).toLowerCase();
   if (!normalized) return false;
@@ -591,7 +656,13 @@ function resolveDependencies(overrides = {}) {
     fs: overrides.fs || defaultFs,
     path: overrides.path || defaultPath,
     fetch: overrides.fetch || defaultFetch,
-    buildSdPromptBundle: overrides.buildSdPromptBundle || buildSdPromptBundleFallback,
+    buildCanonicalImageMaskFromText: overrides.buildCanonicalImageMaskFromText || buildCanonicalImageMaskFromText,
+    compileMaskImageGenerate: overrides.compileMaskImageGenerate || defaultCompileMaskImageGenerate,
+    compileMaskImageGenerateRuntime: overrides.compileMaskImageGenerateRuntime || defaultCompileMaskImageGenerateRuntime,
+    callStructuredLlmJson: Object.prototype.hasOwnProperty.call(overrides, 'callStructuredLlmJson')
+      ? overrides.callStructuredLlmJson
+      : defaultCallStructuredLlmJson,
+    buildSdPromptBundle: overrides.buildSdPromptBundle || defaultBuildSdPromptBundle || buildSdPromptBundleFallback,
     resolveSdProxyUrl: overrides.resolveSdProxyUrl || defaultResolveSdProxyUrl,
     resolveSdScriptPath: overrides.resolveSdScriptPath || defaultResolveSdScriptPath,
     runSdScript: overrides.runSdScript || defaultRunSdScript,
@@ -606,6 +677,10 @@ function createSdToolsRouter(overrides = {}) {
     fs,
     path,
     fetch,
+    buildCanonicalImageMaskFromText,
+    compileMaskImageGenerate,
+    compileMaskImageGenerateRuntime,
+    callStructuredLlmJson,
     buildSdPromptBundle,
     resolveSdProxyUrl,
     resolveSdScriptPath,
@@ -663,7 +738,21 @@ function createSdToolsRouter(overrides = {}) {
               reference_image_url: initImage,
             };
           }
-          semanticCompiledState = compileMaskImageGenerate(maskResolution.rawMask);
+          if (
+            typeof compileMaskImageGenerateRuntime === 'function'
+            && shouldUseRuntimeImagePromptCompiler({
+              rawPrompt,
+              negativePrompt: String(requestBody?.negative_prompt || '').trim(),
+              initImage,
+            })
+          ) {
+            semanticCompiledState = await compileMaskImageGenerateRuntime(maskResolution.rawMask, {
+              req,
+              callStructuredLlmJson,
+            });
+          } else {
+            semanticCompiledState = compileMaskImageGenerate(maskResolution.rawMask);
+          }
         }
       } catch {
         semanticCompiledState = null;
@@ -680,7 +769,7 @@ function createSdToolsRouter(overrides = {}) {
     const finalPrompt = repairCompiledSdPromptArtifacts(
       promptAlreadyCompiled || inferredPromptAlreadyCompiled
         ? (repairedRawPrompt || rawPrompt)
-        : (semanticCompiledState?.sdBody?.prompt || promptBundle.prompt)
+        : (semanticCompiledState?.sdBody?.prompt || normalizeBundledProxyPrompt(promptBundle.prompt))
     );
     const finalPrompt2 = repairCompiledSdPromptArtifacts(
       String(requestBody?.prompt_2 || requestBody?.prompt2 || '').trim()
@@ -691,7 +780,8 @@ function createSdToolsRouter(overrides = {}) {
     const finalNegativePrompt = mergeNegativePrompts(
       semanticCompiledState?.sdBody?.negative_prompt,
       requestBody?.negative_prompt,
-      Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : ''
+      Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : '',
+      buildBundleFallbackNegativeHints(promptBundle).join(', ')
     );
     const finalNegativePrompt2 = String(
       requestBody?.negative_prompt_2 || requestBody?.negativePrompt2 || ''
@@ -881,6 +971,9 @@ function createSdToolsRouter(overrides = {}) {
           body: JSON.stringify({
             prompt: finalPrompt,
             prompt_prebuilt: true,
+            ...(semanticCompiledState?.sdBody?.prompt_language
+              ? { prompt_language: String(semanticCompiledState.sdBody.prompt_language).trim() }
+              : {}),
             ...(finalPrompt2 ? { prompt_2: finalPrompt2, prompt_2_prebuilt: true } : {}),
             ...(finalPrompt3 ? { prompt_3: finalPrompt3, prompt_3_prebuilt: true } : {}),
             ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
@@ -1013,6 +1106,9 @@ function createSdToolsRouter(overrides = {}) {
       await unloadOllamaModelIfNeeded(modelProfilePlan?.profile || '');
       return runSdScript({
       prompt: finalPrompt,
+      ...(semanticCompiledState?.sdBody?.prompt_language
+        ? { prompt_language: String(semanticCompiledState.sdBody.prompt_language).trim() }
+        : {}),
       ...(finalPrompt2 ? { prompt_2: finalPrompt2 } : {}),
       ...(finalPrompt3 ? { prompt_3: finalPrompt3 } : {}),
       ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt } : {}),
@@ -1307,7 +1403,7 @@ function sdToolsEntrypoint(...args) {
 
 sdToolsEntrypoint.router = defaultSdTools.router;
 sdToolsEntrypoint.generateImageInternal = defaultSdTools.generateImageInternal;
-sdToolsEntrypoint.generateSdInternal = defaultSdTools.generateImageInternal;
+sdToolsEntrypoint.generateSdInternal = defaultSdTools.generateSdInternal;
 sdToolsEntrypoint.createSdToolsRouter = createSdToolsRouter;
 sdToolsEntrypoint.buildSdBackendUnavailablePayload = buildSdBackendUnavailablePayload;
 

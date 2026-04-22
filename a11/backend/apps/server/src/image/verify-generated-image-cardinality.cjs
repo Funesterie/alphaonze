@@ -2,6 +2,7 @@ const {
   compileCharacterCountConstraints,
   compileSingleSubjectConstraints,
   isMultiSubjectSceneRequest,
+  translateImagePromptToEnglish,
 } = require('../mask/build-sd-prompt-bundle.cjs');
 
 let sharpLib;
@@ -649,9 +650,18 @@ async function verifyGeneratedImageCardinality({
 
 function buildRetrySdBody(sdBody = {}, verification = {}, options = {}) {
   const expected = verification?.expected || {};
-  const subjectLabel = String(expected.subject_label || expected.subject_type || 'subject').trim() || 'subject';
   const expectedSubjectCount = Number(expected?.subject_count || 0);
   const useFrenchPrompt = String(sdBody?.prompt_language || '').trim().toLowerCase() === 'fr';
+  const subjectLabel = (
+    useFrenchPrompt
+      ? String(expected.subject_label || expected.subject_type || 'subject').trim()
+      : String(
+          translateImagePromptToEnglish(expected.subject_label || expected.subject_type || '')
+          || expected.subject_label
+          || expected.subject_type
+          || 'subject'
+        ).trim()
+  ) || 'subject';
   const requestedMultiSubjectScene = isMultiSubjectSceneRequest(String(sdBody?.prompt || '').trim());
   const fusionDetected = verification?.observed?.fusion_detected === true;
   const duplicateSubjects = verification?.observed?.duplicate_subjects === true

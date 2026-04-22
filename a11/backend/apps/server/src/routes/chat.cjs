@@ -40,6 +40,7 @@ function resolveChatDependencies(overrides = {}) {
     duckduckgoImageSearch: overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch,
     generateSd: overrides.generateSd || sdToolsModule.generateSdInternal,
     generateVideo: overrides.generateVideo || videoToolsModule.generateVideoInternal,
+    specialCompilerCallStructuredLlmJson: overrides.specialCompilerCallStructuredLlmJson,
     intentRouterV2Enabled: isIntentRouterV2Enabled(overrides.intentRouterV2Enabled),
   };
 }
@@ -53,6 +54,7 @@ function createChatRouter(overrides = {}) {
     duckduckgoImageSearch,
     generateSd,
     generateVideo,
+    specialCompilerCallStructuredLlmJson,
   } = resolveChatDependencies(overrides);
   const intentResolver = createUnifiedIntentResolver({
     detectImageIntent,
@@ -61,6 +63,7 @@ function createChatRouter(overrides = {}) {
     duckduckgoImageSearch,
     generateSd,
     generateVideo,
+    specialCompilerCallStructuredLlmJson,
   });
 
   const router = express.Router();
@@ -141,6 +144,7 @@ function looksLikeDependencyBag(value) {
       || 'duckduckgoImageSearch' in value
       || 'generateSd' in value
       || 'generateVideo' in value
+      || 'specialCompilerCallStructuredLlmJson' in value
       || 'intentRouterV2Enabled' in value
     )
   );

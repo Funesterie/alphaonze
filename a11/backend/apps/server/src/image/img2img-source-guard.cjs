@@ -1,5 +1,8 @@
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   resolveImageDimensionConfig,
@@ -25,6 +28,212 @@ function getSharp() {
     sharpLib = null;
   }
   return sharpLib;
+}
+
+function resolvePreparedImg2ImgSourceRoot() {
+  if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+    return path.join(os.tmpdir(), 'a11-prepared-img2img-sources');
+  }
+  return path.resolve(__dirname, '..', '..', 'tmp', 'generated', 'prepared-img2img-sources');
+}
+
+function resolvePreparedImageExtension({ contentType = '', format = '' } = {}) {
+  const normalizedContentType = String(contentType || '').trim().toLowerCase();
+  const normalizedFormat = String(format || '').trim().toLowerCase();
+  if (normalizedContentType.includes('jpeg') || normalizedFormat === 'jpeg' || normalizedFormat === 'jpg') {
+    return { extension: 'jpg', format: 'jpeg' };
+  }
+  if (normalizedContentType.includes('webp') || normalizedFormat === 'webp') {
+    return { extension: 'webp', format: 'webp' };
+  }
+  return { extension: 'png', format: 'png' };
+}
+
+function computeLuma(data, offset) {
+  const r = Number(data[offset] || 0);
+  const g = Number(data[offset + 1] || 0);
+  const b = Number(data[offset + 2] || 0);
+  return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+}
+
+function sampleRowDarknessStats({
+  data,
+  width = 0,
+  channels = 4,
+  row = 0,
+} = {}) {
+  const safeWidth = Number(width || 0);
+  if (!safeWidth || !data) {
+    return {
+      meanLuma: 255,
+      darkRatio: 0,
+      brightRatio: 0,
+    };
+  }
+
+  const samplingStep = safeWidth > 1600 ? 2 : 1;
+  let sampleCount = 0;
+  let lumaSum = 0;
+  let darkCount = 0;
+  let brightCount = 0;
+
+  for (let column = 0; column < safeWidth; column += samplingStep) {
+    const offset = ((row * safeWidth) + column) * channels;
+    const luma = computeLuma(data, offset);
+    lumaSum += luma;
+    sampleCount += 1;
+    if (luma <= 30) darkCount += 1;
+    if (luma >= 180) brightCount += 1;
+  }
+
+  const safeSampleCount = Math.max(sampleCount, 1);
+  return {
+    meanLuma: lumaSum / safeSampleCount,
+    darkRatio: darkCount / safeSampleCount,
+    brightRatio: brightCount / safeSampleCount,
+  };
+}
+
+function scanDarkEdgeBand({
+  data,
+  width = 0,
+  height = 0,
+  channels = 4,
+  edge = 'top',
+} = {}) {
+  const safeHeight = Number(height || 0);
+  if (!safeHeight || !data) return 0;
+
+  const minBandRows = Math.max(24, Math.round(safeHeight * 0.04));
+  const maxBandRows = Math.min(Math.round(safeHeight * 0.3), 720);
+  let matchedRows = 0;
+
+  for (let index = 0; index < maxBandRows; index += 1) {
+    const row = edge === 'bottom'
+      ? (safeHeight - 1 - index)
+      : index;
+    const stats = sampleRowDarknessStats({
+      data,
+      width,
+      channels,
+      row,
+    });
+    const looksLikeDarkBand = (
+      stats.darkRatio >= 0.76
+      && stats.meanLuma <= 40
+      && stats.brightRatio <= 0.24
+    );
+    if (!looksLikeDarkBand) break;
+    matchedRows += 1;
+  }
+
+  return matchedRows >= minBandRows ? matchedRows : 0;
+}
+
+async function detectEdgeBandCrop({
+  buffer = null,
+  width = 0,
+  height = 0,
+} = {}) {
+  const sharp = getSharp();
+  const safeWidth = Number(width || 0);
+  const safeHeight = Number(height || 0);
+  if (!sharp || !buffer || !safeWidth || !safeHeight) {
+    return {
+      applied: false,
+      top: 0,
+      bottom: 0,
+      areaGain: 0,
+    };
+  }
+
+  const raw = await sharp(buffer, { failOn: 'none' })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const channels = Number(raw?.info?.channels || 4) || 4;
+  const top = scanDarkEdgeBand({
+    data: raw?.data,
+    width: safeWidth,
+    height: safeHeight,
+    channels,
+    edge: 'top',
+  });
+  const bottom = scanDarkEdgeBand({
+    data: raw?.data,
+    width: safeWidth,
+    height: safeHeight,
+    channels,
+    edge: 'bottom',
+  });
+  const croppedHeight = safeHeight - top - bottom;
+  const areaGain = safeWidth > 0 && safeHeight > 0
+    ? 1 - ((safeWidth * Math.max(croppedHeight, 1)) / Math.max(safeWidth * safeHeight, 1))
+    : 0;
+  const applied = croppedHeight >= 128 && areaGain >= 0.05 && (top > 0 || bottom > 0);
+
+  return {
+    applied,
+    top: applied ? top : 0,
+    bottom: applied ? bottom : 0,
+    areaGain: applied ? areaGain : 0,
+  };
+}
+
+async function materializeEffectiveImg2ImgSource({
+  imageUrl = '',
+  imagePath = '',
+  sourceMeta = {},
+  fetch = defaultFetch,
+} = {}) {
+  const sharp = getSharp();
+  if (!sharp) return null;
+
+  const cropLeft = Math.max(0, Number(sourceMeta?.effectiveOffsetLeft || 0) || 0);
+  const cropTop = Math.max(0, Number(sourceMeta?.effectiveOffsetTop || 0) || 0);
+  const cropRight = Math.max(0, Number(sourceMeta?.effectiveOffsetRight || 0) || 0);
+  const cropBottom = Math.max(0, Number(sourceMeta?.effectiveOffsetBottom || 0) || 0);
+  const cropApplied = cropLeft > 0 || cropTop > 0 || cropRight > 0 || cropBottom > 0;
+  if (!cropApplied) return null;
+
+  const loaded = await readImageBuffer({ imageUrl, imagePath, fetch });
+  const metadata = await sharp(loaded.buffer, { failOn: 'none' }).metadata();
+  const width = Number(sourceMeta?.width || metadata?.width || 0);
+  const height = Number(sourceMeta?.height || metadata?.height || 0);
+  const extractWidth = Math.max(1, width - cropLeft - cropRight);
+  const extractHeight = Math.max(1, height - cropTop - cropBottom);
+  if (!width || !height || extractWidth < 64 || extractHeight < 64) return null;
+
+  const outputRoot = resolvePreparedImg2ImgSourceRoot();
+  await fsp.mkdir(outputRoot, { recursive: true });
+
+  const outputFormat = resolvePreparedImageExtension({
+    contentType: loaded.contentType,
+    format: metadata?.format,
+  });
+  const outputPath = path.join(
+    outputRoot,
+    `img2img_src_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${outputFormat.extension}`
+  );
+
+  await sharp(loaded.buffer, { failOn: 'none' })
+    .extract({
+      left: cropLeft,
+      top: cropTop,
+      width: extractWidth,
+      height: extractHeight,
+    })
+    .toFormat(outputFormat.format)
+    .toFile(outputPath);
+
+  return {
+    initImagePath: outputPath,
+    initImageUrl: '',
+    preparedApplied: true,
+    preparedReason: String(sourceMeta?.cropReason || 'effective_source_crop').trim() || 'effective_source_crop',
+    originalSourceUsed: String(sourceMeta?.sourceUsed || loaded.sourceUsed || imagePath || imageUrl).trim() || null,
+    effectiveSourceUsed: outputPath,
+  };
 }
 
 function normalizeText(value = '') {
@@ -66,11 +275,6 @@ function buildSourceAnalysisText({ prompt = '', draft = {}, sourceMeta = {} } = 
     draft?.title,
     draft?.query,
     draft?.reason,
-    draft?.mode,
-    draft?.sourceUrl,
-    draft?.sourceDomain,
-    draft?.sceneType,
-    sourceMeta?.contentType,
   ].filter(Boolean).join(' ');
 }
 
@@ -179,6 +383,10 @@ async function probeImg2ImgSource({
   let trimBorderRatioX = 0;
   let trimBorderRatioY = 0;
   let trimAreaGain = 0;
+  let edgeBandCropApplied = false;
+  let edgeBandCropTop = 0;
+  let edgeBandCropBottom = 0;
+  let edgeBandCropAreaGain = 0;
 
   try {
     const trimmed = await sharp(loaded.buffer, { failOn: 'none' })
@@ -213,6 +421,42 @@ async function probeImg2ImgSource({
     // keep original bounds when trim probing fails
   }
 
+  try {
+    const edgeBandCrop = await detectEdgeBandCrop({
+      buffer: loaded.buffer,
+      width,
+      height,
+    });
+    if (edgeBandCrop?.applied) {
+      edgeBandCropApplied = true;
+      edgeBandCropTop = Number(edgeBandCrop.top || 0) || 0;
+      edgeBandCropBottom = Number(edgeBandCrop.bottom || 0) || 0;
+      edgeBandCropAreaGain = Number(edgeBandCrop.areaGain || 0) || 0;
+    }
+  } catch {
+    // keep original bounds when dark band probing fails
+  }
+
+  const trimOffsetRight = trimApplied
+    ? Math.max(0, width - (trimOffsetLeft + effectiveWidth))
+    : 0;
+  const trimOffsetBottom = trimApplied
+    ? Math.max(0, height - (trimOffsetTop + effectiveHeight))
+    : 0;
+  const effectiveOffsetLeft = trimApplied ? trimOffsetLeft : 0;
+  const effectiveOffsetRight = trimApplied ? trimOffsetRight : 0;
+  const effectiveOffsetTop = Math.max(trimApplied ? trimOffsetTop : 0, edgeBandCropTop);
+  const effectiveOffsetBottom = Math.max(trimApplied ? trimOffsetBottom : 0, edgeBandCropBottom);
+  effectiveWidth = Math.max(1, width - effectiveOffsetLeft - effectiveOffsetRight);
+  effectiveHeight = Math.max(1, height - effectiveOffsetTop - effectiveOffsetBottom);
+  const cropApplied = effectiveOffsetLeft > 0 || effectiveOffsetTop > 0 || effectiveOffsetRight > 0 || effectiveOffsetBottom > 0;
+  const cropReason = edgeBandCropApplied
+    ? 'edge_band_crop'
+    : (trimApplied ? 'trimmed_bounds' : 'original_bounds');
+  const effectiveAreaGain = width > 0 && height > 0
+    ? 1 - ((effectiveWidth * effectiveHeight) / Math.max(width * height, 1))
+    : 0;
+
   return {
     ok: true,
     width,
@@ -228,6 +472,17 @@ async function probeImg2ImgSource({
     trimBorderRatioX,
     trimBorderRatioY,
     trimAreaGain,
+    effectiveOffsetLeft,
+    effectiveOffsetTop,
+    effectiveOffsetRight,
+    effectiveOffsetBottom,
+    cropApplied,
+    cropReason,
+    effectiveAreaGain,
+    edgeBandCropApplied,
+    edgeBandCropTop,
+    edgeBandCropBottom,
+    edgeBandCropAreaGain,
     contentType: loaded.contentType || String(metadata?.format || '').trim() || 'image/unknown',
     sourceUsed: loaded.sourceUsed,
     sourceKind: loaded.sourceKind,
@@ -263,9 +518,13 @@ function classifyImg2ImgSource({
   const normalized = normalizeText(buildSourceAnalysisText({ prompt, draft, sourceMeta }));
   const portraitCanvas = height > width;
   const landscapeCanvas = width >= height;
-  const groupKeywordMatch = /\b(duo|group|groupe|crew|team|ensemble|characters|personnages|cast|family|versus|vs\b|face off|faceoff)\b/.test(normalized);
+  const groupKeywordMatch = (
+    /\b(duo|pair|couple|group|groupe|crew|team|ensemble|cast|family|versus|vs\b|face off|faceoff|lineup|line up)\b/.test(normalized)
+    || /\b(?:two|2|deux|three|3|trois|multiple|several)\s+(?:characters?|personnages?|people|persons?|subjects?)\b/.test(normalized)
+  );
   const faceKeywordMatch = /\b(face|visage|portrait|headshot|close up|close-up|bust|buste)\b/.test(normalized);
-  const soloKeywordMatch = /\b(solo|single subject|sujet unique|personnage seul|full body|full-body|plein pied|character art|official art)\b/.test(normalized);
+  const fullBodyKeywordMatch = /\b(full body|full-body|plein pied|en pied|personnage entier|corps entier|character art|official art)\b/.test(normalized);
+  const soloKeywordMatch = /\b(solo|single subject|sujet unique|personnage seul|full body|full-body|plein pied|en pied|character art|official art)\b/.test(normalized);
   const wideLandscapeScene = landscapeCanvas && aspectRatio >= 1.8;
 
   const compositeRisk = (
@@ -283,6 +542,7 @@ function classifyImg2ImgSource({
   const faceSolo = (
     !compositeRisk
     && !duoOrGroup
+    && !fullBodyKeywordMatch
     && (
       faceKeywordMatch
       || (portraitCanvas && aspectRatio <= 1.75)
@@ -502,9 +762,37 @@ async function enrichImg2ImgDraft({
   const protection = buildImg2ImgProtectionPrompts({
     promptLanguage: String(mask?.meta?.promptLanguage || mask?.meta?.language || 'fr').trim() || 'fr',
   });
+  let preparedSource = null;
+  let preparedSourceError = '';
+  try {
+    preparedSource = await materializeEffectiveImg2ImgSource({
+      imageUrl: initImageUrl,
+      imagePath: initImagePath,
+      sourceMeta,
+      fetch,
+    });
+  } catch (error_) {
+    preparedSourceError = String(error_?.message || error_);
+  }
+  const effectiveInitImagePath = String(preparedSource?.initImagePath || initImagePath).trim();
+  const effectiveInitImageUrl = String(
+    preparedSource?.preparedApplied === true
+      ? (preparedSource?.initImageUrl || '')
+      : (preparedSource?.initImageUrl || initImageUrl)
+  ).trim();
+  const sourceOriginalUsed = String(sourceMeta?.sourceUsed || initImagePath || initImageUrl).trim() || null;
+  const sourceEffectiveUsed = String(
+    preparedSource?.effectiveSourceUsed
+    || effectiveInitImagePath
+    || effectiveInitImageUrl
+    || sourceOriginalUsed
+    || ''
+  ).trim() || null;
 
   return {
     ...webImageDraft,
+    initImagePath: effectiveInitImagePath || '',
+    initImageUrl: effectiveInitImageUrl,
     sourceWidth: scene.width || null,
     sourceHeight: scene.height || null,
     originalSourceWidth: scene.originalWidth || Number(sourceMeta?.width || 0) || null,
@@ -521,8 +809,19 @@ async function enrichImg2ImgDraft({
     sourceTrimBorderRatioX: Number(sourceMeta?.trimBorderRatioX || 0) || 0,
     sourceTrimBorderRatioY: Number(sourceMeta?.trimBorderRatioY || 0) || 0,
     sourceTrimAreaGain: Number(sourceMeta?.trimAreaGain || 0) || 0,
-    sourceUsed: String(sourceMeta?.sourceUsed || initImagePath || initImageUrl).trim() || null,
+    sourceCropApplied: sourceMeta?.cropApplied === true,
+    sourceCropReason: String(sourceMeta?.cropReason || '').trim() || null,
+    sourceCropAreaGain: Number(sourceMeta?.effectiveAreaGain || 0) || 0,
+    sourceEdgeBandCropApplied: sourceMeta?.edgeBandCropApplied === true,
+    sourceEdgeBandCropTop: Number(sourceMeta?.edgeBandCropTop || 0) || 0,
+    sourceEdgeBandCropBottom: Number(sourceMeta?.edgeBandCropBottom || 0) || 0,
+    sourceUsed: sourceEffectiveUsed,
+    sourceOriginalUsed,
     sourceKind: String(sourceMeta?.sourceKind || '').trim() || null,
+    sourcePreparedApplied: preparedSource?.preparedApplied === true,
+    sourcePreparedReason: String(preparedSource?.preparedReason || '').trim() || null,
+    sourcePreparedPath: String(preparedSource?.initImagePath || '').trim() || null,
+    sourcePreparedError: preparedSourceError || null,
     sceneKey: scene.sceneKey,
     sceneType: scene.sceneType,
     canvasType: scene.canvasType,

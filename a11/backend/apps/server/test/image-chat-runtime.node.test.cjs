@@ -110,7 +110,206 @@ test('buildSdRequestBody injects face-protection negatives for img2img web draft
   assert.match(String(sdBody.negative_prompt || ''), /visage duplique/i);
 });
 
-test('compileMaskImageGenerateRuntime recalculates img2img technique from the final refined prompt', async () => {
+test('buildSdRequestBody prefers the current web-init canvas over stale compiled payload dimensions', () => {
+  const sdBody = buildSdRequestBody(
+    {
+      raw: 'generate a portrait variation from the reference image',
+      options: { width: 832, height: 1536, steps: 30, guidance_scale: 7.5 },
+      meta: {
+        renderSizing: {
+          source: 'web_init_image',
+          reason: 'preserve_init_image_ratio',
+          requestedWidth: 1206,
+          requestedHeight: 2310,
+        },
+        webImageDraft: {
+          initImageUrl: 'https://images.example.com/reference.png',
+        },
+      },
+    },
+    {
+      prompt: 'the same subject as in the reference image',
+      prompt_language: 'en',
+      width: 1024,
+      height: 1024,
+    }
+  );
+
+  assert.equal(sdBody.width, 832);
+  assert.equal(sdBody.height, 1536);
+  assert.equal(sdBody.size_source, 'web_init_image');
+  assert.equal(sdBody.size_reason, 'preserve_init_image_ratio');
+  assert.equal(sdBody.requested_width, 1206);
+  assert.equal(sdBody.requested_height, 2310);
+});
+
+test('compileMaskImageGenerateRuntime keeps translated negative hints literal for the final negative prompt', async () => {
+  const result = await compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait'],
+      environment: [],
+      style: ['high quality'],
+      composition: ['single subject'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 30,
+      guidance_scale: 7.5,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: false,
+    },
+    meta: {
+      negativeHints: ['doigts en trop'],
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    ambiguities: [],
+    raw: 'portrait of the same person',
+  }, {
+    imageRequestMode: 'raw',
+    imagePromptRefinerEnabled: false,
+  });
+
+  assert.match(String(result.sdBody?.negative_prompt || ''), /\bextra fingers\b/i);
+  assert.doesNotMatch(String(result.sdBody?.negative_prompt || ''), /\bdoigts\b|\bgénéré\b/i);
+  assert.doesNotMatch(String(result.sdBody?.negative_prompt || ''), /polydactyly|must possess/i);
+});
+
+test('compileMaskImageGenerateRuntime reuses existing canonical structured fields instead of re-expanding them at runtime', async () => {
+  let translatorCalls = 0;
+  const canonicalizedRequest = {
+    canonicalEnglishInput: 'the same person as in the reference image, transformed into a joker-style version without altering facial identity',
+    structuredFields: {
+      subject: [
+        'the same person as in the reference image',
+        'joker-style version with faithful face',
+      ],
+      environment: [
+        'harlem-inspired urban street',
+      ],
+      style: [
+        'dark cinematic realism',
+      ],
+      composition: [
+        'full body portrait',
+        'custom bat clearly visible',
+      ],
+      lighting: [
+        'dramatic lighting',
+      ],
+      palette: [
+        'purple',
+        'green',
+        'red',
+      ],
+      constraints: {
+        safeMode: true,
+        noText: true,
+        promptInstructions: [
+          'keep the recognizable face and the same facial structure',
+        ],
+        negativeHints: [
+          'text',
+          'watermark',
+        ],
+      },
+    },
+    audit: {
+      rawUserInput: 'Utilise l image d entree comme reference d identite et transforme la personne en Joker.',
+    },
+  };
+
+  const result = await compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['personnage inspire du Joker'],
+      environment: ['decor urbain'],
+      style: ['cinematographique'],
+      composition: ['portrait'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 1024,
+      steps: 30,
+      guidance_scale: 7.5,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      canonicalizedRequest,
+      promptCanonicalization: {
+        rawUserInput: canonicalizedRequest.audit.rawUserInput,
+        canonicalEnglishInput: canonicalizedRequest.canonicalEnglishInput,
+        structuredFields: canonicalizedRequest.structuredFields,
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/joker-ref.png',
+      },
+    },
+    ambiguities: [],
+    raw: 'transforme moi en joker',
+  }, {
+    imageRequestMode: 'raw',
+    imagePromptRefinerEnabled: false,
+    callStructuredLlmJson: async ({ systemPrompt }) => {
+      if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
+        translatorCalls += 1;
+        return {
+          target_language: 'english',
+          raw_request: 'make the same person into a joker',
+          current_prompt: 'A highly cinematic style, featuring a wide aspect ratio and venetian blind shadows.',
+          current_negative_prompt: 'text, watermark',
+          subject: ['A generic joker'],
+          environment: ['busy, character-filled streets'],
+          style: ['high-budget film still'],
+          composition: ['wide aspect ratio'],
+          lighting: ['volumetric lighting'],
+          palette: ['purple', 'green'],
+          prompt_instructions: [],
+          subject_profile_type: 'single_human_figure',
+          canonical_subject: '',
+          universe: '',
+          reference_init_image: 'https://images.example.com/joker-ref.png',
+          web_reference_pack: null,
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+  });
+
+  assert.equal(translatorCalls, 0);
+  assert.deepEqual(result.mask?.meta?.canonicalizedRequest?.structuredFields?.environment, ['harlem-inspired urban street']);
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
+  assert.match(String(result.sdBody?.prompt || ''), /keep the recognizable face and the same facial structure/i);
+  assert.doesNotMatch(String(result.sdBody?.prompt || ''), /wide aspect ratio|venetian blind shadows|character filled streets/i);
+});
+
+test('compileMaskImageGenerateRuntime recalculates img2img technique from the final canonical prompt', async () => {
   const draftCalls = [];
 
   const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
@@ -213,27 +412,35 @@ test('compileMaskImageGenerateRuntime recalculates img2img technique from the fi
 
   assert.equal(draftCalls.length, 2);
   assert.equal(draftCalls[0], '');
-  assert.match(draftCalls[1], /James Bond 007/i);
-  assert.match(String(result.mask?.meta?.techniqueAnalysisPrompt || ''), /James Bond 007/i);
-  assert.equal(result.mask?.meta?.webImageDraft?.strengthProfile, 'balanced');
-  assert.equal(result.mask?.meta?.webImageDraft?.strengthReason, 'reference_subject_scene_rewrite');
-  assert.ok(Number(result.mask?.meta?.webImageDraft?.strengthValue || 0) >= 0.6);
+  assert.match(draftCalls[1], /the same person (?:as in|from) the reference image/i);
+  assert.match(draftCalls[1], /(?:single clearly visible main subject|simple clear composition)/i);
+  assert.match(String(result.mask?.meta?.techniqueAnalysisPrompt || ''), /the same person (?:as in|from) the reference image/i);
+  assert.equal(result.mask?.meta?.webImageDraft?.strengthProfile, 'preserve');
+  assert.equal(result.mask?.meta?.webImageDraft?.strengthReason, 'reference_subject_identity_lock');
+  assert.ok(Number(result.mask?.meta?.webImageDraft?.strengthValue || 0) >= 0.24);
+  assert.ok(Number(result.mask?.meta?.webImageDraft?.strengthValue || 0) <= 0.26);
   assert.equal(result.mask?.meta?.webImageDraft?.strengthComponents?.identity?.profile, 'preserve');
   assert.equal(result.mask?.meta?.webImageDraft?.strengthComponents?.background?.profile, 'restyle');
   assert.equal(result.sdBody?.strength, 'auto');
-  assert.equal(result.sdBody?.strength_profile, 'balanced');
-  assert.equal(result.sdBody?.strength_reason, 'reference_subject_scene_rewrite');
+  assert.equal(result.sdBody?.strength_profile, 'preserve');
+  assert.equal(result.sdBody?.strength_reason, 'reference_subject_identity_lock');
   assert.equal(result.sdBody?.strength_value, undefined);
   assert.equal(result.sdBody?.strength_components?.identity?.profile, 'preserve');
   assert.equal(result.sdBody?.strength_components?.background?.profile, 'restyle');
-  assert.equal(result.techniqueReconciler?.promptGuidance?.reason, 'component_strength_llm_director');
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.promptRefiner?.reason, 'disabled_or_not_needed');
+  assert.match(
+    String(result.techniqueReconciler?.promptGuidance?.reason || ''),
+    /component_strength_guidance_preserved_rich_prompt|base_prompt_not_canonical_english/i
+  );
   assert.equal(result.sdBody?.prompt_language, 'en');
-  assert.match(String(result.sdBody?.prompt || ''), /keep exactly the same face and identity/i);
-  assert.match(String(result.sdBody?.prompt || ''), /dramatically redesigned 007 backdrop/i);
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
+  assert.match(String(result.sdBody?.prompt || ''), /single clearly visible main subject/i);
+  assert.match(String(result.sdBody?.prompt || ''), /full body visible/i);
   assert.match(String(result.sdBody?.negative_prompt || ''), /different identity/i);
 });
 
-test('compileMaskImageGenerateRuntime keeps prompt llm refinement enabled for short init-image prompts', async () => {
+test('compileMaskImageGenerateRuntime skips prompt llm refinement for short init-image prompts when canonical english is already sufficient', async () => {
   let refinerCalls = 0;
 
   const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
@@ -309,14 +516,18 @@ test('compileMaskImageGenerateRuntime keeps prompt llm refinement enabled for sh
     resolveImageReferencePack: async () => null,
   }));
 
-  assert.equal(refinerCalls, 1);
-  assert.equal(result.promptRefiner?.applied, true);
-  assert.equal(result.promptRefiner?.reason, 'llm_refined');
+  assert.equal(refinerCalls, 0);
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.promptRefiner?.reason, 'disabled_or_not_needed');
+  assert.equal(result.localEnglishPromptFallback?.applied, false);
+  assert.equal(result.localEnglishPromptFallback?.reason, 'disabled');
   assert.equal(result.sdBody?.prompt_language, 'en');
-  assert.match(String(result.sdBody?.prompt || ''), /clean portrait/i);
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
+  assert.match(String(result.sdBody?.prompt || ''), /simple background/i);
+  assert.match(String(result.sdBody?.prompt || ''), /single clearly visible main subject/i);
 });
 
-test('compileMaskImageGenerateRuntime asks the prompt refiner to stay in english for sd payload prompts', async () => {
+test('compileMaskImageGenerateRuntime skips translator and prompt refiner when the sd payload prompt is already canonical enough', async () => {
   let capturedSystemPrompt = '';
   let capturedText = '';
   let capturedTranslatorPrompt = '';
@@ -402,18 +613,18 @@ test('compileMaskImageGenerateRuntime asks the prompt refiner to stay in english
     resolveImageReferencePack: async () => null,
   }));
 
-  assert.match(capturedTranslatorPrompt, /multilingual prompt-context translator/i);
-  assert.match(capturedTranslatorText, /utilise ma photo comme reference/i);
-  assert.match(capturedTranslatorText, /joker cinematographique/i);
-  assert.match(capturedTranslatorText, /garder le même visage et la même coiffure/i);
-  assert.doesNotMatch(capturedTranslatorText, /the same person from the reference image, dark decor, high quality, clean portrait/i);
-  assert.match(capturedSystemPrompt, /english only/i);
-  assert.match(capturedText, /"target_language": "english"/i);
-  assert.match(capturedText, /"raw_request": "use my reference photo and transform me into a cinematic Joker-inspired character"/i);
+  assert.equal(capturedTranslatorPrompt, '');
+  assert.equal(capturedTranslatorText, '');
+  assert.equal(capturedSystemPrompt, '');
+  assert.equal(capturedText, '');
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.promptRefiner?.reason, 'disabled_or_not_needed');
+  assert.equal(result.localEnglishPromptFallback?.applied, false);
+  assert.equal(result.localEnglishPromptFallback?.reason, 'disabled');
   assert.equal(result.sdBody?.prompt_language, 'en');
-  assert.match(String(result.sdBody?.prompt || ''), /the same person from the reference image/i);
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
   assert.match(String(result.sdBody?.prompt || ''), /keep exactly the same face and identity/i);
-  assert.match(String(result.sdBody?.prompt || ''), /preserve the silhouette and main outfit/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the outfit change clearly visible/i);
   assert.match(String(result.sdBody?.prompt || ''), /make the lighting and effects clearly visible/i);
   assert.doesNotMatch(String(result.sdBody?.prompt || ''), /\bgarder\b|\bvisage\b|\btenue\b/i);
   assert.doesNotMatch(String(result.sdBody?.negative_prompt || ''), /\btexte\b/i);
@@ -523,6 +734,257 @@ test('compileMaskImageGenerateRuntime preserves a rich final prompt instead of c
   assert.match(String(result.sdBody?.prompt || ''), /Harlem|graffiti|batte|joker/i);
 });
 
+test('compileMaskImageGenerateRuntime prefers a stable canonical init-image prompt when translator or refiner round-trips would compress the request', async () => {
+  let capturedTranslatorText = '';
+  let fieldRepairCalls = 0;
+  let refinerCalls = 0;
+
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['fond simple'],
+      style: ['haute qualité'],
+      composition: ['portrait propre'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 1024,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      originalSourceText: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker dans un style sombre, cinematographique et realiste tout en conservant le meme visage, la meme structure faciale, la meme corpulence, la meme posture et la meme presence generale. Remplace la tenue par un costume Joker complet en violet et vert use, ajoute un maquillage de clown inquietant, rends la batte custom clairement visible et transforme le decor en rue brute inspiree de Harlem avec graffitis, immeuble use, sol sale, reflets de neons et lumiere dramatique. Sujet unique, personnage entier visible, haute qualite, aucun texte lisible.',
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/joker-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    ambiguities: [],
+    raw: 'transforme moi en joker',
+  }, {
+    callStructuredLlmJson: async ({ systemPrompt, text }) => {
+      if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
+        capturedTranslatorText = String(text || '');
+        return {
+          target_language: 'english',
+          raw_request: 'Transform the person into a dark Joker-inspired character with the same face and a visible custom bat.',
+          current_prompt: 'the same person from the reference image, joker portrait, custom bat visible',
+          current_negative_prompt: 'text, watermark',
+          subject: ['male portrait'],
+          environment: ['simple background'],
+          style: ['high quality'],
+          composition: ['clean portrait'],
+          lighting: [],
+          palette: [],
+          prompt_instructions: [],
+          subject_profile_type: 'single_human_figure',
+          canonical_subject: '',
+          universe: '',
+          reference_init_image: 'https://images.example.com/joker-ref.png',
+          web_reference_pack: null,
+        };
+      }
+      if (/single image-generation prompt field/i.test(String(systemPrompt || ''))) {
+        fieldRepairCalls += 1;
+        return {
+          translated_text: 'Use the input image as an identity, pose, and framing reference. Transform the person into a dark, cinematic, realistic live-action Joker-inspired character while preserving the same recognizable face, the same facial structure, the same build, the same posture, and the same overall presence as in the original photo. Replace the outfit with a full Joker-themed suit in worn purple and green tones, add unsettling clown makeup, make the custom decorated bat clearly visible, and stage the scene in a raw Harlem-inspired street with graffiti, worn building textures, dirty pavement, neon reflections, dramatic lighting, and a tense noir comic-book atmosphere. Subject only, full body visible, high quality, no readable text.',
+        };
+      }
+      if (/réécrivain final/i.test(String(systemPrompt || ''))) {
+        refinerCalls += 1;
+        return {
+          prompt: 'A character inspired by the Joker with a recognizable face and a custom bat.',
+          negative_prompt: 'text, watermark',
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    lookupImageHintWebContext: async () => null,
+    resolveImageReferencePack: async () => null,
+  }));
+
+  assert.equal(capturedTranslatorText, '');
+  assert.ok(fieldRepairCalls >= 1);
+  assert.equal(refinerCalls, 0);
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.promptRefiner?.reason, 'disabled_or_not_needed');
+  assert.equal(result.localEnglishPromptFallback?.applied, false);
+  assert.equal(result.localEnglishPromptFallback?.reason, 'disabled');
+  assert.equal(result.sdBody?.prompt_language, 'en');
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
+  assert.match(String(result.sdBody?.prompt || ''), /keep exactly the same face and identity/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the outfit change clearly visible/i);
+  assert.match(String(result.sdBody?.prompt || ''), /clearly redesign the background and atmosphere/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the lighting and effects clearly visible/i);
+});
+
+test('compileMaskImageGenerateRuntime keeps a stable canonical init-image prompt without re-calling the translator when the raw text was shortened upstream', async () => {
+  let capturedTranslatorText = '';
+
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['fond simple'],
+      style: ['haute qualité'],
+      composition: ['portrait propre'],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 1024,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      originalSourceText: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker dans un style sombre, cinematographique et realiste, avec une rue inspiree de Harlem, une batte custom visible, des reflets de neons et une lumiere dramatique.',
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/joker-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+    },
+    ambiguities: [],
+    raw: 'transforme moi en joker',
+  }, {
+    callStructuredLlmJson: async ({ systemPrompt, text }) => {
+      if (/multilingual prompt-context translator/i.test(String(systemPrompt || ''))) {
+        capturedTranslatorText = String(text || '');
+        return {
+          target_language: 'english',
+          raw_request: 'Use the input image as identity, pose, and framing reference in a cinematic Joker-inspired scene.',
+          current_prompt: 'the same person from the reference image, joker portrait',
+          current_negative_prompt: 'text, watermark',
+          subject: ['male portrait'],
+          environment: ['dark street'],
+          style: ['cinematic'],
+          composition: ['clean portrait'],
+          lighting: ['dramatic lighting'],
+          palette: ['purple', 'green'],
+          prompt_instructions: [],
+          subject_profile_type: 'single_human_figure',
+          canonical_subject: '',
+          universe: '',
+          reference_init_image: 'https://images.example.com/joker-ref.png',
+          web_reference_pack: null,
+        };
+      }
+      if (/réécrivain final/i.test(String(systemPrompt || ''))) {
+        return {
+          prompt: 'the same person from the reference image in a cinematic Joker-inspired Harlem street scene with a visible custom bat and dramatic neon reflections',
+          negative_prompt: 'text, watermark',
+        };
+      }
+      return {
+        composition_hints: [],
+        environment_hints: [],
+        style_hints: [],
+        prompt_instructions: [],
+      };
+    },
+    lookupImageHintWebContext: async () => null,
+    resolveImageReferencePack: async () => null,
+  }));
+
+  assert.equal(capturedTranslatorText, '');
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.promptRefiner?.reason, 'disabled_or_not_needed');
+  assert.equal(result.localEnglishPromptFallback?.applied, false);
+  assert.equal(result.localEnglishPromptFallback?.reason, 'disabled');
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
+  assert.match(String(result.sdBody?.prompt || ''), /keep exactly the same face and identity/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the outfit change clearly visible/i);
+  assert.match(String(result.sdBody?.prompt || ''), /clearly redesign the background and atmosphere/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the lighting and effects clearly visible/i);
+});
+
+test('compileMaskImageGenerateRuntime keeps the local english fallback disabled when the preserved source canonicalizes cleanly', async () => {
+  const result = await withImagePipelineMode('orchestrated', () => compileMaskImageGenerateRuntime({
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-en', version: '1.0' },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['decor urbain inspire de Harlem', 'rue brute avec graffitis'],
+      style: ['portrait live action sombre et credible', 'cinematographique', 'haute qualité'],
+      composition: ['personnage entier visible', 'batte custom clairement visible', 'composition propre'],
+      lighting: ['lumiere dramatique', 'reflets de neons violets et verts'],
+      palette: ['violet', 'vert', 'rouge'],
+    },
+    options: {
+      width: 768,
+      height: 1024,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    meta: {
+      originalSourceText: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker dans un style sombre, cinematographique et realiste tout en conservant le meme visage, la meme structure faciale, la meme corpulence, la meme posture et la meme presence generale. Remplace la batte en bois par une batte custom visible et theatrale, et transforme le decor en rue brute inspiree de Harlem avec graffitis, immeubles uses, sol sale, reflets de neons et lumiere dramatique.',
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/joker-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+      promptInstructions: [
+        'costume joker elegant mais chaotique',
+        'maquillage de clown inquietant mais credible',
+        'la batte custom doit etre bien visible',
+      ],
+    },
+    ambiguities: [],
+    raw: 'transforme moi en joker',
+  }, {
+    lookupImageHintWebContext: async () => null,
+    resolveImageReferencePack: async () => null,
+    directImageRequest: async ({ mask }) => ({
+      mask,
+      director: null,
+    }),
+  }));
+
+  assert.equal(result.promptRefiner?.applied, false);
+  assert.equal(result.promptRefiner?.reason, 'disabled_or_not_needed');
+  assert.equal(result.localEnglishPromptFallback?.applied, false);
+  assert.equal(result.localEnglishPromptFallback?.reason, 'disabled');
+  assert.equal(result.sdBody?.prompt_language, 'en');
+  assert.match(String(result.sdBody?.prompt || ''), /(?:the exact same person from the reference image|the same person as in the reference image)/i);
+  assert.match(String(result.sdBody?.prompt || ''), /Harlem-inspired urban environment|Harlem-inspired street/i);
+  assert.match(String(result.sdBody?.prompt || ''), /custom bat/i);
+  assert.match(String(result.sdBody?.prompt || ''), /elegant but chaotic Joker-themed suit/i);
+  assert.match(String(result.sdBody?.prompt || ''), /make the lighting and effects clearly visible|dramatic lighting/i);
+});
+
 test('generateImageFromMask preserves the source ratio for web init images instead of forcing a square fallback', async () => {
   const calls = [];
 
@@ -609,9 +1071,9 @@ test('generateImageFromMask keeps the uploaded chat source image as init image i
       task: { domain: 'image', action: 'generate' },
       compiler: { target: 'sd-payload', version: '1.0' },
       inputs: {
-        subject: ['sujet de reference'],
-        environment: ['decor urbain sombre'],
-        style: ['portrait live action credible'],
+        subject: ['joker'],
+        environment: ['dark urban setting'],
+        style: ['believable live-action portrait'],
         composition: ['personnage entier visible'],
         lighting: ['lumiere dramatique'],
         palette: ['violet', 'vert'],
@@ -707,7 +1169,7 @@ test('generateImageFromMask keeps the uploaded chat source image as init image i
   assert.notEqual(result.mask?.meta?.webImageDraft?.sceneType, 'duo/groupe');
   assert.equal(Number(verificationExpected?.subjectCount || 0), 1);
   assert.equal(String(verificationExpected?.mode || ''), 'single');
-  assert.equal(String(verificationExpected?.subjectLabel || ''), 'joker');
+  assert.equal(String(verificationExpected?.subjectLabel || ''), 'joker with a custom bat visible');
 });
 
 test('toImageChatProxyPayload synthesizes a png filename when the image URL has no extension', () => {
@@ -729,7 +1191,7 @@ test('toImageChatProxyPayload synthesizes a png filename when the image URL has 
   assert.match(String(payload.choices?.[0]?.message?.content || ''), /\[ouvrir l'image\]/i);
 });
 
-test('generateImageFromMask compiles canonical masks into a french image prompt by default', async () => {
+test('generateImageFromMask compiles canonical masks into an english image prompt by default', async () => {
   const calls = [];
 
   const result = await generateImageFromMask({
@@ -777,15 +1239,15 @@ test('generateImageFromMask compiles canonical masks into a french image prompt 
   });
 
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /un herisson vert/i);
+  assert.match(String(calls[0]?.prompt || ''), /hedgehog/i);
   assert.match(String(calls[0]?.prompt || ''), /high quality, detailed/i);
   assert.match(String(calls[0]?.prompt || ''), /single main subject, clear centered composition, simple clean background/i);
-  assert.match(String(calls[0]?.prompt || ''), /couleurs green/i);
-  assert.match(String(calls[0]?.prompt || ''), /un seul sujet principal/i);
-  assert.match(String(calls[0]?.negative_prompt || ''), /plusieurs sujets/i);
+  assert.match(String(calls[0]?.prompt || ''), /color palette: green/i);
+  assert.match(String(calls[0]?.prompt || ''), /single clearly visible main subject/i);
+  assert.match(String(calls[0]?.negative_prompt || ''), /multiple subjects/i);
   assert.match(String(calls[0]?.negative_prompt || ''), /watermark/i);
   assert.doesNotMatch(String(calls[0]?.prompt || ''), /\bNe pas\b|\bdo not\b/i);
-  assert.equal(calls[0]?.prompt_language, 'fr');
+  assert.equal(calls[0]?.prompt_language, 'en');
   assert.equal(result.sdResult.mode, 'openai-image');
 });
 
@@ -855,8 +1317,8 @@ test('generateImageFromMask retries once when the verifier detects multiple subj
   }));
 
   assert.equal(calls.length, 2);
-  assert.match(String(calls[1]?.prompt || ''), /montrer un seul lapin/i);
-  assert.match(String(calls[1]?.prompt || ''), /silhouette claire et lisible/i);
+  assert.match(String(calls[1]?.prompt || ''), /show a single rabbit/i);
+  assert.match(String(calls[1]?.prompt || ''), /clear readable silhouette/i);
   assert.equal(calls[1]?.has_negative_prompt, true);
   assert.equal(calls[1]?.seed, 197);
   assert.equal(result.sdResult.image_url, 'https://files.example.com/rabbit-2.png');
@@ -931,7 +1393,7 @@ test('generateImageFromMask retries once by default when verification suggests a
   assert.equal(result.imageGuard?.verification?.decision?.retry, false);
 });
 
-test('generateImageFromMask relaxes fusion retries for automatic web init drafts', async () => {
+test('generateImageFromMask disables cardinality expectations for automatic web init drafts with composite risk', async () => {
   let callCount = 0;
 
   const result = await withImagePipelineMode('smart', () => generateImageFromMask({
@@ -988,9 +1450,11 @@ test('generateImageFromMask relaxes fusion retries for automatic web init drafts
   }));
 
   assert.equal(callCount, 1);
+  assert.equal(result.imageGuard?.enabled, true);
+  assert.equal(result.imageGuard?.expected?.enabled, false);
+  assert.equal(result.imageGuard?.expected?.reason, 'source_scene_multi_subject');
   assert.equal(result.imageGuard?.retries?.length, 0);
-  assert.equal(result.imageGuard?.verification?.decision?.retry, false);
-  assert.equal(result.imageGuard?.verification?.decision?.reason, 'fusion_detected_web_init_tolerated');
+  assert.equal(result.imageGuard?.verification, null);
 });
 
 test('generateImageFromMask retries duo prompts when verification detects extra characters', async () => {
@@ -1028,9 +1492,9 @@ test('generateImageFromMask retries duo prompts when verification detects extra 
     generateSd: async ({ body }) => {
       callCount += 1;
       if (callCount === 2) {
-        assert.match(String(body?.prompt || ''), /exactement deux personnages distincts/i);
-        assert.match(String(body?.prompt || ''), /une seule occurrence de chaque personnage/i);
-        assert.match(String(body?.negative_prompt || ''), /collage|montage|mosaïque/i);
+        assert.match(String(body?.prompt || ''), /exactly two distinct characters/i);
+        assert.match(String(body?.prompt || ''), /only one instance of each character/i);
+        assert.match(String(body?.negative_prompt || ''), /collage|montage|mosaic/i);
       }
       return {
         ok: true,
@@ -1435,8 +1899,9 @@ test('generateImageFromMask applies the special compiler for complex prompts wit
   }));
 
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
-  assert.match(String(calls[0]?.prompt || ''), /lapin avec une carotte dans la bouche/i);
+  assert.match(String(calls[0]?.prompt || ''), /accessory clearly visible/i);
+  assert.match(String(calls[0]?.prompt || ''), /rabbit/i);
+  assert.match(String(calls[0]?.prompt || ''), /carrot/i);
   assert.equal(result.mask?.meta?.compilerCompartment, 'special');
   assert.equal(result.specialCompiler?.selection?.compartment, 'special');
   assert.equal(result.mask?.meta?.specialCompilerAppliedHintsCount, 4);
@@ -1707,8 +2172,9 @@ test('generateImageFromMask reuses remembered hint memory for complex prompts', 
   }));
 
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /accessoire bien visible/i);
-  assert.match(String(calls[0]?.prompt || ''), /lapin avec une carotte dans la bouche/i);
+  assert.match(String(calls[0]?.prompt || ''), /accessory clearly visible/i);
+  assert.match(String(calls[0]?.prompt || ''), /rabbit/i);
+  assert.match(String(calls[0]?.prompt || ''), /carrot/i);
   assert.equal(result.mask?.meta?.compilerCompartment, 'special');
   assert.equal(result.mask?.meta?.specialCompilerMemoryHintsAppliedCount, 4);
   assert.equal(result.specialCompiler?.fallbackReason, 'empty_or_invalid_hints');
@@ -1909,8 +2375,9 @@ test('generateImageFromMask provides web hint context to the special compiler an
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.init_image_url, undefined);
   assert.equal(calls[0]?.strength, undefined);
-  assert.match(String(calls[0]?.prompt || ''), /oreilles longues bien visibles/i);
-  assert.match(String(calls[0]?.prompt || ''), /bugsbunny avec une cigarette/i);
+  assert.match(String(calls[0]?.prompt || ''), /bugs bunny/i);
+  assert.match(String(calls[0]?.prompt || ''), /gray-and-white cartoon rabbit/i);
+  assert.match(String(calls[0]?.prompt || ''), /long ears clearly visible/i);
 });
 
 test('generateImageFromMask injects the temporary entity scratchpad before special compilation', async () => {
@@ -1998,7 +2465,9 @@ test('generateImageFromMask injects the temporary entity scratchpad before speci
   assert.match(llmPayloadText, /canonical_subject/i);
   assert.match(llmPayloadText, /Master Chief/i);
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /john 117 en armure bleue/i);
+  assert.match(String(calls[0]?.prompt || ''), /master chief/i);
+  assert.match(String(calls[0]?.prompt || ''), /stay consistent with the universe halo/i);
+  assert.match(String(calls[0]?.prompt || ''), /full armor clearly visible/i);
 });
 
 test('generateImageFromMask carries gentle scratchpad embellishment into the special compiler for basic mario kart prompts', async () => {
@@ -2088,8 +2557,8 @@ test('generateImageFromMask carries gentle scratchpad embellishment into the spe
   assert.match(llmPayloadText, /prompt_instructions/i);
   assert.match(llmPayloadText, /dérapage visible/i);
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /dérapage visible/i);
-  assert.match(String(calls[0]?.prompt || ''), /action dynamique lisible|énergie arcade nette/i);
+  assert.match(String(calls[0]?.prompt || ''), /visible drift/i);
+  assert.match(String(calls[0]?.prompt || ''), /readable dynamic action|clean arcade energy/i);
 });
 
 test('generateImageFromMask applies image-request director enrichments before final compilation', async () => {
@@ -2180,7 +2649,8 @@ test('generateImageFromMask applies image-request director enrichments before fi
   }));
 
   assert.equal(calls.length, 1);
-  assert.match(String(calls[0]?.prompt || ''), /Boruto en train de fumer/i);
+  assert.match(String(calls[0]?.prompt || ''), /Boruto smoking/i);
+  assert.match(String(calls[0]?.prompt || ''), /cigarette clearly visible near the mouth/i);
   assert.doesNotMatch(String(calls[0]?.prompt || ''), /Action utile : cigarette visible près de la bouche/i);
   assert.deepEqual(result.imageRequestDirector?.action_candidates, ['cigarette visible près de la bouche', 'personnage unique complet']);
 });
@@ -2307,8 +2777,8 @@ test('generateImageFromMask forwards multi-part web references to the special co
 
   assert.ok(llmCalls.length >= 1);
   assert.ok(result.mask?.meta?.webReferencePack);
-  assert.match(String(result.sdBody?.prompt || ''), /sombrero mexicain/i);
-  assert.match(String(result.sdBody?.prompt || ''), /cigarette visible près de la bouche/i);
+  assert.match(String(result.sdBody?.prompt || ''), /sombrero/i);
+  assert.match(String(result.sdBody?.prompt || ''), /cigarette near the mouth/i);
 });
 
 test('generateImageFromMask uses a local reference composite as init image when no single web draft is available', async () => {
