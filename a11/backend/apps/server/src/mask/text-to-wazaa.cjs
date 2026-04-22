@@ -13,7 +13,8 @@ const {
 } = require('../knowledge/request-text-smoother.cjs');
 
 function textToWazaaSync(text, opts = {}) {
-  const requestTextSmootherResult = opts.requestTextSmootherResult || smoothRequestTextSync(text, {
+  const sourceText = String(opts?.canonicalizedRequest?.canonicalEnglishInput || text || '').trim();
+  const requestTextSmootherResult = opts.requestTextSmootherResult || smoothRequestTextSync(sourceText, {
     source: opts.source || 'text-to-wazaa',
     enableLlm: false,
   });
@@ -22,7 +23,8 @@ function textToWazaaSync(text, opts = {}) {
 }
 
 async function textToWazaa(text, opts = {}) {
-  const requestTextSmootherResult = opts.requestTextSmootherResult || await smoothRequestText(text, {
+  const sourceText = String(opts?.canonicalizedRequest?.canonicalEnglishInput || text || '').trim();
+  const requestTextSmootherResult = opts.requestTextSmootherResult || await smoothRequestText(sourceText, {
     source: opts.source || 'text-to-wazaa',
   });
   const heuristic = semanticToWazaa(requestTextSmootherResult.text, opts);

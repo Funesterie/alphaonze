@@ -12,9 +12,9 @@ const fs = require("node:fs");
   const _envLocalPath = path.resolve(__dirname, ".env.local");
   const _envPath = path.resolve(__dirname, ".env");
   if (fs.existsSync(_envLocalPath)) {
-    require("dotenv").config({ path: _envLocalPath });
+    require("dotenv").config({ path: _envLocalPath, override: true });
   } else {
-    require("dotenv").config({ path: _envPath });
+    require("dotenv").config({ path: _envPath, override: true });
   }
 }
 const express = require("express");
@@ -108,6 +108,35 @@ function logError(msg) {
 function logWarn(msg) {
   if (DEV_MODE) console.warn(COLOR.yellow + msg + COLOR.reset);
   else console.warn(msg);
+}
+
+function buildStructuredRouterTraceMeta(req = {}, target = null) {
+  const headers = req?.headers && typeof req.headers === "object" ? req.headers : {};
+  const stage = String(headers["x-a11-structured-stage"] || "").trim() || null;
+  const route = String(headers["x-a11-structured-route"] || "").trim() || null;
+  const origin = String(headers["x-a11-structured-origin"] || "").trim() || null;
+  return {
+    stage,
+    route,
+    origin,
+    provider: String(target?.provider || "").trim() || null,
+    model: String(target?.model || req?.body?.model || "").trim() || null,
+    upstreamBaseUrl: normalizeBaseUrl(target?.baseUrl || "") || null,
+  };
+}
+
+function logStructuredRouterTrace(req = {}, target = null) {
+  const traceMeta = buildStructuredRouterTraceMeta(req, target);
+  if (!traceMeta.stage && !traceMeta.origin) return;
+  const parts = [
+    `stage=${traceMeta.stage || "unknown"}`,
+    `route=${traceMeta.route || "unknown"}`,
+    `origin=${traceMeta.origin || "unknown"}`,
+    `provider=${traceMeta.provider || "unknown"}`,
+    `model=${traceMeta.model || "unknown"}`,
+    `upstream=${traceMeta.upstreamBaseUrl || "unknown"}`,
+  ];
+  logInfo(`[A11][structured-llm][router] ${parts.join(" ")}`);
 }
 
 
@@ -240,7 +269,7 @@ function normalizeOllamaModelNames(payload) {
 function getConfiguredOllamaCandidates(requestedModel = "") {
   const candidates = [];
   const explicit = String(requestedModel || "").trim();
-  if (explicit && explicit === OLLAMA_PRIMARY_MODEL) {
+  if (explicit) {
     candidates.push(explicit);
   }
   for (const candidate of [OLLAMA_PRIMARY_MODEL, OLLAMA_FALLBACK_MODEL]) {
@@ -467,6 +496,61 @@ function buildOllamaMessages(messages = []) {
     role: String(message?.role || "user"),
     content: normalizeMessageContentForOllama(message?.content),
   }));
+}
+
+function toOllamaStructuredFormat(responseFormat = null) {
+  if (!responseFormat) return undefined;
+  if (typeof responseFormat === "string") {
+    return responseFormat === "json" ? "json" : undefined;
+  }
+  const formatType = String(responseFormat?.type || "").trim().toLowerCase();
+  if (formatType === "json_object") {
+    return "json";
+  }
+  if (formatType === "json_schema") {
+    const schema = responseFormat?.json_schema?.schema || responseFormat?.schema;
+    return schema && typeof schema === "object" ? schema : undefined;
+  }
+  return undefined;
+}
+
+function toOllamaThinkSetting(body = {}) {
+  const explicit = String(
+    body?.reasoning_effort
+    || body?.reasoning?.effort
+    || ''
+  ).trim().toLowerCase();
+  if (!explicit) return undefined;
+  if (explicit === 'none') return false;
+  return ['low', 'medium', 'high'].includes(explicit) ? explicit : undefined;
+}
+
+function buildOllamaOptionsFromOpenAiBody(body = {}) {
+  const options = {};
+
+  if (Number.isFinite(Number(body?.temperature))) {
+    options.temperature = Number(body.temperature);
+  }
+  if (Number.isFinite(Number(body?.top_p))) {
+    options.top_p = Number(body.top_p);
+  }
+  if (Number.isFinite(Number(body?.seed))) {
+    options.seed = Math.trunc(Number(body.seed));
+  }
+
+  const maxTokens = Number(body?.max_tokens ?? body?.maxTokens);
+  if (Number.isFinite(maxTokens) && maxTokens > 0) {
+    options.num_predict = Math.trunc(maxTokens);
+  }
+
+  const stop = Array.isArray(body?.stop)
+    ? body.stop.map((entry) => String(entry || '').trim()).filter(Boolean)
+    : (String(body?.stop || '').trim() ? [String(body.stop).trim()] : []);
+  if (stop.length) {
+    options.stop = stop;
+  }
+
+  return Object.keys(options).length ? options : undefined;
 }
 
 function toOpenAIStyleResponseFromOllama(payload, model) {
@@ -1529,12 +1613,19 @@ router.post("/v1/chat/completions", async (req, res) => {
 
   try {
     const target = await resolveLlmTarget(model, { emitLogs: true });
+    logStructuredRouterTrace(req, target);
 
     if (target.provider === "ollama") {
+      const ollamaFormat = toOllamaStructuredFormat(body.response_format);
+      const ollamaOptions = buildOllamaOptionsFromOpenAiBody(body);
+      const ollamaThink = toOllamaThinkSetting(body);
       const ollamaPayload = {
         model: target.model,
         messages: buildOllamaMessages(messages),
         stream: false,
+        ...(ollamaFormat !== undefined ? { format: ollamaFormat } : {}),
+        ...(ollamaOptions ? { options: ollamaOptions } : {}),
+        ...(ollamaThink !== undefined ? { think: ollamaThink } : {}),
       };
 
       const upstreamRes = await fetch(target.url, {
@@ -1597,7 +1688,17 @@ router.post("/v1/chat/completions", async (req, res) => {
 });
 
 // Exporte à la fois le router et BACKENDS pour usage externe
-module.exports = { router, BACKENDS };
+module.exports = {
+  router,
+  BACKENDS,
+  __private__: {
+    buildStructuredRouterTraceMeta,
+    buildOllamaOptionsFromOpenAiBody,
+    getConfiguredOllamaCandidates,
+    looksLikeStructuredJson,
+    toOllamaStructuredFormat,
+  },
+};
 
 // Ajoute la whitelist en haut du fichier
 const MODULES_WHITELIST = new Set([
@@ -1839,10 +1940,23 @@ function dedupeConsecutiveSentences(text) {
   return out.join(" ").replace(/\s+/g, " ").trim();
 }
 
+function looksLikeStructuredJson(text) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return false;
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    || (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
+}
+
 function sanitizeAssistantText(text) {
+  const raw = String(text || "").trim();
+  if (looksLikeStructuredJson(raw)) {
+    return raw;
+  }
   const step1 = dedupeConsecutiveLines(text);
   const step2 = dedupeConsecutiveSentences(step1);
-  return step2 || String(text || "").trim();
+  return step2 || raw;
 }
 
 function summarizeActionsFallback(actionResults = []) {

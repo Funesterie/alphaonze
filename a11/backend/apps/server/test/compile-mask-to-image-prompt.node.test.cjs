@@ -181,8 +181,163 @@ test('compileMaskToImagePrompt defers english localization for image runtime pro
   assert.equal(compiled.prompt_language, 'fr');
   assert.match(String(compiled.prompt || ''), /joker cinematographique/i);
   assert.match(String(compiled.prompt || ''), /decor sombre/i);
-  assert.match(String(compiled.prompt || ''), /garder le même visage et la même coiffure/i);
+  assert.match(String(compiled.prompt || ''), /garder exactement le même visage, la même structure faciale et la même identité/i);
+  assert.match(String(compiled.prompt || ''), /garder les mêmes yeux, les mêmes sourcils, le même nez, la même mâchoire et le même sourire/i);
   assert.doesNotMatch(String(compiled.prompt || ''), /the same person from the reference image|cinematic joker/i);
+});
+
+test('compileMaskToImagePrompt rebuilds canonical image prompts from english structured fields only', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'Utilise l image de reference et transforme la personne en joker avec maquillage inquietant.',
+    compiler: {
+      target: 'image-prompt-en',
+      version: '1.0',
+    },
+    inputs: {
+      subject: ['placeholder sujet'],
+      environment: ['decor pollue'],
+      style: ['style pollue'],
+      composition: ['composition polluee'],
+      lighting: [],
+      palette: [],
+    },
+    meta: {
+      originalSourceText: 'Texte brut français qui ne doit plus servir au prompt final.',
+      sourceText: 'Autre texte français interdit.',
+      promptSeedText: 'Encore du français brut.',
+      promptText: 'Toujours du français brut.',
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/joker-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+      promptInstructions: [
+        'preserve the body angle, arm placement, same-side hand laterality, and visible hand pose from the reference image',
+      ],
+      imageReferenceManifests: [
+        {
+          image_id: 'ref-1',
+          detected_content: 'same man holding a bat over the shoulders with a wrapped left hand',
+          probable_role: 'identity',
+          confidence: 0.91,
+          quality_flags: ['screenshot_ui', 'crop_needed'],
+        },
+      ],
+      imageReferenceDecision: {
+        primaryImageId: 'ref-1',
+        primaryRole: 'identity',
+        primaryConfidence: 0.91,
+        clarificationRequired: false,
+        clarificationQuestion: '',
+        conflicts: [],
+      },
+      canonicalizedRequest: {
+        canonicalEnglishInput: 'Use the input image as an identity, pose, and framing reference. Transform the person into a dark cinematic Joker-inspired character with the same face, the same build, and a visible custom bat in a Harlem-inspired street.',
+        structuredFields: {
+          subject: ['dark cinematic Joker-inspired character'],
+          environment: ['Harlem-inspired street with graffiti and worn building textures'],
+          style: ['realistic live-action noir comic-book portrait'],
+          composition: ['full body visible', 'custom decorated bat clearly visible'],
+          lighting: ['dramatic lighting', 'neon reflections'],
+          palette: ['purple', 'green', 'dirty red'],
+          constraints: {
+            promptInstructions: [
+              'preserve the same recognizable face, build, posture, and overall presence from the reference image',
+              'keep the background secondary but immersive',
+            ],
+            negativeHints: ['blurry face', 'bad hands'],
+            noText: true,
+            safeMode: true,
+          },
+        },
+        scenePolicy: {
+          subjectMode: 'single',
+          explicitSubjectCount: 1,
+        },
+        audit: {
+          rawUserInput: 'Utilise l image de reference et transforme la personne en joker avec maquillage inquietant.',
+        },
+      },
+      promptNegativeHints: ['visage deformé'],
+      negativeHints: ['decor vide'],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  const prompt = String(compiled.prompt || '');
+  const singleSubjectCount = (prompt.match(/single clearly visible main subject/gi) || []).length;
+  const fullBodyCount = (prompt.match(/full body visible/gi) || []).length;
+
+  assert.equal(compiled.prompt_language, 'en');
+  assert.match(prompt, /^the exact same person from the reference image in a Joker-style transformation/i);
+  assert.match(prompt, /keep exactly the same face, facial structure, and identity/i);
+  assert.match(prompt, /keep the same eyes, eyebrows, nose, jawline, and smile from the reference image/i);
+  assert.match(prompt, /preserve the body angle, arm placement, same-side hand laterality, and visible hand pose from the reference image/i);
+  assert.match(prompt, /preserve these distinctive visible cues from the reference image: same man holding a bat over the shoulders with a wrapped hand on the same side as in the reference image/i);
+  assert.match(prompt, /same recognizable face/i);
+  assert.match(prompt, /Harlem-inspired street/i);
+  assert.match(prompt, /custom decorated bat clearly visible/i);
+  assert.ok(prompt.indexOf('keep exactly the same face, facial structure, and identity') > prompt.indexOf('Joker-style transformation'));
+  assert.ok(prompt.indexOf('preserve the pose and framing from the reference image') > prompt.indexOf('keep the same eyes, eyebrows, nose, jawline, and smile from the reference image'));
+  assert.ok(prompt.indexOf('custom decorated bat clearly visible') > prompt.indexOf('preserve the body angle, arm placement, same-side hand laterality, and visible hand pose from the reference image'));
+  assert.ok(prompt.indexOf('Harlem-inspired street') > prompt.indexOf('custom decorated bat clearly visible'));
+  assert.ok(prompt.indexOf('realistic live-action noir comic-book portrait') > prompt.indexOf('Harlem-inspired street'));
+  assert.equal(singleSubjectCount, 1);
+  assert.equal(fullBodyCount, 1);
+  assert.match(String(compiled.negative_prompt || ''), /blurry face/i);
+  assert.match(String(compiled.negative_prompt || ''), /bad hands/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /joker-inspired character/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /\b(?:utilise|transforme|personne|maquillage|decor|lumiere)\b/i);
+  assert.doesNotMatch(String(compiled.negative_prompt || ''), /\b(?:visage|decor)\b/i);
+});
+
+test('compileMaskToImagePrompt preserves long rich reference prompts instead of collapsing to a minimal subject', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'Utilise l image d entree comme reference d identite, de pose et de cadrage. Transforme la personne en personnage inspire du Joker, dans un style sombre, cinematographique et realiste, tout en conservant un visage reconnaissable, la meme structure faciale, la meme corpulence, la meme posture et la meme presence generale. Remplace la batte en bois par une batte custom menaceante et theatrale, et transforme le decor en rue brute inspiree de Harlem avec graffitis, immeubles uses, sol sale, reflets de neons et lumiere dramatique.',
+    compiler: {
+      target: 'image-prompt-en',
+      version: '1.0',
+    },
+    inputs: {
+      subject: ['portrait homme'],
+      environment: ['decor urbain inspire de Harlem', 'rue brute avec graffitis', 'immeubles uses'],
+      style: ['portrait live action sombre et credible', 'cinematographique', 'haute qualité'],
+      composition: ['personnage entier visible', 'batte custom clairement visible', 'composition propre'],
+      lighting: ['lumiere dramatique', 'reflets de neons violets et verts'],
+      palette: ['violet', 'vert', 'rouge'],
+    },
+    meta: {
+      deferEnglishPromptLocalization: true,
+      webImageDraft: {
+        initImageUrl: 'https://images.example.com/joker-ref.png',
+      },
+      subjectProfile: {
+        type: 'single_human_figure',
+      },
+      promptInstructions: [
+        'costume joker elegant mais chaotique',
+        'maquillage de clown inquietant mais credible',
+        'la batte custom doit etre bien visible',
+        'le decor doit rester secondaire mais immersif',
+      ],
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.equal(compiled.prompt_language, 'fr');
+  assert.ok(String(compiled.prompt || '').length >= 320);
+  assert.match(String(compiled.prompt || ''), /joker/i);
+  assert.match(String(compiled.prompt || ''), /Harlem/i);
+  assert.match(String(compiled.prompt || ''), /batte custom/i);
+  assert.match(String(compiled.prompt || ''), /préserver la pose et le cadrage de l image de référence/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /^portrait homme$/i);
 });
 
 test('compileMaskToImagePrompt promotes the canonical Zelda subject in the prompt lead', () => {

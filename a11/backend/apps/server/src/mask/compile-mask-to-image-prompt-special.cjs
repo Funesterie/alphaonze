@@ -23,7 +23,6 @@ Règles strictes :
 - pas de changement de couleurs
 - maximum 3 entrées par tableau
 - si rien n'est utile, renvoie des tableaux vides`;
-
 function deepClone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -101,7 +100,7 @@ function hasScratchpadEmbellishment(mask = {}) {
 }
 
 function hasSceneRelation(rawText = '') {
-  return /\b(avec|dans|sur|tenant|portant|sortant|sorti|sortie)\b/i.test(String(rawText || ''));
+  return /\b(avec|with|dans|in|sur|on|tenant|holding|portant|wearing|carrying|sortant|sorti|sortie|next to|beside|inside)\b/i.test(String(rawText || ''));
 }
 
 function looksLikeShortOrNoisySubject(mask = {}) {
@@ -476,19 +475,19 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
   const combinedHints = {
     composition_hints: toUniqueStrings([
       ...memoryHints.composition_hints,
-      ...normalizedHints.composition_hints,
+      ...(normalizedHints?.composition_hints || []),
     ]).slice(0, 3),
     environment_hints: toUniqueStrings([
       ...memoryHints.environment_hints,
-      ...normalizedHints.environment_hints,
+      ...(normalizedHints?.environment_hints || []),
     ]).slice(0, 3),
     style_hints: toUniqueStrings([
       ...memoryHints.style_hints,
-      ...normalizedHints.style_hints,
+      ...(normalizedHints?.style_hints || []),
     ]).slice(0, 3),
     prompt_instructions: toUniqueStrings([
       ...memoryHints.prompt_instructions,
-      ...normalizedHints.prompt_instructions,
+      ...(normalizedHints?.prompt_instructions || []),
     ]).slice(0, 3),
   };
   const enrichedMask = mergeSpecialCompilerHints(baseMask, combinedHints);
@@ -505,6 +504,7 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
   if (memoryHintCount > 0) {
     enrichedMask.meta.specialCompilerMemoryHintsAppliedCount = memoryHintCount;
   }
+  enrichedMask.meta.specialCompilerJanusDisabled = true;
 
   return {
     mask: enrichedMask,

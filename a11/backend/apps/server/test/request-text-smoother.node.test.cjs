@@ -7,23 +7,23 @@ const {
   smoothRequestTextSync,
 } = require('../src/knowledge/request-text-smoother.cjs');
 
-test('smoothRequestTextSync corrects obvious semantic typos conservatively', () => {
+test('smoothRequestTextSync no longer corrects semantic typos locally', () => {
   const result = smoothRequestTextSync('genere une imag de gueriere nordiqe avec eppe');
 
-  assert.equal(result.changed, true);
-  assert.match(result.text, /image/i);
-  assert.match(result.text, /guerriere/i);
-  assert.match(result.text, /nordique/i);
-  assert.match(result.text, /épée|epee/i);
+  assert.equal(result.changed, false);
+  assert.equal(result.text, 'genere une imag de gueriere nordiqe avec eppe');
   assert.equal(result.originalText, 'genere une imag de gueriere nordiqe avec eppe');
 });
 
-test('smoothRequestTextSync keeps named references while fixing nearby typos', () => {
-  const result = smoothRequestTextSync('genere une imag de bugsbunny avec cigarrette');
+test('smoothRequestTextSync only normalizes mechanical surface noise', () => {
+  const result = smoothRequestTextSync("genere   une image  d un pirate , plant americain !");
 
-  assert.match(result.text, /bugsbunny/i);
-  assert.match(result.text, /cigarette/i);
-  assert.doesNotMatch(result.text, /bugs bunny/i);
+  assert.equal(result.changed, true);
+  assert.equal(result.text, "genere une image d'un pirate, plan americain!");
+  assert.deepEqual(result.localCorrections, [
+    { from: 'plant americain', to: 'plan americain' },
+    { from: 'd un', to: "d'un" },
+  ]);
 });
 
 test('smoothRequestTextSync keeps football words and does not rewrite ballon into baton', () => {

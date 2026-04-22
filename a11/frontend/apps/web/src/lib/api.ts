@@ -1094,6 +1094,109 @@ export function extractAssistantDisplayContent(payload: unknown) {
   return String(extractAssistantContentFromPayload(payload) || '').trim();
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
+function extractAsyncImageJobDescriptor(payload: any) {
+  if (!payload || typeof payload !== "object") return null;
+
+  const asyncJob = payload?.asyncJob && typeof payload.asyncJob === "object"
+    ? payload.asyncJob
+    : (payload?.a11Agent?.asyncJob && typeof payload.a11Agent.asyncJob === "object" ? payload.a11Agent.asyncJob : null);
+
+  const status = String(asyncJob?.status || payload?.status || "").trim().toLowerCase();
+  const jobId = String(asyncJob?.jobId || asyncJob?.id || payload?.jobId || "").trim();
+  if (!jobId || (status !== "pending" && status !== "running")) {
+    return null;
+  }
+
+  const pollUrl = String(asyncJob?.pollUrl || asyncJob?.poll_url || payload?.pollUrl || payload?.poll_url || "").trim()
+    || `/api/llm/jobs/image/${encodeURIComponent(jobId)}`;
+  const pollIntervalMs = Math.max(
+    1000,
+    Math.min(
+      30000,
+      Math.floor(Number(asyncJob?.pollIntervalMs || payload?.pollIntervalMs || 5000) || 5000)
+    )
+  );
+  const maxPollAttempts = Math.max(
+    1,
+    Math.min(
+      720,
+      Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
+    )
+  );
+
+  return {
+    jobId,
+    status,
+    pollUrl,
+    pollIntervalMs,
+    maxPollAttempts,
+  };
+}
+
+async function fetchAsyncImageJobStatus(descriptor: {
+  pollUrl: string;
+}) {
+  const pollTarget = String(descriptor?.pollUrl || "").trim();
+  const url = /^https?:\/\//i.test(pollTarget) ? pollTarget : getApiUrl(pollTarget || "/api/llm/jobs/image");
+  const response = await authFetch(url, {
+    headers: buildAuthHeaders(),
+  });
+  const text = await response.text();
+
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    const message = typeof data?.message === "string" && data.message.trim()
+      ? data.message.trim()
+      : (typeof data?.error === "string" && data.error.trim()
+        ? data.error.trim()
+        : `API ${response.status}: ${text}`);
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+async function resolveAsyncImageJobPayload(initialPayload: any) {
+  const descriptor = extractAsyncImageJobDescriptor(initialPayload);
+  if (!descriptor) return initialPayload;
+
+  dispatchBrowserEvent(new CustomEvent("a11:image-job.queued", {
+    detail: {
+      jobId: descriptor.jobId,
+      pollIntervalMs: descriptor.pollIntervalMs,
+    },
+  }));
+
+  for (let attempt = 0; attempt < descriptor.maxPollAttempts; attempt += 1) {
+    await sleep(descriptor.pollIntervalMs);
+    const polled = await fetchAsyncImageJobStatus(descriptor);
+    const status = String(polled?.status || polled?.asyncJob?.status || "").trim().toLowerCase();
+
+    if (status === "done") {
+      dispatchBrowserEvent(new CustomEvent("a11:image-job.done", {
+        detail: { jobId: descriptor.jobId },
+      }));
+      return polled?.result || polled;
+    }
+
+    if (status === "error") {
+      throw new Error(String(polled?.message || polled?.error || "image_job_failed"));
+    }
+  }
+
+  throw new Error(`Timeout image async apres ${Math.round((descriptor.maxPollAttempts * descriptor.pollIntervalMs) / 1000)}s`);
+}
+
 function normalizeCreatedAt(rawValue: unknown) {
   if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
     const timestamp = rawValue > 1e12 ? rawValue : rawValue * 1000;
@@ -1311,10 +1414,12 @@ export async function chatCompletionDetailed(
     top_p: 0.9,
     conversationId,
     providerProfileId,
+    acceptAsyncImageJob: true,
     ...(sourceImageUrl ? { sourceImageUrl } : {}),
   };
   // Always post to router (apiPost ignores the path and uses router endpoint)
-  const data = await apiPost(payload);
+  const initialData = await apiPost(payload);
+  const data = await resolveAsyncImageJobPayload(initialData);
 
   // On essaie de lire réponse façon OpenAI
   const content =

@@ -29,6 +29,10 @@ const {
   buildCanonicalImageMaskFromText,
 } = require('./resolve-image-mask-from-text.cjs');
 const {
+  applyCanonicalizedImageGenerateRequestToMask,
+  normalizeCanonicalizedImageGenerateRequest: normalizeCanonicalizedImageGenerateRequestPayload,
+} = require('./canonicalize-image-generate-request.cjs');
+const {
   lookupImageHintWebContext: defaultLookupImageHintWebContext,
   resolveImageWebDraft: defaultResolveImageWebDraft,
 } = require('../knowledge/image-hint-web-context.cjs');
@@ -94,6 +98,7 @@ function splitPromptFragments(value = '') {
 
 function mergePromptHints(base = '', hints = [], {
   maxHints = 4,
+  insertAfterLead = false,
 } = {}) {
   const normalizedBase = normalizeLookup(base);
   const selected = [];
@@ -107,8 +112,18 @@ function mergePromptHints(base = '', hints = [], {
     if (selected.length >= maxHints) break;
   }
 
-  if (!selected.length) return normalizeText(base);
-  return [normalizeText(base), ...selected].filter(Boolean).join('. ').trim();
+  const normalizedBaseText = normalizeText(base);
+  if (!selected.length) return normalizedBaseText;
+  if (insertAfterLead) {
+    const fragments = String(normalizedBaseText || '')
+      .split(',')
+      .map((entry) => normalizeText(entry))
+      .filter(Boolean);
+    if (fragments.length) {
+      return [fragments[0], ...selected, ...fragments.slice(1)].filter(Boolean).join(', ').trim();
+    }
+  }
+  return [normalizedBaseText, ...selected].filter(Boolean).join('. ').trim();
 }
 
 function mergeNegativePromptHints(base = '', hints = [], {
@@ -216,8 +231,104 @@ function resolveStrengthPromptGuidanceLanguage({
   return 'en';
 }
 
+function hasReferenceHumanFigure(mask = {}) {
+  return (
+    Boolean(String(
+      mask?.meta?.webImageDraft?.initImageUrl
+      || mask?.meta?.webImageDraft?.initImagePath
+      || mask?.meta?.reference_image_url
+      || mask?.meta?.init_image_url
+      || ''
+    ).trim())
+    && normalizeLookup(mask?.meta?.subjectProfile?.type || '') === 'single_human_figure'
+  );
+}
+
+function hasJokerStyleTransformationSignal(value = '') {
+  return /\b(joker(?:[ -]?style|[ -]?themed)?|joker-inspired|joker inspired|character inspired by the joker|personnage inspire du joker|joker portrait|joker-style transformation|joker style transformation)\b/i.test(String(value || ''));
+}
+
+function isReferenceHumanJokerTransformation(mask = {}, prompt = '') {
+  if (!hasReferenceHumanFigure(mask)) return false;
+  return hasJokerStyleTransformationSignal([
+    prompt,
+    mask?.raw,
+    mask?.meta?.originalSourceText,
+    mask?.meta?.canonicalizedRequest?.canonicalEnglishInput,
+    mask?.meta?.promptCanonicalization?.canonicalEnglishInput,
+  ].filter(Boolean).join(' '));
+}
+
+function normalizeReferenceHumanTransformationPrompt(prompt = '', mask = {}) {
+  const safePrompt = normalizeText(prompt);
+  if (!safePrompt || !isReferenceHumanJokerTransformation(mask, safePrompt)) return safePrompt;
+
+  const fragments = safePrompt
+    .split(',')
+    .map((entry) => normalizeText(entry))
+    .filter(Boolean)
+    .filter((entry) => !(
+      /\bthe (?:exact )?same person (?:as in|from) the reference image\b/i.test(entry)
+      || /\b(?:joker-inspired|joker inspired|joker portrait|joker-style version|joker style version|joker-style transformation|joker style transformation|character inspired by the joker)\b/i.test(entry)
+    ));
+
+  return [
+    'the exact same person from the reference image in a Joker-style transformation',
+    ...fragments,
+  ].filter(Boolean).join(', ');
+}
+
 const SD_PROMPT_OUTPUT_LANGUAGE = 'en';
 const SD_PROMPT_OUTPUT_LABEL = 'english';
+const ENGLISH_MIXED_LANGUAGE_PATTERNS = [
+  /\b(?:transforme|ajoute|remplace|garde|garder|preserver|préserver|rendre|montre|montrer|utilise|utiliser|avec|dans|sur|pour)\s+(?:the|a|an|with|and|or|of|to|for|from)\b/i,
+  /\b(?:the|a|an|with|and|or|of|to|for|from)\s+(?:meme|visage|identite|corpulence|posture|pose|cadrage|tenue|costume|maquillage|decor|ambiance|rue|sol|graffitis|lumiere|reflets|personnage|sujet|batte)\b/i,
+  /\b(?:keep|preserve|replace|transform|add|show|use|make)\s+(?:le|la|les|un|une|des|du|de|meme|visage|identite|corpulence|posture|pose|cadrage|tenue|costume|maquillage|decor|ambiance|rue|sol|graffitis|lumiere|reflets|personnage|sujet|batte)\b/i,
+  /\b(?:portrait|live action|high quality|dramatic|cinematic|realistic|noir|comic-book)\s+(?:sombre|sale|usee|usée|brute|theatrale|théâtrale|menaçante|menacante|inquietant|inquietante|fidele|lisible)\b/i,
+];
+const ENGLISH_MIXED_LANGUAGE_LOOKUP_FRAGMENTS = [
+  'forest and ville',
+  'hyperrealiste and picturale',
+  'presence spectrale',
+  'couronne portee',
+  'couronne porte',
+  'inclure clearly',
+  'vraie personnalite visuelle',
+  'plan moyen',
+  'profondeur de champ',
+  'silhouette spectrale',
+  'forme spectrale',
+  'contours bien visibles',
+  'de maniere proeminente',
+];
+const FRENCH_PROMPT_LEAK_PATTERNS = [
+  /\b(?:garde|garder|avec|sans|visage|identite|decor|personnage|lumiere|maquillage|batte|immeuble|sujet|tenue|cadrage|corpulence|posture|theatrale|theatrales|usee|usees|sombre|cinematographique|realiste|propre|homme|femme|vert|blanc|rouge|noir)\b/i,
+  /\b(?:visage fusionne|visages fusionnes|visage duplique|visages dupliques|yeux deformes|bouche deformee|nez deforme|texte lisible)\b/i,
+];
+const FRENCH_PROMPT_LEAK_LOOKUP_FRAGMENTS = [
+  'couronne',
+  'baton',
+  'hyperrealiste',
+  'picturale',
+  'peinture',
+  'spectrale',
+  'foret',
+  'ville',
+  'plan moyen',
+  'profondeur de champ',
+  'vraie personnalite visuelle',
+  'rester fidele au sujet canonique nomme',
+  'mettant accent',
+  'en valeur',
+  'lisibilite maximale',
+  'esthetique',
+  'photoréalisme',
+  'photorealisme',
+  'symboliste',
+  'contours bien visibles',
+  'de maniere proeminente',
+  'portrait homme',
+];
 const SD_PROMPT_ENGLISH_PHRASE_FIXUPS = [
   [
     /\bgarder strictement (?:(?:le|the) )?meme (?:(?:visage|face)) et (?:(?:la|the) )?meme identite\b/gi,
@@ -238,6 +349,54 @@ const SD_PROMPT_ENGLISH_PHRASE_FIXUPS = [
   [
     /\bpreserver? une anatomie naturelle et des proportions stables\b/gi,
     'preserve natural anatomy and stable proportions',
+  ],
+  [
+    /\baccessoire baton bien visible\b/gi,
+    'baton accessory clearly visible',
+  ],
+  [
+    /\baccessoire baton\b/gi,
+    'baton accessory',
+  ],
+  [
+    /\baccessoire bien visible\b/gi,
+    'accessory clearly visible',
+  ],
+  [
+    /\bd[eé]cor simple et lisible\b/gi,
+    'simple readable setting',
+  ],
+  [
+    /\bd[eé]cor sobre et lisible\b/gi,
+    'understated readable setting',
+  ],
+  [
+    /\bsilhouette h[eé]ro[iï]que lisible\b/gi,
+    'clear heroic silhouette',
+  ],
+  [
+    /\bmontrer clairement l[’']? epee tenue par le personnage principal\b/gi,
+    'show clearly the sword held by the main character',
+  ],
+  [
+    /\bmontrer clairement la carotte attach[eé]e? au sujet principal\b/gi,
+    'show clearly the carrot attached to the main subject',
+  ],
+  [
+    /\brester fid[eè]le au sujet canonique nomm[eé]\b/gi,
+    'stay faithful to the canonical subject named',
+  ],
+  [
+    /\brester coherent avec l univers\b/gi,
+    'stay consistent with the universe',
+  ],
+  [
+    /\bcigarette visible pres de la bouche\b/gi,
+    'cigarette clearly visible near the mouth',
+  ],
+  [
+    /\bgrand sombrero mexicain\b/gi,
+    'large Mexican sombrero',
   ],
   [
     /\btexte\b/gi,
@@ -279,6 +438,94 @@ const SD_PROMPT_ENGLISH_PHRASE_FIXUPS = [
     /\bmorphing facial\b/gi,
     'facial morphing',
   ],
+  [
+    /\bpresence spectrale(?: complete et lisible| full and readable)?\b/gi,
+    'full readable spectral presence',
+  ],
+  [
+    /\bforme spectrale(?: clairement lisible| lisible)?\b/gi,
+    'readable spectral form',
+  ],
+  [
+    /\bsilhouette spectrale\b/gi,
+    'spectral silhouette',
+  ],
+  [
+    /\bcouronne port[ée]e? par (?:(?:le|the) )?sujet principal\b/gi,
+    'crown worn by the main subject',
+  ],
+  [
+    /\bshow clearly couronne port[ée]e? par the main subject\b/gi,
+    'show clearly the crown worn by the main subject',
+  ],
+  [
+    /\binclure clairement? une vraie personnalit[eé] visuelle\b/gi,
+    'clearly include a strong visual identity',
+  ],
+  [
+    /\binclure clearly a vraie personnalit[eé] visuelle\b/gi,
+    'clearly include a strong visual identity',
+  ],
+  [
+    /\bvraie personnalit[eé] visuelle\b/gi,
+    'strong visual identity',
+  ],
+  [
+    /\bcadre en plan moyen(?: \(medium shot\))?(?: mettant accent (?:(?:sur le personnage principal)|(?:on the character main)))?\b/gi,
+    'medium shot focused on the main character',
+  ],
+  [
+    /\bplan moyen\b/gi,
+    'medium shot',
+  ],
+  [
+    /\ben valeur (?:(?:the )?)?profondeur de champ\b/gi,
+    'highlighted depth of field',
+  ],
+  [
+    /\bprofondeur de champ\b/gi,
+    'depth of field',
+  ],
+  [
+    /\bfor[eê]t et ville\b/gi,
+    'forest and city',
+  ],
+  [
+    /\bforest and ville\b/gi,
+    'forest and city',
+  ],
+  [
+    /\bsc[eè]ne hyperr[eé]aliste(?: et| and) picturale repr[eé]sentant\b/gi,
+    'hyperrealistic painterly scene depicting',
+  ],
+  [
+    /\bhyperr[eé]aliste(?: et| and) picturale\b/gi,
+    'hyperrealistic and painterly',
+  ],
+  [
+    /\besth[eé]tique de peinture hyperr[eé]aliste\b/gi,
+    'hyperrealistic painting aesthetic',
+  ],
+  [
+    /\bpeinture hyperr[eé]aliste\b/gi,
+    'hyperrealistic painting',
+  ],
+  [
+    /\bpeinture dark ou symboliste\b/gi,
+    'dark or symbolist painting',
+  ],
+  [
+    /\bpeinture\b/gi,
+    'painting',
+  ],
+  [
+    /\bcontours bien visibles\b/gi,
+    'clearly visible contours',
+  ],
+  [
+    /\bde mani[eè]re pro[eé]minente et visible\b/gi,
+    'prominently and visibly',
+  ],
 ];
 
 function applySdEnglishPhraseFixups(value = '') {
@@ -311,6 +558,481 @@ function isAcceptableSdRewriteLanguage(value = '', { allowUnknown = false } = {}
   return allowUnknown && profile?.dominant === 'unknown' && profile?.mixed !== true;
 }
 
+function hasEnglishMixedLanguageArtifacts(value = '') {
+  const text = normalizeText(value);
+  if (!text) return false;
+  const lookup = normalizeLookup(text);
+  return (
+    ENGLISH_MIXED_LANGUAGE_PATTERNS.some((pattern) => pattern.test(text))
+    || ENGLISH_MIXED_LANGUAGE_LOOKUP_FRAGMENTS.some((fragment) => lookup.includes(fragment))
+  );
+}
+
+function isUsableEnglishPromptText(value = '', { allowUnknown = false } = {}) {
+  return (
+    isAcceptableSdRewriteLanguage(value, { allowUnknown })
+    && !hasEnglishMixedLanguageArtifacts(value)
+  );
+}
+
+function hasFrenchPromptLeak(value = '') {
+  const text = normalizeText(value);
+  if (!text) return false;
+  const lookup = normalizeLookup(text);
+  return (
+    FRENCH_PROMPT_LEAK_PATTERNS.some((pattern) => pattern.test(text))
+    || FRENCH_PROMPT_LEAK_LOOKUP_FRAGMENTS.some((fragment) => lookup.includes(fragment))
+  );
+}
+
+function isCanonicalEnglishSdText(value = '', { allowUnknown = false } = {}) {
+  const text = normalizeSdPromptRewriteText(value);
+  if (!text) return false;
+  if (hasEnglishMixedLanguageArtifacts(text)) return false;
+  if (hasFrenchPromptLeak(text)) return false;
+  return isAcceptableSdRewriteLanguage(text, { allowUnknown });
+}
+
+function tryLocalEnglishPromptNormalization(value = '') {
+  return '';
+}
+
+function isRichPromptForDetailPreservation(value = '') {
+  const density = analyzePromptDensity(value, '');
+  return (
+    density.promptLength >= 260
+    || density.promptWords >= 45
+    || density.promptClauses >= 5
+    || (density.promptLength >= 220 && density.commaClauses >= 5)
+  );
+}
+
+function scorePromptDetailDensity(value = '') {
+  const density = analyzePromptDensity(value, '');
+  return (
+    density.promptLength
+    + (density.promptWords * 4)
+    + (density.promptClauses * 18)
+    + (density.commaClauses * 8)
+  );
+}
+
+function pickMostDetailedPromptText(values = []) {
+  const candidates = (Array.isArray(values) ? values : [values])
+    .map((entry) => normalizeText(entry))
+    .filter(Boolean);
+  if (!candidates.length) return '';
+  return candidates
+    .slice()
+    .sort((left, right) => scorePromptDetailDensity(right) - scorePromptDetailDensity(left))[0];
+}
+
+function resolveAuthoritativeRawRequest(mask = {}) {
+  return pickMostDetailedPromptText([
+    mask?.meta?.originalSourceText,
+    mask?.raw,
+    mask?.meta?.sourceText,
+    mask?.meta?.promptSeedText,
+    mask?.meta?.promptText,
+  ]);
+}
+
+function hasReferenceInitImage(mask = {}) {
+  return Boolean(String(
+    mask?.meta?.webImageDraft?.initImageUrl
+    || mask?.meta?.webImageDraft?.initImagePath
+    || mask?.meta?.reference_image_url
+    || mask?.meta?.init_image_url
+    || mask?.sdBody?.init_image_url
+    || ''
+  ).trim());
+}
+
+function shouldPromoteRawRequestToCurrentPrompt({
+  rawRequest = '',
+  currentPrompt = '',
+} = {}) {
+  const safeRawRequest = normalizeText(rawRequest);
+  const safeCurrentPrompt = normalizeText(currentPrompt);
+  if (!safeRawRequest) return false;
+  if (!safeCurrentPrompt) return true;
+
+  const rawDensity = analyzePromptDensity(safeRawRequest, '');
+  const currentDensity = analyzePromptDensity(safeCurrentPrompt, '');
+  if (isRichPromptForDetailPreservation(safeRawRequest) && !isRichPromptForDetailPreservation(safeCurrentPrompt)) {
+    return true;
+  }
+  return (
+    rawDensity.promptLength >= currentDensity.promptLength + 80
+    || rawDensity.promptWords >= currentDensity.promptWords + 14
+    || rawDensity.promptClauses >= currentDensity.promptClauses + 3
+    || rawDensity.commaClauses >= currentDensity.commaClauses + 4
+  );
+}
+
+function isOvercompressedPromptFieldRewrite(source = '', translated = '') {
+  const safeSource = normalizeText(source);
+  const safeTranslated = normalizeText(translated);
+  if (!safeSource || !safeTranslated) return false;
+  if (!isRichPromptForDetailPreservation(safeSource)) return false;
+
+  const sourceDensity = analyzePromptDensity(safeSource, '');
+  const translatedDensity = analyzePromptDensity(safeTranslated, '');
+  if (translatedDensity.promptLength < Math.max(220, Math.round(sourceDensity.promptLength * 0.72))) {
+    return true;
+  }
+  if (translatedDensity.promptWords < Math.max(38, Math.round(sourceDensity.promptWords * 0.7))) {
+    return true;
+  }
+  if (translatedDensity.promptClauses < Math.max(4, Math.round(sourceDensity.promptClauses * 0.72))) {
+    return true;
+  }
+  return false;
+}
+
+function resolvePromptRewriteMaxTokens(values = [], {
+  floor = 900,
+  ceiling = 1800,
+  base = 360,
+} = {}) {
+  const reference = pickMostDetailedPromptText(values);
+  if (!reference) return floor;
+  const density = analyzePromptDensity(reference, '');
+  return Math.max(
+    floor,
+    Math.min(
+      ceiling,
+      base + (density.promptWords * 4) + (density.promptClauses * 60)
+    )
+  );
+}
+
+function applyPromptOverrideCompiledState(compiledState = {}, {
+  prompt = '',
+  negativePrompt = '',
+  promptLanguage = '',
+} = {}) {
+  const nextPrompt = normalizeSdPromptRewriteText(prompt);
+  if (!nextPrompt) return null;
+  const nextNegativePrompt = normalizeSdPromptRewriteText(negativePrompt);
+  const resolvedPromptLanguage = String(promptLanguage || '').trim();
+
+  return {
+    ...compiledState,
+    compiledPayload: {
+      ...(compiledState?.compiledPayload && typeof compiledState.compiledPayload === 'object' ? compiledState.compiledPayload : {}),
+      prompt: nextPrompt,
+      ...(resolvedPromptLanguage ? { prompt_language: resolvedPromptLanguage } : {}),
+      ...(nextNegativePrompt ? { negative_prompt: nextNegativePrompt } : {}),
+    },
+    compiled: (
+      compiledState?.compiled && typeof compiledState.compiled === 'object'
+        ? {
+            ...compiledState.compiled,
+            prompt: nextPrompt,
+            ...(resolvedPromptLanguage ? { prompt_language: resolvedPromptLanguage } : {}),
+            ...(nextNegativePrompt ? { negative_prompt: nextNegativePrompt } : {}),
+          }
+        : compiledState.compiled
+    ),
+    sdBody: {
+      ...(compiledState?.sdBody && typeof compiledState.sdBody === 'object' ? compiledState.sdBody : {}),
+      prompt: nextPrompt,
+      ...(resolvedPromptLanguage ? { prompt_language: resolvedPromptLanguage } : {}),
+      ...(nextNegativePrompt ? { negative_prompt: nextNegativePrompt } : {}),
+    },
+  };
+}
+
+function buildEnglishPromptOverrideCompiledState(compiledState = {}, {
+  prompt = '',
+  negativePrompt = '',
+} = {}) {
+  const nextPrompt = normalizeReferenceHumanEnglishPromptContract(
+    normalizeSdPromptRewriteText(prompt),
+    compiledState?.mask || {}
+  );
+  if (!nextPrompt || !isUsableEnglishPromptText(nextPrompt, { allowUnknown: true })) return null;
+  if (!shouldPromoteRawRequestToCurrentPrompt({
+    rawRequest: nextPrompt,
+    currentPrompt: compiledState?.sdBody?.prompt || '',
+  })) {
+    return null;
+  }
+
+  const nextNegativePrompt = normalizeSdPromptRewriteText(
+    negativePrompt || compiledState?.sdBody?.negative_prompt || ''
+  );
+
+  return applyPromptOverrideCompiledState(compiledState, {
+    prompt: nextPrompt,
+    negativePrompt: nextNegativePrompt,
+    promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
+  });
+}
+
+function shouldPromoteLocalEnglishPromptFallback(compiledState = {}) {
+  const compilerTarget = String(compiledState?.mask?.compiler?.target || '').trim().toLowerCase();
+  if (compilerTarget !== 'image-prompt-en' && compilerTarget !== 'sd-payload') return false;
+  if (!hasReferenceInitImage(compiledState?.mask || {})) return false;
+  const prompt = normalizeText(compiledState?.sdBody?.prompt || '');
+  if (!prompt) return false;
+  return !isUsableEnglishPromptText(prompt, { allowUnknown: true });
+}
+
+function buildLocalEnglishPromptFallbackCompiledState(compiledState = {}) {
+  return null;
+}
+
+function normalizeReferenceHumanEnglishPromptContract(prompt = '', mask = {}) {
+  let text = normalizeSdPromptRewriteText(prompt);
+  if (!text) return '';
+  if (!hasReferenceInitImage(mask)) return text;
+  if (normalizeLookup(mask?.meta?.subjectProfile?.type || '') !== 'single_human_figure') return text;
+  if (!/\bjoker(?:[ -]?style|[ -]?themed| inspired| portrait)\b/i.test(text)) return text;
+
+  text = text
+    .replace(/\bJoker-inspired\b/gi, 'Joker-style')
+    .replace(/\bcharacter inspired by the Joker\b/gi, 'Joker-style character');
+
+  if (!/\bthe exact same person from the reference image in a Joker-style transformation\b/i.test(text)) {
+    const remainder = normalizeText(
+      text
+        .replace(/^use the input image as an identity, pose(?:, and framing)? reference\.?\s*/i, '')
+        .replace(/^the same person from the reference image,?\s*/i, '')
+    );
+    text = normalizeText([
+      'the exact same person from the reference image in a Joker-style transformation',
+      remainder,
+    ].filter(Boolean).join(', '));
+  }
+
+  return text;
+}
+
+function extractPromptFieldFragments(value = '') {
+  return toUniqueNormalizedStrings(
+    String(value || '')
+      .replace(/[.。]+\s*/g, ', ')
+      .split(/[,\n]+/)
+      .map((entry) => normalizeText(entry))
+      .filter(Boolean)
+  );
+}
+
+function applyPromptOverrideCompiledStateStrict(compiledState = {}, {
+  prompt = '',
+  negativePrompt = '',
+  promptLanguage = '',
+} = {}) {
+  const nextPrompt = normalizeSdPromptRewriteText(prompt);
+  if (!nextPrompt) return null;
+  const nextNegativePrompt = normalizeSdPromptRewriteText(negativePrompt);
+  const resolvedPromptLanguage = String(promptLanguage || '').trim();
+
+  return {
+    ...compiledState,
+    compiledPayload: {
+      ...(compiledState?.compiledPayload && typeof compiledState.compiledPayload === 'object' ? compiledState.compiledPayload : {}),
+      prompt: nextPrompt,
+      ...(resolvedPromptLanguage ? { prompt_language: resolvedPromptLanguage } : {}),
+      negative_prompt: nextNegativePrompt,
+    },
+    compiled: (
+      compiledState?.compiled && typeof compiledState.compiled === 'object'
+        ? {
+            ...compiledState.compiled,
+            prompt: nextPrompt,
+            ...(resolvedPromptLanguage ? { prompt_language: resolvedPromptLanguage } : {}),
+            negative_prompt: nextNegativePrompt,
+          }
+        : compiledState.compiled
+    ),
+    sdBody: {
+      ...(compiledState?.sdBody && typeof compiledState.sdBody === 'object' ? compiledState.sdBody : {}),
+      prompt: nextPrompt,
+      ...(resolvedPromptLanguage ? { prompt_language: resolvedPromptLanguage } : {}),
+      negative_prompt: nextNegativePrompt,
+    },
+  };
+}
+
+function buildConservativeCanonicalEnglishPromptField(value = '', {
+  allowUnknown = true,
+} = {}) {
+  const canonicalFragments = [];
+  for (const fragment of extractPromptFieldFragments(value)) {
+    const normalizedFragment = normalizeSdPromptRewriteText(fragment);
+    if (normalizedFragment && isCanonicalEnglishSdText(normalizedFragment, { allowUnknown })) {
+      canonicalFragments.push(normalizedFragment);
+    }
+  }
+  return toUniqueNormalizedStrings(canonicalFragments).join(', ');
+}
+
+async function repairPromptFieldToCanonicalEnglish(value = '', options = {}) {
+  const text = normalizeSdPromptRewriteText(value);
+  if (!text) return '';
+  if (isCanonicalEnglishSdText(text, { allowUnknown: true })) return text;
+
+  const translatedPrompt = normalizeSdPromptRewriteText(
+    await translateDetailedPromptFieldToEnglish(text, {
+      callStructuredLlmJson: options.callStructuredLlmJson,
+      previousRejected: text,
+    })
+  );
+  if (translatedPrompt && isCanonicalEnglishSdText(translatedPrompt, { allowUnknown: true })) {
+    return translatedPrompt;
+  }
+
+  return buildConservativeCanonicalEnglishPromptField(text, { allowUnknown: true });
+}
+
+async function repairCompiledStateToCanonicalEnglish(compiledState = {}, options = {}) {
+  const sdBody = compiledState?.sdBody && typeof compiledState.sdBody === 'object'
+    ? compiledState.sdBody
+    : {};
+  const currentPrompt = normalizeSdPromptRewriteText(sdBody?.prompt || '');
+  const currentNegativePrompt = normalizeSdPromptRewriteText(sdBody?.negative_prompt || '');
+  if (
+    currentPrompt
+    && isCanonicalEnglishSdText(currentPrompt, { allowUnknown: true })
+    && (!currentNegativePrompt || isCanonicalEnglishSdText(currentNegativePrompt, { allowUnknown: true }))
+  ) {
+    return {
+      compiledState,
+      repaired: false,
+      reason: 'already_canonical',
+    };
+  }
+
+  const repairedPrompt = normalizeReferenceHumanEnglishPromptContract(
+    await repairPromptFieldToCanonicalEnglish(currentPrompt, options),
+    compiledState?.mask || {}
+  );
+  if (!repairedPrompt || !isCanonicalEnglishSdText(repairedPrompt, { allowUnknown: true })) {
+    return {
+      compiledState,
+      repaired: false,
+      reason: 'prompt_repair_unavailable',
+    };
+  }
+
+  let repairedNegativePrompt = currentNegativePrompt;
+  if (currentNegativePrompt && !isCanonicalEnglishSdText(currentNegativePrompt, { allowUnknown: true })) {
+    repairedNegativePrompt = await repairPromptFieldToCanonicalEnglish(currentNegativePrompt, options);
+  }
+  if (repairedNegativePrompt && !isCanonicalEnglishSdText(repairedNegativePrompt, { allowUnknown: true })) {
+    repairedNegativePrompt = buildConservativeCanonicalEnglishPromptField(repairedNegativePrompt, {
+      allowUnknown: true,
+    });
+  }
+  if (repairedNegativePrompt && !isCanonicalEnglishSdText(repairedNegativePrompt, { allowUnknown: true })) {
+    repairedNegativePrompt = '';
+  }
+
+  const localizedState = applyPromptOverrideCompiledStateStrict(compiledState, {
+    prompt: repairedPrompt,
+    negativePrompt: repairedNegativePrompt,
+    promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
+  });
+  return {
+    compiledState: localizedState || compiledState,
+    repaired: Boolean(localizedState),
+    reason: localizedState ? 'translated_current_prompt_to_canonical_english' : 'repair_override_unavailable',
+  };
+}
+
+function inferSpecificPropPromptHint(mask = {}, prompt = '') {
+  const candidates = toUniqueNormalizedStrings([
+    ...(Array.isArray(mask?.inputs?.composition) ? mask.inputs.composition : []),
+    ...(Array.isArray(mask?.meta?.promptInstructions) ? mask.meta.promptInstructions : []),
+    prompt,
+  ]);
+
+  for (const candidate of candidates) {
+    const translatedCandidate = normalizeSdPromptRewriteText(candidate);
+    if (!translatedCandidate) continue;
+
+    const accessoryMatch = translatedCandidate.match(/\b([a-z][a-z -]{1,40}) accessory clearly visible\b/i)
+      || translatedCandidate.match(/\b([a-z][a-z -]{1,40}) accessory\b/i);
+    if (accessoryMatch && normalizeText(accessoryMatch[1])) {
+      return `make the ${normalizeText(accessoryMatch[1])} accessory clearly visible`;
+    }
+    if (/\bcrown worn by the main subject\b/i.test(translatedCandidate)) {
+      return 'show clearly the crown worn by the main subject';
+    }
+    if (/\bsword held by the main character\b/i.test(translatedCandidate)) {
+      return 'show clearly the sword held by the main character';
+    }
+    if (/\bcarrot attached to the main subject\b/i.test(translatedCandidate)) {
+      return 'show clearly the carrot attached to the main subject';
+    }
+  }
+
+  return '';
+}
+
+function shouldCanonicalizePromptGuidanceToEnglish(compiledState = {}, mask = {}) {
+  const explicitPromptLanguage = String(
+    compiledState?.sdBody?.prompt_language
+    || compiledState?.compiledPayload?.prompt_language
+    || ''
+  ).trim().toLowerCase();
+  if (explicitPromptLanguage === SD_PROMPT_OUTPUT_LANGUAGE) return true;
+
+  const compilerTarget = String(
+    compiledState?.mask?.compiler?.target
+    || mask?.compiler?.target
+    || ''
+  ).trim().toLowerCase();
+
+  return compilerTarget === 'image-prompt-en' || compilerTarget === 'sd-payload';
+}
+
+function canonicalizePromptGuidanceBaseState(compiledState = {}, mask = {}) {
+  if (!shouldCanonicalizePromptGuidanceToEnglish(compiledState, mask)) {
+    return {
+      compiledState,
+      applied: false,
+      canonical: false,
+      reason: 'non_english_target',
+    };
+  }
+
+  const sdBody = compiledState?.sdBody && typeof compiledState.sdBody === 'object'
+    ? compiledState.sdBody
+    : {};
+  const currentPrompt = normalizeSdPromptRewriteText(sdBody?.prompt || '');
+  const currentNegativePrompt = normalizeSdPromptRewriteText(sdBody?.negative_prompt || '');
+  let nextPrompt = currentPrompt;
+  let nextNegativePrompt = currentNegativePrompt;
+  const promptCanonical = nextPrompt && isCanonicalEnglishSdText(nextPrompt, { allowUnknown: true });
+  const negativeCanonical = !nextNegativePrompt || isCanonicalEnglishSdText(nextNegativePrompt, { allowUnknown: true });
+
+  if (!promptCanonical || !negativeCanonical) {
+    return {
+      compiledState,
+      applied: false,
+      canonical: false,
+      reason: 'base_prompt_not_canonical_english',
+    };
+  }
+
+  const localizedState = applyPromptOverrideCompiledState(compiledState, {
+    prompt: nextPrompt,
+    negativePrompt: nextNegativePrompt,
+    promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
+  });
+
+  return {
+    compiledState: localizedState || compiledState,
+    applied: Boolean(localizedState),
+    canonical: true,
+    reason: localizedState ? 'normalized_existing_canonical_prompt' : 'already_canonical',
+  };
+}
+
 function normalizePromptContextShape(value) {
   if (Array.isArray(value)) {
     return value.map((entry) => normalizePromptContextShape(entry));
@@ -338,11 +1060,270 @@ function isCompatiblePromptContextTranslation(source = {}, translated = {}) {
   return requiredKeys.every((key) => Object.prototype.hasOwnProperty.call(translated, key));
 }
 
+async function translateDetailedPromptFieldToEnglish(value = '', options = {}) {
+  const sourceText = normalizeText(value);
+  if (!sourceText || typeof options.callStructuredLlmJson !== 'function') return '';
+  const sourceProfile = typeof detectPromptLanguageProfile === 'function'
+    ? detectPromptLanguageProfile(sourceText)
+    : { dominant: 'unknown', mixed: false };
+  if (sourceProfile?.dominant === 'en' && sourceProfile?.mixed !== true) {
+    return sourceText;
+  }
+
+  const translateOnce = async (previousRejected = '') => {
+    try {
+      const response = await options.callStructuredLlmJson({
+        text: JSON.stringify({
+          source_text: sourceText,
+          ...(previousRejected
+            ? { rejected_translation: normalizeText(previousRejected) }
+            : {}),
+        }, null, 2),
+        systemPrompt: `You translate a single image-generation prompt field into detailed natural English for A11.
+Strict rules:
+- preserve every concrete visual detail and every useful constraint
+- never summarize, condense, shorten, simplify, or omit details
+- keep identity locks, face, body, pose, framing, outfit, props, environment, lighting, palette, mood, style, and all negative constraints
+- if the source is rich and long, the translation must stay rich and long
+- output only strict JSON
+{
+  "translated_text": "detailed english translation"
+}`,
+        temperature: 0.1,
+        maxTokens: resolvePromptRewriteMaxTokens([sourceText], {
+          floor: 700,
+          ceiling: 2200,
+          base: 320,
+        }),
+        timeoutMs: Number(process.env.A11_IMAGE_PROMPT_TRANSLATOR_TIMEOUT_MS || 10000),
+      });
+      const translated = normalizeSdPromptRewriteText(
+        response?.translated_text || response?.translatedText || ''
+      );
+      if (!translated) return '';
+      if (!isUsableEnglishPromptText(translated, { allowUnknown: true })) return '';
+      if (isOvercompressedPromptFieldRewrite(sourceText, translated)) return '';
+      return translated;
+    } catch {
+      return '';
+    }
+  };
+
+  const firstAttempt = await translateOnce('');
+  if (firstAttempt) return firstAttempt;
+  return translateOnce(options.previousRejected || '');
+}
+
+const NEGATIVE_PROMPT_HINT_LITERAL_RULES = [
+  { pattern: /\b(?:flou|blur(?:ry)?|out of focus|soft focus)\b/i, literal: 'blurry' },
+  { pattern: /\b(?:basse qualite|basse qualité|low quality|poor quality)\b/i, literal: 'low quality' },
+  { pattern: /\b(?:visage deforme|visage déformé|deformed face)\b/i, literal: 'deformed face' },
+  { pattern: /\b(?:mains ratees|mains ratées|bad hands)\b/i, literal: 'bad hands' },
+  { pattern: /\b(?:doigts? en trop|extra fingers?|polydactyl(?:y|e))\b/i, literal: 'extra fingers' },
+  { pattern: /\b(?:anatomie incorrecte|incorrect anatomy|bad anatomy)\b/i, literal: 'incorrect anatomy' },
+  { pattern: /\b(?:plusieurs personnages|multiple characters|multiple subjects)\b/i, literal: 'multiple characters' },
+  { pattern: /\b(?:batte dupliquee|batte dupliquée|duplicated bat)\b/i, literal: 'duplicated bat' },
+  { pattern: /\b(?:tete coupee|tête coupée|cut head|head crop)\b/i, literal: 'cut head' },
+  { pattern: /\b(?:pieds coupes|pieds coupés|cut feet|feet crop)\b/i, literal: 'cut feet' },
+  { pattern: /\b(?:decor vide|décor vide|empty background)\b/i, literal: 'empty background' },
+  { pattern: /\b(?:lumiere plate|lumière plate|flat lighting)\b/i, literal: 'flat lighting' },
+  { pattern: /\b(?:maquillage faible|weak makeup)\b/i, literal: 'weak makeup' },
+  { pattern: /\b(?:costume peu visible|tenue peu visible|unclear costume)\b/i, literal: 'unclear costume' },
+  { pattern: /\b(?:fond mal genere|fond mal généré|poorly generated background)\b/i, literal: 'poorly generated background' },
+  { pattern: /\b(?:texte lisible|texte|text)\b/i, literal: 'text' },
+  { pattern: /\b(?:watermark|filigrane)\b/i, literal: 'watermark' },
+  { pattern: /\b(?:logo)\b/i, literal: 'logo' },
+  { pattern: /\b(?:signature)\b/i, literal: 'signature' },
+];
+
+function resolveLiteralNegativePromptHint(value = '') {
+  const text = normalizeText(value);
+  if (!text) return '';
+  for (const rule of NEGATIVE_PROMPT_HINT_LITERAL_RULES) {
+    if (rule.pattern.test(text)) {
+      return rule.literal;
+    }
+  }
+  return '';
+}
+
+function sanitizeNegativePromptHintLiteral(value = '') {
+  const text = normalizeText(value)
+    .replace(/[.]+$/g, '')
+    .replace(/^negative prompt\s*:\s*/i, '')
+    .trim();
+  if (!text) return '';
+
+  const literalOverride = resolveLiteralNegativePromptHint(text);
+  if (literalOverride) return literalOverride;
+
+  if (!isUsableEnglishPromptText(text, { allowUnknown: true })) return '';
+  if (/[.!?]/.test(text)) return '';
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= 0 || words.length > 8) return '';
+  if (/\b(?:must|should|depict|depicted|rendered|presented|featuring|incorporated|integrated|contains?|showing|showcasing)\b/i.test(text)) {
+    return '';
+  }
+  if (/^(?:a|an|the)\b/i.test(text) && words.length > 4) {
+    return '';
+  }
+  if (/[,;:]/.test(text) && words.length > 5) {
+    return '';
+  }
+
+  return text;
+}
+
+async function translateNegativePromptHintToEnglish(value = '', options = {}) {
+  const sourceText = normalizeText(value);
+  if (!sourceText) return '';
+
+  const sourceLiteral = sanitizeNegativePromptHintLiteral(sourceText);
+  if (sourceLiteral) return sourceLiteral;
+  if (typeof options.callStructuredLlmJson !== 'function') {
+    return resolveLiteralNegativePromptHint(sourceText) || sourceText;
+  }
+
+  const translateOnce = async (previousRejected = '') => {
+    try {
+      const response = await options.callStructuredLlmJson({
+        text: JSON.stringify({
+          source_text: sourceText,
+          ...(previousRejected
+            ? { rejected_translation: normalizeText(previousRejected) }
+            : {}),
+        }, null, 2),
+        systemPrompt: `You translate a single negative prompt hint for A11 into short literal English suitable for a Stable Diffusion negative prompt.
+Strict rules:
+- translate into short literal English only
+- keep it concise: a short fragment, not a sentence
+- never expand into a scene description
+- never rewrite as a positive instruction
+- never add visual details that were not present
+- avoid punctuation except parentheses when essential
+- output only strict JSON
+{
+  "translated_text": "short english negative hint"
+}`,
+        temperature: 0,
+        maxTokens: 120,
+        timeoutMs: Number(process.env.A11_IMAGE_PROMPT_TRANSLATOR_TIMEOUT_MS || 10000),
+      });
+      const translated = normalizeSdPromptRewriteText(
+        response?.translated_text || response?.translatedText || ''
+      );
+      return sanitizeNegativePromptHintLiteral(translated);
+    } catch {
+      return '';
+    }
+  };
+
+  const firstAttempt = await translateOnce('');
+  if (firstAttempt) return firstAttempt;
+  const retried = await translateOnce(options.previousRejected || '');
+  if (retried) return retried;
+
+  return resolveLiteralNegativePromptHint(sourceText) || sourceText;
+}
+
+async function translateNegativePromptHintListToEnglish(values = [], options = {}) {
+  const translated = [];
+  for (const entry of Array.isArray(values) ? values : [values]) {
+    const nextEntry = await translateNegativePromptHintToEnglish(entry, options);
+    if (nextEntry) translated.push(nextEntry);
+  }
+  return toUniqueNormalizedStrings(translated);
+}
+
+async function translateNegativePromptTextToEnglish(value = '', options = {}) {
+  const sourceText = normalizeText(value);
+  if (!sourceText) return '';
+  const fragments = splitPromptFragments(sourceText);
+  if (!fragments.length) {
+    return await translateNegativePromptHintToEnglish(sourceText, options);
+  }
+  const translated = await translateNegativePromptHintListToEnglish(fragments, options);
+  return translated.join(', ');
+}
+
+function shouldSkipPromptContextEnglishRepair(pathSegments = [], value = '') {
+  const leaf = String(pathSegments[pathSegments.length - 1] || '').trim().toLowerCase();
+  if ([
+    'target_language',
+    'reference_init_image',
+    'source_domain',
+    'subject_profile_type',
+    'image_url',
+    'source_url',
+  ].includes(leaf)) {
+    return true;
+  }
+  const text = normalizeText(value);
+  return /^(?:https?:\/\/|data:|app:\/\/|plugin:\/\/|file:\/\/)/i.test(text);
+}
+
+async function repairPromptContextValueToEnglish(currentValue, sourceValue, options = {}, pathSegments = []) {
+  if (Array.isArray(currentValue)) {
+    const sourceArray = Array.isArray(sourceValue) ? sourceValue : [];
+    const repaired = [];
+    for (let index = 0; index < currentValue.length; index += 1) {
+      repaired.push(await repairPromptContextValueToEnglish(
+        currentValue[index],
+        sourceArray[index],
+        options,
+        [...pathSegments, String(index)]
+      ));
+    }
+    return repaired;
+  }
+
+  if (currentValue && typeof currentValue === 'object') {
+    const sourceObject = sourceValue && typeof sourceValue === 'object' ? sourceValue : {};
+    const repairedEntries = [];
+    for (const [key, entry] of Object.entries(currentValue)) {
+      repairedEntries.push([
+        key,
+        await repairPromptContextValueToEnglish(entry, sourceObject?.[key], options, [...pathSegments, key]),
+      ]);
+    }
+    return Object.fromEntries(repairedEntries);
+  }
+
+  if (typeof currentValue !== 'string') return currentValue;
+
+  const currentText = normalizeText(currentValue);
+  const sourceText = normalizeText(sourceValue || currentValue);
+  if (!currentText || shouldSkipPromptContextEnglishRepair(pathSegments, currentText)) {
+    return currentText;
+  }
+  if (isUsableEnglishPromptText(currentText, { allowUnknown: true })) {
+    return currentText;
+  }
+
+  const llmRepaired = await translateDetailedPromptFieldToEnglish(sourceText, {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+    previousRejected: currentText,
+  });
+  if (llmRepaired && isUsableEnglishPromptText(llmRepaired, { allowUnknown: true })) {
+    return llmRepaired;
+  }
+
+  return currentText;
+}
+
 async function translatePromptContextToEnglish(context = {}, options = {}) {
   const normalizedContext = normalizePromptContextShape(context);
   const profile = detectPromptContextLanguage(normalizedContext);
   if (profile?.dominant === 'en' && profile?.mixed !== true) {
-    return normalizedContext;
+    const promotedEnglishContext = { ...normalizedContext };
+    if (shouldPromoteRawRequestToCurrentPrompt({
+      rawRequest: promotedEnglishContext.raw_request,
+      currentPrompt: promotedEnglishContext.current_prompt,
+    })) {
+      promotedEnglishContext.current_prompt = normalizeText(promotedEnglishContext.raw_request);
+    }
+    return normalizePromptContextShape(promotedEnglishContext);
   }
   if (typeof options.callStructuredLlmJson !== 'function') {
     return normalizedContext;
@@ -363,15 +1344,551 @@ Strict rules:
 - keep non-text fields unchanged
 - output only strict JSON`,
       temperature: 0.1,
-      maxTokens: 1400,
+      maxTokens: resolvePromptRewriteMaxTokens([
+        normalizedContext?.raw_request,
+        normalizedContext?.current_prompt,
+        normalizedContext?.current_negative_prompt,
+      ], {
+        floor: 1400,
+        ceiling: 2400,
+        base: 620,
+      }),
       timeoutMs: Number(process.env.A11_IMAGE_PROMPT_TRANSLATOR_TIMEOUT_MS || 10000),
     });
     if (!isCompatiblePromptContextTranslation(normalizedContext, translated)) {
       return normalizedContext;
     }
-    return normalizePromptContextShape(translated);
+    let repairedContext = normalizePromptContextShape(translated);
+    for (const field of ['raw_request', 'current_prompt', 'current_negative_prompt']) {
+      const sourceText = normalizeText(normalizedContext?.[field] || '');
+      const translatedText = normalizeText(repairedContext?.[field] || '');
+      if (!sourceText) continue;
+      if (
+        translatedText
+        && isUsableEnglishPromptText(translatedText, { allowUnknown: field !== 'raw_request' })
+        && !isOvercompressedPromptFieldRewrite(sourceText, translatedText)
+      ) {
+        continue;
+      }
+      const repairedField = await translateDetailedPromptFieldToEnglish(sourceText, {
+        callStructuredLlmJson: options.callStructuredLlmJson,
+        previousRejected: translatedText,
+      });
+      if (repairedField) {
+        repairedContext = {
+          ...repairedContext,
+          [field]: repairedField,
+        };
+      }
+    }
+    if (shouldPromoteRawRequestToCurrentPrompt({
+      rawRequest: repairedContext.raw_request,
+      currentPrompt: repairedContext.current_prompt,
+    })) {
+      repairedContext = {
+        ...repairedContext,
+        current_prompt: normalizeText(repairedContext.raw_request),
+      };
+    }
+    repairedContext = await repairPromptContextValueToEnglish(
+      repairedContext,
+      normalizedContext,
+      options,
+      []
+    );
+    return normalizePromptContextShape(repairedContext);
   } catch {
     return normalizedContext;
+  }
+}
+
+const CANONICAL_STRUCTURED_PROMPT_KEYS = [
+  'subject',
+  'environment',
+  'style',
+  'composition',
+  'lighting',
+  'palette',
+];
+
+async function translateStructuredPromptEntryToEnglish(value = '', options = {}) {
+  const sourceText = normalizeText(value);
+  if (!sourceText) return '';
+  if (isAcceptableSdRewriteLanguage(sourceText, { allowUnknown: false }) && !hasEnglishMixedLanguageArtifacts(sourceText)) {
+    return sourceText;
+  }
+
+  const llmTranslation = await translateDetailedPromptFieldToEnglish(sourceText, options);
+  if (llmTranslation) return llmTranslation;
+
+  return sourceText;
+}
+
+async function translateStructuredPromptListToEnglish(values = [], options = {}) {
+  const translated = [];
+  for (const entry of Array.isArray(values) ? values : [values]) {
+    const nextEntry = await translateStructuredPromptEntryToEnglish(entry, options);
+    if (nextEntry) translated.push(nextEntry);
+  }
+  return toUniqueNormalizedStrings(translated);
+}
+
+function buildStructuredPromptFieldsSnapshot(mask = {}) {
+  return normalizeCanonicalStructuredPromptFields({
+    subject: toUniqueNormalizedStrings(mask?.inputs?.subject || []),
+    environment: toUniqueNormalizedStrings(mask?.inputs?.environment || []),
+    style: toUniqueNormalizedStrings(mask?.inputs?.style || []),
+    composition: toUniqueNormalizedStrings(mask?.inputs?.composition || []),
+    lighting: toUniqueNormalizedStrings(mask?.inputs?.lighting || []),
+    palette: toUniqueNormalizedStrings(mask?.inputs?.palette || []),
+    constraints: {
+      safe_mode: mask?.constraints?.safe_mode === true,
+      no_text: mask?.constraints?.no_text === true,
+      prompt_instructions: toUniqueNormalizedStrings(mask?.meta?.promptInstructions || []),
+      negative_hints: toUniqueNormalizedStrings([
+        ...(Array.isArray(mask?.meta?.promptNegativeHints) ? mask.meta.promptNegativeHints : []),
+        ...(Array.isArray(mask?.meta?.negativeHints) ? mask.meta.negativeHints : []),
+        ...splitPromptFragments(mask?.meta?.negative_prompt || mask?.meta?.negativePrompt || ''),
+      ]),
+    },
+  });
+}
+
+function normalizeCanonicalStructuredPromptFields(structuredFields = {}) {
+  const normalizedRequest = normalizeCanonicalizedImageGenerateRequestPayload(
+    {
+      canonicalEnglishInput: '',
+      structuredFields,
+    },
+    ''
+  );
+  const normalizedFields = normalizedRequest?.structuredFields && typeof normalizedRequest.structuredFields === 'object'
+    ? normalizedRequest.structuredFields
+    : {};
+  const constraints = normalizedFields?.constraints && typeof normalizedFields.constraints === 'object'
+    ? normalizedFields.constraints
+    : {};
+  return {
+    subject: toUniqueNormalizedStrings(normalizedFields?.subject || []),
+    environment: toUniqueNormalizedStrings(normalizedFields?.environment || []),
+    style: toUniqueNormalizedStrings(normalizedFields?.style || []),
+    composition: toUniqueNormalizedStrings(normalizedFields?.composition || []),
+    lighting: toUniqueNormalizedStrings(normalizedFields?.lighting || []),
+    palette: toUniqueNormalizedStrings(normalizedFields?.palette || []),
+    constraints: {
+      safe_mode: constraints?.safe_mode === true || constraints?.safeMode === true,
+      no_text: constraints?.no_text === true || constraints?.noText === true,
+      prompt_instructions: toUniqueNormalizedStrings([
+        ...(Array.isArray(constraints?.prompt_instructions) ? constraints.prompt_instructions : []),
+        ...(Array.isArray(constraints?.promptInstructions) ? constraints.promptInstructions : []),
+      ]),
+      negative_hints: toUniqueNormalizedStrings([
+        ...(Array.isArray(constraints?.negative_hints) ? constraints.negative_hints : []),
+        ...(Array.isArray(constraints?.negativeHints) ? constraints.negativeHints : []),
+      ]),
+    },
+  };
+}
+
+function hasUsableCanonicalStructuredPromptFields(structuredFields = {}) {
+  return (
+    CANONICAL_STRUCTURED_PROMPT_KEYS.some((key) => Array.isArray(structuredFields?.[key]) && structuredFields[key].length > 0)
+    || (Array.isArray(structuredFields?.constraints?.prompt_instructions) && structuredFields.constraints.prompt_instructions.length > 0)
+    || (Array.isArray(structuredFields?.constraints?.negative_hints) && structuredFields.constraints.negative_hints.length > 0)
+    || structuredFields?.constraints?.safe_mode === true
+    || structuredFields?.constraints?.no_text === true
+  );
+}
+
+function logCanonicalPromptFlow({
+  stage = 'runtime',
+  rawUserInput = '',
+  canonicalEnglishInput = '',
+  structuredFields = null,
+} = {}) {
+  console.log(`[A11][prompt-canon][raw] stage=${stage} input=${JSON.stringify(String(rawUserInput || ''))}`);
+  console.log(`[A11][prompt-canon][english] stage=${stage} input=${JSON.stringify(String(canonicalEnglishInput || ''))}`);
+  if (structuredFields && typeof structuredFields === 'object') {
+    console.log(`[A11][prompt-canon][fields] stage=${stage} ${JSON.stringify(structuredFields)}`);
+  }
+}
+
+function buildCanonicalEnglishInputFromStructuredFields(structuredFields = {}) {
+  const sections = [
+    ...(Array.isArray(structuredFields?.subject) ? structuredFields.subject : []),
+    ...(Array.isArray(structuredFields?.constraints?.prompt_instructions)
+      ? structuredFields.constraints.prompt_instructions
+      : []),
+    ...(Array.isArray(structuredFields?.composition) ? structuredFields.composition : []),
+    ...(Array.isArray(structuredFields?.environment) ? structuredFields.environment : []),
+    ...(Array.isArray(structuredFields?.style) ? structuredFields.style : []),
+    ...(Array.isArray(structuredFields?.lighting) ? structuredFields.lighting : []),
+    (
+      Array.isArray(structuredFields?.palette) && structuredFields.palette.length
+        ? [`color palette: ${structuredFields.palette.join(', ')}`]
+        : []
+    ),
+    ...(structuredFields?.constraints?.no_text === true ? ['no readable text'] : []),
+  ];
+
+  return toUniqueNormalizedStrings(sections).join(', ');
+}
+
+async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
+  const normalizedMask = normalizeMaskImageGenerate(mask);
+  const compilerTarget = String(normalizedMask?.compiler?.target || '').trim().toLowerCase();
+  if (!['image-prompt-en', 'sd-payload'].includes(compilerTarget)) {
+    return normalizedMask;
+  }
+
+  const meta = normalizedMask?.meta && typeof normalizedMask.meta === 'object'
+    ? normalizedMask.meta
+    : {};
+  const existingCanonicalizedRequest = meta?.canonicalizedRequest && typeof meta.canonicalizedRequest === 'object'
+    ? meta.canonicalizedRequest
+    : null;
+  const existingPromptCanonicalization = meta?.promptCanonicalization && typeof meta.promptCanonicalization === 'object'
+    ? meta.promptCanonicalization
+    : null;
+  const existingAudit = existingCanonicalizedRequest?.audit && typeof existingCanonicalizedRequest.audit === 'object'
+    ? existingCanonicalizedRequest.audit
+    : {};
+  const translationOptions = {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+  };
+  const reusableCanonicalStructuredFields = [
+    existingCanonicalizedRequest?.structuredFields,
+    existingPromptCanonicalization?.structuredFields,
+  ]
+    .map((candidate) => normalizeCanonicalStructuredPromptFields(candidate))
+    .find((candidate) => hasUsableCanonicalStructuredPromptFields(candidate))
+    || null;
+  const rawUserInput = normalizeText(
+    existingAudit?.rawUserInput
+    || existingPromptCanonicalization?.rawUserInput
+    || resolveAuthoritativeRawRequest(normalizedMask)
+    || normalizedMask?.raw
+    || ''
+  );
+  const structuredPromptSource = buildCanonicalEnglishInputFromStructuredFields(
+    buildStructuredPromptFieldsSnapshot(normalizedMask)
+  );
+  const canonicalTranslationSource = pickMostDetailedPromptText([
+    rawUserInput,
+    structuredPromptSource,
+    normalizeText(normalizedMask?.raw || ''),
+  ]);
+  const existingCanonicalEnglishInput = normalizeText(
+    existingCanonicalizedRequest?.canonicalEnglishInput
+    || existingPromptCanonicalization?.canonicalEnglishInput
+    || ''
+  );
+  const canonicalEnglishInput = isUsableEnglishPromptText(existingCanonicalEnglishInput, { allowUnknown: true })
+    ? existingCanonicalEnglishInput
+    : await translateStructuredPromptEntryToEnglish(canonicalTranslationSource || rawUserInput, translationOptions);
+
+  const translatedInputs = {};
+  for (const key of CANONICAL_STRUCTURED_PROMPT_KEYS) {
+    const preservedEntries = Array.isArray(reusableCanonicalStructuredFields?.[key])
+      ? reusableCanonicalStructuredFields[key]
+      : [];
+    translatedInputs[key] = preservedEntries.length
+      ? preservedEntries
+      : await translateStructuredPromptListToEnglish(
+        normalizedMask?.inputs?.[key] || [],
+        translationOptions
+      );
+  }
+
+  const translatedStructuredEntries = CANONICAL_STRUCTURED_PROMPT_KEYS.flatMap((key) => (
+    Array.isArray(translatedInputs?.[key]) ? translatedInputs[key] : []
+  ));
+  const englishStructuredEntryCount = translatedStructuredEntries.filter((entry) => (
+    isCanonicalEnglishSdText(entry, { allowUnknown: true })
+  )).length;
+  const nonEnglishStructuredEntryCount = translatedStructuredEntries.filter((entry) => (
+    normalizeText(entry)
+    && (
+      hasFrenchPromptLeak(entry)
+      || !isCanonicalEnglishSdText(entry, { allowUnknown: true })
+    )
+  )).length;
+  const shouldBackfillStructuredFieldsFromCanonicalEnglish = (
+    isUsableEnglishPromptText(canonicalEnglishInput, { allowUnknown: true })
+    && nonEnglishStructuredEntryCount >= Math.max(2, englishStructuredEntryCount + 1)
+  );
+  if (shouldBackfillStructuredFieldsFromCanonicalEnglish) {
+    for (const key of ['subject', 'environment', 'style', 'composition']) {
+      translatedInputs[key] = [canonicalEnglishInput];
+    }
+  }
+
+  const preservedPromptInstructions = Array.isArray(reusableCanonicalStructuredFields?.constraints?.prompt_instructions)
+    ? reusableCanonicalStructuredFields.constraints.prompt_instructions
+    : [];
+  const preservedNegativeHints = Array.isArray(reusableCanonicalStructuredFields?.constraints?.negative_hints)
+    ? reusableCanonicalStructuredFields.constraints.negative_hints
+    : [];
+  const translatedPromptInstructions = preservedPromptInstructions.length
+    ? preservedPromptInstructions
+    : await translateStructuredPromptListToEnglish(
+      meta?.promptInstructions || [],
+      translationOptions
+    );
+  const translatedPromptNegativeHints = preservedNegativeHints.length
+    ? preservedNegativeHints
+    : await translateNegativePromptHintListToEnglish(
+      meta?.promptNegativeHints || [],
+      translationOptions
+    );
+  const translatedNegativeHints = preservedNegativeHints.length
+    ? preservedNegativeHints
+    : await translateNegativePromptHintListToEnglish(
+      meta?.negativeHints || [],
+      translationOptions
+    );
+  const translatedNegativePrompt = await translateNegativePromptTextToEnglish(
+    meta?.negative_prompt || meta?.negativePrompt || '',
+    translationOptions
+  );
+  const translatedTechniquePrompt = await translateStructuredPromptEntryToEnglish(
+    meta?.techniqueAnalysisPrompt || '',
+    translationOptions
+  );
+  const translatedSubjectProfilePromptInstruction = await translateStructuredPromptEntryToEnglish(
+    meta?.subjectProfile?.promptInstruction || '',
+    translationOptions
+  );
+  const preliminaryMask = {
+    ...normalizedMask,
+    constraints: {
+      ...(normalizedMask?.constraints && typeof normalizedMask.constraints === 'object'
+        ? normalizedMask.constraints
+        : {}),
+      safe_mode: normalizedMask?.constraints?.safe_mode === true || reusableCanonicalStructuredFields?.constraints?.safe_mode === true,
+      no_text: normalizedMask?.constraints?.no_text === true || reusableCanonicalStructuredFields?.constraints?.no_text === true,
+    },
+    inputs: {
+      ...(normalizedMask?.inputs && typeof normalizedMask.inputs === 'object' ? normalizedMask.inputs : {}),
+      ...translatedInputs,
+    },
+    meta: {
+      ...meta,
+      promptInstructions: translatedPromptInstructions,
+      promptNegativeHints: translatedPromptNegativeHints,
+      negativeHints: translatedNegativeHints,
+      ...(translatedNegativePrompt
+        ? {
+            negative_prompt: translatedNegativePrompt,
+            negativePrompt: translatedNegativePrompt,
+          }
+        : {}),
+      subjectProfile: (
+        meta?.subjectProfile && typeof meta.subjectProfile === 'object'
+          ? {
+              ...meta.subjectProfile,
+              ...(translatedSubjectProfilePromptInstruction
+                ? { promptInstruction: translatedSubjectProfilePromptInstruction }
+                : {}),
+            }
+          : meta?.subjectProfile
+      ),
+    },
+  };
+  const structuredFields = buildStructuredPromptFieldsSnapshot(preliminaryMask);
+  const structuredEnglishFallback = buildCanonicalEnglishInputFromStructuredFields(structuredFields);
+  const resolvedCanonicalEnglishInput = isUsableEnglishPromptText(canonicalEnglishInput, { allowUnknown: true })
+    ? canonicalEnglishInput
+    : structuredEnglishFallback;
+
+  const nextMask = {
+    ...preliminaryMask,
+    ...(resolvedCanonicalEnglishInput ? { raw: resolvedCanonicalEnglishInput } : {}),
+    meta: {
+      ...(preliminaryMask?.meta && typeof preliminaryMask.meta === 'object' ? preliminaryMask.meta : {}),
+      deferEnglishPromptLocalization: false,
+      ...(resolvedCanonicalEnglishInput
+        ? {
+            originalSourceText: resolvedCanonicalEnglishInput,
+            sourceText: resolvedCanonicalEnglishInput,
+            promptSeedText: resolvedCanonicalEnglishInput,
+            promptText: resolvedCanonicalEnglishInput,
+          }
+        : {}),
+      ...(translatedTechniquePrompt ? { techniqueAnalysisPrompt: translatedTechniquePrompt } : {}),
+    },
+  };
+  nextMask.meta = {
+    ...(nextMask?.meta && typeof nextMask.meta === 'object' ? nextMask.meta : {}),
+    canonicalizedRequest: {
+      canonicalEnglishInput: resolvedCanonicalEnglishInput,
+      structuredFields,
+      scenePolicy: existingCanonicalizedRequest?.scenePolicy || existingPromptCanonicalization?.scenePolicy || null,
+      audit: {
+        ...existingAudit,
+        rawUserInput,
+      },
+    },
+    promptCanonicalization: {
+      ...(existingPromptCanonicalization && typeof existingPromptCanonicalization === 'object'
+        ? existingPromptCanonicalization
+        : {}),
+      rawUserInput,
+      canonicalEnglishInput: resolvedCanonicalEnglishInput,
+      structuredFields,
+    },
+  };
+
+  logCanonicalPromptFlow({
+    stage: options.stage || 'runtime',
+    rawUserInput,
+    canonicalEnglishInput: resolvedCanonicalEnglishInput,
+    structuredFields,
+  });
+
+  return nextMask;
+}
+
+async function enforceFinalCanonicalEnglishPrompt(compiledState = {}, options = {}) {
+  const sdBody = compiledState?.sdBody && typeof compiledState.sdBody === 'object'
+    ? compiledState.sdBody
+    : {};
+  const currentPrompt = normalizeSdPromptRewriteText(sdBody?.prompt || '');
+  const currentNegativePrompt = normalizeSdPromptRewriteText(sdBody?.negative_prompt || '');
+  const promptOkay = isCanonicalEnglishSdText(currentPrompt, { allowUnknown: true });
+  const negativeOkay = !currentNegativePrompt || isCanonicalEnglishSdText(currentNegativePrompt, { allowUnknown: true });
+
+  if (promptOkay && negativeOkay) {
+    const normalizedCanonicalState = (
+      currentPrompt !== normalizeText(sdBody?.prompt || '')
+      || currentNegativePrompt !== normalizeText(sdBody?.negative_prompt || '')
+    )
+      ? applyPromptOverrideCompiledState(compiledState, {
+        prompt: currentPrompt,
+        negativePrompt: currentNegativePrompt,
+        promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
+      })
+      : null;
+    return {
+      compiledState: normalizedCanonicalState || compiledState,
+      finalPromptGuard: {
+        applied: Boolean(normalizedCanonicalState),
+        reason: normalizedCanonicalState
+          ? 'normalized_existing_canonical_prompt'
+          : 'already_canonical',
+      },
+    };
+  }
+
+  const repairedCurrentState = await repairCompiledStateToCanonicalEnglish(compiledState, options);
+  if (repairedCurrentState.repaired === true) {
+    return {
+      compiledState: repairedCurrentState.compiledState,
+      finalPromptGuard: {
+        applied: true,
+        reason: repairedCurrentState.reason,
+      },
+    };
+  }
+
+  const mask = compiledState?.mask && typeof compiledState.mask === 'object'
+    ? {
+        ...compiledState.mask,
+        meta: {
+          ...((compiledState.mask.meta && typeof compiledState.mask.meta === 'object') ? compiledState.mask.meta : {}),
+          deferEnglishPromptLocalization: false,
+        },
+      }
+    : null;
+  if (!mask) {
+    return {
+      compiledState,
+      finalPromptGuard: {
+        applied: false,
+        rejected: true,
+        reason: 'missing_mask_for_rebuild',
+      },
+    };
+  }
+
+  try {
+    const rebuiltPayload = compileMaskToImagePrompt(mask);
+    const rebuiltPrompt = normalizeSdPromptRewriteText(rebuiltPayload?.prompt || '');
+    const rebuiltNegativePrompt = normalizeSdPromptRewriteText(
+      rebuiltPayload?.negative_prompt || currentNegativePrompt || ''
+    );
+    const rebuiltPromptOkay = isCanonicalEnglishSdText(rebuiltPrompt, { allowUnknown: true });
+    const rebuiltNegativeOkay = !rebuiltNegativePrompt || isCanonicalEnglishSdText(rebuiltNegativePrompt, { allowUnknown: true });
+
+    if (!rebuiltPromptOkay || !rebuiltNegativeOkay) {
+      const rebuiltState = applyPromptOverrideCompiledStateStrict({
+        ...compiledState,
+        mask,
+      }, {
+        prompt: rebuiltPrompt,
+        negativePrompt: rebuiltNegativePrompt,
+        promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
+      });
+      const repairedRebuiltState = await repairCompiledStateToCanonicalEnglish(
+        rebuiltState || {
+          ...compiledState,
+          mask,
+          sdBody: {
+            ...sdBody,
+            prompt: rebuiltPrompt,
+            negative_prompt: rebuiltNegativePrompt,
+            prompt_language: SD_PROMPT_OUTPUT_LANGUAGE,
+          },
+        },
+        options
+      );
+      if (repairedRebuiltState.repaired === true) {
+        return {
+          compiledState: repairedRebuiltState.compiledState,
+          finalPromptGuard: {
+            applied: true,
+            reason: 'translated_rebuilt_prompt_to_canonical_english',
+          },
+        };
+      }
+      return {
+        compiledState,
+        finalPromptGuard: {
+          applied: false,
+          rejected: true,
+          reason: 'rebuilt_prompt_not_canonical_english',
+        },
+      };
+    }
+
+    const guardedState = applyPromptOverrideCompiledState({
+      ...compiledState,
+      mask,
+    }, {
+      prompt: rebuiltPrompt,
+      negativePrompt: rebuiltNegativePrompt,
+      promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
+    });
+
+    return {
+      compiledState: guardedState || compiledState,
+      finalPromptGuard: {
+        applied: Boolean(guardedState),
+        reason: guardedState
+          ? 'rebuilt_from_canonical_english_fields'
+          : 'rebuild_override_unavailable',
+      },
+    };
+  } catch (error_) {
+    return {
+      compiledState,
+      finalPromptGuard: {
+        applied: false,
+        rejected: true,
+        reason: 'canonical_english_rebuild_failed',
+        message: String(error_?.message || error_),
+      },
+    };
   }
 }
 
@@ -379,17 +1896,17 @@ function buildStrengthComponentPromptGuidance({
   strengthComponents = null,
   promptLanguage = '',
   prompt = '',
+  mask = {},
 } = {}) {
   if (!strengthComponents || typeof strengthComponents !== 'object') {
     return {
       positiveHints: [],
       negativeHints: [],
-      language: resolveStrengthPromptGuidanceLanguage({ promptLanguage, prompt }),
+      language: 'en',
     };
   }
 
-  const language = resolveStrengthPromptGuidanceLanguage({ promptLanguage, prompt });
-  const useFrench = language === 'fr';
+  const language = 'en';
   const identity = strengthComponents.identity && typeof strengthComponents.identity === 'object'
     ? strengthComponents.identity
     : {};
@@ -416,71 +1933,42 @@ function buildStrengthComponentPromptGuidance({
     String(identity.profile || '').trim() === 'preserve'
     || Number(identity.strength) <= 0.34
   ) {
-    positiveHints.push(
-      useFrench
-        ? 'garder strictement le meme visage et la meme identite'
-        : 'keep exactly the same face and identity'
-    );
-    negativeHints.push(
-      useFrench
-        ? 'visage different, identite differente, autre personne'
-        : 'different face, different identity, different person'
-    );
+    positiveHints.push('keep exactly the same face and identity');
+    positiveHints.push('keep the same eyes, eyebrows, nose, jawline, and smile from the reference image');
+    positiveHints.push('preserve the pose and framing from the reference image');
+    negativeHints.push('different face', 'different identity', 'different person');
   }
 
   if (
     String(anatomy.profile || '').trim() === 'preserve'
     || Number(anatomy.strength) <= 0.36
   ) {
-    positiveHints.push(
-      useFrench
-        ? 'preserver une anatomie naturelle et des proportions stables'
-        : 'preserve natural anatomy and stable proportions'
-    );
-    negativeHints.push(
-      useFrench
-        ? 'anatomie deformee, mains deformees, yeux deformes'
-        : 'bad anatomy, deformed hands, deformed eyes'
-    );
+    positiveHints.push('preserve natural anatomy and stable proportions');
+    positiveHints.push('preserve the body angle, arm placement, same-side hand laterality, and visible hand pose from the reference image');
+    negativeHints.push('bad anatomy', 'deformed hands', 'deformed eyes');
   }
 
   if (String(outfit.profile || '').trim() === 'preserve') {
-    positiveHints.push(
-      useFrench
-        ? 'preserver la silhouette et la tenue principale'
-        : 'preserve the silhouette and main outfit'
-    );
+    positiveHints.push('preserve the silhouette and main outfit');
   } else if (
     ['balanced', 'restyle'].includes(String(outfit.profile || '').trim())
     && Number(outfit.strength) >= 0.58
   ) {
-    positiveHints.push(
-      useFrench
-        ? 'rendre le changement de tenue clairement visible'
-        : 'make the outfit change clearly visible'
-    );
+    positiveHints.push('make the outfit change clearly visible');
   }
 
   if (
     String(background.profile || '').trim() === 'restyle'
     || Number(background.strength) >= 0.7
   ) {
-    positiveHints.push(
-      useFrench
-        ? 'reinventer clairement le decor et l ambiance'
-        : 'clearly redesign the background and atmosphere'
-    );
+    positiveHints.push('clearly redesign the background and atmosphere');
   }
 
   if (
     ['balanced', 'restyle'].includes(String(effects.profile || '').trim())
     && Number(effects.strength) >= 0.58
   ) {
-    positiveHints.push(
-      useFrench
-        ? 'rendre les effets et la lumiere clairement visibles'
-        : 'make the lighting and effects clearly visible'
-    );
+    positiveHints.push('make the lighting and effects clearly visible');
   }
 
   if (
@@ -488,22 +1976,37 @@ function buildStrengthComponentPromptGuidance({
     && Number(props.strength) >= 0.56
   ) {
     positiveHints.push(
-      useFrench
-        ? 'rendre l accessoire demande clairement visible'
-        : 'make the requested prop or accessory clearly visible'
+      inferSpecificPropPromptHint(mask, prompt)
+      || 'make the requested prop or accessory clearly visible'
     );
+  }
+
+  if (mask?.meta?.webImageDraft?.fromChatSourceImage === true) {
+    positiveHints.unshift('ignore any mobile screenshot interface or overlay caption from the reference image');
+    negativeHints.unshift('mobile screenshot interface, story caption overlay, status bar, phone icons');
   }
 
   return {
     language,
-    positiveHints: toUniqueNormalizedStrings(positiveHints).slice(0, 4),
+    positiveHints: toUniqueNormalizedStrings(positiveHints).slice(0, 8),
     negativeHints: toUniqueNormalizedStrings(negativeHints).slice(0, 6),
   };
 }
 
 function applyStrengthComponentPromptGuidance(compiledState = {}, mask = {}) {
-  const sdBody = compiledState?.sdBody && typeof compiledState.sdBody === 'object'
-    ? compiledState.sdBody
+  const baseNormalization = canonicalizePromptGuidanceBaseState(compiledState, mask);
+  if (baseNormalization.canonical === false) {
+    return {
+      compiledState: baseNormalization.compiledState,
+      promptGuidance: {
+        applied: false,
+        reason: 'base_prompt_not_canonical_english',
+      },
+    };
+  }
+  const effectiveCompiledState = baseNormalization.compiledState;
+  const sdBody = effectiveCompiledState?.sdBody && typeof effectiveCompiledState.sdBody === 'object'
+    ? effectiveCompiledState.sdBody
     : {};
   const strengthComponents = sdBody?.strength_components
     || mask?.meta?.webImageDraft?.strengthComponents
@@ -512,36 +2015,44 @@ function applyStrengthComponentPromptGuidance(compiledState = {}, mask = {}) {
     strengthComponents,
     promptLanguage: sdBody?.prompt_language,
     prompt: sdBody?.prompt,
+    mask,
   });
 
   if (!guidance.positiveHints.length && !guidance.negativeHints.length) {
     return {
-      compiledState,
+      compiledState: effectiveCompiledState,
       promptGuidance: {
         applied: false,
         reason: 'no_component_guidance',
+        ...(baseNormalization.applied
+          ? { baseNormalization: baseNormalization.reason }
+          : {}),
       },
     };
   }
 
-  const nextPrompt = mergePromptHints(sdBody?.prompt || '', guidance.positiveHints);
+  const normalizedBasePrompt = normalizeReferenceHumanTransformationPrompt(sdBody?.prompt || '', mask);
+  const nextPrompt = mergePromptHints(normalizedBasePrompt, guidance.positiveHints, {
+    maxHints: hasReferenceHumanFigure(mask) ? 8 : 4,
+    insertAfterLead: isReferenceHumanJokerTransformation(mask, normalizedBasePrompt),
+  });
   const nextNegativePrompt = mergeNegativePromptHints(sdBody?.negative_prompt || '', guidance.negativeHints);
 
   const nextCompiledState = {
-    ...compiledState,
+    ...effectiveCompiledState,
     compiledPayload: {
-      ...(compiledState?.compiledPayload && typeof compiledState.compiledPayload === 'object' ? compiledState.compiledPayload : {}),
+      ...(effectiveCompiledState?.compiledPayload && typeof effectiveCompiledState.compiledPayload === 'object' ? effectiveCompiledState.compiledPayload : {}),
       ...(nextPrompt ? { prompt: nextPrompt } : {}),
       ...(nextNegativePrompt ? { negative_prompt: nextNegativePrompt } : {}),
     },
     compiled: (
-      compiledState?.compiled && typeof compiledState.compiled === 'object'
+      effectiveCompiledState?.compiled && typeof effectiveCompiledState.compiled === 'object'
         ? {
-            ...compiledState.compiled,
+            ...effectiveCompiledState.compiled,
             ...(nextPrompt ? { prompt: nextPrompt } : {}),
             ...(nextNegativePrompt ? { negative_prompt: nextNegativePrompt } : {}),
           }
-        : compiledState.compiled
+        : effectiveCompiledState.compiled
     ),
     sdBody: {
       ...sdBody,
@@ -558,6 +2069,9 @@ function applyStrengthComponentPromptGuidance(compiledState = {}, mask = {}) {
       language: guidance.language,
       positiveHints: guidance.positiveHints,
       negativeHints: guidance.negativeHints,
+      ...(baseNormalization.applied
+        ? { baseNormalization: baseNormalization.reason }
+        : {}),
     },
   };
 }
@@ -625,7 +2139,7 @@ function buildStrengthComponentDirectorSourceContext(compiledState = {}, mask = 
 
   return {
     target_language: SD_PROMPT_OUTPUT_LABEL,
-    raw_request: String(mask?.raw || '').trim(),
+    raw_request: resolveAuthoritativeRawRequest(mask),
     current_prompt: normalizeText(sdBody?.prompt || ''),
     current_negative_prompt: normalizeText(sdBody?.negative_prompt || ''),
     reference_init_image: String(
@@ -648,8 +2162,19 @@ function buildStrengthComponentDirectorInput(context = {}) {
 }
 
 async function directStrengthComponentPromptGuidance(compiledState = {}, mask = {}, options = {}) {
-  const sdBody = compiledState?.sdBody && typeof compiledState.sdBody === 'object'
-    ? compiledState.sdBody
+  const baseNormalization = canonicalizePromptGuidanceBaseState(compiledState, mask);
+  if (baseNormalization.canonical === false) {
+    return {
+      compiledState: baseNormalization.compiledState,
+      promptGuidance: {
+        applied: false,
+        reason: 'base_prompt_not_canonical_english',
+      },
+    };
+  }
+  const effectiveCompiledState = baseNormalization.compiledState;
+  const sdBody = effectiveCompiledState?.sdBody && typeof effectiveCompiledState.sdBody === 'object'
+    ? effectiveCompiledState.sdBody
     : {};
   const guidance = buildStrengthComponentPromptGuidance({
     strengthComponents: sdBody?.strength_components
@@ -661,16 +2186,19 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
 
   if (!guidance.positiveHints.length && !guidance.negativeHints.length) {
     return {
-      compiledState,
+      compiledState: effectiveCompiledState,
       promptGuidance: {
         applied: false,
         reason: 'no_component_guidance',
+        ...(baseNormalization.applied
+          ? { baseNormalization: baseNormalization.reason }
+          : {}),
       },
     };
   }
 
   if (isRichFinalImagePrompt(sdBody?.prompt || '', sdBody?.negative_prompt || '')) {
-    const fallback = applyStrengthComponentPromptGuidance(compiledState, mask);
+    const fallback = applyStrengthComponentPromptGuidance(effectiveCompiledState, mask);
     return {
       compiledState: fallback.compiledState,
       promptGuidance: {
@@ -687,29 +2215,46 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
     !resolveImageFinalPromptDirectorEnabled(options.finalPromptDirectorEnabled)
     || typeof options.callStructuredLlmJson !== 'function'
   ) {
-    return applyStrengthComponentPromptGuidance(compiledState, mask);
+    return applyStrengthComponentPromptGuidance(effectiveCompiledState, mask);
   }
 
   try {
     const englishContext = await translatePromptContextToEnglish(
-      buildStrengthComponentDirectorSourceContext(compiledState, mask, guidance),
+      buildStrengthComponentDirectorSourceContext(effectiveCompiledState, mask, guidance),
       { callStructuredLlmJson: options.callStructuredLlmJson }
     );
+    const promotedFallbackState = buildEnglishPromptOverrideCompiledState(effectiveCompiledState, {
+      prompt: englishContext?.current_prompt || '',
+      negativePrompt: englishContext?.current_negative_prompt || sdBody?.negative_prompt || '',
+    });
+    const compressionReferencePrompt = pickMostDetailedPromptText([
+      englishContext?.raw_request,
+      englishContext?.current_prompt,
+      sdBody?.prompt,
+    ]);
     const response = await options.callStructuredLlmJson({
       text: buildStrengthComponentDirectorInput(englishContext),
       systemPrompt: IMAGE_COMPONENT_PROMPT_DIRECTOR_SYSTEM_PROMPT,
       temperature: 0.1,
-      maxTokens: 900,
+      maxTokens: resolvePromptRewriteMaxTokens([
+        englishContext?.raw_request,
+        englishContext?.current_prompt,
+        englishContext?.current_negative_prompt,
+      ], {
+        floor: 900,
+        ceiling: 1800,
+        base: 420,
+      }),
       timeoutMs: Number(process.env.A11_IMAGE_FINAL_PROMPT_DIRECTOR_TIMEOUT_MS || 9000),
     });
 
     const nextPrompt = normalizeSdPromptRewriteText(response?.prompt || '');
     const nextNegativePrompt = normalizeSdPromptRewriteText(response?.negative_prompt || '');
     if (!nextPrompt) {
-      return applyStrengthComponentPromptGuidance(compiledState, mask);
+      return applyStrengthComponentPromptGuidance(promotedFallbackState || effectiveCompiledState, mask);
     }
-    if (!isAcceptableSdRewriteLanguage(nextPrompt)) {
-      const fallback = applyStrengthComponentPromptGuidance(compiledState, mask);
+    if (!isUsableEnglishPromptText(nextPrompt, { allowUnknown: true })) {
+      const fallback = applyStrengthComponentPromptGuidance(promotedFallbackState || effectiveCompiledState, mask);
       return {
         compiledState: fallback.compiledState,
         promptGuidance: {
@@ -718,8 +2263,8 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
         },
       };
     }
-    if (nextNegativePrompt && !isAcceptableSdRewriteLanguage(nextNegativePrompt, { allowUnknown: true })) {
-      const fallback = applyStrengthComponentPromptGuidance(compiledState, mask);
+    if (nextNegativePrompt && !isUsableEnglishPromptText(nextNegativePrompt, { allowUnknown: true })) {
+      const fallback = applyStrengthComponentPromptGuidance(promotedFallbackState || effectiveCompiledState, mask);
       return {
         compiledState: fallback.compiledState,
         promptGuidance: {
@@ -729,12 +2274,12 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
       };
     }
     if (isOvercompressedPromptRewrite({
-      currentPrompt: sdBody?.prompt || '',
-      currentNegativePrompt: sdBody?.negative_prompt || '',
+      currentPrompt: compressionReferencePrompt || sdBody?.prompt || '',
+      currentNegativePrompt: englishContext?.current_negative_prompt || sdBody?.negative_prompt || '',
       nextPrompt,
       nextNegativePrompt,
     })) {
-      const fallback = applyStrengthComponentPromptGuidance(compiledState, mask);
+      const fallback = applyStrengthComponentPromptGuidance(promotedFallbackState || effectiveCompiledState, mask);
       return {
         compiledState: fallback.compiledState,
         promptGuidance: {
@@ -746,9 +2291,9 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
     }
 
     const nextCompiledState = {
-      ...compiledState,
+      ...effectiveCompiledState,
       compiledPayload: {
-        ...(compiledState?.compiledPayload && typeof compiledState.compiledPayload === 'object' ? compiledState.compiledPayload : {}),
+        ...(effectiveCompiledState?.compiledPayload && typeof effectiveCompiledState.compiledPayload === 'object' ? effectiveCompiledState.compiledPayload : {}),
         prompt: nextPrompt,
         prompt_language: SD_PROMPT_OUTPUT_LANGUAGE,
         ...(nextNegativePrompt
@@ -756,16 +2301,16 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
           : {}),
       },
       compiled: (
-        compiledState?.compiled && typeof compiledState.compiled === 'object'
+        effectiveCompiledState?.compiled && typeof effectiveCompiledState.compiled === 'object'
           ? {
-              ...compiledState.compiled,
+              ...effectiveCompiledState.compiled,
               prompt: nextPrompt,
               prompt_language: SD_PROMPT_OUTPUT_LANGUAGE,
               ...(nextNegativePrompt
                 ? { negative_prompt: nextNegativePrompt }
                 : {}),
             }
-          : compiledState.compiled
+          : effectiveCompiledState.compiled
       ),
       sdBody: {
         ...sdBody,
@@ -788,10 +2333,13 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
         originalPrompt: String(sdBody?.prompt || '').trim(),
         refinedPrompt: nextPrompt,
         refinedNegativePrompt: nextNegativePrompt || String(sdBody?.negative_prompt || '').trim(),
+        ...(baseNormalization.applied
+          ? { baseNormalization: baseNormalization.reason }
+          : {}),
       },
     };
   } catch (error_) {
-    const fallback = applyStrengthComponentPromptGuidance(compiledState, mask);
+    const fallback = applyStrengthComponentPromptGuidance(effectiveCompiledState, mask);
     return {
       compiledState: fallback.compiledState,
       promptGuidance: {
@@ -1108,16 +2656,23 @@ function inferAutoImageRequestMode(rawMask = {}) {
   );
   const hasWorkflowSignal = /\b(web|internet|cherche|recherche|reference|référence|variation|variante|version|corrige|corriger|ameliore|améliore|retravaille|retouche|upscale|memoire|mémoire|workflow|plusieurs etapes|plusieurs étapes|edition|édition|edit)\b/i.test(rawText);
   const hasRichPromptState = Boolean(
-    mask?.meta?.llmEnriched === true
-    || (mask?.meta?.definitionLookup && typeof mask.meta.definitionLookup === 'object')
+    (mask?.meta?.definitionLookup && typeof mask.meta.definitionLookup === 'object')
     || (mask?.meta?.imageEntityContext && typeof mask.meta.imageEntityContext === 'object')
     || (Array.isArray(mask?.meta?.promptInstructions) && mask.meta.promptInstructions.length > 3)
     || countImageSemanticFamilies(mask) >= 3
   );
-  const hasSceneAttachment = /\b(avec|dans|sur|sous|tenant|portant|en train de|devant|derriere|derrière)\b/i.test(rawText);
+  const hasSceneAttachment = /\b(avec|with|dans|in|sur|on|sous|under|tenant|holding|portant|wearing|carrying|en train de|devant|in front of|derriere|derrière|behind|next to|beside|inside)\b/i.test(rawText);
+  const hasPromptInstructionHints = Array.isArray(mask?.meta?.promptInstructions) && mask.meta.promptInstructions.length > 0;
   const hasHumanFigureAccessory = (
     ['reference_character', 'single_human_figure'].includes(subjectProfileType)
     && ['wearable', 'weapon', 'smoking_prop'].some((family) => accessoryFamilies.has(family))
+  );
+  const hasAccessoryAttachmentVariation = (
+    hasSceneAttachment
+    && (
+      accessoryFamilies.size > 0
+      || hasPromptInstructionHints
+    )
   );
   const hasNamedCharacterVariation = (
     subjectProfileType === 'reference_character'
@@ -1132,18 +2687,20 @@ function inferAutoImageRequestMode(rawMask = {}) {
     };
   }
 
-  if (namedReferenceSubject) {
+  if (hasNamedCharacterVariation || hasHumanFigureAccessory || hasAccessoryAttachmentVariation) {
     return {
       mode: 'smart',
-      reason: 'named_reference_subject',
+      reason: hasNamedCharacterVariation
+        ? 'reference_character_variation'
+        : (hasHumanFigureAccessory ? 'human_figure_accessory_variation' : 'accessory_attachment_variation'),
       explicit: false,
     };
   }
 
-  if (hasNamedCharacterVariation || hasHumanFigureAccessory) {
+  if (namedReferenceSubject) {
     return {
       mode: 'smart',
-      reason: hasNamedCharacterVariation ? 'reference_character_variation' : 'human_figure_accessory_variation',
+      reason: 'named_reference_subject',
       explicit: false,
     };
   }
@@ -1233,9 +2790,20 @@ function buildSdRequestBody(mask, compiledPayload) {
   const prompt3 = String(payload.prompt_3 || payload.prompt3 || '').trim();
   const negativePrompt2 = String(payload.negative_prompt_2 || payload.negativePrompt2 || '').trim();
   const negativePrompt3 = String(payload.negative_prompt_3 || payload.negativePrompt3 || '').trim();
-
-  const requestedWidth = Number(payload.width || mask?.options?.width);
-  const requestedHeight = Number(payload.height || mask?.options?.height);
+  const renderSizing = mask?.meta?.renderSizing && typeof mask.meta.renderSizing === 'object'
+    ? mask.meta.renderSizing
+    : null;
+  const preferMaskCanvas = String(renderSizing?.source || '').trim() === 'web_init_image';
+  const requestedWidth = Number(
+    preferMaskCanvas
+      ? (mask?.options?.width || payload.width)
+      : (payload.width || mask?.options?.width)
+  );
+  const requestedHeight = Number(
+    preferMaskCanvas
+      ? (mask?.options?.height || payload.height)
+      : (payload.height || mask?.options?.height)
+  );
   const renderLimits = typeof resolveSdLocalRenderLimits === 'function'
     ? resolveSdLocalRenderLimits({
       env: process.env,
@@ -1263,9 +2831,6 @@ function buildSdRequestBody(mask, compiledPayload) {
   });
   const width = fittedDimensions.width;
   const height = fittedDimensions.height;
-  const renderSizing = mask?.meta?.renderSizing && typeof mask.meta.renderSizing === 'object'
-    ? mask.meta.renderSizing
-    : null;
   if (requestedWidth !== undefined && width !== requestedWidth) {
     console.warn(`[A11][image-chat-runtime] width requested=${requestedWidth} effective=${width} (fit)`);
   }
@@ -1611,7 +3176,6 @@ function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
   if (!prompt) return false;
   if (String(compiledState?.sdBody?.prompt_2 || compiledState?.sdBody?.prompt2 || '').trim()) return false;
   if (String(compiledState?.sdBody?.prompt_3 || compiledState?.sdBody?.prompt3 || '').trim()) return false;
-  if (isRichFinalImagePrompt(prompt, negativePrompt)) return false;
   const hasReferenceInitImage = Boolean(String(
     compiledState?.mask?.meta?.webImageDraft?.initImageUrl
     || compiledState?.mask?.meta?.webImageDraft?.initImagePath
@@ -1620,6 +3184,10 @@ function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
     || compiledState?.sdBody?.init_image_url
     || ''
   ).trim());
+  const needsEnglishRewrite = !isUsableEnglishPromptText(prompt, { allowUnknown: true });
+  if (isRichFinalImagePrompt(prompt, negativePrompt) && !(hasReferenceInitImage && needsEnglishRewrite)) {
+    return false;
+  }
 
   return (
     prompt.length >= 160
@@ -1637,7 +3205,7 @@ function buildImagePromptRefinerSourceContext(compiledState = {}) {
   const mask = compiledState?.mask || {};
   return {
     target_language: SD_PROMPT_OUTPUT_LABEL,
-    raw_request: String(mask?.raw || '').trim(),
+    raw_request: resolveAuthoritativeRawRequest(mask),
     current_prompt: normalizeText(compiledState?.sdBody?.prompt || ''),
     current_negative_prompt: normalizeText(compiledState?.sdBody?.negative_prompt || ''),
     subject: Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : [],
@@ -1700,11 +3268,28 @@ async function refineCompiledImagePromptWithLlm(compiledState = {}, options = {}
       buildImagePromptRefinerSourceContext(compiledState),
       { callStructuredLlmJson: options.callStructuredLlmJson }
     );
+    const promotedFallbackState = buildEnglishPromptOverrideCompiledState(compiledState, {
+      prompt: englishContext?.current_prompt || '',
+      negativePrompt: englishContext?.current_negative_prompt || compiledState?.sdBody?.negative_prompt || '',
+    });
+    const compressionReferencePrompt = pickMostDetailedPromptText([
+      englishContext?.raw_request,
+      englishContext?.current_prompt,
+      compiledState?.sdBody?.prompt,
+    ]);
     const response = await options.callStructuredLlmJson({
       text: buildImagePromptRefinerInput(englishContext),
       systemPrompt: buildImagePromptRefinerSystemPrompt(),
       temperature: 0.1,
-      maxTokens: 900,
+      maxTokens: resolvePromptRewriteMaxTokens([
+        englishContext?.raw_request,
+        englishContext?.current_prompt,
+        englishContext?.current_negative_prompt,
+      ], {
+        floor: 900,
+        ceiling: 1800,
+        base: 420,
+      }),
       timeoutMs: Number(process.env.A11_IMAGE_PROMPT_REFINER_TIMEOUT_MS || 10000),
     });
 
@@ -1713,42 +3298,42 @@ async function refineCompiledImagePromptWithLlm(compiledState = {}, options = {}
 
     if (!nextPrompt) {
       return {
-        compiledState,
+        compiledState: promotedFallbackState || compiledState,
         promptRefiner: {
-          applied: false,
-          reason: 'empty_response',
+          applied: Boolean(promotedFallbackState),
+          reason: promotedFallbackState ? 'promoted_translated_raw_request' : 'empty_response',
         },
       };
     }
-    if (!isAcceptableSdRewriteLanguage(nextPrompt)) {
+    if (!isUsableEnglishPromptText(nextPrompt, { allowUnknown: true })) {
       return {
-        compiledState,
+        compiledState: promotedFallbackState || compiledState,
         promptRefiner: {
-          applied: false,
-          reason: 'non_english_response',
+          applied: Boolean(promotedFallbackState),
+          reason: promotedFallbackState ? 'promoted_translated_raw_request' : 'non_english_response',
         },
       };
     }
-    if (nextNegativePrompt && !isAcceptableSdRewriteLanguage(nextNegativePrompt, { allowUnknown: true })) {
+    if (nextNegativePrompt && !isUsableEnglishPromptText(nextNegativePrompt, { allowUnknown: true })) {
       return {
-        compiledState,
+        compiledState: promotedFallbackState || compiledState,
         promptRefiner: {
-          applied: false,
-          reason: 'non_english_negative_response',
+          applied: Boolean(promotedFallbackState),
+          reason: promotedFallbackState ? 'promoted_translated_raw_request' : 'non_english_negative_response',
         },
       };
     }
     if (isOvercompressedPromptRewrite({
-      currentPrompt: compiledState?.sdBody?.prompt || '',
-      currentNegativePrompt: compiledState?.sdBody?.negative_prompt || '',
+      currentPrompt: compressionReferencePrompt || compiledState?.sdBody?.prompt || '',
+      currentNegativePrompt: englishContext?.current_negative_prompt || compiledState?.sdBody?.negative_prompt || '',
       nextPrompt,
       nextNegativePrompt,
     })) {
       return {
-        compiledState,
+        compiledState: promotedFallbackState || compiledState,
         promptRefiner: {
-          applied: false,
-          reason: 'overcompressed_response',
+          applied: Boolean(promotedFallbackState),
+          reason: promotedFallbackState ? 'promoted_translated_raw_request' : 'overcompressed_response',
         },
       };
     }
@@ -1912,13 +3497,17 @@ function compileMaskImageGenerate(rawMask) {
 }
 
 async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
+  const canonicalEntryMask = await canonicalizeImageMaskPromptFlow(rawMask, {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+    stage: 'ingress',
+  });
   const imageRequestMode = resolveImageRequestMode({
-    rawMask,
+    rawMask: canonicalEntryMask,
     req: options.req,
     explicitMode: options.imageRequestMode,
   });
   if (imageRequestMode.mode === 'raw') {
-    const rawModeMask = normalizeMaskImageGenerate(rawMask);
+    const rawModeMask = normalizeMaskImageGenerate(canonicalEntryMask);
     rawModeMask.meta = rawModeMask.meta && typeof rawModeMask.meta === 'object' ? rawModeMask.meta : {};
     rawModeMask.meta.imageRequestMode = 'raw';
     rawModeMask.meta.imagePipelineMode = 'raw';
@@ -1946,7 +3535,7 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     return compiledState;
   }
 
-  const baseSelection = resolveImageCompilerCompartment(rawMask, {
+  const baseSelection = resolveImageCompilerCompartment(canonicalEntryMask, {
     callStructuredLlmJson: options.callStructuredLlmJson,
     pipelineMode: 'smart',
   });
@@ -1955,8 +3544,8 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
   if (orchestratorEnabled) {
     try {
       preferredHintMemory = typeof options.readPreferredImageHintMemory === 'function'
-        ? await options.readPreferredImageHintMemory(rawMask)
-        : await readPreferredImageHintMemory(rawMask);
+        ? await options.readPreferredImageHintMemory(canonicalEntryMask)
+        : await readPreferredImageHintMemory(canonicalEntryMask);
     } catch (error_) {
       preferredHintMemory = {
         available: false,
@@ -1973,13 +3562,13 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     }
   }
   const selection = orchestratorEnabled
-    ? resolveImageCompilerCompartment(rawMask, {
+    ? resolveImageCompilerCompartment(canonicalEntryMask, {
       callStructuredLlmJson: options.callStructuredLlmJson,
       preferredHints: preferredHintMemory?.hints || {},
       pipelineMode: 'smart',
     })
     : baseSelection;
-  let runtimeMask = rawMask;
+  let runtimeMask = canonicalEntryMask;
   if (typeof options.resolveImageEntityContext === 'function') {
     try {
       const imageEntityContext = await options.resolveImageEntityContext({
@@ -2152,11 +3741,14 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     preferredHints: preferredHintMemory?.hints || {},
     pipelineMode: 'smart',
   });
-  const enrichedMask = enriched?.mask || runtimeMask;
+  const enrichedMask = await canonicalizeImageMaskPromptFlow(enriched?.mask || runtimeMask, {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+    stage: 'post_enrichment',
+  });
   enrichedMask.meta = enrichedMask.meta && typeof enrichedMask.meta === 'object'
     ? enrichedMask.meta
     : {};
-  enrichedMask.meta.deferEnglishPromptLocalization = true;
+  enrichedMask.meta.deferEnglishPromptLocalization = false;
   const compiledState = compileMaskImageGenerate(enrichedMask);
   compiledState.imageRequestMode = imageRequestMode;
   compiledState.imageRequestDirector = director;
@@ -2171,8 +3763,10 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
     preferredHintMemory: preferredHintMemory || null,
   };
   const promptRefined = await refineCompiledImagePromptWithLlm(compiledState, options);
-  const techniqueReconciled = await reconcileCompiledImageTechnique(promptRefined.compiledState, {
-    selection: promptRefined.compiledState?.specialCompiler?.selection || selection,
+  const englishPromptFallbackState = buildLocalEnglishPromptFallbackCompiledState(promptRefined.compiledState);
+  const effectivePromptCompiledState = englishPromptFallbackState || promptRefined.compiledState;
+  const techniqueReconciled = await reconcileCompiledImageTechnique(effectivePromptCompiledState, {
+    selection: effectivePromptCompiledState?.specialCompiler?.selection || selection,
     resolveImageWebDraft: options.resolveImageWebDraft,
     webHintContext,
     callStructuredLlmJson: options.callStructuredLlmJson,
@@ -2180,7 +3774,15 @@ async function compileMaskImageGenerateRuntime(rawMask, options = {}) {
   });
   techniqueReconciled.compiledState.promptRefiner = promptRefined.promptRefiner;
   techniqueReconciled.compiledState.techniqueReconciler = techniqueReconciled.techniqueReconciler;
-  return techniqueReconciled.compiledState;
+  techniqueReconciled.compiledState.localEnglishPromptFallback = {
+    applied: false,
+    reason: 'disabled',
+  };
+  const finalPromptGuard = await enforceFinalCanonicalEnglishPrompt(techniqueReconciled.compiledState, {
+    callStructuredLlmJson: options.callStructuredLlmJson,
+  });
+  finalPromptGuard.compiledState.finalPromptGuard = finalPromptGuard.finalPromptGuard;
+  return finalPromptGuard.compiledState;
 }
 
 function slugifyImageVerificationLabel(value = '') {
@@ -2270,8 +3872,18 @@ function deriveOperationalSeed({ mask = {}, sdBody = {} } = {}) {
 }
 
 function ensureOperationalSdBody(sdBody = {}, mask = {}) {
+  const initImage = String(
+    sdBody?.init_image_url
+    || sdBody?.initImageUrl
+    || mask?.meta?.webImageDraft?.initImagePath
+    || mask?.meta?.webImageDraft?.initImageUrl
+    || mask?.meta?.reference_image_url
+    || mask?.meta?.init_image_url
+    || ''
+  ).trim();
   return {
     ...sdBody,
+    ...(initImage ? { init_image_url: initImage } : {}),
     seed: deriveOperationalSeed({ mask, sdBody }),
   };
 }
@@ -2405,6 +4017,23 @@ async function generateImageFromMask({
   const attempts = [];
 
   let activeSdBody = ensureOperationalSdBody(compiledState.sdBody, compiledState.mask);
+  const finalPrompt = String(activeSdBody?.prompt || '').trim();
+  const finalNegativePrompt = String(activeSdBody?.negative_prompt || '').trim();
+  const finalPromptOkay = isCanonicalEnglishSdText(finalPrompt, { allowUnknown: true });
+  const finalNegativeOkay = !finalNegativePrompt || isCanonicalEnglishSdText(finalNegativePrompt, { allowUnknown: true });
+  console.log(`[A11][prompt-canon][final] prompt=${JSON.stringify(finalPrompt)}`);
+  if (!finalPromptOkay || !finalNegativeOkay || compiledState?.finalPromptGuard?.rejected === true) {
+    const error = new Error('final_prompt_not_canonical_english');
+    error.statusCode = 422;
+    error.payload = {
+      ok: false,
+      error: 'final_prompt_not_canonical_english',
+      prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
+      finalPromptGuard: compiledState?.finalPromptGuard || null,
+    };
+    throw error;
+  }
   let compiledPromptHash = buildCompiledPromptHash(activeSdBody);
   const expectedSubjectCount = Number(expectedImageContract?.subjectCount || 0) || 0;
   const expectedMode = String(expectedImageContract?.mode || expectedImageContract?.reason || 'none').trim() || 'none';
@@ -2419,10 +4048,15 @@ async function generateImageFromMask({
       : (Number.isFinite(Number(activeSdBody?.strength)) ? Number(activeSdBody.strength).toFixed(2) : 'none');
     console.log(
       `[A11][img2img-web] source=${String(draft?.sourceUsed || draft?.initImagePath || draft?.initImageUrl || 'unknown').trim() || 'unknown'}`
+      + (
+        draft?.sourcePreparedApplied === true && draft?.sourceOriginalUsed
+          ? ` source_original=${String(draft.sourceOriginalUsed).trim()}`
+          : ''
+      )
       + ` source_dims=${draft?.sourceWidth || draft?.width || 'unknown'}x${draft?.sourceHeight || draft?.height || 'unknown'}`
       + (
         draft?.sourceTrimApplied === true
-          ? ` source_original=${draft?.originalSourceWidth || 'unknown'}x${draft?.originalSourceHeight || 'unknown'}`
+          ? ` source_dims_original=${draft?.originalSourceWidth || 'unknown'}x${draft?.originalSourceHeight || 'unknown'}`
           : ''
       )
       + ` source_ratio=${Number.isFinite(Number(draft?.sourceRatio)) ? Number(draft.sourceRatio).toFixed(4) : 'unknown'}`
@@ -2784,6 +4418,7 @@ function toImageChatProxyPayload({
 
 module.exports = {
   extractLatestUserMessage,
+  applyStrengthComponentPromptGuidance,
   buildSdRequestBody,
   buildImageVerificationRequestId,
   compileMaskImageGenerate,
