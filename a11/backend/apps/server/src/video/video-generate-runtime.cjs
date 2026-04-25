@@ -2720,9 +2720,11 @@ function createGenerateVideoHandler(overrides = {}) {
     request.canonicalSubject = compiledCanonicalSubject;
     request.subjectFacts = compiledFacts;
 
+    const compiledBasePrompt = String(baseSdBody.prompt || request.prompt).trim();
+
     const sequencePlan = await planVideoSequence({
       request,
-      compiledBasePrompt: String(baseSdBody.prompt || request.prompt).trim(),
+      compiledBasePrompt,
       sourceImagePath: String(
         effectiveInitialReference.initImagePath
         || request.sourceImagePath
@@ -2804,7 +2806,7 @@ function createGenerateVideoHandler(overrides = {}) {
     }
 
     console.log(
-      `[A11][video] start prompt="${request.prompt}" duration=${request.durationSeconds}s fps=${request.fps} format=${request.format} frames=${request.frameCount} size=${frameWidth}x${frameHeight}`
+      `[A11][video] start prompt="${compiledBasePrompt}" duration=${request.durationSeconds}s fps=${request.fps} format=${request.format} frames=${request.frameCount} size=${frameWidth}x${frameHeight}`
     );
     if (referenceAnalysis?.sourceMeta) {
       console.log(
@@ -2836,7 +2838,7 @@ function createGenerateVideoHandler(overrides = {}) {
         label: 'continuite',
         prompt: 'faire avancer la posture d une etape visible',
       });
-      const framePromptPlan = buildFramePromptPlan(baseSdBody.prompt || request.prompt, {
+      const framePromptPlan = buildFramePromptPlan(compiledBasePrompt, {
         framePlan,
         sequencePlan,
         referenceAnalysis,
@@ -3093,7 +3095,7 @@ function createGenerateVideoHandler(overrides = {}) {
       videoCodec: resolvedVideoCodec,
       mode: request.config.backend,
       prompt: request.prompt,
-      compiledPrompt: String(baseSdBody.prompt || request.prompt).trim(),
+      compiledPrompt: compiledBasePrompt,
       negativePrompt: String(baseSdBody.negative_prompt || '').trim() || null,
       format: request.format,
       durationSeconds: request.durationSeconds,
