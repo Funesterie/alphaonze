@@ -51,9 +51,9 @@ function Show-A11Status {
     }
   }
 
-  $pid = Get-ListeningProcessId -Port $BackendPort
-  if ($pid) {
-    Write-Host ("backend   running            port={0} pid={1}" -f $BackendPort, $pid) -ForegroundColor Green
+  $backendPid = Get-ListeningProcessId -Port $BackendPort
+  if ($backendPid) {
+    Write-Host ("backend   running            port={0} pid={1}" -f $BackendPort, $backendPid) -ForegroundColor Green
   } else {
     Write-WarnLine "Backend non detecte sur le port $BackendPort."
   }
@@ -89,7 +89,24 @@ function Write-FilteredLine {
 
 $launcherRoot = Split-Path -Parent $PSCommandPath
 $a11Root = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot '..'))
-$runtimeRoot = Join-Path $a11Root 'runtime'
+
+# Lire A11_RUNTIME_ROOT depuis le config si disponible, sinon fallback relatif
+$configPath = Join-Path $launcherRoot 'config\a11-local.env'
+$runtimeRoot = $null
+if (Test-Path -LiteralPath $configPath) {
+  $configLine = Get-Content -LiteralPath $configPath | Where-Object { $_ -match '^A11_RUNTIME_ROOT\s*=' } | Select-Object -Last 1
+  if ($configLine) {
+    $rawValue = ($configLine -split '=', 2)[1].Trim()
+    if ([System.IO.Path]::IsPathRooted($rawValue)) {
+      $runtimeRoot = $rawValue
+    } else {
+      $runtimeRoot = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot $rawValue))
+    }
+  }
+}
+if (-not $runtimeRoot) {
+  $runtimeRoot = Join-Path $a11Root 'runtime'
+}
 $launcherRuntimeRoot = Join-Path $runtimeRoot 'launcher'
 $logsDirectory = Join-Path $launcherRuntimeRoot 'logs'
 $snapshotPath = Join-Path $launcherRuntimeRoot 'a11-local.snapshot.json'

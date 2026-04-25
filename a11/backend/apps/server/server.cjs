@@ -5504,7 +5504,7 @@ const sdTools = createSdToolsRouter({
   resolveSdProxyUrl,
   resolveSdScriptPath,
   runSdScript,
-  uploadBufferToR2,
+  uploadBufferToR2: (payload) => resolveFileUploadWriter().uploadBuffer(payload),
   isAdminRequest,
 });
 
