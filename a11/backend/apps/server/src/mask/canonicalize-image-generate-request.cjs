@@ -184,6 +184,74 @@ const NAMED_ENTITY_STOPWORDS = new Set([
   'fait',
   'fais',
   'dessine',
+  // Pronoms et articles français/anglais qui commencent une phrase
+  'une',
+  'un',
+  'des',
+  'les',
+  'elle',
+  'il',
+  'ils',
+  'elles',
+  'nous',
+  'vous',
+  'on',
+  'ce',
+  'cet',
+  'cette',
+  'ces',
+  'son',
+  'sa',
+  'ses',
+  'mon',
+  'ma',
+  'mes',
+  'ton',
+  'ta',
+  'tes',
+  'leur',
+  'leurs',
+  'she',
+  'he',
+  'they',
+  'we',
+  'you',
+  'it',
+  'this',
+  'that',
+  'her',
+  'his',
+  'its',
+  'their',
+  'our',
+  'your',
+  // Verbes courants en début de phrase
+  'leve',
+  'lève',
+  'tient',
+  'regarde',
+  'marche',
+  'court',
+  'stands',
+  'holds',
+  'raises',
+  'looks',
+  'walks',
+  'runs',
+  'turns',
+  'faces',
+  // Adjectifs/adverbes courants
+  'lentement',
+  'slowly',
+  'pendant',
+  'while',
+  'camera',
+  'caméra',
+  'style',
+  'plan',
+  'fond',
+  'sans',
+  'avec',
 ]);
 
 const NAMED_ENTITY_SECTION_LABEL_STOPWORDS = new Set([
@@ -225,7 +293,7 @@ function extractPreservedNamedEntityCandidates(rawUserInput = '') {
       tokenCount >= 2
       || hasUppercaseAcronymShape(cleaned)
       || /[-']/.test(cleaned)
-      || (cleaned.length >= 4 && text.indexOf(cleaned) > 0)
+      || cleaned.length >= 4
     );
     if (!hasNamedShape) continue;
     seen.add(lookup);
