@@ -347,10 +347,13 @@ const { createArtifact, normalizeArtifactKind, buildArtifactOrigin } = require('
 const { createEmailService, resolveEmailServiceConfigFromEnv } = require('./lib/email-service.cjs');
 const { analyzeUploadedResource, buildConversationResourceContext } = require('./lib/resource-reader.cjs');
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
+const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
 const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
+const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
+const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
@@ -1058,16 +1061,9 @@ app.get('/avatar.gif', (req, res) => {
 
 // CORS configuration: allow local dev origins and production origin
 const defaultCorsOrigins = [
-  'https://a11backendrailway.up.railway.app',
-  'https://a11backendrailway.railway.app',
-  'https://funesterie.pro',
-  'https://a11.funesterie.pro',
-  'https://casino.funesterie.pro'
+  'https://alphaonze.funesterie.pro'
 ];
-const trustedNetlifyOrigins = [
-  'https://a11funesterie.netlify.app',
-  'https://funesterie.netlify.app'
-];
+const trustedNetlifyOrigins = [];
 const normalizeOrigin = (origin) => String(origin || '').trim().replace(/\/$/, '');
 const envCorsOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
@@ -2520,7 +2516,7 @@ async function fetchRemoteImageBuffer(imageUrl) {
   const response = await fetch(normalizedUrl, {
     method: 'GET',
     headers: {
-      'user-agent': 'A11/1.0 (+https://a11.funesterie.pro)',
+      'user-agent': 'A11/1.0 (+https://alphaonze.funesterie.pro)',
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
   });
@@ -2751,7 +2747,7 @@ async function fetchRemoteImageBuffer(imageUrl) {
   const response = await fetch(normalizedUrl, {
     method: 'GET',
     headers: {
-      'user-agent': 'A11/1.0 (+https://a11.funesterie.pro)',
+      'user-agent': 'A11/1.0 (+https://alphaonze.funesterie.pro)',
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
   });
@@ -5014,7 +5010,7 @@ const EXPLICIT_PUBLIC_API_BASE_URL = String(
 ).trim();
 const PUBLIC_API_BASE_URL = normalizePublicAppUrl(
   EXPLICIT_PUBLIC_API_BASE_URL
-  || 'https://api.funesterie.pro'
+  || 'https://alphaonze.funesterie.pro'
 );
 
 if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-in-production') {
@@ -5172,7 +5168,7 @@ ensureExpiredSharedFilesCleanupTimer();
 const resolvedEmailConfig = resolveEmailServiceConfigFromEnv(process.env);
 const emailService = createEmailService({
   ...resolvedEmailConfig,
-  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://a11.funesterie.pro'),
+  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://alphaonze.funesterie.pro'),
 });
 const emailStatus = emailService.getStatus();
 if (emailStatus.configured) {
@@ -5495,39 +5491,10 @@ app.post('/api/control/:command', verifyJWT, requireRuntimeControlAccess, async 
   }
 });
 
-function isAdminRequest(req) {
-  const configuredAdminTokens = [
-    process.env.NEZ_ADMIN_TOKEN,
-    process.env.DRAGON_API_TOKEN,
-    process.env.QFLUSH_TOKEN,
-    process.env.NPZ_ADMIN_TOKEN,
-  ]
-    .map((value) => String(value || '').trim())
-    .filter(Boolean)
-    .filter((value, index, values) => values.indexOf(value) === index);
-  const bearerMatch = String(req.headers?.authorization || '').match(/^Bearer\s+(.+)$/i);
-  const adminHeaders = [
-    req.headers['x-nez-admin'],
-    req.headers['x-nez-admin-token'],
-    req.headers['x-admin-token'],
-    req.headers['x-qflush-token'],
-    req.headers['x-dragon-token'],
-    req.headers['x-nez-token'],
-    bearerMatch?.[1],
-  ].map((value) => String(value || '').trim()).filter(Boolean);
-  if (configuredAdminTokens.length && adminHeaders.some((value) => configuredAdminTokens.includes(value))) {
-    return true;
-  }
-
-  if (adminHeaders.some((value) => ['1', 'true', 'yes', 'admin'].includes(value.toLowerCase()))) {
-    return true;
-  }
-
-  const userId = String(req.user?.id || '').trim().toLowerCase();
-  const username = String(req.user?.username || '').trim().toLowerCase();
-  const normalizedDefaultAdmin = DEFAULT_ADMIN_USERNAME.toLowerCase();
-  return userId === 'admin' || username === 'admin' || username === normalizedDefaultAdmin;
-}
+const isAdminRequest = createIsAdminRequest({
+  env: process.env,
+  defaultAdminUsername: DEFAULT_ADMIN_USERNAME,
+});
 
 const sdTools = createSdToolsRouter({
   fs,
@@ -5544,6 +5511,7 @@ const sdTools = createSdToolsRouter({
 app.use('/api', createAdminRunRouter({
   isAdminRequest,
   runQflushFlow,
+  verifyJWT,
 }));
 
 app.use('/api/admin', createAdminRouter({
@@ -5786,7 +5754,7 @@ async function buildControlCenterStatus(req) {
       key: isLocalControlOrigin(req) ? 'local' : 'online',
       label: isLocalControlOrigin(req) ? 'Local tunnel' : 'Online',
       requestOrigin,
-      frontendUrl: runtime?.config?.frontendUrl || 'https://a11.funesterie.pro',
+      frontendUrl: runtime?.config?.frontendUrl || 'https://alphaonze.funesterie.pro',
       publicApiUrl: runtime?.config?.publicApiUrl || requestOrigin || '',
       controlEnabled,
       controlReason: controlEnabled
@@ -6525,6 +6493,30 @@ try {
 } catch (e) {
   console.warn('[A11] Could not initialize /legacy static middleware for web public:', e?.message);
 }
+
+const EMBEDDED_UI_STATIC_PREFIXES = ['/assets/', '/icons/', '/legacy/'];
+const EMBEDDED_UI_STATIC_FILES = new Set([
+  '/favicon.ico',
+  '/manifest.webmanifest',
+  '/sw.js',
+  '/anonymous_code_placeholder.js',
+  '/a11_static.png',
+  '/A11_talking_smooth_8s.gif',
+  '/system_prompt.txt',
+]);
+
+function isEmbeddedUiStaticRequest(pathname) {
+  return EMBEDDED_UI_STATIC_FILES.has(pathname)
+    || EMBEDDED_UI_STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+app.use((req, res, next) => {
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || !isEmbeddedUiStaticRequest(req.path)) {
+    return next();
+  }
+
+  return res.status(404).type('text/plain').send('Not found');
+});
 
 // Ajout des routes /healthz et /
 app.get('/healthz', (_req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -12203,14 +12195,11 @@ function writeMemoryKeyValue(key, value) {
   }
 }
 
-// --- Route API pour a11_memory_write ---
-app.post('/api/a11/memory/write', express.json(), (req, res) => {
-  const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({ ok: false, error: 'Missing key' });
-  const result = writeMemoryKeyValue(key, value);
-  if (!result.ok) return res.status(500).json(result);
-  return res.json(result);
-});
+app.use('/api', createA11MemoryWriteRouter({
+  isAdminRequest,
+  verifyJWT,
+  writeMemoryKeyValue,
+}));
 
 // Ajout du routeur Cerbère (llm-router.cjs)
 const { router: llmRouter } = require('./llm-router.cjs');
@@ -12219,13 +12208,10 @@ app.use(llmRouter);
 // Fallback: ensure server starts
 if (!LISTENING) {
   try {
-    const HOST = process.env.HOST || '0.0.0.0';
+    const HOST = resolveBindHost(process.env);
     const server = app.listen(PORT, HOST, () => {
       LISTENING = true;
-      const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN || 'a11backendrailway.up.railway.app';
-      const publicUrl = process.env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${railwayDomain}`
-        : `http://127.0.0.1:${PORT}`;
+      const publicUrl = process.env.PUBLIC_API_URL || `http://127.0.0.1:${PORT}`;
       console.log(`[A11] Server listening on ${HOST}:${PORT} (public: ${publicUrl})`);
     });
     server.on('error', (error_) => {

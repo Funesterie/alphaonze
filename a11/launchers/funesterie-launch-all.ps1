@@ -172,8 +172,13 @@ function Start-AlphaOnZeIfNeeded {
   $previousPort = $env:ALPHAONZE_PORT
   $previousHost = $env:ALPHAONZE_HOST
   try {
+    $alphaHost = if ([string]::IsNullOrWhiteSpace($env:A11_ALPHAONZE_HOST)) {
+      if ([string]::IsNullOrWhiteSpace($env:ALPHAONZE_HOST)) { '127.0.0.1' } else { $env:ALPHAONZE_HOST }
+    } else {
+      $env:A11_ALPHAONZE_HOST
+    }
     $env:ALPHAONZE_PORT = '8088'
-    $env:ALPHAONZE_HOST = '0.0.0.0'
+    $env:ALPHAONZE_HOST = $alphaHost
     Start-LoggedProcess -Label 'alphaonze-afk' -FilePath $node -ArgumentList @('server.cjs') -WorkingDirectory $AlphaDir -LogRoot $LogRoot | Out-Null
   } finally {
     $env:ALPHAONZE_PORT = $previousPort
@@ -253,7 +258,6 @@ try {
   }
 
   if (Test-Path -LiteralPath $alphaDir) {
-    Start-AlphaOnZeIfNeeded -AlphaDir $alphaDir -LogRoot $logRoot
     Start-CaddyIfNeeded -AlphaDir $alphaDir -LogRoot $logRoot
   } else {
     Write-WarnLine "Dossier AlphaOnze introuvable: $alphaDir"
@@ -265,8 +269,8 @@ try {
   }
 
   Write-Info 'Termine.'
-  Write-Info 'A11: http://127.0.0.1:3000'
-  Write-Info 'AlphaOnze AFK: https://alphaonze.funesterie.pro/afkop.png'
+  Write-Info 'A11 local: http://127.0.0.1:3000'
+  Write-Info 'A11 public: https://alphaonze.funesterie.pro/'
 } finally {
   Complete
 }

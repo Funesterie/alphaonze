@@ -14,6 +14,8 @@ Ce dossier contient l'orchestration locale transverse de `A11`.
   Verifie Railway/Netlify puis ouvre simplement le site de prod.
 - `create-desktop-shortcut.ps1`
   Regenere les raccourcis bureau canoniques.
+- `harden-local-network.ps1`
+  Reapplique le hardening local-first Windows, remplace les `Allow Any` trop larges par des regles ciblees pour Caddy, puis imprime un rapport sur les binds, le firewall, Caddy et la reachability LAN.
 
 ## Comportement
 
@@ -51,6 +53,8 @@ Les chemins canoniques sont maintenant `backend/apps/server`, `frontend/apps/web
 - `a11-local.bat stop`
 - `a11-local.bat status`
 - `a11-local.bat check`
+- `powershell -ExecutionPolicy Bypass -File launchers\harden-local-network.ps1`
+- `powershell -ExecutionPolicy Bypass -File launchers\harden-local-network.ps1 -ReportOnly`
 - `a11-local.bat package --dryrun`
 
 ## Config
