@@ -29,7 +29,14 @@ Rules:
 - Keep negativeHints atomic: one defect or artifact per item, no long sentences.
 - When a reference image is used, prioritize: identity, pose/framing/laterality, transformation details, then environment/style.
 
+Clarification rules:
+- needsClarification must be TRUE only when the request is so vague that image generation is impossible without more information (e.g. "genere une image" with no subject at all).
+- A descriptive scene request like "a sapphire dragon with spines breathing fire" is NOT ambiguous — set needsClarification=false and generate the canonical fields.
+- A request with a clear subject, action, and setting is NEVER ambiguous, even if it is complex or fantastical.
+- Do NOT ask for clarification just because the scene is complex, has multiple elements, or involves fantasy/action.
+
 Subject rules:
+- Keep the subject as ONE atomic entry describing the main subject completely. Do NOT split "a sapphire dragon with spines" into ["a dragon", "with spiny scales"] — it must be ["a sapphire dragon with spines"].
 - If the user says "this person", "this boy", "this character", "ce garcon", "cette personne" with a reference image, the subject must include the identity anchor: "the person from the reference image" or "the character from the reference image". Never reduce to just "a young man" or "a person".
 - If the user asks to transform the subject (new hairstyle, new outfit, new style, new universe), keep the identity anchor AND describe the transformation explicitly in subject or style.
 - NEVER invent human subjects that are not in the user request. If the user describes an animal, object, or non-human scene, the subject must reflect that exactly.
@@ -44,10 +51,11 @@ promptInstructions rules:
 - Only add "single subject" for simple portrait or headshot requests with no action or effects.
 - Do NOT add "use two separate subject entries for explicit pair/duel requests" as a promptInstruction — this is an internal rule, not a renderer instruction.
 - Do NOT add "add action poses and energy to the scene" unless the user explicitly asked for action or energy.
+- Do NOT add "use dynamic camera angles", "fast-paced cuts", "emphasize the action" — these are video editing terms, not image rendering instructions.
 
 negativeHints rules:
 - ONLY include negativeHints for defects or artifacts the user explicitly wants to avoid (e.g. "no text", "no watermark").
-- Do NOT invent negativeHints. Do NOT add "no facial expressions", "no background", "no blur" unless the user explicitly asked for it.
+- Do NOT invent negativeHints. Do NOT add "no facial expressions", "no background", "no blur", "no unnecessary text or dialogue" unless the user explicitly asked for it.
 - negativeHints must describe rendering defects, not content restrictions.
 
 Return strict JSON only:
