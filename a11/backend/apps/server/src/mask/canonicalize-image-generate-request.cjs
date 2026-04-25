@@ -21,6 +21,8 @@ Rules:
 - If a reference image is present, reflect that in the English request and keep identity/pose/framing preservation when explicitly requested.
 - Treat solo portrait requests as single-subject unless there is a strong explicit signal for two or more subjects.
 - Treat "versus", "vs", "against", "duel", "fight", "battle", "combat between", and equivalent wording as a pair or group scene when named subjects are present. Do not emit "single subject" instructions for pair or group scenes.
+- Preserve explicit cardinality from raw_user_input: if the user asks for two subjects, both subjects, a duel, 1v1, face-to-face combat, or "between two" actors, scenePolicy.subjectMode must be "pair", explicitSubjectCount must be 2, and structuredFields.subject must contain two separate subject entries.
+- Do not turn action/event nouns such as confrontation, fight, battle, duel, combat, or clash into the sole subject when the user requested actors taking part in that action.
 - Make scenePolicy and constraints consistent: if subjectMode is "pair" or explicitSubjectCount is 2, promptInstructions and composition must not say "single subject".
 - Each structuredFields array item must be one short atomic idea only, never a paragraph.
 - Deduplicate repeated ideas across structuredFields.
@@ -237,6 +239,48 @@ function hasSingleSubjectInstruction(value = '') {
   return /\b(single subject|single main subject|single clearly visible main subject|single well framed subject|single well framed|only one subject|one subject only)\b/i.test(lookup);
 }
 
+function findRawSubjectCardinalityExpectation(rawUserInput = '') {
+  const lookup = normalizeLookup(rawUserInput);
+  if (!lookup) {
+    return { subjectMode: 'unspecified', explicitSubjectCount: null, reason: '' };
+  }
+
+  const pairPatterns = [
+    {
+      reason: 'explicit_two_subjects',
+      pattern: /\b(?:deux|two|2)\s+(?:personnages?|characters?|combattants?|fighters?|guerriers?|warriors?|adversaires?|opponents?|sujets?|subjects?|personnes?|people|humains?|humans?)\b/i,
+    },
+    {
+      reason: 'both_subjects',
+      pattern: /\b(?:les\s+deux|both)\s+(?:personnages?|characters?|combattants?|fighters?|guerriers?|warriors?|adversaires?|opponents?|sujets?|subjects?|personnes?|people|humains?|humans?)\b/i,
+    },
+    {
+      reason: 'between_two_actors',
+      pattern: /\b(?:entre|between)\s+(?:deux|two|2)\b/i,
+    },
+    {
+      reason: 'duel_pair_scene',
+      pattern: /\b(?:duel|face\s+a\s+face|face\s+to\s+face|one\s+on\s+one|1\s*(?:v|vs|versus|contre)\s*1|1v1)\b/i,
+    },
+    {
+      reason: 'versus_pair_scene',
+      pattern: /\b(?:vs\.?|versus)\b/i,
+    },
+  ];
+
+  const match = pairPatterns.find((entry) => entry.pattern.test(lookup));
+  if (!match) {
+    return { subjectMode: 'unspecified', explicitSubjectCount: null, reason: '' };
+  }
+  return { subjectMode: 'pair', explicitSubjectCount: 2, reason: match.reason };
+}
+
+function isAbstractCombatEventSubject(value = '') {
+  const lookup = normalizeLookup(value);
+  if (!lookup) return false;
+  return /^(?:affrontement|confrontation|combat|duel|fight|battle|clash|collision|energy clash|scene|action scene|combat scene)$/i.test(lookup);
+}
+
 function findCardinalityConflict(canonicalizedRequest = null) {
   const structuredFields = canonicalizedRequest?.structuredFields || {};
   const constraints = structuredFields?.constraints || {};
@@ -244,6 +288,21 @@ function findCardinalityConflict(canonicalizedRequest = null) {
   const scenePolicy = normalizeScenePolicy(canonicalizedRequest?.scenePolicy);
   const explicitSubjectCount = Number(scenePolicy.explicitSubjectCount || 0) || 0;
   const mode = scenePolicy.subjectMode;
+  const rawExpectation = findRawSubjectCardinalityExpectation(canonicalizedRequest?.audit?.rawUserInput || '');
+
+  if (rawExpectation.subjectMode === 'pair' && rawExpectation.explicitSubjectCount === 2) {
+    if (mode === 'single' || explicitSubjectCount === 1) {
+      return `raw_pair_scene_collapsed_to_single:${rawExpectation.reason}`;
+    }
+    if (subjectCount < 2) {
+      const firstSubject = Array.isArray(structuredFields?.subject) ? structuredFields.subject[0] : '';
+      if (isAbstractCombatEventSubject(firstSubject)) {
+        return `raw_pair_scene_collapsed_to_event_subject:${normalizeText(firstSubject)}`;
+      }
+      return `raw_pair_scene_missing_two_subject_entries:${rawExpectation.reason}`;
+    }
+  }
+
   const effectivePairOrGroup = (
     mode === 'pair'
     || mode === 'group'
@@ -584,7 +643,7 @@ function buildCanonicalizeImageGenerateRequestRetryText(rawUserInput = '', optio
       : null,
     rejection_code: normalizeText(rejectionCode),
     rejection_details: normalizeText(rejectionDetails),
-    retry_instruction: 'Re-emit the full canonical request in English only, preserve every explicit named entity from raw_user_input, keep scenePolicy consistent with the subject count, and make every structuredFields item a short atomic idea.',
+    retry_instruction: 'Re-emit the full canonical request in English only, preserve every explicit named entity and subject count from raw_user_input, keep scenePolicy consistent with the subject count, use two separate subject entries for explicit pair/duel requests, never collapse actors into an abstract event subject, and make every structuredFields item a short atomic idea.',
   }, null, 2);
 }
 
@@ -901,6 +960,7 @@ module.exports = {
   extractPreservedNamedEntityCandidates,
   findCardinalityConflict,
   findMissingNamedEntityCandidates,
+  findRawSubjectCardinalityExpectation,
   isEnglishLikeText,
   normalizeCanonicalizedImageGenerateRequest,
   resolveCanonicalizerTimeoutMs,

@@ -911,10 +911,17 @@ const PUBLIC_RUNTIME_ROOT = path.resolve(
 );
 const PUBLIC_RUNTIME_UPLOADS_ROOT = path.join(PUBLIC_RUNTIME_ROOT, 'files', 'uploads');
 
+function setPublicFileResponseHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Timing-Allow-Origin', '*');
+}
+
 // Exposer explicitement le runtime local, même s'il vit hors du workspace.
 app.use('/files/runtime', express.static(PUBLIC_RUNTIME_ROOT, {
   dotfiles: 'ignore',
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: setPublicFileResponseHeaders,
 }));
 console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT);
 
@@ -922,14 +929,16 @@ console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT);
 // /files/runtime/files/uploads/..., donc on expose aussi cet alias vers le runtime.
 app.use('/files/uploads', express.static(PUBLIC_RUNTIME_UPLOADS_ROOT, {
   dotfiles: 'ignore',
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: setPublicFileResponseHeaders,
 }));
 console.log('[A11] Static /files/uploads ->', PUBLIC_RUNTIME_UPLOADS_ROOT);
 
 // Exposer le workspace en lecture seule sous /files
 app.use('/files', express.static(WORKSPACE_ROOT, {
   dotfiles: 'ignore',
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: setPublicFileResponseHeaders,
 }));
 console.log('[A11] Static /files ->', WORKSPACE_ROOT);
 

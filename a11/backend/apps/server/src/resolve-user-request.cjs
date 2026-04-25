@@ -227,7 +227,11 @@ function buildClarificationPayload(clarification, semantic, traceId, pipeline) {
 function shouldSurfaceCanonicalizerDiagnostic(error_ = null) {
   if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
   const reasons = Array.isArray(error_?.payload?.details?.reasons) ? error_.payload.details.reasons : [];
-  return reasons.some((entry) => /canonicalized_request_not_english_only/i.test(String(entry || '')));
+  return reasons.some((entry) => (
+    /canonicalized_request_not_english_only/i.test(String(entry || ''))
+    || /canonicalized_request_cardinality_conflict/i.test(String(entry || ''))
+    || /canonicalized_request_missing_named_entity/i.test(String(entry || ''))
+  ));
 }
 
 function buildCanonicalizerDiagnosticSummary(error_ = null) {
@@ -237,11 +241,17 @@ function buildCanonicalizerDiagnosticSummary(error_ = null) {
   const reasons = Array.isArray(details.reasons) ? details.reasons : [];
   const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
   const lastRejected = rejectedPayloads.length ? rejectedPayloads[rejectedPayloads.length - 1] : null;
+  const lastReason = String(lastRejected?.reason || '').trim();
+  const failedBecause = /canonicalized_request_cardinality_conflict/i.test(lastReason)
+    ? 'cardinality_validation_failed_after_retry'
+    : (/canonicalized_request_missing_named_entity/i.test(lastReason)
+        ? 'named_entity_validation_failed_after_retry'
+        : 'english_only_validation_failed_after_retry');
   return {
-    failedBecause: 'english_only_validation_failed_after_retry',
+    failedBecause,
     retryCount: Math.max(0, rejectedPayloads.length - 1),
     lastAttempt: String(lastRejected?.attempt || '').trim(),
-    lastReason: String(lastRejected?.reason || '').trim(),
+    lastReason,
     lastCanonicalEnglishInput: String(lastRejected?.payload?.canonicalEnglishInput || '').trim(),
     reasons,
   };
@@ -253,12 +263,17 @@ function buildCanonicalizerDiagnosticAssistant(error_ = null) {
     : {};
   const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
   const summary = buildCanonicalizerDiagnosticSummary(error_);
+  const reasonLine = summary.failedBecause === 'cardinality_validation_failed_after_retry'
+    ? "La requete image a ete comprise, mais la normalisation a essaye de reduire une scene a plusieurs sujets en sujet unique."
+    : (summary.failedBecause === 'named_entity_validation_failed_after_retry'
+        ? "La requete image a ete comprise, mais la normalisation a perdu ou remplace un nom explicite de ta demande."
+        : "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.");
   const lines = [
-    "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.",
+    reasonLine,
     summary.retryCount > 0
-      ? "J'ai deja tente une seconde passe automatique, sans arriver a produire un anglais canonique propre."
+      ? "J'ai deja tente une seconde passe automatique, sans obtenir une sortie canonique fiable."
       : '',
-    "Tu peux retenter avec une version plus decoupee, par exemple: sujet, decor, style, contraintes.",
+    "Je prefere bloquer ici plutot que lancer une generation avec un prompt ecrase.",
     rejectedPayloads.length ? "Le detail technique complet reste disponible dans `diagnostic.rejectedPayloads`." : '',
   ].filter(Boolean);
   return lines.join('\n');

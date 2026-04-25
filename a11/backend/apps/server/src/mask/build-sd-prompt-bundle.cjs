@@ -760,6 +760,8 @@ function isPluralRequested(prompt = '') {
   const normalized = normalizeIntentText(prompt);
   return (
     /\b(des|plusieurs|many|multiple|crowd|group|groupe|ensemble)\b/.test(normalized)
+    || /\b(?:deux|two|2)\s+(?:personnages?|characters?|combattants?|fighters?|guerriers?|warriors?|adversaires?|opponents?|sujets?|subjects?|personnes?|people|humains?|humans?)\b/.test(normalized)
+    || /\b(?:les\s+deux|both)\s+(?:personnages?|characters?|combattants?|fighters?|guerriers?|warriors?|adversaires?|opponents?|sujets?|subjects?|personnes?|people|humains?|humans?)\b/.test(normalized)
     || NAMED_GROUP_REFERENCE_PATTERNS.some((pattern) => pattern.test(normalized))
   );
 }
@@ -769,6 +771,8 @@ function isMultiSubjectSceneRequest(prompt = '') {
   if (!normalized) return false;
   return (
     isPluralRequested(prompt)
+    || /\b(?:entre|between)\s+(?:deux|two|2)\b/.test(normalized)
+    || /\b(?:duel|face\s+a\s+face|face\s+to\s+face|one\s+on\s+one|1\s*(?:v|vs|versus|contre)\s*1|1v1)\b/.test(normalized)
     || /\b(?:contre|vs\.?|versus|face\s+a)\b/.test(normalized)
     || /\b(crew|team|squad|party|band|bande|troupe|alliance|league)\b/.test(normalized)
     || /\b(scene de groupe|composition de groupe|scene multi|multi personnages|multi personnage|multi character|multi characters)\b/.test(normalized)
