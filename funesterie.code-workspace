@@ -69,7 +69,8 @@
     "github.copilot.chat.notebook.followCellExecution.enabled": true,
     "github.copilot.chat.responsesApi.promptCacheKey.enabled": true,
     "github.copilot.chat.responsesApiContextManagement.enabled": true,
-    "github.copilot.chat.switchAgent.enabled": true
+    "github.copilot.chat.switchAgent.enabled": true,
+    "powershell.cwd": "FUNESTERIE ROOT"
   },
   "extensions": {
     "recommendations": [

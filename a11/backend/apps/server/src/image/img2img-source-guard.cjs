@@ -34,6 +34,17 @@ function resolvePreparedImg2ImgSourceRoot() {
   if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
     return path.join(os.tmpdir(), 'a11-prepared-img2img-sources');
   }
+
+  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+  if (runtimeRoot) {
+    return path.resolve(runtimeRoot, 'files', 'generated', 'prepared-img2img-sources');
+  }
+
+  const workspaceRoot = String(process.env.A11_WORKSPACE_ROOT || '').trim();
+  if (workspaceRoot) {
+    return path.resolve(workspaceRoot, 'runtime', 'files', 'generated', 'prepared-img2img-sources');
+  }
+
   return path.resolve(__dirname, '..', '..', 'tmp', 'generated', 'prepared-img2img-sources');
 }
 

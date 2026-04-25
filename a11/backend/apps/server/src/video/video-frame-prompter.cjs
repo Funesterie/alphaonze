@@ -196,6 +196,9 @@ function buildFramePrompterInput({
   visualAnalysis = null,
   referenceImageWidth = 0,
   referenceImageHeight = 0,
+  chunkIndex = 0,
+  totalFrames = 0,
+  previousBeatLabels = [],
 }) {
   const normalizedSubject = normalizeText(subject);
   const normalizedPrompt = normalizeText(prompt);
@@ -211,6 +214,29 @@ function buildFramePrompterInput({
     ? `${Number(referenceImageWidth)}x${Number(referenceImageHeight)}`
     : '';
 
+  const chunkOffset = chunkIndex * frameCount;
+  const framingNote = totalFrames > frameCount
+    ? `These are frames ${chunkOffset + 1} to ${chunkOffset + frameCount} of ${totalFrames} total. Continue the motion arc — do NOT repeat beats already produced.`
+    : `Generate exactly ${frameCount} frame descriptions covering the full motion arc.`;
+
+  const previousNote = previousBeatLabels.length > 0
+    ? `Beats already produced (do not repeat): ${previousBeatLabels.join(', ')}.`
+    : '';
+
+  const sizeNote = referenceImageSize
+    ? `Reference image size ${referenceImageSize}: preserve its framing unless motion requires otherwise.`
+    : '';
+
+  const instruction = [
+    `Generate exactly ${frameCount} frame descriptions in ENGLISH to animate "${normalizedSubject}" doing a "${motionLabel}".`,
+    framingNote,
+    previousNote,
+    'Each frame must name the concrete subject directly with their appearance.',
+    anatomyHint,
+    sizeNote,
+    'Do NOT use French words in the output.',
+  ].filter(Boolean).join(' ');
+
   return JSON.stringify({
     original_request: normalizedPrompt,
     main_subject: normalizedSubject,
@@ -220,11 +246,13 @@ function buildFramePrompterInput({
     motion_profile: motionProfile,
     motion_label: motionLabel,
     frame_count: frameCount,
+    chunk_offset: chunkOffset,
+    total_frames: totalFrames || frameCount,
     identity_locks: normalizedIdentityLocks,
     visual_context: normalizedVisualContext,
     visual_analysis: visualAnalysis && typeof visualAnalysis === 'object' ? visualAnalysis : null,
     reference_image_size: referenceImageSize,
-    instruction: `Generate exactly ${frameCount} frame descriptions in ENGLISH to animate "${normalizedSubject}" doing a "${motionLabel}". Each frame must mention the concrete subject name or defining appearance, and it must stay visually grounded. ${anatomyHint} ${referenceImageSize ? `A reference image size of ${referenceImageSize} is provided; preserve its portrait/landscape framing unless the motion clearly requires otherwise.` : ''} Do NOT use French words in the output.`,
+    instruction,
   }, null, 2);
 }
 
@@ -265,11 +293,124 @@ function convertLlmFramesToBeats(frames) {
   }));
 }
 
+// Nombre de frames par chunk LLM (configurable via A11_VIDEO_LLM_PROMPTER_CHUNK_SIZE).
+// Appeler le LLM tous les N frames réduit le risque de troncature JSON
+// et garde le budget token par appel raisonnable sans empiéter sur la VRAM SD.
+const DEFAULT_LLM_CHUNK_SIZE = 4;
+
+function resolveChunkSize(frameCount) {
+  const configured = Number(process.env.A11_VIDEO_LLM_PROMPTER_CHUNK_SIZE || DEFAULT_LLM_CHUNK_SIZE);
+  const safe = Number.isFinite(configured) && configured >= 1 ? Math.round(configured) : DEFAULT_LLM_CHUNK_SIZE;
+  return Math.min(safe, Math.max(1, frameCount));
+}
+
+function resolveMaxTokensForChunk(chunkSize) {
+  const override = Number(process.env.A11_VIDEO_LLM_PROMPTER_MAX_TOKENS || 0);
+  if (Number.isFinite(override) && override > 0) return override;
+  return Math.max(1200, chunkSize * 180);
+}
+
+// Schéma JSON strict pour le response_format Ollama-compatible.
+const FRAME_PROMPTER_RESPONSE_FORMAT = Object.freeze({
+  type: 'json_schema',
+  json_schema: {
+    name: 'video_frame_beats',
+    strict: true,
+    schema: {
+      type: 'object',
+      required: ['subject_type', 'motion_description', 'scene_context', 'frame_beats'],
+      properties: {
+        subject_type: { type: 'string' },
+        motion_description: { type: 'string' },
+        scene_context: { type: 'string' },
+        continuity_locks: { type: 'array', items: { type: 'string' } },
+        sound_cues: { type: 'array', items: { type: 'string' } },
+        frame_beats: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['label', 'prompt'],
+            properties: {
+              label: { type: 'string' },
+              prompt: { type: 'string' },
+              sound_cues: { type: 'array', items: { type: 'string' } },
+              continuity_locks: { type: 'array', items: { type: 'string' } },
+              scene_context: { type: 'string' },
+            },
+          },
+        },
+        frames: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['label', 'prompt'],
+            properties: {
+              label: { type: 'string' },
+              prompt: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
+async function callLlmWithRetry({
+  callLlm,
+  input,
+  systemPrompt,
+  maxTokens,
+  timeoutMs,
+  subject,
+  maxRetries = 1,
+}) {
+  let lastReason = 'llm_prompter_failed';
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    let response = null;
+    try {
+      response = await callLlm({
+        text: input,
+        systemPrompt,
+        temperature: 0.3,
+        maxTokens,
+        timeoutMs,
+        responseFormat: FRAME_PROMPTER_RESPONSE_FORMAT,
+        stage: 'video_frame_prompter',
+      });
+    } catch (error) {
+      lastReason = String(error?.message || error || 'llm_prompter_failed');
+      console.warn(`[A11][video-frame-prompter] LLM call error attempt=${attempt}: ${lastReason}`);
+      continue;
+    }
+
+    if (validateFramePrompterResponse(response, { subject })) {
+      return { ok: true, response };
+    }
+
+    lastReason = 'invalid_llm_response';
+    console.warn(`[A11][video-frame-prompter] Invalid LLM response attempt=${attempt}, retrying compact`);
+
+    // Retry avec un prompt compact (sans visual_analysis pour réduire les tokens)
+    if (attempt < maxRetries) {
+      try {
+        const compactInput = JSON.parse(input);
+        compactInput.visual_analysis = null;
+        compactInput.visual_context = String(compactInput.visual_context || '').slice(0, 200);
+        input = JSON.stringify(compactInput, null, 2);
+      } catch {
+        // ignore parse error, retry with same input
+      }
+    }
+  }
+  return { ok: false, reason: lastReason, response: null };
+}
+
 async function generateFramePromptsWithLlm({
   subject,
   motionProfile,
   frameCount,
   prompt,
+  compiledPrompt = '',
   identityLocks = [],
   visualContext = '',
   visualAnalysis = null,
@@ -290,51 +431,82 @@ async function generateFramePromptsWithLlm({
     return { ok: false, reason: 'llm_unavailable', beats: null };
   }
 
+  // Utiliser le prompt compilé (anglais) si disponible, sinon le prompt brut
+  const resolvedPrompt = normalizeText(compiledPrompt || prompt);
+
   const resolvedTimeout = Number(
     timeoutMs
     || process.env.A11_VIDEO_LLM_PROMPTER_TIMEOUT_MS
     || 60000
   ) || 60000;
 
+  const chunkSize = resolveChunkSize(resolvedFrameCount);
+  const maxTokens = resolveMaxTokensForChunk(chunkSize);
+
+  const allBeats = [];
+  let firstResponse = null;
+
   try {
-    const response = await callLlm({
-      text: buildFramePrompterInput({
+    for (let chunkStart = 0; chunkStart < resolvedFrameCount; chunkStart += chunkSize) {
+      const currentChunkSize = Math.min(chunkSize, resolvedFrameCount - chunkStart);
+      const isFirstChunk = chunkStart === 0;
+      const chunkIndex = Math.floor(chunkStart / chunkSize);
+
+      // Résumé des beats déjà produits pour éviter les répétitions
+      const previousBeatLabels = allBeats.map((beat) => beat.label).filter(Boolean);
+
+      const input = buildFramePrompterInput({
         subject,
         motionProfile,
-        frameCount: resolvedFrameCount,
-        prompt,
+        frameCount: currentChunkSize,
+        prompt: resolvedPrompt,
         identityLocks,
-        visualContext,
-        visualAnalysis,
-        referenceImageWidth,
-        referenceImageHeight,
-      }),
-      systemPrompt: VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT,
-      temperature: 0.3,
-      maxTokens: Math.max(512, resolvedFrameCount * 80),
-      timeoutMs: resolvedTimeout,
-    });
+        visualContext: isFirstChunk ? visualContext : '',
+        visualAnalysis: isFirstChunk ? visualAnalysis : null,
+        referenceImageWidth: isFirstChunk ? referenceImageWidth : 0,
+        referenceImageHeight: isFirstChunk ? referenceImageHeight : 0,
+        chunkIndex,
+        totalFrames: resolvedFrameCount,
+        previousBeatLabels: isFirstChunk ? [] : previousBeatLabels,
+      });
 
-    if (!validateFramePrompterResponse(response, { subject })) {
-      return { ok: false, reason: 'invalid_llm_response', raw: response, beats: null };
+      const { ok, response, reason } = await callLlmWithRetry({
+        callLlm,
+        input,
+        systemPrompt: VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT,
+        maxTokens,
+        timeoutMs: resolvedTimeout,
+        subject,
+        maxRetries: 1,
+      });
+
+      if (!ok) {
+        return { ok: false, reason: reason || 'invalid_llm_response', raw: response, beats: null };
+      }
+
+      if (isFirstChunk) {
+        firstResponse = response;
+      }
+
+      const chunkFrames = padOrTrimFrames(extractFrameEntries(response), currentChunkSize, { subject });
+      allBeats.push(...convertLlmFramesToBeats(chunkFrames));
     }
 
-    const paddedFrames = padOrTrimFrames(extractFrameEntries(response), resolvedFrameCount, { subject });
-    const beats = convertLlmFramesToBeats(paddedFrames);
+    const beats = allBeats;
     const continuityLocks = collectNormalizedList(
-      response.continuity_locks || response.continuityLocks || [],
+      firstResponse?.continuity_locks || firstResponse?.continuityLocks || [],
       beats.flatMap((beat) => beat.continuityLocks || [])
     );
     const soundCues = collectNormalizedList(
-      response.sound_cues || response.soundCues || [],
+      firstResponse?.sound_cues || firstResponse?.soundCues || [],
       beats.flatMap((beat) => beat.soundCues || [])
     );
 
     return {
       ok: true,
-      subjectType: normalizeText(response.subject_type || 'unknown'),
-      motionDescription: normalizeText(response.motion_description || ''),
-      sceneContext: normalizeText(response.scene_context || ''),
+      subjectType: normalizeText(firstResponse?.subject_type || 'unknown'),
+      motionDescription: normalizeText(firstResponse?.motion_description || ''),
+      sceneContext: normalizeText(firstResponse?.scene_context || ''),
       continuityLocks,
       soundCues,
       beats,

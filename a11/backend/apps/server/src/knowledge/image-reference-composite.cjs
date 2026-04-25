@@ -128,6 +128,16 @@ function resolveCompositeOutputDir(customDir = '') {
     return path.join(os.tmpdir(), 'a11-image-reference-composites');
   }
 
+  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+  if (runtimeRoot) {
+    return path.resolve(runtimeRoot, 'files', 'generated', 'reference-composites');
+  }
+
+  const workspaceRoot = String(process.env.A11_WORKSPACE_ROOT || '').trim();
+  if (workspaceRoot) {
+    return path.resolve(workspaceRoot, 'runtime', 'files', 'generated', 'reference-composites');
+  }
+
   return path.resolve(__dirname, '..', '..', 'tmp', 'generated', 'reference-composites');
 }
 

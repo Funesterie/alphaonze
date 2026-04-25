@@ -915,6 +915,7 @@ async function planVideoSequence({
           motionProfile: heuristicFallbackPlan.motionProfile,
           frameCount: Math.max(1, Number(request?.frameCount || 0) || heuristicFallbackPlan.beats.length),
           prompt: String(request?.prompt || '').trim(),
+          compiledPrompt: String(compiledBasePrompt || request?.prompt || '').trim(),
           identityLocks,
           visualContext,
           visualAnalysis,
@@ -945,29 +946,30 @@ async function planVideoSequence({
         }
 
         llmFailureReason = String(llmResult.reason || 'llm_prompter_failed').trim() || 'llm_prompter_failed';
-        console.log(`[A11][video-prompter] LLM prompter skipped: ${llmFailureReason}, using heuristic`);
-        if (compiledBasePrompt && compiledBasePrompt !== String(request?.prompt || '').trim()) {
-          const compiledSceneLocks = extractStableSceneFragments(
-            String(compiledBasePrompt || '').trim(),
-            heuristicFallbackPlan.motionProfile
-          );
-          heuristicFallbackPlan = {
-            ...heuristicFallbackPlan,
-            sceneLocks: normalizePromptList([
-              ...heuristicFallbackPlan.sceneLocks,
-              ...compiledSceneLocks.slice(0, 2),
-            ]).slice(0, 4),
-          };
-          console.log('[A11][video-prompter] Heuristic enriched with compiledBasePrompt');
-        }
+        console.warn(`[A11][video-prompter] LLM prompter failed: ${llmFailureReason}, policy=llm_only_no_heuristic_fallback`);
+
+        // Pas de fallback heuristic silencieux : retourner une erreur explicite.
+        const planError = new Error(`video_sequence_planner_failed:${llmFailureReason}`);
+        planError.code = 'video_sequence_planner_failed';
+        planError.policy = 'llm_only_no_heuristic_fallback';
+        planError.llmFailureReason = llmFailureReason;
+        planError.providerRequested = providerRequested;
+        planError.imageAwareUsed = imageAwareUsed;
+        planError.imageAwareError = imageAwareError || null;
+        throw planError;
       } else {
         llmFailureReason = 'llm_prompter_disabled';
-      }
+        console.warn(`[A11][video-prompter] LLM prompter disabled, policy=llm_only_no_heuristic_fallback`);
 
-      return {
-        ...heuristicFallbackPlan,
-        fallbackReason: llmFailureReason || heuristicFallbackPlan.fallbackReason || 'llm_prompter_failed',
-      };
+        const planError = new Error(`video_sequence_planner_failed:${llmFailureReason}`);
+        planError.code = 'video_sequence_planner_failed';
+        planError.policy = 'llm_only_no_heuristic_fallback';
+        planError.llmFailureReason = llmFailureReason;
+        planError.providerRequested = providerRequested;
+        planError.imageAwareUsed = imageAwareUsed;
+        planError.imageAwareError = imageAwareError || null;
+        throw planError;
+      }
     }
 
     return heuristicFallbackPlan;
