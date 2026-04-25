@@ -1178,6 +1178,11 @@ function Build-ServiceDefinitions {
   $sdModelProfile = (Get-ConfigValue $Config 'A11_SD_MODEL_PROFILE' 'classic').Trim()
   $sdDevice = (Get-ConfigValue $Config 'A11_SD_DEVICE' 'cuda').Trim()
   $sdTorchDtype = (Get-ConfigValue $Config 'A11_SD_TORCH_DTYPE' 'auto').Trim()
+  $sdGpuSettleMs = (Get-ConfigValue $Config 'A11_SD_GPU_SETTLE_MS' '350').Trim()
+  $sdSd3ExecutionMode = (Get-ConfigValue $Config 'A11_SD_SD3_EXECUTION_MODE' '').Trim()
+  $sdEnableAttentionSlicing = (Get-ConfigValue $Config 'A11_SD_ENABLE_ATTENTION_SLICING' '').Trim()
+  $sdEnableChannelsLast = (Get-ConfigValue $Config 'A11_SD_ENABLE_CHANNELS_LAST' '').Trim()
+  $sdEnableXformers = (Get-ConfigValue $Config 'A11_SD_ENABLE_XFORMERS' '').Trim()
   $imagePipelineMode = (Get-ConfigValue $Config 'A11_IMAGE_PIPELINE_MODE' 'auto').Trim()
   $imageMaxRenderSide = (Get-ConfigValue $Config 'A11_IMAGE_MAX_RENDER_SIDE' '2048').Trim()
   $imageDefaultWidth = (Get-ConfigValue $Config 'A11_IMAGE_DEFAULT_WIDTH' '').Trim()
@@ -1427,6 +1432,11 @@ function Build-ServiceDefinitions {
     SD_MODEL_PROFILE = $sdModelProfile
     SD_DEVICE = $sdDevice
     SD_TORCH_DTYPE = $sdTorchDtype
+    A11_SD_GPU_SETTLE_MS = $sdGpuSettleMs
+    SD_SD3_EXECUTION_MODE = $sdSd3ExecutionMode
+    SD_ENABLE_ATTENTION_SLICING = $sdEnableAttentionSlicing
+    SD_ENABLE_CHANNELS_LAST = $sdEnableChannelsLast
+    SD_ENABLE_XFORMERS = $sdEnableXformers
     A11_IMAGE_MAX_RENDER_SIDE = $imageMaxRenderSide
     A11_IMAGE_DEFAULT_WIDTH = $imageDefaultWidth
     A11_IMAGE_DEFAULT_HEIGHT = $imageDefaultHeight

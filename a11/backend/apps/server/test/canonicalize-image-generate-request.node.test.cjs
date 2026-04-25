@@ -289,6 +289,42 @@ test('validateCanonicalizedImageGenerateRequest rejects collapsed explicit two-f
   );
 });
 
+test('extractPreservedNamedEntityCandidates ignores prompt section labels but preserves DBZ acronym', () => {
+  const rawUserInput = "genere une image d'un affrontement anime explosif de type DBZ entre deux combattants ultra puissants dans une arène rocheuse détruite, au moment d’un choc d’énergie monumental. Les deux personnages sont bien distincts, en full body, face à face ou en collision au centre de l’image. Style anime shonen haut de gamme, rendu très détaillé, couleurs intenses, illustration cinématique, sans texte. Negative prompt : low quality, blurry, bad anatomy, extra fingers, bad hands, text, watermark, logo";
+
+  assert.deepEqual(
+    extractPreservedNamedEntityCandidates(rawUserInput),
+    ['DBZ']
+  );
+});
+
+test('validateCanonicalizedImageGenerateRequest accepts the full DBZ two-fighter request without requiring section labels', () => {
+  const rawUserInput = "genere une image d'un affrontement anime explosif de type DBZ entre deux combattants ultra puissants dans une arène rocheuse détruite, au moment d’un choc d’énergie monumental, poses dynamiques, muscles tendus, expressions féroces et déterminées, auras gigantesques autour des corps, éclairs, ondes de choc, poussière, rochers qui lévitent, lumière intense, ciel dramatique déchiré par l’énergie, impact visuel énorme. Les deux personnages sont bien distincts, en full body, face à face ou en collision au centre de l’image, avec attaque énergétique massive contre contre-attaque puissante, ambiance de fin de combat légendaire. Style anime shonen haut de gamme, rendu très détaillé, couleurs intenses, cheveux et vêtements emportés par l’énergie, composition claire et lisible, sensation de vitesse, puissance et destruction, illustration cinématique, sans texte. Negative prompt : low quality, blurry, bad anatomy, extra fingers, bad hands, malformed face, asymmetrical eyes, duplicate body, fused limbs, multiple extra characters, messy composition, weak aura, weak energy effects, flat lighting, cropped head, cropped hands, cut off body, deformed proportions, childish cartoon style, realistic photo style, text, watermark, logo";
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Two distinct ultra-powerful anime fighters in an explosive DBZ-style energy clash inside a destroyed rocky arena',
+    structuredFields: {
+      subject: ['first ultra-powerful anime fighter', 'second ultra-powerful anime fighter'],
+      environment: ['destroyed rocky arena', 'dramatic energy-torn sky'],
+      style: ['high-end shonen anime', 'DBZ-style energy battle'],
+      composition: ['full-body face-to-face collision', 'massive energy attack versus counterattack'],
+      lighting: ['intense energy light'],
+      palette: ['intense colors'],
+      constraints: {
+        promptInstructions: ['both fighters fully visible', 'clear separate silhouettes'],
+        negativeHints: ['low quality', 'blurry', 'bad anatomy', 'extra fingers', 'text', 'watermark', 'logo'],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'pair',
+      explicitSubjectCount: 2,
+    },
+  }, rawUserInput);
+
+  assert.doesNotThrow(() => validateCanonicalizedImageGenerateRequest(payload));
+});
+
 test('canonicalizeImageGenerateRequest retries when the LLM substitutes a named character or contradicts pair cardinality', async () => {
   let callCount = 0;
   const canonicalizedRequest = await canonicalizeImageGenerateRequest(

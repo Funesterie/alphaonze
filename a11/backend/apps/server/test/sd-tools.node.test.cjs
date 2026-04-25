@@ -50,6 +50,49 @@ test('generateSdInternal preserves prebuilt prompts without re-enriching them', 
   assert.equal(capturedBody?.negative_prompt_prebuilt, true);
 });
 
+test('generateSdInternal forwards only strong admin headers to the SD proxy', async () => {
+  let capturedHeaders = null;
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedHeaders = options.headers || {};
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/secure-proxy.png',
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  const response = await generateSdInternal({
+    req: {
+      headers: {
+        authorization: 'Bearer jwt-token',
+        'x-nez-admin': 'true',
+        'x-nez-token': 'legacy-token',
+        'x-nez-admin-token': 'shared-admin-token',
+      },
+    },
+    prompt: 'cinematic knight frame',
+    body: {
+      prompt: 'cinematic knight frame',
+      prompt_prebuilt: true,
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(capturedHeaders.authorization, 'Bearer jwt-token');
+  assert.equal(capturedHeaders['x-nez-admin-token'], 'shared-admin-token');
+  assert.equal(Object.hasOwn(capturedHeaders, 'x-nez-admin'), false);
+  assert.equal(Object.hasOwn(capturedHeaders, 'x-nez-token'), false);
+});
+
 test('generateSdInternal preserves SD3 multi-prompt payload layers', async () => {
   let capturedBody = null;
   const { generateSdInternal } = createSdToolsRouter({
@@ -72,11 +115,11 @@ test('generateSdInternal preserves SD3 multi-prompt payload layers', async () =>
 
   const response = await generateSdInternal({
     req: { headers: {} },
-    prompt: 'base structure stable: vegeta, posture droite stable',
+    prompt: 'main subject pose continuity: vegeta, stable upright pose',
     body: {
-      prompt: 'base structure stable: vegeta, posture droite stable',
-      prompt_2: 'decor et composition stables: meme visage, meme tenue, fond simple',
-      prompt_3: 'variation visible de cette frame: cheveux se dressent, aura rouge apparait',
+      prompt: 'main subject pose continuity: vegeta, stable upright pose',
+      prompt_2: 'scene camera decor continuity: same face, same outfit, simple background',
+      prompt_3: 'visible frame delta anatomy prop detail: hair rises, red aura appears',
       negative_prompt: 'low quality',
       negative_prompt_2: 'drift identitaire',
       negative_prompt_3: 'variation insuffisante',
@@ -87,9 +130,9 @@ test('generateSdInternal preserves SD3 multi-prompt payload layers', async () =>
   });
 
   assert.equal(response.ok, true);
-  assert.equal(capturedBody?.prompt, 'base structure stable: vegeta, posture droite stable');
-  assert.equal(capturedBody?.prompt_2, 'decor et composition stables: meme visage, meme tenue, fond simple');
-  assert.equal(capturedBody?.prompt_3, 'variation visible de cette frame: cheveux se dressent, aura rouge apparait');
+  assert.equal(capturedBody?.prompt, 'main subject pose continuity: vegeta, stable upright pose');
+  assert.equal(capturedBody?.prompt_2, 'scene camera decor continuity: same face, same outfit, simple background');
+  assert.equal(capturedBody?.prompt_3, 'visible frame delta anatomy prop detail: hair rises, red aura appears');
   assert.equal(capturedBody?.prompt_prebuilt, true);
   assert.equal(capturedBody?.prompt_2_prebuilt, true);
   assert.equal(capturedBody?.prompt_3_prebuilt, true);
@@ -100,6 +143,63 @@ test('generateSdInternal preserves SD3 multi-prompt payload layers', async () =>
   assert.equal(capturedBody?.negative_prompt_3_prebuilt, true);
   assert.equal(capturedBody?.width, 1536);
   assert.equal(capturedBody?.height, 896);
+});
+
+test('generateSdInternal aligns requested render dimensions to the SD latent grid', async () => {
+  let capturedBody = null;
+  const previousEnv = {
+    SD_DIMENSION_MULTIPLE: process.env.SD_DIMENSION_MULTIPLE,
+    A11_SD_DIMENSION_MULTIPLE: process.env.A11_SD_DIMENSION_MULTIPLE,
+    A11_IMAGE_MAX_SIZE: process.env.A11_IMAGE_MAX_SIZE,
+    A11_IMAGE_MAX_PIXELS: process.env.A11_IMAGE_MAX_PIXELS,
+  };
+
+  process.env.SD_DIMENSION_MULTIPLE = '8';
+  process.env.A11_IMAGE_MAX_SIZE = '2048';
+  delete process.env.A11_SD_DIMENSION_MULTIPLE;
+  delete process.env.A11_IMAGE_MAX_PIXELS;
+
+  const { generateSdInternal } = createSdToolsRouter({
+    fetch: async (_url, options = {}) => {
+      capturedBody = JSON.parse(String(options.body || '{}'));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            image_url: 'https://files.example.com/aligned.png',
+          });
+        },
+      };
+    },
+    resolveSdProxyUrl: () => 'http://proxy.test/generate',
+    resolveSdScriptPath: () => '',
+  });
+
+  try {
+    const response = await generateSdInternal({
+      req: { headers: {} },
+      prompt: 'cinematic knight frame',
+      body: {
+        prompt: 'cinematic knight frame',
+        prompt_prebuilt: true,
+        width: 682,
+        height: 1024,
+      },
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(capturedBody?.width, 680);
+    assert.equal(capturedBody?.height, 1024);
+    assert.equal(capturedBody?.requested_width, 682);
+    assert.equal(capturedBody?.requested_height, 1024);
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('generateSdInternal forwards init image draft settings to the SD proxy', async () => {
@@ -684,6 +784,51 @@ test('generateSdInternal allows explicit local SD fallback override in productio
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  }
+});
+
+test('generateSdInternal drains local GPU pressure before invoking the local SD script', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-drain-'));
+  const outputPath = path.join(tempDir, 'result.png');
+  fs.writeFileSync(outputPath, Buffer.from('png'));
+  const events = [];
+
+  try {
+    const { generateSdInternal } = createSdToolsRouter({
+      resolveSdProxyUrl: () => '',
+      resolveSdScriptPath: () => __filename,
+      isAdminRequest: () => true,
+      drainLocalGpuBeforeSd: async () => {
+        events.push('drain');
+      },
+      runSdScript: async () => {
+        events.push('run');
+        return {
+          ok: true,
+          output_path: outputPath,
+          device: 'cuda',
+          model_id: 'stabilityai/stable-diffusion-3.5-medium',
+          torch_dtype: 'float16',
+          cuda_available: true,
+          cuda_device_name: 'NVIDIA GeForce RTX 5070',
+          xformers_enabled: false,
+        };
+      },
+      uploadBufferToR2: async () => ({
+        url: 'https://files.example.com/result.png',
+      }),
+    });
+
+    const result = await generateSdInternal({
+      req: { headers: {} },
+      prompt: 'generate a knight portrait',
+      body: { prompt: 'generate a knight portrait', prompt_prebuilt: true },
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(events, ['drain', 'run']);
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 });
 

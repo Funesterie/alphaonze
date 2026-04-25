@@ -186,6 +186,28 @@ const NAMED_ENTITY_STOPWORDS = new Set([
   'dessine',
 ]);
 
+const NAMED_ENTITY_SECTION_LABEL_STOPWORDS = new Set([
+  'negative',
+  'negative prompt',
+  'prompt negatif',
+  'style',
+]);
+
+function isLikelyPromptSectionLabel(cleaned = '', fullText = '') {
+  const label = normalizeLookup(cleaned);
+  if (!label || !NAMED_ENTITY_SECTION_LABEL_STOPWORDS.has(label)) return false;
+  const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const labelPattern = new RegExp(`\\b${escaped}\\b\\s*:`, 'i');
+  if (labelPattern.test(fullText)) return true;
+  if (label === 'negative' && new RegExp(`\\b${escaped}\\b\\s+prompt\\s*:`, 'i').test(fullText)) return true;
+  if (label === 'style' && new RegExp(`(?:^|[.!?]\\s+)${escaped}\\s+`, 'i').test(fullText)) return true;
+  return false;
+}
+
+function hasUppercaseAcronymShape(cleaned = '') {
+  return /^[A-Z0-9]{2,8}$/.test(String(cleaned || '').trim());
+}
+
 function extractPreservedNamedEntityCandidates(rawUserInput = '') {
   const text = normalizeText(rawUserInput);
   if (!text) return [];
@@ -197,9 +219,11 @@ function extractPreservedNamedEntityCandidates(rawUserInput = '') {
     const lookup = normalizeLookup(cleaned);
     if (!lookup || seen.has(lookup)) continue;
     if (NAMED_ENTITY_STOPWORDS.has(lookup)) continue;
+    if (isLikelyPromptSectionLabel(cleaned, text)) continue;
     const tokenCount = lookup.split(/\s+/).filter(Boolean).length;
     const hasNamedShape = (
       tokenCount >= 2
+      || hasUppercaseAcronymShape(cleaned)
       || /[-']/.test(cleaned)
       || (cleaned.length >= 4 && text.indexOf(cleaned) > 0)
     );

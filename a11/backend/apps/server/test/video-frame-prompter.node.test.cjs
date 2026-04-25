@@ -66,6 +66,106 @@ test('generateFramePromptsWithLlm pads incomplete frame lists without changing t
   }
 });
 
+test('generateFramePromptsWithLlm accepts structured frame beats, continuity locks, and sound cues', async () => {
+  const restoreEnv = withEnv('A11_VIDEO_LLM_PROMPTER', 'true');
+  try {
+    const { generateFramePromptsWithLlm } = loadPrompterModule();
+    const result = await generateFramePromptsWithLlm({
+      subject: 'the knight in dark armor',
+      motionProfile: 'action_burst',
+      frameCount: 2,
+      prompt: 'the knight in dark armor bends toward the golden sword in a torch-lit stone hall',
+      identityLocks: ['same knight', 'same golden sword'],
+      visualContext: 'torch-lit stone hall, low angle camera, golden sword on the right',
+      visualAnalysis: {
+        subjects: [
+          {
+            label: 'knight in dark armor',
+            bbox: [0.14, 0.18, 0.32, 0.56],
+          },
+        ],
+        props: [
+          {
+            label: 'golden sword',
+            bbox: [0.58, 0.38, 0.2, 0.36],
+          },
+        ],
+      },
+      callLlm: async () => ({
+        subject_type: 'humanoid',
+        motion_description: 'the knight reaches for the sword',
+        scene_context: 'low angle view inside a torch-lit stone hall',
+        continuity_locks: ['same knight', 'same golden sword', 'same stone hall'],
+        sound_cues: ['metallic ring'],
+        frame_beats: [
+          {
+            label: 'reach',
+            prompt: 'The knight in dark armor bends toward the golden sword with one gauntleted hand reaching for the hilt',
+            sound_cues: ['metallic ring'],
+          },
+        ],
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.frameCount, 2);
+    assert.match(String(result.sceneContext || ''), /torch-lit stone hall/i);
+    assert.deepEqual(result.continuityLocks, ['same knight', 'same golden sword', 'same stone hall']);
+    assert.deepEqual(result.soundCues, ['metallic ring']);
+    assert.deepEqual(result.beats[0].soundCues, ['metallic ring']);
+    assert.match(String(result.beats[0].variation || ''), /knight in dark armor/i);
+    assert.match(String(result.beats[0].variation || ''), /golden sword/i);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('generateFramePromptsWithLlm accepts structured frame beats and keeps the subject concrete', async () => {
+  const restoreEnv = withEnv('A11_VIDEO_LLM_PROMPTER', 'true');
+  try {
+    const { generateFramePromptsWithLlm } = loadPrompterModule();
+    const result = await generateFramePromptsWithLlm({
+      subject: 'the knight in dark armor with a golden sword',
+      motionProfile: 'action_burst',
+      frameCount: 2,
+      prompt: 'the knight in dark armor bends toward the golden sword in a torchlit stone hall',
+      identityLocks: ['same knight', 'same dark armor', 'same golden sword'],
+      visualContext: 'torchlit stone hall, low angle framing',
+      callLlm: async () => ({
+        subject_type: 'humanoid',
+        motion_description: 'measured kneeling approach',
+        scene_context: 'torchlit stone hall, low angle frame, drifting dust',
+        continuity_locks: ['same knight', 'same dark armor', 'same golden sword'],
+        sound_cues: ['metal clang', 'armor rattle'],
+        frame_beats: [
+          {
+            label: 'approach',
+            beat: 'structure bends toward the golden sword',
+            sound_cue: 'metal clang',
+          },
+          {
+            label: 'grip',
+            prompt: 'the knight in dark armor grips the golden sword with both hands',
+            sound_cue: 'armor rattle',
+          },
+        ],
+      }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.frameCount, 2);
+    assert.match(String(result.sceneContext || ''), /torchlit stone hall/i);
+    assert.deepEqual(result.continuityLocks, ['same knight', 'same dark armor', 'same golden sword']);
+    assert.deepEqual(result.soundCues, ['metal clang', 'armor rattle']);
+    assert.match(String(result.beats[0]?.variation || ''), /knight/i);
+    assert.match(String(result.beats[0]?.variation || ''), /golden sword/i);
+    assert.doesNotMatch(String(result.beats[0]?.variation || ''), /\bstructure\b/i);
+    assert.equal(result.beats[0]?.soundCue, 'metal clang');
+  } finally {
+    restoreEnv();
+  }
+});
+
 test('generateFramePromptsWithLlm rejects invalid frame payloads', async () => {
   const restoreEnv = withEnv('A11_VIDEO_LLM_PROMPTER', 'true');
   try {
@@ -78,6 +178,33 @@ test('generateFramePromptsWithLlm rejects invalid frame payloads', async () => {
       callLlm: async () => ({
         subject_type: 'humanoid',
         frames: [{ label: 'broken', prompt: '   ' }],
+      }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'invalid_llm_response');
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('generateFramePromptsWithLlm rejects generic frame prompts that do not name the main subject concretely', async () => {
+  const restoreEnv = withEnv('A11_VIDEO_LLM_PROMPTER', 'true');
+  try {
+    const { generateFramePromptsWithLlm } = loadPrompterModule();
+    const result = await generateFramePromptsWithLlm({
+      subject: 'the knight in dark armor',
+      motionProfile: 'action_burst',
+      frameCount: 2,
+      prompt: 'the knight in dark armor bends toward the golden sword',
+      callLlm: async () => ({
+        subject_type: 'humanoid',
+        frame_beats: [
+          {
+            label: 'broken',
+            prompt: 'The structure changes a little while the scene stays stable',
+          },
+        ],
       }),
     });
 

@@ -47,8 +47,7 @@ function isRouterLikeBaseUrl(value = '') {
   const configuredRouter = normalizeBaseUrl(process.env.LLM_ROUTER_URL || '').toLowerCase();
   if (configuredRouter && normalized === configuredRouter) return true;
   return (
-    normalized.includes('cerbere.funesterie.me')
-    || normalized.includes('127.0.0.1:4545')
+    normalized.includes('127.0.0.1:4545')
     || normalized.includes('localhost:4545')
   );
 }

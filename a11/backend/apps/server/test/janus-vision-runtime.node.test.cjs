@@ -45,20 +45,20 @@ test('resolveVisionProvider keeps remote mode when only remote vision is configu
   });
 });
 
-test('resolveJanusVisionConfig defaults to Janus-Pro-1B and backend venv python', () => {
+test('resolveJanusVisionConfig keeps Janus on the cpu-safe 1B profile by default', () => {
   withEnv({
     A11_LOCAL_MODE: 'true',
-    A11_JANUS_DEVICE: 'cuda',
+    A11_JANUS_DEVICE: undefined,
     A11_JANUS_MODEL_ID: undefined,
     A11_JANUS_MODEL_DIR: undefined,
     A11_LOCAL_VISION_MODEL_DIR: undefined,
-    A11_JANUS_PREFER_LATEST: 'true',
+    A11_JANUS_PREFER_LATEST: undefined,
   }, () => {
     const config = resolveJanusVisionConfig({});
-    assert.match(String(config.modelRef || ''), /Janus-Pro-7B|deepseek-ai\/Janus-Pro-7B/i);
+    assert.match(String(config.modelRef || ''), /Janus-Pro-1B|deepseek-ai\/Janus-Pro-1B/i);
     assert.match(String(config.pythonBin || ''), /(tools[\\/](vision|sd)[\\/]venv|[\\/]opt[\\/]janus-venv)/i);
     assert.equal(config.provider, 'janus');
-    assert.equal(config.device, 'cuda');
+    assert.equal(config.device, 'cpu');
   });
 });
 
@@ -75,6 +75,21 @@ test('resolveJanusVisionConfig keeps Janus-Pro-1B as the default cpu-safe profil
     const config = resolveJanusVisionConfig({});
     assert.match(String(config.modelRef || ''), /Janus-Pro-1B|deepseek-ai\/Janus-Pro-1B/i);
     assert.equal(config.device, 'cpu');
+  });
+});
+
+test('resolveJanusVisionConfig still honors an explicit cuda override for Janus', () => {
+  withEnv({
+    A11_LOCAL_MODE: 'true',
+    A11_JANUS_DEVICE: 'cuda',
+    A11_JANUS_MODEL_ID: undefined,
+    A11_JANUS_MODEL_DIR: undefined,
+    A11_LOCAL_VISION_MODEL_DIR: undefined,
+    A11_JANUS_PREFER_LATEST: 'true',
+  }, () => {
+    const config = resolveJanusVisionConfig({});
+    assert.match(String(config.modelRef || ''), /Janus-Pro-7B|deepseek-ai\/Janus-Pro-7B/i);
+    assert.equal(config.device, 'cuda');
   });
 });
 

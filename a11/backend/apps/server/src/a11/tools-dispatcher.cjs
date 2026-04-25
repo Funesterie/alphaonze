@@ -2592,7 +2592,8 @@ async function t_generate_png(args = {}) {
   if (enableSd && scriptPath && fsSync.existsSync(scriptPath)) {
     const sdResult = await runSdScript({
       prompt: finalPrompt,
-      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt } : {}),
+      prompt_prebuilt: true,
+      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
       num_inference_steps: numInferenceSteps,
       guidance_scale: guidanceScale,
       width,

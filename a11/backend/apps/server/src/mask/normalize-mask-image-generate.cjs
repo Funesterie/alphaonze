@@ -22,6 +22,17 @@ function roundDimensionToMultiple(value, multiple = 64) {
   return Math.max(multiple, Math.round(numeric / multiple) * multiple);
 }
 
+function alignDimensionToLatentMultiple(value, { min = 64, max = 2048, multiple = 8 } = {}) {
+  const safeMultiple = Math.max(1, Number(multiple) || 8);
+  const safeMin = Math.max(safeMultiple, Math.ceil(Number(min || 64) / safeMultiple) * safeMultiple);
+  const safeMax = Math.max(safeMin, Math.floor(Number(max || 2048) / safeMultiple) * safeMultiple);
+  let numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric) || numeric <= 0) numeric = safeMin;
+  numeric = Math.max(safeMin, Math.min(safeMax, numeric));
+  numeric = Math.floor(numeric / safeMultiple) * safeMultiple;
+  return Math.max(safeMin, Math.min(safeMax, numeric));
+}
+
 function isLocalImageRuntime(env = process.env) {
   return isTruthy(env?.A11_LOCAL_MODE)
     || String(env?.A11_RUNTIME_PROFILE || '').trim().toLowerCase() === 'local';
@@ -191,6 +202,17 @@ function resolveAutoImageCanvas({ rawMask = {}, prompt = '', imageConfig = resol
   };
 }
 
+function resolveDeferredModelCanvas(imageConfig = resolveImageDimensionConfig(process.env)) {
+  return {
+    source: 'model_auto',
+    reason: 'defer_canvas_selection',
+    requestedWidth: null,
+    requestedHeight: null,
+    width: imageConfig.defaultWidth,
+    height: imageConfig.defaultHeight,
+  };
+}
+
 function resolveImageCanvasPlan({ rawMask = {}, prompt = '', width, height, env = process.env } = {}) {
   const imageConfig = resolveImageDimensionConfig(env);
   const explicitWidth = hasExplicitDimension(width);
@@ -218,7 +240,7 @@ function resolveImageCanvasPlan({ rawMask = {}, prompt = '', width, height, env 
     };
   }
 
-  return resolveAutoImageCanvas({ rawMask, prompt, imageConfig });
+  return resolveDeferredModelCanvas(imageConfig);
 }
 
 function buildDefaults(env = process.env) {
@@ -277,9 +299,7 @@ function normalizeMaskImageGenerate(mask) {
   function clampAndRoundDimension(val, fallback, { min = 64, max = 2048 } = {}) {
     let n = Number(val);
     if (!Number.isFinite(n)) n = fallback;
-    n = Math.round(n);
-    if (n > 1 && n % 2 !== 0) n = n - 1;
-    return Math.max(min, Math.min(max, n));
+    return alignDimensionToLatentMultiple(n, { min, max });
   }
   function fitCanvasDimensions(width, height, fallbackWidth, fallbackHeight) {
     let resolvedWidth = Number(width);

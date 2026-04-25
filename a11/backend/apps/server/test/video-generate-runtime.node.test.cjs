@@ -1,12 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const sharp = require('sharp');
 
 const {
   buildFfmpegAssemblyArgs,
   createGenerateVideoHandler,
   ensureFfmpegAvailable,
+  fitRenderDimensionsWithinLimits,
   normalizeVideoRequest,
 } = require('../src/video/video-generate-runtime.cjs');
 
@@ -72,6 +75,19 @@ test('normalizeVideoRequest upgrades suspiciously low video dimensions to a safe
   } finally {
     process.env.A11_VIDEO_MIN_RENDER_SIDE = previousEnv.A11_VIDEO_MIN_RENDER_SIDE;
   }
+});
+
+test('fitRenderDimensionsWithinLimits keeps video frames compatible with SD latent dimensions', () => {
+  const fitted = fitRenderDimensionsWithinLimits({
+    width: 682,
+    height: 1024,
+    minSide: 64,
+    maxSide: 1024,
+    maxPixels: 1024 * 1024,
+  });
+
+  assert.equal(fitted.width, 680);
+  assert.equal(fitted.height, 1024);
 });
 
 test('normalizeVideoRequest defaults to the maximum render size in local runtime mode', () => {
@@ -156,7 +172,7 @@ test('normalizeVideoRequest scales oversized explicit dimensions proportionally 
     });
 
     assert.equal(request.width, 1536);
-    assert.equal(request.height, 1178);
+    assert.equal(request.height, 1176);
   } finally {
     for (const [key, value] of Object.entries(previousEnv)) {
       if (value === undefined) delete process.env[key];
@@ -446,10 +462,110 @@ test('createGenerateVideoHandler can synthesize and mux a requested audio track'
   assert.equal(result.audioText, 'Test audio video');
   assert.equal(result.durationSeconds, 1);
   assert.equal(calls.length, 2);
+  assert.match(String(calls[0].prompt || ''), /main subject pose continuity: circle red/i);
+  assert.match(String(calls[0].prompt_2 || ''), /white background/i);
+  assert.doesNotMatch(String(calls[0].prompt || ''), /\bcercle\b|\bfond\b|\bsur\b/i);
+  assert.doesNotMatch(String(calls[0].prompt_2 || ''), /\bfond\b|\bsur\b|\bblanc\b/i);
   assert.match(String(ffmpegInvocation?.audioPath || ''), /audio\.wav$/i);
   assert.equal(fs.existsSync(ffmpegInvocation.audioPath), true);
   assert.ok(fetchCalls.some((url) => url.endsWith('/api/tts')));
   assert.ok(fetchCalls.some((url) => url.endsWith('/voice.wav')));
+});
+
+test('createGenerateVideoHandler does not expose loopback audio URLs to HTTPS clients', async () => {
+  const previousWorkspaceRoot = process.env.A11_WORKSPACE_ROOT;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-video-audio-public-'));
+  process.env.A11_WORKSPACE_ROOT = tempRoot;
+
+  const generateVideo = createGenerateVideoHandler({
+    generateSd: async ({ body }) => ({
+      ok: true,
+      image_url: `https://files.example.com/frame-${body.width}x${body.height}.png`,
+    }),
+    fetch: async (url) => {
+      const normalizedUrl = String(url);
+      if (normalizedUrl.endsWith('/api/tts')) {
+        return {
+          ok: true,
+          async text() {
+            return JSON.stringify({
+              audio_url: 'http://127.0.0.1:5002/out/local-voice.wav',
+            });
+          },
+        };
+      }
+      if (normalizedUrl === 'http://127.0.0.1:5002/out/local-voice.wav') {
+        return {
+          ok: true,
+          headers: {
+            get(name) {
+              return String(name).toLowerCase() === 'content-type' ? 'audio/wav' : '';
+            },
+          },
+          async arrayBuffer() {
+            return Buffer.from('RIFFfake-wave');
+          },
+        };
+      }
+      return {
+        ok: true,
+        async arrayBuffer() {
+          return TINY_PNG;
+        },
+      };
+    },
+    uploadBufferToR2: async ({ filename, contentType, buffer }) => ({
+      url: `https://files.example.com/${filename}`,
+      filename,
+      contentType,
+      sizeBytes: buffer.length,
+    }),
+    buildCanonicalImageMaskFromText: async () => ({
+      rawMask: {
+        version: 'mask-1',
+        intent: 'image.generate',
+        raw: 'cercle rouge pulse',
+      },
+    }),
+    compileMaskImageGenerateRuntime: async () => ({
+      sdBody: {
+        prompt: 'red circle on white background',
+      },
+    }),
+    runFfmpeg: async ({ outputPath }) => {
+      fs.writeFileSync(outputPath, Buffer.from('fake-video'));
+    },
+  });
+
+  try {
+    const result = await generateVideo({
+      req: {
+        headers: {
+          host: 'alphaonze.funesterie.pro',
+          'x-forwarded-proto': 'https',
+        },
+        body: {},
+      },
+      prompt: 'red circle pulse',
+      body: {
+        prompt: 'red circle pulse',
+        frameCount: 2,
+        fps: 2,
+        audioText: 'Test audio video',
+        format: 'mp4',
+        strictTiming: true,
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.hasAudio, true);
+    assert.match(String(result.audio_url || ''), /^https:\/\/alphaonze\.funesterie\.pro\/files\//i);
+    assert.doesNotMatch(String(result.audio_url || ''), /127\.0\.0\.1|http:\/\/127/i);
+  } finally {
+    if (previousWorkspaceRoot === undefined) delete process.env.A11_WORKSPACE_ROOT;
+    else process.env.A11_WORKSPACE_ROOT = previousWorkspaceRoot;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('createGenerateVideoHandler builds a stable french walk cycle plan with concrete pose prompts', async () => {
@@ -503,16 +619,18 @@ test('createGenerateVideoHandler builds a stable french walk cycle plan with con
   assert.equal(result.ok, true);
   assert.equal(result.frameCount, 8);
   assert.equal(calls.length, 8);
-  assert.match(String(calls[0].prompt || ''), /stable base structure:/i);
-  assert.match(String(calls[0].prompt_3 || ''), /visible change in this frame:/i);
+  assert.match(String(calls[0].prompt || ''), /main subject pose continuity:/i);
+  assert.match(String(calls[0].prompt_3 || ''), /visible frame delta anatomy prop detail:/i);
   assert.match(String(calls[0].prompt_3 || ''), /neutral walking pose|posture neutre de marche/i);
   assert.match(String(calls[1].prompt || ''), /left leg moves forward|jambe gauche avance devant/i);
   assert.match(String(calls[1].prompt_3 || ''), /left leg moves forward|jambe gauche avance devant/i);
   assert.match(String(calls[1].prompt_3 || ''), /clear anatomy:|anatomie lisible:/i);
   assert.match(String(calls[4].prompt_3 || ''), /right leg moves forward|jambe droite avance devant/i);
-  assert.match(String(calls[7].prompt_3 || ''), /posture stable apres (la|the) progression/i);
+  assert.match(String(calls[7].prompt_3 || ''), /pose stable after the progression|posture stable apres (la|the) progression/i);
   assert.doesNotMatch(String(calls[0].prompt || ''), /profil|sequence :|methode :|frame 1 sur 8|palier actuel/i);
   assert.doesNotMatch(String(calls[0].prompt_2 || ''), /camera fixe|pas de rotation de camera/i);
+  assert.doesNotMatch(String(calls[0].prompt || ''), /\bheroique\b|\bsentier\b|\bfantastique\b|\bsur\b/i);
+  assert.doesNotMatch(String(calls[0].prompt_2 || ''), /\bsentier\b|\bfantastique\b|\bsur\b/i);
   assert.equal(result.frames[0].initSource, 'reference_anchor');
   assert.ok(result.frames.slice(1).every((frame) => frame.initSource === 'previous_frame'));
   assert.equal(calls[0].init_image_url, 'https://files.example.com/source-image.png');
@@ -577,7 +695,7 @@ test('createGenerateVideoHandler adapts walk prompts to a ten-frame storyboard',
   assert.match(String(calls[1].prompt || ''), /left leg moves forward|weight distributed across both legs|jambe gauche avance devant|poids reparti sur les deux jambes/i);
   assert.match(String(calls[1].prompt_3 || ''), /left leg moves forward|weight distributed across both legs|jambe gauche avance devant|poids reparti sur les deux jambes/i);
   assert.match(String(calls[4].prompt_3 || ''), /right leg moves forward|right leg passes under the body|jambe droite avance devant|jambe droite passe sous le corps/i);
-  assert.match(String(calls[9].prompt_3 || ''), /sortie de marche|posture stable apres (la|the) progression/i);
+  assert.match(String(calls[9].prompt_3 || ''), /walking motion still readable|pose stable after the progression|sortie de marche|posture stable apres (la|the) progression/i);
   assert.doesNotMatch(String(calls[0].prompt || ''), /profil|sequence :|methode :|palier actuel|preparer la prochaine frame/i);
   assert.equal(calls[1].strength_profile, 'balanced');
 });
@@ -634,13 +752,13 @@ test('createGenerateVideoHandler uses an action burst plan for kamehameha prompt
 
   assert.equal(result.ok, true);
   assert.equal(calls.length, 4);
-  assert.match(String(calls[0].prompt || ''), /stable base structure: goku|base structure stable: goku/i);
-  assert.match(String(calls[0].prompt || ''), /posture de depart stable, geste encore retenu/i);
-  assert.match(String(calls[0].prompt_2 || ''), /stable scene and composition:|decor et composition stables:/i);
-  assert.match(String(calls[0].prompt_3 || ''), /visual checkpoint of this frame: low energy|checkpoint visuel de cette frame: energie faible/i);
+  assert.match(String(calls[0].prompt || ''), /main subject pose continuity: goku/i);
+  assert.match(String(calls[0].prompt || ''), /stable starting pose, gesture still (restrained|held back)|posture de depart stable, geste encore retenu/i);
+  assert.match(String(calls[0].prompt_2 || ''), /scene camera decor continuity:/i);
+  assert.match(String(calls[0].prompt_3 || ''), /visible frame delta anatomy prop detail: .*low energy/i);
   assert.match(String(calls[1].prompt_3 || ''), /denser energy|visible weight transfer|energie plus dense|transfert de poids visible/i);
   assert.match(String(calls[2].prompt_3 || ''), /readable energy projection|projection d energie lisible/i);
-  assert.match(String(calls[3].prompt || ''), /retombee du geste|energie se dissipe/i);
+  assert.match(String(calls[3].prompt || ''), /gesture settles down|energy dissipates|retombee du geste|energie se dissipe/i);
   assert.match(String(calls[3].prompt_3 || ''), /pose remains readable|posture reste lisible/i);
   assert.doesNotMatch(String(calls[0].prompt || ''), /profil|sequence :|methode :/i);
   assert.doesNotMatch(String(calls[0].prompt_2 || ''), /camera fixe|pas de rotation de camera/i);
@@ -709,9 +827,9 @@ test('createGenerateVideoHandler builds a staged power-up plan for threatening a
 
   assert.equal(result.ok, true);
   assert.equal(calls.length, 8);
-  assert.match(String(calls[0].prompt || ''), /stable base structure: luffy de face|base structure stable: luffy de face/i);
+  assert.match(String(calls[0].prompt || ''), /main subject pose continuity: luffy de face/i);
   assert.match(String(calls[0].prompt || ''), /stable threatening stance|posture menacante stable/i);
-  assert.match(String(calls[0].prompt_3 || ''), /visual checkpoint of this frame: aura still faint|checkpoint visuel de cette frame: aura encore faible/i);
+  assert.match(String(calls[0].prompt_3 || ''), /visible frame delta anatomy prop detail: .*aura still faint/i);
   assert.match(String(calls[1].prompt_3 || ''), /clenched fists|more visible aura|poings serres|aura plus visible/i);
   assert.match(String(calls[4].prompt_3 || ''), /aura spreads further|aura intense|face and identity remain consistent|aura se deploie davantage|visage et identite coherents/i);
   assert.match(String(calls[7].prompt || ''), /posture puissante stabilisee/i);
@@ -777,15 +895,15 @@ test('createGenerateVideoHandler builds a staged transformation storyboard witho
   assert.equal(result.ok, true);
   assert.equal(result.frameCount, 10);
   assert.equal(calls.length, 10);
-  assert.match(String(calls[0].prompt || ''), /stable base structure: gogeta|base structure stable: gogeta/i);
+  assert.match(String(calls[0].prompt || ''), /main subject pose continuity: gogeta/i);
   assert.match(String(calls[0].prompt || ''), /stable upright pose|posture droite stable/i);
-  assert.match(String(calls[0].prompt_3 || ''), /visual checkpoint of this frame: .*hair still normal|checkpoint visuel de cette frame: .*cheveux encore normaux/i);
+  assert.match(String(calls[0].prompt_3 || ''), /visible frame delta anatomy prop detail: .*hair still normal/i);
   assert.match(String(calls[2].prompt_3 || ''), /hair rises further|first glow of energy|cheveux se dressent davantage|premiere lueur d energie/i);
-  assert.match(String(calls[5].prompt || ''), /cheveux rouges divins|hair .*red|aura .*divine/i);
+  assert.match(String(calls[5].prompt || ''), /divine red hair clearly visible|cheveux rouges divins|hair .*red|aura .*divine/i);
   assert.match(String(calls[5].prompt_3 || ''), /transformation clearly underway|transformation clairement engagee/i);
   assert.match(String(calls[9].prompt || ''), /form[e]? super saiyan divin stabilisee|energy maitrisee autour du corps|energy .*around the body|energie maitrisee autour du corps/i);
-  assert.match(String(calls[6].prompt || ''), /arms ouverts plus haut|torso projete vers avant|bras ouverts plus haut|torse projete vers l avant/i);
-  assert.match(String(calls[7].prompt || ''), /arms ouverts avec force|chest projetee|bras ouverts avec force|poitrine projetee/i);
+  assert.match(String(calls[6].prompt || ''), /arms raised higher and open|torso projected forward|arms ouverts plus haut|torse projete vers l avant/i);
+  assert.match(String(calls[7].prompt || ''), /arms thrown open with force|chest projected forward|bras ouverts avec force|poitrine projetee/i);
   assert.doesNotMatch(String(calls[0].prompt || ''), /transformation vers super saiyan divin/i);
   assert.doesNotMatch(String(calls[1].prompt_3 || ''), /vers .* vers|posture de depart stable, posture de depart stable/i);
   assert.doesNotMatch(String(calls[1].prompt_2 || ''), /priorite a|faire evoluer|garder visage/i);
@@ -793,7 +911,7 @@ test('createGenerateVideoHandler builds a staged transformation storyboard witho
   assert.ok(result.frames.slice(1).every((frame) => ['previous_frame', 'checkpoint_chain'].includes(frame.initSource)));
   assert.ok(result.frames.some((frame) => frame.initSource === 'checkpoint_chain'));
   assert.notEqual(String(result.frames[1].prompt_3 || ''), String(result.frames[2].prompt_3 || ''));
-  assert.match(String(result.frames[5].structuralPrompt || ''), /hair red divins bien visibles|cheveux rouges divins bien visibles/i);
+  assert.match(String(result.frames[5].structuralPrompt || ''), /divine red hair clearly visible|hair red divins bien visibles|cheveux rouges divins bien visibles/i);
   assert.equal(calls[1].strength, 'auto');
   assert.equal(calls[1].strength_profile, 'balanced');
   assert.ok(Number(calls[1].strength_value || 0) >= 0.2);
@@ -855,7 +973,7 @@ test('createGenerateVideoHandler keeps compiled character identity hints in the 
   assert.equal(result.ok, true);
   assert.equal(calls.length, 2);
   assert.match(String(calls[0].prompt_2 || ''), /readable orange and blue outfit|tenue orange et bleue lisible/i);
-  assert.match(String(calls[0].prompt || ''), /stable base structure: goku|base structure stable: goku/i);
+  assert.match(String(calls[0].prompt || ''), /main subject pose continuity: goku/i);
 });
 
 test('createGenerateVideoHandler keeps base negative prompt on the main layer and adds video text guards', async () => {

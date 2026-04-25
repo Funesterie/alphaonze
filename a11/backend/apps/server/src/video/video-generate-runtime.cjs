@@ -154,11 +154,25 @@ function resolveImageRenderMaxSide(env = process.env) {
   return roundDimensionToMultiple(clampNumber(raw, 64, 4096, 2048));
 }
 
-function normalizeEvenDimension(value, min = 64) {
+function resolveSdDimensionMultiple(env = process.env) {
+  const configured = Number(env?.SD_DIMENSION_MULTIPLE || env?.A11_SD_DIMENSION_MULTIPLE || 8);
+  if (!Number.isFinite(configured) || configured <= 0) return 8;
+  return Math.max(8, Math.min(128, Math.round(configured)));
+}
+
+function normalizeLatentDimension(value, {
+  min = 64,
+  max = 4096,
+  multiple = resolveSdDimensionMultiple(process.env),
+} = {}) {
+  const safeMultiple = Math.max(1, Number(multiple) || 8);
+  const safeMin = Math.max(safeMultiple, Math.ceil(Number(min || 64) / safeMultiple) * safeMultiple);
+  const safeMax = Math.max(safeMin, Math.floor(Number(max || 4096) / safeMultiple) * safeMultiple);
   let numeric = Math.round(Number(value));
-  if (!Number.isFinite(numeric) || numeric <= 0) numeric = min;
-  if (numeric > 1 && numeric % 2 !== 0) numeric -= 1;
-  return Math.max(min, numeric);
+  if (!Number.isFinite(numeric) || numeric <= 0) numeric = safeMin;
+  numeric = Math.max(safeMin, Math.min(safeMax, numeric));
+  numeric = Math.floor(numeric / safeMultiple) * safeMultiple;
+  return Math.max(safeMin, Math.min(safeMax, numeric));
 }
 
 function fitRenderDimensionsWithinLimits({
@@ -194,18 +208,47 @@ function fitRenderDimensionsWithinLimits({
     resolvedHeight *= scale;
   }
 
-  resolvedWidth = normalizeEvenDimension(resolvedWidth, minSide);
-  resolvedHeight = normalizeEvenDimension(resolvedHeight, minSide);
+  const dimensionMultiple = resolveSdDimensionMultiple(process.env);
+  resolvedWidth = normalizeLatentDimension(resolvedWidth, {
+    min: minSide,
+    max: maxSide,
+    multiple: dimensionMultiple,
+  });
+  resolvedHeight = normalizeLatentDimension(resolvedHeight, {
+    min: minSide,
+    max: maxSide,
+    multiple: dimensionMultiple,
+  });
 
-  if (resolvedWidth > maxSide) resolvedWidth = normalizeEvenDimension(maxSide, minSide);
-  if (resolvedHeight > maxSide) resolvedHeight = normalizeEvenDimension(maxSide, minSide);
+  if (resolvedWidth > maxSide) {
+    resolvedWidth = normalizeLatentDimension(maxSide, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
+  }
+  if (resolvedHeight > maxSide) {
+    resolvedHeight = normalizeLatentDimension(maxSide, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
+  }
 
   let guard = 0;
   while ((resolvedWidth * resolvedHeight) > maxPixels && guard < 4) {
     const areaScale = Math.sqrt(maxPixels / Math.max(resolvedWidth * resolvedHeight, 1));
     if (!(areaScale > 0 && areaScale < 1)) break;
-    const nextWidth = normalizeEvenDimension(resolvedWidth * areaScale, minSide);
-    const nextHeight = normalizeEvenDimension(resolvedHeight * areaScale, minSide);
+    const nextWidth = normalizeLatentDimension(resolvedWidth * areaScale, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
+    const nextHeight = normalizeLatentDimension(resolvedHeight * areaScale, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
     if (nextWidth === resolvedWidth && nextHeight === resolvedHeight) break;
     resolvedWidth = nextWidth;
     resolvedHeight = nextHeight;
@@ -1736,6 +1779,34 @@ function buildLocalPublicUrl(req, candidatePath) {
   return origin ? `${origin}${publicPath}` : publicPath;
 }
 
+function isLoopbackUrl(value = '') {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    const hostname = String(parsed.hostname || '').trim().toLowerCase();
+    return hostname === '127.0.0.1'
+      || hostname === 'localhost'
+      || hostname === '::1'
+      || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+function isUnsafeAssetUrlForClient(req, value = '') {
+  const raw = String(value || '').trim();
+  if (!/^https?:\/\//i.test(raw)) return false;
+  if (isLoopbackUrl(raw)) return true;
+
+  try {
+    const requestOrigin = resolveRequestOrigin(req);
+    const requestProtocol = requestOrigin ? new URL(requestOrigin).protocol : '';
+    const assetProtocol = new URL(raw).protocol;
+    return requestProtocol === 'https:' && assetProtocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 function resolveVideoAudioRequest(body = {}, prompt = '') {
   const text = String(
     body?.audioText
@@ -1877,10 +1948,14 @@ async function synthesizeVideoAudioTrack({
   const buffer = Buffer.from(await audioResponse.arrayBuffer());
   const audioPath = path.join(workingPaths.jobRoot, `audio${inferAudioExtension(audioUrl, contentType)}`);
   await fsp.writeFile(audioPath, buffer);
+  const localPublicAudioUrl = buildLocalPublicUrl(req, audioPath);
+  const publicAudioUrl = isUnsafeAssetUrlForClient(req, audioUrl) && localPublicAudioUrl
+    ? localPublicAudioUrl
+    : audioUrl;
 
   return {
     path: audioPath,
-    url: audioUrl,
+    url: publicAudioUrl,
     text: normalizedText,
     contentType,
     sizeBytes: buffer.length,
@@ -2812,6 +2887,7 @@ function createGenerateVideoHandler(overrides = {}) {
         prompt: framePromptPlan.prompt,
         prompt_2: framePromptPlan.prompt_2,
         prompt_3: framePromptPlan.prompt_3,
+        prompt_language: 'en',
         prompt_prebuilt: true,
         prompt_2_prebuilt: true,
         prompt_3_prebuilt: true,
@@ -2917,6 +2993,9 @@ function createGenerateVideoHandler(overrides = {}) {
         structuralPrompt: framePromptPlan.structuralPrompt,
         stableIdentityPrompt: framePromptPlan.stableIdentityPrompt,
         frameVariationPrompt: framePromptPlan.frameVariationPrompt,
+        soundCues: Array.isArray(framePlan.soundCues) ? framePlan.soundCues.slice() : [],
+        continuityLocks: Array.isArray(framePlan.continuityLocks) ? framePlan.continuityLocks.slice() : [],
+        sceneContext: String(framePlan.sceneContext || '').trim() || null,
         url: frameUrl,
         path: framePath,
         initSource: initSourceLabel,
@@ -3044,10 +3123,16 @@ function createGenerateVideoHandler(overrides = {}) {
         compositionHints: Array.isArray(sequencePlan.compositionHints) ? sequencePlan.compositionHints.slice() : [],
         identityLocks: Array.isArray(sequencePlan.identityLocks) ? sequencePlan.identityLocks.slice() : [],
         sceneLocks: Array.isArray(sequencePlan.sceneLocks) ? sequencePlan.sceneLocks.slice() : [],
+        continuityLocks: Array.isArray(sequencePlan.continuityLocks) ? sequencePlan.continuityLocks.slice() : [],
+        soundCues: Array.isArray(sequencePlan.soundCues) ? sequencePlan.soundCues.slice() : [],
         initStrategy: sequencePlan.initStrategy,
         reanchorEvery: sequencePlan.reanchorEvery,
         imageAwareUsed: Boolean(sequencePlan.imageAwareUsed),
         imageAwareError: String(sequencePlan.imageAwareError || '').trim() || null,
+        visualAnalysisProvider: String(sequencePlan.visualAnalysisProvider || '').trim() || null,
+        visualAnalysis: sequencePlan.visualAnalysis && typeof sequencePlan.visualAnalysis === 'object'
+          ? JSON.parse(JSON.stringify(sequencePlan.visualAnalysis))
+          : null,
         beats: Array.isArray(sequencePlan.beats)
           ? sequencePlan.beats.map((beat) => ({
               label: beat.label,
@@ -3055,6 +3140,9 @@ function createGenerateVideoHandler(overrides = {}) {
               variation: beat.variation,
               checkpoint: Boolean(beat.checkpoint),
               rendererFocus: Array.isArray(beat.rendererFocus) ? beat.rendererFocus.slice() : [],
+              soundCues: Array.isArray(beat.soundCues) ? beat.soundCues.slice() : [],
+              continuityLocks: Array.isArray(beat.continuityLocks) ? beat.continuityLocks.slice() : [],
+              sceneContext: String(beat.sceneContext || '').trim() || null,
             }))
           : [],
       },
@@ -3068,6 +3156,9 @@ function createGenerateVideoHandler(overrides = {}) {
         structuralPrompt: frame.structuralPrompt,
         stableIdentityPrompt: frame.stableIdentityPrompt,
         frameVariationPrompt: frame.frameVariationPrompt,
+        soundCues: Array.isArray(frame.soundCues) ? frame.soundCues.slice() : [],
+        continuityLocks: Array.isArray(frame.continuityLocks) ? frame.continuityLocks.slice() : [],
+        sceneContext: frame.sceneContext,
       })),
     };
   };
@@ -3078,6 +3169,7 @@ module.exports = {
   buildFfmpegAssemblyArgs,
   createGenerateVideoHandler,
   ensureFfmpegAvailable,
+  fitRenderDimensionsWithinLimits,
   normalizeVideoRequest,
   resolveVideoEnvConfig,
   runFfmpegAssembly,
