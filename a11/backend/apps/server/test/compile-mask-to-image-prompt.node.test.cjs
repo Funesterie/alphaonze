@@ -708,6 +708,35 @@ test('compileMaskToImagePrompt removes solo framing constraints for versus promp
   assert.match(String(compiled.negative_prompt || ''), /fusion des personnages|clone du premier sujet/i);
 });
 
+test('compileMaskToImagePrompt removes solo framing constraints for explicit two-fighter prompts', () => {
+  const compiled = compileMaskToImagePrompt({
+    raw: 'Un affrontement anime explosif de type DBZ entre deux combattants ultra puissants',
+    inputs: {
+      subject: ['affrontement'],
+      environment: ['arène rocheuse détruite'],
+      style: ['style anime shonen haut de gamme'],
+      composition: ['sujet unique bien cadré', 'silhouette lisible', 'forme complète visible'],
+      lighting: ['lumière intense'],
+      palette: [],
+    },
+    meta: {
+      subjectProfile: {
+        type: 'reference_character',
+      },
+    },
+    constraints: {
+      no_text: true,
+    },
+    options: {},
+  });
+
+  assert.match(String(compiled.prompt || ''), /deux combattants/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /sujet unique bien cadré/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /un seul sujet principal/i);
+  assert.doesNotMatch(String(compiled.prompt || ''), /single clearly visible main subject/i);
+  assert.doesNotMatch(String(compiled.negative_prompt || ''), /plusieurs sujets|foule/i);
+});
+
 test('compileMaskToImagePrompt removes solo framing constraints for named group scenes', () => {
   const compiled = compileMaskToImagePrompt({
     raw: 'genere une image des Mugiwaras',

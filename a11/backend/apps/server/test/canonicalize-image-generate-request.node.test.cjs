@@ -7,6 +7,7 @@ const {
   extractPreservedNamedEntityCandidates,
   findCardinalityConflict,
   findMissingNamedEntityCandidates,
+  findRawSubjectCardinalityExpectation,
   normalizeCanonicalizedImageGenerateRequest,
   resolveCanonicalizerTimeoutMs,
   validateCanonicalizedImageGenerateRequest,
@@ -184,6 +185,8 @@ test('canonicalizer prompt explicitly forbids named-entity substitution and cont
   assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /proper names and named entities as immutable/i);
   assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not replace a named entity with a related/i);
   assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not emit "single subject" instructions for pair or group scenes/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /two separate subject entries/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /sole subject when the user requested actors/i);
 });
 
 test('validateCanonicalizedImageGenerateRequest rejects missing explicit named entities from the raw request', () => {
@@ -244,6 +247,42 @@ test('validateCanonicalizedImageGenerateRequest rejects single-subject instructi
   }, 'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine');
 
   assert.match(findCardinalityConflict(payload), /single_subject_instruction_in_multi_subject_scene/);
+  assert.throws(
+    () => validateCanonicalizedImageGenerateRequest(payload),
+    /canonicalized_request_cardinality_conflict/
+  );
+});
+
+test('validateCanonicalizedImageGenerateRequest rejects collapsed explicit two-fighter requests', () => {
+  const rawUserInput = 'Un affrontement anime explosif de type DBZ entre deux combattants ultra puissants';
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Explosive anime confrontation in a rocky arena',
+    structuredFields: {
+      subject: ['confrontation'],
+      environment: ['rocky arena'],
+      style: ['explosive anime'],
+      composition: ['single subject poster framing'],
+      lighting: ['intense light'],
+      palette: [],
+      constraints: {
+        promptInstructions: ['single clearly visible main subject'],
+        negativeHints: [],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'single',
+      explicitSubjectCount: 1,
+    },
+  }, rawUserInput);
+
+  assert.deepEqual(findRawSubjectCardinalityExpectation(rawUserInput), {
+    subjectMode: 'pair',
+    explicitSubjectCount: 2,
+    reason: 'explicit_two_subjects',
+  });
+  assert.match(findCardinalityConflict(payload), /raw_pair_scene_collapsed_to_single/);
   assert.throws(
     () => validateCanonicalizedImageGenerateRequest(payload),
     /canonicalized_request_cardinality_conflict/
@@ -321,6 +360,74 @@ test('canonicalizeImageGenerateRequest retries when the LLM substitutes a named 
   assert.equal(canonicalizedRequest.scenePolicy.subjectMode, 'pair');
   assert.equal(canonicalizedRequest.scenePolicy.explicitSubjectCount, 2);
   assert.deepEqual(canonicalizedRequest.structuredFields.subject, ['Darth Vader', 'Qui-Gon Jinn']);
+});
+
+test('canonicalizeImageGenerateRequest retries when an explicit two-fighter request is collapsed to an event subject', async () => {
+  let callCount = 0;
+  const canonicalizedRequest = await canonicalizeImageGenerateRequest(
+    'Un affrontement anime explosif de type DBZ entre deux combattants ultra puissants dans une arene rocheuse',
+    {
+      stage: 'canonicalize-image-generate-request-test',
+      callStructuredLlmJson: async ({ text }) => {
+        callCount += 1;
+        if (callCount === 1) {
+          return {
+            canonicalEnglishInput: 'Explosive anime confrontation in a destroyed rocky arena',
+            structuredFields: {
+              subject: ['confrontation'],
+              environment: ['destroyed rocky arena'],
+              style: ['explosive anime'],
+              composition: ['single subject poster framing'],
+              lighting: ['intense light'],
+              palette: [],
+              constraints: {
+                promptInstructions: ['single clearly visible main subject'],
+                negativeHints: ['blur'],
+                noText: true,
+                safeMode: true,
+              },
+            },
+            scenePolicy: {
+              subjectMode: 'single',
+              explicitSubjectCount: 1,
+            },
+          };
+        }
+
+        assert.match(String(text || ''), /two separate subject entries/i);
+        assert.match(String(text || ''), /never collapse actors into an abstract event subject/i);
+        return {
+          canonicalEnglishInput: 'Two distinct powerful anime fighters in an explosive DBZ-style duel inside a destroyed rocky arena',
+          structuredFields: {
+            subject: ['first powerful anime fighter', 'second powerful anime fighter'],
+            environment: ['destroyed rocky arena'],
+            style: ['explosive DBZ-style anime'],
+            composition: ['one-on-one duel'],
+            lighting: ['intense energy light'],
+            palette: ['bright energy colors'],
+            constraints: {
+              promptInstructions: ['both fighters fully visible', 'separate readable silhouettes'],
+              negativeHints: ['fused bodies', 'duplicate character'],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'pair',
+            explicitSubjectCount: 2,
+          },
+        };
+      },
+    }
+  );
+
+  assert.equal(callCount, 2);
+  assert.equal(canonicalizedRequest.audit.reason, 'retry_after_canonicalized_request_cardinality_conflict');
+  assert.equal(canonicalizedRequest.scenePolicy.subjectMode, 'pair');
+  assert.deepEqual(
+    canonicalizedRequest.structuredFields.subject,
+    ['first powerful anime fighter', 'second powerful anime fighter']
+  );
 });
 
 test('canonicalizeImageGenerateRequest keeps a valid structured canonical payload and never marks it as fallback', async () => {
