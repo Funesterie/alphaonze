@@ -702,14 +702,6 @@ function validateCanonicalizedImageGenerateRequest(canonicalizedRequest = null) 
     throw error;
   }
 
-  const missingNamedEntities = findMissingNamedEntityCandidates(canonicalizedRequest);
-  if (missingNamedEntities.length) {
-    const error = new Error('canonicalized_request_missing_named_entity');
-    error.code = 'canonicalized_request_missing_named_entity';
-    error.details = missingNamedEntities.join(', ');
-    throw error;
-  }
-
   return canonicalizedRequest;
 }
 
