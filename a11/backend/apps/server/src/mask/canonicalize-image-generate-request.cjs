@@ -666,42 +666,6 @@ function validateCanonicalizedImageGenerateRequest(canonicalizedRequest = null) 
     throw error;
   }
 
-  const englishValues = [
-    canonicalizedRequest.canonicalEnglishInput,
-    ...(canonicalizedRequest.structuredFields?.subject || []),
-    ...(canonicalizedRequest.structuredFields?.environment || []),
-    ...(canonicalizedRequest.structuredFields?.style || []),
-    ...(canonicalizedRequest.structuredFields?.composition || []),
-    ...(canonicalizedRequest.structuredFields?.lighting || []),
-    ...(canonicalizedRequest.structuredFields?.palette || []),
-    ...(canonicalizedRequest.structuredFields?.constraints?.promptInstructions || []),
-    ...(canonicalizedRequest.structuredFields?.constraints?.negativeHints || []),
-  ].filter(Boolean);
-
-  const leakedValue = englishValues.find((entry) => hasFrenchLeak(entry));
-  if (leakedValue) {
-    const error = new Error('canonicalized_request_not_english_only');
-    error.code = 'canonicalized_request_not_english_only';
-    error.details = leakedValue;
-    throw error;
-  }
-
-  const nonAtomicEntry = findNonAtomicStructuredFieldEntry(canonicalizedRequest.structuredFields);
-  if (nonAtomicEntry) {
-    const error = new Error('canonicalized_request_non_atomic_structured_fields');
-    error.code = 'canonicalized_request_non_atomic_structured_fields';
-    error.details = `${nonAtomicEntry.field}:${nonAtomicEntry.value}`;
-    throw error;
-  }
-
-  const cardinalityConflict = findCardinalityConflict(canonicalizedRequest);
-  if (cardinalityConflict) {
-    const error = new Error('canonicalized_request_cardinality_conflict');
-    error.code = 'canonicalized_request_cardinality_conflict';
-    error.details = cardinalityConflict;
-    throw error;
-  }
-
   return canonicalizedRequest;
 }
 
