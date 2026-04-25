@@ -190,6 +190,39 @@ function scoreImageCandidate(candidate = {}, query = '', options = {}) {
     score -= 28;
     reasons.push('statue_penalty');
   }
+
+  // Domaines connus pour les mauvaises images de référence
+  const sourceDomain = extractHostname(candidate.source_url || '');
+  if (/\b(pinterest|tumblr|reddit|twitter|x\.com|instagram|tiktok|facebook|deviantart\.com)\b/.test(sourceDomain)) {
+    score -= 8;
+    reasons.push('social_domain_penalty');
+  }
+  if (/\b(wikia|fandom\.com|wiki)\b/.test(sourceDomain)) {
+    score += 6;
+    reasons.push('wiki_bonus');
+  }
+  if (/\b(artstation|pixiv|zerochan|safebooru|danbooru|gelbooru)\b/.test(sourceDomain)) {
+    score += 8;
+    reasons.push('art_platform_bonus');
+  }
+
+  // Pénaliser les images trop petites ou de mauvaise résolution
+  if (longestSide > 0 && longestSide < 256) {
+    score -= 20;
+    reasons.push('tiny_image_penalty');
+  }
+
+  // Pénaliser les screenshots de jeux vidéo ou captures d'écran
+  if (/\b(screenshot|screen shot|capture|gameplay|in game|in-game|ingame|hud|interface|ui overlay)\b/.test(combined)) {
+    score -= 14;
+    reasons.push('screenshot_penalty');
+  }
+
+  // Pénaliser les images de mauvaise qualité connues
+  if (/\b(blurry|pixelated|low quality|low res|lowres|bad quality|poor quality|jpeg artifact)\b/.test(combined)) {
+    score -= 16;
+    reasons.push('low_quality_penalty');
+  }
   if (lineartCandidate && !wantsLineart) {
     score -= 24;
     reasons.push('lineart_penalty');

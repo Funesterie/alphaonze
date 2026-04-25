@@ -4977,13 +4977,20 @@ function resolveFileUploadWriter() {
 
   return {
     backend: 'local-file',
-    uploadBuffer: ({ filename, buffer, contentType }) => saveBufferToLocalUploadStorage({
-      uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
-      filename,
-      buffer,
-      contentType,
-      sanitizeFileName,
-    }),
+    uploadBuffer: async ({ filename, buffer, contentType }) => {
+      const saved = saveBufferToLocalUploadStorage({
+        uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
+        filename,
+        buffer,
+        contentType,
+        sanitizeFileName,
+      });
+      // L'URL relative /files/runtime/... ne peut pas être fetchée par SD.
+      // On la préfixe avec l'origine locale pour obtenir une URL absolue.
+      const localPort = globalThis.__A11_PORT || Number(process.env.PORT || 3000);
+      const absoluteUrl = `http://127.0.0.1:${localPort}${saved.url}`;
+      return { ...saved, url: absoluteUrl };
+    },
   };
 }
 

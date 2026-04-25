@@ -258,13 +258,13 @@ function shouldRejectReferenceResult(entry = {}, options = {}) {
 
   const selectionScore = Number(entry?.selectionScore || 0) || 0;
   if (selectionScore > 0) {
-    const minimumScore = role === 'subject' ? 8 : 5;
+    const minimumScore = role === 'subject' ? 12 : 6;
     if (selectionScore < minimumScore) return true;
   }
 
   const width = Number(entry?.width || 0) || 0;
   const height = Number(entry?.height || 0) || 0;
-  const minimumSide = (role === 'subject' && options?.strictSubject) ? 320 : 192;
+  const minimumSide = (role === 'subject' && options?.strictSubject) ? 384 : 256;
   if ((width > 0 && width < minimumSide) || (height > 0 && height < minimumSide)) {
     return true;
   }
