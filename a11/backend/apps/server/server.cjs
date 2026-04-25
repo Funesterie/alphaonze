@@ -5511,7 +5511,9 @@ const sdTools = createSdToolsRouter({
   resolveSdProxyUrl,
   resolveSdScriptPath,
   runSdScript,
-  uploadBufferToR2: (payload) => resolveFileUploadWriter().uploadBuffer(payload),
+  // Pas d'override uploadBufferToR2 : sd-tools utilise le vrai R2 si configuré,
+  // sinon throw → catch dans sd-tools construit l'URL locale depuis output_path
+  // (generated/images), sans copier dans uploads.
   isAdminRequest,
 });
 

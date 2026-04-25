@@ -1284,47 +1284,83 @@ function createSdToolsRouter(overrides = {}) {
         init_image_source: outputJson.init_image_source || null,
       };
     } catch (error_) {
-      const publicWorkspaceRoot = resolvePublicWorkspaceRoot();
-      const localRelativePath = String(path.relative(publicWorkspaceRoot, outputJson.output_path || '') || '').replace(/\\/g, '/');
-      if (localRelativePath && !localRelativePath.startsWith('..')) {
-        const localPublicPath = `/files/${localRelativePath
-          .split('/')
-          .filter(Boolean)
-          .map((segment) => encodeURIComponent(segment))
-          .join('/')}`;
-        const localPublicUrl = `${resolveRequestOrigin(req)}${localPublicPath}`;
-        const resolvedLocalUrl = localPublicUrl.startsWith('http')
-          ? localPublicUrl
-          : localPublicPath;
+      const outputFilePath = String(outputJson.output_path || '').trim();
+      if (outputFilePath) {
+        // Essayer d'abord via A11_RUNTIME_ROOT (/files/runtime/...)
+        const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+        if (runtimeRoot) {
+          const runtimeRelativePath = String(defaultPath.relative(runtimeRoot, outputFilePath) || '').replace(/\\/g, '/');
+          if (runtimeRelativePath && !runtimeRelativePath.startsWith('..')) {
+            const localPublicPath = `/files/runtime/${runtimeRelativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
+            const origin = resolveRequestOrigin(req);
+            const resolvedLocalUrl = origin ? `${origin}${localPublicPath}` : localPublicPath;
+            return {
+              ok: true,
+              url: resolvedLocalUrl,
+              image_url: resolvedLocalUrl,
+              filename: defaultPath.basename(outputFilePath),
+              prompt: finalPrompt,
+              num_inference_steps,
+              guidance_scale,
+              width,
+              height,
+              actual_width: actualWidth,
+              actual_height: actualHeight,
+              ...(initImage ? { init_image_url: initImage } : {}),
+              ...buildStrengthPlanPayload(strengthPlan, strength),
+              seed: seed !== undefined ? Number(seed) : undefined,
+              mode: 'stable-diffusion-local',
+              size_policy: sizePolicy !== 'default' ? sizePolicy : null,
+              storage: 'local-file',
+              device: outputJson.device || null,
+              model_id: outputJson.model_id || null,
+              torch_dtype: outputJson.torch_dtype || null,
+              cuda_available: outputJson.cuda_available === true,
+              cuda_device_name: outputJson.cuda_device_name || null,
+              xformers_enabled: outputJson.xformers_enabled === true,
+              init_image_used: outputJson.init_image_used === true,
+              init_image_source: outputJson.init_image_source || null,
+              upload_warning: String(error_?.message || error_),
+            };
+          }
+        }
 
-        return {
-          ok: true,
-          url: resolvedLocalUrl,
-          image_url: resolvedLocalUrl,
-          filename: path.basename(outputJson.output_path || `sd_${Date.now()}.png`),
-          prompt: finalPrompt,
-          num_inference_steps,
-          guidance_scale,
-          width,
-          height,
-          actual_width: actualWidth,
-          actual_height: actualHeight,
-          ...(initImage ? { init_image_url: initImage } : {}),
-          ...buildStrengthPlanPayload(strengthPlan, strength),
-          seed: seed !== undefined ? Number(seed) : undefined,
-          mode: 'stable-diffusion-local',
-          size_policy: sizePolicy !== 'default' ? sizePolicy : null,
-          storage: 'local-file',
-          device: outputJson.device || null,
-          model_id: outputJson.model_id || null,
-          torch_dtype: outputJson.torch_dtype || null,
-          cuda_available: outputJson.cuda_available === true,
-          cuda_device_name: outputJson.cuda_device_name || null,
-          xformers_enabled: outputJson.xformers_enabled === true,
-          init_image_used: outputJson.init_image_used === true,
-          init_image_source: outputJson.init_image_source || null,
-          upload_warning: String(error_?.message || error_),
-        };
+        // Fallback via A11_WORKSPACE_ROOT (/files/...)
+        const publicWorkspaceRoot = resolvePublicWorkspaceRoot();
+        const localRelativePath = String(defaultPath.relative(publicWorkspaceRoot, outputFilePath) || '').replace(/\\/g, '/');
+        if (localRelativePath && !localRelativePath.startsWith('..')) {
+          const localPublicPath = `/files/${localRelativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
+          const localPublicUrl = `${resolveRequestOrigin(req)}${localPublicPath}`;
+          const resolvedLocalUrl = localPublicUrl.startsWith('http') ? localPublicUrl : localPublicPath;
+          return {
+            ok: true,
+            url: resolvedLocalUrl,
+            image_url: resolvedLocalUrl,
+            filename: defaultPath.basename(outputFilePath || `sd_${Date.now()}.png`),
+            prompt: finalPrompt,
+            num_inference_steps,
+            guidance_scale,
+            width,
+            height,
+            actual_width: actualWidth,
+            actual_height: actualHeight,
+            ...(initImage ? { init_image_url: initImage } : {}),
+            ...buildStrengthPlanPayload(strengthPlan, strength),
+            seed: seed !== undefined ? Number(seed) : undefined,
+            mode: 'stable-diffusion-local',
+            size_policy: sizePolicy !== 'default' ? sizePolicy : null,
+            storage: 'local-file',
+            device: outputJson.device || null,
+            model_id: outputJson.model_id || null,
+            torch_dtype: outputJson.torch_dtype || null,
+            cuda_available: outputJson.cuda_available === true,
+            cuda_device_name: outputJson.cuda_device_name || null,
+            xformers_enabled: outputJson.xformers_enabled === true,
+            init_image_used: outputJson.init_image_used === true,
+            init_image_source: outputJson.init_image_source || null,
+            upload_warning: String(error_?.message || error_),
+          };
+        }
       }
 
       const error = new Error(String(error_?.message || error_));
