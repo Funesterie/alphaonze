@@ -1,4 +1,6 @@
-param()
+param(
+  [switch]$NoPause
+)
 
 $ErrorActionPreference = 'Stop'
 

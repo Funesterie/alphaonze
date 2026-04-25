@@ -3145,6 +3145,7 @@ Règles strictes :
 - si la raw_request contient plus de détails concrets que le current_prompt, les réintégrer proprement dans le prompt final
 - préserver tous les détails visuels concrets utiles: identité, visage, corpulence, posture, cadrage, tenue, accessoires, décor, éclairage, palette, ambiance et contraintes négatives utiles
 - préserver les détails visuels concrets, les éléments de décor, les accessoires, les effets et les contraintes de cadrage réellement utiles
+- si janus_reference_analysis est présent, préserver ses objets, personnages, anatomie, latéralité, relations spatiales et coordonnées utiles
 - produire un prompt positif fluide, orienté rendu image, de longueur adaptée au besoin réel, sans perte d information
 - produire aussi un negative prompt propre et utile
 - pour les champs prompt et negative_prompt, utiliser strictement l anglais naturel: ${languageInstruction}
@@ -3201,8 +3202,98 @@ function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
   );
 }
 
+function compactJanusReferenceEntity(entry = {}, nested = false) {
+  if (!entry || typeof entry !== 'object') return null;
+  const compact = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'string') {
+      const text = normalizeText(value);
+      if (text) compact[key] = text;
+      continue;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      compact[key] = value;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      if (value.length <= 0) continue;
+      if (value.every((item) => typeof item === 'number')) {
+        compact[key] = value.slice(0, 4);
+        continue;
+      }
+      if (nested) {
+        compact[key] = value
+          .map((item) => normalizeText(item))
+          .filter(Boolean)
+          .slice(0, 6);
+        continue;
+      }
+      compact[key] = value
+        .map((item) => (item && typeof item === 'object'
+          ? compactJanusReferenceEntity(item, true)
+          : normalizeText(item)))
+        .filter(Boolean)
+        .slice(0, 8);
+    }
+  }
+  return Object.keys(compact).length > 0 ? compact : null;
+}
+
+function buildJanusReferenceAnalysisContext(mask = {}) {
+  const meta = mask?.meta && typeof mask.meta === 'object' ? mask.meta : {};
+  const manifests = Array.isArray(meta.imageReferenceManifests)
+    ? meta.imageReferenceManifests
+        .map((manifest) => {
+          if (!manifest || typeof manifest !== 'object') return null;
+          const compact = {
+            image_id: normalizeText(manifest.image_id || manifest.imageId || ''),
+            probable_role: normalizeText(manifest.probable_role || manifest.probableRole || ''),
+            confidence: Number(manifest.confidence || 0) || 0,
+            detected_content: normalizeText(manifest.detected_content || manifest.detectedContent || ''),
+            quality_flags: Array.isArray(manifest.quality_flags || manifest.qualityFlags)
+              ? (manifest.quality_flags || manifest.qualityFlags).map((entry) => normalizeText(entry)).filter(Boolean).slice(0, 6)
+              : [],
+            objects: Array.isArray(manifest.objects)
+              ? manifest.objects.map((entry) => compactJanusReferenceEntity(entry)).filter(Boolean).slice(0, 8)
+              : [],
+            characters: Array.isArray(manifest.characters)
+              ? manifest.characters.map((entry) => compactJanusReferenceEntity(entry)).filter(Boolean).slice(0, 4)
+              : [],
+            anatomy: Array.isArray(manifest.anatomy)
+              ? manifest.anatomy.map((entry) => compactJanusReferenceEntity(entry)).filter(Boolean).slice(0, 8)
+              : [],
+            relationships: Array.isArray(manifest.relationships)
+              ? manifest.relationships.map((entry) => normalizeText(entry)).filter(Boolean).slice(0, 6)
+              : [],
+          };
+          if (!compact.image_id && !compact.detected_content) return null;
+          return compact;
+        })
+        .filter(Boolean)
+        .slice(0, 6)
+    : [];
+  const decision = meta.imageReferenceDecision && typeof meta.imageReferenceDecision === 'object'
+    ? {
+        primary_image_id: normalizeText(meta.imageReferenceDecision.primaryImageId || meta.imageReferenceDecision.primary_image_id || ''),
+        primary_role: normalizeText(meta.imageReferenceDecision.primaryRole || meta.imageReferenceDecision.primary_role || ''),
+        primary_confidence: Number(meta.imageReferenceDecision.primaryConfidence || meta.imageReferenceDecision.primary_confidence || 0) || 0,
+        selection_mode: normalizeText(meta.imageReferenceDecision.selectionMode || meta.imageReferenceDecision.selection_mode || ''),
+        decision_source: normalizeText(meta.imageReferenceDecision.decisionSource || meta.imageReferenceDecision.decision_source || ''),
+      }
+    : null;
+  if (!manifests.length && !decision) return null;
+  return {
+    role: 'janus_source_image_spatial_analysis',
+    instruction: 'Preserve concrete visible facts, laterality, spatial placement, and coordinates from this analysis; do not invent hidden details.',
+    decision,
+    manifests,
+  };
+}
+
 function buildImagePromptRefinerSourceContext(compiledState = {}) {
   const mask = compiledState?.mask || {};
+  const janusReferenceAnalysis = buildJanusReferenceAnalysisContext(mask);
   return {
     target_language: SD_PROMPT_OUTPUT_LABEL,
     raw_request: resolveAuthoritativeRawRequest(mask),
@@ -3215,6 +3306,7 @@ function buildImagePromptRefinerSourceContext(compiledState = {}) {
     lighting: Array.isArray(mask?.inputs?.lighting) ? mask.inputs.lighting : [],
     palette: Array.isArray(mask?.inputs?.palette) ? mask.inputs.palette : [],
     prompt_instructions: Array.isArray(mask?.meta?.promptInstructions) ? mask.meta.promptInstructions.slice(0, 12) : [],
+    ...(janusReferenceAnalysis ? { janus_reference_analysis: janusReferenceAnalysis } : {}),
     subject_profile_type: String(mask?.meta?.subjectProfile?.type || '').trim(),
     canonical_subject: String(mask?.meta?.canonicalSubject || mask?.meta?.imageScratchpad?.canonicalSubject || '').trim(),
     universe: String(mask?.meta?.imageScratchpad?.universe || '').trim(),

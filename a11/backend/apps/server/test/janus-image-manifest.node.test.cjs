@@ -5,6 +5,7 @@ const {
   applyImageReferenceDecisionToMask,
   buildAutomaticImageReferenceFallbackDecision,
   extractRequestImageReferences,
+  normalizeImageReferenceManifest,
   resolveImageReferenceDecision,
 } = require('../src/image/janus-image-manifest.cjs');
 
@@ -106,6 +107,58 @@ test('resolveImageReferenceDecision stays automatic when the top identity image 
   assert.equal(decision.selection_mode, 'auto_primary');
 });
 
+test('normalizeImageReferenceManifest preserves Janus spatial object character and anatomy data', () => {
+  const manifest = normalizeImageReferenceManifest({
+    image_id: 'identity-1',
+    detected_content: 'same man holding a bat over the shoulders',
+    probable_role: 'identity',
+    confidence: 0.87321,
+    objects: [
+      {
+        label: 'decorated baseball bat',
+        role: 'prop',
+        bbox: [0.24, 0.12, 0.58, 0.18],
+        confidence: 0.91,
+        attributes: ['over shoulders', 'dark grip'],
+      },
+    ],
+    characters: [
+      {
+        label: 'main man',
+        bbox: { x: 0.18, y: 0.08, width: 0.62, height: 0.86 },
+        pose: 'three-quarter stance',
+        anatomy: [
+          {
+            part: 'hand',
+            side: 'left',
+            state: 'wrapped and gripping the bat',
+            bbox: [0.31, 0.39, 0.12, 0.15],
+            confidence: 0.83,
+          },
+        ],
+      },
+    ],
+    anatomy: [
+      {
+        part: 'face',
+        side: 'center',
+        state: 'visible grin',
+        bbox: '0.39, 0.11, 0.18, 0.2',
+      },
+    ],
+    relationships: [
+      { subject: 'left hand', relation: 'grips', object: 'bat above shoulder' },
+    ],
+  });
+
+  assert.equal(manifest.confidence, 0.8732);
+  assert.deepEqual(manifest.objects[0].bbox, [0.24, 0.12, 0.58, 0.18]);
+  assert.deepEqual(manifest.characters[0].bbox, [0.18, 0.08, 0.62, 0.86]);
+  assert.equal(manifest.characters[0].anatomy[0].side, 'left');
+  assert.deepEqual(manifest.anatomy[0].bbox, [0.39, 0.11, 0.18, 0.2]);
+  assert.deepEqual(manifest.relationships, ['left hand grips bat above shoulder']);
+});
+
 test('applyImageReferenceDecisionToMask stores manifests, promotes the primary image, and turns secondary roles into A11-owned hints', () => {
   const mask = {
     intent: 'image.generate',
@@ -130,6 +183,32 @@ test('applyImageReferenceDecisionToMask stores manifests, promotes the primary i
         probable_role: 'identity',
         confidence: 0.9,
         quality_flags: ['crop_needed'],
+        objects: [
+          {
+            label: 'decorated baseball bat',
+            role: 'prop',
+            bbox: [0.22, 0.16, 0.61, 0.19],
+            confidence: 0.88,
+            attributes: ['over shoulders'],
+          },
+        ],
+        characters: [
+          {
+            label: 'main man',
+            bbox: [0.18, 0.08, 0.64, 0.86],
+            pose: 'three-quarter stance with bat across shoulders',
+            anatomy: [
+              {
+                part: 'hand',
+                side: 'left',
+                state: 'wrapped and gripping the bat',
+                bbox: [0.3, 0.38, 0.12, 0.14],
+                confidence: 0.82,
+              },
+            ],
+          },
+        ],
+        relationships: ['left hand grips bat above shoulder'],
       },
       {
         image_id: 'style-1',
@@ -160,7 +239,11 @@ test('applyImageReferenceDecisionToMask stores manifests, promotes the primary i
   assert.equal(nextMask.meta.init_image_url, 'https://images.example.com/identity.png');
   assert.equal(nextMask.meta.webImageDraft.imageReferenceRole, 'identity');
   assert.equal(nextMask.meta.imageReferenceDecision.primaryImageId, 'identity-1');
+  assert.deepEqual(nextMask.meta.imageReferenceManifests[0].objects[0].bbox, [0.22, 0.16, 0.61, 0.19]);
   assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /focus on the main subject from the primary reference image/i);
+  assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /use Janus source analysis as spatial guide/i);
+  assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /bbox 0\.22,0\.16,0\.61,0\.19/i);
+  assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /left hand grips bat above shoulder/i);
   assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /preserve these distinctive visible cues from the reference image: same man holding a bat over the shoulders with a wrapped hand on the same side as in the reference image/i);
   assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /preserve the body angle, arm placement, same-side hand laterality, and visible hand pose from the reference image/i);
   assert.match(String(nextMask.meta.promptInstructions.join(', ') || ''), /include uploaded accessory reference details: custom decorated baseball bat/i);

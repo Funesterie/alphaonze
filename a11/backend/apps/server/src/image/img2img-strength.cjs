@@ -421,6 +421,7 @@ function resolveAutoStrengthProfile({
   const sceneRewriteSignal = hasSceneRewriteSignal(prompt);
   const accessoryEditSignal = hasAccessoryEditSignal(prompt);
   const jokerTransformationSignal = hasJokerStyleTransformationSignal(prompt);
+  const normalizedSceneKey = normalizeText(scene?.sceneKey || '').replace(/\s+/g, '_');
 
   if (VALID_IMG2IMG_STRENGTH_PROFILES.includes(requestedProfile)) {
     return {
@@ -464,7 +465,11 @@ function resolveAutoStrengthProfile({
     };
   }
 
-  if (referenceSourceMode && exactReferenceLock) {
+  if (
+    referenceSourceMode
+    && exactReferenceLock
+    && (!jokerTransformationSignal || ['solo_subject', 'solo_face'].includes(normalizedSceneKey))
+  ) {
     return {
       profile: 'preserve',
       reason: 'reference_subject_exact_lock',
@@ -475,6 +480,13 @@ function resolveAutoStrengthProfile({
     return {
       profile: 'balanced',
       reason: 'reference_subject_joker_transformation',
+    };
+  }
+
+  if (referenceSourceMode && exactReferenceLock) {
+    return {
+      profile: 'preserve',
+      reason: 'reference_subject_exact_lock',
     };
   }
 
