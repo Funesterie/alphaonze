@@ -255,7 +255,8 @@ test('planVideoSequence auto keeps the LLM as prompt writer and uses Janus only 
     assert.match(String(plan.beats[0]?.variation || ''), /knight in dark armor/i);
     assert.match(String(plan.beats[0]?.variation || ''), /golden sword/i);
     assert.deepEqual(plan.continuityLocks, ['same knight', 'same golden sword', 'same torch-lit hall']);
-    assert.deepEqual(plan.soundCues, ['metallic ring']);
+    // soundCues inclut maintenant les sons physiques Janus + les sons LLM
+    assert.ok(Array.isArray(plan.soundCues) && plan.soundCues.includes('metallic ring'), `soundCues should include 'metallic ring', got: ${JSON.stringify(plan.soundCues)}`);
   });
   fs.rmSync(tempDir, { recursive: true, force: true });
 });

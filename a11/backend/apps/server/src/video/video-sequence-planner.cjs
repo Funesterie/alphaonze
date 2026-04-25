@@ -15,6 +15,12 @@ const {
   isLlmFramePrompterEnabled,
 } = require('./video-frame-prompter.cjs');
 const {
+  buildStrategySoundCues,
+  buildStrategyVisualContext,
+  interpretVideoVisualScanWithLlm,
+  isVideoSpatialStrategyEnabled,
+} = require('./video-spatial-strategy.cjs');
+const {
   VALID_VIDEO_MOTION_PROFILES,
   extractStableSceneFragments,
   isStoryboardMetaFragment,
@@ -903,13 +909,37 @@ async function planVideoSequence({
           heuristicFallbackPlan.motionProfile,
           String(request?.prompt || '').trim()
         );
-        const visualContext = [
+        const baseVisualContext = [
           String(request?.compiledVisualContext || '').trim(),
           String(request?.canonicalSubject || '').trim(),
           formatPlannerReferenceImageSize(request) ? `reference image size ${formatPlannerReferenceImageSize(request)}` : '',
           ...(Array.isArray(request?.subjectFacts) ? request.subjectFacts.slice(0, 3) : []),
           summarizeJanusVisualScan(visualAnalysis),
         ].filter(Boolean).join('. ');
+
+        // Étape Janus → LLM stratégie spatiale/sonore : séquentiel, Janus déjà terminé.
+        let videoStrategy = null;
+        if (visualAnalysis && isVideoSpatialStrategyEnabled(process.env)) {
+          try {
+            videoStrategy = await interpretVideoVisualScanWithLlm({
+              visualAnalysis,
+              prompt: String(request?.prompt || '').trim(),
+              compiledPrompt: String(compiledBasePrompt || request?.prompt || '').trim(),
+              motionProfile: heuristicFallbackPlan.motionProfile,
+              frameCount: Math.max(1, Number(request?.frameCount || 0) || heuristicFallbackPlan.beats.length),
+              timeoutMs: Math.min(timeoutMs, 20000),
+            });
+          } catch (strategyError) {
+            console.warn(`[A11][video-spatial-strategy] strategy failed: ${String(strategyError?.message || strategyError)}`);
+          }
+        }
+
+        // Enrichir le visualContext avec la stratégie spatiale LLM
+        const visualContext = buildStrategyVisualContext(videoStrategy, baseVisualContext);
+
+        // Enrichir les sound cues globaux avec les sons physiques dérivés de Janus
+        const strategySoundCues = buildStrategySoundCues(videoStrategy, []);
+
         const llmResult = await generateFramePromptsWithLlm({
           subject,
           motionProfile: heuristicFallbackPlan.motionProfile,
@@ -929,7 +959,13 @@ async function planVideoSequence({
             `[A11][video-prompter] LLM beats generated subject_type=${llmResult.subjectType}`
             + ` motion=${llmResult.motionDescription}`
             + ` frames=${llmResult.beats.length}`
+            + (videoStrategy ? ` spatial_strategy=${videoStrategy.frameStrengthProfile} sounds=${videoStrategy.physicalSoundCues.length}` : '')
           );
+          // Fusionner les sound cues physiques Janus avec ceux du LLM prompter
+          const mergedSoundCues = normalizePromptList([
+            ...strategySoundCues,
+            ...(llmResult.soundCues || []),
+          ]);
           return {
             ...heuristicFallbackPlan,
             providerUsed: 'llm_prompter',
@@ -937,11 +973,12 @@ async function planVideoSequence({
             beats: llmResult.beats.map((beat, index) => sanitizePlannerBeatWithExtras(beat, `beat ${index + 1}`)),
             sceneContext: llmResult.sceneContext || '',
             continuityLocks: normalizePromptList(llmResult.continuityLocks || heuristicFallbackPlan.continuityLocks || []),
-            soundCues: normalizePromptList(llmResult.soundCues || []),
+            soundCues: mergedSoundCues,
             imageAwareUsed,
             imageAwareError: imageAwareError || null,
             visualAnalysis,
             visualAnalysisProvider: visualAnalysis ? 'janus' : null,
+            videoStrategy: videoStrategy || null,
           };
         }
 
