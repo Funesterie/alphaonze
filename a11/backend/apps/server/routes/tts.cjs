@@ -8,6 +8,7 @@ const {
   DEFAULT_TTS_MODEL_NAME,
   firstExistingPath,
   getBackendRoot,
+  getCanonicalTtsDir,
   getPublicTtsDir,
   getTtsBinaryPathCandidates,
   getTtsEspeakPathCandidates,
@@ -266,9 +267,56 @@ function parseJsonMaybe(value) {
   }
 }
 
+function isLoopbackHostname(hostname = '') {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '127.0.0.1'
+    || normalized === '::1'
+    || normalized === '[::1]';
+}
+
+function isTtsOutPath(pathname = '') {
+  return String(pathname || '').replace(/\\/g, '/').startsWith('/out/');
+}
+
+function buildBackendTtsOutPath(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  let pathname = '';
+  try {
+    pathname = new URL(raw, 'http://127.0.0.1').pathname;
+  } catch {
+    pathname = raw;
+  }
+  if (!isTtsOutPath(pathname)) return null;
+  const filename = path.posix.basename(decodeURIComponent(pathname));
+  if (!filename || filename === '.' || filename === '..') return null;
+  return `/api/tts/out/${encodeURIComponent(filename)}`;
+}
+
+function shouldProxyTtsAsset(baseUrl = '', value = '') {
+  const assetUrl = String(value || '').trim();
+  if (!assetUrl) return false;
+
+  try {
+    const parsed = new URL(assetUrl);
+    return isLoopbackHostname(parsed.hostname) && isTtsOutPath(parsed.pathname);
+  } catch {}
+
+  try {
+    const parsedBase = new URL(baseUrl);
+    return isLoopbackHostname(parsedBase.hostname) && isTtsOutPath(new URL(assetUrl, parsedBase).pathname);
+  } catch {
+    return false;
+  }
+}
+
 function normalizeRemoteAssetUrl(baseUrl, value) {
   const assetUrl = String(value || '').trim();
   if (!assetUrl) return null;
+  if (shouldProxyTtsAsset(baseUrl, assetUrl)) {
+    return buildBackendTtsOutPath(assetUrl);
+  }
   if (/^https?:\/\//i.test(assetUrl)) return assetUrl;
   return new URL(assetUrl.replace(/^\.\//, ''), `${String(baseUrl).replace(/\/$/, '')}/`).toString();
 }
@@ -297,8 +345,10 @@ async function requestRemoteTts(payload) {
 
       const assetBaseUrl = preferredPublicBaseUrl || candidateBaseUrl;
       if (typeof parsed === 'string' && parsed.endsWith('.wav')) {
+        const audioUrl = normalizeRemoteAssetUrl(assetBaseUrl, parsed);
         return {
-          audio_url: normalizeRemoteAssetUrl(assetBaseUrl, parsed),
+          audio_url: audioUrl,
+          audioUrl,
           via: 'http-string',
           requestBaseUrl: candidateBaseUrl,
           publicBaseUrl: assetBaseUrl,
@@ -310,9 +360,13 @@ async function requestRemoteTts(payload) {
         throw new Error(`invalid_http_tts_response: ${String(textBody).slice(0, 300)}`);
       }
 
+      const normalizedAudioUrl = normalizeRemoteAssetUrl(assetBaseUrl, audioUrl);
+      const normalizedGifUrl = normalizeRemoteAssetUrl(assetBaseUrl, parsed?.gif_url || parsed?.gifUrl || null);
       return {
-        audio_url: normalizeRemoteAssetUrl(assetBaseUrl, audioUrl),
-        gif_url: normalizeRemoteAssetUrl(assetBaseUrl, parsed?.gif_url || parsed?.gifUrl || null),
+        audio_url: normalizedAudioUrl,
+        audioUrl: normalizedAudioUrl,
+        gif_url: normalizedGifUrl,
+        gifUrl: normalizedGifUrl,
         gif_duration_ms: parsed?.gif_duration_ms ?? parsed?.gifDurationMs ?? null,
         via: 'http',
         requestBaseUrl: candidateBaseUrl,
@@ -672,6 +726,55 @@ router.get('/tts/models', (req, res) => {
     console.error('[TTS][Piper] list models error', err);
     return res.status(500).json({ error: 'list_models_failed' });
   }
+});
+
+function contentTypeForTtsAsset(filename = '') {
+  const ext = path.extname(String(filename || '').trim()).toLowerCase();
+  if (ext === '.wav') return 'audio/wav';
+  if (ext === '.mp3') return 'audio/mpeg';
+  if (ext === '.ogg') return 'audio/ogg';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  return 'application/octet-stream';
+}
+
+router.get('/tts/out/:filename', async (req, res) => {
+  const filename = path.basename(String(req.params?.filename || '').trim());
+  if (!filename || filename === '.' || filename === '..') {
+    return res.status(400).json({ ok: false, error: 'invalid_tts_asset' });
+  }
+
+  const ttsConfig = getLocalTtsConfig();
+  const remoteUrl = `${String(ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '')}/out/${encodeURIComponent(filename)}`;
+
+  try {
+    const response = await fetch(remoteUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (response.ok) {
+      const contentType = String(response.headers?.get?.('content-type') || contentTypeForTtsAsset(filename)).trim();
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.send(buffer);
+    }
+  } catch {
+    // Fall back to the local canonical TTS output directory below.
+  }
+
+  const localPath = path.join(getCanonicalTtsDir(), 'out', filename);
+  if (!fs.existsSync(localPath)) {
+    return res.status(404).json({ ok: false, error: 'tts_asset_not_found' });
+  }
+
+  res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.sendFile(localPath);
 });
 
 router.post('/tts/piper', async (req, res) => {

@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const root = __dirname;
 const port = Number.parseInt(process.env.ALPHAONZE_PORT || "8088", 10);
-const host = process.env.ALPHAONZE_HOST || "0.0.0.0";
+const host = process.env.ALPHAONZE_HOST || "127.0.0.1";
 
 const routes = new Map([
   ["/", { file: "index.html", type: "text/html; charset=utf-8" }],

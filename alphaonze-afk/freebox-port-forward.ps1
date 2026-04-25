@@ -1,8 +1,8 @@
 param(
   [string]$LanIp = "192.168.1.2",
   [int]$WanPort = 80,
-  [int]$LanPort = 8088,
-  [string]$Comment = "AlphaOnze AFK"
+  [int]$LanPort = 80,
+  [string]$Comment = "AlphaOnze HTTP"
 )
 
 $ErrorActionPreference = "Stop"

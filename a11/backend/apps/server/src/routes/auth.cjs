@@ -196,7 +196,7 @@ function createAuthRouter({
       );
 
       const appUrl = emailService.getStatus().appUrl
-        || normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://a11.funesterie.pro');
+        || normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://alphaonze.funesterie.pro');
       const link = `${appUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
       const mailResult = await emailService.sendPasswordResetEmail({
         to: user.email,

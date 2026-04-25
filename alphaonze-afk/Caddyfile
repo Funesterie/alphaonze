@@ -1,3 +1,30 @@
-alphaonze.funesterie.pro {
-	reverse_proxy 127.0.0.1:8088
+alphaonze.funesterie.pro, api.funesterie.pro {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	@html path /
+	header @html {
+		-Cache-Control
+		Cache-Control "no-store"
+		defer
+	}
+
+	@service_worker path /sw.js
+	header @service_worker {
+		-Cache-Control
+		Cache-Control "no-cache, no-store, must-revalidate"
+		defer
+	}
+
+	@local_only path /api/v1/vs/* /api/v1/fs/* /api/admin/* /api/tools/run /api/browse*
+	respond @local_only 403
+
+	reverse_proxy 127.0.0.1:3000
 }
