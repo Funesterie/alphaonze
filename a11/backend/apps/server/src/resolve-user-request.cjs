@@ -45,6 +45,11 @@ const {
   classifyReferenceImages: defaultClassifyReferenceImages,
   extractRequestImageReferences,
 } = require('./image/janus-image-manifest.cjs');
+const {
+  applyJanusStrategyToMask,
+  interpretJanusManifestWithLlm,
+  isJanusSpatialStrategyEnabled,
+} = require('./image/janus-spatial-strategy.cjs');
 
 const {
   detectImageIntent: defaultDetectImageIntent,
@@ -723,6 +728,25 @@ function createIntentResolver(overrides = {}) {
           };
         }
         if (Array.isArray(imageReferenceResolution?.manifests) && imageReferenceResolution.manifests.length > 0) {
+          // Étape Janus → LLM : interpréter les manifests pour produire une stratégie spatiale
+          // avant d'appliquer la décision au mask. Séquentiel : Janus déjà terminé, LLM ici, SD après.
+          if (isJanusSpatialStrategyEnabled(process.env)) {
+            try {
+              const janusStrategy = await interpretJanusManifestWithLlm({
+                manifests: imageReferenceResolution.manifests,
+                canonicalRequest: String(canonicalizedImageRequest?.canonicalEnglishInput || wazaaSourceText || '').trim(),
+                sceneType: String(mask?.meta?.webImageDraft?.sceneType || mask?.meta?.imageRequestMode || '').trim(),
+                imageReferences,
+                timeoutMs: 25000,
+                callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
+              });
+              if (janusStrategy) {
+                mask = applyJanusStrategyToMask(mask, janusStrategy);
+              }
+            } catch (strategyError) {
+              console.warn(`[A11][janus-strategy] traceId=${traceId} strategy failed: ${String(strategyError?.message || strategyError)}`);
+            }
+          }
           mask = applyImageReferenceDecisionToMask(mask, imageReferenceResolution, imageReferences);
         } else {
           imageReferenceResolution = buildAutomaticImageReferenceFallbackDecision({
