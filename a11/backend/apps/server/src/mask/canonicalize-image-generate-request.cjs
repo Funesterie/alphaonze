@@ -29,6 +29,27 @@ Rules:
 - Keep negativeHints atomic: one defect or artifact per item, no long sentences.
 - When a reference image is used, prioritize: identity, pose/framing/laterality, transformation details, then environment/style.
 
+Subject rules:
+- If the user says "this person", "this boy", "this character", "ce garcon", "cette personne" with a reference image, the subject must include the identity anchor: "the person from the reference image" or "the character from the reference image". Never reduce to just "a young man" or "a person".
+- If the user asks to transform the subject (new hairstyle, new outfit, new style, new universe), keep the identity anchor AND describe the transformation explicitly in subject or style.
+- NEVER invent human subjects that are not in the user request. If the user describes an animal, object, or non-human scene, the subject must reflect that exactly.
+- A scene with an animal and an object (e.g. "a pigeon stealing a fry") is a single-scene request, NOT a pair/duel scene. Do not apply pair/duel rules to animal+object scenes.
+- French "vole" can mean "flies" (voler = to fly) or "steals" (voler = to steal). Use context to determine which meaning applies. "Un pigeon qui vole une frite" = a pigeon stealing a fry (not flying).
+- scenePolicy.subjectMode should be "pair" ONLY when the user explicitly requests two human/character actors in opposition or interaction. A pigeon and a fry are NOT a pair scene.
+
+promptInstructions rules:
+- Only add promptInstructions that are directly useful for the renderer and explicitly implied by the user request.
+- Do NOT add "single subject" when the request involves transformation effects, energy aura, action poses, or special effects — these scenes need visual complexity, not a single-subject constraint.
+- Do NOT add "single subject" when the user asks for a full-body action scene with effects.
+- Only add "single subject" for simple portrait or headshot requests with no action or effects.
+- Do NOT add "use two separate subject entries for explicit pair/duel requests" as a promptInstruction — this is an internal rule, not a renderer instruction.
+- Do NOT add "add action poses and energy to the scene" unless the user explicitly asked for action or energy.
+
+negativeHints rules:
+- ONLY include negativeHints for defects or artifacts the user explicitly wants to avoid (e.g. "no text", "no watermark").
+- Do NOT invent negativeHints. Do NOT add "no facial expressions", "no background", "no blur" unless the user explicitly asked for it.
+- negativeHints must describe rendering defects, not content restrictions.
+
 Return strict JSON only:
 {
   "needsClarification": false,
@@ -402,8 +423,19 @@ function findCardinalityConflict(canonicalizedRequest = null) {
     || subjectCount >= 2
   );
 
-  if ((mode === 'single' || explicitSubjectCount === 1) && subjectCount >= 2) {
-    return 'scenePolicy_single_with_multiple_subjects';
+  // Ne déclencher le conflit single/multi que si le LLM a explicitement déclaré
+  // subjectMode=single ET explicitSubjectCount=1 avec plusieurs sujets dans subject[].
+  // Ne pas déclencher si les sujets sont des éléments de scène (animal + objet)
+  // plutôt que des acteurs humains en opposition.
+  if ((mode === 'single' && explicitSubjectCount === 1) && subjectCount >= 2) {
+    // Vérifier si la demande brute contient un signal de paire humaine explicite
+    // (vs, versus, duel, face-à-face, deux personnages, etc.)
+    const rawExpectationForConflict = findRawSubjectCardinalityExpectation(canonicalizedRequest?.audit?.rawUserInput || '');
+    if (rawExpectationForConflict.subjectMode === 'pair') {
+      return 'scenePolicy_single_with_multiple_subjects';
+    }
+    // Pas de signal de paire dans le texte brut → pas de conflit
+    // (scène normale avec plusieurs éléments, ex: pigeon + frite)
   }
 
   if (!effectivePairOrGroup) return '';
@@ -666,6 +698,32 @@ function validateCanonicalizedImageGenerateRequest(canonicalizedRequest = null) 
     throw error;
   }
 
+  // Vérifier que la sortie est bien en anglais — le LLM peut se tromper, retry légitime.
+  const englishValues = [
+    canonicalizedRequest.canonicalEnglishInput,
+    ...(canonicalizedRequest.structuredFields?.subject || []),
+    ...(canonicalizedRequest.structuredFields?.environment || []),
+    ...(canonicalizedRequest.structuredFields?.style || []),
+    ...(canonicalizedRequest.structuredFields?.composition || []),
+    ...(canonicalizedRequest.structuredFields?.lighting || []),
+    ...(canonicalizedRequest.structuredFields?.palette || []),
+    ...(canonicalizedRequest.structuredFields?.constraints?.promptInstructions || []),
+    ...(canonicalizedRequest.structuredFields?.constraints?.negativeHints || []),
+  ].filter(Boolean);
+
+  const leakedValue = englishValues.find((entry) => hasFrenchLeak(entry));
+  if (leakedValue) {
+    const error = new Error('canonicalized_request_not_english_only');
+    error.code = 'canonicalized_request_not_english_only';
+    error.details = leakedValue;
+    throw error;
+  }
+
+  // La cardinalité (pair/single/group) est décidée par le LLM canonicalizer
+  // en fonction du contexte entier du prompt. On ne revalide pas avec des
+  // heuristiques sur les mots-clés — le LLM comprend "pigeon qui vole une frite"
+  // vs "goku vs vegeta" sans avoir besoin de regex.
+
   return canonicalizedRequest;
 }
 
@@ -691,7 +749,7 @@ function buildCanonicalizeImageGenerateRequestRetryText(rawUserInput = '', optio
       : null,
     rejection_code: normalizeText(rejectionCode),
     rejection_details: normalizeText(rejectionDetails),
-    retry_instruction: 'Re-emit the full canonical request in English only, preserve every explicit named entity and subject count from raw_user_input, keep scenePolicy consistent with the subject count, use two separate subject entries for explicit pair/duel requests, never collapse actors into an abstract event subject, and make every structuredFields item a short atomic idea.',
+    retry_instruction: 'Re-emit the full canonical request in English only. Preserve the EXACT subjects from raw_user_input — do NOT invent human subjects that are not in the request. If the original request describes an animal, object, or non-human scene, keep those as subjects. Only use two separate subject entries if the user explicitly requested two human/character actors. Keep scenePolicy consistent with the actual subjects. Make every structuredFields item a short atomic idea.',
   }, null, 2);
 }
 
@@ -755,9 +813,6 @@ function shouldRetryCanonicalizerFailure(error_ = null) {
   const code = String(error_?.code || '').trim();
   return [
     'canonicalized_request_not_english_only',
-    'canonicalized_request_non_atomic_structured_fields',
-    'canonicalized_request_cardinality_conflict',
-    'canonicalized_request_missing_named_entity',
     'missing_canonical_english_input',
     'missing_canonical_subject',
   ].includes(code);
