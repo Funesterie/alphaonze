@@ -236,7 +236,23 @@ function Complete {
 $launcherRoot = Split-Path -Parent $PSCommandPath
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot '..\..'))
 $alphaDir = [System.IO.Path]::GetFullPath((Join-Path $workspaceRoot 'alphaonze-afk'))
-$logRoot = Join-Path $workspaceRoot 'a11\runtime\launcher\funesterie-all'
+
+# Lire A11_RUNTIME_ROOT depuis le config, sinon fallback relatif
+$configPath = Join-Path $launcherRoot 'config\a11-local.env'
+$logRootBase = $null
+if (Test-Path -LiteralPath $configPath) {
+  $configLine = Get-Content -LiteralPath $configPath | Where-Object { $_ -match '^A11_RUNTIME_ROOT\s*=' } | Select-Object -Last 1
+  if ($configLine) {
+    $rawValue = ($configLine -split '=', 2)[1].Trim()
+    if ([System.IO.Path]::IsPathRooted($rawValue)) {
+      $logRootBase = $rawValue
+    } else {
+      $logRootBase = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot $rawValue))
+    }
+  }
+}
+if (-not $logRootBase) { $logRootBase = Join-Path $workspaceRoot 'a11\runtime' }
+$logRoot = Join-Path $logRootBase 'launcher\funesterie-all'
 $stopAll = Join-Path $launcherRoot 'funesterie-stop-all.ps1'
 $a11Launcher = Join-Path $launcherRoot 'a11-local.ps1'
 

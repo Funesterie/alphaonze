@@ -151,7 +151,23 @@ function Stop-CerbereTunnel {
 $launcherRoot = Split-Path -Parent $PSCommandPath
 $localLauncher = Join-Path $launcherRoot 'a11-local.ps1'
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot '..\..'))
-$runtimeRoot = Join-Path $workspaceRoot 'a11\runtime\launcher'
+
+# Lire A11_RUNTIME_ROOT depuis le config, sinon fallback relatif
+$configPath = Join-Path $launcherRoot 'config\a11-local.env'
+$resolvedRuntimeRoot = $null
+if (Test-Path -LiteralPath $configPath) {
+  $configLine = Get-Content -LiteralPath $configPath | Where-Object { $_ -match '^A11_RUNTIME_ROOT\s*=' } | Select-Object -Last 1
+  if ($configLine) {
+    $rawValue = ($configLine -split '=', 2)[1].Trim()
+    if ([System.IO.Path]::IsPathRooted($rawValue)) {
+      $resolvedRuntimeRoot = $rawValue
+    } else {
+      $resolvedRuntimeRoot = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot $rawValue))
+    }
+  }
+}
+if (-not $resolvedRuntimeRoot) { $resolvedRuntimeRoot = Join-Path $workspaceRoot 'a11\runtime' }
+$runtimeRoot = Join-Path $resolvedRuntimeRoot 'launcher'
 $stateFile = Join-Path $runtimeRoot 'a11-local.state.json'
 $snapshotFile = Join-Path $runtimeRoot 'a11-local.snapshot.json'
 $progressFile = Join-Path $runtimeRoot 'a11-local.progress.json'
