@@ -349,6 +349,7 @@ const { analyzeUploadedResource, buildConversationResourceContext } = require('.
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
+const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
@@ -1171,6 +1172,12 @@ const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
 const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '1991');
 const DEFAULT_ADMIN_EMAIL = String(process.env.DEFAULT_ADMIN_EMAIL || 'djeff@a11.local').trim().toLowerCase();
+const localAuthStore = db
+  ? null
+  : createLocalAuthStore({
+      filePath: path.join(PUBLIC_RUNTIME_ROOT, 'auth', 'local-users.json'),
+      logger: console,
+    });
 
 if (db) {
   db.connect()
@@ -5794,6 +5801,7 @@ app.use(createAuthRouter({
   jwtSecret: JWT_SECRET,
   jwtExpiry: JWT_EXPIRY,
   registerIssuedToken,
+  localAuthStore,
   defaultAdminUsername: DEFAULT_ADMIN_USERNAME,
   defaultAdminPassword: DEFAULT_ADMIN_PASSWORD,
   emailService,

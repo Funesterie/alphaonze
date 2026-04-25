@@ -2,7 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT,
   canonicalizeImageGenerateRequest,
+  extractPreservedNamedEntityCandidates,
+  findCardinalityConflict,
+  findMissingNamedEntityCandidates,
   normalizeCanonicalizedImageGenerateRequest,
   resolveCanonicalizerTimeoutMs,
   validateCanonicalizedImageGenerateRequest,
@@ -174,6 +178,149 @@ test('validateCanonicalizedImageGenerateRequest rejects non-atomic structured fi
     }),
     /canonicalized_request_non_atomic_structured_fields/
   );
+});
+
+test('canonicalizer prompt explicitly forbids named-entity substitution and contradictory subject counts', () => {
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /proper names and named entities as immutable/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not replace a named entity with a related/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not emit "single subject" instructions for pair or group scenes/i);
+});
+
+test('validateCanonicalizedImageGenerateRequest rejects missing explicit named entities from the raw request', () => {
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Generate an image of Darth Vader versus Obi-Wan Kenobi in combat on the Tatooine spaceport',
+    structuredFields: {
+      subject: ['Darth Vader', 'Obi-Wan Kenobi'],
+      environment: ['Tatooine spaceport'],
+      style: ['epic cinematic scene'],
+      composition: ['combat duel'],
+      lighting: ['intense lighting'],
+      palette: ['dark', 'muted'],
+      constraints: {
+        promptInstructions: ['two full recognizable characters'],
+        negativeHints: [],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'pair',
+      explicitSubjectCount: 2,
+    },
+  }, 'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine');
+
+  assert.deepEqual(
+    extractPreservedNamedEntityCandidates(payload.audit.rawUserInput),
+    ['Qui-Gon Jinn', 'Tatooine']
+  );
+  assert.deepEqual(findMissingNamedEntityCandidates(payload), ['Qui-Gon Jinn']);
+  assert.throws(
+    () => validateCanonicalizedImageGenerateRequest(payload),
+    /canonicalized_request_missing_named_entity/
+  );
+});
+
+test('validateCanonicalizedImageGenerateRequest rejects single-subject instructions in pair scenes', () => {
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Darth Vader versus Qui-Gon Jinn in combat on the Tatooine spaceport',
+    structuredFields: {
+      subject: ['Darth Vader', 'Qui-Gon Jinn'],
+      environment: ['Tatooine spaceport'],
+      style: ['epic cinematic scene'],
+      composition: ['combat duel'],
+      lighting: ['intense lighting'],
+      palette: ['dark', 'muted'],
+      constraints: {
+        promptInstructions: ['single subject', 'two full recognizable characters'],
+        negativeHints: [],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'pair',
+      explicitSubjectCount: 2,
+    },
+  }, 'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine');
+
+  assert.match(findCardinalityConflict(payload), /single_subject_instruction_in_multi_subject_scene/);
+  assert.throws(
+    () => validateCanonicalizedImageGenerateRequest(payload),
+    /canonicalized_request_cardinality_conflict/
+  );
+});
+
+test('canonicalizeImageGenerateRequest retries when the LLM substitutes a named character or contradicts pair cardinality', async () => {
+  let callCount = 0;
+  const canonicalizedRequest = await canonicalizeImageGenerateRequest(
+    'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine',
+    {
+      stage: 'canonicalize-image-generate-request-test',
+      callStructuredLlmJson: async ({ text }) => {
+        callCount += 1;
+        if (callCount === 1) {
+          return {
+            canonicalEnglishInput: 'Generate an image of Darth Vader versus Obi-Wan Kenobi in combat, set on the spaceport of Tatooine',
+            structuredFields: {
+              subject: ['Darth Vader', 'Obi-Wan Kenobi'],
+              environment: ['Tatooine spaceport'],
+              style: ['dark epic scene'],
+              composition: ['combat duel'],
+              lighting: ['intense lighting'],
+              palette: ['dark', 'muted'],
+              constraints: {
+                promptInstructions: ['single subject', 'no text'],
+                negativeHints: ['low resolution'],
+                noText: true,
+                safeMode: true,
+              },
+            },
+            scenePolicy: {
+              subjectMode: 'single',
+              explicitSubjectCount: 1,
+            },
+          };
+        }
+
+        assert.match(String(text || ''), /previous_rejected_payload/i);
+        assert.match(String(text || ''), /canonicalized_request_/i);
+        return {
+          canonicalEnglishInput: 'Generate an image of Darth Vader versus Qui-Gon Jinn in a lightsaber duel at the Tatooine spaceport',
+          structuredFields: {
+            subject: ['Darth Vader', 'Qui-Gon Jinn'],
+            environment: ['Tatooine spaceport'],
+            style: ['epic cinematic duel'],
+            composition: ['two-character lightsaber combat'],
+            lighting: ['desert backlight'],
+            palette: ['sand', 'black', 'green', 'red'],
+            constraints: {
+              promptInstructions: [
+                'both characters fully readable',
+                'clear opposed combat poses',
+                'two separate lightsabers visible',
+              ],
+              negativeHints: ['crowd', 'third subject'],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'pair',
+            explicitSubjectCount: 2,
+          },
+        };
+      },
+    }
+  );
+
+  assert.equal(callCount, 2);
+  assert.equal(canonicalizedRequest.audit.source, 'provided_structured_llm_retry');
+  assert.equal(canonicalizedRequest.audit.reason, 'retry_after_canonicalized_request_cardinality_conflict');
+  assert.match(canonicalizedRequest.canonicalEnglishInput, /Qui-Gon Jinn/i);
+  assert.doesNotMatch(canonicalizedRequest.canonicalEnglishInput, /Obi-Wan/i);
+  assert.equal(canonicalizedRequest.scenePolicy.subjectMode, 'pair');
+  assert.equal(canonicalizedRequest.scenePolicy.explicitSubjectCount, 2);
+  assert.deepEqual(canonicalizedRequest.structuredFields.subject, ['Darth Vader', 'Qui-Gon Jinn']);
 });
 
 test('canonicalizeImageGenerateRequest keeps a valid structured canonical payload and never marks it as fallback', async () => {

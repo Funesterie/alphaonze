@@ -1,0 +1,142 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const express = require('express');
+const http = require('node:http');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+const createAuthRouter = require('../src/routes/auth.cjs');
+const createA11HistoryRouter = require('../src/routes/a11-history.cjs');
+const { createLocalAuthStore } = require('../src/auth/local-auth-store.cjs');
+
+async function withServer(registerRoutes, runAssertions) {
+  const app = express();
+  registerRoutes(app);
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    await runAssertions(baseUrl);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error_) => (error_ ? reject(error_) : resolve()));
+    });
+  }
+}
+
+async function postJson(baseUrl, route, body) {
+  const response = await fetch(baseUrl + route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  return {
+    response,
+    json: text ? JSON.parse(text) : null,
+  };
+}
+
+async function getJson(baseUrl, route, headers = {}) {
+  const response = await fetch(baseUrl + route, { headers });
+  const text = await response.text();
+  return {
+    response,
+    json: text ? JSON.parse(text) : null,
+  };
+}
+
+test('local auth store backs register and login when database is unavailable', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  const localAuthStore = createLocalAuthStore({
+    filePath: path.join(tmpDir, 'local-users.json'),
+    logger: { warn() {} },
+  });
+  const issuedTokens = [];
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        registerIssuedToken: (token) => issuedTokens.push(token),
+        localAuthStore,
+        defaultAdminUsername: 'Djeff',
+        defaultAdminPassword: '1991',
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const registered = await postJson(baseUrl, '/api/auth/register', {
+        username: 'LocalUser',
+        email: 'local@example.test',
+        password: 'secret123',
+      });
+      assert.equal(registered.response.status, 200);
+      assert.equal(registered.json.success, true);
+      assert.equal(registered.json.user.username, 'LocalUser');
+      assert.match(registered.json.token, /^[^.]+\.[^.]+\.[^.]+$/);
+      assert.equal(issuedTokens.length, 1);
+
+      const duplicate = await postJson(baseUrl, '/api/auth/register', {
+        username: 'LocalUser',
+        email: 'other@example.test',
+        password: 'secret123',
+      });
+      assert.equal(duplicate.response.status, 400);
+      assert.equal(duplicate.json.error, 'username_taken');
+
+      const loggedIn = await postJson(baseUrl, '/api/auth/login', {
+        email: 'local@example.test',
+        password: 'secret123',
+      });
+      assert.equal(loggedIn.response.status, 200);
+      assert.equal(loggedIn.json.success, true);
+      assert.equal(loggedIn.json.user.email, 'local@example.test');
+      assert.equal(issuedTokens.length, 2);
+    }
+  );
+});
+
+test('conversation resources route degrades to an empty list without database', async () => {
+  await withServer(
+    (app) => {
+      app.use(createA11HistoryRouter({
+        verifyJWT: (req, _res, next) => {
+          req.user = { id: 'local-user', username: 'LocalUser' };
+          next();
+        },
+        db: null,
+        normalizeConversationId: (value) => String(value || 'default').trim() || 'default',
+        purgeConversationLogEntries: () => ({ removedEntries: 0 }),
+        purgeConversationPhantomMemory: async () => ({ removed: 0 }),
+        listConversationResources: async () => {
+          throw new Error('should_not_query_without_db');
+        },
+        readConversationLogEntries: () => [],
+        buildConversationActivityEntry: () => null,
+      }));
+    },
+    async (baseUrl) => {
+      const result = await getJson(baseUrl, '/api/a11/history/chat-1777068789543/resources?limit=24');
+      assert.equal(result.response.status, 200);
+      assert.equal(result.json.ok, true);
+      assert.equal(result.json.count, 0);
+      assert.deepEqual(result.json.resources, []);
+    }
+  );
+});

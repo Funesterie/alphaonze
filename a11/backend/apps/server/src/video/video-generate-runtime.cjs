@@ -1446,6 +1446,12 @@ function resolveVideoTimingPlan({
   const parsedDurationSeconds = resolvePositiveNumber(parsed?.durationSeconds, bodyDurationSeconds);
   const parsedFps = resolvePositiveNumber(parsed?.fps, bodyFps);
   const parsedFrameCount = resolvePositiveNumber(parsed?.frameCount, bodyFrameCount);
+  const hasTextDuration = resolvePositiveNumber(parsed?.textDurationSeconds) > 0;
+  const hasTextFps = resolvePositiveNumber(parsed?.textFps) > 0;
+  const hasTextFrameCount = resolvePositiveNumber(parsed?.textFrameCount) > 0;
+  const hasBodyDuration = hasOwnPositiveNumber(body, ['durationSeconds', 'duration_seconds', 'duration']);
+  const hasBodyFps = hasOwnPositiveNumber(body, ['fps']);
+  const hasBodyFrameCount = hasOwnPositiveNumber(body, ['frameCount', 'frame_count', 'frames']);
   const strictTiming = (
     isTruthy(body?.strictTiming)
     || isTruthy(body?.lockTiming)
@@ -1456,19 +1462,16 @@ function resolveVideoTimingPlan({
   const durationLooksDefault = bodyDurationSeconds > 0 && bodyDurationSeconds === Number(config.defaultDurationSeconds || 0);
   const fpsLooksDefault = bodyFps > 0 && bodyFps === Number(config.defaultFps || 0);
   const explicitDuration = Boolean(
-    strictTiming
-    || resolvePositiveNumber(parsed?.textDurationSeconds) > 0
-    || (hasOwnPositiveNumber(body, ['durationSeconds', 'duration_seconds', 'duration']) && !durationLooksDefault)
+    hasTextDuration
+    || (hasBodyDuration && (strictTiming || !durationLooksDefault))
   );
   const explicitFps = Boolean(
-    strictTiming
-    || resolvePositiveNumber(parsed?.textFps) > 0
-    || (hasOwnPositiveNumber(body, ['fps']) && !fpsLooksDefault)
+    hasTextFps
+    || (hasBodyFps && (strictTiming || !fpsLooksDefault))
   );
   const explicitFrameCount = Boolean(
-    strictTiming
-    || resolvePositiveNumber(parsed?.textFrameCount) > 0
-    || hasOwnPositiveNumber(body, ['frameCount', 'frame_count', 'frames'])
+    hasTextFrameCount
+    || hasBodyFrameCount
   );
   const motionPlan = resolveVideoMotionPlan(prompt, config);
 
@@ -1733,12 +1736,156 @@ function buildLocalPublicUrl(req, candidatePath) {
   return origin ? `${origin}${publicPath}` : publicPath;
 }
 
+function resolveVideoAudioRequest(body = {}, prompt = '') {
+  const text = String(
+    body?.audioText
+    || body?.audio_text
+    || body?.voiceText
+    || body?.voice_text
+    || body?.narration
+    || body?.soundText
+    || body?.sound_text
+    || ''
+  ).trim();
+  const implicitAudio = (
+    isTruthy(body?.withAudio)
+    || isTruthy(body?.with_audio)
+    || isTruthy(body?.includeAudio)
+    || isTruthy(body?.include_audio)
+  );
+  return {
+    enabled: Boolean(text || implicitAudio),
+    text: text || (implicitAudio ? String(prompt || '').trim() : ''),
+  };
+}
+
+function resolveVideoSdRequestOverrides(body = {}) {
+  const modelProfile = String(
+    body?.model_profile
+    || body?.modelProfile
+    || body?.sd_model_profile
+    || body?.sdModelProfile
+    || ''
+  ).trim();
+  const sdSteps = resolvePositiveNumber(
+    body?.sdSteps,
+    body?.sd_steps,
+    body?.num_inference_steps,
+    body?.numInferenceSteps,
+    body?.steps
+  );
+  const sdGuidanceScale = resolvePositiveNumber(
+    body?.sdGuidanceScale,
+    body?.sd_guidance_scale,
+    body?.guidance_scale,
+    body?.guidanceScale
+  );
+  return {
+    modelProfile,
+    sdSteps: sdSteps > 0 ? sdSteps : 0,
+    sdGuidanceScale: sdGuidanceScale > 0 ? sdGuidanceScale : 0,
+  };
+}
+
 async function downloadBinary(url, fetchImpl = defaultFetch) {
   const response = await fetchImpl(url);
   if (!response.ok) {
     throw new Error(`video_frame_download_failed:${response.status}`);
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+function resolveTtsBaseUrl(env = process.env) {
+  return String(
+    env.TTS_BASE_URL
+    || env.TTS_URL
+    || env.TTS_PUBLIC_BASE_URL
+    || 'http://127.0.0.1:5002'
+  ).trim().replace(/\/+$/, '');
+}
+
+function inferAudioExtension(audioUrl = '', contentType = '') {
+  const ext = path.extname(String(new URL(audioUrl, 'http://localhost').pathname || '')).trim().toLowerCase();
+  if (ext && /^\.[a-z0-9]{2,5}$/.test(ext)) return ext;
+  if (String(contentType || '').toLowerCase().includes('mpeg')) return '.mp3';
+  if (String(contentType || '').toLowerCase().includes('ogg')) return '.ogg';
+  return '.wav';
+}
+
+async function synthesizeVideoAudioTrack({
+  req,
+  text,
+  workingPaths,
+  fetchImpl = defaultFetch,
+} = {}) {
+  const normalizedText = String(text || '').trim();
+  if (!normalizedText) return null;
+
+  const ttsBaseUrl = resolveTtsBaseUrl();
+  const response = await fetchImpl(`${ttsBaseUrl}/api/tts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text: normalizedText }),
+  });
+  const rawBody = await response.text();
+  let payload = null;
+  try {
+    payload = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || !payload) {
+    const error = new Error(`video_audio_tts_failed:${response.status}:${rawBody}`);
+    error.statusCode = response.status || 502;
+    error.payload = {
+      ok: false,
+      error: 'video_audio_tts_failed',
+      message: rawBody || `TTS status ${response.status}`,
+    };
+    throw error;
+  }
+
+  const audioUrl = String(payload.audio_url || payload.audioUrl || payload.url || '').trim();
+  if (!audioUrl) {
+    const error = new Error('video_audio_url_missing');
+    error.statusCode = 502;
+    error.payload = {
+      ok: false,
+      error: 'video_audio_url_missing',
+      message: 'Le TTS n a pas retourne d URL audio exploitable.',
+    };
+    throw error;
+  }
+
+  const audioResponse = await fetchImpl(audioUrl);
+  if (!audioResponse.ok) {
+    const error = new Error(`video_audio_download_failed:${audioResponse.status}`);
+    error.statusCode = audioResponse.status || 502;
+    error.payload = {
+      ok: false,
+      error: 'video_audio_download_failed',
+      message: `Telechargement audio impossible (${audioResponse.status}).`,
+      audioUrl,
+    };
+    throw error;
+  }
+
+  const contentType = String(audioResponse.headers?.get?.('content-type') || 'audio/wav').trim();
+  const buffer = Buffer.from(await audioResponse.arrayBuffer());
+  const audioPath = path.join(workingPaths.jobRoot, `audio${inferAudioExtension(audioUrl, contentType)}`);
+  await fsp.writeFile(audioPath, buffer);
+
+  return {
+    path: audioPath,
+    url: audioUrl,
+    text: normalizedText,
+    contentType,
+    sizeBytes: buffer.length,
+    gifUrl: String(payload.gif_url || payload.gifUrl || '').trim() || null,
+  };
 }
 
 async function materializeSourceVideoFile(request, workingPaths, fetchImpl) {
@@ -2091,6 +2238,7 @@ async function runFfmpegAssembly({
   mp4Codec = 'libx264',
   mp4Preset = 'medium',
   mp4Quality = 19,
+  audioPath = '',
 }) {
   const args = buildFfmpegAssemblyArgs({
     fps,
@@ -2100,6 +2248,7 @@ async function runFfmpegAssembly({
     mp4Codec,
     mp4Preset,
     mp4Quality,
+    audioPath,
   });
 
   await new Promise((resolve, reject) => {
@@ -2136,8 +2285,16 @@ function buildFfmpegAssemblyArgs({
   mp4Codec = 'libx264',
   mp4Preset = 'medium',
   mp4Quality = 19,
+  audioPath = '',
 }) {
   const inputPattern = path.join(framesDir, 'frame-%04d.png');
+  const normalizedAudioPath = String(audioPath || '').trim();
+  const audioArgs = normalizedAudioPath && format === 'mp4'
+    ? ['-i', normalizedAudioPath]
+    : [];
+  const audioEncodeArgs = normalizedAudioPath && format === 'mp4'
+    ? ['-c:a', 'aac', '-b:a', '128k', '-af', 'apad', '-shortest']
+    : [];
   return format === 'gif'
     ? ['-y', '-framerate', String(fps), '-i', inputPattern, outputPath]
     : (
@@ -2146,6 +2303,7 @@ function buildFfmpegAssemblyArgs({
             '-y',
             '-framerate', String(fps),
             '-i', inputPattern,
+            ...audioArgs,
             '-c:v', String(mp4Codec || 'h264_nvenc'),
             '-preset', String(mp4Preset || 'p5'),
             '-rc', 'vbr',
@@ -2153,6 +2311,7 @@ function buildFfmpegAssemblyArgs({
             '-b:v', '0',
             '-profile:v', 'high',
             '-pix_fmt', 'yuv420p',
+            ...audioEncodeArgs,
             '-movflags', '+faststart',
             outputPath,
           ]
@@ -2160,10 +2319,12 @@ function buildFfmpegAssemblyArgs({
             '-y',
             '-framerate', String(fps),
             '-i', inputPattern,
+            ...audioArgs,
             '-c:v', String(mp4Codec || 'libx264'),
             '-preset', String(mp4Preset || 'medium'),
             '-crf', String(mp4Quality),
             '-pix_fmt', 'yuv420p',
+            ...audioEncodeArgs,
             '-movflags', '+faststart',
             outputPath,
           ]
@@ -2288,6 +2449,8 @@ function createGenerateVideoHandler(overrides = {}) {
 
     const requestBody = body || req?.body || {};
     const request = normalizeVideoRequest(requestBody, prompt);
+    const audioRequest = resolveVideoAudioRequest(requestBody, request.prompt);
+    const sdRequestOverrides = resolveVideoSdRequestOverrides(requestBody);
     const hasExplicitSource = hasExplicitVideoVisualSource(request);
     if (!request.config.enabled) {
       const error = new Error('video_generation_disabled');
@@ -2425,8 +2588,7 @@ function createGenerateVideoHandler(overrides = {}) {
     const implicitSquareDefault = looksLikeImplicitSquareDefault(request);
     const shouldPreserveSourceAspect = Boolean(
       referenceAnalysis?.canvasPlan
-      && !(request.explicitWidth && request.explicitHeight)
-      && !implicitSquareDefault
+      && (!(request.explicitWidth && request.explicitHeight) || implicitSquareDefault)
       && !request.config.localRuntime
     );
     const shouldAdoptCompiledRenderSizing = Boolean(
@@ -2656,11 +2818,12 @@ function createGenerateVideoHandler(overrides = {}) {
         ...(frameNegativePrompt ? { negative_prompt: frameNegativePrompt, negative_prompt_prebuilt: true } : {}),
         ...(frameNegativePrompt2 ? { negative_prompt_2: frameNegativePrompt2, negative_prompt_2_prebuilt: true } : {}),
         ...(frameNegativePrompt3 ? { negative_prompt_3: frameNegativePrompt3, negative_prompt_3_prebuilt: true } : {}),
-        num_inference_steps: request.config.sdSteps,
-        guidance_scale: request.config.sdGuidanceScale,
+        num_inference_steps: sdRequestOverrides.sdSteps || request.config.sdSteps,
+        guidance_scale: sdRequestOverrides.sdGuidanceScale || request.config.sdGuidanceScale,
         width: frameWidth,
         height: frameHeight,
         seed: Number(baseSdBody.seed || 0) ? Number(baseSdBody.seed) : undefined,
+        ...(sdRequestOverrides.modelProfile ? { model_profile: sdRequestOverrides.modelProfile } : {}),
         ...(frameReference
           ? {
               init_image_url: frameReference,
@@ -2763,6 +2926,32 @@ function createGenerateVideoHandler(overrides = {}) {
 
     const filename = ensureVideoFilename(request.format);
     const outputPath = path.join(workingPaths.jobRoot, filename);
+    let audioTrack = null;
+    if (audioRequest.enabled && request.format !== 'mp4') {
+      console.warn('[A11][video-audio] audio requested but ignored for non-mp4 output');
+    } else if (audioRequest.enabled) {
+      try {
+        audioTrack = await synthesizeVideoAudioTrack({
+          req,
+          text: audioRequest.text,
+          workingPaths,
+          fetchImpl,
+        });
+        console.log(
+          `[A11][video-audio] generated audio track ${audioTrack.path}`
+          + ` (${audioTrack.sizeBytes} bytes)`
+        );
+      } catch (error_) {
+        const error = new Error('video_audio_generation_failed');
+        error.statusCode = error_?.statusCode || 502;
+        error.payload = error_?.payload || {
+          ok: false,
+          error: 'video_audio_generation_failed',
+          message: String(error_?.message || error_),
+        };
+        throw error;
+      }
+    }
     const ffmpegOptions = {
       ffmpegBin: request.config.ffmpegBin,
       fps: request.fps,
@@ -2772,6 +2961,7 @@ function createGenerateVideoHandler(overrides = {}) {
       mp4Codec: request.config.mp4Codec,
       mp4Preset: request.config.mp4Preset,
       mp4Quality: request.config.mp4Quality,
+      audioPath: audioTrack?.path || '',
     };
 
     let ffmpegResult = null;
@@ -2835,7 +3025,12 @@ function createGenerateVideoHandler(overrides = {}) {
       filename,
       url: videoUrl || null,
       video_url: videoUrl || null,
+      audio_url: audioTrack?.url || null,
+      audioUrl: audioTrack?.url || null,
+      audioText: audioTrack?.text || null,
+      hasAudio: Boolean(audioTrack),
       outputPath,
+      audioPath: audioTrack?.path || null,
       firstFrameAnalysis,
       sourceMode: effectiveInitialReference.sourceMode || (!hasExplicitSource ? 'prompt_only' : null),
       sourceSceneType: referenceAnalysis?.scene?.sceneType || null,

@@ -151,6 +151,22 @@ function hasExplicitJanusModelSelection(env = process.env) {
   return Boolean(String(env.A11_JANUS_MODEL_ID || env.A11_JANUS_MODEL_DIR || env.A11_LOCAL_VISION_MODEL_DIR || '').trim());
 }
 
+function isDefaultJanus7BModelRef(modelRef = '') {
+  const ref = String(modelRef || '').trim();
+  if (!ref) return false;
+  if (ref === DEFAULT_MODEL_ID_7B) return true;
+  try {
+    return path.resolve(ref).toLowerCase() === path.resolve(DEFAULT_MODEL_DIR_7B).toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+function resolveDefaultJanus1BFallbackRef() {
+  if (fs.existsSync(DEFAULT_MODEL_DIR_1B)) return DEFAULT_MODEL_DIR_1B;
+  return DEFAULT_MODEL_ID_1B;
+}
+
 let workerState = null;
 let requestCounter = 0;
 
@@ -307,12 +323,12 @@ async function callJanusVisionText({
   } catch (error_) {
     const shouldFallbackTo1B = !modelRef
       && !hasExplicitJanusModelSelection(process.env)
-      && String(config.modelRef || '').trim() === DEFAULT_MODEL_ID_7B;
+      && isDefaultJanus7BModelRef(config.modelRef);
     if (!shouldFallbackTo1B) throw error_;
 
     resetWorkerState('janus_retry_1b_fallback');
     const fallbackConfig = resolveJanusVisionConfig({
-      modelRef: DEFAULT_MODEL_ID_1B,
+      modelRef: resolveDefaultJanus1BFallbackRef(),
       device,
       torchDtype,
       maxNewTokens,
@@ -422,12 +438,12 @@ async function callJanusText({
   } catch (error_) {
     const shouldFallbackTo1B = !modelRef
       && !hasExplicitJanusModelSelection(process.env)
-      && String(config.modelRef || '').trim() === DEFAULT_MODEL_ID_7B;
+      && isDefaultJanus7BModelRef(config.modelRef);
     if (!shouldFallbackTo1B) throw error_;
 
     resetWorkerState('janus_retry_1b_fallback');
     const fallbackConfig = resolveJanusVisionConfig({
-      modelRef: DEFAULT_MODEL_ID_1B,
+      modelRef: resolveDefaultJanus1BFallbackRef(),
       device,
       torchDtype,
       maxNewTokens,

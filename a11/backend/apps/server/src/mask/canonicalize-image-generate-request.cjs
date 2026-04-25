@@ -15,9 +15,13 @@ Rules:
 - Do not preserve French wording anywhere in canonicalEnglishInput or structuredFields.
 - Keep the user's meaning, details, intensity, and constraints.
 - Do not invent new subjects, props, environments, styles, or actions.
+- Treat explicit proper names and named entities as immutable source facts: preserve every named character, place, object, brand, title, and person the user wrote. Do not replace a named entity with a related or more famous entity from the same universe.
+- Translate only common descriptive words and localized franchise names when needed; never substitute one named character for another.
 - If the request is ambiguous in a way that blocks image generation, ask for clarification instead of guessing.
 - If a reference image is present, reflect that in the English request and keep identity/pose/framing preservation when explicitly requested.
 - Treat solo portrait requests as single-subject unless there is a strong explicit signal for two or more subjects.
+- Treat "versus", "vs", "against", "duel", "fight", "battle", "combat between", and equivalent wording as a pair or group scene when named subjects are present. Do not emit "single subject" instructions for pair or group scenes.
+- Make scenePolicy and constraints consistent: if subjectMode is "pair" or explicitSubjectCount is 2, promptInstructions and composition must not say "single subject".
 - Each structuredFields array item must be one short atomic idea only, never a paragraph.
 - Deduplicate repeated ideas across structuredFields.
 - Keep negativeHints atomic: one defect or artifact per item, no long sentences.
@@ -158,6 +162,108 @@ function normalizeLookup(value = '') {
     .replace(/[’']/g, ' ')
     .replace(/[-/]/g, ' ')
     .toLowerCase();
+}
+
+const NAMED_ENTITY_STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'generate',
+  'create',
+  'make',
+  'image',
+  'picture',
+  'photo',
+  'scene',
+  'génère',
+  'genere',
+  'crée',
+  'cree',
+  'fait',
+  'fais',
+  'dessine',
+]);
+
+function extractPreservedNamedEntityCandidates(rawUserInput = '') {
+  const text = normalizeText(rawUserInput);
+  if (!text) return [];
+  const matches = text.match(/\b[A-ZÀ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9]*(?:[-'][A-ZÀ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9]+)*(?:\s+[A-ZÀ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9]*(?:[-'][A-ZÀ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9]+)*)*/g) || [];
+  const seen = new Set();
+  const candidates = [];
+  for (const match of matches) {
+    const cleaned = normalizeText(match).replace(/[.,!?;:]+$/g, '');
+    const lookup = normalizeLookup(cleaned);
+    if (!lookup || seen.has(lookup)) continue;
+    if (NAMED_ENTITY_STOPWORDS.has(lookup)) continue;
+    const tokenCount = lookup.split(/\s+/).filter(Boolean).length;
+    const hasNamedShape = (
+      tokenCount >= 2
+      || /[-']/.test(cleaned)
+      || (cleaned.length >= 4 && text.indexOf(cleaned) > 0)
+    );
+    if (!hasNamedShape) continue;
+    seen.add(lookup);
+    candidates.push(cleaned);
+  }
+  return candidates;
+}
+
+function collectCanonicalizedRequestText(canonicalizedRequest = null) {
+  const fields = canonicalizedRequest?.structuredFields || {};
+  const constraints = fields?.constraints || {};
+  return [
+    canonicalizedRequest?.canonicalEnglishInput,
+    ...(Array.isArray(fields?.subject) ? fields.subject : []),
+    ...(Array.isArray(fields?.environment) ? fields.environment : []),
+    ...(Array.isArray(fields?.style) ? fields.style : []),
+    ...(Array.isArray(fields?.composition) ? fields.composition : []),
+    ...(Array.isArray(fields?.lighting) ? fields.lighting : []),
+    ...(Array.isArray(fields?.palette) ? fields.palette : []),
+    ...(Array.isArray(constraints?.promptInstructions) ? constraints.promptInstructions : []),
+    ...(Array.isArray(constraints?.negativeHints) ? constraints.negativeHints : []),
+  ].map((entry) => normalizeText(entry)).filter(Boolean);
+}
+
+function findMissingNamedEntityCandidates(canonicalizedRequest = null) {
+  const rawUserInput = normalizeText(canonicalizedRequest?.audit?.rawUserInput || '');
+  const candidates = extractPreservedNamedEntityCandidates(rawUserInput);
+  if (!candidates.length) return [];
+  const haystack = normalizeLookup(collectCanonicalizedRequestText(canonicalizedRequest).join(' '));
+  return candidates.filter((candidate) => !haystack.includes(normalizeLookup(candidate)));
+}
+
+function hasSingleSubjectInstruction(value = '') {
+  const lookup = normalizeLookup(value);
+  return /\b(single subject|single main subject|single clearly visible main subject|single well framed subject|single well framed|only one subject|one subject only)\b/i.test(lookup);
+}
+
+function findCardinalityConflict(canonicalizedRequest = null) {
+  const structuredFields = canonicalizedRequest?.structuredFields || {};
+  const constraints = structuredFields?.constraints || {};
+  const subjectCount = Array.isArray(structuredFields?.subject) ? structuredFields.subject.length : 0;
+  const scenePolicy = normalizeScenePolicy(canonicalizedRequest?.scenePolicy);
+  const explicitSubjectCount = Number(scenePolicy.explicitSubjectCount || 0) || 0;
+  const mode = scenePolicy.subjectMode;
+  const effectivePairOrGroup = (
+    mode === 'pair'
+    || mode === 'group'
+    || explicitSubjectCount >= 2
+    || subjectCount >= 2
+  );
+
+  if ((mode === 'single' || explicitSubjectCount === 1) && subjectCount >= 2) {
+    return 'scenePolicy_single_with_multiple_subjects';
+  }
+
+  if (!effectivePairOrGroup) return '';
+
+  const conflictEntry = [
+    canonicalizedRequest?.canonicalEnglishInput,
+    ...(Array.isArray(structuredFields?.composition) ? structuredFields.composition : []),
+    ...(Array.isArray(constraints?.promptInstructions) ? constraints.promptInstructions : []),
+  ].find((entry) => hasSingleSubjectInstruction(entry));
+
+  return conflictEntry ? `single_subject_instruction_in_multi_subject_scene:${normalizeText(conflictEntry)}` : '';
 }
 
 function toUniqueStrings(values = []) {
@@ -437,6 +543,22 @@ function validateCanonicalizedImageGenerateRequest(canonicalizedRequest = null) 
     throw error;
   }
 
+  const cardinalityConflict = findCardinalityConflict(canonicalizedRequest);
+  if (cardinalityConflict) {
+    const error = new Error('canonicalized_request_cardinality_conflict');
+    error.code = 'canonicalized_request_cardinality_conflict';
+    error.details = cardinalityConflict;
+    throw error;
+  }
+
+  const missingNamedEntities = findMissingNamedEntityCandidates(canonicalizedRequest);
+  if (missingNamedEntities.length) {
+    const error = new Error('canonicalized_request_missing_named_entity');
+    error.code = 'canonicalized_request_missing_named_entity';
+    error.details = missingNamedEntities.join(', ');
+    throw error;
+  }
+
   return canonicalizedRequest;
 }
 
@@ -462,7 +584,7 @@ function buildCanonicalizeImageGenerateRequestRetryText(rawUserInput = '', optio
       : null,
     rejection_code: normalizeText(rejectionCode),
     rejection_details: normalizeText(rejectionDetails),
-    retry_instruction: 'Re-emit the full canonical request in English only, keep the same JSON schema, and make every structuredFields item a short atomic idea.',
+    retry_instruction: 'Re-emit the full canonical request in English only, preserve every explicit named entity from raw_user_input, keep scenePolicy consistent with the subject count, and make every structuredFields item a short atomic idea.',
   }, null, 2);
 }
 
@@ -527,6 +649,8 @@ function shouldRetryCanonicalizerFailure(error_ = null) {
   return [
     'canonicalized_request_not_english_only',
     'canonicalized_request_non_atomic_structured_fields',
+    'canonicalized_request_cardinality_conflict',
+    'canonicalized_request_missing_named_entity',
     'missing_canonical_english_input',
     'missing_canonical_subject',
   ].includes(code);
@@ -774,6 +898,9 @@ module.exports = {
   buildCanonicalizedRequestTextSmootherResult,
   canonicalizeImageGenerateRequest,
   hasFrenchLeak,
+  extractPreservedNamedEntityCandidates,
+  findCardinalityConflict,
+  findMissingNamedEntityCandidates,
   isEnglishLikeText,
   normalizeCanonicalizedImageGenerateRequest,
   resolveCanonicalizerTimeoutMs,
