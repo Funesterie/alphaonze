@@ -104,6 +104,18 @@ test('resolveSdLocalRenderLimits keeps 1536x2048 portraits but guards sd35 squar
   assert.equal(square.policy, 'sd35_area_guard+square_guard');
 });
 
+test('normalizeMaskImageGenerate aligns explicit dimensions to the SD latent grid', () => {
+  const normalized = normalizeMaskImageGenerate({
+    options: {
+      width: 682,
+      height: 1024,
+    },
+  });
+
+  assert.equal(normalized.options.width, 680);
+  assert.equal(normalized.options.height, 1024);
+});
+
 test('local image runtime disables automatic verification retries by default', () => {
   const previous = {
     A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
@@ -130,7 +142,7 @@ test('local image runtime disables automatic verification retries by default', (
   }
 });
 
-test('normalizeMaskImageGenerate auto-resolves a larger square canvas when no size is provided', () => {
+test('normalizeMaskImageGenerate falls back to neutral defaults when no size is provided', () => {
   const previous = {
     A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
     A11_RUNTIME_PROFILE: process.env.A11_RUNTIME_PROFILE,
@@ -152,10 +164,10 @@ test('normalizeMaskImageGenerate auto-resolves a larger square canvas when no si
       meta: { subjectProfile: { type: 'mythic_creature' } },
     });
 
-    assert.equal(normalized.options.width, 1024);
-    assert.equal(normalized.options.height, 1024);
-    assert.equal(normalized.meta?.renderSizing?.source, 'auto_scene');
-    assert.equal(normalized.meta?.renderSizing?.reason, 'single_subject_square');
+    assert.equal(normalized.options.width, 768);
+    assert.equal(normalized.options.height, 768);
+    assert.equal(normalized.meta?.renderSizing?.source, 'model_auto');
+    assert.equal(normalized.meta?.renderSizing?.reason, 'defer_canvas_selection');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) {
@@ -167,7 +179,7 @@ test('normalizeMaskImageGenerate auto-resolves a larger square canvas when no si
   }
 });
 
-test('resolveImageCanvasPlan prefers a wider auto canvas for group scenes', () => {
+test('resolveImageCanvasPlan no longer derives a scene-dependent canvas from the prompt', () => {
   const previous = {
     A11_IMAGE_MAX_RENDER_SIDE: process.env.A11_IMAGE_MAX_RENDER_SIDE,
     A11_IMAGE_DEFAULT_WIDTH: process.env.A11_IMAGE_DEFAULT_WIDTH,
@@ -184,10 +196,48 @@ test('resolveImageCanvasPlan prefers a wider auto canvas for group scenes', () =
       env: process.env,
     });
 
-    assert.equal(plan.source, 'auto_scene');
-    assert.equal(plan.reason, 'multi_subject_scene');
-    assert.equal(plan.width, 1536);
-    assert.equal(plan.height, 896);
+    assert.equal(plan.source, 'model_auto');
+    assert.equal(plan.reason, 'defer_canvas_selection');
+    assert.equal(plan.width, 768);
+    assert.equal(plan.height, 768);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+});
+
+test('resolveImageCanvasPlan falls back to neutral defaults when no dimensions are explicit', () => {
+  const previous = {
+    A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
+    A11_RUNTIME_PROFILE: process.env.A11_RUNTIME_PROFILE,
+    A11_IMAGE_MAX_RENDER_SIDE: process.env.A11_IMAGE_MAX_RENDER_SIDE,
+    A11_IMAGE_DEFAULT_WIDTH: process.env.A11_IMAGE_DEFAULT_WIDTH,
+    A11_IMAGE_DEFAULT_HEIGHT: process.env.A11_IMAGE_DEFAULT_HEIGHT,
+  };
+
+  delete process.env.A11_LOCAL_MODE;
+  delete process.env.A11_RUNTIME_PROFILE;
+  process.env.A11_IMAGE_MAX_RENDER_SIDE = '2048';
+  delete process.env.A11_IMAGE_DEFAULT_WIDTH;
+  delete process.env.A11_IMAGE_DEFAULT_HEIGHT;
+
+  try {
+    const plan = resolveImageCanvasPlan({
+      prompt: 'les Mugiwaras ensemble dans une fresque epique',
+      env: process.env,
+    });
+
+    assert.equal(plan.source, 'model_auto');
+    assert.equal(plan.reason, 'defer_canvas_selection');
+    assert.equal(plan.width, 768);
+    assert.equal(plan.height, 768);
+    assert.equal(plan.requestedWidth, null);
+    assert.equal(plan.requestedHeight, null);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) {

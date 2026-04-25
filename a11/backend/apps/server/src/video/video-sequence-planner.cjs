@@ -147,11 +147,15 @@ function isSequencePlannerImagePathAllowed(candidatePath = '', allowedPathRoots 
 }
 
 function shouldAttemptLlmFramePrompter(providerRequested = 'auto') {
-  return providerRequested === 'auto' || providerRequested === 'llm_prompter';
+  return providerRequested === 'auto' || providerRequested === 'llm_prompter' || providerRequested === 'janus';
 }
 
 function shouldAttemptJanusSequencePlanner(providerRequested = 'auto') {
   return providerRequested === 'auto' || providerRequested === 'janus';
+}
+
+function shouldAttemptJanusVisualScan(providerRequested = 'auto') {
+  return providerRequested === 'auto' || providerRequested === 'llm_prompter' || providerRequested === 'janus';
 }
 
 function resolveSequencePlanningEnvConfig(env = process.env) {
@@ -186,6 +190,11 @@ function buildHeuristicFallbackPlan(request = {}, providerRequested = 'auto', fa
     providerUsed: 'heuristic',
     fallbackReason: fallbackReason ? String(fallbackReason).trim() : null,
     imageAwareUsed: false,
+    imageAwareError: null,
+    visualAnalysis: null,
+    visualAnalysisProvider: null,
+    continuityLocks: [],
+    soundCues: [],
   };
 }
 
@@ -339,6 +348,221 @@ function sanitizePlannerList(values = [], fallback = []) {
   return normalized.length ? normalized : normalizePromptList(fallback || []);
 }
 
+function normalizePlannerBox(value = null) {
+  let coordinates = [];
+  if (Array.isArray(value)) {
+    coordinates = value.slice(0, 4);
+  } else if (value && typeof value === 'object') {
+    const source = value.bbox || value.box || value.region || value;
+    if (Array.isArray(source)) {
+      coordinates = source.slice(0, 4);
+    } else if (source && typeof source === 'object') {
+      const x = source.x ?? source.left ?? source.x1 ?? source.min_x;
+      const y = source.y ?? source.top ?? source.y1 ?? source.min_y;
+      const width = source.width ?? source.w;
+      const height = source.height ?? source.h;
+      const right = source.right ?? source.x2 ?? source.max_x;
+      const bottom = source.bottom ?? source.y2 ?? source.max_y;
+      if (width !== undefined && height !== undefined) {
+        coordinates = [x, y, width, height];
+      } else if (right !== undefined && bottom !== undefined) {
+        const numericX = Number(x);
+        const numericY = Number(y);
+        const numericRight = Number(right);
+        const numericBottom = Number(bottom);
+        coordinates = [
+          numericX,
+          numericY,
+          numericRight - numericX,
+          numericBottom - numericY,
+        ];
+      }
+    }
+  } else if (typeof value === 'string') {
+    coordinates = value.match(/-?\d+(?:\.\d+)?/g)?.slice(0, 4) || [];
+  }
+
+  const normalized = coordinates.map((entry) => {
+    const numeric = Number(entry);
+    if (!Number.isFinite(numeric)) return null;
+    return Number(Math.max(0, Math.min(1, numeric)).toFixed(3));
+  });
+  if (normalized.length !== 4 || normalized.some((entry) => entry === null)) return null;
+  return normalized;
+}
+
+function normalizePlannerVisualEntity(entry = null, {
+  defaultLabel = 'visible detail',
+  allowProps = false,
+} = {}) {
+  if (typeof entry === 'string') {
+    const label = sanitizePlannerText(entry);
+    return label ? {
+      label,
+      bbox: null,
+      pose: '',
+      anatomy: [],
+      accessories: [],
+      props: [],
+      details: [],
+    } : null;
+  }
+  if (!entry || typeof entry !== 'object') return null;
+
+  const label = sanitizePlannerText(
+    entry.label
+    || entry.name
+    || entry.subject
+    || entry.object
+    || entry.description
+    || entry.identity
+    || defaultLabel
+  ) || defaultLabel;
+
+  return {
+    label,
+    bbox: normalizePlannerBox(entry),
+    pose: sanitizePlannerText(entry.pose || entry.body_pose || entry.stance || ''),
+    anatomy: sanitizePlannerList(entry.anatomy || entry.visible_anatomy || []),
+    accessories: sanitizePlannerList(entry.accessories || entry.clothing || entry.outfit || entry.wearables || []),
+    props: allowProps ? [] : sanitizePlannerList(entry.props || entry.held_props || entry.objects || []),
+    details: sanitizePlannerList(entry.details || entry.attributes || entry.visible_attributes || []),
+  };
+}
+
+function normalizePlannerVisualList(values = [], options = {}, limit = 6) {
+  return (Array.isArray(values) ? values : [values])
+    .map((entry) => normalizePlannerVisualEntity(entry, options))
+    .filter((entry) => entry && entry.label)
+    .slice(0, limit);
+}
+
+function buildJanusVisualScanPrompt({
+  request = {},
+  compiledBasePrompt = '',
+} = {}) {
+  const referenceImageSize = formatPlannerReferenceImageSize(request);
+  return [
+    'You are a visual continuity analyst for a frame-by-frame video renderer.',
+    'Observe this reference image carefully.',
+    'Reply only with a valid JSON object, with no markdown and no extra text.',
+    'Do not write final Stable Diffusion prose.',
+    'Describe only visible facts that help continuity across frames.',
+    'Use English only.',
+    'Approximate normalized regions must use [x, y, width, height] values between 0 and 1 when possible.',
+    'The JSON schema must be:',
+    '{"scene":{"decor":["..."],"cameraFraming":["..."],"lighting":["..."]},"subjects":[{"label":"...","pose":"...","anatomy":["..."],"accessories":["..."],"props":["..."],"bbox":[0,0,0,0]}],"props":[{"label":"...","details":["..."],"bbox":[0,0,0,0]}],"continuityAnchors":["..."],"continuityRisks":["..."]}',
+    'Rules:',
+    '- subjects must stay concrete and visible',
+    '- props should mention key accessories or weapons that must stay consistent',
+    '- continuityAnchors should capture identity, costume, decor, and prop details worth preserving',
+    '- continuityRisks should mention likely drift, crop, or anatomy risks',
+    `User prompt: ${String(request?.prompt || '').trim()}`,
+    `Compiled base prompt: ${String(compiledBasePrompt || request?.prompt || '').trim()}`,
+    referenceImageSize ? `Reference image size: ${referenceImageSize}` : '',
+  ].join('\n');
+}
+
+function coerceJanusVisualScan({ candidate = null } = {}) {
+  const scanObject = (
+    candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      ? (candidate.visualScan && typeof candidate.visualScan === 'object'
+          ? candidate.visualScan
+          : candidate)
+      : null
+  );
+  if (!scanObject) {
+    throw new Error('janus_invalid_visual_scan_payload');
+  }
+
+  const sceneSource = scanObject.scene && typeof scanObject.scene === 'object'
+    ? scanObject.scene
+    : {};
+  const visualAnalysis = {
+    scene: {
+      decor: sanitizePlannerList(sceneSource.decor || sceneSource.background || sceneSource.scene || []),
+      cameraFraming: sanitizePlannerList(sceneSource.cameraFraming || sceneSource.camera || sceneSource.framing || []),
+      lighting: sanitizePlannerList(sceneSource.lighting || []),
+    },
+    subjects: normalizePlannerVisualList(
+      scanObject.subjects || scanObject.characters || scanObject.people || [],
+      { defaultLabel: 'visible subject', allowProps: false },
+      4
+    ),
+    props: normalizePlannerVisualList(
+      scanObject.props || scanObject.objects || [],
+      { defaultLabel: 'visible prop', allowProps: true },
+      6
+    ),
+    continuityAnchors: sanitizePlannerList(
+      scanObject.continuityAnchors
+      || scanObject.continuity_anchors
+      || scanObject.continuityLocks
+      || []
+    ),
+    continuityRisks: sanitizePlannerList(
+      scanObject.continuityRisks
+      || scanObject.continuity_risks
+      || scanObject.risks
+      || []
+    ),
+  };
+
+  const hasSignal = (
+    visualAnalysis.scene.decor.length > 0
+    || visualAnalysis.scene.cameraFraming.length > 0
+    || visualAnalysis.scene.lighting.length > 0
+    || visualAnalysis.subjects.length > 0
+    || visualAnalysis.props.length > 0
+    || visualAnalysis.continuityAnchors.length > 0
+    || visualAnalysis.continuityRisks.length > 0
+  );
+  if (!hasSignal) {
+    throw new Error('janus_invalid_visual_scan_payload');
+  }
+
+  return visualAnalysis;
+}
+
+function formatPlannerBox(box = null) {
+  return Array.isArray(box) && box.length === 4
+    ? `bbox ${box.join(', ')}`
+    : '';
+}
+
+function summarizeJanusVisualScan(visualAnalysis = {}) {
+  const subjects = (Array.isArray(visualAnalysis?.subjects) ? visualAnalysis.subjects : [])
+    .map((entry) => normalizePromptList([
+      entry.label,
+      entry.pose,
+      formatPlannerBox(entry.bbox),
+      ...entry.accessories,
+      ...entry.props,
+      ...entry.anatomy,
+    ]).join(', '))
+    .filter(Boolean);
+  const props = (Array.isArray(visualAnalysis?.props) ? visualAnalysis.props : [])
+    .map((entry) => normalizePromptList([
+      entry.label,
+      formatPlannerBox(entry.bbox),
+      ...entry.details,
+    ]).join(', '))
+    .filter(Boolean);
+  const scene = normalizePromptList([
+    ...(visualAnalysis?.scene?.decor || []),
+    ...(visualAnalysis?.scene?.cameraFraming || []),
+    ...(visualAnalysis?.scene?.lighting || []),
+  ]);
+
+  return normalizePromptList([
+    scene.length ? `reference scene: ${scene.join(', ')}` : '',
+    subjects.length ? `reference subjects: ${subjects.join('; ')}` : '',
+    props.length ? `reference props: ${props.join('; ')}` : '',
+    visualAnalysis?.continuityAnchors?.length ? `continuity anchors: ${visualAnalysis.continuityAnchors.join(', ')}` : '',
+    visualAnalysis?.continuityRisks?.length ? `continuity risks: ${visualAnalysis.continuityRisks.join(', ')}` : '',
+  ]).join('. ');
+}
+
 function sanitizePlannerBeat(beat = {}, fallbackLabel = 'continuite') {
   const label = sanitizePlannerText(beat?.label || beat?.name || fallbackLabel) || fallbackLabel;
   const structuralState = sanitizePlannerText(
@@ -371,6 +595,16 @@ function sanitizePlannerBeat(beat = {}, fallbackLabel = 'continuite') {
     checkpoint: Boolean(beat?.checkpoint),
     rendererFocus,
   }, fallbackLabel);
+}
+
+function sanitizePlannerBeatWithExtras(beat = {}, fallbackLabel = 'continuite') {
+  const normalizedBeat = sanitizePlannerBeat(beat, fallbackLabel);
+  return {
+    ...normalizedBeat,
+    soundCues: sanitizePlannerList(beat?.soundCues || beat?.sound_cues || []),
+    continuityLocks: sanitizePlannerList(beat?.continuityLocks || beat?.continuity_locks || []),
+    sceneContext: sanitizePlannerText(beat?.sceneContext || beat?.scene_context || ''),
+  };
 }
 
 function withMotionProfile(request = {}, motionProfile = 'generic') {
@@ -587,127 +821,25 @@ async function planVideoSequence({
     stablePromptSource: String(compiledBasePrompt || request?.prompt || '').trim(),
   });
 
-  if (providerRequested === 'heuristic') {
-    return heuristicFallbackPlan;
-  }
-
-  let llmFailureReason = '';
-  if (shouldAttemptLlmFramePrompter(providerRequested)) {
-    if (isLlmFramePrompterEnabled()) {
-      const subject = String(
-        request?.compiledSubject
-        || compiledBasePrompt
-        || request?.prompt
-        || ''
-      ).trim();
-      const identityLocks = resolveDefaultIdentityLocks(
-        heuristicFallbackPlan.motionProfile,
-        String(request?.prompt || '').trim()
-      );
-      // Contexte visuel du personnage depuis le mask compilé
-      const visualContext = [
-        String(request?.compiledVisualContext || '').trim(),
-        String(request?.canonicalSubject || '').trim(),
-        formatPlannerReferenceImageSize(request) ? `reference image size ${formatPlannerReferenceImageSize(request)}` : '',
-        ...(Array.isArray(request?.subjectFacts) ? request.subjectFacts.slice(0, 3) : []),
-      ].filter(Boolean).join('. ');
-      const llmResult = await generateFramePromptsWithLlm({
-        subject,
-        motionProfile: heuristicFallbackPlan.motionProfile,
-        frameCount: Math.max(1, Number(request?.frameCount || 0) || heuristicFallbackPlan.beats.length),
-        prompt: String(request?.prompt || '').trim(),
-        identityLocks,
-        visualContext,
-        referenceImageWidth: Number(request?.sourceImageWidth || 0),
-        referenceImageHeight: Number(request?.sourceImageHeight || 0),
-        timeoutMs: Math.max(5000, Number(request?.config?.sequencePlannerTimeoutMs || 0) || sequencePlanningConfig.sequencePlannerTimeoutMs),
-      });
-
-      if (llmResult.ok && Array.isArray(llmResult.beats) && llmResult.beats.length > 0) {
-        console.log(
-          `[A11][video-prompter] LLM beats generated subject_type=${llmResult.subjectType}`
-          + ` motion=${llmResult.motionDescription}`
-          + ` frames=${llmResult.beats.length}`
-        );
-        return {
-          ...heuristicFallbackPlan,
-          providerUsed: 'llm_prompter',
-          fallbackReason: null,
-          beats: llmResult.beats.map((beat) => normalizeSequenceBeat(beat)),
-          sceneContext: llmResult.sceneContext || '',
-          imageAwareUsed: false,
-        };
-      }
-
-      llmFailureReason = String(llmResult.reason || 'llm_prompter_failed').trim() || 'llm_prompter_failed';
-      console.log(`[A11][video-prompter] LLM prompter skipped: ${llmFailureReason}, using heuristic`);
-      // Enrichir le plan heuristique avec le compiledBasePrompt si disponible
-      if (compiledBasePrompt && compiledBasePrompt !== String(request?.prompt || '').trim()) {
-        const compiledSceneLocks = extractStableSceneFragments(
-          String(compiledBasePrompt || '').trim(),
-          heuristicFallbackPlan.motionProfile
-        );
-        heuristicFallbackPlan = {
-          ...heuristicFallbackPlan,
-          sceneLocks: normalizePromptList([
-            ...heuristicFallbackPlan.sceneLocks,
-            ...compiledSceneLocks.slice(0, 2),
-          ]).slice(0, 4),
-        };
-        console.log('[A11][video-prompter] Heuristic enriched with compiledBasePrompt');
-      }
-    } else {
-      llmFailureReason = 'llm_prompter_disabled';
-    }
-
-    if (providerRequested === 'llm_prompter') {
-      return {
-        ...heuristicFallbackPlan,
-        fallbackReason: llmFailureReason || 'llm_prompter_failed',
-        imageAwareUsed: false,
-      };
-    }
-  }
-
-  // Fallback Janus si disponible
-  if (!shouldAttemptJanusSequencePlanner(providerRequested) || !isJanusSequencePlannerAvailable()) {
-    return {
-      ...heuristicFallbackPlan,
-      fallbackReason: shouldAttemptJanusSequencePlanner(providerRequested)
-        ? 'janus_unavailable'
-        : (llmFailureReason || 'planner_unavailable'),
-      imageAwareUsed: false,
-    };
-  }
-
   const timeoutMs = Math.max(
     5_000,
     Number(request?.config?.sequencePlannerTimeoutMs || 0) || sequencePlanningConfig.sequencePlannerTimeoutMs
   );
+  const imageAwareRequested = request?.config?.sequencePlannerImageAware === undefined
+    ? sequencePlanningConfig.sequencePlannerImageAware
+    : request.config.sequencePlannerImageAware !== false;
+
+  let visualAnalysis = null;
+  let imageAwareUsed = false;
+  let imageAwareError = '';
 
   try {
-    const textPrompt = buildJanusSequencePlannerPrompt({
-      request,
-      compiledBasePrompt,
-      heuristicPlan: heuristicFallbackPlan,
-    });
-    const initialTextResult = await callJanusPlannerTextPrompt({
-      prompt: textPrompt,
-      timeoutMs,
-    });
-    const parsedInitialPlan = extractJsonObjectCandidate(initialTextResult?.text || initialTextResult);
-    let plannedSequence = coerceJanusSequencePlan({
-      request,
-      providerRequested,
-      compiledBasePrompt,
-      candidate: parsedInitialPlan,
-      fallbackPlan: heuristicFallbackPlan,
-      imageAwareUsed: false,
-    });
-
-    if (request?.config?.sequencePlannerImageAware) {
+    if (
+      imageAwareRequested
+      && shouldAttemptJanusVisualScan(providerRequested)
+      && isJanusSequencePlannerAvailable()
+    ) {
       let imageSource = null;
-      let imageSourceError = '';
       try {
         imageSource = await loadPlannerImageSource({
           sourceImagePath,
@@ -719,54 +851,126 @@ async function planVideoSequence({
             : sequencePlanningConfig.sequencePlannerAllowedPathRoots,
         });
       } catch (error_) {
-        imageSourceError = String(error_?.message || error_).trim() || 'janus_image_source_failed';
+        imageAwareError = String(error_?.message || error_).trim() || 'janus_image_source_failed';
       }
 
       if (imageSource?.buffer?.length) {
         try {
-          const imagePrompt = buildJanusImageAwareRefinementPrompt({
+          const visualScanPrompt = buildJanusVisualScanPrompt({
             request,
             compiledBasePrompt,
-            currentPlan: plannedSequence,
           });
-          const imageAwareResult = await callJanusPlannerImageAwarePrompt({
-            prompt: imagePrompt,
+          const visualScanResult = await callJanusPlannerImageAwarePrompt({
+            prompt: visualScanPrompt,
             imageBuffer: imageSource.buffer,
             contentType: imageSource.contentType,
             timeoutMs,
           });
-          const parsedImageAwarePlan = extractJsonObjectCandidate(imageAwareResult?.text || imageAwareResult);
-          plannedSequence = coerceJanusSequencePlan({
-            request,
-            providerRequested,
-            compiledBasePrompt,
-            candidate: parsedImageAwarePlan,
-            fallbackPlan: plannedSequence,
-            imageAwareUsed: true,
-          });
+          const parsedVisualScan = extractJsonObjectCandidate(visualScanResult?.text || visualScanResult);
+          visualAnalysis = coerceJanusVisualScan({ candidate: parsedVisualScan });
+          imageAwareUsed = true;
+          imageAwareError = '';
         } catch (error_) {
-          plannedSequence = {
-            ...plannedSequence,
-            imageAwareUsed: false,
-            imageAwareError: String(error_?.message || error_).trim() || 'janus_image_aware_failed',
-          };
+          imageAwareUsed = false;
+          imageAwareError = String(error_?.message || error_).trim() || 'janus_image_aware_failed';
         }
-      } else if (imageSourceError) {
-        plannedSequence = {
-          ...plannedSequence,
-          imageAwareUsed: false,
-          imageAwareError: imageSourceError,
-        };
       }
     }
 
-    return plannedSequence;
-  } catch (error_) {
-    return {
+    heuristicFallbackPlan = {
       ...heuristicFallbackPlan,
-      fallbackReason: String(error_?.message || error_).trim() || 'janus_planner_failed',
-      imageAwareUsed: false,
+      imageAwareUsed,
+      imageAwareError: imageAwareError || null,
+      visualAnalysis,
+      visualAnalysisProvider: visualAnalysis ? 'janus' : null,
+      continuityLocks: normalizePromptList(visualAnalysis?.continuityAnchors || []),
     };
+
+    if (providerRequested === 'heuristic') {
+      return heuristicFallbackPlan;
+    }
+
+    let llmFailureReason = '';
+    if (shouldAttemptLlmFramePrompter(providerRequested)) {
+      if (isLlmFramePrompterEnabled()) {
+        const subject = String(
+          request?.compiledSubject
+          || compiledBasePrompt
+          || request?.prompt
+          || ''
+        ).trim();
+        const identityLocks = resolveDefaultIdentityLocks(
+          heuristicFallbackPlan.motionProfile,
+          String(request?.prompt || '').trim()
+        );
+        const visualContext = [
+          String(request?.compiledVisualContext || '').trim(),
+          String(request?.canonicalSubject || '').trim(),
+          formatPlannerReferenceImageSize(request) ? `reference image size ${formatPlannerReferenceImageSize(request)}` : '',
+          ...(Array.isArray(request?.subjectFacts) ? request.subjectFacts.slice(0, 3) : []),
+          summarizeJanusVisualScan(visualAnalysis),
+        ].filter(Boolean).join('. ');
+        const llmResult = await generateFramePromptsWithLlm({
+          subject,
+          motionProfile: heuristicFallbackPlan.motionProfile,
+          frameCount: Math.max(1, Number(request?.frameCount || 0) || heuristicFallbackPlan.beats.length),
+          prompt: String(request?.prompt || '').trim(),
+          identityLocks,
+          visualContext,
+          visualAnalysis,
+          referenceImageWidth: Number(request?.sourceImageWidth || 0),
+          referenceImageHeight: Number(request?.sourceImageHeight || 0),
+          timeoutMs,
+        });
+
+        if (llmResult.ok && Array.isArray(llmResult.beats) && llmResult.beats.length > 0) {
+          console.log(
+            `[A11][video-prompter] LLM beats generated subject_type=${llmResult.subjectType}`
+            + ` motion=${llmResult.motionDescription}`
+            + ` frames=${llmResult.beats.length}`
+          );
+          return {
+            ...heuristicFallbackPlan,
+            providerUsed: 'llm_prompter',
+            fallbackReason: null,
+            beats: llmResult.beats.map((beat, index) => sanitizePlannerBeatWithExtras(beat, `beat ${index + 1}`)),
+            sceneContext: llmResult.sceneContext || '',
+            continuityLocks: normalizePromptList(llmResult.continuityLocks || heuristicFallbackPlan.continuityLocks || []),
+            soundCues: normalizePromptList(llmResult.soundCues || []),
+            imageAwareUsed,
+            imageAwareError: imageAwareError || null,
+            visualAnalysis,
+            visualAnalysisProvider: visualAnalysis ? 'janus' : null,
+          };
+        }
+
+        llmFailureReason = String(llmResult.reason || 'llm_prompter_failed').trim() || 'llm_prompter_failed';
+        console.log(`[A11][video-prompter] LLM prompter skipped: ${llmFailureReason}, using heuristic`);
+        if (compiledBasePrompt && compiledBasePrompt !== String(request?.prompt || '').trim()) {
+          const compiledSceneLocks = extractStableSceneFragments(
+            String(compiledBasePrompt || '').trim(),
+            heuristicFallbackPlan.motionProfile
+          );
+          heuristicFallbackPlan = {
+            ...heuristicFallbackPlan,
+            sceneLocks: normalizePromptList([
+              ...heuristicFallbackPlan.sceneLocks,
+              ...compiledSceneLocks.slice(0, 2),
+            ]).slice(0, 4),
+          };
+          console.log('[A11][video-prompter] Heuristic enriched with compiledBasePrompt');
+        }
+      } else {
+        llmFailureReason = 'llm_prompter_disabled';
+      }
+
+      return {
+        ...heuristicFallbackPlan,
+        fallbackReason: llmFailureReason || heuristicFallbackPlan.fallbackReason || 'llm_prompter_failed',
+      };
+    }
+
+    return heuristicFallbackPlan;
   } finally {
     // The sequence planner runs once before SD rendering; release Janus to avoid VRAM contention.
     shutdownJanusVisionWorker();
@@ -777,7 +981,9 @@ module.exports = {
   VALID_SEQUENCE_PLANNER_MODES,
   buildJanusImageAwareRefinementPrompt,
   buildJanusSequencePlannerPrompt,
+  buildJanusVisualScanPrompt,
   coerceJanusSequencePlan,
+  coerceJanusVisualScan,
   extractJsonObjectCandidate,
   planVideoSequence,
   resolveSequencePlannerMode,

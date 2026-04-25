@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -11,7 +12,36 @@ const {
   isForeignAbsolutePath,
   shouldAllowLocalSdFallback,
   runSdScript,
+  sanitizeProxyHeaders,
 } = require('../lib/sd-runtime.cjs');
+
+test('sd and vision requirements pin torchvision 0.26.0 for the torch 2.11 runtime', () => {
+  const sdRequirements = fs.readFileSync(
+    path.join(__dirname, '..', 'tools', 'sd', 'requirements.txt'),
+    'utf8'
+  );
+  const visionRequirements = fs.readFileSync(
+    path.join(__dirname, '..', 'tools', 'vision', 'requirements.txt'),
+    'utf8'
+  );
+
+  assert.match(sdRequirements, /^torch==2\.11\.0\s*$/m);
+  assert.match(sdRequirements, /^torchvision==0\.26\.0\s*$/m);
+  assert.match(visionRequirements, /^torchvision==0\.26\.0\s*$/m);
+});
+
+test('local SD venv imports torch and torchvision when the bundled venv exists', { skip: !fs.existsSync(resolveSdPythonBin()) }, () => {
+  const pythonBin = resolveSdPythonBin();
+  const result = spawnSync(
+    pythonBin,
+    ['-c', 'import torch, torchvision; print(torch.__version__, torchvision.__version__)'],
+    { encoding: 'utf8' }
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(String(result.stdout || ''), /2\.11\.0/);
+  assert.match(String(result.stdout || ''), /0\.26\.0/);
+});
 
 test('resolveSdPythonBin ignores a stale explicit path when a local adjacent venv exists', () => {
   const previousExplicit = process.env.SD_PYTHON_PATH;
@@ -102,6 +132,23 @@ test('hasSdProxyUrl only considers SD proxy variables', () => {
   assert.equal(hasSdProxyUrl({ A11_SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd' }), true);
   assert.equal(hasSdProxyUrl({ SD_PROXY_URL: 'https://sd.example.com/api/tools/generate_sd' }), true);
   assert.equal(hasSdProxyUrl({ A11_VISION_BASE_URL: 'https://vision.example.com' }), false);
+});
+
+test('sanitizeProxyHeaders does not forward weak admin header shorthands', () => {
+  assert.deepEqual(
+    sanitizeProxyHeaders({
+      authorization: 'Bearer strong-token',
+      'x-nez-admin': 'true',
+      'x-nez-token': 'legacy-token',
+      'x-nez-admin-token': 'shared-admin-token',
+      'x-qflush-token': 'qflush-token',
+    }),
+    {
+      authorization: 'Bearer strong-token',
+      'x-nez-admin-token': 'shared-admin-token',
+      'x-qflush-token': 'qflush-token',
+    }
+  );
 });
 
 test('shouldAllowLocalSdFallback keeps production proxy-only by default when SD proxy is configured', () => {
@@ -216,6 +263,62 @@ test('runSdScript prefers strength_value when strength mode stays auto upstream'
   }
 });
 
+test('runSdScript downgrades unstable SD3 Windows profiles to sd35 and forces float16', async () => {
+  const previousPlatform = process.platform;
+  const previousDevice = process.env.SD_DEVICE;
+  const previousDtype = process.env.SD_TORCH_DTYPE;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-compat-'));
+  const scriptPath = path.join(tempRoot, 'echo-env.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({",
+      "  ok: true,",
+      "  output_path: output,",
+      "  env_model_profile: process.env.SD_MODEL_PROFILE || '',",
+      "  env_torch_dtype: process.env.SD_TORCH_DTYPE || ''",
+      "}));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  try {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    process.env.SD_DEVICE = 'cuda';
+    process.env.SD_TORCH_DTYPE = 'auto';
+
+    const result = await runSdScript({
+      prompt: 'simple english prompt',
+      prompt_prebuilt: true,
+      model_profile: 'sd35turbo',
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.env_model_profile, 'sd35');
+    assert.equal(result.env_torch_dtype, 'float16');
+  } finally {
+    Object.defineProperty(process, 'platform', { value: previousPlatform });
+    if (previousDevice === undefined) delete process.env.SD_DEVICE;
+    else process.env.SD_DEVICE = previousDevice;
+    if (previousDtype === undefined) delete process.env.SD_TORCH_DTYPE;
+    else process.env.SD_TORCH_DTYPE = previousDtype;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('runSdScript normalizes mixed french-english prompts before invoking the SD script', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-mixed-'));
   const scriptPath = path.join(tempRoot, 'echo-argv.js');
@@ -264,6 +367,64 @@ test('runSdScript normalizes mixed french-english prompts before invoking the SD
     assert.match(promptArg, /character as the Joker/i);
     assert.match(promptArg, /same face/i);
     assert.doesNotMatch(promptArg, /\bgarder\b|\bvisage\b|\btenue\b|\bmaquillage\b|\bcorpulence\b/i);
+  } finally {
+    global.fetch = previousFetch;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('runSdScript respects prompt_prebuilt and skips the final translation pass', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-prebuilt-'));
+  const scriptPath = path.join(tempRoot, 'echo-argv.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+  const previousFetch = global.fetch;
+  let fetchCalls = 0;
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({ ok: true, output_path: output, argv: args }));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  global.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('translation should not run for prompt_prebuilt payloads');
+  };
+
+  try {
+    const result = await runSdScript({
+      prompt: 'main subject pose continuity: chevalier en armure sombre tenant une epee doree',
+      prompt_2: 'scene camera decor continuity: torch-lit stone hall, same dark armor',
+      prompt_3: 'visible frame delta anatomy prop detail: knight bends toward the golden sword',
+      prompt_prebuilt: true,
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(fetchCalls, 0);
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    const argv = Array.isArray(parsed.argv) ? parsed.argv : [];
+    const promptIndex = argv.indexOf('--prompt');
+    const promptArg = promptIndex >= 0 ? String(argv[promptIndex + 1] || '') : '';
+
+    assert.equal(
+      promptArg,
+      'main subject pose continuity: chevalier en armure sombre tenant une epee doree'
+    );
+    assert.match(String(result.stdout || ''), /scene camera decor continuity:/i);
+    assert.match(String(result.stdout || ''), /visible frame delta anatomy prop detail:/i);
   } finally {
     global.fetch = previousFetch;
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -327,6 +488,60 @@ test('runSdScript retries rich prompt translation when the first english candida
     assert.match(promptArg, /graffiti/i);
     assert.match(promptArg, /single full-body subject/i);
     assert.doesNotMatch(promptArg, /^A Joker-inspired character keeping the same face\.?$/i);
+  } finally {
+    global.fetch = previousFetch;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('runSdScript preserves prompt_prebuilt payloads without final translation', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-sd-run-prebuilt-'));
+  const scriptPath = path.join(tempRoot, 'echo-argv.js');
+  const outputPath = path.join(tempRoot, 'result.png');
+  const previousFetch = global.fetch;
+  let fetchCalls = 0;
+
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const args = process.argv.slice(2);",
+      "const findValue = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : ''; };",
+      "const output = findValue('--output');",
+      "fs.mkdirSync(path.dirname(output), { recursive: true });",
+      "fs.writeFileSync(output, Buffer.from('png'));",
+      "process.stdout.write(JSON.stringify({ ok: true, output_path: output, argv: args }));",
+    ].join('\n'),
+    'utf8'
+  );
+
+  global.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('translation should not run for prebuilt prompts');
+  };
+
+  try {
+    const result = await runSdScript({
+      prompt: 'main subject pose continuity: the knight in dark armor bends toward the golden sword',
+      prompt_prebuilt: true,
+      output: outputPath,
+    }, {
+      scriptPath,
+      pythonBin: process.execPath,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(fetchCalls, 0);
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    const argv = Array.isArray(parsed.argv) ? parsed.argv : [];
+    const promptIndex = argv.indexOf('--prompt');
+    const promptArg = promptIndex >= 0 ? String(argv[promptIndex + 1] || '') : '';
+
+    assert.equal(
+      promptArg,
+      'main subject pose continuity: the knight in dark armor bends toward the golden sword'
+    );
   } finally {
     global.fetch = previousFetch;
     fs.rmSync(tempRoot, { recursive: true, force: true });

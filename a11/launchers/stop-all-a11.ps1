@@ -134,8 +134,7 @@ function Stop-CerbereTunnel {
   $matching = @(
     Get-CimInstance Win32_Process -Filter "Name = 'cloudflared.exe'" -ErrorAction SilentlyContinue |
       Where-Object {
-        ($_.CommandLine -like "*funesterie-cerbere-local*") -or
-        ($_.CommandLine -like "*cloudflared-cerbere.yml*")
+        ($_.CommandLine -like "*funesterie-cerbere-local*")
       }
   )
 

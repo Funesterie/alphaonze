@@ -21,11 +21,7 @@ if [ -x /opt/janus-venv/bin/python ] && [ -z "${A11_JANUS_PYTHON_PATH:-}" ]; the
 fi
 
 if [ -z "${A11_JANUS_DEVICE:-}" ] && [ "${A11_VISION_PROVIDER:-}" = "janus" ]; then
-  if command -v nvidia-smi >/dev/null 2>&1; then
-    export A11_JANUS_DEVICE=cuda
-  else
-    export A11_JANUS_DEVICE=cpu
-  fi
+  export A11_JANUS_DEVICE=cpu
 fi
 
 if [ -z "${A11_JANUS_MODEL_DIR:-}" ] && [ -z "${A11_JANUS_MODEL_ID:-}" ] && [ "${A11_VISION_PROVIDER:-}" = "janus" ]; then

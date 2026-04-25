@@ -83,6 +83,26 @@ def env_bool(name, default=False):
     return raw in {"1", "true", "yes", "on"}
 
 
+def normalize_dimension_multiple():
+    try:
+        configured = int(str(os.environ.get("SD_DIMENSION_MULTIPLE", "8")).strip())
+    except (TypeError, ValueError):
+        configured = 8
+    return max(8, min(128, configured))
+
+
+def align_dimension_to_multiple(value, multiple=8, minimum=64):
+    try:
+        numeric = int(round(float(value)))
+    except (TypeError, ValueError):
+        numeric = int(minimum)
+    safe_multiple = max(1, int(multiple or 8))
+    safe_minimum = max(safe_multiple, int((int(minimum) + safe_multiple - 1) // safe_multiple) * safe_multiple)
+    numeric = max(safe_minimum, numeric)
+    numeric = int(numeric // safe_multiple) * safe_multiple
+    return max(safe_minimum, numeric)
+
+
 def resolve_model_config():
     explicit_model_id = str(os.environ.get("SD_MODEL_ID", "")).strip()
     explicit_profile = normalize_env_text(os.environ.get("SD_MODEL_PROFILE"), "sd35")
@@ -526,6 +546,18 @@ def main():
         args.width = min(args.width, max_side)
         args.height = min(args.height, max_side)
         args.num_inference_steps = min(args.num_inference_steps, max_steps)
+
+    dimension_multiple = normalize_dimension_multiple()
+    original_width = args.width
+    original_height = args.height
+    args.width = align_dimension_to_multiple(args.width, dimension_multiple)
+    args.height = align_dimension_to_multiple(args.height, dimension_multiple)
+    if args.width != original_width or args.height != original_height:
+        print(
+            f"[A11][sd] adjusted render size to latent grid multiple={dimension_multiple}: "
+            f"{original_width}x{original_height} -> {args.width}x{args.height}",
+            file=os.sys.stderr,
+        )
 
     cuda_fast_path_flags = maybe_enable_cuda_fast_paths()
 

@@ -1,4 +1,4 @@
-const A11_CACHE = "a11-pwa-v2";
+const A11_CACHE = "a11-pwa-v3";
 const A11_STATIC_ASSETS = [
   "/",
   "/manifest.webmanifest",

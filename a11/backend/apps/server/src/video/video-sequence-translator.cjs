@@ -12,12 +12,93 @@ const {
   splitFramePromptClauses,
 } = require('./video-sequence-heuristic.cjs');
 const {
+  detectPromptLanguageProfile,
   translateImagePromptToEnglish,
 } = require('../mask/build-sd-prompt-bundle.cjs');
 
 const VIDEO_ENGLISH_PHRASE_REPLACEMENTS = [
+  ['sur un sentier fantastique', 'on a fantasy path'],
   ['sur un sentier', 'on a path'],
   ['sur le chemin', 'on the path'],
+  ['sur fond blanc', 'on a white background'],
+  ['sur fond noir', 'on a black background'],
+  ['fond simple', 'simple background'],
+  ['posture de depart stable', 'stable starting pose'],
+  ['appuis nets', 'clear support points'],
+  ['geste encore contenu', 'gesture still restrained'],
+  ['debut du geste', 'gesture begins'],
+  ['un appui change clairement', 'one support point changes clearly'],
+  ['le buste commence a suivre', 'the torso starts following'],
+  ['transfert de poids visible', 'visible weight transfer'],
+  ['geste plus ouvert', 'wider gesture'],
+  ['silhouette toujours claire', 'silhouette stays clear'],
+  ['point fort du geste ou de la posture', 'peak of the gesture or pose'],
+  ['action lisible sans changer toute la scene', 'action remains readable without changing the whole scene'],
+  ['sortie du geste', 'gesture release'],
+  ['posture stabilisee apres l action', 'pose stabilized after the action'],
+  ['posture stabilisee apres action', 'pose stabilized after the action'],
+  ['geste encore retenu', 'gesture still restrained'],
+  ['retombee du geste', 'gesture settles down'],
+  ['energie se dissipe', 'energy dissipates'],
+  ['posture reste lisible', 'pose remains readable'],
+  ['depart pret', 'ready starting pose'],
+  ['marche enclenchee', 'walking motion starts'],
+  ['bassin legerement bas', 'hips slightly lowered'],
+  ['jambe gauche clairement devant le bassin', 'left leg clearly ahead of the hips'],
+  ['jambe droite clairement devant le bassin', 'right leg clearly ahead of the hips'],
+  ['jambe gauche porte l appui', 'left leg carries the support'],
+  ['jambe droite porte l appui', 'right leg carries the support'],
+  ['jambe gauche sous le bassin', 'left leg under the hips'],
+  ['jambe droite sous le bassin', 'right leg under the hips'],
+  ['jambe gauche toujours en appui', 'left leg still supporting'],
+  ['jambe droite toujours en appui', 'right leg still supporting'],
+  ['progression du corps encore lisible', 'body progression still readable'],
+  ['deux jambes distinctes', 'two distinct legs'],
+  ['deux bras distincts', 'two distinct arms'],
+  ['bassin et epaules bien lisibles', 'hips and shoulders clearly visible'],
+  ['une jambe d appui et une jambe mobile', 'one supporting leg and one moving leg'],
+  ['bras droit plus avance que le bras gauche', 'right arm more forward than the left arm'],
+  ['bras gauche plus avance que le bras droit', 'left arm more forward than the right arm'],
+  ['pied droit en train de quitter le sol', 'right foot leaving the ground'],
+  ['pied gauche en train de quitter le sol', 'left foot leaving the ground'],
+  ['pied gauche quitte le sol', 'left foot leaves the ground'],
+  ['pas suivant visible', 'next step visible'],
+  ['bassin lisible en compression', 'hips clearly visible in compression'],
+  ['buste stable et lisible', 'stable torso clearly visible'],
+  ['jambe gauche repart vers l avant', 'left leg swings forward again'],
+  ['balancier oppose des bras', 'opposite arm swing'],
+  ['silhouette de marche complete', 'complete walking silhouette'],
+  ['marche encore lisible', 'walking motion still readable'],
+  ['posture stable apres la progression', 'pose stable after the progression'],
+  ['posture stabilisee sans deformation', 'pose stabilized without distortion'],
+  ['buste pret a se projeter', 'torso ready to lean into motion'],
+  ['jambe gauche clairement devant', 'left leg clearly forward'],
+  ['jambe droite clairement devant', 'right leg clearly forward'],
+  ['buste incline vers l avant', 'torso leaning forward'],
+  ['bras opposes bien distincts', 'distinct opposite arm swing'],
+  ['poids compresse sur la jambe gauche', 'weight compressed on the left leg'],
+  ['poids compresse sur la jambe droite', 'weight compressed on the right leg'],
+  ['bassin bas et lisible', 'low hips clearly visible'],
+  ['jambe droite prete a repartir', 'right leg ready to push again'],
+  ['jambe gauche prete a repartir', 'left leg ready to push again'],
+  ['les deux pieds quittent legerement le sol', 'both feet briefly leave the ground'],
+  ['projection nette vers l avant', 'clear forward projection'],
+  ['bras opposes inverses', 'opposite arm swing reversed'],
+  ['course encore lisible', 'running motion still readable'],
+  ['sortie de poussee sans deformation', 'push-off exit without distortion'],
+  ['bras ecartes du corps', 'arms spread away from the body'],
+  ['poitrine ouverte', 'open chest'],
+  ['cheveux rouges divins bien visibles', 'divine red hair clearly visible'],
+  ['transformation clairement engagee', 'transformation clearly underway'],
+  ['forme super saiyan divin presque atteinte', 'super saiyan divine form nearly reached'],
+  ['forme super saiyan divin atteinte', 'super saiyan divine form reached'],
+  ['forme super saiyan divin stabilisee', 'super saiyan divine form stabilized'],
+  ['bras ouverts plus haut', 'arms raised higher and open'],
+  ['torse projete vers l avant', 'torso projected forward'],
+  ['bras ouverts avec force', 'arms thrown open with force'],
+  ['poitrine projetee', 'chest projected forward'],
+  ['energie maitrisee autour du corps', 'controlled energy around the body'],
+  ['visage toujours reconnaissable', 'face remains recognizable'],
   ['un seul espion britannique complet et reconnaissable', 'a single full recognizable british spy'],
   ['base de marche stable', 'stable walking base'],
   ['base de course stable', 'stable running base'],
@@ -97,6 +178,27 @@ const VIDEO_ENGLISH_PHRASE_REPLACEMENTS = [
 ];
 
 const VIDEO_ENGLISH_TOKEN_REPLACEMENTS = [
+  ['cercle', 'circle'],
+  ['fond', 'background'],
+  ['simple', 'simple'],
+  ['deux', 'two'],
+  ['encore', 'still'],
+  ['toujours', 'still'],
+  ['bien', 'clearly'],
+  ['commence', 'starts'],
+  ['porte', 'carries'],
+  ['quitte', 'leaves'],
+  ['pret', 'ready'],
+  ['bas', 'low'],
+  ['sol', 'ground'],
+  ['retenu', 'restrained'],
+  ['ecartes', 'spread'],
+  ['ouverte', 'open'],
+  ['ouvertes', 'open'],
+  ['ouverts', 'open'],
+  ['visibles', 'visible'],
+  ['divins', 'divine'],
+  ['divines', 'divine'],
   ['jambe', 'leg'],
   ['jambes', 'legs'],
   ['bras', 'arms'],
@@ -120,7 +222,37 @@ const VIDEO_ENGLISH_TOKEN_REPLACEMENTS = [
   ['reconnaissable', 'recognizable'],
   ['appui', 'support'],
   ['appuis', 'support points'],
+  ['fantastique', 'fantasy'],
+  ['suivre', 'follow'],
+  ['depart', 'start'],
+  ['marche', 'walking motion'],
+  ['course', 'running motion'],
+  ['progression', 'progression'],
 ];
+
+const SUBJECT_STYLE_TAIL_TOKENS = new Set([
+  'anime',
+  'cinematic',
+  'dramatic',
+  'dramatique',
+  'epic',
+  'epique',
+  'fantasy',
+  'fantastique',
+  'heroic',
+  'heroique',
+  'manga',
+  'net',
+  'nette',
+  'photorealiste',
+  'photorealistic',
+]);
+
+const SD3_PROMPT_LABELS = Object.freeze({
+  prompt: 'main subject pose continuity',
+  prompt2: 'scene camera decor continuity',
+  prompt3: 'visible frame delta anatomy prop detail',
+});
 
 function transliterateForSd(value = '') {
   return String(value || '')
@@ -165,11 +297,23 @@ function restoreNamedTermsCasing(source = '', terms = []) {
   return result;
 }
 
+function repairVideoEnglishWordOrder(source = '') {
+  return String(source || '')
+    .replace(/\bon a background (\w+)\b/gi, 'on a $1 background')
+    .replace(/\ba background (\w+)\b/gi, 'a $1 background')
+    .replace(/\bpath fantasy\b/gi, 'fantasy path')
+    .replace(/\bharbor fantasy\b/gi, 'fantasy harbor')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function translateVideoPromptFragment(value = '', options = {}) {
   const normalized = normalizeAsciiText(value);
   if (!normalized) return '';
   const normalizedLower = normalized.toLowerCase();
-  const originalSubject = String(options?.subject || '').trim();
+  const originalSubject = String(options?.subject || options?.canonicalSubject || '').trim();
   const originalStartsWithSubject = (
     originalSubject
     && normalizedLower.startsWith(normalizeAsciiText(originalSubject).toLowerCase())
@@ -192,6 +336,7 @@ function translateVideoPromptFragment(value = '', options = {}) {
     .replace(/,\s*,/g, ',')
     .replace(/\s+/g, ' ')
     .trim();
+  translated = repairVideoEnglishWordOrder(translated);
 
   if (
     originalStartsWithSubject
@@ -202,12 +347,64 @@ function translateVideoPromptFragment(value = '', options = {}) {
   }
 
   translated = restoreNamedTermsCasing(translated, [
-    options?.subject,
     options?.canonicalSubject,
     options?.universe,
   ]);
 
+  for (const styleToken of ['anime', 'manga', 'fantasy', 'cinematic']) {
+    if (normalizedLower.includes(styleToken) && !normalizeAsciiText(translated).toLowerCase().includes(styleToken)) {
+      translated = `${styleToken} ${translated}`.trim();
+    }
+  }
+
   return translated;
+}
+
+function stripFrenchSceneRelationSuffix(value = '') {
+  let result = normalizeFramePromptFragment(value);
+  const patterns = [
+    /\s+\b(?:sur|sous|dans|devant|derriere|derrière)\b[\s\S]*$/i,
+    /\s+\b(?:pres|près)\s+de\b[\s\S]*$/i,
+    /\s+\b(?:au bord de|au milieu de)\b[\s\S]*$/i,
+  ];
+  for (const pattern of patterns) {
+    result = result.replace(pattern, '').trim();
+  }
+  return normalizeFramePromptFragment(result);
+}
+
+function stripSubjectStyleTail(value = '') {
+  const tokens = normalizeFramePromptFragment(value).split(/\s+/).filter(Boolean);
+  while (tokens.length > 1) {
+    const tail = normalizeAsciiText(tokens[tokens.length - 1]).toLowerCase();
+    if (!SUBJECT_STYLE_TAIL_TOKENS.has(tail)) break;
+    tokens.pop();
+  }
+  return normalizeFramePromptFragment(tokens.join(' '));
+}
+
+function resolveCanonicalSubjectLabel(subject = '', options = {}) {
+  const preferred = normalizeFramePromptFragment(options?.preferred || '');
+  if (preferred) return preferred;
+
+  const normalizedSubject = normalizeFramePromptFragment(subject);
+  if (!normalizedSubject) return '';
+
+  const translated = repairVideoEnglishWordOrder(translateVideoPromptFragment(normalizedSubject, {
+    subject: '',
+    canonicalSubject: '',
+    universe: options?.universe,
+  }));
+  const profile = detectPromptLanguageProfile(translated);
+  if (profile?.mixed || profile?.dominant === 'fr') {
+    return repairVideoEnglishWordOrder(
+      replacePatternsCaseInsensitive(
+        replacePatternsCaseInsensitive(normalizeAsciiText(normalizedSubject).toLowerCase(), VIDEO_ENGLISH_PHRASE_REPLACEMENTS),
+        VIDEO_ENGLISH_TOKEN_REPLACEMENTS
+      )
+    ) || normalizedSubject;
+  }
+  return translated || normalizedSubject;
 }
 
 function resolvePromptSubject(basePrompt = '', motionProfile = 'generic') {
@@ -245,6 +442,8 @@ function resolvePromptSubject(basePrompt = '', motionProfile = 'generic') {
       break;
   }
 
+  subject = stripFrenchSceneRelationSuffix(subject);
+  subject = stripSubjectStyleTail(subject);
   return subject || head || 'personnage principal';
 }
 
@@ -291,17 +490,40 @@ function buildStructuralOverridePrompt(subject = '', structuralState = '', fallb
 
 function buildSceneSentence(basePrompt = '', sequencePlan = {}, referenceAnalysis = null) {
   const motionProfile = String(sequencePlan?.motionProfile || 'generic').trim() || 'generic';
+  const visualAnalysis = (
+    sequencePlan?.visualAnalysis
+    && typeof sequencePlan.visualAnalysis === 'object'
+      ? sequencePlan.visualAnalysis
+      : null
+  );
   const universe = String(sequencePlan?.universe || referenceAnalysis?.universe || '').trim();
   const styleHint = universe ? `style illustration ${universe}` : '';
   const sceneContext = String(sequencePlan?.sceneContext || '').trim();
+  const visualSceneFragments = normalizePromptList([
+    ...(Array.isArray(visualAnalysis?.scene?.decor) ? visualAnalysis.scene.decor : []),
+    ...(Array.isArray(visualAnalysis?.scene?.cameraFraming) ? visualAnalysis.scene.cameraFraming : []),
+    ...(Array.isArray(visualAnalysis?.scene?.lighting) ? visualAnalysis.scene.lighting : []),
+  ]);
 
   // Priorite au scene_context genere par le LLM (camera + style + decor)
   if (sceneContext) {
-    return `stable scene and composition: ${translateVideoPromptFragment(sceneContext, {
+    return translateVideoPromptFragment(sceneContext, {
       subject: sequencePlan?.canonicalSubject,
       canonicalSubject: sequencePlan?.canonicalSubject,
       universe,
-    })}`;
+    });
+  }
+
+  if (visualSceneFragments.length) {
+    const translatedVisualScene = normalizePromptList(
+      visualSceneFragments.map((fragment) => translateVideoPromptFragment(fragment, {
+        subject: sequencePlan?.canonicalSubject,
+        canonicalSubject: sequencePlan?.canonicalSubject,
+        universe,
+      }))
+    );
+    const base = translatedVisualScene.join(', ');
+    return styleHint ? `${base}, ${styleHint}` : base;
   }
 
   const fallbackLocks = extractStableSceneFragments(basePrompt, motionProfile);
@@ -314,7 +536,7 @@ function buildSceneSentence(basePrompt = '', sequencePlan = {}, referenceAnalysi
   );
 
   if (englishLocks.length) {
-    const base = `stable scene and composition: ${englishLocks.join(', ')}`;
+    const base = englishLocks.join(', ');
     return styleHint ? `${base}, ${styleHint}` : base;
   }
 
@@ -322,12 +544,12 @@ function buildSceneSentence(basePrompt = '', sequencePlan = {}, referenceAnalysi
     String(sequencePlan?.providerUsed || '').trim() === 'janus'
     && referenceAnalysis?.scene?.sceneType
   ) {
-    return `stable scene and composition: coherent ${String(referenceAnalysis.scene.sceneType).trim().toLowerCase()} scene, main subject clearly visible`;
+    return `coherent ${String(referenceAnalysis.scene.sceneType).trim().toLowerCase()} scene, main subject clearly visible`;
   }
 
   return styleHint
-    ? `stable scene and composition: coherent framing, main subject clearly visible, ${styleHint}`
-    : 'stable scene and composition: coherent framing, main subject clearly visible';
+    ? `coherent framing, main subject clearly visible, ${styleHint}`
+    : 'coherent framing, main subject clearly visible';
 }
 
 function sanitizeWikidataArtifacts(value = '') {
@@ -346,7 +568,11 @@ function sanitizeWikidataArtifacts(value = '') {
 
 function buildIdentitySentence(sequencePlan = {}) {
   const motionProfile = String(sequencePlan?.motionProfile || 'generic').trim() || 'generic';
-  const locks = normalizePromptList(sequencePlan?.identityLocks || []);
+  const locks = normalizePromptList([
+    ...(sequencePlan?.identityLocks || []),
+    ...(sequencePlan?.continuityLocks || []),
+    ...(sequencePlan?.visualAnalysis?.continuityAnchors || []),
+  ]);
   const resolvedLocks = locks.length
     ? locks
     : resolveDefaultIdentityLocks(motionProfile);
@@ -360,11 +586,46 @@ function buildIdentitySentence(sequencePlan = {}) {
   return `keep ${translatedLocks.join(', ')}`;
 }
 
-function buildVariationPrompt(beat = {}) {
+function concretizeSubjectPrompt(value = '', subject = '') {
+  const normalizedValue = String(value || '').trim();
+  const normalizedSubject = String(subject || '').trim();
+  if (!normalizedValue) return '';
+  if (!normalizedSubject) return normalizedValue;
+  const subjectLookup = normalizeAsciiText(normalizedSubject).toLowerCase();
+  const valueLookup = normalizeAsciiText(normalizedValue).toLowerCase();
+  if (subjectLookup && valueLookup.includes(subjectLookup)) {
+    return normalizedValue;
+  }
+  if (/\bthe structure\b/i.test(normalizedValue)) {
+    return normalizedValue.replace(/\bthe structure\b/i, normalizedSubject);
+  }
+  if (/\bstructure\b/i.test(normalizedValue)) {
+    return normalizedValue.replace(/\bstructure\b/i, normalizedSubject);
+  }
+  if (/\b(sword|blade|hilt|armor|armour|gauntlet|cape|bow|arrow|shield|gun|pistol|bat|staff|horse|hoof|mane|face|hair|aura|energy|hall|torch|crown|helmet|fists?)\b/i.test(normalizedValue)) {
+    return `${normalizedSubject}, ${normalizedValue}`;
+  }
+  return normalizedValue;
+}
+
+function visualizeSoundCue(soundCue = '') {
+  const cue = normalizeVideoLookup(soundCue);
+  if (!cue) return '';
+  if (/\b(clang|ring|metal|sword)\b/.test(cue)) return 'brief metallic glint near the prop';
+  if (/\b(boom|impact|thud|slam)\b/.test(cue)) return 'small impact shock visible around the contact point';
+  if (/\b(whoosh|swish|rush)\b/.test(cue)) return 'motion trail visible around the movement';
+  if (/\b(crackle|spark|electric|thunder)\b/.test(cue)) return 'small electric sparks visible around the energy';
+  if (/\b(roar|shout|scream|yell)\b/.test(cue)) return 'open mouth or tense expression visible during the action';
+  if (/\b(step|footstep|hoofbeat)\b/.test(cue)) return 'dust kick or ground contact visible under the moving step';
+  return 'visible emphasis around the action';
+}
+
+function buildVariationPrompt(beat = {}, subject = '') {
   const resolvedBeat = normalizeSequenceBeat(beat);
   const clauses = normalizePromptList([
-    ...splitFramePromptClauses(resolvedBeat.variation || ''),
+    ...splitFramePromptClauses(concretizeSubjectPrompt(resolvedBeat.variation || '', subject)),
     ...resolvedBeat.rendererFocus,
+    ...(Array.isArray(resolvedBeat.soundCues) ? resolvedBeat.soundCues.map((cue) => visualizeSoundCue(cue)) : []),
   ]);
   return clauses.join(', ') || 'advance the pose by one visible step';
 }
@@ -492,15 +753,27 @@ function buildFramePromptPlan(basePrompt = '', {
     variation: 'faire avancer la posture d une etape visible',
   });
   const motionProfile = String(resolvedSequencePlan.motionProfile || 'generic').trim() || 'generic';
-  const subject = resolvePromptSubject(basePrompt, motionProfile);
+  const rawSubject = resolvePromptSubject(basePrompt, motionProfile);
+  const canonicalSubject = resolveCanonicalSubjectLabel(rawSubject, {
+    preferred: resolvedSequencePlan.canonicalSubject,
+    universe: resolvedSequencePlan.universe,
+  });
+  const sequencePlanForTranslation = {
+    ...resolvedSequencePlan,
+    canonicalSubject,
+  };
+  const concreteSubject = canonicalSubject || rawSubject;
   const defaultStructuralPrompt = resolveDefaultStructuralPrompt({
-    subject,
+    subject: concreteSubject,
     motionProfile,
     basePrompt,
   });
-  const sceneSentence = buildSceneSentence(basePrompt, resolvedSequencePlan, referenceAnalysis);
-  const continuitySentence = buildIdentitySentence(resolvedSequencePlan);
-  const checkpointStructuralSource = concreteBeat.structuralState || concreteBeat.variation;
+  const sceneSentence = buildSceneSentence(basePrompt, sequencePlanForTranslation, referenceAnalysis);
+  const continuitySentence = buildIdentitySentence(sequencePlanForTranslation);
+  const checkpointStructuralSource = concretizeSubjectPrompt(
+    concreteBeat.structuralState || concreteBeat.variation,
+    concreteSubject
+  );
   const hasDistinctCheckpointVariation = (
     concreteBeat.checkpoint
     && concreteBeat.variation
@@ -508,7 +781,8 @@ function buildFramePromptPlan(basePrompt = '', {
   );
   const promoteVariationToStructure = shouldPromoteVariationToStructure(concreteBeat, motionProfile);
   const anatomyHints = resolveFrameAnatomyHints(motionProfile, concreteBeat);
-  const canonicalSubject = String(resolvedSequencePlan.canonicalSubject || '').trim();
+  const structuralStateConcrete = concretizeSubjectPrompt(concreteBeat.structuralState, concreteSubject);
+  const variationConcrete = concretizeSubjectPrompt(concreteBeat.variation, concreteSubject);
 
   let structuralPrompt = defaultStructuralPrompt;
   // Si le beat vient du LLM anglais (variation en anglais), utiliser directement sans prefixe francais
@@ -518,18 +792,22 @@ function buildFramePromptPlan(basePrompt = '', {
   if (concreteBeat.checkpoint) {
     structuralPrompt = beatIsEnglish
       ? normalizeFramePromptFragment(checkpointStructuralSource)
-      : buildCheckpointStructuralPrompt(subject, checkpointStructuralSource, defaultStructuralPrompt);
-  } else if (concreteBeat.structuralState) {
+      : buildCheckpointStructuralPrompt(concreteSubject, checkpointStructuralSource, defaultStructuralPrompt);
+  } else if (structuralStateConcrete) {
     structuralPrompt = beatIsEnglish
-      ? normalizeFramePromptFragment(concreteBeat.structuralState)
-      : buildStructuralOverridePrompt(subject, concreteBeat.structuralState, defaultStructuralPrompt);
-  } else if (promoteVariationToStructure && concreteBeat.variation) {
+      ? normalizeFramePromptFragment(structuralStateConcrete)
+      : buildStructuralOverridePrompt(concreteSubject, structuralStateConcrete, defaultStructuralPrompt);
+  } else if (promoteVariationToStructure && variationConcrete) {
     structuralPrompt = beatIsEnglish
-      ? normalizeFramePromptFragment(concreteBeat.variation)
-      : buildStructuralOverridePrompt(subject, concreteBeat.variation, defaultStructuralPrompt);
+      ? normalizeFramePromptFragment(variationConcrete)
+      : buildStructuralOverridePrompt(concreteSubject, variationConcrete, defaultStructuralPrompt);
   }
 
-  let frameVariationPrompt = buildVariationPrompt(concreteBeat);
+  let frameVariationPrompt = buildVariationPrompt({
+    ...concreteBeat,
+    structuralState: structuralStateConcrete || concreteBeat.structuralState,
+    variation: variationConcrete || concreteBeat.variation,
+  }, concreteSubject);
   if (concreteBeat.checkpoint && !hasDistinctCheckpointVariation) {
     frameVariationPrompt = buildCheckpointVariationPrompt(checkpointStructuralSource);
   }
@@ -538,36 +816,34 @@ function buildFramePromptPlan(basePrompt = '', {
     anatomyHints.length ? `clear anatomy: ${anatomyHints.join(', ')}` : '',
   ]).join('. ');
   let translatedStructuralPrompt = translateVideoPromptFragment(structuralPrompt, {
-    subject,
+    subject: concreteSubject,
     canonicalSubject,
-    universe: resolvedSequencePlan.universe,
+    universe: sequencePlanForTranslation.universe,
   });
   if (
-    subject
-    && !normalizeAsciiText(translatedStructuralPrompt).toLowerCase().includes(normalizeAsciiText(subject).toLowerCase())
+    concreteSubject
+    && !normalizeAsciiText(translatedStructuralPrompt).toLowerCase().includes(normalizeAsciiText(concreteSubject).toLowerCase())
   ) {
-    translatedStructuralPrompt = `${subject}, ${translatedStructuralPrompt}`;
+    translatedStructuralPrompt = `${concreteSubject}, ${translatedStructuralPrompt}`;
   }
   const translatedStableIdentityPrompt = translateVideoPromptFragment([sceneSentence, continuitySentence].filter(Boolean).join('. '), {
-    subject,
+    subject: concreteSubject,
     canonicalSubject,
-    universe: resolvedSequencePlan.universe,
+    universe: sequencePlanForTranslation.universe,
   });
   const translatedFrameVariationPrompt = translateVideoPromptFragment(frameActionPrompt || frameVariationPrompt, {
-    subject,
+    subject: concreteSubject,
     canonicalSubject,
-    universe: resolvedSequencePlan.universe,
+    universe: sequencePlanForTranslation.universe,
   });
 
   return {
     structuralPrompt: translatedStructuralPrompt,
     stableIdentityPrompt: translatedStableIdentityPrompt,
     frameVariationPrompt: translatedFrameVariationPrompt,
-    prompt: transliterateForSd(`stable base structure: ${translatedStructuralPrompt}`),
-    prompt_2: transliterateForSd(sanitizeWikidataArtifacts(translatedStableIdentityPrompt)),
-    prompt_3: transliterateForSd(concreteBeat.checkpoint
-      ? `visual checkpoint of this frame: ${translatedFrameVariationPrompt}`
-      : `visible change in this frame: ${translatedFrameVariationPrompt}`),
+    prompt: transliterateForSd(`${SD3_PROMPT_LABELS.prompt}: ${translatedStructuralPrompt}`),
+    prompt_2: transliterateForSd(`${SD3_PROMPT_LABELS.prompt2}: ${sanitizeWikidataArtifacts(translatedStableIdentityPrompt)}`),
+    prompt_3: transliterateForSd(`${SD3_PROMPT_LABELS.prompt3}: ${translatedFrameVariationPrompt}`),
     negative_prompt_video: 'text, watermark, caption, subtitle, label, signature, logo, letters, words, writing, inscription',
   };
 }

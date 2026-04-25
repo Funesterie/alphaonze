@@ -70,6 +70,29 @@ function normalizeSequenceBeat(beat = {}, fallbackLabel = 'continuite') {
     variation,
     checkpoint: Boolean(beat?.checkpoint),
     rendererFocus: normalizePromptList(beat?.rendererFocus || []),
+    soundCue: normalizeFramePromptFragment(
+      beat?.soundCue !== undefined
+        ? beat.soundCue
+        : beat?.sound_cue
+    ),
+    soundCues: normalizePromptList([
+      ...(Array.isArray(beat?.soundCues) ? beat.soundCues : []),
+      ...(Array.isArray(beat?.sound_cues) ? beat.sound_cues : []),
+      beat?.soundCue,
+      beat?.sound_cue,
+    ]),
+    continuityLock: normalizeFramePromptFragment(
+      beat?.continuityLock !== undefined
+        ? beat.continuityLock
+        : beat?.continuity_lock
+    ),
+    continuityLocks: normalizePromptList([
+      ...(Array.isArray(beat?.continuityLocks) ? beat.continuityLocks : []),
+      ...(Array.isArray(beat?.continuity_locks) ? beat.continuity_locks : []),
+      beat?.continuityLock,
+      beat?.continuity_lock,
+    ]),
+    sceneContext: normalizeFramePromptFragment(beat?.sceneContext || beat?.scene_context || ''),
   };
 }
 

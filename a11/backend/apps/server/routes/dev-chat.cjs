@@ -18,16 +18,11 @@ function validatePrompt(prompt) {
 function fallbackIsAdminRequest(req) {
   const configuredAdminToken = String(process.env.NEZ_ADMIN_TOKEN || '').trim();
   const adminHeaders = [
-    req?.headers?.['x-nez-admin'],
     req?.headers?.['x-nez-admin-token'],
     req?.headers?.['x-admin-token'],
   ].map((value) => String(value || '').trim()).filter(Boolean);
 
   if (configuredAdminToken && adminHeaders.includes(configuredAdminToken)) {
-    return true;
-  }
-
-  if (adminHeaders.some((value) => ['1', 'true', 'yes', 'admin'].includes(value.toLowerCase()))) {
     return true;
   }
 
@@ -46,8 +41,7 @@ function fallbackIsAdminRequest(req) {
   }
 
   const bearer = String(req?.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const directToken = String(req?.headers?.['x-nez-token'] || '').trim();
-  return allowedTokens.includes(bearer) || allowedTokens.includes(directToken);
+  return allowedTokens.includes(bearer);
 }
 
 module.exports = function({ app, openaiClient, uploadBufferToR2, detectImageIntent, isAdminRequest = fallbackIsAdminRequest }) {
@@ -72,8 +66,9 @@ module.exports = function({ app, openaiClient, uploadBufferToR2, detectImageInte
             headers: {
               'Content-Type': 'application/json',
               ...(typeof req.headers?.authorization === 'string' ? { authorization: req.headers.authorization } : {}),
-              ...(typeof req.headers?.['x-nez-admin'] === 'string' ? { 'x-nez-admin': req.headers['x-nez-admin'] } : {}),
-              ...(typeof req.headers?.['x-nez-token'] === 'string' ? { 'x-nez-token': req.headers['x-nez-token'] } : {}),
+              ...(typeof req.headers?.['x-nez-admin-token'] === 'string' ? { 'x-nez-admin-token': req.headers['x-nez-admin-token'] } : {}),
+              ...(typeof req.headers?.['x-qflush-token'] === 'string' ? { 'x-qflush-token': req.headers['x-qflush-token'] } : {}),
+              ...(typeof req.headers?.['x-dragon-token'] === 'string' ? { 'x-dragon-token': req.headers['x-dragon-token'] } : {}),
             },
             body: JSON.stringify({ prompt }),
           });

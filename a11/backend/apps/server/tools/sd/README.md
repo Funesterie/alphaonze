@@ -52,6 +52,27 @@ Those heavy assets stay in the separate local `llm` workspace on Windows.
   uses `runwayml/stable-diffusion-v1-5`.
 - You can still override everything with `SD_MODEL_ID=<hugging-face-repo-id>`.
 
+## RTX 5070 local tuning
+
+For the current Windows local box with an RTX 5070 12 GB, keep Janus on CPU and
+run SD through the Torch/CUDA path:
+
+```env
+SD_MODEL_PROFILE=sd35
+SD_DEVICE=cuda
+SD_TORCH_DTYPE=float16
+A11_SD_GPU_SETTLE_MS=1200
+SD_SD3_EXECUTION_MODE=model_cpu_offload
+SD_ENABLE_ATTENTION_SLICING=true
+SD_ENABLE_CHANNELS_LAST=true
+SD_ENABLE_XFORMERS=false
+```
+
+`model_cpu_offload` is the balanced SD3.5 mode for 12 GB VRAM on Windows: much
+less conservative than sequential offload, but still safer than loading the
+whole SD3 stack directly onto the GPU. The 1200 ms settle gives Ollama and any
+Janus worker time to release VRAM before SD starts.
+
 ## Optional Python packages
 
 If you want to run the script directly, install at least:

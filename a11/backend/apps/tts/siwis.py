@@ -15,6 +15,7 @@ import uuid
 import wave
 import math
 from pathlib import Path
+from bind_config import resolve_bind_host
 
 
 ROOT_DIR = os.path.dirname(__file__)
@@ -60,6 +61,7 @@ PIPER_LIB_DIR = _first_existing_path([
     ROOT_DIR,
 ])
 OUT_DIR = os.path.join(ROOT_DIR, "out")
+BIND_HOST = resolve_bind_host(os.environ)
 
 print(f"[TTS] PORT: {PORT}")
 print(f"[TTS] MODEL_PATH: {MODEL_PATH}")
@@ -560,8 +562,8 @@ class TTSHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"[TTS] siwis.py (Piper) lancé sur http://0.0.0.0:{PORT} ...")
-    server = HTTPServer(("0.0.0.0", PORT), TTSHandler)
+    print(f"[TTS] siwis.py (Piper) lancé sur http://{BIND_HOST}:{PORT} ...")
+    server = HTTPServer((BIND_HOST, PORT), TTSHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
