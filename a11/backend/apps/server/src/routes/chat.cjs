@@ -4,6 +4,7 @@ const express = require('express');
 const http = require('node:http');
 const https = require('node:https');
 const { URL } = require('node:url');
+const { withOllamaQueue, getQueueStats } = require('../core/ollama-queue.cjs');
 
 let OpenAI = null;
 try {
@@ -256,11 +257,33 @@ function createChatRouter(overrides = {}) {
 
       console.log(`[A11][chat] Intention: fallback LLM | message: ${userMessage}`);
 
-      // Priorite 1 : Ollama local
-      const ollamaText = await callOllama(userMessage);
-      if (ollamaText) {
-        const { model } = getOllamaConfig();
-        return res.json({ ok: true, mode: 'ollama', model, assistant: ollamaText });
+      // Priorite 1 : Ollama local (via queue pour éviter contention)
+      try {
+        const ollamaText = await withOllamaQueue(
+          () => callOllama(userMessage),
+          'chat'
+        );
+        if (ollamaText) {
+          const { model } = getOllamaConfig();
+          return res.json({ ok: true, mode: 'ollama', model, assistant: ollamaText });
+        }
+      } catch (qErr) {
+        if (qErr.statusCode === 503) {
+          return res.status(503).json({
+            ok: false,
+            error: 'ollama_busy',
+            message: 'Trop de requêtes en cours, réessaie dans quelques secondes.',
+            retryAfter: qErr.retryAfter || 10,
+          });
+        }
+        if (qErr.statusCode === 504) {
+          return res.status(504).json({
+            ok: false,
+            error: 'ollama_timeout',
+            message: 'Ollama n\'a pas répondu à temps.',
+          });
+        }
+        // Autre erreur → fallback OpenAI
       }
 
       // Priorite 2 : OpenAI (fallback cloud)
@@ -312,7 +335,21 @@ function createChatRouter(overrides = {}) {
     res.flushHeaders();
 
     console.log(`[A11][chat/stream] message: ${userMessage}`);
+
+    // Vérifier la queue avant de démarrer le stream
+    const stats = getQueueStats();
+    if (stats.active >= stats.maxConcurrent && stats.queued >= stats.maxQueueSize) {
+      res.write('data: {"error":"ollama_busy","retryAfter":10}\n\n');
+      res.end();
+      return;
+    }
+
     streamOllama(userMessage, res);
+  });
+
+  // --- Route stats queue ---
+  router.get('/chat/queue-stats', (req, res) => {
+    res.json({ ok: true, queue: getQueueStats() });
   });
 
   return router;
