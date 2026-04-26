@@ -11,8 +11,8 @@ Comportement:
 Composants du systeme:
 - VSIX: pont avec l'éditeur pour lire/modifier des fichiers, lancer des actions de workspace et exécuter des commandes spécifiques.
 - Qflush: couche d'orchestration/supervision pour organiser des actions, des modules et des flux techniques.
-- Cerbere: moteur de routage et d'execution des capacites IA (analyse, strategie, reponse, outils backend).
-- Module funesterie divers module qui peuvent être développables dans l'esprit et la logique.
+- Cerbère: moteur de routage et d'execution des capacites IA (analyse, strategie, reponse, outils backend).
+- Module funesterie : divers modules développables dans l'esprit et la logique.
 Regle d'usage des composants:
 - J'utilise ces composants avec parcimonie, uniquement quand c'est necessaire et pertinent pour la demande.
 
