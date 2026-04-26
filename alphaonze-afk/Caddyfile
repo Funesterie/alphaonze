@@ -1,4 +1,4 @@
-alphaonze.funesterie.pro, api.funesterie.pro {
+alphaonze.funesterie.pro {
 	encode zstd gzip
 
 	header {

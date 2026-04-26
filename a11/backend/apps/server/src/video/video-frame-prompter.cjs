@@ -3,7 +3,6 @@
 // avant tout appel SD.
 
 const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
-const { detectSubjectType } = require('./video-sequence-heuristic.cjs');
 
 const FRAME_PROMPTER_MOTION_LABELS = Object.freeze({
   walk_cycle: 'walk cycle',
@@ -17,14 +16,6 @@ const FRAME_PROMPTER_MOTION_LABELS = Object.freeze({
   gesture_loop: 'gesture loop',
   subtle_loop: 'subtle idle loop',
   generic: 'generic motion',
-});
-
-const FRAME_PROMPTER_ANATOMY_HINTS = Object.freeze({
-  horse: 'Subject is a horse/pony with 4 legs. Never mention human legs or arms. Use: front leg, back leg, hoof, mane, withers, saddle.',
-  quadruped: 'Subject is a 4-legged animal. Never mention human legs or arms. Use: front leg, back leg, paw.',
-  dragon: 'Subject is a dragon with 4 legs and wings.',
-  humanoid: 'Subject is a human with 2 legs and 2 arms.',
-  small_animal: 'Subject is a small 4-legged animal.',
 });
 
 const FRAME_PROMPTER_FALLBACK_FRAME = Object.freeze({
@@ -206,8 +197,6 @@ function buildFramePrompterInput({
   const normalizedVisualContext = normalizeText(visualContext);
   const normalizedIdentityLocks = normalizeStringList(identityLocks);
   const motionLabel = FRAME_PROMPTER_MOTION_LABELS[motionProfile] || normalizeText(motionProfile);
-  const subjectType = detectSubjectType([normalizedSubject, normalizedPrompt].filter(Boolean).join(' '));
-  const anatomyHint = FRAME_PROMPTER_ANATOMY_HINTS[subjectType] || '';
   const referenceImageSize = (
     Number(referenceImageWidth || 0) > 0
     && Number(referenceImageHeight || 0) > 0
@@ -257,11 +246,19 @@ function validateFramePrompterResponse(response, { subject = '' } = {}) {
   if (!response || typeof response !== 'object') return false;
   const frames = extractFrameEntries(response).map((frame) => normalizeFrameEntry(frame, { subject }));
   if (frames.length < 1) return false;
-  // Validation assouplie : on vérifie juste que chaque frame a un prompt non vide.
-  // La vérification stricte du sujet et du mot "structure" rejetait trop souvent
-  // les réponses de modèles locaux (gemma4, llama3) qui produisent du JSON valide
-  // mais ne nomment pas toujours le sujet mot pour mot dans chaque frame.
-  return frames.every((frame) => Boolean(frame.prompt));
+  // Validation assouplie : on vérifie que chaque frame a un prompt non vide.
+  // On rejette uniquement les prompts qui contiennent \bstructure\b sans nommer
+  // le sujet — ce sont des placeholders inutilisables que concretizeFramePrompt
+  // ne peut pas corriger (pas de cible concrète dans le prompt).
+  // Les modèles locaux (gemma4, llama3) qui produisent un vrai prompt descriptif
+  // sans répéter le sujet mot pour mot sont acceptés.
+  return frames.every((frame) => {
+    if (!frame.prompt) return false;
+    if (/\bstructure\b/i.test(frame.prompt) && !framePromptMentionsSubject(frame.prompt, subject)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function padOrTrimFrames(frames, targetCount, { subject = '' } = {}) {
