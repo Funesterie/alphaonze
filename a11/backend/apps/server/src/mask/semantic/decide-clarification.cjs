@@ -24,6 +24,16 @@ function buildQuestion(first, second) {
       return "Tu veux une image, ou tu veux que je produise du code/script ?";
     case 'chat.reply::web.search':
       return "Tu veux une reponse directe, ou tu veux que je fasse une recherche web ?";
+    case 'image.generate::video.generate':
+      return "Tu veux une image fixe, ou une video/animation ?";
+    case 'code.python.generate::web.search':
+      return "Tu veux du code Python, ou des informations sur le sujet ?";
+    case 'video.generate::web.search':
+      return "Tu veux que je genere une video, ou que je cherche des infos sur le sujet ?";
+    case 'chat.reply::image.generate':
+      return "Tu veux juste discuter, ou tu veux que je genere une image ?";
+    case 'chat.reply::code.python.generate':
+      return "Tu veux une explication, ou du code Python fonctionnel ?";
     default:
       return `Je vois deux interpretations possibles: ${first.label} ou ${second.label}. Tu veux laquelle ?`;
   }
@@ -79,12 +89,29 @@ function decideClarification(scoring) {
     && second.rawScore >= 1
   );
 
+  // Détecter plus de cas ambigus nécessitant clarification
+  const hasMultipleStrongIntents = Boolean(
+    first
+    && second
+    && first.rawScore >= 2.0
+    && second.rawScore >= 1.5
+    && second.rawScore >= first.rawScore * 0.65
+  );
+
+  const hasConflictingSignals = Boolean(
+    scoring.summary?.actionSignal
+    && scoring.summary?.questionSignal
+    && first.rawScore > 0
+    && second.rawScore > 0
+  );
+
   const shouldClarify = Boolean(
-    (scoring.summary?.shouldClarifySuggestion || shouldClarifyImageSearchPair)
+    (scoring.summary?.shouldClarifySuggestion || shouldClarifyImageSearchPair || hasMultipleStrongIntents || hasConflictingSignals)
     && first
     && second
     && first.type !== 'chat.reply'
     && second.type !== first.type
+    && first.rawScore >= 0.8 // Seuil minimum pour éviter les faux positifs
   );
 
   const options = shouldClarify ? buildOptionsForIntents(first, second) : [];
