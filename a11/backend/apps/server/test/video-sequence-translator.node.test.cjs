@@ -19,9 +19,8 @@ test('buildFramePromptPlan preserves early subject identity cues from the compil
     }
   );
 
-  assert.match(String(plan.prompt || ''), /main subject pose continuity: mario/i);
+  assert.match(String(plan.prompt || ''), /mario/i);
   assert.match(String(plan.prompt || ''), /weight on the left leg/i);
-  assert.match(String(plan.prompt_2 || ''), /scene camera decor continuity:/i);
   assert.match(String(plan.prompt_2 || ''), /in front of a castle/i);
   assert.match(String(plan.prompt_2 || ''), /keep same face, same outfit, same background/i);
   assert.doesNotMatch(String(plan.prompt || ''), /\bpoids\b|\bjambe\b|\bpied\b/i);
@@ -44,7 +43,6 @@ test('buildFramePromptPlan keeps true Zelda scene locks and filters instruction-
   );
 
   assert.match(String(plan.prompt_2 || ''), /on a path in the forest/i);
-  assert.match(String(plan.prompt_2 || ''), /scene camera decor continuity:/i);
   assert.doesNotMatch(String(plan.prompt_2 || ''), /Rester cohérent avec l univers/i);
   assert.doesNotMatch(String(plan.prompt_2 || ''), /illustration fantasy nette/i);
   assert.doesNotMatch(String(plan.prompt_2 || ''), /sujet unique bien cadré/i);
@@ -73,14 +71,11 @@ test('buildFramePromptPlan keeps knight and golden sword on the main layer and o
     }
   );
 
-  assert.match(String(plan.prompt || ''), /main subject pose continuity:/i);
   assert.match(String(plan.prompt || ''), /knight in dark armor/i);
   assert.match(String(plan.prompt || ''), /golden sword/i);
-  assert.match(String(plan.prompt_2 || ''), /scene camera decor continuity:/i);
   assert.match(String(plan.prompt_2 || ''), /torch-lit stone hall/i);
   assert.match(String(plan.prompt_2 || ''), /same dark armor/i);
   assert.match(String(plan.prompt_2 || ''), /same golden sword/i);
-  assert.match(String(plan.prompt_3 || ''), /visible frame delta anatomy prop detail:/i);
   assert.match(String(plan.prompt_3 || ''), /golden sword hilt clearly visible/i);
   assert.match(String(plan.prompt_3 || ''), /dark gauntlet near the blade/i);
   assert.match(String(plan.prompt_3 || ''), /clear anatomy:/i);
@@ -132,7 +127,7 @@ test('buildFramePromptPlan derives an English subject anchor from a French compi
     }
   );
 
-  assert.match(String(plan.prompt || ''), /main subject pose continuity: mario/i);
+  assert.match(String(plan.prompt || ''), /mario/i);
   assert.match(String(plan.prompt_2 || ''), /fantasy path|on a path/i);
   assert.doesNotMatch(String(plan.prompt || ''), /\bheroique\b|\bsentier\b|\bfantastique\b|\bsur\b/i);
   assert.doesNotMatch(String(plan.prompt_2 || ''), /\bsentier\b|\bfantastique\b|\bsur\b/i);

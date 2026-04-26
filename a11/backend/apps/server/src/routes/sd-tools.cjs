@@ -746,7 +746,11 @@ function createSdToolsRouter(overrides = {}) {
       || ''
     ).trim();
 
-    const promptAlreadyCompiled = requestBody?.prompt_prebuilt === true || requestBody?.skip_prompt_enrichment === true;
+    const promptAlreadyCompiled = (
+      requestBody?.prompt_prebuilt === true
+      || requestBody?.skip_prompt_enrichment === true
+      || requestBody?.task_type === 'video_frame_sequence'
+    );
     const inferredPromptAlreadyCompiled = !promptAlreadyCompiled && looksLikeCompiledSdPrompt(rawPrompt);
 
     let semanticCompiledState = null;

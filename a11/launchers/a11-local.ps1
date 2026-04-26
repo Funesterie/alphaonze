@@ -51,26 +51,30 @@ function Remove-DirectoryTreeBestEffort {
   try {
     Remove-Item -LiteralPath $resolvedPath -Recurse -Force -ErrorAction Stop
     return
-  } catch {
+  }
+  catch {
     Write-WarnLine "Best-effort cleanup for package root after Remove-Item failure: $resolvedPath"
   }
 
   Get-ChildItem -LiteralPath $resolvedPath -Force -Recurse -ErrorAction SilentlyContinue |
-    Sort-Object FullName -Descending |
-    ForEach-Object {
-      try {
-        if ($_.PSIsContainer) {
-          Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        } else {
-          Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
-        }
-      } catch {
+  Sort-Object FullName -Descending |
+  ForEach-Object {
+    try {
+      if ($_.PSIsContainer) {
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      else {
+        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
       }
     }
+    catch {
+    }
+  }
 
   try {
     Remove-Item -LiteralPath $resolvedPath -Recurse -Force -ErrorAction SilentlyContinue
-  } catch {
+  }
+  catch {
   }
 
   if (Test-Path -LiteralPath $resolvedPath) {
@@ -86,35 +90,35 @@ function Resolve-DesktopBrowserExecutable {
 
   if ($preferred -eq 'chrome') {
     $candidates.Add([pscustomobject]@{
-      Name = 'chrome'
-      Paths = @(
+        Name     = 'chrome'
+        Paths    = @(
+          (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+          (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+          (Join-Path $env:LocalAppData 'Google\Chrome\Application\chrome.exe')
+        )
+        Commands = @('chrome.exe', 'chrome')
+      })
+  }
+
+  $candidates.Add([pscustomobject]@{
+      Name     = 'edge'
+      Paths    = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path $env:LocalAppData 'Microsoft\Edge\Application\msedge.exe')
+      )
+      Commands = @('msedge.exe', 'msedge')
+    })
+
+  $candidates.Add([pscustomobject]@{
+      Name     = 'chrome'
+      Paths    = @(
         (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
         (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
         (Join-Path $env:LocalAppData 'Google\Chrome\Application\chrome.exe')
       )
       Commands = @('chrome.exe', 'chrome')
     })
-  }
-
-  $candidates.Add([pscustomobject]@{
-    Name = 'edge'
-    Paths = @(
-      (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
-      (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
-      (Join-Path $env:LocalAppData 'Microsoft\Edge\Application\msedge.exe')
-    )
-    Commands = @('msedge.exe', 'msedge')
-  })
-
-  $candidates.Add([pscustomobject]@{
-    Name = 'chrome'
-    Paths = @(
-      (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
-      (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-      (Join-Path $env:LocalAppData 'Google\Chrome\Application\chrome.exe')
-    )
-    Commands = @('chrome.exe', 'chrome')
-  })
 
   foreach ($candidate in $candidates) {
     foreach ($path in $candidate.Paths) {
@@ -232,7 +236,8 @@ function Resolve-CommandExecutable {
 
   try {
     return (Get-Command $Name -ErrorAction Stop).Source
-  } catch {
+  }
+  catch {
     return ''
   }
 }
@@ -275,7 +280,8 @@ function Get-ListeningProcessId {
     if ($connection) {
       return [int]$connection.OwningProcess
     }
-  } catch {
+  }
+  catch {
   }
 
   try {
@@ -283,7 +289,8 @@ function Get-ListeningProcessId {
     if ($match -and $match.Matches.Count -gt 0) {
       return [int]$match.Matches[0].Groups[1].Value
     }
-  } catch {
+  }
+  catch {
   }
 
   return $null
@@ -316,7 +323,8 @@ function Test-HttpReady {
     $webRequestParams = Get-WebRequestCompatParameters
     $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec $TimeoutSec @webRequestParams
     return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500)
-  } catch {
+  }
+  catch {
     return $false
   }
 }
@@ -346,13 +354,15 @@ function Test-UiReady {
         if ($null -ne $json.embeddedUiReady) {
           return [bool]$json.embeddedUiReady
         }
-      } catch {
+      }
+      catch {
         return $false
       }
     }
 
     return ($body -match 'id=["'']root["'']')
-  } catch {
+  }
+  catch {
     return $false
   }
 }
@@ -361,7 +371,8 @@ function Get-AliveProcess {
   param([int]$ProcessId)
   try {
     return Get-Process -Id $ProcessId -ErrorAction Stop
-  } catch {
+  }
+  catch {
     return $null
   }
 }
@@ -375,7 +386,8 @@ function Get-ProcessMetadata {
 
   try {
     return Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
-  } catch {
+  }
+  catch {
     return $null
   }
 }
@@ -400,7 +412,8 @@ function Resolve-ServiceArgumentList {
       if (Test-Path -LiteralPath $raw) {
         $resolvedPath = [System.IO.Path]::GetFullPath($raw)
       }
-    } elseif ($Service.WorkingDirectory) {
+    }
+    elseif ($Service.WorkingDirectory) {
       $candidate = Join-Path $Service.WorkingDirectory $raw
       if (Test-Path -LiteralPath $candidate) {
         $resolvedPath = [System.IO.Path]::GetFullPath($candidate)
@@ -409,7 +422,8 @@ function Resolve-ServiceArgumentList {
 
     if ($resolvedPath) {
       $resolved.Add($resolvedPath)
-    } else {
+    }
+    else {
       $resolved.Add($raw)
     }
   }
@@ -478,7 +492,8 @@ function Test-ServiceOwnedProcess {
   $serviceExe = ''
   try {
     $serviceExe = [System.IO.Path]::GetFullPath([string]$Service.FilePath)
-  } catch {
+  }
+  catch {
     $serviceExe = [string]$Service.FilePath
   }
 
@@ -568,7 +583,8 @@ function Stop-ProcessTree {
   if (-not $ProcessId) { return }
   try {
     & taskkill /PID $ProcessId /T /F | Out-Null
-  } catch {
+  }
+  catch {
     Write-WarnLine "taskkill failed for PID ${ProcessId}: $($_.Exception.Message)"
   }
 }
@@ -588,7 +604,8 @@ function Use-ProcessEnvironment {
 
   try {
     & $Action
-  } finally {
+  }
+  finally {
     foreach ($entry in $previous.GetEnumerator()) {
       [Environment]::SetEnvironmentVariable([string]$entry.Key, $entry.Value, 'Process')
     }
@@ -601,7 +618,7 @@ function Load-State {
   if (-not (Test-Path $Path)) {
     return @{
       updatedAt = $null
-      services = @{}
+      services  = @{}
     }
   }
 
@@ -616,13 +633,14 @@ function Load-State {
     }
     return @{
       updatedAt = $data.updatedAt
-      services = $services
+      services  = $services
     }
-  } catch {
+  }
+  catch {
     Write-WarnLine "State file unreadable, reset: $Path"
     return @{
       updatedAt = $null
-      services = @{}
+      services  = @{}
     }
   }
 }
@@ -635,7 +653,7 @@ function Save-State {
 
   $payload = @{
     updatedAt = (Get-Date).ToString('o')
-    services = $State.services
+    services  = $State.services
   }
   $json = $payload | ConvertTo-Json -Depth 10
   $json | Set-Content -Path $Path -Encoding UTF8
@@ -660,14 +678,15 @@ function Load-OperationState {
     [void][int]::TryParse([string]$parsed.pid, [ref]$pid)
     if ($pid -gt 0 -and (Get-AliveProcess -ProcessId $pid)) {
       return [pscustomobject]@{
-        active = $true
-        command = [string]$parsed.command
-        pid = $pid
-        startedAt = [string]$parsed.startedAt
+        active     = $true
+        command    = [string]$parsed.command
+        pid        = $pid
+        startedAt  = [string]$parsed.startedAt
         configPath = [string]$parsed.configPath
       }
     }
-  } catch {
+  }
+  catch {
   }
 
   Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
@@ -682,10 +701,10 @@ function Save-OperationState {
   )
 
   $payload = @{
-    active = $true
-    command = $CommandName
-    pid = $PID
-    startedAt = (Get-Date).ToString('o')
+    active     = $true
+    command    = $CommandName
+    pid        = $PID
+    startedAt  = (Get-Date).ToString('o')
     configPath = $ConfigPath
   }
   $payload | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Path -Encoding UTF8
@@ -715,7 +734,8 @@ function Save-LauncherSnapshot {
 
   try {
     Write-AtomicJsonFile -Path $Path -Payload $Snapshot
-  } catch {
+  }
+  catch {
   }
 }
 
@@ -741,15 +761,16 @@ function Set-LauncherProgress {
 
   try {
     Write-AtomicJsonFile -Path $Path -Payload @{
-      active = $true
-      phase = $Phase
-      message = $Message
-      serviceKey = $ServiceKey
+      active       = $true
+      phase        = $Phase
+      message      = $Message
+      serviceKey   = $ServiceKey
       serviceLabel = $ServiceLabel
-      updatedAt = (Get-Date).ToString('o')
-      pid = $PID
+      updatedAt    = (Get-Date).ToString('o')
+      pid          = $PID
     }
-  } catch {
+  }
+  catch {
   }
 }
 
@@ -762,7 +783,8 @@ function Get-LauncherProgress {
 
   try {
     return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -ErrorAction Stop
-  } catch {
+  }
+  catch {
     return $null
   }
 }
@@ -779,7 +801,8 @@ function Get-ActiveLauncherOperations {
   $scriptPath = ''
   try {
     $scriptPath = [System.IO.Path]::GetFullPath($PSCommandPath).ToLowerInvariant()
-  } catch {
+  }
+  catch {
     $scriptPath = [string]$PSCommandPath
   }
 
@@ -803,18 +826,19 @@ function Get-ActiveLauncherOperations {
         if ($processInfo.CreationDate) {
           try {
             $startedAt = ([System.Management.ManagementDateTimeConverter]::ToDateTime($processInfo.CreationDate)).ToString('o')
-          } catch {
+          }
+          catch {
             $startedAt = [string]$processInfo.CreationDate
           }
         }
 
         $results.Add([pscustomobject]@{
-          active = $true
-          command = $commandName
-          pid = [int]$processInfo.ProcessId
-          startedAt = $startedAt
-          commandLine = $commandLine
-        })
+            active      = $true
+            command     = $commandName
+            pid         = [int]$processInfo.ProcessId
+            startedAt   = $startedAt
+            commandLine = $commandLine
+          })
         break
       }
     }
@@ -859,7 +883,8 @@ function Invoke-WithOperationLock {
   try {
     & $Action
     return $true
-  } finally {
+  }
+  finally {
     Clear-OperationState -Path $Path -CommandName $CommandName
     Clear-LauncherProgress -Path $progressFile
   }
@@ -882,13 +907,13 @@ function Start-ManagedProcess {
     }
     $resolvedArgumentList = Resolve-ServiceArgumentList -Service $Service
     $startParams = @{
-      FilePath = $Service.FilePath
-      ArgumentList = $resolvedArgumentList
-      WorkingDirectory = $Service.WorkingDirectory
+      FilePath               = $Service.FilePath
+      ArgumentList           = $resolvedArgumentList
+      WorkingDirectory       = $Service.WorkingDirectory
       RedirectStandardOutput = $stdoutPath
-      RedirectStandardError = $stderrPath
-      PassThru = $true
-      WindowStyle = $windowStyle
+      RedirectStandardError  = $stderrPath
+      PassThru               = $true
+      WindowStyle            = $windowStyle
     }
     Start-Process @startParams
   }
@@ -896,9 +921,9 @@ function Start-ManagedProcess {
   $process = Use-ProcessEnvironment -Environment $Service.Environment -Action $action
   Write-Info "$($Service.DisplayName) demarre (PID $($process.Id)). Logs: $stdoutPath"
   return [pscustomobject]@{
-    Pid = $process.Id
-    Stdout = $stdoutPath
-    Stderr = $stderrPath
+    Pid       = $process.Id
+    Stdout    = $stdoutPath
+    Stderr    = $stderrPath
     StartedAt = (Get-Date).ToString('o')
   }
 }
@@ -927,7 +952,8 @@ function Wait-UntilReady {
       if (Test-HttpReady -Url $Service.HealthUrl -TimeoutSec 3) {
         return $true
       }
-    } elseif ($portReady) {
+    }
+    elseif ($portReady) {
       return $true
     }
 
@@ -956,7 +982,8 @@ function Invoke-SynchronousCommand {
         $commandExitCode = 0
       }
       return [int]$commandExitCode
-    } finally {
+    }
+    finally {
       Pop-Location
     }
   }
@@ -994,14 +1021,14 @@ function Ensure-EmbeddedUiBuild {
     -FilePath $NpmCommand `
     -ArgumentList @('run', 'build') `
     -Environment @{
-      VITE_API_BASE = '/api'
-      VITE_API_BASE_URL = '/api'
-      VITE_API_URL = '/api'
-      VITE_A11_API_BASE_URL = '/api'
-      VITE_A11_LOCAL_API_BASE_URL = $LocalApiUrl
-      VITE_A11_ONLINE_API_BASE_URL = $PublicApiUrl
-      VITE_LLM_ROUTER_URL = ''
-    } `
+    VITE_API_BASE                = '/api'
+    VITE_API_BASE_URL            = '/api'
+    VITE_API_URL                 = '/api'
+    VITE_A11_API_BASE_URL        = '/api'
+    VITE_A11_LOCAL_API_BASE_URL  = $LocalApiUrl
+    VITE_A11_ONLINE_API_BASE_URL = $PublicApiUrl
+    VITE_LLM_ROUTER_URL          = ''
+  } `
     -Label 'Build frontend embed'
 
   if (-not (Test-Path $WebDistDirectory)) {
@@ -1218,11 +1245,11 @@ function Build-ServiceDefinitions {
     -BaseDirectory $LauncherDirectory `
     -CommandName 'ffmpeg' `
     -CandidatePaths @(
-      (Join-Path $LauncherDirectory 'tools\ffmpeg\bin\ffmpeg.exe'),
-      'C:\Program Files\BlueStacks_nxt\ffmpeg.exe',
-      'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
-      'C:\ffmpeg\bin\ffmpeg.exe'
-    )
+    (Join-Path $LauncherDirectory 'tools\ffmpeg\bin\ffmpeg.exe'),
+    'C:\Program Files\BlueStacks_nxt\ffmpeg.exe',
+    'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
+    'C:\ffmpeg\bin\ffmpeg.exe'
+  )
 
   $enableBackend = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_BACKEND' '1') $true
   $enableTts = To-BoolValue (Get-ConfigValue $Config 'A11_ENABLE_TTS' '1') $true
@@ -1252,9 +1279,11 @@ function Build-ServiceDefinitions {
   if (-not $chatProviderMode) {
     if ($enableLlm) {
       $chatProviderMode = 'local'
-    } elseif ($openAiBaseUrl -or $openAiApiKey) {
+    }
+    elseif ($openAiBaseUrl -or $openAiApiKey) {
       $chatProviderMode = 'remote'
-    } else {
+    }
+    else {
       $chatProviderMode = 'local'
     }
   }
@@ -1279,62 +1308,62 @@ function Build-ServiceDefinitions {
   $services = @()
 
   $services += [pscustomobject]@{
-    Key = 'llm'
-    DisplayName = 'A11 Ollama Router'
-    Required = $true
-    Enabled = $effectiveEnableLlm
-    FilePath = $NodeCommand
-    WorkingDirectory = (Split-Path -Parent $llmRunner)
-    ArgumentList = @((Split-Path -Leaf $llmRunner))
-    Environment = @{
-      PORT = $llmPort
-      CERBERE_PORT = $llmPort
-      LLM_ROUTER_PORT = $llmPort
-      A11_LLM_PROVIDER = 'ollama'
-      A11_LLM_FALLBACK_PROVIDER = $llmFallbackProvider
-      OLLAMA_BASE = $ollamaBase
-      A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
-      A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
+    Key               = 'llm'
+    DisplayName       = 'A11 Ollama Router'
+    Required          = $true
+    Enabled           = $effectiveEnableLlm
+    FilePath          = $NodeCommand
+    WorkingDirectory  = (Split-Path -Parent $llmRunner)
+    ArgumentList      = @((Split-Path -Leaf $llmRunner))
+    Environment       = @{
+      PORT                       = $llmPort
+      CERBERE_PORT               = $llmPort
+      LLM_ROUTER_PORT            = $llmPort
+      A11_LLM_PROVIDER           = 'ollama'
+      A11_LLM_FALLBACK_PROVIDER  = $llmFallbackProvider
+      OLLAMA_BASE                = $ollamaBase
+      A11_OLLAMA_PRIMARY_MODEL   = $ollamaPrimaryModel
+      A11_OLLAMA_FALLBACK_MODEL  = $ollamaFallbackModel
       A11_LLM_REQUEST_TIMEOUT_MS = '90000'
-      OPENAI_API_KEY = ''
-      OPENAI_BASE_URL = ''
-      OPENAI_MODEL = ''
+      OPENAI_API_KEY             = ''
+      OPENAI_BASE_URL            = ''
+      OPENAI_MODEL               = ''
     }
-    Port = $llmPort
-    HealthUrl = "http://127.0.0.1:$llmPort/health"
-    HealthMode = 'http'
+    Port              = $llmPort
+    HealthUrl         = "http://127.0.0.1:$llmPort/health"
+    HealthMode        = 'http'
     ReadyWhenPortOpen = $true
     StartupTimeoutSec = $llmStartupTimeoutSec
-    LogKey = 'llm'
-    Issues = @(
+    LogKey            = 'llm'
+    Issues            = @(
       if (-not $NodeCommand) { 'Node command not found' }
       if (-not (Test-Path $llmRunner)) { "Missing LLM runner: $llmRunner" }
     ) | Where-Object { $_ }
   }
 
   $services += [pscustomobject]@{
-    Key = 'tts'
-    DisplayName = 'A11 TTS'
-    Required = $true
-    Enabled = $enableTts
-    FilePath = $PythonCommand
-    WorkingDirectory = $ttsDir
-    ArgumentList = @('siwis.py')
-    Environment = @{
-      PORT = $ttsPort
-      BASE_URL = $LocalTtsUrl
-      MODEL_PATH = $ttsModel
-      PIPER_PATH = $ttsPiper
-      ESPEAK_DATA_PATH = $ttsEspeak
+    Key               = 'tts'
+    DisplayName       = 'A11 TTS'
+    Required          = $true
+    Enabled           = $enableTts
+    FilePath          = $PythonCommand
+    WorkingDirectory  = $ttsDir
+    ArgumentList      = @('siwis.py')
+    Environment       = @{
+      PORT                  = $ttsPort
+      BASE_URL              = $LocalTtsUrl
+      MODEL_PATH            = $ttsModel
+      PIPER_PATH            = $ttsPiper
+      ESPEAK_DATA_PATH      = $ttsEspeak
       A11_AVATAR_UPDATE_URL = "$LocalApiUrl/api/avatar/update"
     }
-    Port = $ttsPort
-    HealthUrl = "$LocalTtsUrl/health"
-    HealthMode = 'http'
+    Port              = $ttsPort
+    HealthUrl         = "$LocalTtsUrl/health"
+    HealthMode        = 'http'
     ReadyWhenPortOpen = $true
     StartupTimeoutSec = 35
-    LogKey = 'tts'
-    Issues = @(
+    LogKey            = 'tts'
+    Issues            = @(
       if (-not $PythonCommand) { 'Python command not found' }
       if (-not (Test-Path $ttsDir)) { "Missing TTS directory: $ttsDir" }
       if (-not (Test-Path $ttsModel)) { "Missing TTS model: $ttsModel" }
@@ -1345,148 +1374,148 @@ function Build-ServiceDefinitions {
 
   $qflushEntry = Join-Path $qflushDir 'dist\daemon\qflushd.js'
   $services += [pscustomobject]@{
-    Key = 'qflush'
-    DisplayName = 'Qflush'
-    Required = $false
-    Enabled = $enableQflush
-    FilePath = $NodeCommand
-    WorkingDirectory = $qflushDir
-    ArgumentList = @($qflushEntry)
-    Environment = @{
-      PORT = $qflushPort
-      QFLUSHD_PORT = $qflushPort
-      QFLUSH_DISABLE_REDIS = '1'
+    Key               = 'qflush'
+    DisplayName       = 'Qflush'
+    Required          = $false
+    Enabled           = $enableQflush
+    FilePath          = $NodeCommand
+    WorkingDirectory  = $qflushDir
+    ArgumentList      = @($qflushEntry)
+    Environment       = @{
+      PORT                   = $qflushPort
+      QFLUSHD_PORT           = $qflushPort
+      QFLUSH_DISABLE_REDIS   = '1'
       QFLUSH_DISABLE_COPILOT = '1'
-      QFLUSH_TELEMETRY = '0'
-      QFLUSH_REQUIRE_AUTH = '0'
-      LOCAL_LLM_URL = $LocalLlmUrl
-      LLAMA_BASE = $LocalLlmUrl
-      A11_SERVER_HEALTH_URL = "$LocalApiUrl/health"
+      QFLUSH_TELEMETRY       = '0'
+      QFLUSH_REQUIRE_AUTH    = '0'
+      LOCAL_LLM_URL          = $LocalLlmUrl
+      LLAMA_BASE             = $LocalLlmUrl
+      A11_SERVER_HEALTH_URL  = "$LocalApiUrl/health"
     }
-    Port = $qflushPort
-    HealthUrl = "$LocalQflushUrl/health"
-    HealthMode = 'http'
+    Port              = $qflushPort
+    HealthUrl         = "$LocalQflushUrl/health"
+    HealthMode        = 'http'
     ReadyWhenPortOpen = $true
     StartupTimeoutSec = 35
-    LogKey = 'qflush'
-    Issues = @(
+    LogKey            = 'qflush'
+    Issues            = @(
       if (-not $NodeCommand) { 'Node command not found' }
       if (-not (Test-Path $qflushDir)) { "Missing qflush directory: $qflushDir" }
     ) | Where-Object { $_ }
   }
 
   $backendEnvironment = @{
-    PORT = $backendPort
-    NODE_ENV = 'development'
-    A11_LOCAL_MODE = '1'
-    A11_RUNTIME_PROFILE = 'local'
-    A11_WORKSPACE_ROOT = $a11Root
-    A11_RUNTIME_ROOT = $runtimeRoot
-    A11_SAFE_DATA_ROOT = $safeDataRoot
-    A11_SHELL_CWD = $a11Root
-    BACKEND = $(if ($useRemoteProvider) { 'openai' } else { 'local' })
-    APP_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
-    FRONT_URL = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
-    PUBLIC_API_URL = $(if ([string]::IsNullOrWhiteSpace($PublicApiUrl)) { $LocalApiUrl } else { $PublicApiUrl })
-    API_URL = $LocalApiUrl
-    LOCAL_LLM_URL = ''
-    LLAMA_BASE = ''
-    LLAMA_PORT = $llmPort
-    LOCAL_LLM_PORT = $llmPort
-    LLM_ROUTER_URL = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
-    A11_LLM_PROVIDER = 'ollama'
-    A11_LLM_FALLBACK_PROVIDER = $llmFallbackProvider
-    OLLAMA_BASE = $ollamaBase
-    A11_OLLAMA_PRIMARY_MODEL = $ollamaPrimaryModel
-    A11_OLLAMA_FALLBACK_MODEL = $ollamaFallbackModel
-    A11_LLM_REQUEST_TIMEOUT_MS = '90000'
-    A11_TRANSLATION_BASE_URL = $translationBaseUrl
-    A11_TRANSLATION_MODEL = $translationModel
-    A11_TRANSLATION_ALLOW_ANON = $translationAllowAnon
-    LOCAL_DEFAULT_MODEL = $ollamaPrimaryModel
-    DEFAULT_MODEL = $ollamaPrimaryModel
-    OPENAI_BASE_URL = $(if ($useRemoteProvider) { $openAiBaseUrl } else { '' })
-    OPENAI_API_KEY = $(if ($useRemoteProvider) { $openAiApiKey } else { '' })
-    OPENAI_MODEL = $(if ($useRemoteProvider) { $openAiModel } else { '' })
-    A11_OPENAI_MODEL = $(if ($useRemoteProvider) { $openAiModel } else { '' })
-    A11_REMOTE_PROVIDER_ID = $remoteProviderId
-    A11_REMOTE_PROVIDER_CATALOG_FILE = $remoteProviderCatalogFile
-    A11_CHAT_PROVIDER_MODE = $chatProviderMode
-    TTS_PORT = $ttsPort
-    TTS_URL = $LocalTtsUrl
-    TTS_BASE_URL = $LocalTtsUrl
-    TTS_PUBLIC_BASE_URL = $LocalTtsUrl
-    QFLUSH_URL = $qflushRuntimeUrl
-    QFLUSH_REMOTE_URL = $qflushRuntimeUrl
-    QFLUSH_CHAT_FLOW = $effectiveQflushChatFlow
-    QFLUSH_MEMORY_SUMMARY_FLOW = $qflushMemorySummaryFlow
-    A11_WEB_DIST_DIR = $backendWebDist
-    SERVE_STATIC = $serveStatic
-    A11_PACKAGE_MODE = '0'
-    ENABLE_SD = 'true'
-    A11_SD_ALLOW_LOCAL_FALLBACK = 'true'
-    A11_SD_ALLOW_OPENAI_FALLBACK = 'false'
-    A11_ENABLE_OPENAI_IMAGE = 'false'
-    A11_IMAGE_PROVIDER_ORDER = 'sd'
-    A11_IMAGE_PIPELINE_MODE = $imagePipelineMode
-    SD_MODEL_PROFILE = $sdModelProfile
-    SD_DEVICE = $sdDevice
-    SD_TORCH_DTYPE = $sdTorchDtype
-    A11_SD_GPU_SETTLE_MS = $sdGpuSettleMs
-    SD_SD3_EXECUTION_MODE = $sdSd3ExecutionMode
-    SD_ENABLE_ATTENTION_SLICING = $sdEnableAttentionSlicing
-    SD_ENABLE_CHANNELS_LAST = $sdEnableChannelsLast
-    SD_ENABLE_XFORMERS = $sdEnableXformers
-    A11_IMAGE_MAX_RENDER_SIDE = $imageMaxRenderSide
-    A11_IMAGE_DEFAULT_WIDTH = $imageDefaultWidth
-    A11_IMAGE_DEFAULT_HEIGHT = $imageDefaultHeight
-    A11_VISION_PROVIDER = $visionProvider
-    A11_JANUS_ENABLED = $janusEnabled
-    A11_JANUS_MODEL_ID = $janusModelId
-    A11_JANUS_MODEL_DIR = $janusModelDir
-    A11_JANUS_PYTHON_PATH = $janusPythonPath
-    A11_JANUS_SCRIPT_PATH = $janusScriptPath
-    A11_JANUS_DEVICE = $janusDevice
-    A11_JANUS_TORCH_DTYPE = $janusTorchDtype
-    A11_JANUS_PREFER_LATEST = $janusPreferLatest
+    PORT                                 = $backendPort
+    NODE_ENV                             = 'development'
+    A11_LOCAL_MODE                       = '1'
+    A11_RUNTIME_PROFILE                  = 'local'
+    A11_WORKSPACE_ROOT                   = $a11Root
+    A11_RUNTIME_ROOT                     = $runtimeRoot
+    A11_SAFE_DATA_ROOT                   = $safeDataRoot
+    A11_SHELL_CWD                        = $a11Root
+    BACKEND                              = $(if ($useRemoteProvider) { 'openai' } else { 'local' })
+    APP_URL                              = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
+    FRONT_URL                            = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })
+    PUBLIC_API_URL                       = $(if ([string]::IsNullOrWhiteSpace($PublicApiUrl)) { $LocalApiUrl } else { $PublicApiUrl })
+    API_URL                              = $LocalApiUrl
+    LOCAL_LLM_URL                        = ''
+    LLAMA_BASE                           = ''
+    LLAMA_PORT                           = $llmPort
+    LOCAL_LLM_PORT                       = $llmPort
+    LLM_ROUTER_URL                       = $(if ($effectiveEnableLlm) { $LocalLlmUrl } else { '' })
+    A11_LLM_PROVIDER                     = 'ollama'
+    A11_LLM_FALLBACK_PROVIDER            = $llmFallbackProvider
+    OLLAMA_BASE                          = $ollamaBase
+    A11_OLLAMA_PRIMARY_MODEL             = $ollamaPrimaryModel
+    A11_OLLAMA_FALLBACK_MODEL            = $ollamaFallbackModel
+    A11_LLM_REQUEST_TIMEOUT_MS           = '90000'
+    A11_TRANSLATION_BASE_URL             = $translationBaseUrl
+    A11_TRANSLATION_MODEL                = $translationModel
+    A11_TRANSLATION_ALLOW_ANON           = $translationAllowAnon
+    LOCAL_DEFAULT_MODEL                  = $ollamaPrimaryModel
+    DEFAULT_MODEL                        = $ollamaPrimaryModel
+    OPENAI_BASE_URL                      = $(if ($useRemoteProvider) { $openAiBaseUrl } else { '' })
+    OPENAI_API_KEY                       = $(if ($useRemoteProvider) { $openAiApiKey } else { '' })
+    OPENAI_MODEL                         = $(if ($useRemoteProvider) { $openAiModel } else { '' })
+    A11_OPENAI_MODEL                     = $(if ($useRemoteProvider) { $openAiModel } else { '' })
+    A11_REMOTE_PROVIDER_ID               = $remoteProviderId
+    A11_REMOTE_PROVIDER_CATALOG_FILE     = $remoteProviderCatalogFile
+    A11_CHAT_PROVIDER_MODE               = $chatProviderMode
+    TTS_PORT                             = $ttsPort
+    TTS_URL                              = $LocalTtsUrl
+    TTS_BASE_URL                         = $LocalTtsUrl
+    TTS_PUBLIC_BASE_URL                  = $LocalTtsUrl
+    QFLUSH_URL                           = $qflushRuntimeUrl
+    QFLUSH_REMOTE_URL                    = $qflushRuntimeUrl
+    QFLUSH_CHAT_FLOW                     = $effectiveQflushChatFlow
+    QFLUSH_MEMORY_SUMMARY_FLOW           = $qflushMemorySummaryFlow
+    A11_WEB_DIST_DIR                     = $backendWebDist
+    SERVE_STATIC                         = $serveStatic
+    A11_PACKAGE_MODE                     = '0'
+    ENABLE_SD                            = 'true'
+    A11_SD_ALLOW_LOCAL_FALLBACK          = 'true'
+    A11_SD_ALLOW_OPENAI_FALLBACK         = 'false'
+    A11_ENABLE_OPENAI_IMAGE              = 'false'
+    A11_IMAGE_PROVIDER_ORDER             = 'sd'
+    A11_IMAGE_PIPELINE_MODE              = $imagePipelineMode
+    SD_MODEL_PROFILE                     = $sdModelProfile
+    SD_DEVICE                            = $sdDevice
+    SD_TORCH_DTYPE                       = $sdTorchDtype
+    A11_SD_GPU_SETTLE_MS                 = $sdGpuSettleMs
+    SD_SD3_EXECUTION_MODE                = $sdSd3ExecutionMode
+    SD_ENABLE_ATTENTION_SLICING          = $sdEnableAttentionSlicing
+    SD_ENABLE_CHANNELS_LAST              = $sdEnableChannelsLast
+    SD_ENABLE_XFORMERS                   = $sdEnableXformers
+    A11_IMAGE_MAX_RENDER_SIDE            = $imageMaxRenderSide
+    A11_IMAGE_DEFAULT_WIDTH              = $imageDefaultWidth
+    A11_IMAGE_DEFAULT_HEIGHT             = $imageDefaultHeight
+    A11_VISION_PROVIDER                  = $visionProvider
+    A11_JANUS_ENABLED                    = $janusEnabled
+    A11_JANUS_MODEL_ID                   = $janusModelId
+    A11_JANUS_MODEL_DIR                  = $janusModelDir
+    A11_JANUS_PYTHON_PATH                = $janusPythonPath
+    A11_JANUS_SCRIPT_PATH                = $janusScriptPath
+    A11_JANUS_DEVICE                     = $janusDevice
+    A11_JANUS_TORCH_DTYPE                = $janusTorchDtype
+    A11_JANUS_PREFER_LATEST              = $janusPreferLatest
     A11_IMAGE_REFERENCE_JANUS_MAX_TOKENS = $imageReferenceJanusMaxTokens
     A11_IMAGE_REFERENCE_JANUS_TIMEOUT_MS = $imageReferenceJanusTimeoutMs
-    A11_VIDEO_ENABLED = 'true'
-    A11_VIDEO_DEFAULT_DURATION_SEC = $videoDefaultDurationSec
-    A11_VIDEO_MAX_DURATION_SEC = $videoMaxDurationSec
-    A11_VIDEO_DEFAULT_FPS = $videoDefaultFps
-    A11_VIDEO_MAX_FPS = $videoMaxFps
-    A11_VIDEO_MAX_RENDER_FRAMES = $videoMaxRenderFrames
-    A11_VIDEO_MAX_RENDER_SIDE = $videoMaxRenderSide
-    A11_VIDEO_DEFAULT_WIDTH = $videoDefaultWidth
-    A11_VIDEO_DEFAULT_HEIGHT = $videoDefaultHeight
-    A11_VIDEO_SD_STEPS = $videoSdSteps
-    A11_VIDEO_SD_GUIDANCE_SCALE = $videoSdGuidanceScale
-    A11_VIDEO_FRAME_INIT_STRENGTH = $videoFrameInitStrength
-    A11_VIDEO_USE_JANUS_FRAME_ANALYSIS = $videoUseJanusFrameAnalysis
-    A11_VIDEO_MP4_CODEC = $videoMp4Codec
-    A11_VIDEO_MP4_PRESET = $videoMp4Preset
-    A11_VIDEO_MP4_CQ = $videoMp4Cq
-    A11_VIDEO_FFMPEG_BIN = $ffmpegBin
-    A11_VIDEO_WORK_ROOT = $videoWorkRoot
+    A11_VIDEO_ENABLED                    = 'true'
+    A11_VIDEO_DEFAULT_DURATION_SEC       = $videoDefaultDurationSec
+    A11_VIDEO_MAX_DURATION_SEC           = $videoMaxDurationSec
+    A11_VIDEO_DEFAULT_FPS                = $videoDefaultFps
+    A11_VIDEO_MAX_FPS                    = $videoMaxFps
+    A11_VIDEO_MAX_RENDER_FRAMES          = $videoMaxRenderFrames
+    A11_VIDEO_MAX_RENDER_SIDE            = $videoMaxRenderSide
+    A11_VIDEO_DEFAULT_WIDTH              = $videoDefaultWidth
+    A11_VIDEO_DEFAULT_HEIGHT             = $videoDefaultHeight
+    A11_VIDEO_SD_STEPS                   = $videoSdSteps
+    A11_VIDEO_SD_GUIDANCE_SCALE          = $videoSdGuidanceScale
+    A11_VIDEO_FRAME_INIT_STRENGTH        = $videoFrameInitStrength
+    A11_VIDEO_USE_JANUS_FRAME_ANALYSIS   = $videoUseJanusFrameAnalysis
+    A11_VIDEO_MP4_CODEC                  = $videoMp4Codec
+    A11_VIDEO_MP4_PRESET                 = $videoMp4Preset
+    A11_VIDEO_MP4_CQ                     = $videoMp4Cq
+    A11_VIDEO_FFMPEG_BIN                 = $ffmpegBin
+    A11_VIDEO_WORK_ROOT                  = $videoWorkRoot
   }
 
   $services += [pscustomobject]@{
-    Key = 'backend'
-    DisplayName = 'A11 Backend'
-    Required = $true
-    Enabled = $enableBackend
-    FilePath = $NodeCommand
-    WorkingDirectory = $backendDir
-    ArgumentList = @('server.cjs')
-    Environment = $backendEnvironment
-    Port = $backendPort
-    HealthUrl = "$LocalApiUrl/health"
-    HealthMode = 'http'
+    Key               = 'backend'
+    DisplayName       = 'A11 Backend'
+    Required          = $true
+    Enabled           = $enableBackend
+    FilePath          = $NodeCommand
+    WorkingDirectory  = $backendDir
+    ArgumentList      = @('server.cjs')
+    Environment       = $backendEnvironment
+    Port              = $backendPort
+    HealthUrl         = "$LocalApiUrl/health"
+    HealthMode        = 'http'
     ReadyWhenPortOpen = $true
     StartupTimeoutSec = 45
-    LogKey = 'backend'
-    Issues = @(
+    LogKey            = 'backend'
+    Issues            = @(
       if (-not $NodeCommand) { 'Node command not found' }
       if (-not (Test-Path $backendDir)) { "Missing backend directory: $backendDir" }
       if (-not (Test-Path (Join-Path $backendDir 'server.cjs'))) { "Missing backend entry point: $(Join-Path $backendDir 'server.cjs')" }
@@ -1496,29 +1525,29 @@ function Build-ServiceDefinitions {
 
   if ($UiMode -eq 'dev') {
     $services += [pscustomobject]@{
-      Key = 'frontend'
-      DisplayName = 'A11 Frontend'
-      Required = $false
-      Enabled = $true
-      FilePath = $NpmCommand
-      WorkingDirectory = $frontendDir
-      ArgumentList = @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$frontendPort")
-      Environment = @{
-        VITE_API_BASE = $LocalApiUrl
-        VITE_API_BASE_URL = $LocalApiUrl
-        VITE_API_URL = $LocalApiUrl
-        VITE_A11_API_BASE_URL = $LocalApiUrl
-        VITE_A11_LOCAL_API_BASE_URL = $LocalApiUrl
+      Key               = 'frontend'
+      DisplayName       = 'A11 Frontend'
+      Required          = $false
+      Enabled           = $true
+      FilePath          = $NpmCommand
+      WorkingDirectory  = $frontendDir
+      ArgumentList      = @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$frontendPort")
+      Environment       = @{
+        VITE_API_BASE                = $LocalApiUrl
+        VITE_API_BASE_URL            = $LocalApiUrl
+        VITE_API_URL                 = $LocalApiUrl
+        VITE_A11_API_BASE_URL        = $LocalApiUrl
+        VITE_A11_LOCAL_API_BASE_URL  = $LocalApiUrl
         VITE_A11_ONLINE_API_BASE_URL = $PublicApiUrl
-        VITE_LLM_ROUTER_URL = $viteRouterUrl
+        VITE_LLM_ROUTER_URL          = $viteRouterUrl
       }
-      Port = $frontendPort
-      HealthUrl = "http://127.0.0.1:$frontendPort/"
-      HealthMode = 'http'
+      Port              = $frontendPort
+      HealthUrl         = "http://127.0.0.1:$frontendPort/"
+      HealthMode        = 'http'
       ReadyWhenPortOpen = $true
       StartupTimeoutSec = 40
-      LogKey = 'frontend'
-      Issues = @(
+      LogKey            = 'frontend'
+      Issues            = @(
         if (-not $NpmCommand) { 'npm command not found' }
         if (-not (Test-Path $frontendDir)) { "Missing frontend directory: $frontendDir" }
       ) | Where-Object { $_ }
@@ -1526,38 +1555,38 @@ function Build-ServiceDefinitions {
   }
 
   return [pscustomobject]@{
-    Services = $services
-    BackendDir = $backendDir
-    TtsDir = $ttsDir
-    FrontendDir = $frontendDir
-    WebDistDirectory = $WebDistDirectory
-    QflushDir = $qflushDir
-    QflushEntry = $qflushEntry
-    LlmRunner = $llmRunner
-    LlmPackageSource = ''
-    A11Root = $a11Root
-    RuntimeRoot = $runtimeRoot
-    SafeDataRoot = $safeDataRoot
-    LauncherRuntimeRoot = $launcherRuntimeRoot
-    OllamaBase = $ollamaBase
-    OllamaPrimaryModel = $ollamaPrimaryModel
-    BackendPort = $backendPort
-    TtsPort = $ttsPort
-    LlmPort = $llmPort
-    QflushPort = $qflushPort
-    FrontendPort = $frontendPort
-    QflushChatFlow = $qflushChatFlow
-    QflushMemorySummaryFlow = $qflushMemorySummaryFlow
-    EnableBackend = $enableBackend
-    EnableTts = $enableTts
-    EnableLlm = $effectiveEnableLlm
-    EnableQflush = $enableQflush
-    ChatProviderMode = $chatProviderMode
-    UseRemoteProvider = $useRemoteProvider
-    RemoteProviderId = $remoteProviderId
+    Services                  = $services
+    BackendDir                = $backendDir
+    TtsDir                    = $ttsDir
+    FrontendDir               = $frontendDir
+    WebDistDirectory          = $WebDistDirectory
+    QflushDir                 = $qflushDir
+    QflushEntry               = $qflushEntry
+    LlmRunner                 = $llmRunner
+    LlmPackageSource          = ''
+    A11Root                   = $a11Root
+    RuntimeRoot               = $runtimeRoot
+    SafeDataRoot              = $safeDataRoot
+    LauncherRuntimeRoot       = $launcherRuntimeRoot
+    OllamaBase                = $ollamaBase
+    OllamaPrimaryModel        = $ollamaPrimaryModel
+    BackendPort               = $backendPort
+    TtsPort                   = $ttsPort
+    LlmPort                   = $llmPort
+    QflushPort                = $qflushPort
+    FrontendPort              = $frontendPort
+    QflushChatFlow            = $qflushChatFlow
+    QflushMemorySummaryFlow   = $qflushMemorySummaryFlow
+    EnableBackend             = $enableBackend
+    EnableTts                 = $enableTts
+    EnableLlm                 = $effectiveEnableLlm
+    EnableQflush              = $enableQflush
+    ChatProviderMode          = $chatProviderMode
+    UseRemoteProvider         = $useRemoteProvider
+    RemoteProviderId          = $remoteProviderId
     RemoteProviderCatalogFile = $remoteProviderCatalogFile
-    OpenAiBaseUrl = $openAiBaseUrl
-    OpenAiModel = $openAiModel
+    OpenAiBaseUrl             = $openAiBaseUrl
+    OpenAiModel               = $openAiModel
   }
 }
 
@@ -1619,7 +1648,8 @@ function Get-ServiceStatus {
   $resolvedPid = $null
   if ($servicePid -and $alive) {
     $resolvedPid = $servicePid
-  } elseif ($listeningPid) {
+  }
+  elseif ($listeningPid) {
     $resolvedPid = $listeningPid
   }
 
@@ -1627,34 +1657,40 @@ function Get-ServiceStatus {
   if (-not $Service.Enabled) {
     if ($alive -or $listeningPid) {
       $stateLabel = 'disabled-external'
-    } else {
+    }
+    else {
       $stateLabel = 'disabled'
     }
-  } elseif ($alive -and $healthy) {
+  }
+  elseif ($alive -and $healthy) {
     if ($managedByLauncher) {
       $stateLabel = 'running-managed'
-    } else {
+    }
+    else {
       $stateLabel = 'running-external'
     }
-  } elseif ($alive -and -not $healthy) {
+  }
+  elseif ($alive -and -not $healthy) {
     if ($managedByLauncher) {
       $stateLabel = 'degraded-managed'
-    } else {
+    }
+    else {
       $stateLabel = 'degraded-external'
     }
-  } elseif (-not $alive -and $listeningPid) {
+  }
+  elseif (-not $alive -and $listeningPid) {
     $stateLabel = 'running-external'
   }
 
   return [pscustomobject]@{
     Service = $Service.DisplayName
-    Key = $Service.Key
+    Key     = $Service.Key
     Enabled = $Service.Enabled
-    State = $stateLabel
-    Port = $Service.Port
-    Pid = $resolvedPid
+    State   = $stateLabel
+    Port    = $Service.Port
+    Pid     = $resolvedPid
     Healthy = $healthy
-    Url = $Service.HealthUrl
+    Url     = $Service.HealthUrl
   }
 }
 
@@ -1664,10 +1700,10 @@ function Get-LauncherStatusSnapshot {
     $liveLauncherOperation = Get-ActiveLauncherOperations -CommandNames @('start', 'restart', 'desktop') | Select-Object -First 1
     if ($liveLauncherOperation) {
       $activeOperation = [pscustomobject]@{
-        active = $true
-        command = [string]$liveLauncherOperation.command
-        pid = [int]$liveLauncherOperation.pid
-        startedAt = [string]$liveLauncherOperation.startedAt
+        active     = $true
+        command    = [string]$liveLauncherOperation.command
+        pid        = [int]$liveLauncherOperation.pid
+        startedAt  = [string]$liveLauncherOperation.startedAt
         configPath = $resolvedConfigPath
       }
     }
@@ -1676,36 +1712,36 @@ function Get-LauncherStatusSnapshot {
   $rows = foreach ($service in $definitionBundle.Services) {
     $status = Get-ServiceStatus -Service $service -StateServices $state.services
     [pscustomobject]@{
-      key = $service.Key
-      label = $service.DisplayName
-      enabled = [bool]$status.Enabled
-      state = [string]$status.State
-      port = if ($null -ne $status.Port) { [int]$status.Port } else { $null }
-      pid = if ($null -ne $status.Pid) { [int]$status.Pid } else { $null }
-      ready = [bool]$status.Healthy
-      required = [bool]$service.Required
+      key       = $service.Key
+      label     = $service.DisplayName
+      enabled   = [bool]$status.Enabled
+      state     = [string]$status.State
+      port      = if ($null -ne $status.Port) { [int]$status.Port } else { $null }
+      pid       = if ($null -ne $status.Pid) { [int]$status.Pid } else { $null }
+      ready     = [bool]$status.Healthy
+      required  = [bool]$service.Required
       healthUrl = [string]$status.Url
     }
   }
 
   $requiredReady = @($rows | Where-Object { $_.required -and $_.enabled }).Count -eq 0 -or
-    (@($rows | Where-Object { $_.required -and $_.enabled -and -not $_.ready }).Count -eq 0)
+  (@($rows | Where-Object { $_.required -and $_.enabled -and -not $_.ready }).Count -eq 0)
   $uiReady = Test-UiReady -Url $localUiUrl -TimeoutSec 4
 
   $snapshot = [pscustomobject]@{
-    ok = (-not $script:HadErrors)
-    command = $Command
-    uiMode = $uiMode
-    uiUrl = $localUiUrl
-    uiReady = $uiReady
-    requiredServicesReady = $requiredReady
-    ready = ($requiredReady -and $uiReady)
-    logsDirectory = $logsDirectory
-    launcherConfig = $resolvedConfigPath
+    ok                        = (-not $script:HadErrors)
+    command                   = $Command
+    uiMode                    = $uiMode
+    uiUrl                     = $localUiUrl
+    uiReady                   = $uiReady
+    requiredServicesReady     = $requiredReady
+    ready                     = ($requiredReady -and $uiReady)
+    logsDirectory             = $logsDirectory
+    launcherConfig            = $resolvedConfigPath
     remoteProviderCatalogFile = $definitionBundle.RemoteProviderCatalogFile
-    operation = $activeOperation
-    progress = $progress
-    services = $rows
+    operation                 = $activeOperation
+    progress                  = $progress
+    services                  = $rows
   }
 
   Save-LauncherSnapshot -Path $snapshotFile -Snapshot $snapshot
@@ -1715,7 +1751,8 @@ function Get-LauncherStatusSnapshot {
 function Update-LauncherSnapshotCache {
   try {
     [void](Get-LauncherStatusSnapshot)
-  } catch {
+  }
+  catch {
   }
 }
 
@@ -1749,7 +1786,10 @@ function Open-A11DesktopWindow {
 }
 
 function Start-A11Stack {
-  param([switch]$DesktopWindow)
+  param(
+    [switch]$DesktopWindow,
+    [switch]$ForceRestart
+  )
 
   Set-LauncherProgress -Path $progressFile -Phase 'validation' -Message 'Verification de la stack locale...'
   Update-LauncherSnapshotCache
@@ -1762,16 +1802,38 @@ function Start-A11Stack {
     if ($externalPid) {
       $ownedExternal = Test-ServiceOwnedProcess -Service $service -ProcessId $externalPid
       if ($ownedExternal) {
-        Write-Info "$($service.DisplayName) already active locally on port $($service.Port) (PID $externalPid)"
-        $state.services[$service.Key] = @{
-          pid = $externalPid
-          port = $service.Port
-          healthUrl = $service.HealthUrl
-          managedByLauncher = $true
+        if ($ForceRestart) {
+          # En mode restart force, on tue le process existant au lieu de le reutiliser
+          Write-Info "$($service.DisplayName) force-restart: arret du process existant (PID $externalPid)"
+          Stop-ProcessTree -ProcessId $externalPid
+          # Attendre que le port se libere (max 8s)
+          $freed = $false
+          $deadline = (Get-Date).AddSeconds(8)
+          while ((Get-Date) -lt $deadline) {
+            if (-not (Get-ListeningProcessId -Port $service.Port)) { $freed = $true; break }
+            Start-Sleep -Milliseconds 400
+          }
+          if (-not $freed) {
+            Write-WarnLine "$($service.DisplayName) port $($service.Port) toujours occupe apres 8s, on continue quand meme."
+          }
+          if ($state.services.ContainsKey($service.Key)) {
+            [void]$state.services.Remove($service.Key)
+            $validationStateChanged = $true
+          }
         }
-        $validationStateChanged = $true
-        continue
-      } else {
+        else {
+          Write-Info "$($service.DisplayName) already active locally on port $($service.Port) (PID $externalPid)"
+          $state.services[$service.Key] = @{
+            pid               = $externalPid
+            port              = $service.Port
+            healthUrl         = $service.HealthUrl
+            managedByLauncher = $true
+          }
+          $validationStateChanged = $true
+          continue
+        }
+      }
+      else {
         Write-ErrorLine "$($service.DisplayName) port conflict on $($service.Port). External process detected: $(Get-ProcessSummary -ProcessId $externalPid)"
         Write-ErrorLine "$($service.DisplayName): stop this external process before relaunching A11 local, otherwise the launcher may talk to the wrong repo/runtime."
         if ($state.services.ContainsKey($service.Key)) {
@@ -1823,7 +1885,7 @@ function Start-A11Stack {
       $existingState = $state.services[$service.Key]
     }
     $currentStatus = Get-ServiceStatus -Service $service -StateServices $state.services
-    if ($currentStatus.State -eq 'running-managed') {
+    if ($currentStatus.State -eq 'running-managed' -and -not $ForceRestart) {
       $service | Add-Member -NotePropertyName Pid -NotePropertyValue $currentStatus.Pid -Force
       Write-Info "$($service.DisplayName) already healthy locally on port $($service.Port) (PID $($currentStatus.Pid))"
       continue
@@ -1846,12 +1908,12 @@ function Start-A11Stack {
     $started = Start-ManagedProcess -Service $service -LogsDirectory $logsDirectory -ShowWindow:$ShowWindows
     $service | Add-Member -NotePropertyName Pid -NotePropertyValue $started.Pid -Force
     $state.services[$service.Key] = @{
-      pid = $started.Pid
-      port = $service.Port
-      healthUrl = $service.HealthUrl
-      stdout = $started.Stdout
-      stderr = $started.Stderr
-      startedAt = $started.StartedAt
+      pid               = $started.Pid
+      port              = $service.Port
+      healthUrl         = $service.HealthUrl
+      stdout            = $started.Stdout
+      stderr            = $started.Stderr
+      startedAt         = $started.StartedAt
       managedByLauncher = $true
     }
     Save-State -Path $stateFile -State $state
@@ -1882,7 +1944,8 @@ function Start-A11Stack {
           -Width $desktopWindowWidth `
           -Height $desktopWindowHeight `
           -RuntimeDirectory $runtimeDirectory
-      } elseif ($autoOpenUi) {
+      }
+      elseif ($autoOpenUi) {
         Start-Process $uiLaunchUrl | Out-Null
       }
     }
@@ -1920,9 +1983,9 @@ function Stop-A11Stack {
       if ($ownedPid) {
         $managedByLauncher = $true
         $stateEntry = @{
-          pid = $ownedPid
-          port = $service.Port
-          healthUrl = $service.HealthUrl
+          pid               = $ownedPid
+          port              = $service.Port
+          healthUrl         = $service.HealthUrl
           managedByLauncher = $true
         }
         $state.services[$service.Key] = $stateEntry
@@ -1942,7 +2005,8 @@ function Stop-A11Stack {
       }
       if ($service.Port -and (Get-ListeningProcessId -Port $service.Port)) {
         Write-Info "$($service.DisplayName) left running (external process not owned by launcher)"
-      } else {
+      }
+      else {
         Write-Info "$($service.DisplayName) already stopped"
       }
       continue
@@ -1964,7 +2028,8 @@ function Stop-A11Stack {
         Write-Info "Stopping $($service.DisplayName) (PID $targetPid)"
         Stop-ProcessTree -ProcessId $targetPid
       }
-    } else {
+    }
+    else {
       Write-Info "$($service.DisplayName) already stopped"
     }
 
@@ -1979,7 +2044,8 @@ function Stop-A11Stack {
 $launcherDirectory = Split-Path -Parent $PSCommandPath
 $previewConfigPath = if ($ConfigPath) {
   Resolve-LauncherRelativePath -Value $ConfigPath -BaseDirectory $launcherDirectory
-} else {
+}
+else {
   Join-Path $launcherDirectory 'config\a11-local.env'
 }
 $config = Read-LauncherConfig -Path $previewConfigPath
@@ -1994,7 +2060,8 @@ New-Item -ItemType Directory -Force -Path $logsDirectory | Out-Null
 
 $resolvedConfigPath = if ($ConfigPath) {
   Resolve-LauncherRelativePath -Value $ConfigPath -BaseDirectory $launcherDirectory
-} else {
+}
+else {
   Join-Path $launcherDirectory 'config\a11-local.env'
 }
 
@@ -2056,7 +2123,8 @@ switch ($Command) {
         foreach ($issue in $service.Issues) {
           Write-ErrorLine "$($service.DisplayName): $issue"
         }
-      } else {
+      }
+      else {
         Write-Info "$($service.DisplayName): ready"
       }
     }
@@ -2064,7 +2132,8 @@ switch ($Command) {
     if ($uiMode -eq 'embedded') {
       if (Test-Path $definitionBundle.WebDistDirectory) {
         Write-Info "Embedded UI build found: $($definitionBundle.WebDistDirectory)"
-      } else {
+      }
+      else {
         Write-WarnLine "Embedded UI build missing: $($definitionBundle.WebDistDirectory)"
       }
     }
@@ -2074,7 +2143,7 @@ switch ($Command) {
     $rows = foreach ($service in $definitionBundle.Services) {
       Get-ServiceStatus -Service $service -StateServices $state.services
     }
-    $rows | Sort-Object Service | Format-Table Service,State,Port,Pid,Healthy,Url -AutoSize
+    $rows | Sort-Object Service | Format-Table Service, State, Port, Pid, Healthy, Url -AutoSize
   }
 
   'status-json' {
@@ -2085,15 +2154,15 @@ switch ($Command) {
   'stop' {
     Stop-LauncherOperations
     [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'stop' -Action {
-      Stop-A11Stack
-    })
+        Stop-A11Stack
+      })
   }
 
   'restart' {
     [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'restart' -Action {
-      Stop-A11Stack
-      Start-A11Stack
-    })
+        Stop-A11Stack
+        Start-A11Stack
+      })
   }
 
   'package' {
@@ -2115,14 +2184,15 @@ switch ($Command) {
     Write-Info "Packaging plan written: $generatedPlanPath"
 
     if ($DryRun) {
-      $plan | Format-Table Name,Source,Target,Reason -AutoSize
+      $plan | Format-Table Name, Source, Target, Reason -AutoSize
       break
     }
 
     if (Test-Path $packageRoot) {
       if ($Force) {
         Remove-DirectoryTreeBestEffort -Path $packageRoot -AllowedRoot $packageContainerRoot
-      } else {
+      }
+      else {
         Write-WarnLine "Package root already exists, files will be updated: $packageRoot"
       }
     }
@@ -2150,43 +2220,43 @@ switch ($Command) {
     Invoke-DirectoryMirror -Source $definitionBundle.WebDistDirectory -Target (Join-Path $packageRoot 'backend\web\dist')
 
     Write-PackagedConfig -Path (Join-Path $packageRoot 'launcher\config\a11-local.env') -Context ([pscustomobject]@{
-      EnableBackend = $definitionBundle.EnableBackend
-      EnableTts = $definitionBundle.EnableTts
-      EnableLlm = $definitionBundle.EnableLlm
-      EnableQflush = $definitionBundle.EnableQflush
-      BackendPort = $definitionBundle.BackendPort
-      TtsPort = $definitionBundle.TtsPort
-      LlmPort = $definitionBundle.LlmPort
-      QflushPort = $definitionBundle.QflushPort
-      FrontendPort = $definitionBundle.FrontendPort
-      DesktopBrowser = $desktopBrowserPreference
-      DesktopWidth = $desktopWindowWidth
-      DesktopHeight = $desktopWindowHeight
-      PublicApiUrl = $publicApiUrl
-      PublicFrontendUrl = $publicFrontendUrl
-      QflushChatFlow = $definitionBundle.QflushChatFlow
-      QflushMemorySummaryFlow = $definitionBundle.QflushMemorySummaryFlow
-      ChatProviderMode = $definitionBundle.ChatProviderMode
-      OllamaBase = $definitionBundle.OllamaBase
-      OllamaPrimaryModel = $definitionBundle.OllamaPrimaryModel
-      RemoteProviderId = $definitionBundle.RemoteProviderId
-      OpenAiBaseUrl = $definitionBundle.OpenAiBaseUrl
-      OpenAiModel = $definitionBundle.OpenAiModel
-    })
+        EnableBackend           = $definitionBundle.EnableBackend
+        EnableTts               = $definitionBundle.EnableTts
+        EnableLlm               = $definitionBundle.EnableLlm
+        EnableQflush            = $definitionBundle.EnableQflush
+        BackendPort             = $definitionBundle.BackendPort
+        TtsPort                 = $definitionBundle.TtsPort
+        LlmPort                 = $definitionBundle.LlmPort
+        QflushPort              = $definitionBundle.QflushPort
+        FrontendPort            = $definitionBundle.FrontendPort
+        DesktopBrowser          = $desktopBrowserPreference
+        DesktopWidth            = $desktopWindowWidth
+        DesktopHeight           = $desktopWindowHeight
+        PublicApiUrl            = $publicApiUrl
+        PublicFrontendUrl       = $publicFrontendUrl
+        QflushChatFlow          = $definitionBundle.QflushChatFlow
+        QflushMemorySummaryFlow = $definitionBundle.QflushMemorySummaryFlow
+        ChatProviderMode        = $definitionBundle.ChatProviderMode
+        OllamaBase              = $definitionBundle.OllamaBase
+        OllamaPrimaryModel      = $definitionBundle.OllamaPrimaryModel
+        RemoteProviderId        = $definitionBundle.RemoteProviderId
+        OpenAiBaseUrl           = $definitionBundle.OpenAiBaseUrl
+        OpenAiModel             = $definitionBundle.OpenAiModel
+      })
     Write-PackagePlanFile -Path (Join-Path $packageRoot 'PACKAGE_LAYOUT_PLAN.md') -Plan $plan -PackageRoot $packageRoot
     Write-Info "Local package staging ready: $packageRoot"
   }
 
   'start' {
     [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'start' -Action {
-      Start-A11Stack
-    })
+        Start-A11Stack
+      })
   }
 
   'desktop' {
     [void](Invoke-WithOperationLock -Path $operationFile -CommandName 'desktop' -Action {
-      Start-A11Stack -DesktopWindow
-    })
+        Start-A11Stack -DesktopWindow
+      })
   }
 }
 
@@ -2200,3 +2270,37 @@ if (-not $NoPause -and $Command -eq 'start') {
 
 if ($script:HadErrors) { exit 1 }
 exit 0
+
+# SIG # Begin signature block
+# MIIFpwYJKoZIhvcNAQcCoIIFmDCCBZQCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCGhkl5gwlP68OF
+# ae8TDGjnYAqY+30P0L0IRoUbLBBge6CCAxYwggMSMIIB+qADAgECAhAWh8uBU0rs
+# rEDlqExfyH1hMA0GCSqGSIb3DQEBCwUAMCExHzAdBgNVBAMMFkExMS1GdW5lc3Rl
+# cmllLVNjcmlwdHMwHhcNMjYwNDI2MTI1MDU5WhcNMzEwNDI2MTMwMDU5WjAhMR8w
+# HQYDVQQDDBZBMTEtRnVuZXN0ZXJpZS1TY3JpcHRzMIIBIjANBgkqhkiG9w0BAQEF
+# AAOCAQ8AMIIBCgKCAQEA6RbjQDNKRaPU3C25PQYgV9o3Ne3oIX0SWxC3caNFhtDt
+# Y6p+kdxoxPNNvyUteNC25XYUbDDJyIsLSoZA6ItHMavQ8OCZZGx2bMqY2Ab8Q4jr
+# OxV8GIpgDoDGqVx/bNECfoh4AFmRqgY+00p1CoQ7r9QVTn6X9OBKRA0iXVZxEMT7
+# OumcskpwwwNJhiPsRCY51UxwXKG8z7e3P1Tm3OVXkkyQNQN8cc9TURarToaxgahN
+# zHz0N81zamFRcwzdxIz2xyx2SQoK/arcLhA27j1ndIegbzqYWvrTZ9HgSiMI34tM
+# HxlzctmzCgeTGtDmOzN66NSmAFTkfv8E+U09fGxsyQIDAQABo0YwRDAOBgNVHQ8B
+# Af8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwMwHQYDVR0OBBYEFBPlLwoseJYs
+# +l+hlUcKSY0P+y/xMA0GCSqGSIb3DQEBCwUAA4IBAQAjCc2teI13CeAoNLTlKPkB
+# ROz/icO7JxlvnUQ+jmP2nmmTVfRfZvpp09tIHrHYpEH1kAIzb3Yy2knZUHisiOIo
+# YqN0VtdvdDQtz/8hauhnqODPYOu2LQsc6t7vKGciu4yLP9agY9sBQJGvv2FJ25gU
+# wEur8Jm3PW6/eHIO4dnv7zLdstOQqKL+Pu8aeoWpb0AE2oTX72sVx8/74DzkEbgM
+# FY9mKjO832S4QWwsqvhMo1I8C97l3Dz6cyfjb9HJQgFHgtJ2zEp1zVBOstkDDxnH
+# m3Xc2CJuNEwD4yScri97KFELD9K3+ZSahAs5teGCPV5vI5o7GPHeHI5gsbrQdnVW
+# MYIB5zCCAeMCAQEwNTAhMR8wHQYDVQQDDBZBMTEtRnVuZXN0ZXJpZS1TY3JpcHRz
+# AhAWh8uBU0rsrEDlqExfyH1hMA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcC
+# AQwxCjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYB
+# BAGCNwIBCzEOMAwGCisGAQQBgjcCARUwLwYJKoZIhvcNAQkEMSIEID55LmDGTAgv
+# KtRgzJ7w9SMCVQ2/G1yNSGN2S9RIgrqqMA0GCSqGSIb3DQEBAQUABIIBADLi8jHi
+# nkyeCfRwmLFKODa8A3BtBCMQbBn+U3Lq6/bJ0eK643biG0Bv0GBS60e8vzAXHsgn
+# eUHV+EuaxtyRG1H4MB3wRPPNIxuOABiF6TEPKhgpOCBHbECjZTgqkThLLVmE8zS9
+# AF4MTGLrnar8pW+3R2M5yvyfBKBx1rN0HCCIYsLkntA3sfHbEHPeoExQ4jAqdHyR
+# igHJX2N82xu8JKNXjfkZD52Lc1TSAygixTrkwXlViKR/nzroveJrYZiZjHjHdmPt
+# SvAYiW5Q3LYauZiWJ/n7aDOTUP9azBoKDa5wBkYSi36ctNKNWwPnl83tiR+QBmwa
+# 3Kh6uFKuQ/hqZL4=
+# SIG # End signature block

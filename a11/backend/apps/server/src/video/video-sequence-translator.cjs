@@ -1,4 +1,4 @@
-const {
+﻿const {
   buildCheckpointStructuralPrompt,
   buildCheckpointVariationPrompt,
   detectSubjectType,
@@ -248,18 +248,12 @@ const SUBJECT_STYLE_TAIL_TOKENS = new Set([
   'photorealistic',
 ]);
 
-const SD3_PROMPT_LABELS = Object.freeze({
-  prompt: 'main subject pose continuity',
-  prompt2: 'scene camera decor continuity',
-  prompt3: 'visible frame delta anatomy prop detail',
-});
-
 function transliterateForSd(value = '') {
+  // SD3.5 comprend les accents — on normalise juste les guillemets typographiques
   return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[\u2019\u2018]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -267,7 +261,7 @@ function normalizeAsciiText(value = '') {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[’']/g, ' ')
+    .replace(/[â']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -841,9 +835,9 @@ function buildFramePromptPlan(basePrompt = '', {
     structuralPrompt: translatedStructuralPrompt,
     stableIdentityPrompt: translatedStableIdentityPrompt,
     frameVariationPrompt: translatedFrameVariationPrompt,
-    prompt: transliterateForSd(`${SD3_PROMPT_LABELS.prompt}: ${translatedStructuralPrompt}`),
-    prompt_2: transliterateForSd(`${SD3_PROMPT_LABELS.prompt2}: ${sanitizeWikidataArtifacts(translatedStableIdentityPrompt)}`),
-    prompt_3: transliterateForSd(`${SD3_PROMPT_LABELS.prompt3}: ${translatedFrameVariationPrompt}`),
+    prompt: transliterateForSd(translatedStructuralPrompt),
+    prompt_2: transliterateForSd(sanitizeWikidataArtifacts(translatedStableIdentityPrompt)),
+    prompt_3: transliterateForSd(translatedFrameVariationPrompt),
     negative_prompt_video: 'text, watermark, caption, subtitle, label, signature, logo, letters, words, writing, inscription',
   };
 }
