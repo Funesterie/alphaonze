@@ -5919,6 +5919,7 @@ app.use(casinoRouter);
 const createCheckpointsRouter = require('./src/routes/checkpoints.cjs');
 const createToolsRouter = require('./src/routes/tools.cjs');
 const createAgentShellRouter = require('./src/routes/agent-shell.cjs');
+const createSelfRewriteRouter = require('./src/routes/self-rewrite.cjs');
 
 app.use('/api/checkpoints', verifyJWT);
 app.use('/api/tools', verifyJWT);
@@ -5927,6 +5928,7 @@ app.use('/api/tools', verifyJWT);
 app.use('/api/checkpoints', createCheckpointsRouter({ checkpointManager }));
 app.use('/api/tools', createToolsRouter({ toolCallingLayer }));
 app.use('/api/agent/shell', createAgentShellRouter({ workspaceRoot: WORKSPACE_ROOT }));
+app.use('/api', createSelfRewriteRouter({ verifyJWT }));
 
 console.log('[Server] Checkpoint routes mounted under /api/checkpoints');
 console.log('[Server] Tools routes mounted under /api/tools');
