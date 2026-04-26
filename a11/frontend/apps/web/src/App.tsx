@@ -1202,6 +1202,7 @@ export function App() {
   const [uploadFeedback, setUploadFeedback] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
+  const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
@@ -1756,7 +1757,12 @@ export function App() {
     }
     if (newPreviews.length > 0) {
       // Accumuler — plusieurs drops successifs s'ajoutent
-      setDragPreviewUrls((prev) => [...prev, ...newPreviews]);
+      setDragPreviewUrls((prev) => {
+        const next = [...prev, ...newPreviews];
+        // Pointer sur le premier nouveau fichier ajouté
+        setPreviewCarouselIndex(prev.length);
+        return next;
+      });
       // Pas de timeout : les chips restent jusqu'à l'envoi du message
     }
 
@@ -1922,6 +1928,7 @@ export function App() {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
       return [];
     });
+    setPreviewCarouselIndex(0);
 
 
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
@@ -3453,29 +3460,63 @@ export function App() {
             <div className="hint">
               Entrée pour envoyer · Shift+Entrée pour aller à la ligne
             </div>
-            {dragPreviewUrls.length > 0 && (
-              <div className="a11-drop-previews">
-                {dragPreviewUrls.map((p, i) => (
-                  <div key={i} className="a11-drop-preview-chip">
-                    {p.isImage ? (
-                      <img src={p.url} alt={p.name} className="a11-drop-preview-thumb" />
-                    ) : (
-                      <span className="a11-drop-preview-file-icon">📄</span>
-                    )}
-                    <span className="a11-drop-preview-name">{p.name}</span>
-                    <button
-                      type="button"
-                      className="a11-drop-preview-remove"
-                      aria-label={`Retirer ${p.name}`}
-                      onClick={() => {
-                        if (p.url) URL.revokeObjectURL(p.url);
-                        setDragPreviewUrls((prev) => prev.filter((_, j) => j !== i));
-                      }}
-                    >✕</button>
+            {dragPreviewUrls.length > 0 && (() => {
+              const total = dragPreviewUrls.length;
+              const idx = Math.min(previewCarouselIndex, total - 1);
+              const p = dragPreviewUrls[idx];
+              return (
+                <div className="a11-drop-carousel">
+                  {/* Thumbnail ou icône */}
+                  <div className="a11-drop-carousel-media">
+                    {p.isImage
+                      ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
+                      : <span className="a11-drop-carousel-file-icon">📄</span>
+                    }
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {/* Infos + navigation */}
+                  <div className="a11-drop-carousel-info">
+                    <span className="a11-drop-carousel-name">{p.name}</span>
+                    {total > 1 && (
+                      <span className="a11-drop-carousel-counter">{idx + 1}/{total}</span>
+                    )}
+                  </div>
+
+                  {/* Flèches si plusieurs */}
+                  {total > 1 && (
+                    <div className="a11-drop-carousel-nav">
+                      <button
+                        type="button"
+                        className="a11-drop-carousel-arrow"
+                        aria-label="Image précédente"
+                        onClick={() => setPreviewCarouselIndex((i) => (i - 1 + total) % total)}
+                      >‹</button>
+                      <button
+                        type="button"
+                        className="a11-drop-carousel-arrow"
+                        aria-label="Image suivante"
+                        onClick={() => setPreviewCarouselIndex((i) => (i + 1) % total)}
+                      >›</button>
+                    </div>
+                  )}
+
+                  {/* Retirer l'image courante */}
+                  <button
+                    type="button"
+                    className="a11-drop-carousel-remove"
+                    aria-label={`Retirer ${p.name}`}
+                    onClick={() => {
+                      if (p.url) URL.revokeObjectURL(p.url);
+                      setDragPreviewUrls((prev) => {
+                        const next = prev.filter((_, j) => j !== idx);
+                        setPreviewCarouselIndex(Math.min(idx, next.length - 1));
+                        return next;
+                      });
+                    }}
+                  >✕</button>
+                </div>
+              );
+            })()}
             <input
               ref={fileInputRef}
               type="file"
