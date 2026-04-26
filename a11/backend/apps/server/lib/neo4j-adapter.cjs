@@ -409,10 +409,18 @@ function isNeo4jAvailable() {
   if (!neo4j) return false;
   const uri = String(process.env.NEO4J_URI || '').trim();
   if (!uri) return false;
-  // Rejeter les placeholders
-  if (uri.includes('your-instance') || uri.includes('your-') || uri === 'neo4j://localhost:7687') {
+  
+  // Rejeter les placeholders évidents (mais accepter localhost qui est valide)
+  if (uri.includes('your-instance') || uri.includes('your-password') || uri.includes('your-username')) {
     return false;
   }
+  
+  // Vérifier que le mot de passe n'est pas un placeholder
+  const password = String(process.env.NEO4J_PASSWORD || '').trim();
+  if (!password || password === 'password' || password === 'your-password-here') {
+    return false;
+  }
+  
   return true;
 }
 
