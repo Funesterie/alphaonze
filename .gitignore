@@ -45,6 +45,9 @@ Thumbs.db
 !**/.env.example
 !**/.env.*.example
 
+# Root workspace lock file (not needed in monorepo)
+/package-lock.json
+
 # A11 monorepo generated state
 /a11/a11_memory/
 /a11/backend/a11_memory/memos/
