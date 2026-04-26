@@ -83,6 +83,14 @@ function scoreSemanticIntents(levels, overrides = {}) {
     }
   }
 
+  // Court-circuit : expressions idiomatiques/introspectives → toujours chat.reply
+  // Ex: "cherche dans ton os", "trouve en toi", "c'est quoi ton rêve", "qui es-tu"
+  const introspectivePattern = /\b(dans\s+ton\s+(os|coeur|ame|âme|tete|tête|esprit|mémoire|memoire)|en\s+toi|ton\s+(reve|rêve|but|identite|identité|nindo|histoire)|qui\s+(es-tu|es\s+tu)|c'est\s+quoi\s+ton|qu'est-ce\s+que\s+tu|parle\s+moi\s+de\s+toi)\b/i;
+  if (introspectivePattern.test(normalizedText)) {
+    rawScores['chat.reply'] += 10;
+    evidence['chat.reply'].push('introspective-bypass');
+  }
+
   const questionLike = /\?/.test(sourceText);
   const explicitQuestion = /\b(comment|pourquoi|quand|qui|quoi|ou|où|what|how|why|when|who)\b/.test(normalizedText);
   const actionLike = /\b(genere|cree|dessine|cherche|trouve|montre|affiche|ecris|code|fais|prepare|generate|create|draw|search|find|show|write)\b/.test(normalizedText);
