@@ -1647,7 +1647,7 @@ function createProtectedChatProxyRouter({
       userText: latestUserMessage,
       messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
       executeImage: false,
-      executeWebSearch: false,
+      executeWebSearch: true,
     });
 
     if (
