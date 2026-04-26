@@ -11,6 +11,7 @@
 # Neo4j Desktop installation and data
 /Neo4j Desktop 2/
 /a11/neo4j/
+/neo4j-desktop-*.exe
 
 # Generated images and test artifacts
 *.png

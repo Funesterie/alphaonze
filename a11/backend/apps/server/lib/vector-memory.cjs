@@ -34,6 +34,13 @@ function cosineSimilarity(vecA, vecB) {
  * Génère un embedding vectoriel via Ollama
  */
 async function generateEmbedding(text, options = {}) {
+  // Vérifier si les embeddings sont activés
+  const enableEmbeddings = process.env.A11_ENABLE_EMBEDDINGS !== 'false';
+  if (!enableEmbeddings) {
+    logger.debug('Embeddings disabled via A11_ENABLE_EMBEDDINGS=false');
+    return null;
+  }
+
   const ollamaBase = options.ollamaBase || process.env.OLLAMA_BASE || 'http://127.0.0.1:11434';
   const model = options.model || process.env.A11_EMBEDDING_MODEL || 'nomic-embed-text';
 
