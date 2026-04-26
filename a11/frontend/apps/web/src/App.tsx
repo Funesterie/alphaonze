@@ -67,6 +67,7 @@ interface ChatMessage {
   role: Role;
   content: string;
   imageUrl?: string | null;
+  imageUrls?: string[] | null;
   videoUrl?: string | null;
   fileUrl?: string | null;
   qflushVerification?: {
@@ -642,6 +643,50 @@ function detectAssistantExportSuggestion(content: string): AssistantExportSugges
   }
 
   return null;
+}
+
+// ── Carousel d'images dans les bulles de chat ─────────────────────────────────
+function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (url: string) => void }) {
+  const [idx, setIdx] = React.useState(0);
+  const total = images.length;
+  const current = images[Math.min(idx, total - 1)];
+  return (
+    <div className="msg-image-carousel">
+      <div className="msg-image-carousel-frame">
+        <button
+          type="button"
+          className="image-preview-trigger"
+          onClick={() => onExpand(current)}
+          aria-label="Agrandir l'image"
+        >
+          <img src={current} alt={`Image ${idx + 1}/${total}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
+        </button>
+      </div>
+      <div className="msg-image-carousel-bar">
+        <button
+          type="button"
+          className="msg-image-carousel-arrow"
+          aria-label="Image précédente"
+          onClick={() => setIdx((i) => (i - 1 + total) % total)}
+        >‹</button>
+        <span className="msg-image-carousel-counter">{idx + 1}/{total}</span>
+        <button
+          type="button"
+          className="msg-image-carousel-arrow"
+          aria-label="Image suivante"
+          onClick={() => setIdx((i) => (i + 1) % total)}
+        >›</button>
+        <button
+          type="button"
+          className="msg-image-carousel-expand"
+          onClick={() => onExpand(current)}
+          aria-label="Agrandir l'image"
+        >
+          <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ✅ LOGIN PANEL
@@ -1892,8 +1937,9 @@ export function App() {
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
-    const previewImageUrl = imageUrls[0] ? String(imageUrls[0]).trim() : "";
-    const sourceImageUrl = previewImageUrl ? (resolveApiAssetUrl(previewImageUrl) || previewImageUrl) : undefined;
+    const allImageUrls = imageUrls.map((u) => resolveApiAssetUrl(u) || u).filter(Boolean);
+    const previewImageUrl = allImageUrls[0] ?? "";
+    const sourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
     const messageKey = normalizeOutgoingMessageKey([effectiveText, sourceImageUrl || previewImageUrl || ""].join("\n"));
     const now = Date.now();
@@ -1913,7 +1959,8 @@ export function App() {
       id: `u-${Date.now()}`,
       role: "user",
       content: effectiveText,
-      imageUrl: previewImageUrl || sourceImageUrl || null,
+      imageUrl: previewImageUrl || null,
+      imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
       ts: new Date().toISOString(),
     };
     setMessages((prev) => {
@@ -3265,23 +3312,35 @@ export function App() {
                       </div>
                     ) : null}
                     {contentNode}
-                    {m.imageUrl && (
-                      <div className="msg-image">
-                        <button
-                          type="button"
-                          className="image-preview-trigger"
-                          onClick={() => setPreviewImageUrl(m.imageUrl || null)}
-                          aria-label="Agrandir l'image"
-                        >
-                          <img
-                            src={m.imageUrl}
-                            alt="Résultat A11"
-                            style={{ maxWidth: "320px", borderRadius: 12 }}
-                          />
-                          <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
-                        </button>
-                      </div>
-                    )}
+                    {(() => {
+                      // Carousel si plusieurs images, sinon affichage simple
+                      const imgs = m.imageUrls && m.imageUrls.length > 1
+                        ? m.imageUrls
+                        : m.imageUrl ? [m.imageUrl] : [];
+                      if (imgs.length === 0) return null;
+                      if (imgs.length === 1) {
+                        return (
+                          <div className="msg-image">
+                            <button
+                              type="button"
+                              className="image-preview-trigger"
+                              onClick={() => setPreviewImageUrl(imgs[0])}
+                              aria-label="Agrandir l'image"
+                            >
+                              <img src={imgs[0]} alt="Résultat A11" style={{ maxWidth: "320px", borderRadius: 12 }} />
+                              <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
+                            </button>
+                          </div>
+                        );
+                      }
+                      // Carousel multi-images
+                      return (
+                        <MsgImageCarousel
+                          images={imgs}
+                          onExpand={(url) => setPreviewImageUrl(url)}
+                        />
+                      );
+                    })()}
                     {m.videoUrl && !m.imageUrl && (
                       <div
                         style={{
