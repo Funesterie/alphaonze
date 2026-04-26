@@ -36,25 +36,32 @@ function createOpenAIClient() {
   });
 }
 
+function getOllamaConfig() {
+  return {
+    base: String(process.env.OLLAMA_BASE || '').trim().replace(/\/+$/, ''),
+    model: String(process.env.LOCAL_DEFAULT_MODEL || process.env.DEFAULT_MODEL || 'gemma4:e4b').trim(),
+  };
+}
+
+function buildOllamaMessages(userMessage) {
+  return [
+    { role: 'system', content: 'Tu es A11, un assistant IA local. Reponds en francais.' },
+    { role: 'user', content: userMessage },
+  ];
+}
+
 /**
- * Appel direct Ollama via /v1/chat/completions (compatible OpenAI).
+ * Appel direct Ollama — mode non-streaming.
  * Retourne le texte de la réponse ou null si echec.
  */
 async function callOllama(userMessage) {
-  const ollamaBase = String(process.env.OLLAMA_BASE || '').trim().replace(/\/+$/, '');
-  if (!ollamaBase) return null;
+  const { base, model } = getOllamaConfig();
+  if (!base) return null;
 
-  const localModel = String(
-    process.env.LOCAL_DEFAULT_MODEL || process.env.DEFAULT_MODEL || 'gemma4:e4b'
-  ).trim();
-
-  const ollamaUrl = `${ollamaBase}/v1/chat/completions`;
+  const ollamaUrl = `${base}/v1/chat/completions`;
   const bodyStr = JSON.stringify({
-    model: localModel,
-    messages: [
-      { role: 'system', content: 'Tu es A11, un assistant IA local. Reponds en francais.' },
-      { role: 'user', content: userMessage },
-    ],
+    model,
+    messages: buildOllamaMessages(userMessage),
     stream: false,
   });
 
@@ -97,6 +104,88 @@ async function callOllama(userMessage) {
     req.write(bodyStr);
     req.end();
   });
+}
+
+/**
+ * Appel Ollama en mode streaming — pipe les chunks SSE vers res.
+ * Format SSE : data: {"delta":"..."}\n\n  puis  data: [DONE]\n\n
+ */
+function streamOllama(userMessage, res) {
+  const { base, model } = getOllamaConfig();
+  if (!base) {
+    res.write('data: {"error":"ollama_not_configured"}\n\n');
+    res.end();
+    return;
+  }
+
+  const bodyStr = JSON.stringify({
+    model,
+    messages: buildOllamaMessages(userMessage),
+    stream: true,
+  });
+
+  let parsed;
+  try {
+    parsed = new URL(`${base}/v1/chat/completions`);
+  } catch (_) {
+    res.write('data: {"error":"invalid_ollama_url"}\n\n');
+    res.end();
+    return;
+  }
+
+  const lib = parsed.protocol === 'https:' ? https : http;
+  const req = lib.request(
+    {
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: parsed.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+    },
+    (ollamaRes) => {
+      let buf = '';
+      ollamaRes.on('data', (chunk) => {
+        buf += chunk.toString('utf8');
+        const lines = buf.split('\n');
+        buf = lines.pop(); // fragment incomplet
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          const jsonStr = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+          try {
+            const parsed2 = JSON.parse(jsonStr);
+            const delta = parsed2?.choices?.[0]?.delta?.content;
+            if (delta) {
+              res.write(`data: ${JSON.stringify({ delta, model })}\n\n`);
+            }
+          } catch (_) { /* ignore malformed chunks */ }
+        }
+      });
+      ollamaRes.on('end', () => {
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+      ollamaRes.on('error', () => {
+        res.write('data: {"error":"ollama_stream_error"}\n\n');
+        res.end();
+      });
+    }
+  );
+
+  req.on('error', () => {
+    res.write('data: {"error":"ollama_unreachable"}\n\n');
+    res.end();
+  });
+  req.setTimeout(120_000, () => {
+    req.destroy();
+    res.write('data: {"error":"ollama_timeout"}\n\n');
+    res.end();
+  });
+  req.write(bodyStr);
+  req.end();
 }
 
 function resolveChatDependencies(overrides = {}) {
@@ -170,10 +259,8 @@ function createChatRouter(overrides = {}) {
       // Priorite 1 : Ollama local
       const ollamaText = await callOllama(userMessage);
       if (ollamaText) {
-        const localModel = String(
-          process.env.LOCAL_DEFAULT_MODEL || process.env.DEFAULT_MODEL || 'gemma4:e4b'
-        ).trim();
-        return res.json({ ok: true, mode: 'ollama', model: localModel, assistant: ollamaText });
+        const { model } = getOllamaConfig();
+        return res.json({ ok: true, mode: 'ollama', model, assistant: ollamaText });
       }
 
       // Priorite 2 : OpenAI (fallback cloud)
@@ -205,6 +292,27 @@ function createChatRouter(overrides = {}) {
         }
       );
     }
+  });
+
+  // --- Route streaming SSE : POST /chat/stream ---
+  // Envoie les tokens Ollama au fur et à mesure (Server-Sent Events).
+  // Format : data: {"delta":"..."}\n\n  ...  data: [DONE]\n\n
+  // Le client peut aussi passer ?stream=1 sur /chat pour activer le streaming.
+  router.post('/chat/stream', express.json({ limit: '2mb' }), (req, res) => {
+    const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
+    if (!userMessage) {
+      res.status(400).json({ ok: false, error: 'missing_message' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // désactive le buffering nginx
+    res.flushHeaders();
+
+    console.log(`[A11][chat/stream] message: ${userMessage}`);
+    streamOllama(userMessage, res);
   });
 
   return router;
