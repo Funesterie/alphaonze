@@ -1745,21 +1745,19 @@ export function App() {
   async function handleImportedFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
 
-    // Previews locaux immédiats (object URL, pas de réseau)
-    const previews: { name: string; url: string; isImage: boolean }[] = [];
+    // Previews locaux immédiats (object URL, pas de réseau) — accumulés, pas remplacés
+    const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
     for (const file of Array.from(files)) {
       if (file.type.startsWith('image/')) {
-        previews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
+        newPreviews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
       } else {
-        previews.push({ name: file.name, url: '', isImage: false });
+        newPreviews.push({ name: file.name, url: '', isImage: false });
       }
     }
-    if (previews.length > 0) {
-      setDragPreviewUrls(previews);
-      setTimeout(() => {
-        previews.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
-        setDragPreviewUrls([]);
-      }, 8000);
+    if (newPreviews.length > 0) {
+      // Accumuler — plusieurs drops successifs s'ajoutent
+      setDragPreviewUrls((prev) => [...prev, ...newPreviews]);
+      // Pas de timeout : les chips restent jusqu'à l'envoi du message
     }
 
     // Upload et injection dans le textarea — on attend la fin pour avoir les URLs
@@ -1919,6 +1917,11 @@ export function App() {
     });
     setInput("");
     setSending(true);
+    // Nettoyer les chips de preview après envoi — les object URLs sont révoquées
+    setDragPreviewUrls((prev) => {
+      prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
+      return [];
+    });
 
 
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
@@ -3412,18 +3415,26 @@ export function App() {
                 {isCompactLayout ? "Import" : "Importer"}
               </button>
 
-              <textarea
-                placeholder="Demande quelque chose à A11…"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
+              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                <textarea
+                  placeholder="Demande quelque chose à A11…"
+                  value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
+                  onChange={(e) => {
+                    // Reconstruire l'input en préservant les tokens [image:...] cachés
+                    const imageTokens = (input.match(/\[image:[^\]]+\]/g) || []).join('\n');
+                    const newText = e.target.value;
+                    setInput(imageTokens ? (imageTokens + (newText ? '\n' + newText : '')) : newText);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  style={{ width: '100%', resize: 'vertical', maxHeight: '35vh', background: '#0d0f13', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 10, padding: 10 }}
+                />
+              </div>
 
               <button
                 type="button"
                 className="send-button"
                 onClick={() => sendMessage()}
-                disabled={sending || !input.trim()}
+                disabled={sending || (!input.trim())}
                 title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
               >
                 {sending ? "…" : "➤"}
