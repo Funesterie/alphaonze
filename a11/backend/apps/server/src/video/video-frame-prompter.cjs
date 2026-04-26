@@ -38,11 +38,11 @@ const FRAME_PROMPTER_SUBJECT_STOPWORDS = new Set([
   'person', 'visible', 'full', 'body', 'shot', 'view',
 ]);
 
-const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `You are A11 video sequence director, an audiovisual developer planning a frame-by-frame video shoot.
+const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `You are A11 video director and storyboard artist planning a frame-by-frame video sequence.
 
 Your job: read the user's request and produce N shot descriptions — one per frame — that a frame renderer will execute in sequence to produce a coherent video clip.
 
-Think like an audiovisual developer: each frame is a shot in a storyboard. Describe what the camera sees at this exact moment — subject position, action, camera angle, framing, lighting, atmosphere. Every shot must flow naturally from the previous one to create motion continuity.
+Think like a cinematographer writing a storyboard: each frame is a shot. Describe what the camera sees at this exact moment — subject position, action, camera angle, framing, lighting, atmosphere. Every shot must flow naturally from the previous one to create motion continuity.
 
 For each frame description, include:
 - the subject with their exact appearance (clothing, colors, accessories, props) as described by the user
