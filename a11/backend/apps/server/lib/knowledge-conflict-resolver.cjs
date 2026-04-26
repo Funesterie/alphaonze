@@ -54,12 +54,14 @@ function queryTypeModifier(sourceType, queryType) {
     if (sourceType === 'kg')  return 0.10;
     if (sourceType === 'web') return 0.08;
     if (sourceType === 'rag') return 0.05;
-    return -0.05;
+    return -0.10; // pénalise episodic et user sur factuel
   }
   if (queryType === 'subjective') {
-    if (sourceType === 'episodic') return 0.10;
     if (sourceType === 'user')     return 0.15;
-    return -0.03;
+    if (sourceType === 'episodic') return 0.20; // boost fort pour subjectif
+    if (sourceType === 'kg')       return -0.20; // pénalise KG sur subjectif
+    if (sourceType === 'rag')      return -0.10;
+    return 0;
   }
   return 0;
 }
