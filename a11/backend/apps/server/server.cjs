@@ -17,6 +17,9 @@ const { safeSlack, SlackDashboard } = require('./utils/slackNotify');
 // Vector memory (RAG)
 const { createVectorMemory } = require('./lib/vector-memory.cjs');
 
+// Knowledge Graph
+const { createKnowledgeGraph } = require('./lib/knowledge-graph.cjs');
+
 
 // --- Dépendances OpenAI ---
 let OpenAI;
@@ -358,6 +361,7 @@ const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
+const createKnowledgeGraphRouter = require('./src/routes/knowledge-graph.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
@@ -1938,6 +1942,18 @@ async function saveChatMemoryMessageWithVector(userId, role, content, conversati
         const vectorMemory = createVectorMemory(normalizedUserId, normalizedConversationId);
         await vectorMemory.addExchange(lastUserMessage, normalizedContent);
         lastUserMessageCache.delete(cacheKey); // Nettoyer le cache
+
+        // Extraire et ajouter les triplets au graphe de connaissances
+        try {
+          const kg = createKnowledgeGraph(normalizedUserId);
+          const exchangeText = `User: ${lastUserMessage}\nAssistant: ${normalizedContent}`;
+          await kg.extractAndAddFromText(exchangeText, {
+            conversationId: normalizedConversationId,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (kgError) {
+          console.warn('[A11][KG] knowledge graph extraction failed:', kgError?.message);
+        }
       } catch (error_) {
         console.warn('[A11][RAG] vector memory save failed:', error_?.message);
       }
@@ -8958,6 +8974,20 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
     }
   }
 
+  // Récupérer le contexte du graphe de connaissances
+  let knowledgeGraphContext = '';
+  if (normalizedLatestMessage) {
+    try {
+      const kg = createKnowledgeGraph(normalizedUserId);
+      const kgResult = kg.getContextForQuery(normalizedLatestMessage, { maxRelations: 10 });
+      if (kgResult.found) {
+        knowledgeGraphContext = kgResult.context;
+      }
+    } catch (error_) {
+      console.warn('[A11][KG] knowledge graph context retrieval failed:', error_?.message);
+    }
+  }
+
   return {
     storedMessages,
     logicalMemory,
@@ -8974,10 +9004,11 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
       files: structuredFiles,
     }),
     vectorContext,
+    knowledgeGraphContext,
   };
 }
 
-function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '') {
+function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '') {
   const messages = [];
   const normalizedSystemPrompt = String(systemPrompt || '').trim();
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
@@ -9006,6 +9037,15 @@ function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemo
   );
   if (memorySystemMessage) {
     messages.push(memorySystemMessage);
+  }
+
+  // Injecter le contexte du graphe de connaissances si disponible
+  const normalizedKgContext = String(knowledgeGraphContext || '').trim();
+  if (normalizedKgContext) {
+    messages.push({
+      role: 'system',
+      content: `# Graphe de connaissances (relations structurées)\n\nVoici les relations connues pertinentes pour cette conversation :\n\n${normalizedKgContext}\n\nUtilise ces relations pour enrichir ta compréhension et ton raisonnement.`
+    });
   }
 
   // Injecter le contexte vectoriel (RAG) si disponible
@@ -10296,7 +10336,7 @@ function shouldAutoUseInternetAgent(body) {
   return !!detectInternetResearchReason(body);
 }
 
-function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '') {
+function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '') {
   return buildChatMessagesWithMemory(
     Array.isArray(storedMessages) ? storedMessages : [],
     logicalMemory,
@@ -10304,7 +10344,8 @@ function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structured
     conversationResourceContext,
     systemPrompt,
     ephemeralMemoryContext,
-    vectorContext
+    vectorContext,
+    knowledgeGraphContext
   );
 }
 
@@ -10338,6 +10379,7 @@ async function proxyQflushChat(req, res) {
       structuredMemoryContext,
       ephemeralMemoryContext,
       vectorContext,
+      knowledgeGraphContext,
     } = memoryContext;
 
     const prompt = latestUserMessage || buildPromptFromMessages(storedMessages);
@@ -10348,7 +10390,8 @@ async function proxyQflushChat(req, res) {
       conversationResourceContext,
       body.systemPrompt,
       ephemeralMemoryContext,
-      vectorContext
+      vectorContext,
+      knowledgeGraphContext
     );
 
     const qflushUrl = process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || 'not_set';
@@ -10644,7 +10687,8 @@ async function proxyChatToOpenAI(req, res) {
         memoryContext.conversationResourceContext,
         req.body?.systemPrompt,
         memoryContext.ephemeralMemoryContext,
-        memoryContext.vectorContext
+        memoryContext.vectorContext,
+        memoryContext.knowledgeGraphContext
       );
     }
 
@@ -10708,7 +10752,8 @@ async function proxyChatToOpenAI(req, res) {
       memoryContext.conversationResourceContext,
       req.body?.systemPrompt,
       memoryContext.ephemeralMemoryContext,
-      memoryContext.vectorContext
+      memoryContext.vectorContext,
+      memoryContext.knowledgeGraphContext
     );
 
     if ((!upstreamBody.prompt || !String(upstreamBody.prompt).trim()) && upstreamBody.messages.length) {
@@ -11995,7 +12040,8 @@ app.post('/api/agent', express.json(), async (req, res) => {
           memoryContext.conversationResourceContext,
           undefined,
           memoryContext.ephemeralMemoryContext,
-          memoryContext.vectorContext
+          memoryContext.vectorContext,
+          memoryContext.knowledgeGraphContext
         );
       }
 
@@ -12313,6 +12359,11 @@ app.use('/api', createA11MemoryWriteRouter({
 app.use(createVectorMemoryRouter({
   verifyJWT,
   normalizeConversationId,
+}));
+
+// Ajout du routeur Knowledge Graph
+app.use(createKnowledgeGraphRouter({
+  verifyJWT,
 }));
 
 // Ajout du routeur Cerbère (llm-router.cjs)
