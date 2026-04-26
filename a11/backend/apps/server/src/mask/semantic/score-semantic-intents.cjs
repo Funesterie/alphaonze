@@ -386,13 +386,14 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const shouldClarifySuggestion = Boolean(
     top.kind === 'action'
     && second.kind !== 'default'
-    && top.rawScore >= 1.2
+    && top.rawScore >= 2.0        // relevé de 1.2 → 2.0
     && !shouldAutoShowExistingImage
     && !strongImplicitImageRequest
+    && !troubleshootingLike       // jamais clarifier si c'est du troubleshooting
     && (
-      confidence < 0.62
-      || marginRatio < 0.24
-      || second.rawScore >= top.rawScore * 0.72
+      confidence < 0.55           // abaissé de 0.62 → 0.55 (moins sensible)
+      || marginRatio < 0.30       // relevé de 0.24 → 0.30
+      || second.rawScore >= top.rawScore * 0.78  // relevé de 0.72 → 0.78
     )
   );
 

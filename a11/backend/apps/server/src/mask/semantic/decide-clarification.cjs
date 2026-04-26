@@ -89,29 +89,29 @@ function decideClarification(scoring) {
     && second.rawScore >= 1
   );
 
-  // Détecter plus de cas ambigus nécessitant clarification
+  // Détecter les cas ambigus nécessitant clarification — seuils relevés pour libérer A11
   const hasMultipleStrongIntents = Boolean(
     first
     && second
-    && first.rawScore >= 2.0
-    && second.rawScore >= 1.5
-    && second.rawScore >= first.rawScore * 0.65
+    && first.rawScore >= 3.0      // relevé de 2.0 → 3.0
+    && second.rawScore >= 2.2     // relevé de 1.5 → 2.2
+    && second.rawScore >= first.rawScore * 0.75  // relevé de 0.65 → 0.75
   );
 
-  const hasConflictingSignals = Boolean(
-    scoring.summary?.actionSignal
-    && scoring.summary?.questionSignal
-    && first.rawScore > 0
-    && second.rawScore > 0
-  );
+  // hasConflictingSignals supprimé : trop de faux positifs
+  // (ex: "t'a recherche internet fonctionne pas ?" → actionSignal + questionSignal → clarification inutile)
+
+  // Paire web.search vs web.image.search : toujours résoudre en web.search sans clarifier
+  const isWebSearchPair = [first?.type, second?.type].sort().join('::') === 'web.image.search::web.search';
 
   const shouldClarify = Boolean(
-    (scoring.summary?.shouldClarifySuggestion || shouldClarifyImageSearchPair || hasMultipleStrongIntents || hasConflictingSignals)
+    (scoring.summary?.shouldClarifySuggestion || shouldClarifyImageSearchPair || hasMultipleStrongIntents)
+    && !isWebSearchPair  // jamais clarifier web.search vs web.image.search
     && first
     && second
     && first.type !== 'chat.reply'
     && second.type !== first.type
-    && first.rawScore >= 0.8 // Seuil minimum pour éviter les faux positifs
+    && first.rawScore >= 1.2  // relevé de 0.8 → 1.2
   );
 
   const options = shouldClarify ? buildOptionsForIntents(first, second) : [];
