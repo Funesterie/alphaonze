@@ -6,47 +6,43 @@ export default async function handleImportFiles(
   if (!list || list.length === 0) return;
   for (const f of Array.from(list)) {
     try {
-      // If it's a text file, read it
+      // Fichiers texte : lire et injecter dans le textarea
       if (f.type.startsWith('text/') || /\.(md|txt|json)$/i.test(f.name)) {
         const start = performance.now();
         const txt = await f.text();
-        const end = performance.now();
-        console.log(`[Importer] Read file '${f.name}' in ${(end - start).toFixed(2)} ms`);
+        console.log(`[Importer] Read file '${f.name}' in ${(performance.now() - start).toFixed(2)} ms`);
         onText(txt);
       } else if (options?.uploadImages && f.type.startsWith('image/')) {
-        // Lire l'image en base64
+        // Upload vers le backend local — pas de fallback data-URL
+        // (coller des mégaoctets de base64 dans le textarea casse tout)
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
-          reader.onerror = () => reject(reader.error);
-          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error(`FileReader error on ${f.name}`));
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
           reader.readAsDataURL(f);
         });
-        // Tenter l'upload vers le backend local
         try {
-          // Toujours utiliser une URL relative pour passer par le proxy Vite en dev
-          const uploadUrl = '/api/upload/image-local';
-          const res = await fetch(uploadUrl, {
+          const res = await fetch('/api/upload/image-local', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contentBase64: dataUrl, filename: f.name }),
           });
           const data = res.ok ? await res.json() : null;
-          // L'URL retournée est relative (/files/...) - la garder relative pour le proxy
           const imageUrl = data?.url || null;
           if (imageUrl) {
             onText(`[image:${imageUrl}]`);
             console.log(`[Importer] Image uploaded locally: ${f.name} -> ${imageUrl}`);
           } else {
-            // Fallback: data URL directe
-            onText(`[image-data:${dataUrl}]`);
-            console.log(`[Importer] Image as data URL: ${f.name}`);
+            // Upload a répondu mais sans URL — erreur propre, pas de base64
+            console.warn(`[Importer] Upload returned no URL for ${f.name} (status ${res.status})`);
+            onText(`[Erreur upload: ${f.name}]`);
           }
-        } catch (uploadErr) {
-          console.warn('[Importer] Local upload failed, using data URL:', uploadErr);
-          onText(`[image-data:${dataUrl}]`);
+        } catch (error_) {
+          // Réseau ou serveur indisponible — erreur propre, pas de base64
+          console.warn('[Importer] Local upload failed:', error_);
+          onText(`[Erreur upload: ${f.name}]`);
         }
       } else {
-        // For other file types, try to extract name and a placeholder
         onText(`[Fichier importé: ${f.name}]`);
       }
     } catch (e) {

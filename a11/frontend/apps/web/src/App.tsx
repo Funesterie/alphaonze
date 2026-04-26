@@ -1743,39 +1743,36 @@ export function App() {
   }
 
   async function handleImportedFiles(files: FileList | null) {
-    // Generate image previews before uploading
-    if (files && files.length > 0) {
-      const previews: { name: string; url: string; isImage: boolean }[] = [];
-      for (const file of Array.from(files)) {
-        if (file.type.startsWith('image/')) {
-          const url = URL.createObjectURL(file);
-          previews.push({ name: file.name, url, isImage: true });
-        } else {
-          previews.push({ name: file.name, url: '', isImage: false });
-        }
+    if (!files || files.length === 0) return;
+
+    // Previews locaux immédiats (object URL, pas de réseau)
+    const previews: { name: string; url: string; isImage: boolean }[] = [];
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        previews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
+      } else {
+        previews.push({ name: file.name, url: '', isImage: false });
       }
+    }
+    if (previews.length > 0) {
       setDragPreviewUrls(previews);
-      // Auto-clear previews after 8s
       setTimeout(() => {
         previews.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
         setDragPreviewUrls([]);
       }, 8000);
     }
 
-    handleImportFiles(files, (txt: string) => {
+    // Upload et injection dans le textarea — on attend la fin pour avoir les URLs
+    await handleImportFiles(files, (txt: string) => {
       setInput((prev) => (prev ? prev + "\n" + txt : txt));
-    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined }).catch(console.error);
+    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
 
-    if (!files || files.length === 0) return;
-
+    // Upload des fichiers non-image dans la conversation (PDF, etc.)
     const conversationId = a11ConvId || selectedChatId || undefined;
-    const uploaded: string[] = [];
-    const failed: string[] = [];
-    // Only upload non-image files via uploadConversationFile — images are already
-    // handled by importer.ts via /api/upload/image-local. Uploading them again
-    // via /api/files/upload causes a 502 in local mode (no R2 signed URL).
     const nonImageFiles = Array.from(files).filter((f) => !f.type.startsWith('image/'));
     if (nonImageFiles.length > 0) {
+      const uploaded: string[] = [];
+      const failed: string[] = [];
       setUploadFeedback(`Import de ${nonImageFiles.length} fichier(s) en cours...`);
       for (const file of nonImageFiles) {
         try {
@@ -1786,19 +1783,17 @@ export function App() {
           failed.push(file.name);
         }
       }
-    }
-
-    if (conversationId) {
-      await refreshConversationActivity(conversationId);
-      await refreshConversationResources(conversationId);
-    }
-
-    if (uploaded.length && failed.length) {
-      setUploadFeedback(`Import partiel: ${uploaded.length} ok, ${failed.length} en echec.`);
-    } else if (uploaded.length) {
-      setUploadFeedback(`${uploaded.length} fichier(s) rattache(s) a la conversation.`);
-    } else if (failed.length) {
-      setUploadFeedback(`Echec import: ${failed.join(", ")}`);
+      if (conversationId) {
+        await refreshConversationActivity(conversationId);
+        await refreshConversationResources(conversationId);
+      }
+      if (uploaded.length && failed.length) {
+        setUploadFeedback(`Import partiel: ${uploaded.length} ok, ${failed.length} en echec.`);
+      } else if (uploaded.length) {
+        setUploadFeedback(`${uploaded.length} fichier(s) rattache(s) a la conversation.`);
+      } else if (failed.length) {
+        setUploadFeedback(`Echec import: ${failed.join(", ")}`);
+      }
     }
   }
 
