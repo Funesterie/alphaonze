@@ -576,10 +576,19 @@ function createIntentResolver(overrides = {}) {
 
     // Détection d'intent analytique via LLM — override la décision sémantique heuristique
     // quand la confiance est suffisante. Séquentiel, timeout court pour ne pas bloquer.
+    // On passe la description Janus et l'historique récent pour que le LLM décide
+    // correctement (ex: "regarde ce beau lapin" + image → chat.reply, pas image.generate).
+    const conversationHistoryForIntent = messages
+      .filter((m) => m?.role === 'user' || m?.role === 'assistant')
+      .slice(-6)
+      .map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 200) }));
+
     let llmIntentResult = null;
     try {
       llmIntentResult = await deps.detectIntentWithLlm({
         message: userText,
+        imageDescription: autoDescribeResult?.description || '',
+        conversationHistory: conversationHistoryForIntent,
         callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
         timeoutMs: 6000,
       });
