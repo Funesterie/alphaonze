@@ -23,6 +23,9 @@ const { createKnowledgeGraph } = require('./lib/knowledge-graph.cjs');
 // Reflection Loop (Self-Correction)
 const { createReflectionLoop } = require('./lib/reflection-loop.cjs');
 
+// Episodic Memory
+const { buildEpisodicContext } = require('./lib/episodic-memory.cjs');
+
 
 // --- Dépendances OpenAI ---
 let OpenAI;
@@ -366,6 +369,7 @@ const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
 const createKnowledgeGraphRouter = require('./src/routes/knowledge-graph.cjs');
 const createReflectionRouter = require('./src/routes/reflection.cjs');
+const createEpisodicMemoryRouter = require('./src/routes/episodic-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
@@ -8992,6 +8996,14 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
     }
   }
 
+  // Récupérer le contexte épisodique (préférences et événements récents)
+  let episodicContext = '';
+  try {
+    episodicContext = buildEpisodicContext(normalizedUserId, 7);
+  } catch (error_) {
+    console.warn('[A11][EPISODIC] episodic context retrieval failed:', error_?.message);
+  }
+
   return {
     storedMessages,
     logicalMemory,
@@ -9009,10 +9021,11 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
     }),
     vectorContext,
     knowledgeGraphContext,
+    episodicContext,
   };
 }
 
-function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '') {
+function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
   const messages = [];
   const normalizedSystemPrompt = String(systemPrompt || '').trim();
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
@@ -9058,6 +9071,15 @@ function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemo
     messages.push({
       role: 'system',
       content: `# Contexte pertinent (mémoire long terme)\n\nVoici des échanges passés pertinents pour cette conversation :\n\n${normalizedVectorContext}\n\nUtilise ces informations pour enrichir ta réponse si elles sont pertinentes.`
+    });
+  }
+
+  // Injecter le contexte épisodique (préférences et événements récents) si disponible
+  const normalizedEpisodicContext = String(episodicContext || '').trim();
+  if (normalizedEpisodicContext) {
+    messages.push({
+      role: 'system',
+      content: `# Mémoire épisodique (préférences et contexte récent)\n\n${normalizedEpisodicContext}\n\nTiens compte de ces préférences et événements récents dans ta réponse.`
     });
   }
 
@@ -10340,7 +10362,7 @@ function shouldAutoUseInternetAgent(body) {
   return !!detectInternetResearchReason(body);
 }
 
-function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '') {
+function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
   return buildChatMessagesWithMemory(
     Array.isArray(storedMessages) ? storedMessages : [],
     logicalMemory,
@@ -10349,7 +10371,8 @@ function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structured
     systemPrompt,
     ephemeralMemoryContext,
     vectorContext,
-    knowledgeGraphContext
+    knowledgeGraphContext,
+    episodicContext
   );
 }
 
@@ -10384,6 +10407,7 @@ async function proxyQflushChat(req, res) {
       ephemeralMemoryContext,
       vectorContext,
       knowledgeGraphContext,
+      episodicContext,
     } = memoryContext;
 
     const prompt = latestUserMessage || buildPromptFromMessages(storedMessages);
@@ -10395,7 +10419,8 @@ async function proxyQflushChat(req, res) {
       body.systemPrompt,
       ephemeralMemoryContext,
       vectorContext,
-      knowledgeGraphContext
+      knowledgeGraphContext,
+      episodicContext
     );
 
     const qflushUrl = process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || 'not_set';
@@ -10692,7 +10717,8 @@ async function proxyChatToOpenAI(req, res) {
         req.body?.systemPrompt,
         memoryContext.ephemeralMemoryContext,
         memoryContext.vectorContext,
-        memoryContext.knowledgeGraphContext
+        memoryContext.knowledgeGraphContext,
+        memoryContext.episodicContext
       );
     }
 
@@ -10757,7 +10783,8 @@ async function proxyChatToOpenAI(req, res) {
       req.body?.systemPrompt,
       memoryContext.ephemeralMemoryContext,
       memoryContext.vectorContext,
-      memoryContext.knowledgeGraphContext
+      memoryContext.knowledgeGraphContext,
+      memoryContext.episodicContext
     );
 
     if ((!upstreamBody.prompt || !String(upstreamBody.prompt).trim()) && upstreamBody.messages.length) {
@@ -12045,7 +12072,8 @@ app.post('/api/agent', express.json(), async (req, res) => {
           undefined,
           memoryContext.ephemeralMemoryContext,
           memoryContext.vectorContext,
-          memoryContext.knowledgeGraphContext
+          memoryContext.knowledgeGraphContext,
+          memoryContext.episodicContext
         );
       }
 
@@ -12372,6 +12400,11 @@ app.use(createKnowledgeGraphRouter({
 
 // Ajout du routeur Reflection (Self-Correction)
 app.use(createReflectionRouter({
+  verifyJWT,
+}));
+
+// Ajout du routeur Episodic Memory
+app.use(createEpisodicMemoryRouter({
   verifyJWT,
 }));
 
