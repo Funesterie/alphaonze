@@ -1653,8 +1653,17 @@ function createProtectedChatProxyRouter({
     if (
       resolution.kind === 'chat.reply'
       || resolution.kind === 'code.python.generate'
-      || resolution.kind === 'web.search'
     ) {
+      return false;
+    }
+
+    // web.search avec résultats : retourner directement le payload
+    if (resolution.kind === 'web.search' && resolution.responsePayload) {
+      return res.status(200).json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
+    }
+
+    // web.search sans résultats : laisser passer au LLM
+    if (resolution.kind === 'web.search' && !resolution.responsePayload) {
       return false;
     }
 

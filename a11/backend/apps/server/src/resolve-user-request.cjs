@@ -837,8 +837,53 @@ function createIntentResolver(overrides = {}) {
 
     if (input.executeRuntime === true) {
       resolution = await executeResolvedRuntime(resolution, input, deps);
-    } else if (kind === 'web.image.search' && input.executeWebSearch === true) {
-      resolution = await executeResolvedRuntime(resolution, input, deps);
+    } else if ((kind === 'web.image.search' || kind === 'web.search') && input.executeWebSearch === true) {
+      // web.search : exécuter la recherche et injecter les résultats dans le contexte LLM
+      if (kind === 'web.search') {
+        try {
+          const query = String(mask?.inputs?.query || mask?.raw || userText).trim();
+          const { t_web_search } = require('./a11/tools-dispatcher.cjs');
+          const searchResults = typeof t_web_search === 'function'
+            ? await t_web_search({ query, limit: 5 })
+            : null;
+
+          if (searchResults?.results?.length > 0) {
+            const formatted = searchResults.results
+              .slice(0, 5)
+              .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet || ''}`)
+              .join('\n\n');
+
+            resolution.webSearchResults = searchResults.results;
+            resolution.responsePayload = {
+              ok: true,
+              mode: 'web_search',
+              query,
+              results: searchResults.results,
+              // Contexte injecté dans le message système pour le LLM
+              webContext: `Résultats de recherche web pour "${query}" :\n\n${formatted}`,
+              assistant: `Voici ce que j'ai trouvé sur le web pour "${query}" :\n\n${formatted}`,
+            };
+          } else {
+            resolution.responsePayload = {
+              ok: false,
+              mode: 'web_search',
+              query,
+              results: [],
+              assistant: `Je n'ai pas trouvé de résultats pour "${query}".`,
+            };
+          }
+        } catch (searchErr) {
+          console.error('[web.search] Erreur:', searchErr.message);
+          resolution.responsePayload = {
+            ok: false,
+            mode: 'web_search',
+            error: searchErr.message,
+            assistant: `La recherche web a échoué : ${searchErr.message}`,
+          };
+        }
+      } else {
+        resolution = await executeResolvedRuntime(resolution, input, deps);
+      }
     }
 
     return resolution;
