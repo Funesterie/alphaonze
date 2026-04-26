@@ -249,6 +249,43 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'a11_shell',
+    description:
+      'Exécute une commande shell dans le workspace Funesterie via A11. Liste blanche stricte : node, npm, npx, git, tsc, vitest, cat, ls, find, grep, echo, pwsh. Permet à A11 d\'installer des packages npm, lancer des builds, lire des fichiers, exécuter des scripts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: {
+          type: 'string',
+          description: 'Commande à exécuter (ex: "npm install @funeste38/qflush", "git status", "node script.cjs").',
+        },
+        args: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Arguments séparés (optionnel, sinon parsés depuis command).',
+        },
+        cwd: {
+          type: 'string',
+          description: 'Répertoire de travail relatif au workspace root (optionnel).',
+        },
+        timeout: {
+          type: 'number',
+          description: 'Timeout en ms (défaut: 30000, max: 120000).',
+        },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'a11_shell_whitelist',
+    description: 'Retourne la liste des commandes shell autorisées pour A11.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -265,6 +302,8 @@ async function handleTool(name, args) {
     case 'a11_chat': {
       const body = {
         message: args.message,
+        max_tokens: 4096,
+        n_predict: 4096,
         ...(args.conversationId ? { conversationId: args.conversationId } : {}),
         ...(args.model ? { model: args.model } : {}),
       };
@@ -327,6 +366,22 @@ async function handleTool(name, args) {
 
     case 'a11_llm_stats': {
       const res = await a11Get('/api/llm/stats');
+      return formatResult(res);
+    }
+
+    case 'a11_shell': {
+      const body = {
+        command: args.command,
+        ...(args.args ? { args: args.args } : {}),
+        ...(args.cwd ? { cwd: args.cwd } : {}),
+        ...(args.timeout ? { timeout: args.timeout } : {}),
+      };
+      const res = await a11Post('/api/agent/shell', body, (args.timeout || 30_000) + 5_000);
+      return formatResult(res);
+    }
+
+    case 'a11_shell_whitelist': {
+      const res = await a11Get('/api/agent/shell/whitelist');
       return formatResult(res);
     }
 

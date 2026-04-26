@@ -1393,6 +1393,33 @@ if (db) {
   console.warn('[DB] DATABASE_URL non défini, authentification DB désactivée');
 }
 
+// ============================================================
+// Checkpoint Manager & Tool-Calling Layer
+// ============================================================
+const { CheckpointManager } = require('./lib/checkpoint-manager.cjs');
+const { ToolCallingLayer } = require('./lib/tool-calling-layer.cjs');
+
+const checkpointManager = new CheckpointManager({
+  stateDir: path.join(PUBLIC_RUNTIME_ROOT, 'checkpoints'),
+  cleanup: {
+    maxAgeMs: 7 * 24 * 60 * 60 * 1000, // 7 jours
+    keepLast: 10,
+    keepCurrentSession: true,
+  },
+});
+
+const toolCallingLayer = new ToolCallingLayer({
+  stateDir: path.join(PUBLIC_RUNTIME_ROOT, 'tool-jobs'),
+  circuitBreaker: {
+    failureThreshold: 5,
+    timeWindow: 5 * 60 * 1000,
+    cooldownPeriod: 10 * 60 * 1000,
+  },
+});
+
+console.log('[A11] CheckpointManager initialized');
+console.log('[A11] ToolCallingLayer initialized');
+
 function normalizeConversationId(conversationId) {
   const normalized = String(conversationId || '').trim();
   return normalized || 'default';
@@ -5885,6 +5912,25 @@ app.use('/api/resources', verifyJWT);
 app.use('/api/mail', verifyJWT);
 app.use(mailRouter);
 app.use(casinoRouter);
+
+// ============================================================
+// Checkpoint & Tools routes
+// ============================================================
+const createCheckpointsRouter = require('./src/routes/checkpoints.cjs');
+const createToolsRouter = require('./src/routes/tools.cjs');
+const createAgentShellRouter = require('./src/routes/agent-shell.cjs');
+
+app.use('/api/checkpoints', verifyJWT);
+app.use('/api/tools', verifyJWT);
+// /api/agent est déjà protégé par verifyJWT plus haut
+
+app.use('/api/checkpoints', createCheckpointsRouter({ checkpointManager }));
+app.use('/api/tools', createToolsRouter({ toolCallingLayer }));
+app.use('/api/agent/shell', createAgentShellRouter({ workspaceRoot: WORKSPACE_ROOT }));
+
+console.log('[Server] Checkpoint routes mounted under /api/checkpoints');
+console.log('[Server] Tools routes mounted under /api/tools');
+console.log('[Server] Agent shell route mounted under /api/agent/shell');
 
 
 
@@ -10569,8 +10615,8 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
     const prompt = typeof body.prompt === 'string' && body.prompt.trim()
       ? body.prompt
       : buildPromptFromMessages(messages);
-    const nPredictRaw = body.n_predict ?? body.max_tokens ?? 200;
-    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : 200;
+    const nPredictRaw = body.n_predict ?? body.max_tokens ?? Number(process.env.A11_CHAT_MAX_TOKENS || 4096);
+    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : 4096;
 
     const userInfo = req.user?.username ? `(user: ${req.user.username})` : '';
     console.log('[A11][Llama] Proxying local completion', userInfo, '->', localLlamaCompletionUrl);

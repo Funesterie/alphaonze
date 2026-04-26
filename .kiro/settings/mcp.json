@@ -1,0 +1,38 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "C:\\Users\\cella\\.local\\bin\\uvx.exe",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "*"
+      ]
+    },
+    "a11": {
+      "command": "node",
+      "args": [
+        "D:\\projets\\funesterie\\a11\\backend\\apps\\server\\tools\\mcp\\a11-mcp-server.cjs"
+      ],
+      "env": {
+        "A11_BASE_URL": "http://localhost:3000",
+        "A11_NEZ_TOKEN": "nez:a11-client-funesterie-pro"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "a11_chat",
+        "a11_health",
+        "a11_llm_stats",
+        "a11_vs_status",
+        "a11_vs_project_structure",
+        "a11_shell",
+        "a11_shell_whitelist"
+      ],
+      "disabledTools": []
+    }
+  }
+}
