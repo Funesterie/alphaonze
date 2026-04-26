@@ -301,7 +301,7 @@ function createChatRouter(overrides = {}) {
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
-        max_tokens: 512,
+        max_tokens: Number(process.env.A11_CHAT_MAX_TOKENS || 4096),
       });
 
       const text = completion?.choices?.[0]?.message?.content || '';
