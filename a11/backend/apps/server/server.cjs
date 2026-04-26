@@ -6476,7 +6476,28 @@ try {
   const serveStatic = isEmbeddedUiEnabled();
   if (serveStatic) {
     if (fs.existsSync(webPublic)) {
-      app.use(express.static(webPublic, { maxAge: '1d' }));
+      app.use(express.static(webPublic, {
+        maxAge: '1d',
+        setHeaders(res, filePath) {
+          // Forcer les MIME types corrects pour les assets frontend
+          const ext = require('node:path').extname(filePath).toLowerCase();
+          const mimeMap = {
+            '.css': 'text/css; charset=utf-8',
+            '.js':  'application/javascript; charset=utf-8',
+            '.mjs': 'application/javascript; charset=utf-8',
+            '.json': 'application/json; charset=utf-8',
+            '.svg': 'image/svg+xml',
+            '.webmanifest': 'application/manifest+json',
+          };
+          if (mimeMap[ext]) {
+            res.setHeader('Content-Type', mimeMap[ext]);
+          }
+          // Pas de cache sur index.html — toujours revalider
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          }
+        },
+      }));
       console.log('[A11] Serving frontend static from', webPublic);
     } else {
       console.log('[A11] Frontend public folder not found at', webPublic);
