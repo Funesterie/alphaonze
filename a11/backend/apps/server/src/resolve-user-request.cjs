@@ -462,6 +462,19 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
       throw error;
     }
 
+    // Extraire les images de référence du message (tokens [image:...])
+    // et les injecter dans le body vidéo pour que Janus puisse les analyser.
+    const videoImageRefs = extractRequestImageReferences({
+      body: input.body || {},
+      messages: Array.isArray(input.messages) ? input.messages : [],
+    });
+    const firstVideoImageRef = String(videoImageRefs[0]?.locator || '').trim();
+    const allVideoImageUrls = videoImageRefs.map((r) => r.locator).filter(Boolean);
+
+    // sourceImageUrl : priorité à ce qui est déjà dans videoRequest, sinon première image du message
+    const resolvedSourceImageUrl = String(resolution.videoRequest?.sourceImageUrl || firstVideoImageRef || '').trim();
+    const isLocalVideoRef = resolvedSourceImageUrl && !resolvedSourceImageUrl.startsWith('http');
+
     const videoResult = await deps.generateVideo({
       req: input.req,
       prompt: resolution.videoRequest?.prompt || input.body?.prompt || '',
@@ -476,10 +489,15 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
         sourceType: resolution.videoRequest?.sourceType,
         sourceUrl: resolution.videoRequest?.sourceUrl,
         sourcePath: resolution.videoRequest?.sourcePath,
-        sourceImageUrl: resolution.videoRequest?.sourceImageUrl,
-        sourceImagePath: resolution.videoRequest?.sourceImagePath,
+        // Injecter les images de référence extraites du message
+        sourceImageUrl: isLocalVideoRef ? '' : resolvedSourceImageUrl,
+        sourceImagePath: isLocalVideoRef ? resolvedSourceImageUrl : (resolution.videoRequest?.sourceImagePath || ''),
         sourceVideoUrl: resolution.videoRequest?.sourceVideoUrl,
         sourceVideoPath: resolution.videoRequest?.sourceVideoPath,
+        // Toutes les images pour le contexte multi-référence
+        referenceImageUrls: allVideoImageUrls.length > 1 ? allVideoImageUrls : undefined,
+        // Contexte visuel enrichi par les descriptions Janus des images de référence
+        compiledVisualContext: resolution.videoRequest?.compiledVisualContext || undefined,
       },
     });
     return {
@@ -622,12 +640,53 @@ function createIntentResolver(overrides = {}) {
     }
 
     if (selectedIntentType === 'video.generate') {
+      // Extraire les images de référence du message pour enrichir le prompt vidéo
+      const videoImageRefsEarly = extractRequestImageReferences({
+        body: input.body || {},
+        messages,
+      });
+
+      // Décrire les images de référence avec Janus pour enrichir le contexte vidéo
+      // (ex: "ces deux soldats" → Janus décrit ce qu'il voit sur les images)
+      const runtimeRootForVideo = String(
+        process.env.A11_RUNTIME_ROOT
+        || require('node:path').resolve(__dirname, '..', '..', '..', 'runtime')
+      ).trim();
+
+      const videoImageDescriptions = [];
+      for (const ref of videoImageRefsEarly.slice(0, 3)) {
+        try {
+          const desc = await autoDescribeImage({
+            imageLocator: ref.locator,
+            runtimeRoot: runtimeRootForVideo,
+            timeoutMs: 20000,
+            requestId: `${traceId}-video-ref-${ref.image_id}`,
+          });
+          if (!desc.skipped && desc.description) {
+            videoImageDescriptions.push(desc.description);
+            console.log(`[A11][video-ref-describe] ${ref.image_id}: "${desc.description.slice(0, 80)}"`);
+          }
+        } catch {
+          // skip silently
+        }
+      }
+
+      // Enrichir le prompt vidéo avec les descriptions des images de référence
+      const videoRequest = parseVideoGenerateRequest(userText, input.body || {});
+      if (videoImageDescriptions.length > 0) {
+        const refContext = videoImageDescriptions.length === 1
+          ? `Reference image: ${videoImageDescriptions[0]}`
+          : videoImageDescriptions.map((d, i) => `Reference image ${i + 1}: ${d}`).join('. ');
+        videoRequest.compiledVisualContext = refContext;
+        console.log(`[A11][video-ref-describe] visual context injected: "${refContext.slice(0, 120)}"`);
+      }
+
       let resolution = {
         traceId,
         pipeline,
         kind: 'video.generate',
         semantic,
-        videoRequest: parseVideoGenerateRequest(userText, input.body || {}),
+        videoRequest,
         responsePayload: null,
         requestText: {
           original: effectiveUserText,
