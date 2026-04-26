@@ -338,6 +338,127 @@ async function generateAudioMock(params) {
 }
 
 // ============================================================================
+// PRODUCTION IMPLEMENTATIONS
+// ============================================================================
+
+async function generateVisualProduction(params, endpoint) {
+  const url = endpoint || process.env.SD_PROXY_URL || process.env.STABLE_DIFFUSION_URL;
+  if (!url) throw new Error('SD endpoint not configured');
+
+  const body = {
+    prompt: params.prompt,
+    negative_prompt: params.negative_prompt || '',
+    width: params.width || (params.aspect_ratio === '16:9' ? 768 : params.aspect_ratio === '9:16' ? 512 : 512),
+    height: params.height || (params.aspect_ratio === '16:9' ? 432 : params.aspect_ratio === '9:16' ? 768 : 512),
+    steps: params.steps || 20,
+    seed: params.seed || -1,
+    cfg_scale: params.cfg_scale || 7,
+  };
+
+  const response = await fetch(`${url}/sdapi/v1/txt2img`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`SD API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const imageBase64 = data.images?.[0];
+
+  if (!imageBase64) throw new Error('No image returned from SD API');
+
+  return {
+    ok: true,
+    mode: 'production',
+    result: {
+      imageBase64,
+      prompt: params.prompt,
+      style: params.style || 'default',
+      aspectRatio: params.aspect_ratio || '1:1',
+      seed: data.info ? JSON.parse(data.info || '{}').seed : params.seed,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+async function generateVideoProduction(params, endpoint) {
+  const url = endpoint || process.env.VIDEO_PROXY_URL;
+  if (!url) throw new Error('Video endpoint not configured');
+
+  const response = await fetch(`${url}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: params.prompt,
+      style: params.style || 'default',
+      duration_sec: params.duration_sec || 5,
+      fps: params.fps || 8,
+      scene_breakdown: params.scene_breakdown || [],
+    }),
+    signal: AbortSignal.timeout(300000), // 5 min pour la vidéo
+  });
+
+  if (!response.ok) {
+    throw new Error(`Video API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    ok: true,
+    mode: 'production',
+    result: {
+      videoUrl: data.videoUrl || data.url || data.output,
+      jobId: data.jobId || null,
+      prompt: params.prompt,
+      duration: params.duration_sec || 5,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+async function generateAudioProduction(params, endpoint) {
+  const url = endpoint || process.env.TTS_SERVICE_URL;
+  if (!url) throw new Error('TTS endpoint not configured');
+
+  const response = await fetch(`${url}/synthesize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: params.text_prompt,
+      language: params.language || 'fr-FR',
+      speaker_id: params.speaker_id || 'default',
+      emotion: params.emotion || 'neutral',
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`TTS API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  return {
+    ok: true,
+    mode: 'production',
+    result: {
+      audioUrl: data.audioUrl || data.url || data.output,
+      audioBase64: data.audioBase64 || null,
+      text: params.text_prompt,
+      language: params.language || 'fr-FR',
+      speaker: params.speaker_id || 'default',
+      emotion: params.emotion || 'neutral',
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+// ============================================================================
 // TOOL CALLING LAYER
 // ============================================================================
 
@@ -422,12 +543,20 @@ class ToolCallingLayer {
         return;
       }
     } else {
-      // TODO: Implémenter les appels réels aux APIs
-      this.jobManager.updateJob(jobId, {
-        status: 'failed',
-        error: 'production_implementation_pending',
-      });
-      return;
+      // Appels production vers les APIs réelles
+      if (job.toolName === 'generate_visual') {
+        toolFn = () => generateVisualProduction(job.params, capability.endpoint);
+      } else if (job.toolName === 'generate_video') {
+        toolFn = () => generateVideoProduction(job.params, capability.endpoint);
+      } else if (job.toolName === 'generate_audio') {
+        toolFn = () => generateAudioProduction(job.params, capability.endpoint);
+      } else {
+        this.jobManager.updateJob(jobId, {
+          status: 'failed',
+          error: 'production_tool_not_implemented',
+        });
+        return;
+      }
     }
     
     // Exécuter avec retry

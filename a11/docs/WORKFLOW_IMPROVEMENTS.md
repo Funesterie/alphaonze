@@ -266,10 +266,11 @@ const resolveKnowledgeConflict = ({
 
 ### Phase 3: Knowledge Conflict Resolver (Semaine 3)
 
-1. ⏳ Créer `lib/knowledge-conflict-resolver.cjs`
-2. ⏳ Implémenter algorithme de vote pondéré
-3. ⏳ Intégrer dans pipeline de génération
-4. ⏳ Tests avec scénarios conflictuels
+1. ✅ Créer `lib/knowledge-conflict-resolver.cjs`
+2. ✅ Implémenter algorithme de vote pondéré
+3. ✅ Créer routes API `/api/knowledge/resolve` et `/api/knowledge/resolve-batch`
+4. ✅ Intégrer dans pipeline de génération
+5. ⏳ Tests avec scénarios conflictuels
 
 ---
 
