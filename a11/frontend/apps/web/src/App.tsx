@@ -1771,14 +1771,20 @@ export function App() {
     const conversationId = a11ConvId || selectedChatId || undefined;
     const uploaded: string[] = [];
     const failed: string[] = [];
-    setUploadFeedback(`Import de ${files.length} fichier(s) en cours...`);
-    for (const file of Array.from(files)) {
-      try {
-        await uploadConversationFile(file, { conversationId });
-        uploaded.push(file.name);
-      } catch (error_) {
-        console.warn("[A11] file upload failed", file.name, error_);
-        failed.push(file.name);
+    // Only upload non-image files via uploadConversationFile — images are already
+    // handled by importer.ts via /api/upload/image-local. Uploading them again
+    // via /api/files/upload causes a 502 in local mode (no R2 signed URL).
+    const nonImageFiles = Array.from(files).filter((f) => !f.type.startsWith('image/'));
+    if (nonImageFiles.length > 0) {
+      setUploadFeedback(`Import de ${nonImageFiles.length} fichier(s) en cours...`);
+      for (const file of nonImageFiles) {
+        try {
+          await uploadConversationFile(file, { conversationId });
+          uploaded.push(file.name);
+        } catch (error_) {
+          console.warn("[A11] file upload failed", file.name, error_);
+          failed.push(file.name);
+        }
       }
     }
 
