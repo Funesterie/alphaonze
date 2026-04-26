@@ -3,13 +3,16 @@
  *
  * Web Guide pour A11 — inspiré du format Google Web Guide.
  * Regroupe les résultats de recherche web par thèmes via analyse heuristique.
+ * Intègre Janus Vision pour analyser les images trouvées dans les résultats.
  *
  * Au lieu d'une liste plate de liens, les résultats sont organisés en sections
  * thématiques avec un titre, une description et les liens associés.
+ * Les images sont analysées par Janus si disponible.
  *
  * Usage :
- *   const { buildWebGuide } = require('./web-guide.cjs');
+ *   const { buildWebGuide, enrichWebGuideWithJanus } = require('./web-guide.cjs');
  *   const guide = buildWebGuide(query, results);
+ *   const enriched = await enrichWebGuideWithJanus(guide); // optionnel
  */
 
 // ─── Détecteurs de thèmes ─────────────────────────────────────────────────────
@@ -189,35 +192,6 @@ function buildWebGuide(query, results) {
 }
 
 /**
- * Formate le Web Guide en texte structuré pour injection dans le contexte LLM.
- */
-function formatWebGuideForLLM(query, sections) {
-  if (!sections.length) return `Aucun résultat pour "${query}".`;
-
-  const lines = [`🔍 Web Guide — "${query}"\n`];
-
-  for (const section of sections) {
-    lines.push(`${section.icon} **${section.label}**`);
-    lines.push(`_${section.summary}_`);
-
-    for (const result of section.results.slice(0, 3)) {
-      if (result.isImage) {
-        lines.push(`  • [Image](${result.url})`);
-      } else {
-        lines.push(`  • [${result.title}](${result.url})`);
-        if (result.snippet) {
-          lines.push(`    ${result.snippet.slice(0, 120)}${result.snippet.length > 120 ? '…' : ''}`);
-        }
-      }
-    }
-
-    lines.push('');
-  }
-
-  return lines.join('\n');
-}
-
-/**
  * Formate le Web Guide en réponse courte pour A11.
  * Version condensée pour les réponses chat.
  */
@@ -247,10 +221,164 @@ function formatWebGuideShort(query, sections) {
   return lines.join('\n');
 }
 
+// ─── Intégration Janus Vision ─────────────────────────────────────────────────
+
+/**
+ * Télécharge une image depuis une URL et retourne son buffer.
+ */
+async function fetchImageBuffer(url, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 A11-WebGuide/1.0' },
+    });
+    if (!res.ok) return null;
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.startsWith('image/')) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    return { buffer: Buffer.from(arrayBuffer), contentType };
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Enrichit le Web Guide avec des descriptions Janus des images trouvées.
+ * Si Janus n'est pas disponible, retourne le guide inchangé.
+ *
+ * @param {Object} guide - Le Web Guide produit par buildWebGuide
+ * @param {Object} options - Options (maxImages, timeoutMs)
+ * @returns {Object} Guide enrichi avec les descriptions Janus
+ */
+async function enrichWebGuideWithJanus(guide, options = {}) {
+  if (!guide || !guide.sections) return guide;
+
+  const maxImages = Math.min(Number(options.maxImages || 3), 5);
+  const timeoutMs = Number(options.timeoutMs || 10000);
+
+  // Vérifier si Janus est disponible
+  let callJanusVisionText;
+  let resolveVisionProvider;
+  try {
+    const janusModule = require('./janus-vision-runtime.cjs');
+    callJanusVisionText = janusModule.callJanusVisionText;
+    resolveVisionProvider = janusModule.resolveVisionProvider;
+  } catch (_) {
+    return guide; // Janus non disponible
+  }
+
+  const provider = resolveVisionProvider();
+  if (provider === 'none') return guide; // Janus désactivé
+
+  // Collecter les images des résultats
+  const imageSection = guide.sections.find((s) => s.id === 'image');
+  const imageResults = imageSection?.results?.slice(0, maxImages) || [];
+
+  // Aussi chercher des images dans les autres sections (URLs d'images dans les snippets)
+  const allImageUrls = imageResults.map((r) => r.url).filter(Boolean);
+
+  if (allImageUrls.length === 0) return guide;
+
+  const janusDescriptions = [];
+
+  for (const imageUrl of allImageUrls) {
+    try {
+      const fetched = await fetchImageBuffer(imageUrl, timeoutMs);
+      if (!fetched?.buffer) continue;
+
+      const result = await callJanusVisionText({
+        imageBuffer: fetched.buffer,
+        contentType: fetched.contentType,
+        prompt: `Décris brièvement ce que tu vois dans cette image en lien avec la recherche "${guide.query}". Sois concis (1-2 phrases).`,
+        maxNewTokens: 120,
+        timeoutMs,
+      });
+
+      const description = String(result?.text || result || '').trim();
+      if (description) {
+        janusDescriptions.push({ url: imageUrl, description });
+      }
+    } catch (_) {
+      // Janus indisponible ou timeout — on continue sans
+    }
+  }
+
+  if (janusDescriptions.length === 0) return guide;
+
+  // Enrichir la section images avec les descriptions Janus
+  const enrichedSections = guide.sections.map((section) => {
+    if (section.id !== 'image') return section;
+    return {
+      ...section,
+      label: 'Images analysées par Janus',
+      icon: '👁️',
+      summary: `${janusDescriptions.length} image(s) analysée(s) par Janus Vision.`,
+      results: section.results.map((result) => {
+        const desc = janusDescriptions.find((d) => d.url === result.url);
+        return desc ? { ...result, janusDescription: desc.description } : result;
+      }),
+      janusAnalysis: janusDescriptions,
+    };
+  });
+
+  // Reconstruire le formatted avec les descriptions Janus
+  const enrichedGuide = {
+    ...guide,
+    sections: enrichedSections,
+    janusEnabled: true,
+    janusDescriptions,
+  };
+
+  enrichedGuide.formatted = formatWebGuideForLLM(guide.query, enrichedSections, janusDescriptions);
+
+  return enrichedGuide;
+}
+
+/**
+ * Formate le Web Guide en texte lisible pour le LLM.
+ * Version enrichie avec descriptions Janus si disponibles.
+ */
+function formatWebGuideForLLM(query, sections, janusDescriptions = []) {
+  if (!sections.length) return `Aucun résultat pour "${query}".`;
+
+  const lines = [`🔍 Web Guide — "${query}"\n`];
+
+  for (const section of sections) {
+    lines.push(`${section.icon} **${section.label}**`);
+    lines.push(`_${section.summary}_`);
+
+    for (const result of section.results.slice(0, 3)) {
+      if (result.isImage) {
+        const desc = result.janusDescription
+          || janusDescriptions.find((d) => d.url === result.url)?.description;
+        if (desc) {
+          lines.push(`  • 👁️ [Image](${result.url}) — ${desc}`);
+        } else {
+          lines.push(`  • [Image](${result.url})`);
+        }
+      } else {
+        lines.push(`  • [${result.title}](${result.url})`);
+        if (result.snippet) {
+          lines.push(`    ${result.snippet.slice(0, 120)}${result.snippet.length > 120 ? '…' : ''}`);
+        }
+      }
+    }
+
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
 module.exports = {
   buildWebGuide,
   formatWebGuideForLLM,
   formatWebGuideShort,
   classifyResult,
+  enrichWebGuideWithJanus,
   THEME_RULES,
 };

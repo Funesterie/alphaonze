@@ -843,13 +843,21 @@ function createIntentResolver(overrides = {}) {
         try {
           const query = String(mask?.inputs?.query || mask?.raw || userText).trim();
           const { t_web_search } = require('./a11/tools-dispatcher.cjs');
-          const { buildWebGuide, formatWebGuideShort } = require('../lib/web-guide.cjs');
+          const { buildWebGuide, formatWebGuideShort, enrichWebGuideWithJanus } = require('../lib/web-guide.cjs');
           const searchResults = typeof t_web_search === 'function'
             ? await t_web_search({ query, limit: 8 })
             : null;
 
           if (searchResults?.results?.length > 0) {
-            const guide = buildWebGuide(query, searchResults.results);
+            let guide = buildWebGuide(query, searchResults.results);
+
+            // Enrichir avec Janus si des images sont présentes (non-bloquant)
+            try {
+              guide = await enrichWebGuideWithJanus(guide, { maxImages: 2, timeoutMs: 8000 });
+            } catch (_) {
+              // Janus indisponible — on continue sans
+            }
+
             const shortFormat = formatWebGuideShort(query, guide.sections);
 
             resolution.webSearchResults = searchResults.results;
