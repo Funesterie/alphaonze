@@ -983,29 +983,31 @@ async function planVideoSequence({
         }
 
         llmFailureReason = String(llmResult.reason || 'llm_prompter_failed').trim() || 'llm_prompter_failed';
-        console.warn(`[A11][video-prompter] LLM prompter failed: ${llmFailureReason}, policy=llm_only_no_heuristic_fallback`);
+        console.warn(`[A11][video-prompter] LLM prompter failed: ${llmFailureReason}, falling back to heuristic plan`);
 
-        // Pas de fallback heuristic silencieux : retourner une erreur explicite.
-        const planError = new Error(`video_sequence_planner_failed:${llmFailureReason}`);
-        planError.code = 'video_sequence_planner_failed';
-        planError.policy = 'llm_only_no_heuristic_fallback';
-        planError.llmFailureReason = llmFailureReason;
-        planError.providerRequested = providerRequested;
-        planError.imageAwareUsed = imageAwareUsed;
-        planError.imageAwareError = imageAwareError || null;
-        throw planError;
+        // Fallback heuristique — le LLM local a échoué mais on peut quand même générer
+        return {
+          ...heuristicFallbackPlan,
+          providerUsed: 'heuristic_fallback',
+          fallbackReason: llmFailureReason,
+          imageAwareUsed,
+          imageAwareError: imageAwareError || null,
+          visualAnalysis,
+          visualAnalysisProvider: visualAnalysis ? 'janus' : null,
+        };
       } else {
         llmFailureReason = 'llm_prompter_disabled';
-        console.warn(`[A11][video-prompter] LLM prompter disabled, policy=llm_only_no_heuristic_fallback`);
+        console.warn(`[A11][video-prompter] LLM prompter disabled, using heuristic plan`);
 
-        const planError = new Error(`video_sequence_planner_failed:${llmFailureReason}`);
-        planError.code = 'video_sequence_planner_failed';
-        planError.policy = 'llm_only_no_heuristic_fallback';
-        planError.llmFailureReason = llmFailureReason;
-        planError.providerRequested = providerRequested;
-        planError.imageAwareUsed = imageAwareUsed;
-        planError.imageAwareError = imageAwareError || null;
-        throw planError;
+        return {
+          ...heuristicFallbackPlan,
+          providerUsed: 'heuristic_fallback',
+          fallbackReason: llmFailureReason,
+          imageAwareUsed,
+          imageAwareError: imageAwareError || null,
+          visualAnalysis,
+          visualAnalysisProvider: visualAnalysis ? 'janus' : null,
+        };
       }
     }
 

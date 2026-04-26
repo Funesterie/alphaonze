@@ -260,11 +260,11 @@ function validateFramePrompterResponse(response, { subject = '' } = {}) {
   if (!response || typeof response !== 'object') return false;
   const frames = extractFrameEntries(response).map((frame) => normalizeFrameEntry(frame, { subject }));
   if (frames.length < 1) return false;
-  return frames.every((frame) => (
-    Boolean(frame.prompt)
-    && framePromptMentionsSubject(frame.prompt, subject)
-    && !/\bstructure\b/i.test(frame.prompt)
-  ));
+  // Validation assouplie : on vérifie juste que chaque frame a un prompt non vide.
+  // La vérification stricte du sujet et du mot "structure" rejetait trop souvent
+  // les réponses de modèles locaux (gemma4, llama3) qui produisent du JSON valide
+  // mais ne nomment pas toujours le sujet mot pour mot dans chaque frame.
+  return frames.every((frame) => Boolean(frame.prompt));
 }
 
 function padOrTrimFrames(frames, targetCount, { subject = '' } = {}) {
