@@ -1,4 +1,4 @@
-﻿
+
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
@@ -13,6 +13,9 @@ const {
 
 // Slack notification dashboard
 const { safeSlack, SlackDashboard } = require('./utils/slackNotify');
+
+// Vector memory (RAG)
+const { createVectorMemory } = require('./lib/vector-memory.cjs');
 
 
 // --- Dépendances OpenAI ---
@@ -354,6 +357,7 @@ const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
+const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
@@ -1898,6 +1902,47 @@ async function saveChatMemoryMessage(userId, role, content, conversationId) {
   ).catch((error_) => {
     console.warn('[A11][memory] raw history save failed:', error_?.message);
   });
+}
+
+// Cache pour stocker le dernier message user par conversation (pour RAG)
+const lastUserMessageCache = new Map();
+
+/**
+ * Sauvegarde un message dans la mémoire chat ET dans la mémoire vectorielle (RAG)
+ * Utilisé pour capturer les échanges user/assistant complets
+ */
+async function saveChatMemoryMessageWithVector(userId, role, content, conversationId) {
+  // Sauvegarder dans la mémoire chat classique
+  await saveChatMemoryMessage(userId, role, content, conversationId);
+
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedConversationId = normalizeConversationId(conversationId);
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const normalizedContent = typeof content === 'string'
+    ? stripUnsafeUtf8Text(content, { preserveNewlines: true }).trim()
+    : '';
+
+  if (!normalizedUserId || !normalizedRole || !normalizedContent) return;
+
+  // Pour la mémoire vectorielle, on a besoin d'un échange complet (user + assistant)
+  const cacheKey = `${normalizedUserId}:${normalizedConversationId}`;
+
+  if (normalizedRole === 'user') {
+    // Stocker le message user pour l'associer à la prochaine réponse assistant
+    lastUserMessageCache.set(cacheKey, normalizedContent);
+  } else if (normalizedRole === 'assistant') {
+    // Récupérer le dernier message user et sauvegarder l'échange complet
+    const lastUserMessage = lastUserMessageCache.get(cacheKey);
+    if (lastUserMessage) {
+      try {
+        const vectorMemory = createVectorMemory(normalizedUserId, normalizedConversationId);
+        await vectorMemory.addExchange(lastUserMessage, normalizedContent);
+        lastUserMessageCache.delete(cacheKey); // Nettoyer le cache
+      } catch (error_) {
+        console.warn('[A11][RAG] vector memory save failed:', error_?.message);
+      }
+    }
+  }
 }
 
 async function getRecentChatMemory(userId, conversationId, limit = CHAT_MEMORY_LIMIT) {
@@ -8839,7 +8884,7 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
   }
 
   if (normalizedLatestMessage) {
-    await saveChatMemoryMessage(normalizedUserId, 'user', normalizedLatestMessage, normalizedConversationId);
+    await saveChatMemoryMessageWithVector(normalizedUserId, 'user', normalizedLatestMessage, normalizedConversationId);
     if (!bypassGlobalMemory) {
       await saveStructuredMemoryFromMessage(normalizedUserId, normalizedLatestMessage);
     }
@@ -8896,6 +8941,23 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
     console.warn('[DB] mark facts as used failed:', error_?.message);
   });
 
+  // Récupérer le contexte vectoriel (RAG) si le message est fourni
+  let vectorContext = '';
+  if (normalizedLatestMessage) {
+    try {
+      const vectorMemory = createVectorMemory(normalizedUserId, normalizedConversationId);
+      const contextResult = await vectorMemory.getRelevantContext(normalizedLatestMessage, {
+        k: 3,
+        minSimilarity: 0.6,
+      });
+      if (contextResult.found) {
+        vectorContext = contextResult.context;
+      }
+    } catch (error_) {
+      console.warn('[A11][RAG] vector context retrieval failed:', error_?.message);
+    }
+  }
+
   return {
     storedMessages,
     logicalMemory,
@@ -8911,10 +8973,11 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
       tasks: structuredTasks,
       files: structuredFiles,
     }),
+    vectorContext,
   };
 }
 
-function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '') {
+function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '') {
   const messages = [];
   const normalizedSystemPrompt = String(systemPrompt || '').trim();
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
@@ -8943,6 +9006,15 @@ function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemo
   );
   if (memorySystemMessage) {
     messages.push(memorySystemMessage);
+  }
+
+  // Injecter le contexte vectoriel (RAG) si disponible
+  const normalizedVectorContext = String(vectorContext || '').trim();
+  if (normalizedVectorContext) {
+    messages.push({
+      role: 'system',
+      content: `# Contexte pertinent (mémoire long terme)\n\nVoici des échanges passés pertinents pour cette conversation :\n\n${normalizedVectorContext}\n\nUtilise ces informations pour enrichir ta réponse si elles sont pertinentes.`
+    });
   }
 
   return [...messages, ...nonSystemMessages];
@@ -10224,14 +10296,15 @@ function shouldAutoUseInternetAgent(body) {
   return !!detectInternetResearchReason(body);
 }
 
-function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '') {
+function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '') {
   return buildChatMessagesWithMemory(
     Array.isArray(storedMessages) ? storedMessages : [],
     logicalMemory,
     structuredMemoryContext,
     conversationResourceContext,
     systemPrompt,
-    ephemeralMemoryContext
+    ephemeralMemoryContext,
+    vectorContext
   );
 }
 
@@ -10264,6 +10337,7 @@ async function proxyQflushChat(req, res) {
       conversationResourceContext,
       structuredMemoryContext,
       ephemeralMemoryContext,
+      vectorContext,
     } = memoryContext;
 
     const prompt = latestUserMessage || buildPromptFromMessages(storedMessages);
@@ -10273,7 +10347,8 @@ async function proxyQflushChat(req, res) {
       structuredMemoryContext,
       conversationResourceContext,
       body.systemPrompt,
-      ephemeralMemoryContext
+      ephemeralMemoryContext,
+      vectorContext
     );
 
     const qflushUrl = process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || 'not_set';
@@ -10301,7 +10376,7 @@ async function proxyQflushChat(req, res) {
     if (qflushVerificationState && getA11QflushVerificationMode() !== 'pass') {
       const content = buildA11QflushVerificationReply(qflushVerificationState);
       if (userId && content) {
-        await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+        await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
       }
 
       const data = {
@@ -10352,7 +10427,7 @@ async function proxyQflushChat(req, res) {
     });
     const content = resolvedAssistant.content;
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
 
     const data = {
@@ -10474,7 +10549,7 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
     }
 
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
 
     appendChatTurnLogSafe(body, data, 'local-gguf', userId);
@@ -10540,7 +10615,7 @@ async function proxyChatToOpenAI(req, res) {
       };
     }
     if (userId && directSafeIntent.content) {
-      await saveChatMemoryMessage(userId, 'assistant', directSafeIntent.content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', directSafeIntent.content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-safe-tools', userId);
     return res.status(200).json(data);
@@ -10550,7 +10625,7 @@ async function proxyChatToOpenAI(req, res) {
     const content = buildDevModeRequiredReply(detectDevModeRequiredReason(req.body) || 'executer cette action');
     const data = toSimpleAssistantCompletion(content, 'a11-dev-required');
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-dev-required', userId);
     return res.status(200).json(data);
@@ -10568,7 +10643,8 @@ async function proxyChatToOpenAI(req, res) {
         memoryContext.structuredMemoryContext,
         memoryContext.conversationResourceContext,
         req.body?.systemPrompt,
-        memoryContext.ephemeralMemoryContext
+        memoryContext.ephemeralMemoryContext,
+        memoryContext.vectorContext
       );
     }
 
@@ -10597,7 +10673,7 @@ async function proxyChatToOpenAI(req, res) {
       };
     }
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-web', userId);
     return res.status(200).json(data);
@@ -10631,7 +10707,8 @@ async function proxyChatToOpenAI(req, res) {
       memoryContext.structuredMemoryContext,
       memoryContext.conversationResourceContext,
       req.body?.systemPrompt,
-      memoryContext.ephemeralMemoryContext
+      memoryContext.ephemeralMemoryContext,
+      memoryContext.vectorContext
     );
 
     if ((!upstreamBody.prompt || !String(upstreamBody.prompt).trim()) && upstreamBody.messages.length) {
@@ -10741,7 +10818,7 @@ async function proxyChatToOpenAI(req, res) {
 
     const responsePayload = applyAssistantTextToPayload(data, content, resolvedAssistant.extras);
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
 
     appendChatTurnLogSafe(req.body, responsePayload, 'gpt-4o-mini', userId);
@@ -10790,7 +10867,7 @@ async function proxyChatToOpenAI(req, res) {
           const content = resolvedAssistant.content;
           const responsePayload = applyAssistantTextToPayload(localData, content, resolvedAssistant.extras);
           if (userId && content) {
-            await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+            await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
           }
           appendChatTurnLogSafe(req.body, responsePayload, 'local-chat-fallback', userId);
           return res.status(localUpstreamRes.status).json(responsePayload);
@@ -10852,7 +10929,7 @@ async function proxyChatToOpenAI(req, res) {
           const content = resolvedAssistant.content;
           const responsePayload = applyAssistantTextToPayload(remoteData, content, resolvedAssistant.extras);
           if (userId && content) {
-            await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+            await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
           }
           appendChatTurnLogSafe(req.body, responsePayload, 'openai-chat-fallback', userId);
           return res.status(remoteUpstreamRes.status).json(responsePayload);
@@ -11917,7 +11994,8 @@ app.post('/api/agent', express.json(), async (req, res) => {
           memoryContext.structuredMemoryContext,
           memoryContext.conversationResourceContext,
           undefined,
-          memoryContext.ephemeralMemoryContext
+          memoryContext.ephemeralMemoryContext,
+          memoryContext.vectorContext
         );
       }
 
@@ -12229,6 +12307,12 @@ app.use('/api', createA11MemoryWriteRouter({
   isAdminRequest,
   verifyJWT,
   writeMemoryKeyValue,
+}));
+
+// Ajout du routeur Vector Memory (RAG)
+app.use(createVectorMemoryRouter({
+  verifyJWT,
+  normalizeConversationId,
 }));
 
 // Ajout du routeur Cerbère (llm-router.cjs)
