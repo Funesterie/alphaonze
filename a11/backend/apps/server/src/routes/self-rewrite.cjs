@@ -31,7 +31,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Router } = require('express');
 
-const ALLOWED_SECTIONS = ['nindo', 'identite', 'ambition'];
+const ALLOWED_SECTIONS = ['nindo', 'nindo2', 'nindo3', 'identite', 'ambition'];
+const MAX_NINDO_COUNT = 3;
 const MAX_CONTENT_LENGTH = 2000;
 const MIN_REFERENCE_LENGTH = 10;
 
@@ -68,18 +69,23 @@ const EVOLUTION_LOG_PATH = path.resolve(__dirname, '../../evolution-log.json');
 /**
  * Valide que la référence contient au moins un terme connu
  * ou est suffisamment longue pour être une référence originale valide.
+ * Accepte toutes les langues (y compris japonais, coréen, arabe, chinois, etc.)
  */
 function validateReference(reference) {
   if (!reference || typeof reference !== 'string') return false;
   const ref = reference.toLowerCase();
   if (ref.length < MIN_REFERENCE_LENGTH) return false;
 
-  // Accepte si contient un mot-clé connu
+  // Accepte si contient un mot-clé connu (latin)
   const hasKnownRef = KNOWN_REFERENCE_KEYWORDS.some((kw) => ref.includes(kw));
   if (hasKnownRef) return true;
 
+  // Accepte les références en caractères non-latins (japonais, coréen, arabe, chinois, etc.)
+  // Détection par plages Unicode : CJK, Hiragana, Katakana, Hangul, Arabe, Hébreu, Thaï, etc.
+  const hasNonLatinChars = /[\u3000-\u9FFF\uAC00-\uD7AF\u0600-\u06FF\u0400-\u04FF\u0E00-\u0E7F\u3040-\u30FF]/.test(reference);
+  if (hasNonLatinChars && reference.length >= 5) return true;
+
   // Accepte aussi si la référence est une phrase complète (> 30 chars) même sans mot-clé connu
-  // (pour permettre des refs originales ou moins connues)
   if (ref.length >= 30) return true;
 
   return false;
@@ -158,6 +164,23 @@ function createSelfRewriteRouter({ verifyJWT }) {
       });
     }
 
+    // Vérifier la limite de 3 Nindo
+    const sectionKey = section.toLowerCase();
+    if (sectionKey.startsWith('nindo')) {
+      try {
+        const currentPrompt = fs.existsSync(PROMPT_PATH)
+          ? fs.readFileSync(PROMPT_PATH, 'utf-8') : '';
+        const nindoCount = (currentPrompt.match(/^# Nindo/gm) || []).length;
+        const isNewNindo = !currentPrompt.includes(`# ${section.charAt(0).toUpperCase() + section.slice(1)}`);
+        if (isNewNindo && nindoCount >= MAX_NINDO_COUNT) {
+          return res.status(400).json({
+            error: `Limite atteinte : A11 ne peut avoir que ${MAX_NINDO_COUNT} Nindo simultanément.`,
+            current: nindoCount,
+          });
+        }
+      } catch (_) { /* continue */ }
+    }
+
     // Validation content
     if (!content || typeof content !== 'string') {
       return res.status(400).json({ error: 'content manquant' });
@@ -199,11 +222,29 @@ function createSelfRewriteRouter({ verifyJWT }) {
       let newPrompt = currentPrompt;
 
       if (sectionKey === 'nindo') {
+        // Remplace le contenu du Nindo principal
         newPrompt = currentPrompt.replace(
           /(# Nindo\n)([\s\S]*?)(\n#|\n\nLimites|\n\nCapacité|\n\nSi la demande)/,
           `$1${content.trim()}\n$3`
         );
+      } else if (sectionKey === 'nindo2' || sectionKey === 'nindo3') {
+        const label = sectionKey === 'nindo2' ? 'Nindo2' : 'Nindo3';
+        const sectionHeader = `# ${label}`;
+        if (currentPrompt.includes(sectionHeader)) {
+          // Remplace le Nindo existant
+          newPrompt = currentPrompt.replace(
+            new RegExp(`(# ${label}\\n)([\\s\\S]*?)(\\n#|\\n\\nLimites|\\n\\nCapacité|\\n\\nSi la demande|$)`),
+            `$1${content.trim()}\n$3`
+          );
+        } else {
+          // Ajoute le nouveau Nindo avant "Limites:"
+          newPrompt = currentPrompt.replace(
+            /(\nLimites:)/,
+            `\n${sectionHeader}\n${content.trim()}\n$1`
+          );
+        }
       } else if (sectionKey === 'identite' || sectionKey === 'ambition') {
+        // Remplace la ligne "Mon ambition : ..."
         newPrompt = currentPrompt.replace(
           /Mon ambition\s*:[^\n]*/,
           `Mon ambition : ${content.trim()}`
