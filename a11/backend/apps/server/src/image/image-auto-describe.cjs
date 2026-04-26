@@ -167,13 +167,12 @@ async function autoDescribeImage({
 
 /**
  * Construit le message utilisateur synthétique quand l'image est analysée sans texte.
- * Retourne une phrase naturelle qui déclenche le bon intent dans le pipeline.
+ * On retourne la description brute — c'est l'intent detection LLM qui décide
+ * ce qu'il faut faire (générer une variante, décrire, analyser...).
+ * On ne force plus "Génère une image" ici.
  */
 function buildAutoDescribeUserMessage(description = '') {
-  const desc = String(description || '').trim();
-  if (!desc) return '';
-  // Formulation qui déclenche image.generate avec la description comme base
-  return `Génère une image : ${desc}`;
+  return String(description || '').trim();
 }
 
 module.exports = {
