@@ -504,3 +504,61 @@
 .a11-drop-carousel-remove:hover {
   color: #fca5a5;
 }
+
+/* ── Carousel d'images dans les bulles de chat ──────────────────────────────── */
+.msg-image-carousel {
+  margin-top: 10px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 320px;
+}
+
+.msg-image-carousel-frame {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.msg-image-carousel-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg-image-carousel-arrow {
+  background: #1e3a5f;
+  border: 1px solid #2d5a8e;
+  color: #7dd3fc;
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 120ms;
+}
+
+.msg-image-carousel-arrow:hover {
+  background: #2d5a8e;
+  color: #e0f2fe;
+}
+
+.msg-image-carousel-counter {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7dd3fc;
+  min-width: 32px;
+  text-align: center;
+}
+
+.msg-image-carousel-expand {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 2px;
+}
