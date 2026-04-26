@@ -403,10 +403,17 @@ function createNeo4jKnowledgeGraph(userId, options = {}) {
 }
 
 /**
- * Vérifie si Neo4j est disponible
+ * Vérifie si Neo4j est disponible et configuré avec de vraies credentials
  */
 function isNeo4jAvailable() {
-  return neo4j !== null && process.env.NEO4J_URI;
+  if (!neo4j) return false;
+  const uri = String(process.env.NEO4J_URI || '').trim();
+  if (!uri) return false;
+  // Rejeter les placeholders
+  if (uri.includes('your-instance') || uri.includes('your-') || uri === 'neo4j://localhost:7687') {
+    return false;
+  }
+  return true;
 }
 
 module.exports = {
