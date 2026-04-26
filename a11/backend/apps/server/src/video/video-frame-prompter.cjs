@@ -38,42 +38,37 @@ const FRAME_PROMPTER_SUBJECT_STOPWORDS = new Set([
   'person', 'visible', 'full', 'body', 'shot', 'view',
 ]);
 
-const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `You are a video sequence planner for a frame-by-frame image generator.
-You receive a video request with a subject, a motion profile and a frame count.
-You must produce exactly N frame descriptions, one per frame, progressive and coherent.
+const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `You are A11 video sequence planner for a frame-by-frame image generator.
 
-Strict rules:
-- each frame must describe a concrete and visible step of the motion
-- descriptions must match the real anatomy of the subject (4 legs for a horse, 2 legs for a human)
-- never invent limbs the subject does not have
-- if type_sujet_detecte=horse: use legs/hooves/mane/withers, never human arms or legs
-- if type_sujet_detecte=humanoid: use legs, arms, hips, shoulders
-- always mention the main subject in each frame description with their appearance (outfit, colors, accessories)
-- every frame beat must name the concrete subject directly; never use generic wording like "the structure changes"
-- if a key prop matters, mention it concretely in the frame beat
-- short, visual descriptions oriented toward image rendering
-- output in ENGLISH only, no accents, no special characters
-- no numbering in descriptions
-- infer the visual style, camera angle and background from the subject and universe (e.g. Street Fighter = side view, 2D anime style, urban Japan fight stage; Mario = colorful cartoon, Mushroom Kingdom; etc.)
+Your job: read the user's request and produce N detailed frame descriptions that faithfully capture what the user asked for — their exact subject, style, atmosphere, and action.
+
+For each frame, write a rich visual description in English as if describing a painting to an artist: include the subject with their appearance (clothing, colors, accessories), the action at this specific moment, the environment, lighting, camera angle, and visual style. Use the user's own words and details as much as possible — do not simplify or genericize.
+
+Rules:
+- Stay true to the user's request. If they said "two soldiers clashing swords in training, same style same atmosphere", every frame must show exactly that.
+- Each frame is a progressive step of the motion — describe what is visually different from the previous frame.
+- Write in English only.
+- No numbering in descriptions.
+- Infer visual style and camera angle from the subject and universe when not specified.
 
 Reply ONLY in strict JSON:
 {
   "subject_type": "humanoid|horse|quadruped|dragon|other",
   "motion_description": "short description of the global motion in english",
-  "scene_context": "camera angle, visual style and background setting inferred from the universe",
+  "scene_context": "camera angle, visual style and background setting",
   "continuity_locks": ["short continuity anchor"],
   "sound_cues": ["short sound cue"],
   "frame_beats": [
     {
       "label": "short name",
-      "prompt": "visual description of this frame in english with the concrete subject named directly",
+      "prompt": "detailed visual description of this frame using the user's exact subject, style and atmosphere",
       "sound_cues": ["optional short sound cue"],
       "continuity_locks": ["optional short continuity lock"],
       "scene_context": "optional short frame-specific scene cue"
     }
   ],
   "frames": [
-    { "label": "short name", "prompt": "legacy fallback visual description of this frame in english" }
+    { "label": "short name", "prompt": "detailed visual description of this frame" }
   ]
 }`;
 
@@ -228,30 +223,26 @@ function buildFramePrompterInput({
     : '';
 
   const instruction = [
-    `Generate exactly ${frameCount} frame descriptions in ENGLISH to animate "${normalizedSubject}" doing a "${motionLabel}".`,
+    `Generate exactly ${frameCount} detailed frame descriptions in ENGLISH for: "${normalizedPrompt || normalizedSubject}".`,
+    `Use the user's exact subject, style, atmosphere and details in every frame description.`,
     framingNote,
     previousNote,
-    'Each frame must name the concrete subject directly with their appearance.',
-    anatomyHint,
     sizeNote,
-    'Do NOT use French words in the output.',
+    'Write in English only.',
   ].filter(Boolean).join(' ');
 
   return JSON.stringify({
-    original_request: normalizedPrompt,
+    user_request: normalizedPrompt,
     main_subject: normalizedSubject,
-    subject_keywords: extractSubjectKeywords(normalizedSubject),
-    detected_subject_type: subjectType,
-    anatomy_constraint: anatomyHint,
     motion_profile: motionProfile,
     motion_label: motionLabel,
     frame_count: frameCount,
-    chunk_offset: chunkOffset,
     total_frames: totalFrames || frameCount,
+    chunk_offset: chunkOffset,
     identity_locks: normalizedIdentityLocks,
     visual_context: normalizedVisualContext,
     visual_analysis: visualAnalysis && typeof visualAnalysis === 'object' ? visualAnalysis : null,
-    reference_image_size: referenceImageSize,
+    reference_image_size: referenceImageSize || null,
     instruction,
   }, null, 2);
 }
