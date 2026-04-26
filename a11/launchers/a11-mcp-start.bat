@@ -1,4 +1,5 @@
 @echo off
 cd /d "D:\projets\funesterie\a11\backend\apps\server"
-pm2 start ecosystem.config.cjs
-pm2 save
+"C:\Users\cella\AppData\Roaming\npm\pm2.cmd" start ecosystem.config.cjs
+"C:\Users\cella\AppData\Roaming\npm\pm2.cmd" save
+pause
