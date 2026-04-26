@@ -1,9 +1,14 @@
+'use strict';
+
 const express = require('express');
+const http = require('node:http');
+const https = require('node:https');
+const { URL } = require('node:url');
 
 let OpenAI = null;
 try {
   OpenAI = require('openai');
-} catch (error_) {
+} catch (_) {
   OpenAI = null;
 }
 
@@ -31,6 +36,69 @@ function createOpenAIClient() {
   });
 }
 
+/**
+ * Appel direct Ollama via /v1/chat/completions (compatible OpenAI).
+ * Retourne le texte de la réponse ou null si echec.
+ */
+async function callOllama(userMessage) {
+  const ollamaBase = String(process.env.OLLAMA_BASE || '').trim().replace(/\/+$/, '');
+  if (!ollamaBase) return null;
+
+  const localModel = String(
+    process.env.LOCAL_DEFAULT_MODEL || process.env.DEFAULT_MODEL || 'gemma4:e4b'
+  ).trim();
+
+  const ollamaUrl = `${ollamaBase}/v1/chat/completions`;
+  const bodyStr = JSON.stringify({
+    model: localModel,
+    messages: [
+      { role: 'system', content: 'Tu es A11, un assistant IA local. Reponds en francais.' },
+      { role: 'user', content: userMessage },
+    ],
+    stream: false,
+  });
+
+  let parsed;
+  try {
+    parsed = new URL(ollamaUrl);
+  } catch (_) {
+    return null;
+  }
+
+  const lib = parsed.protocol === 'https:' ? https : http;
+
+  return new Promise((resolve) => {
+    const req = lib.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        path: parsed.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(bodyStr),
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            resolve(data?.choices?.[0]?.message?.content || null);
+          } catch (_) {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on('error', () => resolve(null));
+    req.setTimeout(90_000, () => { req.destroy(); resolve(null); });
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
 function resolveChatDependencies(overrides = {}) {
   return {
     openaiClient: overrides.openaiClient || createOpenAIClient(),
@@ -45,6 +113,10 @@ function resolveChatDependencies(overrides = {}) {
   };
 }
 
+function attachIntentDebug(payload) {
+  return payload;
+}
+
 function createChatRouter(overrides = {}) {
   const {
     openaiClient,
@@ -56,6 +128,7 @@ function createChatRouter(overrides = {}) {
     generateVideo,
     specialCompilerCallStructuredLlmJson,
   } = resolveChatDependencies(overrides);
+
   const intentResolver = createUnifiedIntentResolver({
     detectImageIntent,
     detectVideoIntent,
@@ -67,10 +140,6 @@ function createChatRouter(overrides = {}) {
   });
 
   const router = express.Router();
-
-  function attachIntentDebug(payload, _resolution, _body = {}) {
-    return payload;
-  }
 
   router.post('/chat', express.json({ limit: '2mb' }), async (req, res) => {
     try {
@@ -97,6 +166,17 @@ function createChatRouter(overrides = {}) {
       }
 
       console.log(`[A11][chat] Intention: fallback LLM | message: ${userMessage}`);
+
+      // Priorite 1 : Ollama local
+      const ollamaText = await callOllama(userMessage);
+      if (ollamaText) {
+        const localModel = String(
+          process.env.LOCAL_DEFAULT_MODEL || process.env.DEFAULT_MODEL || 'gemma4:e4b'
+        ).trim();
+        return res.json({ ok: true, mode: 'ollama', model: localModel, assistant: ollamaText });
+      }
+
+      // Priorite 2 : OpenAI (fallback cloud)
       if (!openaiClient) {
         return res.status(500).json({ ok: false, error: 'llm_unavailable' });
       }
@@ -106,7 +186,7 @@ function createChatRouter(overrides = {}) {
         messages: [
           {
             role: 'system',
-            content: 'Tu es l’assistant A11. Si la demande est une génération d’image réelle, ne réponds pas en texte, laisse le routeur déclencher le tool.',
+            content: 'Tu es l\'assistant A11. Si la demande est une generation d\'image reelle, ne reponds pas en texte, laisse le routeur declencher le tool.',
           },
           { role: 'user', content: userMessage },
         ],
