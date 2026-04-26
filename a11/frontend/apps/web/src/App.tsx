@@ -40,6 +40,7 @@ import { A11CommandConsolePanel } from "./components/A11CommandConsolePanel";
 import { A11RemoteProvidersPanel } from "./components/A11RemoteProvidersPanel";
 import { ConversationActivityPanel } from "./components/ConversationActivityPanel";
 import { ConversationResourcesPanel } from "./components/ConversationResourcesPanel";
+import { A11ActivityConsole, useA11Activity } from "./components/A11ActivityConsole";
 import { CreateArtifactModal } from "./components/CreateArtifactModal";
 import { EmailResourceModal } from "./components/EmailResourceModal";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -1206,6 +1207,19 @@ export function App() {
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Console d'activité A11
+  const {
+    events: activityEvents,
+    isActive: activityIsActive,
+    pushEvent: pushActivityEvent,
+    updateEvent: updateActivityEvent,
+    clearEvents: clearActivityEvents,
+    startActivity,
+    stopActivity,
+    detectAndPushFromResponse,
+  } = useA11Activity();
+  const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toggleLockRef = useRef(false);
@@ -1970,6 +1984,7 @@ export function App() {
     });
     setInput("");
     setSending(true);
+    startActivity();
     // Nettoyer les chips de preview après envoi — les object URLs sont révoquées
     setDragPreviewUrls((prev) => {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
@@ -2004,6 +2019,8 @@ export function App() {
         assistantReply.videoUrl || null,
         assistantReply.fileUrl || null
       );
+      // Détecter les activités depuis la réponse A11
+      detectAndPushFromResponse(assistantReply.raw || assistantReply);
 
       const aiMsg: ChatMessage = {
         id: `a-${Date.now()}`,
@@ -2044,6 +2061,7 @@ export function App() {
       });
     } finally {
       setSending(false);
+      stopActivity();
       sendLockRef.current = false;
       pendingMessageKeyRef.current = "";
     }
@@ -3470,6 +3488,14 @@ export function App() {
               void onComposerDrop(e);
             }}
           >
+            {/* Console d'activité A11 — affichée pendant et après les actions */}
+            <A11ActivityConsole
+              events={activityEvents}
+              isActive={activityIsActive}
+              onClear={clearActivityEvents}
+              collapsed={consoleCollapsed}
+              onToggleCollapse={() => setConsoleCollapsed((v) => !v)}
+            />
             <div className="row">
               <button
                 type="button"
