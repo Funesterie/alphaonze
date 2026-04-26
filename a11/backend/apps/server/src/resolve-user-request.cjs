@@ -49,6 +49,10 @@ const {
   executeDirectImagePipeline,
 } = require('./image/image-pipeline-direct.cjs');
 const {
+  autoDescribeImage,
+  buildAutoDescribeUserMessage,
+} = require('./image/image-auto-describe.cjs');
+const {
   detectIntentWithLlm: defaultDetectIntentWithLlm,
 } = require('../lib/intent-detection.cjs');
 
@@ -509,7 +513,37 @@ function createIntentResolver(overrides = {}) {
       : (Array.isArray(input.body?.messages) ? input.body.messages : []);
     const pipeline = 'intent-router-v2';
 
+    // ─── Auto-description Janus ───────────────────────────────────────────────
+    // Quand l'utilisateur envoie une image sans texte, Janus l'analyse et produit
+    // une description qui sert de message pour le reste du pipeline.
+    let effectiveUserText = originalUserText;
+    let autoDescribeResult = null;
     if (!originalUserText) {
+      const imageRefsEarly = extractRequestImageReferences({
+        body: input.body || {},
+        messages,
+      });
+      const firstLocator = String(imageRefsEarly[0]?.locator || '').trim();
+      if (firstLocator) {
+        const runtimeRoot = String(
+          process.env.A11_RUNTIME_ROOT
+          || require('node:path').resolve(__dirname, '..', '..', '..', 'runtime')
+        ).trim();
+        autoDescribeResult = await autoDescribeImage({
+          imageLocator: firstLocator,
+          runtimeRoot,
+          timeoutMs: 30000,
+          requestId: traceId,
+        });
+        if (!autoDescribeResult.skipped && autoDescribeResult.description) {
+          effectiveUserText = buildAutoDescribeUserMessage(autoDescribeResult.description);
+          console.log(`[A11][auto-describe] traceId=${traceId} image described, effectiveText="${effectiveUserText.slice(0, 100)}"`);
+        }
+      }
+    }
+
+    // Si toujours pas de texte après auto-describe, erreur
+    if (!effectiveUserText) {
       const error = new Error('missing_message');
       error.statusCode = 400;
       error.payload = { ok: false, error: 'missing_message' };
@@ -517,19 +551,19 @@ function createIntentResolver(overrides = {}) {
     }
 
     const requestTextSmootherResult = typeof deps.smoothRequestText === 'function'
-      ? await deps.smoothRequestText(originalUserText, {
+      ? await deps.smoothRequestText(effectiveUserText, {
         source: 'resolve-user-request',
       })
       : {
-        originalText: originalUserText,
-        text: originalUserText,
+        originalText: effectiveUserText,
+        text: effectiveUserText,
         changed: false,
         usedLlm: false,
         localCorrections: [],
         suspiciousTokens: [],
         noiseScore: 0,
       };
-    const userText = String(requestTextSmootherResult?.text || originalUserText).trim();
+    const userText = String(requestTextSmootherResult?.text || effectiveUserText).trim();
 
     const semantic = analyzeSemanticIntent(userText, {
       detectImageIntent: deps.detectImageIntent,
@@ -587,9 +621,11 @@ function createIntentResolver(overrides = {}) {
         videoRequest: parseVideoGenerateRequest(userText, input.body || {}),
         responsePayload: null,
         requestText: {
-          original: originalUserText,
+          original: effectiveUserText,
           smoothed: userText,
           changed: requestTextSmootherResult?.changed === true,
+          autoDescribed: autoDescribeResult?.skipped === false,
+          autoDescription: autoDescribeResult?.description || null,
         },
       };
 
@@ -617,9 +653,11 @@ function createIntentResolver(overrides = {}) {
         semantic,
         responsePayload: null,
         requestText: {
-          original: originalUserText,
+          original: effectiveUserText,
           smoothed: userText,
           changed: requestTextSmootherResult?.changed === true,
+          autoDescribed: autoDescribeResult?.skipped === false,
+          autoDescription: autoDescribeResult?.description || null,
         },
         referenceImageUrl: isLocalPath ? '' : referenceLocator,
         referenceImagePath: isLocalPath ? referenceLocator : '',
