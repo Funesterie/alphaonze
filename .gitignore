@@ -1,11 +1,25 @@
 # Workspace runtime and temp files
 /a11_runtime/
 /a11/runtime/
+/runtime/
 /tmp/
 /.tmp-video-tests/
 /tmp-*.log
 /dist/
 /funesterie.local.code-workspace
+
+# Neo4j Desktop installation and data
+/Neo4j Desktop 2/
+/a11/neo4j/
+
+# Generated images and test artifacts
+*.png
+!a11/frontend/apps/web/public/favicon.png
+!a11/frontend/apps/web/public/logo*.png
+/a11/backend/apps/server/logs/
+/a11/backend/apps/server/test/*.tmp
+/.tmp_*.txt
+/a11/frontend/.tmp_*.txt
 
 # Local launcher runtime
 /a11/launchers/dist/
