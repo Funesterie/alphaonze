@@ -165,10 +165,19 @@ function scoreSemanticIntents(levels, overrides = {}) {
   }
 
   if (questionLike || explicitQuestion) {
-    rawScores['web.search'] += 0.32;
-    rawScores['chat.reply'] += 0.18;
-    levelBreakdown.message['web.search'] += 0.32;
-    levelBreakdown.message['chat.reply'] += 0.18;
+    // Favoriser chat.reply pour les questions, sauf si recherche web explicite
+    const hasWebSearchIntent = /\b(cherche|trouve|recherche|google|bing|web|internet|source|article)\b/.test(normalizedText);
+    if (hasWebSearchIntent) {
+      rawScores['web.search'] += 0.85;
+      rawScores['chat.reply'] += 0.25;
+      levelBreakdown.message['web.search'] += 0.85;
+      levelBreakdown.message['chat.reply'] += 0.25;
+    } else {
+      rawScores['chat.reply'] += 0.75;
+      rawScores['web.search'] += 0.32;
+      levelBreakdown.message['chat.reply'] += 0.75;
+      levelBreakdown.message['web.search'] += 0.32;
+    }
   }
 
   if (actionLike) {
@@ -224,9 +233,11 @@ function scoreSemanticIntents(levels, overrides = {}) {
   }
 
   if (visualStyleSignal) {
-    rawScores['image.generate'] += 1.25;
-    levelBreakdown.message['image.generate'] += 1.25;
-    evidence['image.generate'].push('heuristique:visual_style_signal');
+    // Réduire le bonus si pas de verbe de création explicite
+    const styleBonus = creationLike ? 1.25 : 0.45;
+    rawScores['image.generate'] += styleBonus;
+    levelBreakdown.message['image.generate'] += styleBonus;
+    evidence['image.generate'].push(creationLike ? 'heuristique:visual_style_signal' : 'heuristique:visual_style_signal_weak');
   }
 
   if (mailRequestWithReferencedImage) {
@@ -260,8 +271,41 @@ function scoreSemanticIntents(levels, overrides = {}) {
     evidence['web.image.search'].push('suppression:meta_image_discussion');
   }
 
-  rawScores['chat.reply'] += 0.25;
-  levelBreakdown.message['chat.reply'] += 0.25;
+  // Signaux forts pour chat.reply (conversations, feedback, greetings, meta-discussion)
+  const greetingLike = /\b(salut|bonjour|bonsoir|hello|hi|hey|coucou|merci|thanks|ok|d'accord|bien|super|cool|genial|génial)\b/.test(normalizedText);
+  const feedbackLike = /\b(j'aime|j'adore|c'est bien|c'est beau|bravo|excellent|parfait|top|nickel)\b/.test(normalizedText);
+  const conversationLike = /\b(tu penses|tu crois|selon toi|d'apres toi|d'après toi|ton avis|que penses-tu|what do you think|in your opinion)\b/.test(normalizedText);
+  const metaDiscussionLike = /\b(comment tu|pourquoi tu|explique-moi|dis-moi|raconte|parle-moi|how do you|why do you|tell me|explain)\b/.test(normalizedText);
+  const shortMessageWithoutAction = wordItems.length > 0 && wordItems.length <= 5 && !creationLike && !showLike;
+
+  if (greetingLike) {
+    rawScores['chat.reply'] += 2.5;
+    levelBreakdown.message['chat.reply'] += 2.5;
+    evidence['chat.reply'].push('heuristique:greeting');
+  }
+
+  if (feedbackLike) {
+    rawScores['chat.reply'] += 2.8;
+    levelBreakdown.message['chat.reply'] += 2.8;
+    evidence['chat.reply'].push('heuristique:feedback');
+  }
+
+  if (conversationLike || metaDiscussionLike) {
+    rawScores['chat.reply'] += 2.4;
+    levelBreakdown.message['chat.reply'] += 2.4;
+    evidence['chat.reply'].push('heuristique:conversation');
+  }
+
+  if (shortMessageWithoutAction) {
+    rawScores['chat.reply'] += 1.2;
+    levelBreakdown.message['chat.reply'] += 1.2;
+    evidence['chat.reply'].push('heuristique:short_message_no_action');
+  }
+
+  // Bonus de base pour chat.reply augmenté de 0.25 à 1.5
+  // Cela garantit que chat.reply est compétitif même sans signaux forts
+  rawScores['chat.reply'] += 1.5;
+  levelBreakdown.message['chat.reply'] += 1.5;
 
   const knowledge = applySemanticKnowledgeModules({
     text: sourceText,
