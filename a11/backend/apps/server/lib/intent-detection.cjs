@@ -81,32 +81,27 @@ const INTENT_DETECTION_RESPONSE_FORMAT = Object.freeze({
   },
 });
 
-const INTENT_DETECTION_SYSTEM_PROMPT = `You are A11 intent's media classifier, a creative AI assistant that generates images, videos, and sounds.
+const INTENT_DETECTION_SYSTEM_PROMPT = `You are an intent classifier for A11, a creative assistant.
 
-Your job: read the user message and decide what they want.
+Decide what the user wants based on their message and context.
 
 Intents:
-- image.generate — user explicitly wants an image created or transformed
-- video.generate — user wants a video or animation created
-- sound.generate — user wants audio, music, or speech created
-- web.image.search — user wants to see an existing image from the web
-- web.search — user wants to find information on the web
-- code.python.generate — user wants Python code written
-- chat.reply — conversation, questions, comments, reactions, analysis, descriptions
+- image.generate — user explicitly asks to create, generate, draw, transform, or modify an image
+- video.generate — user explicitly asks to create a video or animation
+- sound.generate — user explicitly asks to create audio, music, or speech
+- web.image.search — user wants to find an existing image on the web
+- web.search — user wants to find information
+- code.python.generate — user wants Python code
+- chat.reply — everything else: questions, comments, reactions, analysis, sharing, greetings
 
-Rules:
-- Explicit creation verbs (génère, crée, dessine, make, draw, create, render) → image.generate or video.generate
-- A question ("c'est quoi", "pourquoi", "comment", "qu'est-ce que") → chat.reply
-- A comment or reaction ("regarde ce beau lapin", "j'aime cette photo", "c'est magnifique") → chat.reply
-- A description without a creation verb → chat.reply (the user is sharing, not requesting)
-- "Montre-moi une image de X" → web.image.search
-- When an image is attached and the user says nothing or just comments on it → chat.reply
-- When an image is attached and the user asks to transform/recreate/modify it → image.generate
-- Conversation history matters: if the user was just chatting, a bare description is likely chat.reply
-
-confidence: how certain you are (0.0–1.0)
-subject: main subject in English, empty for chat.reply
-reason: one short sentence
+Key rules:
+- The user message is the primary signal. Read it carefully.
+- An empty message or a comment ("regarde", "c'est beau", "j'aime ça") → chat.reply
+- A question → chat.reply
+- An explicit creation verb (génère, crée, dessine, fais, make, draw, create, render, transform) → image.generate or video.generate
+- Sharing an image without asking for anything → chat.reply
+- "Montre-moi une image de X" → web.image.search, not image.generate
+- When unsure, prefer chat.reply over image.generate
 
 Return strict JSON only.`;
 
@@ -119,28 +114,21 @@ async function detectIntentWithLlm({
   callStructuredLlmJson = defaultCallStructuredLlmJson,
   timeoutMs = 8000,
 } = {}) {
-  // Pour les fast-paths regex, on garde le texte normalisé (lowercase, espaces)
-  // mais ON GARDE LES ACCENTS pour que les regex accentuées matchent.
   const normalized = normalizeMessageForIntent(message).toLowerCase();
-
-  // Pour le LLM, on passe le message original avec accents et casse.
   const originalMessage = String(message || '').replace(/\s+/g, ' ').trim();
-
-  if (!normalized && !imageDescription) {
-    return { intent: 'chat.reply', confidence: 1.0, reason: 'empty_message', subject: '' };
-  }
-
-  // Fast-path uniquement si pas d'image jointe et pas d'historique ambigu
-  // (on ne veut pas court-circuiter le LLM quand le contexte est important)
   const hasImage = Boolean(String(imageDescription || '').trim());
   const hasHistory = Array.isArray(conversationHistory) && conversationHistory.length > 0;
 
+  if (!normalized && !hasImage) {
+    return { intent: 'chat.reply', confidence: 1.0, reason: 'empty_message', subject: '' };
+  }
+
+  // Fast-path uniquement sans image ni historique — cas non ambigus
   if (!hasImage && !hasHistory) {
     const fastPath = fastPathVideoIntent(normalized)
       || fastPathSoundIntent(normalized)
       || fastPathImageIntent(normalized)
       || fastPathWebImageIntent(normalized);
-
     if (fastPath && fastPath.confidence >= 0.95) {
       return { ...fastPath, subject: '' };
     }
@@ -151,26 +139,36 @@ async function detectIntentWithLlm({
       || fastPathSoundIntent(normalized)
       || fastPathImageIntent(normalized)
       || fastPathWebImageIntent(normalized);
-    const fallback = fastPath || { intent: 'chat.reply', confidence: 0.5, reason: 'llm_unavailable_fallback' };
-    return { ...fallback, subject: '' };
+    return { ...(fastPath || { intent: 'chat.reply', confidence: 0.5, reason: 'llm_unavailable_fallback' }), subject: '' };
   }
 
-  // Construire le contexte pour le LLM
-  const context = {
-    message: originalMessage || null,
-    image_attached: hasImage,
-    image_description: hasImage ? String(imageDescription).trim() : null,
-    recent_history: hasHistory
-      ? conversationHistory.slice(-4).map((entry) => ({
-          role: String(entry?.role || 'user').trim(),
-          content: String(entry?.content || '').trim().slice(0, 200),
-        }))
-      : null,
-  };
+  // Construire un message naturel pour le LLM — pas de flags JSON qui induisent en erreur
+  const parts = [];
+
+  if (hasHistory) {
+    const historyLines = conversationHistory.slice(-4).map((entry) => {
+      const role = String(entry?.role || 'user').trim();
+      const content = String(entry?.content || '').trim().slice(0, 150);
+      return `${role === 'assistant' ? 'A11' : 'User'}: ${content}`;
+    });
+    parts.push(`Recent conversation:\n${historyLines.join('\n')}`);
+  }
+
+  if (hasImage) {
+    parts.push(`The user attached an image. Janus describes it as: "${String(imageDescription).trim()}"`);
+  }
+
+  if (originalMessage) {
+    parts.push(`User message: "${originalMessage}"`);
+  } else {
+    parts.push('User message: (empty — the user sent no text)');
+  }
+
+  parts.push('What does the user want?');
 
   try {
     const response = await callStructuredLlmJson({
-      text: JSON.stringify(context),
+      text: parts.join('\n\n'),
       systemPrompt: INTENT_DETECTION_SYSTEM_PROMPT,
       temperature: 0,
       maxTokens: 120,
