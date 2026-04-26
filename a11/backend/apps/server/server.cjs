@@ -20,6 +20,9 @@ const { createVectorMemory } = require('./lib/vector-memory.cjs');
 // Knowledge Graph
 const { createKnowledgeGraph } = require('./lib/knowledge-graph.cjs');
 
+// Reflection Loop (Self-Correction)
+const { createReflectionLoop } = require('./lib/reflection-loop.cjs');
+
 
 // --- Dépendances OpenAI ---
 let OpenAI;
@@ -362,6 +365,7 @@ const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
 const createKnowledgeGraphRouter = require('./src/routes/knowledge-graph.cjs');
+const createReflectionRouter = require('./src/routes/reflection.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
@@ -12363,6 +12367,11 @@ app.use(createVectorMemoryRouter({
 
 // Ajout du routeur Knowledge Graph
 app.use(createKnowledgeGraphRouter({
+  verifyJWT,
+}));
+
+// Ajout du routeur Reflection (Self-Correction)
+app.use(createReflectionRouter({
   verifyJWT,
 }));
 
