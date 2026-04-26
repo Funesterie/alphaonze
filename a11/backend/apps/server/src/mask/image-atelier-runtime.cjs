@@ -8,6 +8,10 @@ const {
   resolveGeneratedImageUrl,
   toImageChatProxyPayload,
 } = require('./image-chat-runtime.cjs');
+const {
+  resolveSubjectProfile,
+  normalizeSubjectProfileText,
+} = require('./semantic/subject-profile-library.cjs');
 
 function toUniqueStrings(values = []) {
   return [...new Set(
@@ -291,6 +295,54 @@ function refineImageAtelierMask(mask = {}, judgement = {}, context = {}) {
   };
 }
 
+/**
+ * Fallback heuristique : construit un mask image.generate basique sans LLM.
+ * Utilisé quand le LLM structuré n'est pas disponible (tests, mode dégradé).
+ */
+function buildHeuristicMaskFromText(text = '') {
+  const normalized = normalizeSubjectProfileText(text);
+  if (!normalized) return null;
+
+  // Extraire le sujet : supprimer les préfixes de commande
+  const subject = normalized
+    .replace(/^(genere|génère|cree|crée|fais|dessine|montre|affiche)\s+(une?\s+)?(image\s+(de|du|des|d[''])?|illustration\s+(de|du|des|d[''])?)?/i, '')
+    .replace(/^(de|du|des|d[''])\s+/i, '')
+    .trim() || normalized;
+
+  // Résoudre le profil de sujet
+  const profile = resolveSubjectProfile({ subject, sourceText: normalized });
+  const profilePack = getProfileRefinementPack(profile?.type || 'generic_subject');
+
+  return {
+    version: 'mask-1',
+    intent: 'image.generate',
+    task: { domain: 'image', action: 'generate' },
+    compiler: { target: 'image-prompt-fr', version: '1.0' },
+    inputs: {
+      subject: [subject],
+      environment: [...(profilePack.environment || [])],
+      style: [...(profilePack.style || ['haute qualité'])],
+      composition: [...(profilePack.composition || [])],
+      lighting: [],
+      palette: [],
+    },
+    options: {
+      width: 768,
+      height: 768,
+      steps: 40,
+      guidance_scale: 8,
+    },
+    constraints: {
+      safe_mode: true,
+      no_text: true,
+    },
+    ambiguities: [],
+    meta: profile ? { subjectProfile: { type: profile.type } } : {},
+    raw: text,
+    _heuristic: true,
+  };
+}
+
 async function resolveAtelierSourceMask({
   message = '',
   rawMask = null,
@@ -312,10 +364,21 @@ async function resolveAtelierSourceMask({
     throw error;
   }
 
-  const resolution = await buildMaskFromText(normalizedMessage, {
-    allowCompatFallback: true,
-  });
-  return deepClone(resolution?.rawMask || null);
+  // Essayer d'abord le buildMaskFromText fourni (LLM canonique)
+  try {
+    const resolution = await buildMaskFromText(normalizedMessage, {
+      allowCompatFallback: true,
+    });
+    return deepClone(resolution?.rawMask || null);
+  } catch (_llmError) {
+    // Fallback heuristique si le LLM n'est pas disponible
+    const heuristicMask = buildHeuristicMaskFromText(normalizedMessage);
+    if (heuristicMask) {
+      return heuristicMask;
+    }
+    // Re-throw l'erreur originale si le fallback ne produit rien
+    throw _llmError;
+  }
 }
 
 async function runImageAtelier({
@@ -465,6 +528,7 @@ module.exports = {
   normalizeAtelierOptions,
   judgeImageAtelierRound,
   refineImageAtelierMask,
+  buildHeuristicMaskFromText,
   runImageAtelier,
   toImageAtelierPayload,
 };
