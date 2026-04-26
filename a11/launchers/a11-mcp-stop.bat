@@ -1,4 +1,11 @@
 @echo off
-"C:\Users\cella\AppData\Roaming\npm\pm2.cmd" stop a11-backend
-"C:\Users\cella\AppData\Roaming\npm\pm2.cmd" save
-pause
+title A11 MCP - Arret
+
+echo [A11] Arret du backend sur le port 3000...
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3000 " ^| findstr "LISTENING"') do (
+    echo [A11] Arret PID %%p
+    taskkill /PID %%p /F
+)
+
+echo [A11] Backend arrete.
+timeout /t 2 /nobreak >nul
