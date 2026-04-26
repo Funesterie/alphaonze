@@ -1200,6 +1200,9 @@ export function App() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const [uploadFeedback, setUploadFeedback] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
+  const dragCounterRef = useRef(0);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
   const [createArtifactError, setCreateArtifactError] = useState("");
@@ -1740,6 +1743,25 @@ export function App() {
   }
 
   async function handleImportedFiles(files: FileList | null) {
+    // Generate image previews before uploading
+    if (files && files.length > 0) {
+      const previews: { name: string; url: string; isImage: boolean }[] = [];
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          const url = URL.createObjectURL(file);
+          previews.push({ name: file.name, url, isImage: true });
+        } else {
+          previews.push({ name: file.name, url: '', isImage: false });
+        }
+      }
+      setDragPreviewUrls(previews);
+      // Auto-clear previews after 8s
+      setTimeout(() => {
+        previews.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
+        setDragPreviewUrls([]);
+      }, 8000);
+    }
+
     handleImportFiles(files, (txt: string) => {
       setInput((prev) => (prev ? prev + "\n" + txt : txt));
     }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined }).catch(console.error);
@@ -1782,6 +1804,8 @@ export function App() {
 
   async function onComposerDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
     const files = e.dataTransfer?.files || null;
     await handleImportedFiles(files);
   }
@@ -1802,6 +1826,37 @@ export function App() {
     setUploadFeedback("");
     setSidebarOpen(false);
   }
+
+  // Global drag-and-drop overlay
+  useEffect(() => {
+    const onDragEnter = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      dragCounterRef.current += 1;
+      setIsDragOver(true);
+    };
+    const onDragLeave = () => {
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) setIsDragOver(false);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    };
+    document.addEventListener('dragenter', onDragEnter);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragenter', onDragEnter);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, []);
 
   // Speech recognition callback
   useEffect(() => {
@@ -2429,6 +2484,25 @@ export function App() {
 
   return (
     <div className="app-container a11-shell" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+      {/* ── Drag-and-drop overlay ── */}
+      {isDragOver && (
+        <div
+          className="a11-drop-overlay"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            dragCounterRef.current = 0;
+            setIsDragOver(false);
+            void handleImportedFiles(e.dataTransfer?.files || null);
+          }}
+        >
+          <div className="a11-drop-overlay-inner">
+            <div className="a11-drop-overlay-icon">📎</div>
+            <div className="a11-drop-overlay-label">Dépose ici</div>
+            <div className="a11-drop-overlay-hint">Images, texte, JSON, PDF…</div>
+          </div>
+        </div>
+      )}
       <header
         className="header"
         style={{
@@ -3367,6 +3441,29 @@ export function App() {
             <div className="hint">
               Entrée pour envoyer · Shift+Entrée pour aller à la ligne
             </div>
+            {dragPreviewUrls.length > 0 && (
+              <div className="a11-drop-previews">
+                {dragPreviewUrls.map((p, i) => (
+                  <div key={i} className="a11-drop-preview-chip">
+                    {p.isImage ? (
+                      <img src={p.url} alt={p.name} className="a11-drop-preview-thumb" />
+                    ) : (
+                      <span className="a11-drop-preview-file-icon">📄</span>
+                    )}
+                    <span className="a11-drop-preview-name">{p.name}</span>
+                    <button
+                      type="button"
+                      className="a11-drop-preview-remove"
+                      aria-label={`Retirer ${p.name}`}
+                      onClick={() => {
+                        if (p.url) URL.revokeObjectURL(p.url);
+                        setDragPreviewUrls((prev) => prev.filter((_, j) => j !== i));
+                      }}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
             <input
               ref={fileInputRef}
               type="file"
