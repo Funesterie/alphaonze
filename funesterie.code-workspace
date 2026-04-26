@@ -104,7 +104,9 @@
       "$job *",
       "git *",
       "pwsh *",
-      "Get-ScheduledTask *"
+      "Get-ScheduledTask *",
+      "Get-Process *",
+      "netstat *"
     ],
     "telemetry.editStats.details.enabled": true,
     "telemetry.editStats.showDecorations": true,
