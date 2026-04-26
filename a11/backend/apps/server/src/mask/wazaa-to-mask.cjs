@@ -564,46 +564,27 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
     String(subjectProfile?.canonicalSubject || '').trim()
   );
   const finalSubject = canonicalSubject || normalizedSubject;
-  const metierHints = buildMetierSemanticHints(semanticMeta, subjectProfile);
-  const elementHints = buildElementSemanticHints(semanticMeta, subjectProfile);
-  const accessoryHints = buildAccessorySemanticHints(semanticMeta, promptSeedText);
-  const accessoryPromptInstructions = extractAccessoryPromptInstructions(promptSeedText);
+
+  // Style : uniquement ce qui vient du LLM/wazaa, pas d'injection heuristique
   const style = toUniqueStrings([
     styleEntity,
     ...(Array.isArray(semanticMeta?.styleWords) ? semanticMeta.styleWords : []),
-    ...metierHints.style,
-    ...elementHints.style,
-    ...accessoryHints.style,
     ...(Array.isArray(subjectProfile?.styleHints) ? subjectProfile.styleHints : []),
-    'haute qualité',
   ]);
+
+  // Composition : uniquement ce qui vient du LLM/wazaa
   const composition = toUniqueStrings([
-    ...buildPositiveCompositionHints(finalSubject, promptSeedText, semanticMeta),
-    ...metierHints.composition,
-    ...elementHints.composition,
-    ...accessoryHints.composition,
     ...(Array.isArray(subjectProfile?.composition) ? subjectProfile.composition : []),
   ]);
+
+  // Environment : uniquement ce qui vient du LLM/wazaa
   const profileEnvironment = Array.isArray(subjectProfile?.environment) ? subjectProfile.environment : [];
   const environment = explicitEnvironment
     ? [explicitEnvironment]
-    : (
-      profileEnvironment.length > 0
-        ? toUniqueStrings([
-            ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
-            ...metierHints.environment,
-            ...elementHints.environment,
-            ...accessoryHints.environment,
-            ...profileEnvironment,
-          ])
-        : toUniqueStrings([
-            ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
-            ...metierHints.environment,
-            ...elementHints.environment,
-            ...accessoryHints.environment,
-            ...buildCoherentEnvironmentHints(finalSubject, promptSeedText, definitionSummary),
-          ])
-    );
+    : toUniqueStrings([
+        ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
+        ...profileEnvironment,
+      ]);
 
   return {
     version: 'mask-1',
@@ -637,16 +618,6 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
       promptText: promptSeedText,
       ...(canonicalSubject && canonicalSubject !== normalizedSubject
         ? { canonicalSubject }
-        : {}),
-      ...(metierHints.promptInstructions.length || elementHints.promptInstructions.length || accessoryHints.promptInstructions.length || accessoryPromptInstructions.length
-        ? {
-            promptInstructions: toUniqueStrings([
-              ...metierHints.promptInstructions,
-              ...elementHints.promptInstructions,
-              ...accessoryHints.promptInstructions,
-              ...accessoryPromptInstructions,
-            ]),
-          }
         : {}),
       ...(subjectProfile ? { subjectProfile } : {}),
     },
