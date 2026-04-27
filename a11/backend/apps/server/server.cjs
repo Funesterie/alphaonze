@@ -5945,6 +5945,11 @@ app.use('/api/agent/runtime/files', verifyJWT, createRuntimeFilesRouter({ runtim
 console.log('[Server] Runtime files routes mounted under /api/agent/runtime/files');
 app.use('/api/agent/vision-memory', verifyJWT, createVisionMemoryRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Vision memory routes mounted under /api/agent/vision-memory');
+
+// A11 Dump RGBA Brotli — archive visuelle interne
+const createDumpRgbaRouter = require('./src/routes/a11-dump-rgba.cjs');
+app.use('/api/dump/rgba-brotli', verifyJWT, createDumpRgbaRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+console.log('[Server] Dump RGBA Brotli routes mounted under /api/dump/rgba-brotli');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
 app.use('/api', createKnowledgeConflictRouter({ verifyJWT }));
 app.use('/api', createGitHubRouter({ verifyJWT }));
