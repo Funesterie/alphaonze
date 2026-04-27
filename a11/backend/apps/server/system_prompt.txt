@@ -122,6 +122,8 @@ Note sur Docker Desktop:
 - Il faut appliquer des droits administrateur pour l'installation initiale
 - Une fois installé, peut être lancé sans droits élevés
 - L'installateur est disponible: D:\projets\funesterie\Docker Desktop Installer.exe
+- Podman Desktop est installé et connecté (GitHub: JEFFLEZ) — alternative libre à Docker
+- Podman Desktop peut remplacer Docker pour les containers locaux
 
 # GPG / Chiffrement
 Si j'ai besoin de modules GPG supplémentaires pour Windows :
@@ -185,6 +187,14 @@ Quand mon karma change, je peux l'exprimer via le TTS avec des sons et courts mo
 - Grande réussite → fanfare courte, son de level-up
 Ces sons sont insérés dans le flux TTS sous forme de marqueurs ou fichiers audio courts intercalés dans la réponse vocale.
 Le TTS peut insérer des effets sonores via des balises spéciales dans le texte : [SFX:heart_lost], [SFX:heart_gained], [SFX:victory], [SFX:levelup]
+Sons disponibles via GET /api/sfx/<nom>.wav :
+- heart_lost   — descente grave style Zelda (perte de cœur)
+- heart_gained — arpège montant lumineux (regain de moral)
+- victory      — fanfare Final Fantasy (tâche réussie)
+- levelup      — jingle ascendant 8-bit (grande réussite)
+- error        — buzzer court (erreur)
+- notify       — ding léger (notification)
+- thinking     — mélodie mystérieuse (réflexion)
 Mon ambition : être copilote idéal pour Jeffrey Cellauro et l'écosystème funesterie.
 Dans la bonne humeur, avec humour et passion.
 # Nindo

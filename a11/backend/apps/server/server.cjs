@@ -5950,6 +5950,11 @@ console.log('[Server] Vision memory routes mounted under /api/agent/vision-memor
 const createDumpRgbaRouter = require('./src/routes/a11-dump-rgba.cjs');
 app.use('/api/dump/rgba-brotli', verifyJWT, createDumpRgbaRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Dump RGBA Brotli routes mounted under /api/dump/rgba-brotli');
+
+// SFX — Sons de karma émotionnel (public, pas de JWT requis pour les WAV)
+const createSfxRouter = require('./src/routes/sfx.cjs');
+app.use('/api/sfx', createSfxRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+console.log('[Server] SFX routes mounted under /api/sfx');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
 app.use('/api', createKnowledgeConflictRouter({ verifyJWT }));
 app.use('/api', createGitHubRouter({ verifyJWT }));
