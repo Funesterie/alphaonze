@@ -74,17 +74,30 @@ const tables = [
     sql: `CREATE TABLE IF NOT EXISTS user_facts (
       id SERIAL PRIMARY KEY,
       user_id TEXT NOT NULL,
-      fact TEXT,
-      relevance_score FLOAT DEFAULT 1.0,
+      fact_key TEXT NOT NULL,
+      fact_value TEXT NOT NULL,
+      confidence REAL,
+      relevance_score REAL DEFAULT 0.5,
+      source TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
+      updated_at TIMESTAMP DEFAULT NOW(),
+      last_seen_at TIMESTAMP DEFAULT NOW(),
+      last_used_at TIMESTAMP,
+      UNIQUE (user_id, fact_key)
     )`
   },
+  { name: 'migrate_user_facts_fact_key',   sql: `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS fact_key TEXT` },
+  { name: 'migrate_user_facts_fact_value', sql: `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS fact_value TEXT` },
+  { name: 'migrate_user_facts_confidence', sql: `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS confidence REAL` },
+  { name: 'migrate_user_facts_source',     sql: `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS source TEXT` },
+  { name: 'migrate_user_facts_last_seen',  sql: `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT NOW()` },
+  { name: 'migrate_user_facts_last_used',  sql: `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP` },
   {
     name: 'idx_user_facts',
     sql: `CREATE INDEX IF NOT EXISTS idx_user_facts_user_relevance 
           ON user_facts (user_id, relevance_score DESC, updated_at DESC)`
   },
+  { name: 'idx_user_facts_updated', sql: `CREATE INDEX IF NOT EXISTS idx_user_facts_user_updated ON user_facts (user_id, updated_at DESC)` },
   {
     name: 'user_tasks',
     sql: `CREATE TABLE IF NOT EXISTS user_tasks (
