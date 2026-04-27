@@ -187,7 +187,7 @@ class Neo4jKnowledgeGraph {
     const params = {
       userId: this.userId,
       query: String(query).trim(),
-      limit,
+      limit: neo4j.int(Math.max(1, Math.floor(Number(limit) || 10))),
     };
 
     const result = await this.runQuery(cypher, params);
@@ -232,7 +232,7 @@ class Neo4jKnowledgeGraph {
     const params = {
       entityId,
       userId: this.userId,
-      limit,
+      limit: neo4j.int(Math.max(1, Math.floor(Number(options.limit || 50)))),
     };
 
     const result = await this.runQuery(cypher, params);
