@@ -17,6 +17,7 @@ const CODE_EXTENSIONS = new Set([
 const JSON_EXTENSIONS = new Set(['.json']);
 const CSV_EXTENSIONS = new Set(['.csv']);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.opus', '.wma', '.aiff', '.aif']);
 const IMAGE_OCR_ENABLED = String(process.env.IMAGE_OCR_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const IMAGE_OCR_MAX_BYTES = Number(process.env.IMAGE_OCR_MAX_BYTES || 4 * 1024 * 1024);
 const IMAGE_OCR_MAX_WIDTH = Number(process.env.IMAGE_OCR_MAX_WIDTH || 1600);
@@ -63,6 +64,7 @@ function inferResourceKind(contentType, filename) {
   const extension = getExtension(filename);
 
   if (mime.startsWith('image/') || IMAGE_EXTENSIONS.has(extension)) return 'image';
+  if (mime.startsWith('audio/') || AUDIO_EXTENSIONS.has(extension)) return 'audio';
   if (mime === 'application/pdf' || extension === '.pdf') return 'pdf';
   if (mime === 'application/json' || JSON_EXTENSIONS.has(extension)) return 'json';
   if (mime === 'text/csv' || CSV_EXTENSIONS.has(extension)) return 'csv';
@@ -531,6 +533,181 @@ function analyzeTextBuffer(buffer, fileKind) {
   };
 }
 
+/**
+ * Analyse un buffer audio (MP3, WAV, OGG, FLAC, etc.) via ffprobe.
+ * Retourne les métadonnées techniques + une transcription Whisper si disponible.
+ *
+ * @param {Buffer} buffer - Contenu du fichier audio
+ * @param {string} mime - Type MIME
+ * @param {string} filename - Nom du fichier
+ * @returns {Promise<object>}
+ */
+async function analyzeAudioBuffer(buffer, mime, filename) {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const { execFile } = require('node:child_process');
+  const { promisify } = require('node:util');
+  const execFileAsync = promisify(execFile);
+
+  const base = {
+    readableInChatContext: false,
+    parser: 'audio_metadata',
+    preview: '',
+    note: null,
+  };
+
+  // Écrire le buffer dans un fichier temporaire pour ffprobe
+  const tmpDir = os.tmpdir();
+  const ext = path.extname(filename || '.mp3') || '.mp3';
+  const tmpFile = path.join(tmpDir, `a11_audio_${Date.now()}${ext}`);
+
+  try {
+    fs.writeFileSync(tmpFile, buffer);
+
+    // Trouver ffprobe dans le PATH
+    const { execSync } = require('node:child_process');
+    let ffprobePath = 'ffprobe';
+    try {
+      const which = process.platform === 'win32'
+        ? execSync('where ffprobe 2>nul', { encoding: 'utf8' }).trim().split('\n')[0].trim()
+        : execSync('which ffprobe 2>/dev/null', { encoding: 'utf8' }).trim();
+      if (which) ffprobePath = which;
+    } catch {
+      // ffprobe dans le PATH par défaut
+    }
+
+    // Analyse ffprobe
+    let ffprobeData = null;
+    try {
+      const { stdout } = await execFileAsync(ffprobePath, [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        tmpFile,
+      ], { timeout: 15000 });
+      ffprobeData = JSON.parse(stdout);
+    } catch (ffprobeErr) {
+      base.note = `ffprobe_unavailable: ${String(ffprobeErr?.message || ffprobeErr).slice(0, 100)}`;
+      return base;
+    }
+
+    const format = ffprobeData?.format || {};
+    const stream = (ffprobeData?.streams || []).find((s) => s.codec_type === 'audio') || {};
+
+    const durationSec = parseFloat(format.duration || stream.duration || 0);
+    const durationMin = Math.floor(durationSec / 60);
+    const durationSecRem = Math.round(durationSec % 60);
+    const bitrateKbps = Math.round(parseInt(format.bit_rate || stream.bit_rate || 0, 10) / 1000);
+    const sampleRate = parseInt(stream.sample_rate || 0, 10);
+    const channels = parseInt(stream.channels || 0, 10);
+    const channelLayout = stream.channel_layout || (channels === 2 ? 'stereo' : channels === 1 ? 'mono' : `${channels}ch`);
+    const codec = stream.codec_name || 'unknown';
+    const encoder = format.tags?.encoder || stream.tags?.encoder || '';
+    const sizeKb = Math.round(buffer.length / 1024);
+
+    // Analyse loudness via ffmpeg volumedetect (optionnel, rapide)
+    let loudnessInfo = '';
+    try {
+      const ffmpegPath = ffprobePath.replace('ffprobe', 'ffmpeg');
+      const { stderr } = await execFileAsync(ffmpegPath, [
+        '-i', tmpFile,
+        '-af', 'volumedetect',
+        '-f', 'null',
+        process.platform === 'win32' ? 'NUL' : '/dev/null',
+      ], { timeout: 20000 });
+      const meanMatch = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+      const maxMatch = stderr.match(/max_volume:\s*([-\d.]+)\s*dB/);
+      if (meanMatch && maxMatch) {
+        loudnessInfo = ` | Volume moyen: ${meanMatch[1]} dB, Peak: ${maxMatch[1]} dB`;
+      }
+    } catch {
+      // loudness optionnel
+    }
+
+    // Tentative de transcription Whisper via l'API OpenAI (si disponible)
+    let transcription = '';
+    let transcriptionNote = '';
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const whisperEnabled = String(process.env.AUDIO_TRANSCRIPTION_ENABLED || 'true').trim().toLowerCase() !== 'false';
+    if (openaiKey && whisperEnabled && buffer.length < 25 * 1024 * 1024) {
+      try {
+        const FormData = require('form-data');
+        const nodeFetch = (...args) => import('node-fetch').then((m) => m.default(...args));
+        const form = new FormData();
+        form.append('file', buffer, { filename: path.basename(filename || 'audio.mp3'), contentType: mime });
+        form.append('model', 'whisper-1');
+        form.append('language', 'fr');
+        const whisperRes = await nodeFetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${openaiKey}`,
+            ...form.getHeaders(),
+          },
+          body: form,
+          signal: AbortSignal.timeout(30000),
+        });
+        if (whisperRes.ok) {
+          const whisperData = await whisperRes.json();
+          transcription = String(whisperData?.text || '').trim();
+          if (transcription) {
+            transcriptionNote = 'transcription_whisper_ok';
+          }
+        }
+      } catch (whisperErr) {
+        transcriptionNote = `whisper_unavailable: ${String(whisperErr?.message || '').slice(0, 80)}`;
+      }
+    } else if (!openaiKey) {
+      transcriptionNote = 'whisper_skipped_no_api_key';
+    }
+
+    // Construire le preview lisible pour le contexte LLM
+    const metaLine = [
+      `Durée: ${durationMin}:${String(durationSecRem).padStart(2, '0')}`,
+      `Codec: ${codec.toUpperCase()}`,
+      `Bitrate: ${bitrateKbps} kbps`,
+      `Sample rate: ${sampleRate} Hz`,
+      `Canaux: ${channelLayout}`,
+      `Taille: ${sizeKb} KB`,
+      encoder ? `Encodeur: ${encoder}` : null,
+    ].filter(Boolean).join(' | ');
+
+    const previewParts = [`[Analyse audio] ${metaLine}${loudnessInfo}`];
+    if (transcription) {
+      const truncated = transcription.length > 800
+        ? transcription.slice(0, 797) + '…'
+        : transcription;
+      previewParts.push(`[Transcription] ${truncated}`);
+    }
+
+    return {
+      readableInChatContext: true,
+      parser: transcription ? 'audio_transcription' : 'audio_metadata',
+      preview: previewParts.join('\n'),
+      truncated: transcription.length > 800,
+      durationSec,
+      durationFormatted: `${durationMin}:${String(durationSecRem).padStart(2, '0')}`,
+      bitrateKbps,
+      sampleRate,
+      channels,
+      channelLayout,
+      codec,
+      encoder,
+      sizeBytes: buffer.length,
+      transcription: transcription || null,
+      note: transcriptionNote || null,
+    };
+  } catch (err) {
+    return {
+      ...base,
+      note: `audio_analysis_error: ${String(err?.message || err).slice(0, 100)}`,
+    };
+  } finally {
+    // Nettoyage du fichier temporaire
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  }
+}
+
 async function analyzeUploadedResource({ filename, contentType, buffer }) {
   const extension = getExtension(filename);
   const fileKind = inferResourceKind(contentType, filename);
@@ -552,6 +729,13 @@ async function analyzeUploadedResource({ filename, contentType, buffer }) {
     return {
       ...base,
       ...(await analyzeImageBuffer(buffer, base.mime)),
+    };
+  }
+
+  if (fileKind === 'audio') {
+    return {
+      ...base,
+      ...(await analyzeAudioBuffer(buffer, base.mime, filename)),
     };
   }
 
@@ -607,7 +791,7 @@ function buildConversationResourceContext(resources, options = {}) {
     }
 
     if (analysis.readableInChatContext && analysis.preview) {
-      const preview = truncateText(String(analysis.preview || ''), 500).text;
+      const preview = truncateText(String(analysis.preview || ''), 800).text;
       lines.push(`  Extrait utile:\n${preview}`);
       continue;
     }
