@@ -216,9 +216,9 @@ $services = @(
 )
 
 foreach ($svc in $services) {
-    $pid = Get-ListeningPid -Port $svc.Port
-    if ($pid) {
-        Write-OK "$($svc.Name) ($($svc.Label)) — port $($svc.Port) — PID $pid"
+    $svcPid = Get-ListeningPid -Port $svc.Port
+    if ($svcPid) {
+        Write-OK "$($svc.Name) ($($svc.Label)) — port $($svc.Port) — PID $svcPid"
     }
     else {
         Write-Warn "$($svc.Name) ($($svc.Label)) — port $($svc.Port) — INACTIF"
