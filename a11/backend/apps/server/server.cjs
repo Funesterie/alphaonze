@@ -936,22 +936,52 @@ function setPublicFileResponseHeaders(res) {
   res.setHeader('Timing-Allow-Origin', '*');
 }
 
+// Middleware de protection audio — seuls Djeff (JWT valide) et A11 (token interne) ont accès
+// aux fichiers audio (MP3, WAV, FLAC, OGG, AAC, M4A)
+function audioFileGuard(req, res, next) {
+  const filePath = req.path.toLowerCase();
+  const AUDIO_EXTS = ['.mp3', '.wav', '.flac', '.ogg', '.aac', '.m4a', '.opus', '.wma'];
+  const isAudio = AUDIO_EXTS.some((ext) => filePath.endsWith(ext));
+
+  if (!isAudio) return next(); // pas un fichier audio → accès libre
+
+  // Accès interne A11 (header x-internal-call ou token admin)
+  if (req.headers['x-internal-call'] === 'true') return next();
+
+  // Vérifier JWT
+  const authHeader = String(req.headers['authorization'] || '').trim();
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Accès audio réservé à Djeff et A11.' });
+  }
+
+  try {
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+    jwt.verify(token, secret);
+    return next();
+  } catch (_e) {
+    return res.status(403).json({ error: 'forbidden', message: 'Token invalide — accès audio refusé.' });
+  }
+}
+
 // Exposer explicitement le runtime local, même s'il vit hors du workspace.
-app.use('/files/runtime', express.static(PUBLIC_RUNTIME_ROOT, {
+// Les fichiers audio sont protégés par JWT (seuls Djeff et A11 y ont accès).
+app.use('/files/runtime', audioFileGuard, express.static(PUBLIC_RUNTIME_ROOT, {
   dotfiles: 'ignore',
   maxAge: '1d',
   setHeaders: setPublicFileResponseHeaders,
 }));
-console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT);
+console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT, '(audio: JWT requis)');
 
 // Compat legacy: certains flux img2img utilisent encore /files/uploads/... au lieu de
 // /files/runtime/files/uploads/..., donc on expose aussi cet alias vers le runtime.
-app.use('/files/uploads', express.static(PUBLIC_RUNTIME_UPLOADS_ROOT, {
+app.use('/files/uploads', audioFileGuard, express.static(PUBLIC_RUNTIME_UPLOADS_ROOT, {
   dotfiles: 'ignore',
   maxAge: '1d',
   setHeaders: setPublicFileResponseHeaders,
 }));
-console.log('[A11] Static /files/uploads ->', PUBLIC_RUNTIME_UPLOADS_ROOT);
+console.log('[A11] Static /files/uploads ->', PUBLIC_RUNTIME_UPLOADS_ROOT, '(audio: JWT requis)');
 
 // Exposer le workspace en lecture seule sous /files
 app.use('/files', express.static(WORKSPACE_ROOT, {

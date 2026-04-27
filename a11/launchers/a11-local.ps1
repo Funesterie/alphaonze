@@ -1846,7 +1846,13 @@ function Start-A11Stack {
 
     if ($service.Issues.Count -gt 0) {
       foreach ($issue in $service.Issues) {
-        Write-ErrorLine "$($service.DisplayName): $issue"
+        # Ne pas bloquer le démarrage pour les issues d'un service désactivé
+        if (-not $service.Enabled) {
+          Write-WarnLine "$($service.DisplayName) (désactivé): $issue"
+        }
+        else {
+          Write-ErrorLine "$($service.DisplayName): $issue"
+        }
       }
     }
   }

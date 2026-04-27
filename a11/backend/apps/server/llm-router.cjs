@@ -418,7 +418,7 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
   if (provider === "ollama") {
     const ollamaResult = await resolveOllamaTarget(requestedModel, { emitLogs });
     if (ollamaResult.ok) {
-      if (emitLogs) logInfo(`[LLM] provider=ollama model=${ollamaResult.target.model}`);
+      if (emitLogs) logInfo(`[LLM] provider=ollama model=${ollamaResult.target.model} (A11 prioritaire)`);
       rememberResolvedTarget(ollamaResult.target, {
         availableOllamaModels: ollamaResult.tags?.models || [],
       });
@@ -426,16 +426,18 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
     }
 
     if (emitLogs) {
+      logWarn(`[LLM] A11/Ollama indisponible (${ollamaResult.reason}) — activation du fallback Cerbère/OpenAI`);
       rememberLlmError(ollamaResult.detail || ollamaResult.reason, {
         provider: "ollama",
         reason: ollamaResult.reason,
       });
     }
 
+    // Fallback 1 : llama-server (si configuré)
     if (LLM_FALLBACK_PROVIDER === "llama_server") {
       const llamaTarget = resolveLlamaServerTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
       if (llamaTarget) {
-        if (emitLogs) logWarn(`[LLM] fallback=llama-server reason=${ollamaResult.reason || "ollama_unavailable"}`);
+        if (emitLogs) logWarn(`[LLM] fallback=llama-server (Cerbère) reason=${ollamaResult.reason || "ollama_unavailable"}`);
         rememberResolvedTarget(llamaTarget, {
           availableOllamaModels: ollamaResult.tags?.models || [],
         });
@@ -443,16 +445,21 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
       }
     }
 
-    if (LLM_FALLBACK_PROVIDER === "openai") {
-      const openAiTarget = resolveOpenAITarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
-      if (emitLogs) logWarn(`[LLM] fallback=openai reason=${ollamaResult.reason || "ollama_unavailable"}`);
-      rememberResolvedTarget(openAiTarget, {
-        availableOllamaModels: ollamaResult.tags?.models || [],
-      });
-      return openAiTarget;
+    // Fallback 2 : OpenAI (Cerbère cloud) — protège le backend quand A11 est occupée
+    if (LLM_FALLBACK_PROVIDER === "openai" || LLM_FALLBACK_PROVIDER === "none") {
+      // Même si fallback=none, on tente OpenAI si une clé est disponible
+      const hasOpenAiKey = !!(process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY);
+      if (LLM_FALLBACK_PROVIDER === "openai" || hasOpenAiKey) {
+        const openAiTarget = resolveOpenAITarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+        if (emitLogs) logWarn(`[LLM] fallback=openai (Cerbère cloud) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+        rememberResolvedTarget(openAiTarget, {
+          availableOllamaModels: ollamaResult.tags?.models || [],
+        });
+        return openAiTarget;
+      }
     }
 
-    throw new Error(ollamaResult.detail || ollamaResult.reason || "ollama_resolution_failed");
+    throw new Error(ollamaResult.detail || ollamaResult.reason || "ollama_resolution_failed — aucun fallback disponible");
   }
 
   if (provider === "llama_server") {

@@ -1,47 +1,418 @@
-import fetch from "node-fetch";
+'use strict';
 
-const CERBERE_URL = process.env.CERBERE_PLANNER_URL || "http://127.0.0.1:4545/api/v1/plan";
+/**
+ * a11-planner.cjs
+ * Planner A11 — décompose un Goal en Plan structuré via LLM (Cerbère).
+ *
+ * Responsabilités :
+ *  - Construction du World_Context (workspace, services actifs, mémoire épisodique, Neo4j, Karma)
+ *  - Injection de l'Identity_Core (system_prompt.txt) en priorité absolue
+ *  - Appel LLM (Cerbère) avec retry (max 2 tentatives supplémentaires) et timeout 30s
+ *  - Validation des skills contre allowedPrefixes
+ *  - Persistance du Plan dans Redis sous plan:{taskId} avec TTL 3600s
+ *  - Retry Cerbère : 3 tentatives × 2s si HTTP error
+ *
+ * Exigences : 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 4.6, 7.2, 10.5
+ */
 
-export async function getPlanFromLlm(task, worldContext) {
-  const systemPrompt = `
-Tu es A-11, un agent PLANNER. 
+const fs = require('node:fs');
+const path = require('node:path');
+
+// ---------------------------------------------------------------------------
+// Constantes
+// ---------------------------------------------------------------------------
+
+const CERBERE_URL =
+  process.env.CERBERE_PLANNER_URL || 'http://127.0.0.1:4545/api/v1/plan';
+
+const PLAN_TTL = 3600; // secondes
+
+/** Préfixes de skills autorisés */
+const ALLOWED_PREFIXES = [
+  'a11d.fs.',
+  'a11d.shell.',
+  'a11d.git.',
+  'a11d.tests.',
+  'a11d.vs.',
+  'a11d.qf.',
+  'a11d.ui.',
+  'a11d.web.',
+  'a11d.llm.',
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Retourne le client Redis si disponible via globalThis.__REDIS_CLIENT.
+ * @returns {object|null}
+ */
+function getRedisClient() {
+  try {
+    if (
+      globalThis.__REDIS_CLIENT &&
+      typeof globalThis.__REDIS_CLIENT.get === 'function'
+    ) {
+      return globalThis.__REDIS_CLIENT;
+    }
+  } catch (_) {
+    // Redis indisponible
+  }
+  return null;
+}
+
+/**
+ * Vérifie qu'un skill commence par l'un des préfixes autorisés.
+ * @param {string} skill
+ * @returns {boolean}
+ */
+function isAllowedSkill(skill) {
+  if (typeof skill !== 'string' || skill.length === 0) return false;
+  return ALLOWED_PREFIXES.some((prefix) => skill.startsWith(prefix));
+}
+
+/**
+ * Valide les steps d'un Plan contre les préfixes autorisés.
+ * @param {{ steps: Array<{ skill: string, payload: object }> }} plan
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+function validatePlanSkills(plan) {
+  const errors = [];
+  if (!plan || !Array.isArray(plan.steps)) {
+    errors.push('Le plan doit contenir un tableau "steps".');
+    return { valid: false, errors };
+  }
+  for (let i = 0; i < plan.steps.length; i++) {
+    const step = plan.steps[i];
+    if (!isAllowedSkill(step.skill)) {
+      errors.push(
+        `Step[${i}] : skill "${step.skill}" ne commence par aucun préfixe autorisé.`
+      );
+    }
+    if (
+      step.payload === null ||
+      typeof step.payload !== 'object' ||
+      Array.isArray(step.payload)
+    ) {
+      errors.push(`Step[${i}] : "payload" doit être un objet non-null.`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
+// buildWorldContext
+// ---------------------------------------------------------------------------
+
+/**
+ * Construit le World_Context pour le Planner.
+ *
+ * @param {object} task - La Task courante
+ * @returns {Promise<{
+ *   workspaceRoot: string,
+ *   activeServices: string[],
+ *   recentMemory: string[],
+ *   neo4jNodes: object[],
+ *   identityCore: string,
+ *   karma: number,
+ *   timestamp: string
+ * }>}
+ */
+async function buildWorldContext(task) {
+  // 1. workspaceRoot
+  const workspaceRoot = process.cwd();
+
+  // 2. activeServices — vérifier les env vars
+  const activeServices = [];
+  if (process.env.CERBERE_PLANNER_URL) activeServices.push('cerbere');
+  if (process.env.TTS_BASE_URL) activeServices.push('tts');
+  if (process.env.NEO4J_URI) activeServices.push('neo4j');
+
+  // 3. recentMemory — 5 dernières entrées épisodiques
+  let recentMemory = [];
+  try {
+    const episodicMemory = require('./lib/episodic-memory.cjs');
+    const userId = (task && task.userId) ? task.userId : 'a11';
+    const result = episodicMemory.getRecentContext(userId, 7);
+    if (result && result.ok && Array.isArray(result.episodes)) {
+      recentMemory = result.episodes
+        .slice(-5)
+        .map((ep) => ep.content || '');
+    }
+  } catch (_) {
+    recentMemory = [];
+  }
+
+  // 4. neo4jNodes — 5 derniers nœuds Neo4j pertinents
+  let neo4jNodes = [];
+  try {
+    const { isNeo4jAvailable, createNeo4jKnowledgeGraph } = require('./lib/neo4j-adapter.cjs');
+    if (isNeo4jAvailable()) {
+      const goal = (task && task.goal) ? task.goal : '';
+      const kg = createNeo4jKnowledgeGraph('a11');
+      const nodes = await kg.findNodes(goal.slice(0, 100), 5);
+      neo4jNodes = nodes || [];
+    }
+  } catch (_) {
+    neo4jNodes = [];
+  }
+
+  // 5. identityCore — contenu de system_prompt.txt
+  let identityCore = '';
+  try {
+    const promptPath = path.join(__dirname, 'system_prompt.txt');
+    identityCore = fs.readFileSync(promptPath, 'utf8');
+  } catch (_) {
+    identityCore = '';
+  }
+
+  // 6. karma — Karma courant
+  let karma = 2.0;
+  try {
+    const karmaEngine = require('./lib/karma-engine.cjs');
+    karma = await karmaEngine.getCurrentKarma();
+  } catch (_) {
+    karma = 2.0;
+  }
+
+  // 7. timestamp
+  const timestamp = new Date().toISOString();
+
+  return {
+    workspaceRoot,
+    activeServices,
+    recentMemory,
+    neo4jNodes,
+    identityCore,
+    karma,
+    timestamp,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// getPlanFromLlm
+// ---------------------------------------------------------------------------
+
+/**
+ * Appelle le LLM (Cerbère) pour obtenir un Plan à partir d'une Task et d'un World_Context.
+ *
+ * - Injecte identityCore comme premier message system (priorité absolue)
+ * - Retry LLM : max 2 tentatives supplémentaires sur JSON invalide
+ * - Timeout 30s via Promise.race + AbortController
+ * - Valide les skills contre allowedPrefixes
+ * - Retourne une Envelope need_user si le Goal est ambigu ou vide
+ * - Persiste le Plan dans Redis sous plan:{taskId} avec TTL 3600s
+ * - Retry Cerbère : 3 tentatives × 2s si HTTP error
+ *
+ * @param {object} task - La Task courante ({ id, goal, ... })
+ * @param {object} worldContext - Le World_Context construit par buildWorldContext
+ * @returns {Promise<object>} Plan { steps: [...] } ou Envelope need_user
+ */
+async function getPlanFromLlm(task, worldContext) {
+  const goal = (task && task.goal) ? String(task.goal).trim() : '';
+
+  // Retourner une Envelope need_user si le Goal est ambigu ou vide
+  if (!goal || goal.length < 3) {
+    return {
+      mode: 'need_user',
+      question: 'Le Goal est vide ou trop court. Pouvez-vous préciser votre objectif ?',
+      choices: [],
+    };
+  }
+
+  // Construire les messages LLM
+  // identityCore injecté en PREMIER message system (priorité absolue)
+  const identityCore = (worldContext && worldContext.identityCore)
+    ? worldContext.identityCore
+    : '';
+
+  const systemPlannerPrompt = `
+Tu es A-11, un agent PLANNER.
 Tu ne modifies pas les fichiers toi-même.
 Tu dois retourner UNIQUEMENT un JSON valide avec des 'steps',
 où chaque 'step' contient :
-- "skill": nom d'une compétence (a11d.fs.read, a11d.fs.write, a11d.shell.run, a11d.vs.openFile, etc.)
+- "skill": nom d'une compétence commençant par l'un des préfixes autorisés : ${ALLOWED_PREFIXES.join(', ')}
 - "payload": un objet avec les paramètres nécessaires.
 Ne réponds AUCUN texte en dehors de ce JSON.
-`;
+Exemple de réponse valide :
+{"steps":[{"skill":"a11d.fs.read","payload":{"path":"README.md"}}]}
+`.trim();
 
-  const userPrompt = `
-Objectif: ${task.goal}
-Contexte:
-${JSON.stringify(worldContext, null, 2)}
-Donne-moi un plan d'actions minimal et sûr pour atteindre cet objectif.
-`;
-
-  const body = {
-    model: "planner-a11",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt }
-    ]
+  // Contexte world sans identityCore (déjà injecté séparément)
+  const worldContextForPrompt = {
+    workspaceRoot: worldContext ? worldContext.workspaceRoot : '',
+    activeServices: worldContext ? worldContext.activeServices : [],
+    recentMemory: worldContext ? worldContext.recentMemory : [],
+    neo4jNodes: worldContext ? worldContext.neo4jNodes : [],
+    karma: worldContext ? worldContext.karma : 2.0,
+    timestamp: worldContext ? worldContext.timestamp : new Date().toISOString(),
   };
 
-  const res = await fetch(CERBERE_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const userPrompt = `
+Objectif: ${goal}
+Contexte:
+${JSON.stringify(worldContextForPrompt, null, 2)}
+Donne-moi un plan d'actions minimal et sûr pour atteindre cet objectif.
+`.trim();
 
-  if (!res.ok) throw new Error(`Planner HTTP ${res.status}`);
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content || "";
-  let plan;
-  try {
-    plan = JSON.parse(content);
-  } catch (e) {
-    throw new Error("Planner a renvoyé du JSON invalide: " + e.message);
+  const messages = [
+    // 1. Identity_Core en priorité absolue
+    { role: 'system', content: identityCore },
+    // 2. Instructions du Planner
+    { role: 'system', content: systemPlannerPrompt },
+    // 3. Goal + contexte
+    { role: 'user', content: userPrompt },
+  ];
+
+  const body = {
+    model: 'planner-a11',
+    messages,
+  };
+
+  // Retry Cerbère : 3 tentatives × 2s si HTTP error
+  const CERBERE_MAX_RETRIES = 3;
+  const CERBERE_RETRY_DELAY_MS = 2000;
+
+  let lastHttpError = null;
+  let rawContent = null;
+
+  for (let attempt = 1; attempt <= CERBERE_MAX_RETRIES; attempt++) {
+    try {
+      // Timeout 30s via AbortController + Promise.race
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      let res;
+      try {
+        res = await fetch(CERBERE_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!res.ok) {
+        lastHttpError = new Error(`Planner HTTP ${res.status}`);
+        if (attempt < CERBERE_MAX_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, CERBERE_RETRY_DELAY_MS));
+          continue;
+        }
+        // Marquer la Task en erreur après 3 tentatives
+        throw lastHttpError;
+      }
+
+      const data = await res.json();
+      rawContent = data.choices?.[0]?.message?.content || '';
+      lastHttpError = null;
+      break; // succès HTTP
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error('Planner timeout (30s dépassé)');
+      }
+      lastHttpError = err;
+      if (attempt < CERBERE_MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, CERBERE_RETRY_DELAY_MS));
+      }
+    }
   }
-  return plan; // { steps: [...] }
+
+  if (lastHttpError) {
+    throw lastHttpError;
+  }
+
+  // Retry LLM : max 2 tentatives supplémentaires sur JSON invalide
+  const LLM_MAX_RETRIES = 2;
+  let plan = null;
+  let lastParseError = null;
+  let currentContent = rawContent;
+
+  for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
+    try {
+      // Extraire le JSON du contenu (peut être entouré de markdown)
+      const jsonMatch = currentContent.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : currentContent;
+      plan = JSON.parse(jsonStr);
+      lastParseError = null;
+      break;
+    } catch (e) {
+      lastParseError = e;
+
+      if (attempt < LLM_MAX_RETRIES) {
+        // Prompt de correction explicite
+        const correctionMessages = [
+          ...messages,
+          { role: 'assistant', content: currentContent },
+          {
+            role: 'user',
+            content: `Ta réponse précédente n'était pas un JSON valide. Erreur : ${e.message}. Retourne UNIQUEMENT un JSON valide de la forme {"steps":[{"skill":"...","payload":{}}]}, sans aucun texte autour.`,
+          },
+        ];
+
+        const correctionBody = { model: 'planner-a11', messages: correctionMessages };
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          let retryRes;
+          try {
+            retryRes = await fetch(CERBERE_URL, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(correctionBody),
+              signal: controller.signal,
+            });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+
+          if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            currentContent = retryData.choices?.[0]?.message?.content || '';
+          }
+        } catch (retryErr) {
+          if (retryErr.name === 'AbortError') {
+            throw new Error('Planner retry timeout (30s dépassé)');
+          }
+          // Continuer avec le contenu précédent
+        }
+      }
+    }
+  }
+
+  if (lastParseError) {
+    throw new Error(`Planner a renvoyé du JSON invalide après ${LLM_MAX_RETRIES + 1} tentatives : ${lastParseError.message}`);
+  }
+
+  // Valider les skills contre allowedPrefixes
+  const validation = validatePlanSkills(plan);
+  if (!validation.valid) {
+    throw new Error(`Plan invalide — skills non autorisés : ${validation.errors.join(' | ')}`);
+  }
+
+  // Persister le Plan dans Redis sous plan:{taskId} avec TTL 3600s
+  const taskId = task && task.id ? task.id : null;
+  if (taskId) {
+    const redis = getRedisClient();
+    if (redis) {
+      try {
+        const { serialize } = require('./lib/plan-serializer.cjs');
+        const serialized = serialize(plan);
+        await redis.set(`plan:${taskId}`, serialized, { EX: PLAN_TTL });
+      } catch (_) {
+        // Fallback silencieux si Redis ou sérialisation échoue
+      }
+    }
+  }
+
+  return plan;
 }
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
+module.exports = { getPlanFromLlm, buildWorldContext };
