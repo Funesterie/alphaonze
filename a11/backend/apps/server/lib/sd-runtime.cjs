@@ -330,7 +330,7 @@ function resolveSdPythonBin(scriptPath = '') {
 
 function sanitizeProxyHeaders(headers = {}) {
   const forwarded = {};
-  for (const headerName of ['authorization', 'x-nez-admin', 'x-nez-token']) {
+  for (const headerName of ['authorization', 'x-nez-admin-token', 'x-qflush-token', 'x-dragon-token']) {
     const value = headers?.[headerName];
     if (typeof value === 'string' && value.trim()) {
       forwarded[headerName] = value;
@@ -358,6 +358,100 @@ function normalizeSdModelProfile(value = '') {
     return 'classic';
   }
   return profile;
+}
+
+function shouldUseWindowsSdCompatibilityGuard(env = process.env, platform = process.platform) {
+  if (platform !== 'win32') return false;
+  const override = String(
+    env.A11_SD_ALLOW_EXPERIMENTAL_WINDOWS_PROFILES
+    || env.SD_ALLOW_EXPERIMENTAL_WINDOWS_PROFILES
+    || ''
+  ).trim();
+  if (override) {
+    return !toBoolean(override);
+  }
+  const device = String(env.SD_DEVICE || env.A11_SD_DEVICE || 'cuda').trim().toLowerCase();
+  return !device || device === 'cuda';
+}
+
+function resolveCompatibleWindowsSdProfile(profile = '', env = process.env, platform = process.platform) {
+  const normalized = normalizeSdModelProfile(profile || env.SD_MODEL_PROFILE || 'sd35') || 'sd35';
+  if (!shouldUseWindowsSdCompatibilityGuard(env, platform)) {
+    return { profile: normalized, downgraded: false, reason: '' };
+  }
+  if (normalized === 'sd35turbo' || normalized === 'sd35large') {
+    return {
+      profile: 'sd35',
+      downgraded: true,
+      reason: 'windows_sd3_stability_guard',
+    };
+  }
+  return { profile: normalized, downgraded: false, reason: '' };
+}
+
+function resolveCompatibleWindowsSdTorchDtype(profile = '', env = process.env, platform = process.platform) {
+  const requested = String(env.SD_TORCH_DTYPE || env.A11_SD_TORCH_DTYPE || '').trim().toLowerCase();
+  if (!shouldUseWindowsSdCompatibilityGuard(env, platform)) {
+    return requested || '';
+  }
+  if (requested && requested !== 'auto') {
+    return requested;
+  }
+  const normalizedProfile = normalizeSdModelProfile(profile || env.SD_MODEL_PROFILE || '');
+  if (!normalizedProfile || normalizedProfile.startsWith('sd35')) {
+    return 'float16';
+  }
+  return requested || '';
+}
+
+function stripAnsi(value = '') {
+  return String(value || '')
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\r(?!\n)/g, '\n');
+}
+
+function compactProcessOutput(value = '', maxLength = 6000) {
+  const text = stripAnsi(value)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim();
+  if (!text || text.length <= maxLength) return text;
+  return `[truncated ${text.length - maxLength} chars]\n${text.slice(-maxLength)}`;
+}
+
+function extractSdPythonDiagnostic({ message = '', stderr = '', stdout = '' } = {}) {
+  const combined = `${message}\n${stderr}\n${stdout}`.toLowerCase();
+  if (/python_exit_(?:-1073741819|3221225477)|0xc0000005|access violation/.test(combined)) {
+    return {
+      code: 'windows_native_crash',
+      message: 'crash natif du runtime SD sous Windows pendant le chargement du modele',
+    };
+  }
+  if (/divisible by\s+8|height.*width.*divisible|width.*height.*divisible/.test(combined)) {
+    return {
+      code: 'invalid_render_dimensions',
+      message: 'dimensions de rendu SD invalides: largeur et hauteur doivent etre multiples de 8',
+    };
+  }
+  if (/out of memory|cuda.*memory|not enough memory|\boom\b/.test(combined)) {
+    return {
+      code: 'sd_out_of_memory',
+      message: 'memoire insuffisante pendant le chargement ou le rendu SD',
+    };
+  }
+  if (/no module named ['"]?torch|module torch/.test(combined)) {
+    return {
+      code: 'missing_torch',
+      message: 'torch manque dans le runtime Python SD',
+    };
+  }
+  if (/no module named ['"]?diffusers|module diffusers/.test(combined)) {
+    return {
+      code: 'missing_diffusers',
+      message: 'diffusers manque dans le runtime Python SD',
+    };
+  }
+  return null;
 }
 
 async function invokeSdProxy(payload = {}, options = {}) {
@@ -400,8 +494,16 @@ async function runSdScript(payload = {}, options = {}) {
   const scriptPath = options.scriptPath || resolveSdScriptPath();
   const pythonBin = options.pythonBin || resolveSdPythonBin(scriptPath);
   const outputPath = String(payload.output || payload.outputPath || '').trim();
+  const promptPrebuilt = (
+    payload.prompt_prebuilt === true
+    || payload.promptPrebuilt === true
+    || payload.skip_prompt_enrichment === true
+    || payload.skipPromptEnrichment === true
+  );
   const rawPrompt = String(payload.prompt || '').trim();
-  const finalPrompt = await translatePromptToEnglish(rawPrompt);
+  const finalPrompt = promptPrebuilt
+    ? rawPrompt
+    : await translatePromptToEnglish(rawPrompt);
   const finalPrompt2 = String(payload.prompt_2 || payload.prompt2 || '').trim();
   const finalPrompt3 = String(payload.prompt_3 || payload.prompt3 || '').trim();
   const finalNegativePrompt2 = String(payload.negative_prompt_2 || payload.negativePrompt2 || '').trim();
@@ -495,9 +597,30 @@ async function runSdScript(payload = {}, options = {}) {
   }
 
   return new Promise((resolve) => {
+    const requestedOrDefaultProfile = requestedModelProfile || String(process.env.SD_MODEL_PROFILE || 'sd35').trim();
+    const profileCompatibility = resolveCompatibleWindowsSdProfile(
+      requestedOrDefaultProfile,
+      process.env,
+      process.platform,
+    );
+    const compatibleTorchDtype = resolveCompatibleWindowsSdTorchDtype(
+      profileCompatibility.profile,
+      process.env,
+      process.platform,
+    );
+    if (profileCompatibility.downgraded) {
+      console.warn(
+        `[A11][sd-runtime] downgraded local Windows profile ${requestedOrDefaultProfile} -> ${profileCompatibility.profile}`
+        + ` (${profileCompatibility.reason})`
+      );
+    }
+    if (compatibleTorchDtype) {
+      console.log('[A11][sd-runtime] effective torch dtype', compatibleTorchDtype);
+    }
     const sdEnv = {
       ...process.env,
-      SD_MODEL_PROFILE: requestedModelProfile || String(process.env.SD_MODEL_PROFILE || 'sd35').trim(),
+      SD_MODEL_PROFILE: profileCompatibility.profile,
+      ...(compatibleTorchDtype ? { SD_TORCH_DTYPE: compatibleTorchDtype } : {}),
     };
     const py = spawn(pythonBin, args, { cwd: path.dirname(scriptPath), env: sdEnv });
     let stdout = Buffer.alloc(0);
@@ -515,31 +638,43 @@ async function runSdScript(payload = {}, options = {}) {
       });
     });
     py.on('close', (code, signal) => {
+      const stdoutText = compactProcessOutput(stdout.toString());
+      const stderrText = compactProcessOutput(stderr.toString());
       if (code !== 0) {
         const exitCode = Number.isInteger(code) ? code : null;
         const signalLabel = String(signal || '').trim() || null;
+        const message = signalLabel
+          ? `python_signal_${signalLabel}`
+          : `python_exit_${exitCode ?? 'unknown'}`;
+        const diagnostic = extractSdPythonDiagnostic({
+          message,
+          stderr: stderrText,
+          stdout: stdoutText,
+        });
         return resolve({
           ok: false,
           error: 'python_failed',
-          message: signalLabel
-            ? `python_signal_${signalLabel}`
-            : `python_exit_${exitCode ?? 'unknown'}`,
-          stderr: stderr.toString(),
-          stdout: stdout.toString(),
+          message,
+          stderr: stderrText,
+          stdout: stdoutText,
           exitCode,
           signal: signalLabel,
+          ...(diagnostic ? {
+            diagnostic_code: diagnostic.code,
+            diagnostic_message: diagnostic.message,
+          } : {}),
           scriptPath,
           pythonBin,
         });
       }
       try {
-        const parsed = JSON.parse(stdout.toString() || '{}');
+        const parsed = JSON.parse(stdoutText || '{}');
         // Log the full JSON output from the Python script
         console.log('[SD][PYTHON][JSON_OUTPUT]', JSON.stringify(parsed, null, 2));
         return resolve({
           ...parsed,
-          stdout: stdout.toString(),
-          stderr: stderr.toString(),
+          stdout: stdoutText,
+          stderr: stderrText,
           scriptPath,
           pythonBin,
         });
@@ -548,8 +683,8 @@ async function runSdScript(payload = {}, options = {}) {
           ok: false,
           error: 'bad_python_output',
           message: String(error_?.message || error_),
-          stdout: stdout.toString(),
-          stderr: stderr.toString(),
+          stdout: stdoutText,
+          stderr: stderrText,
           scriptPath,
           pythonBin,
         });

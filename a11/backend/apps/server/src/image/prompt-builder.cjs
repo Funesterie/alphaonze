@@ -216,9 +216,8 @@ function buildPromptSeed(text = '', semanticAnalysis = null) {
   // Normalize prompts that look like an "inventory" of anatomy parts
   // to favor a single coherent subject description.
   const anatomyNormalizedText = normalizeAnatomyPrompt(normalized, subjectEntity);
-  const additionalCompositionHints = looksLikeInventoryAnatomy(normalized) && !hasExplicitMultiIntent(normalized)
-    ? ['single subject', 'full body', 'natural anatomy', 'coherent silhouette']
-    : [];
+  // Ne plus injecter de hints heuristiques de composition — le LLM canonicalizer gère ça
+  const additionalCompositionHints = [];
 
   return {
     normalizedText: anatomyNormalizedText,

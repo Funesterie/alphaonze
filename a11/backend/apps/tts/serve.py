@@ -1,5 +1,7 @@
 raise SystemExit("[TTS] Deprecated: use siwis.py as the main server entrypoint.")
 
+from bind_config import resolve_bind_host
+
 # --- SERVER ---
 class Handler(BaseHTTPRequestHandler):
 
@@ -100,8 +102,9 @@ def run():
     # Ensure output directory exists (important for Railway)
     os.makedirs(OUT_DIR, exist_ok=True)
     PORT = int(os.environ.get("PORT", 5002))
-    print(f"[TTS] 🚀 Running on port {PORT}")
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    HOST = resolve_bind_host(os.environ)
+    print(f"[TTS] 🚀 Running on http://{HOST}:{PORT}")
+    HTTPServer((HOST, PORT), Handler).serve_forever()
 
 if __name__ == "__main__":
     run()

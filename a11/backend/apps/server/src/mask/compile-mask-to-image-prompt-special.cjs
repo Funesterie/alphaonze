@@ -504,7 +504,12 @@ async function enrichMaskForSpecialImageCompiler(rawMask = {}, options = {}) {
   if (memoryHintCount > 0) {
     enrichedMask.meta.specialCompilerMemoryHintsAppliedCount = memoryHintCount;
   }
-  enrichedMask.meta.specialCompilerJanusDisabled = true;
+  if (
+    Array.isArray(enrichedMask.meta.imageReferenceManifests)
+    && enrichedMask.meta.imageReferenceManifests.length > 0
+  ) {
+    enrichedMask.meta.specialCompilerJanusAware = true;
+  }
 
   return {
     mask: enrichedMask,

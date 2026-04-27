@@ -1,4 +1,4 @@
-const fs = require('node:fs');
+﻿const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -7,11 +7,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { uploadBufferToR2: defaultUploadBufferToR2 } = require('../../lib/file-storage.cjs');
 const {
   resolveGeneratedImageUrl,
-  compileMaskImageGenerateRuntime,
 } = require('../mask/image-chat-runtime.cjs');
-const {
-  buildCanonicalImageMaskFromText,
-} = require('../mask/resolve-image-mask-from-text.cjs');
 const {
   callJanusVisionText,
   resolveJanusVisionConfig,
@@ -30,22 +26,6 @@ const {
   resolveSequencePlanningEnvConfig,
 } = require('./video-sequence-planner.cjs');
 const {
-  lookupImageHintWebContext: defaultLookupImageHintWebContext,
-  resolveImageWebDraft: defaultResolveImageWebDraft,
-} = require('../knowledge/image-hint-web-context.cjs');
-const {
-  resolveImageReferencePack: defaultResolveImageReferencePack,
-} = require('../knowledge/image-reference-pack.cjs');
-const {
-  buildImageReferenceComposite: defaultBuildImageReferenceComposite,
-} = require('../knowledge/image-reference-composite.cjs');
-const {
-  resolveImageEntityContext: defaultResolveImageEntityContext,
-} = require('../knowledge/image-entity-resolver.cjs');
-const {
-  directImageRequest: defaultDirectImageRequest,
-} = require('../knowledge/image-request-director.cjs');
-const {
   classifyImg2ImgSource,
   probeImg2ImgSource,
   resolveImg2ImgCanvasPlan,
@@ -55,12 +35,6 @@ const {
   resolveRetryStrength,
   resolveStrengthFromProfile,
 } = require('../image/img2img-strength.cjs');
-const {
-  lookupDefinitionContext: defaultLookupDefinitionContext,
-} = require('../knowledge/definition-context.cjs');
-const {
-  duckduckgoImageSearch: defaultDuckduckgoImageSearch,
-} = require('../../lib/image-search.cjs');
 const {
   normalizeVideoFormat,
   parseVideoGenerateRequest,
@@ -126,9 +100,7 @@ function roundTimingValue(value, precision = 2) {
 
 function normalizeVideoLookup(value = '') {
   return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[’']/g, ' ')
+    .replace(/[â']/g, ' ')
     .replace(/[_-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -154,11 +126,25 @@ function resolveImageRenderMaxSide(env = process.env) {
   return roundDimensionToMultiple(clampNumber(raw, 64, 4096, 2048));
 }
 
-function normalizeEvenDimension(value, min = 64) {
+function resolveSdDimensionMultiple(env = process.env) {
+  const configured = Number(env?.SD_DIMENSION_MULTIPLE || env?.A11_SD_DIMENSION_MULTIPLE || 8);
+  if (!Number.isFinite(configured) || configured <= 0) return 8;
+  return Math.max(8, Math.min(128, Math.round(configured)));
+}
+
+function normalizeLatentDimension(value, {
+  min = 64,
+  max = 4096,
+  multiple = resolveSdDimensionMultiple(process.env),
+} = {}) {
+  const safeMultiple = Math.max(1, Number(multiple) || 8);
+  const safeMin = Math.max(safeMultiple, Math.ceil(Number(min || 64) / safeMultiple) * safeMultiple);
+  const safeMax = Math.max(safeMin, Math.floor(Number(max || 4096) / safeMultiple) * safeMultiple);
   let numeric = Math.round(Number(value));
-  if (!Number.isFinite(numeric) || numeric <= 0) numeric = min;
-  if (numeric > 1 && numeric % 2 !== 0) numeric -= 1;
-  return Math.max(min, numeric);
+  if (!Number.isFinite(numeric) || numeric <= 0) numeric = safeMin;
+  numeric = Math.max(safeMin, Math.min(safeMax, numeric));
+  numeric = Math.floor(numeric / safeMultiple) * safeMultiple;
+  return Math.max(safeMin, Math.min(safeMax, numeric));
 }
 
 function fitRenderDimensionsWithinLimits({
@@ -194,18 +180,47 @@ function fitRenderDimensionsWithinLimits({
     resolvedHeight *= scale;
   }
 
-  resolvedWidth = normalizeEvenDimension(resolvedWidth, minSide);
-  resolvedHeight = normalizeEvenDimension(resolvedHeight, minSide);
+  const dimensionMultiple = resolveSdDimensionMultiple(process.env);
+  resolvedWidth = normalizeLatentDimension(resolvedWidth, {
+    min: minSide,
+    max: maxSide,
+    multiple: dimensionMultiple,
+  });
+  resolvedHeight = normalizeLatentDimension(resolvedHeight, {
+    min: minSide,
+    max: maxSide,
+    multiple: dimensionMultiple,
+  });
 
-  if (resolvedWidth > maxSide) resolvedWidth = normalizeEvenDimension(maxSide, minSide);
-  if (resolvedHeight > maxSide) resolvedHeight = normalizeEvenDimension(maxSide, minSide);
+  if (resolvedWidth > maxSide) {
+    resolvedWidth = normalizeLatentDimension(maxSide, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
+  }
+  if (resolvedHeight > maxSide) {
+    resolvedHeight = normalizeLatentDimension(maxSide, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
+  }
 
   let guard = 0;
   while ((resolvedWidth * resolvedHeight) > maxPixels && guard < 4) {
     const areaScale = Math.sqrt(maxPixels / Math.max(resolvedWidth * resolvedHeight, 1));
     if (!(areaScale > 0 && areaScale < 1)) break;
-    const nextWidth = normalizeEvenDimension(resolvedWidth * areaScale, minSide);
-    const nextHeight = normalizeEvenDimension(resolvedHeight * areaScale, minSide);
+    const nextWidth = normalizeLatentDimension(resolvedWidth * areaScale, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
+    const nextHeight = normalizeLatentDimension(resolvedHeight * areaScale, {
+      min: minSide,
+      max: maxSide,
+      multiple: dimensionMultiple,
+    });
     if (nextWidth === resolvedWidth && nextHeight === resolvedHeight) break;
     resolvedWidth = nextWidth;
     resolvedHeight = nextHeight;
@@ -463,152 +478,6 @@ function resolveFrameReferenceCandidate({
     return normalizedUrl || normalizedPath;
   }
   return normalizedPath || normalizedUrl;
-}
-
-function isImplicitVideoWebInitAllowed(env = process.env) {
-  return isTruthy(env?.A11_VIDEO_ALLOW_IMPLICIT_WEB_INIT);
-}
-
-function isTrustedImplicitVideoInit(reference = {}) {
-  const sourceMode = String(reference?.sourceMode || '').trim().toLowerCase();
-  return sourceMode === 'web_reference_subject';
-}
-
-function resolveReferencePackSubjectInit(webReferencePack = null) {
-  const references = Array.isArray(webReferencePack?.references)
-    ? webReferencePack.references
-    : [];
-  const subjectReference = references.find((entry) => String(entry?.role || '').trim() === 'subject') || null;
-  const imageUrl = String(subjectReference?.imageUrl || '').trim();
-  if (!imageUrl) return null;
-  return {
-    initImageUrl: imageUrl,
-    initImagePath: '',
-    sourceMode: 'web_reference_subject',
-  };
-}
-
-function resolveReferencePackInitImage(compiledState = {}) {
-  return resolveReferencePackSubjectInit(compiledState?.mask?.meta?.webReferencePack || null);
-}
-
-function resolveCanonicalSubjectBootstrapContext(mask = {}) {
-  const subjectProfileType = normalizeVideoLookup(
-    mask?.meta?.subjectProfile?.type
-    || mask?.meta?.imageScratchpad?.subjectProfileType
-    || ''
-  );
-  const subjectProfileTypeKey = subjectProfileType.replace(/\s+/g, '_');
-  const canonicalSubject = String(
-    mask?.meta?.canonicalSubject
-    || mask?.meta?.imageScratchpad?.canonicalSubject
-    || mask?.meta?.imageEntityContext?.canonicalSubject
-    || mask?.meta?.subjectProfile?.canonicalSubject
-    || ''
-  ).trim();
-
-  return {
-    canonicalSubject,
-    subjectProfileType: subjectProfileTypeKey,
-    eligible: Boolean(
-      canonicalSubject
-      && ['reference_character', 'pokemon_creature'].includes(subjectProfileTypeKey)
-    ),
-  };
-}
-
-function shouldSkipCanonicalSubjectWebInitForMotionProfile(motionProfile = '') {
-  return [
-    'walk_cycle',
-    'run_cycle',
-    'dance_cycle',
-    'gesture_loop',
-    'subtle_loop',
-  ].includes(String(motionProfile || '').trim());
-}
-
-async function resolveCanonicalSubjectWebInit({
-  request = {},
-  compiledState = {},
-  resolveImageReferencePack,
-  duckduckgoImageSearch,
-} = {}) {
-  const mask = compiledState?.mask && typeof compiledState.mask === 'object'
-    ? compiledState.mask
-    : null;
-  if (!mask) return null;
-
-  const bootstrapContext = resolveCanonicalSubjectBootstrapContext(mask);
-  if (!bootstrapContext.eligible) return null;
-  const motionProfile = normalizeVideoLookup(request?.timingPlan?.motionProfile || '').replace(/\s+/g, '_');
-  if (shouldSkipCanonicalSubjectWebInitForMotionProfile(motionProfile)) return null;
-  const shouldBypassCachedReference = Boolean(motionProfile && motionProfile !== 'generic');
-
-  const cachedReference = shouldBypassCachedReference
-    ? null
-    : resolveReferencePackSubjectInit(mask?.meta?.webReferencePack || null);
-  if (cachedReference) {
-    return {
-      ...cachedReference,
-      canonicalSubject: bootstrapContext.canonicalSubject,
-      reason: 'canonical_subject_cached_reference',
-    };
-  }
-
-  if (typeof resolveImageReferencePack !== 'function') return null;
-
-  try {
-    const resolvedPack = await resolveImageReferencePack({
-      mask,
-      selection: compiledState?.specialCompiler?.selection || null,
-      duckduckgoImageSearch,
-      forceSubjectLookup: true,
-      subjectOnly: true,
-      motionProfile,
-    });
-    const resolvedReference = resolveReferencePackSubjectInit(resolvedPack);
-    if (!resolvedReference) return null;
-
-    return {
-      ...resolvedReference,
-      canonicalSubject: bootstrapContext.canonicalSubject,
-      reason: 'canonical_subject_lookup',
-    };
-  } catch {
-    return null;
-  }
-}
-
-function resolveCompiledImplicitWebInit(compiledState = {}) {
-  const draft = compiledState?.mask?.meta?.webImageDraft && typeof compiledState.mask.meta.webImageDraft === 'object'
-    ? compiledState.mask.meta.webImageDraft
-    : null;
-  if (draft) {
-    const initImageUrl = String(draft?.initImageUrl || '').trim();
-    const initImagePath = String(draft?.initImagePath || '').trim();
-    if (initImageUrl || initImagePath) {
-      return {
-        initImageUrl,
-        initImagePath,
-        sourceMode: String(draft?.mode || 'web_image_draft').trim() || 'web_image_draft',
-        reason: String(draft?.reason || '').trim() || null,
-      };
-    }
-  }
-  return resolveReferencePackInitImage(compiledState);
-}
-
-function stripImplicitInitFromSdBody(sdBody = {}) {
-  if (!sdBody || typeof sdBody !== 'object') return {};
-  const {
-    init_image_url,
-    init_image,
-    initImage,
-    initImageUrl,
-    strength,
-    ...rest
-  } = sdBody;
-  return rest;
 }
 
 function hasExplicitVideoVisualSource(request = {}) {
@@ -1446,6 +1315,12 @@ function resolveVideoTimingPlan({
   const parsedDurationSeconds = resolvePositiveNumber(parsed?.durationSeconds, bodyDurationSeconds);
   const parsedFps = resolvePositiveNumber(parsed?.fps, bodyFps);
   const parsedFrameCount = resolvePositiveNumber(parsed?.frameCount, bodyFrameCount);
+  const hasTextDuration = resolvePositiveNumber(parsed?.textDurationSeconds) > 0;
+  const hasTextFps = resolvePositiveNumber(parsed?.textFps) > 0;
+  const hasTextFrameCount = resolvePositiveNumber(parsed?.textFrameCount) > 0;
+  const hasBodyDuration = hasOwnPositiveNumber(body, ['durationSeconds', 'duration_seconds', 'duration']);
+  const hasBodyFps = hasOwnPositiveNumber(body, ['fps']);
+  const hasBodyFrameCount = hasOwnPositiveNumber(body, ['frameCount', 'frame_count', 'frames']);
   const strictTiming = (
     isTruthy(body?.strictTiming)
     || isTruthy(body?.lockTiming)
@@ -1456,19 +1331,16 @@ function resolveVideoTimingPlan({
   const durationLooksDefault = bodyDurationSeconds > 0 && bodyDurationSeconds === Number(config.defaultDurationSeconds || 0);
   const fpsLooksDefault = bodyFps > 0 && bodyFps === Number(config.defaultFps || 0);
   const explicitDuration = Boolean(
-    strictTiming
-    || resolvePositiveNumber(parsed?.textDurationSeconds) > 0
-    || (hasOwnPositiveNumber(body, ['durationSeconds', 'duration_seconds', 'duration']) && !durationLooksDefault)
+    hasTextDuration
+    || (hasBodyDuration && (strictTiming || !durationLooksDefault))
   );
   const explicitFps = Boolean(
-    strictTiming
-    || resolvePositiveNumber(parsed?.textFps) > 0
-    || (hasOwnPositiveNumber(body, ['fps']) && !fpsLooksDefault)
+    hasTextFps
+    || (hasBodyFps && (strictTiming || !fpsLooksDefault))
   );
   const explicitFrameCount = Boolean(
-    strictTiming
-    || resolvePositiveNumber(parsed?.textFrameCount) > 0
-    || hasOwnPositiveNumber(body, ['frameCount', 'frame_count', 'frames'])
+    hasTextFrameCount
+    || hasBodyFrameCount
   );
   const motionPlan = resolveVideoMotionPlan(prompt, config);
 
@@ -1674,36 +1546,6 @@ function looksLikeImplicitSquareDefault(request = {}) {
   return width === defaultWidth && height === defaultHeight;
 }
 
-function resolveCompiledRenderSizing(compiledState = {}, compiledSdBody = {}, request = {}) {
-  const renderSizing = compiledState?.mask?.meta?.renderSizing
-    && typeof compiledState.mask.meta.renderSizing === 'object'
-      ? compiledState.mask.meta.renderSizing
-      : null;
-  const resolvedWidth = Number(renderSizing?.resolvedWidth || compiledSdBody?.width || 0);
-  const resolvedHeight = Number(renderSizing?.resolvedHeight || compiledSdBody?.height || 0);
-
-  if (!(resolvedWidth > 0 && resolvedHeight > 0)) {
-    return null;
-  }
-
-  if (
-    !renderSizing
-    && resolvedWidth === Number(request?.width || 0)
-    && resolvedHeight === Number(request?.height || 0)
-  ) {
-    return null;
-  }
-
-  return {
-    source: String(renderSizing?.source || 'compiled_sd_body').trim() || 'compiled_sd_body',
-    reason: String(renderSizing?.reason || 'compiled_render_size').trim() || 'compiled_render_size',
-    requestedWidth: Number(renderSizing?.requestedWidth || resolvedWidth),
-    requestedHeight: Number(renderSizing?.requestedHeight || resolvedHeight),
-    width: resolvedWidth,
-    height: resolvedHeight,
-  };
-}
-
 function ensureVideoFilename(format = 'mp4') {
   const normalized = normalizeVideoFormat(format, 'mp4');
   return `a11-video-${Date.now()}.${normalized}`;
@@ -1733,12 +1575,188 @@ function buildLocalPublicUrl(req, candidatePath) {
   return origin ? `${origin}${publicPath}` : publicPath;
 }
 
+function isLoopbackUrl(value = '') {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    const hostname = String(parsed.hostname || '').trim().toLowerCase();
+    return hostname === '127.0.0.1'
+      || hostname === 'localhost'
+      || hostname === '::1'
+      || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+function isUnsafeAssetUrlForClient(req, value = '') {
+  const raw = String(value || '').trim();
+  if (!/^https?:\/\//i.test(raw)) return false;
+  if (isLoopbackUrl(raw)) return true;
+
+  try {
+    const requestOrigin = resolveRequestOrigin(req);
+    const requestProtocol = requestOrigin ? new URL(requestOrigin).protocol : '';
+    const assetProtocol = new URL(raw).protocol;
+    return requestProtocol === 'https:' && assetProtocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function resolveVideoAudioRequest(body = {}, prompt = '') {
+  const text = String(
+    body?.audioText
+    || body?.audio_text
+    || body?.voiceText
+    || body?.voice_text
+    || body?.narration
+    || body?.soundText
+    || body?.sound_text
+    || ''
+  ).trim();
+  const implicitAudio = (
+    isTruthy(body?.withAudio)
+    || isTruthy(body?.with_audio)
+    || isTruthy(body?.includeAudio)
+    || isTruthy(body?.include_audio)
+  );
+  return {
+    enabled: Boolean(text || implicitAudio),
+    text: text || (implicitAudio ? String(prompt || '').trim() : ''),
+  };
+}
+
+function resolveVideoSdRequestOverrides(body = {}) {
+  const modelProfile = String(
+    body?.model_profile
+    || body?.modelProfile
+    || body?.sd_model_profile
+    || body?.sdModelProfile
+    || ''
+  ).trim();
+  const sdSteps = resolvePositiveNumber(
+    body?.sdSteps,
+    body?.sd_steps,
+    body?.num_inference_steps,
+    body?.numInferenceSteps,
+    body?.steps
+  );
+  const sdGuidanceScale = resolvePositiveNumber(
+    body?.sdGuidanceScale,
+    body?.sd_guidance_scale,
+    body?.guidance_scale,
+    body?.guidanceScale
+  );
+  return {
+    modelProfile,
+    sdSteps: sdSteps > 0 ? sdSteps : 0,
+    sdGuidanceScale: sdGuidanceScale > 0 ? sdGuidanceScale : 0,
+  };
+}
+
 async function downloadBinary(url, fetchImpl = defaultFetch) {
   const response = await fetchImpl(url);
   if (!response.ok) {
     throw new Error(`video_frame_download_failed:${response.status}`);
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+function resolveTtsBaseUrl(env = process.env) {
+  return String(
+    env.TTS_BASE_URL
+    || env.TTS_URL
+    || env.TTS_PUBLIC_BASE_URL
+    || 'http://127.0.0.1:5002'
+  ).trim().replace(/\/+$/, '');
+}
+
+function inferAudioExtension(audioUrl = '', contentType = '') {
+  const ext = path.extname(String(new URL(audioUrl, 'http://localhost').pathname || '')).trim().toLowerCase();
+  if (ext && /^\.[a-z0-9]{2,5}$/.test(ext)) return ext;
+  if (String(contentType || '').toLowerCase().includes('mpeg')) return '.mp3';
+  if (String(contentType || '').toLowerCase().includes('ogg')) return '.ogg';
+  return '.wav';
+}
+
+async function synthesizeVideoAudioTrack({
+  req,
+  text,
+  workingPaths,
+  fetchImpl = defaultFetch,
+} = {}) {
+  const normalizedText = String(text || '').trim();
+  if (!normalizedText) return null;
+
+  const ttsBaseUrl = resolveTtsBaseUrl();
+  const response = await fetchImpl(`${ttsBaseUrl}/api/tts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text: normalizedText }),
+  });
+  const rawBody = await response.text();
+  let payload = null;
+  try {
+    payload = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || !payload) {
+    const error = new Error(`video_audio_tts_failed:${response.status}:${rawBody}`);
+    error.statusCode = response.status || 502;
+    error.payload = {
+      ok: false,
+      error: 'video_audio_tts_failed',
+      message: rawBody || `TTS status ${response.status}`,
+    };
+    throw error;
+  }
+
+  const audioUrl = String(payload.audio_url || payload.audioUrl || payload.url || '').trim();
+  if (!audioUrl) {
+    const error = new Error('video_audio_url_missing');
+    error.statusCode = 502;
+    error.payload = {
+      ok: false,
+      error: 'video_audio_url_missing',
+      message: 'Le TTS n a pas retourne d URL audio exploitable.',
+    };
+    throw error;
+  }
+
+  const audioResponse = await fetchImpl(audioUrl);
+  if (!audioResponse.ok) {
+    const error = new Error(`video_audio_download_failed:${audioResponse.status}`);
+    error.statusCode = audioResponse.status || 502;
+    error.payload = {
+      ok: false,
+      error: 'video_audio_download_failed',
+      message: `Telechargement audio impossible (${audioResponse.status}).`,
+      audioUrl,
+    };
+    throw error;
+  }
+
+  const contentType = String(audioResponse.headers?.get?.('content-type') || 'audio/wav').trim();
+  const buffer = Buffer.from(await audioResponse.arrayBuffer());
+  const audioPath = path.join(workingPaths.jobRoot, `audio${inferAudioExtension(audioUrl, contentType)}`);
+  await fsp.writeFile(audioPath, buffer);
+  const localPublicAudioUrl = buildLocalPublicUrl(req, audioPath);
+  const publicAudioUrl = isUnsafeAssetUrlForClient(req, audioUrl) && localPublicAudioUrl
+    ? localPublicAudioUrl
+    : audioUrl;
+
+  return {
+    path: audioPath,
+    url: publicAudioUrl,
+    text: normalizedText,
+    contentType,
+    sizeBytes: buffer.length,
+    gifUrl: String(payload.gif_url || payload.gifUrl || '').trim() || null,
+  };
 }
 
 async function materializeSourceVideoFile(request, workingPaths, fetchImpl) {
@@ -2091,6 +2109,7 @@ async function runFfmpegAssembly({
   mp4Codec = 'libx264',
   mp4Preset = 'medium',
   mp4Quality = 19,
+  audioPath = '',
 }) {
   const args = buildFfmpegAssemblyArgs({
     fps,
@@ -2100,6 +2119,7 @@ async function runFfmpegAssembly({
     mp4Codec,
     mp4Preset,
     mp4Quality,
+    audioPath,
   });
 
   await new Promise((resolve, reject) => {
@@ -2136,8 +2156,16 @@ function buildFfmpegAssemblyArgs({
   mp4Codec = 'libx264',
   mp4Preset = 'medium',
   mp4Quality = 19,
+  audioPath = '',
 }) {
   const inputPattern = path.join(framesDir, 'frame-%04d.png');
+  const normalizedAudioPath = String(audioPath || '').trim();
+  const audioArgs = normalizedAudioPath && format === 'mp4'
+    ? ['-i', normalizedAudioPath]
+    : [];
+  const audioEncodeArgs = normalizedAudioPath && format === 'mp4'
+    ? ['-c:a', 'aac', '-b:a', '128k', '-af', 'apad', '-shortest']
+    : [];
   return format === 'gif'
     ? ['-y', '-framerate', String(fps), '-i', inputPattern, outputPath]
     : (
@@ -2146,6 +2174,7 @@ function buildFfmpegAssemblyArgs({
             '-y',
             '-framerate', String(fps),
             '-i', inputPattern,
+            ...audioArgs,
             '-c:v', String(mp4Codec || 'h264_nvenc'),
             '-preset', String(mp4Preset || 'p5'),
             '-rc', 'vbr',
@@ -2153,6 +2182,7 @@ function buildFfmpegAssemblyArgs({
             '-b:v', '0',
             '-profile:v', 'high',
             '-pix_fmt', 'yuv420p',
+            ...audioEncodeArgs,
             '-movflags', '+faststart',
             outputPath,
           ]
@@ -2160,10 +2190,12 @@ function buildFfmpegAssemblyArgs({
             '-y',
             '-framerate', String(fps),
             '-i', inputPattern,
+            ...audioArgs,
             '-c:v', String(mp4Codec || 'libx264'),
             '-preset', String(mp4Preset || 'medium'),
             '-crf', String(mp4Quality),
             '-pix_fmt', 'yuv420p',
+            ...audioEncodeArgs,
             '-movflags', '+faststart',
             outputPath,
           ]
@@ -2260,16 +2292,6 @@ function createGenerateVideoHandler(overrides = {}) {
   const generateSd = overrides.generateSd;
   const fetchImpl = overrides.fetch || defaultFetch;
   const uploadBufferToR2 = overrides.uploadBufferToR2 || defaultUploadBufferToR2;
-  const buildMask = overrides.buildCanonicalImageMaskFromText || buildCanonicalImageMaskFromText;
-  const compileRuntime = overrides.compileMaskImageGenerateRuntime || compileMaskImageGenerateRuntime;
-  const lookupImageHintWebContext = overrides.lookupImageHintWebContext || defaultLookupImageHintWebContext;
-  const resolveImageWebDraft = overrides.resolveImageWebDraft || defaultResolveImageWebDraft;
-  const resolveImageReferencePack = overrides.resolveImageReferencePack || defaultResolveImageReferencePack;
-  const buildImageReferenceComposite = overrides.buildImageReferenceComposite || defaultBuildImageReferenceComposite;
-  const resolveImageEntityContext = overrides.resolveImageEntityContext || defaultResolveImageEntityContext;
-  const directImageRequest = overrides.directImageRequest || defaultDirectImageRequest;
-  const lookupDefinitionContext = overrides.lookupDefinitionContext || defaultLookupDefinitionContext;
-  const duckduckgoImageSearch = overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch;
   const runFfmpeg = overrides.runFfmpeg || runFfmpegAssembly;
   const ensureFfmpeg = overrides.ensureFfmpegAvailable || ensureFfmpegAvailable;
   const usesCustomFfmpegRunner = typeof overrides.runFfmpeg === 'function';
@@ -2288,6 +2310,8 @@ function createGenerateVideoHandler(overrides = {}) {
 
     const requestBody = body || req?.body || {};
     const request = normalizeVideoRequest(requestBody, prompt);
+    const audioRequest = resolveVideoAudioRequest(requestBody, request.prompt);
+    const sdRequestOverrides = resolveVideoSdRequestOverrides(requestBody);
     const hasExplicitSource = hasExplicitVideoVisualSource(request);
     if (!request.config.enabled) {
       const error = new Error('video_generation_disabled');
@@ -2336,26 +2360,6 @@ function createGenerateVideoHandler(overrides = {}) {
     const workingPaths = buildVideoWorkingPaths(request.config);
     await fsp.mkdir(workingPaths.framesDir, { recursive: true });
 
-    const maskResolution = await buildMask(request.prompt, {
-      allowCompatFallback: true,
-      maskOptions: {
-        width: request.width,
-        height: request.height,
-      },
-    });
-    const compiledState = await compileRuntime(maskResolution.rawMask, {
-      req,
-      imagePromptRefinerEnabled: false,
-      imageRequestMode: hasExplicitSource ? 'raw' : undefined,
-      lookupImageHintWebContext,
-      resolveImageWebDraft,
-      resolveImageReferencePack,
-      buildImageReferenceComposite,
-      resolveImageEntityContext,
-      directImageRequest,
-      lookupDefinitionContext,
-      duckduckgoImageSearch,
-    });
     const initialReference = await resolveInitialReferenceFrame({
       req,
       request,
@@ -2363,129 +2367,32 @@ function createGenerateVideoHandler(overrides = {}) {
       fetchImpl,
       uploadBufferToR2,
     });
-    const canonicalSubjectWebInit = !hasExplicitSource
-      ? await resolveCanonicalSubjectWebInit({
-          request,
-          compiledState,
-          resolveImageReferencePack,
-          duckduckgoImageSearch,
-        })
-      : null;
-    const implicitWebInit = !hasExplicitSource
-      ? resolveCompiledImplicitWebInit(compiledState)
-      : null;
-    const allowImplicitWebInit = !hasExplicitSource && isImplicitVideoWebInitAllowed(process.env);
-    const allowTrustedImplicitWebInit = !hasExplicitSource && isTrustedImplicitVideoInit(implicitWebInit);
-    const useCanonicalSubjectWebInit = Boolean(
-      !hasExplicitSource
-      && !initialReference.initImageUrl
-      && !initialReference.initImagePath
-      && canonicalSubjectWebInit
-    );
-    if (implicitWebInit && !allowImplicitWebInit && !allowTrustedImplicitWebInit && !useCanonicalSubjectWebInit) {
-      console.log(
-        `[A11][video] ignore implicit web init source=${String(implicitWebInit.initImagePath || implicitWebInit.initImageUrl || 'unknown').trim() || 'unknown'}`
-        + ` source_mode=${String(implicitWebInit.sourceMode || 'unknown').trim() || 'unknown'}`
-        + ` reason=${String(implicitWebInit.reason || 'no_explicit_visual_source').trim() || 'no_explicit_visual_source'}`
-      );
-    }
-    const effectiveInitialReference = (
-      initialReference.initImageUrl || initialReference.initImagePath
-        ? initialReference
-        : (
-            canonicalSubjectWebInit
-            || (allowTrustedImplicitWebInit ? implicitWebInit : null)
-            || (allowImplicitWebInit ? implicitWebInit : null)
-            || initialReference
-          )
-    );
-    if (useCanonicalSubjectWebInit) {
-      console.log(
-        `[A11][video] bootstrap canonical subject web init source=${String(effectiveInitialReference.initImagePath || effectiveInitialReference.initImageUrl || 'unknown').trim() || 'unknown'}`
-        + ` subject=${String(canonicalSubjectWebInit?.canonicalSubject || 'unknown').trim() || 'unknown'}`
-        + ` reason=${String(canonicalSubjectWebInit?.reason || 'canonical_subject_lookup').trim() || 'canonical_subject_lookup'}`
-      );
-    } else if (allowTrustedImplicitWebInit) {
-      console.log(
-        `[A11][video] accept trusted implicit web init source=${String(effectiveInitialReference.initImagePath || effectiveInitialReference.initImageUrl || 'unknown').trim() || 'unknown'}`
-        + ` source_mode=${String(effectiveInitialReference.sourceMode || 'unknown').trim() || 'unknown'}`
-      );
-    }
+    const effectiveInitialReference = initialReference;
     const referenceAnalysis = await resolveVideoReferenceAnalysis({
       request,
       reference: effectiveInitialReference,
       fetchImpl,
     });
-    const compiledSdBody = (
-      !hasExplicitSource && !allowImplicitWebInit && !allowTrustedImplicitWebInit
-        ? stripImplicitInitFromSdBody(compiledState?.sdBody)
-        : (compiledState?.sdBody && typeof compiledState.sdBody === 'object' ? compiledState.sdBody : {})
-    );
-    const compiledRenderSizing = resolveCompiledRenderSizing(compiledState, compiledSdBody, request);
     const implicitSquareDefault = looksLikeImplicitSquareDefault(request);
     const shouldPreserveSourceAspect = Boolean(
       referenceAnalysis?.canvasPlan
-      && !(request.explicitWidth && request.explicitHeight)
-      && !implicitSquareDefault
+      && (!(request.explicitWidth && request.explicitHeight) || implicitSquareDefault)
       && !request.config.localRuntime
     );
-    const shouldAdoptCompiledRenderSizing = Boolean(
-      compiledRenderSizing
-      && !shouldPreserveSourceAspect
-      && (
-        (!request.explicitWidth && !request.explicitHeight)
-        || implicitSquareDefault
-      )
-    );
-    const fittedCompiledRenderSizing = shouldAdoptCompiledRenderSizing
-      ? fitRenderDimensionsWithinLimits({
-        width: compiledRenderSizing.width,
-        height: compiledRenderSizing.height,
-        fallbackWidth: request.config.defaultWidth,
-        fallbackHeight: request.config.defaultHeight,
-        minSide: request.config.minRenderSide,
-        maxSide: request.config.maxRenderSide,
-        maxPixels: request.config.maxRenderPixels,
-      })
-      : null;
     const frameWidth = shouldPreserveSourceAspect
       ? Number(referenceAnalysis.canvasPlan.width || request.width)
-      : Number(fittedCompiledRenderSizing?.width || request.width);
+      : request.width;
     const frameHeight = shouldPreserveSourceAspect
       ? Number(referenceAnalysis.canvasPlan.height || request.height)
-      : Number(fittedCompiledRenderSizing?.height || request.height);
-    const baseSdBody = {
-      ...compiledSdBody,
-      width: frameWidth,
-      height: frameHeight,
-      // Effacer prompt_2/3 du mask compile — le translator video les reconstruit en anglais
-      prompt_2: '',
-      prompt_3: '',
-    };
-    // Enrichir request avec le contexte visuel du personnage pour le LLM prompter
-    const compiledUniverse = String(
-      compiledState?.mask?.meta?.imageScratchpad?.universe
-      || compiledState?.mask?.meta?.imageEntityContext?.universe
-      || ''
-    ).trim();
-    const compiledCanonicalSubject = String(
-      compiledState?.mask?.meta?.canonicalSubject
-      || compiledState?.mask?.meta?.imageScratchpad?.canonicalSubject
-      || ''
-    ).trim();
-    const compiledFacts = [
-      ...(Array.isArray(compiledState?.mask?.meta?.imageScratchpad?.facts) ? compiledState.mask.meta.imageScratchpad.facts : []),
-      ...(Array.isArray(compiledState?.mask?.meta?.imageEntityContext?.hintFacts) ? compiledState.mask.meta.imageEntityContext.hintFacts : []),
-    ].slice(0, 4);
+      : request.height;
     request.sourceImageWidth = Number(referenceAnalysis?.sourceMeta?.width || 0) || 0;
     request.sourceImageHeight = Number(referenceAnalysis?.sourceMeta?.height || 0) || 0;
-    request.compiledVisualContext = String(compiledState?.sdBody?.prompt || '').trim();
-    request.canonicalSubject = compiledCanonicalSubject;
-    request.subjectFacts = compiledFacts;
+
+    const compiledBasePrompt = String(request.prompt).trim();
 
     const sequencePlan = await planVideoSequence({
       request,
-      compiledBasePrompt: String(baseSdBody.prompt || request.prompt).trim(),
+      compiledBasePrompt,
       sourceImagePath: String(
         effectiveInitialReference.initImagePath
         || request.sourceImagePath
@@ -2500,9 +2407,6 @@ function createGenerateVideoHandler(overrides = {}) {
       ).trim(),
       fetchImpl,
     });
-    // Injecter universe et canonicalSubject dans sequencePlan pour le style visuel
-    if (compiledUniverse) sequencePlan.universe = compiledUniverse;
-    if (compiledCanonicalSubject) sequencePlan.canonicalSubject = compiledCanonicalSubject;
     const {
       referenceAnchorPlan: defaultReferenceAnchorPlan,
       referenceReanchorPlan: defaultReferenceReanchorPlan,
@@ -2531,6 +2435,7 @@ function createGenerateVideoHandler(overrides = {}) {
 
     if (request?.timingPlan && typeof request.timingPlan === 'object') {
       const requestedMotionProfile = String(request.timingPlan.motionProfile || 'generic').trim() || 'generic';
+
       const resolvedMotionProfile = String(sequencePlan.motionProfile || requestedMotionProfile).trim() || requestedMotionProfile;
       console.log(
         `[A11][video-plan] source=${String(request.timingPlan.source || 'unknown').trim() || 'unknown'}`
@@ -2557,17 +2462,9 @@ function createGenerateVideoHandler(overrides = {}) {
         )).join(' | ')}`
       );
     }
-    if (shouldAdoptCompiledRenderSizing && compiledRenderSizing && fittedCompiledRenderSizing) {
-      console.log(
-        `[A11][video-size] adopt compiled sizing source=${compiledRenderSizing.source}`
-        + ` reason=${compiledRenderSizing.reason}`
-        + ` requested=${compiledRenderSizing.requestedWidth}x${compiledRenderSizing.requestedHeight}`
-        + ` effective=${fittedCompiledRenderSizing.width}x${fittedCompiledRenderSizing.height}`
-      );
-    }
 
     console.log(
-      `[A11][video] start prompt="${request.prompt}" duration=${request.durationSeconds}s fps=${request.fps} format=${request.format} frames=${request.frameCount} size=${frameWidth}x${frameHeight}`
+      `[A11][video] start prompt="${compiledBasePrompt}" duration=${request.durationSeconds}s fps=${request.fps} format=${request.format} frames=${request.frameCount} size=${frameWidth}x${frameHeight}`
     );
     if (referenceAnalysis?.sourceMeta) {
       console.log(
@@ -2599,7 +2496,7 @@ function createGenerateVideoHandler(overrides = {}) {
         label: 'continuite',
         prompt: 'faire avancer la posture d une etape visible',
       });
-      const framePromptPlan = buildFramePromptPlan(baseSdBody.prompt || request.prompt, {
+      const framePromptPlan = buildFramePromptPlan(compiledBasePrompt, {
         framePlan,
         sequencePlan,
         referenceAnalysis,
@@ -2639,28 +2536,21 @@ function createGenerateVideoHandler(overrides = {}) {
               : (poseRewriteNeeded ? previousPoseShiftPlan : previousFramePlan)))
       );
       const frameStrength = Number(frameStrengthPlan?.strength || 0);
-      const frameNegativePrompt = [
-        String(baseSdBody.negative_prompt || '').trim(),
-        framePromptPlan.negative_prompt_video || '',
-      ].filter(Boolean).join(', ');
-      const frameNegativePrompt2 = String(baseSdBody.negative_prompt_2 || '').trim();
-      const frameNegativePrompt3 = String(baseSdBody.negative_prompt_3 || '').trim();
+      const frameNegativePrompt = String(framePromptPlan.negative_prompt_video || '').trim();
       const frameBody = {
-        ...baseSdBody,
         prompt: framePromptPlan.prompt,
         prompt_2: framePromptPlan.prompt_2,
         prompt_3: framePromptPlan.prompt_3,
+        prompt_language: 'en',
         prompt_prebuilt: true,
         prompt_2_prebuilt: true,
         prompt_3_prebuilt: true,
         ...(frameNegativePrompt ? { negative_prompt: frameNegativePrompt, negative_prompt_prebuilt: true } : {}),
-        ...(frameNegativePrompt2 ? { negative_prompt_2: frameNegativePrompt2, negative_prompt_2_prebuilt: true } : {}),
-        ...(frameNegativePrompt3 ? { negative_prompt_3: frameNegativePrompt3, negative_prompt_3_prebuilt: true } : {}),
-        num_inference_steps: request.config.sdSteps,
-        guidance_scale: request.config.sdGuidanceScale,
+        num_inference_steps: sdRequestOverrides.sdSteps || request.config.sdSteps,
+        guidance_scale: sdRequestOverrides.sdGuidanceScale || request.config.sdGuidanceScale,
         width: frameWidth,
         height: frameHeight,
-        seed: Number(baseSdBody.seed || 0) ? Number(baseSdBody.seed) : undefined,
+        ...(sdRequestOverrides.modelProfile ? { model_profile: sdRequestOverrides.modelProfile } : {}),
         ...(frameReference
           ? {
               init_image_url: frameReference,
@@ -2754,6 +2644,9 @@ function createGenerateVideoHandler(overrides = {}) {
         structuralPrompt: framePromptPlan.structuralPrompt,
         stableIdentityPrompt: framePromptPlan.stableIdentityPrompt,
         frameVariationPrompt: framePromptPlan.frameVariationPrompt,
+        soundCues: Array.isArray(framePlan.soundCues) ? framePlan.soundCues.slice() : [],
+        continuityLocks: Array.isArray(framePlan.continuityLocks) ? framePlan.continuityLocks.slice() : [],
+        sceneContext: String(framePlan.sceneContext || '').trim() || null,
         url: frameUrl,
         path: framePath,
         initSource: initSourceLabel,
@@ -2763,6 +2656,32 @@ function createGenerateVideoHandler(overrides = {}) {
 
     const filename = ensureVideoFilename(request.format);
     const outputPath = path.join(workingPaths.jobRoot, filename);
+    let audioTrack = null;
+    if (audioRequest.enabled && request.format !== 'mp4') {
+      console.warn('[A11][video-audio] audio requested but ignored for non-mp4 output');
+    } else if (audioRequest.enabled) {
+      try {
+        audioTrack = await synthesizeVideoAudioTrack({
+          req,
+          text: audioRequest.text,
+          workingPaths,
+          fetchImpl,
+        });
+        console.log(
+          `[A11][video-audio] generated audio track ${audioTrack.path}`
+          + ` (${audioTrack.sizeBytes} bytes)`
+        );
+      } catch (error_) {
+        const error = new Error('video_audio_generation_failed');
+        error.statusCode = error_?.statusCode || 502;
+        error.payload = error_?.payload || {
+          ok: false,
+          error: 'video_audio_generation_failed',
+          message: String(error_?.message || error_),
+        };
+        throw error;
+      }
+    }
     const ffmpegOptions = {
       ffmpegBin: request.config.ffmpegBin,
       fps: request.fps,
@@ -2772,6 +2691,7 @@ function createGenerateVideoHandler(overrides = {}) {
       mp4Codec: request.config.mp4Codec,
       mp4Preset: request.config.mp4Preset,
       mp4Quality: request.config.mp4Quality,
+      audioPath: audioTrack?.path || '',
     };
 
     let ffmpegResult = null;
@@ -2824,8 +2744,8 @@ function createGenerateVideoHandler(overrides = {}) {
       videoCodec: resolvedVideoCodec,
       mode: request.config.backend,
       prompt: request.prompt,
-      compiledPrompt: String(baseSdBody.prompt || request.prompt).trim(),
-      negativePrompt: String(baseSdBody.negative_prompt || '').trim() || null,
+      compiledPrompt: compiledBasePrompt,
+      negativePrompt: null,
       format: request.format,
       durationSeconds: request.durationSeconds,
       fps: request.fps,
@@ -2835,7 +2755,12 @@ function createGenerateVideoHandler(overrides = {}) {
       filename,
       url: videoUrl || null,
       video_url: videoUrl || null,
+      audio_url: audioTrack?.url || null,
+      audioUrl: audioTrack?.url || null,
+      audioText: audioTrack?.text || null,
+      hasAudio: Boolean(audioTrack),
       outputPath,
+      audioPath: audioTrack?.path || null,
       firstFrameAnalysis,
       sourceMode: effectiveInitialReference.sourceMode || (!hasExplicitSource ? 'prompt_only' : null),
       sourceSceneType: referenceAnalysis?.scene?.sceneType || null,
@@ -2849,10 +2774,16 @@ function createGenerateVideoHandler(overrides = {}) {
         compositionHints: Array.isArray(sequencePlan.compositionHints) ? sequencePlan.compositionHints.slice() : [],
         identityLocks: Array.isArray(sequencePlan.identityLocks) ? sequencePlan.identityLocks.slice() : [],
         sceneLocks: Array.isArray(sequencePlan.sceneLocks) ? sequencePlan.sceneLocks.slice() : [],
+        continuityLocks: Array.isArray(sequencePlan.continuityLocks) ? sequencePlan.continuityLocks.slice() : [],
+        soundCues: Array.isArray(sequencePlan.soundCues) ? sequencePlan.soundCues.slice() : [],
         initStrategy: sequencePlan.initStrategy,
         reanchorEvery: sequencePlan.reanchorEvery,
         imageAwareUsed: Boolean(sequencePlan.imageAwareUsed),
         imageAwareError: String(sequencePlan.imageAwareError || '').trim() || null,
+        visualAnalysisProvider: String(sequencePlan.visualAnalysisProvider || '').trim() || null,
+        visualAnalysis: sequencePlan.visualAnalysis && typeof sequencePlan.visualAnalysis === 'object'
+          ? JSON.parse(JSON.stringify(sequencePlan.visualAnalysis))
+          : null,
         beats: Array.isArray(sequencePlan.beats)
           ? sequencePlan.beats.map((beat) => ({
               label: beat.label,
@@ -2860,6 +2791,9 @@ function createGenerateVideoHandler(overrides = {}) {
               variation: beat.variation,
               checkpoint: Boolean(beat.checkpoint),
               rendererFocus: Array.isArray(beat.rendererFocus) ? beat.rendererFocus.slice() : [],
+              soundCues: Array.isArray(beat.soundCues) ? beat.soundCues.slice() : [],
+              continuityLocks: Array.isArray(beat.continuityLocks) ? beat.continuityLocks.slice() : [],
+              sceneContext: String(beat.sceneContext || '').trim() || null,
             }))
           : [],
       },
@@ -2873,6 +2807,9 @@ function createGenerateVideoHandler(overrides = {}) {
         structuralPrompt: frame.structuralPrompt,
         stableIdentityPrompt: frame.stableIdentityPrompt,
         frameVariationPrompt: frame.frameVariationPrompt,
+        soundCues: Array.isArray(frame.soundCues) ? frame.soundCues.slice() : [],
+        continuityLocks: Array.isArray(frame.continuityLocks) ? frame.continuityLocks.slice() : [],
+        sceneContext: frame.sceneContext,
       })),
     };
   };
@@ -2883,6 +2820,7 @@ module.exports = {
   buildFfmpegAssemblyArgs,
   createGenerateVideoHandler,
   ensureFfmpegAvailable,
+  fitRenderDimensionsWithinLimits,
   normalizeVideoRequest,
   resolveVideoEnvConfig,
   runFfmpegAssembly,

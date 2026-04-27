@@ -92,6 +92,36 @@ function buildJanusPlan(overrides = {}) {
   };
 }
 
+function buildJanusVisualScan(overrides = {}) {
+  return {
+    scene: {
+      decor: ['torch-lit stone hall', 'stone floor'],
+      cameraFraming: ['low angle framing', 'medium full body'],
+      lighting: ['warm torch light on the right side'],
+    },
+    subjects: [
+      {
+        label: 'knight in dark armor',
+        pose: 'bending toward the sword',
+        anatomy: ['right gauntleted hand extended', 'torso leaning forward'],
+        accessories: ['dark armor', 'cape'],
+        props: ['golden sword'],
+        bbox: [0.14, 0.18, 0.32, 0.56],
+      },
+    ],
+    props: [
+      {
+        label: 'golden sword',
+        details: ['ornate hilt'],
+        bbox: [0.58, 0.38, 0.2, 0.36],
+      },
+    ],
+    continuityAnchors: ['same knight', 'same golden sword', 'same torch-lit hall'],
+    continuityRisks: ['keep the sword fully visible near the right edge'],
+    ...overrides,
+  };
+}
+
 test('resolveSequencePlanningEnvConfig parses planner-specific env vars', () => {
   withPlannerStubs({}, ({ resolveSequencePlanningEnvConfig }) => {
     const config = resolveSequencePlanningEnvConfig({
@@ -112,9 +142,9 @@ test('resolveSequencePlanningEnvConfig defaults to a shorter Janus timeout', () 
   });
 });
 
-test('buildJanusSequencePlannerPrompt emits english planner instructions and keeps reference size context', async () => {
-  await withPlannerStubs({}, async ({ buildJanusSequencePlannerPrompt }) => {
-    const prompt = buildJanusSequencePlannerPrompt({
+test('buildJanusVisualScanPrompt emits english visual scan instructions and keeps reference size context', async () => {
+  await withPlannerStubs({}, async ({ buildJanusVisualScanPrompt }) => {
+    const prompt = buildJanusVisualScanPrompt({
       request: {
         prompt: 'genere une video de James Bond marchant',
         frameCount: 8,
@@ -122,12 +152,11 @@ test('buildJanusSequencePlannerPrompt emits english planner instructions and kee
         sourceImageHeight: 1344,
       },
       compiledBasePrompt: 'James Bond walking, coherent decor matching the requested scene',
-      heuristicPlan: buildJanusPlan(),
     });
 
-    assert.match(String(prompt || ''), /You are a video sequence planner/i);
+    assert.match(String(prompt || ''), /You are a visual continuity analyst/i);
     assert.match(String(prompt || ''), /Reference image size:\s+1152x1344/i);
-    assert.match(String(prompt || ''), /Heuristic baseline plan:/i);
+    assert.match(String(prompt || ''), /approximate normalized regions/i);
     assert.doesNotMatch(String(prompt || ''), /Tu es un planner|Taille de l image de reference|Plan heuristique de depart/i);
   });
 });
@@ -135,10 +164,15 @@ test('buildJanusSequencePlannerPrompt emits english planner instructions and kee
 test('planVideoSequence keeps heuristic mode local and never calls Janus', async () => {
   let janusCalls = 0;
   await withPlannerStubs({
-    resolveVisionProvider: () => 'janus',
-    callJanusText: async () => {
-      janusCalls += 1;
-      return { text: '{}' };
+    janus: {
+      resolveVisionProvider: () => 'janus',
+      callJanusVisionText: async () => {
+        janusCalls += 1;
+        return { text: '{}' };
+      },
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => false,
     },
   }, async ({ planVideoSequence }) => {
     const plan = await planVideoSequence({
@@ -152,45 +186,98 @@ test('planVideoSequence keeps heuristic mode local and never calls Janus', async
   });
 });
 
-test('planVideoSequence auto uses Janus when it is available', async () => {
-  let janusCalls = 0;
+test('planVideoSequence auto keeps the LLM as prompt writer and uses Janus only as visual scan context', async () => {
+  let janusTextCalls = 0;
+  let janusVisionCalls = 0;
   let shutdownCalls = 0;
-  await withPlannerStubs({
-    resolveVisionProvider: () => 'janus',
-    callJanusText: async () => {
-      janusCalls += 1;
-      return { text: JSON.stringify(buildJanusPlan()) };
-    },
-    callJanusVisionText: async () => {
-      throw new Error('image-aware should stay inactive without a real source');
-    },
-    shutdownJanusVisionWorker: () => {
-      shutdownCalls += 1;
-    },
-  }, async ({ planVideoSequence }) => {
-    const plan = await planVideoSequence({
-      request: buildRequest({ sequencePlanner: 'auto' }),
-      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
-    });
-    assert.equal(plan.providerRequested, 'auto');
-    assert.equal(plan.providerUsed, 'janus');
-    assert.equal(plan.motionProfile, 'walk_cycle');
-    assert.equal(plan.imageAwareUsed, false);
-    assert.match(String(plan.beats[0]?.variation || ''), /jambe gauche avance devant/i);
-    assert.equal(janusCalls, 1);
-    assert.equal(shutdownCalls, 1);
-  });
-});
+  let capturedPrompterArgs = null;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-janus-scan-'));
+  const sourceImagePath = path.join(tempDir, 'source.png');
+  fs.writeFileSync(sourceImagePath, TINY_PNG);
 
-test('planVideoSequence explicit janus mode skips the LLM prompter even when it could succeed', async () => {
-  let janusCalls = 0;
-  let llmCalls = 0;
   await withPlannerStubs({
     janus: {
       resolveVisionProvider: () => 'janus',
       callJanusText: async () => {
-        janusCalls += 1;
+        janusTextCalls += 1;
         return { text: JSON.stringify(buildJanusPlan()) };
+      },
+      callJanusVisionText: async () => {
+        janusVisionCalls += 1;
+        return { text: JSON.stringify(buildJanusVisualScan()) };
+      },
+      shutdownJanusVisionWorker: () => {
+        shutdownCalls += 1;
+      },
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => true,
+      generateFramePromptsWithLlm: async (args) => {
+        capturedPrompterArgs = args;
+        return {
+          ok: true,
+          subjectType: 'humanoid',
+          motionDescription: 'the knight reaches for the sword',
+          sceneContext: 'low angle camera in a torch-lit stone hall',
+          continuityLocks: ['same knight', 'same golden sword', 'same torch-lit hall'],
+          soundCues: ['metallic ring'],
+          beats: [
+            {
+              label: 'reach',
+              structuralState: 'The knight in dark armor leans toward the golden sword with one gauntleted hand reaching for the hilt',
+              variation: 'The knight in dark armor bends lower toward the golden sword as the blade catches warm light',
+              checkpoint: true,
+              rendererFocus: ['golden sword hilt clearly visible'],
+              soundCues: ['metallic ring'],
+            },
+          ],
+        };
+      },
+    },
+  }, async ({ planVideoSequence }) => {
+    const plan = await planVideoSequence({
+      request: {
+        ...buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+        prompt: 'the knight in dark armor bends toward the golden sword',
+      },
+      compiledBasePrompt: 'the knight in dark armor bends toward the golden sword in a torch-lit stone hall',
+      sourceImagePath,
+    });
+    assert.equal(plan.providerRequested, 'auto');
+    assert.equal(plan.providerUsed, 'llm_prompter');
+    assert.equal(plan.imageAwareUsed, true);
+    assert.equal(janusTextCalls, 0);
+    assert.equal(janusVisionCalls, 1);
+    assert.equal(shutdownCalls, 1);
+    assert.equal(capturedPrompterArgs?.visualAnalysis?.subjects?.[0]?.label, 'knight in dark armor');
+    assert.deepEqual(capturedPrompterArgs?.visualAnalysis?.props?.[0]?.bbox, [0.58, 0.38, 0.2, 0.36]);
+    assert.match(String(capturedPrompterArgs?.visualContext || ''), /golden sword/i);
+    assert.match(String(plan.beats[0]?.variation || ''), /knight in dark armor/i);
+    assert.match(String(plan.beats[0]?.variation || ''), /golden sword/i);
+    assert.deepEqual(plan.continuityLocks, ['same knight', 'same golden sword', 'same torch-lit hall']);
+    // soundCues inclut maintenant les sons physiques Janus + les sons LLM
+    assert.ok(Array.isArray(plan.soundCues) && plan.soundCues.includes('metallic ring'), `soundCues should include 'metallic ring', got: ${JSON.stringify(plan.soundCues)}`);
+  });
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('planVideoSequence explicit janus mode keeps Janus as a visual analyst while the LLM owns the beats', async () => {
+  let janusTextCalls = 0;
+  let janusVisionCalls = 0;
+  let llmCalls = 0;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-janus-only-'));
+  const sourceImagePath = path.join(tempDir, 'source.png');
+  fs.writeFileSync(sourceImagePath, TINY_PNG);
+  await withPlannerStubs({
+    janus: {
+      resolveVisionProvider: () => 'janus',
+      callJanusText: async () => {
+        janusTextCalls += 1;
+        return { text: JSON.stringify(buildJanusPlan()) };
+      },
+      callJanusVisionText: async () => {
+        janusVisionCalls += 1;
+        return { text: JSON.stringify(buildJanusVisualScan()) };
       },
     },
     prompter: {
@@ -210,24 +297,31 @@ test('planVideoSequence explicit janus mode skips the LLM prompter even when it 
     },
   }, async ({ planVideoSequence }) => {
     const plan = await planVideoSequence({
-      request: buildRequest({ sequencePlanner: 'janus' }),
-      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+      request: {
+        ...buildRequest({ sequencePlanner: 'janus', sequencePlannerImageAware: true }),
+        prompt: 'the knight in dark armor bends toward the golden sword',
+      },
+      compiledBasePrompt: 'the knight in dark armor bends toward the golden sword in a torch-lit stone hall',
+      sourceImagePath,
     });
 
     assert.equal(plan.providerRequested, 'janus');
-    assert.equal(plan.providerUsed, 'janus');
-    assert.equal(janusCalls, 1);
-    assert.equal(llmCalls, 0);
+    assert.equal(plan.providerUsed, 'llm_prompter');
+    assert.equal(plan.imageAwareUsed, true);
+    assert.equal(janusTextCalls, 0);
+    assert.equal(janusVisionCalls, 1);
+    assert.equal(llmCalls, 1);
   });
+  fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
 test('planVideoSequence explicit llm_prompter mode uses the LLM planner without calling Janus', async () => {
-  let janusCalls = 0;
+  let janusTextCalls = 0;
   await withPlannerStubs({
     janus: {
       resolveVisionProvider: () => 'janus',
       callJanusText: async () => {
-        janusCalls += 1;
+        janusTextCalls += 1;
         return { text: JSON.stringify(buildJanusPlan()) };
       },
     },
@@ -258,15 +352,21 @@ test('planVideoSequence explicit llm_prompter mode uses the LLM planner without 
     assert.equal(plan.providerRequested, 'llm_prompter');
     assert.equal(plan.providerUsed, 'llm_prompter');
     assert.match(String(plan.sceneContext || ''), /side view colorful platform stage/i);
-    assert.equal(janusCalls, 0);
+    assert.equal(janusTextCalls, 0);
   });
 });
 
 test('planVideoSequence forwards reference image dimensions into the LLM planner context', async () => {
   let capturedArgs = null;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-janus-visual-'));
+  const sourceImagePath = path.join(tempDir, 'source.png');
+  fs.writeFileSync(sourceImagePath, TINY_PNG);
   await withPlannerStubs({
     janus: {
       resolveVisionProvider: () => 'janus',
+      callJanusVisionText: async () => ({
+        text: JSON.stringify(buildJanusVisualScan()),
+      }),
     },
     prompter: {
       isLlmFramePrompterEnabled: () => true,
@@ -292,108 +392,178 @@ test('planVideoSequence forwards reference image dimensions into the LLM planner
   }, async ({ planVideoSequence }) => {
     const plan = await planVideoSequence({
       request: {
-        ...buildRequest({ sequencePlanner: 'llm_prompter' }),
+        ...buildRequest({ sequencePlanner: 'llm_prompter', sequencePlannerImageAware: true }),
         prompt: 'genere une video de James Bond marchant',
         sourceImageWidth: 1152,
         sourceImageHeight: 1344,
       },
       compiledBasePrompt: 'James Bond walking, coherent decor matching the requested scene',
+      sourceImagePath,
     });
 
     assert.equal(plan.providerUsed, 'llm_prompter');
     assert.equal(capturedArgs?.referenceImageWidth, 1152);
     assert.equal(capturedArgs?.referenceImageHeight, 1344);
     assert.match(String(capturedArgs?.visualContext || ''), /1152x1344/i);
+    assert.equal(capturedArgs?.visualAnalysis?.subjects?.[0]?.label, 'knight in dark armor');
   });
+  fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-test('planVideoSequence falls back to the heuristic planner when Janus returns invalid JSON', async () => {
+test('planVideoSequence keeps the LLM as planner when Janus visual scan returns invalid JSON', async () => {
   await withPlannerStubs({
-    resolveVisionProvider: () => 'janus',
-    callJanusText: async () => ({ text: 'ceci nest pas du json' }),
-  }, async ({ planVideoSequence }) => {
-    const plan = await planVideoSequence({
-      request: buildRequest({ sequencePlanner: 'janus' }),
-      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
-    });
-    assert.equal(plan.providerRequested, 'janus');
-    assert.equal(plan.providerUsed, 'heuristic');
-    assert.match(String(plan.fallbackReason || ''), /janus_invalid_plan_payload/i);
-    assert.equal(plan.motionProfile, 'walk_cycle');
-    assert.ok(Array.isArray(plan.beats) && plan.beats.length > 0);
-  });
-});
-
-test('planVideoSequence reuses compiled stable identity hints in heuristic fallback plans', async () => {
-  await withPlannerStubs({
-    resolveVisionProvider: () => 'none',
+    janus: {
+      resolveVisionProvider: () => 'janus',
+      callJanusVisionText: async () => ({ text: 'ceci nest pas du json' }),
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => true,
+      generateFramePromptsWithLlm: async () => ({
+        ok: true,
+        subjectType: 'humanoid',
+        motionDescription: 'walk cycle',
+        sceneContext: 'portrait spy shot',
+        beats: [
+          {
+            label: 'start',
+            structuralState: 'James Bond stands in a clear portrait frame',
+            variation: 'James Bond starts a visible walking step',
+            checkpoint: true,
+            rendererFocus: [],
+          },
+        ],
+      }),
+    },
   }, async ({ planVideoSequence }) => {
     const plan = await planVideoSequence({
       request: {
-        prompt: 'goku se transformant en super saiyan divin',
-        frameCount: 10,
-        timingPlan: {
-          motionProfile: 'transformation_rise',
-        },
-        config: {
-          sequencePlanner: 'auto',
-          sequencePlannerImageAware: false,
-          sequencePlannerTimeoutMs: 15_000,
-          frameReanchorEvery: 0,
-        },
+        ...buildRequest({ sequencePlanner: 'llm_prompter', sequencePlannerImageAware: true }),
+        prompt: 'genere une video de James Bond marchant',
       },
-      compiledBasePrompt: 'goku se transformant en super saiyan divin, illustration anime de combat nette, tenue orange et bleue lisible, fond simple cohérent avec le personnage',
+      compiledBasePrompt: 'James Bond walking, coherent decor matching the requested scene',
+      sourceImageUrl: 'https://files.example.com/source-image.png',
+      fetchImpl: async () => ({
+        ok: true,
+        headers: {
+          get(name) {
+            return String(name).toLowerCase() === 'content-type' ? 'image/png' : '';
+          },
+        },
+        async arrayBuffer() {
+          return TINY_PNG;
+        },
+      }),
     });
-
-    assert.equal(plan.providerUsed, 'heuristic');
-    assert.equal(plan.fallbackReason, 'janus_unavailable');
-    assert.match(String(plan.sceneLocks.join(', ') || ''), /tenue orange et bleue lisible/i);
-    assert.doesNotMatch(String(plan.sceneLocks.join(', ') || ''), /illustration anime de combat nette/i);
+    assert.equal(plan.providerRequested, 'llm_prompter');
+    assert.equal(plan.providerUsed, 'llm_prompter');
+    assert.equal(plan.imageAwareUsed, false);
+    assert.match(String(plan.imageAwareError || ''), /janus_invalid_visual_scan_payload/i);
+    assert.match(String(plan.beats[0]?.variation || ''), /James Bond/i);
   });
 });
 
-test('planVideoSequence only enables image-aware refinement when a real source image exists', async () => {
+test('planVideoSequence throws video_sequence_planner_failed when LLM is disabled in auto mode', async () => {
+  await withPlannerStubs({
+    janus: {
+      resolveVisionProvider: () => 'none',
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => false,
+    },
+  }, async ({ planVideoSequence }) => {
+    await assert.rejects(
+      () => planVideoSequence({
+        request: {
+          prompt: 'goku se transformant en super saiyan divin',
+          frameCount: 10,
+          timingPlan: {
+            motionProfile: 'transformation_rise',
+          },
+          config: {
+            sequencePlanner: 'auto',
+            sequencePlannerImageAware: false,
+            sequencePlannerTimeoutMs: 15_000,
+            frameReanchorEvery: 0,
+          },
+        },
+        compiledBasePrompt: 'goku se transformant en super saiyan divin, illustration anime de combat nette, tenue orange et bleue lisible, fond simple cohérent avec le personnage',
+      }),
+      (error) => {
+        assert.equal(error.code, 'video_sequence_planner_failed');
+        assert.equal(error.policy, 'llm_only_no_heuristic_fallback');
+        assert.equal(error.llmFailureReason, 'llm_prompter_disabled');
+        return true;
+      }
+    );
+  });
+});
+
+test('planVideoSequence only enables Janus visual scan when a real source image exists', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-janus-seq-'));
   const sourceImagePath = path.join(tempDir, 'source.png');
   fs.writeFileSync(sourceImagePath, TINY_PNG);
 
   let imageAwareCalls = 0;
   await withPlannerStubs({
-    resolveVisionProvider: () => 'janus',
-    callJanusText: async () => ({ text: JSON.stringify(buildJanusPlan()) }),
-    callJanusVisionText: async () => {
-      imageAwareCalls += 1;
-      return {
-        text: JSON.stringify(buildJanusPlan({
-          sceneLocks: ['chemin stable', 'fond simple', 'reference visuelle coherente'],
-        })),
-      };
+    janus: {
+      resolveVisionProvider: () => 'janus',
+      callJanusVisionText: async () => {
+        imageAwareCalls += 1;
+        return {
+          text: JSON.stringify(buildJanusVisualScan({
+            continuityAnchors: ['same knight', 'same golden sword', 'same torch-lit hall'],
+          })),
+        };
+      },
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => true,
+      generateFramePromptsWithLlm: async () => ({
+        ok: true,
+        subjectType: 'humanoid',
+        motionDescription: 'walk cycle',
+        sceneContext: 'low angle torch-lit stone hall',
+        beats: [
+          {
+            label: 'reach',
+            structuralState: 'The knight in dark armor leans toward the golden sword',
+            variation: 'The knight in dark armor bends lower toward the golden sword',
+            checkpoint: true,
+            rendererFocus: [],
+          },
+        ],
+      }),
     },
   }, async ({ planVideoSequence }) => {
     const withoutImage = await planVideoSequence({
-      request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
-      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+      request: {
+        ...buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+        prompt: 'the knight in dark armor bends toward the golden sword',
+      },
+      compiledBasePrompt: 'the knight in dark armor bends toward the golden sword in a torch-lit stone hall',
       sourceImagePath: path.join(tempDir, 'missing.png'),
     });
     assert.equal(withoutImage.imageAwareUsed, false);
 
     const withImage = await planVideoSequence({
-      request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
-      compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+      request: {
+        ...buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+        prompt: 'the knight in dark armor bends toward the golden sword',
+      },
+      compiledBasePrompt: 'the knight in dark armor bends toward the golden sword in a torch-lit stone hall',
       sourceImagePath,
     });
-    assert.equal(withImage.providerUsed, 'janus');
+    assert.equal(withImage.providerUsed, 'llm_prompter');
     assert.equal(withImage.imageAwareUsed, true);
-    assert.match(String(withImage.sceneLocks.join(', ') || ''), /reference visuelle coherente/i);
+    assert.match(String(withImage.visualAnalysis?.continuityAnchors?.join(', ') || ''), /same golden sword/i);
     assert.equal(imageAwareCalls, 1);
   });
 });
 
-test('planVideoSequence keeps Janus planning but records invalid image-aware source errors explicitly', async () => {
+test('planVideoSequence throws video_sequence_planner_failed when LLM is disabled and image source is invalid', async () => {
   await withPlannerStubs({
     janus: {
       resolveVisionProvider: () => 'janus',
-      callJanusText: async () => ({ text: JSON.stringify(buildJanusPlan()) }),
       callJanusVisionText: async () => {
         throw new Error('image-aware should not run with an invalid source url');
       },
@@ -402,14 +572,186 @@ test('planVideoSequence keeps Janus planning but records invalid image-aware sou
       isLlmFramePrompterEnabled: () => false,
     },
   }, async ({ planVideoSequence }) => {
+    await assert.rejects(
+      () => planVideoSequence({
+        request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+        compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+        sourceImageUrl: 'file:///etc/passwd',
+      }),
+      (error) => {
+        assert.equal(error.code, 'video_sequence_planner_failed');
+        assert.equal(error.policy, 'llm_only_no_heuristic_fallback');
+        assert.equal(error.imageAwareError, 'janus_image_source_url_not_allowed');
+        return true;
+      }
+    );
+  });
+});
+
+test('planVideoSequence rejects with video_sequence_planner_failed when LLM returns truncated JSON twice', async () => {
+  let llmCallCount = 0;
+  await withPlannerStubs({
+    janus: {
+      resolveVisionProvider: () => 'none',
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => true,
+      generateFramePromptsWithLlm: async () => {
+        llmCallCount += 1;
+        // Simule un JSON tronqué -> invalid_llm_response à chaque appel
+        return { ok: false, reason: 'invalid_llm_response', beats: null };
+      },
+    },
+  }, async ({ planVideoSequence }) => {
+    await assert.rejects(
+      () => planVideoSequence({
+        request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: false }),
+        compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
+      }),
+      (error) => {
+        assert.equal(error.code, 'video_sequence_planner_failed');
+        assert.equal(error.policy, 'llm_only_no_heuristic_fallback');
+        assert.match(String(error.llmFailureReason || ''), /invalid_llm_response/i);
+        return true;
+      }
+    );
+    // Le prompter a bien été appelé (le retry est géré dans video-frame-prompter, pas ici)
+    assert.ok(llmCallCount >= 1);
+  });
+});
+
+test('planVideoSequence returns providerUsed=llm_prompter when first LLM call fails but retry succeeds', async () => {
+  let llmCallCount = 0;
+  await withPlannerStubs({
+    janus: {
+      resolveVisionProvider: () => 'none',
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => true,
+      generateFramePromptsWithLlm: async () => {
+        llmCallCount += 1;
+        // Le retry est géré dans generateFramePromptsWithLlm lui-même.
+        // Ici on simule que le prompter réussit après retry interne.
+        return {
+          ok: true,
+          subjectType: 'humanoid',
+          motionDescription: 'walk cycle',
+          sceneContext: 'side view colorful platform stage',
+          continuityLocks: ['same mario', 'same outfit'],
+          soundCues: [],
+          beats: [
+            {
+              label: 'start',
+              structuralState: 'Mario stands in a clear side view platform pose',
+              variation: 'Mario starts the first visible walking step',
+              checkpoint: true,
+              rendererFocus: [],
+            },
+            {
+              label: 'step',
+              structuralState: 'Mario mid-stride with left leg forward',
+              variation: 'Mario continues the walk cycle with right arm swinging',
+              checkpoint: false,
+              rendererFocus: [],
+            },
+          ],
+          frameCount: 2,
+        };
+      },
+    },
+  }, async ({ planVideoSequence }) => {
     const plan = await planVideoSequence({
-      request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+      request: buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: false }),
       compiledBasePrompt: 'mario avancant sur le chemin un pas devant l autre',
-      sourceImageUrl: 'file:///etc/passwd',
     });
 
-    assert.equal(plan.providerUsed, 'janus');
-    assert.equal(plan.imageAwareUsed, false);
-    assert.equal(plan.imageAwareError, 'janus_image_source_url_not_allowed');
+    assert.equal(plan.providerUsed, 'llm_prompter');
+    assert.equal(plan.fallbackReason, null);
+    assert.ok(Array.isArray(plan.beats) && plan.beats.length >= 1);
+    assert.equal(llmCallCount, 1);
   });
+});
+
+test('planVideoSequence injects Janus bbox into visualContext and sequencePlanning.visualAnalysis', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-janus-bbox-'));
+  const sourceImagePath = path.join(tempDir, 'source.png');
+  fs.writeFileSync(sourceImagePath, TINY_PNG);
+
+  let capturedPrompterArgs = null;
+  await withPlannerStubs({
+    janus: {
+      resolveVisionProvider: () => 'janus',
+      callJanusVisionText: async () => ({
+        text: JSON.stringify(buildJanusVisualScan({
+          subjects: [
+            {
+              label: 'knight in dark armor',
+              pose: 'bending toward the sword',
+              anatomy: ['right gauntleted hand extended'],
+              accessories: ['dark armor'],
+              props: ['golden sword'],
+              bbox: [0.14, 0.18, 0.32, 0.56],
+            },
+          ],
+          props: [
+            {
+              label: 'golden sword',
+              details: ['ornate hilt'],
+              bbox: [0.58, 0.38, 0.2, 0.36],
+            },
+          ],
+          continuityAnchors: ['same knight', 'same golden sword'],
+        })),
+      }),
+      shutdownJanusVisionWorker: () => {},
+    },
+    prompter: {
+      isLlmFramePrompterEnabled: () => true,
+      generateFramePromptsWithLlm: async (args) => {
+        capturedPrompterArgs = args;
+        return {
+          ok: true,
+          subjectType: 'humanoid',
+          motionDescription: 'the knight reaches for the sword',
+          sceneContext: 'low angle torch-lit stone hall',
+          continuityLocks: ['same knight', 'same golden sword'],
+          soundCues: ['metallic ring'],
+          beats: [
+            {
+              label: 'reach',
+              structuralState: 'The knight in dark armor leans toward the golden sword',
+              variation: 'The knight in dark armor bends lower toward the golden sword',
+              checkpoint: true,
+              rendererFocus: ['golden sword hilt clearly visible'],
+            },
+          ],
+          frameCount: 1,
+        };
+      },
+    },
+  }, async ({ planVideoSequence }) => {
+    const plan = await planVideoSequence({
+      request: {
+        ...buildRequest({ sequencePlanner: 'auto', sequencePlannerImageAware: true }),
+        prompt: 'the knight in dark armor bends toward the golden sword',
+      },
+      compiledBasePrompt: 'the knight in dark armor bends toward the golden sword in a torch-lit stone hall',
+      sourceImagePath,
+    });
+
+    // Janus bbox arrivent dans visualAnalysis du plan
+    assert.equal(plan.providerUsed, 'llm_prompter');
+    assert.equal(plan.imageAwareUsed, true);
+    assert.deepEqual(plan.visualAnalysis?.subjects?.[0]?.bbox, [0.14, 0.18, 0.32, 0.56]);
+    assert.deepEqual(plan.visualAnalysis?.props?.[0]?.bbox, [0.58, 0.38, 0.2, 0.36]);
+    assert.equal(plan.visualAnalysisProvider, 'janus');
+
+    // Janus bbox arrivent dans les args du prompter (visualAnalysis + visualContext)
+    assert.deepEqual(capturedPrompterArgs?.visualAnalysis?.subjects?.[0]?.bbox, [0.14, 0.18, 0.32, 0.56]);
+    assert.deepEqual(capturedPrompterArgs?.visualAnalysis?.props?.[0]?.bbox, [0.58, 0.38, 0.2, 0.36]);
+    assert.match(String(capturedPrompterArgs?.visualContext || ''), /golden sword/i);
+    assert.match(String(capturedPrompterArgs?.visualContext || ''), /same knight/i);
+  });
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
 });

@@ -28,6 +28,8 @@ const {
 const {
   resolveImg2ImgStrengthPlan,
 } = require('../image/img2img-strength.cjs');
+const { shutdownJanusVisionWorker } = require('../../lib/janus-vision-runtime.cjs');
+const { runExclusiveLocalGpuTask } = require('../../lib/local-gpu-orchestrator.cjs');
 
 function defaultFetch(...args) {
   if (typeof globalThis.fetch === 'function') {
@@ -104,8 +106,6 @@ function looksLikeHumanReferencePrompt(value = '') {
 }
 
 async function unloadOllamaModelIfNeeded(modelProfile = '') {
-  const profile = normalizeSdModelProfile(modelProfile || process.env.SD_MODEL_PROFILE || '');
-  if (!profile.includes('turbo') && !profile.includes('large')) return;
   const ollamaBase = String(process.env.OLLAMA_BASE || 'http://127.0.0.1:11434').trim();
   const primaryModel = String(process.env.A11_OLLAMA_PRIMARY_MODEL || 'gemma4:e4b').trim();
   if (!primaryModel) return;
@@ -116,10 +116,24 @@ async function unloadOllamaModelIfNeeded(modelProfile = '') {
       body: JSON.stringify({ model: primaryModel, keep_alive: 0 }),
       signal: AbortSignal.timeout(5000),
     });
-    console.log(`[A11][sd-tools] Ollama model ${primaryModel} unloaded from VRAM before SD generation`);
+    const profile = normalizeSdModelProfile(modelProfile || process.env.SD_MODEL_PROFILE || '') || 'unknown';
+    console.log(`[A11][sd-tools] Ollama model ${primaryModel} unloaded from VRAM before SD generation (profile=${profile})`);
   } catch {
     // ignore - Ollama peut ne pas etre disponible
   }
+}
+
+function sleep(ms) {
+  const duration = Number(ms);
+  if (!Number.isFinite(duration) || duration <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, duration));
+}
+
+async function drainLocalGpuBeforeSd({ modelProfile = '' } = {}) {
+  shutdownJanusVisionWorker();
+  await unloadOllamaModelIfNeeded(modelProfile);
+  const settleMs = Math.max(0, Number(process.env.A11_SD_GPU_SETTLE_MS || 350) || 350);
+  await sleep(settleMs);
 }
 
 function resolveRequestOrigin(req) {
@@ -383,6 +397,27 @@ function normalizePromptFragment(value = '') {
     .trim();
 }
 
+function resolveSdDimensionMultiple() {
+  const configured = Number(process.env.SD_DIMENSION_MULTIPLE || process.env.A11_SD_DIMENSION_MULTIPLE || 8);
+  if (!Number.isFinite(configured) || configured <= 0) return 8;
+  return Math.max(8, Math.min(128, Math.round(configured)));
+}
+
+function alignDimensionToMultiple(value, {
+  min = 64,
+  max = 2048,
+  multiple = resolveSdDimensionMultiple(),
+} = {}) {
+  const safeMultiple = Math.max(1, Number(multiple) || 8);
+  const safeMin = Math.max(safeMultiple, Math.ceil(Number(min || 64) / safeMultiple) * safeMultiple);
+  const safeMax = Math.max(safeMin, Math.floor(Number(max || 2048) / safeMultiple) * safeMultiple);
+  let n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) n = safeMin;
+  n = Math.max(safeMin, Math.min(safeMax, n));
+  n = Math.floor(n / safeMultiple) * safeMultiple;
+  return Math.max(safeMin, Math.min(safeMax, n));
+}
+
 function splitPromptFragments(value = '') {
   return String(value || '')
     .split(',')
@@ -525,16 +560,11 @@ function repairCompiledSdPromptArtifacts(value = '') {
 function fallbackIsAdminRequest(req) {
   const configuredAdminToken = String(process.env.NEZ_ADMIN_TOKEN || '').trim();
   const adminHeaders = [
-    req?.headers?.['x-nez-admin'],
     req?.headers?.['x-nez-admin-token'],
     req?.headers?.['x-admin-token'],
   ].map((value) => String(value || '').trim()).filter(Boolean);
 
   if (configuredAdminToken && adminHeaders.includes(configuredAdminToken)) {
-    return true;
-  }
-
-  if (adminHeaders.some((value) => ['1', 'true', 'yes', 'admin'].includes(value.toLowerCase()))) {
     return true;
   }
 
@@ -553,8 +583,7 @@ function fallbackIsAdminRequest(req) {
   }
 
   const bearer = String(req?.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  const directToken = String(req?.headers?.['x-nez-token'] || '').trim();
-  return allowedTokens.includes(bearer) || allowedTokens.includes(directToken);
+  return allowedTokens.includes(bearer);
 }
 
 function isMissingTorchFailure(result = {}) {
@@ -569,6 +598,9 @@ function summarizeLocalSdFailure(localResult = null) {
   }
   if (isMissingTorchFailure(localResult)) {
     return 'torch manque sur le backend image';
+  }
+  if (String(localResult?.diagnostic_message || '').trim()) {
+    return String(localResult.diagnostic_message).trim();
   }
 
   const stderrText = String(localResult.stderr || '').trim();
@@ -669,6 +701,7 @@ function resolveDependencies(overrides = {}) {
     uploadBufferToR2: overrides.uploadBufferToR2 || defaultUploadBufferToR2,
     isAdminRequest: overrides.isAdminRequest || fallbackIsAdminRequest,
     shouldAllowLocalSdFallback: overrides.shouldAllowLocalSdFallback || defaultShouldAllowLocalSdFallback,
+    drainLocalGpuBeforeSd: overrides.drainLocalGpuBeforeSd || drainLocalGpuBeforeSd,
   };
 }
 
@@ -688,6 +721,7 @@ function createSdToolsRouter(overrides = {}) {
     uploadBufferToR2,
     isAdminRequest,
     shouldAllowLocalSdFallback,
+    drainLocalGpuBeforeSd,
   } = resolveDependencies(overrides);
 
   const express = require('express');
@@ -712,7 +746,11 @@ function createSdToolsRouter(overrides = {}) {
       || ''
     ).trim();
 
-    const promptAlreadyCompiled = requestBody?.prompt_prebuilt === true || requestBody?.skip_prompt_enrichment === true;
+    const promptAlreadyCompiled = (
+      requestBody?.prompt_prebuilt === true
+      || requestBody?.skip_prompt_enrichment === true
+      || requestBody?.task_type === 'video_frame_sequence'
+    );
     const inferredPromptAlreadyCompiled = !promptAlreadyCompiled && looksLikeCompiledSdPrompt(rawPrompt);
 
     let semanticCompiledState = null;
@@ -806,12 +844,9 @@ function createSdToolsRouter(overrides = {}) {
 
     const num_inference_steps = Number(requestBody?.num_inference_steps || requestBody?.steps || 35);
     const guidance_scale = Number(requestBody?.guidance_scale || 8.0);
-    function clampDimension(val, fallback, { min = 64, max = 2048 } = {}) {
-      let n = Number(val);
-      if (!Number.isFinite(n)) n = fallback;
-      n = Math.round(n);
-      if (n > 1 && n % 2 !== 0) n = n - 1;
-      return Math.max(min, Math.min(max, n));
+    function clampDimension(val, fallback, { min = 64, max = 2048, multiple = resolveSdDimensionMultiple() } = {}) {
+      const n = Number(val);
+      return alignDimensionToMultiple(Number.isFinite(n) ? n : fallback, { min, max, multiple });
     }
     function fitDimensions(widthValue, heightValue, fallbackWidth, fallbackHeight) {
       let width = Number(widthValue);
@@ -832,6 +867,9 @@ function createSdToolsRouter(overrides = {}) {
       const IMAGE_MIN_SIZE = Number(renderLimits.minSide || 64) || 64;
       const IMAGE_MAX_SIZE = Number(renderLimits.maxSide || 2048) || 2048;
       const IMAGE_MAX_PIXELS = Number(renderLimits.maxPixels || (IMAGE_MAX_SIZE * IMAGE_MAX_SIZE)) || (IMAGE_MAX_SIZE * IMAGE_MAX_SIZE);
+      const SD_DIMENSION_MULTIPLE = resolveSdDimensionMultiple();
+      const beforeAlignWidth = width;
+      const beforeAlignHeight = height;
       if (!Number.isFinite(width) || width <= 0) width = fallbackWidth;
       if (!Number.isFinite(height) || height <= 0) height = fallbackHeight;
       width = Math.max(IMAGE_MIN_SIZE, width);
@@ -852,10 +890,12 @@ function createSdToolsRouter(overrides = {}) {
       width = clampDimension(width, fallbackWidth, {
         min: IMAGE_MIN_SIZE,
         max: IMAGE_MAX_SIZE,
+        multiple: SD_DIMENSION_MULTIPLE,
       });
       height = clampDimension(height, fallbackHeight, {
         min: IMAGE_MIN_SIZE,
         max: IMAGE_MAX_SIZE,
+        multiple: SD_DIMENSION_MULTIPLE,
       });
 
       let guard = 0;
@@ -865,15 +905,27 @@ function createSdToolsRouter(overrides = {}) {
         const nextWidth = clampDimension(width * areaScale, fallbackWidth, {
           min: IMAGE_MIN_SIZE,
           max: IMAGE_MAX_SIZE,
+          multiple: SD_DIMENSION_MULTIPLE,
         });
         const nextHeight = clampDimension(height * areaScale, fallbackHeight, {
           min: IMAGE_MIN_SIZE,
           max: IMAGE_MAX_SIZE,
+          multiple: SD_DIMENSION_MULTIPLE,
         });
         if (nextWidth === width && nextHeight === height) break;
         width = nextWidth;
         height = nextHeight;
         guard += 1;
+      }
+      if (
+        (Number.isFinite(beforeAlignWidth) && beforeAlignWidth > 0 && width !== Math.round(beforeAlignWidth))
+        || (Number.isFinite(beforeAlignHeight) && beforeAlignHeight > 0 && height !== Math.round(beforeAlignHeight))
+      ) {
+        console.warn(
+          `[A11][sd-tools] aligned render size to SD latent grid multiple=${SD_DIMENSION_MULTIPLE}`
+          + ` requested=${Number.isFinite(beforeAlignWidth) ? Math.round(beforeAlignWidth) : 'auto'}x${Number.isFinite(beforeAlignHeight) ? Math.round(beforeAlignHeight) : 'auto'}`
+          + ` effective=${width}x${height}`
+        );
       }
 
       return {
@@ -965,8 +1017,9 @@ function createSdToolsRouter(overrides = {}) {
           headers: {
             'Content-Type': 'application/json',
             ...(typeof req?.headers?.authorization === 'string' ? { authorization: req.headers.authorization } : {}),
-            ...(typeof req?.headers?.['x-nez-admin'] === 'string' ? { 'x-nez-admin': req.headers['x-nez-admin'] } : {}),
-            ...(typeof req?.headers?.['x-nez-token'] === 'string' ? { 'x-nez-token': req.headers['x-nez-token'] } : {}),
+            ...(typeof req?.headers?.['x-nez-admin-token'] === 'string' ? { 'x-nez-admin-token': req.headers['x-nez-admin-token'] } : {}),
+            ...(typeof req?.headers?.['x-qflush-token'] === 'string' ? { 'x-qflush-token': req.headers['x-qflush-token'] } : {}),
+            ...(typeof req?.headers?.['x-dragon-token'] === 'string' ? { 'x-dragon-token': req.headers['x-dragon-token'] } : {}),
           },
           body: JSON.stringify({
             prompt: finalPrompt,
@@ -1102,18 +1155,19 @@ function createSdToolsRouter(overrides = {}) {
     const outputName = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
     const outputPath = path.join(tempDir, outputName);
 
-    const outputJson = await (async () => {
-      await unloadOllamaModelIfNeeded(modelProfilePlan?.profile || '');
+    const outputJson = await runExclusiveLocalGpuTask('sd:render', async () => {
+      await drainLocalGpuBeforeSd({ modelProfile: modelProfilePlan?.profile || '' });
       return runSdScript({
       prompt: finalPrompt,
+      prompt_prebuilt: true,
       ...(semanticCompiledState?.sdBody?.prompt_language
         ? { prompt_language: String(semanticCompiledState.sdBody.prompt_language).trim() }
         : {}),
-      ...(finalPrompt2 ? { prompt_2: finalPrompt2 } : {}),
-      ...(finalPrompt3 ? { prompt_3: finalPrompt3 } : {}),
-      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt } : {}),
-      ...(finalNegativePrompt2 ? { negative_prompt_2: finalNegativePrompt2 } : {}),
-      ...(finalNegativePrompt3 ? { negative_prompt_3: finalNegativePrompt3 } : {}),
+      ...(finalPrompt2 ? { prompt_2: finalPrompt2, prompt_2_prebuilt: true } : {}),
+      ...(finalPrompt3 ? { prompt_3: finalPrompt3, prompt_3_prebuilt: true } : {}),
+      ...(finalNegativePrompt ? { negative_prompt: finalNegativePrompt, negative_prompt_prebuilt: true } : {}),
+      ...(finalNegativePrompt2 ? { negative_prompt_2: finalNegativePrompt2, negative_prompt_2_prebuilt: true } : {}),
+      ...(finalNegativePrompt3 ? { negative_prompt_3: finalNegativePrompt3, negative_prompt_3_prebuilt: true } : {}),
       num_inference_steps,
       guidance_scale,
       width,
@@ -1128,7 +1182,7 @@ function createSdToolsRouter(overrides = {}) {
       ...(seed !== undefined ? { seed } : {}),
       output: outputPath,
     }, { scriptPath });
-    })();
+    });
     const actualWidth = Number(outputJson?.output_width || outputJson?.width || 0) || width;
     const actualHeight = Number(outputJson?.output_height || outputJson?.height || 0) || height;
     if (actualWidth !== width || actualHeight !== height) {
@@ -1234,47 +1288,83 @@ function createSdToolsRouter(overrides = {}) {
         init_image_source: outputJson.init_image_source || null,
       };
     } catch (error_) {
-      const publicWorkspaceRoot = resolvePublicWorkspaceRoot();
-      const localRelativePath = String(path.relative(publicWorkspaceRoot, outputJson.output_path || '') || '').replace(/\\/g, '/');
-      if (localRelativePath && !localRelativePath.startsWith('..')) {
-        const localPublicPath = `/files/${localRelativePath
-          .split('/')
-          .filter(Boolean)
-          .map((segment) => encodeURIComponent(segment))
-          .join('/')}`;
-        const localPublicUrl = `${resolveRequestOrigin(req)}${localPublicPath}`;
-        const resolvedLocalUrl = localPublicUrl.startsWith('http')
-          ? localPublicUrl
-          : localPublicPath;
+      const outputFilePath = String(outputJson.output_path || '').trim();
+      if (outputFilePath) {
+        // Essayer d'abord via A11_RUNTIME_ROOT (/files/runtime/...)
+        const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+        if (runtimeRoot) {
+          const runtimeRelativePath = String(defaultPath.relative(runtimeRoot, outputFilePath) || '').replace(/\\/g, '/');
+          if (runtimeRelativePath && !runtimeRelativePath.startsWith('..')) {
+            const localPublicPath = `/files/runtime/${runtimeRelativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
+            const origin = resolveRequestOrigin(req);
+            const resolvedLocalUrl = origin ? `${origin}${localPublicPath}` : localPublicPath;
+            return {
+              ok: true,
+              url: resolvedLocalUrl,
+              image_url: resolvedLocalUrl,
+              filename: defaultPath.basename(outputFilePath),
+              prompt: finalPrompt,
+              num_inference_steps,
+              guidance_scale,
+              width,
+              height,
+              actual_width: actualWidth,
+              actual_height: actualHeight,
+              ...(initImage ? { init_image_url: initImage } : {}),
+              ...buildStrengthPlanPayload(strengthPlan, strength),
+              seed: seed !== undefined ? Number(seed) : undefined,
+              mode: 'stable-diffusion-local',
+              size_policy: sizePolicy !== 'default' ? sizePolicy : null,
+              storage: 'local-file',
+              device: outputJson.device || null,
+              model_id: outputJson.model_id || null,
+              torch_dtype: outputJson.torch_dtype || null,
+              cuda_available: outputJson.cuda_available === true,
+              cuda_device_name: outputJson.cuda_device_name || null,
+              xformers_enabled: outputJson.xformers_enabled === true,
+              init_image_used: outputJson.init_image_used === true,
+              init_image_source: outputJson.init_image_source || null,
+              upload_warning: String(error_?.message || error_),
+            };
+          }
+        }
 
-        return {
-          ok: true,
-          url: resolvedLocalUrl,
-          image_url: resolvedLocalUrl,
-          filename: path.basename(outputJson.output_path || `sd_${Date.now()}.png`),
-          prompt: finalPrompt,
-          num_inference_steps,
-          guidance_scale,
-          width,
-          height,
-          actual_width: actualWidth,
-          actual_height: actualHeight,
-          ...(initImage ? { init_image_url: initImage } : {}),
-          ...buildStrengthPlanPayload(strengthPlan, strength),
-          seed: seed !== undefined ? Number(seed) : undefined,
-          mode: 'stable-diffusion-local',
-          size_policy: sizePolicy !== 'default' ? sizePolicy : null,
-          storage: 'local-file',
-          device: outputJson.device || null,
-          model_id: outputJson.model_id || null,
-          torch_dtype: outputJson.torch_dtype || null,
-          cuda_available: outputJson.cuda_available === true,
-          cuda_device_name: outputJson.cuda_device_name || null,
-          xformers_enabled: outputJson.xformers_enabled === true,
-          init_image_used: outputJson.init_image_used === true,
-          init_image_source: outputJson.init_image_source || null,
-          upload_warning: String(error_?.message || error_),
-        };
+        // Fallback via A11_WORKSPACE_ROOT (/files/...)
+        const publicWorkspaceRoot = resolvePublicWorkspaceRoot();
+        const localRelativePath = String(defaultPath.relative(publicWorkspaceRoot, outputFilePath) || '').replace(/\\/g, '/');
+        if (localRelativePath && !localRelativePath.startsWith('..')) {
+          const localPublicPath = `/files/${localRelativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
+          const localPublicUrl = `${resolveRequestOrigin(req)}${localPublicPath}`;
+          const resolvedLocalUrl = localPublicUrl.startsWith('http') ? localPublicUrl : localPublicPath;
+          return {
+            ok: true,
+            url: resolvedLocalUrl,
+            image_url: resolvedLocalUrl,
+            filename: defaultPath.basename(outputFilePath || `sd_${Date.now()}.png`),
+            prompt: finalPrompt,
+            num_inference_steps,
+            guidance_scale,
+            width,
+            height,
+            actual_width: actualWidth,
+            actual_height: actualHeight,
+            ...(initImage ? { init_image_url: initImage } : {}),
+            ...buildStrengthPlanPayload(strengthPlan, strength),
+            seed: seed !== undefined ? Number(seed) : undefined,
+            mode: 'stable-diffusion-local',
+            size_policy: sizePolicy !== 'default' ? sizePolicy : null,
+            storage: 'local-file',
+            device: outputJson.device || null,
+            model_id: outputJson.model_id || null,
+            torch_dtype: outputJson.torch_dtype || null,
+            cuda_available: outputJson.cuda_available === true,
+            cuda_device_name: outputJson.cuda_device_name || null,
+            xformers_enabled: outputJson.xformers_enabled === true,
+            init_image_used: outputJson.init_image_used === true,
+            init_image_source: outputJson.init_image_source || null,
+            upload_warning: String(error_?.message || error_),
+          };
+        }
       }
 
       const error = new Error(String(error_?.message || error_));
@@ -1388,6 +1478,7 @@ function looksLikeDependencyBag(value) {
       || 'uploadBufferToR2' in value
       || 'isAdminRequest' in value
       || 'shouldAllowLocalSdFallback' in value
+      || 'drainLocalGpuBeforeSd' in value
     )
   );
 }

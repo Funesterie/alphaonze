@@ -25,7 +25,7 @@ const DEFAULT_API_BASE = normalizeApiBase(
   (import.meta.env?.VITE_API_BASE) ||
   ''
 );
-const DEFAULT_ONLINE_API_BASE = normalizeApiBase(import.meta.env?.VITE_A11_ONLINE_API_BASE_URL) || 'https://api.funesterie.pro';
+const DEFAULT_ONLINE_API_BASE = normalizeApiBase(import.meta.env?.VITE_A11_ONLINE_API_BASE_URL) || 'https://alphaonze.funesterie.pro';
 const DEFAULT_LOCAL_PROFILE_BASE = (() => {
   const explicitLocalBase = normalizeApiBase(import.meta.env?.VITE_A11_LOCAL_API_BASE_URL);
   if (explicitLocalBase) return explicitLocalBase;
@@ -47,9 +47,7 @@ function normalizeApiBase(rawValue: string | null | undefined) {
 function isPublicA11WebHost(hostname: string | null | undefined) {
   const normalized = String(hostname || '').trim().toLowerCase();
   if (!normalized) return false;
-  return normalized === 'a11.funesterie.pro'
-    || normalized === 'a11funesterie.netlify.app'
-    || normalized.endsWith('--a11funesterie.netlify.app');
+  return normalized === 'alphaonze.funesterie.pro';
 }
 
 function isLocalApiBaseCandidate(baseValue: string | null | undefined) {
@@ -59,9 +57,7 @@ function isLocalApiBaseCandidate(baseValue: string | null | undefined) {
   try {
     const hostname = new URL(normalized, globalThis.location?.origin || 'http://127.0.0.1').hostname.toLowerCase();
     return hostname === 'localhost'
-      || hostname === '127.0.0.1'
-      || hostname.endsWith('.funesterie.me')
-      || hostname === 'api.funesterie.me';
+      || hostname === '127.0.0.1';
   } catch {
     return false;
   }
@@ -217,6 +213,18 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
   const raw = String(rawValue || '').trim();
   if (!raw) return null;
   if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) {
+    try {
+      const parsed = new URL(raw, globalThis.location?.origin || 'https://alphaonze.funesterie.pro');
+      if (
+        parsed.hostname.toLowerCase() === 'api.funesterie.pro'
+        && /^\/files\//i.test(parsed.pathname)
+      ) {
+        const origin = getApiOrigin() || globalThis.location?.origin || 'https://alphaonze.funesterie.pro';
+        return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch {
+      // keep the original absolute URL when it is not parseable by URL.
+    }
     return raw;
   }
   const origin = getApiOrigin();

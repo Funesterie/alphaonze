@@ -1053,48 +1053,16 @@ function buildCanonicalEnglishLead(subject = [], mask = {}) {
 function buildCanonicalEnglishDirectives(mask = {}, canonicalizedState = null) {
   const directives = [];
   const scenePolicy = resolveCanonicalScenePolicy(mask, canonicalizedState);
-  const subjectProfileType = normalizeLookup(mask?.meta?.subjectProfile?.type || '');
 
+  // Pour les scènes multi-sujets explicites, ajouter les directives de cardinalité
+  // Le LLM canonicalizer a déjà décidé subjectMode — on respecte sa décision.
   if (scenePolicy.subjectMode === 'pair') {
     directives.push('exactly two distinct readable subjects');
-    if (
-      subjectProfileType === 'reference_character'
-      || subjectProfileType === 'single_human_figure'
-      || subjectProfileType === 'pokemon_creature'
-    ) {
-      directives.push('two full recognizable characters');
-    }
   } else if (scenePolicy.subjectMode === 'group') {
     directives.push('clear readable multi-subject composition');
-  } else {
-    directives.push('single clearly visible main subject');
   }
-
-  if (
-    scenePolicy.subjectMode === 'single'
-    && (
-      subjectProfileType === 'reference_character'
-      || subjectProfileType === 'single_human_figure'
-      || subjectProfileType === 'pokemon_creature'
-    )
-  ) {
-    directives.push('full body visible');
-  }
-
-  if (
-    scenePolicy.subjectMode === 'single'
-    && (
-      subjectProfileType === 'single_animal'
-      || subjectProfileType === 'mythic_creature'
-      || subjectProfileType === 'phoenix_creature'
-    )
-  ) {
-    directives.push('full readable creature');
-  }
-
-  if (hasSemanticElementFamily(mask, 'fire') && hasAnimateSubjectProfile(mask)) {
-    directives.push('sharp flames around the subject');
-  }
+  // Ne plus injecter "single clearly visible main subject" par défaut —
+  // le LLM canonicalizer l'ajoute dans promptInstructions si nécessaire.
 
   if (canonicalizedState?.structuredFields?.constraints?.noText === true) {
     directives.push('no readable text');

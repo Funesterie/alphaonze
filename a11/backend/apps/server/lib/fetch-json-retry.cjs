@@ -48,7 +48,7 @@ function createTimeoutContext(timeoutMs, externalSignal) {
 async function fetchJsonWithRetry(url, options = {}, {
   timeoutMs = 15000,
   retries = 2,
-  backoffBaseMs = 250,
+  backoffBaseMs = 5000,
   requestId = crypto.randomUUID(),
   logger = console,
 } = {}) {

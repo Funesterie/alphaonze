@@ -2,7 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT,
   canonicalizeImageGenerateRequest,
+  extractPreservedNamedEntityCandidates,
+  findCardinalityConflict,
+  findMissingNamedEntityCandidates,
+  findRawSubjectCardinalityExpectation,
   normalizeCanonicalizedImageGenerateRequest,
   resolveCanonicalizerTimeoutMs,
   validateCanonicalizedImageGenerateRequest,
@@ -139,8 +144,9 @@ test('normalizeCanonicalizedImageGenerateRequest atomizes structured field parag
   );
 });
 
-test('validateCanonicalizedImageGenerateRequest rejects non-atomic structured field items that survive normalization', () => {
-  assert.throws(
+test('validateCanonicalizedImageGenerateRequest accepts long promptInstructions without throwing non-atomic error', () => {
+  // non-atomic validation removed — LLM decides structure, not heuristics
+  assert.doesNotThrow(
     () => validateCanonicalizedImageGenerateRequest({
       needsClarification: false,
       clarificationQuestion: '',
@@ -171,9 +177,236 @@ test('validateCanonicalizedImageGenerateRequest rejects non-atomic structured fi
         fallbackUsed: false,
         reason: '',
       },
-    }),
-    /canonicalized_request_non_atomic_structured_fields/
+    })
   );
+});
+
+test('canonicalizer prompt explicitly forbids named-entity substitution and contradictory subject counts', () => {
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /proper names and named entities as immutable/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not replace a named entity with a related/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /Do not emit "single subject" instructions for pair or group scenes/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /two separate subject entries/i);
+  assert.match(CANONICAL_IMAGE_GENERATE_REQUEST_SYSTEM_PROMPT, /sole subject when the user requested actors/i);
+});
+
+test('validateCanonicalizedImageGenerateRequest accepts payloads where named entities differ from raw input', () => {
+  // named entity validation removed — LLM decides preservation, not heuristics
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Generate an image of Darth Vader versus Obi-Wan Kenobi in combat on the Tatooine spaceport',
+    structuredFields: {
+      subject: ['Darth Vader', 'Obi-Wan Kenobi'],
+      environment: ['Tatooine spaceport'],
+      style: ['epic cinematic scene'],
+      composition: ['combat duel'],
+      lighting: ['intense lighting'],
+      palette: ['dark', 'muted'],
+      constraints: {
+        promptInstructions: ['two full recognizable characters'],
+        negativeHints: [],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'pair',
+      explicitSubjectCount: 2,
+    },
+  }, 'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine');
+
+  assert.deepEqual(
+    extractPreservedNamedEntityCandidates(payload.audit.rawUserInput),
+    ['Qui-Gon Jinn', 'Tatooine']
+  );
+  // findMissingNamedEntityCandidates still works as a utility but no longer blocks validation
+  assert.deepEqual(findMissingNamedEntityCandidates(payload), ['Qui-Gon Jinn']);
+  assert.doesNotThrow(() => validateCanonicalizedImageGenerateRequest(payload));
+});
+
+test('validateCanonicalizedImageGenerateRequest accepts pair scenes even with single-subject instructions — LLM decides cardinality', () => {
+  // La cardinalité est décidée par le LLM canonicalizer, pas par validation heuristique.
+  // Si le LLM produit subjectMode=pair avec une instruction "single subject", c'est
+  // une incohérence interne du LLM — on lui fait confiance et on ne revalide pas.
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Darth Vader versus Qui-Gon Jinn in combat on the Tatooine spaceport',
+    structuredFields: {
+      subject: ['Darth Vader', 'Qui-Gon Jinn'],
+      environment: ['Tatooine spaceport'],
+      style: ['epic cinematic scene'],
+      composition: ['combat duel'],
+      lighting: ['intense lighting'],
+      palette: ['dark', 'muted'],
+      constraints: {
+        promptInstructions: ['single subject', 'two full recognizable characters'],
+        negativeHints: [],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'pair',
+      explicitSubjectCount: 2,
+    },
+  }, 'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine');
+
+  // findCardinalityConflict est conservé comme utilitaire mais ne bloque plus la validation
+  assert.match(findCardinalityConflict(payload), /single_subject_instruction_in_multi_subject_scene/);
+  // La validation ne throw plus sur la cardinalité — le LLM décide
+  assert.doesNotThrow(() => validateCanonicalizedImageGenerateRequest(payload));
+});
+
+test('validateCanonicalizedImageGenerateRequest accepts collapsed two-fighter requests — LLM decides cardinality', () => {
+  // Le LLM canonicalizer décide si "deux combattants" = pair ou single.
+  // On ne revalide plus avec des regex sur le texte brut.
+  const rawUserInput = 'Un affrontement anime explosif de type DBZ entre deux combattants ultra puissants';
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Explosive anime confrontation in a rocky arena',
+    structuredFields: {
+      subject: ['confrontation'],
+      environment: ['rocky arena'],
+      style: ['explosive anime'],
+      composition: ['single subject poster framing'],
+      lighting: ['intense light'],
+      palette: [],
+      constraints: {
+        promptInstructions: ['single clearly visible main subject'],
+        negativeHints: [],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'single',
+      explicitSubjectCount: 1,
+    },
+  }, rawUserInput);
+
+  // findRawSubjectCardinalityExpectation et findCardinalityConflict restent disponibles
+  // comme utilitaires pour le system prompt du LLM, mais ne bloquent plus la validation.
+  assert.deepEqual(findRawSubjectCardinalityExpectation(rawUserInput), {
+    subjectMode: 'pair',
+    explicitSubjectCount: 2,
+    reason: 'explicit_two_subjects',
+  });
+  assert.match(findCardinalityConflict(payload), /raw_pair_scene_collapsed_to_single/);
+  // La validation accepte — c'est le LLM qui doit corriger ça, pas une regex
+  assert.doesNotThrow(() => validateCanonicalizedImageGenerateRequest(payload));
+});
+
+test('extractPreservedNamedEntityCandidates ignores prompt section labels but preserves DBZ acronym', () => {
+  const rawUserInput = "genere une image d'un affrontement anime explosif de type DBZ entre deux combattants ultra puissants dans une arène rocheuse détruite, au moment d’un choc d’énergie monumental. Les deux personnages sont bien distincts, en full body, face à face ou en collision au centre de l’image. Style anime shonen haut de gamme, rendu très détaillé, couleurs intenses, illustration cinématique, sans texte. Negative prompt : low quality, blurry, bad anatomy, extra fingers, bad hands, text, watermark, logo";
+
+  assert.deepEqual(
+    extractPreservedNamedEntityCandidates(rawUserInput),
+    ['DBZ']
+  );
+});
+
+test('validateCanonicalizedImageGenerateRequest accepts the full DBZ two-fighter request without requiring section labels', () => {
+  const rawUserInput = "genere une image d'un affrontement anime explosif de type DBZ entre deux combattants ultra puissants dans une arène rocheuse détruite, au moment d’un choc d’énergie monumental, poses dynamiques, muscles tendus, expressions féroces et déterminées, auras gigantesques autour des corps, éclairs, ondes de choc, poussière, rochers qui lévitent, lumière intense, ciel dramatique déchiré par l’énergie, impact visuel énorme. Les deux personnages sont bien distincts, en full body, face à face ou en collision au centre de l’image, avec attaque énergétique massive contre contre-attaque puissante, ambiance de fin de combat légendaire. Style anime shonen haut de gamme, rendu très détaillé, couleurs intenses, cheveux et vêtements emportés par l’énergie, composition claire et lisible, sensation de vitesse, puissance et destruction, illustration cinématique, sans texte. Negative prompt : low quality, blurry, bad anatomy, extra fingers, bad hands, malformed face, asymmetrical eyes, duplicate body, fused limbs, multiple extra characters, messy composition, weak aura, weak energy effects, flat lighting, cropped head, cropped hands, cut off body, deformed proportions, childish cartoon style, realistic photo style, text, watermark, logo";
+  const payload = normalizeCanonicalizedImageGenerateRequest({
+    canonicalEnglishInput: 'Two distinct ultra-powerful anime fighters in an explosive DBZ-style energy clash inside a destroyed rocky arena',
+    structuredFields: {
+      subject: ['first ultra-powerful anime fighter', 'second ultra-powerful anime fighter'],
+      environment: ['destroyed rocky arena', 'dramatic energy-torn sky'],
+      style: ['high-end shonen anime', 'DBZ-style energy battle'],
+      composition: ['full-body face-to-face collision', 'massive energy attack versus counterattack'],
+      lighting: ['intense energy light'],
+      palette: ['intense colors'],
+      constraints: {
+        promptInstructions: ['both fighters fully visible', 'clear separate silhouettes'],
+        negativeHints: ['low quality', 'blurry', 'bad anatomy', 'extra fingers', 'text', 'watermark', 'logo'],
+        noText: true,
+        safeMode: true,
+      },
+    },
+    scenePolicy: {
+      subjectMode: 'pair',
+      explicitSubjectCount: 2,
+    },
+  }, rawUserInput);
+
+  assert.doesNotThrow(() => validateCanonicalizedImageGenerateRequest(payload));
+});
+
+test('canonicalizeImageGenerateRequest accepts the first LLM result without retrying on cardinality — LLM decides', async () => {
+  // Le LLM décide de la cardinalité. Même si le premier résultat a subjectMode=single
+  // pour une demande "vs", on l'accepte — c'est au LLM de bien interpréter le contexte.
+  let callCount = 0;
+  const canonicalizedRequest = await canonicalizeImageGenerateRequest(
+    'genere une image de darkvador versus Qui-Gon Jinn, en plein combat, dans le spatioport de Tatooine',
+    {
+      stage: 'canonicalize-image-generate-request-test',
+      callStructuredLlmJson: async () => {
+        callCount += 1;
+        return {
+          canonicalEnglishInput: 'Generate an image of Darth Vader versus Obi-Wan Kenobi in combat, set on the spaceport of Tatooine',
+          structuredFields: {
+            subject: ['Darth Vader', 'Obi-Wan Kenobi'],
+            environment: ['Tatooine spaceport'],
+            style: ['dark epic scene'],
+            composition: ['combat duel'],
+            lighting: ['intense lighting'],
+            palette: ['dark', 'muted'],
+            constraints: {
+              promptInstructions: ['no text'],
+              negativeHints: ['low resolution'],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'single',
+            explicitSubjectCount: 1,
+          },
+        };
+      },
+    }
+  );
+
+  // Un seul appel LLM — pas de retry sur la cardinalité
+  assert.equal(callCount, 1);
+  assert.equal(canonicalizedRequest.audit.source, 'provided_structured_llm');
+  assert.equal(canonicalizedRequest.audit.fallbackUsed, false);
+});
+
+test('canonicalizeImageGenerateRequest accepts collapsed two-fighter requests without retry — LLM decides cardinality', async () => {
+  // Le LLM décide si "deux combattants" = pair. On n'impose plus de retry.
+  let callCount = 0;
+  const canonicalizedRequest = await canonicalizeImageGenerateRequest(
+    'Un affrontement anime explosif de type DBZ entre deux combattants ultra puissants dans une arene rocheuse',
+    {
+      stage: 'canonicalize-image-generate-request-test',
+      callStructuredLlmJson: async () => {
+        callCount += 1;
+        return {
+          canonicalEnglishInput: 'Explosive anime confrontation in a destroyed rocky arena',
+          structuredFields: {
+            subject: ['confrontation'],
+            environment: ['destroyed rocky arena'],
+            style: ['explosive anime'],
+            composition: ['single subject poster framing'],
+            lighting: ['intense light'],
+            palette: [],
+            constraints: {
+              promptInstructions: ['single clearly visible main subject'],
+              negativeHints: ['blur'],
+              noText: true,
+              safeMode: true,
+            },
+          },
+          scenePolicy: {
+            subjectMode: 'single',
+            explicitSubjectCount: 1,
+          },
+        };
+      },
+    }
+  );
+
+  // Un seul appel — pas de retry sur la cardinalité
+  assert.equal(callCount, 1);
+  assert.equal(canonicalizedRequest.audit.source, 'provided_structured_llm');
+  assert.equal(canonicalizedRequest.audit.fallbackUsed, false);
 });
 
 test('canonicalizeImageGenerateRequest keeps a valid structured canonical payload and never marks it as fallback', async () => {

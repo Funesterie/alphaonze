@@ -1,4 +1,6 @@
-param()
+param(
+  [switch]$NoPause
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -132,8 +134,7 @@ function Stop-CerbereTunnel {
   $matching = @(
     Get-CimInstance Win32_Process -Filter "Name = 'cloudflared.exe'" -ErrorAction SilentlyContinue |
       Where-Object {
-        ($_.CommandLine -like "*funesterie-cerbere-local*") -or
-        ($_.CommandLine -like "*cloudflared-cerbere.yml*")
+        ($_.CommandLine -like "*funesterie-cerbere-local*")
       }
   )
 
@@ -150,7 +151,23 @@ function Stop-CerbereTunnel {
 $launcherRoot = Split-Path -Parent $PSCommandPath
 $localLauncher = Join-Path $launcherRoot 'a11-local.ps1'
 $workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot '..\..'))
-$runtimeRoot = Join-Path $workspaceRoot 'a11\runtime\launcher'
+
+# Lire A11_RUNTIME_ROOT depuis le config, sinon fallback relatif
+$configPath = Join-Path $launcherRoot 'config\a11-local.env'
+$resolvedRuntimeRoot = $null
+if (Test-Path -LiteralPath $configPath) {
+  $configLine = Get-Content -LiteralPath $configPath | Where-Object { $_ -match '^A11_RUNTIME_ROOT\s*=' } | Select-Object -Last 1
+  if ($configLine) {
+    $rawValue = ($configLine -split '=', 2)[1].Trim()
+    if ([System.IO.Path]::IsPathRooted($rawValue)) {
+      $resolvedRuntimeRoot = $rawValue
+    } else {
+      $resolvedRuntimeRoot = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot $rawValue))
+    }
+  }
+}
+if (-not $resolvedRuntimeRoot) { $resolvedRuntimeRoot = Join-Path $workspaceRoot 'a11\runtime' }
+$runtimeRoot = Join-Path $resolvedRuntimeRoot 'launcher'
 $stateFile = Join-Path $runtimeRoot 'a11-local.state.json'
 $snapshotFile = Join-Path $runtimeRoot 'a11-local.snapshot.json'
 $progressFile = Join-Path $runtimeRoot 'a11-local.progress.json'
@@ -198,3 +215,37 @@ foreach ($path in @($operationFile, $progressFile, $snapshotFile, $stateFile)) {
 }
 
 exit $LASTEXITCODE
+
+# SIG # Begin signature block
+# MIIFpwYJKoZIhvcNAQcCoIIFmDCCBZQCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCifz1Fcnlme0TT
+# 5U+TQTkVyP/s45taDizjep4Qd1VatqCCAxYwggMSMIIB+qADAgECAhAWh8uBU0rs
+# rEDlqExfyH1hMA0GCSqGSIb3DQEBCwUAMCExHzAdBgNVBAMMFkExMS1GdW5lc3Rl
+# cmllLVNjcmlwdHMwHhcNMjYwNDI2MTI1MDU5WhcNMzEwNDI2MTMwMDU5WjAhMR8w
+# HQYDVQQDDBZBMTEtRnVuZXN0ZXJpZS1TY3JpcHRzMIIBIjANBgkqhkiG9w0BAQEF
+# AAOCAQ8AMIIBCgKCAQEA6RbjQDNKRaPU3C25PQYgV9o3Ne3oIX0SWxC3caNFhtDt
+# Y6p+kdxoxPNNvyUteNC25XYUbDDJyIsLSoZA6ItHMavQ8OCZZGx2bMqY2Ab8Q4jr
+# OxV8GIpgDoDGqVx/bNECfoh4AFmRqgY+00p1CoQ7r9QVTn6X9OBKRA0iXVZxEMT7
+# OumcskpwwwNJhiPsRCY51UxwXKG8z7e3P1Tm3OVXkkyQNQN8cc9TURarToaxgahN
+# zHz0N81zamFRcwzdxIz2xyx2SQoK/arcLhA27j1ndIegbzqYWvrTZ9HgSiMI34tM
+# HxlzctmzCgeTGtDmOzN66NSmAFTkfv8E+U09fGxsyQIDAQABo0YwRDAOBgNVHQ8B
+# Af8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwMwHQYDVR0OBBYEFBPlLwoseJYs
+# +l+hlUcKSY0P+y/xMA0GCSqGSIb3DQEBCwUAA4IBAQAjCc2teI13CeAoNLTlKPkB
+# ROz/icO7JxlvnUQ+jmP2nmmTVfRfZvpp09tIHrHYpEH1kAIzb3Yy2knZUHisiOIo
+# YqN0VtdvdDQtz/8hauhnqODPYOu2LQsc6t7vKGciu4yLP9agY9sBQJGvv2FJ25gU
+# wEur8Jm3PW6/eHIO4dnv7zLdstOQqKL+Pu8aeoWpb0AE2oTX72sVx8/74DzkEbgM
+# FY9mKjO832S4QWwsqvhMo1I8C97l3Dz6cyfjb9HJQgFHgtJ2zEp1zVBOstkDDxnH
+# m3Xc2CJuNEwD4yScri97KFELD9K3+ZSahAs5teGCPV5vI5o7GPHeHI5gsbrQdnVW
+# MYIB5zCCAeMCAQEwNTAhMR8wHQYDVQQDDBZBMTEtRnVuZXN0ZXJpZS1TY3JpcHRz
+# AhAWh8uBU0rsrEDlqExfyH1hMA0GCWCGSAFlAwQCAQUAoIGEMBgGCisGAQQBgjcC
+# AQwxCjAIoAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYB
+# BAGCNwIBCzEOMAwGCisGAQQBgjcCARUwLwYJKoZIhvcNAQkEMSIEIGzSoLI9e+OM
+# Aah0TYst3KAiQlZ5enH9JA1eP3rfo9QdMA0GCSqGSIb3DQEBAQUABIIBADD1arBq
+# RHAxbsYwoMVqEHm5/vsuZPVAm8MdW1rzBrq0911IpbQHtQOPMrYXeBcpDzBGjvbM
+# 3sDn5wgxHNzsnayArp+j87KCrwzK6fIahYkiqL/F81aKMTS5RsmDGU4obTecpJqJ
+# jU3fcbfniimSqAzDzb/4hohrQwUjoO1guFsy+d/U2NO8VnadWkQJE24rqrggt1CU
+# 2RICjdFr6NbD3UkQWmHBXFY61YWEHBbu2KgBR6auGEc1rSDlwmhWtUhLUafVJ96S
+# 9k5dcV/3WddbqF53Kkao8Q6J6gv5FnPDAzhU1TVzrVgoctuIPeWM2IsHgQKZABEb
+# VN/CTU8+KiM52ag=
+# SIG # End signature block

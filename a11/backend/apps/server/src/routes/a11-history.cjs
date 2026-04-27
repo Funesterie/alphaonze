@@ -278,7 +278,6 @@ function createA11HistoryRouter({
     try {
       const userId = String(req.user?.id || '').trim();
       if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
-      if (!db) return res.status(503).json({ ok: false, error: 'database_unavailable' });
 
       const requestedId = String(req.params.id || '').trim();
       const legacyHistoryId = `user-${userId}`;
@@ -288,11 +287,13 @@ function createA11HistoryRouter({
         : (queryConversationId ? normalizeConversationId(queryConversationId) : '');
       const requestedKind = String(req.query.kind || '').trim();
       const limit = Math.max(1, Math.min(100, Number(req.query.limit || 20)));
-      const resources = await listConversationResources(userId, {
-        conversationId: requestedConversationId,
-        resourceKind: requestedKind,
-        limit,
-      });
+      const resources = db && typeof listConversationResources === 'function'
+        ? await listConversationResources(userId, {
+            conversationId: requestedConversationId,
+            resourceKind: requestedKind,
+            limit,
+          })
+        : [];
 
       return res.json({
         ok: true,

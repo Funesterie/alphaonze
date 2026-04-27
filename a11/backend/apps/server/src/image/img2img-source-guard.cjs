@@ -34,6 +34,17 @@ function resolvePreparedImg2ImgSourceRoot() {
   if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
     return path.join(os.tmpdir(), 'a11-prepared-img2img-sources');
   }
+
+  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+  if (runtimeRoot) {
+    return path.resolve(runtimeRoot, 'files', 'generated', 'prepared-img2img-sources');
+  }
+
+  const workspaceRoot = String(process.env.A11_WORKSPACE_ROOT || '').trim();
+  if (workspaceRoot) {
+    return path.resolve(workspaceRoot, 'runtime', 'files', 'generated', 'prepared-img2img-sources');
+  }
+
   return path.resolve(__dirname, '..', '..', 'tmp', 'generated', 'prepared-img2img-sources');
 }
 
@@ -757,8 +768,45 @@ async function enrichImg2ImgDraft({
     taskType: 'image_reference_variation',
     initSourceMode: String(webImageDraft?.mode || '').trim(),
     motionProfile: String(mask?.meta?.motionProfile || '').trim(),
-    profileHint: String(webImageDraft?.strengthProfile || webImageDraft?.strength_profile || '').trim(),
+    profileHint: String(webImageDraft?.janusStrategyProfile || webImageDraft?.strengthProfile || webImageDraft?.strength_profile || '').trim(),
   });
+
+  // Appliquer les profils par composant décidés par le LLM Janus si disponibles.
+  // On post-traite les composants pour overrider les profils heuristiques.
+  const janusComponentProfiles = webImageDraft?.janusComponentProfiles
+    && typeof webImageDraft.janusComponentProfiles === 'object'
+    ? webImageDraft.janusComponentProfiles
+    : null;
+  if (janusComponentProfiles && strengthPlan.components && typeof strengthPlan.components === 'object') {
+    const ranges = {
+      preserve: { min: 0.22, max: 0.38 },
+      balanced: { min: 0.48, max: 0.68 },
+      restyle: { min: 0.60, max: 0.78 },
+    };
+    for (const component of Object.keys(strengthPlan.components)) {
+      const janusProfile = String(janusComponentProfiles[component] || '').trim().toLowerCase();
+      if (!janusProfile || !ranges[janusProfile]) continue;
+      const range = ranges[janusProfile];
+      const midpoint = Math.round(((range.min + range.max) / 2) * 100) / 100;
+      strengthPlan.components[component] = {
+        ...strengthPlan.components[component],
+        profile: janusProfile,
+        strength: midpoint,
+        reason: `janus_llm_strategy:${janusProfile}`,
+      };
+    }
+    // Recalculer les maps dérivées
+    strengthPlan.componentStrengths = Object.fromEntries(
+      Object.entries(strengthPlan.components).map(([k, v]) => [k, v.strength])
+    );
+    strengthPlan.componentProfiles = Object.fromEntries(
+      Object.entries(strengthPlan.components).map(([k, v]) => [k, v.profile])
+    );
+    strengthPlan.componentReasons = Object.fromEntries(
+      Object.entries(strengthPlan.components).map(([k, v]) => [k, v.reason])
+    );
+    console.log(`[A11][janus-strategy] component profiles applied: ${JSON.stringify(strengthPlan.componentProfiles)}`);
+  }
   const protection = buildImg2ImgProtectionPrompts({
     promptLanguage: String(mask?.meta?.promptLanguage || mask?.meta?.language || 'fr').trim() || 'fr',
   });

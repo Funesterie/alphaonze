@@ -40,6 +40,7 @@ import { A11CommandConsolePanel } from "./components/A11CommandConsolePanel";
 import { A11RemoteProvidersPanel } from "./components/A11RemoteProvidersPanel";
 import { ConversationActivityPanel } from "./components/ConversationActivityPanel";
 import { ConversationResourcesPanel } from "./components/ConversationResourcesPanel";
+import { A11ActivityConsole, useA11Activity } from "./components/A11ActivityConsole";
 import { CreateArtifactModal } from "./components/CreateArtifactModal";
 import { EmailResourceModal } from "./components/EmailResourceModal";
 import { ConfirmModal } from "./components/ConfirmModal";
@@ -67,6 +68,7 @@ interface ChatMessage {
   role: Role;
   content: string;
   imageUrl?: string | null;
+  imageUrls?: string[] | null;
   videoUrl?: string | null;
   fileUrl?: string | null;
   qflushVerification?: {
@@ -644,6 +646,50 @@ function detectAssistantExportSuggestion(content: string): AssistantExportSugges
   return null;
 }
 
+// ── Carousel d'images dans les bulles de chat ─────────────────────────────────
+function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (url: string) => void }) {
+  const [idx, setIdx] = React.useState(0);
+  const total = images.length;
+  const current = images[Math.min(idx, total - 1)];
+  return (
+    <div className="msg-image-carousel">
+      <div className="msg-image-carousel-frame">
+        <button
+          type="button"
+          className="image-preview-trigger"
+          onClick={() => onExpand(current)}
+          aria-label="Agrandir l'image"
+        >
+          <img src={current} alt={`Image ${idx + 1}/${total}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
+        </button>
+      </div>
+      <div className="msg-image-carousel-bar">
+        <button
+          type="button"
+          className="msg-image-carousel-arrow"
+          aria-label="Image précédente"
+          onClick={() => setIdx((i) => (i - 1 + total) % total)}
+        >‹</button>
+        <span className="msg-image-carousel-counter">{idx + 1}/{total}</span>
+        <button
+          type="button"
+          className="msg-image-carousel-arrow"
+          aria-label="Image suivante"
+          onClick={() => setIdx((i) => (i + 1) % total)}
+        >›</button>
+        <button
+          type="button"
+          className="msg-image-carousel-expand"
+          onClick={() => onExpand(current)}
+          aria-label="Agrandir l'image"
+        >
+          <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ✅ LOGIN PANEL
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
@@ -1161,6 +1207,19 @@ export function App() {
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Console d'activité A11
+  const {
+    events: activityEvents,
+    isActive: activityIsActive,
+    pushEvent: pushActivityEvent,
+    updateEvent: updateActivityEvent,
+    clearEvents: clearActivityEvents,
+    startActivity,
+    stopActivity,
+    detectAndPushFromResponse,
+  } = useA11Activity();
+  const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toggleLockRef = useRef(false);
@@ -1200,6 +1259,10 @@ export function App() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const [uploadFeedback, setUploadFeedback] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
+  const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
+  const dragCounterRef = useRef(0);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
   const [createArtifactError, setCreateArtifactError] = useState("");
@@ -1740,37 +1803,60 @@ export function App() {
   }
 
   async function handleImportedFiles(files: FileList | null) {
-    handleImportFiles(files, (txt: string) => {
-      setInput((prev) => (prev ? prev + "\n" + txt : txt));
-    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined }).catch(console.error);
-
     if (!files || files.length === 0) return;
 
-    const conversationId = a11ConvId || selectedChatId || undefined;
-    const uploaded: string[] = [];
-    const failed: string[] = [];
-    setUploadFeedback(`Import de ${files.length} fichier(s) en cours...`);
+    // Previews locaux immédiats (object URL, pas de réseau) — accumulés, pas remplacés
+    const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
     for (const file of Array.from(files)) {
-      try {
-        await uploadConversationFile(file, { conversationId });
-        uploaded.push(file.name);
-      } catch (error_) {
-        console.warn("[A11] file upload failed", file.name, error_);
-        failed.push(file.name);
+      if (file.type.startsWith('image/')) {
+        newPreviews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
+      } else {
+        newPreviews.push({ name: file.name, url: '', isImage: false });
       }
     }
-
-    if (conversationId) {
-      await refreshConversationActivity(conversationId);
-      await refreshConversationResources(conversationId);
+    if (newPreviews.length > 0) {
+      // Accumuler — plusieurs drops successifs s'ajoutent
+      setDragPreviewUrls((prev) => {
+        const next = [...prev, ...newPreviews];
+        // Pointer sur le premier nouveau fichier ajouté
+        setPreviewCarouselIndex(prev.length);
+        return next;
+      });
+      // Pas de timeout : les chips restent jusqu'à l'envoi du message
     }
 
-    if (uploaded.length && failed.length) {
-      setUploadFeedback(`Import partiel: ${uploaded.length} ok, ${failed.length} en echec.`);
-    } else if (uploaded.length) {
-      setUploadFeedback(`${uploaded.length} fichier(s) rattache(s) a la conversation.`);
-    } else if (failed.length) {
-      setUploadFeedback(`Echec import: ${failed.join(", ")}`);
+    // Upload et injection dans le textarea — on attend la fin pour avoir les URLs
+    await handleImportFiles(files, (txt: string) => {
+      setInput((prev) => (prev ? prev + "\n" + txt : txt));
+    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
+
+    // Upload des fichiers non-image dans la conversation (PDF, etc.)
+    const conversationId = a11ConvId || selectedChatId || undefined;
+    const nonImageFiles = Array.from(files).filter((f) => !f.type.startsWith('image/'));
+    if (nonImageFiles.length > 0) {
+      const uploaded: string[] = [];
+      const failed: string[] = [];
+      setUploadFeedback(`Import de ${nonImageFiles.length} fichier(s) en cours...`);
+      for (const file of nonImageFiles) {
+        try {
+          await uploadConversationFile(file, { conversationId });
+          uploaded.push(file.name);
+        } catch (error_) {
+          console.warn("[A11] file upload failed", file.name, error_);
+          failed.push(file.name);
+        }
+      }
+      if (conversationId) {
+        await refreshConversationActivity(conversationId);
+        await refreshConversationResources(conversationId);
+      }
+      if (uploaded.length && failed.length) {
+        setUploadFeedback(`Import partiel: ${uploaded.length} ok, ${failed.length} en echec.`);
+      } else if (uploaded.length) {
+        setUploadFeedback(`${uploaded.length} fichier(s) rattache(s) a la conversation.`);
+      } else if (failed.length) {
+        setUploadFeedback(`Echec import: ${failed.join(", ")}`);
+      }
     }
   }
 
@@ -1782,6 +1868,8 @@ export function App() {
 
   async function onComposerDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
     const files = e.dataTransfer?.files || null;
     await handleImportedFiles(files);
   }
@@ -1802,6 +1890,37 @@ export function App() {
     setUploadFeedback("");
     setSidebarOpen(false);
   }
+
+  // Global drag-and-drop overlay
+  useEffect(() => {
+    const onDragEnter = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      dragCounterRef.current += 1;
+      setIsDragOver(true);
+    };
+    const onDragLeave = () => {
+      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+      if (dragCounterRef.current === 0) setIsDragOver(false);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    };
+    document.addEventListener('dragenter', onDragEnter);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragenter', onDragEnter);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, []);
 
   // Speech recognition callback
   useEffect(() => {
@@ -1832,8 +1951,9 @@ export function App() {
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
-    const previewImageUrl = imageUrls[0] ? String(imageUrls[0]).trim() : "";
-    const sourceImageUrl = previewImageUrl ? (resolveApiAssetUrl(previewImageUrl) || previewImageUrl) : undefined;
+    const allImageUrls = imageUrls.map((u) => resolveApiAssetUrl(u) || u).filter(Boolean);
+    const previewImageUrl = allImageUrls[0] ?? "";
+    const sourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
     const messageKey = normalizeOutgoingMessageKey([effectiveText, sourceImageUrl || previewImageUrl || ""].join("\n"));
     const now = Date.now();
@@ -1853,7 +1973,8 @@ export function App() {
       id: `u-${Date.now()}`,
       role: "user",
       content: effectiveText,
-      imageUrl: previewImageUrl || sourceImageUrl || null,
+      imageUrl: previewImageUrl || null,
+      imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
       ts: new Date().toISOString(),
     };
     setMessages((prev) => {
@@ -1863,6 +1984,13 @@ export function App() {
     });
     setInput("");
     setSending(true);
+    startActivity();
+    // Nettoyer les chips de preview après envoi — les object URLs sont révoquées
+    setDragPreviewUrls((prev) => {
+      prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
+      return [];
+    });
+    setPreviewCarouselIndex(0);
 
 
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
@@ -1891,6 +2019,8 @@ export function App() {
         assistantReply.videoUrl || null,
         assistantReply.fileUrl || null
       );
+      // Détecter les activités depuis la réponse A11
+      detectAndPushFromResponse(assistantReply.raw || assistantReply);
 
       const aiMsg: ChatMessage = {
         id: `a-${Date.now()}`,
@@ -1931,6 +2061,7 @@ export function App() {
       });
     } finally {
       setSending(false);
+      stopActivity();
       sendLockRef.current = false;
       pendingMessageKeyRef.current = "";
     }
@@ -2429,6 +2560,25 @@ export function App() {
 
   return (
     <div className="app-container a11-shell" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+      {/* ── Drag-and-drop overlay ── */}
+      {isDragOver && (
+        <div
+          className="a11-drop-overlay"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            dragCounterRef.current = 0;
+            setIsDragOver(false);
+            void handleImportedFiles(e.dataTransfer?.files || null);
+          }}
+        >
+          <div className="a11-drop-overlay-inner">
+            <div className="a11-drop-overlay-icon">📎</div>
+            <div className="a11-drop-overlay-label">Dépose ici</div>
+            <div className="a11-drop-overlay-hint">Images, texte, JSON, PDF…</div>
+          </div>
+        </div>
+      )}
       <header
         className="header"
         style={{
@@ -3180,23 +3330,35 @@ export function App() {
                       </div>
                     ) : null}
                     {contentNode}
-                    {m.imageUrl && (
-                      <div className="msg-image">
-                        <button
-                          type="button"
-                          className="image-preview-trigger"
-                          onClick={() => setPreviewImageUrl(m.imageUrl || null)}
-                          aria-label="Agrandir l'image"
-                        >
-                          <img
-                            src={m.imageUrl}
-                            alt="Résultat A11"
-                            style={{ maxWidth: "320px", borderRadius: 12 }}
-                          />
-                          <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
-                        </button>
-                      </div>
-                    )}
+                    {(() => {
+                      // Carousel si plusieurs images, sinon affichage simple
+                      const imgs = m.imageUrls && m.imageUrls.length > 1
+                        ? m.imageUrls
+                        : m.imageUrl ? [m.imageUrl] : [];
+                      if (imgs.length === 0) return null;
+                      if (imgs.length === 1) {
+                        return (
+                          <div className="msg-image">
+                            <button
+                              type="button"
+                              className="image-preview-trigger"
+                              onClick={() => setPreviewImageUrl(imgs[0])}
+                              aria-label="Agrandir l'image"
+                            >
+                              <img src={imgs[0]} alt="Résultat A11" style={{ maxWidth: "320px", borderRadius: 12 }} />
+                              <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
+                            </button>
+                          </div>
+                        );
+                      }
+                      // Carousel multi-images
+                      return (
+                        <MsgImageCarousel
+                          images={imgs}
+                          onExpand={(url) => setPreviewImageUrl(url)}
+                        />
+                      );
+                    })()}
                     {m.videoUrl && !m.imageUrl && (
                       <div
                         style={{
@@ -3326,6 +3488,14 @@ export function App() {
               void onComposerDrop(e);
             }}
           >
+            {/* Console d'activité A11 — affichée pendant et après les actions */}
+            <A11ActivityConsole
+              events={activityEvents}
+              isActive={activityIsActive}
+              onClear={clearActivityEvents}
+              collapsed={consoleCollapsed}
+              onToggleCollapse={() => setConsoleCollapsed((v) => !v)}
+            />
             <div className="row">
               <button
                 type="button"
@@ -3337,18 +3507,26 @@ export function App() {
                 {isCompactLayout ? "Import" : "Importer"}
               </button>
 
-              <textarea
-                placeholder="Demande quelque chose à A11…"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
+              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                <textarea
+                  placeholder="Demande quelque chose à A11…"
+                  value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
+                  onChange={(e) => {
+                    // Reconstruire l'input en préservant les tokens [image:...] cachés
+                    const imageTokens = (input.match(/\[image:[^\]]+\]/g) || []).join('\n');
+                    const newText = e.target.value;
+                    setInput(imageTokens ? (imageTokens + (newText ? '\n' + newText : '')) : newText);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  style={{ width: '100%', resize: 'vertical', maxHeight: '35vh', background: '#0d0f13', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 10, padding: 10 }}
+                />
+              </div>
 
               <button
                 type="button"
                 className="send-button"
                 onClick={() => sendMessage()}
-                disabled={sending || !input.trim()}
+                disabled={sending || (!input.trim())}
                 title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
               >
                 {sending ? "…" : "➤"}
@@ -3367,6 +3545,63 @@ export function App() {
             <div className="hint">
               Entrée pour envoyer · Shift+Entrée pour aller à la ligne
             </div>
+            {dragPreviewUrls.length > 0 && (() => {
+              const total = dragPreviewUrls.length;
+              const idx = Math.min(previewCarouselIndex, total - 1);
+              const p = dragPreviewUrls[idx];
+              return (
+                <div className="a11-drop-carousel">
+                  {/* Thumbnail ou icône */}
+                  <div className="a11-drop-carousel-media">
+                    {p.isImage
+                      ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
+                      : <span className="a11-drop-carousel-file-icon">📄</span>
+                    }
+                  </div>
+
+                  {/* Infos + navigation */}
+                  <div className="a11-drop-carousel-info">
+                    <span className="a11-drop-carousel-name">{p.name}</span>
+                    {total > 1 && (
+                      <span className="a11-drop-carousel-counter">{idx + 1}/{total}</span>
+                    )}
+                  </div>
+
+                  {/* Flèches si plusieurs */}
+                  {total > 1 && (
+                    <div className="a11-drop-carousel-nav">
+                      <button
+                        type="button"
+                        className="a11-drop-carousel-arrow"
+                        aria-label="Image précédente"
+                        onClick={() => setPreviewCarouselIndex((i) => (i - 1 + total) % total)}
+                      >‹</button>
+                      <button
+                        type="button"
+                        className="a11-drop-carousel-arrow"
+                        aria-label="Image suivante"
+                        onClick={() => setPreviewCarouselIndex((i) => (i + 1) % total)}
+                      >›</button>
+                    </div>
+                  )}
+
+                  {/* Retirer l'image courante */}
+                  <button
+                    type="button"
+                    className="a11-drop-carousel-remove"
+                    aria-label={`Retirer ${p.name}`}
+                    onClick={() => {
+                      if (p.url) URL.revokeObjectURL(p.url);
+                      setDragPreviewUrls((prev) => {
+                        const next = prev.filter((_, j) => j !== idx);
+                        setPreviewCarouselIndex(Math.min(idx, next.length - 1));
+                        return next;
+                      });
+                    }}
+                  >✕</button>
+                </div>
+              );
+            })()}
             <input
               ref={fileInputRef}
               type="file"

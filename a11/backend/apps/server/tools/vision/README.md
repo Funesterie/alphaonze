@@ -10,24 +10,32 @@ Important compatibility note:
 
 Default local model:
 
-- local GPU: `deepseek-ai/Janus-Pro-7B`
-- CPU / constrained fallback: `deepseek-ai/Janus-Pro-1B`
+- default local runtime: `deepseek-ai/Janus-Pro-1B` on CPU
+- optional GPU override: `deepseek-ai/Janus-Pro-7B`
 
-Why `7B` by default on local GPU:
+Why CPU by default now:
 
-- it is the latest Janus-Pro tier and gives a stronger multimodal judge
-- A11 now prefers it automatically on local GPU setups
-- if it fails to load and no explicit Janus model was forced, the runtime falls back to `1B`
+- it leaves VRAM available for Stable Diffusion and local LLM traffic
+- it avoids a persistent Janus worker sitting on CUDA between requests
+- you can still force `A11_JANUS_DEVICE=cuda` and `A11_JANUS_PREFER_LATEST=true` when the machine has headroom
 
 Recommended env:
 
 ```env
 A11_VISION_PROVIDER=janus
 A11_JANUS_ENABLED=true
-A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-7B
+A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-1B
 A11_JANUS_PYTHON_PATH=D:\funesterie\a11\backend\apps\server\tools\vision\venv\Scripts\python.exe
-A11_JANUS_DEVICE=cuda
+A11_JANUS_DEVICE=cpu
 A11_JANUS_TORCH_DTYPE=auto
+A11_JANUS_PREFER_LATEST=false
+```
+
+Optional GPU override:
+
+```env
+A11_JANUS_MODEL_ID=deepseek-ai/Janus-Pro-7B
+A11_JANUS_DEVICE=cuda
 A11_JANUS_PREFER_LATEST=true
 ```
 

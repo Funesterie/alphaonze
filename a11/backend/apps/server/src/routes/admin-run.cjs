@@ -1,5 +1,6 @@
 const express = require('express');
 const { ensureRequestId, truncateText } = require('../../lib/request-context.cjs');
+const { createRequireAdminAccess } = require('../security/admin-access.cjs');
 
 function buildAdminRunErrorPayload(error_, requestId) {
   const payload = {
@@ -19,50 +20,62 @@ function buildAdminRunErrorPayload(error_, requestId) {
   return payload;
 }
 
-function createAdminRunRouter({ isAdminRequest, runQflushFlow } = {}) {
+function createAdminRunRouter({ isAdminRequest, runQflushFlow, verifyJWT } = {}) {
   const router = express.Router();
-
-  router.post('/admin/run', express.json({ limit: '2mb' }), async (req, res) => {
-    const requestId = ensureRequestId(req, res);
-    try {
-      if (typeof isAdminRequest !== 'function' || !isAdminRequest(req)) {
-        return res.status(403).json({
-          ok: false,
-          error: 'admin_required',
-          requestId,
-          message: 'Accès réservé à l’admin.',
-        });
-      }
-
-      const { flow, payload } = req.body || {};
-      if (!flow || typeof flow !== 'string') {
-        return res.status(400).json({
-          ok: false,
-          error: 'missing_flow',
-          requestId,
-          message: 'Champ "flow" requis.',
-        });
-      }
-
-      if (typeof runQflushFlow !== 'function') {
-        return res.status(500).json({
-          ok: false,
-          error: 'qflush_unavailable',
-          requestId,
-          message: 'runQflushFlow unavailable',
-        });
-      }
-
-      const result = await runQflushFlow(flow, payload || {}, { admin: true, requestId });
-      return res.json({ ok: true, requestId, result });
-    } catch (error_) {
-      const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
-        ? Number(error_.status)
-        : 500;
-      console.error(`[A11][admin/run] requestId=${requestId} error:`, error_?.message || error_);
-      return res.status(status).json(buildAdminRunErrorPayload(error_, requestId));
-    }
+  const requireAdminAccess = createRequireAdminAccess({
+    isAdminRequest,
+    verifyJWT,
+    buildForbiddenBody(req, res) {
+      const requestId = ensureRequestId(req, res);
+      return {
+        ok: false,
+        error: 'admin_required',
+        requestId,
+        message: 'Accès réservé à l’admin.',
+      };
+    },
   });
+
+  router.post(
+    '/admin/run',
+    express.json({ limit: '2mb' }),
+    (req, res, next) => {
+      ensureRequestId(req, res);
+      return requireAdminAccess(req, res, next);
+    },
+    async (req, res) => {
+      const requestId = ensureRequestId(req, res);
+      try {
+        const { flow, payload } = req.body || {};
+        if (!flow || typeof flow !== 'string') {
+          return res.status(400).json({
+            ok: false,
+            error: 'missing_flow',
+            requestId,
+            message: 'Champ "flow" requis.',
+          });
+        }
+
+        if (typeof runQflushFlow !== 'function') {
+          return res.status(500).json({
+            ok: false,
+            error: 'qflush_unavailable',
+            requestId,
+            message: 'runQflushFlow unavailable',
+          });
+        }
+
+        const result = await runQflushFlow(flow, payload || {}, { admin: true, requestId });
+        return res.json({ ok: true, requestId, result });
+      } catch (error_) {
+        const status = Number.isFinite(Number(error_?.status)) && Number(error_.status) >= 400
+          ? Number(error_.status)
+          : 500;
+        console.error(`[A11][admin/run] requestId=${requestId} error:`, error_?.message || error_);
+        return res.status(status).json(buildAdminRunErrorPayload(error_, requestId));
+      }
+    }
+  );
 
   return router;
 }

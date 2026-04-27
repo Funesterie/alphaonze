@@ -122,6 +122,201 @@ function normalizeDetectedContent(value = '') {
   return normalizeText(value);
 }
 
+function roundCoordinate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (Math.abs(numeric) <= 1) {
+    return Number(numeric.toFixed(4));
+  }
+  return Number(numeric.toFixed(2));
+}
+
+function normalizeCoordinateBox(value = null) {
+  let raw = value;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    raw = raw.bbox
+      || raw.box
+      || raw.bounding_box
+      || raw.boundingBox
+      || raw.coordinates
+      || raw.position
+      || raw.rect
+      || raw;
+  }
+
+  let coordinates = [];
+  if (Array.isArray(raw)) {
+    coordinates = raw.slice(0, 4);
+  } else if (raw && typeof raw === 'object') {
+    const x = raw.x ?? raw.left ?? raw.x1 ?? raw.min_x ?? raw.minX;
+    const y = raw.y ?? raw.top ?? raw.y1 ?? raw.min_y ?? raw.minY;
+    const width = raw.width ?? raw.w;
+    const height = raw.height ?? raw.h;
+    const right = raw.right ?? raw.x2 ?? raw.max_x ?? raw.maxX;
+    const bottom = raw.bottom ?? raw.y2 ?? raw.max_y ?? raw.maxY;
+    if (width !== undefined && height !== undefined) {
+      coordinates = [x, y, width, height];
+    } else if (right !== undefined && bottom !== undefined) {
+      const numericX = Number(x);
+      const numericY = Number(y);
+      const numericRight = Number(right);
+      const numericBottom = Number(bottom);
+      coordinates = [
+        numericX,
+        numericY,
+        numericRight - numericX,
+        numericBottom - numericY,
+      ];
+    }
+  } else if (typeof raw === 'string') {
+    coordinates = raw.match(/-?\d+(?:\.\d+)?/g)?.slice(0, 4) || [];
+  }
+
+  const normalized = coordinates.map(roundCoordinate);
+  if (normalized.length !== 4 || normalized.some((entry) => entry === null)) return null;
+  return normalized;
+}
+
+function normalizeConfidence(value, fallback = 0) {
+  return Number(clamp01(value ?? fallback ?? 0).toFixed(4));
+}
+
+function normalizeEntityAttributes(value = []) {
+  if (!value || typeof value !== 'object') return toUniqueStrings(value).slice(0, 6);
+  if (Array.isArray(value)) return toUniqueStrings(value).slice(0, 6);
+  return toUniqueStrings(
+    Object.entries(value)
+      .map(([key, entry]) => {
+        const keyText = normalizeText(key);
+        const entryText = normalizeText(Array.isArray(entry) ? entry.join(', ') : entry);
+        return keyText && entryText ? `${keyText}: ${entryText}` : entryText || keyText;
+      })
+  ).slice(0, 6);
+}
+
+function normalizeManifestObject(entry = null) {
+  if (typeof entry === 'string') {
+    const label = normalizeText(entry);
+    return label ? { label, role: '', bbox: null, confidence: 0, attributes: [] } : null;
+  }
+  if (!entry || typeof entry !== 'object') return null;
+  const label = normalizeText(
+    entry.label
+    || entry.name
+    || entry.object
+    || entry.category
+    || entry.description
+    || ''
+  );
+  const role = normalizeText(entry.role || entry.type || entry.kind || '');
+  const bbox = normalizeCoordinateBox(entry);
+  const attributes = normalizeEntityAttributes(
+    entry.attributes
+    || entry.traits
+    || entry.visible_attributes
+    || entry.visibleAttributes
+    || []
+  );
+  if (!label && !role && !bbox && attributes.length <= 0) return null;
+  return {
+    label: label || role || 'visible object',
+    role,
+    bbox,
+    confidence: normalizeConfidence(entry.confidence),
+    attributes,
+  };
+}
+
+function normalizeManifestAnatomy(entry = null) {
+  if (typeof entry === 'string') {
+    const part = normalizeText(entry);
+    return part ? { part, side: '', state: '', bbox: null, confidence: 0 } : null;
+  }
+  if (!entry || typeof entry !== 'object') return null;
+  const part = normalizeText(
+    entry.part
+    || entry.label
+    || entry.name
+    || entry.body_part
+    || entry.bodyPart
+    || ''
+  );
+  const side = normalizeText(entry.side || entry.laterality || '');
+  const state = normalizeText(
+    entry.state
+    || entry.pose
+    || entry.gesture
+    || entry.condition
+    || entry.description
+    || ''
+  );
+  const bbox = normalizeCoordinateBox(entry);
+  if (!part && !side && !state && !bbox) return null;
+  return {
+    part: part || 'visible anatomy',
+    side,
+    state,
+    bbox,
+    confidence: normalizeConfidence(entry.confidence),
+  };
+}
+
+function normalizeManifestCharacter(entry = null) {
+  if (typeof entry === 'string') {
+    const label = normalizeText(entry);
+    return label ? { label, bbox: null, pose: '', anatomy: [], clothing: [], confidence: 0 } : null;
+  }
+  if (!entry || typeof entry !== 'object') return null;
+  const label = normalizeText(
+    entry.label
+    || entry.name
+    || entry.identity
+    || entry.character
+    || entry.description
+    || ''
+  );
+  const bbox = normalizeCoordinateBox(entry);
+  const pose = normalizeText(entry.pose || entry.body_pose || entry.bodyPose || entry.stance || '');
+  const anatomy = normalizeManifestList(
+    entry.anatomy
+    || entry.visible_anatomy
+    || entry.visibleAnatomy
+    || [],
+    normalizeManifestAnatomy,
+    8
+  );
+  const clothing = normalizeEntityAttributes(entry.clothing || entry.outfit || entry.costume || []);
+  if (!label && !pose && !bbox && anatomy.length <= 0 && clothing.length <= 0) return null;
+  return {
+    label: label || 'visible character',
+    bbox,
+    pose,
+    anatomy,
+    clothing,
+    confidence: normalizeConfidence(entry.confidence),
+  };
+}
+
+function normalizeManifestList(values = [], mapper = (entry) => entry, limit = 10) {
+  return (Array.isArray(values) ? values : [values])
+    .map((entry) => mapper(entry))
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function normalizeManifestRelationships(values = []) {
+  return normalizeManifestList(values, (entry) => {
+    if (typeof entry === 'string') return normalizeText(entry);
+    if (!entry || typeof entry !== 'object') return '';
+    const subject = normalizeText(entry.subject || entry.from || entry.actor || '');
+    const relation = normalizeText(entry.relation || entry.action || entry.verb || entry.type || '');
+    const object = normalizeText(entry.object || entry.to || entry.target || '');
+    const description = normalizeText(entry.description || entry.summary || '');
+    if (description) return description;
+    return normalizeText([subject, relation, object].filter(Boolean).join(' '));
+  }, 8);
+}
+
 function sanitizeDetectedContentForPrompt(value = '') {
   return normalizeText(value)
     .replace(/\bprimary reference image\b/gi, 'reference image')
@@ -130,6 +325,89 @@ function sanitizeDetectedContentForPrompt(value = '') {
       '$1 hand on the same side as in the reference image'
     )
     .replace(/\bhandedness\b/gi, 'same-side hand laterality');
+}
+
+function hasRichManifestObservation(manifest = {}) {
+  return (
+    (Array.isArray(manifest?.objects) && manifest.objects.length > 0)
+    || (Array.isArray(manifest?.characters) && manifest.characters.length > 0)
+    || (Array.isArray(manifest?.anatomy) && manifest.anatomy.length > 0)
+    || (Array.isArray(manifest?.relationships) && manifest.relationships.length > 0)
+  );
+}
+
+function formatCoordinateBox(box = null) {
+  return Array.isArray(box) && box.length === 4
+    ? `bbox ${box.join(',')}`
+    : '';
+}
+
+function trimPromptObservation(value = '', limit = 520) {
+  const text = normalizeText(value);
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 1).trim()}...`;
+}
+
+function formatManifestAnatomy(entry = {}) {
+  const part = normalizeText(entry?.part || '');
+  const side = normalizeText(entry?.side || '');
+  const state = normalizeText(entry?.state || '');
+  const bbox = formatCoordinateBox(entry?.bbox || null);
+  const core = normalizeText([
+    side,
+    part,
+    state ? `(${state})` : '',
+  ].filter(Boolean).join(' '));
+  return normalizeText([core || part || 'visible anatomy', bbox].filter(Boolean).join(' '));
+}
+
+function formatManifestObject(entry = {}) {
+  const label = normalizeText(entry?.label || '');
+  const role = normalizeText(entry?.role || '');
+  const bbox = formatCoordinateBox(entry?.bbox || null);
+  const attributes = Array.isArray(entry?.attributes) && entry.attributes.length
+    ? `attributes: ${entry.attributes.slice(0, 3).join(', ')}`
+    : '';
+  return normalizeText([label || role || 'visible object', role && label ? `(${role})` : '', bbox, attributes].filter(Boolean).join(' '));
+}
+
+function formatManifestCharacter(entry = {}) {
+  const label = normalizeText(entry?.label || '');
+  const bbox = formatCoordinateBox(entry?.bbox || null);
+  const pose = normalizeText(entry?.pose || '');
+  const clothing = Array.isArray(entry?.clothing) && entry.clothing.length
+    ? `clothing: ${entry.clothing.slice(0, 3).join(', ')}`
+    : '';
+  const anatomy = Array.isArray(entry?.anatomy) && entry.anatomy.length
+    ? `anatomy: ${entry.anatomy.slice(0, 4).map(formatManifestAnatomy).filter(Boolean).join(', ')}`
+    : '';
+  return normalizeText([
+    label || 'visible character',
+    bbox,
+    pose ? `pose: ${pose}` : '',
+    clothing,
+    anatomy,
+  ].filter(Boolean).join(' '));
+}
+
+function buildManifestPromptObservation(manifest = {}) {
+  if (!manifest || typeof manifest !== 'object') return '';
+  const sections = [];
+  const detected = sanitizeDetectedContentForPrompt(manifest.detected_content || '');
+  if (detected) sections.push(detected);
+  if (Array.isArray(manifest.characters) && manifest.characters.length > 0) {
+    sections.push(`characters: ${manifest.characters.slice(0, 3).map(formatManifestCharacter).filter(Boolean).join('; ')}`);
+  }
+  if (Array.isArray(manifest.objects) && manifest.objects.length > 0) {
+    sections.push(`objects: ${manifest.objects.slice(0, 6).map(formatManifestObject).filter(Boolean).join('; ')}`);
+  }
+  if (Array.isArray(manifest.anatomy) && manifest.anatomy.length > 0) {
+    sections.push(`anatomy: ${manifest.anatomy.slice(0, 6).map(formatManifestAnatomy).filter(Boolean).join('; ')}`);
+  }
+  if (Array.isArray(manifest.relationships) && manifest.relationships.length > 0) {
+    sections.push(`spatial relations: ${manifest.relationships.slice(0, 4).join('; ')}`);
+  }
+  return trimPromptObservation(sections.filter(Boolean).join('; '));
 }
 
 function normalizeImageReferenceManifest(result = {}, fallback = {}) {
@@ -147,15 +425,45 @@ function normalizeImageReferenceManifest(result = {}, fallback = {}) {
       || fallback.probable_role
       || ''
     ),
-    confidence: Number(clamp01(
-      result?.confidence
-      ?? fallback.confidence
-      ?? 0
-    ).toFixed(4)),
+    confidence: normalizeConfidence(result?.confidence, fallback.confidence),
     quality_flags: normalizeQualityFlags(
       result?.quality_flags
       || result?.qualityFlags
       || fallback.quality_flags
+      || []
+    ),
+    objects: normalizeManifestList(
+      result?.objects
+      || result?.detected_objects
+      || result?.detectedObjects
+      || fallback.objects
+      || [],
+      normalizeManifestObject,
+      12
+    ),
+    characters: normalizeManifestList(
+      result?.characters
+      || result?.people
+      || result?.persons
+      || fallback.characters
+      || [],
+      normalizeManifestCharacter,
+      6
+    ),
+    anatomy: normalizeManifestList(
+      result?.anatomy
+      || result?.visible_anatomy
+      || result?.visibleAnatomy
+      || fallback.anatomy
+      || [],
+      normalizeManifestAnatomy,
+      12
+    ),
+    relationships: normalizeManifestRelationships(
+      result?.relationships
+      || result?.spatial_relationships
+      || result?.spatialRelationships
+      || fallback.relationships
       || []
     ),
   };
@@ -173,12 +481,54 @@ function buildJanusImageManifestPrompt(imageId = '') {
       probable_role: 'identity',
       confidence: 0.0,
       quality_flags: [],
+      objects: [
+        {
+          label: 'visible object or prop',
+          role: 'prop/accessory/background/detail',
+          bbox: [0.0, 0.0, 0.0, 0.0],
+          confidence: 0.0,
+          attributes: ['short visible cue'],
+        },
+      ],
+      characters: [
+        {
+          label: 'main character/person',
+          bbox: [0.0, 0.0, 0.0, 0.0],
+          pose: 'short pose description',
+          anatomy: [
+            {
+              part: 'hand/arm/face/etc',
+              side: 'left/right/center/unknown',
+              state: 'short visible state',
+              bbox: [0.0, 0.0, 0.0, 0.0],
+              confidence: 0.0,
+            },
+          ],
+          clothing: ['short visible cue'],
+          confidence: 0.0,
+        },
+      ],
+      anatomy: [
+        {
+          part: 'visible body part',
+          side: 'left/right/center/unknown',
+          state: 'short visible state',
+          bbox: [0.0, 0.0, 0.0, 0.0],
+          confidence: 0.0,
+        },
+      ],
+      relationships: ['short spatial relation'],
     }),
     'Rules:',
     `- probable_role must be one of: ${IMAGE_REFERENCE_ROLES.join(', ')}`,
     `- quality_flags may contain only: ${IMAGE_QUALITY_FLAGS.join(', ')}`,
     '- detected_content must stay short, concrete, and in English',
     '- detected_content should mention the main subject plus any distinctive pose, held prop, visible wrap/cast, or facial cue when clearly visible',
+    '- objects must list visible objects/props/background details with normalized bbox [x, y, width, height] from 0 to 1 when possible',
+    '- characters must list visible people/characters, their bbox, body pose, clothing, and nested anatomy when visible',
+    '- anatomy must list visible body parts, laterality, state/gesture, and bbox when visible',
+    '- relationships must list concise spatial relations such as "left hand grips bat above shoulder"',
+    '- Use empty arrays when a section is not visible; never invent hidden details',
     '- identity: the image mainly defines who the main person or character is',
     '- pose: the image mainly defines body pose, framing, or camera angle',
     '- accessory: the image mainly defines a prop, wearable, or local detail',
@@ -608,34 +958,40 @@ function applyImageReferenceDecisionToMask(mask = {}, decision = {}, references 
   if (Array.isArray(primaryManifest?.quality_flags) && primaryManifest.quality_flags.includes('crop_needed')) {
     promptInstructions.push('focus on the main subject from the primary reference image and ignore irrelevant margins');
   }
+  const primaryObservation = buildManifestPromptObservation(primaryManifest);
+  if (primaryObservation && hasRichManifestObservation(primaryManifest)) {
+    promptInstructions.push(`use Janus source analysis as spatial guide: ${primaryObservation}`);
+  }
   if (
     ['identity', 'pose'].includes(normalizeOptionalRole(primaryManifest?.probable_role || ''))
-    && primaryManifest?.detected_content
+    && primaryObservation
   ) {
-    promptInstructions.push(`preserve these distinctive visible cues from the reference image: ${sanitizeDetectedContentForPrompt(primaryManifest.detected_content)}`);
+    promptInstructions.push(`preserve these distinctive visible cues from the reference image: ${primaryObservation}`);
     promptInstructions.push('preserve the body angle, arm placement, same-side hand laterality, and visible hand pose from the reference image');
   }
 
   for (const manifest of manifests) {
-    if (!manifest || manifest.image_id === primaryImageId || !manifest.detected_content) continue;
+    if (!manifest || manifest.image_id === primaryImageId) continue;
+    const manifestObservation = buildManifestPromptObservation(manifest);
+    if (!manifestObservation) continue;
     if (manifest.probable_role === 'background') {
-      environment.push(`background reference: ${sanitizeDetectedContentForPrompt(manifest.detected_content)}`);
+      environment.push(`background reference: ${manifestObservation}`);
       continue;
     }
     if (manifest.probable_role === 'style_reference') {
-      style.push(`style reference: ${sanitizeDetectedContentForPrompt(manifest.detected_content)}`);
+      style.push(`style reference: ${manifestObservation}`);
       continue;
     }
     if (manifest.probable_role === 'accessory') {
-      promptInstructions.push(`include uploaded accessory reference details: ${sanitizeDetectedContentForPrompt(manifest.detected_content)}`);
+      promptInstructions.push(`include uploaded accessory reference details: ${manifestObservation}`);
       continue;
     }
     if (manifest.probable_role === 'pose') {
-      promptInstructions.push(`reuse pose cues from the uploaded pose reference: ${sanitizeDetectedContentForPrompt(manifest.detected_content)}`);
+      promptInstructions.push(`reuse pose cues from the uploaded pose reference: ${manifestObservation}`);
     }
   }
 
-  nextMask.meta.promptInstructions = toUniqueStrings(promptInstructions).slice(0, 8);
+  nextMask.meta.promptInstructions = toUniqueStrings(promptInstructions).slice(0, 10);
   nextMask.inputs.environment = toUniqueStrings(environment).slice(0, 6);
   nextMask.inputs.style = toUniqueStrings(style).slice(0, 6);
   return nextMask;
@@ -668,8 +1024,8 @@ async function classifyReferenceImages({
   }
 
   const config = resolveJanusVisionConfig({
-    maxNewTokens: Number(process.env.A11_IMAGE_REFERENCE_JANUS_MAX_TOKENS || 240),
-    timeoutMs: Number(process.env.A11_IMAGE_REFERENCE_JANUS_TIMEOUT_MS || 9000),
+    maxNewTokens: Number(process.env.A11_IMAGE_REFERENCE_JANUS_MAX_TOKENS || 700),
+    timeoutMs: Number(process.env.A11_IMAGE_REFERENCE_JANUS_TIMEOUT_MS || 12000),
   });
   const manifests = [];
   const errors = [];

@@ -48,7 +48,7 @@ $shell = New-Object -ComObject WScript.Shell
 $localShortcut = $shell.CreateShortcut($localShortcutPath)
 $localShortcut.TargetPath = $localTargetPath
 $localShortcut.WorkingDirectory = $workingDirectory
-$localShortcut.Description = 'Lance A11 local, Ollama et le tunnel Cloudflare.'
+$localShortcut.Description = 'Lance A11 local et Ollama.'
 if (Test-Path -LiteralPath $iconPath) {
   $localShortcut.IconLocation = $iconPath
 }
@@ -66,7 +66,7 @@ $prodShortcut.Save()
 $stopShortcut = $shell.CreateShortcut($stopShortcutPath)
 $stopShortcut.TargetPath = $stopTargetPath
 $stopShortcut.WorkingDirectory = $workingDirectory
-$stopShortcut.Description = 'Arrete la stack locale A11 et le tunnel Cerbere.'
+$stopShortcut.Description = 'Arrete la stack locale A11.'
 if (Test-Path -LiteralPath $iconPath) {
   $stopShortcut.IconLocation = $iconPath
 }

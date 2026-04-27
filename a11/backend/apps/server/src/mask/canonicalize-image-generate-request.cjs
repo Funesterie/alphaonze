@@ -15,13 +15,48 @@ Rules:
 - Do not preserve French wording anywhere in canonicalEnglishInput or structuredFields.
 - Keep the user's meaning, details, intensity, and constraints.
 - Do not invent new subjects, props, environments, styles, or actions.
+- Treat explicit proper names and named entities as immutable source facts: preserve every named character, place, object, brand, title, and person the user wrote. Do not replace a named entity with a related or more famous entity from the same universe.
+- Translate only common descriptive words and localized franchise names when needed; never substitute one named character for another.
 - If the request is ambiguous in a way that blocks image generation, ask for clarification instead of guessing.
 - If a reference image is present, reflect that in the English request and keep identity/pose/framing preservation when explicitly requested.
 - Treat solo portrait requests as single-subject unless there is a strong explicit signal for two or more subjects.
+- Treat "versus", "vs", "against", "duel", "fight", "battle", "combat between", and equivalent wording as a pair or group scene when named subjects are present. Do not emit "single subject" instructions for pair or group scenes.
+- Preserve explicit cardinality from raw_user_input: if the user asks for two subjects, both subjects, a duel, 1v1, face-to-face combat, or "between two" actors, scenePolicy.subjectMode must be "pair", explicitSubjectCount must be 2, and structuredFields.subject must contain two separate subject entries.
+- Do not turn action/event nouns such as confrontation, fight, battle, duel, combat, or clash into the sole subject when the user requested actors taking part in that action.
+- Make scenePolicy and constraints consistent: if subjectMode is "pair" or explicitSubjectCount is 2, promptInstructions and composition must not say "single subject".
 - Each structuredFields array item must be one short atomic idea only, never a paragraph.
 - Deduplicate repeated ideas across structuredFields.
 - Keep negativeHints atomic: one defect or artifact per item, no long sentences.
 - When a reference image is used, prioritize: identity, pose/framing/laterality, transformation details, then environment/style.
+
+Clarification rules:
+- needsClarification must be TRUE only when the request is so vague that image generation is impossible without more information (e.g. "genere une image" with no subject at all).
+- A descriptive scene request like "a sapphire dragon with spines breathing fire" is NOT ambiguous — set needsClarification=false and generate the canonical fields.
+- A request with a clear subject, action, and setting is NEVER ambiguous, even if it is complex or fantastical.
+- Do NOT ask for clarification just because the scene is complex, has multiple elements, or involves fantasy/action.
+
+Subject rules:
+- Keep the subject as ONE atomic entry describing the main subject completely. Do NOT split "a sapphire dragon with spines" into ["a dragon", "with spiny scales"] — it must be ["a sapphire dragon with spines"].
+- If the user says "this person", "this boy", "this character", "ce garcon", "cette personne" with a reference image, the subject must include the identity anchor: "the person from the reference image" or "the character from the reference image". Never reduce to just "a young man" or "a person".
+- If the user asks to transform the subject (new hairstyle, new outfit, new style, new universe), keep the identity anchor AND describe the transformation explicitly in subject or style.
+- NEVER invent human subjects that are not in the user request. If the user describes an animal, object, or non-human scene, the subject must reflect that exactly.
+- A scene with an animal and an object (e.g. "a pigeon stealing a fry") is a single-scene request, NOT a pair/duel scene. Do not apply pair/duel rules to animal+object scenes.
+- French "vole" can mean "flies" (voler = to fly) or "steals" (voler = to steal). Use context to determine which meaning applies. "Un pigeon qui vole une frite" = a pigeon stealing a fry (not flying).
+- scenePolicy.subjectMode should be "pair" ONLY when the user explicitly requests two human/character actors in opposition or interaction. A pigeon and a fry are NOT a pair scene.
+
+promptInstructions rules:
+- Only add promptInstructions that are directly useful for the renderer and explicitly implied by the user request.
+- Do NOT add "single subject" when the request involves transformation effects, energy aura, action poses, or special effects — these scenes need visual complexity, not a single-subject constraint.
+- Do NOT add "single subject" when the user asks for a full-body action scene with effects.
+- Only add "single subject" for simple portrait or headshot requests with no action or effects.
+- Do NOT add "use two separate subject entries for explicit pair/duel requests" as a promptInstruction — this is an internal rule, not a renderer instruction.
+- Do NOT add "add action poses and energy to the scene" unless the user explicitly asked for action or energy.
+- Do NOT add "use dynamic camera angles", "fast-paced cuts", "emphasize the action" — these are video editing terms, not image rendering instructions.
+
+negativeHints rules:
+- ONLY include negativeHints for defects or artifacts the user explicitly wants to avoid (e.g. "no text", "no watermark").
+- Do NOT invent negativeHints. Do NOT add "no facial expressions", "no background", "no blur", "no unnecessary text or dialogue" unless the user explicitly asked for it.
+- negativeHints must describe rendering defects, not content restrictions.
 
 Return strict JSON only:
 {
@@ -158,6 +193,268 @@ function normalizeLookup(value = '') {
     .replace(/[’']/g, ' ')
     .replace(/[-/]/g, ' ')
     .toLowerCase();
+}
+
+const NAMED_ENTITY_STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'generate',
+  'create',
+  'make',
+  'image',
+  'picture',
+  'photo',
+  'scene',
+  'génère',
+  'genere',
+  'crée',
+  'cree',
+  'fait',
+  'fais',
+  'dessine',
+  // Pronoms et articles français/anglais qui commencent une phrase
+  'une',
+  'un',
+  'des',
+  'les',
+  'elle',
+  'il',
+  'ils',
+  'elles',
+  'nous',
+  'vous',
+  'on',
+  'ce',
+  'cet',
+  'cette',
+  'ces',
+  'son',
+  'sa',
+  'ses',
+  'mon',
+  'ma',
+  'mes',
+  'ton',
+  'ta',
+  'tes',
+  'leur',
+  'leurs',
+  'she',
+  'he',
+  'they',
+  'we',
+  'you',
+  'it',
+  'this',
+  'that',
+  'her',
+  'his',
+  'its',
+  'their',
+  'our',
+  'your',
+  // Verbes courants en début de phrase
+  'leve',
+  'lève',
+  'tient',
+  'regarde',
+  'marche',
+  'court',
+  'stands',
+  'holds',
+  'raises',
+  'looks',
+  'walks',
+  'runs',
+  'turns',
+  'faces',
+  // Adjectifs/adverbes courants
+  'lentement',
+  'slowly',
+  'pendant',
+  'while',
+  'camera',
+  'caméra',
+  'style',
+  'plan',
+  'fond',
+  'sans',
+  'avec',
+]);
+
+const NAMED_ENTITY_SECTION_LABEL_STOPWORDS = new Set([
+  'negative',
+  'negative prompt',
+  'prompt negatif',
+  'style',
+]);
+
+function isLikelyPromptSectionLabel(cleaned = '', fullText = '') {
+  const label = normalizeLookup(cleaned);
+  if (!label || !NAMED_ENTITY_SECTION_LABEL_STOPWORDS.has(label)) return false;
+  const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const labelPattern = new RegExp(`\\b${escaped}\\b\\s*:`, 'i');
+  if (labelPattern.test(fullText)) return true;
+  if (label === 'negative' && new RegExp(`\\b${escaped}\\b\\s+prompt\\s*:`, 'i').test(fullText)) return true;
+  if (label === 'style' && new RegExp(`(?:^|[.!?]\\s+)${escaped}\\s+`, 'i').test(fullText)) return true;
+  return false;
+}
+
+function hasUppercaseAcronymShape(cleaned = '') {
+  return /^[A-Z0-9]{2,8}$/.test(String(cleaned || '').trim());
+}
+
+function extractPreservedNamedEntityCandidates(rawUserInput = '') {
+  const text = normalizeText(rawUserInput);
+  if (!text) return [];
+  const matches = text.match(/\b[A-ZÀ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9]*(?:[-'][A-ZÀ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9]+)*(?:\s+[A-ZÀ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9]*(?:[-'][A-ZÀ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9]+)*)*/g) || [];
+  const seen = new Set();
+  const candidates = [];
+  for (const match of matches) {
+    const cleaned = normalizeText(match).replace(/[.,!?;:]+$/g, '');
+    const lookup = normalizeLookup(cleaned);
+    if (!lookup || seen.has(lookup)) continue;
+    if (NAMED_ENTITY_STOPWORDS.has(lookup)) continue;
+    if (isLikelyPromptSectionLabel(cleaned, text)) continue;
+    const tokenCount = lookup.split(/\s+/).filter(Boolean).length;
+    const hasNamedShape = (
+      tokenCount >= 2
+      || hasUppercaseAcronymShape(cleaned)
+      || /[-']/.test(cleaned)
+      || cleaned.length >= 4
+    );
+    if (!hasNamedShape) continue;
+    seen.add(lookup);
+    candidates.push(cleaned);
+  }
+  return candidates;
+}
+
+function collectCanonicalizedRequestText(canonicalizedRequest = null) {
+  const fields = canonicalizedRequest?.structuredFields || {};
+  const constraints = fields?.constraints || {};
+  return [
+    canonicalizedRequest?.canonicalEnglishInput,
+    ...(Array.isArray(fields?.subject) ? fields.subject : []),
+    ...(Array.isArray(fields?.environment) ? fields.environment : []),
+    ...(Array.isArray(fields?.style) ? fields.style : []),
+    ...(Array.isArray(fields?.composition) ? fields.composition : []),
+    ...(Array.isArray(fields?.lighting) ? fields.lighting : []),
+    ...(Array.isArray(fields?.palette) ? fields.palette : []),
+    ...(Array.isArray(constraints?.promptInstructions) ? constraints.promptInstructions : []),
+    ...(Array.isArray(constraints?.negativeHints) ? constraints.negativeHints : []),
+  ].map((entry) => normalizeText(entry)).filter(Boolean);
+}
+
+function findMissingNamedEntityCandidates(canonicalizedRequest = null) {
+  const rawUserInput = normalizeText(canonicalizedRequest?.audit?.rawUserInput || '');
+  const candidates = extractPreservedNamedEntityCandidates(rawUserInput);
+  if (!candidates.length) return [];
+  const haystack = normalizeLookup(collectCanonicalizedRequestText(canonicalizedRequest).join(' '));
+  return candidates.filter((candidate) => !haystack.includes(normalizeLookup(candidate)));
+}
+
+function hasSingleSubjectInstruction(value = '') {
+  const lookup = normalizeLookup(value);
+  return /\b(single subject|single main subject|single clearly visible main subject|single well framed subject|single well framed|only one subject|one subject only)\b/i.test(lookup);
+}
+
+function findRawSubjectCardinalityExpectation(rawUserInput = '') {
+  const lookup = normalizeLookup(rawUserInput);
+  if (!lookup) {
+    return { subjectMode: 'unspecified', explicitSubjectCount: null, reason: '' };
+  }
+
+  const pairPatterns = [
+    {
+      reason: 'explicit_two_subjects',
+      pattern: /\b(?:deux|two|2)\s+(?:personnages?|characters?|combattants?|fighters?|guerriers?|warriors?|adversaires?|opponents?|sujets?|subjects?|personnes?|people|humains?|humans?)\b/i,
+    },
+    {
+      reason: 'both_subjects',
+      pattern: /\b(?:les\s+deux|both)\s+(?:personnages?|characters?|combattants?|fighters?|guerriers?|warriors?|adversaires?|opponents?|sujets?|subjects?|personnes?|people|humains?|humans?)\b/i,
+    },
+    {
+      reason: 'between_two_actors',
+      pattern: /\b(?:entre|between)\s+(?:deux|two|2)\b/i,
+    },
+    {
+      reason: 'duel_pair_scene',
+      pattern: /\b(?:duel|face\s+a\s+face|face\s+to\s+face|one\s+on\s+one|1\s*(?:v|vs|versus|contre)\s*1|1v1)\b/i,
+    },
+    {
+      reason: 'versus_pair_scene',
+      pattern: /\b(?:vs\.?|versus)\b/i,
+    },
+  ];
+
+  const match = pairPatterns.find((entry) => entry.pattern.test(lookup));
+  if (!match) {
+    return { subjectMode: 'unspecified', explicitSubjectCount: null, reason: '' };
+  }
+  return { subjectMode: 'pair', explicitSubjectCount: 2, reason: match.reason };
+}
+
+function isAbstractCombatEventSubject(value = '') {
+  const lookup = normalizeLookup(value);
+  if (!lookup) return false;
+  return /^(?:affrontement|confrontation|combat|duel|fight|battle|clash|collision|energy clash|scene|action scene|combat scene)$/i.test(lookup);
+}
+
+function findCardinalityConflict(canonicalizedRequest = null) {
+  const structuredFields = canonicalizedRequest?.structuredFields || {};
+  const constraints = structuredFields?.constraints || {};
+  const subjectCount = Array.isArray(structuredFields?.subject) ? structuredFields.subject.length : 0;
+  const scenePolicy = normalizeScenePolicy(canonicalizedRequest?.scenePolicy);
+  const explicitSubjectCount = Number(scenePolicy.explicitSubjectCount || 0) || 0;
+  const mode = scenePolicy.subjectMode;
+  const rawExpectation = findRawSubjectCardinalityExpectation(canonicalizedRequest?.audit?.rawUserInput || '');
+
+  if (rawExpectation.subjectMode === 'pair' && rawExpectation.explicitSubjectCount === 2) {
+    if (mode === 'single' || explicitSubjectCount === 1) {
+      return `raw_pair_scene_collapsed_to_single:${rawExpectation.reason}`;
+    }
+    if (subjectCount < 2) {
+      const firstSubject = Array.isArray(structuredFields?.subject) ? structuredFields.subject[0] : '';
+      if (isAbstractCombatEventSubject(firstSubject)) {
+        return `raw_pair_scene_collapsed_to_event_subject:${normalizeText(firstSubject)}`;
+      }
+      return `raw_pair_scene_missing_two_subject_entries:${rawExpectation.reason}`;
+    }
+  }
+
+  const effectivePairOrGroup = (
+    mode === 'pair'
+    || mode === 'group'
+    || explicitSubjectCount >= 2
+    || subjectCount >= 2
+  );
+
+  // Ne déclencher le conflit single/multi que si le LLM a explicitement déclaré
+  // subjectMode=single ET explicitSubjectCount=1 avec plusieurs sujets dans subject[].
+  // Ne pas déclencher si les sujets sont des éléments de scène (animal + objet)
+  // plutôt que des acteurs humains en opposition.
+  if ((mode === 'single' && explicitSubjectCount === 1) && subjectCount >= 2) {
+    // Vérifier si la demande brute contient un signal de paire humaine explicite
+    // (vs, versus, duel, face-à-face, deux personnages, etc.)
+    const rawExpectationForConflict = findRawSubjectCardinalityExpectation(canonicalizedRequest?.audit?.rawUserInput || '');
+    if (rawExpectationForConflict.subjectMode === 'pair') {
+      return 'scenePolicy_single_with_multiple_subjects';
+    }
+    // Pas de signal de paire dans le texte brut → pas de conflit
+    // (scène normale avec plusieurs éléments, ex: pigeon + frite)
+  }
+
+  if (!effectivePairOrGroup) return '';
+
+  const conflictEntry = [
+    canonicalizedRequest?.canonicalEnglishInput,
+    ...(Array.isArray(structuredFields?.composition) ? structuredFields.composition : []),
+    ...(Array.isArray(constraints?.promptInstructions) ? constraints.promptInstructions : []),
+  ].find((entry) => hasSingleSubjectInstruction(entry));
+
+  return conflictEntry ? `single_subject_instruction_in_multi_subject_scene:${normalizeText(conflictEntry)}` : '';
 }
 
 function toUniqueStrings(values = []) {
@@ -409,6 +706,7 @@ function validateCanonicalizedImageGenerateRequest(canonicalizedRequest = null) 
     throw error;
   }
 
+  // Vérifier que la sortie est bien en anglais — le LLM peut se tromper, retry légitime.
   const englishValues = [
     canonicalizedRequest.canonicalEnglishInput,
     ...(canonicalizedRequest.structuredFields?.subject || []),
@@ -429,13 +727,10 @@ function validateCanonicalizedImageGenerateRequest(canonicalizedRequest = null) 
     throw error;
   }
 
-  const nonAtomicEntry = findNonAtomicStructuredFieldEntry(canonicalizedRequest.structuredFields);
-  if (nonAtomicEntry) {
-    const error = new Error('canonicalized_request_non_atomic_structured_fields');
-    error.code = 'canonicalized_request_non_atomic_structured_fields';
-    error.details = `${nonAtomicEntry.field}:${nonAtomicEntry.value}`;
-    throw error;
-  }
+  // La cardinalité (pair/single/group) est décidée par le LLM canonicalizer
+  // en fonction du contexte entier du prompt. On ne revalide pas avec des
+  // heuristiques sur les mots-clés — le LLM comprend "pigeon qui vole une frite"
+  // vs "goku vs vegeta" sans avoir besoin de regex.
 
   return canonicalizedRequest;
 }
@@ -462,7 +757,7 @@ function buildCanonicalizeImageGenerateRequestRetryText(rawUserInput = '', optio
       : null,
     rejection_code: normalizeText(rejectionCode),
     rejection_details: normalizeText(rejectionDetails),
-    retry_instruction: 'Re-emit the full canonical request in English only, keep the same JSON schema, and make every structuredFields item a short atomic idea.',
+    retry_instruction: 'Re-emit the full canonical request in English only. Preserve the EXACT subjects from raw_user_input — do NOT invent human subjects that are not in the request. If the original request describes an animal, object, or non-human scene, keep those as subjects. Only use two separate subject entries if the user explicitly requested two human/character actors. Keep scenePolicy consistent with the actual subjects. Make every structuredFields item a short atomic idea.',
   }, null, 2);
 }
 
@@ -526,7 +821,6 @@ function shouldRetryCanonicalizerFailure(error_ = null) {
   const code = String(error_?.code || '').trim();
   return [
     'canonicalized_request_not_english_only',
-    'canonicalized_request_non_atomic_structured_fields',
     'missing_canonical_english_input',
     'missing_canonical_subject',
   ].includes(code);
@@ -774,6 +1068,10 @@ module.exports = {
   buildCanonicalizedRequestTextSmootherResult,
   canonicalizeImageGenerateRequest,
   hasFrenchLeak,
+  extractPreservedNamedEntityCandidates,
+  findCardinalityConflict,
+  findMissingNamedEntityCandidates,
+  findRawSubjectCardinalityExpectation,
   isEnglishLikeText,
   normalizeCanonicalizedImageGenerateRequest,
   resolveCanonicalizerTimeoutMs,

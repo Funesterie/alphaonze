@@ -7,6 +7,7 @@ function createAuthRouter({
   jwtSecret,
   jwtExpiry,
   registerIssuedToken,
+  localAuthStore,
   defaultAdminUsername,
   defaultAdminPassword,
   emailService,
@@ -16,12 +17,51 @@ function createAuthRouter({
   const router = express.Router();
 
   router.post('/api/auth/register', express.json(), async (req, res) => {
-    if (!db) return res.status(503).json({ error: 'Database unavailable' });
     const { username, email, password } = req.body || {};
     const normalizedUsername = String(username || '').trim();
     const normalizedEmail = String(email || '').trim().toLowerCase();
     if (!normalizedUsername || !normalizedEmail || !password) {
       return res.status(400).json({ error: 'Missing fields' });
+    }
+
+    if (!db) {
+      if (!localAuthStore || typeof localAuthStore.createUser !== 'function') {
+        return res.status(503).json({ error: 'auth_store_unavailable' });
+      }
+
+      try {
+        const hash = await bcrypt.hash(password, 10);
+        const user = await localAuthStore.createUser({
+          username: normalizedUsername,
+          email: normalizedEmail,
+          passwordHash: hash,
+        });
+        const token = jwt.sign(
+          { id: user.id, username: user.username, localAuth: true },
+          jwtSecret,
+          { expiresIn: jwtExpiry }
+        );
+        registerIssuedToken(token);
+        console.log('[AUTH] Local register:', normalizedUsername);
+        return res.json({
+          ok: true,
+          success: true,
+          token,
+          expiresIn: jwtExpiry,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+          },
+        });
+      } catch (e) {
+        console.warn('[AUTH] Local register failed:', e?.message);
+        const code = String(e?.code || e?.message || '').trim();
+        if (code === 'username_taken') return res.status(400).json({ error: 'username_taken' });
+        if (code === 'email_taken') return res.status(400).json({ error: 'email_taken' });
+        if (code === 'missing_fields') return res.status(400).json({ error: 'Missing fields' });
+        return res.status(500).json({ error: 'local_auth_register_failed' });
+      }
     }
 
     try {
@@ -68,6 +108,34 @@ function createAuthRouter({
     }
 
     if (!db) {
+      if (localAuthStore && typeof localAuthStore.findUserByIdentifier === 'function') {
+        try {
+          const localUser = await localAuthStore.findUserByIdentifier(identifier);
+          if (localUser?.password_hash) {
+            const ok = await bcrypt.compare(password, localUser.password_hash);
+            if (ok) {
+              const token = jwt.sign(
+                { id: localUser.id, username: localUser.username, localAuth: true },
+                jwtSecret,
+                { expiresIn: jwtExpiry }
+              );
+              registerIssuedToken(token);
+              return res.json({
+                success: true,
+                token,
+                user: {
+                  id: localUser.id,
+                  username: localUser.username,
+                  email: localUser.email,
+                },
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('[AUTH] Local login failed:', e?.message);
+        }
+      }
+
       const { username: fallbackUsername, password: fallbackPassword } = req.body || {};
       const normalizedFallbackUser = String(fallbackUsername || '').trim().toLowerCase();
       const fallbackDefaultAdmin = String(defaultAdminUsername || '').trim().toLowerCase();
@@ -128,7 +196,7 @@ function createAuthRouter({
       );
 
       const appUrl = emailService.getStatus().appUrl
-        || normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://a11.funesterie.pro');
+        || normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://alphaonze.funesterie.pro');
       const link = `${appUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
       const mailResult = await emailService.sendPasswordResetEmail({
         to: user.email,

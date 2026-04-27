@@ -1,4 +1,4 @@
-﻿
+
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
@@ -13,6 +13,18 @@ const {
 
 // Slack notification dashboard
 const { safeSlack, SlackDashboard } = require('./utils/slackNotify');
+
+// Vector memory (RAG)
+const { createVectorMemory } = require('./lib/vector-memory.cjs');
+
+// Knowledge Graph
+const { createKnowledgeGraph } = require('./lib/knowledge-graph.cjs');
+
+// Reflection Loop (Self-Correction)
+const { createReflectionLoop } = require('./lib/reflection-loop.cjs');
+
+// Episodic Memory
+const { buildEpisodicContext } = require('./lib/episodic-memory.cjs');
 
 
 // --- Dépendances OpenAI ---
@@ -347,9 +359,17 @@ const { createArtifact, normalizeArtifactKind, buildArtifactOrigin } = require('
 const { createEmailService, resolveEmailServiceConfigFromEnv } = require('./lib/email-service.cjs');
 const { analyzeUploadedResource, buildConversationResourceContext } = require('./lib/resource-reader.cjs');
 const { resolveSdProxyUrl, resolveSdScriptPath, runSdScript } = require('./lib/sd-runtime.cjs');
+const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
+const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
+const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
+const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
+const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
+const createKnowledgeGraphRouter = require('./src/routes/knowledge-graph.cjs');
+const createReflectionRouter = require('./src/routes/reflection.cjs');
+const createEpisodicMemoryRouter = require('./src/routes/episodic-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
@@ -910,10 +930,17 @@ const PUBLIC_RUNTIME_ROOT = path.resolve(
 );
 const PUBLIC_RUNTIME_UPLOADS_ROOT = path.join(PUBLIC_RUNTIME_ROOT, 'files', 'uploads');
 
+function setPublicFileResponseHeaders(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Timing-Allow-Origin', '*');
+}
+
 // Exposer explicitement le runtime local, même s'il vit hors du workspace.
 app.use('/files/runtime', express.static(PUBLIC_RUNTIME_ROOT, {
   dotfiles: 'ignore',
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: setPublicFileResponseHeaders,
 }));
 console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT);
 
@@ -921,14 +948,16 @@ console.log('[A11] Static /files/runtime ->', PUBLIC_RUNTIME_ROOT);
 // /files/runtime/files/uploads/..., donc on expose aussi cet alias vers le runtime.
 app.use('/files/uploads', express.static(PUBLIC_RUNTIME_UPLOADS_ROOT, {
   dotfiles: 'ignore',
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: setPublicFileResponseHeaders,
 }));
 console.log('[A11] Static /files/uploads ->', PUBLIC_RUNTIME_UPLOADS_ROOT);
 
 // Exposer le workspace en lecture seule sous /files
 app.use('/files', express.static(WORKSPACE_ROOT, {
   dotfiles: 'ignore',
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: setPublicFileResponseHeaders,
 }));
 console.log('[A11] Static /files ->', WORKSPACE_ROOT);
 
@@ -1048,16 +1077,9 @@ app.get('/avatar.gif', (req, res) => {
 
 // CORS configuration: allow local dev origins and production origin
 const defaultCorsOrigins = [
-  'https://a11backendrailway.up.railway.app',
-  'https://a11backendrailway.railway.app',
-  'https://funesterie.pro',
-  'https://a11.funesterie.pro',
-  'https://casino.funesterie.pro'
+  'https://alphaonze.funesterie.pro'
 ];
-const trustedNetlifyOrigins = [
-  'https://a11funesterie.netlify.app',
-  'https://funesterie.netlify.app'
-];
+const trustedNetlifyOrigins = [];
 const normalizeOrigin = (origin) => String(origin || '').trim().replace(/\/$/, '');
 const envCorsOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
@@ -1171,6 +1193,12 @@ const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
 const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '1991');
 const DEFAULT_ADMIN_EMAIL = String(process.env.DEFAULT_ADMIN_EMAIL || 'djeff@a11.local').trim().toLowerCase();
+const localAuthStore = db
+  ? null
+  : createLocalAuthStore({
+      filePath: path.join(PUBLIC_RUNTIME_ROOT, 'auth', 'local-users.json'),
+      logger: console,
+    });
 
 if (db) {
   db.connect()
@@ -1364,6 +1392,33 @@ if (db) {
 } else {
   console.warn('[DB] DATABASE_URL non défini, authentification DB désactivée');
 }
+
+// ============================================================
+// Checkpoint Manager & Tool-Calling Layer
+// ============================================================
+const { CheckpointManager } = require('./lib/checkpoint-manager.cjs');
+const { ToolCallingLayer } = require('./lib/tool-calling-layer.cjs');
+
+const checkpointManager = new CheckpointManager({
+  stateDir: path.join(PUBLIC_RUNTIME_ROOT, 'checkpoints'),
+  cleanup: {
+    maxAgeMs: 7 * 24 * 60 * 60 * 1000, // 7 jours
+    keepLast: 10,
+    keepCurrentSession: true,
+  },
+});
+
+const toolCallingLayer = new ToolCallingLayer({
+  stateDir: path.join(PUBLIC_RUNTIME_ROOT, 'tool-jobs'),
+  circuitBreaker: {
+    failureThreshold: 5,
+    timeWindow: 5 * 60 * 1000,
+    cooldownPeriod: 10 * 60 * 1000,
+  },
+});
+
+console.log('[A11] CheckpointManager initialized');
+console.log('[A11] ToolCallingLayer initialized');
 
 function normalizeConversationId(conversationId) {
   const normalized = String(conversationId || '').trim();
@@ -1886,6 +1941,59 @@ async function saveChatMemoryMessage(userId, role, content, conversationId) {
   ).catch((error_) => {
     console.warn('[A11][memory] raw history save failed:', error_?.message);
   });
+}
+
+// Cache pour stocker le dernier message user par conversation (pour RAG)
+const lastUserMessageCache = new Map();
+
+/**
+ * Sauvegarde un message dans la mémoire chat ET dans la mémoire vectorielle (RAG)
+ * Utilisé pour capturer les échanges user/assistant complets
+ */
+async function saveChatMemoryMessageWithVector(userId, role, content, conversationId) {
+  // Sauvegarder dans la mémoire chat classique
+  await saveChatMemoryMessage(userId, role, content, conversationId);
+
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedConversationId = normalizeConversationId(conversationId);
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const normalizedContent = typeof content === 'string'
+    ? stripUnsafeUtf8Text(content, { preserveNewlines: true }).trim()
+    : '';
+
+  if (!normalizedUserId || !normalizedRole || !normalizedContent) return;
+
+  // Pour la mémoire vectorielle, on a besoin d'un échange complet (user + assistant)
+  const cacheKey = `${normalizedUserId}:${normalizedConversationId}`;
+
+  if (normalizedRole === 'user') {
+    // Stocker le message user pour l'associer à la prochaine réponse assistant
+    lastUserMessageCache.set(cacheKey, normalizedContent);
+  } else if (normalizedRole === 'assistant') {
+    // Récupérer le dernier message user et sauvegarder l'échange complet
+    const lastUserMessage = lastUserMessageCache.get(cacheKey);
+    if (lastUserMessage) {
+      try {
+        const vectorMemory = createVectorMemory(normalizedUserId, normalizedConversationId);
+        await vectorMemory.addExchange(lastUserMessage, normalizedContent);
+        lastUserMessageCache.delete(cacheKey); // Nettoyer le cache
+
+        // Extraire et ajouter les triplets au graphe de connaissances
+        try {
+          const kg = createKnowledgeGraph(normalizedUserId);
+          const exchangeText = `User: ${lastUserMessage}\nAssistant: ${normalizedContent}`;
+          await kg.extractAndAddFromText(exchangeText, {
+            conversationId: normalizedConversationId,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (kgError) {
+          console.warn('[A11][KG] knowledge graph extraction failed:', kgError?.message);
+        }
+      } catch (error_) {
+        console.warn('[A11][RAG] vector memory save failed:', error_?.message);
+      }
+    }
+  }
 }
 
 async function getRecentChatMemory(userId, conversationId, limit = CHAT_MEMORY_LIMIT) {
@@ -2504,7 +2612,7 @@ async function fetchRemoteImageBuffer(imageUrl) {
   const response = await fetch(normalizedUrl, {
     method: 'GET',
     headers: {
-      'user-agent': 'A11/1.0 (+https://a11.funesterie.pro)',
+      'user-agent': 'A11/1.0 (+https://alphaonze.funesterie.pro)',
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
   });
@@ -2735,7 +2843,7 @@ async function fetchRemoteImageBuffer(imageUrl) {
   const response = await fetch(normalizedUrl, {
     method: 'GET',
     headers: {
-      'user-agent': 'A11/1.0 (+https://a11.funesterie.pro)',
+      'user-agent': 'A11/1.0 (+https://alphaonze.funesterie.pro)',
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
   });
@@ -4965,13 +5073,20 @@ function resolveFileUploadWriter() {
 
   return {
     backend: 'local-file',
-    uploadBuffer: ({ filename, buffer, contentType }) => saveBufferToLocalUploadStorage({
-      uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
-      filename,
-      buffer,
-      contentType,
-      sanitizeFileName,
-    }),
+    uploadBuffer: async ({ filename, buffer, contentType }) => {
+      const saved = saveBufferToLocalUploadStorage({
+        uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
+        filename,
+        buffer,
+        contentType,
+        sanitizeFileName,
+      });
+      // L'URL relative /files/runtime/... ne peut pas être fetchée par SD.
+      // On la préfixe avec l'origine locale pour obtenir une URL absolue.
+      const localPort = globalThis.__A11_PORT || Number(process.env.PORT || 3000);
+      const absoluteUrl = `http://127.0.0.1:${localPort}${saved.url}`;
+      return { ...saved, url: absoluteUrl };
+    },
   };
 }
 
@@ -4998,7 +5113,7 @@ const EXPLICIT_PUBLIC_API_BASE_URL = String(
 ).trim();
 const PUBLIC_API_BASE_URL = normalizePublicAppUrl(
   EXPLICIT_PUBLIC_API_BASE_URL
-  || 'https://api.funesterie.pro'
+  || 'https://alphaonze.funesterie.pro'
 );
 
 if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-in-production') {
@@ -5156,7 +5271,7 @@ ensureExpiredSharedFilesCleanupTimer();
 const resolvedEmailConfig = resolveEmailServiceConfigFromEnv(process.env);
 const emailService = createEmailService({
   ...resolvedEmailConfig,
-  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://a11.funesterie.pro'),
+  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://alphaonze.funesterie.pro'),
 });
 const emailStatus = emailService.getStatus();
 if (emailStatus.configured) {
@@ -5479,39 +5594,10 @@ app.post('/api/control/:command', verifyJWT, requireRuntimeControlAccess, async 
   }
 });
 
-function isAdminRequest(req) {
-  const configuredAdminTokens = [
-    process.env.NEZ_ADMIN_TOKEN,
-    process.env.DRAGON_API_TOKEN,
-    process.env.QFLUSH_TOKEN,
-    process.env.NPZ_ADMIN_TOKEN,
-  ]
-    .map((value) => String(value || '').trim())
-    .filter(Boolean)
-    .filter((value, index, values) => values.indexOf(value) === index);
-  const bearerMatch = String(req.headers?.authorization || '').match(/^Bearer\s+(.+)$/i);
-  const adminHeaders = [
-    req.headers['x-nez-admin'],
-    req.headers['x-nez-admin-token'],
-    req.headers['x-admin-token'],
-    req.headers['x-qflush-token'],
-    req.headers['x-dragon-token'],
-    req.headers['x-nez-token'],
-    bearerMatch?.[1],
-  ].map((value) => String(value || '').trim()).filter(Boolean);
-  if (configuredAdminTokens.length && adminHeaders.some((value) => configuredAdminTokens.includes(value))) {
-    return true;
-  }
-
-  if (adminHeaders.some((value) => ['1', 'true', 'yes', 'admin'].includes(value.toLowerCase()))) {
-    return true;
-  }
-
-  const userId = String(req.user?.id || '').trim().toLowerCase();
-  const username = String(req.user?.username || '').trim().toLowerCase();
-  const normalizedDefaultAdmin = DEFAULT_ADMIN_USERNAME.toLowerCase();
-  return userId === 'admin' || username === 'admin' || username === normalizedDefaultAdmin;
-}
+const isAdminRequest = createIsAdminRequest({
+  env: process.env,
+  defaultAdminUsername: DEFAULT_ADMIN_USERNAME,
+});
 
 const sdTools = createSdToolsRouter({
   fs,
@@ -5521,13 +5607,16 @@ const sdTools = createSdToolsRouter({
   resolveSdProxyUrl,
   resolveSdScriptPath,
   runSdScript,
-  uploadBufferToR2,
+  // Pas d'override uploadBufferToR2 : sd-tools utilise le vrai R2 si configuré,
+  // sinon throw → catch dans sd-tools construit l'URL locale depuis output_path
+  // (generated/images), sans copier dans uploads.
   isAdminRequest,
 });
 
 app.use('/api', createAdminRunRouter({
   isAdminRequest,
   runQflushFlow,
+  verifyJWT,
 }));
 
 app.use('/api/admin', createAdminRouter({
@@ -5770,7 +5859,7 @@ async function buildControlCenterStatus(req) {
       key: isLocalControlOrigin(req) ? 'local' : 'online',
       label: isLocalControlOrigin(req) ? 'Local tunnel' : 'Online',
       requestOrigin,
-      frontendUrl: runtime?.config?.frontendUrl || 'https://a11.funesterie.pro',
+      frontendUrl: runtime?.config?.frontendUrl || 'https://alphaonze.funesterie.pro',
       publicApiUrl: runtime?.config?.publicApiUrl || requestOrigin || '',
       controlEnabled,
       controlReason: controlEnabled
@@ -5794,6 +5883,7 @@ app.use(createAuthRouter({
   jwtSecret: JWT_SECRET,
   jwtExpiry: JWT_EXPIRY,
   registerIssuedToken,
+  localAuthStore,
   defaultAdminUsername: DEFAULT_ADMIN_USERNAME,
   defaultAdminPassword: DEFAULT_ADMIN_PASSWORD,
   emailService,
@@ -5822,6 +5912,31 @@ app.use('/api/resources', verifyJWT);
 app.use('/api/mail', verifyJWT);
 app.use(mailRouter);
 app.use(casinoRouter);
+
+// ============================================================
+// Checkpoint & Tools routes
+// ============================================================
+const createCheckpointsRouter = require('./src/routes/checkpoints.cjs');
+const createToolsRouter = require('./src/routes/tools.cjs');
+const createAgentShellRouter = require('./src/routes/agent-shell.cjs');
+const createSelfRewriteRouter = require('./src/routes/self-rewrite.cjs');
+const createKnowledgeConflictRouter = require('./src/routes/knowledge-conflict.cjs');
+const createGitHubRouter = require('./src/routes/github.cjs');
+
+app.use('/api/checkpoints', verifyJWT);
+app.use('/api/tools', verifyJWT);
+// /api/agent est déjà protégé par verifyJWT plus haut
+
+app.use('/api/checkpoints', createCheckpointsRouter({ checkpointManager }));
+app.use('/api/tools', createToolsRouter({ toolCallingLayer }));
+app.use('/api/agent/shell', createAgentShellRouter({ workspaceRoot: WORKSPACE_ROOT }));
+app.use('/api', createSelfRewriteRouter({ verifyJWT }));
+app.use('/api', createKnowledgeConflictRouter({ verifyJWT }));
+app.use('/api', createGitHubRouter({ verifyJWT }));
+
+console.log('[Server] Checkpoint routes mounted under /api/checkpoints');
+console.log('[Server] Tools routes mounted under /api/tools');
+console.log('[Server] Agent shell route mounted under /api/agent/shell');
 
 
 
@@ -6482,7 +6597,28 @@ try {
   const serveStatic = isEmbeddedUiEnabled();
   if (serveStatic) {
     if (fs.existsSync(webPublic)) {
-      app.use(express.static(webPublic, { maxAge: '1d' }));
+      app.use(express.static(webPublic, {
+        maxAge: '1d',
+        setHeaders(res, filePath) {
+          // Forcer les MIME types corrects pour les assets frontend
+          const ext = require('node:path').extname(filePath).toLowerCase();
+          const mimeMap = {
+            '.css': 'text/css; charset=utf-8',
+            '.js':  'application/javascript; charset=utf-8',
+            '.mjs': 'application/javascript; charset=utf-8',
+            '.json': 'application/json; charset=utf-8',
+            '.svg': 'image/svg+xml',
+            '.webmanifest': 'application/manifest+json',
+          };
+          if (mimeMap[ext]) {
+            res.setHeader('Content-Type', mimeMap[ext]);
+          }
+          // Pas de cache sur index.html — toujours revalider
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          }
+        },
+      }));
       console.log('[A11] Serving frontend static from', webPublic);
     } else {
       console.log('[A11] Frontend public folder not found at', webPublic);
@@ -6508,6 +6644,30 @@ try {
 } catch (e) {
   console.warn('[A11] Could not initialize /legacy static middleware for web public:', e?.message);
 }
+
+const EMBEDDED_UI_STATIC_PREFIXES = ['/assets/', '/icons/', '/legacy/'];
+const EMBEDDED_UI_STATIC_FILES = new Set([
+  '/favicon.ico',
+  '/manifest.webmanifest',
+  '/sw.js',
+  '/anonymous_code_placeholder.js',
+  '/a11_static.png',
+  '/A11_talking_smooth_8s.gif',
+  '/system_prompt.txt',
+]);
+
+function isEmbeddedUiStaticRequest(pathname) {
+  return EMBEDDED_UI_STATIC_FILES.has(pathname)
+    || EMBEDDED_UI_STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+app.use((req, res, next) => {
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || !isEmbeddedUiStaticRequest(req.path)) {
+    return next();
+  }
+
+  return res.status(404).type('text/plain').send('Not found');
+});
 
 // Ajout des routes /healthz et /
 app.get('/healthz', (_req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -8800,7 +8960,7 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
   }
 
   if (normalizedLatestMessage) {
-    await saveChatMemoryMessage(normalizedUserId, 'user', normalizedLatestMessage, normalizedConversationId);
+    await saveChatMemoryMessageWithVector(normalizedUserId, 'user', normalizedLatestMessage, normalizedConversationId);
     if (!bypassGlobalMemory) {
       await saveStructuredMemoryFromMessage(normalizedUserId, normalizedLatestMessage);
     }
@@ -8857,6 +9017,45 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
     console.warn('[DB] mark facts as used failed:', error_?.message);
   });
 
+  // Récupérer le contexte vectoriel (RAG) si le message est fourni
+  let vectorContext = '';
+  if (normalizedLatestMessage) {
+    try {
+      const vectorMemory = createVectorMemory(normalizedUserId, normalizedConversationId);
+      const contextResult = await vectorMemory.getRelevantContext(normalizedLatestMessage, {
+        k: 3,
+        minSimilarity: 0.6,
+      });
+      if (contextResult.found) {
+        vectorContext = contextResult.context;
+      }
+    } catch (error_) {
+      console.warn('[A11][RAG] vector context retrieval failed:', error_?.message);
+    }
+  }
+
+  // Récupérer le contexte du graphe de connaissances
+  let knowledgeGraphContext = '';
+  if (normalizedLatestMessage) {
+    try {
+      const kg = createKnowledgeGraph(normalizedUserId);
+      const kgResult = kg.getContextForQuery(normalizedLatestMessage, { maxRelations: 10 });
+      if (kgResult.found) {
+        knowledgeGraphContext = kgResult.context;
+      }
+    } catch (error_) {
+      console.warn('[A11][KG] knowledge graph context retrieval failed:', error_?.message);
+    }
+  }
+
+  // Récupérer le contexte épisodique (préférences et événements récents)
+  let episodicContext = '';
+  try {
+    episodicContext = buildEpisodicContext(normalizedUserId, 7);
+  } catch (error_) {
+    console.warn('[A11][EPISODIC] episodic context retrieval failed:', error_?.message);
+  }
+
   return {
     storedMessages,
     logicalMemory,
@@ -8872,10 +9071,13 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
       tasks: structuredTasks,
       files: structuredFiles,
     }),
+    vectorContext,
+    knowledgeGraphContext,
+    episodicContext,
   };
 }
 
-function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '') {
+function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
   const messages = [];
   const normalizedSystemPrompt = String(systemPrompt || '').trim();
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
@@ -8904,6 +9106,33 @@ function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemo
   );
   if (memorySystemMessage) {
     messages.push(memorySystemMessage);
+  }
+
+  // Injecter le contexte du graphe de connaissances si disponible
+  const normalizedKgContext = String(knowledgeGraphContext || '').trim();
+  if (normalizedKgContext) {
+    messages.push({
+      role: 'system',
+      content: `# Graphe de connaissances (relations structurées)\n\nVoici les relations connues pertinentes pour cette conversation :\n\n${normalizedKgContext}\n\nUtilise ces relations pour enrichir ta compréhension et ton raisonnement.`
+    });
+  }
+
+  // Injecter le contexte vectoriel (RAG) si disponible
+  const normalizedVectorContext = String(vectorContext || '').trim();
+  if (normalizedVectorContext) {
+    messages.push({
+      role: 'system',
+      content: `# Contexte pertinent (mémoire long terme)\n\nVoici des échanges passés pertinents pour cette conversation :\n\n${normalizedVectorContext}\n\nUtilise ces informations pour enrichir ta réponse si elles sont pertinentes.`
+    });
+  }
+
+  // Injecter le contexte épisodique (préférences et événements récents) si disponible
+  const normalizedEpisodicContext = String(episodicContext || '').trim();
+  if (normalizedEpisodicContext) {
+    messages.push({
+      role: 'system',
+      content: `# Mémoire épisodique (préférences et contexte récent)\n\n${normalizedEpisodicContext}\n\nTiens compte de ces préférences et événements récents dans ta réponse.`
+    });
   }
 
   return [...messages, ...nonSystemMessages];
@@ -10185,14 +10414,17 @@ function shouldAutoUseInternetAgent(body) {
   return !!detectInternetResearchReason(body);
 }
 
-function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '') {
+function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
   return buildChatMessagesWithMemory(
     Array.isArray(storedMessages) ? storedMessages : [],
     logicalMemory,
     structuredMemoryContext,
     conversationResourceContext,
     systemPrompt,
-    ephemeralMemoryContext
+    ephemeralMemoryContext,
+    vectorContext,
+    knowledgeGraphContext,
+    episodicContext
   );
 }
 
@@ -10225,6 +10457,9 @@ async function proxyQflushChat(req, res) {
       conversationResourceContext,
       structuredMemoryContext,
       ephemeralMemoryContext,
+      vectorContext,
+      knowledgeGraphContext,
+      episodicContext,
     } = memoryContext;
 
     const prompt = latestUserMessage || buildPromptFromMessages(storedMessages);
@@ -10234,7 +10469,10 @@ async function proxyQflushChat(req, res) {
       structuredMemoryContext,
       conversationResourceContext,
       body.systemPrompt,
-      ephemeralMemoryContext
+      ephemeralMemoryContext,
+      vectorContext,
+      knowledgeGraphContext,
+      episodicContext
     );
 
     const qflushUrl = process.env.QFLUSH_URL || process.env.QFLUSH_REMOTE_URL || 'not_set';
@@ -10262,7 +10500,7 @@ async function proxyQflushChat(req, res) {
     if (qflushVerificationState && getA11QflushVerificationMode() !== 'pass') {
       const content = buildA11QflushVerificationReply(qflushVerificationState);
       if (userId && content) {
-        await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+        await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
       }
 
       const data = {
@@ -10313,7 +10551,7 @@ async function proxyQflushChat(req, res) {
     });
     const content = resolvedAssistant.content;
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
 
     const data = {
@@ -10383,8 +10621,8 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
     const prompt = typeof body.prompt === 'string' && body.prompt.trim()
       ? body.prompt
       : buildPromptFromMessages(messages);
-    const nPredictRaw = body.n_predict ?? body.max_tokens ?? 200;
-    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : 200;
+    const nPredictRaw = body.n_predict ?? body.max_tokens ?? Number(process.env.A11_CHAT_MAX_TOKENS || 4096);
+    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : 4096;
 
     const userInfo = req.user?.username ? `(user: ${req.user.username})` : '';
     console.log('[A11][Llama] Proxying local completion', userInfo, '->', localLlamaCompletionUrl);
@@ -10435,7 +10673,7 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
     }
 
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
 
     appendChatTurnLogSafe(body, data, 'local-gguf', userId);
@@ -10501,7 +10739,7 @@ async function proxyChatToOpenAI(req, res) {
       };
     }
     if (userId && directSafeIntent.content) {
-      await saveChatMemoryMessage(userId, 'assistant', directSafeIntent.content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', directSafeIntent.content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-safe-tools', userId);
     return res.status(200).json(data);
@@ -10511,7 +10749,7 @@ async function proxyChatToOpenAI(req, res) {
     const content = buildDevModeRequiredReply(detectDevModeRequiredReason(req.body) || 'executer cette action');
     const data = toSimpleAssistantCompletion(content, 'a11-dev-required');
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-dev-required', userId);
     return res.status(200).json(data);
@@ -10529,7 +10767,10 @@ async function proxyChatToOpenAI(req, res) {
         memoryContext.structuredMemoryContext,
         memoryContext.conversationResourceContext,
         req.body?.systemPrompt,
-        memoryContext.ephemeralMemoryContext
+        memoryContext.ephemeralMemoryContext,
+        memoryContext.vectorContext,
+        memoryContext.knowledgeGraphContext,
+        memoryContext.episodicContext
       );
     }
 
@@ -10558,7 +10799,7 @@ async function proxyChatToOpenAI(req, res) {
       };
     }
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-web', userId);
     return res.status(200).json(data);
@@ -10592,7 +10833,10 @@ async function proxyChatToOpenAI(req, res) {
       memoryContext.structuredMemoryContext,
       memoryContext.conversationResourceContext,
       req.body?.systemPrompt,
-      memoryContext.ephemeralMemoryContext
+      memoryContext.ephemeralMemoryContext,
+      memoryContext.vectorContext,
+      memoryContext.knowledgeGraphContext,
+      memoryContext.episodicContext
     );
 
     if ((!upstreamBody.prompt || !String(upstreamBody.prompt).trim()) && upstreamBody.messages.length) {
@@ -10702,7 +10946,7 @@ async function proxyChatToOpenAI(req, res) {
 
     const responsePayload = applyAssistantTextToPayload(data, content, resolvedAssistant.extras);
     if (userId && content) {
-      await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
 
     appendChatTurnLogSafe(req.body, responsePayload, 'gpt-4o-mini', userId);
@@ -10751,7 +10995,7 @@ async function proxyChatToOpenAI(req, res) {
           const content = resolvedAssistant.content;
           const responsePayload = applyAssistantTextToPayload(localData, content, resolvedAssistant.extras);
           if (userId && content) {
-            await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+            await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
           }
           appendChatTurnLogSafe(req.body, responsePayload, 'local-chat-fallback', userId);
           return res.status(localUpstreamRes.status).json(responsePayload);
@@ -10813,7 +11057,7 @@ async function proxyChatToOpenAI(req, res) {
           const content = resolvedAssistant.content;
           const responsePayload = applyAssistantTextToPayload(remoteData, content, resolvedAssistant.extras);
           if (userId && content) {
-            await saveChatMemoryMessage(userId, 'assistant', content, conversationId);
+            await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
           }
           appendChatTurnLogSafe(req.body, responsePayload, 'openai-chat-fallback', userId);
           return res.status(remoteUpstreamRes.status).json(responsePayload);
@@ -11878,7 +12122,10 @@ app.post('/api/agent', express.json(), async (req, res) => {
           memoryContext.structuredMemoryContext,
           memoryContext.conversationResourceContext,
           undefined,
-          memoryContext.ephemeralMemoryContext
+          memoryContext.ephemeralMemoryContext,
+          memoryContext.vectorContext,
+          memoryContext.knowledgeGraphContext,
+          memoryContext.episodicContext
         );
       }
 
@@ -12186,14 +12433,32 @@ function writeMemoryKeyValue(key, value) {
   }
 }
 
-// --- Route API pour a11_memory_write ---
-app.post('/api/a11/memory/write', express.json(), (req, res) => {
-  const { key, value } = req.body || {};
-  if (!key) return res.status(400).json({ ok: false, error: 'Missing key' });
-  const result = writeMemoryKeyValue(key, value);
-  if (!result.ok) return res.status(500).json(result);
-  return res.json(result);
-});
+app.use('/api', createA11MemoryWriteRouter({
+  isAdminRequest,
+  verifyJWT,
+  writeMemoryKeyValue,
+}));
+
+// Ajout du routeur Vector Memory (RAG)
+app.use(createVectorMemoryRouter({
+  verifyJWT,
+  normalizeConversationId,
+}));
+
+// Ajout du routeur Knowledge Graph
+app.use(createKnowledgeGraphRouter({
+  verifyJWT,
+}));
+
+// Ajout du routeur Reflection (Self-Correction)
+app.use(createReflectionRouter({
+  verifyJWT,
+}));
+
+// Ajout du routeur Episodic Memory
+app.use(createEpisodicMemoryRouter({
+  verifyJWT,
+}));
 
 // Ajout du routeur Cerbère (llm-router.cjs)
 const { router: llmRouter } = require('./llm-router.cjs');
@@ -12202,13 +12467,10 @@ app.use(llmRouter);
 // Fallback: ensure server starts
 if (!LISTENING) {
   try {
-    const HOST = process.env.HOST || '0.0.0.0';
+    const HOST = resolveBindHost(process.env);
     const server = app.listen(PORT, HOST, () => {
       LISTENING = true;
-      const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN || 'a11backendrailway.up.railway.app';
-      const publicUrl = process.env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${railwayDomain}`
-        : `http://127.0.0.1:${PORT}`;
+      const publicUrl = process.env.PUBLIC_API_URL || `http://127.0.0.1:${PORT}`;
       console.log(`[A11] Server listening on ${HOST}:${PORT} (public: ${publicUrl})`);
     });
     server.on('error', (error_) => {
