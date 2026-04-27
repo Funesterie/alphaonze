@@ -44,5 +44,8 @@ if [ -n "${A11_JANUS_DEVICE:-}" ]; then
   echo "[A11] Janus device: ${A11_JANUS_DEVICE}"
 fi
 
+echo "[A11] Running DB schema migration..."
+node ./init-db.cjs || echo "[A11] WARNING: init-db.cjs failed — continuing anyway"
+
 echo "[A11] Starting backend from $SCRIPT_DIR"
 exec node ./server.cjs
