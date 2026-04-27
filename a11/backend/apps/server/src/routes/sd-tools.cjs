@@ -28,6 +28,16 @@ const {
 const {
   resolveImg2ImgStrengthPlan,
 } = require('../image/img2img-strength.cjs');
+
+// Vision Memory — analyse automatique des images générées (fire-and-forget)
+let _visionMemory = null;
+function getVisionMemory() {
+  if (!_visionMemory) {
+    try { _visionMemory = require('../../lib/vision-memory.cjs'); } catch (_) {}
+  }
+  return _visionMemory;
+}
+
 const { shutdownJanusVisionWorker } = require('../../lib/janus-vision-runtime.cjs');
 const { runExclusiveLocalGpuTask } = require('../../lib/local-gpu-orchestrator.cjs');
 
@@ -1427,6 +1437,27 @@ function createSdToolsRouter(overrides = {}) {
     }
 
     const sdResult = await generateSdInternal({ req, prompt: rawPrompt, body: requestBody });
+
+    // Vision Memory — analyse l'image générée en arrière-plan (fire-and-forget)
+    const _vm = getVisionMemory();
+    if (_vm && sdResult?.ok && (sdResult.image_url || sdResult.url)) {
+      const _imageLocator = sdResult.image_url || sdResult.url;
+      const _userId = req?.user?.id || requestBody?.userId || 'unknown';
+      const _convId = requestBody?.conversationId || requestBody?.conversation_id || '';
+      setImmediate(() => {
+        _vm.analyzeAndSave({
+          imageLocator: _imageLocator,
+          imageUrl: _imageLocator,
+          prompt: rawPrompt || requestBody?.prompt || '',
+          userId: _userId,
+          conversationId: _convId,
+          source: 'generated',
+          runtimeRoot: process.env.A11_RUNTIME_ROOT,
+          timeoutMs: 60000,
+        }).catch(e => console.warn('[vision-memory] analyze failed:', e?.message));
+      });
+    }
+
     return {
       ...sdResult,
       tool: sdResult?.tool || 'generate_image',
