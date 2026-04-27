@@ -53,6 +53,8 @@ function Start-Neo4jDesktop {
 
     # Chercher l'exécutable Neo4j Desktop
     $neo4jExePaths = @(
+        "D:\projets\funesterie\Neo4j Desktop 2\Neo4j Desktop 2.exe",
+        "C:\Users\$env:USERNAME\.Neo4jDesktop2\Neo4j Desktop 2.exe",
         "C:\Users\$env:USERNAME\.Neo4jDesktop2\Neo4j Desktop.exe",
         "C:\Users\$env:USERNAME\AppData\Local\Programs\Neo4j Desktop\Neo4j Desktop.exe",
         "$env:LOCALAPPDATA\Programs\Neo4j Desktop\Neo4j Desktop.exe",
@@ -120,6 +122,29 @@ function Start-DockerDesktop {
     $dockerExe = $dockerExePaths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 
     if (-not $dockerExe) {
+        # Vérifier si Podman Desktop est disponible (alternative libre à Docker)
+        $podmanExePaths = @(
+            "$env:ProgramFiles\Podman Desktop\Podman Desktop.exe",
+            "$env:LOCALAPPDATA\Programs\Podman Desktop\Podman Desktop.exe",
+            "C:\Program Files\Podman Desktop\Podman Desktop.exe"
+        )
+        $podmanExe = $podmanExePaths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+        if ($podmanExe) {
+            Write-Info "Docker Desktop introuvable — Podman Desktop détecté: $podmanExe"
+            try {
+                $podmanRunning = & podman info 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-OK "Podman Desktop déjà actif"
+                    return
+                }
+            }
+            catch {}
+            Start-Process -FilePath $podmanExe -WindowStyle Minimized -ErrorAction SilentlyContinue
+            Write-OK "Podman Desktop lancé (alternative à Docker)"
+            return
+        }
+
         Write-Warn "Docker Desktop introuvable."
         Write-Warn "Installez Docker Desktop depuis: https://www.docker.com/products/docker-desktop/"
         Write-Warn "Ou lancez l'installateur: D:\projets\funesterie\Docker Desktop Installer.exe"
