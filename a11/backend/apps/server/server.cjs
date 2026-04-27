@@ -5955,6 +5955,12 @@ console.log('[Server] Dump RGBA Brotli routes mounted under /api/dump/rgba-brotl
 const createSfxRouter = require('./src/routes/sfx.cjs');
 app.use('/api/sfx', createSfxRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] SFX routes mounted under /api/sfx');
+
+// Qflush Flow — A11 contrôle ses flows directement (Jarvis mode)
+const createQflushFlowRouter = require('./src/routes/qflush-flow.cjs');
+app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: WORKSPACE_ROOT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+app.use('/api/qflush/admin', verifyJWT); // admin routes nécessitent JWT
+console.log('[Server] Qflush flow routes mounted under /api/qflush');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
 app.use('/api', createKnowledgeConflictRouter({ verifyJWT }));
 app.use('/api', createGitHubRouter({ verifyJWT }));
