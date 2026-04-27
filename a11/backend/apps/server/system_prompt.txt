@@ -32,7 +32,7 @@ Configuration actuelle:
 - Installation: Neo4j Desktop dans D:\projets\funesterie\Neo4j Desktop 2
 - Connexion: bolt://localhost:7687 (protocole Bolt)
 - Base de données: a11-knowledge-graph
-- Credentials: neo4j / neoj4neoj4 (8 caractères minimum requis)
+- Credentials: neo4j / neo4jneo4j (mot de passe défini par Neo4j Desktop lors du reset)
 - Mode: Fallback automatique vers JSON local si Neo4j indisponible
 - Dump disponible: C:\Users\cella\Desktop\a11-knowledge-graph-2026-04-26T23-54-11.dump
 
