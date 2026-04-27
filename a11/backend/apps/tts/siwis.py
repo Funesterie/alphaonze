@@ -249,11 +249,26 @@ def generate_gif_for_wav(wav_path: str, gif_template: str = None) -> str:
 
 
 def clean_tts_text(text: str) -> str:
-    # Supprime les caractères spéciaux qui ne doivent pas être prononcés
+    """Nettoie le texte avant envoi à Piper.
+
+    - Supprime les caractères Markdown qui ne doivent pas être prononcés
+    - Normalise les espaces
+    - Préserve tous les accents et caractères Unicode (é, è, ê, ç, ñ, ü, etc.)
+    - Force la normalisation NFC pour garantir la compatibilité UTF-8 avec Piper
+    """
     import re
-    # Retire *, _, ~, `, |, #, >, [, ], {, }, etc. et espaces multiples
+    import unicodedata
+
+    # Normalisation Unicode NFC — garantit que les accents composés (é = e + ́)
+    # sont représentés sous forme précomposée (é = U+00E9), compatible Piper/espeak-ng
+    text = unicodedata.normalize("NFC", text)
+
+    # Retire les marqueurs Markdown visuels (ne pas prononcer)
     text = re.sub(r'[\*_~`|#>\[\]{}]', '', text)
+
+    # Normalise les espaces multiples
     text = re.sub(r'\s+', ' ', text)
+
     return text.strip()
 
 
@@ -307,8 +322,13 @@ def synthesize(text: str) -> str:
             "env": env,
             "cwd": ROOT_DIR,
         }
-        if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
-            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        if os.name == "nt":
+            # Windows : forcer UTF-8 sur stdin/stdout de Piper via PYTHONIOENCODING
+            # et CREATE_NO_WINDOW pour éviter la fenêtre console
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUTF8"] = "1"
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
         proc = subprocess.Popen(cmd, **popen_kwargs)
         stdout_bytes, stderr_bytes = proc.communicate(

@@ -5359,6 +5359,16 @@ casinoRouter.bootstrapCasinoStorage().catch((error_) => {
 
 // Ajout express.json AVANT les proxies pour garantir le body POST
 app.use(express.json({ limit: '10mb' }));
+
+// Forcer charset=utf-8 sur toutes les réponses JSON et texte — fix accents toutes langues
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = function (body) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return originalJson(body);
+  };
+  next();
+});
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/tts', express.static(path.join(__dirname, '../../public/tts')));
 

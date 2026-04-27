@@ -103,7 +103,8 @@ function registerTTSRoutes(router) {
       let responded = false;
 
       if (proc.stdin && !proc.stdin.destroyed) {
-        proc.stdin.write(text);
+        // Forcer UTF-8 pour préserver les accents (é, è, ê, ç, ñ, ü, etc.)
+        proc.stdin.write(Buffer.from(text, 'utf8'));
         proc.stdin.end();
       }
 
