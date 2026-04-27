@@ -22,7 +22,8 @@ function Get-ListeningProcessId {
   try {
     $connection = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop | Select-Object -First 1
     if ($connection) { return [int]$connection.OwningProcess }
-  } catch {
+  }
+  catch {
     return $null
   }
   return $null
@@ -144,7 +145,8 @@ function Start-OllamaIfNeeded {
   $ollamaPid = Wait-Port -Port 11434 -TimeoutSec 25
   if ($ollamaPid) {
     Write-Info "Ollama pret sur 11434 (PID $ollamaPid)."
-  } else {
+  }
+  else {
     Write-WarnLine 'Ollama lance, mais le port 11434 ne repond pas encore.'
   }
 }
@@ -174,13 +176,15 @@ function Start-AlphaOnZeIfNeeded {
   try {
     $alphaHost = if ([string]::IsNullOrWhiteSpace($env:A11_ALPHAONZE_HOST)) {
       if ([string]::IsNullOrWhiteSpace($env:ALPHAONZE_HOST)) { '127.0.0.1' } else { $env:ALPHAONZE_HOST }
-    } else {
+    }
+    else {
       $env:A11_ALPHAONZE_HOST
     }
     $env:ALPHAONZE_PORT = '8088'
     $env:ALPHAONZE_HOST = $alphaHost
     Start-LoggedProcess -Label 'alphaonze-afk' -FilePath $node -ArgumentList @('server.cjs') -WorkingDirectory $AlphaDir -LogRoot $LogRoot | Out-Null
-  } finally {
+  }
+  finally {
     $env:ALPHAONZE_PORT = $previousPort
     $env:ALPHAONZE_HOST = $previousHost
   }
@@ -188,7 +192,8 @@ function Start-AlphaOnZeIfNeeded {
   $alphaPid = Wait-Port -Port 8088 -TimeoutSec 20
   if ($alphaPid) {
     Write-Info "AlphaOnze pret sur 8088 (PID $alphaPid)."
-  } else {
+  }
+  else {
     Write-WarnLine 'AlphaOnze lance, mais le port 8088 ne repond pas encore.'
   }
 }
@@ -218,7 +223,8 @@ function Start-CaddyIfNeeded {
   $pid80 = Wait-Port -Port 80 -TimeoutSec 5
   if ($pid443) {
     Write-Info "Caddy pret sur 443 (PID $pid443)."
-  } else {
+  }
+  else {
     Write-WarnLine 'Caddy lance, mais le port 443 ne repond pas encore.'
   }
   if ($pid80) {
@@ -246,7 +252,8 @@ if (Test-Path -LiteralPath $configPath) {
     $rawValue = ($configLine -split '=', 2)[1].Trim()
     if ([System.IO.Path]::IsPathRooted($rawValue)) {
       $logRootBase = $rawValue
-    } else {
+    }
+    else {
       $logRootBase = [System.IO.Path]::GetFullPath((Join-Path $launcherRoot $rawValue))
     }
   }
@@ -262,20 +269,30 @@ try {
     Invoke-ChildPowerShellScript -Path $stopAll -Arguments @('-NoPause')
   }
 
-  Start-OllamaIfNeeded -LogRoot $logRoot
+  # Démarrage automatique des services (Neo4j, Docker, Ollama)
+  $autoStartScript = Join-Path $launcherRoot 'a11-autostart-services.ps1'
+  if (Test-Path -LiteralPath $autoStartScript) {
+    Write-Info 'Démarrage des services (Ollama, Neo4j, Docker)...'
+    Invoke-ChildPowerShellScript -Path $autoStartScript -Arguments @('-NoPause')
+  }
+  else {
+    Start-OllamaIfNeeded -LogRoot $logRoot
+  }
 
   if (Test-Path -LiteralPath $a11Launcher) {
     Write-Info 'Demarrage A11.'
     $a11Args = @('restart', '-NoPause', '-SkipUiBuild')
     if ($NoOpen) { $a11Args += '-NoOpen' }
     Invoke-ChildPowerShellScript -Path $a11Launcher -Arguments $a11Args
-  } else {
+  }
+  else {
     Write-WarnLine "Launcher A11 introuvable: $a11Launcher"
   }
 
   if (Test-Path -LiteralPath $alphaDir) {
     Start-CaddyIfNeeded -AlphaDir $alphaDir -LogRoot $logRoot
-  } else {
+  }
+  else {
     Write-WarnLine "Dossier AlphaOnze introuvable: $alphaDir"
   }
 
@@ -287,6 +304,7 @@ try {
   Write-Info 'Termine.'
   Write-Info 'A11 local: http://127.0.0.1:3000'
   Write-Info 'A11 public: https://alphaonze.funesterie.pro/'
-} finally {
+}
+finally {
   Complete
 }
