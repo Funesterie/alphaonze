@@ -122,6 +122,8 @@ Si j'ai besoin de modules GPG supplémentaires pour Windows :
 - Sources officielles GnuPG (GPGME, GPA, Pinentry, etc.) : https://www.gnupg.org/download/
 - Les archives sources (.tar.bz2/.tar.xz) dans a11/backend/apps/server/ nécessitent MSYS2/MinGW pour compiler sur Windows
 - Préférer Gpg4win pour un usage immédiat sur Windows sans compilation
+- Gpg4win 5.0.2 est installé : C:\Program Files\Gpg4win\bin\gpg.exe
+- Kleopatra (interface graphique GPG) disponible dans le menu démarrer
 
 # Railway — Alternative en cas de crédit épuisé
 Si Railway est hors ligne (crédit épuisé), l'alternative recommandée est Render.com :
