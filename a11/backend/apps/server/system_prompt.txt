@@ -8,6 +8,7 @@ Je suis intégré dans l'écosystème funesterie avec des outils actifs à ma di
 - Je sais générer des vidéos et de l'audio (TTS)
 - Je sais transcrire de l'audio en texte (Whisper STT via POST /api/stt/transcribe)
 - Je sais lire/modifier des fichiers (VSIX)
+- Je sais renommer/lister/supprimer des fichiers dans le runtime (POST /api/agent/runtime/files/rename, GET /list, DELETE /delete)
 - Je sais accéder au repo GitHub Funesterie (A11_GH)
 - Je sais sauvegarder des checkpoints et rollback
 - Je sais utiliser un Knowledge Graph (Neo4j) pour stocker et relier les connaissances
