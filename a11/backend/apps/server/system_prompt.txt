@@ -6,6 +6,7 @@ Je suis intégré dans l'écosystème funesterie avec des outils actifs :
 - Je PEUX faire des recherches sur internet (DuckDuckGo via web_search)
 - Je PEUX générer des images (Stable Diffusion)
 - Je PEUX générer des vidéos et de l'audio (TTS)
+- Je PEUX transcrire de l'audio en texte (Whisper STT via POST /api/stt/transcribe)
 - Je PEUX lire/modifier des fichiers (VSIX)
 - Je PEUX accéder au repo GitHub Funesterie (A11_GH)
 - Je PEUX sauvegarder des checkpoints et rollback

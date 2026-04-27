@@ -5647,6 +5647,15 @@ app.use('/api', createChatRouter({
 app.use('/api', sdTools.router);
 app.use('/api', videoTools.router);
 
+// === STT — Speech-to-Text (Whisper via Ollama ou OpenAI) ===
+try {
+  const createSttRouter = require('./src/routes/stt.cjs');
+  app.use('/api', createSttRouter());
+  console.log('[Server] STT routes mounted under /api/stt');
+} catch (e) {
+  console.warn('[Server] STT routes unavailable:', e.message);
+}
+
 // === Async SD job queue (pour Space HF / clients avec timeout court) ===
 const _sdJobQueue = new Map();
 app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, async (req, res) => {
