@@ -1,9 +1,18 @@
 #!/usr/bin/env node
 // Script d'initialisation du schéma PostgreSQL Railway pour A11
+// Charge .env.local si présent (dev local), sinon utilise DATABASE_URL depuis l'environnement
+const path = require('node:path');
+try {
+  require('dotenv').config({ path: path.resolve(__dirname, '.env.local'), override: false });
+} catch (_) {}
+
 const { Client } = require('pg');
 
-const DB_URL = process.env.DATABASE_URL || 
-  'postgresql://postgres:KTQeQfOkaNNwMKDYXXfKvmedvMAXqQsh@shuttle.proxy.rlwy.net:35544/railway';
+const DB_URL = process.env.DATABASE_URL;
+if (!DB_URL) {
+  console.error('Fatal: DATABASE_URL non défini. Configure .env.local ou la variable d\'environnement.');
+  process.exit(1);
+}
 
 const client = new Client({
   connectionString: DB_URL,
