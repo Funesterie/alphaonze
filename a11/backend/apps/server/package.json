@@ -21,6 +21,7 @@
     "test:contracts": "node --test ./test/*.node.test.cjs",
     "test:e2e:artifact": "node tests/a11-artifact-flow.e2e.cjs",
     "test:neo4j": "node test-neo4j-connection.cjs",
+    "db:init": "node init-db.cjs",
     "lint": "echo 'No linting configured for server'",
     "build": "echo 'No build step needed for backend'",
     "railway:build": "echo 'No build step needed for backend'"
