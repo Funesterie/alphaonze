@@ -204,7 +204,30 @@ const tables = [
       cached_at TIMESTAMP DEFAULT NOW(),
       expires_at TIMESTAMP
     )`
-  }
+  },
+  // Migrations : contraintes UNIQUE composites manquantes (ON CONFLICT)
+  {
+    name: 'migrate_user_files_unique_user_storage',
+    sql: `DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name='user_files' AND constraint_name='user_files_user_id_storage_key_key'
+      ) THEN
+        ALTER TABLE user_files ADD CONSTRAINT user_files_user_id_storage_key_key UNIQUE (user_id, storage_key);
+      END IF;
+    END $$`
+  },
+  {
+    name: 'migrate_user_facts_unique_user_fact_key',
+    sql: `DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name='user_facts' AND constraint_name='user_facts_user_id_fact_key_key'
+      ) THEN
+        ALTER TABLE user_facts ADD CONSTRAINT user_facts_user_id_fact_key_key UNIQUE (user_id, fact_key);
+      END IF;
+    END $$`
+  },
 ];
 
 async function run() {
