@@ -3,8 +3,23 @@
 const express = require('express');
 const http = require('node:http');
 const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
 const { URL } = require('node:url');
 const { withOllamaQueue, getQueueStats } = require('../core/ollama-queue.cjs');
+
+// Charge le system prompt depuis system_prompt.txt (première personne, identité complète d'A11)
+function loadSystemPrompt() {
+  try {
+    const promptPath = path.resolve(__dirname, '..', '..', 'system_prompt.txt');
+    return fs.readFileSync(promptPath, 'utf8').trim();
+  } catch (_) {
+    // Fallback si le fichier est absent
+    return `Je suis A-11, une intelligence artificielle développée par Jeffrey Cellauro alias Djeff alias funeste.\nJe réponds en français, de manière concise, claire et directe.`;
+  }
+}
+
+const SYSTEM_PROMPT = loadSystemPrompt();
 
 let OpenAI = null;
 try {
@@ -46,7 +61,7 @@ function getOllamaConfig() {
 
 function buildOllamaMessages(userMessage) {
   return [
-    { role: 'system', content: 'Tu es A11, un assistant IA local. Reponds en francais.' },
+    { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: userMessage },
   ];
 }
@@ -294,10 +309,7 @@ function createChatRouter(overrides = {}) {
       const completion = await openaiClient.chat.completions.create({
         model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
         messages: [
-          {
-            role: 'system',
-            content: 'Tu es l\'assistant A11. Si la demande est une generation d\'image reelle, ne reponds pas en texte, laisse le routeur declencher le tool.',
-          },
+          { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
