@@ -740,6 +740,27 @@ async function analyzeUploadedResource({ filename, contentType, buffer }) {
   }
 
   if (fileKind === 'pdf') {
+    // Tentative avec l'extracteur robuste (pdf-parse → heuristique → OCR)
+    try {
+      const { extractPdfText, formatPdfPreview } = require('./pdf-extractor.cjs');
+      const result = await extractPdfText(buffer, { maxChars: 2000 });
+      if (result && result.text) {
+        return {
+          ...base,
+          readableInChatContext: true,
+          parser: `pdf_${result.method}`,
+          preview: formatPdfPreview(result, filename),
+          truncated: result.truncated,
+          charCount: result.text.length,
+          blockCount: result.pages,
+          note: null,
+        };
+      }
+    } catch (_pdfErr) {
+      // fallback sur l'extracteur heuristique intégré
+    }
+
+    // Fallback heuristique intégré
     const pdfPreview = extractPdfTextPreview(buffer);
     if (pdfPreview.preview) {
       return {
