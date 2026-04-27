@@ -115,6 +115,10 @@ const tables = [
     sql: `CREATE INDEX IF NOT EXISTS idx_user_tasks_user_status_updated 
           ON user_tasks (user_id, status, updated_at DESC)`
   },
+  { name: 'migrate_user_tasks_priority',   sql: `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal'` },
+  { name: 'migrate_user_tasks_due_at',     sql: `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMP` },
+  { name: 'migrate_user_tasks_source',     sql: `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'chat_message'` },
+  { name: 'migrate_user_tasks_closed_at',  sql: `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP` },
   {
     name: 'user_files',
     sql: `CREATE TABLE IF NOT EXISTS user_files (
