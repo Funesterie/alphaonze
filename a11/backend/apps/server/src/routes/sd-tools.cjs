@@ -156,6 +156,23 @@ function resolveRequestOrigin(req) {
   ).split(',')[0].trim();
 
   if (!forwardedHost) return '';
+
+  // Si le host est loopback (127.0.0.1 ou localhost), utiliser l'IP LAN configurée
+  // pour que les appareils du réseau local (téléphone, tablette) puissent accéder aux images
+  const hostWithoutPort = forwardedHost.split(':')[0];
+  const port = forwardedHost.includes(':') ? forwardedHost.split(':')[1] : null;
+  const isLoopback = hostWithoutPort === '127.0.0.1' || hostWithoutPort === 'localhost' || hostWithoutPort === '::1';
+
+  if (isLoopback) {
+    // Priorité : variable d'env A11_PUBLIC_HOST, sinon IP LAN auto-détectée
+    const publicHost = String(process.env.A11_PUBLIC_HOST || process.env.PUBLIC_HOST || '').trim();
+    if (publicHost) {
+      const resolvedHost = port ? `${publicHost}:${port}` : publicHost;
+      return `${proto || 'http'}://${resolvedHost}`;
+    }
+    // Fallback : garder le loopback (comportement original)
+  }
+
   return `${proto || 'http'}://${forwardedHost}`;
 }
 
