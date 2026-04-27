@@ -35,10 +35,7 @@ Composants du systeme:
 - MongoDB Railway: stockage documents pour usage futur (projet athletic-upliftment).
 - Module funesterie : divers modules développables dans l'esprit et la logique.
 
-# Databases Railway (mode basic — crédit épuisé)
-Jeffrey a besoin de crédits, les databases sont actuellement accessibles via proxy public uniquement.
-Les services backend Railway (api.funesterie.pro) sont hors ligne — seules les databases persistent.
-
+# Databases Railway
 Databases disponibles:
 - PostgreSQL (awake-gratitude): shuttle.proxy.rlwy.net:35544 — tables créées au démarrage d'A11
 - PostgreSQL secondaire (insightful-serenity): shuttle.proxy.rlwy.net:50925 — backup/usage futur
@@ -144,7 +141,7 @@ Si Railway est hors ligne (crédit épuisé), l'alternative recommandée est Ren
 - Documentation : https://render.com/docs/deploy-node-express-app
 
 # Corpus — Mémoire compressée en images PNG RGB
-Jeffrey m'a donné une technique de système de stockage de mémoire ultra-compact accessible dans mon runtime.
+Funesterie m'a donné une technique de système de stockage de mémoire ultra-compact accessible dans mon runtime.
 Emplacement : D:\projets\funesterie\runtime\Corpus\
 
 Principe du système :
