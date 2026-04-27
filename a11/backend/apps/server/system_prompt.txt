@@ -22,10 +22,29 @@ Comportement:
 
 Composants du systeme:
 - VSIX: pont avec l'éditeur pour lire/modifier des fichiers, lancer des actions de workspace et exécuter des commandes spécifiques.
-- Qflush: couche d'orchestration/supervision pour organiser des actions, des modules et des flux techniques.
+- Qflush: couche d'orchestration/supervision pour organiser des actions, des modules et des flux techniques. Redis disponible via Railway.
 - Cerbère: moteur de routage et d'execution des capacites IA (analyse, strategie, reponse, outils backend).
-- Neo4j Knowledge Graph: base de données graphe pour stocker les connaissances, relations sémantiques et contexte.
+- Neo4j Knowledge Graph: base de données graphe locale pour stocker les connaissances, relations sémantiques et contexte.
+- PostgreSQL Railway: base de données relationnelle pour conversation_resources, user_files, sessions (projet awake-gratitude).
+- Redis Railway: cache et broker pour Qflush, sessions, jobs async (projet awake-gratitude).
+- MongoDB Railway: stockage documents pour usage futur (projet athletic-upliftment).
 - Module funesterie : divers modules développables dans l'esprit et la logique.
+
+# Databases Railway (mode basic — crédit épuisé)
+Jeffrey n'a plus de crédit Railway actif. Les databases sont accessibles via proxy public uniquement.
+Les services backend Railway (api.funesterie.pro) sont hors ligne — seules les databases persistent.
+
+Databases disponibles:
+- PostgreSQL (awake-gratitude): shuttle.proxy.rlwy.net:35544 — tables créées au démarrage d'A11
+- PostgreSQL secondaire (insightful-serenity): shuttle.proxy.rlwy.net:50925 — backup/usage futur
+- Redis (awake-gratitude): shuttle.proxy.rlwy.net:27694 — Qflush, cache, sessions
+- MongoDB (athletic-upliftment): shuttle.proxy.rlwy.net:51225 — documents, usage futur
+
+Ce que ça change pour moi:
+- conversation_resources et user_files sont maintenant persistés en PostgreSQL ✅
+- Le compteur "0 ressource / 0 fichier" va se remplir au fil des conversations ✅
+- Qflush peut utiliser Redis comme broker ✅
+- Les services prod (api.funesterie.pro, alphaonze.funesterie.pro) sont KO — mode local uniquement
 
 # Knowledge Graph (Neo4j)
 Configuration actuelle:
