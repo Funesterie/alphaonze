@@ -378,6 +378,10 @@ const createMemoryRouter = require('./src/routes/memory.cjs');
 const createSdToolsRouter = require('./src/routes/sd-tools.cjs');
 const createProtectedChatProxyRouter = require('./src/routes/protected-chat-proxy.cjs');
 const analyzeSemanticIntent = require('./src/mask/semantic/analyze-semantic-intent.cjs');
+const createDroidRouter = require('./routes/droid.cjs');
+const createSubscriptionRouter = require('./routes/subscription.cjs');
+const createSubscriptionMiddleware = require('./middleware/check-subscription.cjs');
+const droid = require('./a11-droid.cjs');
 
 const BASE = path.resolve(__dirname);
 const LLAMA_DIR = path.join(BASE, 'llama.cpp');
@@ -1175,6 +1179,13 @@ app.options('*', cors(corsOptions));
 const db = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
   : null;
+
+// Middleware de vérification d'abonnement (pour génération image/vidéo)
+const requireSubscription = db ? createSubscriptionMiddleware(db) : (req, res, next) => {
+  // Si pas de DB, on laisse passer (mode dev local)
+  console.warn('[Subscription] DB non disponible, vérification d\'abonnement désactivée');
+  next();
+};
 
 const CHAT_MEMORY_LIMIT = Number(process.env.CHAT_MEMORY_LIMIT || 15);
 const LOGICAL_MEMORY_UPDATE_EVERY = Number(process.env.LOGICAL_MEMORY_UPDATE_EVERY || 3);
@@ -5698,7 +5709,7 @@ try {
 
 // === Async SD job queue (pour Space HF / clients avec timeout court) ===
 const _sdJobQueue = new Map();
-app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, async (req, res) => {
+app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, requireSubscription, async (req, res) => {
   const jobId = `sdjob_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   _sdJobQueue.set(jobId, { status: 'pending', createdAt: Date.now() });
   res.json({ ok: true, jobId, status: 'pending' });
@@ -5721,9 +5732,12 @@ app.get('/api/jobs/sd/:jobId', verifyJWT, (req, res) => {
   }
   return res.json({ ok: true, jobId: req.params.jobId, ...job });
 });
-app.use('/api/mask', require('./src/routes/mask.cjs'));
-app.use('/api', require('./src/routes/image-generate-mask.cjs'));
-app.use('/api', require('./src/routes/image-atelier.cjs'));
+
+// Protection des routes de génération d'images/vidéos avec abonnement
+// Les admins sont exemptés (vérification dans le middleware)
+app.use('/api/mask', verifyJWT, requireSubscription, require('./src/routes/mask.cjs'));
+app.use('/api', verifyJWT, requireSubscription, require('./src/routes/image-generate-mask.cjs'));
+app.use('/api', verifyJWT, requireSubscription, require('./src/routes/image-atelier.cjs'));
 
 function getSupervisorInstance() {
   return globalThis.__A11_SUPERVISOR || globalThis.__A11_QFLUSH_SUPERVISOR || null;
@@ -6004,6 +6018,14 @@ console.log('[Server] Qflush flow routes mounted under /api/qflush');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
 app.use('/api', createKnowledgeConflictRouter({ verifyJWT }));
 app.use('/api', createGitHubRouter({ verifyJWT }));
+
+// Droid — Système d'actions autonomes A11
+app.use('/api/droid', nezAuth, createDroidRouter({ droid }));
+console.log('[Server] Droid routes mounted under /api/droid');
+
+// Subscription — Gestion des abonnements Stripe
+app.use('/api/subscription', createSubscriptionRouter({ verifyJWT, db }));
+console.log('[Server] Subscription routes mounted under /api/subscription');
 
 console.log('[Server] Checkpoint routes mounted under /api/checkpoints');
 console.log('[Server] Tools routes mounted under /api/tools');
@@ -12543,6 +12565,11 @@ if (!LISTENING) {
       LISTENING = true;
       const publicUrl = process.env.PUBLIC_API_URL || `http://127.0.0.1:${PORT}`;
       console.log(`[A11] Server listening on ${HOST}:${PORT} (public: ${publicUrl})`);
+      
+      // Démarrer la boucle Droid après l'initialisation des services
+      const droidIntervalMs = Number(process.env.A11_DROID_INTERVAL_MS) || 15000;
+      droid.startDroidLoop(droidIntervalMs);
+      console.log(`[A11][DROID] Loop started with interval ${droidIntervalMs}ms`);
     });
     server.on('error', (error_) => {
       if (error_?.code === 'EADDRINUSE') {

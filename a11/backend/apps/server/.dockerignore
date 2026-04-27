@@ -1,21 +1,42 @@
-.git
-.github
-.vscode
-.vs
-node_modules
-dist
-docs
-test
-tests
-.a11_state
-.qflash
-a11_runtime
-tmp
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Logs
+logs/
+*.log
+
+# Runtime
+runtime/
+.codex-tmp/
+
+# Environment
 .env
 .env.local
-dev.log
-server.cjs.backup
-server.cjs.before-supervisor-init
-*.ps1
-*.bat
-nixpacks.toml
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests
+test/
+tests/
+*.test.js
+*.test.cjs
+
+# Documentation
+*.md
+docs/
+
+# Temporary
+tmp/
+temp/
+.tmp/

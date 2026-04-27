@@ -45,6 +45,7 @@ import { CreateArtifactModal } from "./components/CreateArtifactModal";
 import { EmailResourceModal } from "./components/EmailResourceModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameConversationModal } from "./components/RenameConversationModal";
+import { SubscriptionPanel } from "./components/SubscriptionPanel";
 import ReactMarkdown from "react-markdown";
 import "./index.css";
 import {
@@ -1121,7 +1122,7 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
 }
 
 export function App() {
-  type AdminSection = "cockpit" | "memory" | "runtime" | "console" | "ai";
+  type AdminSection = "cockpit" | "memory" | "runtime" | "console" | "ai" | "subscription";
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
@@ -2762,6 +2763,20 @@ export function App() {
                     type="button"
                     onClick={() => {
                       setActiveView("admin");
+                      setAdminSection("subscription");
+                      setSettingsMenuOpen(false);
+                      setSidebarOpen(false);
+                    }}
+                    className="btn ghost"
+                    style={{ width: "100%", justifyContent: "space-between" }}
+                  >
+                    <span>Abonnement</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>💳</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveView("admin");
                       setAdminSection("ai");
                       setSettingsMenuOpen(false);
                       setSidebarOpen(false);
@@ -3007,6 +3022,9 @@ export function App() {
                     <button type="button" onClick={() => setAdminSection('console')} style={adminTabButtonStyle('console')}>
                       Console
                     </button>
+                    <button type="button" onClick={() => setAdminSection('subscription')} style={adminTabButtonStyle('subscription')}>
+                      Abonnement
+                    </button>
                   </div>
                 </div>
 
@@ -3024,6 +3042,13 @@ export function App() {
                     onSave={handleSaveRemoteAiProfile}
                     onDelete={handleDeleteRemoteAiProfile}
                     onSelect={(profileId) => setModel(`remote-profile:${profileId}`)}
+                  />
+                ) : null}
+
+                {adminSection === 'subscription' ? (
+                  <SubscriptionPanel 
+                    isAdmin={hasAdminApiAccess()} 
+                    onClose={() => setActiveView('chat')}
                   />
                 ) : null}
 

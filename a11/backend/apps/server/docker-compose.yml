@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  a11-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: a11-backend:latest
+    container_name: a11-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Port et host
+      - PORT=3000
+      - HOST_SERVER=0.0.0.0
+      
+      # JWT
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRY=7d
+      
+      # Admin par défaut
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME:-Djeff}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      
+      # PostgreSQL (Railway)
+      - DATABASE_URL=${DATABASE_URL}
+      
+      # Redis (Railway)
+      - REDIS_URL=${REDIS_URL}
+      - QFLUSH_REDIS_URL=${REDIS_URL}
+      
+      # LLM
+      - A11_LLM_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEFAULT_MODEL=gpt-4o-mini
+      
+      # Stripe
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL}
+      - STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL}
+      - STRIPE_PORTAL_RETURN_URL=${STRIPE_PORTAL_RETURN_URL}
+      
+      # Email (Resend)
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM:-A11 <a11@funesterie.pro>}
+      - APP_URL=${APP_URL:-https://alphaonze.funesterie.pro}
+      
+      # CORS
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://alphaonze.funesterie.pro}
+      
+      # Sécurité
+      - NEZ_SECURITY_MODE=production
+      
+      # Qflush
+      - A11_ENABLE_QFLUSH=1
+      - QFLUSH_CHAT_FLOW=a11.chat.v1
+      
+    volumes:
+      - a11-logs:/app/logs
+      - a11-runtime:/app/runtime
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - a11-network
+
+volumes:
+  a11-logs:
+    driver: local
+  a11-runtime:
+    driver: local
+
+networks:
+  a11-network:
+    driver: bridge

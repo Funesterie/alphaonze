@@ -2362,3 +2362,76 @@ export async function deleteRemoteProviderProfile(profileId: string): Promise<{ 
 
   return data as { ok: boolean; removedId?: string };
 }
+
+// ── Subscription Management ──────────────────────────────────────────────────
+
+export interface SubscriptionStatus {
+  ok: boolean;
+  active: boolean;
+  endDate?: string | null;
+  stripeStatus?: {
+    active: boolean;
+    status: string;
+    currentPeriodEnd: number | null;
+    cancelAtPeriodEnd?: boolean;
+  } | null;
+}
+
+export interface CheckoutSessionResponse {
+  ok: boolean;
+  sessionId: string;
+  url: string;
+}
+
+export interface CustomerPortalResponse {
+  ok: boolean;
+  url: string;
+}
+
+/**
+ * Récupère le statut d'abonnement de l'utilisateur
+ */
+export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {
+  const res = await authFetch(getApiUrl('/api/subscription/status'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Impossible de charger le statut (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Crée une session de checkout Stripe pour souscrire
+ */
+export async function createCheckoutSession(): Promise<CheckoutSessionResponse> {
+  const res = await authFetch(getApiUrl('/api/subscription/create-checkout'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Impossible de créer la session (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Crée une session du portail client Stripe pour gérer l'abonnement
+ */
+export async function createCustomerPortal(): Promise<CustomerPortalResponse> {
+  const res = await authFetch(getApiUrl('/api/subscription/create-portal'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Impossible d'ouvrir le portail (${res.status})`);
+  }
+
+  return res.json();
+}

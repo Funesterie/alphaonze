@@ -1,41 +1,50 @@
-FROM node:22-bookworm-slim
+# A11 Backend - Dockerfile pour Podman/Docker
+FROM node:20-alpine
 
-ARG A11_INSTALL_JANUS=1
+# Métadonnées
+LABEL maintainer="Jeffrey Cellauro <djeff@funesterie.pro>"
+LABEL description="A11 Backend - Assistant IA avec Stripe"
+LABEL version="1.0.0"
 
-ENV NODE_ENV=production \
-    A11_INSTALL_JANUS=${A11_INSTALL_JANUS} \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH=/opt/venv/bin:/app/node_modules/.bin:$PATH
+# Variables d'environnement par défaut
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST_SERVER=0.0.0.0
 
+# Installer les dépendances système nécessaires
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    postgresql-client \
+    curl
+
+# Créer le répertoire de l'application
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash python3 python3-venv ca-certificates libstdc++6 git ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Copier les fichiers package
+COPY package*.json ./
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+# Installer les dépendances de production
+RUN npm ci --only=production --ignore-scripts
 
-RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir piper-tts
-
+# Copier le code source
 COPY . .
 
-RUN /opt/venv/bin/pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r tools/sd/requirements.txt
+# Créer les répertoires nécessaires
+RUN mkdir -p \
+    /app/logs \
+    /app/logs/supervisor \
+    /app/runtime \
+    /app/runtime/files \
+    /app/runtime/files/uploads
 
-RUN if [ "${A11_INSTALL_JANUS}" = "1" ]; then \
-      python3 -m venv /opt/janus-venv \
-      && /opt/janus-venv/bin/pip install --no-cache-dir -U pip \
-      && JANUS_PYTHON_VERSION="$("/opt/janus-venv/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" \
-      && echo "/opt/venv/lib/python${JANUS_PYTHON_VERSION}/site-packages" > "/opt/janus-venv/lib/python${JANUS_PYTHON_VERSION}/site-packages/a11_backend_sd_sitepackages.pth" \
-      && if ! /opt/janus-venv/bin/pip install --no-cache-dir -r tools/vision/requirements.txt; then \
-           echo "[A11] Warning: bundled Janus install failed during Docker build; continuing without local Janus runtime"; \
-           rm -rf /opt/janus-venv; \
-         fi; \
-    fi
+# Exposer le port
+EXPOSE 3000
 
-EXPOSE 8080
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/api/health || exit 1
 
-CMD ["bash", "start.sh"]
+# Démarrer l'application
+CMD ["node", "server.cjs"]
