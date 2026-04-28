@@ -51,36 +51,46 @@ Le **A11 Blueprint** est le **code source complet** du système A11, prêt à d�
 
 ## 💰 Tarification
 
-### Blueprint Complet : **3000€** (paiement unique)
+### Blueprint Complet : **8000€** (paiement unique)
 
 **Ce que vous obtenez :**
 
 - 📂 Accès au repository privé GitHub
-- 📝 Documentation complète
-- 🔧 Configuration prête à l'emploi
-- 🚀 Scripts de déploiement
-- 💬 Support par email (30 jours)
-- 🔄 Mises à jour (6 mois)
+- 📝 Documentation complète (architecture, API, déploiement)
+- 🔧 Configuration prête à l'emploi (Docker, Render, Railway)
+- 🚀 Scripts de déploiement automatisés
+- 💬 Support par email (90 jours)
+- 🔄 Mises à jour (12 mois)
+- 📊 **Économie de 52 000€** vs développement from scratch
+
+**Justification du prix :**
+
+- ⏱️ Temps de développement équivalent : 6-12 mois solo
+- 💰 Coût développeur senior : 60 000€ (1000h × 60€/h)
+- 🚀 ROI immédiat : Lancez votre produit en quelques jours
+- 💬 Support inclus : 90 jours d'assistance technique
+- 🔄 Mises à jour : 12 mois de nouvelles fonctionnalités
 
 ### Options Supplémentaires
 
-**Support Étendu** : +500€/mois
+**Support Étendu** : +1000€/mois
 
 - Support prioritaire par email/Discord
-- Aide au déploiement
-- Personnalisation mineure
+- Aide au déploiement personnalisé
+- Personnalisation mineure (5h/mois)
 - Mises à jour continues
+- Accès Discord privé
 
-**Personnalisation** : Sur devis
+**Personnalisation** : Sur devis (à partir de 3000€)
 
 - Branding personnalisé
-- Fonctionnalités sur mesure
+- Fonctionnalités sur mesure (20h incluses)
 - Intégrations spécifiques
-- Formation équipe
+- Formation équipe (2 jours)
 
 ## 🆚 A11 vs Blueprint
 
-| Feature                  | A11 Free  | A11 Premium (2,99€) | Blueprint (3000€) |
+| Feature                  | A11 Free  | A11 Premium (2,99€) | Blueprint (8000€) |
 | ------------------------ | --------- | ------------------- | ----------------- |
 | **Accès A11**            | ✅ Limité | ✅ Illimité         | ✅ Illimité       |
 | **Génération d'images**  | 5/jour    | Illimité            | Illimité          |
@@ -197,4 +207,4 @@ A: Oui, testez A11 gratuitement sur https://alphaonze.funesterie.pro pour voir l
 
 **Prêt à lancer votre propre assistant IA ?** 🚀
 
-[Acheter le Blueprint (3000€)](mailto:djeff@funesterie.pro?subject=Achat%20Blueprint%20A11)
+[Acheter le Blueprint (8000€)](mailto:djeff@funesterie.pro?subject=Achat%20Blueprint%20A11)

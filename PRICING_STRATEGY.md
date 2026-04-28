@@ -30,7 +30,7 @@
 
 **Modèle** : Paiement unique
 
-#### Blueprint Complet (3000€)
+#### Blueprint Complet (8000€)
 
 - ✅ Code source complet (backend + frontend)
 - ✅ Documentation complète
@@ -47,7 +47,7 @@
 
 | Feature               | Free      | Premium    | Blueprint      |
 | --------------------- | --------- | ---------- | -------------- |
-| **Prix**              | 0€        | 2,99€/mois | 3000€ (unique) |
+| **Prix**              | 0€        | 2,99€/mois | 8000€ (unique) |
 | **Accès A11**         | ✅        | ✅         | ✅             |
 | **Images**            | 5/jour    | Illimité   | Illimité       |
 | **Vidéos**            | ❌        | 10/jour    | Illimité       |
@@ -142,7 +142,7 @@
 - ✅ API calls vers `/api/subscription/*`
 - ✅ Gestion des états (non-abonné, abonné, admin)
 
-### Blueprint (3000€ unique)
+### Blueprint (8000€ unique)
 
 **À Créer** :
 
@@ -171,7 +171,7 @@
 
 ### Blueprint
 
-- [ ] Créer produit Stripe (3000€)
+- [x] Créer produit Stripe (8000€)
 - [ ] Créer lien de paiement
 - [ ] Page de vente professionnelle
 - [ ] Webhook blueprint
