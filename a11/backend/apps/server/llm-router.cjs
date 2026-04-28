@@ -152,6 +152,8 @@ function normalizeLlmProvider(value, fallback = "none") {
   if (normalized === "openai") return "openai";
   if (normalized === "groq") return "groq";
   if (normalized === "deepseek") return "deepseek";
+  if (["together", "together_ai", "togetherai"].includes(normalized)) return "together";
+  if (["huggingface", "hf", "hugging_face"].includes(normalized)) return "huggingface";
   if (["llama_server", "llama-server", "llama", "local"].includes(normalized)) return "llama_server";
   if (["none", "disabled", "off"].includes(normalized)) return "none";
   return fallback;
@@ -174,6 +176,8 @@ const BACKENDS = {
   llama_server: normalizeBaseUrl(process.env.LLAMA_BASE || process.env.LOCAL_LLM_URL || ""),
   groq: normalizeBaseUrl(process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"),
   deepseek: normalizeBaseUrl(process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1"),
+  together: normalizeBaseUrl(process.env.TOGETHER_BASE_URL || "https://api.together.xyz/v1"),
+  huggingface: normalizeBaseUrl(process.env.HF_BASE_URL || "https://api-inference.huggingface.co/v1"),
 };
 const OLLAMA_BASE = BACKENDS.ollama;
 const LLM_PROVIDER = deriveDefaultLlmProvider();
@@ -189,6 +193,8 @@ const DEFAULT_LOCAL_MODEL = String(
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
 const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || "llama-3.3-70b-versatile").trim() || "llama-3.3-70b-versatile";
 const DEFAULT_DEEPSEEK_MODEL = String(process.env.DEEPSEEK_MODEL || "deepseek-chat").trim() || "deepseek-chat";
+const DEFAULT_TOGETHER_MODEL = String(process.env.TOGETHER_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo").trim() || "meta-llama/Llama-3.3-70B-Instruct-Turbo";
+const DEFAULT_HF_MODEL = String(process.env.HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct").trim() || "meta-llama/Llama-3.1-8B-Instruct";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 120000) || 120000;
@@ -408,6 +414,30 @@ function resolveDeepSeekTarget(requestedModel = "", reason = "") {
   };
 }
 
+function resolveTogetherTarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.together) return null;
+  const model = String(requestedModel || DEFAULT_TOGETHER_MODEL).trim() || DEFAULT_TOGETHER_MODEL;
+  return {
+    provider: "together",
+    model,
+    baseUrl: BACKENDS.together,
+    url: buildOpenAICompletionsUrl(BACKENDS.together),
+    reason: reason || null,
+  };
+}
+
+function resolveHuggingFaceTarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.huggingface) return null;
+  const model = String(requestedModel || DEFAULT_HF_MODEL).trim() || DEFAULT_HF_MODEL;
+  return {
+    provider: "huggingface",
+    model,
+    baseUrl: BACKENDS.huggingface,
+    url: buildOpenAICompletionsUrl(BACKENDS.huggingface),
+    reason: reason || null,
+  };
+}
+
 async function resolveOllamaTarget(requestedModel = "", { emitLogs = true } = {}) {
   const tags = await getOllamaTags();
   if (!tags.ok) {
@@ -505,7 +535,37 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
       }
     }
 
-    // Fallback 4 : OpenAI (Cerbère cloud) — protège le backend quand A11 est occupée
+    // Fallback 4 : Together AI (llama open source, gratuit)
+    if (LLM_FALLBACK_PROVIDER === "together" || LLM_FALLBACK_PROVIDER === "none") {
+      const hasTogetherKey = !!(process.env.TOGETHER_API_KEY);
+      if ((LLM_FALLBACK_PROVIDER === "together" || hasTogetherKey) && BACKENDS.together) {
+        const togetherTarget = resolveTogetherTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+        if (togetherTarget) {
+          if (emitLogs) logWarn(`[LLM] fallback=together (llama cloud) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+          rememberResolvedTarget(togetherTarget, {
+            availableOllamaModels: ollamaResult.tags?.models || [],
+          });
+          return togetherTarget;
+        }
+      }
+    }
+
+    // Fallback 5 : HuggingFace (open source, gratuit)
+    if (LLM_FALLBACK_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "none") {
+      const hasHfKey = !!(process.env.HF_API_KEY);
+      if ((LLM_FALLBACK_PROVIDER === "huggingface" || hasHfKey) && BACKENDS.huggingface) {
+        const hfTarget = resolveHuggingFaceTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+        if (hfTarget) {
+          if (emitLogs) logWarn(`[LLM] fallback=huggingface (open source) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+          rememberResolvedTarget(hfTarget, {
+            availableOllamaModels: ollamaResult.tags?.models || [],
+          });
+          return hfTarget;
+        }
+      }
+    }
+
+    // Fallback 6 : OpenAI (Cerbère cloud) — protège le backend quand A11 est occupée
     if (LLM_FALLBACK_PROVIDER === "openai" || LLM_FALLBACK_PROVIDER === "none") {
       // Même si fallback=none, on tente OpenAI si une clé est disponible
       const hasOpenAiKey = !!(process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY);
@@ -846,6 +906,12 @@ function buildUpstreamHeaders(backendBase, provider = "openai") {
   }
   if (provider === "deepseek" && process.env.DEEPSEEK_API_KEY) {
     headers.Authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
+  }
+  if (provider === "together" && process.env.TOGETHER_API_KEY) {
+    headers.Authorization = `Bearer ${process.env.TOGETHER_API_KEY}`;
+  }
+  if (provider === "huggingface" && process.env.HF_API_KEY) {
+    headers.Authorization = `Bearer ${process.env.HF_API_KEY}`;
   }
   return headers;
 }

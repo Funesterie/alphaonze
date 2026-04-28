@@ -45,6 +45,18 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: TOGETHER_API_KEY
+        sync: false
+      - key: TOGETHER_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: HF_API_KEY
+        sync: false
+      - key: HF_MODEL
+        value: meta-llama/Llama-3.1-8B-Instruct
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PRICE_ID
