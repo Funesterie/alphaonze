@@ -6669,7 +6669,55 @@ app.get('/api/llm/stats', async (req, res) => {
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 
-app.use(helmet({ contentSecurityPolicy: false }));
+// Helmet — headers de sécurité complets
+app.use(helmet({
+  contentSecurityPolicy: false, // géré séparément pour ne pas casser le frontend
+  crossOriginEmbedderPolicy: false, // nécessaire pour les images/vidéos
+  hsts: {
+    maxAge: 31536000, // 1 an
+    includeSubDomains: true,
+    preload: true,
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xContentTypeOptions: true,
+  xFrameOptions: { action: 'deny' },
+  xXssProtection: true,
+}));
+
+// Rate limiting global — protection contre les abus
+const _rateLimitWindows = new Map();
+function createRateLimiter({ windowMs = 60_000, max = 100, message = 'Too many requests' } = {}) {
+  return (req, res, next) => {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const key = `${ip}:${req.path}`;
+    const now = Date.now();
+    const window = _rateLimitWindows.get(key) || { count: 0, resetAt: now + windowMs };
+
+    if (now > window.resetAt) {
+      window.count = 0;
+      window.resetAt = now + windowMs;
+    }
+
+    window.count++;
+    _rateLimitWindows.set(key, window);
+
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - window.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(window.resetAt / 1000));
+
+    if (window.count > max) {
+      return res.status(429).json({ ok: false, error: 'rate_limited', message });
+    }
+    next();
+  };
+}
+
+// Rate limits par route
+app.use('/api/auth', createRateLimiter({ windowMs: 60_000, max: 10, message: 'Trop de tentatives de connexion' }));
+app.use('/api/chat', createRateLimiter({ windowMs: 60_000, max: 30, message: 'Trop de requêtes chat' }));
+app.use('/api/image-generate', createRateLimiter({ windowMs: 60_000, max: 5, message: 'Trop de générations d\'images' }));
+app.use('/api', createRateLimiter({ windowMs: 60_000, max: 200, message: 'Trop de requêtes' }));
+
 app.use(cookieParser());
 
 // Serve frontend static files from a configurable embedded build directory.
