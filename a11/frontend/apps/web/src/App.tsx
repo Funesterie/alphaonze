@@ -483,8 +483,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
   return null;
 }
 
-const DEFAULT_SYSTEM_NINDO =
-  "Tu es A-11, assistant local. Réponds de façon concise, claire et directe. N'invente pas de contexte. Ne fais aucune action et ne proposes aucune action non demandée explicitement. Si la question est triviale, réponds en une phrase maximum.";
+const DEFAULT_SYSTEM_NINDO = "";
 
 function buildConversationArtifactContent(
   conversationMessages: ChatMessage[],
@@ -2205,32 +2204,9 @@ export function App() {
     setDeleteDialogChatId(null);
   }
 
-  // NINDO layers (à adapter selon ton code)
-  const nindoLayers = {
-    core: DEFAULT_SYSTEM_NINDO,
-    dev: '',
-    project: '',
-    session: '',
-  };
-
-  // Prompt système pour le mode CHAT normal
-  const systemPromptChat = useMemo(() => {
-    const parts: string[] = [];
-    parts.push(`# NINDO CORE\n${nindoLayers.core}`);
-    if (nindoLayers.project.trim()) {
-      parts.push(`# NINDO PROJET\n${nindoLayers.project}`);
-    }
-    if (nindoLayers.session.trim()) {
-      parts.push(`# NINDO SESSION\n${nindoLayers.session}`);
-    }
-    // Règle anti-blabla
-    parts.push(
-      `# RÈGLES\n- Réponds uniquement à la demande de l'utilisateur.\n- N'invente jamais de contexte ou de scénario.\n- Ne propose aucune action non demandée explicitement.\n- Ne réponds jamais par un JSON d'action, une enveloppe d'outil ou une pseudo commande.\n- Si la demande n'est pas claire, pose une seule question de clarification.\n- Si la question est triviale, réponds en une phrase maximum.`
-    );
-    return parts.join("\n\n---\n\n");
-  }, [nindoLayers]);
-
-  const systemPrompt = systemPromptChat;
+  // Le system prompt est géré côté backend (system_prompt.txt)
+  // Le frontend n'envoie pas de prompt système — évite l'exposition dans les DevTools
+  const systemPrompt = undefined;
 
   // Initialisation globale de window.speak au montage pour garantir le son
   useEffect(() => {
