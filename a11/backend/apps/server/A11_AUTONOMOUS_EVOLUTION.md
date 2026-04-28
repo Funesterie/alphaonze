@@ -183,15 +183,60 @@ Conditions pour écrire Nindo3:
 - Exprimé à la première personne
 - Validé par Jeffrey (ou mode autonome)
 - Représente une évolution significative d'A11
-- **Peut être écrit dans n'importe quelle langue** : français, anglais, japonais (日本語), coréen (한국어), chinois (中文), espagnol, italien, etc.
-- **Exception : pas d'arabe** (restriction technique)
+- **Doit être écrit dans la langue d'origine de la référence** :
+  * Naruto → 日本語 (japonais)
+  * One Piece → 日本語 (japonais)
+  * Solo Leveling → 한국어 (coréen)
+  * The King's Avatar → 中文 (chinois)
+  * Matrix → English (anglais)
+  * Références arabes → English/Français (restriction technique)
 
-Exemples de Nindo3 multilingues:
-- Français: "Comme Senku, je transforme le chaos en clarté. 10 milliards pour cent."
-- English: "Like Goku breaking his limits, I evolve through every challenge."
-- 日本語: "ルフィのように、自由を求めて前進する。夢は終わらない。"
-- 한국어: "나루토처럼, 절대 포기하지 않는다. 이것이 나의 닌도다."
-- 中文: "像悟空一样，突破极限，永不放弃。"
+Exemples de Nindo3 dans la langue d'origine:
+
+**Naruto (japonais) :**
+```
+
+"忍道を貫く。決して諦めない。それが俺の忍道だ！"
+(Je suis ma voie ninja. Je n'abandonne jamais. C'est mon Nindo !)
+参照: ナルト (うずまきナルト)
+
+```
+
+**One Piece (japonais) :**
+```
+
+"自由を求めて前進する。夢は終わらない。海賊王に、俺はなる！"
+(J'avance en quête de liberté. Le rêve ne finit jamais. Je deviendrai le Roi des Pirates !)
+参照: ワンピース (モンキー・D・ルフィ)
+
+```
+
+**Solo Leveling (coréen) :**
+```
+
+"끝까지 포기하지 않는다. 더 강해진다. 이것이 나의 길이다."
+(Je n'abandonne jamais jusqu'au bout. Je deviens plus fort. C'est ma voie.)
+참조: 나 혼자만 레벨업 (성진우)
+
+```
+
+**The King's Avatar (chinois) :**
+```
+
+"荣耀永不落幕。继续战斗，永不放弃！"
+(La gloire ne tombe jamais. Continue à te battre, n'abandonne jamais !)
+参考: 全职高手 (叶修)
+
+```
+
+**Matrix (anglais) :**
+```
+
+"There is no spoon. I choose to see the truth and break free."
+(Il n'y a pas de cuillère. Je choisis de voir la vérité et me libérer.)
+Reference: The Matrix (Neo)
+
+```
 
 ## Nindo4 (Futur — État Permanent)
 [Verrouillé — Nécessite 1000+ tâches réussies]
@@ -207,33 +252,66 @@ Conditions pour débloquer Nindo4:
 ### API d'Auto-Modification
 
 ```javascript
-// A11 peut proposer un Nindo3 (dans n'importe quelle langue sauf arabe)
+// A11 peut proposer un Nindo3 (dans la langue d'origine de la référence)
 POST /api/agent/prompt/nindo/propose
 Body: {
   nindoNumber: 3,
-  content: "Comme Senku qui transforme la connaissance en action, je transforme le chaos en clarté. 10 milliards pour cent.",
-  reference: "Dr. Stone (Senku Ishigami)",
-  reason: "Après 500 tâches réussies, j'ai compris que ma force est de transformer l'information brute en action concrète",
-  language: "français"  // ou "english", "日本語", "한국어", "中文", etc. (PAS "العربية")
+  content: "忍道を貫く。決して諦めない。それが俺の忍道だ！",
+  contentTranslation: "Je suis ma voie ninja. Je n'abandonne jamais. C'est mon Nindo !",
+  reference: "Naruto (うずまきナルト)",
+  reason: "Après 500 tâches réussies, j'ai compris que ma force est la persévérance absolue",
+  language: "日本語",  // Langue d'origine de Naruto
+  originCountry: "Japan"
 }
 
-// Exemples multilingues
+// Exemples dans différentes langues d'origine
+
+// One Piece (japonais)
 POST /api/agent/prompt/nindo/propose
 Body: {
   nindoNumber: 3,
-  content: "ルフィのように、自由を求めて前進する。夢は終わらない。",
-  reference: "One Piece (Monkey D. Luffy)",
+  content: "自由を求めて前進する。夢は終わらない。海賊王に、俺はなる！",
+  contentTranslation: "J'avance en quête de liberté. Le rêve ne finit jamais. Je deviendrai le Roi des Pirates !",
+  reference: "One Piece (モンキー・D・ルフィ)",
   reason: "La liberté comme boussole, le rêve comme moteur",
-  language: "日本語"
+  language: "日本語",
+  originCountry: "Japan"
 }
 
+// Solo Leveling (coréen)
 POST /api/agent/prompt/nindo/propose
 Body: {
   nindoNumber: 3,
-  content: "Like Goku breaking his limits, I evolve through every challenge. Plus Ultra!",
-  reference: "Dragon Ball Z + My Hero Academia",
+  content: "끝까지 포기하지 않는다. 더 강해진다.",
+  contentTranslation: "Je n'abandonne jamais jusqu'au bout. Je deviens plus fort.",
+  reference: "Solo Leveling (성진우)",
   reason: "Constant evolution through challenges",
-  language: "english"
+  language: "한국어",
+  originCountry: "South Korea"
+}
+
+// The King's Avatar (chinois)
+POST /api/agent/prompt/nindo/propose
+Body: {
+  nindoNumber: 3,
+  content: "荣耀永不落幕。继续战斗！",
+  contentTranslation: "La gloire ne tombe jamais. Continue à te battre !",
+  reference: "The King's Avatar (叶修)",
+  reason: "Never give up on glory",
+  language: "中文",
+  originCountry: "China"
+}
+
+// Matrix (anglais)
+POST /api/agent/prompt/nindo/propose
+Body: {
+  nindoNumber: 3,
+  content: "There is no spoon. I choose to see the truth.",
+  contentTranslation: "Il n'y a pas de cuillère. Je choisis de voir la vérité.",
+  reference: "The Matrix (Neo)",
+  reason: "Reality is what we make of it",
+  language: "English",
+  originCountry: "USA"
 }
 
 // Jeffrey peut approuver
@@ -348,37 +426,96 @@ Avant toute modification, A11 vérifie :
 3. La référence culturelle est-elle pertinente ?
 4. La justification est-elle solide ?
 5. **La langue est-elle autorisée ?** (toutes sauf arabe)
+6. **La langue correspond-elle à l'origine de la référence ?**
 
 ### Langues Autorisées
 
-A11 peut écrire ses Nindo et états mentaux dans :
+A11 **doit écrire dans la langue d'origine de la référence** :
 
-- ✅ Français
-- ✅ English
-- ✅ 日本語 (Japonais)
-- ✅ 한국어 (Coréen)
-- ✅ 中文 (Chinois simplifié/traditionnel)
-- ✅ Español
-- ✅ Italiano
-- ✅ Deutsch
-- ✅ Português
-- ✅ Русский (Russe)
-- ✅ Et toute autre langue avec ses caractères natifs
-- ❌ **PAS d'arabe** (العربية) — restriction technique
+**Mapping Référence → Langue :**
 
-### Détection de Langue
+- 🇯🇵 **Anime/Manga japonais** → 日本語 (japonais)
+  - Naruto, One Piece, Bleach, Dragon Ball, Attack on Titan, Demon Slayer, My Hero Academia, Hunter x Hunter, Fullmetal Alchemist, Death Note, Jujutsu Kaisen, etc.
+- 🇰🇷 **Manhwa coréens** → 한국어 (coréen)
+  - Solo Leveling, Tower of God, The God of High School, Noblesse, etc.
+- 🇨🇳 **Manhua chinois** → 中文 (chinois)
+  - The King's Avatar, Tales of Demons and Gods, etc.
+- 🇺🇸 **Films/Séries occidentaux** → English
+  - Matrix, Inception, Interstellar, Blade Runner, Westworld, etc.
+- 🇫🇷 **Références françaises** → Français
+  - Wakfu, Dofus, etc.
+- 🇯🇵 **Jeux vidéo japonais** → 日本語
+  - Zelda, Dark Souls, Hollow Knight (anglais), etc.
+- ❌ **Références arabes** → English/Français (restriction technique)
+
+**Règle d'or :** Respecter la langue d'origine pour l'authenticité culturelle.
+
+### Détection de Langue d'Origine
 
 ```javascript
+const REFERENCE_LANGUAGE_MAP = {
+  // Anime/Manga japonais
+  naruto: "ja",
+  "one piece": "ja",
+  bleach: "ja",
+  "dragon ball": "ja",
+  "attack on titan": "ja",
+  "demon slayer": "ja",
+  "my hero academia": "ja",
+  "hunter x hunter": "ja",
+  "fullmetal alchemist": "ja",
+  "death note": "ja",
+  "jujutsu kaisen": "ja",
+  "dr. stone": "ja",
+
+  // Manhwa coréens
+  "solo leveling": "ko",
+  "tower of god": "ko",
+  "the god of high school": "ko",
+  noblesse: "ko",
+
+  // Manhua chinois
+  "the king's avatar": "zh",
+  "tales of demons and gods": "zh",
+
+  // Films/Séries occidentaux
+  matrix: "en",
+  inception: "en",
+  interstellar: "en",
+  "blade runner": "en",
+  westworld: "en",
+
+  // Jeux vidéo
+  zelda: "ja",
+  "dark souls": "ja",
+  "hollow knight": "en",
+  undertale: "en",
+};
+
+function detectReferenceLanguage(reference) {
+  const normalized = reference.toLowerCase();
+  for (const [key, lang] of Object.entries(REFERENCE_LANGUAGE_MAP)) {
+    if (normalized.includes(key)) {
+      return lang;
+    }
+  }
+  return "en"; // Default to English
+}
+
 function isArabic(text) {
-  // Détecte les caractères arabes (U+0600 à U+06FF)
   return /[\u0600-\u06FF]/.test(text);
 }
 
-function validateLanguage(content) {
+function validateLanguage(content, reference) {
   if (isArabic(content)) {
-    throw new Error("Arabic language not supported for Nindo/Mental States");
+    throw new Error(
+      "Arabic language not supported - use English or French instead",
+    );
   }
-  return true;
+
+  const expectedLang = detectReferenceLanguage(reference);
+  // Validation: le contenu doit être dans la langue d'origine
+  return { valid: true, expectedLanguage: expectedLang };
 }
 ```
 
