@@ -131,3 +131,22 @@ Thumbs.db
 /a11/backend/libs/Logo et personnage Funesterie.png
 /spaces/a11/.gradio-local*.log
 Docker Desktop Installer.exe
+
+# Secrets supplémentaires
+**/.env.production
+**/.env.prod
+**/secrets.json
+**/credentials.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519
+**/.npmrc
+**/.yarnrc
+**/auth.json
+# Watchdog snapshots (runtime)
+/a11/runtime/watchdog-snapshots/
+/a11/runtime/memory-consolidation-state.json
+/a11/runtime/logs/
