@@ -154,6 +154,7 @@ function normalizeLlmProvider(value, fallback = "none") {
   if (normalized === "deepseek") return "deepseek";
   if (["together", "together_ai", "togetherai"].includes(normalized)) return "together";
   if (["huggingface", "hf", "hugging_face"].includes(normalized)) return "huggingface";
+  if (["xai", "grok", "x.ai"].includes(normalized)) return "xai";
   if (["llama_server", "llama-server", "llama", "local"].includes(normalized)) return "llama_server";
   if (["none", "disabled", "off"].includes(normalized)) return "none";
   return fallback;
@@ -178,6 +179,7 @@ const BACKENDS = {
   deepseek: normalizeBaseUrl(process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1"),
   together: normalizeBaseUrl(process.env.TOGETHER_BASE_URL || "https://api.together.xyz/v1"),
   huggingface: normalizeBaseUrl(process.env.HF_BASE_URL || "https://api-inference.huggingface.co/v1"),
+  xai: normalizeBaseUrl(process.env.XAI_BASE_URL || "https://api.x.ai/v1"),
 };
 const OLLAMA_BASE = BACKENDS.ollama;
 const LLM_PROVIDER = deriveDefaultLlmProvider();
@@ -195,6 +197,7 @@ const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || "llama-3.3-70b-versa
 const DEFAULT_DEEPSEEK_MODEL = String(process.env.DEEPSEEK_MODEL || "deepseek-chat").trim() || "deepseek-chat";
 const DEFAULT_TOGETHER_MODEL = String(process.env.TOGETHER_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo").trim() || "meta-llama/Llama-3.3-70B-Instruct-Turbo";
 const DEFAULT_HF_MODEL = String(process.env.HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct").trim() || "meta-llama/Llama-3.1-8B-Instruct";
+const DEFAULT_XAI_MODEL = String(process.env.XAI_MODEL || "grok-3-fast").trim() || "grok-3-fast";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 120000) || 120000;
@@ -414,7 +417,17 @@ function resolveDeepSeekTarget(requestedModel = "", reason = "") {
   };
 }
 
-function resolveTogetherTarget(requestedModel = "", reason = "") {
+function resolveXAITarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.xai) return null;
+  const model = String(requestedModel || DEFAULT_XAI_MODEL).trim() || DEFAULT_XAI_MODEL;
+  return {
+    provider: "xai",
+    model,
+    baseUrl: BACKENDS.xai,
+    url: buildOpenAICompletionsUrl(BACKENDS.xai),
+    reason: reason || null,
+  };
+}
   if (!BACKENDS.together) return null;
   const model = String(requestedModel || DEFAULT_TOGETHER_MODEL).trim() || DEFAULT_TOGETHER_MODEL;
   return {
@@ -550,7 +563,20 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
       }
     }
 
-    // Fallback 5 : HuggingFace (open source, gratuit)
+    // Fallback 5 : xAI Grok (intelligent, API compatible OpenAI)
+    if (LLM_FALLBACK_PROVIDER === "xai" || LLM_FALLBACK_PROVIDER === "none") {
+      const hasXaiKey = !!(process.env.XAI_API_KEY);
+      if ((LLM_FALLBACK_PROVIDER === "xai" || hasXaiKey) && BACKENDS.xai) {
+        const xaiTarget = resolveXAITarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+        if (xaiTarget) {
+          if (emitLogs) logWarn(`[LLM] fallback=xai (grok) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+          rememberResolvedTarget(xaiTarget, { availableOllamaModels: ollamaResult.tags?.models || [] });
+          return xaiTarget;
+        }
+      }
+    }
+
+    // Fallback 6 : HuggingFace (open source, gratuit)
     if (LLM_FALLBACK_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "none") {
       const hasHfKey = !!(process.env.HF_API_KEY);
       if ((LLM_FALLBACK_PROVIDER === "huggingface" || hasHfKey) && BACKENDS.huggingface) {
@@ -906,6 +932,9 @@ function buildUpstreamHeaders(backendBase, provider = "openai") {
   }
   if (provider === "deepseek" && process.env.DEEPSEEK_API_KEY) {
     headers.Authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
+  }
+  if (provider === "xai" && process.env.XAI_API_KEY) {
+    headers.Authorization = `Bearer ${process.env.XAI_API_KEY}`;
   }
   if (provider === "together" && process.env.TOGETHER_API_KEY) {
     headers.Authorization = `Bearer ${process.env.TOGETHER_API_KEY}`;
