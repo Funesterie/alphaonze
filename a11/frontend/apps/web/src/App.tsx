@@ -3546,6 +3546,21 @@ export function App() {
             onDrop={(e) => {
               void onComposerDrop(e);
             }}
+            onPaste={async (e) => {
+              // Paste global sur le composer (hors textarea) — images et fichiers
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
+              if (imageItem) {
+                e.preventDefault();
+                const file = imageItem.getAsFile();
+                if (file) {
+                  const renamedFile = new File([file], `paste-${Date.now()}.png`, { type: file.type });
+                  const fileList = Object.assign([renamedFile], { item: (i: number) => [renamedFile][i] }) as unknown as FileList;
+                  await handleImportedFiles(fileList);
+                }
+              }
+            }}
           >
             {/* Console d'activité A11 — affichée pendant et après les actions */}
             <A11ActivityConsole
@@ -3568,16 +3583,59 @@ export function App() {
 
               <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea
-                  placeholder="Demande quelque chose à A11…"
-                  value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
+                  placeholder="Demande quelque chose à A11… (Ctrl+V pour coller une image)"
+                  value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
                   onChange={(e) => {
-                    // Reconstruire l'input en préservant les tokens [image:...] cachés
-                    const imageTokens = (input.match(/\[image:[^\]]+\]/g) || []).join('\n');
+                    const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
                     const newText = e.target.value;
                     setInput(imageTokens ? (imageTokens + (newText ? '\n' + newText : '')) : newText);
+                    // Auto-resize
+                    const el = e.target as HTMLTextAreaElement;
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.35) + 'px';
                   }}
                   onKeyDown={handleKeyDown}
-                  style={{ width: '100%', resize: 'vertical', maxHeight: '35vh', background: '#0d0f13', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 10, padding: 10 }}
+                  onPaste={async (e) => {
+                    const items = e.clipboardData?.items;
+                    if (!items) return;
+                    // Chercher une image dans le presse-papier (screenshot, copie d'image)
+                    const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
+                    if (imageItem) {
+                      e.preventDefault();
+                      const file = imageItem.getAsFile();
+                      if (file) {
+                        const renamedFile = new File([file], `paste-${Date.now()}.png`, { type: file.type });
+                        const fileList = Object.assign([renamedFile], { item: (i: number) => [renamedFile][i] }) as unknown as FileList;
+                        await handleImportedFiles(fileList);
+                      }
+                      return;
+                    }
+                    // Chercher des fichiers collés (depuis l'explorateur)
+                    const fileItems = Array.from(items).filter(item => item.kind === 'file' && !item.type.startsWith('image/'));
+                    if (fileItems.length > 0) {
+                      e.preventDefault();
+                      const files = fileItems.map(item => item.getAsFile()).filter(Boolean) as File[];
+                      if (files.length > 0) {
+                        const fileList = Object.assign(files, { item: (i: number) => files[i] }) as unknown as FileList;
+                        await handleImportedFiles(fileList);
+                      }
+                    }
+                    // Sinon laisser le paste texte normal se faire
+                  }}
+                  rows={1}
+                  style={{
+                    width: '100%',
+                    resize: 'none',
+                    minHeight: '42px',
+                    maxHeight: '35vh',
+                    background: '#0d0f13',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    padding: 10,
+                    overflowY: 'auto',
+                    lineHeight: '1.5',
+                  }}
                 />
               </div>
 
@@ -3606,7 +3664,12 @@ export function App() {
               </button>
             </div>
             <div className="hint">
-              Entrée pour envoyer · Shift+Entrée pour aller à la ligne
+              Entrée pour envoyer · Shift+Entrée pour aller à la ligne · Ctrl+V pour coller une image
+              {sending && messageQueueRef.current.length > 0 && (
+                <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 600 }}>
+                  ⏳ {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
+                </span>
+              )}
             </div>
             {dragPreviewUrls.length > 0 && (() => {
               const total = dragPreviewUrls.length;
