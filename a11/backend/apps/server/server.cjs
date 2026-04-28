@@ -1386,6 +1386,7 @@ if (db) {
             resolved_at TIMESTAMP
           )
         `);
+        await db.query('ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT \'semantic\'');
         await db.query('ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS payload_json JSONB');
         await db.query('ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP');
         await db.query('ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP');
