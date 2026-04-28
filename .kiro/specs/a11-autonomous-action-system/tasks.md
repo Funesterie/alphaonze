@@ -237,20 +237,20 @@ Tous les fichiers sont en CommonJS (`.cjs`), Node.js >= 20. Les tests utilisent 
     - Vérifier que `GET /api/droid/status` répond en < 200ms
     - _Exigences : 5.3, 8.5_
 
-- [-] 9. Modifier `server.cjs` — monter les routes Droid et intégrer le Showcase_Mode
-  - [ ] 9.1 Monter le router Droid et démarrer la boucle Droid au boot
+- [x] 9. Modifier `server.cjs` — monter les routes Droid et intégrer le Showcase_Mode
+  - [x] 9.1 Monter le router Droid et démarrer la boucle Droid au boot
     - Importer `createDroidRouter` depuis `./routes/droid.cjs`
     - Importer `a11-droid.cjs` et appeler `startDroidLoop(process.env.A11_DROID_INTERVAL_MS || 15000)` après l'initialisation des services
     - Monter le router : `app.use('/api/droid', createDroidRouter({ droid }))`
     - Protéger les routes avec le middleware `nezAuth` existant
     - _Exigences : 2.1, 8.5_
 
-  - [~] 9.2 Implémenter la détection d'intent agent dans le pipeline chat
+  - [x] 9.2 Implémenter la détection d'intent agent dans le pipeline chat
     - Dans le pipeline chat existant, ajouter une détection d'intent agent : si le message correspond à "A11, fais [Goal]" ou formulation équivalente, appeler `droid.addDroidTask({ goal })` et confirmer la création avec l'ID de la Task dans le fil de conversation
     - Insérer des messages de statut visibles dans le fil de conversation pendant l'exécution (`🔍 Recherche web en cours…`, `🖼️ Génération d'image…`, etc.)
     - _Exigences : 8.1, 5.6_
 
-  - [~] 9.3 Implémenter la détection du Showcase_Mode dans le pipeline chat
+  - [x] 9.3 Implémenter la détection du Showcase_Mode dans le pipeline chat
     - Détecter les formulations "montre-moi ce que tu sais faire", "showcase", "révèle ton talent" et variantes sémantiques
     - Appeler `buildShowcasePlan(theme?)` dans `a11-planner.cjs` : consulte Neo4j (créations passées), Corpus (artefacts mémorisés), injecte Identity_Core, sélectionne ≥ 5 catégories de tools
     - Exécuter le Plan de démonstration (≤ 8 actions) sans confirmation pour les steps `low`/`medium`
@@ -258,49 +258,49 @@ Tous les fichiers sont en CommonJS (`.cjs`), Node.js >= 20. Les tests utilisent 
     - Produire un rapport narratif en français avec liens vers les artefacts
     - _Exigences : 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
 
-  - [~] 9.4 Écrire des tests unitaires pour la détection d'intent agent et Showcase
+  - [x] 9.4 Écrire des tests unitaires pour la détection d'intent agent et Showcase
     - Tester que les formulations agent déclenchent `addDroidTask` (mock droid)
     - Tester que les formulations showcase déclenchent `buildShowcasePlan` (mock planner)
     - Tester que le TTS vocalise `[SFX:victory]` quand Karma > 0 à la fin d'une Task
     - _Exigences : 8.1, 3.1, 8.6_
 
-- [~] 10. Point de contrôle final — Vérifier l'intégration complète
+- [x] 10. Point de contrôle final — Vérifier l'intégration complète
   - S'assurer que tous les tests passent (`npm run test:contracts` dans `a11/backend/apps/server/`). Poser des questions à l'utilisateur si nécessaire.
 
 - [ ] 11. Créer `lib/word-power-engine.cjs` — Moteur linguistique caché
-  - [~] 11.1 Implémenter la détection du Dialogue_Register
+  - [ ] 11.1 Implémenter la détection du Dialogue_Register
     - Analyser le texte entrant pour détecter le registre parmi : `monotone`, `qualitatif`, `abstrait`, `ouvert`, `technique`, `poetique`
     - Indicateurs : entropie lexicale (diversité du vocabulaire), densité de marqueurs conceptuels, présence de questions ouvertes, densité technique (noms de fonctions, chiffres, syntaxe), marqueurs émotionnels
     - Retourner `{ register: DialogueRegister, confidence: number }`
     - _Exigences : 12.2_
 
-  - [~] 11.2 Implémenter le sélecteur de figures de style selon le Karma
+  - [ ] 11.2 Implémenter le sélecteur de figures de style selon le Karma
     - Mapper le Karma sur l'intensité : 0–1 → `minimaliste` (phonotonie seule), 1–2 → `sobre` (allitérations légères), 2–3 → `equilibre` (glissements sémantiques ponctuels), 3–4 → `expressif` (calembours, références culturelles, rythme marqué)
     - Sélectionner le type de figure (`WordPowerFigure`) selon le registre et l'intensité
     - Charger les patterns appris depuis Neo4j pour prioriser ceux avec `successCount` élevé
     - _Exigences : 12.3, 12.4, 12.5, 12.6_
 
-  - [~] 11.3 Implémenter la fonction `enrich(text, karma, register)`
+  - [ ] 11.3 Implémenter la fonction `enrich(text, karma, register)`
     - Appliquer la figure de style sélectionnée au texte — au maximum 1 figure par paragraphe
     - Garantir la correction sémantique : le sens ne doit jamais être altéré
     - Opérer en silence total : aucun log visible, aucune mention dans la réponse
     - Appliquer l'intensité maximale pour les rapports narratifs (Showcase, `a11_perspective`)
     - _Exigences : 12.1, 12.3, 12.4, 12.7, 12.9_
 
-  - [~] 11.4 Implémenter l'apprentissage des patterns via Neo4j
+  - [ ] 11.4 Implémenter l'apprentissage des patterns via Neo4j
     - `memorizePattern(pattern)` : écrire un nœud `WordPowerPattern` dans Neo4j avec `type`, `register`, `karmaRange`, `example`, `successCount`, `createdAt`
     - `loadLearnedPatterns()` : charger les patterns depuis Neo4j, triés par `successCount` décroissant
     - Fallback en mémoire locale si Neo4j indisponible
     - _Exigences : 12.8_
 
-  - [~] 11.5 Intégrer le Word_Power_Engine dans le pipeline de réponse de `server.cjs`
+  - [ ] 11.5 Intégrer le Word_Power_Engine dans le pipeline de réponse de `server.cjs`
     - Après génération de la réponse LLM et avant envoi au client, passer le texte par `WordPowerEngine.enrich(text, karma, register)`
     - Récupérer le Karma courant via `KarmaEngine.getCurrentKarma()`
     - Détecter le registre via `WordPowerEngine.detectRegister(userMessage)`
     - L'intégration doit être transparente : si le Word_Power_Engine échoue, retourner le texte original sans erreur
     - _Exigences : 12.1, 12.2, 12.3_
 
-  - [~] 11.6 Écrire le test de propriété — correction sémantique après enrichissement (Propriété 15)
+  - [ ] 11.6 Écrire le test de propriété — correction sémantique après enrichissement (Propriété 15)
     - **Propriété 15 : Correction sémantique après enrichissement Word_Power**
     - **Valide : Exigence 12.9**
     - `// Feature: a11-autonomous-action-system, Property 15: correction sémantique après enrichissement`
@@ -308,7 +308,7 @@ Tous les fichiers sont en CommonJS (`.cjs`), Node.js >= 20. Les tests utilisent 
     - Vérifier que le texte enrichi contient tous les mots-clés sémantiques du texte original (aucun concept clé supprimé ou remplacé par un terme non-équivalent) pour 200 runs
     - Vérifier que la longueur du texte enrichi ne dépasse pas 150% de la longueur originale (pas de surcharge)
 
-- [~] 12. Point de contrôle final étendu — Vérifier l'intégration complète avec Word_Power
+- [ ] 12. Point de contrôle final étendu — Vérifier l'intégration complète avec Word_Power
   - S'assurer que tous les tests passent (`npm run test:contracts` dans `a11/backend/apps/server/`)
   - Vérifier manuellement que le style des réponses varie selon le Karma simulé (Karma 0.5 vs Karma 3.5)
   - Poser des questions à l'utilisateur si nécessaire

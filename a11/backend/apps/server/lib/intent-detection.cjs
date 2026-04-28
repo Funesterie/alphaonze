@@ -57,6 +57,63 @@ function fastPathSoundIntent(normalized) {
   return null;
 }
 
+function fastPathAgentIntent(normalized) {
+  // Détecte les formulations "A11, fais X", "A11, fait X", "A11, peux-tu X", etc.
+  // Patterns: "A11, [verbe d'action] [goal]"
+  const agentPatterns = [
+    /^a11,?\s+(fais|fait|peux[-\s]?tu|pourrais[-\s]?tu|veux[-\s]?tu|va|vas)\s+(.+)/i,
+    /^a11,?\s+(lance|d[eé]marre|ex[eé]cute|effectue|r[eé]alise|accomplis)\s+(.+)/i,
+    /^a11,?\s+(cr[eé]e|g[eé]n[eè]re|produis|fabrique|construis)\s+(.+)/i,
+  ];
+
+  for (const pattern of agentPatterns) {
+    const match = normalized.match(pattern);
+    if (match && match[2]) {
+      const goal = match[2].trim();
+      if (goal.length > 0) {
+        return { 
+          intent: 'agent.task', 
+          confidence: 0.95, 
+          reason: 'fast_path_agent_command', 
+          goal 
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function fastPathShowcaseIntent(normalized) {
+  // Détecte les formulations "montre-moi ce que tu sais faire", "showcase", "révèle ton talent", etc.
+  // Patterns: showcase, démonstration, capacités, talent, ce que tu sais faire
+  const showcasePatterns = [
+    /\b(montre[-\s]?moi|montre)\s+(ce\s+que\s+tu\s+sais\s+faire|tes\s+capacit[eé]s|ton\s+talent|ce\s+que\s+tu\s+peux\s+faire)\b/i,
+    /\b(showcase|d[eé]monstration|d[eé]mo)\b/i,
+    /\b(r[eé]v[eè]le|montre|affiche|pr[eé]sente)\s+(ton\s+talent|tes\s+capacit[eé]s|ce\s+que\s+tu\s+sais\s+faire)\b/i,
+    /\b(fais[-\s]?moi|fais)\s+(une\s+)?(d[eé]monstration|d[eé]mo|showcase)\b/i,
+    /\bque\s+sais[-\s]?tu\s+faire\b/i,
+    /\bquelles\s+sont\s+tes\s+capacit[eé]s\b/i,
+  ];
+
+  for (const pattern of showcasePatterns) {
+    if (pattern.test(normalized)) {
+      // Extraire un thème optionnel si présent
+      const themeMatch = normalized.match(/\b(?:sur|avec|pour|concernant|autour\s+de)\s+([a-zàâäéèêëïîôùûüÿæœç\s]+)/i);
+      const theme = themeMatch ? themeMatch[1].trim() : null;
+      
+      return { 
+        intent: 'showcase.mode', 
+        confidence: 0.95, 
+        reason: 'fast_path_showcase_command',
+        theme
+      };
+    }
+  }
+
+  return null;
+}
+
 // ─── Schéma LLM ──────────────────────────────────────────────────────────────
 
 const INTENT_DETECTION_RESPONSE_FORMAT = Object.freeze({
@@ -230,6 +287,20 @@ function detectSoundIntent(message) {
   return Boolean(fastPathSoundIntent(normalized));
 }
 
+function detectAgentIntent(message) {
+  if (!message || typeof message !== 'string') return null;
+  const normalized = normalizeMessageForIntent(message);
+  const result = fastPathAgentIntent(normalized);
+  return result ? { goal: result.goal, confidence: result.confidence } : null;
+}
+
+function detectShowcaseIntent(message) {
+  if (!message || typeof message !== 'string') return null;
+  const normalized = normalizeMessageForIntent(message);
+  const result = fastPathShowcaseIntent(normalized);
+  return result ? { theme: result.theme, confidence: result.confidence } : null;
+}
+
 // ─── Extraction du sujet web image (legacy) ───────────────────────────────────
 
 function sanitizeWebImageSubject(candidate) {
@@ -275,6 +346,8 @@ module.exports = {
   detectSoundIntent,
   detectVideoIntent,
   detectWebImageIntent,
+  detectAgentIntent,
+  detectShowcaseIntent,
   extractWebImageSubject,
   normalizeMessageForIntent,
 };

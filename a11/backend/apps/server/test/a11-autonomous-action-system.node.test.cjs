@@ -1756,3 +1756,297 @@ test('Integration 8.2 — toutes les réponses d\'erreur ont un champ "error" et
     await close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Tests unitaires — Détection d'intent agent et Showcase (Task 9.4)
+// Valide : Exigences 8.1, 3.1, 8.6
+// ---------------------------------------------------------------------------
+
+const { detectAgentIntent, detectShowcaseIntent } = require('../lib/intent-detection.cjs');
+
+test('Unit 9.4 — detectAgentIntent détecte "A11, fais X" et retourne le goal', () => {
+  // Cas positifs : formulations agent
+  const agentMessages = [
+    'A11, fais une recherche web sur les LLM',
+    'A11, fait un résumé du fichier README.md',
+    'A11, peux-tu générer une image de chat',
+    'A11, pourrais-tu lancer les tests',
+    'A11, va chercher les derniers commits',
+    'A11, crée un fichier test.txt',
+    'A11, génère un rapport PDF',
+    'A11, lance le build',
+    'A11, démarre le serveur',
+    'A11, exécute npm install',
+  ];
+
+  for (const message of agentMessages) {
+    const result = detectAgentIntent(message);
+    assert.ok(
+      result !== null,
+      `detectAgentIntent("${message}") doit retourner un résultat non-null`
+    );
+    assert.ok(
+      result.goal && result.goal.length > 0,
+      `detectAgentIntent("${message}") doit extraire un goal non-vide. Obtenu : "${result.goal}"`
+    );
+    assert.ok(
+      typeof result.confidence === 'number' && result.confidence >= 0.9,
+      `detectAgentIntent("${message}") doit retourner une confiance >= 0.9. Obtenu : ${result.confidence}`
+    );
+  }
+});
+
+test('Unit 9.4 — detectAgentIntent ne détecte pas les messages non-agent', () => {
+  // Cas négatifs : messages normaux
+  const normalMessages = [
+    'Bonjour',
+    'Comment ça va ?',
+    'Génère une image de chat',
+    'Fais une recherche web',
+    'Peux-tu m\'aider ?',
+    'Quelle heure est-il ?',
+    'Explique-moi les LLM',
+    '',
+    'A11',
+    'A11,',
+  ];
+
+  for (const message of normalMessages) {
+    const result = detectAgentIntent(message);
+    assert.equal(
+      result,
+      null,
+      `detectAgentIntent("${message}") ne doit pas détecter d'intent agent. Obtenu : ${JSON.stringify(result)}`
+    );
+  }
+});
+
+test('Unit 9.4 — detectAgentIntent extrait correctement le goal', () => {
+  const testCases = [
+    { message: 'A11, fais une recherche web sur les LLM', expectedGoal: 'une recherche web sur les LLM' },
+    { message: 'A11, crée un fichier test.txt avec du contenu', expectedGoal: 'un fichier test.txt avec du contenu' },
+    { message: 'A11, lance npm install', expectedGoal: 'npm install' },
+  ];
+
+  for (const { message, expectedGoal } of testCases) {
+    const result = detectAgentIntent(message);
+    assert.ok(result !== null, `detectAgentIntent("${message}") doit retourner un résultat`);
+    assert.ok(
+      result.goal.includes(expectedGoal.split(' ')[0]),
+      `Le goal extrait doit contenir le début du goal attendu. Attendu : "${expectedGoal}", Obtenu : "${result.goal}"`
+    );
+  }
+});
+
+test('Unit 9.4 — detectShowcaseIntent détecte les formulations showcase', () => {
+  // Cas positifs : formulations showcase
+  const showcaseMessages = [
+    'montre-moi ce que tu sais faire',
+    'montre moi ce que tu sais faire',
+    'montre-moi tes capacités',
+    'montre ton talent',
+    'showcase',
+    'démonstration',
+    'démo',
+    'révèle ton talent',
+    'révèle tes capacités',
+    'affiche ce que tu sais faire',
+    'présente tes capacités',
+    'fais-moi une démonstration',
+    'fais une démo',
+    'que sais-tu faire',
+    'quelles sont tes capacités',
+  ];
+
+  for (const message of showcaseMessages) {
+    const result = detectShowcaseIntent(message);
+    assert.ok(
+      result !== null,
+      `detectShowcaseIntent("${message}") doit retourner un résultat non-null`
+    );
+    assert.ok(
+      typeof result.confidence === 'number' && result.confidence >= 0.9,
+      `detectShowcaseIntent("${message}") doit retourner une confiance >= 0.9. Obtenu : ${result.confidence}`
+    );
+  }
+});
+
+test('Unit 9.4 — detectShowcaseIntent ne détecte pas les messages non-showcase', () => {
+  // Cas négatifs : messages normaux
+  const normalMessages = [
+    'Bonjour',
+    'Comment ça va ?',
+    'Génère une image',
+    'Fais une recherche',
+    'A11, fais une recherche',
+    'Explique-moi les LLM',
+    '',
+    'montre',
+    'capacités',
+  ];
+
+  for (const message of normalMessages) {
+    const result = detectShowcaseIntent(message);
+    assert.equal(
+      result,
+      null,
+      `detectShowcaseIntent("${message}") ne doit pas détecter d'intent showcase. Obtenu : ${JSON.stringify(result)}`
+    );
+  }
+});
+
+test('Unit 9.4 — detectShowcaseIntent extrait le thème optionnel', () => {
+  const testCases = [
+    { message: 'montre-moi ce que tu sais faire sur les images', expectedTheme: 'les images' },
+    { message: 'showcase avec la génération de contenu', expectedTheme: 'la génération de contenu' },
+    { message: 'démo pour le web scraping', expectedTheme: 'le web scraping' },
+    { message: 'montre-moi tes capacités', expectedTheme: null },
+    { message: 'showcase', expectedTheme: null },
+  ];
+
+  for (const { message, expectedTheme } of testCases) {
+    const result = detectShowcaseIntent(message);
+    assert.ok(result !== null, `detectShowcaseIntent("${message}") doit retourner un résultat`);
+    
+    if (expectedTheme === null) {
+      assert.ok(
+        result.theme === null || result.theme === undefined,
+        `Le thème doit être null/undefined pour "${message}". Obtenu : "${result.theme}"`
+      );
+    } else {
+      assert.ok(
+        result.theme && result.theme.includes(expectedTheme.split(' ')[0]),
+        `Le thème extrait doit contenir le début du thème attendu. Attendu : "${expectedTheme}", Obtenu : "${result.theme}"`
+      );
+    }
+  }
+});
+
+test('Unit 9.4 — TTS vocalise [SFX:victory] quand Karma > 0 à la fin d\'une Task', { skip: 'TTS integration not yet implemented in executor' }, async () => {
+  // NOTE: Ce test est skip car l'intégration TTS dans l'executor n'est pas encore implémentée.
+  // Il sera activé une fois que task 9.3 (Showcase_Mode) sera complétée avec l'intégration TTS.
+  
+  // Mock du module TTS
+  const ttsVocalizations = [];
+  const mockTTS = {
+    vocalize(text) {
+      ttsVocalizations.push(text);
+      return Promise.resolve();
+    },
+  };
+
+  // Mock Karma_Engine avec Karma > 0
+  const savedKarmaEngine = globalThis.__KARMA_ENGINE_MOCK;
+  globalThis.__KARMA_ENGINE_MOCK = {
+    getCurrentKarma: async () => 2.5, // Karma positif
+  };
+
+  // Mock Droid avec une Task qui se termine
+  const { addDroidTask } = require('../a11-droid.cjs');
+  const { executePlan } = require('../a11-plan-executor.cjs');
+
+  // Sauvegarder les mocks existants
+  const savedHornMock = globalThis.__A11_HORN_MOCK;
+  const savedTTSMock = globalThis.__A11_TTS_MOCK;
+  const savedSleepMock = globalThis.__A11_SLEEP_MOCK;
+
+  // Configurer les mocks
+  globalThis.__A11_HORN_MOCK = async () => ({ ok: true });
+  globalThis.__A11_TTS_MOCK = mockTTS;
+  globalThis.__A11_SLEEP_MOCK = async () => {};
+
+  try {
+    const task = {
+      id: `task_tts_test_${Date.now()}`,
+      goal: 'Test TTS victory',
+    };
+
+    const plan = {
+      steps: [
+        { skill: 'a11d.fs.read', payload: { path: 'test.txt' } },
+      ],
+    };
+
+    const result = await executePlan(task, plan, { sessionId: 'session_tts_test' });
+
+    // Vérifier que la Task est done
+    assert.equal(result.status, 'done', 'La Task doit être done');
+
+    // Vérifier que TTS a vocalisé [SFX:victory]
+    const hasVictorySFX = ttsVocalizations.some((text) => text.includes('[SFX:victory]'));
+    assert.ok(
+      hasVictorySFX,
+      `TTS doit vocaliser [SFX:victory] quand Karma > 0 et Task done. Vocalizations : ${JSON.stringify(ttsVocalizations)}`
+    );
+  } finally {
+    // Restaurer les mocks
+    globalThis.__A11_HORN_MOCK = savedHornMock;
+    globalThis.__A11_TTS_MOCK = savedTTSMock;
+    globalThis.__A11_SLEEP_MOCK = savedSleepMock;
+    globalThis.__KARMA_ENGINE_MOCK = savedKarmaEngine;
+  }
+});
+
+test('Unit 9.4 — TTS ne vocalise pas [SFX:victory] quand Karma <= 0', { skip: 'TTS integration not yet implemented in executor' }, async () => {
+  // NOTE: Ce test est skip car l'intégration TTS dans l'executor n'est pas encore implémentée.
+  // Il sera activé une fois que task 9.3 (Showcase_Mode) sera complétée avec l'intégration TTS.
+  
+  // Mock du module TTS
+  const ttsVocalizations = [];
+  const mockTTS = {
+    vocalize(text) {
+      ttsVocalizations.push(text);
+      return Promise.resolve();
+    },
+  };
+
+  // Mock Karma_Engine avec Karma <= 0
+  const savedKarmaEngine = globalThis.__KARMA_ENGINE_MOCK;
+  globalThis.__KARMA_ENGINE_MOCK = {
+    getCurrentKarma: async () => 0.0, // Karma nul
+  };
+
+  // Mock Droid avec une Task qui se termine
+  const { executePlan } = require('../a11-plan-executor.cjs');
+
+  // Sauvegarder les mocks existants
+  const savedHornMock = globalThis.__A11_HORN_MOCK;
+  const savedTTSMock = globalThis.__A11_TTS_MOCK;
+  const savedSleepMock = globalThis.__A11_SLEEP_MOCK;
+
+  // Configurer les mocks
+  globalThis.__A11_HORN_MOCK = async () => ({ ok: true });
+  globalThis.__A11_TTS_MOCK = mockTTS;
+  globalThis.__A11_SLEEP_MOCK = async () => {};
+
+  try {
+    const task = {
+      id: `task_tts_no_victory_${Date.now()}`,
+      goal: 'Test TTS no victory',
+    };
+
+    const plan = {
+      steps: [
+        { skill: 'a11d.fs.read', payload: { path: 'test.txt' } },
+      ],
+    };
+
+    const result = await executePlan(task, plan, { sessionId: 'session_tts_no_victory' });
+
+    // Vérifier que la Task est done
+    assert.equal(result.status, 'done', 'La Task doit être done');
+
+    // Vérifier que TTS n'a PAS vocalisé [SFX:victory]
+    const hasVictorySFX = ttsVocalizations.some((text) => text.includes('[SFX:victory]'));
+    assert.ok(
+      !hasVictorySFX,
+      `TTS ne doit pas vocaliser [SFX:victory] quand Karma <= 0. Vocalizations : ${JSON.stringify(ttsVocalizations)}`
+    );
+  } finally {
+    // Restaurer les mocks
+    globalThis.__A11_HORN_MOCK = savedHornMock;
+    globalThis.__A11_TTS_MOCK = savedTTSMock;
+    globalThis.__A11_SLEEP_MOCK = savedSleepMock;
+    globalThis.__KARMA_ENGINE_MOCK = savedKarmaEngine;
+  }
+});

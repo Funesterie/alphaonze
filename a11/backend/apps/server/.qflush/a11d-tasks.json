@@ -1,0 +1,38 @@
+[
+  {
+    "id": "task_c",
+    "goal": "C",
+    "status": "done",
+    "createdAt": "2024-01-03T00:00:00.000Z",
+    "updatedAt": "2026-04-27T22:44:41.207Z",
+    "meta": {},
+    "result": {
+      "ok": true,
+      "note": "Traitement stub (à brancher sur Executor en tâche 6)."
+    }
+  },
+  {
+    "id": "task_a",
+    "goal": "A",
+    "status": "done",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2026-04-27T22:43:44.755Z",
+    "meta": {},
+    "result": {
+      "ok": true,
+      "note": "Traitement stub (à brancher sur Executor en tâche 6)."
+    }
+  },
+  {
+    "id": "task_b",
+    "goal": "B",
+    "status": "done",
+    "createdAt": "2024-01-02T00:00:00.000Z",
+    "updatedAt": "2026-04-27T22:44:04.930Z",
+    "meta": {},
+    "result": {
+      "ok": true,
+      "note": "Traitement stub (à brancher sur Executor en tâche 6)."
+    }
+  }
+]

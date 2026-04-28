@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A11 Subscription Panel Preview</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #0a101a;
+        color: #f1f5f9;
+        padding: 40px 20px;
+        min-height: 100vh;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      h2 {
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+
+      .status-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .status-icon {
+        font-size: 32px;
+      }
+
+      .status-title {
+        margin: 0 0 4px 0;
+        color: #f1f5f9;
+      }
+
+      .status-subtitle {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 14px;
+      }
+
+      .pricing-box {
+        background: #0f172a;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+
+      .price-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .price {
+        color: #f1f5f9;
+        font-weight: bold;
+        font-size: 24px;
+      }
+
+      .period {
+        color: #94a3b8;
+        font-size: 14px;
+      }
+
+      .features {
+        margin: 0;
+        padding-left: 20px;
+        color: #cbd5e1;
+        font-size: 14px;
+      }
+
+      .features li {
+        margin-bottom: 8px;
+      }
+
+      .btn {
+        padding: 12px 24px;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+        width: 100%;
+      }
+
+      .btn-primary {
+        background: #7c3aed;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: #6d28d9;
+      }
+
+      .btn-secondary {
+        background: #334155;
+        color: #e2e8f0;
+      }
+
+      .btn-secondary:hover {
+        background: #475569;
+      }
+
+      .alert {
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+
+      .alert-error {
+        background: #7f1d1d;
+        border: 1px solid #991b1b;
+        color: #fecaca;
+      }
+
+      .alert-success {
+        background: #064e3b;
+        border: 1px solid #065f46;
+        color: #a7f3d0;
+      }
+
+      .admin-card {
+        text-align: center;
+      }
+
+      .admin-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+      }
+
+      .admin-title {
+        margin: 0 0 8px 0;
+        color: #f1f5f9;
+      }
+
+      .admin-text {
+        margin: 0;
+        color: #94a3b8;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 40px;
+        border-bottom: 2px solid #334155;
+        padding-bottom: 10px;
+      }
+
+      .tab {
+        background: none;
+        border: none;
+        color: #94a3b8;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 8px 0;
+        transition: color 0.2s;
+      }
+
+      .tab.active {
+        color: #7c3aed;
+        border-bottom: 2px solid #7c3aed;
+        margin-bottom: -12px;
+      }
+
+      .tab:hover {
+        color: #f1f5f9;
+      }
+
+      .panel {
+        display: none;
+      }
+
+      .panel.active {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="tabs">
+        <button class="tab active" onclick="showPanel('inactive')">
+          Non-Abonné
+        </button>
+        <button class="tab" onclick="showPanel('active')">Abonné</button>
+        <button class="tab" onclick="showPanel('admin')">Admin</button>
+      </div>
+
+      <!-- Panel: Non-Abonné -->
+      <div id="inactive" class="panel active">
+        <h2>
+          <span>Abonnement A11</span>
+          <button
+            class="btn btn-secondary"
+            style="width: auto; padding: 8px 16px"
+          >
+            Fermer
+          </button>
+        </h2>
+
+        <div class="card">
+          <div class="status-header">
+            <div class="status-icon">❌</div>
+            <div>
+              <h3 class="status-title">Pas d'abonnement</h3>
+              <p class="status-subtitle">
+                Souscrivez pour accéder aux fonctionnalités premium
+              </p>
+            </div>
+          </div>
+
+          <div class="pricing-box">
+            <div class="price-row">
+              <span class="price">2,99€</span>
+              <span class="period">par mois</span>
+            </div>
+            <ul class="features">
+              <li>Génération d'images illimitée</li>
+              <li>Génération de vidéos</li>
+              <li>Accès prioritaire aux nouvelles fonctionnalités</li>
+              <li>Annulable à tout moment</li>
+            </ul>
+          </div>
+
+          <button class="btn btn-primary">S'abonner maintenant</button>
+        </div>
+      </div>
+
+      <!-- Panel: Abonné -->
+      <div id="active" class="panel">
+        <h2>
+          <span>Abonnement A11</span>
+          <button
+            class="btn btn-secondary"
+            style="width: auto; padding: 8px 16px"
+          >
+            Fermer
+          </button>
+        </h2>
+
+        <div class="card">
+          <div class="status-header">
+            <div class="status-icon">✅</div>
+            <div>
+              <h3 class="status-title">Abonnement Actif</h3>
+              <p class="status-subtitle">Renouvellement le 28/05/2026</p>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary">Gérer mon abonnement</button>
+        </div>
+
+        <div class="alert alert-success">
+          <strong>Merci pour votre soutien !</strong> Vous avez accès à toutes
+          les fonctionnalités premium d'A11.
+        </div>
+      </div>
+
+      <!-- Panel: Admin -->
+      <div id="admin" class="panel">
+        <h2>
+          <span>Abonnement A11</span>
+          <button
+            class="btn btn-secondary"
+            style="width: auto; padding: 8px 16px"
+          >
+            Fermer
+          </button>
+        </h2>
+
+        <div class="card admin-card">
+          <div class="admin-icon">👑</div>
+          <h3 class="admin-title">Accès Administrateur</h3>
+          <p class="admin-text">
+            Vous avez un accès illimité à toutes les fonctionnalités A11 sans
+            abonnement.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function showPanel(panelId) {
+        // Hide all panels
+        document.querySelectorAll(".panel").forEach((panel) => {
+          panel.classList.remove("active");
+        });
+
+        // Remove active class from all tabs
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+
+        // Show selected panel
+        document.getElementById(panelId).classList.add("active");
+
+        // Add active class to clicked tab
+        event.target.classList.add("active");
+      }
+    </script>
+  </body>
+</html>

@@ -21,10 +21,16 @@
     "test:contracts": "node --test ./test/*.node.test.cjs",
     "test:e2e:artifact": "node tests/a11-artifact-flow.e2e.cjs",
     "test:neo4j": "node test-neo4j-connection.cjs",
+    "test:stripe": "node test-stripe-integration.cjs",
+    "test:subscription": "node test-subscription-flow.cjs",
     "db:init": "node init-db.cjs",
+    "db:migrate:stripe": "node run-migration.cjs",
     "lint": "echo 'No linting configured for server'",
     "build": "echo 'No build step needed for backend'",
-    "railway:build": "echo 'No build step needed for backend'"
+    "railway:build": "echo 'No build step needed for backend'",
+    "sonar": "pwsh -File run-sonar-analysis.ps1",
+    "sonar:local": "pwsh -File run-sonar-analysis.ps1 -Local",
+    "stripe:setup": "pwsh -File setup-stripe.ps1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1022.0",
@@ -57,12 +63,14 @@
     "react-markdown": "^10.1.0",
     "resend": "^6.10.0",
     "sharp": "^0.34.5",
+    "stripe": "^22.1.0",
     "tesseract.js": "^6.0.1",
     "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
     "@types/node": "^24.12.0",
-    "@types/react": "^19.2.14"
+    "@types/react": "^19.2.14",
+    "fast-check": "^4.7.0"
   }
 }

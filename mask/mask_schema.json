@@ -1,0 +1,27 @@
+{
+  "version": "mask-1",
+  "intent": "image.generate",
+  "slots": {
+    "subject": [
+      {
+        "value": "lapin",
+        "attributes": ["violet"],
+        "importance": "high",
+        "count": 1
+      }
+    ],
+    "environment": [
+      {
+        "value": "forêt",
+        "importance": "medium"
+      }
+    ]
+  },
+  "relations": [
+    { "from": "lapin", "to": "violet", "type": "subject-attribute", "weight": 0.95, "required": true },
+    { "from": "lapin", "to": "forêt", "type": "subject-environment", "weight": 0.7, "required": false }
+  ],
+  "confidence": 0.88,
+  "ambiguities": [],
+  "raw": "un lapin violet dans une forêt"
+}

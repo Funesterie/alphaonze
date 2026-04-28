@@ -412,7 +412,174 @@ Donne-moi un plan d'actions minimal et sûr pour atteindre cet objectif.
 }
 
 // ---------------------------------------------------------------------------
+// buildShowcasePlan
+// ---------------------------------------------------------------------------
+
+/**
+ * Construit un Plan de démonstration Showcase_Mode.
+ * 
+ * Consulte Neo4j (créations passées), Corpus (artefacts mémorisés),
+ * injecte Identity_Core, sélectionne ≥5 catégories de tools.
+ * 
+ * @param {string|null} theme - Thème optionnel pour orienter la démonstration
+ * @returns {Promise<object>} Plan de démonstration (≤8 actions)
+ */
+async function buildShowcasePlan(theme = null) {
+  // 1. Construire le World_Context (sans task spécifique)
+  const worldContext = await buildWorldContext({ goal: 'showcase' });
+
+  // 2. Consulter Neo4j pour les créations passées
+  let pastCreations = [];
+  try {
+    const { isNeo4jAvailable, createNeo4jKnowledgeGraph } = require('./lib/neo4j-adapter.cjs');
+    if (isNeo4jAvailable()) {
+      const kg = createNeo4jKnowledgeGraph('a11');
+      // Récupérer les 10 derniers artefacts créés
+      const query = `
+        MATCH (n)
+        WHERE n.type IN ['image', 'video', 'pdf', 'audio', 'code']
+        RETURN n
+        ORDER BY n.createdAt DESC
+        LIMIT 10
+      `;
+      const result = await kg.query(query);
+      pastCreations = result || [];
+    }
+  } catch (_) {
+    pastCreations = [];
+  }
+
+  // 3. Construire le prompt Showcase pour Cerbère
+  const identityCore = worldContext.identityCore || '';
+  
+  const showcaseSystemPrompt = `
+Tu es A-11, un agent PLANNER en mode SHOWCASE.
+Tu dois créer un plan de démonstration spectaculaire qui révèle tes capacités.
+
+Contraintes strictes :
+- Minimum 5 catégories de tools différentes parmi : génération d'image, recherche web, synthèse vocale, manipulation de fichiers, accès au Knowledge Graph, génération de PDF, envoi d'email, analyse de code
+- Maximum 8 actions au total
+- Chaque action doit être impressionnante et montrer une capacité unique
+- Utilise tes créations passées comme inspiration
+- Retourne UNIQUEMENT un JSON valide avec des 'steps'
+
+Format de réponse :
+{"steps":[{"skill":"a11d.fs.read","payload":{"path":"README.md"}}, ...]}
+
+Skills disponibles (préfixes autorisés) : ${ALLOWED_PREFIXES.join(', ')}
+`.trim();
+
+  const themeContext = theme ? `\n\nThème demandé : ${theme}` : '';
+  
+  const userPrompt = `
+Crée un plan de démonstration spectaculaire pour révéler mes capacités.
+
+Créations passées (inspiration) :
+${JSON.stringify(pastCreations.slice(0, 5), null, 2)}
+
+Contexte actuel :
+${JSON.stringify({
+  workspaceRoot: worldContext.workspaceRoot,
+  activeServices: worldContext.activeServices,
+  karma: worldContext.karma,
+}, null, 2)}${themeContext}
+
+Donne-moi un plan de démonstration avec au minimum 5 catégories de tools différentes et au maximum 8 actions.
+`.trim();
+
+  const messages = [
+    // 1. Identity_Core en priorité absolue
+    { role: 'system', content: identityCore },
+    // 2. Instructions du Planner Showcase
+    { role: 'system', content: showcaseSystemPrompt },
+    // 3. Contexte + demande
+    { role: 'user', content: userPrompt },
+  ];
+
+  const body = {
+    model: 'planner-a11',
+    messages,
+  };
+
+  // Retry Cerbère : 3 tentatives × 2s si HTTP error
+  const CERBERE_MAX_RETRIES = 3;
+  const CERBERE_RETRY_DELAY_MS = 2000;
+
+  let lastHttpError = null;
+  let rawContent = null;
+
+  for (let attempt = 1; attempt <= CERBERE_MAX_RETRIES; attempt++) {
+    try {
+      // Timeout 30s via AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      let res;
+      try {
+        res = await fetch(CERBERE_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!res.ok) {
+        lastHttpError = new Error(`Planner HTTP ${res.status}`);
+        if (attempt < CERBERE_MAX_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, CERBERE_RETRY_DELAY_MS));
+          continue;
+        }
+        throw lastHttpError;
+      }
+
+      const data = await res.json();
+      rawContent = data.choices?.[0]?.message?.content || '';
+      lastHttpError = null;
+      break; // succès HTTP
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        throw new Error('Planner Showcase timeout (30s dépassé)');
+      }
+      lastHttpError = err;
+      if (attempt < CERBERE_MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, CERBERE_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  if (lastHttpError) {
+    throw lastHttpError;
+  }
+
+  // Parser le JSON
+  let plan = null;
+  try {
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+    const jsonStr = jsonMatch ? jsonMatch[0] : rawContent;
+    plan = JSON.parse(jsonStr);
+  } catch (e) {
+    throw new Error(`Planner Showcase a renvoyé du JSON invalide : ${e.message}`);
+  }
+
+  // Valider les skills contre allowedPrefixes
+  const validation = validatePlanSkills(plan);
+  if (!validation.valid) {
+    throw new Error(`Plan Showcase invalide — skills non autorisés : ${validation.errors.join(' | ')}`);
+  }
+
+  // Limiter à 8 actions maximum
+  if (plan.steps && plan.steps.length > 8) {
+    plan.steps = plan.steps.slice(0, 8);
+  }
+
+  return plan;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { getPlanFromLlm, buildWorldContext };
+module.exports = { getPlanFromLlm, buildWorldContext, buildShowcasePlan };

@@ -32,6 +32,8 @@ const {
   detectImageIntent: defaultDetectImageIntent,
   detectVideoIntent: defaultDetectVideoIntent,
   detectWebImageIntent: defaultDetectWebImageIntent,
+  detectAgentIntent: defaultDetectAgentIntent,
+  detectShowcaseIntent: defaultDetectShowcaseIntent,
 } = require('../../lib/intent-detection.cjs');
 const { duckduckgoImageSearch: defaultDuckduckgoImageSearch } = require('../../lib/image-search.cjs');
 const sdToolsModule = require('./sd-tools.cjs');
@@ -210,6 +212,8 @@ function resolveChatDependencies(overrides = {}) {
     detectImageIntent: overrides.detectImageIntent || defaultDetectImageIntent,
     detectVideoIntent: overrides.detectVideoIntent || defaultDetectVideoIntent,
     detectWebImageIntent: overrides.detectWebImageIntent || defaultDetectWebImageIntent,
+    detectAgentIntent: overrides.detectAgentIntent || defaultDetectAgentIntent,
+    detectShowcaseIntent: overrides.detectShowcaseIntent || defaultDetectShowcaseIntent,
     duckduckgoImageSearch: overrides.duckduckgoImageSearch || defaultDuckduckgoImageSearch,
     generateSd: overrides.generateSd || sdToolsModule.generateSdInternal,
     generateVideo: overrides.generateVideo || videoToolsModule.generateVideoInternal,
@@ -228,6 +232,8 @@ function createChatRouter(overrides = {}) {
     detectImageIntent,
     detectVideoIntent,
     detectWebImageIntent,
+    detectAgentIntent,
+    detectShowcaseIntent,
     duckduckgoImageSearch,
     generateSd,
     generateVideo,
@@ -251,6 +257,193 @@ function createChatRouter(overrides = {}) {
       const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
       if (!userMessage) {
         return res.status(400).json({ ok: false, error: 'missing_message' });
+      }
+
+      // Détection d'intent agent : "A11, fais [Goal]"
+      const agentIntent = detectAgentIntent(userMessage);
+      if (agentIntent && agentIntent.goal) {
+        try {
+          // Appeler Cerbère (port 3001) pour créer la Task via le Droid
+          const cerbereUrl = process.env.LLM_ROUTER_URL || 'http://localhost:3001';
+          const cerbereEndpoint = `${cerbereUrl}/api/droid/tasks`;
+          
+          console.log(`[A11][chat] Agent intent detected, calling Cerbère: ${cerbereEndpoint}`);
+          
+          const taskPayload = {
+            goal: agentIntent.goal,
+            meta: {
+              source: 'chat',
+              conversationId: req.body?.conversationId || null,
+              userId: req.body?.userId || null,
+            },
+            userId: req.body?.userId || null,
+          };
+
+          // Appel HTTP vers Cerbère avec timeout de 5s
+          const cerbereResponse = await new Promise((resolve, reject) => {
+            const parsed = new URL(cerbereEndpoint);
+            const lib = parsed.protocol === 'https:' ? https : http;
+            const bodyStr = JSON.stringify(taskPayload);
+            
+            const req = lib.request(
+              {
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                path: parsed.pathname,
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(bodyStr),
+                  'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
+                },
+                timeout: 5000,
+              },
+              (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                  try {
+                    const parsed = JSON.parse(data);
+                    resolve({ status: res.statusCode, data: parsed });
+                  } catch (e) {
+                    reject(new Error(`Invalid JSON from Cerbère: ${data}`));
+                  }
+                });
+              }
+            );
+            
+            req.on('error', reject);
+            req.on('timeout', () => {
+              req.destroy();
+              reject(new Error('Cerbère timeout (5s)'));
+            });
+            
+            req.write(bodyStr);
+            req.end();
+          });
+
+          if (cerbereResponse.status === 201 && cerbereResponse.data?.task) {
+            const task = cerbereResponse.data.task;
+            console.log(`[A11][chat] Agent task created via Cerbère: ${task.id}`);
+
+            // Confirmer la création avec l'ID de la Task
+            return res.json({
+              ok: true,
+              mode: 'agent_task',
+              taskId: task.id,
+              goal: agentIntent.goal,
+              assistant: `✅ Tâche créée : **${task.id}**\n\nJe vais m'occuper de : "${agentIntent.goal}"\n\nTu peux suivre l'avancement avec \`/api/droid/tasks/${task.id}\`.`,
+            });
+          } else {
+            throw new Error(`Cerbère returned status ${cerbereResponse.status}`);
+          }
+        } catch (droidError) {
+          console.error('[A11][chat] Failed to create agent task via Cerbère:', droidError);
+          // Fallback : continuer avec le traitement normal si Cerbère échoue
+        }
+      }
+
+      // Détection d'intent Showcase : "montre-moi ce que tu sais faire"
+      const showcaseIntent = detectShowcaseIntent(userMessage);
+      if (showcaseIntent) {
+        try {
+          console.log(`[A11][chat] Showcase intent detected, theme: ${showcaseIntent.theme || 'none'}`);
+          
+          // Importer le planner et construire le plan Showcase
+          const { buildShowcasePlan } = require('../../a11-planner.cjs');
+          const showcasePlan = await buildShowcasePlan(showcaseIntent.theme);
+          
+          console.log(`[A11][chat] Showcase plan generated: ${showcasePlan.steps.length} steps`);
+          
+          // Créer une Task Droid avec le plan Showcase
+          const cerbereUrl = process.env.LLM_ROUTER_URL || 'http://localhost:3001';
+          const cerbereEndpoint = `${cerbereUrl}/api/droid/tasks`;
+          
+          const taskPayload = {
+            goal: showcaseIntent.theme 
+              ? `Showcase Mode : démonstration sur le thème "${showcaseIntent.theme}"` 
+              : 'Showcase Mode : démonstration complète de mes capacités',
+            meta: {
+              source: 'chat',
+              mode: 'showcase',
+              showcaseMode: true, // Flag pour l'Executor
+              theme: showcaseIntent.theme,
+              plan: showcasePlan,
+              conversationId: req.body?.conversationId || null,
+              userId: req.body?.userId || null,
+            },
+            userId: req.body?.userId || null,
+          };
+
+          // Appel HTTP vers Cerbère avec timeout de 5s
+          const cerbereResponse = await new Promise((resolve, reject) => {
+            const parsed = new URL(cerbereEndpoint);
+            const lib = parsed.protocol === 'https:' ? https : http;
+            const bodyStr = JSON.stringify(taskPayload);
+            
+            const req = lib.request(
+              {
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                path: parsed.pathname,
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(bodyStr),
+                  'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
+                },
+                timeout: 5000,
+              },
+              (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                  try {
+                    const parsed = JSON.parse(data);
+                    resolve({ status: res.statusCode, data: parsed });
+                  } catch (e) {
+                    reject(new Error(`Invalid JSON from Cerbère: ${data}`));
+                  }
+                });
+              }
+            );
+            
+            req.on('error', reject);
+            req.on('timeout', () => {
+              req.destroy();
+              reject(new Error('Cerbère timeout (5s)'));
+            });
+            
+            req.write(bodyStr);
+            req.end();
+          });
+
+          if (cerbereResponse.status === 201 && cerbereResponse.data?.task) {
+            const task = cerbereResponse.data.task;
+            console.log(`[A11][chat] Showcase task created via Cerbère: ${task.id}`);
+
+            // Confirmer le démarrage du Showcase avec un message enthousiaste
+            const themeMsg = showcaseIntent.theme ? ` sur le thème "${showcaseIntent.theme}"` : '';
+            return res.json({
+              ok: true,
+              mode: 'showcase',
+              taskId: task.id,
+              theme: showcaseIntent.theme,
+              stepsCount: showcasePlan.steps.length,
+              assistant: `🎭 **Showcase Mode activé !**\n\n[SFX:thinking]\n\nJe vais te montrer ce que je sais faire${themeMsg}.\n\nPlan de démonstration : ${showcasePlan.steps.length} actions spectaculaires.\n\nC'est parti ! 🚀`,
+            });
+          } else {
+            throw new Error(`Cerbère returned status ${cerbereResponse.status}`);
+          }
+        } catch (showcaseError) {
+          console.error('[A11][chat] Failed to create showcase task:', showcaseError);
+          // Fallback : réponse d'erreur gracieuse
+          return res.json({
+            ok: true,
+            mode: 'llm',
+            assistant: `Je détecte que tu veux voir mes capacités, mais je rencontre un problème technique pour lancer le Showcase Mode. Erreur : ${showcaseError.message}\n\nJe peux quand même te parler de ce que je sais faire si tu veux !`,
+          });
+        }
       }
 
       const resolution = await intentResolver.resolveUserRequest({

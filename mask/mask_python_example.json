@@ -1,0 +1,22 @@
+{
+  "version": "mask-1",
+  "intent": "code.python.generate",
+  "task": {
+    "domain": "filesystem",
+    "action": "sort_images"
+  },
+  "inputs": {
+    "path": "D:/Images",
+    "extensions": ["png"]
+  },
+  "options": {
+    "sort_by": "date",
+    "recursive": false
+  },
+  "constraints": {
+    "safe_mode": true,
+    "no_delete": true
+  },
+  "confidence": 0.91,
+  "ambiguities": []
+}
