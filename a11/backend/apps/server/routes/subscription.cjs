@@ -17,16 +17,26 @@ function createSubscriptionRouter({ verifyJWT, db }) {
   router.post('/create-checkout', verifyJWT, async (req, res) => {
     try {
       const userId = req.user?.id;
-      const userEmail = req.user?.email;
 
-      if (!userId || !userEmail) {
-        return res.status(400).json({ error: 'User ID et email requis' });
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID requis' });
       }
 
       if (!stripeService.isStripeEnabled()) {
         return res.status(503).json({ error: 'Service de paiement non disponible' });
       }
 
+      // Récupérer l'email depuis la DB
+      const userResult = await db.query(
+        'SELECT email FROM users WHERE id = $1',
+        [userId]
+      );
+
+      if (!userResult.rows[0]?.email) {
+        return res.status(404).json({ error: 'Email utilisateur non trouvé' });
+      }
+
+      const userEmail = userResult.rows[0].email;
       const session = await stripeService.createCheckoutSession(userId, userEmail);
 
       res.json({

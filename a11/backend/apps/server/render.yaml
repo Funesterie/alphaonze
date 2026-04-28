@@ -52,7 +52,7 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_PRICE_ID
-        sync: false # Secret, à configurer manuellement
+        value: price_ENTERPRISE_3000EUR # À remplacer par le vrai price ID après création
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_SUCCESS_URL
