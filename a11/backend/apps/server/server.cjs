@@ -6037,6 +6037,56 @@ try {
   console.warn('[Server] Watchdog routes failed to mount:', e.message);
 }
 
+// Memory Consolidator + Module Loader + Agent Memory routes
+let _consolidator = null;
+let _moduleLoader = null;
+try {
+  const consolidatorLib = require('./lib/memory-consolidator.cjs');
+  _moduleLoader = require('./lib/module-loader.cjs');
+  const registerAgentMemoryRoutes = require('./routes/agent-memory.cjs');
+
+  // Démarrer le consolidateur avec accès au KG et à la mémoire épisodique
+  consolidatorLib.start({
+    knowledgeGraph: {
+      addTriplets: async (userId, triplets) => {
+        try {
+          const kg = createKnowledgeGraph(userId);
+          await kg.addTriplets(triplets);
+        } catch {}
+      },
+    },
+    episodicMemory: null, // injecté si disponible
+    llmCall: async (messages) => {
+      // Appel LLM léger pour l'extraction de faits
+      try {
+        const target = await resolveLlmTarget('', { emitLogs: false });
+        if (!target) return '';
+        const resp = await fetch(target.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(target.provider === 'openai' ? { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } : {}) },
+          body: JSON.stringify({ model: target.model, messages, stream: false }),
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await resp.json();
+        return data?.choices?.[0]?.message?.content || '';
+      } catch { return ''; }
+    },
+  });
+  _consolidator = consolidatorLib;
+
+  // Charger les modules depuis runtime/modules/
+  _moduleLoader.loadAllFromDir({ app }).then(results => {
+    const loaded = results.filter(r => r.ok).length;
+    if (loaded > 0) console.log(`[Server] ${loaded} module(s) loaded from runtime/modules/`);
+  }).catch(() => {});
+
+  // Monter les routes agent memory
+  registerAgentMemoryRoutes({ app, consolidator: _consolidator, moduleLoader: _moduleLoader, verifyJWT });
+  console.log('[Server] Agent memory routes mounted: /api/agent/memory/*');
+} catch (e) {
+  console.warn('[Server] Memory consolidator/module loader failed to init:', e.message);
+}
+
 console.log('[Server] Checkpoint routes mounted under /api/checkpoints');
 console.log('[Server] Tools routes mounted under /api/tools');
 console.log('[Server] Agent shell route mounted under /api/agent/shell');

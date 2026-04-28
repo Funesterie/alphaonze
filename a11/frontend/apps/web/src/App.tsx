@@ -3489,23 +3489,28 @@ export function App() {
                       </div>
                     )}
                     {exportSuggestion ? (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          padding: "8px 10px",
-                          borderRadius: 10,
-                          border: `1px solid ${exportSuggestion.accent}`,
-                          background: "#0b1220",
-                          color: "#e2e8f0",
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(m.content).catch(() => {});
                         }}
+                        style={{
+                          marginTop: 8,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: `1px solid ${exportSuggestion.accent}44`,
+                          background: "transparent",
+                          color: exportSuggestion.accent,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                        title="Copier tout le contenu"
                       >
-                        <div style={{ fontSize: 11, fontWeight: 700, color: exportSuggestion.accent, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                          Pret a exporter · {exportSuggestion.label}
-                        </div>
-                        <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 4 }}>
-                          {exportSuggestion.hint}
-                        </div>
-                      </div>
+                        📋 Copier
+                      </button>
                     ) : null}
                   </div>
                 );
