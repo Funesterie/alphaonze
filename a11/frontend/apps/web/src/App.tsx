@@ -1209,6 +1209,9 @@ export function App() {
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // File d'attente — messages envoyés pendant qu'A11 réfléchit
+  const messageQueueRef = useRef<string[]>([]);
+  const queueProcessingRef = useRef(false);
 
   // Console d'activité A11
   const {
@@ -1950,6 +1953,7 @@ export function App() {
       .trim();
     return { cleanText, imageUrls };
   }
+  // ── File d'attente : l'utilisateur peut écrire pendant qu'A11 réfléchit ──────
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
@@ -1957,20 +1961,9 @@ export function App() {
     const previewImageUrl = allImageUrls[0] ?? "";
     const sourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
-    const messageKey = normalizeOutgoingMessageKey([effectiveText, sourceImageUrl || previewImageUrl || ""].join("\n"));
-    const now = Date.now();
-    if (!effectiveText || sending || sendLockRef.current) return;
-    if (messageKey && pendingMessageKeyRef.current === messageKey) return;
-    if (
-      messageKey
-      && lastCompletedMessageRef.current.key === messageKey
-      && now - lastCompletedMessageRef.current.at < 10000
-    ) {
-      return;
-    }
-    sendLockRef.current = true;
-    pendingMessageKeyRef.current = messageKey;
+    if (!effectiveText) return;
 
+    // Afficher le message utilisateur immédiatement — sans bloquer l'input
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
@@ -1985,88 +1978,128 @@ export function App() {
       return nm;
     });
     setInput("");
-    setSending(true);
-    startActivity();
-    // Nettoyer les chips de preview après envoi — les object URLs sont révoquées
     setDragPreviewUrls((prev) => {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
       return [];
     });
     setPreviewCarouselIndex(0);
 
-
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
-    if (suggestion) {
-      openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
+    if (suggestion) openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
+
+    // Si A11 traite déjà, mettre en file — l'utilisateur peut continuer à écrire
+    if (queueProcessingRef.current) {
+      messageQueueRef.current.push(effectiveText);
+      return;
     }
-    try {
-      // Utilisation de chatCompletion pour transmettre le prompt et le flag dev
-      // On reconstruit l'historique sans les messages système (le prompt système est passé séparément)
-      const history = sanitizeConversationHistoryForModel(messages).concat(userMsg);
-      const provider: Provider = resolvedChatModelChoice.provider;
-      const assistantReply = await chatCompletionDetailed(
-        history,
-        provider,
-        {
-          model: resolvedChatModelChoice.model,
-          systemPrompt: systemPrompt,
-          conversationId: selectedChatId || undefined,
-          providerProfileId: resolvedChatModelChoice.providerProfileId,
-          sourceImageUrl,
+
+    // Sinon démarrer le traitement
+    void processMessageQueue(effectiveText, sourceImageUrl);
+  }
+
+  async function processMessageQueue(firstText: string, firstImageUrl?: string) {
+    if (queueProcessingRef.current) return;
+    queueProcessingRef.current = true;
+    setSending(true);
+    startActivity();
+
+    const toProcess: Array<{ text: string; imageUrl?: string }> = [
+      { text: firstText, imageUrl: firstImageUrl },
+    ];
+
+    while (toProcess.length > 0) {
+      const item = toProcess.shift()!;
+      const messageKey = normalizeOutgoingMessageKey(item.text);
+      const now = Date.now();
+      if (
+        messageKey
+        && lastCompletedMessageRef.current.key === messageKey
+        && now - lastCompletedMessageRef.current.at < 10000
+      ) {
+        // Drainer la queue avant de continuer
+        while (messageQueueRef.current.length > 0) {
+          toProcess.push({ text: messageQueueRef.current.shift()! });
         }
-      );
-      const normalizedAssistant = normalizeAssistantMessagePayload(
-        String(assistantReply.content || ""),
-        assistantReply.imageUrl || null,
-        assistantReply.videoUrl || null,
-        assistantReply.fileUrl || null
-      );
-      // Détecter les activités depuis la réponse A11
-      detectAndPushFromResponse(assistantReply.raw || assistantReply);
-
-      const aiMsg: ChatMessage = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        content: normalizedAssistant.content,
-        imageUrl: normalizedAssistant.imageUrl,
-        videoUrl: normalizedAssistant.videoUrl,
-        fileUrl: normalizedAssistant.fileUrl,
-        qflushVerification: assistantReply.qflushVerification || normalizedAssistant.qflushVerification || null,
-        ts: assistantReply.createdAt || new Date().toISOString(),
-      };
-      setMessages((prev) => {
-        const nm = [...prev, aiMsg];
-        updateChatMessages(selectedChatId, nm);
-        return nm;
-      });
-      await refreshConversationActivity(selectedChatId || a11ConvId);
-      await refreshConversationResources(selectedChatId || a11ConvId);
-
-      const spokenText = String(normalizedAssistant.content || assistantReply.content || "");
-      if (shouldAutoplayAssistantMessage(spokenText)) {
-        speak(spokenText, { lang: "fr-FR" });
+        continue;
       }
-      lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
-    } catch (err: any) {
+
+      pendingMessageKeyRef.current = messageKey;
+
+      // Lire l'historique courant via ref pour éviter les closures périmées
+      let currentMessages: ChatMessage[] = [];
+      setMessages((prev) => { currentMessages = prev; return prev; });
+      await new Promise<void>((r) => setTimeout(r, 0));
+      setMessages((prev) => { currentMessages = prev; return prev; });
+
+      try {
+        const history = sanitizeConversationHistoryForModel(currentMessages);
+        const provider: Provider = resolvedChatModelChoice.provider;
+        const assistantReply = await chatCompletionDetailed(
+          history,
+          provider,
+          {
+            model: resolvedChatModelChoice.model,
+            systemPrompt: systemPrompt,
+            conversationId: selectedChatId || undefined,
+            providerProfileId: resolvedChatModelChoice.providerProfileId,
+            sourceImageUrl: item.imageUrl,
+          }
+        );
+        const normalizedAssistant = normalizeAssistantMessagePayload(
+          String(assistantReply.content || ""),
+          assistantReply.imageUrl || null,
+          assistantReply.videoUrl || null,
+          assistantReply.fileUrl || null
+        );
+        detectAndPushFromResponse(assistantReply.raw || assistantReply);
+
+        const aiMsg: ChatMessage = {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          content: normalizedAssistant.content,
+          imageUrl: normalizedAssistant.imageUrl,
+          videoUrl: normalizedAssistant.videoUrl,
+          fileUrl: normalizedAssistant.fileUrl,
+          qflushVerification: assistantReply.qflushVerification || normalizedAssistant.qflushVerification || null,
+          ts: assistantReply.createdAt || new Date().toISOString(),
+        };
+        setMessages((prev) => {
+          const nm = [...prev, aiMsg];
+          updateChatMessages(selectedChatId, nm);
+          return nm;
+        });
+        await refreshConversationActivity(selectedChatId || a11ConvId);
+        await refreshConversationResources(selectedChatId || a11ConvId);
+
+        const spokenText = String(normalizedAssistant.content || assistantReply.content || "");
+        if (shouldAutoplayAssistantMessage(spokenText)) speak(spokenText, { lang: "fr-FR" });
+        lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
+      } catch (err: any) {
         lastCompletedMessageRef.current = { key: "", at: 0 };
         const errMsg: ChatMessage = {
           id: `e-${Date.now()}`,
           role: "assistant",
-          content:
-          "Erreur lors de l'appel au chat A11 : " + (err?.message || err),
+          content: "Erreur lors de l'appel au chat A11 : " + (err?.message || err),
           ts: new Date().toISOString(),
         };
-      setMessages((prev) => {
-        const nm = [...prev, errMsg];
-        updateChatMessages(selectedChatId, nm);
-        return nm;
-      });
-    } finally {
-      setSending(false);
-      stopActivity();
-      sendLockRef.current = false;
-      pendingMessageKeyRef.current = "";
+        setMessages((prev) => {
+          const nm = [...prev, errMsg];
+          updateChatMessages(selectedChatId, nm);
+          return nm;
+        });
+      }
+
+      // Absorber les messages arrivés pendant ce traitement
+      while (messageQueueRef.current.length > 0) {
+        toProcess.push({ text: messageQueueRef.current.shift()! });
+      }
     }
+
+    queueProcessingRef.current = false;
+    sendLockRef.current = false;
+    pendingMessageKeyRef.current = "";
+    setSending(false);
+    stopActivity();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -3552,10 +3585,14 @@ export function App() {
                 type="button"
                 className="send-button"
                 onClick={() => sendMessage()}
-                disabled={sending || (!input.trim())}
+                disabled={!input.trim()}
                 title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
+                style={sending ? { opacity: 0.7 } : undefined}
               >
-                {sending ? "…" : "➤"}
+                {sending
+                  ? (messageQueueRef.current.length > 0 ? `⏳ +${messageQueueRef.current.length}` : "…")
+                  : "➤"
+                }
               </button>
 
               <button
