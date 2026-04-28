@@ -52,7 +52,7 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_PRICE_ID
-        value: price_1TQzjeHkqLcMgv54Ucci3Qao # 3000€/mois Enterprise
+        value: price_1TQwxHHkqLcMgv548uBa6GDZ # 2,99€/mois Premium
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_SUCCESS_URL
