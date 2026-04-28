@@ -150,6 +150,8 @@ function normalizeLlmProvider(value, fallback = "none") {
   if (!normalized) return fallback;
   if (normalized === "ollama") return "ollama";
   if (normalized === "openai") return "openai";
+  if (normalized === "groq") return "groq";
+  if (normalized === "deepseek") return "deepseek";
   if (["llama_server", "llama-server", "llama", "local"].includes(normalized)) return "llama_server";
   if (["none", "disabled", "off"].includes(normalized)) return "none";
   return fallback;
@@ -170,6 +172,8 @@ const BACKENDS = {
   openai: normalizeBaseUrl(process.env.OPENAI_BASE_URL || "https://api.openai.com/v1"),
   ollama: normalizeBaseUrl(process.env.OLLAMA_BASE || DEFAULT_OLLAMA_BASE),
   llama_server: normalizeBaseUrl(process.env.LLAMA_BASE || process.env.LOCAL_LLM_URL || ""),
+  groq: normalizeBaseUrl(process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"),
+  deepseek: normalizeBaseUrl(process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1"),
 };
 const OLLAMA_BASE = BACKENDS.ollama;
 const LLM_PROVIDER = deriveDefaultLlmProvider();
@@ -183,6 +187,8 @@ const DEFAULT_LOCAL_MODEL = String(
   || OLLAMA_PRIMARY_MODEL
 ).trim() || OLLAMA_PRIMARY_MODEL;
 const DEFAULT_OPENAI_MODEL = String(process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
+const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || "llama-3.3-70b-versatile").trim() || "llama-3.3-70b-versatile";
+const DEFAULT_DEEPSEEK_MODEL = String(process.env.DEEPSEEK_MODEL || "deepseek-chat").trim() || "deepseek-chat";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 120000) || 120000;
@@ -378,6 +384,30 @@ function resolveOpenAITarget(requestedModel = "", reason = "") {
   };
 }
 
+function resolveGroqTarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.groq) return null;
+  const model = String(requestedModel || DEFAULT_GROQ_MODEL).trim() || DEFAULT_GROQ_MODEL;
+  return {
+    provider: "groq",
+    model,
+    baseUrl: BACKENDS.groq,
+    url: buildOpenAICompletionsUrl(BACKENDS.groq),
+    reason: reason || null,
+  };
+}
+
+function resolveDeepSeekTarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.deepseek) return null;
+  const model = String(requestedModel || DEFAULT_DEEPSEEK_MODEL).trim() || DEFAULT_DEEPSEEK_MODEL;
+  return {
+    provider: "deepseek",
+    model,
+    baseUrl: BACKENDS.deepseek,
+    url: buildOpenAICompletionsUrl(BACKENDS.deepseek),
+    reason: reason || null,
+  };
+}
+
 async function resolveOllamaTarget(requestedModel = "", { emitLogs = true } = {}) {
   const tags = await getOllamaTags();
   if (!tags.ok) {
@@ -445,7 +475,37 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
       }
     }
 
-    // Fallback 2 : OpenAI (Cerbère cloud) — protège le backend quand A11 est occupée
+    // Fallback 2 : Groq (ultra rapide, gratuit)
+    if (LLM_FALLBACK_PROVIDER === "groq" || LLM_FALLBACK_PROVIDER === "none") {
+      const hasGroqKey = !!(process.env.GROQ_API_KEY);
+      if ((LLM_FALLBACK_PROVIDER === "groq" || hasGroqKey) && BACKENDS.groq) {
+        const groqTarget = resolveGroqTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+        if (groqTarget) {
+          if (emitLogs) logWarn(`[LLM] fallback=groq (ultra rapide) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+          rememberResolvedTarget(groqTarget, {
+            availableOllamaModels: ollamaResult.tags?.models || [],
+          });
+          return groqTarget;
+        }
+      }
+    }
+
+    // Fallback 3 : DeepSeek (bon pour le code, pas cher)
+    if (LLM_FALLBACK_PROVIDER === "deepseek" || LLM_FALLBACK_PROVIDER === "none") {
+      const hasDeepSeekKey = !!(process.env.DEEPSEEK_API_KEY);
+      if ((LLM_FALLBACK_PROVIDER === "deepseek" || hasDeepSeekKey) && BACKENDS.deepseek) {
+        const deepseekTarget = resolveDeepSeekTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+        if (deepseekTarget) {
+          if (emitLogs) logWarn(`[LLM] fallback=deepseek (code expert) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+          rememberResolvedTarget(deepseekTarget, {
+            availableOllamaModels: ollamaResult.tags?.models || [],
+          });
+          return deepseekTarget;
+        }
+      }
+    }
+
+    // Fallback 4 : OpenAI (Cerbère cloud) — protège le backend quand A11 est occupée
     if (LLM_FALLBACK_PROVIDER === "openai" || LLM_FALLBACK_PROVIDER === "none") {
       // Même si fallback=none, on tente OpenAI si une clé est disponible
       const hasOpenAiKey = !!(process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY);
@@ -460,6 +520,26 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
     }
 
     throw new Error(ollamaResult.detail || ollamaResult.reason || "ollama_resolution_failed — aucun fallback disponible");
+  }
+
+  if (provider === "groq") {
+    const groqTarget = resolveGroqTarget(requestedModel, "provider_forced");
+    if (!groqTarget) {
+      throw new Error("groq_base_missing");
+    }
+    if (emitLogs) logInfo(`[LLM] provider=groq model=${groqTarget.model}`);
+    rememberResolvedTarget(groqTarget);
+    return groqTarget;
+  }
+
+  if (provider === "deepseek") {
+    const deepseekTarget = resolveDeepSeekTarget(requestedModel, "provider_forced");
+    if (!deepseekTarget) {
+      throw new Error("deepseek_base_missing");
+    }
+    if (emitLogs) logInfo(`[LLM] provider=deepseek model=${deepseekTarget.model}`);
+    rememberResolvedTarget(deepseekTarget);
+    return deepseekTarget;
   }
 
   if (provider === "llama_server") {
@@ -760,6 +840,12 @@ function buildUpstreamHeaders(backendBase, provider = "openai") {
   const headers = { "Content-Type": "application/json" };
   if (provider === "openai" && process.env.OPENAI_API_KEY) {
     headers.Authorization = `Bearer ${process.env.OPENAI_API_KEY}`;
+  }
+  if (provider === "groq" && process.env.GROQ_API_KEY) {
+    headers.Authorization = `Bearer ${process.env.GROQ_API_KEY}`;
+  }
+  if (provider === "deepseek" && process.env.DEEPSEEK_API_KEY) {
+    headers.Authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
   }
   return headers;
 }

@@ -46,6 +46,7 @@ import { EmailResourceModal } from "./components/EmailResourceModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameConversationModal } from "./components/RenameConversationModal";
 import { SubscriptionPanel } from "./components/SubscriptionPanel";
+import { AdBanner } from "./components/AdBanner";
 import ReactMarkdown from "react-markdown";
 import "./index.css";
 import {
@@ -3724,9 +3725,12 @@ export function App() {
         ) : null}
       </div>
       {!isCompactLayout ? (
-      <footer className="footer">
-        A11 local · Ollama + TTS + image · Funesterie
-      </footer>
+      <>
+        <AdBanner position="bottom" style={{ margin: '20px auto', maxWidth: '800px' }} />
+        <footer className="footer">
+          A11 local · Ollama + TTS + image · Funesterie
+        </footer>
+      </>
       ) : null}
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
       <RenameConversationModal

@@ -48,6 +48,18 @@ services:
       - key: OPENAI_API_KEY
         sync: false # Secret, à configurer manuellement
 
+      # LLM Fallbacks (optionnel)
+      - key: A11_LLM_FALLBACK_PROVIDER
+        value: groq # groq, deepseek, openai, ou none
+      - key: GROQ_API_KEY
+        sync: false # Secret, à configurer manuellement
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: DEEPSEEK_API_KEY
+        sync: false # Secret, à configurer manuellement
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+
       # Stripe
       - key: STRIPE_SECRET_KEY
         sync: false # Secret, à configurer manuellement
