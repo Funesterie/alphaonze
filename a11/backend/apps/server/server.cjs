@@ -5736,8 +5736,8 @@ app.get('/api/jobs/sd/:jobId', verifyJWT, (req, res) => {
 // Protection des routes de génération d'images/vidéos avec abonnement
 // Les admins sont exemptés (vérification dans le middleware)
 app.use('/api/mask', verifyJWT, requireSubscription, require('./src/routes/mask.cjs'));
-app.use('/api', verifyJWT, requireSubscription, require('./src/routes/image-generate-mask.cjs'));
-app.use('/api', verifyJWT, requireSubscription, require('./src/routes/image-atelier.cjs'));
+app.use('/api/image-generate', verifyJWT, requireSubscription, require('./src/routes/image-generate-mask.cjs'));
+app.use('/api/image-atelier', verifyJWT, requireSubscription, require('./src/routes/image-atelier.cjs'));
 
 function getSupervisorInstance() {
   return globalThis.__A11_SUPERVISOR || globalThis.__A11_QFLUSH_SUPERVISOR || null;

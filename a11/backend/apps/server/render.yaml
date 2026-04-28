@@ -1,0 +1,101 @@
+# Render Blueprint pour A11 Backend
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API
+  - type: web
+    name: a11-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: frankfurt
+    plan: free
+    branch: master
+    rootDir: a11/backend/apps/server
+    healthCheckPath: /health
+    envVars:
+      # Backend Config
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: HOST_SERVER
+        value: 0.0.0.0
+      - key: BACKEND
+        value: render
+
+      # Security
+      - key: NEZ_SECURITY_MODE
+        value: production
+      - key: JWT_SECRET
+        sync: false # Secret, à configurer manuellement
+      - key: JWT_EXPIRY
+        value: 7d
+
+      # CORS
+      - key: CORS_ORIGINS
+        value: https://alphaonze.funesterie.pro
+      - key: APP_URL
+        value: https://alphaonze.funesterie.pro
+
+      # LLM
+      - key: A11_LLM_PROVIDER
+        value: openai
+      - key: DEFAULT_MODEL
+        value: gpt-4o-mini
+      - key: A11_LLM_TIMEOUT_MS
+        value: 60000
+      - key: OPENAI_API_KEY
+        sync: false # Secret, à configurer manuellement
+
+      # Stripe
+      - key: STRIPE_SECRET_KEY
+        sync: false # Secret, à configurer manuellement
+      - key: STRIPE_PRICE_ID
+        sync: false # Secret, à configurer manuellement
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false # Secret, à configurer manuellement
+      - key: STRIPE_SUCCESS_URL
+        value: https://alphaonze.funesterie.pro/subscription/success
+      - key: STRIPE_CANCEL_URL
+        value: https://alphaonze.funesterie.pro/subscription/cancel
+      - key: STRIPE_PORTAL_RETURN_URL
+        value: https://alphaonze.funesterie.pro/account
+
+      # Email
+      - key: RESEND_API_KEY
+        sync: false # Secret, à configurer manuellement
+      - key: EMAIL_FROM
+        value: A11 <a11@funesterie.pro>
+
+      # Databases (à configurer avec les URLs Render)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: a11-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          name: a11-redis
+          property: connectionString
+
+      # Features
+      - key: A11_ENABLE_QFLUSH
+        value: 0
+      - key: MANAGE_CERBERE
+        value: false
+      - key: MANAGE_TTS
+        value: false
+
+databases:
+  # PostgreSQL
+  - name: a11-postgres
+    databaseName: a11
+    plan: free
+    region: frankfurt
+    ipAllowList: [] # Allow all IPs
+
+  # Redis
+  - name: a11-redis
+    plan: free
+    region: frankfurt
+    ipAllowList: [] # Allow all IPs
