@@ -5,9 +5,9 @@ services:
   # Backend API
   - type: web
     name: a11-backend
-    env: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    env: node
+    buildCommand: echo 'No build step needed'
+    startCommand: node server.cjs
     region: frankfurt
     plan: free
     branch: master
