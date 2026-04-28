@@ -16,6 +16,8 @@
   "scripts": {
     "dev": "node server.cjs",
     "start": "node server.cjs",
+    "start:watchdog": "node cerbere-watchdog.cjs",
+    "dev:watchdog": "node cerbere-watchdog.cjs",
     "dev:router": "node llm-router-runner.cjs",
     "test": "echo 'No tests specified for server'",
     "test:contracts": "node --test ./test/*.node.test.cjs",

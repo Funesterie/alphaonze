@@ -380,6 +380,7 @@ const createProtectedChatProxyRouter = require('./src/routes/protected-chat-prox
 const analyzeSemanticIntent = require('./src/mask/semantic/analyze-semantic-intent.cjs');
 const createDroidRouter = require('./routes/droid.cjs');
 const createSubscriptionRouter = require('./routes/subscription.cjs');
+const registerWatchdogRoutes = require('./routes/agent-watchdog.cjs');
 const createSubscriptionMiddleware = require('./middleware/check-subscription.cjs');
 const droid = require('./a11-droid.cjs');
 
@@ -6027,6 +6028,14 @@ console.log('[Server] Droid routes mounted under /api/droid');
 // Subscription — Gestion des abonnements Stripe
 app.use('/api/subscription', createSubscriptionRouter({ verifyJWT, db }));
 console.log('[Server] Subscription routes mounted under /api/subscription');
+
+// Watchdog — Auto-save mémoire + statut Cerbère
+try {
+  registerWatchdogRoutes({ app });
+  console.log('[Server] Watchdog routes mounted: /api/agent/memory/auto-save, /api/agent/watchdog/*');
+} catch (e) {
+  console.warn('[Server] Watchdog routes failed to mount:', e.message);
+}
 
 console.log('[Server] Checkpoint routes mounted under /api/checkpoints');
 console.log('[Server] Tools routes mounted under /api/tools');
