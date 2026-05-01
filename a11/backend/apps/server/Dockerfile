@@ -1,5 +1,5 @@
 # A11 Backend - Dockerfile pour Podman/Docker
-FROM node:20-alpine
+FROM node:20
 
 # Métadonnées
 LABEL maintainer="Jeffrey Cellauro <djeff@funesterie.pro>"
@@ -12,12 +12,10 @@ ENV PORT=3000
 ENV HOST_SERVER=0.0.0.0
 
 # Installer les dépendances système nécessaires
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
+# python3, make, g++ et curl sont déjà inclus dans node:20 (Debian)
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     postgresql-client \
-    curl
+    && rm -rf /var/lib/apt/lists/*
 
 # Créer le répertoire de l'application
 WORKDIR /app

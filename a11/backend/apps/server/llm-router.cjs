@@ -428,6 +428,8 @@ function resolveXAITarget(requestedModel = "", reason = "") {
     reason: reason || null,
   };
 }
+
+function resolveTogetherTarget(requestedModel = "", reason = "") {
   if (!BACKENDS.together) return null;
   const model = String(requestedModel || DEFAULT_TOGETHER_MODEL).trim() || DEFAULT_TOGETHER_MODEL;
   return {
