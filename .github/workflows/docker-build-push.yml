@@ -6,6 +6,7 @@ on:
     paths:
       - "a11/backend/apps/server/**"
       - ".github/workflows/docker-build-push.yml"
+  workflow_dispatch:
 
 jobs:
   build-and-push:
