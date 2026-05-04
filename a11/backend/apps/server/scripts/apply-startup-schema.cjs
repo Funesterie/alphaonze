@@ -102,6 +102,8 @@ const statements = [
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS confidence REAL`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS relevance_score REAL DEFAULT 0.5`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS source TEXT`,
+  `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP`,
   `DO $$ BEGIN
@@ -134,6 +136,8 @@ const statements = [
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal'`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMP`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'chat_message'`,
+  `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP`,
   `CREATE INDEX IF NOT EXISTS idx_user_tasks_user_status_updated
     ON user_tasks (user_id, status, updated_at DESC)`,
@@ -149,8 +153,13 @@ const statements = [
     metadata_json JSONB,
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (user_id, storage_key)
   )`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'upload'`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `DO $$ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM information_schema.table_constraints
@@ -179,6 +188,15 @@ const statements = [
     updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (user_id, conversation_id, storage_key)
   )`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS resource_kind TEXT NOT NULL DEFAULT 'file'`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'upload'`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS url TEXT`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS content_type TEXT`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS size_bytes INTEGER`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS metadata_json JSONB`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `CREATE INDEX IF NOT EXISTS idx_conversation_resources_user_conversation_created
     ON conversation_resources (user_id, conversation_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_conversation_resources_user_kind_updated
@@ -193,17 +211,52 @@ const statements = [
     original_prompt TEXT,
     clarification_question TEXT,
     status TEXT DEFAULT 'pending',
+    kind TEXT NOT NULL DEFAULT 'semantic',
     payload_json JSONB,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP,
+    resolved_at TIMESTAMP
   )`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'semantic'`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS payload_json JSONB`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP`,
+  `CREATE INDEX IF NOT EXISTS idx_a11_pending_clarifications_user_conv_kind
+    ON a11_pending_clarifications (user_id, conversation_id, kind, updated_at DESC)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_a11_pending_clarifications_active
+    ON a11_pending_clarifications (user_id, conversation_id, kind)
+    WHERE status = 'pending'`,
 
   `CREATE TABLE IF NOT EXISTS a11_external_resource_cache (
     cache_key TEXT PRIMARY KEY,
     image_url TEXT,
+    source_url TEXT,
+    storage_key TEXT,
+    public_url TEXT,
+    filename TEXT,
+    content_type TEXT,
+    size_bytes INTEGER,
     cached_at TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    last_hit_at TIMESTAMP DEFAULT NOW(),
     expires_at TIMESTAMP
   )`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS source_url TEXT`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS storage_key TEXT`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS public_url TEXT`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS filename TEXT`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS content_type TEXT`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS size_bytes INTEGER`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS last_hit_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE a11_external_resource_cache ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
+  `CREATE INDEX IF NOT EXISTS idx_a11_external_resource_cache_updated
+    ON a11_external_resource_cache (updated_at DESC)`,
 ];
 
 async function main() {
