@@ -36,6 +36,12 @@ const statements = [
     subscription_end_date TIMESTAMP,
     stripe_subscription_id VARCHAR(255)
   )`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMP`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)`,
