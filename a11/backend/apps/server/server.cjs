@@ -1233,8 +1233,11 @@ const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 10 * 1
 const TEMP_SHARED_FILE_TTL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_TTL_MS || 60 * 60 * 1000));
 const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_CLEANUP_INTERVAL_MS || 60 * 1000));
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
-const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '1991');
+const DEFAULT_ADMIN_PASSWORD = Object.prototype.hasOwnProperty.call(process.env, 'DEFAULT_ADMIN_PASSWORD')
+  ? String(process.env.DEFAULT_ADMIN_PASSWORD)
+  : '';
 const DEFAULT_ADMIN_EMAIL = String(process.env.DEFAULT_ADMIN_EMAIL || 'djeff@a11.local').trim().toLowerCase();
+const DEFAULT_ADMIN_BOOTSTRAP_ENABLED = DEFAULT_ADMIN_PASSWORD.length > 0;
 const localAuthStore = db
   ? null
   : createLocalAuthStore({
@@ -1412,17 +1415,21 @@ if (db) {
         `);
         await db.query('CREATE INDEX IF NOT EXISTS idx_a11_external_resource_cache_updated ON a11_external_resource_cache (updated_at DESC)');
 
-        const adminLookup = await db.query(
-          'SELECT id FROM users WHERE LOWER(username)=LOWER($1) OR LOWER(email)=LOWER($2) LIMIT 1',
-          [DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL]
-        );
-        if (!adminLookup.rows.length) {
-          const adminHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
-          await db.query(
-            'INSERT INTO users (username, email, password_hash) VALUES ($1,$2,$3)',
-            [DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, adminHash]
+        if (DEFAULT_ADMIN_BOOTSTRAP_ENABLED) {
+          const adminLookup = await db.query(
+            'SELECT id FROM users WHERE LOWER(username)=LOWER($1) OR LOWER(email)=LOWER($2) LIMIT 1',
+            [DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL]
           );
-          console.log('[AUTH] ✅ Admin bootstrap account created');
+          if (!adminLookup.rows.length) {
+            const adminHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
+            await db.query(
+              'INSERT INTO users (username, email, password_hash) VALUES ($1,$2,$3)',
+              [DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, adminHash]
+            );
+            console.log('[AUTH] ✅ Admin bootstrap account created');
+          }
+        } else {
+          console.log('[AUTH] Admin bootstrap skipped (DEFAULT_ADMIN_PASSWORD not set)');
         }
         console.log('[DB] ✅ users.reset_token columns vérifiées');
         console.log('[DB] ✅ chat memory tables vérifiées');

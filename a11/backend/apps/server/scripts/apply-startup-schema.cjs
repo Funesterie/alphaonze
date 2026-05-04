@@ -2,7 +2,9 @@
 'use strict';
 
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { Client } = require('pg');
+const bcrypt = require('bcrypt');
 
 try {
   require('dotenv').config({ path: path.resolve(__dirname, '..', '.env.local'), override: false });
@@ -19,6 +21,15 @@ const client = new Client({
   connectionString: databaseUrl,
   ssl: { rejectUnauthorized: false },
 });
+
+const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
+const DEFAULT_ADMIN_EMAIL = String(process.env.DEFAULT_ADMIN_EMAIL || 'djeff@a11.local').trim().toLowerCase();
+const DEFAULT_ADMIN_PASSWORD = Object.prototype.hasOwnProperty.call(process.env, 'DEFAULT_ADMIN_PASSWORD')
+  ? String(process.env.DEFAULT_ADMIN_PASSWORD)
+  : '';
+const UNSAFE_DEFAULT_ADMIN_PASSWORD = '1991';
+const isProductionRuntime = process.env.NODE_ENV === 'production'
+  || Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -259,12 +270,56 @@ const statements = [
     ON a11_external_resource_cache (updated_at DESC)`,
 ];
 
+async function disableUnsafeDefaultAdmin() {
+  if (!isProductionRuntime || DEFAULT_ADMIN_PASSWORD) {
+    return;
+  }
+
+  const { rows } = await client.query(
+    `SELECT id, password_hash
+       FROM users
+      WHERE LOWER(username)=LOWER($1) OR LOWER(email)=LOWER($2)`,
+    [DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL]
+  );
+
+  let disabledCount = 0;
+
+  for (const row of rows) {
+    if (!row.password_hash) {
+      continue;
+    }
+
+    const matchesUnsafeDefault = await bcrypt
+      .compare(UNSAFE_DEFAULT_ADMIN_PASSWORD, row.password_hash)
+      .catch(() => false);
+
+    if (!matchesUnsafeDefault) {
+      continue;
+    }
+
+    const lockedPassword = crypto.randomBytes(48).toString('base64url');
+    const lockedHash = await bcrypt.hash(lockedPassword, 12);
+    await client.query(
+      'UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2',
+      [lockedHash, row.id]
+    );
+    disabledCount += 1;
+  }
+
+  if (disabledCount > 0) {
+    const suffix = disabledCount === 1 ? '' : 's';
+    console.log(`[AUTH] unsafe default admin password disabled (${disabledCount} user${suffix})`);
+  }
+}
+
 async function main() {
   await client.connect();
 
   for (const statement of statements) {
     await client.query(statement);
   }
+
+  await disableUnsafeDefaultAdmin();
 
   await client.end();
   console.log(`[DB] startup schema applied (${statements.length} statements)`);
