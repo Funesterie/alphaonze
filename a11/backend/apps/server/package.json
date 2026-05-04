@@ -15,7 +15,7 @@
   },
   "scripts": {
     "dev": "node server.cjs",
-    "start": "node server.cjs",
+    "start": "node scripts/apply-startup-schema.cjs && node server.cjs",
     "start:watchdog": "node cerbere-watchdog.cjs",
     "dev:watchdog": "node cerbere-watchdog.cjs",
     "dev:router": "node llm-router-runner.cjs",
