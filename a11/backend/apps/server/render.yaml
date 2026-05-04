@@ -5,9 +5,9 @@ services:
   # Backend API
   - type: web
     name: a11-backend
-    env: node
-    buildCommand: echo 'No build step needed'
-    startCommand: node server.cjs
+    runtime: node
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
     region: frankfurt
     plan: free
     branch: master
@@ -34,7 +34,7 @@ services:
 
       # CORS
       - key: CORS_ORIGINS
-        value: https://alphaonze.funesterie.pro
+        value: https://alphaonze.funesterie.pro,https://a11.funesterie.pro
       - key: APP_URL
         value: https://alphaonze.funesterie.pro
 
