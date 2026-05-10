@@ -17,6 +17,7 @@
 *.png
 !a11/frontend/apps/web/public/favicon.png
 !a11/frontend/apps/web/public/logo*.png
+!a11/vsix/media/icon.png
 /a11/backend/apps/server/logs/
 /a11/backend/apps/server/test/*.tmp
 /.tmp_*.txt
@@ -25,6 +26,7 @@
 # Local launcher runtime
 /a11/launchers/dist/
 /a11/launchers/tools/
+/a11/vsix/out/
 
 # Desktop wrapper generated files
 /a11/a11desktoptauri/node_modules/
@@ -135,6 +137,8 @@ Docker Desktop Installer.exe
 # Secrets supplémentaires
 **/.env.production
 **/.env.prod
+**/.env.online
+**/.env.container.local
 **/secrets.json
 **/credentials.json
 **/*.pem
@@ -145,6 +149,10 @@ Docker Desktop Installer.exe
 **/id_ed25519
 **/.npmrc
 **/.yarnrc
+
+# Profils env-spécifiques (a11.env, kaen44.env)
+a11/backend/apps/server/profiles/*.env
+!a11/backend/apps/server/profiles/*.env.example
 **/auth.json
 # Watchdog snapshots (runtime)
 /a11/runtime/watchdog-snapshots/

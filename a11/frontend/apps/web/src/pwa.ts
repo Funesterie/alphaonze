@@ -1,7 +1,12 @@
 function shouldDisableServiceWorker() {
   const host = String(globalThis.location?.hostname || '').trim().toLowerCase();
   const isLocalHost = host === '127.0.0.1' || host === 'localhost';
-  const isPublicA11Host = host === 'alphaonze.funesterie.pro';
+  const isPublicA11Host = [
+    '178.105.86.89',
+    'alphaonze.funesterie.pro',
+    'a11.funesterie.pro',
+    'api.funesterie.pro',
+  ].includes(host);
   const hasTauriBridge = typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
   const userAgent = String(globalThis.navigator?.userAgent || '').toLowerCase();
   const isTauriUserAgent = userAgent.includes('tauri');

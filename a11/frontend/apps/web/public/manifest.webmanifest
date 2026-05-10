@@ -1,7 +1,7 @@
 {
-  "name": "A11",
-  "short_name": "A11",
-  "description": "Assistant A11 installable sur web et mobile.",
+  "name": "Kaen44",
+  "short_name": "Kaen44",
+  "description": "Assistante bureau Funesterie pour documents, Drive, factures, voix et projets du quotidien.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -55,7 +55,16 @@ async function getJson(baseUrl, route, headers = {}) {
 
 test('local auth store backs register and login when database is unavailable', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
+  const previousFullAccessEmails = process.env.A11_FULL_ACCESS_EMAILS;
+  process.env.A11_FULL_ACCESS_EMAILS = 'funeste38@gmail.com';
   t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  t.after(() => {
+    if (previousFullAccessEmails === undefined) {
+      delete process.env.A11_FULL_ACCESS_EMAILS;
+    } else {
+      process.env.A11_FULL_ACCESS_EMAILS = previousFullAccessEmails;
+    }
+  });
 
   const localAuthStore = createLocalAuthStore({
     filePath: path.join(tmpDir, 'local-users.json'),
@@ -100,6 +109,15 @@ test('local auth store backs register and login when database is unavailable', a
       assert.equal(duplicate.response.status, 400);
       assert.equal(duplicate.json.error, 'username_taken');
 
+      const fullAccess = await postJson(baseUrl, '/api/auth/register', {
+        username: 'FullAccessUser',
+        email: 'funeste38@gmail.com',
+        password: 'secret123',
+      });
+      assert.equal(fullAccess.response.status, 200);
+      assert.equal(fullAccess.json.user.fullAccess, true);
+      assert.equal(jwt.decode(fullAccess.json.token).fullAccess, true);
+
       const loggedIn = await postJson(baseUrl, '/api/auth/login', {
         email: 'local@example.test',
         password: 'secret123',
@@ -107,7 +125,42 @@ test('local auth store backs register and login when database is unavailable', a
       assert.equal(loggedIn.response.status, 200);
       assert.equal(loggedIn.json.success, true);
       assert.equal(loggedIn.json.user.email, 'local@example.test');
-      assert.equal(issuedTokens.length, 2);
+      assert.equal(issuedTokens.length, 3);
+    }
+  );
+});
+
+test('auth/me accepts the a11_session cookie without cookie-parser state', async () => {
+  const token = jwt.sign(
+    { id: 'cookie-user', username: 'CookieUser', email: 'cookie@example.test' },
+    'test-secret',
+    { expiresIn: '1h' }
+  );
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        defaultAdminUsername: 'Djeff',
+        defaultAdminPassword: '1991',
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const result = await getJson(baseUrl, '/api/auth/me', {
+        Cookie: `a11_session=${encodeURIComponent(token)}`,
+      });
+      assert.equal(result.response.status, 200);
+      assert.equal(result.json.ok, true);
+      assert.equal(result.json.authenticated, true);
+      assert.equal(result.json.user.email, 'cookie@example.test');
     }
   );
 });

@@ -1,6 +1,27 @@
 /* Minimal mobile-specific overrides (stub) */
 @media (max-width: 600px) {
   :root { --bg: #071021; }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    background: #071021;
+  }
+
+  .app-container.a11-shell {
+    min-height: 100vh;
+    min-height: 100svh;
+    height: 100vh;
+    height: 100svh;
+    background: #071021;
+  }
+
+  .a11-body,
+  .main {
+    min-height: 0;
+  }
+
   .app-container { padding: 12px; }
   .chat-message { font-size: 15px; line-height:1.3; }
 
@@ -19,6 +40,43 @@
 
   .composer .row {
     align-items: flex-end;
+  }
+
+  .composer .a11-composer-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-areas:
+      "input input input"
+      "import send mic";
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .composer .a11-input-wrap {
+    grid-area: input;
+    min-width: 0;
+  }
+
+  .composer .import-inline {
+    grid-area: import;
+    width: 100%;
+    margin: 0 !important;
+  }
+
+  .composer .send-button {
+    grid-area: send;
+    width: 44px;
+  }
+
+  .composer .nossen-mic-btn.inline {
+    grid-area: mic;
+    width: 44px;
+    margin-left: 0 !important;
+  }
+
+  .composer .a11-voice-tools {
+    display: none !important;
   }
 
   .composer .row .send-button,

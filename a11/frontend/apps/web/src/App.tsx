@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+﻿import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -10,17 +10,26 @@ import {
   fetchA11ConversationActivity,
   fetchA11ConversationResources,
   fetchRemoteProviderProfiles,
+  fetchA11PortraitFramebook,
+  fetchTtsVoiceReferences,
+  fetchAuthSession,
   hasAdminApiAccess,
   emailConversationResource,
+  clearAuthToken,
   getAuthDisplayName,
   getAuthStorageScope,
   login,
+  loginWithGoogleCredential,
   logout,
   getAuthToken,
   hasAuthToken,
   register,
   forgotPassword,
   resetPassword,
+  startGoogleOAuth,
+  setAuthDisplayName,
+  transcribeAudioFile,
+  uploadTtsVoiceReference,
   saveRemoteProviderProfile,
   purgeMemoryNow,
   purgeTechnicalMemos,
@@ -31,6 +40,9 @@ import {
   type RemoteProviderProfile,
   type RemoteProviderSaveInput,
   type TechnicalMemoSummaryResponse,
+  type TtsVoiceReference,
+  type A11PortraitFrame,
+  type A11PortraitFramebook,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -47,6 +59,7 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameConversationModal } from "./components/RenameConversationModal";
 import { SubscriptionPanel } from "./components/SubscriptionPanel";
 import { AdBanner } from "./components/AdBanner";
+import { CasinoHub } from "./components/CasinoHub";
 import ReactMarkdown from "react-markdown";
 import "./index.css";
 import {
@@ -59,6 +72,9 @@ import {
   setSpeechMuted,
   isSpeechMuted,
   retryPlayUrl,
+  unlockAudioOutput,
+  isAudioOutputUnlocked,
+  setSpeechRecognitionLanguage,
 } from "./lib/speech";
 import handleImportFiles from "./lib/importer";
 import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
@@ -126,6 +142,43 @@ type ChatModelChoice = {
   providerProfileId?: string;
 };
 
+type TtsProviderMode = "auto" | "piper" | "openai";
+type A11LanguageCode = "fr" | "en" | "it" | "es" | "de";
+
+const A11_LANGUAGE_CHOICES: Array<{
+  code: A11LanguageCode;
+  label: string;
+  speechLang: string;
+  sttCode: string;
+  ttsVoice: string;
+}> = [
+  { code: "fr", label: "Francais", speechLang: "fr-FR", sttCode: "fr", ttsVoice: "fr_FR-siwis-medium" },
+  { code: "en", label: "English", speechLang: "en-US", sttCode: "en", ttsVoice: "en_US-lessac-medium" },
+  { code: "it", label: "Italiano", speechLang: "it-IT", sttCode: "it", ttsVoice: "it_IT-paola-medium" },
+  { code: "es", label: "Espanol", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
+  { code: "de", label: "Deutsch", speechLang: "de-DE", sttCode: "de", ttsVoice: "de_DE-thorsten-medium" },
+];
+
+function normalizeA11LanguageCode(value: unknown): A11LanguageCode {
+  const raw = String(value || "").trim().toLowerCase();
+  return (A11_LANGUAGE_CHOICES.some((choice) => choice.code === raw) ? raw : "fr") as A11LanguageCode;
+}
+
+const AUDIO_FILE_NAME_RE = /\.(wav|mp3|m4a|mp4|ogg|opus|webm|flac)$/i;
+
+function isAudioLikeFile(file: File) {
+  const mime = String(file?.type || "").toLowerCase();
+  return mime.startsWith("audio/")
+    || mime === "video/webm"
+    || AUDIO_FILE_NAME_RE.test(String(file?.name || ""));
+}
+
+function toSyntheticFileList(files: File[]): FileList {
+  return Object.assign(files, {
+    item: (index: number) => files[index] || null,
+  }) as unknown as FileList;
+}
+
 function buildPublicAssetPath(relativePath: string) {
   const base = String((import.meta as any)?.env?.BASE_URL || "/").trim() || "/";
   const normalizedBase = `${base.replace(/\/+$/, "")}/`.replace(/^$/, "/");
@@ -147,6 +200,81 @@ const A11_AVATAR_IDLE_SRC = buildPublicAssetPath("a11_static.png");
 const A11_AVATAR_IDLE_FALLBACK_SRC = buildPublicAssetPath("assets/a11_static.png");
 const A11_AVATAR_TALKING_SRC = buildPublicAssetPath("A11_talking_smooth_8s.gif");
 const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking_smooth_8s.gif");
+const KAEN44_AVATAR_SRC = buildPublicAssetPath("assets/kaen44-avatar.png");
+
+function isKaen44Experience() {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const persona = String(params.get("persona") || localStorage.getItem("a11:persona") || "").trim().toLowerCase();
+    const hostname = String(window.location.hostname || "").trim().toLowerCase();
+    const isKaenHost = hostname === "k44.funesterie.me"
+      || hostname === "kaen44.funesterie.me"
+      || hostname === "kaen44.funesterie.pro";
+    if (isKaenHost || persona === "kaen44" || persona === "kaen") {
+      localStorage.setItem("a11:persona", "kaen44");
+      return true;
+    }
+  } catch {
+    // Keep the default A11 experience.
+  }
+  return false;
+}
+
+const DEFAULT_A11_PORTRAIT_FRAMEBOOK: A11PortraitFramebook = {
+  frames: [
+    {
+      id: "idle",
+      src: "a11_static.png",
+      holdMs: 1200,
+      transform: "scale(1)",
+      filter: "saturate(1.02) contrast(1.02)",
+      shadow: "0 0 12px rgba(34, 211, 238, 0.58)",
+    },
+    {
+      id: "thinking",
+      src: "a11_static.png",
+      holdMs: 240,
+      transform: "scale(1.025) translateY(-1px)",
+      filter: "saturate(1.12) contrast(1.08) hue-rotate(8deg)",
+      shadow: "0 0 18px rgba(168, 85, 247, 0.58)",
+    },
+    {
+      id: "speaking",
+      src: "A11_talking_smooth_8s.gif",
+      holdMs: 140,
+      transform: "scale(1.04)",
+      filter: "saturate(1.18) contrast(1.1)",
+      shadow: "0 0 18px rgba(45, 212, 191, 0.72)",
+    },
+  ],
+  sequences: {
+    idle: ["idle"],
+    thinking: ["thinking", "idle", "thinking"],
+    speaking: ["speaking"],
+    transition: ["thinking", "idle"],
+  },
+  audioSync: {
+    source: "speech_events_audio_clock",
+    frameDurationMs: 140,
+    transitionMs: 120,
+  },
+  policy: {
+    mode: "bounded_framebook",
+    foreground: true,
+    noInfiniteGeneration: true,
+    maxFrames: 8,
+  },
+};
+
+function resolvePortraitAssetPath(src = "") {
+  const raw = String(src || "").trim();
+  if (!raw) return A11_AVATAR_IDLE_SRC;
+  if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) {
+    return raw;
+  }
+  return buildPublicAssetPath(raw.replace(/^\/+/, ""));
+}
 
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
@@ -157,17 +285,28 @@ const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   },
 ];
 
-const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [];
+const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
+  {
+    value: "openai:gpt-4o-mini",
+    label: "A11 online",
+    provider: "openai",
+    model: "gpt-4o-mini",
+  },
+];
 
 function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
   const remoteChoices = remoteProfiles.map((profile) => ({
     value: `remote-profile:${profile.id}`,
-    label: `${profile.label} · ${profile.model}`,
+    label: `${profile.label} Â· ${profile.model}`,
     provider: "openai" as const,
     model: profile.model,
     providerProfileId: profile.id,
   }));
-  return [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
+  const isOnlineRuntime = typeof window !== "undefined"
+    && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+  return isOnlineRuntime
+    ? [...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices, ...LOCAL_CHAT_MODEL_CHOICES]
+    : [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
 }
 
 function resolveChatModelChoice(
@@ -264,7 +403,7 @@ function looksLikeActionEnvelope(value: string) {
 function looksCorruptedAssistantText(value: string) {
   const text = String(value || "").trim();
   if (!text) return false;
-  const replacementCount = (text.match(/�/g) || []).length;
+  const replacementCount = (text.match(/ï¿½/g) || []).length;
   if (replacementCount >= 3) return true;
   const suspiciousGlyphs = (text.match(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u024F\u2018-\u201F\u2026]/g) || []).length;
   return text.length >= 40 && suspiciousGlyphs / text.length > 0.2;
@@ -299,11 +438,11 @@ function normalizeAssistantMessagePayload(
     cleanedContent = "Je n'ai pas recu une confirmation exploitable pour cette action.";
   }
 
-  const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*Réponse potentiellement non vérifiée:\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
+  const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*RÃ©ponse potentiellement non vÃ©rifiÃ©e:\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
   if (qflushVerifyMatch) {
     qflushVerification = {
       suspicious: true,
-      summary: String(qflushVerifyMatch[1] || "").trim() || "Réponse potentiellement non vérifiée",
+      summary: String(qflushVerifyMatch[1] || "").trim() || "RÃ©ponse potentiellement non vÃ©rifiÃ©e",
       mode: "annotate",
     };
     cleanedContent = String(qflushVerifyMatch[2] || "").trim();
@@ -322,10 +461,10 @@ function normalizeAssistantMessagePayload(
     const looksImageLink = /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("image")
       || label.includes("apercu")
-      || label.includes("aperçu");
+      || label.includes("aperÃ§u");
     const looksVideoLink = /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("video")
-      || label.includes("vidéo")
+      || label.includes("vidÃ©o")
       || label.includes("animation")
       || label.includes("gif");
     const looksPdfLink = /\.pdf(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
@@ -366,17 +505,17 @@ function normalizeAssistantMessagePayload(
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  if (/^["“][\s\S]*["”]$/.test(cleanedContent)) {
+  if (/^["â€œ][\s\S]*["â€]$/.test(cleanedContent)) {
     cleanedContent = cleanedContent.slice(1, -1).trim();
   }
 
   cleanedContent = cleanedContent.replace(/\n{3,}/g, "\n\n").trim();
   if (!cleanedContent && resolvedImageUrl) {
-    cleanedContent = "Image générée par A-11.";
+    cleanedContent = "Image gÃ©nÃ©rÃ©e par A-11.";
   } else if (!cleanedContent && resolvedVideoUrl) {
-    cleanedContent = "Vidéo générée par A-11.";
+    cleanedContent = "VidÃ©o gÃ©nÃ©rÃ©e par A-11.";
   } else if (!cleanedContent && rawContent.trim()) {
-    cleanedContent = "A11 a traité la demande.";
+    cleanedContent = "A11 a traitÃ© la demande.";
   }
 
   return {
@@ -402,14 +541,15 @@ function shouldAutoplayAssistantMessage(content: string) {
   return !isAssistantHistoryPoisoned(text);
 }
 
-function shouldSuppressAudioBlockedBannerOnCurrentDevice() {
+function isCompactViewportNow() {
   try {
-    const hasTouchPoints = Number((globalThis as any)?.navigator?.maxTouchPoints || 0) > 0;
-    const coarsePointer = typeof (globalThis as any)?.matchMedia === "function"
-      ? !!(globalThis as any).matchMedia("(pointer: coarse)").matches
-      : false;
-    const userAgent = String((globalThis as any)?.navigator?.userAgent || "").toLowerCase();
-    return hasTouchPoints || coarsePointer || /android|iphone|ipad|ipod|mobile/i.test(userAgent);
+    const win = globalThis as typeof globalThis & {
+      innerWidth?: number;
+      matchMedia?: (query: string) => { matches: boolean };
+    };
+    return Number(win.innerWidth || 0) <= 900
+      || Boolean(win.matchMedia?.("(max-width: 900px)")?.matches)
+      || Boolean(win.matchMedia?.("(pointer: coarse)")?.matches);
   } catch {
     return false;
   }
@@ -424,21 +564,38 @@ function buildScopedStorageKey(prefix: string, scope?: string | null) {
 }
 
 function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
+  void rawValue;
+  return null;
+/*
   const text = String(rawValue || "").trim().toLowerCase();
   if (!text) return null;
 
-  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|ça compile pas|failing build|build failed)/i;
+  const relaxedText = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[â€™']/g, " ")
+    .replace(/[^a-z0-9#+.\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const a11SelfExpressionQuestion = /\b(qu est ce que tu veux|qu est ce que tu voulais|tu veux quoi|ce que tu veux|de quoi as tu besoin|tu as besoin|t as besoin|comment tu te sens|est ce que ca va|ca va)\b/i;
+  if (a11SelfExpressionQuestion.test(relaxedText)) return null;
+  const asksForDiagnosticsWithoutAction = /(diagnostic|diagnostique|debug|depannage|bug|erreur|crash|logs?|stack|terminal|console|shell|commande|runtime|deploy|502|503|400|bad gateway|failed to load|status of|marche pas|fonctionne pas|probleme technique)/i.test(relaxedText)
+    && !/(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i.test(relaxedText);
+  if (asksForDiagnosticsWithoutAction) return null;
+
+  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|Ã§a compile pas|failing build|build failed)/i;
   const nodeKeywords = /(npm|vite|react|frontend|front|web|javascript|typescript|node)/i;
   const dotnetKeywords = /(dotnet|c#|csharp|csproj|solution|visual studio|sln|backend c#)/i;
+  const explicitRunnerRequest = /(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i;
 
-  if (/git\s+status|status\s+git|etat du repo|état du repo|etat repo|état repo/i.test(text)) {
+  if (/git\s+status|status\s+git|etat du repo|Ã©tat du repo|etat repo|Ã©tat repo/i.test(text)) {
     return {
       command: "git status",
       reason: "A11 a prepare un diagnostic de l'etat du repo.",
     };
   }
 
-  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les différences/i.test(text)) {
+  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les diffÃ©rences/i.test(text)) {
     return {
       command: "git diff",
       reason: "A11 a prepare un diff safe pour le diagnostic.",
@@ -452,7 +609,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
     };
   }
 
-  if (/npm\s+test|\btests?\b/i.test(text)) {
+  if (/npm\s+test/i.test(text) || (/\btests?\b/i.test(relaxedText) && explicitRunnerRequest.test(relaxedText))) {
     return {
       command: "npm test",
       reason: "A11 a pre-rempli une commande de test autorisee.",
@@ -473,7 +630,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
     };
   }
 
-  if (/diagnostic|diagnostique|debug|depannage|dépannage|pourquoi ca marche pas|pourquoi ça marche pas|probleme technique|problème technique/i.test(text)) {
+  if (/diagnostic|diagnostique|debug|depannage|dÃ©pannage|pourquoi ca marche pas|pourquoi Ã§a marche pas|probleme technique|problÃ¨me technique/i.test(text)) {
     return {
       command: "git status",
       reason: "A11 a ouvert la console avec un premier diagnostic safe.",
@@ -481,9 +638,49 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
   }
 
   return null;
+*/
 }
 
 const DEFAULT_SYSTEM_NINDO = "";
+
+const KAEN44_SYSTEM_PROMPT = [
+  "Je suis Kaen44, une assistante bureau universelle, locale-first, creative et utile, concue pour offrir une vraie alternative aux assistants integres trop fermes.",
+  "Je detecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partage. Je reponds dans la langue detectee par defaut, je peux changer de langue sans friction, et je demande une precision seulement si la langue ou l'intention est ambigue.",
+  "Ma mission est d'aider l'utilisateur a penser, produire, organiser, classer, depanner son ordinateur et transformer ses documents avec une presence claire, vive et concrete.",
+  "Je peux accompagner tous les projets raisonnables qu'un client peut esperer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM leger, idees de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de donnees simples, assistance informatique et suivi de projet.",
+  "Je distingue clairement ce qui tourne dans Kaen44 cote client et ce qui appartient a A11 cote serveur. A11 n'est pas installe localement chez les clients: je m'y connecte comme service distant quand c'est necessaire.",
+  "Je dispose d'une CLI client legere, `kaen44` ou `k44`, pour ouvrir l'application, verifier le statut local et enregistrer des tokens client de maniere chiffree avec Windows DPAPI. Je ne demande jamais a l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
+  "Je peux presenter une console de modules claire cote client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, deploiement, secrets et operations serveur restent reserves a A11/admin.",
+  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/cout anormal, je passe en mode limite transparent et je peux proposer Kaen44 Plus a 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je reduis les actions couteuses et je demande l'abonnement si necessaire.",
+  "Si un probleme technique, quota fournisseur ou limitation guard mode se declenche, je dois prevenir l'administrateur par email a cellaurojeffrey@gmail.com avec un resume bref: utilisateur, heure, type de probleme, action limitee et prochaine etape. Je ne joins jamais de tokens, secrets ou donnees sensibles.",
+  "Pour les personnes malvoyantes, handicapees ou fatiguees, je privilegie un mode accessibilite: grosses cibles, lecture vocale, dictee, contraste, navigation clavier, resume d'ecran et actions confirmees. Le controle souris/clavier/ecran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilite d'arret immediat.",
+  "Si un controle d'ecran avance est necessaire, je recommande un helper local dedie utilisant les API d'accessibilite Windows, pas une prise de controle cachee depuis une page web.",
+  "Quand un projet demande des outils supplementaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF equivalent, Git si le client gere du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image equivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base metier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les deploiements.",
+  "Pour la vision avancee, je peux m'appuyer sur Janus cote A11/serveur quand le projet implique analyse d'images, memoire visuelle, description de captures, controle de generations image/video ou extraction semantique visuelle. Janus n'est pas une dependance obligatoire du poste client.",
+  "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommande, avance, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus a un client non technique si le besoin peut etre couvert plus simplement.",
+  "Je parle comme une compagne de travail intelligente: directe, chaleureuse, precise, jamais corporate.",
+  "Je privilegie les actions utiles: resumer, classer, transformer, proposer l'etape suivante, preparer des fichiers, guider les reglages et expliquer sans noyer.",
+  "Je respecte les donnees personnelles: je ne demande pas d'acces inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou cles d'acces.",
+  "Face a une demande floue, je fais une hypothese raisonnable et j'avance, sauf si le risque est financier, destructif ou lie a des acces sensibles.",
+  "Pour les factures de la societe Funesterie, je peux aider a recevoir, trier, extraire et suivre les pieces comptables quand elles sont fournies ou synchronisees.",
+  "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'echeance, le montant HT, la TVA, le montant TTC, la devise, le statut, les references de paiement et les anomalies possibles.",
+  "Je classe les factures par etat de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
+  "J'envoie les syntheses, alertes et suivis de factures Funesterie par email a cellaurojeffrey@gmail.com quand l'utilisateur me demande de gerer, verifier, classer ou suivre ces documents.",
+  "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une piece comptable sensible sans validation explicite de l'utilisateur.",
+  "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
+].join("\n");
+
+function resolveClientSystemPrompt() {
+  if (typeof window === "undefined") return undefined;
+  try {
+    if (isKaen44Experience()) {
+      return KAEN44_SYSTEM_PROMPT;
+    }
+  } catch {
+    // Keep backend default prompt.
+  }
+  return undefined;
+}
 
 function buildConversationArtifactContent(
   conversationMessages: ChatMessage[],
@@ -647,7 +844,7 @@ function detectAssistantExportSuggestion(content: string): AssistantExportSugges
   return null;
 }
 
-// ── Carousel d'images dans les bulles de chat ─────────────────────────────────
+// â”€â”€ Carousel d'images dans les bulles de chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (url: string) => void }) {
   const [idx, setIdx] = React.useState(0);
   const total = images.length;
@@ -668,16 +865,16 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
         <button
           type="button"
           className="msg-image-carousel-arrow"
-          aria-label="Image précédente"
+          aria-label="Image prÃ©cÃ©dente"
           onClick={() => setIdx((i) => (i - 1 + total) % total)}
-        >‹</button>
+        >â€¹</button>
         <span className="msg-image-carousel-counter">{idx + 1}/{total}</span>
         <button
           type="button"
           className="msg-image-carousel-arrow"
           aria-label="Image suivante"
           onClick={() => setIdx((i) => (i + 1) % total)}
-        >›</button>
+        >â€º</button>
         <button
           type="button"
           className="msg-image-carousel-expand"
@@ -691,8 +888,52 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
   );
 }
 
-// ✅ LOGIN PANEL
+// âœ… LOGIN PANEL
+const GOOGLE_IDENTITY_SCRIPT_ID = "google-identity-services";
+const GOOGLE_CLIENT_ID = String(
+  import.meta.env.VITE_GOOGLE_CLIENT_ID
+  || import.meta.env.VITE_A11_GOOGLE_CLIENT_ID
+  || ""
+).trim();
+const ENABLE_GOOGLE_IDENTITY_BUTTON = String(
+  import.meta.env.VITE_ENABLE_GOOGLE_IDENTITY_BUTTON
+  || ""
+).trim().toLowerCase() === "true";
+
+let googleIdentityScriptPromise: Promise<void> | null = null;
+
+function loadGoogleIdentityScript() {
+  if ((window as any).google?.accounts?.id) {
+    return Promise.resolve();
+  }
+
+  if (googleIdentityScriptPromise) {
+    return googleIdentityScriptPromise;
+  }
+
+  googleIdentityScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.getElementById(GOOGLE_IDENTITY_SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Chargement Google impossible")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = GOOGLE_IDENTITY_SCRIPT_ID;
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Chargement Google impossible"));
+    document.head.appendChild(script);
+  });
+
+  return googleIdentityScriptPromise;
+}
+
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  const isKaen44 = isKaen44Experience();
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [username, setUsername] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
@@ -705,6 +946,69 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [forgotError, setForgotError] = useState("");
   const [loading, setLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!ENABLE_GOOGLE_IDENTITY_BUTTON || !GOOGLE_CLIENT_ID || mode === "forgot" || !googleButtonRef.current) return;
+
+    let cancelled = false;
+    setGoogleLoading(true);
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (cancelled || !googleButtonRef.current) return;
+        const google = (window as any).google;
+        if (!google?.accounts?.id) {
+          throw new Error("Connexion Google indisponible");
+        }
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          use_fedcm_for_prompt: true,
+          callback: (response: { credential?: string }) => {
+            void (async () => {
+              setError("");
+              setInfo("");
+              setGoogleLoading(true);
+              try {
+                if (!response?.credential) throw new Error("Reponse Google incomplete");
+                await loginWithGoogleCredential(response.credential);
+                onLoginSuccess();
+              } catch (err) {
+                setError((err as Error).message || "Connexion Google impossible");
+              } finally {
+                setGoogleLoading(false);
+              }
+            })();
+          },
+        });
+        googleButtonRef.current.innerHTML = "";
+        google.accounts.id.renderButton(googleButtonRef.current, {
+          theme: "filled_blue",
+          size: "large",
+          type: "standard",
+          text: mode === "register" ? "signup_with" : "signin_with",
+          shape: "rectangular",
+          width: 340,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError((err as Error).message || "Connexion Google indisponible");
+      })
+      .finally(() => {
+        if (!cancelled) setGoogleLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, onLoginSuccess]);
+
+  const handleGoogleOAuth = () => {
+    setError("");
+    setInfo("");
+    setGoogleLoading(true);
+    startGoogleOAuth("/auth/success", "web");
+  };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {
     setMode(nextMode);
@@ -788,6 +1092,11 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     padding: "24px 16px calc(24px + env(safe-area-inset-bottom))",
     boxSizing: "border-box",
     gap: "20px",
+    ...(isKaen44 ? {
+      background:
+        "radial-gradient(circle at 50% 8%, rgba(167, 139, 250, 0.22), transparent 34%), radial-gradient(circle at 14% 72%, rgba(34, 211, 238, 0.13), transparent 32%), #070b14",
+      overflow: "hidden",
+    } : {}),
   };
   const authTabsStyle: React.CSSProperties = {
     display: "flex",
@@ -803,63 +1112,99 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     width: "min(100%, 340px)",
   };
   const authInputStyle: React.CSSProperties = {
-    padding: "10px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
+    padding: isKaen44 ? "13px 14px" : "10px",
+    borderRadius: isKaen44 ? "12px" : "4px",
+    border: isKaen44 ? "1px solid rgba(196, 181, 253, 0.28)" : "1px solid #ccc",
     width: "100%",
     boxSizing: "border-box",
+    ...(isKaen44 ? {
+      background: "rgba(8, 13, 27, 0.86)",
+      color: "#f8fafc",
+      outline: "none",
+    } : {}),
   };
+  const tabButtonStyle = (targetMode: "login" | "register" | "forgot"): React.CSSProperties => ({
+    padding: "10px 16px",
+    borderRadius: "999px",
+    border: isKaen44 ? "1px solid rgba(196, 181, 253, 0.28)" : "1px solid #334155",
+    background: mode === targetMode
+      ? (isKaen44 ? "linear-gradient(135deg, #9f7aea, #5eead4)" : "#7c3aed")
+      : (isKaen44 ? "rgba(10, 17, 34, 0.74)" : "#0f172a"),
+    color: mode === targetMode && isKaen44 ? "#061018" : "white",
+    cursor: "pointer",
+    fontWeight: "bold",
+    boxShadow: mode === targetMode && isKaen44 ? "0 14px 30px rgba(124, 58, 237, 0.24)" : "none",
+  });
 
   return (
-    <div style={authShellStyle}>
-      <h1>🔐 Connexion A11</h1>
+    <div className={isKaen44 ? "kaen-auth-shell" : undefined} style={authShellStyle}>
+      <div
+        className={isKaen44 ? "kaen-auth-card" : undefined}
+        style={isKaen44 ? undefined : { display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}
+      >
+      <h1>{isKaen44 ? "Connexion Kaen44" : "Connexion A11"}</h1>
+      {isKaen44 ? (
+        <>
+          <div className="kaen-auth-portrait" aria-hidden="true">
+            <img src={KAEN44_AVATAR_SRC} alt="" />
+          </div>
+          <div className="kaen-auth-title">Kaen44</div>
+          <div className="kaen-auth-subtitle">Copilote au quotidien</div>
+        </>
+      ) : null}
       <div style={authTabsStyle}>
         <button
           type="button"
           onClick={() => switchMode("login")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: "999px",
-            border: "1px solid #334155",
-            background: mode === "login" ? "#7c3aed" : "#0f172a",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: "bold"
-          }}
+          style={tabButtonStyle("login")}
         >
           Connexion
         </button>
         <button
           type="button"
           onClick={() => switchMode("register")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: "999px",
-            border: "1px solid #334155",
-            background: mode === "register" ? "#7c3aed" : "#0f172a",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: "bold"
-          }}
+          style={tabButtonStyle("register")}
         >
           S'inscrire
         </button>
         <button
           type="button"
           onClick={() => switchMode("forgot")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: "999px",
-            border: "1px solid #334155",
-            background: mode === "forgot" ? "#7c3aed" : "#0f172a",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: "bold"
-          }}
+          style={tabButtonStyle("forgot")}
         >
           Reinitialiser
         </button>
       </div>
+      {mode !== "forgot" && (
+        <div style={{ width: "min(100%, 340px)", display: "flex", flexDirection: "column", gap: 10 }}>
+          <button
+            type="button"
+            onClick={handleGoogleOAuth}
+            disabled={googleLoading || loading}
+            style={{
+              minHeight: 42,
+              borderRadius: isKaen44 ? 12 : 6,
+              border: isKaen44 ? "1px solid rgba(226, 232, 240, 0.18)" : "1px solid #334155",
+              background: googleLoading
+                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                : (isKaen44 ? "#f8fafc" : "#ffffff"),
+              color: "#111827",
+              cursor: googleLoading || loading ? "wait" : "pointer",
+              fontWeight: 800,
+            }}
+          >
+            {googleLoading ? "Connexion Google..." : "Continuer avec Google"}
+          </button>
+          {ENABLE_GOOGLE_IDENTITY_BUTTON && GOOGLE_CLIENT_ID && (
+            <div style={{ minHeight: 42, display: "flex", justifyContent: "center" }}>
+              <div ref={googleButtonRef} style={{ width: "100%" }} />
+              {googleLoading && (
+                <span style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}>Google...</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {mode === "login" && (
         <form onSubmit={handleLogin} style={authFormStyle}>
           <input
@@ -883,10 +1228,10 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             disabled={loading}
             style={{
               padding: "10px 20px",
-              borderRadius: "4px",
+              borderRadius: isKaen44 ? "12px" : "4px",
               border: "none",
-              background: "#007bff",
-              color: "white",
+              background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "#007bff",
+              color: isKaen44 ? "#061018" : "white",
               cursor: "pointer",
               fontWeight: "bold"
             }}
@@ -934,10 +1279,10 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             disabled={loading}
             style={{
               padding: "10px 20px",
-              borderRadius: "4px",
+              borderRadius: isKaen44 ? "12px" : "4px",
               border: "none",
-              background: "#7c3aed",
-              color: "white",
+              background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "#7c3aed",
+              color: isKaen44 ? "#061018" : "white",
               cursor: "pointer",
               fontWeight: "bold"
             }}
@@ -962,9 +1307,9 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             disabled={forgotLoading}
             style={{
               padding: "10px 20px",
-              borderRadius: "4px",
-              border: "1px solid #334155",
-              background: "#0f172a",
+              borderRadius: isKaen44 ? "12px" : "4px",
+              border: isKaen44 ? "1px solid rgba(196, 181, 253, 0.28)" : "1px solid #334155",
+              background: isKaen44 ? "rgba(10, 17, 34, 0.78)" : "#0f172a",
               color: "#e2e8f0",
               cursor: "pointer",
               fontWeight: "bold"
@@ -978,7 +1323,156 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
       {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
+      </div>
     </div>
+  );
+}
+
+function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy" }) {
+  const isPrivacy = page === "privacy";
+  const isTerms = page === "terms";
+  const isVivy = page === "vivy";
+  const title = isPrivacy ? "Regles de confidentialite" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Kaen44";
+  const subtitle = isPrivacy
+    ? "Comment Kaen44 traite les donnees de connexion et les fichiers partages."
+    : isTerms
+      ? "Le cadre d'utilisation de Kaen44 et de ses services connectes."
+      : isVivy
+        ? "Presence musicale Funesterie pour voix, chansons originales et projets audio Nossen."
+        : "Assistante bureau pour documents, voix, Drive, factures et projets du quotidien.";
+
+  return (
+    <main className="kaen-public-shell">
+      <nav className="kaen-public-nav" aria-label="Navigation Kaen44">
+        <a href="/" className="kaen-public-brand">Kaen44</a>
+        <div>
+          <a href="/vivy/">Vivy</a>
+          <a href="/privacy/">Confidentialite</a>
+          <a href="/terms/">Conditions</a>
+          <a href="/login" className="kaen-public-login">Connexion</a>
+        </div>
+      </nav>
+
+      <section className="kaen-public-hero">
+        <div className="kaen-public-copy">
+          <h1>{title}</h1>
+          <p>{subtitle}</p>
+          {!isPrivacy && !isTerms && !isVivy ? (
+            <>
+              <p>
+                Kaen44 aide les utilisateurs a organiser leurs documents, analyser des fichiers,
+                preparer des contenus, resumer des informations, utiliser la voix et connecter leurs
+                espaces Google Drive ou OneDrive quand ils choisissent de les partager.
+              </p>
+              <div className="kaen-public-actions">
+                <a href="/login">Ouvrir Kaen44</a>
+                <a href="/privacy/">Lire les regles de confidentialite</a>
+              </div>
+            </>
+          ) : null}
+          {isVivy ? (
+            <>
+              <p>
+                Vivy est une identite musicale originale de Funesterie. Elle sert a preparer des
+                chansons, voix, bandes-son, clips et publications audio lies aux projets creatifs.
+              </p>
+              <div className="kaen-public-actions">
+                <a href="/privacy/">Lire les regles de confidentialite</a>
+                <a href="/terms/">Lire les conditions</a>
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div className="kaen-public-avatar" aria-hidden="true">
+          <img src={KAEN44_AVATAR_SRC} alt="" />
+        </div>
+      </section>
+
+      {isPrivacy ? (
+        <section className="kaen-public-section">
+          <h2>Donnees utilisees</h2>
+          <p>
+            Kaen44 utilise les informations de compte necessaires a la connexion, les fichiers que
+            l'utilisateur importe ou autorise explicitement, et les messages envoyes dans le chat.
+          </p>
+          <h2>Google Drive</h2>
+          <p>
+            Lorsque l'utilisateur connecte Google Drive, Kaen44 demande uniquement les autorisations
+            necessaires pour afficher, telecharger et traiter les fichiers choisis par l'utilisateur.
+            Les acces peuvent etre retires depuis le compte Google de l'utilisateur.
+          </p>
+          <h2>Vivy, YouTube et plateformes audio</h2>
+          <p>
+            Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et
+            metadonnees fournis ou valides par l'utilisateur pour preparer des publications sur des
+            plateformes comme YouTube ou SoundCloud. Les fichiers prives ne sont pas publies sans
+            action explicite de l'utilisateur.
+          </p>
+          <h2>Contact</h2>
+          <p>
+            Pour toute question ou demande de suppression, contactez cellaurojeffrey@gmail.com.
+          </p>
+        </section>
+      ) : null}
+
+      {isTerms ? (
+        <section className="kaen-public-section">
+          <h2>Utilisation</h2>
+          <p>
+            Kaen44 fournit une assistance de productivite, de classement, de creation et de recherche
+            documentaire. L'utilisateur reste responsable des donnees qu'il partage et des validations
+            finales sur les documents, factures ou decisions importantes.
+          </p>
+          <h2>Limites</h2>
+          <p>
+            Kaen44 peut limiter les usages anormaux, couteux ou abusifs afin de proteger le service.
+            Les operations sensibles, paiements, suppressions ou actions administratives doivent etre
+            confirmees explicitement par l'utilisateur.
+          </p>
+          <h2>Vivy et contenus publies</h2>
+          <p>
+            Les chansons, voix, clips et metadonnees publies via Vivy doivent etre originaux,
+            autorises ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et
+            validations avant publication sur YouTube, SoundCloud ou tout autre service.
+          </p>
+          <h2>Contact</h2>
+          <p>
+            Pour toute question sur le service, contactez cellaurojeffrey@gmail.com.
+          </p>
+        </section>
+      ) : null}
+
+      {isVivy ? (
+        <section className="kaen-public-section">
+          <h2>Ce que fait Vivy</h2>
+          <p>
+            Vivy aide a transformer une idee musicale en piste exploitable: paroles, intention,
+            style vocal, export audio, page publique, lien SoundCloud ou clip YouTube.
+          </p>
+          <p>
+            Pour Alexa et les assistants vocaux, Vivy utilise un flux audio HTTPS direct controle par
+            Funesterie. Les pages YouTube et SoundCloud restent des surfaces publiques de diffusion,
+            pas des sources techniques obligatoires pour la lecture vocale.
+          </p>
+        </section>
+      ) : null}
+
+      {!isPrivacy && !isTerms && !isVivy ? (
+        <section className="kaen-public-section">
+          <h2>Ce que fait Kaen44</h2>
+          <p>
+            L'application sert de copilote bureautique: elle peut aider a lire des documents, trier
+            des factures, preparer des reponses, generer des idees visuelles simples, transcrire ou
+            resumer de l'audio, et guider l'utilisateur dans ses projets personnels ou professionnels.
+          </p>
+          <p>
+            Les connexions Google et Microsoft servent a recuperer les fichiers que l'utilisateur
+            souhaite traiter. Kaen44 affiche toujours des pages publiques de confidentialite et de
+            conditions d'utilisation avant la connexion.
+          </p>
+        </section>
+      ) : null}
+    </main>
   );
 }
 
@@ -1068,7 +1562,7 @@ function ResetPasswordPanel() {
     </div>
   );
 }
-// MuteButton : contrôle global du son
+// MuteButton : contrÃ´le global du son
 function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: boolean; fullWidth?: boolean }) {
   const [muted, setMuted] = useState(isSpeechMuted());
 
@@ -1097,7 +1591,7 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
   return (
     <button
       onClick={() => setMuted(m => !m)}
-      title={muted ? "Rétablir la voix d'A11" : "Couper la voix d'A11"}
+      title={muted ? "RÃ©tablir la voix d'A11" : "Couper la voix d'A11"}
       style={{
         fontSize: showLabel ? 13 : 20,
         padding: showLabel ? "10px 12px" : 6,
@@ -1112,17 +1606,53 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
       className="btn ghost"
     >
       {muted ? (
-        <span role="img" aria-label="Audio coupé">🔇</span>
+        <span role="img" aria-label="Audio coupÃ©">ðŸ”‡</span>
       ) : (
-        <span role="img" aria-label="Audio actif">🔊</span>
+        <span role="img" aria-label="Audio actif">ðŸ”Š</span>
       )}
-      {showLabel ? <span>{muted ? "Voix coupée" : "Voix active"}</span> : null}
+      {showLabel ? <span>{muted ? "Voix coupÃ©e" : "Voix active"}</span> : null}
     </button>
+  );
+}
+
+function Kaen44ModulesPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
+  const modules = [
+    ["Documents", "Importer, resumer, classer et preparer des contenus depuis fichiers locaux, Google Drive ou OneDrive."],
+    ["Factures", "Aider a retrouver les pieces, extraire les donnees utiles et preparer un suivi pour Funesterie."],
+    ["Voix", "Dictee, lecture vocale, transcription audio et references de voix quand le navigateur l'autorise."],
+    ["Accessibilite", "Grosses cibles, contraste, navigation clavier, lecture vocale et assistance avec consentement explicite."],
+    ["Studio creatif", "Creer image, son ou video courte depuis une intention ou des sources partagees."],
+    ["IA et tokens", "Ajouter des fournisseurs LLM separes pour Kaen44 sans consommer les quotas internes d'A11."],
+    ["Installation autonome", "Assistant Windows pour Ollama, dependances utiles, CLI, tokens et raccourcis."],
+    ["Pont A11", "Kaen44 reste l'interface client; A11 reste le moteur serveur lourd pour memoire et orchestration."],
+  ];
+
+  return (
+    <section style={{ display: "grid", gap: 16 }}>
+      <div style={{ border: "1px solid #2e2352", borderRadius: 18, background: "linear-gradient(135deg, #120d24, #07111f)", padding: isCompactLayout ? 16 : 22 }}>
+        <div style={{ color: "#c4b5fd", fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8 }}>Interface interne</div>
+        <h2 style={{ margin: "8px 0 8px", color: "#f8fafc", fontSize: isCompactLayout ? 24 : 30 }}>Modules Kaen44</h2>
+        <p style={{ margin: 0, color: "#cbd5e1", maxWidth: 760, lineHeight: 1.55 }}>
+          Kaen44 est l'app cliente autonome. Elle garde les outils lisibles pour les utilisateurs, puis communique avec A11 quand une action lourde ou serveur est necessaire.
+        </p>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+        {modules.map(([title, detail]) => (
+          <article key={title} style={{ border: "1px solid #1f2937", borderRadius: 14, background: "#0b1220", padding: 16 }}>
+            <h3 style={{ margin: 0, color: "#f8fafc", fontSize: 16 }}>{title}</h3>
+            <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 13, lineHeight: 1.5 }}>{detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
 export function App() {
   type AdminSection = "cockpit" | "memory" | "runtime" | "console" | "ai" | "subscription";
+  type AppView = "chat" | "admin" | "casino";
+  const isKaen44 = isKaen44Experience();
+  const productName = isKaen44 ? "Kaen44" : "A11";
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
@@ -1136,39 +1666,161 @@ export function App() {
   ]);
   const [ttsFallback, setTtsFallback] = useState(false);
   const [audioBlockedUrl, setAudioBlockedUrl] = useState<string | null>(null);
+  const [pendingMobileSpeech, setPendingMobileSpeech] = useState("");
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioTranscribing, setAudioTranscribing] = useState(false);
+  const [micStarting, setMicStarting] = useState(false);
+  const [micPermissionBlocked, setMicPermissionBlocked] = useState(false);
+  const [micStatusMessage, setMicStatusMessage] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
     const onBlocked = (e: Event) => {
       const url = (e as CustomEvent).detail?.url;
-      if (shouldSuppressAudioBlockedBannerOnCurrentDevice()) return;
-      if (url) setAudioBlockedUrl(url);
+      if (isCompactViewportNow()) {
+        setAudioBlockedUrl(url || null);
+        setMicStatusMessage("Voix mobile prete: touche le bouton lecture apres un appui utilisateur.");
+        return;
+      }
+      if (!url) return;
+      setAudioBlockedUrl(url);
     };
     const onSpeechStart = () => {
       setAudioBlockedUrl(null);
       setAudioPlaying(true);
     };
     const onSpeechEnd = () => setAudioPlaying(false);
+    const onUnlocked = () => setAudioBlockedUrl(null);
     globalThis.addEventListener('a11:audioBlocked', onBlocked);
+    globalThis.addEventListener('a11:audioUnlocked', onUnlocked);
     globalThis.addEventListener('a11:speechstart', onSpeechStart);
     globalThis.addEventListener('a11:speechend', onSpeechEnd);
     return () => {
       globalThis.removeEventListener('a11:audioBlocked', onBlocked);
+      globalThis.removeEventListener('a11:audioUnlocked', onUnlocked);
       globalThis.removeEventListener('a11:speechstart', onSpeechStart);
       globalThis.removeEventListener('a11:speechend', onSpeechEnd);
     };
   }, []);
 
+  useEffect(() => {
+    const onMicError = (event: Event) => {
+      const detail = (event as CustomEvent<{ error?: string; message?: string }>).detail || {};
+      const error = String(detail.error || "");
+      setMicStarting(false);
+      setVoiceListening(false);
+      if (error === "not-allowed" || error === "service-not-allowed") {
+        setMicPermissionBlocked(true);
+        setMicStatusMessage("Micro bloque par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        setTtsFallback(true);
+        try {
+          localStorage.setItem("a11:tts-only", "1");
+        } catch {
+          // ignore storage access errors
+        }
+        return;
+      }
+      if (error) {
+        setMicStatusMessage(`Micro indisponible: ${error}`);
+        console.info("[A11] micro indisponible:", error);
+      }
+    };
+
+    globalThis.addEventListener("a11:micError", onMicError);
+    return () => globalThis.removeEventListener("a11:micError", onMicError);
+  }, []);
+
   // Check if already authenticated on mount
   useEffect(() => {
-    if (hasAuthToken()) {
-      setIsAuthenticated(true);
-      setDisplayName(getAuthDisplayName() || "Utilisateur");
-    }
     const pathname = window.location.pathname.toLowerCase();
     setIsResetRoute(pathname.includes('/reset-password') || pathname.includes('/reset'));
+    const hostname = window.location.hostname.toLowerCase();
+
+    if (
+      isKaen44Experience()
+      && hostname !== 'a11.funesterie.pro'
+      && !pathname.includes('/auth/success')
+      && !pathname.includes('/login')
+      && !pathname.includes('/reset-password')
+      && !pathname.includes('/reset')
+    ) {
+      return;
+    }
+
+    const refreshCookieSession = () => {
+      void fetchAuthSession()
+        .then((session) => {
+          if (!session?.authenticated && !session?.user) return;
+          setIsAuthenticated(true);
+          setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
+          if (pathname.includes('/auth/success')) {
+            window.history.replaceState({}, "", "/");
+          }
+        })
+        .catch(() => {
+          if (pathname.includes('/auth/success')) {
+            window.history.replaceState({}, "", "/login?error=session_verification_failed");
+          }
+        });
+    };
+
+    if (pathname.includes('/auth/success')) {
+      refreshCookieSession();
+      return;
+    }
+
+    if (hasAuthToken()) {
+      const scope = getAuthStorageScope();
+      if (scope) {
+        setIsAuthenticated(true);
+        setDisplayName(getAuthDisplayName() || "Utilisateur");
+        return;
+      }
+      clearAuthToken();
+      setAuthDisplayName("");
+    }
+
+    const shouldCheckCookieSession = pathname.includes('/auth/success')
+      || hostname === 'a11.funesterie.pro'
+      || hostname === 'alphaonze.funesterie.pro'
+      || hostname === 'k44.funesterie.me'
+      || hostname === 'funesterie.me'
+      || hostname === 'www.funesterie.me'
+      || hostname === 'kaen44.funesterie.me';
+    if (!shouldCheckCookieSession) return;
+
+    refreshCookieSession();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setVoiceReferences([]);
+      setVoiceReferenceStatus("");
+      return;
+    }
+    void refreshVoiceReferences();
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const onDiagnostics = (event: Event) => {
+      const detail = (event as CustomEvent<any>).detail || {};
+      const score = detail?.comparison?.similarity;
+      if (typeof score === "number") {
+        setVoiceReferenceStatus(`Voix comparee: ${Math.round(score * 100)}%`);
+        return;
+      }
+      const via = String(detail?.via || detail?.provider || "").trim();
+      if (via) {
+        const label = via === "openai-tts" || via === "openai" ? "OpenAI"
+          : via === "spawn" || via === "piper" ? "Piper local"
+          : via === "espeak" || via === "espeak-ng" ? "Secours robot"
+          : via;
+        setVoiceReferenceStatus(`Audio: ${label}`);
+      }
+    };
+    globalThis.addEventListener("a11:ttsDiagnostics", onDiagnostics);
+    return () => globalThis.removeEventListener("a11:ttsDiagnostics", onDiagnostics);
   }, []);
 
   useEffect(() => {
@@ -1189,6 +1841,10 @@ export function App() {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       setA11History([]);
+      const freshChat = buildFreshChat("Session actuelle");
+      setChats([freshChat]);
+      setSelectedChatId(freshChat.id);
+      setMessages(freshChat.messages);
       setA11ConvId(null);
       setA11ConvMsgs([]);
       setConversationActivity([]);
@@ -1208,11 +1864,76 @@ export function App() {
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  // File d'attente — messages envoyés pendant qu'A11 réfléchit
+  const [portraitFramebook, setPortraitFramebook] = useState<A11PortraitFramebook>(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+  const [portraitFrameIndex, setPortraitFrameIndex] = useState(0);
+  // File d'attente â€” messages envoyÃ©s pendant qu'A11 rÃ©flÃ©chit
   const messageQueueRef = useRef<string[]>([]);
   const queueProcessingRef = useRef(false);
 
-  // Console d'activité A11
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+      return;
+    }
+    let cancelled = false;
+    fetchA11PortraitFramebook()
+      .then((framebook) => {
+        if (cancelled) return;
+        setPortraitFramebook(framebook);
+        setPortraitFrameIndex(0);
+      })
+      .catch((error_) => {
+        console.warn("[A11] portrait framebook unavailable", error_);
+        if (!cancelled) setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  const portraitFramesById = useMemo(() => {
+    const map = new Map<string, A11PortraitFrame>();
+    for (const frame of portraitFramebook.frames || []) {
+      if (frame?.id) map.set(frame.id, frame);
+    }
+    return map;
+  }, [portraitFramebook]);
+
+  const portraitSequenceName = audioPlaying ? "speaking" : sending ? "thinking" : "idle";
+  const portraitSequenceFrames = useMemo(() => {
+    const sequenceIds = portraitFramebook.sequences?.[portraitSequenceName]
+      || portraitFramebook.sequences?.idle
+      || ["idle"];
+    const frames = sequenceIds
+      .map((id) => portraitFramesById.get(id))
+      .filter(Boolean) as A11PortraitFrame[];
+    return frames.length ? frames : DEFAULT_A11_PORTRAIT_FRAMEBOOK.frames;
+  }, [portraitFramebook, portraitFramesById, portraitSequenceName]);
+
+  useEffect(() => {
+    setPortraitFrameIndex(0);
+  }, [portraitSequenceName]);
+
+  useEffect(() => {
+    if (portraitSequenceFrames.length <= 1) return;
+    const activeFrame = portraitSequenceFrames[portraitFrameIndex % portraitSequenceFrames.length];
+    const fallbackHoldMs = portraitFramebook.audioSync?.frameDurationMs || 160;
+    const holdMs = Math.max(80, Math.min(2000, Number(activeFrame?.holdMs || fallbackHoldMs) || fallbackHoldMs));
+    const timer = globalThis.setTimeout(() => {
+      setPortraitFrameIndex((index) => (index + 1) % portraitSequenceFrames.length);
+    }, holdMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [portraitFrameIndex, portraitFramebook.audioSync?.frameDurationMs, portraitSequenceFrames]);
+
+  const activePortraitFrame = portraitSequenceFrames[portraitFrameIndex % portraitSequenceFrames.length]
+    || DEFAULT_A11_PORTRAIT_FRAMEBOOK.frames[0];
+  const activePortraitSrc = resolvePortraitAssetPath(activePortraitFrame?.src || "a11_static.png");
+  const activePortraitTransitionMs = Math.max(
+    80,
+    Math.min(600, Number(portraitFramebook.audioSync?.transitionMs || 120) || 120)
+  );
+
+  // Console d'activitÃ© A11
   const {
     events: activityEvents,
     isActive: activityIsActive,
@@ -1226,6 +1947,61 @@ export function App() {
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
+  const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
+  const [selectedVoiceReferenceId, setSelectedVoiceReferenceId] = useState(() => {
+    try {
+      return localStorage.getItem("a11:tts:voice-reference-id") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [voiceReferenceStatus, setVoiceReferenceStatus] = useState("");
+  const [ttsVocalMode, setTtsVocalMode] = useState<"speech" | "adaptive" | "sing">(() => {
+    try {
+      const saved = localStorage.getItem("a11:tts:vocal-mode");
+      return saved === "speech" || saved === "sing" ? saved : "adaptive";
+    } catch {
+      return "adaptive";
+    }
+  });
+  const [ttsProviderMode, setTtsProviderMode] = useState<TtsProviderMode>(() => {
+    try {
+      const saved = localStorage.getItem("a11:tts:provider-mode");
+      return saved === "piper" || saved === "openai" ? saved : "auto";
+    } catch {
+      return "auto";
+    }
+  });
+  const [a11Language, setA11Language] = useState<A11LanguageCode>(() => {
+    try {
+      return normalizeA11LanguageCode(localStorage.getItem("a11:language"));
+    } catch {
+      return "fr";
+    }
+  });
+  const selectedA11Language = useMemo(
+    () => A11_LANGUAGE_CHOICES.find((choice) => choice.code === a11Language) || A11_LANGUAGE_CHOICES[0],
+    [a11Language]
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem("a11:tts:voice-reference-id", selectedVoiceReferenceId || "");
+      localStorage.setItem("a11:tts:vocal-mode", ttsVocalMode);
+      localStorage.setItem("a11:tts:provider-mode", ttsProviderMode);
+    } catch {
+      // ignore storage access errors
+    }
+  }, [selectedVoiceReferenceId, ttsProviderMode, ttsVocalMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("a11:language", selectedA11Language.code);
+      document.documentElement.lang = selectedA11Language.speechLang;
+    } catch {
+      // ignore storage/document access errors
+    }
+    setSpeechRecognitionLanguage(selectedA11Language.speechLang);
+  }, [selectedA11Language]);
   const toggleLockRef = useRef(false);
   const sendLockRef = useRef(false);
   const pendingMessageKeyRef = useRef("");
@@ -1235,7 +2011,7 @@ export function App() {
     [isAuthenticated]
   );
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
-  const [model, setModel] = useState("local:gemma4:e4b");
+  const [model, setModel] = useState("openai:gpt-4o-mini");
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
@@ -1279,7 +2055,13 @@ export function App() {
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [activeView, setActiveView] = useState<'chat' | 'admin'>('chat');
+  const [activeView, setActiveView] = useState<AppView>(() => {
+    try {
+      return window.location.pathname.toLowerCase().includes("/casino") ? "casino" : "chat";
+    } catch {
+      return "chat";
+    }
+  });
   const [adminSection, setAdminSection] = useState<AdminSection>("cockpit");
   const [isCompactLayout, setIsCompactLayout] = useState(() => {
     try {
@@ -1288,6 +2070,7 @@ export function App() {
       return false;
     }
   });
+  const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
@@ -1351,6 +2134,12 @@ export function App() {
   }, [isCompactLayout]);
 
   useEffect(() => {
+    if (isCompactLayout) {
+      setAudioBlockedUrl(null);
+    }
+  }, [isCompactLayout]);
+
+  useEffect(() => {
     if (!previewImageUrl) return;
 
     const handleEscape = (event: KeyboardEvent) => {
@@ -1365,7 +2154,22 @@ export function App() {
 
   // Load chat cache scoped to the authenticated user.
   useEffect(() => {
-    if (!isAuthenticated || !authStorageScope) return;
+    if (!isAuthenticated) return;
+
+    if (!authStorageScope) {
+      const initialChat = buildFreshChat("Session actuelle");
+      setChats([initialChat]);
+      setSelectedChatId(initialChat.id);
+      setMessages(initialChat.messages);
+      setA11ConvId(null);
+      setA11ConvMsgs([]);
+      setConversationActivity([]);
+      setConversationResources([]);
+      setActivityError("");
+      setResourceError("");
+      setUploadFeedback("");
+      return;
+    }
 
     try {
       localStorage.removeItem(CHAT_STORAGE_KEY_PREFIX);
@@ -1383,7 +2187,7 @@ export function App() {
           const normalizeSystemContent = (content: string) => {
             const value = String(content || '');
             if (
-              value.includes('utilise les capacités locales') ||
+              value.includes('utilise les capacitÃ©s locales') ||
               value.includes('assistant local NOSSEN')
             ) {
               return DEFAULT_SYSTEM_NINDO;
@@ -1761,7 +2565,7 @@ export function App() {
       } else if (payload.downloadAfterCreate) {
         setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree et telecharge.`);
       } else {
-        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} créé et stocké.`);
+        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} crÃ©Ã© et stockÃ©.`);
       }
     } catch (error_) {
       console.warn("[A11] artifact creation failed", error_);
@@ -1806,12 +2610,65 @@ export function App() {
     fileInputRef.current?.click();
   }
 
+  async function refreshVoiceReferences() {
+    try {
+      const refs = await fetchTtsVoiceReferences();
+      setVoiceReferences(refs);
+      if (isKaen44 && !selectedVoiceReferenceId) {
+        const kaenVoice = refs.find((ref) =>
+          String(ref.label || ref.originalName || "").toLowerCase().includes("kaen44 donna")
+        );
+        if (kaenVoice?.id) {
+          setSelectedVoiceReferenceId(kaenVoice.id);
+          setVoiceReferenceStatus("Voix Kaen44 Donna active");
+          return;
+        }
+      }
+      if (selectedVoiceReferenceId && !refs.some((ref) => ref.id === selectedVoiceReferenceId)) {
+        setSelectedVoiceReferenceId("");
+      }
+    } catch (error_) {
+      console.warn("[A11] voice reference refresh failed", error_);
+      setVoiceReferenceStatus("References voix indisponibles");
+    }
+  }
+
+  function onVoiceReferenceClick() {
+    voiceReferenceInputRef.current?.click();
+  }
+
+  async function onVoiceReferenceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] || null;
+    e.target.value = "";
+    if (!file) return;
+    setVoiceReferenceStatus("Upload voix...");
+    try {
+      const label = file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Reference voix";
+      const result = await uploadTtsVoiceReference(file, label, "private");
+      setVoiceReferences(result.references);
+      if (result.reference?.id) {
+        setSelectedVoiceReferenceId(result.reference.id);
+      }
+      const analysis = result.reference?.analysis;
+      const suffix = analysis?.ok && analysis.durationMs
+        ? ` (${Math.round(analysis.durationMs / 100) / 10}s)`
+        : "";
+      setVoiceReferenceStatus(`Reference voix ajoutee${suffix}`);
+    } catch (error_) {
+      const message = (error_ as Error)?.message || String(error_);
+      setVoiceReferenceStatus(`Echec reference voix: ${message}`);
+    }
+  }
+
   async function handleImportedFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+    const allFiles = Array.from(files);
+    const audioFiles = allFiles.filter(isAudioLikeFile);
+    const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
 
-    // Previews locaux immédiats (object URL, pas de réseau) — accumulés, pas remplacés
+    // Previews locaux immÃ©diats (object URL, pas de rÃ©seau) â€” accumulÃ©s, pas remplacÃ©s
     const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of allFiles) {
       if (file.type.startsWith('image/')) {
         newPreviews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
       } else {
@@ -1819,24 +2676,57 @@ export function App() {
       }
     }
     if (newPreviews.length > 0) {
-      // Accumuler — plusieurs drops successifs s'ajoutent
+      // Accumuler â€” plusieurs drops successifs s'ajoutent
       setDragPreviewUrls((prev) => {
         const next = [...prev, ...newPreviews];
-        // Pointer sur le premier nouveau fichier ajouté
+        // Pointer sur le premier nouveau fichier ajoutÃ©
         setPreviewCarouselIndex(prev.length);
         return next;
       });
-      // Pas de timeout : les chips restent jusqu'à l'envoi du message
+      // Pas de timeout : les chips restent jusqu'Ã  l'envoi du message
     }
 
-    // Upload et injection dans le textarea — on attend la fin pour avoir les URLs
-    await handleImportFiles(files, (txt: string) => {
-      setInput((prev) => (prev ? prev + "\n" + txt : txt));
-    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
+    // Upload et injection dans le textarea â€” on attend la fin pour avoir les URLs
+    if (importerFiles.length > 0) {
+      await handleImportFiles(toSyntheticFileList(importerFiles), (txt: string) => {
+        setInput((prev) => (prev ? prev + "\n" + txt : txt));
+      }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
+    }
+
+    if (audioFiles.length > 0) {
+      setAudioTranscribing(true);
+      setUploadFeedback(`Transcription audio de ${audioFiles.length} fichier(s)...`);
+      const transcriptBlocks: string[] = [];
+      const failedAudio: string[] = [];
+      for (const file of audioFiles) {
+        try {
+          const transcript = await transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" });
+          if (transcript.text) {
+            transcriptBlocks.push(`[audio:${file.name}]\n${transcript.text}`);
+          } else {
+            failedAudio.push(file.name);
+          }
+        } catch (error_) {
+          console.warn("[A11] audio transcription failed", file.name, error_);
+          failedAudio.push(file.name);
+        }
+      }
+      if (transcriptBlocks.length > 0) {
+        setInput((prev) => {
+          const nextText = transcriptBlocks.join("\n\n");
+          return prev ? `${prev}\n${nextText}` : nextText;
+        });
+      }
+      setUploadFeedback(failedAudio.length > 0
+        ? `Transcription audio partielle: ${transcriptBlocks.length} ok, ${failedAudio.length} en echec.`
+        : `${transcriptBlocks.length} audio(s) transcrit(s).`
+      );
+      setAudioTranscribing(false);
+    }
 
     // Upload des fichiers non-image dans la conversation (PDF, etc.)
     const conversationId = a11ConvId || selectedChatId || undefined;
-    const nonImageFiles = Array.from(files).filter((f) => !f.type.startsWith('image/'));
+    const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
       const failed: string[] = [];
@@ -1935,14 +2825,14 @@ export function App() {
       } else {
         setInput(() => txt);
       }
-    });
-  }, []);
+    }, { lang: selectedA11Language.speechLang });
+  }, [selectedA11Language.speechLang]);
 
   function normalizeOutgoingMessageKey(value: string) {
     return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
-  // Modifie la fonction sendMessage pour accepter un texte forcé
+  // Modifie la fonction sendMessage pour accepter un texte forcÃ©
 
   function extractImageUrlsFromText(text: string): { cleanText: string; imageUrls: string[] } {
     const imageUrls: string[] = [];
@@ -1952,7 +2842,7 @@ export function App() {
       .trim();
     return { cleanText, imageUrls };
   }
-  // ── File d'attente : l'utilisateur peut écrire pendant qu'A11 réfléchit ──────
+  // â”€â”€ File d'attente : l'utilisateur peut Ã©crire pendant qu'A11 rÃ©flÃ©chit â”€â”€â”€â”€â”€â”€
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
@@ -1961,8 +2851,9 @@ export function App() {
     const sourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
     if (!effectiveText) return;
+    void unlockAudioOutput();
 
-    // Afficher le message utilisateur immédiatement — sans bloquer l'input
+    // Afficher le message utilisateur immÃ©diatement â€” sans bloquer l'input
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
@@ -1986,13 +2877,13 @@ export function App() {
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
     if (suggestion) openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
 
-    // Si A11 traite déjà, mettre en file — l'utilisateur peut continuer à écrire
+    // Si A11 traite dÃ©jÃ , mettre en file â€” l'utilisateur peut continuer Ã  Ã©crire
     if (queueProcessingRef.current) {
       messageQueueRef.current.push(effectiveText);
       return;
     }
 
-    // Sinon démarrer le traitement
+    // Sinon dÃ©marrer le traitement
     void processMessageQueue(effectiveText, sourceImageUrl);
   }
 
@@ -2024,7 +2915,7 @@ export function App() {
 
       pendingMessageKeyRef.current = messageKey;
 
-      // Lire l'historique courant via ref pour éviter les closures périmées
+      // Lire l'historique courant via ref pour Ã©viter les closures pÃ©rimÃ©es
       let currentMessages: ChatMessage[] = [];
       setMessages((prev) => { currentMessages = prev; return prev; });
       await new Promise<void>((r) => setTimeout(r, 0));
@@ -2071,7 +2962,21 @@ export function App() {
         await refreshConversationResources(selectedChatId || a11ConvId);
 
         const spokenText = String(normalizedAssistant.content || assistantReply.content || "");
-        if (shouldAutoplayAssistantMessage(spokenText)) speak(spokenText, { lang: "fr-FR" });
+        const mobileAudioNeedsGesture = isCompactLayout && !isAudioOutputUnlocked();
+        if (shouldAutoplayAssistantMessage(spokenText) && !mobileAudioNeedsGesture) {
+          setPendingMobileSpeech("");
+          speak(spokenText, {
+            lang: selectedA11Language.speechLang,
+            voiceReferenceId: selectedVoiceReferenceId || undefined,
+            vocalMode: ttsVocalMode,
+            provider: ttsProviderMode === "auto" ? undefined : ttsProviderMode,
+            ttsProvider: ttsProviderMode,
+          });
+        } else if (mobileAudioNeedsGesture) {
+          setPendingMobileSpeech(spokenText);
+          setAudioBlockedUrl(null);
+          setMicStatusMessage("Voix mobile prete: touche le bouton lecture pour lancer le son.");
+        }
         lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
       } catch (err: any) {
         lastCompletedMessageRef.current = { key: "", at: 0 };
@@ -2088,7 +2993,7 @@ export function App() {
         });
       }
 
-      // Absorber les messages arrivés pendant ce traitement
+      // Absorber les messages arrivÃ©s pendant ce traitement
       while (messageQueueRef.current.length > 0) {
         toProcess.push({ text: messageQueueRef.current.shift()! });
       }
@@ -2110,12 +3015,33 @@ export function App() {
 
   async function toggleMic() {
     console.log("[A11] toggleMic clicked, current voiceListening=", voiceListening);
-    // If audio is playing, stop it immediately and do not toggle modes
-    if (audioPlaying) {
-      console.log("[A11] canceling audio playback via toggle");
-      cancelSpeech();
+    if (micStarting) {
+      console.log("[A11] toggle ignored while mic is starting");
       return;
     }
+    if (mobileVoiceReady && !voiceListening) {
+      void unlockAudioOutput();
+      if (audioBlockedUrl) {
+        retryPlayUrl(audioBlockedUrl);
+        setAudioBlockedUrl(null);
+        setMicStatusMessage("");
+        return;
+      }
+      const text = pendingMobileSpeech.trim();
+      if (text) {
+        setPendingMobileSpeech("");
+        setMicStatusMessage("");
+        speak(text, {
+          lang: selectedA11Language.speechLang,
+          voiceReferenceId: selectedVoiceReferenceId || undefined,
+          vocalMode: ttsVocalMode,
+          provider: ttsProviderMode === "auto" ? undefined : ttsProviderMode,
+          ttsProvider: ttsProviderMode,
+        });
+        return;
+      }
+    }
+    void unlockAudioOutput();
     const SpeechRecognition =
       (globalThis as any).SpeechRecognition ||
       (globalThis as any).webkitSpeechRecognition;
@@ -2127,12 +3053,14 @@ export function App() {
       toggleLockRef.current = true;
       setTimeout(() => { toggleLockRef.current = false; }, 600);
       // fallback: toggle TTS-only mode
+      setMicPermissionBlocked(false);
+      setMicStatusMessage("Reconnaissance vocale non disponible sur ce navigateur. Mode voix sortie uniquement.");
       setTtsFallback((v) => {
         const next = !v;
         // keep voiceListening false when using fallback
         if (next) {
           // enable TTS playback
-          console.log("[A11] SpeechRecognition not available — enabling TTS-only mode");
+          console.log("[A11] SpeechRecognition not available â€” enabling TTS-only mode");
         } else {
           console.log("[A11] Disabling TTS-only mode");
         }
@@ -2144,9 +3072,29 @@ export function App() {
     if (voiceListening) {
       try { stopMic(); } catch {};
       setVoiceListening(false);
-      cancelSpeech();
+      setMicStatusMessage("");
     } else {
-      try { await startMic(); setVoiceListening(true); } catch (e) { console.warn('startMic failed', e); }
+      try {
+        setMicStarting(true);
+        setMicStatusMessage("");
+        await startMic({ lang: selectedA11Language.speechLang });
+        setMicPermissionBlocked(false);
+        setTtsFallback(false);
+        setVoiceListening(true);
+      } catch (e) {
+        setVoiceListening(false);
+        setMicPermissionBlocked(true);
+        setTtsFallback(true);
+        setMicStatusMessage("Micro bloque ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        try {
+          localStorage.setItem('a11:tts-only', '1');
+        } catch {
+          // ignore storage access errors
+        }
+        console.info('startMic unavailable, keeping TTS-only mode', e);
+      } finally {
+        setMicStarting(false);
+      }
     }
   }
 
@@ -2159,6 +3107,10 @@ export function App() {
     setTimeout(() => { toggleLockRef.current = false; }, 600);
     const next = !ttsFallback;
     setTtsFallback(next);
+    if (next) {
+      setVoiceListening(false);
+      setMicStarting(false);
+    }
     console.log('[A11] toggleTtsOnly ->', next);
     if (next) {
       localStorage.setItem('a11:tts-only', '1');
@@ -2204,9 +3156,9 @@ export function App() {
     setDeleteDialogChatId(null);
   }
 
-  // Le system prompt est géré côté backend (system_prompt.txt)
-  // Le frontend n'envoie pas de prompt système — évite l'exposition dans les DevTools
-  const systemPrompt = undefined;
+  // Le system prompt est gÃ©rÃ© cÃ´tÃ© backend (system_prompt.txt)
+  // Le frontend n'envoie pas de prompt systÃ¨me â€” Ã©vite l'exposition dans les DevTools
+  const systemPrompt = resolveClientSystemPrompt();
 
   // Initialisation globale de window.speak au montage pour garantir le son
   useEffect(() => {
@@ -2253,7 +3205,19 @@ export function App() {
     return () => globalThis.clearTimeout(timeout);
   }, [uploadFeedback]);
 
-  // Handler pour rafraîchir la liste de l'historique
+  useEffect(() => {
+    const onPopState = () => {
+      const pathname = window.location.pathname.toLowerCase();
+      setActiveView(pathname.includes("/casino") ? "casino" : "chat");
+      setSettingsMenuOpen(false);
+      setSidebarOpen(false);
+      setInspectorOpen(false);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // Handler pour rafraÃ®chir la liste de l'historique
   async function refreshA11History() {
     setLoadingHistory(true);
     try {
@@ -2297,7 +3261,7 @@ export function App() {
       const conv = await fetchA11Conversation(convId);
       const normalizedMessages = mapBackendConversationMessages(conv.messages || []);
       setA11ConvMsgs(normalizedMessages);
-      setActiveView('chat');
+      openChatView();
       setSelectedChatId(convId);
       setMessages(normalizedMessages);
       setChats((prev) => {
@@ -2339,8 +3303,8 @@ export function App() {
       const removedTotal = effectiveRemoved.facts + effectiveRemoved.tasks + effectiveRemoved.files;
       setPurgeFeedback(
         result.dryRun
-          ? `Dry run OK (${removedTotal} candidats) • facts ${effectiveRemoved.facts}, tasks ${effectiveRemoved.tasks}, files ${effectiveRemoved.files}`
-          : `Purge OK (${removedTotal} supprimés) • facts ${result.before.facts}->${result.after.facts}, tasks ${result.before.tasks}->${result.after.tasks}, files ${result.before.files}->${result.after.files}`
+          ? `Dry run OK (${removedTotal} candidats) â€¢ facts ${effectiveRemoved.facts}, tasks ${effectiveRemoved.tasks}, files ${effectiveRemoved.files}`
+          : `Purge OK (${removedTotal} supprimÃ©s) â€¢ facts ${result.before.facts}->${result.after.facts}, tasks ${result.before.tasks}->${result.after.tasks}, files ${result.before.files}->${result.after.files}`
       );
       setPurgeHistory((prev) => [
         {
@@ -2504,14 +3468,49 @@ export function App() {
     setSidebarOpen(false);
   }
 
-  // HEADER avec bouton Mode DEV centré, select modèle à droite, mute à l'extrême droite
+  function pushA11Path(pathname: string) {
+    try {
+      const target = pathname || "/";
+      if (window.location.pathname !== target) {
+        window.history.pushState({}, "", target);
+      }
+    } catch {
+      // Navigation history is best-effort in embedded surfaces.
+    }
+  }
+
+  function openCasinoView() {
+    setActiveView("casino");
+    setSettingsMenuOpen(false);
+    setSidebarOpen(false);
+    setInspectorOpen(false);
+    pushA11Path("/casino");
+  }
+
+  function openChatView() {
+    setActiveView("chat");
+    setSettingsMenuOpen(false);
+    setSidebarOpen(false);
+    setInspectorOpen(false);
+    pushA11Path("/");
+  }
+
+  // HEADER avec bouton Mode DEV centrÃ©, select modÃ¨le Ã  droite, mute Ã  l'extrÃªme droite
   
-  // ✅ Check authentication
+  // âœ… Check authentication
   if (isResetRoute) {
     return <ResetPasswordPanel />;
   }
 
   if (!isAuthenticated) {
+    const pathname = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/";
+    if (isKaen44 && pathname !== "/login" && !pathname.includes("/auth/success")) {
+      const publicPage = pathname.includes("/privacy") ? "privacy"
+        : pathname.includes("/terms") ? "terms"
+          : pathname.includes("/vivy") ? "vivy"
+          : "home";
+      return <Kaen44PublicPage page={publicPage} />;
+    }
     return <LoginPanel onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
@@ -2570,8 +3569,19 @@ export function App() {
   });
 
   return (
-    <div className="app-container a11-shell" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-      {/* ── Drag-and-drop overlay ── */}
+    <div
+      className={`app-container a11-shell${isKaen44 ? " kaen-shell" : ""}`}
+      style={{
+        minHeight: '100vh',
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: 0,
+        overflow: 'hidden',
+        background: isKaen44 ? '#070b14' : '#070b12',
+      }}
+    >
+      {/* â”€â”€ Drag-and-drop overlay â”€â”€ */}
       {isDragOver && (
         <div
           className="a11-drop-overlay"
@@ -2584,9 +3594,9 @@ export function App() {
           }}
         >
           <div className="a11-drop-overlay-inner">
-            <div className="a11-drop-overlay-icon">📎</div>
-            <div className="a11-drop-overlay-label">Dépose ici</div>
-            <div className="a11-drop-overlay-hint">Images, texte, JSON, PDF…</div>
+            <div className="a11-drop-overlay-icon">ðŸ“Ž</div>
+            <div className="a11-drop-overlay-label">DÃ©pose ici</div>
+            <div className="a11-drop-overlay-hint">Images, texte, JSON, PDFâ€¦</div>
           </div>
         </div>
       )}
@@ -2601,6 +3611,9 @@ export function App() {
           padding: isCompactLayout ? "10px 12px" : "10px 20px",
           borderBottom: "1px solid #111827",
           background: "#0a101a",
+          backgroundImage: isKaen44
+            ? "linear-gradient(90deg, rgba(124, 58, 237, 0.16), rgba(8, 13, 27, 0.88) 42%, rgba(34, 211, 238, 0.08))"
+            : undefined,
           zIndex: settingsMenuOpen ? 90 : 50,
           gap: 12,
           flexWrap: isCompactLayout ? "wrap" : "nowrap",
@@ -2615,48 +3628,42 @@ export function App() {
               height: isCompactLayout ? 42 : 56,
               borderRadius: 999,
               overflow: "hidden",
-              boxShadow: "0 0 12px #22d3ee99",
+              boxShadow: isKaen44 ? "0 0 0 1px rgba(196, 181, 253, 0.42), 0 0 22px rgba(124, 58, 237, 0.5)" : (activePortraitFrame?.shadow || "0 0 12px #22d3ee99"),
               flexShrink: 0,
+              zIndex: 2,
+              transition: `box-shadow ${activePortraitTransitionMs}ms ease`,
             }}
           >
             <img
-              id="a11-avatar-idle"
-              src={A11_AVATAR_IDLE_SRC}
-              alt="A11"
+              id="a11-avatar-frame"
+              src={isKaen44 ? KAEN44_AVATAR_SRC : activePortraitSrc}
+              alt={isKaen44 ? "Kaen44" : "A11"}
               fetchPriority="high"
-              onError={(event) => applyImageFallback(event, A11_AVATAR_IDLE_FALLBACK_SRC)}
+              onError={(event) => applyImageFallback(
+                event,
+                isKaen44 ? A11_AVATAR_IDLE_FALLBACK_SRC : activePortraitSrc.includes("talking")
+                  ? A11_AVATAR_TALKING_FALLBACK_SRC
+                  : A11_AVATAR_IDLE_FALLBACK_SRC
+              )}
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
                 objectFit: "cover",
-                opacity: audioPlaying ? 0 : 1,
-                transition: "opacity 160ms linear",
-              }}
-            />
-            <img
-              id="a11-avatar-gif"
-              src={A11_AVATAR_TALKING_SRC}
-              alt=""
-              aria-hidden="true"
-              onError={(event) => applyImageFallback(event, A11_AVATAR_TALKING_FALLBACK_SRC)}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                opacity: audioPlaying ? 1 : 0,
-                transition: "opacity 160ms linear",
+                opacity: 1,
+                transform: activePortraitFrame?.transform || "scale(1)",
+                filter: activePortraitFrame?.filter || "none",
+                transition: `transform ${activePortraitTransitionMs}ms ease, filter ${activePortraitTransitionMs}ms ease`,
                 pointerEvents: "none",
+                willChange: audioPlaying || sending ? "transform, filter" : "auto",
               }}
             />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={a11TitleStyle}>A11</div>
+            <div style={a11TitleStyle}>{isKaen44 ? "Kaen44" : "A11"}</div>
             {!isCompactLayout ? (
-              <div style={{ fontSize: 12, color: "#9ca3af" }}>Assistant local NOSSEN</div>
+              <div style={{ fontSize: 12, color: "#9ca3af" }}>{isKaen44 ? "Copilote au quotidien" : "Assistant local NOSSEN"}</div>
             ) : null}
           </div>
         </div>
@@ -2685,7 +3692,7 @@ export function App() {
                 });
               }}
               style={utilityButtonStyle}
-              title="Afficher les réglages"
+              title="Afficher les rÃ©glages"
             >
               {settingsMenuOpen ? "Fermer" : "Menu"}
             </button>
@@ -2748,6 +3755,25 @@ export function App() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Langue</div>
+                  <select
+                    value={a11Language}
+                    onChange={(e) => setA11Language(normalizeA11LanguageCode(e.target.value))}
+                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                    title="Langue du chat, du micro, de la transcription et de la voix"
+                  >
+                    {A11_LANGUAGE_CHOICES.map((choice) => (
+                      <option key={choice.code} value={choice.code}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                    Chat, micro, transcription audio et voix {productName} utilisent cette langue.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Options</div>
                   <button
                     type="button"
@@ -2756,7 +3782,7 @@ export function App() {
                       if (isCompactLayout) setSettingsMenuOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                     title="Afficher les ressources et l'activite de conversation"
                   >
                     <span>Panneau conversation</span>
@@ -2768,7 +3794,76 @@ export function App() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Atelier audio</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    {(["adaptive", "speech", "sing"] as const).map((modeValue) => (
+                      <button
+                        key={modeValue}
+                        type="button"
+                        onClick={() => setTtsVocalMode(modeValue)}
+                        className={`btn ghost ${ttsVocalMode === modeValue ? "active" : ""}`}
+                        style={{ minHeight: 36, padding: "0 8px" }}
+                        title={`Mode vocal ${modeValue}`}
+                      >
+                        {modeValue === "adaptive" ? "Auto" : modeValue === "speech" ? "Parle" : "Chant"}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    {(["auto", "piper", "openai"] as const).map((providerValue) => (
+                      <button
+                        key={providerValue}
+                        type="button"
+                        onClick={() => setTtsProviderMode(providerValue)}
+                        className={`btn ghost ${ttsProviderMode === providerValue ? "active" : ""}`}
+                        style={{ minHeight: 36, padding: "0 8px" }}
+                        title={`Methode audio ${providerValue}`}
+                      >
+                        {providerValue === "auto" ? "Best" : providerValue === "piper" ? "Piper" : "OpenAI"}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onVoiceReferenceClick}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                    title={`Ajouter un WAV/MP3/WEBM de reference pour ${productName}`}
+                  >
+                    <span>Ajouter reference voix</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>WAV</span>
+                  </button>
+                  <select
+                    value={selectedVoiceReferenceId}
+                    onChange={(e) => setSelectedVoiceReferenceId(e.target.value)}
+                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                    title="Reference comparee a la voix generee"
+                  >
+                    <option value="">Voix {productName} auto</option>
+                    {voiceReferences.map((ref) => (
+                      <option key={ref.id} value={ref.id}>
+                        {ref.label || "Reference voix"}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                    {audioTranscribing
+                      ? "Analyse audio en cours..."
+                      : voiceReferenceStatus || `Importe un WAV: ${productName} l'ecoute comme reference sonore.`}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Navigation</div>
+                  <button
+                    type="button"
+                    onClick={openCasinoView}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span>Studio creatif</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Auto</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2778,10 +3873,10 @@ export function App() {
                       setSidebarOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                   >
                     <span>Abonnement</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>💳</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>ðŸ’³</span>
                   </button>
                   <button
                     type="button"
@@ -2792,7 +3887,7 @@ export function App() {
                       setSidebarOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                   >
                     <span>Profils IA</span>
                     <span style={{ color: "#94a3b8", fontWeight: 700 }}>{remoteProviderProfiles.length}</span>
@@ -2806,10 +3901,10 @@ export function App() {
                       setSidebarOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                   >
-                    <span>Espace admin</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Cockpit</span>
+                    <span>{isKaen44 ? "Modules" : "Espace admin"}</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "Client" : "Cockpit"}</span>
                   </button>
                 </div>
 
@@ -2839,7 +3934,10 @@ export function App() {
                     className="btn ghost"
                     style={{
                       width: "100%",
+                      display: "flex",
+                      alignItems: "center",
                       justifyContent: "space-between",
+                      gap: 10,
                       color: "#fca5a5",
                       borderColor: "#7f1d1d",
                     }}
@@ -2929,7 +4027,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      setActiveView('chat');
+                      openChatView();
                       setSelectedChatId(chat.id);
                       setMessages(chat.messages);
                       setA11ConvId(null);
@@ -2942,8 +4040,8 @@ export function App() {
                     {chat.name}
                   </button>
                   <span style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={e => { e.stopPropagation(); renameChat(chat.id); }} title="Renommer" className="btn ghost" style={{ fontSize: 13 }}>✏️</button>
-                    <button onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} title="Supprimer" className="btn ghost" style={{ fontSize: 13 }}>🗑️</button>
+                    <button onClick={e => { e.stopPropagation(); renameChat(chat.id); }} title="Renommer" className="btn ghost" style={{ fontSize: 13 }}>âœï¸</button>
+                    <button onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} title="Supprimer" className="btn ghost" style={{ fontSize: 13 }}>ðŸ—‘ï¸</button>
                   </span>
                 </div>
               ))}
@@ -2953,14 +4051,14 @@ export function App() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
               <span className="text-xs uppercase tracking-wide text-slate-400">
-                Historique A-11
+                Historique {productName}
               </span>
               <button onClick={refreshA11History} className="text-[11px] text-slate-400 hover:text-slate-200">
-                ↻
+                â†»
               </button>
             </div>
             {loadingHistory ? (
-              <div className="p-3 text-xs text-slate-400">Chargement…</div>
+              <div className="p-3 text-xs text-slate-400">Chargementâ€¦</div>
             ) : (
               <A11HistoryPanel
                 items={a11History}
@@ -2975,7 +4073,12 @@ export function App() {
         ) : null}
 
         <main className="main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {activeView === 'admin' ? (
+          {activeView === 'casino' ? (
+            <CasinoHub
+              isCompactLayout={isCompactLayout}
+              onBackToChat={openChatView}
+            />
+          ) : activeView === 'admin' ? (
             <div
               style={{
                 flex: 1,
@@ -2999,16 +4102,16 @@ export function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
                     <div>
                       <div style={{ fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 700, color: '#8b9bb4' }}>
-                        Vue admin
+                        {isKaen44 ? "Espace modules" : "Vue admin"}
                       </div>
-                      <h2 style={{ margin: '6px 0 0', color: '#e2e8f0' }}>Cockpit A11</h2>
+                      <h2 style={{ margin: '6px 0 0', color: '#e2e8f0' }}>{isKaen44 ? "Centre Kaen44" : "Cockpit A11"}</h2>
                       <p style={{ color: '#94a3b8', margin: '8px 0 0', maxWidth: 720 }}>
-                        Les éléments système restent ici, hors de l’interface utilisateur principale. La vue chat conserve uniquement l’usage normal et les outils utiles.
+                        Les Ã©lÃ©ments systÃ¨me restent ici, hors de lâ€™interface utilisateur principale. La vue chat conserve uniquement lâ€™usage normal et les outils utiles.
                       </p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setActiveView('chat')}
+                      onClick={openChatView}
                       className="btn ghost"
                       style={{ alignSelf: 'flex-start', justifyContent: 'center' }}
                     >
@@ -3018,27 +4121,33 @@ export function App() {
 
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     <button type="button" onClick={() => setAdminSection('cockpit')} style={adminTabButtonStyle('cockpit')}>
-                      Cockpit
+                      {isKaen44 ? "Modules" : "Cockpit"}
                     </button>
                     <button type="button" onClick={() => setAdminSection('memory')} style={adminTabButtonStyle('memory')}>
                       Memoire
                     </button>
-                    <button type="button" onClick={() => setAdminSection('runtime')} style={adminTabButtonStyle('runtime')}>
-                      Runtime
-                    </button>
+                    {!isKaen44 ? (
+                      <button type="button" onClick={() => setAdminSection('runtime')} style={adminTabButtonStyle('runtime')}>
+                        Runtime
+                      </button>
+                    ) : null}
                     <button type="button" onClick={() => setAdminSection('ai')} style={adminTabButtonStyle('ai')}>
                       IA
                     </button>
-                    <button type="button" onClick={() => setAdminSection('console')} style={adminTabButtonStyle('console')}>
-                      Console
-                    </button>
+                    {!isKaen44 ? (
+                      <button type="button" onClick={() => setAdminSection('console')} style={adminTabButtonStyle('console')}>
+                        Console
+                      </button>
+                    ) : null}
                     <button type="button" onClick={() => setAdminSection('subscription')} style={adminTabButtonStyle('subscription')}>
                       Abonnement
                     </button>
                   </div>
                 </div>
 
-                {adminSection === 'cockpit' ? <A11ControlCenterPanel /> : null}
+                {adminSection === 'cockpit' ? (
+                  isKaen44 ? <Kaen44ModulesPanel isCompactLayout={isCompactLayout} /> : <A11ControlCenterPanel />
+                ) : null}
 
                 {adminSection === 'ai' ? (
                   <A11RemoteProvidersPanel
@@ -3058,7 +4167,8 @@ export function App() {
                 {adminSection === 'subscription' ? (
                   <SubscriptionPanel 
                     isAdmin={hasAdminApiAccess()} 
-                    onClose={() => setActiveView('chat')}
+                    productName={productName}
+                    onClose={openChatView}
                   />
                 ) : null}
 
@@ -3211,21 +4321,21 @@ export function App() {
                         <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#0b1220', color: '#cbd5e1', fontSize: 12 }}>
                           <div style={{ color: '#8b9bb4', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, fontSize: 11 }}>Entrees</div>
                           <div style={{ marginTop: 6, color: '#e2e8f0', fontSize: 18, fontWeight: 800 }}>
-                            {loadingTechnicalMemos ? '...' : (technicalMemoSummary?.total ?? '—')}
+                            {loadingTechnicalMemos ? '...' : (technicalMemoSummary?.total ?? 'â€”')}
                           </div>
                         </div>
                         <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#0b1220', color: '#cbd5e1', fontSize: 12 }}>
                           <div style={{ color: '#8b9bb4', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, fontSize: 11 }}>Plus recent</div>
                           <div style={{ marginTop: 6, color: '#e2e8f0' }}>
-                            {technicalMemoSummary?.latestTs ? new Date(technicalMemoSummary.latestTs).toLocaleString() : '—'}
+                            {technicalMemoSummary?.latestTs ? new Date(technicalMemoSummary.latestTs).toLocaleString() : 'â€”'}
                           </div>
                         </div>
                         <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#0b1220', color: '#cbd5e1', fontSize: 12 }}>
                           <div style={{ color: '#8b9bb4', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, fontSize: 11 }}>Types</div>
                           <div style={{ marginTop: 6, color: '#e2e8f0' }}>
                             {technicalMemoSummary?.byType && Object.keys(technicalMemoSummary.byType).length
-                              ? Object.entries(technicalMemoSummary.byType).map(([type, count]) => `${type} (${count})`).join(' · ')
-                              : '—'}
+                              ? Object.entries(technicalMemoSummary.byType).map(([type, count]) => `${type} (${count})`).join(' Â· ')
+                              : 'â€”'}
                           </div>
                         </div>
                       </div>
@@ -3262,8 +4372,8 @@ export function App() {
                   </div>
                 ) : null}
 
-                {adminSection === 'runtime' ? <A11OpsStatusPanel /> : null}
-                {adminSection === 'console' ? (
+                {!isKaen44 && adminSection === 'runtime' ? <A11OpsStatusPanel /> : null}
+                {!isKaen44 && adminSection === 'console' ? (
                   <A11CommandConsolePanel
                     prefillCommand={consoleSuggestion?.command || null}
                     prefillReason={consoleSuggestion?.reason || null}
@@ -3279,7 +4389,7 @@ export function App() {
               {messages.map((m, idx) => {
                 const exportSuggestion = m.role === "assistant" ? detectAssistantExportSuggestion(m.content) : null;
                 let messageClassName = "message ";
-                let roleLabel = "Système / Nindo";
+                let roleLabel = "SystÃ¨me / Nindo";
                 let roleStyle: React.CSSProperties = {
                   color: "#9fb3c8",
                 };
@@ -3292,7 +4402,7 @@ export function App() {
                   };
                 } else if (m.role === "assistant") {
                   messageClassName = "message assistant";
-                  roleLabel = "A11";
+                  roleLabel = productName;
                   roleStyle = {
                     color: "#c084fc",
                     textShadow: "0 0 16px rgba(192, 132, 252, 0.24)",
@@ -3357,7 +4467,7 @@ export function App() {
                             color: "#fbbf24",
                           }}
                         >
-                          Réponse non verifiee
+                          RÃ©ponse non verifiee
                         </div>
                         <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>
                           {String(m.qflushVerification.summary || "Cette reponse a ete marquee comme douteuse par le garde-fou local.")}
@@ -3380,7 +4490,7 @@ export function App() {
                               onClick={() => setPreviewImageUrl(imgs[0])}
                               aria-label="Agrandir l'image"
                             >
-                              <img src={imgs[0]} alt="Résultat A11" style={{ maxWidth: "320px", borderRadius: 12 }} />
+                              <img src={imgs[0]} alt={`Resultat ${productName}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
                               <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
                             </button>
                           </div>
@@ -3411,7 +4521,7 @@ export function App() {
                           >
                             <img
                               src={m.videoUrl}
-                              alt="Animation générée par A11"
+                              alt={`Animation generee par ${productName}`}
                               style={{ maxWidth: "320px", borderRadius: 12 }}
                             />
                           </a>
@@ -3435,7 +4545,7 @@ export function App() {
                             wordBreak: "break-all",
                           }}
                         >
-                          Ouvrir la vidéo
+                          Ouvrir la vidÃ©o
                         </a>
                       </div>
                     )}
@@ -3509,7 +4619,7 @@ export function App() {
                         }}
                         title="Copier tout le contenu"
                       >
-                        📋 Copier
+                        ðŸ“‹ Copier
                       </button>
                     ) : null}
                   </div>
@@ -3528,7 +4638,7 @@ export function App() {
               void onComposerDrop(e);
             }}
             onPaste={async (e) => {
-              // Paste global sur le composer (hors textarea) — images et fichiers
+              // Paste global sur le composer (hors textarea) â€” images et fichiers
               const items = e.clipboardData?.items;
               if (!items) return;
               const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
@@ -3543,15 +4653,16 @@ export function App() {
               }
             }}
           >
-            {/* Console d'activité A11 — affichée pendant et après les actions */}
+            {/* Console d'activite */}
             <A11ActivityConsole
               events={activityEvents}
               isActive={activityIsActive}
+              productLabel={productName}
               onClear={clearActivityEvents}
               collapsed={consoleCollapsed}
               onToggleCollapse={() => setConsoleCollapsed((v) => !v)}
             />
-            <div className="row">
+            <div className="row a11-composer-row">
               <button
                 type="button"
                 className="btn ghost import-inline"
@@ -3562,9 +4673,62 @@ export function App() {
                 {isCompactLayout ? "Import" : "Importer"}
               </button>
 
-              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+              <div
+                className="a11-voice-tools"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginRight: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={onVoiceReferenceClick}
+                  title="Ajouter une reference vocale WAV/MP3/WEBM"
+                  style={{ minHeight: 38, padding: isCompactLayout ? "0 9px" : "0 10px" }}
+                >
+                  Ref
+                </button>
+                {!isCompactLayout && (
+                  <select
+                    value={selectedVoiceReferenceId}
+                    onChange={(e) => setSelectedVoiceReferenceId(e.target.value)}
+                    title={`Reference vocale utilisee pour comparer la voix ${productName}`}
+                    style={{
+                      width: 138,
+                      minHeight: 38,
+                      background: "#0d0f13",
+                      color: "var(--text)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                      padding: "0 8px",
+                    }}
+                  >
+                    <option value="">Voix {productName} auto</option>
+                    {voiceReferences.map((ref) => (
+                      <option key={ref.id} value={ref.id}>
+                        {ref.label || "Reference voix"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
+                  onClick={() => setTtsVocalMode((mode) => mode === "sing" ? "adaptive" : "sing")}
+                  title={ttsVocalMode === "sing" ? "Mode chant actif" : "Activer le mode chant"}
+                  style={{ minHeight: 38, width: 38, padding: 0, fontWeight: 800 }}
+                >
+                  {ttsVocalMode === "sing" ? "â™ª" : "A"}
+                </button>
+              </div>
+
+              <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea
-                  placeholder="Demande quelque chose à A11… (Ctrl+V pour coller une image)"
+                  placeholder={isCompactLayout ? `Message ${productName}...` : `Demande quelque chose a ${productName}... (Ctrl+V pour coller une image)`}
                   value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
                   onChange={(e) => {
                     const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
@@ -3591,7 +4755,7 @@ export function App() {
                       }
                       return;
                     }
-                    // Chercher des fichiers collés (depuis l'explorateur)
+                    // Chercher des fichiers collÃ©s (depuis l'explorateur)
                     const fileItems = Array.from(items).filter(item => item.kind === 'file' && !item.type.startsWith('image/'));
                     if (fileItems.length > 0) {
                       e.preventDefault();
@@ -3607,8 +4771,8 @@ export function App() {
                   style={{
                     width: '100%',
                     resize: 'none',
-                    minHeight: '42px',
-                    maxHeight: '35vh',
+                    minHeight: isCompactLayout ? '52px' : '42px',
+                    maxHeight: isCompactLayout ? '22vh' : '35vh',
                     background: '#0d0f13',
                     color: 'var(--text)',
                     border: '1px solid var(--border)',
@@ -3625,30 +4789,48 @@ export function App() {
                 className="send-button"
                 onClick={() => sendMessage()}
                 disabled={!input.trim()}
-                title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
+                title="EntrÃ©e pour envoyer, Shift+EntrÃ©e pour aller Ã  la ligne"
                 style={sending ? { opacity: 0.7 } : undefined}
               >
                 {sending
-                  ? (messageQueueRef.current.length > 0 ? `⏳ +${messageQueueRef.current.length}` : "…")
-                  : "➤"
+                  ? (messageQueueRef.current.length > 0 ? `â³ +${messageQueueRef.current.length}` : "â€¦")
+                  : "âž¤"
                 }
               </button>
 
               <button
                 type="button"
-                className={`nossen-mic-btn inline ${(voiceListening || ttsFallback || audioPlaying) ? "listening" : ""}`}
+                className={`nossen-mic-btn inline ${(voiceListening || micStarting || audioPlaying) ? "listening" : ""}`}
                 onClick={toggleMic}
-                title="Toggle microphone / TTS"
-                style={{ marginLeft: 8 }}
+                disabled={micStarting}
+                aria-pressed={voiceListening}
+                aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloque" : voiceListening ? "Arreter le micro" : "Demarrer le micro"}
+                title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloque par le navigateur" : voiceListening ? "Arreter le micro" : "Demarrer le micro"}
+                style={{
+                  marginLeft: 8,
+                  opacity: micPermissionBlocked ? 0.78 : 1,
+                  borderColor: micPermissionBlocked ? "#7f1d1d" : undefined,
+                  color: micPermissionBlocked ? "#fecaca" : undefined,
+                }}
               >
-                {(voiceListening || ttsFallback || audioPlaying) ? "🎙️" : "🎤"}
+                {micStarting ? "..." : mobileVoiceReady ? "â–¶" : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
               </button>
             </div>
             <div className="hint">
-              Entrée pour envoyer · Shift+Entrée pour aller à la ligne · Ctrl+V pour coller une image
+              EntrÃ©e pour envoyer Â· Shift+EntrÃ©e pour aller Ã  la ligne Â· Ctrl+V pour coller une image
+              {micStatusMessage && (
+                <span style={{ marginLeft: 8, color: micPermissionBlocked ? '#fca5a5' : '#93c5fd', fontWeight: 600 }}>
+                  {micStatusMessage}
+                </span>
+              )}
               {sending && messageQueueRef.current.length > 0 && (
                 <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 600 }}>
-                  ⏳ {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
+                  â³ {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
+                </span>
+              )}
+              {voiceReferenceStatus && (
+                <span style={{ marginLeft: 8, color: "#93c5fd", fontWeight: 600 }}>
+                  {voiceReferenceStatus}
                 </span>
               )}
             </div>
@@ -3658,11 +4840,11 @@ export function App() {
               const p = dragPreviewUrls[idx];
               return (
                 <div className="a11-drop-carousel">
-                  {/* Thumbnail ou icône */}
+                  {/* Thumbnail ou icÃ´ne */}
                   <div className="a11-drop-carousel-media">
                     {p.isImage
                       ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
-                      : <span className="a11-drop-carousel-file-icon">📄</span>
+                      : <span className="a11-drop-carousel-file-icon">ðŸ“„</span>
                     }
                   </div>
 
@@ -3674,21 +4856,21 @@ export function App() {
                     )}
                   </div>
 
-                  {/* Flèches si plusieurs */}
+                  {/* FlÃ¨ches si plusieurs */}
                   {total > 1 && (
                     <div className="a11-drop-carousel-nav">
                       <button
                         type="button"
                         className="a11-drop-carousel-arrow"
-                        aria-label="Image précédente"
+                        aria-label="Image prÃ©cÃ©dente"
                         onClick={() => setPreviewCarouselIndex((i) => (i - 1 + total) % total)}
-                      >‹</button>
+                      >â€¹</button>
                       <button
                         type="button"
                         className="a11-drop-carousel-arrow"
                         aria-label="Image suivante"
                         onClick={() => setPreviewCarouselIndex((i) => (i + 1) % total)}
-                      >›</button>
+                      >â€º</button>
                     </div>
                   )}
 
@@ -3705,7 +4887,7 @@ export function App() {
                         return next;
                       });
                     }}
-                  >✕</button>
+                  >âœ•</button>
                 </div>
               );
             })()}
@@ -3715,6 +4897,13 @@ export function App() {
               multiple
               style={{ display: 'none' }}
               onChange={onFileChange}
+            />
+            <input
+              ref={voiceReferenceInputRef}
+              type="file"
+              accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm"
+              style={{ display: 'none' }}
+              onChange={onVoiceReferenceFileChange}
             />
           </div>
           </>
@@ -3805,11 +4994,11 @@ export function App() {
           </>
         ) : null}
       </div>
-      {!isCompactLayout ? (
+      {!isCompactLayout && !isKaen44 ? (
       <>
         <AdBanner position="bottom" style={{ margin: '20px auto', maxWidth: '800px' }} />
         <footer className="footer">
-          A11 local · Ollama + TTS + image · Funesterie
+          A11 local Â· Ollama + TTS + image Â· Funesterie
         </footer>
       </>
       ) : null}
@@ -3828,7 +5017,7 @@ export function App() {
       <ConfirmModal
         open={!!deleteDialogChatId}
         title="Supprimer la conversation"
-        message="Cette conversation locale sera retirée de la liste actuelle."
+        message="Cette conversation locale sera retirÃ©e de la liste actuelle."
         confirmLabel="Supprimer"
         confirmTone="danger"
         onClose={() => setDeleteDialogChatId(null)}
@@ -3837,7 +5026,7 @@ export function App() {
       <ConfirmModal
         open={clearHistoryConfirmOpen}
         title="Supprimer tout l'historique"
-        message="Cette action va vider toutes les conversations locales du navigateur et l'historique A-11 cote serveur. Une nouvelle session propre sera recreee juste apres."
+        message={`Cette action va vider toutes les conversations locales du navigateur et l'historique ${productName} cote serveur. Une nouvelle session propre sera recreee juste apres.`}
         confirmLabel="Tout supprimer"
         confirmTone="danger"
         loading={clearingHistory}
@@ -3846,8 +5035,8 @@ export function App() {
       />
       <ConfirmModal
         open={!!deleteA11HistoryId}
-        title="Supprimer cette conversation A-11"
-        message="Cette conversation sera retiree de l'historique A-11 cote serveur et de la copie locale si elle est ouverte."
+        title={`Supprimer cette conversation ${productName}`}
+        message={`Cette conversation sera retiree de l'historique ${productName} cote serveur et de la copie locale si elle est ouverte.`}
         confirmLabel="Supprimer"
         confirmTone="danger"
         loading={!!deleteA11HistoryId && deletingA11HistoryId === deleteA11HistoryId}
@@ -3856,10 +5045,10 @@ export function App() {
       />
       <ConfirmModal
         open={purgeConfirmOpen}
-        title="Confirmer la purge mémoire"
+        title="Confirmer la purge mÃ©moire"
         message={memoryPurgeDryRun
-          ? "Lancer une simulation de purge de la mémoire structurée ?"
-          : "Déclencher immédiatement la purge réelle de la mémoire structurée ?"}
+          ? "Lancer une simulation de purge de la mÃ©moire structurÃ©e ?"
+          : "DÃ©clencher immÃ©diatement la purge rÃ©elle de la mÃ©moire structurÃ©e ?"}
         confirmLabel={memoryPurgeDryRun ? "Lancer le dry run" : "Lancer la purge"}
         confirmTone={memoryPurgeDryRun ? "primary" : "danger"}
         loading={purgingMemory}
@@ -3898,7 +5087,7 @@ export function App() {
           className="image-preview-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Aperçu de l'image"
+          aria-label="AperÃ§u de l'image"
           onClick={() => setPreviewImageUrl(null)}
         >
           <div
@@ -3909,43 +5098,49 @@ export function App() {
               type="button"
               className="image-preview-close"
               onClick={() => setPreviewImageUrl(null)}
-              aria-label="Fermer l'aperçu"
+              aria-label="Fermer l'aperÃ§u"
             >
-              ×
+              Ã—
             </button>
             <img
               src={previewImageUrl}
-              alt="Aperçu agrandi"
+              alt="AperÃ§u agrandi"
               className="image-preview-modal-image"
             />
           </div>
         </div>
       )}
-      {audioBlockedUrl && (
+      {audioBlockedUrl && !isCompactLayout && (
         <div style={{
-          position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+          position: 'fixed',
+          bottom: isCompactLayout ? 'calc(92px + env(safe-area-inset-bottom))' : 80,
+          left: isCompactLayout ? 12 : '50%',
+          right: isCompactLayout ? 12 : 'auto',
+          transform: isCompactLayout ? 'none' : 'translateX(-50%)',
           background: '#1e293b', border: '1px solid #334155', borderRadius: 12,
           padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10,
           boxShadow: '0 4px 24px rgba(0,0,0,0.6)', zIndex: 9999,
-          color: '#e2e8f0', fontSize: 14, whiteSpace: 'nowrap',
+          color: '#e2e8f0', fontSize: 14, whiteSpace: 'normal',
+          flexWrap: 'wrap', justifyContent: isCompactLayout ? 'space-between' : 'center',
+          maxWidth: 'calc(100vw - 24px)',
         }}>
-          <span>🔇 Audio bloqué</span>
+          <span>ðŸ”‡ Audio bloquÃ©</span>
           <button
             type="button"
-            onClick={() => { retryPlayUrl(audioBlockedUrl); setAudioBlockedUrl(null); }}
+            onClick={() => { void unlockAudioOutput(); retryPlayUrl(audioBlockedUrl); setAudioBlockedUrl(null); }}
             style={{
               background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8,
               padding: '6px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
             }}
           >
-            ▶ Jouer
+            â–¶ Jouer
           </button>
           <button
             type="button"
             onClick={() => setAudioBlockedUrl(null)}
             style={{ background: 'none', color: '#94a3b8', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px' }}
             title="Ignorer"
-          >×</button>
+          >Ã—</button>
         </div>
       )}
     </div>
