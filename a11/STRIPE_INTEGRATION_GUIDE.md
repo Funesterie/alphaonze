@@ -71,7 +71,7 @@ Pour que les webhooks fonctionnent en production:
 6. Ajoutez-le dans `.env.local`:
 
 ```env
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 ```
 
 ### 3. Variables d'Environnement Complètes
@@ -84,13 +84,13 @@ Voici toutes les variables Stripe nécessaires dans `.env.local`:
 # ============================================================
 
 # Clé secrète Stripe (DÉJÀ CONFIGURÉE)
-STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 
 # ID du prix (À CORRIGER - doit commencer par "price_")
 STRIPE_PRICE_ID=price_XXXXXXXXXXXXXXXXXX
 
 # Secret du webhook (À CONFIGURER pour la production)
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # URLs de redirection (DÉJÀ CONFIGURÉES)
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success

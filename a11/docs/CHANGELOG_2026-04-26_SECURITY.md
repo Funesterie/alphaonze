@@ -222,8 +222,7 @@ Ce fichier.
 ### Variables Existantes (inchangées)
 
 ```bash
-# JWT pour les sessions utilisateur
-JWT_SECRET=
+# JWT pour les sessions utilisateur : secret stored outside the repository.
 JWT_EXPIRY=7d
 
 # Admin par défaut

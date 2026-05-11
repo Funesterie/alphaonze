@@ -29,12 +29,12 @@ Render va créer automatiquement :
 Dashboard → a11-backend → Environment :
 
 ```bash
-JWT_SECRET=
-OPENAI_API_KEY=<ta_clé>
-STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
+# Set the session signing secret in Render.
+# OPENAI_API_KEY is configured via the deployment secret store.
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_1TQwxHHkqLcMgv548uBa6GDZ
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
-RESEND_API_KEY=<RESEND_API_KEY>
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
+# RESEND_API_KEY is configured via the deployment secret store.
 ```
 
 ### Étape 4 : Déployer
@@ -97,7 +97,7 @@ BACKEND=render
 
 # Security
 NEZ_SECURITY_MODE=production
-JWT_SECRET=
+# JWT_SECRET is configured via the deployment secret store.
 JWT_EXPIRY=7d
 
 # CORS
@@ -110,20 +110,20 @@ REDIS_URL=<redis_internal_url>
 
 # LLM
 A11_LLM_PROVIDER=openai
-OPENAI_API_KEY=<ta_clé>
+# OPENAI_API_KEY is configured via the deployment secret store.
 DEFAULT_MODEL=gpt-4o-mini
 A11_LLM_TIMEOUT_MS=60000
 
 # Stripe
-STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_1TQwxHHkqLcMgv548uBa6GDZ
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
 STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
 STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
 
 # Email
-RESEND_API_KEY=<RESEND_API_KEY>
+# RESEND_API_KEY is configured via the deployment secret store.
 EMAIL_FROM=A11 <a11@funesterie.pro>
 
 # Features

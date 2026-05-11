@@ -25,7 +25,7 @@ Configurer le système d'envoi d'emails d'A11 avec **Resend** pour permettre :
 
 ```bash
 # Email (Resend)
-RESEND_API_KEY=<RESEND_API_KEY>
+# RESEND_API_KEY is configured via the deployment secret store.
 EMAIL_FROM=A11 <a11@funesterie.pro>
 APP_URL=https://alphaonze.funesterie.pro
 ```
@@ -275,7 +275,7 @@ POST /api/mail/schedule
 1. **Ajouter les variables d'environnement** :
 
    ```bash
-   RESEND_API_KEY=<RESEND_API_KEY>
+   # RESEND_API_KEY is configured via the deployment secret store.
    EMAIL_FROM=A11 <a11@funesterie.pro>
    APP_URL=https://alphaonze.funesterie.pro
    ```

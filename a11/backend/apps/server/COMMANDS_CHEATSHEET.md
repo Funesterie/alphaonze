@@ -272,9 +272,9 @@ npm run stripe:setup && npm run test:stripe && npm start
 
 ```bash
 # Stripe
-STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_...
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # URLs de redirection
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success

@@ -129,8 +129,8 @@ function buildUpstreamHeaders(backendBase, provider) {
 ```bash
 A11_LLM_PROVIDER=openai
 A11_LLM_FALLBACK_PROVIDER=groq
-OPENAI_API_KEY=sk-...
-GROQ_API_KEY=gsk_...
+# OPENAI_API_KEY is configured via the deployment secret store.
+# GROQ_API_KEY is configured via the deployment secret store.
 ```
 
 **Avantages :**

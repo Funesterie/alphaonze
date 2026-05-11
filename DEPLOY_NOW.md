@@ -23,17 +23,17 @@ Dashboard → a11-backend → Environment → Add Secret :
 
 ```bash
 # JWT
-JWT_SECRET=<JWT_SECRET>
+# JWT_SECRET is configured via the deployment secret store.
 
 # OpenAI (OBLIGATOIRE)
-OPENAI_API_KEY=<ta_clé_openai>
+# OPENAI_API_KEY is configured via the deployment secret store.
 
 # Stripe
-STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # Email
-RESEND_API_KEY=<RESEND_API_KEY>
+# RESEND_API_KEY is configured via the deployment secret store.
 ```
 
 ### Étape 3 : Attendre le Déploiement (2-5 minutes)

@@ -45,9 +45,9 @@ Ouvrir `funesterie/a11/backend/apps/server/.env.local` et remplir :
 
 ```bash
 # Stripe Configuration
-STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_VOTRE_PRICE_ID
-STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 ```
 
 ## Étape 6 : Exécuter la migration SQL
