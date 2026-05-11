@@ -122,11 +122,12 @@ curl -X POST http://localhost:3000/api/chat \
 
 #### Option 2 : Header `X-NEZ-TOKEN`
 
-```bash
-curl -X POST http://localhost:3000/api/chat \
-  -H "X-NEZ-TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Hello"}'
+```powershell
+$headers = @{
+  "X-NEZ-TOKEN" = $env:NEZ_TOKEN
+  "Content-Type" = "application/json"
+}
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/chat" -Headers $headers -Body '{"message":"Hello"}'
 ```
 
 ---

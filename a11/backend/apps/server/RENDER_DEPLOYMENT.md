@@ -70,7 +70,7 @@ STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
 #### 🔑 JWT & Security
 
 ```bash
-JWT_SECRET=<JWT_SECRET>
+JWT_SECRET=
 JWT_EXPIRY=7d
 NEZ_SECURITY_MODE=production
 ```

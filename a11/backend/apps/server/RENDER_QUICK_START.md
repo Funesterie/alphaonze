@@ -29,7 +29,7 @@ Render va créer automatiquement :
 Dashboard → a11-backend → Environment :
 
 ```bash
-JWT_SECRET=<JWT_SECRET>
+JWT_SECRET=
 OPENAI_API_KEY=<ta_clé>
 STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
 STRIPE_PRICE_ID=price_1TQwxHHkqLcMgv548uBa6GDZ
@@ -97,7 +97,7 @@ BACKEND=render
 
 # Security
 NEZ_SECURITY_MODE=production
-JWT_SECRET=<JWT_SECRET>
+JWT_SECRET=
 JWT_EXPIRY=7d
 
 # CORS

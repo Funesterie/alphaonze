@@ -223,7 +223,7 @@ Ce fichier.
 
 ```bash
 # JWT pour les sessions utilisateur
-JWT_SECRET=<JWT_SECRET>
+JWT_SECRET=
 JWT_EXPIRY=7d
 
 # Admin par défaut
