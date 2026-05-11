@@ -154,6 +154,10 @@ Docker Desktop Installer.exe
 a11/backend/apps/server/profiles/*.env
 !a11/backend/apps/server/profiles/*.env.example
 **/auth.json
+# Local package registry credentials
+**/.npmrc.*
+**/jfrog.env.ps1
+**/*.jfrog.local.ps1
 # Watchdog snapshots (runtime)
 /a11/runtime/watchdog-snapshots/
 /a11/runtime/memory-consolidation-state.json
