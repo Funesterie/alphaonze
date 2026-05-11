@@ -12,6 +12,8 @@ apps/web/
 apps/server/.env
 apps/server/.env.local
 apps/server/.env.*.local
+apps/server/profiles/*.env
+!apps/server/profiles/*.env.example
 apps/server/tmp-restart-*.log
 a11_memory/conversations/
 a11_memory/memos/memo_env_snapshot_*.json
