@@ -127,17 +127,17 @@ stripe logs tail
 ```bash
 # Créer une session de checkout
 curl -X POST http://localhost:3000/api/subscription/create-checkout \
-  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json"
 
 # Créer une session du portail client
 curl -X POST http://localhost:3000/api/subscription/create-portal \
-  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json"
 
 # Vérifier le statut d'abonnement
 curl -X GET http://localhost:3000/api/subscription/status \
-  -H "Authorization: Bearer YOUR_JWT"
+  -H "Authorization: Bearer $TOKEN"
 
 # Webhook (appelé par Stripe)
 # POST http://localhost:3000/api/subscription/webhook
@@ -148,13 +148,13 @@ curl -X GET http://localhost:3000/api/subscription/status \
 ```bash
 # Génération d'image
 curl -X POST http://localhost:3000/api/jobs/sd \
-  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "un panda mignon"}'
 
 # Vérifier le statut du job
 curl -X GET http://localhost:3000/api/jobs/sd/JOB_ID \
-  -H "Authorization: Bearer YOUR_JWT"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Logs
@@ -272,9 +272,9 @@ npm run stripe:setup && npm run test:stripe && npm start
 
 ```bash
 # Stripe
-STRIPE_SECRET_KEY=sk_test_...
+STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
 STRIPE_PRICE_ID=price_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
 
 # URLs de redirection
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success

@@ -59,9 +59,9 @@ Ajoute ces variables dans **Environment** :
 #### 🔐 Stripe (Production)
 
 ```bash
-STRIPE_SECRET_KEY=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
+STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
 STRIPE_PRICE_ID=price_1TQwxHHkqLcMgv548uBa6GDZ
-STRIPE_WEBHOOK_SECRET=whsec_f0sF58jvmkKQroqTl009quZAlXyakCDG
+STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
 STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
 STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
@@ -70,7 +70,7 @@ STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
 #### 🔑 JWT & Security
 
 ```bash
-JWT_SECRET=f564db4d80721484148880ee27f31a29f3e4fc005ee7f17b9026bf10a32aa7c6
+JWT_SECRET=<JWT_SECRET>
 JWT_EXPIRY=7d
 NEZ_SECURITY_MODE=production
 ```
@@ -85,7 +85,7 @@ APP_URL=https://alphaonze.funesterie.pro
 #### 📧 Email (Resend)
 
 ```bash
-RESEND_API_KEY=re_gKNVuJrr_C3zBtFZ2SPcNRJSK1hUcmUnp
+RESEND_API_KEY=<RESEND_API_KEY>
 EMAIL_FROM=A11 <a11@funesterie.pro>
 ```
 
@@ -190,7 +190,7 @@ curl -X POST https://a11-backend.onrender.com/api/auth/login \
 
 ```bash
 curl https://a11-backend.onrender.com/api/subscription/status \
-  -H "Authorization: Bearer <ton_token>"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ## 📊 Monitoring

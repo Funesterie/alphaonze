@@ -57,7 +57,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 # Réponse
 {
   "ok": true,
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "<JWT_TOKEN>",
   "user": { "id": "1", "username": "Djeff" }
 }
 ```
@@ -223,7 +223,7 @@ Ce fichier.
 
 ```bash
 # JWT pour les sessions utilisateur
-JWT_SECRET=f564db4d80721484148880ee27f31a29f3e4fc005ee7f17b9026bf10a32aa7c6
+JWT_SECRET=<JWT_SECRET>
 JWT_EXPIRY=7d
 
 # Admin par défaut

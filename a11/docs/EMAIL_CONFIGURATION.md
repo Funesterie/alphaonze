@@ -22,7 +22,7 @@ A11 supporte l'envoi d'emails via **Resend** (prioritaire) ou **SMTP** (fallback
 
 ```bash
 # Email (Resend)
-RESEND_API_KEY=re_gKNVuJrr_C3zBtFZ2SPcNRJSK1hUcmUnp
+RESEND_API_KEY=<RESEND_API_KEY>
 EMAIL_FROM=A11 <a11@funesterie.pro>
 APP_URL=https://alphaonze.funesterie.pro
 ```

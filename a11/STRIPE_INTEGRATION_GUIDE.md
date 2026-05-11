@@ -71,7 +71,7 @@ Pour que les webhooks fonctionnent en production:
 6. Ajoutez-le dans `.env.local`:
 
 ```env
-STRIPE_WEBHOOK_SECRET=whsec_XXXXXXXXXXXXXXXXXXXXXXXXXX
+STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
 ```
 
 ### 3. Variables d'Environnement Complètes
@@ -84,13 +84,13 @@ Voici toutes les variables Stripe nécessaires dans `.env.local`:
 # ============================================================
 
 # Clé secrète Stripe (DÉJÀ CONFIGURÉE)
-STRIPE_SECRET_KEY=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
+STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
 
 # ID du prix (À CORRIGER - doit commencer par "price_")
 STRIPE_PRICE_ID=price_XXXXXXXXXXXXXXXXXX
 
 # Secret du webhook (À CONFIGURER pour la production)
-STRIPE_WEBHOOK_SECRET=whsec_XXXXXXXXXXXXXXXXXXXXXXXXXX
+STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
 
 # URLs de redirection (DÉJÀ CONFIGURÉES)
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
@@ -198,9 +198,9 @@ Les utilisateurs avec `role: 'admin'` ou `isAdmin: true` dans leur JWT ont un ac
 Les variables d'environnement Stripe doivent être configurées dans Railway:
 
 ```bash
-railway variables set STRIPE_SECRET_KEY=sk_live_...
+railway variables set STRIPE_SECRET_KEY=<STRIPE_SECRET_KEY>
 railway variables set STRIPE_PRICE_ID=price_...
-railway variables set STRIPE_WEBHOOK_SECRET=whsec_...
+railway variables set STRIPE_WEBHOOK_SECRET=<STRIPE_WEBHOOK_SECRET>
 ```
 
 ### Frontend (Netlify)
