@@ -141,6 +141,8 @@ Docker Desktop Installer.exe
 **/.env.container.local
 **/secrets.json
 **/credentials.json
+**/cloudflared/*.json
+**/.cloudflared/*.json
 **/*.pem
 **/*.key
 **/*.p12

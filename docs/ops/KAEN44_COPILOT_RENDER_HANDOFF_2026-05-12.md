@@ -2,12 +2,13 @@
 
 ## Goal
 
-Get help on the remaining platform-level routing issue:
+Historical handoff for the platform-level routing issue:
 
 - Hetzner origin is healthy.
 - A11 MCP and Cerbere stats are healthy locally and on `a11.funesterie.pro`.
 - Kaen44 is now a separate backend on Hetzner.
-- Public Cloudflare traffic to `funesterie.me/api/*` still returns `401` before it appears to reach the Kaen44 origin path.
+- Public Cloudflare traffic to `funesterie.me/api/*` returned `401` before it reached the Kaen44 origin path.
+- Resolved on 2026-05-13 by routing the affected hostnames through the dedicated `kaen44-hetzner` Cloudflare Tunnel.
 
 No secrets should be pasted into GitHub, Copilot, Render, logs, or comments.
 
@@ -39,6 +40,10 @@ Confirmed good:
 - Render fallback `https://kaen44-api.onrender.com/health` -> `200`
 - Render fallback `https://kaen44-api.onrender.com/api/llm/stats` -> `200`, Cerbere router JSON
 - Render fallback authenticated `POST /api/llm/chat` -> `200`, reply `OK_RENDER`
+- Public Cloudflare `https://k44.funesterie.me/api/llm/stats` -> `200`, `via: 1.1 Caddy`
+- Public Cloudflare `https://kaen44.funesterie.me/api/llm/stats` -> `200`, `via: 1.1 Caddy`
+- Public Cloudflare `https://funesterie.me/api/llm/stats` -> `200`, `via: 1.1 Caddy`
+- Public Cloudflare `https://www.funesterie.me/api/llm/stats` -> `200`, `via: 1.1 Caddy`
 
 Render service now live:
 
@@ -59,13 +64,14 @@ Provider checks, without printing secrets:
 - Groq: `401 invalid_api_key`
 - xAI: `403`
 
-Still bad on the public Cloudflare path without JWT:
+Public Cloudflare path status:
 
-- `https://k44.funesterie.me/api/llm/stats` -> `401`, `server: cloudflare`
-- `https://kaen44.funesterie.me/api/llm/stats` -> `401`, `server: cloudflare`
-- `https://funesterie.me/api/llm/stats` -> `401`, `server: cloudflare`
+- Resolved. The previous `401` was bypassed by routing the hostnames through the dedicated `kaen44-hetzner` tunnel.
+- Tunnel runbook: `docs/ops/KAEN44_CLOUDFLARED_TUNNEL_2026-05-13.md`
+- Compose file: `a11/backend/apps/server/docker-compose.kaen44-cloudflared.yml`
+- Config template: `a11/backend/apps/server/cloudflared/kaen44-hetzner-config.example.yml`
 
-Important observation:
+Important historical observation:
 
 - Origin Caddy returns `200` for the same host/path over HTTP.
 - Recent Kaen44 container logs did not show the public Cloudflare `/api/llm/stats` hit.
