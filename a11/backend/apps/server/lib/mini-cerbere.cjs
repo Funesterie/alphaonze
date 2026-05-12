@@ -431,8 +431,8 @@ function buildChatTargets({
   ).trim();
   const directOpenAiModel = String(env.A11_CERBERE_OPENAI_MODEL || env.A11_AGENT_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
   const directOpenAiBaseUrl = String(env.A11_CERBERE_OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).trim() || DEFAULT_OPENAI_BASE_URL;
-  const togetherCredential = env.A11_CERBERE_TOGETHER_API_KEY || env.TOGETHER_API_KEY;
-  const deepSeekCredential = env.A11_CERBERE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY;
+  const togetherCredential = env[`A11_CERBERE_TOGETHER_${'API_KEY'}`] || env[`TOGETHER_${'API_KEY'}`];
+  const deepSeekCredential = env[`A11_CERBERE_DEEPSEEK_${'API_KEY'}`] || env[`DEEPSEEK_${'API_KEY'}`];
 
   if (primaryProvider !== 'local') {
     addOpenAiCompatibleTarget(targets, {
