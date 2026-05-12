@@ -1094,6 +1094,46 @@ function createAuthRouter({
   router.post('/api/auth/reset', express.json(), resetPasswordHandler);
   router.post('/api/auth/reset-password', express.json(), resetPasswordHandler);
 
+  router.post('/api/auth/agent-token', express.json(), (req, res) => {
+    const nezAdminToken = String(process.env.NEZ_ADMIN_TOKEN || '').trim();
+    if (!nezAdminToken) {
+      return res.status(503).json({ ok: false, error: 'agent_token_not_configured' });
+    }
+
+    const providedToken = String(req.body?.admin_token || req.headers?.['x-nez-admin-token'] || '').trim();
+    if (!providedToken) {
+      return res.status(400).json({ ok: false, error: 'admin_token_required' });
+    }
+
+    let tokensMatch = false;
+    try {
+      const a = Buffer.from(nezAdminToken.padEnd(64), 'utf8').slice(0, 64);
+      const b = Buffer.from(providedToken.padEnd(64), 'utf8').slice(0, 64);
+      tokensMatch = nodeCrypto.timingSafeEqual(a, b) && nezAdminToken === providedToken;
+    } catch { tokensMatch = false; }
+
+    if (!tokensMatch) {
+      console.warn('[AUTH] agent-token: invalid admin_token');
+      return res.status(401).json({ ok: false, error: 'invalid_admin_token' });
+    }
+
+    const rawAgentId = String(req.body?.agent_id || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 64);
+    if (!rawAgentId) {
+      return res.status(400).json({ ok: false, error: 'agent_id_required' });
+    }
+
+    const rawExpiry = String(req.body?.expiry || '30d').trim();
+    const allowedExpiry = /^\d+[smhd]$/.test(rawExpiry) ? rawExpiry : '30d';
+
+    const claims = { id: rawAgentId, username: rawAgentId, role: 'agent', typ: 'agent_token', agent: true };
+    const token = jwt.sign(claims, jwtSecret, { expiresIn: allowedExpiry });
+    const decoded = jwt.decode(token);
+    const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : null;
+
+    console.log(`[AUTH] agent-token issued: ${rawAgentId} exp=${allowedExpiry}`);
+    return res.json({ ok: true, token, agent_id: rawAgentId, expires_at: expiresAt, expiry: allowedExpiry });
+  });
+
   return router;
 }
 
