@@ -59,7 +59,9 @@ Important observation:
 
 - Origin Caddy returns `200` for the same host/path over HTTP.
 - Recent Kaen44 container logs did not show the public Cloudflare `/api/llm/stats` hit.
-- This points to Cloudflare Access, a Worker, WAF rule, transform rule, cache/routing rule, or another proxy layer intercepting `funesterie.me/api/*`.
+- Public Cloudflare responses include `server: cloudflare` and `X-Powered-By: Express`.
+- The public `401` body is `A11_JWT_Missing`, so Cloudflare is reaching an Express app, but likely not the same Hetzner Caddy/Kaen44 origin route that returns `200` by Host-header.
+- This points first to a Worker, Origin Rule, Transform Rule, tunnel route, stale target, or another proxy layer sending `funesterie.me/api/*` to an older/protected Express backend.
 
 ## Code Fix Already Applied
 
