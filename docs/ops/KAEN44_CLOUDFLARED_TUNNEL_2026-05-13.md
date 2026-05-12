@@ -66,6 +66,14 @@ cloudflared tunnel route dns --overwrite-dns kaen44-hetzner www.funesterie.me
 Expected:
 
 ```bash
+cd a11/backend/apps/server
+npm run smoke:kaen44
+KAEN44_ORIGIN_BASE=http://62.238.43.32 npm run smoke:kaen44
+```
+
+Equivalent manual checks:
+
+```bash
 curl -fsS https://k44.funesterie.me/health
 curl -fsS https://k44.funesterie.me/api/llm/stats
 curl -fsS https://kaen44.funesterie.me/api/llm/stats

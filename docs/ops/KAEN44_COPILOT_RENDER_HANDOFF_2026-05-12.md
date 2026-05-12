@@ -110,9 +110,9 @@ Local verification:
 - `node --test test/portrait-framebook.node.test.cjs` OK
 - MCP `a11_llm_stats` now returns Cerbere stats.
 
-## Copilot Task
+## Follow-up Task
 
-Ask Copilot/GitHub to help with this precise work:
+The original Cloudflare `401` is resolved by the dedicated tunnel. The remaining follow-up work is now narrower:
 
 1. Review the A11/Kaen44 split deployment changes.
 2. Make the Hetzner split reproducible from source:
@@ -120,23 +120,18 @@ Ask Copilot/GitHub to help with this precise work:
    - Caddy host routing
    - separate runtime/log/upload volumes
    - no secret leakage
-3. Add a smoke script that proves:
+3. Keep the smoke script current:
    - A11 `/health` and `/api/llm/stats`
    - Kaen44 `/health`, `/`, and `/api/llm/stats`
    - Caddy host-based origin route for `k44.funesterie.me`
 4. Add optional safe request logging in Caddy or backend for host/path/status only, not headers or tokens.
-5. Diagnose why Cloudflare returns `401` on `funesterie.me/api/*` while the Hetzner origin returns `200`.
 
-Suggested GitHub issue title:
+Smoke command:
 
-```text
-Kaen44 split is healthy on Hetzner, but Cloudflare returns 401 for funesterie.me/api/*
-```
-
-Suggested labels:
-
-```text
-ops, deployment, cloudflare, kaen44, needs-copilot
+```bash
+cd a11/backend/apps/server
+npm run smoke:kaen44
+KAEN44_ORIGIN_BASE=http://62.238.43.32 npm run smoke:kaen44
 ```
 
 ## Render Fallback
