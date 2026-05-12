@@ -373,6 +373,7 @@ const createEpisodicMemoryRouter = require('./src/routes/episodic-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
 const createCasinoRouter = require('./src/routes/casino.cjs');
 const createChatRouter = require('./src/routes/chat.cjs');
+const { buildA11ChatSystemPrompt } = require('./src/chat/a11-active-identity.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
 const createMemoryRouter = require('./src/routes/memory.cjs');
 const createSdToolsRouter = require('./src/routes/sd-tools.cjs');
@@ -9287,7 +9288,7 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
 
 function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
   const messages = [];
-  const normalizedSystemPrompt = String(systemPrompt || '').trim();
+  const normalizedSystemPrompt = buildA11ChatSystemPrompt(systemPrompt);
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
   const explicitSystemMessages = sanitizedBaseMessages.filter((message) => message.role === 'system');
   const nonSystemMessages = sanitizedBaseMessages.filter((message) => message.role !== 'system');

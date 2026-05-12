@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { URL } = require('node:url');
 const { withOllamaQueue, getQueueStats } = require('../core/ollama-queue.cjs');
+const { buildA11ChatSystemPrompt } = require('../chat/a11-active-identity.cjs');
 
 // Charge le system prompt depuis system_prompt.txt (première personne, identité complète d'A11)
 function loadSystemPrompt() {
@@ -63,7 +64,7 @@ function getOllamaConfig() {
 
 function buildOllamaMessages(userMessage) {
   return [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: buildA11ChatSystemPrompt(SYSTEM_PROMPT) },
     { role: 'user', content: userMessage },
   ];
 }
@@ -502,7 +503,7 @@ function createChatRouter(overrides = {}) {
       const completion = await openaiClient.chat.completions.create({
         model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: buildA11ChatSystemPrompt(SYSTEM_PROMPT) },
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
@@ -591,5 +592,7 @@ function chatEntrypoint(...args) {
 
 chatEntrypoint.router = defaultRouter;
 chatEntrypoint.createChatRouter = createChatRouter;
+chatEntrypoint.buildA11ChatSystemPrompt = buildA11ChatSystemPrompt;
+chatEntrypoint.buildOllamaMessages = buildOllamaMessages;
 
 module.exports = chatEntrypoint;
