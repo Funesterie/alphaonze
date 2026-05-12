@@ -20,7 +20,7 @@ services:
     repo: https://github.com/Funesterie/alphaonze
     branch: master
     rootDir: a11/backend/apps/server
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm install --omit=dev
     # API-only fallback: master currently has the Kaen env switches but not
     # server-kaen44.cjs, so start the generic server with explicit Kaen env.
     startCommand: npm start
@@ -64,6 +64,8 @@ services:
         value: https://funesterie.me,https://k44.funesterie.me,https://kaen44.funesterie.me,https://a11.funesterie.pro
       - key: A11_LLM_PROVIDER
         value: openai
+      - key: LLM_ROUTER_URL
+        value: http://127.0.0.1:3000
       - key: A11_LLM_FALLBACK_PROVIDER
         value: groq
       - key: DEFAULT_MODEL
