@@ -111,7 +111,7 @@ test('mini cerbere adds Janus Llama Pro fallback for vision requests', () => {
   const janus = targets.find((target) => target.role === 'fallback-llama-pro-janus');
   assert.ok(janus);
   assert.equal(janus.model, 'janus-test-model');
-  assert.equal(janus.apiKey, 'llama-janus-test');
+  assert.equal(janus.authToken, 'llama-janus-test');
   assert.match(janus.url, /llama-pro\.example\/v1\/chat\/completions/);
 });
 
@@ -143,7 +143,7 @@ test('mini cerbere adds Vivy Llama Pro fallback from explicit profile and hides 
   const vivy = targets.find((target) => target.role === 'fallback-llama-pro-vivy');
   assert.ok(vivy);
   assert.equal(vivy.model, 'vivy-test-model');
-  assert.equal(vivy.apiKey, 'llama-vivy-test');
+  assert.equal(vivy.authToken, 'llama-vivy-test');
 
   const statusText = JSON.stringify(runtime.getStatus());
   assert.match(statusText, /"vivy":true/);

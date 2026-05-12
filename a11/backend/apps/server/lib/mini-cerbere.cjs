@@ -55,11 +55,11 @@ function isLikelyGroqModel(model) {
 function addOpenAiCompatibleTarget(targets, {
   role,
   baseUrl,
-  apiKey,
+  authToken,
   model,
   upstreamBody,
 } = {}) {
-  const resolvedApiKey = String(apiKey || '').trim();
+  const resolvedApiKey = String(authToken || '').trim();
   const resolvedBaseUrl = String(baseUrl || '').trim();
   const resolvedModel = String(model || '').trim();
   if (!resolvedApiKey || !resolvedBaseUrl || !resolvedModel) return;
@@ -69,7 +69,7 @@ function addOpenAiCompatibleTarget(targets, {
     provider: 'openai',
     url: normalizeCompletionsUrl(resolvedBaseUrl),
     body: sanitizeBodyForRemote(upstreamBody, resolvedModel),
-    apiKey: resolvedApiKey,
+    authToken: resolvedApiKey,
     model: resolvedModel,
   };
   target.id = makeTargetId(target);
@@ -436,7 +436,7 @@ function buildChatTargets({
     addOpenAiCompatibleTarget(targets, {
       role: 'fallback-openai',
       baseUrl: directOpenAiBaseUrl,
-      apiKey: directOpenAiKey,
+      authToken: directOpenAiKey,
       model: directOpenAiModel,
       upstreamBody,
     });
@@ -444,7 +444,7 @@ function buildChatTargets({
     addOpenAiCompatibleTarget(targets, {
       role: 'fallback-together',
       baseUrl: env.A11_CERBERE_TOGETHER_BASE_URL || DEFAULT_TOGETHER_BASE_URL,
-      apiKey: env.A11_CERBERE_TOGETHER_API_KEY || env.TOGETHER_API_KEY,
+      authToken: env.A11_CERBERE_TOGETHER_API_KEY || env.TOGETHER_API_KEY,
       model: env.A11_CERBERE_TOGETHER_MODEL || env.TOGETHER_MODEL || DEFAULT_TOGETHER_MODEL,
       upstreamBody,
     });
@@ -452,7 +452,7 @@ function buildChatTargets({
     addOpenAiCompatibleTarget(targets, {
       role: 'fallback-deepseek',
       baseUrl: env.A11_CERBERE_DEEPSEEK_BASE_URL || DEFAULT_DEEPSEEK_BASE_URL,
-      apiKey: env.A11_CERBERE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY,
+      authToken: env.A11_CERBERE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY,
       model: env.A11_CERBERE_DEEPSEEK_MODEL || env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
       upstreamBody,
     });
@@ -462,7 +462,7 @@ function buildChatTargets({
       addOpenAiCompatibleTarget(targets, {
         role: llamaProTarget.role,
         baseUrl: llamaProTarget.baseUrl,
-        apiKey: llamaProTarget.apiKey,
+        authToken: llamaProTarget.apiKey,
         model: llamaProTarget.model,
         upstreamBody,
       });
@@ -615,7 +615,7 @@ function createMiniCerbereRuntime({
       try {
         const result = await requestChatUpstream(target.url, target.body, {
           provider: target.provider,
-          apiKey: target.apiKey,
+          apiKey: target.authToken,
           reqHeaders,
           requestId,
         });
@@ -696,7 +696,7 @@ function createMiniCerbereRuntime({
           messages: safeBody.messages || target.body?.messages || [],
         }, {
           provider: target.provider,
-          apiKey: target.apiKey,
+          apiKey: target.authToken,
           reqHeaders,
           requestId,
         });
