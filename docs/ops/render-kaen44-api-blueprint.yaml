@@ -63,14 +63,24 @@ services:
       - key: CORS_ORIGINS
         value: https://funesterie.me,https://k44.funesterie.me,https://kaen44.funesterie.me,https://a11.funesterie.pro
       - key: A11_LLM_PROVIDER
-        value: openai
+        value: together
       - key: LLM_ROUTER_URL
-        value: http://127.0.0.1:3000
+        # Used only so /api/llm/stats can proxy to the embedded /api/stats route.
+        # If the service name changes, update this URL after deploy.
+        value: https://kaen44-api.onrender.com
       - key: A11_LLM_FALLBACK_PROVIDER
-        value: groq
+        value: deepseek
       - key: DEFAULT_MODEL
-        value: gpt-4o-mini
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: OPENAI_BASE_URL
+        value: https://api.together.xyz/v1
+      - key: OPENAI_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: A11_OPENAI_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
       - key: OPENAI_API_KEY
+        # Emergency Render profile uses Together through the existing
+        # OpenAI-compatible client path. Put the Together key here.
         sync: false
       - key: GROQ_API_KEY
         sync: false

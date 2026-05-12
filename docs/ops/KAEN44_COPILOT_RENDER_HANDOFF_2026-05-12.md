@@ -38,6 +38,7 @@ Confirmed good:
 - From Hetzner origin with `Host: k44.funesterie.me`, `http://62.238.43.32/api/llm/stats` -> `200`
 - Render fallback `https://kaen44-api.onrender.com/health` -> `200`
 - Render fallback `https://kaen44-api.onrender.com/api/llm/stats` -> `200`, Cerbere router JSON
+- Render fallback authenticated `POST /api/llm/chat` -> `200`, reply `OK_RENDER`
 
 Render service now live:
 
@@ -45,9 +46,18 @@ Render service now live:
 - Service: `kaen44-api`
 - Service id: `srv-d81q1fmk1jcs73cej5t0`
 - Dashboard: `https://dashboard.render.com/web/srv-d81q1fmk1jcs73cej5t0`
-- Latest live deploy: `dep-d81q33v7f7vs739jvcr0`
+- Latest live deploy: `dep-d81qdil0lvsc73bsnv8g`
 - Live commit: `3df2e363c5853734a90937be7c9ab293503cbad6`
 - Commit message: `fix(render): sync backend npm lock`
+- Runtime LLM path: Together AI through the OpenAI-compatible client
+- Runtime model: `meta-llama/Llama-3.3-70B-Instruct-Turbo`
+
+Provider checks, without printing secrets:
+
+- Together: `200`, usable
+- DeepSeek: `402 Insufficient Balance`
+- Groq: `401 invalid_api_key`
+- xAI: `403`
 
 Still bad on the public Cloudflare path without JWT:
 
@@ -137,8 +147,10 @@ Current status:
 
 - `kaen44-api` is deployed and live at `https://kaen44-api.onrender.com`.
 - `/health` and `/api/llm/stats` are both returning `200`.
+- Authenticated `/api/llm/chat` returns `200` using Together and model `meta-llama/Llama-3.3-70B-Instruct-Turbo`.
 - The first deploy failed because `patch-package` was still treated as a dev dependency while Render ran `npm install --omit=dev`.
 - The live deploy is fixed by `3df2e363c5853734a90937be7c9ab293503cbad6`, which syncs the backend npm lock and dependency placement.
+- Render secrets were synced through the Render API, with only key names/status printed locally.
 
 Recommended routing:
 
