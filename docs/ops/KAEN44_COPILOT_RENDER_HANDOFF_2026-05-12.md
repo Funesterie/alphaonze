@@ -35,8 +35,21 @@ Confirmed good:
 - `https://k44.funesterie.me/health` -> `200`
 - `https://k44.funesterie.me/` -> `200`, title `Kaen44 - Assistante bureau Funesterie`
 - From Hetzner origin with `Host: k44.funesterie.me`, `http://127.0.0.1/api/llm/stats` -> `200`
+- From Hetzner origin with `Host: k44.funesterie.me`, `http://62.238.43.32/api/llm/stats` -> `200`
+- Render fallback `https://kaen44-api.onrender.com/health` -> `200`
+- Render fallback `https://kaen44-api.onrender.com/api/llm/stats` -> `200`, Cerbere router JSON
 
-Still bad:
+Render service now live:
+
+- Workspace: `funesterie`
+- Service: `kaen44-api`
+- Service id: `srv-d81q1fmk1jcs73cej5t0`
+- Dashboard: `https://dashboard.render.com/web/srv-d81q1fmk1jcs73cej5t0`
+- Latest live deploy: `dep-d81q33v7f7vs739jvcr0`
+- Live commit: `3df2e363c5853734a90937be7c9ab293503cbad6`
+- Commit message: `fix(render): sync backend npm lock`
+
+Still bad on the public Cloudflare path without JWT:
 
 - `https://k44.funesterie.me/api/llm/stats` -> `401`, `server: cloudflare`
 - `https://kaen44.funesterie.me/api/llm/stats` -> `401`, `server: cloudflare`
@@ -110,7 +123,7 @@ ops, deployment, cloudflare, kaen44, needs-copilot
 
 ## Render Fallback
 
-Render can be used as an API-only fallback for Kaen44 if Cloudflare rules are hard to unwind quickly.
+Render is now available as an API-only fallback for Kaen44 if Cloudflare rules are hard to unwind quickly.
 
 Use:
 
@@ -118,9 +131,15 @@ Use:
 docs/ops/render-kaen44-api-blueprint.yaml
 ```
 
-Recommended first target:
+Current status:
 
-- Deploy `kaen44-api` on Render.
+- `kaen44-api` is deployed and live at `https://kaen44-api.onrender.com`.
+- `/health` and `/api/llm/stats` are both returning `200`.
+- The first deploy failed because `patch-package` was still treated as a dev dependency while Render ran `npm install --omit=dev`.
+- The live deploy is fixed by `3df2e363c5853734a90937be7c9ab293503cbad6`, which syncs the backend npm lock and dependency placement.
+
+Recommended routing:
+
 - Keep the UI on Hetzner.
 - Route only `/api/*` to Render if needed.
 - Keep secrets in the Render Dashboard only.
@@ -149,4 +168,3 @@ Expected routing after fix:
 - `k44.funesterie.me/` -> Hetzner `kaen44-backend:3001`
 - `k44.funesterie.me/api/*` -> Hetzner `kaen44-backend:3001`, or Render `kaen44-api` if using fallback
 - `a11.funesterie.pro/*` -> Hetzner `a11-backend:3000`
-
