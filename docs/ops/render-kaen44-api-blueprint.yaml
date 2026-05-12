@@ -17,10 +17,13 @@ services:
     runtime: node
     region: frankfurt
     plan: free
+    repo: https://github.com/Funesterie/alphaonze
     branch: master
     rootDir: a11/backend/apps/server
     buildCommand: npm ci --omit=dev
-    startCommand: npm run start:kaen44
+    # API-only fallback: master currently has the Kaen env switches but not
+    # server-kaen44.cjs, so start the generic server with explicit Kaen env.
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -108,4 +111,3 @@ databases:
     plan: free
     region: frankfurt
     ipAllowList: []
-
