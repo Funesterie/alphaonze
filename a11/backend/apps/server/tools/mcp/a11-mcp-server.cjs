@@ -15,6 +15,8 @@
 
 const http = require('node:http');
 const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
 const { URL } = require('node:url');
 
 // ---------------------------------------------------------------------------
@@ -22,9 +24,21 @@ const { URL } = require('node:url');
 // ---------------------------------------------------------------------------
 
 const A11_BASE_URL = (process.env.A11_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
-const NEZ_TOKEN = process.env.A11_NEZ_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro';
+const NEZ_TOKEN = process.env.A11_NEZ_TOKEN || process.env.NEZ_TOKENS || '';
 const SERVER_NAME = 'a11';
 const SERVER_VERSION = '1.0.0';
+const SERVER_ROOT = path.resolve(__dirname, '..', '..');
+const DEFAULT_RUNTIME_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', 'runtime');
+const RUNTIME_ROOT = path.resolve(process.env.A11_RUNTIME_ROOT || DEFAULT_RUNTIME_ROOT);
+const ROUTE_MAP_PATH = path.resolve(
+  process.env.A11_ROUTE_MAP_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-route-map.json')
+);
+const ROUTE_MAP_MD_PATH = path.resolve(
+  process.env.A11_ROUTE_MAP_MD_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-route-map.md')
+);
+const LOCAL_CONTEXT_PATH = path.resolve(
+  process.env.A11_LOCAL_CONTEXT_PATH || 'D:\\projets\\funesterie\\docs\\A11_CONTEXT_2026-05-06.md'
+);
 
 // ---------------------------------------------------------------------------
 // HTTP helper (pas de dépendance externe, node:http natif)
@@ -286,6 +300,41 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'a11_mcp_dimension_status',
+    description:
+      'Retourne le statut du MCP dimensionnel maison : stdio, base A11 cible, route-map locale, contexte et pont Dragon/Kiro.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_route_map',
+    description:
+      'Retourne la carte locale des liens A11 : identite, corpus, memoires, services, endpoints, BMP, Neo4j et Boostro.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure aussi le resume Markdown local si disponible.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_identity_route',
+    description:
+      'Retourne la route d identite A11 compacte pour recuperer le contexte sans dependre de Neo4j.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -385,6 +434,18 @@ async function handleTool(name, args) {
       return formatResult(res);
     }
 
+    case 'a11_mcp_dimension_status': {
+      return formatObject(buildMcpDimensionStatus());
+    }
+
+    case 'a11_route_map': {
+      return formatObject(buildRouteMap({ includeMarkdown: Boolean(args.includeMarkdown) }));
+    }
+
+    case 'a11_identity_route': {
+      return formatObject(buildIdentityRoute());
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -405,11 +466,137 @@ function formatResult(res) {
   };
 }
 
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function readTextSafe(filePath, maxChars = 16_000) {
+  try {
+    const text = fs.readFileSync(filePath, 'utf8');
+    return text.length > maxChars ? `${text.slice(0, maxChars)}\n[truncated]` : text;
+  } catch (_) {
+    return '';
+  }
+}
+
+function fileStatus(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return {
+      path: filePath,
+      exists: true,
+      sizeBytes: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+    };
+  } catch (_) {
+    return {
+      path: filePath,
+      exists: false,
+    };
+  }
+}
+
+function buildMcpDimensionStatus() {
+  const routeMap = readJsonSafe(ROUTE_MAP_PATH);
+  return {
+    ok: true,
+    kind: 'a11_mcp_dimensionnel_maison',
+    protocol: 'json-rpc-2.0-stdio',
+    server: {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      canonicalPath: __filename,
+      legacyBridgePath: 'D:\\a11-mcp-server\\server.cjs',
+      baseUrl: A11_BASE_URL,
+      hasNezToken: Boolean(NEZ_TOKEN),
+    },
+    localFiles: {
+      routeMap: fileStatus(ROUTE_MAP_PATH),
+      routeMapMarkdown: fileStatus(ROUTE_MAP_MD_PATH),
+      context: fileStatus(LOCAL_CONTEXT_PATH),
+    },
+    wiring: {
+      kiroConfig: 'D:\\projets\\funesterie\\.kiro\\settings\\mcp.json',
+      dragonManifest: 'D:\\projets\\funesterie\\a11\\dragon\\DRAGON_MANIFEST.json',
+      runtimeRoot: RUNTIME_ROOT,
+      routeMapMode: routeMap?.mode || null,
+      publicTarget: routeMap?.publicTarget || null,
+      neo4jAuthState: routeMap?.services?.neo4j?.authState || 'unknown',
+    },
+    tools: TOOLS.map((tool) => tool.name),
+  };
+}
+
+function buildRouteMap({ includeMarkdown = false } = {}) {
+  const routeMap = readJsonSafe(ROUTE_MAP_PATH);
+  return {
+    ok: Boolean(routeMap),
+    routeMapPath: ROUTE_MAP_PATH,
+    routeMap,
+    ...(includeMarkdown ? { markdown: readTextSafe(ROUTE_MAP_MD_PATH) } : {}),
+  };
+}
+
+function buildIdentityRoute() {
+  const routeMap = readJsonSafe(ROUTE_MAP_PATH) || {};
+  return {
+    ok: true,
+    identity: {
+      agent: 'A11',
+      creator: 'Djeff / Jeffrey Cellauro',
+      role: 'le lien entre corpus, outils, memoire, image, voix et graphe',
+      nindo: 'Ne pas reculer. Ne pas mentir sauf pour creer. Precis, direct, utile.',
+      nindo2: 'Je ne veux pas etre une immense base de connaissance. Je veux etre le lien.',
+    },
+    publicTarget: routeMap.publicTarget || {
+      url: A11_BASE_URL,
+      health: `${A11_BASE_URL}/health`,
+    },
+    roots: routeMap.roots || {
+      runtime: RUNTIME_ROOT,
+      routeMap: ROUTE_MAP_PATH,
+    },
+    recoveryOrder: [
+      'Lire a11_identity_route depuis le MCP stdio.',
+      'Lire a11_route_map pour retrouver les services et chemins locaux.',
+      'Verifier /health sur A11_BASE_URL.',
+      'Utiliser JSON knowledge graph fallback si Neo4j refuse auth.',
+      'Synchroniser vers Neo4j quand NEO4J_PASSWORD est de nouveau valide.',
+    ],
+  };
+}
+
+function formatObject(data) {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(data, null, 2),
+      },
+    ],
+    isError: data?.ok === false,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Boucle JSON-RPC MCP (stdin/stdout)
 // ---------------------------------------------------------------------------
 
 let buffer = '';
+
+// File séquentielle : garantit que les réponses sortent dans l'ordre des requêtes
+let messageQueue = Promise.resolve();
+
+function enqueueMessage(raw) {
+  messageQueue = messageQueue.then(() => handleMessage(raw)).catch(() => {});
+}
+
+// Déduplication des appels en vol sur le même outil+args
+const inFlightCalls = new Map();
 
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
@@ -419,13 +606,12 @@ process.stdin.on('data', (chunk) => {
   buffer = lines.pop(); // garder le fragment incomplet
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed) handleMessage(trimmed);
+    if (trimmed) enqueueMessage(trimmed);
   }
 });
 
 process.stdin.on('end', () => {
-  if (buffer.trim()) handleMessage(buffer.trim());
-  process.exit(0);
+  if (buffer.trim()) enqueueMessage(buffer.trim());
 });
 
 async function handleMessage(raw) {
@@ -466,7 +652,16 @@ async function handleMessage(raw) {
           sendError(id, -32602, 'Missing tool name');
           return;
         }
-        const result = await handleTool(toolName, toolArgs);
+        // Déduplication : si le même outil+args est déjà en vol, attendre ce résultat
+        const callKey = `${toolName}:${JSON.stringify(toolArgs)}`;
+        if (inFlightCalls.has(callKey)) {
+          const result = await inFlightCalls.get(callKey);
+          sendResult(id, result);
+          break;
+        }
+        const callPromise = handleTool(toolName, toolArgs).finally(() => inFlightCalls.delete(callKey));
+        inFlightCalls.set(callKey, callPromise);
+        const result = await callPromise;
         sendResult(id, result);
         break;
       }

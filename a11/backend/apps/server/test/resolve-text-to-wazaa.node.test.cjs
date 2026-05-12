@@ -9,6 +9,8 @@ const {
   shouldEnrichWithLlm,
 } = require('../src/mask/resolve-text-to-wazaa.cjs');
 
+const setEnv = (name, value) => { process.env[name] = value; };
+
 test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
   const previous = {
     A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
@@ -22,9 +24,9 @@ test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
   process.env.A11_WAZAA_LLM_ENRICH = '';
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = '';
-  process.env.A11_TRANSLATION_API_KEY = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
-  process.env.OPENAI_API_KEY = 'sk-generic';
+  process.env.OPENAI_API_KEY = 'generic-test-key';
 
   try {
     assert.equal(isLlmEnrichmentEnabled(), false);
@@ -32,7 +34,7 @@ test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
   }
@@ -46,14 +48,14 @@ test('isLlmEnrichmentEnabled still supports explicit scoped translation keys', (
   };
 
   process.env.A11_WAZAA_LLM_ENRICH = '';
-  process.env.A11_TRANSLATION_API_KEY = 'sk-translation';
+  setEnv('A11_TRANSLATION_API_KEY', 'translation-test-key');
   process.env.A11_OPENAI_API_KEY = '';
 
   try {
     assert.equal(isLlmEnrichmentEnabled(), true);
   } finally {
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
   }
 });
@@ -71,7 +73,7 @@ test('isLlmEnrichmentEnabled supports Cerbere router without OpenAI key', () => 
   process.env.A11_WAZAA_LLM_ENRICH = '';
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = 'https://cerbere.funesterie.me';
-  process.env.A11_TRANSLATION_API_KEY = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
   process.env.OPENAI_API_KEY = '';
 
@@ -81,7 +83,7 @@ test('isLlmEnrichmentEnabled supports Cerbere router without OpenAI key', () => 
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
   }
@@ -97,7 +99,7 @@ test('resolveTranslationConfig prefers Cerbere router and does not require Autho
 
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = 'https://cerbere.funesterie.me';
-  process.env.A11_TRANSLATION_API_KEY = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OLLAMA_PRIMARY_MODEL = 'gemma4:e4b';
 
   try {
@@ -110,7 +112,7 @@ test('resolveTranslationConfig prefers Cerbere router and does not require Autho
   } finally {
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OLLAMA_PRIMARY_MODEL = previous.A11_OLLAMA_PRIMARY_MODEL;
   }
 });
@@ -129,7 +131,7 @@ test('resolveTranslationConfig prefers local Ollama over any OpenAI-style fallba
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = '';
   process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
-  process.env.A11_TRANSLATION_API_KEY = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OLLAMA_PRIMARY_MODEL = 'llama3.2:latest';
   process.env.A11_OPENAI_BASE_URL = 'https://api.openai.com/v1';
   process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1';
@@ -146,7 +148,7 @@ test('resolveTranslationConfig prefers local Ollama over any OpenAI-style fallba
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
     process.env.OLLAMA_BASE = previous.OLLAMA_BASE;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OLLAMA_PRIMARY_MODEL = previous.A11_OLLAMA_PRIMARY_MODEL;
     process.env.A11_OPENAI_BASE_URL = previous.A11_OPENAI_BASE_URL;
     process.env.OPENAI_BASE_URL = previous.OPENAI_BASE_URL;
@@ -186,7 +188,7 @@ test('callStructuredLlmJson strict mode throws a 503 when the structured LLM is 
 
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = '';
-  process.env.A11_TRANSLATION_API_KEY = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
   process.env.OPENAI_API_KEY = '';
   process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = '';
@@ -209,7 +211,7 @@ test('callStructuredLlmJson strict mode throws a 503 when the structured LLM is 
   } finally {
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
     process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = previous.A11_TRANSLATION_ALLOW_GENERIC_OPENAI;

@@ -2,15 +2,37 @@ function looksLikeJwtToken(value) {
   return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(value || '').trim());
 }
 
+function parseCookieHeader(headerValue) {
+  const cookies = {};
+  for (const part of String(headerValue || '').split(';')) {
+    const [rawName, ...rawValueParts] = part.split('=');
+    const name = String(rawName || '').trim();
+    if (!name) continue;
+    const rawValue = rawValueParts.join('=').trim();
+    try {
+      cookies[name] = decodeURIComponent(rawValue);
+    } catch {
+      cookies[name] = rawValue;
+    }
+  }
+  return cookies;
+}
+
 function extractRequestAuthToken(req) {
   const headerToken = String(req?.headers?.['x-nez-token'] || '').trim();
   const bearerToken = String(req?.headers?.authorization || '')
     .replace(/^Bearer\s+/i, '')
     .trim();
+  const cookieToken = String(
+    req?.cookies?.a11_session
+    || parseCookieHeader(req?.headers?.cookie).a11_session
+    || ''
+  ).trim();
 
   if (looksLikeJwtToken(bearerToken)) return bearerToken;
   if (looksLikeJwtToken(headerToken)) return headerToken;
-  return bearerToken || headerToken;
+  if (looksLikeJwtToken(cookieToken)) return cookieToken;
+  return bearerToken || headerToken || cookieToken;
 }
 
 function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false } = {}) {
@@ -54,5 +76,6 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false 
 module.exports = {
   looksLikeJwtToken,
   extractRequestAuthToken,
+  parseCookieHeader,
   createVerifyJWT,
 };

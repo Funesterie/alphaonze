@@ -209,6 +209,297 @@
   cursor: pointer;
 }
 
+.kaen-auth-shell::before,
+.kaen-auth-shell::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+  border-radius: 999px;
+  filter: blur(18px);
+  opacity: 0.72;
+}
+
+.kaen-public-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 72% 12%, rgba(139, 92, 246, 0.24), transparent 34%),
+    radial-gradient(circle at 12% 88%, rgba(34, 211, 238, 0.16), transparent 30%),
+    #070b14;
+  color: #f8fafc;
+  padding: 24px;
+}
+
+.kaen-public-nav {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 10px 0 32px;
+}
+
+.kaen-public-nav a {
+  color: #dbeafe;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 800;
+  margin-left: 18px;
+}
+
+.kaen-public-brand {
+  margin-left: 0 !important;
+  font-size: 22px !important;
+  color: #ffffff !important;
+}
+
+.kaen-public-login {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+  color: #061018 !important;
+}
+
+.kaen-public-hero {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  min-height: 58vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  align-items: center;
+  gap: 56px;
+}
+
+.kaen-public-copy h1 {
+  margin: 0;
+  font-size: clamp(44px, 7vw, 86px);
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.kaen-public-copy p,
+.kaen-public-section p {
+  color: #cbd5e1;
+  font-size: 17px;
+  line-height: 1.72;
+  max-width: 720px;
+}
+
+.kaen-public-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.kaen-public-actions a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  color: #f8fafc;
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.kaen-public-actions a:first-child {
+  background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+  color: #061018;
+}
+
+.kaen-public-avatar {
+  width: min(100%, 420px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  padding: 5px;
+  background: linear-gradient(135deg, rgba(196, 181, 253, 0.92), rgba(34, 211, 238, 0.42));
+  box-shadow: 0 0 70px rgba(124, 58, 237, 0.28);
+}
+
+.kaen-public-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.kaen-public-section {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 28px 0 72px;
+}
+
+.kaen-public-section h2 {
+  margin: 26px 0 6px;
+  color: #f8fafc;
+  font-size: 24px;
+}
+
+.kaen-auth-shell::before {
+  width: min(54vw, 620px);
+  height: min(54vw, 620px);
+  right: -18vw;
+  top: -18vw;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.32), transparent 62%);
+}
+
+.kaen-auth-shell::after {
+  width: min(42vw, 420px);
+  height: min(42vw, 420px);
+  left: -12vw;
+  bottom: -16vw;
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.18), transparent 64%);
+}
+
+.kaen-auth-card {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 430px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px;
+  border: 1px solid rgba(196, 181, 253, 0.2);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(8, 13, 27, 0.92));
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.kaen-auth-card > h1:first-of-type {
+  display: none;
+}
+
+.kaen-auth-portrait {
+  width: min(58vw, 210px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  padding: 4px;
+  background: linear-gradient(135deg, rgba(196, 181, 253, 0.9), rgba(34, 211, 238, 0.42));
+  box-shadow: 0 0 44px rgba(124, 58, 237, 0.32);
+}
+
+.kaen-auth-portrait img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid rgba(15, 23, 42, 0.8);
+}
+
+.kaen-auth-title {
+  margin: 0;
+  font-size: clamp(34px, 7vw, 52px);
+  font-weight: 900;
+  line-height: 0.96;
+  color: #f8fafc;
+  text-shadow: 0 0 34px rgba(168, 85, 247, 0.42);
+}
+
+.kaen-auth-subtitle {
+  margin-top: -6px;
+  color: #c4b5fd;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.kaen-shell .header {
+  box-shadow: 0 12px 38px rgba(2, 6, 23, 0.22);
+}
+
+.kaen-shell .sidebar {
+  background: linear-gradient(180deg, #090f1d 0%, #070b14 100%);
+}
+
+.kaen-shell .scroll-frame {
+  border-color: rgba(139, 92, 246, 0.25);
+  background: radial-gradient(circle at 82% 2%, rgba(139, 92, 246, 0.1), transparent 32%), #0b1020;
+}
+
+.kaen-shell .message.assistant {
+  border-color: rgba(196, 181, 253, 0.22);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(15, 23, 42, 0.94));
+}
+
+.kaen-shell .composer {
+  background: linear-gradient(180deg, rgba(10, 16, 30, 0.92), rgba(7, 11, 20, 0.98));
+}
+
+.kaen-shell .send-button {
+  background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+  color: #061018;
+}
+
+.kaen-shell .footer {
+  font-size: 0;
+}
+
+.kaen-shell .footer::before {
+  content: "Kaen44 · voix · documents · Funesterie";
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .kaen-public-shell {
+    padding: 18px;
+  }
+
+  .kaen-public-nav {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-bottom: 20px;
+  }
+
+  .kaen-public-nav a {
+    margin-left: 0;
+    margin-right: 12px;
+    margin-bottom: 10px;
+  }
+
+  .kaen-public-hero {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    min-height: auto;
+    padding-bottom: 28px;
+  }
+
+  .kaen-public-avatar {
+    grid-row: 1;
+    width: min(74vw, 260px);
+    margin: 0 auto;
+  }
+
+  .kaen-public-copy h1 {
+    font-size: clamp(42px, 14vw, 58px);
+  }
+
+  .kaen-public-copy p,
+  .kaen-public-section p {
+    font-size: 16px;
+  }
+
+  .kaen-auth-card {
+    width: min(94vw, 390px);
+    padding: 22px 18px;
+    border-radius: 20px;
+  }
+
+  .kaen-auth-portrait {
+    width: min(48vw, 166px);
+  }
+}
+
 @media (max-width: 900px) {
   html, body, #root {
     overflow-y: hidden;

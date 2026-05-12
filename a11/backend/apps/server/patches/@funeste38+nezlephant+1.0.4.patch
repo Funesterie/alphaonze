@@ -1,0 +1,16 @@
+diff --git a/node_modules/@funeste38/nezlephant/src/oc8.cjs b/node_modules/@funeste38/nezlephant/src/oc8.cjs
+index b0b6e2b..e2681cc 100644
+--- a/node_modules/@funeste38/nezlephant/src/oc8.cjs
++++ b/node_modules/@funeste38/nezlephant/src/oc8.cjs
+@@ -17,6 +17,11 @@ function encodeToOC8Png(payload, width = 0, height = 0) {
+     const pixels = Math.ceil(len / 3);
+     width = Math.ceil(Math.sqrt(pixels));
+     height = Math.ceil(pixels / width);
++  } else {
++    const maxCapacity = width * height * 3;
++    if (len > maxCapacity) {
++      throw new Error(`OC8 payload too large: ${len} bytes exceeds ${maxCapacity} max capacity for ${width}x${height} image`);
++    }
+   }
+   const pixelCount = width * height;
+   const pixels = Buffer.alloc(pixelCount * 4, 0);

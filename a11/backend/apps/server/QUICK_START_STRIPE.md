@@ -45,9 +45,9 @@ Ouvrir `funesterie/a11/backend/apps/server/.env.local` et remplir :
 
 ```bash
 # Stripe Configuration
-STRIPE_SECRET_KEY=sk_test_VOTRE_CLE_SECRETE
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_VOTRE_PRICE_ID
-STRIPE_WEBHOOK_SECRET=whsec_VOTRE_WEBHOOK_SECRET
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 ```
 
 ## Étape 6 : Exécuter la migration SQL
@@ -110,7 +110,7 @@ Code postal : N'importe quel code
 
 ```bash
 curl -X POST http://localhost:3000/api/subscription/create-checkout \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json"
 ```
 
@@ -118,14 +118,14 @@ curl -X POST http://localhost:3000/api/subscription/create-checkout \
 
 ```bash
 curl -X GET http://localhost:3000/api/subscription/status \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Tester une route protégée (génération d'image)
 
 ```bash
 curl -X POST http://localhost:3000/api/jobs/sd \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "un panda mignon"}'
 ```

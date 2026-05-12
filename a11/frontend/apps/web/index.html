@@ -2,20 +2,169 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <title>A11</title>
+    <title>Kaen44 - Assistante bureau Funesterie</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A11, l'assistant Funesterie installable sur web et mobile." />
+    <meta name="description" content="Kaen44 est une assistante bureau Funesterie pour organiser les documents, importer des fichiers Google Drive, aider aux factures, accompagner les projets et proposer une aide vocale accessible." />
     <meta name="theme-color" content="#0c1020" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="A11" />
+    <meta name="apple-mobile-web-app-title" content="Kaen44" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <script>
+      (function () {
+        var publicHosts = {
+          "178.105.86.89": true,
+          "funesterie.me": true,
+          "www.funesterie.me": true,
+          "k44.funesterie.me": true,
+          "kaen44.funesterie.me": true,
+          "alphaonze.funesterie.pro": true,
+          "a11.funesterie.pro": true,
+          "api.funesterie.pro": true
+        };
+        var isPublicHost = !!publicHosts[String(location.hostname || "").toLowerCase()];
+
+        async function resetClientState(options) {
+          options = options || {};
+          try {
+            if ("serviceWorker" in navigator) {
+              var registrations = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(registrations.map(function (registration) {
+                return registration.unregister().catch(function () { return false; });
+              }));
+            }
+          } catch (error) {
+            console.warn("[A11][boot] service worker reset failed", error);
+          }
+
+          try {
+            if ("caches" in window) {
+              var keys = await caches.keys();
+              await Promise.all(keys
+                .filter(function (key) { return /^a11-|^workbox/i.test(key); })
+                .map(function (key) { return caches.delete(key).catch(function () { return false; }); }));
+            }
+          } catch (error) {
+            console.warn("[A11][boot] cache reset failed", error);
+          }
+
+          if (options.storage) {
+            try {
+              Object.keys(localStorage)
+                .filter(function (key) {
+                  return /^a11:chats(?::|$)/.test(key)
+                    || /^a11:memory-purge-history(?::|$)/.test(key)
+                    || key === "a11:tts-only";
+                })
+                .forEach(function (key) { localStorage.removeItem(key); });
+            } catch (error) {
+              console.warn("[A11][boot] storage reset failed", error);
+            }
+          }
+        }
+
+        window.__A11_RESET_CLIENT_STATE__ = resetClientState;
+
+        var params = new URLSearchParams(location.search);
+        if (params.has("a11-reset") || params.has("a11-hard-reset")) {
+          resetClientState({ storage: params.has("a11-hard-reset") }).finally(function () {
+            params.delete("a11-reset");
+            params.delete("a11-hard-reset");
+            var next = location.pathname + (params.toString() ? "?" + params.toString() : "") + location.hash;
+            location.replace(next || "/");
+          });
+          return;
+        }
+
+        if (isPublicHost) {
+          resetClientState({ storage: false });
+        }
+
+        window.addEventListener("error", function (event) {
+          window.__A11_BOOT_ERROR__ = String(event && (event.message || event.error) || "Erreur JavaScript");
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          window.__A11_BOOT_ERROR__ = String(event && event.reason || "Promise rejetee");
+        });
+
+        window.setTimeout(function () {
+          var root = document.getElementById("root");
+          if (!root || root.childElementCount > 0) return;
+          root.innerHTML = [
+            '<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#071021;color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:24px;">',
+            '<section style="width:min(100%,420px);display:flex;flex-direction:column;gap:14px;">',
+            '<h1 style="margin:0;font-size:28px;">Kaen44</h1>',
+            '<p style="margin:0;color:#bfdbfe;line-height:1.5;">Demarrage bloque cote navigateur. Je peux nettoyer le cache local et relancer proprement.</p>',
+            '<button id="a11-boot-reset" style="min-height:44px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:800;">Relancer Kaen44</button>',
+            '<button id="a11-boot-hard-reset" style="min-height:44px;border:1px solid #334155;border-radius:10px;background:#0f172a;color:#e5e7eb;font-weight:700;">Reset cache conversations local</button>',
+            '<pre style="white-space:pre-wrap;color:#94a3b8;font-size:12px;">' + String(window.__A11_BOOT_ERROR__ || "").replace(/[<>&]/g, function (c) { return ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]; }) + '</pre>',
+            '</section>',
+            '</main>'
+          ].join("");
+          var soft = document.getElementById("a11-boot-reset");
+          var hard = document.getElementById("a11-boot-hard-reset");
+          if (soft) soft.onclick = function () { resetClientState({ storage: false }).finally(function () { location.reload(); }); };
+          if (hard) hard.onclick = function () { resetClientState({ storage: true }).finally(function () { location.reload(); }); };
+        }, 6000);
+      })();
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main style="min-height:100vh;background:#080b14;color:#f8fafc;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;">
+        <header style="border-bottom:1px solid rgba(196,181,253,.16);background:#0b1020;">
+          <nav aria-label="Navigation Kaen44" style="max-width:1120px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">
+            <a href="/" style="color:#fff;text-decoration:none;font-size:24px;font-weight:900;letter-spacing:0;">Kaen44</a>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;">
+              <a href="/privacy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Confidentialite</a>
+              <a href="/terms/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Conditions</a>
+              <a href="/login" style="color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:900;padding:10px 16px;border-radius:999px;">Ouvrir Kaen44</a>
+            </div>
+          </nav>
+        </header>
+        <section style="max-width:1120px;margin:0 auto;padding:64px 24px 44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:52px;align-items:center;">
+          <div>
+            <h1 style="margin:0 0 20px;font-size:clamp(46px,7vw,92px);line-height:.92;letter-spacing:0;">Kaen44</h1>
+            <p style="margin:0;max-width:720px;color:#e9d5ff;font-size:clamp(19px,2vw,24px);line-height:1.52;font-weight:650;">
+              Une assistante bureau claire, vocale et accessible pour organiser les documents,
+              traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien.
+            </p>
+            <div style="margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;">
+              <a href="/login" style="min-height:46px;display:inline-flex;align-items:center;color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:950;padding:0 20px;border-radius:999px;">Connexion Kaen44</a>
+              <a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialite</a>
+            </div>
+          </div>
+          <figure style="margin:0;justify-self:center;width:min(100%,360px);">
+            <img src="/assets/kaen44-avatar.png" alt="Avatar et logo Kaen44" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;border:1px solid rgba(196,181,253,.5);box-shadow:0 24px 80px rgba(0,0,0,.45);" />
+          </figure>
+        </section>
+        <section style="border-top:1px solid rgba(196,181,253,.12);background:#0c1222;">
+          <div style="max-width:1120px;margin:0 auto;padding:44px 24px 54px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:22px;">
+            <article style="border-left:3px solid #a78bfa;padding-left:18px;">
+              <h2 style="font-size:20px;margin:0 0 10px;">Documents et Drive</h2>
+              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 aide a lire, classer, resumer et transformer les fichiers que l'utilisateur importe ou autorise explicitement.</p>
+            </article>
+            <article style="border-left:3px solid #67e8f9;padding-left:18px;">
+              <h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2>
+              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et preparer un suivi clair pour validation humaine.</p>
+            </article>
+            <article style="border-left:3px solid #f0abfc;padding-left:18px;">
+              <h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilite</h2>
+              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des reponses lisibles et une aide adaptee aux personnes fatiguees ou en difficulte.</p>
+            </article>
+          </div>
+        </section>
+        <footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;">
+          <div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;">
+            <span>Kaen44 par Funesterie</span>
+            <span><a href="/privacy/" style="color:#c4b5fd;">Regles de confidentialite</a> · <a href="/terms/" style="color:#c4b5fd;">Conditions d'utilisation</a></span>
+          </div>
+        </footer>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -5,33 +5,41 @@ interface AdBannerProps {
   style?: React.CSSProperties;
 }
 
+const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
+
+function buildQualifiedSalesLink(subject: string, body: string) {
+  return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 export function AdBanner({ position = 'bottom', style }: AdBannerProps) {
   const ads = [
     {
-      title: '🚀 A11 Blueprint - Code Source Complet',
-      description: 'Lancez votre propre assistant IA en quelques jours. Backend + Frontend + Infrastructure prêts.',
-      price: '8000€',
-      cta: 'Découvrir le Blueprint',
-      link: 'mailto:djeff@funesterie.pro?subject=Achat%20Blueprint%20A11',
+      title: 'A11 Blueprint - Source, memoire et orchestration',
+      description: 'Licence qualifiee: backend, frontend, infra, memoire, agents, runbook et transfert technique.',
+      price: '85 000 EUR+',
+      cta: 'Demande qualifiee',
+      link: buildQualifiedSalesLink(
+        'Demande qualifiee Blueprint A11',
+        'Bonjour,\n\nJe souhaite qualifier un achat ou une licence Blueprint A11.\n\nContexte projet:\nBudget estime:\nDelais:\nBesoin source / deploiement / accompagnement:\n\nMerci.'
+      ),
       highlight: true,
     },
     {
-      title: '💎 Passez à A11 Premium',
-      description: 'Générations d\'images illimitées, vidéos, support prioritaire.',
-      price: '2,99€/mois',
-      cta: 'Upgrade Premium',
+      title: 'A11 Studio - Chat long et credits',
+      description: 'Studio semantique pour image, video, audio et documents depuis Drive, fichiers locaux ou partage conversation.',
+      price: '9 EUR/mois',
+      cta: 'Activer Studio',
       link: '/subscription',
       highlight: false,
     },
   ];
 
-  // Rotation des pubs
   const [currentAd, setCurrentAd] = React.useState(0);
 
   React.useEffect(() => {
     const interval = setInterval(() => {
       setCurrentAd((prev) => (prev + 1) % ads.length);
-    }, 10000); // Change toutes les 10 secondes
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [ads.length]);
@@ -117,35 +125,9 @@ export function AdBanner({ position = 'bottom', style }: AdBannerProps) {
             </button>
           </div>
         </div>
-        {ad.highlight && (
-          <div
-            style={{
-              background: 'rgba(255, 255, 255, 0.2)',
-              padding: '5px 10px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            🔥 HOT
-          </div>
-        )}
-      </div>
-      {/* Indicateur de rotation */}
-      <div style={{ display: 'flex', gap: '5px', marginTop: '10px', justifyContent: 'center' }}>
-        {ads.map((_, index) => (
-          <div
-            key={index}
-            style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              background: index === currentAd ? 'white' : 'rgba(255, 255, 255, 0.3)',
-              transition: 'background 0.3s',
-            }}
-          />
-        ))}
+        <div style={{ fontSize: position === 'sidebar' ? '24px' : '32px', opacity: 0.8 }}>
+          {ad.highlight ? 'A11' : 'CR'}
+        </div>
       </div>
     </div>
   );

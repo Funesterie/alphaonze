@@ -16,7 +16,7 @@ services:
       - HOST_SERVER=0.0.0.0
       
       # JWT
-      - JWT_SECRET=${JWT_SECRET}
+      # JWT_SECRET is configured via the deployment secret store.
       - JWT_EXPIRY=7d
       
       # Admin par défaut
@@ -32,19 +32,19 @@ services:
       
       # LLM
       - A11_LLM_PROVIDER=openai
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # OPENAI_API_KEY is configured via the deployment secret store.
       - DEFAULT_MODEL=gpt-4o-mini
       
       # Stripe
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      # STRIPE_SECRET_KEY is configured via the deployment secret store.
       - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
       - STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL}
       - STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL}
       - STRIPE_PORTAL_RETURN_URL=${STRIPE_PORTAL_RETURN_URL}
       
       # Email (Resend)
-      - RESEND_API_KEY=${RESEND_API_KEY}
+      # RESEND_API_KEY is configured via the deployment secret store.
       - EMAIL_FROM=${EMAIL_FROM:-A11 <a11@funesterie.pro>}
       - APP_URL=${APP_URL:-https://alphaonze.funesterie.pro}
       

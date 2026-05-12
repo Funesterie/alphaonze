@@ -37,5 +37,12 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        continue-on-error: ${{ github.event.repository.private && vars.ENABLE_CODEQL != 'true' }}
         with:
           category: "/language:${{ matrix.language }}"
+
+      - name: CodeQL bootstrap note
+        if: ${{ github.event.repository.private && vars.ENABLE_CODEQL != 'true' }}
+        run: |
+          echo "CodeQL upload may require GitHub Advanced Security on private repos."
+          echo "Set repository variable ENABLE_CODEQL=true once code scanning is enabled."

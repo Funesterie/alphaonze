@@ -200,6 +200,7 @@ function ActivityRow({
 export type A11ActivityConsoleProps = {
   events: A11ActivityEvent[];
   isActive: boolean;
+  productLabel?: string;
   maxVisible?: number;
   onClear?: () => void;
   collapsed?: boolean;
@@ -209,6 +210,7 @@ export type A11ActivityConsoleProps = {
 export function A11ActivityConsole({
   events,
   isActive,
+  productLabel = "A11",
   maxVisible = 12,
   onClear,
   collapsed = false,
@@ -260,7 +262,7 @@ export function A11ActivityConsole({
           marginBottom: 8,
         }}
         role="log"
-        aria-label="Console d'activité A11"
+        aria-label={`Console d'activite ${productLabel}`}
         aria-live="polite"
       >
         {/* Header */}
@@ -284,7 +286,7 @@ export function A11ActivityConsole({
               {isActive ? "⚡" : "📋"}
             </span>
             <span style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 600 }}>
-              Console A11
+              Console {productLabel}
             </span>
             {runningCount > 0 && (
               <span
@@ -361,7 +363,7 @@ export function A11ActivityConsole({
                 }}
               >
                 <Spinner color="#475569" />
-                <span>A11 traite la demande…</span>
+                <span>{productLabel} traite la demande...</span>
               </div>
             )}
 

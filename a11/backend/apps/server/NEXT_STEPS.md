@@ -25,7 +25,7 @@
 4. Ajouter dans `.env.local` :
 
 ```bash
-STRIPE_SECRET_KEY=sk_test_VOTRE_CLE_SECRETE
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 ```
 
 📚 **Guide détaillé** : `GET_STRIPE_KEYS.md`
@@ -61,7 +61,7 @@ STRIPE_PRICE_ID=price_VOTRE_PRICE_ID
 7. Ajouter dans `.env.local` :
 
 ```bash
-STRIPE_WEBHOOK_SECRET=whsec_VOTRE_WEBHOOK_SECRET
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 ```
 
 ### 4. Activer l'abonnement pour l'admin (1 min)
@@ -132,13 +132,13 @@ npm run sonar:local
 # ============================================================
 
 # Clé secrète (BACKEND - À RÉCUPÉRER)
-STRIPE_SECRET_KEY=sk_test_VOTRE_CLE_SECRETE
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 
 # ID du prix (À CRÉER ET RÉCUPÉRER)
 STRIPE_PRICE_ID=price_VOTRE_PRICE_ID
 
 # Secret du webhook (À CRÉER ET RÉCUPÉRER)
-STRIPE_WEBHOOK_SECRET=whsec_VOTRE_WEBHOOK_SECRET
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # URLs de redirection (déjà configurées)
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success

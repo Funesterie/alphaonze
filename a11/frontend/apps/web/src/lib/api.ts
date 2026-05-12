@@ -1,23 +1,215 @@
 ﻿// --- Génération d'image via backend DALL·E ---
-export async function generatePngWithPrompt(prompt: string): Promise<{ url: string, filename: string, prompt: string }> {
-  const res = await authFetch(getApiUrl('/api/tools/generate_png'), {
+type A11GenerationSourceOptions = {
+  sourceImageUrl?: string | null;
+  width?: number;
+  height?: number;
+  steps?: number;
+  durationSeconds?: number;
+  durationSec?: number;
+  fps?: number;
+  frameCount?: number;
+  frames?: number;
+  sdSteps?: number;
+  guidanceScale?: number;
+  timingMode?: string;
+  autoTiming?: boolean;
+  acceptAsyncVideoJob?: boolean;
+  mobileAsync?: boolean;
+  pollIntervalMs?: number;
+  maxWaitMs?: number;
+};
+
+function isMobileLongTaskClient() {
+  try {
+    const win = globalThis as typeof globalThis & {
+      innerWidth?: number;
+      matchMedia?: (query: string) => { matches: boolean };
+      navigator?: Navigator & { maxTouchPoints?: number; wakeLock?: any };
+    };
+    return Number(win.innerWidth || 0) <= 900
+      || Boolean(win.matchMedia?.("(pointer: coarse)")?.matches)
+      || Number(win.navigator?.maxTouchPoints || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function acquireScreenWakeLock(maxHoldMs = 900000) {
+  let sentinel: any = null;
+  let released = false;
+  const wakeLock = (globalThis as any)?.navigator?.wakeLock;
+  if (!wakeLock || typeof wakeLock.request !== "function") {
+    return async () => {};
+  }
+
+  const requestLock = async () => {
+    try {
+      sentinel = await wakeLock.request("screen");
+      sentinel?.addEventListener?.("release", () => {
+        sentinel = null;
+      }, { once: true });
+    } catch {
+      sentinel = null;
+    }
+  };
+
+  const onVisibilityChange = () => {
+    if (!released && (globalThis as any)?.document?.visibilityState === "visible" && !sentinel) {
+      void requestLock();
+    }
+  };
+
+  await requestLock();
+  (globalThis as any)?.document?.addEventListener?.("visibilitychange", onVisibilityChange);
+  const timeoutId = globalThis.setTimeout(() => {
+    void sentinel?.release?.();
+    sentinel = null;
+  }, Math.max(1000, maxHoldMs));
+
+  return async () => {
+    released = true;
+    globalThis.clearTimeout(timeoutId);
+    (globalThis as any)?.document?.removeEventListener?.("visibilitychange", onVisibilityChange);
+    try {
+      await sentinel?.release?.();
+    } catch {
+      // Best effort; some mobile browsers auto-release.
+    }
+    sentinel = null;
+  };
+}
+
+async function withMobileLongTaskGuard<T>(maxWaitMs: number, task: () => Promise<T>): Promise<T> {
+  const releaseWakeLock = await acquireScreenWakeLock(maxWaitMs);
+  try {
+    return await task();
+  } finally {
+    await releaseWakeLock();
+  }
+}
+
+export async function generatePngWithPrompt(
+  prompt: string,
+  options: A11GenerationSourceOptions = {}
+): Promise<{ url: string, filename: string, prompt: string }> {
+  const sourceImageUrl = String(options.sourceImageUrl || '').trim();
+  const body: Record<string, any> = {
+    prompt,
+    width: options.width || 384,
+    height: options.height || 384,
+    num_inference_steps: options.steps || 2,
+  };
+  if (sourceImageUrl) {
+    Object.assign(body, {
+      sourceImageUrl,
+      initImageUrl: sourceImageUrl,
+      init_image_url: sourceImageUrl,
+      referenceImageUrl: sourceImageUrl,
+      reference_image_url: sourceImageUrl,
+      strength: 0.34,
+    });
+  }
+  const res = await fetch(getApiUrl('/api/tools/generate_sd'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...buildAuthHeaders()
-    },
-    body: JSON.stringify({ prompt })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error('Erreur génération image');
   return res.json();
+}
+
+export async function generateVideoWithPrompt(
+  prompt: string,
+  options: A11GenerationSourceOptions = {}
+): Promise<{ ok?: boolean; url?: string; videoUrl?: string; video_url?: string; filename?: string; prompt?: string; raw?: any }> {
+  const sourceImageUrl = String(options.sourceImageUrl || '').trim();
+  const resolvePositiveNumber = (...values: Array<number | undefined>) => {
+    for (const value of values) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric > 0) return numeric;
+    }
+    return 0;
+  };
+  const durationSeconds = resolvePositiveNumber(options.durationSeconds, options.durationSec);
+  const fps = resolvePositiveNumber(options.fps);
+  const frameCount = resolvePositiveNumber(options.frameCount, options.frames);
+  const width = resolvePositiveNumber(options.width);
+  const height = resolvePositiveNumber(options.height);
+  const sdSteps = resolvePositiveNumber(options.sdSteps, options.steps);
+  const guidanceScale = resolvePositiveNumber(options.guidanceScale);
+  const hasManualTiming = Boolean(durationSeconds || fps || frameCount);
+  const mobileAsync = options.mobileAsync ?? isMobileLongTaskClient();
+  const maxWaitMs = Math.max(
+    60000,
+    Math.min(3600000, Math.round(Number(options.maxWaitMs || (mobileAsync ? 900000 : 600000)) || 600000))
+  );
+  const pollIntervalMs = Math.max(
+    1000,
+    Math.min(30000, Math.round(Number(options.pollIntervalMs || (mobileAsync ? 5000 : 3000)) || 3000))
+  );
+  const body: Record<string, any> = {
+    prompt,
+    timingMode: options.timingMode || (hasManualTiming ? 'manual' : 'auto'),
+    autoTiming: options.autoTiming ?? !hasManualTiming,
+    allowAutoTiming: true,
+    continuityMode: 'frame_chain',
+    preserveSubject: true,
+    acceptAsyncVideoJob: options.acceptAsyncVideoJob ?? mobileAsync,
+    mobileAsync,
+    pollIntervalMs,
+    maxWaitMs,
+  };
+  if (durationSeconds) body.durationSeconds = durationSeconds;
+  if (fps) body.fps = fps;
+  if (frameCount) body.frameCount = frameCount;
+  if (width) body.width = width;
+  if (height) body.height = height;
+  if (sdSteps) body.sdSteps = sdSteps;
+  if (guidanceScale) body.guidanceScale = guidanceScale;
+  if (sourceImageUrl) body.sourceImageUrl = sourceImageUrl;
+
+  return withMobileLongTaskGuard(maxWaitMs, async () => {
+    const res = await fetch(getApiUrl('/api/video/generate'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    let data: any = {};
+    try {
+      data = await res.json();
+    } catch {
+      // ignore parse failure and use the status error below
+    }
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.message || data?.error || `Erreur generation video (${res.status})`);
+    }
+    data = await resolveAsyncMediaJobPayload(data, {
+      eventPrefix: "video-job",
+      fallbackPollUrl: "/api/video/jobs",
+      maxWaitMs,
+    });
+    return {
+      ...data,
+      videoUrl: data?.videoUrl || data?.video_url || data?.url || data?.result?.videoUrl || data?.result?.video_url || data?.result?.url || null,
+      raw: data
+    };
+  });
 }
 // @ts-nocheck
 
 const API_BASE_STORAGE_KEY = 'a11:api-base-override';
 const DISPLAY_NAME_STORAGE_KEY = 'a11:display-name';
+const AUTH_USER_STORAGE_KEY = 'a11-auth-user';
 const AUTH_TOKEN_STORAGE_KEY = 'a11-auth-token';
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = 'a11_jwt_token';
 const AUTH_INVALID_EVENT_NAME = 'a11:auth-invalid';
+const DEFAULT_A11_SYSTEM_PROMPT = [
+  "Je suis A11, creee par Jeffrey.",
+  "Je parle en francais naturel, direct, vivant, jamais comme une notice.",
+  "Je peux etre precise, imaginative et un peu malicieuse, mais je reste utile et concrete.",
+  "Quand on cree une image, un son ou une video, j'analyse l'intention, les couleurs, la tension, les symboles et je propose une direction forte.",
+  "Je ne sur-explique pas: je donne la meilleure reponse ou le meilleur prompt, avec de la presence."
+].join(" ");
 const DEFAULT_API_BASE = normalizeApiBase(
   (import.meta.env?.VITE_A11_API_BASE_URL) ||
   (import.meta.env?.VITE_API_BASE_URL) ||
@@ -25,7 +217,22 @@ const DEFAULT_API_BASE = normalizeApiBase(
   (import.meta.env?.VITE_API_BASE) ||
   ''
 );
-const DEFAULT_ONLINE_API_BASE = normalizeApiBase(import.meta.env?.VITE_A11_ONLINE_API_BASE_URL) || 'https://alphaonze.funesterie.pro';
+const DEFAULT_PROD_API_BASE = normalizeApiBase(
+  import.meta.env?.VITE_A11_PROD_API_BASE_URL ||
+  'https://a11.funesterie.pro'
+);
+function resolveDefaultOnlineApiBase() {
+  const configured = normalizeApiBase(import.meta.env?.VITE_A11_ONLINE_API_BASE_URL);
+  if (configured) return configured;
+  try {
+    if (isPublicA11WebHost(globalThis.location?.hostname)) return '';
+  } catch {
+    // ignore browser location issues
+  }
+  return DEFAULT_PROD_API_BASE;
+}
+
+const DEFAULT_ONLINE_API_BASE = resolveDefaultOnlineApiBase();
 const DEFAULT_LOCAL_PROFILE_BASE = (() => {
   const explicitLocalBase = normalizeApiBase(import.meta.env?.VITE_A11_LOCAL_API_BASE_URL);
   if (explicitLocalBase) return explicitLocalBase;
@@ -47,7 +254,16 @@ function normalizeApiBase(rawValue: string | null | undefined) {
 function isPublicA11WebHost(hostname: string | null | undefined) {
   const normalized = String(hostname || '').trim().toLowerCase();
   if (!normalized) return false;
-  return normalized === 'alphaonze.funesterie.pro';
+  return [
+    '178.105.86.89',
+    'alphaonze.funesterie.pro',
+    'a11.funesterie.pro',
+    'api.funesterie.pro',
+    'funesterie.me',
+    'www.funesterie.me',
+    'k44.funesterie.me',
+    'kaen44.funesterie.me',
+  ].includes(normalized);
 }
 
 function isLocalApiBaseCandidate(baseValue: string | null | undefined) {
@@ -85,8 +301,9 @@ function applyLaunchApiModeOverrides() {
     }
 
     const forcedMode = String(url.searchParams.get('a11-force-api-mode') || '').trim().toLowerCase();
-    if (forcedMode === 'online' || forcedMode === 'local') {
-      const nextBase = A11_API_PROFILE_BASES[forcedMode as 'online' | 'local'];
+    if (forcedMode === 'online' || forcedMode === 'prod' || forcedMode === 'production' || forcedMode === 'local') {
+      const profileMode = (forcedMode === 'prod' || forcedMode === 'production') ? 'online' : forcedMode;
+      const nextBase = A11_API_PROFILE_BASES[profileMode as 'online' | 'local'];
       if (nextBase) {
         globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, normalizeApiBase(nextBase));
       }
@@ -98,6 +315,15 @@ function applyLaunchApiModeOverrides() {
       const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
       const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
       if (currentOverride !== onlineBase) {
+        globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
+        changed = true;
+      }
+    }
+
+    if (isLocalWebHost(url.hostname) && url.searchParams.get('a11-local-api') !== '1') {
+      const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
+      const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
+      if (onlineBase && (!currentOverride || isLocalApiBaseCandidate(currentOverride))) {
         globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
         changed = true;
       }
@@ -123,7 +349,7 @@ export function getCurrentApiBase() {
   } catch {
     // ignore storage issues
   }
-  return DEFAULT_API_BASE;
+  return DEFAULT_API_BASE || DEFAULT_ONLINE_API_BASE;
 }
 
 export function getCurrentApiMode(): A11ApiMode {
@@ -214,12 +440,13 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
   if (!raw) return null;
   if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) {
     try {
-      const parsed = new URL(raw, globalThis.location?.origin || 'https://alphaonze.funesterie.pro');
+      const parsed = new URL(raw, globalThis.location?.origin || 'http://178.105.86.89');
+      const assetHost = parsed.hostname.toLowerCase();
       if (
-        parsed.hostname.toLowerCase() === 'api.funesterie.pro'
+        ['api.funesterie.pro', '178.105.86.89', 'a11.funesterie.pro'].includes(assetHost)
         && /^\/files\//i.test(parsed.pathname)
       ) {
-        const origin = getApiOrigin() || globalThis.location?.origin || 'https://alphaonze.funesterie.pro';
+        const origin = getApiOrigin() || globalThis.location?.origin || 'http://178.105.86.89';
         return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
     } catch {
@@ -338,6 +565,34 @@ export function setAuthDisplayName(name: string | null | undefined) {
   }
 }
 
+function setAuthUserProfile(user: any) {
+  try {
+    if (!user || typeof user !== 'object') {
+      localStorage.removeItem(AUTH_USER_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify({
+      id: user.id ?? '',
+      username: user.username || '',
+      email: user.email || '',
+      role: user.role || '',
+      fullAccess: user.fullAccess === true,
+      provider: user.provider || '',
+    }));
+  } catch {
+    // ignore storage issues
+  }
+}
+
+function getStoredAuthUserProfile() {
+  try {
+    const raw = String(localStorage.getItem(AUTH_USER_STORAGE_KEY) || '').trim();
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function decodeJwtPayload(token: string) {
   try {
     const payload = String(token || '').split('.')[1] || '';
@@ -371,15 +626,41 @@ function normalizeStorageScopePart(value: unknown) {
 }
 
 export function getAuthIdentity() {
-  const payload = decodeJwtPayload(getAuthToken());
-  const id = normalizeStorageScopePart(payload?.id || payload?.sub || '');
-  const username = normalizeStorageScopePart(
-    payload?.username || payload?.preferred_username || payload?.name || ''
+  const payload = decodeJwtPayload(getAuthToken()) || {};
+  const storedUser = getStoredAuthUserProfile() || {};
+  const id = normalizeStorageScopePart(
+    payload?.id
+    || payload?.userId
+    || payload?.user_id
+    || payload?.sub
+    || storedUser?.id
+    || ''
   );
-  const storageScope = [id, username].filter(Boolean).join('__');
+  const username = normalizeStorageScopePart(
+    payload?.username
+    || payload?.preferred_username
+    || payload?.name
+    || storedUser?.username
+    || ''
+  );
+  const email = normalizeStorageScopePart(
+    payload?.email
+    || storedUser?.email
+    || ''
+  );
+  const provider = normalizeStorageScopePart(
+    payload?.provider
+    || storedUser?.provider
+    || ''
+  );
+  const primary = id || email || username;
+  const storageScope = [provider, primary, username && username !== primary ? username : '']
+    .filter(Boolean)
+    .join('__');
   return {
     id,
     username,
+    email,
     storageScope: storageScope || '',
   };
 }
@@ -391,12 +672,22 @@ export function getAuthStorageScope() {
 export function hasAdminApiAccess() {
   if (String(ADMIN_TOKEN || '').trim()) return true;
   const payload = decodeJwtPayload(getAuthToken()) || {};
+  const storedUser = getStoredAuthUserProfile() || {};
   const id = normalizeStorageScopePart(payload?.id || payload?.sub || '');
   const username = normalizeStorageScopePart(
     payload?.username || payload?.preferred_username || payload?.name || ''
   );
   const role = normalizeStorageScopePart(payload?.role || payload?.user_role || '');
-  return payload?.isAdmin === true || id === 'admin' || username === 'admin' || role === 'admin';
+  const storedUsername = normalizeStorageScopePart(storedUser?.username || '');
+  const storedRole = normalizeStorageScopePart(storedUser?.role || '');
+  return payload?.isAdmin === true
+    || payload?.fullAccess === true
+    || storedUser?.fullAccess === true
+    || id === 'admin'
+    || username === 'admin'
+    || role === 'admin'
+    || storedUsername === 'admin'
+    || storedRole === 'admin';
 }
 
 export function getAuthDisplayName() {
@@ -412,14 +703,19 @@ export function getAuthDisplayName() {
     payload?.username ||
     payload?.preferred_username ||
     payload?.name ||
+    payload?.email ||
     payload?.sub ||
     '';
-  return String(fromToken || '').trim();
+  if (fromToken) return String(fromToken || '').trim();
+
+  const storedUser = getStoredAuthUserProfile();
+  return String(storedUser?.username || storedUser?.email || '').trim();
 }
 
 export function clearAuthToken() {
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
   localStorage.removeItem(LEGACY_AUTH_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(AUTH_USER_STORAGE_KEY);
 }
 
 function clearClientAuthSession(detail?: { reason?: string; message?: string; status?: number }) {
@@ -440,22 +736,99 @@ export async function login(username: string, password: string) {
   const res = await fetch(getApiUrl('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ username, password })
   });
 
   const data = await res.json();
   if (data.success) {
     setAuthToken(data.token);
+    setAuthUserProfile(data?.user);
     setAuthDisplayName(data?.user?.username || username);
     return data;
   }
   throw new Error(data.error || 'Connexion impossible');
 }
 
+export async function loginWithGoogleCredential(credential: string) {
+  const res = await fetch(getApiUrl('/api/auth/google'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ credential })
+  });
+
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore
+  }
+
+  if (res.ok && data.success && data.token) {
+    setAuthToken(data.token);
+    setAuthUserProfile(data?.user);
+    setAuthDisplayName(data?.user?.username || data?.user?.email || 'Google');
+    return data;
+  }
+
+  if (data.error === 'google_auth_not_configured') {
+    throw new Error('Connexion Google pas encore configuree sur ce deploiement');
+  }
+  throw new Error(data.message || data.error || 'Connexion Google impossible');
+}
+
+export type AuthSessionResponse = {
+  ok: boolean;
+  authenticated?: boolean;
+  user?: {
+    id?: string | number;
+    username?: string;
+    email?: string;
+    role?: string;
+    fullAccess?: boolean;
+    provider?: string;
+  };
+  token?: string;
+  error?: string;
+  message?: string;
+};
+
+export async function fetchAuthSession(): Promise<AuthSessionResponse> {
+  const res = await fetch(getApiUrl('/api/auth/me'), {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Session A11 invalide (${res.status})`);
+  }
+  if (data.token) {
+    setAuthToken(data.token);
+  }
+  setAuthUserProfile(data?.user);
+  setAuthDisplayName(data?.user?.username || data?.user?.email || '');
+  return data;
+}
+
+export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
+  const authBase = normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro');
+  const target = new URL(buildApiUrlFromBase(authBase, '/api/auth/google/start'), globalThis.location?.origin || 'https://a11.funesterie.pro');
+  target.searchParams.set('returnTo', returnTo || '/auth/success');
+  target.searchParams.set('client', client || 'web');
+  target.searchParams.set('scopeProfile', 'basic');
+  return target.toString();
+}
+
+export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
+  globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client));
+}
+
 export async function register(username: string, email: string, password: string) {
   const res = await fetch(getApiUrl('/api/auth/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ username, email, password })
   });
 
@@ -478,6 +851,7 @@ export async function register(username: string, email: string, password: string
 
   if (data.token) {
     setAuthToken(data.token);
+    setAuthUserProfile(data?.user);
     setAuthDisplayName(data?.user?.username || username);
   }
 
@@ -527,6 +901,14 @@ export async function resetPassword(token: string, password: string) {
 }
 
 export function logout() {
+  try {
+    void fetch(getApiUrl('/api/auth/logout'), {
+      method: 'POST',
+      credentials: 'include',
+    });
+  } catch {
+    // ignore logout transport issues
+  }
   clearAuthToken();
   setAuthDisplayName('');
 }
@@ -541,19 +923,9 @@ function appendJwtHeaders(headers: Record<string, string>) {
 function buildAuthHeaders(contentType?: string) {
   const headers: Record<string, string> = {};
   if (contentType) headers['Content-Type'] = contentType;
-  if (!appendJwtHeaders(headers)) {
-    clearClientAuthSession({
-      reason: 'A11_JWT_Missing',
-      message: 'JWT token manquant',
-    });
-    throw new Error('A11_JWT_Missing');
-  }
+  appendJwtHeaders(headers);
 
   return headers;
-}
-
-function dispatchBrowserEvent(event: Event) {
-  globalThis.dispatchEvent(event);
 }
 
 async function readResponsePayloadSafe(res: Response) {
@@ -604,7 +976,10 @@ async function throwIfAuthInvalidResponse(res: Response) {
 }
 
 async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
-  const res = await fetch(input, init);
+  const res = await fetch(input, {
+    credentials: 'include',
+    ...init,
+  });
   await throwIfAuthInvalidResponse(res);
   return res;
 }
@@ -613,7 +988,125 @@ export function getTtsApiUrl() {
   return import.meta.env.VITE_TTS_API || getApiUrl('/api/tts/piper');
 }
 
-export const TTS_VOICES = ['fr_FR-siwis-medium'];
+export const TTS_VOICES = [
+  'fr_FR-siwis-medium',
+  'en_US-lessac-medium',
+  'it_IT-paola-medium',
+  'es_ES-sharvard-medium',
+  'de_DE-thorsten-medium',
+];
+
+export type TtsVoiceReference = {
+  id: string;
+  label: string;
+  scope?: string;
+  source?: string;
+  mimeType?: string | null;
+  originalName?: string | null;
+  bytes?: number;
+  analysis?: {
+    ok?: boolean;
+    kind?: string;
+    durationMs?: number;
+    sampleRate?: number;
+    channels?: number;
+    loudnessDb?: number;
+    reason?: string;
+  } | null;
+  createdAt?: string | null;
+};
+
+export async function fetchTtsVoiceReferences(): Promise<TtsVoiceReference[]> {
+  const res = await authFetch(getApiUrl('/api/tts/references'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `References voix indisponibles (${res.status})`);
+  }
+  return Array.isArray(payload?.references) ? payload.references : [];
+}
+
+export async function uploadTtsVoiceReference(
+  file: File,
+  label?: string,
+  scope: 'private' | 'family' = 'private'
+): Promise<{ reference: TtsVoiceReference; references: TtsVoiceReference[] }> {
+  const form = new FormData();
+  form.append('voiceReference', file);
+  if (label) form.append('label', label);
+  if (scope) form.append('scope', scope);
+
+  const res = await authFetch(getApiUrl('/api/tts/references'), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    body: form,
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Upload reference voix impossible (${res.status})`);
+  }
+  return {
+    reference: payload.reference,
+    references: Array.isArray(payload.references) ? payload.references : [],
+  };
+}
+
+export async function deleteTtsVoiceReference(id: string): Promise<TtsVoiceReference[]> {
+  const res = await authFetch(getApiUrl(`/api/tts/references/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Suppression reference voix impossible (${res.status})`);
+  }
+  return Array.isArray(payload.references) ? payload.references : [];
+}
+
+export type SttTranscriptionResult = {
+  ok: boolean;
+  text: string;
+  language?: string | null;
+  duration?: number | null;
+  provider?: string | null;
+  model?: string | null;
+  elapsed?: number | null;
+};
+
+export async function transcribeAudioFile(
+  file: File,
+  options?: { language?: string; provider?: 'auto' | 'ollama' | 'openai' }
+): Promise<SttTranscriptionResult> {
+  const form = new FormData();
+  form.append('audio', file);
+  if (options?.language) form.append('language', options.language);
+  if (options?.provider) form.append('provider', options.provider);
+
+  const res = await authFetch(getApiUrl('/api/stt/transcribe'), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    body: form,
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Transcription audio impossible (${res.status})`);
+  }
+  return {
+    ok: true,
+    text: String(payload?.text || '').trim(),
+    language: payload?.language || null,
+    duration: payload?.duration ?? null,
+    provider: payload?.provider || null,
+    model: payload?.model || null,
+    elapsed: payload?.elapsed ?? null,
+  };
+}
 
 export type Provider = "local" | "ollama" | "openai";
 
@@ -1106,7 +1599,23 @@ function sleep(ms: number) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
-function extractAsyncImageJobDescriptor(payload: any) {
+function dispatchBrowserEvent(event: Event) {
+  try {
+    globalThis.dispatchEvent(event);
+  } catch {
+    // ignore browser event dispatch issues
+  }
+}
+
+function batAsyncSleep(ms: number, deadlineAt = 0) {
+  const remaining = deadlineAt ? Math.max(0, deadlineAt - Date.now()) : ms;
+  return sleep(Math.max(250, Math.min(ms, remaining || ms)));
+}
+
+function extractAsyncMediaJobDescriptor(
+  payload: any,
+  options: { fallbackPollUrl?: string; maxWaitMs?: number } = {}
+) {
   if (!payload || typeof payload !== "object") return null;
 
   const asyncJob = payload?.asyncJob && typeof payload.asyncJob === "object"
@@ -1115,12 +1624,12 @@ function extractAsyncImageJobDescriptor(payload: any) {
 
   const status = String(asyncJob?.status || payload?.status || "").trim().toLowerCase();
   const jobId = String(asyncJob?.jobId || asyncJob?.id || payload?.jobId || "").trim();
-  if (!jobId || (status !== "pending" && status !== "running")) {
+  if (!jobId || (status !== "pending" && status !== "running" && status !== "queued")) {
     return null;
   }
 
   const pollUrl = String(asyncJob?.pollUrl || asyncJob?.poll_url || payload?.pollUrl || payload?.poll_url || "").trim()
-    || `/api/llm/jobs/image/${encodeURIComponent(jobId)}`;
+    || (options.fallbackPollUrl ? `${options.fallbackPollUrl.replace(/\/$/, "")}/${encodeURIComponent(jobId)}` : `/api/llm/jobs/image/${encodeURIComponent(jobId)}`);
   const pollIntervalMs = Math.max(
     1000,
     Math.min(
@@ -1135,6 +1644,13 @@ function extractAsyncImageJobDescriptor(payload: any) {
       Math.floor(Number(asyncJob?.maxPollAttempts || payload?.maxPollAttempts || 72) || 72)
     )
   );
+  const maxWaitMs = Math.max(
+    pollIntervalMs,
+    Math.min(
+      3600000,
+      Math.floor(Number(asyncJob?.maxWaitMs || payload?.maxWaitMs || options.maxWaitMs || maxPollAttempts * pollIntervalMs) || maxPollAttempts * pollIntervalMs)
+    )
+  );
 
   return {
     jobId,
@@ -1142,10 +1658,11 @@ function extractAsyncImageJobDescriptor(payload: any) {
     pollUrl,
     pollIntervalMs,
     maxPollAttempts,
+    maxWaitMs,
   };
 }
 
-async function fetchAsyncImageJobStatus(descriptor: {
+async function fetchAsyncMediaJobStatus(descriptor: {
   pollUrl: string;
 }) {
   const pollTarget = String(descriptor?.pollUrl || "").trim();
@@ -1174,35 +1691,70 @@ async function fetchAsyncImageJobStatus(descriptor: {
   return data;
 }
 
-async function resolveAsyncImageJobPayload(initialPayload: any) {
-  const descriptor = extractAsyncImageJobDescriptor(initialPayload);
+async function resolveAsyncMediaJobPayload(
+  initialPayload: any,
+  options: { eventPrefix?: string; fallbackPollUrl?: string; maxWaitMs?: number } = {}
+) {
+  const descriptor = extractAsyncMediaJobDescriptor(initialPayload, options);
   if (!descriptor) return initialPayload;
 
-  dispatchBrowserEvent(new CustomEvent("a11:image-job.queued", {
+  const eventPrefix = options.eventPrefix || "image-job";
+  const deadlineAt = Date.now() + descriptor.maxWaitMs;
+
+  try {
+    globalThis.localStorage?.setItem(`a11:${eventPrefix}:last`, JSON.stringify({
+      ...descriptor,
+      startedAt: Date.now(),
+      deadlineAt,
+    }));
+  } catch {
+    // ignore storage issues
+  }
+
+  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.queued`, {
     detail: {
       jobId: descriptor.jobId,
       pollIntervalMs: descriptor.pollIntervalMs,
+      maxWaitMs: descriptor.maxWaitMs,
+      strategy: "bat-sleep/rome-poll",
     },
   }));
 
-  for (let attempt = 0; attempt < descriptor.maxPollAttempts; attempt += 1) {
-    await sleep(descriptor.pollIntervalMs);
-    const polled = await fetchAsyncImageJobStatus(descriptor);
+  for (let attempt = 0; attempt < descriptor.maxPollAttempts && Date.now() < deadlineAt; attempt += 1) {
+    await batAsyncSleep(descriptor.pollIntervalMs, deadlineAt);
+    const polled = await fetchAsyncMediaJobStatus(descriptor);
     const status = String(polled?.status || polled?.asyncJob?.status || "").trim().toLowerCase();
 
     if (status === "done") {
-      dispatchBrowserEvent(new CustomEvent("a11:image-job.done", {
+      try {
+        globalThis.localStorage?.removeItem(`a11:${eventPrefix}:last`);
+      } catch {
+        // ignore storage issues
+      }
+      dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.done`, {
         detail: { jobId: descriptor.jobId },
       }));
       return polled?.result || polled;
     }
 
     if (status === "error") {
-      throw new Error(String(polled?.message || polled?.error || "image_job_failed"));
+      try {
+        globalThis.localStorage?.removeItem(`a11:${eventPrefix}:last`);
+      } catch {
+        // ignore storage issues
+      }
+      throw new Error(String(polled?.message || polled?.error || `${eventPrefix}_failed`));
     }
   }
 
-  throw new Error(`Timeout image async apres ${Math.round((descriptor.maxPollAttempts * descriptor.pollIntervalMs) / 1000)}s`);
+  throw new Error(`Timeout async apres ${Math.round(descriptor.maxWaitMs / 1000)}s`);
+}
+
+async function resolveAsyncImageJobPayload(initialPayload: any) {
+  return resolveAsyncMediaJobPayload(initialPayload, {
+    eventPrefix: "image-job",
+    fallbackPollUrl: "/api/llm/jobs/image",
+  });
 }
 
 function normalizeCreatedAt(rawValue: unknown) {
@@ -1369,7 +1921,7 @@ async function apiPost(body: unknown) {
 export async function chatCompletion(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; language?: string }
 ) {
   const result = await chatCompletionDetailed(messages, provider, systemPromptOrOptions);
   return result.content;
@@ -1377,7 +1929,7 @@ export async function chatCompletion(
 export async function chatCompletionDetailed(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; language?: string }
 ) {
   let systemPrompt: string | undefined;
   let turboFlag = false;
@@ -1385,6 +1937,7 @@ export async function chatCompletionDetailed(
   let conversationId: string | undefined;
   let providerProfileId: string | undefined;
   let sourceImageUrl: string | undefined;
+  let language: string | undefined;
   if (typeof systemPromptOrOptions === 'string') {
     systemPrompt = systemPromptOrOptions;
   } else if (typeof systemPromptOrOptions === 'object' && systemPromptOrOptions !== null) {
@@ -1399,6 +1952,9 @@ export async function chatCompletionDetailed(
       : undefined;
     sourceImageUrl = typeof systemPromptOrOptions.sourceImageUrl === 'string'
       ? systemPromptOrOptions.sourceImageUrl.trim() || undefined
+      : undefined;
+    language = typeof systemPromptOrOptions.language === 'string'
+      ? systemPromptOrOptions.language.trim().toLowerCase() || undefined
       : undefined;
   }
   let msgs = messages;
@@ -1422,6 +1978,7 @@ export async function chatCompletionDetailed(
     top_p: 0.9,
     conversationId,
     providerProfileId,
+    language,
     acceptAsyncImageJob: true,
     ...(sourceImageUrl ? { sourceImageUrl } : {}),
   };
@@ -1429,14 +1986,15 @@ export async function chatCompletionDetailed(
   const initialData = await apiPost(payload);
   const data = await resolveAsyncImageJobPayload(initialData);
 
-  // On essaie de lire réponse façon OpenAI
-  const content =
-    extractAssistantDisplayContent(data) ||
-    "Je n'ai pas pu formuler une reponse exploitable.";
-
   const videoUrl = extractVideoUrlFromPayload(data);
   const imageUrl = videoUrl ? null : extractImageUrlFromPayload(data);
   const fileUrl = extractFileUrlFromPayload(data);
+  const extractedContent = extractAssistantDisplayContent(data);
+  const content = extractedContent
+    || (videoUrl ? "La video est prete." : "")
+    || (imageUrl ? "Image generee par A11." : "")
+    || (fileUrl ? "Fichier pret." : "")
+    || "Je n'ai pas pu formuler une reponse exploitable.";
 
   return {
     content: String(content || ''),
@@ -1453,15 +2011,44 @@ export async function chatCompletionDetailed(
 // Chat simple avec prompt système et modèle choisis
 export async function chat(message: string, history: Msg[] = [], provider: Provider = 'local', systemPrompt?: string) {
   const messages: Msg[] = history.length ? history : [
-    { role: 'system', content: systemPrompt || "Tu es A-11, assistant local. Reponds court, clair et direct. N'invente pas de contexte. Ne propose pas d'action non demandee. Si la question est triviale, reponds en une phrase maximum." },
+    { role: 'system', content: systemPrompt || DEFAULT_A11_SYSTEM_PROMPT },
     { role: 'user', content: message }
   ];
   dispatchBrowserEvent(new Event('conversation:start'));
   try {
-    return await chatCompletion(messages, provider, systemPrompt);
+    try {
+      return await chatCompletion(messages, provider, systemPrompt);
+    } catch (error) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      appendJwtHeaders(headers);
+      const res = await fetch(getApiUrl('/api/chat'), {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ message, messages, provider }),
+      });
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        // ignore parse failure and keep the original error if needed
+      }
+      if (res.ok && (data?.assistant || data?.content || data?.message)) {
+        return String(data?.assistant || data?.content || data?.message || '');
+      }
+      throw error;
+    }
   } finally {
     dispatchBrowserEvent(new Event('conversation:end'));
   }
+}
+
+function isLocalWebHost(hostname: string | null | undefined) {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '127.0.0.1'
+    || normalized === '[::1]'
+    || normalized === '::1';
 }
 
 // Appel TTS générique
@@ -1724,6 +2311,74 @@ export async function uploadConversationFile(file: File, options?: { conversatio
     conversationResource?: A11ConversationResource | null;
     record?: any;
     mail?: any;
+  };
+}
+
+export async function uploadLocalImage(file: File) {
+  const contentBase64 = await readFileAsDataUrl(file);
+  const res = await fetch(getApiUrl('/api/upload/image-local'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      contentBase64,
+    }),
+  });
+
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore parse error and surface the HTTP status below
+  }
+
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Upload local image impossible (${res.status})`);
+  }
+
+  return data as {
+    ok: boolean;
+    url?: string;
+    filename?: string;
+    storageKey?: string;
+    sizeBytes?: number;
+    storageBackend?: string;
+  };
+}
+
+export async function analyzeVisionImage(
+  imageUrl: string,
+  options?: { prompt?: string; conversationId?: string; source?: string; timeoutMs?: number }
+) {
+  const res = await authFetch(getApiUrl('/api/agent/vision-memory/analyze'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify({
+      imageUrl,
+      prompt: options?.prompt,
+      conversationId: options?.conversationId,
+      source: options?.source || 'casino',
+      timeoutMs: options?.timeoutMs || 20000,
+    }),
+  });
+
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore parse error and surface the HTTP status below
+  }
+
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || data?.reason || `Analyse image impossible (${res.status})`);
+  }
+
+  return data as {
+    ok: boolean;
+    entry?: any;
+    skipped?: boolean;
+    reason?: string;
+    raw?: any;
   };
 }
 
@@ -2014,6 +2669,52 @@ export type QflushStatusResponse = {
   }>;
 };
 
+export type RuntimeModuleEntrypoint = {
+  kind: string;
+  value: string;
+};
+
+export type RuntimeModuleInfo = {
+  id: string;
+  name: string;
+  version?: string | null;
+  kind: string;
+  summary?: string;
+  capabilities?: string[];
+  scripts?: string[];
+  entrypoints?: RuntimeModuleEntrypoint[];
+  state: {
+    status: 'ready' | 'source-only' | 'asset-only' | 'raw' | 'partial' | string;
+    hasPackage?: boolean;
+    hasSource?: boolean;
+    hasDist?: boolean;
+    hasDocs?: boolean;
+    hasTests?: boolean;
+    loaded?: boolean;
+    shallowFiles?: number;
+    shallowDirectories?: number;
+  };
+};
+
+export type RuntimeModulesStatusResponse = {
+  ok: boolean;
+  timestamp?: string;
+  runtimeRoot?: string;
+  modulesRoot?: string;
+  summary?: {
+    total?: number;
+    ready?: number;
+    packages?: number;
+    sourceOnly?: number;
+    assetOnly?: number;
+    raw?: number;
+    loaded?: number;
+  };
+  modules?: RuntimeModuleInfo[];
+  error?: string;
+  message?: string;
+};
+
 export type ControlServiceState = 'online' | 'offline' | 'warning' | 'starting';
 
 export type ControlServiceStatus = {
@@ -2154,6 +2855,25 @@ export async function fetchQflushStatus(): Promise<QflushStatusResponse> {
   }
 
   return data as QflushStatusResponse;
+}
+
+export async function fetchRuntimeModulesStatus(): Promise<RuntimeModulesStatusResponse> {
+  const res = await authFetch(getApiUrl('/api/runtime/modules'), {
+    headers: buildAuthHeaders(),
+  });
+
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore parse errors
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `Runtime modules status failed (${res.status})`);
+  }
+
+  return data as RuntimeModulesStatusResponse;
 }
 
 export async function fetchControlStatus(apiBaseOverride?: string): Promise<ControlStatusResponse> {
@@ -2363,11 +3083,62 @@ export async function deleteRemoteProviderProfile(profileId: string): Promise<{ 
   return data as { ok: boolean; removedId?: string };
 }
 
+export type A11PortraitFrame = {
+  id: string;
+  src: string;
+  layer?: string;
+  mood?: string;
+  holdMs?: number;
+  transform?: string;
+  filter?: string;
+  shadow?: string;
+};
+
+export type A11PortraitFramebook = {
+  ok?: boolean;
+  version?: string;
+  frames: A11PortraitFrame[];
+  sequences?: Record<string, string[]>;
+  audioSync?: {
+    source?: string;
+    frameDurationMs?: number;
+    transitionMs?: number;
+    minMessageHoldMs?: number;
+    cleanup?: string;
+  };
+  policy?: {
+    mode?: string;
+    foreground?: boolean;
+    noInfiniteGeneration?: boolean;
+    maxFrames?: number;
+    maxSequenceFrames?: number;
+  };
+};
+
+export async function fetchA11PortraitFramebook(): Promise<A11PortraitFramebook> {
+  const res = await authFetch(getApiUrl('/api/a11/portrait-framebook'), {
+    headers: buildAuthHeaders(),
+  });
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore parse errors and fail below
+  }
+  if (!res.ok || data?.ok === false || !Array.isArray(data?.frames)) {
+    throw new Error(data?.message || data?.error || `Portrait framebook failed (${res.status})`);
+  }
+  return data as A11PortraitFramebook;
+}
+
 // ── Subscription Management ──────────────────────────────────────────────────
 
 export interface SubscriptionStatus {
   ok: boolean;
   active: boolean;
+  fullAccess?: boolean;
+  plan?: string | null;
+  reason?: string | null;
   endDate?: string | null;
   stripeStatus?: {
     active: boolean;

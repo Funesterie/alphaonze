@@ -3,15 +3,19 @@ import {
   fetchA11Capabilities,
   fetchA11HostStatus,
   fetchQflushStatus,
+  fetchRuntimeModulesStatus,
   type A11CapabilitiesResponse,
   type A11HostStatusResponse,
   type QflushStatusResponse,
+  type RuntimeModuleInfo,
+  type RuntimeModulesStatusResponse,
 } from "../lib/api";
 
 type SnapshotState = {
   a11host: A11HostStatusResponse | null;
   capabilities: A11CapabilitiesResponse | null;
   qflush: QflushStatusResponse | null;
+  runtimeModules: RuntimeModulesStatusResponse | null;
 };
 
 function statusColor(ok: boolean) {
@@ -70,6 +74,113 @@ function renderBooleanGrid(flags: Record<string, boolean> | undefined) {
   );
 }
 
+function moduleStatusTone(status: string | undefined) {
+  switch (status) {
+    case "ready":
+      return { border: "#14532d", background: "#052e1b", color: "#bbf7d0" };
+    case "source-only":
+      return { border: "#1d4ed8", background: "#0b1e3f", color: "#bfdbfe" };
+    case "asset-only":
+      return { border: "#7c2d12", background: "#2d1608", color: "#fed7aa" };
+    case "raw":
+      return { border: "#52525b", background: "#18181b", color: "#d4d4d8" };
+    default:
+      return { border: "#854d0e", background: "#2f2308", color: "#fde68a" };
+  }
+}
+
+function chipStyle(tone: { border: string; background: string; color: string }): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    padding: "4px 8px",
+    fontSize: 11,
+    lineHeight: 1.2,
+    border: `1px solid ${tone.border}`,
+    background: tone.background,
+    color: tone.color,
+    whiteSpace: "nowrap",
+  };
+}
+
+function renderModuleRow(moduleInfo: RuntimeModuleInfo) {
+  const tone = moduleStatusTone(moduleInfo.state?.status);
+  const capabilities = moduleInfo.capabilities || [];
+  const scripts = moduleInfo.scripts || [];
+
+  return (
+    <li
+      key={moduleInfo.id}
+      style={{
+        listStyle: "none",
+        margin: 0,
+        padding: "10px 0",
+        borderTop: "1px solid #1f2937",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))",
+        gap: 12,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <strong style={{ color: "#e2e8f0", fontSize: 13, wordBreak: "break-word" }}>
+            {moduleInfo.id}
+          </strong>
+          <span style={chipStyle(tone)}>{moduleInfo.state?.status || "partial"}</span>
+          {moduleInfo.state?.loaded ? (
+            <span style={chipStyle({ border: "#14532d", background: "#052e1b", color: "#bbf7d0" })}>
+              charge
+            </span>
+          ) : null}
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 5, wordBreak: "break-word" }}>
+          {moduleInfo.name}
+          {moduleInfo.version ? ` @ ${moduleInfo.version}` : ""} - {moduleInfo.kind}
+        </div>
+        <div style={{ color: "#64748b", fontSize: 11, marginTop: 5 }}>
+          fichiers {moduleInfo.state?.shallowFiles ?? 0} - dossiers {moduleInfo.state?.shallowDirectories ?? 0}
+        </div>
+      </div>
+
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.45, wordBreak: "break-word" }}>
+          {moduleInfo.summary || "Module runtime local."}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          {capabilities.slice(0, 6).map((capability) => (
+            <span
+              key={capability}
+              style={{
+                border: "1px solid #1e3a8a",
+                background: "#0b1e3f",
+                color: "#bfdbfe",
+                borderRadius: 999,
+                padding: "3px 7px",
+                fontSize: 11,
+              }}
+            >
+              {capability}
+            </span>
+          ))}
+          {scripts.length > 0 ? (
+            <span
+              style={{
+                border: "1px solid #334155",
+                background: "#111827",
+                color: "#cbd5e1",
+                borderRadius: 999,
+                padding: "3px 7px",
+                fontSize: 11,
+              }}
+            >
+              scripts {scripts.length}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 export function A11OpsStatusPanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,18 +190,25 @@ export function A11OpsStatusPanel() {
     a11host: null,
     capabilities: null,
     qflush: null,
+    runtimeModules: null,
   });
 
   async function loadStatus() {
     setError("");
     setRefreshing(true);
     try {
-      const [a11host, capabilities, qflush] = await Promise.all([
+      const [a11host, capabilities, qflush, runtimeModules] = await Promise.all([
         fetchA11HostStatus(),
         fetchA11Capabilities(),
         fetchQflushStatus(),
+        fetchRuntimeModulesStatus().catch((err: any) => ({
+          ok: false,
+          error: String(err?.message || err || "runtime_modules_unavailable"),
+          modules: [],
+          summary: { total: 0 },
+        } as RuntimeModulesStatusResponse)),
       ]);
-      setSnapshot({ a11host, capabilities, qflush });
+      setSnapshot({ a11host, capabilities, qflush, runtimeModules });
       setLastUpdated(new Date().toISOString());
     } catch (err: any) {
       setError(String(err?.message || err || "status_load_failed"));
@@ -107,6 +225,9 @@ export function A11OpsStatusPanel() {
   const a11host = snapshot.a11host;
   const capabilities = snapshot.capabilities;
   const qflush = snapshot.qflush;
+  const runtimeModules = snapshot.runtimeModules;
+  const moduleSummary = runtimeModules?.summary || {};
+  const modules = runtimeModules?.modules || [];
   const qflushProcesses = Object.entries(qflush?.processes || capabilities?.qflush?.processes || {});
 
   return (
@@ -184,6 +305,18 @@ export function A11OpsStatusPanel() {
         >
           VSIX {a11host?.bridgeAvailable ? "connecte" : "absent"}
         </span>
+        <span
+          style={{
+            borderRadius: 999,
+            padding: "5px 10px",
+            fontSize: 12,
+            border: `1px solid ${statusColor((moduleSummary.total || 0) > 0)}`,
+            color: (moduleSummary.total || 0) > 0 ? "#bbf7d0" : "#cbd5e1",
+            background: (moduleSummary.total || 0) > 0 ? "#052e1b" : "#111827",
+          }}
+        >
+          Modules {moduleSummary.total || 0}
+        </span>
       </div>
 
       {error && (
@@ -250,6 +383,38 @@ export function A11OpsStatusPanel() {
             </div>
 
             {renderBooleanGrid(capabilities?.a11host?.capabilities)}
+          </section>
+
+          <section style={cardStyle()}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div>
+                <h4 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>Modules Funesterie</h4>
+                <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12, wordBreak: "break-word" }}>
+                  Inventaire famille-only de {monoValue(runtimeModules?.modulesRoot)}.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <span style={chipStyle({ border: "#14532d", background: "#052e1b", color: "#bbf7d0" })}>
+                  ready {moduleSummary.ready || 0}
+                </span>
+                <span style={chipStyle({ border: "#1d4ed8", background: "#0b1e3f", color: "#bfdbfe" })}>
+                  packages {moduleSummary.packages || 0}
+                </span>
+                <span style={chipStyle({ border: "#52525b", background: "#18181b", color: "#d4d4d8" })}>
+                  charges {moduleSummary.loaded || 0}
+                </span>
+              </div>
+            </div>
+
+            {modules.length === 0 ? (
+              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 12 }}>
+                {runtimeModules?.error || "Aucun module runtime detecte sur ce serveur."}
+              </div>
+            ) : (
+              <ul style={{ margin: "12px 0 0", padding: 0 }}>
+                {modules.map(renderModuleRow)}
+              </ul>
+            )}
           </section>
 
           {qflush?.available || qflushProcesses.length > 0 ? (

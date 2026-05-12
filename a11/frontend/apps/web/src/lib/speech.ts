@@ -1,4 +1,4 @@
-import { buildApiUrlFromBase, getApiOriginFromBase, getCurrentApiBase } from './api';
+import { buildApiUrlFromBase, getApiOriginFromBase, getAuthToken, getCurrentApiBase } from './api';
 
 /**
  * Helper pour gérer la lecture vocale (TTS) avec interruption automatique et queue
@@ -30,27 +30,24 @@ export function isSpeechMuted() { return speechMuted; }
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
-
-function isLikelyTouchDevice() {
-  try {
-    const hasTouchPoints = Number((globalThis as any)?.navigator?.maxTouchPoints || 0) > 0;
-    const coarsePointer = typeof (globalThis as any)?.matchMedia === 'function'
-      ? !!(globalThis as any).matchMedia('(pointer: coarse)').matches
-      : false;
-    const userAgent = String((globalThis as any)?.navigator?.userAgent || '').toLowerCase();
-    return hasTouchPoints || coarsePointer || /android|iphone|ipad|ipod|mobile/i.test(userAgent);
-  } catch {
-    return false;
-  }
-}
+let serverTtsDisabledUntil = 0;
 
 // Unlock audio context on first user interaction (required by autoplay policy)
 let _audioUnlocked = false;
-function ensureAudioUnlocked() {
-  if (_audioUnlocked) return;
-  const unlock = () => {
-    if (_audioUnlocked) return;
-    _audioUnlocked = true;
+let audioUnlockPromise: Promise<boolean> | null = null;
+const SILENT_WAV_DATA_URI =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==';
+
+export function isAudioOutputUnlocked(): boolean {
+  return _audioUnlocked;
+}
+
+export async function unlockAudioOutput(): Promise<boolean> {
+  if (_audioUnlocked) return true;
+  if (audioUnlockPromise) return audioUnlockPromise;
+
+  audioUnlockPromise = (async () => {
+    let unlocked = false;
     try {
       const AudioContextCtor =
         (globalThis as any).AudioContext ||
@@ -58,22 +55,53 @@ function ensureAudioUnlocked() {
       if (AudioContextCtor) {
         const ctx = new AudioContextCtor();
         if (typeof ctx.resume === 'function') {
-          void ctx.resume().catch(() => undefined);
+          await ctx.resume().catch(() => undefined);
         }
+        unlocked = ctx.state === 'running' || ctx.state === 'closed' || unlocked;
         if (typeof ctx.close === 'function') {
-          void ctx.close().catch(() => undefined);
+          await ctx.close().catch(() => undefined);
         }
       }
     } catch {
-      // Browser autoplay policies vary; actual audio playback will still be retried later if needed.
+      // Continue with the media element probe below.
     }
+
+    try {
+      const probe = new Audio(SILENT_WAV_DATA_URI);
+      probe.muted = true;
+      probe.volume = 0;
+      await probe.play();
+      probe.pause();
+      probe.removeAttribute('src');
+      unlocked = true;
+    } catch {
+      // Some browsers only unlock real media later; keep the retry banner path.
+    }
+
+    _audioUnlocked = unlocked || _audioUnlocked;
+    if (_audioUnlocked) emitCustomEvent('a11:audioUnlocked', {});
+    return _audioUnlocked;
+  })().finally(() => {
+    audioUnlockPromise = null;
+  });
+
+  return audioUnlockPromise;
+}
+
+function ensureAudioUnlocked() {
+  if (_audioUnlocked) return;
+  const unlock = () => {
+    if (_audioUnlocked) return;
+    void unlockAudioOutput();
     document.removeEventListener('click', unlock, true);
     document.removeEventListener('keydown', unlock, true);
     document.removeEventListener('touchstart', unlock, true);
+    document.removeEventListener('pointerdown', unlock, true);
   };
   document.addEventListener('click', unlock, { once: true, capture: true });
   document.addEventListener('keydown', unlock, { once: true, capture: true });
   document.addEventListener('touchstart', unlock, { once: true, capture: true });
+  document.addEventListener('pointerdown', unlock, { once: true, capture: true });
 }
 if (typeof document !== 'undefined') ensureAudioUnlocked();
 
@@ -87,6 +115,49 @@ function emitEvent(name: string) {
 function emitCustomEvent(name: string, detail: Record<string, unknown>) {
   if (typeof (globalThis as any)?.dispatchEvent === 'function') {
     (globalThis as any).dispatchEvent(new CustomEvent(name, { detail }));
+  }
+}
+
+function canUseBrowserSpeech() {
+  return typeof (globalThis as any)?.speechSynthesis !== 'undefined'
+    && typeof (globalThis as any)?.SpeechSynthesisUtterance !== 'undefined';
+}
+
+function playWithBrowserSpeech(
+  text: string,
+  options: any = {},
+  onEnd?: () => void,
+  reason = 'browser_fallback'
+) {
+  if (!canUseBrowserSpeech()) return false;
+  try {
+    stopCurrentAudio();
+    const synthesis = (globalThis as any).speechSynthesis;
+    const Utterance = (globalThis as any).SpeechSynthesisUtterance;
+    const utterance = new Utterance(String(text || ''));
+    utterance.lang = options.lang || 'fr-FR';
+    utterance.rate = Number(options.rate || 1) || 1;
+    utterance.pitch = Number(options.pitch || 1) || 1;
+    utterance.volume = Number(options.volume ?? 1);
+    utterance.onstart = () => emitEvent('a11:speechstart');
+    utterance.onend = () => {
+      emitEvent('a11:speechend');
+      options.onEnd?.();
+      onEnd?.();
+    };
+    utterance.onerror = (event: any) => {
+      emitCustomEvent('a11:audioBlocked', {
+        reason: String(event?.error || reason),
+      });
+      emitEvent('a11:speechend');
+      options.onError?.(new Error(`Browser speech failed: ${String(event?.error || reason)}`));
+      onEnd?.();
+    };
+    synthesis.cancel();
+    synthesis.speak(utterance);
+    return true;
+  } catch (error) {
+    return false;
   }
 }
 
@@ -104,6 +175,12 @@ function resolveAudioUrl(audioUrl: string): string {
   } catch {
     return value;
   }
+}
+
+function isRobotVoiceFallbackPayload(data: any): boolean {
+  const provider = String(data?.provider || data?.audioModule?.provider || '').trim().toLowerCase();
+  const via = String(data?.via || data?.audioModule?.via || provider).trim().toLowerCase();
+  return provider.includes('espeak') || via.includes('espeak');
 }
 
 function stopCurrentAudio() {
@@ -142,8 +219,11 @@ export function speak(
     rate?: number;
     pitch?: number;
     volume?: number;
+    voiceReferenceId?: string;
+    vocalMode?: 'speech' | 'adaptive' | 'sing';
     onEnd?: () => void;
     onError?: (error: Error) => void;
+    [key: string]: any;
   } = {}
 ): void {
   if (speechMuted || !String(text || '').trim()) {
@@ -176,8 +256,11 @@ export function queueSpeech(
     rate?: number;
     pitch?: number;
     volume?: number;
+    voiceReferenceId?: string;
+    vocalMode?: 'speech' | 'adaptive' | 'sing';
     onEnd?: () => void;
     onError?: (error: Error) => void;
+    [key: string]: any;
   } = {}
 ): void {
   if (speechMuted || !String(text || '').trim()) {
@@ -221,13 +304,30 @@ export function queueLength(): number {
 
 async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () => void): Promise<void> {
   try {
+    if (Date.now() < serverTtsDisabledUntil && playWithBrowserSpeech(text, options, onEnd, 'server_tts_cooldown')) {
+      return;
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+
     const res = await fetch(getTtsEndpoint(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       credentials: 'include',
-      body: JSON.stringify({ text, ...options })
+      body: JSON.stringify({ text, stream: true, ...options })
     });
-    if (!res.ok) throw new Error('Piper TTS server error');
+    if (!res.ok) {
+      const retryable = [404, 502, 503, 504].includes(res.status);
+      if (retryable) {
+        serverTtsDisabledUntil = Date.now() + 60_000;
+        if (playWithBrowserSpeech(text, options, onEnd, `server_tts_${res.status}`)) {
+          return;
+        }
+      }
+      throw new Error(`Piper TTS server error (${res.status})`);
+    }
 
     const contentType = String(res.headers.get('content-type') || '').toLowerCase();
     let resolvedSource = '';
@@ -259,6 +359,20 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
         null;
 
       if (!audioUrl) throw new Error('No audio_url in Piper response');
+      if (data?.audioModule) {
+        emitCustomEvent('a11:ttsDiagnostics', {
+          ...data.audioModule,
+          provider: data?.provider || data?.audioModule?.provider || null,
+          via: data?.via || data?.audioModule?.via || data?.provider || null,
+        });
+      }
+      if (isRobotVoiceFallbackPayload(data) && options.allowRobotVoice !== true) {
+        serverTtsDisabledUntil = Date.now() + 30_000;
+        if (playWithBrowserSpeech(text, options, onEnd, 'robot_voice_fallback')) {
+          return;
+        }
+        throw new Error('Robot voice fallback skipped');
+      }
       resolvedSource = resolveAudioUrl(String(audioUrl));
     }
 
@@ -277,6 +391,10 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
       }
     };
     audio.onerror = (e) => {
+      emitCustomEvent('a11:audioBlocked', {
+        url: audio.src,
+        reason: 'audio_element_error',
+      });
       emitEvent('a11:speechend');
       options.onError?.(new Error('Audio playback error'));
       onEnd?.();
@@ -288,11 +406,14 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
     };
     emitEvent('a11:speechstart');
     const playPromise = audio.play();
-    playPromise.catch((error) => {
+    playPromise.then(() => {
+      _audioUnlocked = true;
+    }).catch((error) => {
       console.error('[speech] audio.play() failed', error);
-      if (!isLikelyTouchDevice()) {
-        emitCustomEvent('a11:audioBlocked', { url: audio.src });
-      }
+      emitCustomEvent('a11:audioBlocked', {
+        url: audio.src,
+        reason: String(error?.message || error || 'play_failed'),
+      });
       emitEvent('a11:speechend');
       options.onError?.(new Error(`Audio playback blocked: ${String(error?.message || error)}`));
       onEnd?.();
@@ -303,6 +424,9 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
       }
     });
   } catch (err: any) {
+    if (playWithBrowserSpeech(text, options, onEnd, 'server_tts_failed')) {
+      return;
+    }
     emitEvent('a11:speechend');
     options.onError?.(err);
     onEnd?.();
@@ -315,7 +439,7 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
  * Utile pour le fallback bouton play quand l'autoplay est bloqué.
  */
 export function retryPlayUrl(url: string): void {
-  _audioUnlocked = true;
+  void unlockAudioOutput();
   stopCurrentAudio();
   const audio = new Audio(url);
   currentAudio = audio;
@@ -328,8 +452,14 @@ export function retryPlayUrl(url: string): void {
     if (currentAudio === audio) currentAudio = null;
   };
   emitEvent('a11:speechstart');
-  audio.play().catch((e) => {
+  audio.play().then(() => {
+    _audioUnlocked = true;
+  }).catch((e) => {
     console.error('[speech] retryPlayUrl failed', e);
+    emitCustomEvent('a11:audioBlocked', {
+      url: audio.src,
+      reason: String(e?.message || e || 'retry_play_failed'),
+    });
     emitEvent('a11:speechend');
     if (currentAudio === audio) currentAudio = null;
   });
@@ -339,12 +469,49 @@ export function retryPlayUrl(url: string): void {
 let recognition: any = null;
 let recognitionCallback: ((txt: string, isFinal?: boolean) => void) | null = null;
 let recognitionActive = false;
+let recognitionLanguage = 'fr-FR';
+let pendingStart:
+  | {
+      promise: Promise<void>;
+      resolve: () => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  | null = null;
+
+function settlePendingStart(error?: Error): void {
+  if (!pendingStart) return;
+  const pending = pendingStart;
+  pendingStart = null;
+  clearTimeout(pending.timer);
+  if (error) pending.reject(error);
+  else pending.resolve();
+}
+
+function normalizeRecognitionLanguage(value?: string) {
+  const raw = String(value || '').trim();
+  return raw || 'fr-FR';
+}
+
+export function setSpeechRecognitionLanguage(value?: string): void {
+  recognitionLanguage = normalizeRecognitionLanguage(value);
+  if (!recognition) return;
+  try {
+    recognition.lang = recognitionLanguage;
+  } catch {
+    // Some browsers reject language changes while recognition is active.
+  }
+}
 
 /**
  * Initialise la reconnaissance vocale avec un callback (txt, isFinal?) => void
  */
-export function initSpeech(onResult: (txt: string, isFinal?: boolean) => void): void {
+export function initSpeech(
+  onResult: (txt: string, isFinal?: boolean) => void,
+  options: { lang?: string } = {}
+): void {
   recognitionCallback = onResult;
+  if (options.lang) setSpeechRecognitionLanguage(options.lang);
   if (recognition) return; // déjà créé
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -354,7 +521,7 @@ export function initSpeech(onResult: (txt: string, isFinal?: boolean) => void): 
     recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'fr-FR';
+    recognition.lang = recognitionLanguage;
     recognition.onresult = (ev: any) => {
       if (!recognitionCallback) return;
       let interim = '';
@@ -367,10 +534,24 @@ export function initSpeech(onResult: (txt: string, isFinal?: boolean) => void): 
       if (interim) recognitionCallback(interim, false);
       if (final) recognitionCallback(final, true);
     };
+    recognition.onstart = () => {
+      recognitionActive = true;
+      settlePendingStart();
+    };
     recognition.onerror = (e: any) => {
-      console.warn('[speech] recognition error', e);
+      const error = String(e?.error || 'unknown');
+      recognitionActive = false;
+      emitCustomEvent('a11:micError', {
+        error,
+        message: String(e?.message || ''),
+      });
+      settlePendingStart(new Error(`SpeechRecognition ${error}`));
+      if (error !== 'not-allowed' && error !== 'service-not-allowed') {
+        console.warn('[speech] recognition error', e);
+      }
     };
     recognition.onend = () => {
+      settlePendingStart(new Error('SpeechRecognition ended before start'));
       recognitionActive = false;
     };
   } catch (e) {
@@ -382,27 +563,52 @@ export function initSpeech(onResult: (txt: string, isFinal?: boolean) => void): 
 /**
  * Démarre la reconnaissance micro. Promise résolue quand démarré.
  */
-export function startMic(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (!recognition) {
-      initSpeech(recognitionCallback ?? (() => {}));
-    }
-    if (!recognition) return reject(new Error('SpeechRecognition not available'));
-    try {
-      recognition.start();
-      recognitionActive = true;
-      resolve();
-    } catch (e) {
-      try {
-        recognition.stop();
-        recognition.start();
-        recognitionActive = true;
-        resolve();
-      } catch (err) {
-        reject(err);
-      }
-    }
+export function startMic(options: { lang?: string } = {}): Promise<void> {
+  if (options.lang) setSpeechRecognitionLanguage(options.lang);
+  if (recognitionActive) return Promise.resolve();
+  if (pendingStart) return pendingStart.promise;
+
+  if (!recognition) {
+    initSpeech(recognitionCallback ?? (() => {}), { lang: recognitionLanguage });
+  }
+  if (!recognition) return Promise.reject(new Error('SpeechRecognition not available'));
+  setSpeechRecognitionLanguage(recognitionLanguage);
+
+  let resolveStart!: () => void;
+  let rejectStart!: (error: Error) => void;
+  const promise = new Promise<void>((resolve, reject) => {
+    resolveStart = resolve;
+    rejectStart = reject;
   });
+  pendingStart = {
+    promise,
+    resolve: resolveStart,
+    reject: rejectStart,
+    timer: setTimeout(() => {
+      recognitionActive = false;
+      settlePendingStart(new Error('SpeechRecognition start timeout'));
+    }, 10000),
+  };
+
+  try {
+    recognition.start();
+  } catch (e) {
+    try {
+      recognition.stop();
+      setTimeout(() => {
+        try {
+          recognition.start();
+        } catch (err: any) {
+          recognitionActive = false;
+          settlePendingStart(err instanceof Error ? err : new Error(String(err)));
+        }
+      }, 80);
+    } catch (err) {
+      recognitionActive = false;
+      settlePendingStart(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  return promise;
 }
 
 /**
@@ -410,6 +616,7 @@ export function startMic(): Promise<void> {
  */
 export function stopMic(): void {
   try {
+    settlePendingStart(new Error('SpeechRecognition stopped'));
     if (recognition) {
       recognition.stop();
       recognitionActive = false;
