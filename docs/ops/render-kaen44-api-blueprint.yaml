@@ -20,7 +20,7 @@ services:
     repo: https://github.com/Funesterie/alphaonze
     branch: master
     rootDir: a11/backend/apps/server
-    buildCommand: npm install --omit=dev
+    buildCommand: npm install --include=dev && npm prune --omit=dev
     # API-only fallback: master currently has the Kaen env switches but not
     # server-kaen44.cjs, so start the generic server with explicit Kaen env.
     startCommand: npm start
