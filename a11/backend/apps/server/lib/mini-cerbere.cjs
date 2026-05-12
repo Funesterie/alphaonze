@@ -431,6 +431,8 @@ function buildChatTargets({
   ).trim();
   const directOpenAiModel = String(env.A11_CERBERE_OPENAI_MODEL || env.A11_AGENT_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
   const directOpenAiBaseUrl = String(env.A11_CERBERE_OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).trim() || DEFAULT_OPENAI_BASE_URL;
+  const togetherCredential = env.A11_CERBERE_TOGETHER_API_KEY || env.TOGETHER_API_KEY;
+  const deepSeekCredential = env.A11_CERBERE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY;
 
   if (primaryProvider !== 'local') {
     addOpenAiCompatibleTarget(targets, {
@@ -444,7 +446,7 @@ function buildChatTargets({
     addOpenAiCompatibleTarget(targets, {
       role: 'fallback-together',
       baseUrl: env.A11_CERBERE_TOGETHER_BASE_URL || DEFAULT_TOGETHER_BASE_URL,
-      authToken: env.A11_CERBERE_TOGETHER_API_KEY || env.TOGETHER_API_KEY,
+      authToken: togetherCredential,
       model: env.A11_CERBERE_TOGETHER_MODEL || env.TOGETHER_MODEL || DEFAULT_TOGETHER_MODEL,
       upstreamBody,
     });
@@ -452,7 +454,7 @@ function buildChatTargets({
     addOpenAiCompatibleTarget(targets, {
       role: 'fallback-deepseek',
       baseUrl: env.A11_CERBERE_DEEPSEEK_BASE_URL || DEFAULT_DEEPSEEK_BASE_URL,
-      authToken: env.A11_CERBERE_DEEPSEEK_API_KEY || env.DEEPSEEK_API_KEY,
+      authToken: deepSeekCredential,
       model: env.A11_CERBERE_DEEPSEEK_MODEL || env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
       upstreamBody,
     });
