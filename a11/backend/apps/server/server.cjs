@@ -7048,6 +7048,21 @@ app.get('/', (_req, res) => {
   return res.status(200).json({ ok: true, service: 'a11-api' });
 });
 
+for (const route of ['/login', '/auth/success', '/reset-password', '/reset']) {
+  app.get(route, (_req, res) => {
+    const uiStatus = getEmbeddedUiStatus();
+    if (uiStatus.ready) {
+      return res.sendFile(uiStatus.indexPath);
+    }
+
+    if (uiStatus.enabled || String(process.env.A11_LOCAL_MODE || '').trim() === '1') {
+      return sendEmbeddedUiDiagnostic(res);
+    }
+
+    return res.status(404).type('text/plain').send('Not found');
+  });
+}
+
 function getOpenAICompletionsUrl(baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1') {
   const base = String(baseUrl || 'https://api.openai.com/v1').trim().replace(/\/$/, '');
   if (!base) {

@@ -27,6 +27,7 @@ import {
   forgotPassword,
   resetPassword,
   startGoogleOAuth,
+  startMicrosoftOAuth,
   setAuthDisplayName,
   transcribeAudioFile,
   uploadTtsVoiceReference,
@@ -947,7 +948,40 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search || "");
+    const authError = String(params.get("error") || "").trim().toLowerCase();
+    if (!authError) return;
+
+    const authErrorMessages: Record<string, string> = {
+      oauth_failed: "La connexion externe a echoue. Reessaie dans un instant.",
+      oauth_state_invalid: "La verification de connexion a expire ou ne correspond plus. Relance la connexion.",
+      oauth_state_expired: "La tentative de connexion a expire. Relance-la depuis cette page.",
+      session_verification_failed: "La connexion a reussi, mais la session n'a pas pu etre verifiee. Reessaie une fois.",
+      google_auth_not_configured: "La connexion Google n'est pas encore activee sur ce serveur.",
+      google_invalid_client: "La connexion Google est mal configuree cote serveur. Utilise Microsoft pendant que nous remplacons la cle Google.",
+      google_invalid_grant: "Google a refuse le code de connexion. Reessaie en repartant du bouton Google.",
+      google_redirect_uri_mismatch: "Google refuse l'URL de retour configuree pour cette application.",
+      google_access_denied: "La connexion Google a ete annulee.",
+      google_email_not_verified: "Ton adresse Google doit etre verifiee avant de pouvoir entrer ici.",
+      microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activee sur ce serveur.",
+      microsoft_invalid_client: "La connexion Microsoft est mal configuree cote serveur.",
+      microsoft_invalid_grant: "Microsoft a refuse le code de connexion. Reessaie en repartant du bouton Microsoft.",
+      microsoft_access_denied: "La connexion Microsoft a ete annulee.",
+      microsoft_email_missing: "Microsoft n'a pas renvoye d'adresse email exploitable pour la session.",
+    };
+
+    setMode("login");
+    setInfo("");
+    setGoogleLoading(false);
+    setMicrosoftLoading(false);
+    setError(authErrorMessages[authError] || "La connexion n'a pas pu etre finalisee.");
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   useEffect(() => {
     if (!ENABLE_GOOGLE_IDENTITY_BUTTON || !GOOGLE_CLIENT_ID || mode === "forgot" || !googleButtonRef.current) return;
@@ -1008,6 +1042,13 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     startGoogleOAuth("/auth/success", "web");
+  };
+
+  const handleMicrosoftOAuth = () => {
+    setError("");
+    setInfo("");
+    setMicrosoftLoading(true);
+    startMicrosoftOAuth("/auth/success", "web");
   };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {
@@ -1180,7 +1221,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           <button
             type="button"
             onClick={handleGoogleOAuth}
-            disabled={googleLoading || loading}
+            disabled={googleLoading || microsoftLoading || loading}
             style={{
               minHeight: 42,
               borderRadius: isKaen44 ? 12 : 6,
@@ -1189,11 +1230,29 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
                 ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
                 : (isKaen44 ? "#f8fafc" : "#ffffff"),
               color: "#111827",
-              cursor: googleLoading || loading ? "wait" : "pointer",
+              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
               fontWeight: 800,
             }}
           >
             {googleLoading ? "Connexion Google..." : "Continuer avec Google"}
+          </button>
+          <button
+            type="button"
+            onClick={handleMicrosoftOAuth}
+            disabled={googleLoading || microsoftLoading || loading}
+            style={{
+              minHeight: 42,
+              borderRadius: isKaen44 ? 12 : 6,
+              border: isKaen44 ? "1px solid rgba(125, 211, 252, 0.28)" : "1px solid #334155",
+              background: microsoftLoading
+                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                : (isKaen44 ? "rgba(15, 23, 42, 0.9)" : "#0f172a"),
+              color: "#f8fafc",
+              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
+              fontWeight: 800,
+            }}
+          >
+            {microsoftLoading ? "Connexion Microsoft..." : "Continuer avec Microsoft"}
           </button>
           {ENABLE_GOOGLE_IDENTITY_BUTTON && GOOGLE_CLIENT_ID && (
             <div style={{ minHeight: 42, display: "flex", justifyContent: "center" }}>
