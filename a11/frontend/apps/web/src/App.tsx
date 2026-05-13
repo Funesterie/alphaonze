@@ -1408,7 +1408,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           <a href="/vivy/">Vivy</a>
           <a href="/privacy/">Confidentialite</a>
           <a href="/terms/">Conditions</a>
-          <a href="/login" className="kaen-public-login">Connexion</a>
+          <a href="/login?show=1" className="kaen-public-login">Connexion</a>
         </div>
       </nav>
 
@@ -1424,7 +1424,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
                 espaces Google Drive ou OneDrive quand ils choisissent de les partager.
               </p>
               <div className="kaen-public-actions">
-                <a href="/login">Ouvrir Kaen44</a>
+                <a href="/login?show=1">Ouvrir Kaen44</a>
                 <a href="/privacy/">Lire les regles de confidentialite</a>
               </div>
             </>
@@ -3563,7 +3563,11 @@ export function App() {
 
   if (!isAuthenticated) {
     const pathname = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/";
-    if (isKaen44 && pathname !== "/login" && !pathname.includes("/auth/success")) {
+    const search = typeof window !== "undefined" ? window.location.search.toLowerCase() : "";
+    const isLoginRoute = pathname === "/login" || pathname.startsWith("/login/");
+    const isAuthSuccessRoute = pathname === "/auth/success" || pathname.startsWith("/auth/success/");
+    const forceLoginPanel = isLoginRoute || search.includes("error=") || search.includes("show=1") || search.includes("login=1");
+    if (isKaen44 && !forceLoginPanel && !isAuthSuccessRoute) {
       const publicPage = pathname.includes("/privacy") ? "privacy"
         : pathname.includes("/terms") ? "terms"
           : pathname.includes("/vivy") ? "vivy"
