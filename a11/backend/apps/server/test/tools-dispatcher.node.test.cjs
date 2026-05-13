@@ -12,6 +12,7 @@ const {
   t_schedule_email,
   t_list_resources,
   t_get_latest_resource,
+  t_a11_env_snapshot,
 } = require('../src/a11/tools-dispatcher.cjs');
 
 function restoreEnv(previous) {
@@ -64,6 +65,80 @@ function createWorkspaceTempFile(filename, content) {
   fs.writeFileSync(fullPath, content, 'utf8');
   return fullPath;
 }
+
+test('env snapshot accepts canonical Cerbere stats without an ok flag', async () => {
+  const previous = {
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+  };
+
+  try {
+    await withInternalApiServer(async ({ req, res, url }) => {
+      if (req.method === 'GET' && url.pathname === '/api/stats') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          service: 'cerbere-router',
+          canonical: true,
+          llm: { provider: 'ollama', localModel: 'gemma4:e4b' },
+        }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    }, async ({ port }) => {
+      process.env.LLM_ROUTER_URL = `http://127.0.0.1:${port}`;
+      const result = await t_a11_env_snapshot();
+
+      assert.equal(result.ok, true);
+      assert.equal(result.snapshot.llm.ok, true);
+      assert.equal(result.snapshot.llm.service, 'cerbere-router');
+      assert.equal(result.snapshot.llm.llm.provider, 'ollama');
+      assert.equal(typeof result.snapshot.storage.runtimeFiles.count, 'number');
+    });
+  } finally {
+    restoreEnv(previous);
+  }
+});
+
+test('env snapshot falls back to the embedded llm stats route', async () => {
+  const previous = {
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+  };
+
+  try {
+    await withInternalApiServer(async ({ req, res, url }) => {
+      if (req.method === 'GET' && url.pathname === '/api/stats') {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'router_down' }));
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/llm/stats') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          service: 'cerbere-router',
+          routerKind: 'embedded-router',
+          llm: { provider: 'ollama' },
+        }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    }, async ({ port }) => {
+      process.env.LLM_ROUTER_URL = `http://127.0.0.1:${port}`;
+      const result = await t_a11_env_snapshot();
+
+      assert.equal(result.ok, true);
+      assert.equal(result.snapshot.llm.ok, true);
+      assert.equal(result.snapshot.llm.sourceUrl, `http://127.0.0.1:${port}/api/llm/stats`);
+      assert.equal(result.snapshot.llm.attempts.length, 1);
+      assert.equal(result.snapshot.llm.attempts[0].status, 503);
+    });
+  } finally {
+    restoreEnv(previous);
+  }
+});
 
 test('t_generate_png fails by default when no real image backend is available', async () => {
   const previous = {

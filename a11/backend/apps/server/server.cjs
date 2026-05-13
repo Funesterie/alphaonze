@@ -8477,6 +8477,7 @@ function buildDevActionResultDetails(action, result = {}) {
       roots: Array.isArray(snapshot.roots) ? snapshot.roots.slice(0, 4) : undefined,
       qflushAvailable: snapshot.qflush?.available === true,
       llmReady: snapshot.llm?.ok === true,
+      runtimeFilesCount: Number(snapshot.storage?.runtimeFiles?.count || 0) || undefined,
       toolsCount: Array.isArray(snapshot.tools) ? snapshot.tools.length : undefined,
     };
   }
@@ -8579,10 +8580,26 @@ function buildDeterministicDevActionReply(context) {
     }
 
     if (okActions.has('a11_env_snapshot')) {
-      const resourcesCount = Number(results.find((entry) => entry.action === 'list_resources')?.count || 0);
-      const filesCount = Number(results.find((entry) => entry.action === 'list_stored_files')?.count || 0);
+      const envEntry = results.find((entry) => entry.action === 'a11_env_snapshot');
+      const resourcesEntry = results.find((entry) => entry.action === 'list_resources');
+      const filesEntry = results.find((entry) => entry.action === 'list_stored_files');
+      const resourcesCount = Number(resourcesEntry?.count || 0);
+      const filesCount = Number(filesEntry?.count || 0);
+      const runtimeFilesCount = Number(envEntry?.details?.runtimeFilesCount || 0);
+      const storageIssues = [];
+      if (resourcesEntry && resourcesEntry.ok === false) {
+        storageIssues.push(`ressources: ${resourcesEntry.error || 'verification impossible'}`);
+      }
+      if (filesEntry && filesEntry.ok === false) {
+        storageIssues.push(`fichiers: ${filesEntry.error || 'verification impossible'}`);
+      }
+      if (storageIssues.length) {
+        return `Diagnostic rapide: le runtime A11 repond, mais je n'ai pas pu verifier tout le stockage utilisateur (${storageIssues.join(' ; ')}).`;
+      }
       return resourcesCount || filesCount
         ? `Diagnostic rapide: le runtime A11 repond, et j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`
+        : runtimeFilesCount
+          ? `Diagnostic rapide: le runtime A11 repond. Le stockage utilisateur est vide, mais le runtime local contient ${runtimeFilesCount} fichier(s).`
         : "Diagnostic rapide: le runtime A11 repond, mais je n'ai trouve aucune ressource stockee pour le moment.";
     }
 
@@ -9876,15 +9893,36 @@ function buildDirectSafeUserReply(cerbere, latestUserMessage = '', imagePath = n
   if (results.some((entry) => entry.action === 'a11_env_snapshot')) {
     const envResult = results.find((entry) => entry.action === 'a11_env_snapshot')?.result || {};
     const snapshot = envResult.snapshot && typeof envResult.snapshot === 'object' ? envResult.snapshot : envResult;
-    const resourcesCount = Number(results.find((entry) => entry.action === 'list_resources')?.result?.count || 0);
-    const filesCount = Number(results.find((entry) => entry.action === 'list_stored_files')?.result?.count || 0);
+    const resourcesEntry = results.find((entry) => entry.action === 'list_resources');
+    const filesEntry = results.find((entry) => entry.action === 'list_stored_files');
+    const resourcesResult = resourcesEntry?.result && typeof resourcesEntry.result === 'object' ? resourcesEntry.result : {};
+    const filesResult = filesEntry?.result && typeof filesEntry.result === 'object' ? filesEntry.result : {};
+    const resourcesCount = Number(resourcesResult.count || 0);
+    const filesCount = Number(filesResult.count || 0);
+    const runtimeFilesCount = Number(snapshot.storage?.runtimeFiles?.count || 0);
+    const storageIssues = [];
+    if (resourcesEntry && resourcesResult.ok === false) {
+      storageIssues.push(`ressources: ${sanitizeDevActionError(resourcesResult.error || resourcesEntry.error || 'verification impossible') || 'verification impossible'}`);
+    }
+    if (filesEntry && filesResult.ok === false) {
+      storageIssues.push(`fichiers: ${sanitizeDevActionError(filesResult.error || filesEntry.error || 'verification impossible') || 'verification impossible'}`);
+    }
+    const storageSentence = storageIssues.length
+      ? `Cote stockage, verification incomplete: ${storageIssues.join(' ; ')}.`
+      : (runtimeFilesCount && !resourcesCount && !filesCount)
+        ? `Cote stockage utilisateur, je trouve 0 ressource(s) DB et 0 fichier(s) DB, mais le runtime local contient ${runtimeFilesCount} fichier(s).`
+      : `Cote stockage, j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`;
     const issues = [];
     if (snapshot.llm?.ok !== true) issues.push('le LLM local ne repond pas correctement');
     if (snapshot.qflush?.available !== true) issues.push('Qflush n est pas disponible');
     if (!issues.length) {
-      return `Diagnostic rapide: le runtime A11 repond, et j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`;
+      return storageIssues.length
+        ? `Diagnostic rapide: le runtime A11 repond. ${storageSentence}`
+        : (runtimeFilesCount && !resourcesCount && !filesCount)
+          ? `Diagnostic rapide: le runtime A11 repond. ${storageSentence}`
+        : `Diagnostic rapide: le runtime A11 repond, et j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`;
     }
-    return `Je vois surtout ces points a corriger: ${issues.join(' ; ')}. Cote stockage, j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`;
+    return `Je vois surtout ces points a corriger: ${issues.join(' ; ')}. ${storageSentence}`;
   }
 
   if (results.some((entry) => entry.action === 'list_resources') || results.some((entry) => entry.action === 'list_stored_files')) {

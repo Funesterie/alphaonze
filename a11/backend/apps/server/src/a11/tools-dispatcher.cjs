@@ -3002,6 +3002,169 @@ async function t_vs_build_solution() {
   };
 }
 
+function normalizeLlmStatsSnapshot(data, sourceUrl) {
+  const stats = data && typeof data === 'object' ? data : {};
+  const service = String(stats.service || '').trim().toLowerCase();
+  const routerKind = String(stats.routerKind || '').trim();
+  const provider = String(stats.llm?.provider || stats.provider || '').trim();
+  const explicitOk = typeof stats.ok === 'boolean' ? stats.ok : null;
+  const inferredOk = Boolean(
+    stats.canonical === true
+    || service === 'cerbere-router'
+    || routerKind
+    || provider
+  );
+
+  return {
+    ...stats,
+    ok: explicitOk === false ? false : (explicitOk === true || inferredOk),
+    sourceUrl,
+  };
+}
+
+function buildLlmStatsCandidateUrls() {
+  const configured = String(process.env.LLM_ROUTER_URL || '').trim().replace(/\/+$/, '');
+  const candidates = [];
+  if (configured) {
+    candidates.push(`${configured}/api/stats`);
+  } else {
+    candidates.push('http://127.0.0.1:4545/api/stats');
+  }
+
+  candidates.push(`${getInternalApiBaseUrl()}/api/llm/stats`);
+
+  return [...new Set(candidates)];
+}
+
+async function fetchLlmStatsSnapshot(url, timeoutMs = 2500) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { method: 'GET', signal: ctrl.signal });
+    const data = await r.json().catch(async () => ({
+      ok: false,
+      error: await r.text().catch(() => 'invalid_response'),
+    }));
+    if (!r.ok) {
+      return {
+        ok: false,
+        sourceUrl: url,
+        status: r.status,
+        ...(data && typeof data === 'object' ? data : { error: String(data) }),
+      };
+    }
+    return normalizeLlmStatsSnapshot(data, url);
+  } catch (e) {
+    return {
+      ok: false,
+      sourceUrl: url,
+      error: String(e && e.message ? e.message : e),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveLlmStatsSnapshot() {
+  const attempts = [];
+  for (const url of buildLlmStatsCandidateUrls()) {
+    const result = await fetchLlmStatsSnapshot(url);
+    if (result?.ok === true) {
+      if (attempts.length) {
+        return {
+          ...result,
+          attempts: attempts.map((entry) => ({
+            sourceUrl: entry.sourceUrl,
+            status: entry.status,
+            error: entry.error,
+          })),
+        };
+      }
+      return result;
+    }
+    attempts.push(result);
+  }
+  return {
+    ok: false,
+    error: 'llm_stats_unavailable',
+    attempts: attempts.map((entry) => ({
+      sourceUrl: entry.sourceUrl,
+      status: entry.status,
+      error: entry.error,
+    })),
+  };
+}
+
+async function collectRuntimeFileStats(rootDir, options = {}) {
+  const root = path.resolve(String(rootDir || ''));
+  const maxEntries = Math.max(1, Math.min(500, Number(options.maxEntries || 200)));
+  const maxDepth = Math.max(0, Math.min(8, Number(options.maxDepth || 5)));
+  const stats = {
+    root,
+    exists: false,
+    count: 0,
+    totalBytes: 0,
+    truncated: false,
+    latest: null,
+  };
+
+  async function visit(dir, depth) {
+    if (stats.count >= maxEntries) {
+      stats.truncated = true;
+      return;
+    }
+    let entries = [];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch (e) {
+      stats.error = String(e && e.message ? e.message : e);
+      return;
+    }
+
+    for (const entry of entries) {
+      if (stats.count >= maxEntries) {
+        stats.truncated = true;
+        return;
+      }
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < maxDepth) await visit(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      try {
+        const stat = await fsp.stat(fullPath);
+        stats.count += 1;
+        stats.totalBytes += Number(stat.size || 0);
+        const modifiedAt = stat.mtime instanceof Date ? stat.mtime.toISOString() : null;
+        if (!stats.latest || Number(stat.mtimeMs || 0) > Number(stats.latest.mtimeMs || 0)) {
+          stats.latest = {
+            path: fullPath,
+            sizeBytes: Number(stat.size || 0),
+            modifiedAt,
+            mtimeMs: Number(stat.mtimeMs || 0),
+          };
+        }
+      } catch (e) {
+        stats.error = String(e && e.message ? e.message : e);
+      }
+    }
+  }
+
+  try {
+    stats.exists = fs.existsSync(root);
+    if (stats.exists) await visit(root, 0);
+  } catch (e) {
+    stats.error = String(e && e.message ? e.message : e);
+  }
+
+  if (stats.latest) {
+    delete stats.latest.mtimeMs;
+  }
+
+  return stats;
+}
+
 async function t_a11_env_snapshot(_args = {}) {
   const tools = Object.keys(TOOL_IMPL || {}).sort();
   const roots = WORKSPACE_ROOTS.map(r => path.resolve(r));
@@ -3010,22 +3173,7 @@ async function t_a11_env_snapshot(_args = {}) {
     module: !!globalThis.__QFLUSH_MODULE,
     exePath: globalThis.__QFLUSH_PATH || null
   };
-  let llmStats = null;
-  try {
-    const routerUrl = (process.env.LLM_ROUTER_URL && process.env.LLM_ROUTER_URL.trim()) || 'http://127.0.0.1:4545';
-    const url = String(routerUrl).replace(/\/$/, '') + '/api/stats';
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 1000);
-    const r = await fetch(url, { method: 'GET', signal: ctrl.signal });
-    clearTimeout(t);
-    if (r.ok) {
-      llmStats = await r.json();
-    } else {
-      llmStats = { ok: false, status: r.status };
-    }
-  } catch (e) {
-    llmStats = { ok: false, error: String(e && e.message) };
-  }
+  const llmStats = await resolveLlmStatsSnapshot();
   const SAFE_ENV_KEYS = [
     'NODE_ENV','BACKEND','LLAMA_BASE','LLAMA_PORT','LLM_ROUTER_URL','PORT','HOST_SERVER'
   ];
@@ -3053,6 +3201,10 @@ async function t_a11_env_snapshot(_args = {}) {
     roots,
     qflush: qflushInfo,
     llm: llmStats,
+    storage: {
+      safeDataRoot: SAFE_DATA_ROOT,
+      runtimeFiles: await collectRuntimeFileStats(SAFE_DATA_ROOT),
+    },
     env: safeEnv,
     workspaces
   };
