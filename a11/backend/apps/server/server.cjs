@@ -76,10 +76,12 @@ const {
 const { buildSdPromptBundle: buildSharedSdPromptBundle } = require('./src/mask/build-sd-prompt-bundle.cjs');
 const { callStructuredLlmJson } = require('./src/mask/resolve-text-to-wazaa.cjs');
 const createDecommissionedDevRoutesRouter = require('./src/routes/decommissioned-dev-routes.cjs');
+const createPublicMcpRouter = require('./src/routes/mcp-public.cjs');
 
 
 // --- Endpoint de healthcheck Railway ---
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.use(createPublicMcpRouter());
 
 const createAdminRouter = require('./src/routes/admin.cjs');
 const createVideoGenerateRouter = require('./src/routes/video-generate.cjs');

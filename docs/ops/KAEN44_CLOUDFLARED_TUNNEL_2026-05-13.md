@@ -76,12 +76,13 @@ Equivalent manual checks:
 ```bash
 curl -fsS https://k44.funesterie.me/health
 curl -fsS https://k44.funesterie.me/api/llm/stats
+curl -fsS https://k44.funesterie.me/mcp
 curl -fsS https://kaen44.funesterie.me/api/llm/stats
 curl -fsS https://funesterie.me/api/llm/stats
 curl -fsS https://www.funesterie.me/api/llm/stats
 ```
 
-The stats response should be Cerbere JSON and response headers should include `via: 1.1 Caddy`.
+The stats response should be Cerbere JSON, `/mcp` should return `kind: "a11_public_mcp"`, and response headers should include `via: 1.1 Caddy`.
 
 ## Rollback
 

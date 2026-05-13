@@ -25,6 +25,12 @@ const checks = [
     jsonService: 'cerbere-router',
   },
   {
+    name: 'A11 public MCP manifest',
+    url: `${a11Base}/mcp`,
+    status: 200,
+    jsonKind: 'a11_public_mcp',
+  },
+  {
     name: 'Kaen44 health',
     url: `${kaen44Base}/health`,
     status: 200,
@@ -42,6 +48,13 @@ const checks = [
     url: `${kaen44Base}/api/llm/stats`,
     status: 200,
     jsonService: 'cerbere-router',
+    viaCaddy: true,
+  },
+  {
+    name: 'Kaen44 public MCP manifest',
+    url: `${kaen44Base}/mcp`,
+    status: 200,
+    jsonKind: 'a11_public_mcp',
     viaCaddy: true,
   },
   {
@@ -133,6 +146,19 @@ function assertCheck(check, response) {
 
     if (parsed.service !== check.jsonService) {
       throw new Error(`expected service ${check.jsonService}, got ${parsed.service || '<missing>'}`);
+    }
+  }
+
+  if (check.jsonKind) {
+    let parsed;
+    try {
+      parsed = JSON.parse(response.body);
+    } catch (error) {
+      throw new Error(`expected JSON response: ${error.message}`);
+    }
+
+    if (parsed.kind !== check.jsonKind) {
+      throw new Error(`expected kind ${check.jsonKind}, got ${parsed.kind || '<missing>'}`);
     }
   }
 }

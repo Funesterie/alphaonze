@@ -53,6 +53,26 @@
         "discussion_read"
       ],
       "disabledTools": []
+    },
+    "a11mcp-public-a11": {
+      "url": "https://a11.funesterie.pro/mcp",
+      "disabled": false,
+      "autoApprove": [
+        "a11_health",
+        "a11_llm_stats",
+        "a11_mcp_public_status"
+      ],
+      "disabledTools": []
+    },
+    "a11mcp-public-k44": {
+      "url": "https://k44.funesterie.me/mcp",
+      "disabled": false,
+      "autoApprove": [
+        "a11_health",
+        "a11_llm_stats",
+        "a11_mcp_public_status"
+      ],
+      "disabledTools": []
     }
   }
 }
