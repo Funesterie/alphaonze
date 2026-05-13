@@ -7,6 +7,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { URL } = require('node:url');
 const { withOllamaQueue, getQueueStats } = require('../core/ollama-queue.cjs');
+const {
+  buildA11ChatSystemPrompt,
+  buildMcpAccessReply,
+  isMcpAccessQuestion,
+} = require('../chat/a11-active-identity.cjs');
 
 // Charge le system prompt depuis system_prompt.txt (première personne, identité complète d'A11)
 function loadSystemPrompt() {
@@ -61,10 +66,34 @@ function getOllamaConfig() {
   };
 }
 
-function buildOllamaMessages(userMessage) {
+function normalizeConversationMessages(messages, fallbackUserMessage = '') {
+  const normalized = [];
+  if (Array.isArray(messages)) {
+    for (const message of messages) {
+      const role = String(message?.role || '').trim().toLowerCase();
+      const content = String(message?.content || '').trim();
+      if (!content) continue;
+      if (role !== 'user' && role !== 'assistant') continue;
+      normalized.push({ role, content });
+    }
+  }
+  const fallback = String(fallbackUserMessage || '').trim();
+  if (fallback) {
+    const last = normalized[normalized.length - 1];
+    if (!last || last.role !== 'user' || last.content !== fallback) {
+      normalized.push({ role: 'user', content: fallback });
+    }
+  }
+  return normalized;
+}
+
+function buildOllamaMessages(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {
+  const conversationMessages = Array.isArray(userMessageOrMessages)
+    ? normalizeConversationMessages(userMessageOrMessages)
+    : normalizeConversationMessages([], userMessageOrMessages);
   return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: userMessage },
+    { role: 'system', content: buildA11ChatSystemPrompt(systemPrompt) },
+    ...conversationMessages,
   ];
 }
 
@@ -72,14 +101,14 @@ function buildOllamaMessages(userMessage) {
  * Appel direct Ollama — mode non-streaming.
  * Retourne le texte de la réponse ou null si echec.
  */
-async function callOllama(userMessage) {
+async function callOllama(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {
   const { base, model } = getOllamaConfig();
   if (!base) return null;
 
   const ollamaUrl = `${base}/v1/chat/completions`;
   const bodyStr = JSON.stringify({
     model,
-    messages: buildOllamaMessages(userMessage),
+    messages: buildOllamaMessages(userMessageOrMessages, systemPrompt),
     stream: false,
   });
 
@@ -128,7 +157,7 @@ async function callOllama(userMessage) {
  * Appel Ollama en mode streaming — pipe les chunks SSE vers res.
  * Format SSE : data: {"delta":"..."}\n\n  puis  data: [DONE]\n\n
  */
-function streamOllama(userMessage, res) {
+function streamOllama(userMessageOrMessages, res, systemPrompt = SYSTEM_PROMPT) {
   const { base, model } = getOllamaConfig();
   if (!base) {
     res.write('data: {"error":"ollama_not_configured"}\n\n');
@@ -138,7 +167,7 @@ function streamOllama(userMessage, res) {
 
   const bodyStr = JSON.stringify({
     model,
-    messages: buildOllamaMessages(userMessage),
+    messages: buildOllamaMessages(userMessageOrMessages, systemPrompt),
     stream: true,
   });
 
@@ -257,6 +286,10 @@ function createChatRouter(overrides = {}) {
       const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
       if (!userMessage) {
         return res.status(400).json({ ok: false, error: 'missing_message' });
+      }
+      const requestMessages = normalizeConversationMessages(req.body?.messages, userMessage);
+      if (isMcpAccessQuestion(userMessage)) {
+        return res.json({ ok: true, mode: 'mcp_status', assistant: buildMcpAccessReply() });
       }
 
       // Détection d'intent agent : "A11, fais [Goal]"
@@ -450,7 +483,7 @@ function createChatRouter(overrides = {}) {
         req,
         body: req.body || {},
         userText: userMessage,
-        messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+        messages: requestMessages,
         executeRuntime: true,
       });
 
@@ -468,7 +501,7 @@ function createChatRouter(overrides = {}) {
       // Priorite 1 : Ollama local (via queue pour éviter contention)
       try {
         const ollamaText = await withOllamaQueue(
-          () => callOllama(userMessage),
+          () => callOllama(requestMessages, SYSTEM_PROMPT),
           'chat'
         );
         if (ollamaText) {
@@ -501,10 +534,7 @@ function createChatRouter(overrides = {}) {
 
       const completion = await openaiClient.chat.completions.create({
         model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
+        messages: buildOllamaMessages(requestMessages, SYSTEM_PROMPT),
         temperature: 0.7,
         max_tokens: Number(process.env.A11_CHAT_MAX_TOKENS || 4096),
       });
@@ -532,6 +562,14 @@ function createChatRouter(overrides = {}) {
       res.status(400).json({ ok: false, error: 'missing_message' });
       return;
     }
+    const requestMessages = normalizeConversationMessages(req.body?.messages, userMessage);
+    if (isMcpAccessQuestion(userMessage)) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.write(`data: ${JSON.stringify({ delta: buildMcpAccessReply(), model: 'a11-mcp-status' })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -549,7 +587,7 @@ function createChatRouter(overrides = {}) {
       return;
     }
 
-    streamOllama(userMessage, res);
+    streamOllama(requestMessages, res, SYSTEM_PROMPT);
   });
 
   // --- Route stats queue ---
@@ -591,5 +629,10 @@ function chatEntrypoint(...args) {
 
 chatEntrypoint.router = defaultRouter;
 chatEntrypoint.createChatRouter = createChatRouter;
+chatEntrypoint.buildA11ChatSystemPrompt = buildA11ChatSystemPrompt;
+chatEntrypoint.buildMcpAccessReply = buildMcpAccessReply;
+chatEntrypoint.buildOllamaMessages = buildOllamaMessages;
+chatEntrypoint.normalizeConversationMessages = normalizeConversationMessages;
+chatEntrypoint.isMcpAccessQuestion = isMcpAccessQuestion;
 
 module.exports = chatEntrypoint;
