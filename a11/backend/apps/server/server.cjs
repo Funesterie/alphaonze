@@ -1177,8 +1177,28 @@ app.options('*', cors(corsOptions));
 // ============================================================
 // PostgreSQL pool (Railway Postgres)
 // ============================================================
+function resolvePgSslConfig(connectionString = '') {
+  const explicit = String(process.env.PGSSLMODE || process.env.DATABASE_SSL_MODE || process.env.DATABASE_SSL || '')
+    .trim()
+    .toLowerCase();
+  if (['disable', 'false', '0', 'off'].includes(explicit)) return false;
+  if (['require', 'true', '1', 'on'].includes(explicit)) {
+    return { rejectUnauthorized: false };
+  }
+  try {
+    const parsed = new URL(connectionString);
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    if (['localhost', '127.0.0.1', 'a11-postgres', 'postgres', 'db'].includes(host)) {
+      return false;
+    }
+  } catch (_) {
+    // Ignore URL parsing issues and fall back to the safe remote default.
+  }
+  return { rejectUnauthorized: false };
+}
+
 const db = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: resolvePgSslConfig(process.env.DATABASE_URL) })
   : null;
 
 // Middleware de vérification d'abonnement (pour génération image/vidéo)
