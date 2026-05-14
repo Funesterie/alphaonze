@@ -4,6 +4,13 @@ const A11_PUBLIC_HOSTS_WITHOUT_SW = new Set([
   "alphaonze.funesterie.pro",
   "a11.funesterie.pro",
   "api.funesterie.pro",
+  "funesterie.me",
+  "www.funesterie.me",
+  "k44.funesterie.me",
+  "kaen44.funesterie.me",
+  "kaen44.funesterie.pro",
+  "vivy.funesterie.me",
+  "vivy.funesterie.pro",
 ]);
 const A11_STATIC_ASSETS = [
   "/manifest.webmanifest",

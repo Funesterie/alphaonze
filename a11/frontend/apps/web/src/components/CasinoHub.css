@@ -232,7 +232,7 @@
 
 .casino-stakes button {
   min-width: 58px;
-  min-height: 42px;
+  min-height: 44px;
   background: #0e1725;
   color: #cbd5e1;
   border-right: 1px solid rgba(148, 163, 184, 0.2);
@@ -277,7 +277,7 @@
 
 .casino-source-input {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   margin-top: 10px;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 8px;
@@ -359,7 +359,7 @@
 
 .casino-actions button,
 .casino-ghost-button {
-  min-height: 38px;
+  min-height: 44px;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.24);
   background: #0c1522;

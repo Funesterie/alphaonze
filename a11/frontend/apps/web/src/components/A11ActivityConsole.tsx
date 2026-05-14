@@ -97,6 +97,19 @@ function formatDuration(startedAt: number, endedAt?: number) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function publicActivityLabel(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/janus/i.test(raw)) return "Lecture image";
+  if (/checkpoint/i.test(raw)) return "Etape";
+  if (/knowledge|kg/i.test(raw)) return "Recherche interne";
+  if (/nindo|rewrite|re.?criture/i.test(raw)) return "Mise au propre";
+  if (/outil/i.test(raw)) return "Action";
+  if (/g.n.ration image|generation image/i.test(raw)) return "Image";
+  if (/g.n.ration vid.o|generation video/i.test(raw)) return "Video";
+  return raw;
+}
+
 // ─── Ligne d'activité ────────────────────────────────────────────────────────
 
 function ActivityRow({
@@ -134,9 +147,9 @@ function ActivityRow({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ color: cfg.color, fontSize: 12, fontWeight: 600 }}>
-            {cfg.label}
+            {publicActivityLabel(cfg.label)}
           </span>
-          <span style={{ color: "#e2e8f0", fontSize: 12 }}>{event.label}</span>
+          <span style={{ color: "#e2e8f0", fontSize: 12 }}>{publicActivityLabel(event.label)}</span>
           <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto", flexShrink: 0 }}>
             {formatDuration(event.startedAt, event.endedAt)}
           </span>
@@ -262,7 +275,7 @@ export function A11ActivityConsole({
           marginBottom: 8,
         }}
         role="log"
-        aria-label={`Console d'activite ${productLabel}`}
+        aria-label={`Suivi d'activite ${productLabel}`}
         aria-live="polite"
       >
         {/* Header */}
@@ -286,7 +299,7 @@ export function A11ActivityConsole({
               {isActive ? "⚡" : "📋"}
             </span>
             <span style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 600 }}>
-              Console {productLabel}
+              Suivi {productLabel}
             </span>
             {runningCount > 0 && (
               <span

@@ -204,7 +204,8 @@ const AUTH_TOKEN_STORAGE_KEY = 'a11-auth-token';
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = 'a11_jwt_token';
 const AUTH_INVALID_EVENT_NAME = 'a11:auth-invalid';
 const DEFAULT_A11_SYSTEM_PROMPT = [
-  "Je suis A11, creee par Jeffrey.",
+  "Je suis A11, creee par Jeffrey, dans l'ecosysteme Funesterie.",
+  "NOSSEN est mon identite locale A11/Funesterie: dev, code, QFlush, Cerbere, VSIX et projets audio/Vivy.",
   "Je parle en francais naturel, direct, vivant, jamais comme une notice.",
   "Je peux etre precise, imaginative et un peu malicieuse, mais je reste utile et concrete.",
   "Quand on cree une image, un son ou une video, j'analyse l'intention, les couleurs, la tension, les symboles et je propose une direction forte.",
@@ -221,11 +222,39 @@ const DEFAULT_PROD_API_BASE = normalizeApiBase(
   import.meta.env?.VITE_A11_PROD_API_BASE_URL ||
   'https://a11.funesterie.pro'
 );
+const DEFAULT_KAEN44_API_BASE = normalizeApiBase(
+  import.meta.env?.VITE_KAEN44_API_BASE_URL ||
+  'https://k44.funesterie.me'
+);
+
+function isPublicKaen44WebHost(hostname: string | null | undefined) {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return [
+    'funesterie.me',
+    'www.funesterie.me',
+    'k44.funesterie.me',
+    'kaen44.funesterie.me',
+    'kaen44.funesterie.pro',
+  ].includes(normalized);
+}
+
+function isPublicVivyWebHost(hostname: string | null | undefined) {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return [
+    'vivy.funesterie.me',
+    'vivy.funesterie.pro',
+    'music.funesterie.me',
+  ].includes(normalized);
+}
+
 function resolveDefaultOnlineApiBase() {
   const configured = normalizeApiBase(import.meta.env?.VITE_A11_ONLINE_API_BASE_URL);
   if (configured) return configured;
   try {
-    if (isPublicA11WebHost(globalThis.location?.hostname)) return '';
+    const hostname = globalThis.location?.hostname;
+    if (isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
   } catch {
     // ignore browser location issues
   }
@@ -259,11 +288,11 @@ function isPublicA11WebHost(hostname: string | null | undefined) {
     'alphaonze.funesterie.pro',
     'a11.funesterie.pro',
     'api.funesterie.pro',
-    'funesterie.me',
-    'www.funesterie.me',
-    'k44.funesterie.me',
-    'kaen44.funesterie.me',
   ].includes(normalized);
+}
+
+function isPublicFunesterieWebHost(hostname: string | null | undefined) {
+  return isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname);
 }
 
 function isLocalApiBaseCandidate(baseValue: string | null | undefined) {
@@ -281,7 +310,7 @@ function isLocalApiBaseCandidate(baseValue: string | null | undefined) {
 
 export function isPublicOnlineModeLocked() {
   try {
-    return isPublicA11WebHost(globalThis.location?.hostname);
+    return isPublicFunesterieWebHost(globalThis.location?.hostname);
   } catch {
     return false;
   }
@@ -311,7 +340,7 @@ function applyLaunchApiModeOverrides() {
       changed = true;
     }
 
-    if (isPublicA11WebHost(url.hostname)) {
+    if (isPublicFunesterieWebHost(url.hostname)) {
       const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
       const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
       if (currentOverride !== onlineBase) {
@@ -320,7 +349,7 @@ function applyLaunchApiModeOverrides() {
       }
     }
 
-    if (isLocalWebHost(url.hostname) && url.searchParams.get('a11-local-api') !== '1') {
+    if (isLocalWebHost(url.hostname) && url.searchParams.get('a11-local-api') !== '1' && !hasLocalDevBypassSession()) {
       const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
       const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
       if (onlineBase && (!currentOverride || isLocalApiBaseCandidate(currentOverride))) {
@@ -340,6 +369,9 @@ function applyLaunchApiModeOverrides() {
 applyLaunchApiModeOverrides();
 
 export function getCurrentApiBase() {
+  if (hasLocalDevBypassSession()) {
+    return normalizeApiBase(A11_API_PROFILE_BASES.local) || DEFAULT_LOCAL_PROFILE_BASE;
+  }
   if (isPublicOnlineModeLocked()) {
     return normalizeApiBase(A11_API_PROFILE_BASES.online) || DEFAULT_ONLINE_API_BASE;
   }
@@ -443,7 +475,19 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
       const parsed = new URL(raw, globalThis.location?.origin || 'http://178.105.86.89');
       const assetHost = parsed.hostname.toLowerCase();
       if (
-        ['api.funesterie.pro', '178.105.86.89', 'a11.funesterie.pro'].includes(assetHost)
+        [
+          'api.funesterie.pro',
+          '178.105.86.89',
+          'a11.funesterie.pro',
+          'alphaonze.funesterie.pro',
+          'funesterie.me',
+          'www.funesterie.me',
+          'k44.funesterie.me',
+          'kaen44.funesterie.me',
+          'kaen44.funesterie.pro',
+          'vivy.funesterie.me',
+          'vivy.funesterie.pro',
+        ].includes(assetHost)
         && /^\/files\//i.test(parsed.pathname)
       ) {
         const origin = getApiOrigin() || globalThis.location?.origin || 'http://178.105.86.89';
@@ -625,7 +669,33 @@ function normalizeStorageScopePart(value: unknown) {
   }
 }
 
+function isLocalDevSurface() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').trim().toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function hasLocalDevBypassSession() {
+  try {
+    return isLocalDevSurface() && localStorage.getItem('a11:local-dev-bypass') === '1';
+  } catch {
+    return isLocalDevSurface();
+  }
+}
+
 export function getAuthIdentity() {
+  if (hasLocalDevBypassSession()) {
+    return {
+      id: 'djeff-local',
+      username: 'djeff-local',
+      email: 'djeff-local@funesterie.local',
+      storageScope: 'local__djeff-local',
+    };
+  }
+
   const payload = decodeJwtPayload(getAuthToken()) || {};
   const storedUser = getStoredAuthUserProfile() || {};
   const id = normalizeStorageScopePart(
@@ -670,6 +740,8 @@ export function getAuthStorageScope() {
 }
 
 export function hasAdminApiAccess() {
+  if (hasLocalDevBypassSession()) return true;
+
   if (String(ADMIN_TOKEN || '').trim()) return true;
   const payload = decodeJwtPayload(getAuthToken()) || {};
   const storedUser = getStoredAuthUserProfile() || {};
@@ -691,6 +763,8 @@ export function hasAdminApiAccess() {
 }
 
 export function getAuthDisplayName() {
+  if (hasLocalDevBypassSession()) return 'Djeff local';
+
   try {
     const saved = String(localStorage.getItem(DISPLAY_NAME_STORAGE_KEY) || '').trim();
     if (saved) return saved;
@@ -719,6 +793,8 @@ export function clearAuthToken() {
 }
 
 function clearClientAuthSession(detail?: { reason?: string; message?: string; status?: number }) {
+  if (hasLocalDevBypassSession()) return;
+
   const hadStoredToken = !!readStoredAuthToken();
   clearAuthToken();
   setAuthDisplayName('');
@@ -811,12 +887,51 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   return data;
 }
 
+function isKaen44WebSurface() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').trim().toLowerCase();
+    const pathname = String(globalThis.location?.pathname || '/').trim().toLowerCase();
+    const search = String(globalThis.location?.search || '');
+    const params = new URLSearchParams(search);
+    const persona = String(params.get('persona') || '').trim().toLowerCase();
+    return isPublicKaen44WebHost(hostname)
+      || (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname))
+      || persona === 'kaen44'
+      || persona === 'kaen';
+  } catch {
+    return false;
+  }
+}
+
+function resolveOAuthReturnTo(returnTo: string) {
+  const fallback = '/auth/success';
+  const raw = String(returnTo || fallback).trim() || fallback;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  try {
+    return new URL(raw.startsWith('/') ? raw : `/${raw}`, globalThis.location?.origin || 'https://a11.funesterie.pro').toString();
+  } catch {
+    return raw;
+  }
+}
+
 export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
-  const authBase = normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro');
-  const target = new URL(buildApiUrlFromBase(authBase, '/api/auth/google/start'), globalThis.location?.origin || 'https://a11.funesterie.pro');
-  target.searchParams.set('returnTo', returnTo || '/auth/success');
+  const currentOrigin = globalThis.location?.origin || '';
+  const currentHostname = globalThis.location?.hostname || '';
+  const isKaen44Surface = isKaen44WebSurface();
+  const fallbackBase = isPublicKaen44WebHost(currentHostname)
+    ? DEFAULT_KAEN44_API_BASE
+    : DEFAULT_PROD_API_BASE;
+  const authBase = isKaen44Surface
+    ? DEFAULT_PROD_API_BASE
+    : normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || fallbackBase);
+  const target = new URL(
+    buildApiUrlFromBase(authBase, '/api/auth/google/start'),
+    currentOrigin || fallbackBase || 'https://a11.funesterie.pro'
+  );
+  target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
   target.searchParams.set('client', client || 'web');
   target.searchParams.set('scopeProfile', 'basic');
+  if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
   return target.toString();
 }
 
@@ -924,6 +1039,9 @@ function buildAuthHeaders(contentType?: string) {
   const headers: Record<string, string> = {};
   if (contentType) headers['Content-Type'] = contentType;
   appendJwtHeaders(headers);
+  if (hasLocalDevBypassSession()) {
+    headers['X-A11-Local-Dev-Bypass'] = '1';
+  }
 
   return headers;
 }
@@ -1017,6 +1135,8 @@ export type TtsVoiceReference = {
 };
 
 export async function fetchTtsVoiceReferences(): Promise<TtsVoiceReference[]> {
+  if (hasLocalDevBypassSession()) return [];
+
   const res = await authFetch(getApiUrl('/api/tts/references'), {
     method: 'GET',
     headers: buildAuthHeaders(),
@@ -1106,6 +1226,65 @@ export async function transcribeAudioFile(
     model: payload?.model || null,
     elapsed: payload?.elapsed ?? null,
   };
+}
+
+export type VivyStudioMode = 'voice' | 'song' | 'share';
+
+export type VivyStudioAction = {
+  id: string;
+  label: string;
+  target: string;
+  ready: boolean;
+};
+
+export type VivyStudioProductionInput = {
+  mode: VivyStudioMode;
+  voiceTool?: string;
+  voiceInstruction?: string;
+  voiceFileName?: string;
+  songSource?: string;
+  songMood?: string;
+  songText?: string;
+  shareTarget?: string;
+  shareUrl?: string;
+  shareTokenPresent?: boolean;
+  shareInstruction?: string;
+};
+
+export type VivyStudioProductionResult = {
+  ok: boolean;
+  service?: string;
+  mode?: VivyStudioMode;
+  title?: string;
+  summary?: string;
+  assistant?: string;
+  content?: string;
+  brief?: string;
+  actions?: VivyStudioAction[];
+  routing?: string[];
+  tokenStored?: boolean;
+  error?: string;
+  message?: string;
+};
+
+export async function runVivyStudioProduction(
+  input: VivyStudioProductionInput
+): Promise<VivyStudioProductionResult> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/produce'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      ...input,
+      shareToken: undefined,
+      shareTokenPresent: Boolean(input.shareTokenPresent),
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Vivy Studio indisponible (${res.status})`);
+  }
+  return payload as VivyStudioProductionResult;
 }
 
 export type Provider = "local" | "ollama" | "openai";
@@ -1743,11 +1922,24 @@ async function resolveAsyncMediaJobPayload(
       } catch {
         // ignore storage issues
       }
+      dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.failed`, {
+        detail: {
+          jobId: descriptor.jobId,
+          message: String(polled?.message || polled?.error || `${eventPrefix}_failed`),
+        },
+      }));
       throw new Error(String(polled?.message || polled?.error || `${eventPrefix}_failed`));
     }
   }
 
-  throw new Error(`Timeout async apres ${Math.round(descriptor.maxWaitMs / 1000)}s`);
+  const timeoutMessage = `Timeout async apres ${Math.round(descriptor.maxWaitMs / 1000)}s`;
+  dispatchBrowserEvent(new CustomEvent(`a11:${eventPrefix}.failed`, {
+    detail: {
+      jobId: descriptor.jobId,
+      message: timeoutMessage,
+    },
+  }));
+  throw new Error(timeoutMessage);
 }
 
 async function resolveAsyncImageJobPayload(initialPayload: any) {
@@ -2186,6 +2378,8 @@ export async function callA11Agent(messages: A11ChatMessage[], _devMode?: boolea
 
 // === A11 Conversation History (backend) ===
 export async function fetchA11HistoryList() {
+  if (hasLocalDevBypassSession()) return [];
+
   // GET /api/a11/history renvoie la liste des conversations (id, name, updated...)
   const url = getApiUrl('/api/a11/history');
   const res = await authFetch(url, {
@@ -2196,6 +2390,8 @@ export async function fetchA11HistoryList() {
 }
 
 export async function fetchA11Conversation(convId: string) {
+  if (hasLocalDevBypassSession()) return { ok: true, id: convId, messages: [] };
+
   // GET /api/a11/history/:id renvoie les messages d'une conversation
   const url = getApiUrl(`/api/a11/history/${encodeURIComponent(convId)}`);
   const res = await authFetch(url, {
@@ -2230,6 +2426,10 @@ export async function clearA11History(convId?: string) {
 }
 
 export async function fetchA11ConversationResources(convId: string, options?: { kind?: string; limit?: number }) {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, conversationId: convId, count: 0, resources: [] };
+  }
+
   const params = new URLSearchParams();
   if (options?.kind) params.set('kind', options.kind);
   if (options?.limit) params.set('limit', String(options.limit));
@@ -2243,6 +2443,10 @@ export async function fetchA11ConversationResources(convId: string, options?: { 
 }
 
 export async function fetchA11ConversationActivity(convId: string, options?: { limit?: number }) {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, conversationId: convId, count: 0, entries: [] };
+  }
+
   const params = new URLSearchParams();
   if (options?.limit) params.set('limit', String(options.limit));
   const suffix = params.toString() ? `?${params.toString()}` : '';
@@ -2857,6 +3061,60 @@ export async function fetchQflushStatus(): Promise<QflushStatusResponse> {
   return data as QflushStatusResponse;
 }
 
+export type QflushTerminalStatusResponse = {
+  ok: boolean;
+  terminal?: {
+    name?: string;
+    shell?: boolean;
+    localOnly?: boolean;
+    help?: string;
+  };
+  gamepad?: any;
+  error?: string;
+  message?: string;
+};
+
+export type QflushTerminalRunResponse = {
+  ok: boolean;
+  command?: string;
+  mode?: string;
+  output?: string;
+  error?: string;
+  message?: string;
+  result?: any;
+  payload?: any;
+  items?: any[];
+  file?: string;
+};
+
+export async function fetchQflushTerminalStatus(): Promise<QflushTerminalStatusResponse> {
+  const res = await authFetch(getApiUrl('/api/qflush/terminal/status'), {
+    headers: buildAuthHeaders(),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Qflush terminal status failed (${res.status})`);
+  }
+
+  return data as QflushTerminalStatusResponse;
+}
+
+export async function runQflushTerminalCommand(command: string): Promise<QflushTerminalRunResponse> {
+  const res = await authFetch(getApiUrl('/api/qflush/terminal/run'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify({ command }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.output || data?.message || data?.error || `Qflush terminal command failed (${res.status})`);
+  }
+
+  return data as QflushTerminalRunResponse;
+}
+
 export async function fetchRuntimeModulesStatus(): Promise<RuntimeModulesStatusResponse> {
   const res = await authFetch(getApiUrl('/api/runtime/modules'), {
     headers: buildAuthHeaders(),
@@ -3001,7 +3259,7 @@ export async function purgeTechnicalMemos(): Promise<TechnicalMemoPurgeResponse>
 }
 
 export async function fetchRemoteProviderProfiles(): Promise<RemoteProviderCatalogResponse> {
-  if (!hasAdminApiAccess()) {
+  if (hasLocalDevBypassSession() || !hasAdminApiAccess()) {
     return {
       ok: true,
       enabled: false,
@@ -3116,6 +3374,10 @@ export type A11PortraitFramebook = {
 };
 
 export async function fetchA11PortraitFramebook(): Promise<A11PortraitFramebook> {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, frames: [], sequences: { idle: [], thinking: [], speaking: [] } };
+  }
+
   const res = await authFetch(getApiUrl('/api/a11/portrait-framebook'), {
     headers: buildAuthHeaders(),
   });

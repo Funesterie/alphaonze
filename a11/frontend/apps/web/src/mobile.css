@@ -7,13 +7,13 @@
   #root {
     min-height: 100%;
     background: #071021;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
   .app-container.a11-shell {
     min-height: 100vh;
     min-height: 100svh;
-    height: 100vh;
-    height: 100svh;
     background: #071021;
   }
 
@@ -44,7 +44,7 @@
 
   .composer .a11-composer-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-columns: minmax(0, 1fr) 84px 44px;
     grid-template-areas:
       "input input input"
       "import send mic";
@@ -66,7 +66,10 @@
 
   .composer .send-button {
     grid-area: send;
-    width: 44px;
+    width: 84px;
+    margin-left: 0 !important;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 
   .composer .nossen-mic-btn.inline {
@@ -84,5 +87,95 @@
   .import-inline {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .scroll-frame {
+    margin: 6px !important;
+  }
+
+  .log {
+    padding: 10px;
+  }
+
+  .persona-dashboard {
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .persona-dashboard h1 {
+    font-size: 26px;
+    line-height: 1.05;
+  }
+
+  .persona-dashboard p {
+    font-size: 13px;
+    line-height: 1.46;
+  }
+
+  .persona-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .persona-action {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .persona-dashboard__visual {
+    min-height: 132px;
+  }
+
+  .a11-network-visual {
+    width: min(100%, 232px);
+    aspect-ratio: 1.55;
+  }
+
+  .a11-network-core {
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+  }
+
+  .a11-network-node {
+    min-height: 28px;
+    max-width: 118px;
+    padding: 0 8px;
+    gap: 6px;
+    font-size: 10px;
+  }
+
+  .persona-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .persona-metric {
+    min-height: 50px;
+    padding: 8px 10px;
+  }
+
+  .message {
+    font-size: 14px;
+    line-height: 1.48;
+  }
+
+  .message img,
+  .message video,
+  .image-preview-trigger img {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .persona-dashboard__visual {
+    display: none;
+  }
+
+  .persona-dashboard h1 {
+    font-size: 24px;
   }
 }

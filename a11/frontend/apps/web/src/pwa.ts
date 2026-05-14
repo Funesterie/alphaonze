@@ -6,6 +6,13 @@ function shouldDisableServiceWorker() {
     'alphaonze.funesterie.pro',
     'a11.funesterie.pro',
     'api.funesterie.pro',
+    'funesterie.me',
+    'www.funesterie.me',
+    'k44.funesterie.me',
+    'kaen44.funesterie.me',
+    'kaen44.funesterie.pro',
+    'vivy.funesterie.me',
+    'vivy.funesterie.pro',
   ].includes(host);
   const hasTauriBridge = typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
   const userAgent = String(globalThis.navigator?.userAgent || '').toLowerCase();

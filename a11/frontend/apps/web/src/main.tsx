@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { App } from "./App";
+import { App, isKaen44Experience } from "./App";
 import "./index.css";
 import "./mobile.css";
 import { registerA11ServiceWorker } from "./pwa";
@@ -38,6 +38,9 @@ class BootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
   render() {
     if (!this.state.error) return this.props.children;
 
+    const isKaen44 = isKaen44Experience();
+    const productName = isKaen44 ? "Kaen44" : "A11";
+
     return (
       <main
         style={{
@@ -52,16 +55,16 @@ class BootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
         }}
       >
         <section style={{ width: "min(100%, 420px)", display: "flex", flexDirection: "column", gap: 14 }}>
-          <h1 style={{ margin: 0, fontSize: 28 }}>Kaen44</h1>
+          <h1 style={{ margin: 0, fontSize: 28 }}>{productName}</h1>
           <p style={{ margin: 0, color: "#bfdbfe", lineHeight: 1.5 }}>
-            Demarrage bloque cote navigateur. Nettoie le cache local puis relance Kaen44.
+            Demarrage bloque cote navigateur. Nettoie le cache local puis relance {productName}.
           </p>
           <button
             type="button"
             onClick={() => this.resetClientState(false)}
             style={{ minHeight: 44, border: 0, borderRadius: 10, background: "#2563eb", color: "white", fontWeight: 800 }}
           >
-            Relancer Kaen44
+            Relancer {productName}
           </button>
           <button
             type="button"
@@ -79,34 +82,12 @@ class BootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
   }
 }
 
-function shouldKeepStaticKaen44Page() {
-  try {
-    const hostname = String(window.location.hostname || "").toLowerCase();
-    const pathname = String(window.location.pathname || "/").toLowerCase();
-    const isPublicKaenSite = hostname === "funesterie.me"
-      || hostname === "www.funesterie.me";
-    return isPublicKaenSite && (
-      pathname === "/"
-      || pathname === "/privacy"
-      || pathname === "/privacy/"
-      || pathname === "/terms"
-      || pathname === "/terms/"
-      || pathname === "/vivy"
-      || pathname === "/vivy/"
-    );
-  } catch {
-    return false;
-  }
-}
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <BootErrorBoundary>
+      <App />
+    </BootErrorBoundary>
+  </React.StrictMode>
+);
 
-if (!shouldKeepStaticKaen44Page()) {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <BootErrorBoundary>
-        <App />
-      </BootErrorBoundary>
-    </React.StrictMode>
-  );
-
-  registerA11ServiceWorker();
-}
+registerA11ServiceWorker();

@@ -5,27 +5,1125 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vivy - Funesterie</title>
     <meta name="description" content="Vivy, presence musicale Funesterie pour voix, chansons originales et projets audio Nossen." />
+    <meta property="og:title" content="Vivy - Presence musicale Funesterie" />
+    <meta property="og:description" content="Voix, musique, composition, clips et publications audio lies aux projets creatifs Funesterie." />
+    <meta property="og:image" content="/vivy-presence-musicale.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #05030a;
+        --ink: #fbe7f8;
+        --muted: #e8bfdc;
+        --pink: #f079d8;
+        --line: rgba(240, 121, 216, 0.36);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+        overflow-x: hidden;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .vivy-page {
+        position: relative;
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: minmax(260px, 360px) minmax(0, 1fr) minmax(280px, 360px);
+        gap: 28px;
+        width: min(1520px, 100%);
+        margin: 0 auto;
+        overflow: hidden;
+      }
+
+      .vivy-bg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: 50% 50%;
+        opacity: 0.28;
+        filter: saturate(1.1) contrast(1.08);
+      }
+
+      .vivy-page::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background:
+          linear-gradient(90deg, rgba(4, 2, 9, 0.94), rgba(4, 2, 9, 0.48) 32%, rgba(4, 2, 9, 0.12) 58%, rgba(4, 2, 9, 0.88) 78%, #040209),
+          linear-gradient(180deg, rgba(4, 2, 9, 0.16), #040209 92%);
+      }
+
+      .vivy-left,
+      .vivy-portrait,
+      .vivy-right,
+      .vivy-bottom {
+        position: relative;
+        z-index: 2;
+      }
+
+      .vivy-left {
+        align-self: center;
+        padding: clamp(34px, 5vw, 76px) 0 96px clamp(22px, 3vw, 54px);
+      }
+
+      .vivy-logo {
+        margin: 0 0 34px;
+        color: var(--pink);
+        font-family: "Segoe Script", "Brush Script MT", Georgia, serif;
+        font-size: clamp(92px, 9vw, 158px);
+        line-height: 0.76;
+        text-shadow: 0 0 34px rgba(240, 121, 216, 0.38);
+      }
+
+      .vivy-kicker {
+        margin: 0 0 28px;
+        color: #f8d5ef;
+        text-transform: uppercase;
+        font-size: 21px;
+        line-height: 1.35;
+      }
+
+      .vivy-kicker::after {
+        content: "";
+        display: block;
+        width: 72px;
+        height: 1px;
+        margin-top: 15px;
+        background: var(--line);
+      }
+
+      .vivy-lead {
+        max-width: 300px;
+        margin: 0 0 28px;
+        color: #f3d9ec;
+        font-size: 17px;
+        line-height: 1.5;
+      }
+
+      .vivy-block {
+        margin-top: 28px;
+      }
+
+      .vivy-block h2,
+      .vivy-right h2 {
+        margin: 0 0 10px;
+        color: var(--pink);
+        text-transform: uppercase;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .vivy-block ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .vivy-block li {
+        position: relative;
+        margin: 7px 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      .vivy-block li::before {
+        content: "*";
+        position: absolute;
+        left: 0;
+        top: 0;
+        color: var(--pink);
+        font-weight: 900;
+      }
+
+      .vivy-portrait {
+        min-height: 760px;
+        border-inline: 1px solid rgba(240, 121, 216, 0.16);
+        overflow: hidden;
+      }
+
+      .vivy-portrait img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        object-position: 49% 50%;
+      }
+
+      .vivy-right {
+        padding: clamp(38px, 5vw, 72px) clamp(20px, 3vw, 44px) 96px 0;
+        background: linear-gradient(180deg, rgba(4, 2, 9, 0.92), rgba(4, 2, 9, 0.78));
+      }
+
+      .vivy-right h2 {
+        color: #f8d4ef;
+        text-align: center;
+        font-size: 23px;
+        letter-spacing: 0.03em;
+      }
+
+      .vivy-right > p {
+        max-width: 270px;
+        margin: 0 auto 28px;
+        color: #eed3e7;
+        text-align: center;
+        font-size: 17px;
+        line-height: 1.5;
+      }
+
+      .vivy-card {
+        margin: 20px 0;
+        border: 1px solid rgba(240, 121, 216, 0.38);
+        background: rgba(5, 3, 11, 0.72);
+      }
+
+      .vivy-card img {
+        width: 100%;
+        aspect-ratio: 1.72;
+        display: block;
+        object-fit: cover;
+      }
+
+      .vivy-card h3 {
+        margin: 11px 12px 4px;
+        color: var(--pink);
+        text-align: center;
+        text-transform: uppercase;
+        font-size: 13px;
+      }
+
+      .vivy-card p {
+        margin: 0 12px 13px;
+        color: #d9bfd2;
+        text-align: center;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .vivy-quote {
+        margin: 30px 0 0;
+        color: #f3d8ea;
+        font-size: 19px;
+        line-height: 1.35;
+      }
+
+      .vivy-quote cite {
+        display: block;
+        margin-top: 10px;
+        color: var(--pink);
+        font-family: "Segoe Script", "Brush Script MT", Georgia, serif;
+        font-size: 44px;
+        font-style: normal;
+        text-align: right;
+      }
+
+      .vivy-bottom {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        min-height: 72px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-top: 1px solid rgba(240, 121, 216, 0.24);
+        background: rgba(2, 1, 5, 0.82);
+        backdrop-filter: blur(14px);
+      }
+
+      .vivy-bottom a {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        border-right: 1px solid rgba(240, 121, 216, 0.22);
+        color: var(--pink);
+        text-decoration: none;
+        text-transform: uppercase;
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      .vivy-wave {
+        width: 64px;
+        height: 22px;
+        background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 7px);
+        mask-image: linear-gradient(180deg, transparent 8%, black 48%, transparent 92%);
+        opacity: 0.78;
+      }
+
+      @media (max-width: 1120px) {
+        .vivy-page {
+          grid-template-columns: minmax(0, 0.95fr) minmax(320px, 1.05fr);
+        }
+
+        .vivy-right {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px;
+          padding: 0 18px 96px;
+        }
+
+        .vivy-right h2,
+        .vivy-right > p,
+        .vivy-quote {
+          grid-column: 1 / -1;
+        }
+
+        .vivy-card {
+          margin: 0;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .vivy-page {
+          display: flex;
+          flex-direction: column;
+          min-height: 100vh;
+          overflow: visible;
+        }
+
+        .vivy-left {
+          order: 2;
+          padding: 30px 20px 10px;
+        }
+
+        .vivy-lead {
+          max-width: none;
+        }
+
+        .vivy-portrait {
+          order: 1;
+          min-height: 520px;
+          border: 1px solid rgba(240, 121, 216, 0.18);
+        }
+
+        .vivy-right {
+          order: 3;
+          display: block;
+          padding: 24px 20px 22px;
+        }
+
+        .vivy-card {
+          margin: 16px 0;
+        }
+
+        .vivy-bottom {
+          position: relative;
+          order: 4;
+          grid-template-columns: 1fr;
+          margin: 0 20px 20px;
+          border: 1px solid rgba(240, 121, 216, 0.24);
+        }
+
+        .vivy-bottom a {
+          min-height: 58px;
+          justify-content: flex-start;
+          padding: 0 18px;
+          border-right: 0;
+          border-bottom: 1px solid rgba(240, 121, 216, 0.16);
+        }
+      }
+
+      .vivy-poster-page {
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 50% 4%, rgba(240, 121, 216, 0.13), transparent 34%),
+          linear-gradient(180deg, #05030a 0%, #020104 100%);
+      }
+
+      .vivy-top {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        min-height: 68px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 12px clamp(14px, 3vw, 36px);
+        border-bottom: 1px solid rgba(240, 121, 216, 0.22);
+        background: rgba(5, 3, 10, 0.84);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+
+      .vivy-top strong {
+        color: var(--pink);
+        font-family: "Segoe Script", "Brush Script MT", Georgia, serif;
+        font-size: 32px;
+        line-height: 1;
+      }
+
+      .vivy-top div {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .vivy-top a {
+        min-height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(240, 121, 216, 0.28);
+        border-radius: 999px;
+        padding: 0 14px;
+        color: #f8d4ef;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 850;
+        text-transform: uppercase;
+      }
+
+      .vivy-poster-stage {
+        width: 100%;
+        min-height: calc(100svh - 68px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(12px, 2.2vw, 28px);
+        overflow: hidden;
+      }
+
+      .vivy-poster-stage:focus-visible {
+        outline: 2px solid rgba(240, 121, 216, 0.72);
+        outline-offset: -4px;
+      }
+
+      .vivy-poster-frame {
+        width: min(100%, 1500px);
+        background: #05030a;
+        border: 1px solid rgba(240, 121, 216, 0.3);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.56), 0 0 48px rgba(240, 121, 216, 0.12);
+      }
+
+      .vivy-poster-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .vivy-mobile-slices {
+        display: none;
+      }
+
+      .vivy-studio {
+        width: min(100% - clamp(24px, 4vw, 56px), 1500px);
+        margin: 0 auto clamp(32px, 6vw, 76px);
+        padding: clamp(18px, 3vw, 34px);
+        border: 1px solid rgba(240, 121, 216, 0.3);
+        background:
+          linear-gradient(135deg, rgba(240, 121, 216, 0.12), transparent 34%),
+          linear-gradient(180deg, rgba(15, 8, 22, 0.94), rgba(5, 3, 10, 0.96));
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+      }
+
+      .vivy-studio-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 22px;
+      }
+
+      .vivy-studio-head h2,
+      .vivy-studio-form h3,
+      .vivy-studio-brief h3 {
+        margin: 0;
+        color: #ffd2f4;
+        font-size: clamp(24px, 3vw, 40px);
+        line-height: 1.04;
+      }
+
+      .vivy-studio-head p {
+        max-width: 650px;
+        margin: 10px 0 0;
+        color: #e8bfdc;
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      .vivy-studio button,
+      .vivy-studio input,
+      .vivy-studio select,
+      .vivy-studio textarea {
+        font: inherit;
+        letter-spacing: 0;
+      }
+
+      .vivy-studio button {
+        min-height: 42px;
+        border: 1px solid rgba(240, 121, 216, 0.34);
+        border-radius: 8px;
+        padding: 0 14px;
+        background: rgba(240, 121, 216, 0.12);
+        color: #ffd2f4;
+        font-size: 12px;
+        font-weight: 850;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .vivy-studio button:hover,
+      .vivy-studio button:focus-visible {
+        border-color: rgba(240, 121, 216, 0.82);
+        background: rgba(240, 121, 216, 0.22);
+      }
+
+      .vivy-studio button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      .vivy-studio-grid {
+        display: grid;
+        grid-template-columns: minmax(230px, 0.72fr) minmax(320px, 1fr) minmax(320px, 1.05fr);
+        gap: 14px;
+      }
+
+      .vivy-studio-modes {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      .vivy-studio-modes button {
+        min-height: 118px;
+        display: grid;
+        align-content: center;
+        gap: 9px;
+        padding: 16px;
+        text-align: left;
+        text-transform: none;
+      }
+
+      .vivy-studio-modes button.is-active {
+        border-color: rgba(240, 121, 216, 0.9);
+        background: linear-gradient(135deg, rgba(240, 121, 216, 0.26), rgba(98, 31, 94, 0.18));
+        box-shadow: inset 3px 0 0 #f079d8;
+      }
+
+      .vivy-studio-modes span {
+        color: #ffe5f9;
+        font-size: 15px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .vivy-studio-modes small {
+        color: #d9bfd2;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .vivy-studio-form,
+      .vivy-studio-brief {
+        min-width: 0;
+        border: 1px solid rgba(240, 121, 216, 0.24);
+        background: rgba(5, 3, 10, 0.62);
+        padding: 16px;
+      }
+
+      .vivy-studio-form {
+        display: grid;
+        gap: 12px;
+      }
+
+      .vivy-studio-form [data-vivy-panel] {
+        display: grid;
+        gap: 12px;
+      }
+
+      .vivy-studio-form [data-vivy-panel][hidden] {
+        display: none;
+      }
+
+      .vivy-studio-form h3,
+      .vivy-studio-brief h3 {
+        margin-bottom: 4px;
+        font-size: 20px;
+      }
+
+      .vivy-studio-form label {
+        display: grid;
+        gap: 7px;
+        color: #f2cfe8;
+        font-size: 12px;
+        font-weight: 850;
+        text-transform: uppercase;
+      }
+
+      .vivy-studio input,
+      .vivy-studio select,
+      .vivy-studio textarea {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid rgba(240, 121, 216, 0.28);
+        border-radius: 8px;
+        background: rgba(2, 1, 5, 0.72);
+        color: #fff3fc;
+        padding: 11px 12px;
+        font-size: 14px;
+        line-height: 1.4;
+        outline: none;
+      }
+
+      .vivy-studio textarea {
+        resize: vertical;
+      }
+
+      .vivy-studio input:focus,
+      .vivy-studio select:focus,
+      .vivy-studio textarea:focus {
+        border-color: rgba(240, 121, 216, 0.78);
+        box-shadow: 0 0 0 3px rgba(240, 121, 216, 0.12);
+      }
+
+      .vivy-studio-actions,
+      .vivy-studio-brief div {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .vivy-studio-actions button:first-child,
+      .vivy-studio-head > button {
+        background: linear-gradient(135deg, #f079d8, #8f3eff);
+        color: #120516;
+        border-color: transparent;
+      }
+
+      .vivy-studio-brief {
+        display: grid;
+        grid-template-rows: auto minmax(260px, 1fr) auto auto;
+        gap: 12px;
+      }
+
+      .vivy-studio-brief pre {
+        min-height: 260px;
+        max-height: 520px;
+        margin: 0;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid rgba(240, 121, 216, 0.18);
+        background: rgba(1, 1, 5, 0.64);
+        color: #f9dff2;
+        padding: 14px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .vivy-studio-status {
+        min-height: 19px;
+        margin: 0;
+        color: #ffd2f4;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 900px) {
+        .vivy-top {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .vivy-top div {
+          justify-content: flex-start;
+        }
+
+        .vivy-poster-stage {
+          min-height: auto;
+          display: block;
+          padding: 10px 12px 18px;
+          overflow-x: hidden;
+          overflow-y: visible;
+        }
+
+        .vivy-poster-frame {
+          width: 100%;
+          min-width: 0;
+          max-width: none;
+        }
+
+        .vivy-poster-frame img {
+          width: 100%;
+          max-width: 100%;
+          height: auto;
+        }
+
+        .vivy-mobile-slices {
+          display: grid;
+          gap: 12px;
+          margin-top: 12px;
+        }
+
+        .vivy-mobile-slice {
+          width: 100%;
+          height: min(64svh, 520px);
+          display: block;
+          object-fit: cover;
+          border: 1px solid rgba(240, 121, 216, 0.3);
+          background: #05030a;
+          box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
+        }
+
+        .vivy-mobile-slice--portrait {
+          height: min(72svh, 580px);
+          object-position: 43% 50%;
+        }
+
+        .vivy-mobile-slice--voice {
+          object-position: 100% 19%;
+        }
+
+        .vivy-mobile-slice--production {
+          object-position: 100% 48%;
+        }
+
+        .vivy-mobile-slice--scene {
+          object-position: 100% 77%;
+        }
+
+        .vivy-studio {
+          width: calc(100% - 24px);
+          margin-bottom: 30px;
+          padding: 14px;
+        }
+
+        .vivy-studio-head {
+          display: grid;
+          align-items: start;
+        }
+
+        .vivy-studio-head > button {
+          width: 100%;
+        }
+
+        .vivy-studio-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .vivy-studio-modes {
+          grid-template-columns: 1fr;
+        }
+
+        .vivy-studio-modes button {
+          min-height: auto;
+        }
+
+        .vivy-studio-actions {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .vivy-studio-brief {
+          grid-template-rows: auto auto auto auto;
+        }
+
+        .vivy-studio-brief pre {
+          max-height: 360px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .vivy-top {
+          padding: 10px 12px;
+        }
+
+        .vivy-top div {
+          gap: 8px;
+        }
+
+        .vivy-top a {
+          min-height: 34px;
+          padding: 0 10px;
+          font-size: 11px;
+        }
+
+        .vivy-poster-frame img {
+          width: 100%;
+        }
+      }
+    </style>
   </head>
-  <body style="margin:0;background:#0b1020;color:#f8fafc;font-family:system-ui,-apple-system,Segoe UI,sans-serif;">
-    <main style="max-width:980px;margin:0 auto;padding:48px 24px;line-height:1.65;">
-      <img src="/assets/kaen44-avatar.png" alt="Vivy Funesterie" style="width:112px;height:112px;object-fit:cover;border-radius:28px;" />
-      <h1 style="font-size:48px;line-height:1.05;margin:28px 0 16px;">Vivy</h1>
-      <p style="font-size:20px;color:#cbd5e1;max-width:760px;">Vivy est une identite musicale originale de Funesterie pour preparer des voix, chansons, clips, visualiseurs et projets audio lies a l'univers Nossen.</p>
-
-      <h2>Objectif</h2>
-      <p>Vivy aide a passer d'une idee creative a un contenu diffusable : intention musicale, paroles, direction vocale, fichier audio, metadonnees, page publique et publication sur les plateformes choisies par l'utilisateur.</p>
-
-      <h2>Lecture vocale</h2>
-      <p>Pour Alexa et les assistants vocaux, Vivy utilise un flux audio HTTPS direct controle par Funesterie, par exemple MP3, AAC ou HLS. YouTube et SoundCloud restent des surfaces publiques de diffusion et de decouverte.</p>
-
-      <h2>Publication</h2>
-      <p>Les contenus publies via Vivy doivent etre originaux, autorises ou fournis par l'utilisateur. Les fichiers prives ne sont pas publies sans validation explicite.</p>
-
-      <nav style="display:flex;flex-wrap:wrap;gap:14px;margin-top:32px;">
-        <a href="/" style="color:#c4b5fd;font-weight:700;">Accueil Kaen44</a>
-        <a href="/privacy/" style="color:#c4b5fd;font-weight:700;">Regles de confidentialite</a>
-        <a href="/terms/" style="color:#c4b5fd;font-weight:700;">Conditions d'utilisation</a>
+  <body>
+    <main class="vivy-poster-page">
+      <nav class="vivy-top" aria-label="Navigation Vivy">
+        <strong>Vivy</strong>
+        <div>
+          <a href="/vivy/">Vivy</a>
+          <a href="#vivy-studio">Studio</a>
+          <a href="https://k44.funesterie.me/">Kaen44</a>
+          <a href="https://a11.funesterie.pro/">A11</a>
+        </div>
       </nav>
+      <section class="vivy-poster-stage" aria-label="Vivy presence musicale" tabindex="0">
+        <div class="vivy-poster-frame">
+          <img src="/vivy-presence-musicale.png" alt="Vivy, presence musicale Funesterie: voix, musique, creation et partage." />
+        </div>
+        <div class="vivy-mobile-slices" aria-hidden="true">
+          <img class="vivy-mobile-slice vivy-mobile-slice--portrait" src="/vivy-presence-musicale.png" alt="" />
+          <img class="vivy-mobile-slice vivy-mobile-slice--voice" src="/vivy-presence-musicale.png" alt="" />
+          <img class="vivy-mobile-slice vivy-mobile-slice--production" src="/vivy-presence-musicale.png" alt="" />
+          <img class="vivy-mobile-slice vivy-mobile-slice--scene" src="/vivy-presence-musicale.png" alt="" />
+        </div>
+      </section>
+      <section id="vivy-studio" class="vivy-studio" aria-label="Atelier Vivy">
+        <div class="vivy-studio-head">
+          <div>
+            <h2>Atelier Vivy</h2>
+            <p>Voix, chanson, clip et partage equipes depuis les trois blocs de droite.</p>
+          </div>
+          <button type="button" data-vivy-share>Partager le brief</button>
+        </div>
+
+        <div class="vivy-studio-grid">
+          <div class="vivy-studio-modes" role="tablist" aria-label="Modules Vivy">
+            <button type="button" class="is-active" data-vivy-mode="voice" role="tab" aria-selected="true">
+              <span>Creation voix</span>
+              <small>Calibrer une voix, preparer Voicemod/RVC/A11 Voice et garder la reference propre.</small>
+            </button>
+            <button type="button" data-vivy-mode="song" role="tab" aria-selected="false">
+              <span>Composition - production</span>
+              <small>Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.</small>
+            </button>
+            <button type="button" data-vivy-mode="share" role="tab" aria-selected="false">
+              <span>Scene - partage</span>
+              <small>Assembler clip, lien, canal et consignes de publication sans exposer les secrets.</small>
+            </button>
+          </div>
+
+          <form class="vivy-studio-form" data-vivy-form>
+            <h3 data-vivy-form-title>Creation voix</h3>
+
+            <div data-vivy-panel="voice">
+              <label>
+                Outil voix
+                <select name="voiceTool">
+                  <option>A11 Voice + Voicemod</option>
+                  <option>A11 Voice + RVC</option>
+                  <option>Audacity + ffmpeg</option>
+                  <option>Voicemod live</option>
+                </select>
+              </label>
+              <label>
+                Reference audio
+                <input name="voiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" />
+              </label>
+              <label>
+                Instruction voix
+                <textarea name="voiceInstruction" rows="6" placeholder="Ex: voix douce, proche micro, legere saturation pop, garder une diction claire."></textarea>
+              </label>
+            </div>
+
+            <div data-vivy-panel="song" hidden>
+              <label>
+                Depart
+                <select name="songSource">
+                  <option>Theme</option>
+                  <option>Texte brut</option>
+                  <option>Paroles</option>
+                  <option>Instruction complete</option>
+                </select>
+              </label>
+              <label>
+                Couleur sonore
+                <input name="songMood" value="Electro pop dark cinematographique" />
+              </label>
+              <label>
+                Matiere creative
+                <textarea name="songText" rows="8" placeholder="Theme, paroles, ambiance, intention, histoire ou simple idee."></textarea>
+              </label>
+            </div>
+
+            <div data-vivy-panel="share" hidden>
+              <label>
+                Canal
+                <select name="shareTarget">
+                  <option>YouTube</option>
+                  <option>OBS / Live</option>
+                  <option>SoundCloud</option>
+                  <option>Deezer</option>
+                  <option>Lien equipe</option>
+                </select>
+              </label>
+              <label>
+                Lien ou cible
+                <input name="shareUrl" placeholder="https://..." />
+              </label>
+              <label>
+                Token local
+                <input name="shareToken" type="password" placeholder="Non stocke, non copie dans le brief" autocomplete="off" />
+              </label>
+              <label>
+                Instruction publication
+                <textarea name="shareInstruction" rows="6" placeholder="Ex: clip vertical 30s, titre court, description FR, tags Funesterie/Vivy."></textarea>
+              </label>
+            </div>
+
+            <div class="vivy-studio-actions">
+              <button type="submit" data-vivy-action>Preparer calibration</button>
+              <button type="button" data-vivy-ask>Demander a Vivy</button>
+              <button type="button" data-vivy-open="a11">Ouvrir A11</button>
+              <button type="button" data-vivy-open="k44">Ouvrir Kaen44</button>
+            </div>
+          </form>
+
+          <aside class="vivy-studio-brief" aria-live="polite">
+            <h3>Brief agents</h3>
+            <pre data-vivy-brief></pre>
+            <div>
+              <button type="button" data-vivy-copy>Copier</button>
+              <button type="button" data-vivy-share>Partager</button>
+            </div>
+            <p class="vivy-studio-status" data-vivy-status></p>
+          </aside>
+        </div>
+      </section>
     </main>
+    <script>
+      (function () {
+        var root = document.querySelector(".vivy-studio");
+        if (!root) return;
+        var modes = {
+          voice: {
+            title: "Creation voix",
+            label: "Calibrer une voix, preparer Voicemod/RVC/A11 Voice et garder la reference propre.",
+            action: "Preparer calibration"
+          },
+          song: {
+            title: "Composition - production",
+            label: "Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.",
+            action: "Preparer chanson"
+          },
+          share: {
+            title: "Scene - partage",
+            label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
+            action: "Preparer partage"
+          }
+        };
+        var activeMode = "voice";
+        var voiceFileName = "";
+        var vivyOutput = "";
+        var form = root.querySelector("[data-vivy-form]");
+        var title = root.querySelector("[data-vivy-form-title]");
+        var action = root.querySelector("[data-vivy-action]");
+        var briefNode = root.querySelector("[data-vivy-brief]");
+        var statusNode = root.querySelector("[data-vivy-status]");
+
+        function field(name) {
+          return form.elements[name];
+        }
+
+        function value(name) {
+          var input = field(name);
+          return input ? String(input.value || "").trim() : "";
+        }
+
+        function setStatus(text) {
+          if (statusNode) statusNode.textContent = text || "";
+        }
+
+        function buildBaseBrief() {
+          var lines = [
+            "VIVY_STUDIO_HANDOFF",
+            "Atelier: " + modes[activeMode].title,
+            "Objectif: " + modes[activeMode].label,
+            ""
+          ];
+
+          if (activeMode === "voice") {
+            lines.push(
+              "Flux voix:",
+              "- Outil cible: " + value("voiceTool"),
+              "- Reference audio: " + (voiceFileName || "a fournir"),
+              "- Instruction: " + (value("voiceInstruction") || "definir le timbre, les limites et le style de modulation"),
+              "- Sortie attendue: profil vocal, notes de calibration, chaine d'effets et phrase de test.",
+              "- Securite: ne pas publier la reference brute sans accord."
+            );
+          }
+
+          if (activeMode === "song") {
+            lines.push(
+              "Flux chanson:",
+              "- Source: " + value("songSource"),
+              "- Direction sonore: " + (value("songMood") || "Electro pop dark cinematographique"),
+              "- Matiere: " + (value("songText") || "theme libre a developper"),
+              "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets a produire.",
+              "- Role: Vivy cree la chanson, A11 aide pour image/video si necessaire."
+            );
+          }
+
+          if (activeMode === "share") {
+            lines.push(
+              "Flux scene / partage:",
+              "- Canal: " + value("shareTarget"),
+              "- Lien: " + (value("shareUrl") || "a fournir"),
+              "- Token fourni dans l'interface: " + (value("shareToken") ? "oui, local seulement" : "non"),
+              "- Instruction: " + (value("shareInstruction") || "preparer clip, titre, description et checklist publication"),
+              "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
+              "- Regle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
+            );
+          }
+
+          lines.push(
+            "",
+            "Routage recommande:",
+            "- Vivy: voix, paroles, composition, presence audio.",
+            "- A11: image, video, montage, generation d'assets.",
+            "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
+          );
+          return lines.join("\n");
+        }
+
+        function buildBrief() {
+          var base = buildBaseBrief();
+          return vivyOutput ? base + "\n\nVIVY_PRODUCTION\n" + vivyOutput : base;
+        }
+
+        function render() {
+          Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-mode]"), function (button) {
+            var isActive = button.getAttribute("data-vivy-mode") === activeMode;
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-selected", isActive ? "true" : "false");
+          });
+          Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-panel]"), function (panel) {
+            panel.hidden = panel.getAttribute("data-vivy-panel") !== activeMode;
+          });
+          if (title) title.textContent = modes[activeMode].title;
+          if (action) action.textContent = modes[activeMode].action;
+          if (briefNode) briefNode.textContent = buildBrief();
+        }
+
+        function copyBrief(message) {
+          var text = buildBrief();
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+              setStatus(message || "Brief copie pour les agents.");
+            }).catch(function () {
+              setStatus("Copie auto indisponible: selectionne le brief et copie-le.");
+            });
+          } else {
+            setStatus("Copie auto indisponible: selectionne le brief et copie-le.");
+          }
+        }
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-mode]"), function (button) {
+          button.addEventListener("click", function () {
+            activeMode = button.getAttribute("data-vivy-mode") || "voice";
+            setStatus("");
+            render();
+          });
+        });
+
+        form.addEventListener("input", render);
+        form.addEventListener("change", function (event) {
+          if (event.target && event.target.name === "voiceFile") {
+            voiceFileName = event.target.files && event.target.files[0] ? event.target.files[0].name : "";
+          }
+          render();
+        });
+        form.addEventListener("submit", function (event) {
+          event.preventDefault();
+          copyBrief(modes[activeMode].action + ": brief pret.");
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-copy]"), function (button) {
+          button.addEventListener("click", function () { copyBrief(); });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-share]"), function (button) {
+          button.addEventListener("click", function () {
+            var text = buildBrief();
+            if (navigator.share) {
+              navigator.share({ title: "Vivy - " + modes[activeMode].title, text: text }).then(function () {
+                setStatus("Partage systeme ouvert.");
+              }).catch(function () {
+                copyBrief("Brief pret a coller dans l'equipe.");
+              });
+            } else {
+              copyBrief("Brief pret a coller dans l'equipe.");
+            }
+          });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-open]"), function (button) {
+          button.addEventListener("click", function () {
+            var target = button.getAttribute("data-vivy-open");
+            copyBrief(target === "a11" ? "Brief copie. Ouverture A11..." : "Brief copie. Ouverture Kaen44...");
+            window.open(target === "a11" ? "https://a11.funesterie.pro/" : "https://k44.funesterie.me/#agents", "_blank", "noopener,noreferrer");
+          });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-ask]"), function (button) {
+          button.addEventListener("click", function () {
+            button.disabled = true;
+            setStatus("Vivy travaille sur le brief...");
+            var focusLine = activeMode === "song"
+              ? "Pour composition/production: donne titre, intention, structure, paroles, arrangement, voix guide et prochaines assets."
+              : activeMode === "voice"
+                ? "Pour creation voix: donne profil vocal, chaine d'effets, calibration, phrase de test et limites."
+                : "Pour scene/partage: donne plan clip, titre, description, tags, checklist OBS/upload et precautions token.";
+            fetch("/api/chat", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                message: [
+                  "Tu es Vivy, presence musicale Funesterie.",
+                  "Transforme ce handoff en production concrete, directement exploitable.",
+                  focusLine,
+                  "",
+                  buildBaseBrief()
+                ].join("\n")
+              })
+            }).then(function (response) {
+              return response.json().catch(function () { return {}; }).then(function (payload) {
+                if (!response.ok || payload.ok === false) {
+                  throw new Error(payload.message || payload.error || ("Vivy indisponible (" + response.status + ")"));
+                }
+                return payload;
+              });
+            }).then(function (payload) {
+              vivyOutput = String(payload.assistant || payload.message || payload.content || "").trim();
+              if (!vivyOutput) throw new Error("reponse_vide");
+              setStatus("Production Vivy ajoutee au brief.");
+              render();
+            }).catch(function (error) {
+              setStatus("Production Vivy indisponible: " + (error && error.message ? error.message : error));
+            }).finally(function () {
+              button.disabled = false;
+            });
+          });
+        });
+
+        render();
+      })();
+    </script>
   </body>
 </html>

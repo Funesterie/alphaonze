@@ -430,15 +430,15 @@ export function CasinoHub({ isCompactLayout = false, onBackToChat }: CasinoHubPr
   }
 
   return (
-    <section className="casino-hub" aria-label="Studio semantique A11">
+    <section className="casino-hub" aria-label="Studio creatif A11">
       <div className="casino-topbar">
         <div>
-          <p className="casino-kicker">A11 / studio semantique</p>
+          <p className="casino-kicker">A11 / studio creatif</p>
           <h1>Generateur creatif A11</h1>
         </div>
         <div className="casino-topbar-actions">
           <button type="button" className="casino-ghost-button" onClick={onBackToChat}>
-            Retour A11
+            Chat
           </button>
           <button type="button" className="casino-ghost-button" onClick={clearPhotos} disabled={!photos.length}>
             Vider

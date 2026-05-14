@@ -2,14 +2,14 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <title>Kaen44 - Assistante bureau Funesterie</title>
+    <title>A11 - Alpha Onze Funesterie</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Kaen44 est une assistante bureau Funesterie pour organiser les documents, importer des fichiers Google Drive, aider aux factures, accompagner les projets et proposer une aide vocale accessible." />
+    <meta name="description" content="A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la memoire et les outils connectes." />
     <meta name="theme-color" content="#0c1020" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Kaen44" />
+    <meta name="apple-mobile-web-app-title" content="A11" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
@@ -21,11 +21,65 @@
           "www.funesterie.me": true,
           "k44.funesterie.me": true,
           "kaen44.funesterie.me": true,
+          "kaen44.funesterie.pro": true,
+          "vivy.funesterie.me": true,
+          "vivy.funesterie.pro": true,
           "alphaonze.funesterie.pro": true,
           "a11.funesterie.pro": true,
           "api.funesterie.pro": true
         };
-        var isPublicHost = !!publicHosts[String(location.hostname || "").toLowerCase()];
+        var hostname = String(location.hostname || "").toLowerCase();
+        var pathname = String(location.pathname || "/").toLowerCase();
+        var port = String(location.port || "");
+        var isLocalHost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+        var isK44Path = /^\/(?:k44|kaen44)(?:\/|$)/.test(pathname);
+        var isVivyPath = /^\/vivy(?:\/|$)/.test(pathname);
+        var isK44Host = hostname === "funesterie.me"
+          || hostname === "www.funesterie.me"
+          || hostname === "k44.funesterie.me"
+          || hostname === "kaen44.funesterie.me"
+          || hostname === "kaen44.funesterie.pro"
+          || isK44Path;
+        var isA11Host = hostname === "alphaonze.funesterie.pro"
+          || hostname === "a11.funesterie.pro"
+          || hostname === "api.funesterie.pro"
+          || (isLocalHost && port === "3000" && !isK44Path && !isVivyPath);
+        var isVivyHost = hostname === "vivy.funesterie.me"
+          || hostname === "vivy.funesterie.pro"
+          || isVivyPath;
+        var isPublicHost = !!publicHosts[hostname];
+
+        if (isVivyHost) {
+          document.title = "Vivy - Presence musicale Funesterie";
+          var vivyDescription = document.querySelector('meta[name="description"]');
+          if (vivyDescription) {
+            vivyDescription.setAttribute("content", "Vivy est la presence musicale Funesterie pour voix, chansons originales, clips et projets audio.");
+          }
+          var vivyAppleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (vivyAppleTitle) {
+            vivyAppleTitle.setAttribute("content", "Vivy");
+          }
+        } else if (isK44Host) {
+          document.title = "Kaen44 - Assistante bureau Funesterie";
+          var k44Description = document.querySelector('meta[name="description"]');
+          if (k44Description) {
+            k44Description.setAttribute("content", "Kaen44 est une assistante bureau Funesterie pour organiser les documents, importer des fichiers Google Drive, aider aux factures, accompagner les projets et proposer une aide vocale accessible.");
+          }
+          var k44AppleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (k44AppleTitle) {
+            k44AppleTitle.setAttribute("content", "Kaen44");
+          }
+        } else if (isA11Host) {
+          document.title = "A11 - Alpha Onze Funesterie";
+          var description = document.querySelector('meta[name="description"]');
+          if (description) {
+            description.setAttribute("content", "A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la memoire et les outils connectes.");
+          }
+          var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (appleTitle) {
+            appleTitle.setAttribute("content", "A11");
+          }
+        }
 
         async function resetClientState(options) {
           options = options || {};
@@ -119,6 +173,8 @@
           <nav aria-label="Navigation Kaen44" style="max-width:1120px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">
             <a href="/" style="color:#fff;text-decoration:none;font-size:24px;font-weight:900;letter-spacing:0;">Kaen44</a>
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;">
+              <a href="https://a11.funesterie.pro/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">A11</a>
+              <a href="/vivy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Vivy</a>
               <a href="/privacy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Confidentialite</a>
               <a href="/terms/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Conditions</a>
               <a href="/login" style="color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:900;padding:10px 16px;border-radius:999px;">Ouvrir Kaen44</a>

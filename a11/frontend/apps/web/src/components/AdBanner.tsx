@@ -14,19 +14,19 @@ function buildQualifiedSalesLink(subject: string, body: string) {
 export function AdBanner({ position = 'bottom', style }: AdBannerProps) {
   const ads = [
     {
-      title: 'A11 Blueprint - Source, memoire et orchestration',
-      description: 'Licence qualifiee: backend, frontend, infra, memoire, agents, runbook et transfert technique.',
-      price: '85 000 EUR+',
-      cta: 'Demande qualifiee',
+      title: 'A11 Pro - assistant sur mesure',
+      description: 'Un assistant personnalise pour documents, voix, creation, suivi et automatisations utiles.',
+      price: 'Sur devis',
+      cta: 'Parler du projet',
       link: buildQualifiedSalesLink(
-        'Demande qualifiee Blueprint A11',
-        'Bonjour,\n\nJe souhaite qualifier un achat ou une licence Blueprint A11.\n\nContexte projet:\nBudget estime:\nDelais:\nBesoin source / deploiement / accompagnement:\n\nMerci.'
+        'Projet A11 sur mesure',
+        'Bonjour,\n\nJe souhaite parler d un projet A11 sur mesure.\n\nContexte:\nBesoin principal:\nDelais:\nBudget estime:\n\nMerci.'
       ),
       highlight: true,
     },
     {
-      title: 'A11 Studio - Chat long et credits',
-      description: 'Studio semantique pour image, video, audio et documents depuis Drive, fichiers locaux ou partage conversation.',
+      title: 'A11 Studio - creation et documents',
+      description: 'Images, videos, audio, resumes et documents depuis les fichiers que tu choisis de partager.',
       price: '9 EUR/mois',
       cta: 'Activer Studio',
       link: '/subscription',
@@ -48,14 +48,15 @@ export function AdBanner({ position = 'bottom', style }: AdBannerProps) {
 
   const baseStyle: React.CSSProperties = {
     background: ad.highlight
-      ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      : 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    color: 'white',
+      ? 'linear-gradient(135deg, #041018 0%, #0f766e 54%, #365314 100%)'
+      : 'linear-gradient(135deg, #041018 0%, #0e7490 56%, #166534 100%)',
+    color: '#ecfeff',
     padding: position === 'sidebar' ? '15px' : '20px',
     borderRadius: '8px',
+    border: '1px solid rgba(45, 212, 191, 0.26)',
     marginBottom: position === 'bottom' ? '20px' : '0',
     marginTop: position === 'top' ? '20px' : '0',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    boxShadow: '0 18px 44px rgba(0, 0, 0, 0.28)',
     cursor: 'pointer',
     transition: 'transform 0.2s, box-shadow 0.2s',
     ...style,
@@ -79,10 +80,20 @@ export function AdBanner({ position = 'bottom', style }: AdBannerProps) {
     e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    handleClick();
+  };
+
   return (
     <div
       style={baseStyle}
+      role="button"
+      tabIndex={0}
+      aria-label={`${ad.cta}: ${ad.title}`}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -99,10 +110,12 @@ export function AdBanner({ position = 'bottom', style }: AdBannerProps) {
               {ad.price}
             </span>
             <button
+              type="button"
               style={{
                 background: 'rgba(255, 255, 255, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                color: 'white',
+                border: '1px solid rgba(209, 250, 229, 0.42)',
+                color: '#ecfeff',
+                minHeight: 44,
                 padding: position === 'sidebar' ? '5px 10px' : '8px 16px',
                 borderRadius: '4px',
                 fontSize: position === 'sidebar' ? '12px' : '14px',
