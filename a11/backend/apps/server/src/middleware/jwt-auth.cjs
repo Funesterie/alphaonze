@@ -35,6 +35,32 @@ function extractRequestAuthToken(req) {
   return bearerToken || headerToken || cookieToken;
 }
 
+function isLoopbackRequest(req) {
+  const values = [
+    req?.hostname,
+    req?.ip,
+    req?.socket?.remoteAddress,
+    req?.connection?.remoteAddress,
+  ].map((value) => String(value || '').trim().toLowerCase().replace(/^::ffff:/, ''));
+
+  return values.some((value) => value === 'localhost' || value === '127.0.0.1' || value === '::1' || value === '[::1]');
+}
+
+function shouldBypassJwtForLocalDev(req) {
+  const securityMode = String(process.env.NEZ_SECURITY_MODE || '').trim().toLowerCase();
+  const explicitBypass = ['true', '1', 'yes', 'on'].includes(
+    String(process.env.A11_DISABLE_JWT_AUTH || process.env.A11_LOCAL_AUTH_BYPASS || '').trim().toLowerCase()
+  );
+  const browserBypass = ['true', '1', 'yes', 'on'].includes(
+    String(req?.headers?.['x-a11-local-dev-bypass'] || '').trim().toLowerCase()
+  );
+
+  if (process.env.NODE_ENV === 'production') return false;
+  if (explicitBypass) return true;
+  if (browserBypass && isLoopbackRequest(req)) return true;
+  return isLoopbackRequest(req) && securityMode === 'off';
+}
+
 function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false } = {}) {
   if (!jwt || typeof jwt.verify !== 'function') {
     throw new Error('createVerifyJWT requires jwt.verify');
@@ -46,6 +72,19 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false 
   }
 
   return function verifyJWT(req, res, next) {
+    if (shouldBypassJwtForLocalDev(req)) {
+      req.user = {
+        id: 'local-dev',
+        username: 'local-dev',
+        email: 'local-dev@funesterie.local',
+        role: 'admin',
+        permissions: ['admin'],
+        isAdmin: true,
+        localBypass: true,
+      };
+      return next();
+    }
+
     const token = extractRequestAuthToken(req);
 
     if (!token) {
@@ -77,5 +116,6 @@ module.exports = {
   looksLikeJwtToken,
   extractRequestAuthToken,
   parseCookieHeader,
+  shouldBypassJwtForLocalDev,
   createVerifyJWT,
 };

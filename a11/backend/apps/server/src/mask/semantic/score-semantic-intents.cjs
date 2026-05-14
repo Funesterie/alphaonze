@@ -108,6 +108,8 @@ function scoreSemanticIntents(levels, overrides = {}) {
   const emailActionLike = /\b(envoie|envoyer|envoi|mail|email|gmail|courriel|message)\b/.test(normalizedText);
   const emailAddressLike = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(sourceText);
   const attachmentLike = /\b(avec|join|joins|joint|jointe|piece jointe|pi[eè]ce jointe|attachment|attached|inclu|inclure)\b/.test(normalizedText);
+  const archiveLookupLike = /\b(archive|archives|conversation|conversations|historique|historiques|session|sessions|transcript|chatgpt|codex)\b/.test(normalizedText);
+  const archiveActionLike = /\b(retrouve|retrouve|relis|lis|cherche|trouve|donne|rappelle|resume|resume|titre|quelle|quel)\b/.test(normalizedText);
   const subject = extractSubjectCandidate(
     wordItems.map((item) => item.word),
     { sourceText }
@@ -277,6 +279,21 @@ function scoreSemanticIntents(levels, overrides = {}) {
     evidence['web.search'].push('heuristique:meta_image_discussion');
     evidence['image.generate'].push('suppression:meta_image_discussion');
     evidence['web.image.search'].push('suppression:meta_image_discussion');
+  }
+
+  if (archiveLookupLike && (archiveActionLike || explicitQuestion)) {
+    rawScores['chat.reply'] += 3.4;
+    rawScores['web.search'] += explicitQuestion ? 0.45 : 0.18;
+    rawScores['image.generate'] -= 3.4;
+    rawScores['web.image.search'] -= 2.2;
+    levelBreakdown.message['chat.reply'] += 3.4;
+    levelBreakdown.message['web.search'] += explicitQuestion ? 0.45 : 0.18;
+    levelBreakdown.message['image.generate'] -= 3.4;
+    levelBreakdown.message['web.image.search'] -= 2.2;
+    evidence['chat.reply'].push('heuristique:archive_lookup');
+    evidence['web.search'].push('heuristique:archive_lookup');
+    evidence['image.generate'].push('suppression:archive_lookup');
+    evidence['web.image.search'].push('suppression:archive_lookup');
   }
 
   // Signaux forts pour chat.reply (conversations, feedback, greetings, meta-discussion)

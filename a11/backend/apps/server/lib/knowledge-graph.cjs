@@ -5,24 +5,55 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
+const { isSemanticMemoryText } = require('./semantic-memory-filter.cjs');
 
 const logger = getLogger({ component: 'knowledge-graph' });
 
 /**
  * Extrait des triplets (Sujet, Prédicat, Objet) d'un texte via LLM
  */
+function isEnvEnabled(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function isTripletExtractionEnabled(options = {}, env = process.env) {
+  const explicit = isEnvEnabled(env.A11_ENABLE_KNOWLEDGE_GRAPH_EXTRACTION);
+  if (explicit !== null) return explicit;
+  if (options.ollamaBase || env.A11_KG_LLM_BASE_URL || env.OLLAMA_BASE) return true;
+  if (String(env.NODE_ENV || '').trim().toLowerCase() === 'production') return false;
+  return true;
+}
+
+function resolveTripletExtractionBaseUrl(options = {}, env = process.env) {
+  return options.ollamaBase || env.A11_KG_LLM_BASE_URL || env.OLLAMA_BASE || 'http://127.0.0.1:11434';
+}
+
 async function extractTriplets(text, options = {}) {
-  const ollamaBase = options.ollamaBase || process.env.OLLAMA_BASE || 'http://127.0.0.1:11434';
+  const normalizedText = String(text || '').trim();
+  if (!isSemanticMemoryText(normalizedText, { maxChars: options.maxChars || 8000 })) {
+    logger.debug('Skipping triplet extraction for non-semantic payload');
+    return [];
+  }
+
+  if (!isTripletExtractionEnabled(options)) {
+    logger.debug('Knowledge graph triplet extraction disabled or not configured');
+    return [];
+  }
+
+  const ollamaBase = resolveTripletExtractionBaseUrl(options);
   const model = options.model || process.env.A11_REASONING_MODEL || process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b';
 
-  const prompt = `Tu es un extracteur de triplets de connaissances. Analyse le texte suivant et extrais tous les triplets sous la forme (Sujet, Prédicat, Objet).
+  const prompt = `Je suis un extracteur de triplets de connaissances. J'analyse le texte suivant et j'extrais tous les triplets sous la forme (Sujet, Prédicat, Objet).
 
 Règles :
 - Un triplet représente une relation : Sujet → Prédicat → Objet
 - Le Sujet et l'Objet sont des entités (personnes, lieux, concepts, objets)
 - Le Prédicat est une relation ou action entre eux
 - Extrais TOUS les triplets pertinents, même implicites
-- Réponds UNIQUEMENT avec un JSON array de triplets
+- Je réponds UNIQUEMENT avec un JSON array de triplets
 
 Exemple :
 Texte: "Paris est la capitale de la France. La Tour Eiffel se trouve à Paris."
@@ -32,9 +63,9 @@ Réponse: [
 ]
 
 Texte à analyser :
-${text}
+${normalizedText}
 
-Réponds UNIQUEMENT avec le JSON array de triplets :`;
+Je réponds UNIQUEMENT avec le JSON array de triplets :`;
 
   try {
     const response = await fetch(`${ollamaBase}/api/generate`, {
@@ -81,7 +112,7 @@ Réponds UNIQUEMENT avec le JSON array de triplets :`;
 
     return validTriplets;
   } catch (error) {
-    logger.error('Failed to extract triplets', { error, text: text.slice(0, 100) });
+    logger.warn('Failed to extract triplets', { error: String(error?.message || error) });
     return [];
   }
 }
@@ -497,26 +528,85 @@ class KnowledgeGraph {
  * Factory pour créer une instance de KnowledgeGraph
  * Utilise Neo4j si disponible, sinon fallback sur JSON
  */
+function shouldFallbackFromNeo4j(error) {
+  const code = String(error?.code || error?.gqlStatus || '').trim();
+  const message = String(error?.message || error || '').trim();
+  return code.startsWith('Neo.') ||
+    /neo4j|authentication|unauthorized|connection|econnrefused|service unavailable/i.test(message);
+}
+
+function createJsonKnowledgeGraph(userId, options = {}) {
+  return new KnowledgeGraph({
+    userId,
+    ...options,
+    forceJson: true,
+  });
+}
+
+function withJsonFallbackGraph(userId, primaryGraph, options = {}) {
+  const callWithFallback = async (methodName, args) => {
+    if (primaryGraph && typeof primaryGraph[methodName] === 'function') {
+      try {
+        return await primaryGraph[methodName](...args);
+      } catch (error) {
+        if (!shouldFallbackFromNeo4j(error)) {
+          throw error;
+        }
+        logger.warn(`Neo4j ${methodName} failed; falling back to JSON graph`, {
+          error: String(error?.message || error),
+          code: error?.code,
+        });
+      }
+    }
+
+    const fallbackGraph = createJsonKnowledgeGraph(userId, options);
+    if (typeof fallbackGraph[methodName] !== 'function') {
+      throw new Error(`Knowledge graph method not available: ${methodName}`);
+    }
+    return await fallbackGraph[methodName](...args);
+  };
+
+  return {
+    addTriplets: (...args) => callWithFallback('addTriplets', args),
+    extractAndAddFromText: async (text, metadata = {}) => {
+      const triplets = await extractTriplets(text);
+      return callWithFallback('addTriplets', [triplets, metadata]);
+    },
+    findNodes: (...args) => callWithFallback('findNodes', args),
+    getRelations: (...args) => callWithFallback('getRelations', args),
+    findPath: (...args) => callWithFallback('findPath', args),
+    getContextForQuery: (...args) => callWithFallback('getContextForQuery', args),
+    getStats: (...args) => callWithFallback('getStats', args),
+    exportToCypher: (...args) => callWithFallback('exportToCypher', args),
+    close: async (...args) => {
+      if (primaryGraph && typeof primaryGraph.close === 'function') {
+        return primaryGraph.close(...args);
+      }
+      return undefined;
+    },
+  };
+}
+
 function createKnowledgeGraph(userId, options = {}) {
   // Essayer d'utiliser Neo4j si disponible
   try {
     const { isNeo4jAvailable, createNeo4jKnowledgeGraph } = require('./neo4j-adapter.cjs');
     if (isNeo4jAvailable() && !options.forceJson) {
-      return createNeo4jKnowledgeGraph(userId, options);
+      const graph = createNeo4jKnowledgeGraph(userId, options);
+      return withJsonFallbackGraph(userId, graph, options);
     }
   } catch (error) {
     // Fallback sur JSON si Neo4j n'est pas disponible
   }
 
   // Fallback sur le stockage JSON
-  return new KnowledgeGraph({
-    userId,
-    ...options,
-  });
+  return createJsonKnowledgeGraph(userId, options);
 }
 
 module.exports = {
   KnowledgeGraph,
   createKnowledgeGraph,
   extractTriplets,
+  isTripletExtractionEnabled,
+  resolveTripletExtractionBaseUrl,
 };

@@ -40,6 +40,7 @@ function resolveLocalUploadPath({
 function saveBufferToLocalUploadStorage({
   uploadsRoot = '',
   filename = '',
+  storageKey = '',
   buffer = Buffer.alloc(0),
   contentType = 'application/octet-stream',
   sanitizeFileName = null,
@@ -48,9 +49,14 @@ function saveBufferToLocalUploadStorage({
   fs.mkdirSync(normalizedRoot, { recursive: true });
 
   const safeFilename = sanitizeWithFallback(filename || 'file.bin', sanitizeFileName);
-  const outputFilename = `upload_${Date.now()}_${crypto.randomBytes(4).toString('hex')}_${safeFilename}`;
+  const requestedStorageKey = String(storageKey || '').trim();
+  const requestedFilename = getLocalUploadFilenameFromStorageKey(requestedStorageKey);
+  const contentHash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 24);
+  const outputFilename = requestedFilename || `upload_${contentHash}_${safeFilename}`;
   const outputPath = path.join(normalizedRoot, outputFilename);
-  fs.writeFileSync(outputPath, buffer);
+  if (!fs.existsSync(outputPath)) {
+    fs.writeFileSync(outputPath, buffer);
+  }
 
   return {
     filename: safeFilename,

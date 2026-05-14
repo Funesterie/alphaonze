@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   a11-backend:
     build:
@@ -16,7 +14,7 @@ services:
       - HOST_SERVER=0.0.0.0
       
       # JWT
-      # JWT_SECRET is configured via the deployment secret store.
+      - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRY=7d
       
       # Admin par défaut
@@ -32,24 +30,24 @@ services:
       
       # LLM
       - A11_LLM_PROVIDER=openai
-      # OPENAI_API_KEY is configured via the deployment secret store.
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DEFAULT_MODEL=gpt-4o-mini
       
       # Stripe
-      # STRIPE_SECRET_KEY is configured via the deployment secret store.
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
-      # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL}
       - STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL}
       - STRIPE_PORTAL_RETURN_URL=${STRIPE_PORTAL_RETURN_URL}
       
       # Email (Resend)
-      # RESEND_API_KEY is configured via the deployment secret store.
+      - RESEND_API_KEY=${RESEND_API_KEY}
       - EMAIL_FROM=${EMAIL_FROM:-A11 <a11@funesterie.pro>}
       - APP_URL=${APP_URL:-https://alphaonze.funesterie.pro}
       
       # CORS
-      - CORS_ORIGINS=${CORS_ORIGINS:-https://alphaonze.funesterie.pro}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://178.105.86.89,https://alphaonze.funesterie.pro,http://alphaonze.funesterie.pro,https://a11.funesterie.pro,http://a11.funesterie.pro,https://api.funesterie.pro,http://api.funesterie.pro}
       
       # Sécurité
       - NEZ_SECURITY_MODE=production
@@ -57,13 +55,21 @@ services:
       # Qflush
       - A11_ENABLE_QFLUSH=1
       - QFLUSH_CHAT_FLOW=a11.chat.v1
+
+      # Voix A11 locale dediee
+      - ENABLE_PIPER_HTTP=1
+      - A11_VOICE_MODULE_URL=http://a11-voice:5002
+      - TTS_URL=http://a11-voice:5002
+      - TTS_BASE_URL=http://a11-voice:5002
+      - A11_VOICE_CONVERSION_ENABLED=1
+      - A11_VOICE_CONVERTER_PROVIDER=ffmpeg-morph
       
     volumes:
       - a11-logs:/app/logs
       - a11-runtime:/app/runtime
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,10 +78,39 @@ services:
     networks:
       - a11-network
 
+    depends_on:
+      - a11-voice
+
+  a11-voice:
+    build:
+      context: ../voice-module
+      dockerfile: Dockerfile
+    image: a11-voice-module:local
+    container_name: a11-voice
+    restart: unless-stopped
+    expose:
+      - "5002"
+    volumes:
+      - a11-voice-out:/app/out
+    environment:
+      - A11_VOICE_CONVERTER_PROVIDER=ffmpeg-morph
+      - A11_VOICE_CONVERSION_STRENGTH=0.45
+      - A11_VOICE_DEFAULT_F0_SHIFT=-1.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - a11-network
+
 volumes:
   a11-logs:
     driver: local
   a11-runtime:
+    driver: local
+  a11-voice-out:
     driver: local
 
 networks:

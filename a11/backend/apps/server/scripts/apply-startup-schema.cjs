@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { Client } = require('pg');
 const bcrypt = require('bcrypt');
+const { getFullAccessEmails } = require('../src/auth/full-access.cjs');
 
 try {
   require('dotenv').config({ path: path.resolve(__dirname, '..', '.env.local'), override: false });
@@ -17,9 +18,25 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
+function resolvePostgresSslConfig() {
+  const raw = String(process.env.DATABASE_SSL ?? process.env.PGSSLMODE ?? '').trim().toLowerCase();
+  if (['0', 'false', 'disable', 'disabled', 'off', 'no'].includes(raw)) return false;
+  if (['1', 'true', 'require', 'required', 'on', 'yes', 'verify-ca', 'verify-full'].includes(raw)) {
+    return { rejectUnauthorized: false };
+  }
+  try {
+    const sslMode = new URL(process.env.DATABASE_URL || '').searchParams.get('sslmode')?.trim().toLowerCase();
+    if (['0', 'false', 'disable', 'disabled', 'off', 'no'].includes(sslMode)) return false;
+    if (['1', 'true', 'require', 'required', 'on', 'yes', 'verify-ca', 'verify-full'].includes(sslMode)) {
+      return { rejectUnauthorized: false };
+    }
+  } catch (_) {}
+  return false;
+}
+
 const client = new Client({
   connectionString: databaseUrl,
-  ssl: { rejectUnauthorized: false },
+  ssl: resolvePostgresSslConfig(),
 });
 
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
@@ -312,6 +329,24 @@ async function disableUnsafeDefaultAdmin() {
   }
 }
 
+async function activateFullAccessAllowlist() {
+  const emails = getFullAccessEmails();
+  if (!emails.length) return;
+
+  const result = await client.query(
+    `UPDATE users
+        SET subscription_active=true,
+            subscription_end_date=NULL,
+            updated_at=NOW()
+      WHERE LOWER(email) = ANY($1::text[])`,
+    [emails]
+  );
+
+  if (result.rowCount > 0) {
+    console.log(`[AUTH] full access allowlist activated (${result.rowCount} user${result.rowCount === 1 ? '' : 's'})`);
+  }
+}
+
 async function main() {
   await client.connect();
 
@@ -320,6 +355,7 @@ async function main() {
   }
 
   await disableUnsafeDefaultAdmin();
+  await activateFullAccessAllowlist();
 
   await client.end();
   console.log(`[DB] startup schema applied (${statements.length} statements)`);

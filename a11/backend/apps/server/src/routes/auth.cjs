@@ -136,10 +136,11 @@ function resolveRequestHostname(req) {
 
 function resolveHostPinnedOAuthCallback(req, provider) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
+  if (!['k44.funesterie.me', 'kaen44.funesterie.me', 'kaen44.funesterie.pro'].includes(hostname)) return '';
   const origin = resolveRequestOrigin(req).replace(/\/+$/, '');
   if (!origin) return '';
-  return `${origin}/api/auth/${provider}/callback`;
+  const publicOrigin = origin.replace(/^http:\/\//i, 'https://');
+  return `${publicOrigin}/api/auth/${provider}/callback`;
 }
 
 function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
@@ -237,6 +238,95 @@ function safeFrontendRedirect(frontendUrl, pathOrUrl = '/auth/success') {
     return `${base}/auth/success`;
   }
   return `${base}${raw.startsWith('/') ? raw : `/${raw}`}`;
+}
+
+function isAllowedOAuthFrontendOrigin(origin) {
+  const normalized = String(origin || '').trim().toLowerCase().replace(/\/+$/, '');
+  if (!normalized) return false;
+  if ([
+    'https://a11.funesterie.pro',
+    'https://alphaonze.funesterie.pro',
+    'https://k44.funesterie.me',
+    'https://kaen44.funesterie.me',
+    'https://funesterie.me',
+    'https://www.funesterie.me',
+  ].includes(normalized)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    return ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)
+      && ['3000', '3001', '5173', '4173'].includes(parsed.port || '');
+  } catch {
+    return false;
+  }
+}
+
+function resolveOAuthRedirectUrl(frontendUrl, pathOrUrl = '/auth/success') {
+  const base = String(frontendUrl || 'https://a11.funesterie.pro').replace(/\/+$/, '');
+  const raw = String(pathOrUrl || '/auth/success').trim();
+  if (!raw || raw.startsWith('//')) return `${base}/auth/success`;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      if (isAllowedOAuthFrontendOrigin(parsed.origin)) return parsed.toString();
+    } catch {}
+    return `${base}/auth/success`;
+  }
+
+  return `${base}${raw.startsWith('/') ? raw : `/${raw}`}`;
+}
+
+function appendOAuthTokenFragment(targetUrl, token, provider) {
+  if (!token) return targetUrl;
+  try {
+    const parsed = new URL(targetUrl);
+    const hashParams = new URLSearchParams(String(parsed.hash || '').replace(/^#/, ''));
+    hashParams.set('a11_token', token);
+    hashParams.set('provider', provider || 'oauth');
+    parsed.hash = hashParams.toString();
+    return parsed.toString();
+  } catch {
+    return targetUrl;
+  }
+}
+
+function redirectOAuthSuccess(res, frontendUrl, returnTo, token, provider) {
+  const target = resolveOAuthRedirectUrl(frontendUrl, returnTo || '/auth/success');
+  let needsFragmentToken = false;
+  try {
+    const targetOrigin = new URL(target).origin;
+    const frontendOrigin = new URL(String(frontendUrl || 'https://a11.funesterie.pro')).origin;
+    needsFragmentToken = targetOrigin !== frontendOrigin;
+  } catch {
+    needsFragmentToken = false;
+  }
+  return res.redirect(needsFragmentToken ? appendOAuthTokenFragment(target, token, provider) : target);
+}
+
+function redirectOAuthErrorWithState(res, frontendUrl, statePayload, errorCode) {
+  const error = encodeURIComponent(errorCode || 'oauth_failed');
+  const returnTo = String(statePayload?.returnTo || '').trim();
+  if (returnTo) {
+    try {
+      const target = new URL(resolveOAuthRedirectUrl(frontendUrl, returnTo));
+      if (/^\/k44(?:\/|$)/i.test(target.pathname)) {
+        target.pathname = '/k44/login';
+      } else if (/^\/kaen44(?:\/|$)/i.test(target.pathname)) {
+        target.pathname = '/kaen44/login';
+      } else {
+        target.pathname = '/login';
+      }
+      target.search = `?error=${error}`;
+      target.hash = '';
+      return res.redirect(target.toString());
+    } catch {
+      // fall through to regular frontend redirect
+    }
+  }
+  return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
 }
 
 function readCookie(req, name) {
@@ -802,7 +892,7 @@ function createAuthRouter({
         hasCallbackUrl: Boolean(callbackUrl),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=google_auth_not_configured'));
+      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, 'google_auth_not_configured');
     }
 
     try {
@@ -820,7 +910,7 @@ function createAuthRouter({
         || String(idTokenProfile?.email_verified || userInfoProfile?.verified_email || '').toLowerCase() === 'true';
       if (!email || !emailVerified) {
         clearSessionCookies(req, res);
-        return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=google_email_not_verified'));
+        return redirectOAuthErrorWithState(res, frontendUrl, statePayload, 'google_email_not_verified');
       }
 
       const profile = {
@@ -841,17 +931,17 @@ function createAuthRouter({
             provider: 'google',
           };
 
-      issueSessionCookie(req, res, user, { provider: 'google' });
+      const sessionToken = issueSessionCookie(req, res, user, { provider: 'google' });
       res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Google OAuth login:', email);
-      return res.redirect(safeFrontendRedirect(frontendUrl, statePayload?.returnTo || '/auth/success'));
+      return redirectOAuthSuccess(res, frontendUrl, statePayload?.returnTo || '/auth/success', sessionToken, 'google');
     } catch (callbackError) {
       clearSessionCookies(req, res);
       logOAuthTrace('google', 'callback_failed', req, normalizePublicAppUrl, {
         callbackUrl,
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
       }, 'warn');
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_failed'));
+      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, 'oauth_failed');
     }
   });
 

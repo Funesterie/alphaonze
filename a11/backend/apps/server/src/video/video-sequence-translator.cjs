@@ -577,7 +577,12 @@ function buildIdentitySentence(sequencePlan = {}) {
       universe: sequencePlan?.universe,
     }))
   );
-  return `keep ${translatedLocks.join(', ')}`;
+  const continuityDirectives = [
+    'same camera setup and framing family',
+    'same background, lighting, color palette and art style',
+    'same subject identity, outfit, proportions and silhouette',
+  ];
+  return `keep ${normalizePromptList([...translatedLocks, ...continuityDirectives]).join(', ')}`;
 }
 
 function concretizeSubjectPrompt(value = '', subject = '') {

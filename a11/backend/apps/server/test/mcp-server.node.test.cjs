@@ -22,6 +22,7 @@ function callMcpOnce(message) {
       env: {
         ...env,
         A11_BASE_URL: 'http://127.0.0.1:3000',
+        A11_MCP_DISABLE_WINDOWS_USER_ENV: '1',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -64,6 +65,37 @@ test('a11 MCP dimension status does not invent a default NEZ token', async () =>
   const status = JSON.parse(text);
   assert.equal(status.ok, true);
   assert.equal(status.server.hasNezToken, false);
+  assert.equal(typeof status.sharedMcp?.tokenPresent, 'boolean');
+  assert.equal(text.includes('Bearer '), false);
+  assert.equal(text.includes('Authorization'), false);
+});
+
+test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
+  const [response] = await callMcpOnce({
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/list',
+    params: {},
+  });
+
+  assert.equal(response.id, 2);
+  const tools = response.result.tools || [];
+  assert.ok(tools.length > 0);
+  for (const tool of tools) {
+    assert.equal(typeof tool.annotations?.readOnlyHint, 'boolean', `${tool.name} readOnlyHint`);
+    assert.equal(typeof tool.annotations?.openWorldHint, 'boolean', `${tool.name} openWorldHint`);
+    assert.equal(typeof tool.annotations?.destructiveHint, 'boolean', `${tool.name} destructiveHint`);
+  }
+  const health = tools.find((tool) => tool.name === 'a11_health');
+  const shell = tools.find((tool) => tool.name === 'a11_shell');
+  const inbox = tools.find((tool) => tool.name === 'a11_kiro_inbox_check');
+  const post = tools.find((tool) => tool.name === 'a11_kiro_discussion_post');
+  assert.equal(health.annotations.readOnlyHint, true);
+  assert.equal(shell.annotations.readOnlyHint, false);
+  assert.equal(inbox.annotations.readOnlyHint, true);
+  assert.equal(inbox.annotations.openWorldHint, true);
+  assert.equal(post.annotations.readOnlyHint, false);
+  assert.equal(post.annotations.openWorldHint, true);
 });
 
 test('Kiro MCP config avoids high-risk auto-approval', () => {
@@ -77,5 +109,6 @@ test('Kiro MCP config avoids high-risk auto-approval', () => {
   assert.equal(a11AutoApprove.includes('a11_chat'), false);
   assert.equal(sharedAutoApprove.includes('memory_write_safe'), false);
   assert.equal(sharedAutoApprove.includes('discussion_post'), false);
+  assert.equal(sharedAutoApprove.includes('discussion_set_status'), false);
   assert.equal(sharedAutoApprove.includes('read_cloud_doc'), false);
 });

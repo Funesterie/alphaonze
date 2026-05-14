@@ -83,7 +83,7 @@ async function extractFactsFromText(text) {
   if (!_llmCall || !text?.trim()) return [];
 
   try {
-    const prompt = `Analyse cette conversation et extrais les faits importants à retenir sur l'utilisateur, ses préférences, ses projets, et les décisions prises. Réponds UNIQUEMENT avec un JSON array de strings courtes (max 100 chars chacune). Si rien d'important, réponds [].
+    const prompt = `J'analyse cette conversation et j'extrais les faits importants à retenir sur l'utilisateur, ses préférences, ses projets, et les décisions prises. Je réponds UNIQUEMENT avec un JSON array de strings courtes (max 100 chars chacune). Si rien d'important, je réponds [].
 
 Conversation:
 ${text.slice(0, 2000)}
@@ -104,7 +104,7 @@ async function extractTripletsFromText(text) {
   if (!_llmCall || !text?.trim()) return [];
 
   try {
-    const prompt = `Extrais les relations importantes de cette conversation sous forme de triplets (sujet, prédicat, objet). Réponds UNIQUEMENT avec un JSON array d'objets {subject, predicate, object}. Si rien, réponds [].
+    const prompt = `J'extrais les relations importantes de cette conversation sous forme de triplets (sujet, prédicat, objet). Je réponds UNIQUEMENT avec un JSON array d'objets {subject, predicate, object}. Si rien, je réponds [].
 
 Conversation:
 ${text.slice(0, 2000)}

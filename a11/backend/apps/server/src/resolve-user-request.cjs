@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const analyzeSemanticIntent = require('./mask/semantic/analyze-semantic-intent.cjs');
 const compileMaskUnified = require('./mask/compile-mask-unified.cjs');
 const {
+  createA11ImageBrain: defaultCreateA11ImageBrain,
   buildClarificationMessage,
 } = require('./image/a11-image-brain.cjs');
 const {
@@ -74,6 +75,29 @@ function isIntentRouterV2Enabled(explicitValue) {
   const envValue = process.env.A11_INTENT_ROUTER_V2;
   if (envValue === undefined || envValue === '') return true;
   return isTruthy(envValue);
+}
+
+function isLegacySemanticIntentFallbackEnabled(env = process.env) {
+  return isTruthy(env.A11_ENABLE_LEGACY_SEMANTIC_INTENT_FALLBACK);
+}
+
+function shouldUseSemanticIntentFallback(llmIntentResult = null) {
+  if (!llmIntentResult || typeof llmIntentResult !== 'object') return true;
+  const reason = String(llmIntentResult.reason || '').trim().toLowerCase();
+  return (
+    reason === 'structured_intent_fallback'
+    || reason === 'llm_unavailable_no_word_detector'
+    || reason === 'llm_error_no_word_detector'
+  );
+}
+
+function shouldAcceptLlmIntent(llmIntentResult = null) {
+  const intent = String(llmIntentResult?.intent || '').trim();
+  if (!intent) return false;
+  const confidence = Number(llmIntentResult?.confidence || 0);
+  if (!Number.isFinite(confidence)) return false;
+  if (confidence >= 0.6) return true;
+  return intent !== 'chat.reply' && confidence >= 0.5;
 }
 
 function buildTraceId(req) {
@@ -214,6 +238,32 @@ function attachDirectSourceImageToMask(mask = {}, body = {}, messages = []) {
     }
   }
   return nextMask;
+}
+
+function isImageTransformRequest(text = '') {
+  const normalized = normalizeLookup(text);
+  if (!normalized) return false;
+
+  const referenceCue = /\b(cette|cet|ce|ca|cela|celle ci|celui ci|l image|la photo|le portrait|image jointe|photo jointe|reference|ref|dessus)\b/.test(normalized);
+  const transformCue = /\b(retravaille|retravailler|retouche|retoucher|modifie|modifier|change|changer|transforme|transformer|adapte|adapter|remix|recompose|recomposer|corrige|corriger|ameliore|ameliorer|refais|refaire|remake|rework|edit|modify|transform|enhance|upscale|stylise|styliser)\b/.test(normalized);
+  const imageCue = /\b(image|photo|portrait|visuel|dessin|illustration|fichier)\b/.test(normalized);
+
+  return transformCue && (referenceCue || imageCue);
+}
+
+function isExplicitImageGenerationRequest(text = '') {
+  const normalized = normalizeLookup(text);
+  if (!normalized) return false;
+
+  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw|render)\b/.test(normalized);
+  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork|render)\b/.test(normalized);
+  const troubleshootingCue = /\b(pourquoi|comment|probleme|bug|erreur|marche pas|fonctionne pas|peux tu|peux pas|capable|capacite)\b/.test(normalized);
+
+  if (!creationCue || !imageCue) return false;
+  if (troubleshootingCue && !/\b(genere|generer|cree|creer|dessine|dessiner|generate|create|draw)\b/.test(normalized)) {
+    return false;
+  }
+  return true;
 }
 
 function buildClarificationPayload(clarification, semantic, traceId, pipeline) {
@@ -391,6 +441,7 @@ async function executeWebImageSearch(mask, duckduckgoImageSearch) {
 
 function resolveIntentDependencies(overrides = {}) {
   return {
+    createA11ImageBrain: overrides.createA11ImageBrain || defaultCreateA11ImageBrain,
     detectImageIntent: overrides.detectImageIntent || defaultDetectImageIntent,
     detectVideoIntent: overrides.detectVideoIntent || defaultDetectVideoIntent,
     detectWebImageIntent: overrides.detectWebImageIntent || defaultDetectWebImageIntent,
@@ -407,6 +458,16 @@ function resolveIntentDependencies(overrides = {}) {
     classifyReferenceImages: overrides.classifyReferenceImages || defaultClassifyReferenceImages,
     detectIntentWithLlm: overrides.detectIntentWithLlm || defaultDetectIntentWithLlm,
   };
+}
+
+function createImageBrainRuntime(deps = {}) {
+  if (typeof deps.createA11ImageBrain !== 'function') return null;
+  return deps.createA11ImageBrain({
+    detectImageIntent: deps.detectImageIntent,
+    detectWebImageIntent: deps.detectWebImageIntent,
+    duckduckgoImageSearch: deps.duckduckgoImageSearch,
+    generateSd: deps.generateSd,
+  });
 }
 
 async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
@@ -433,19 +494,25 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
     });
     return {
       ...resolution,
-      responsePayload: withIntentMetadata(
-        {
-          ok: imageResult.ok,
-          artifact_type: 'image',
-          image_url: imageResult.image_url,
-          url: imageResult.url,
-          filename: imageResult.filename,
-          prompt: imageResult.prompt,
-          subject: imageResult.subject,
-          pipeline: 'direct',
-        },
-        resolution
-      ),
+      responsePayload: withIntentMetadata({
+        ...toImageChatProxyPayload({
+          sdResult: {
+            ...(imageResult.sdResult && typeof imageResult.sdResult === 'object' ? imageResult.sdResult : {}),
+            ok: imageResult.ok,
+            artifact_type: imageResult.artifact_type || 'image',
+            image_url: imageResult.image_url || imageResult.url || null,
+            url: imageResult.url || imageResult.image_url || null,
+            filename: imageResult.filename || imageResult.sdResult?.filename || null,
+            prompt: imageResult.prompt || imageResult.sdResult?.prompt || null,
+            subject: imageResult.subject || null,
+            tool: imageResult.sdResult?.tool || imageResult.tool || 'generate_image',
+            mode: imageResult.sdResult?.mode || imageResult.mode || 'direct-image-pipeline',
+          },
+        }),
+        prompt: imageResult.prompt,
+        subject: imageResult.subject,
+        requestStyle: imageResult.style || null,
+      }, resolution),
       runtime: imageResult,
     };
   }
@@ -508,6 +575,19 @@ async function executeResolvedRuntime(resolution, input = {}, deps = {}) {
   }
 
   if (resolution.kind === 'web.image.search') {
+    if (resolution.imageBrainDecision?.handled) {
+      const imageBrain = createImageBrainRuntime(deps);
+      const webImage = await imageBrain.executePlan({
+        req: input.req,
+        decision: resolution.imageBrainDecision,
+      });
+      return {
+        ...resolution,
+        responsePayload: buildWebImagePayload(webImage.result, webImage.subject, resolution),
+        runtime: webImage,
+        subject: webImage.subject,
+      };
+    }
     const webImage = await executeWebImageSearch(resolution.mask, deps.duckduckgoImageSearch);
     return {
       ...resolution,
@@ -615,20 +695,29 @@ function createIntentResolver(overrides = {}) {
     }
 
     // Résoudre l'intent final : LLM si confiance >= 0.75, sinon sémantique heuristique
-    const llmIntentType = llmIntentResult?.confidence >= 0.75 ? llmIntentResult.intent : null;
+    const hasReferenceImageForRequest = Boolean(extractSourceImageUrl(input.body || {}, messages));
+    const forcedReferenceImageIntent = hasReferenceImageForRequest && isImageTransformRequest(userText);
+    const forcedExplicitImageIntent = isExplicitImageGenerationRequest(userText);
+    const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
+      ? 'image.generate'
+      : (shouldAcceptLlmIntent(llmIntentResult) ? llmIntentResult.intent : null);
+    const allowLegacySemanticFallback = isLegacySemanticIntentFallbackEnabled();
     const semanticIntentType = clarification?.selectedIntentType || semantic?.topIntents?.[0]?.type || 'chat.reply';
-    const selectedIntentType = llmIntentType || semanticIntentType;
+    const allowSemanticIntentFallback = allowLegacySemanticFallback || shouldUseSemanticIntentFallback(llmIntentResult);
+    const selectedIntentType = llmIntentType || (allowSemanticIntentFallback ? semanticIntentType : 'chat.reply');
 
     if (llmIntentResult) {
       console.log(
         `[A11][intent] llm=${llmIntentResult.intent}(${llmIntentResult.confidence.toFixed(2)})`
         + ` semantic=${semanticIntentType}`
         + ` final=${selectedIntentType}`
-        + ` reason=${llmIntentResult.reason}`
+        + ` reason=${forcedReferenceImageIntent
+          ? 'forced_reference_image_transform'
+          : (forcedExplicitImageIntent ? 'forced_explicit_image_generation' : llmIntentResult.reason)}`
       );
     }
 
-    if (clarification?.shouldClarify && !llmIntentType) {
+    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType) {
       return {
         traceId,
         pipeline,
@@ -637,6 +726,80 @@ function createIntentResolver(overrides = {}) {
         clarification,
         responsePayload: buildClarificationPayload(clarification, semantic, traceId, pipeline),
       };
+    }
+
+    const shouldConsultImageBrain = (
+      selectedIntentType === 'chat.reply'
+      && (!llmIntentType || shouldUseSemanticIntentFallback(llmIntentResult))
+    );
+    if (shouldConsultImageBrain) {
+      const imageBrain = createImageBrainRuntime(deps);
+      const imageBrainDecision = imageBrain?.planRequest(userText);
+
+      if (imageBrainDecision?.handled && imageBrainDecision.mode === 'clarify') {
+        return {
+          traceId,
+          pipeline,
+          kind: 'clarification',
+          semantic,
+          clarification: imageBrainDecision.clarification,
+          imageBrainDecision,
+          responsePayload: buildClarificationPayload(
+            imageBrainDecision.clarification,
+            imageBrainDecision.semantic || semantic,
+            traceId,
+            pipeline
+          ),
+        };
+      }
+
+      if (imageBrainDecision?.handled && imageBrainDecision.mode === 'generate') {
+        let resolution = {
+          traceId,
+          pipeline,
+          kind: 'image.generate',
+          semantic,
+          imageBrainDecision,
+          responsePayload: null,
+          requestText: {
+            original: effectiveUserText,
+            smoothed: userText,
+            changed: requestTextSmootherResult?.changed === true,
+            autoDescribed: autoDescribeResult?.skipped === false,
+            autoDescription: autoDescribeResult?.description || null,
+          },
+        };
+
+        if (input.executeRuntime === true || input.executeImage === true) {
+          resolution = await executeResolvedRuntime(resolution, input, deps);
+        }
+
+        return resolution;
+      }
+
+      if (imageBrainDecision?.handled && imageBrainDecision.mode === 'web_search') {
+        let resolution = {
+          traceId,
+          pipeline,
+          kind: 'web.image.search',
+          semantic,
+          imageBrainDecision,
+          responsePayload: null,
+          requestText: {
+            original: effectiveUserText,
+            smoothed: userText,
+            changed: requestTextSmootherResult?.changed === true,
+            autoDescribed: autoDescribeResult?.skipped === false,
+            autoDescription: autoDescribeResult?.description || null,
+          },
+        };
+
+        if (input.executeRuntime === true || input.executeWebSearch === true) {
+          resolution = await executeResolvedRuntime(resolution, input, deps);
+        }
+
+        return resolution;
+      }
     }
 
     if (selectedIntentType === 'video.generate') {

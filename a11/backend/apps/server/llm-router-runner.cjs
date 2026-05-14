@@ -23,7 +23,7 @@ const cors = require("cors");
 const { router } = require("./llm-router.cjs");
 
 const app = express();
-const PORT = Number(process.env.CERBERE_PORT || process.env.LLM_ROUTER_PORT || process.env.PORT || 4545);
+const PORT = Number(process.env.CERBERE_PORT || process.env.LLM_ROUTER_PORT || 4545);
 
 app.use(cors());
 app.use(router);

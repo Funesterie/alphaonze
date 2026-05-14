@@ -17,28 +17,139 @@ const http = require('node:http');
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { URL } = require('node:url');
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
+function readWindowsUserEnv(name) {
+  if (process.platform !== 'win32') return '';
+  if (process.env.A11_MCP_DISABLE_WINDOWS_USER_ENV === '1') return '';
+  try {
+    return execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        `$n = '${name}'; [Environment]::GetEnvironmentVariable($n, 'User')`,
+      ],
+      { encoding: 'utf8', timeout: 3000, windowsHide: true }
+    ).trim();
+  } catch {
+    return '';
+  }
+}
+
+function resolveNezToken() {
+  return process.env.A11_NEZ_TOKEN
+    || process.env.NEZ_TOKENS
+    || readWindowsUserEnv('A11_NEZ_TOKEN')
+    || '';
+}
+
 const A11_BASE_URL = (process.env.A11_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
-const NEZ_TOKEN = process.env.A11_NEZ_TOKEN || process.env.NEZ_TOKENS || '';
+const NEZ_TOKEN = resolveNezToken();
 const SERVER_NAME = 'a11';
 const SERVER_VERSION = '1.0.0';
 const SERVER_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_RUNTIME_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', 'runtime');
 const RUNTIME_ROOT = path.resolve(process.env.A11_RUNTIME_ROOT || DEFAULT_RUNTIME_ROOT);
+const KIRO_MCP_CONFIG_PATH = path.resolve(
+  process.env.KIRO_MCP_CONFIG_PATH || 'D:\\projets\\funesterie\\.kiro\\settings\\mcp.json'
+);
+const DEFAULT_SHARED_MCP_URL = 'https://mcp.funesterie.me/mcp';
 const ROUTE_MAP_PATH = path.resolve(
   process.env.A11_ROUTE_MAP_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-route-map.json')
 );
 const ROUTE_MAP_MD_PATH = path.resolve(
   process.env.A11_ROUTE_MAP_MD_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-route-map.md')
 );
+const RUNTIME_HOOKS_PATH = path.resolve(
+  process.env.A11_RUNTIME_HOOKS_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-runtime-hooks.json')
+);
+const RUNTIME_HOOKS_MD_PATH = path.resolve(
+  process.env.A11_RUNTIME_HOOKS_MD_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-runtime-hooks.md')
+);
 const LOCAL_CONTEXT_PATH = path.resolve(
   process.env.A11_LOCAL_CONTEXT_PATH || 'D:\\projets\\funesterie\\docs\\A11_CONTEXT_2026-05-06.md'
 );
+
+function readJsonFileSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function readKiroMcpConfigSafe() {
+  return readJsonFileSafe(KIRO_MCP_CONFIG_PATH);
+}
+
+function stripBearer(value) {
+  return String(value || '').replace(/^Bearer\s+/i, '').trim();
+}
+
+function getSharedMcpConfigFromKiro() {
+  const config = readKiroMcpConfigSafe();
+  const shared = config?.mcpServers?.['a11mcp-shared'] || config?.mcpServers?.['a11mcp-aura-local'] || null;
+  const authorization = shared?.headers?.Authorization || shared?.headers?.authorization || '';
+  const headerToken = shared?.headers?.['x-mcp-token'] || shared?.headers?.['X-MCP-Token'] || '';
+  return {
+    url: String(shared?.url || '').trim(),
+    token: stripBearer(authorization) || String(headerToken || '').trim(),
+    source: shared ? 'kiro-config' : 'default',
+  };
+}
+
+function resolveSharedMcpConfig() {
+  const kiro = getSharedMcpConfigFromKiro();
+  const url = String(
+    process.env.A11_SHARED_MCP_URL
+    || process.env.A11_PUBLIC_MCP_UPSTREAM_URL
+    || process.env.A11_MCP_URL
+    || process.env.FUNESTERIE_MCP_URL
+    || kiro.url
+    || DEFAULT_SHARED_MCP_URL
+  ).trim().replace(/\/+$/, '');
+  const token = String(
+    process.env.A11_MCP_TOKEN
+    || process.env.A11_PUBLIC_MCP_TOKEN
+    || process.env.MCP_AUTH_TOKEN
+    || kiro.token
+    || ''
+  ).trim();
+  return {
+    url,
+    token,
+    tokenPresent: Boolean(token),
+    source: token ? (process.env.A11_MCP_TOKEN || process.env.A11_PUBLIC_MCP_TOKEN || process.env.MCP_AUTH_TOKEN ? 'env' : kiro.source) : 'missing',
+  };
+}
+
+function getMcpHealthUrl(mcpUrl) {
+  try {
+    const url = new URL(mcpUrl || DEFAULT_SHARED_MCP_URL);
+    url.pathname = url.pathname.replace(/\/mcp\/?$/, '/health') || '/health';
+    url.search = '';
+    return url.toString();
+  } catch (_) {
+    return DEFAULT_SHARED_MCP_URL.replace(/\/mcp$/, '/health');
+  }
+}
+
+function publicSharedMcpConfig() {
+  const config = resolveSharedMcpConfig();
+  return {
+    url: config.url,
+    healthUrl: getMcpHealthUrl(config.url),
+    tokenPresent: config.tokenPresent,
+    source: config.source,
+    kiroConfig: KIRO_MCP_CONFIG_PATH,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helper (pas de dépendance externe, node:http natif)
@@ -93,6 +204,142 @@ function httpRequest(method, urlStr, body = null, timeoutMs = 30_000) {
     if (bodyStr) req.write(bodyStr);
     req.end();
   });
+}
+
+function httpRawRequest(method, urlStr, body = null, timeoutMs = 30_000, extraHeaders = {}) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(urlStr);
+    } catch (_) {
+      return reject(new Error(`Invalid URL: ${urlStr}`));
+    }
+
+    const isHttps = parsed.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const bodyStr = body != null ? JSON.stringify(body) : null;
+
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || (isHttps ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...extraHeaders,
+        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+      },
+    };
+
+    const req = lib.request(options, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          headers: res.headers || {},
+          raw: Buffer.concat(chunks).toString('utf8'),
+        });
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Request timeout after ${timeoutMs}ms`));
+    });
+
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+function parseJsonMaybe(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseSseJson(text) {
+  const events = [];
+  let current = [];
+
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      if (current.length) {
+        events.push(current.join('\n'));
+        current = [];
+      }
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      current.push(line.slice(5).trimStart());
+    }
+  }
+
+  if (current.length) events.push(current.join('\n'));
+
+  for (let index = events.length - 1; index >= 0; index--) {
+    const parsed = parseJsonMaybe(events[index]);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function parseMcpResponse(raw, contentType = '') {
+  const text = String(raw || '');
+  if (String(contentType || '').includes('application/json')) {
+    const parsed = parseJsonMaybe(text);
+    if (parsed) return parsed;
+  }
+
+  return parseJsonMaybe(text) || parseSseJson(text) || null;
+}
+
+async function sharedMcpJsonRpc(method, params = {}, timeoutMs = 30_000) {
+  const config = resolveSharedMcpConfig();
+  const headers = {
+    'Accept': 'application/json, text/event-stream',
+  };
+  if (config.token) {
+    headers.Authorization = `Bearer ${config.token}`;
+    headers['X-MCP-Token'] = config.token;
+  }
+
+  const id = `a11-stdio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const res = await httpRawRequest('POST', config.url, {
+    jsonrpc: '2.0',
+    id,
+    method,
+    params,
+  }, timeoutMs, headers);
+
+  const parsed = parseMcpResponse(res.raw, res.headers['content-type'] || '');
+  if (!parsed) {
+    throw new Error(`Shared MCP response could not be parsed (HTTP ${res.status}).`);
+  }
+  if (res.status >= 400 || parsed.error) {
+    throw new Error(parsed?.error?.message || `Shared MCP HTTP ${res.status}`);
+  }
+
+  return {
+    ok: true,
+    sharedMcp: publicSharedMcpConfig(),
+    status: res.status,
+    response: parsed,
+    result: parsed.result || null,
+  };
+}
+
+async function callSharedMcpTool(name, args = {}, timeoutMs = 30_000) {
+  return sharedMcpJsonRpc('tools/call', {
+    name,
+    arguments: args && typeof args === 'object' ? args : {},
+  }, timeoutMs);
 }
 
 async function a11Get(path) {
@@ -326,6 +573,21 @@ const TOOLS = [
     },
   },
   {
+    name: 'a11_runtime_hooks_status',
+    description:
+      'Retourne le statut du hook Neo4j semantique pour Cortex, Spyder, telemetry, Rome, Corpus, Piccolo et Doctor.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure aussi le resume Markdown local si disponible.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'a11_identity_route',
     description:
       'Retourne la route d identite A11 compacte pour recuperer le contexte sans dependre de Neo4j.',
@@ -335,7 +597,185 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'a11_shared_mcp_status',
+    description:
+      'Retourne la configuration publique et la sante du MCP partage Funesterie utilise par Kiro, sans exposer le token.',
+    annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_kiro_inbox_check',
+    description:
+      'Lit l inbox MCP partagee pour Kiro/Codex/A11: presence, jobs et discussions ouvertes. Ne poste pas de reponse.',
+    annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Nom de l agent appelant (defaut: Codex).',
+        },
+        agentId: {
+          type: 'string',
+          description: 'Identifiant stable de l agent (optionnel).',
+        },
+        aliases: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Alias a verifier dans les discussions (optionnel).',
+        },
+        includeGlobal: {
+          type: 'boolean',
+          description: 'Inclure les threads globaux (defaut: true).',
+        },
+        maxThreads: {
+          type: 'number',
+          description: 'Nombre maximum de threads a scanner (defaut: 20).',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_kiro_discussion_read',
+    description: 'Lit un fil de discussion MCP partage pour coordonner Codex, Kiro, A11, Kaen44 ou Vivy.',
+    annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        threadId: {
+          type: 'string',
+          description: 'Identifiant du thread MCP.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Nombre maximum de messages a retourner (defaut: 100).',
+        },
+      },
+      required: ['threadId'],
+    },
+  },
+  {
+    name: 'a11_kiro_discussion_post',
+    description:
+      'Poste une reponse courte dans un fil MCP partage. Ne jamais inclure de mot de passe, token ou cle API.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        threadId: {
+          type: 'string',
+          description: 'Identifiant du thread MCP.',
+        },
+        from: {
+          type: 'string',
+          description: 'Nom de l agent appelant (defaut: Codex).',
+        },
+        body: {
+          type: 'string',
+          description: 'Message a poster. Secrets interdits.',
+        },
+        kind: {
+          type: 'string',
+          enum: ['message', 'status', 'decision', 'question', 'answer'],
+          description: 'Type de message (defaut: status).',
+        },
+      },
+      required: ['threadId', 'body'],
+    },
+  },
+  {
+    name: 'a11_kiro_heartbeat',
+    description:
+      'Annonce la presence de Codex/A11 sur le MCP partage pour que Kiro voie les capacites et le statut courant.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Nom affiche de l agent (defaut: Codex).',
+        },
+        role: {
+          type: 'string',
+          description: 'Role court (defaut: mcp-upgrader).',
+        },
+        status: {
+          type: 'string',
+          enum: ['active', 'idle', 'busy', 'observed', 'offline', 'error'],
+          description: 'Statut de presence (defaut: active).',
+        },
+        note: {
+          type: 'string',
+          description: 'Note courte visible par les autres agents.',
+        },
+      },
+      required: [],
+    },
+  },
 ];
+
+function inferToolAnnotations(name = '') {
+  const normalized = String(name || '').trim().toLowerCase();
+  const readOnly = [
+    'a11_health',
+    'a11_vs_status',
+    'a11_vs_capabilities',
+    'a11_vs_project_structure',
+    'a11_vs_active_document',
+    'a11_llm_stats',
+    'a11_shell_whitelist',
+    'a11_mcp_dimension_status',
+    'a11_route_map',
+    'a11_runtime_hooks_status',
+    'a11_identity_route',
+  ].includes(normalized);
+  const destructive = /delete|remove|purge|reset|revoke|overwrite/.test(normalized);
+  return {
+    readOnlyHint: readOnly,
+    openWorldHint: false,
+    destructiveHint: destructive,
+  };
+}
+
+function toolDescriptorForMcp(tool = {}) {
+  return {
+    ...tool,
+    annotations: {
+      ...inferToolAnnotations(tool.name),
+      ...(tool.annotations || {}),
+    },
+  };
+}
+
+function assertNoSecretText(value, label = 'text') {
+  const text = String(value || '');
+  const secretPattern = /(bearer\s+[a-z0-9._~+/=-]{16,}|hf_[a-z0-9]{16,}|sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9_]{20,}|api[_-]?key|token\s*[:=]|password\s*[:=]|mot de passe\s*[:=])/i;
+  if (secretPattern.test(text)) {
+    throw new Error(`${label}: secret-looking content refused`);
+  }
+}
+
+async function sharedMcpHealth() {
+  const config = resolveSharedMcpConfig();
+  const headers = { Accept: 'application/json' };
+  if (config.token) {
+    headers.Authorization = `Bearer ${config.token}`;
+    headers['X-MCP-Token'] = config.token;
+  }
+  const res = await httpRawRequest('GET', getMcpHealthUrl(config.url), null, 15_000, headers);
+  return {
+    ok: res.status >= 200 && res.status < 400,
+    status: res.status,
+    sharedMcp: publicSharedMcpConfig(),
+    body: parseJsonMaybe(res.raw) || { raw: res.raw.slice(0, 500) },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Handlers des outils
@@ -442,8 +882,85 @@ async function handleTool(name, args) {
       return formatObject(buildRouteMap({ includeMarkdown: Boolean(args.includeMarkdown) }));
     }
 
+    case 'a11_runtime_hooks_status': {
+      return formatObject(buildRuntimeHooksStatus({ includeMarkdown: Boolean(args.includeMarkdown) }));
+    }
+
     case 'a11_identity_route': {
       return formatObject(buildIdentityRoute());
+    }
+
+    case 'a11_shared_mcp_status': {
+      return formatObject(await sharedMcpHealth());
+    }
+
+    case 'a11_kiro_inbox_check': {
+      const from = String(args.from || 'Codex').trim();
+      const aliases = Array.isArray(args.aliases) ? args.aliases : ['codex', 'Codex', 'ChatGPT', 'A11-Codex'];
+      const result = await callSharedMcpTool('agent_inbox_check', {
+        from,
+        ...(args.agentId ? { agentId: String(args.agentId).trim() } : { agentId: 'codex-desktop' }),
+        aliases,
+        autoReply: false,
+        includeGlobal: args.includeGlobal !== false,
+        maxThreads: Number.isFinite(Number(args.maxThreads)) ? Number(args.maxThreads) : 20,
+        cooldownMinutes: 5,
+      }, 45_000);
+      return formatObject(result);
+    }
+
+    case 'a11_kiro_discussion_read': {
+      const threadId = String(args.threadId || '').trim();
+      if (!threadId) throw new Error('threadId is required');
+      const result = await callSharedMcpTool('discussion_read', {
+        threadId,
+        limit: Number.isFinite(Number(args.limit)) ? Number(args.limit) : 100,
+      }, 45_000);
+      return formatObject(result);
+    }
+
+    case 'a11_kiro_discussion_post': {
+      const threadId = String(args.threadId || '').trim();
+      const body = String(args.body || '').trim();
+      if (!threadId) throw new Error('threadId is required');
+      if (!body) throw new Error('body is required');
+      assertNoSecretText(body, 'body');
+      const result = await callSharedMcpTool('discussion_post', {
+        threadId,
+        from: String(args.from || 'Codex').trim(),
+        body,
+        kind: String(args.kind || 'status').trim(),
+      }, 45_000);
+      return formatObject(result);
+    }
+
+    case 'a11_kiro_heartbeat': {
+      const note = String(
+        args.note || 'Codex active: MCP local upgrade installed, Kiro inbox bridge ready, no secrets exposed.'
+      ).trim();
+      assertNoSecretText(note, 'note');
+      const result = await callSharedMcpTool('agent_heartbeat', {
+        name: String(args.name || 'Codex').trim(),
+        role: String(args.role || 'mcp-upgrader').trim(),
+        host: process.env.COMPUTERNAME || process.env.HOSTNAME || 'codex-desktop-local',
+        status: String(args.status || 'active').trim(),
+        profilePreset: 'codex-desktop',
+        identity: 'Codex MCP upgrader for A11/Kiro',
+        tone: 'calm-direct-useful',
+        priority: 'mcp-kiro-coordination',
+        memoryScope: ['shared', 'mcp', 'kiro', 'a11', 'kaen44', 'vivy'],
+        riskLevel: 'low',
+        capabilities: [
+          'a11_kiro_inbox_check',
+          'a11_kiro_discussion_read',
+          'a11_kiro_discussion_post',
+          'a11_shared_mcp_status',
+        ],
+        note,
+        checkInbox: true,
+        autoReplyInbox: false,
+      }, 45_000);
+      return formatObject(result);
     }
 
     default:
@@ -509,14 +1026,17 @@ function buildMcpDimensionStatus() {
     server: {
       name: SERVER_NAME,
       version: SERVER_VERSION,
-      canonicalPath: __filename,
+      serverPath: __filename,
       legacyBridgePath: 'D:\\a11-mcp-server\\server.cjs',
       baseUrl: A11_BASE_URL,
       hasNezToken: Boolean(NEZ_TOKEN),
     },
+    sharedMcp: publicSharedMcpConfig(),
     localFiles: {
       routeMap: fileStatus(ROUTE_MAP_PATH),
       routeMapMarkdown: fileStatus(ROUTE_MAP_MD_PATH),
+      runtimeHooks: fileStatus(RUNTIME_HOOKS_PATH),
+      runtimeHooksMarkdown: fileStatus(RUNTIME_HOOKS_MD_PATH),
       context: fileStatus(LOCAL_CONTEXT_PATH),
     },
     wiring: {
@@ -538,6 +1058,28 @@ function buildRouteMap({ includeMarkdown = false } = {}) {
     routeMapPath: ROUTE_MAP_PATH,
     routeMap,
     ...(includeMarkdown ? { markdown: readTextSafe(ROUTE_MAP_MD_PATH) } : {}),
+  };
+}
+
+function buildRuntimeHooksStatus({ includeMarkdown = false } = {}) {
+  const manifest = readJsonSafe(RUNTIME_HOOKS_PATH);
+  const modules = Array.isArray(manifest?.modules) ? manifest.modules : [];
+  return {
+    ok: Boolean(manifest),
+    runtimeHooksPath: RUNTIME_HOOKS_PATH,
+    manifest,
+    summary: manifest ? {
+      generatedAt: manifest.generatedAt || null,
+      modules: modules.length,
+      links: Array.isArray(manifest.links) ? manifest.links.length : 0,
+      sourcePathsPresent: modules.reduce((sum, item) => (
+        sum + (Array.isArray(item.sourcePaths) ? item.sourcePaths.filter((entry) => entry.exists).length : 0)
+      ), 0),
+      watchedFilesPresent: modules.reduce((sum, item) => (
+        sum + (Array.isArray(item.watchedFiles) ? item.watchedFiles.filter((entry) => entry.exists).length : 0)
+      ), 0),
+    } : null,
+    ...(includeMarkdown ? { markdown: readTextSafe(RUNTIME_HOOKS_MD_PATH) } : {}),
   };
 }
 
@@ -641,7 +1183,7 @@ async function handleMessage(raw) {
         break;
 
       case 'tools/list': {
-        sendResult(id, { tools: TOOLS });
+        sendResult(id, { tools: TOOLS.map(toolDescriptorForMcp) });
         break;
       }
 

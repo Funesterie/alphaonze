@@ -257,11 +257,45 @@ function hasProviderCredential(provider) {
   if (provider === "groq") return Boolean(String(process.env.GROQ_API_KEY || "").trim());
   if (provider === "deepseek") return Boolean(String(process.env.DEEPSEEK_API_KEY || "").trim());
   if (provider === "together") return Boolean(String(process.env.TOGETHER_API_KEY || "").trim());
-  if (provider === "huggingface") return Boolean(String(process.env.HF_API_KEY || process.env.HUGGINGFACE_HUB_TOKEN || "").trim());
+  if (provider === "huggingface") return resolveHuggingFaceCredentialConfigured();
   if (provider === "xai") return Boolean(String(process.env.XAI_API_KEY || "").trim());
   if (provider === "ollama") return Boolean(BACKENDS.ollama);
   if (provider === "llama_server") return Boolean(BACKENDS.llama_server);
   return false;
+}
+
+function resolveHuggingFaceCredentialConfigured() {
+  return Boolean(String(
+    process.env.HF_API_KEY
+    || process.env.HUGGINGFACE_HUB_TOKEN
+    || process.env.HF_TOKEN
+    || process.env.HUGGINGFACEHUB_API_TOKEN
+    || ''
+  ).trim());
+}
+
+function buildHuggingFacePublicStatus() {
+  const imageEnabled = ["1", "true", "yes", "on"].includes(
+    String(process.env.A11_ENABLE_HF_IMAGE || process.env.A11_ENABLE_HUGGINGFACE_IMAGE || "").trim().toLowerCase()
+  );
+  const imageEndpoint = String(
+    process.env.A11_HF_IMAGE_ENDPOINT
+    || process.env.A11_HUGGINGFACE_IMAGE_ENDPOINT
+    || "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+  ).trim();
+  return {
+    configured: resolveHuggingFaceCredentialConfigured(),
+    enabled: LLM_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "huggingface",
+    baseUrl: BACKENDS.huggingface,
+    model: DEFAULT_HF_MODEL,
+    fallbackProviderEnabled: LLM_FALLBACK_PROVIDER === "huggingface",
+    image: {
+      enabled: imageEnabled,
+      configured: imageEnabled && resolveHuggingFaceCredentialConfigured(),
+      endpoint: imageEndpoint,
+      defaultSteps: Math.max(1, Math.min(12, Math.round(Number(process.env.A11_HF_IMAGE_STEPS || 4) || 4))),
+    },
+  };
 }
 
 function isRuntimeFallbackStatus(status) {
@@ -680,7 +714,7 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
 
     // Fallback 6 : HuggingFace (open source, gratuit)
     if (LLM_FALLBACK_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "none") {
-      const hasHfKey = !!(process.env.HF_API_KEY);
+      const hasHfKey = resolveHuggingFaceCredentialConfigured();
       if ((LLM_FALLBACK_PROVIDER === "huggingface" || hasHfKey) && BACKENDS.huggingface) {
         const hfTarget = resolveHuggingFaceTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
         if (hfTarget) {
@@ -1059,6 +1093,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
         model: DEFAULT_OPENAI_MODEL,
         apiKeyConfigured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
       },
+      huggingface: buildHuggingFacePublicStatus(),
       ollama: {
         configured: Boolean(BACKENDS.ollama),
         baseUrl: BACKENDS.ollama,
@@ -1085,6 +1120,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
 
 // expose simple stats for frontend dev checks
 router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
+  const huggingface = buildHuggingFacePublicStatus();
   res.json({
     service: "cerbere-router",
     version: "2.0.0",
@@ -1101,8 +1137,13 @@ router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
       ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
       localModel: DEFAULT_LOCAL_MODEL,
       openaiModel: DEFAULT_OPENAI_MODEL,
+      huggingfaceModel: DEFAULT_HF_MODEL,
+      huggingface,
     },
-    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback", "runtime_provider_fallback"],
+    providers: {
+      huggingface,
+    },
+    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback", "runtime_provider_fallback", "huggingface_optional_fallback"],
   });
 });
 console.log("[Cerbère] Registered debug stats routes: /api/stats, /api/llm/stats");
@@ -1198,8 +1239,15 @@ function buildUpstreamHeaders(backendBase, provider = "openai") {
   if (provider === "together" && process.env.TOGETHER_API_KEY) {
     headers.Authorization = `Bearer ${process.env.TOGETHER_API_KEY}`;
   }
-  if (provider === "huggingface" && process.env.HF_API_KEY) {
-    headers.Authorization = `Bearer ${process.env.HF_API_KEY}`;
+  if (provider === "huggingface" && resolveHuggingFaceCredentialConfigured()) {
+    const hfToken = String(
+      process.env.HF_API_KEY
+      || process.env.HUGGINGFACE_HUB_TOKEN
+      || process.env.HF_TOKEN
+      || process.env.HUGGINGFACEHUB_API_TOKEN
+      || ''
+    ).trim();
+    headers.Authorization = `Bearer ${hfToken}`;
   }
   return headers;
 }
@@ -2499,7 +2547,7 @@ async function buildDevSummaryWithLLM({ upstreamUrl, model, userPrompt, actionRe
     const messages = [
       {
         role: "system",
-        content: "Tu es A-11. Résume ce que tu viens de faire. Pas de JSON, pas de code. Réponse claire uniquement. Si un résultat contient un lien de fichier, recopie le lien exact dans la réponse.",
+        content: "Je suis A-11. Je resume ce que je viens de faire. Pas de JSON, pas de code. Reponse claire uniquement. Si un resultat contient un lien de fichier, je recopie le lien exact dans la reponse.",
       },
       {
         role: "user",

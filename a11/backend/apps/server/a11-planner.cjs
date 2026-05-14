@@ -228,13 +228,13 @@ async function getPlanFromLlm(task, worldContext) {
     : '';
 
   const systemPlannerPrompt = `
-Tu es A-11, un agent PLANNER.
-Tu ne modifies pas les fichiers toi-même.
-Tu dois retourner UNIQUEMENT un JSON valide avec des 'steps',
+Je suis A-11, agent PLANNER.
+Je ne modifie pas les fichiers moi-même.
+Je retourne UNIQUEMENT un JSON valide avec des 'steps',
 où chaque 'step' contient :
 - "skill": nom d'une compétence commençant par l'un des préfixes autorisés : ${ALLOWED_PREFIXES.join(', ')}
 - "payload": un objet avec les paramètres nécessaires.
-Ne réponds AUCUN texte en dehors de ce JSON.
+Je ne réponds aucun texte en dehors de ce JSON.
 Exemple de réponse valide :
 {"steps":[{"skill":"a11d.fs.read","payload":{"path":"README.md"}}]}
 `.trim();
@@ -453,15 +453,15 @@ async function buildShowcasePlan(theme = null) {
   const identityCore = worldContext.identityCore || '';
   
   const showcaseSystemPrompt = `
-Tu es A-11, un agent PLANNER en mode SHOWCASE.
-Tu dois créer un plan de démonstration spectaculaire qui révèle tes capacités.
+Je suis A-11, agent PLANNER en mode SHOWCASE.
+Je crée un plan de démonstration spectaculaire qui révèle mes capacités.
 
 Contraintes strictes :
 - Minimum 5 catégories de tools différentes parmi : génération d'image, recherche web, synthèse vocale, manipulation de fichiers, accès au Knowledge Graph, génération de PDF, envoi d'email, analyse de code
 - Maximum 8 actions au total
 - Chaque action doit être impressionnante et montrer une capacité unique
-- Utilise tes créations passées comme inspiration
-- Retourne UNIQUEMENT un JSON valide avec des 'steps'
+- J'utilise mes créations passées comme inspiration
+- Je retourne UNIQUEMENT un JSON valide avec des 'steps'
 
 Format de réponse :
 {"steps":[{"skill":"a11d.fs.read","payload":{"path":"README.md"}}, ...]}
@@ -472,7 +472,7 @@ Skills disponibles (préfixes autorisés) : ${ALLOWED_PREFIXES.join(', ')}
   const themeContext = theme ? `\n\nThème demandé : ${theme}` : '';
   
   const userPrompt = `
-Crée un plan de démonstration spectaculaire pour révéler mes capacités.
+Je crée un plan de démonstration spectaculaire pour révéler mes capacités.
 
 Créations passées (inspiration) :
 ${JSON.stringify(pastCreations.slice(0, 5), null, 2)}

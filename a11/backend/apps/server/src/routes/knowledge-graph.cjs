@@ -119,7 +119,7 @@ function createKnowledgeGraphRouter({ verifyJWT } = {}) {
       }
 
       const kg = createKnowledgeGraph(userId);
-      const nodes = kg.findNodes(query);
+      const nodes = await kg.findNodes(query);
 
       return res.json({
         ok: true,
@@ -153,7 +153,7 @@ function createKnowledgeGraphRouter({ verifyJWT } = {}) {
       }
 
       const kg = createKnowledgeGraph(userId);
-      const relations = kg.getRelations(entity, { direction });
+      const relations = await kg.getRelations(entity, { direction });
 
       return res.json({
         ok: true,
@@ -189,7 +189,7 @@ function createKnowledgeGraphRouter({ verifyJWT } = {}) {
       }
 
       const kg = createKnowledgeGraph(userId);
-      const path = kg.findPath(start, end, maxDepth);
+      const path = await kg.findPath(start, end, maxDepth);
 
       return res.json({
         ok: true,
@@ -225,7 +225,7 @@ function createKnowledgeGraphRouter({ verifyJWT } = {}) {
       }
 
       const kg = createKnowledgeGraph(userId);
-      const context = kg.getContextForQuery(query, { maxRelations });
+      const context = await kg.getContextForQuery(query, { maxRelations });
 
       return res.json({
         ok: true,
@@ -257,7 +257,7 @@ function createKnowledgeGraphRouter({ verifyJWT } = {}) {
       }
 
       const kg = createKnowledgeGraph(userId);
-      const stats = kg.getStats();
+      const stats = await kg.getStats();
 
       return res.json({
         ok: true,
@@ -286,7 +286,7 @@ function createKnowledgeGraphRouter({ verifyJWT } = {}) {
       }
 
       const kg = createKnowledgeGraph(userId);
-      const cypher = kg.exportToCypher();
+      const cypher = await kg.exportToCypher();
 
       res.setHeader('Content-Type', 'text/plain');
       res.setHeader('Content-Disposition', `attachment; filename="knowledge-graph-${userId}.cypher"`);

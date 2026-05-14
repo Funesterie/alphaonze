@@ -1602,6 +1602,137 @@ test('POST /api/llm/chat does not force provider=local when a remote provider is
   }
 });
 
+test('POST /api/llm/chat rewrites explicit local provider to remote when no local upstream exists', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const previousOpenAiModel = process.env.OPENAI_MODEL;
+
+  process.env.OPENAI_API_KEY = 'test-openai-key';
+  process.env.OPENAI_MODEL = 'test-remote-model';
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouter({
+          verifyJWT(req, res, next) {
+            try {
+              const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+              req.user = jwt.verify(bearer, jwtSecret);
+              next();
+            } catch (error_) {
+              res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+            }
+          },
+          proxyChatToOpenAI(req, res) {
+            return res.json({
+              provider: req.body?.provider || null,
+              model: req.body?.model || null,
+            });
+          },
+          hasLocalChatUpstreamConfigured: () => false,
+          detectImageIntent: () => false,
+          detectWebImageIntent: () => false,
+          generateSd: async () => {
+            throw new Error('should_not_be_called');
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+          provider: 'local',
+          model: 'gemma4:e4b',
+          messages: [{ role: 'user', content: 'tu peux repondre ?' }],
+        }, {
+          authorization: `Bearer ${token}`,
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal(json.provider, 'openai');
+        assert.equal(json.model, 'test-remote-model');
+      }
+    );
+  } finally {
+    if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+    if (previousOpenAiModel === undefined) delete process.env.OPENAI_MODEL;
+    else process.env.OPENAI_MODEL = previousOpenAiModel;
+  }
+});
+
+test('POST /api/llm/chat keeps explicit local provider when only Qflush chat is configured', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  const previousEnv = {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+    LOCAL_LLM_URL: process.env.LOCAL_LLM_URL,
+    LLAMA_BASE: process.env.LLAMA_BASE,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    QFLUSH_CHAT_FLOW: process.env.QFLUSH_CHAT_FLOW,
+    A11_QFLUSH_CHAT_FLOW: process.env.A11_QFLUSH_CHAT_FLOW,
+    A11_LOCAL_MODE: process.env.A11_LOCAL_MODE,
+    A11_RUNTIME_PROFILE: process.env.A11_RUNTIME_PROFILE,
+  };
+
+  process.env.OPENAI_API_KEY = 'test-openai-key';
+  process.env.OPENAI_MODEL = 'test-remote-model';
+  delete process.env.LOCAL_LLM_URL;
+  delete process.env.LLAMA_BASE;
+  delete process.env.LLM_ROUTER_URL;
+  process.env.QFLUSH_CHAT_FLOW = 'a11.chat.v1';
+  delete process.env.A11_QFLUSH_CHAT_FLOW;
+  delete process.env.A11_LOCAL_MODE;
+  delete process.env.A11_RUNTIME_PROFILE;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouter({
+          verifyJWT(req, res, next) {
+            try {
+              const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+              req.user = jwt.verify(bearer, jwtSecret);
+              next();
+            } catch (error_) {
+              res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+            }
+          },
+          proxyChatToOpenAI(req, res) {
+            return res.json({
+              provider: req.body?.provider || null,
+              model: req.body?.model || null,
+            });
+          },
+          detectImageIntent: () => false,
+          detectWebImageIntent: () => false,
+          generateSd: async () => {
+            throw new Error('should_not_be_called');
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+          provider: 'local',
+          model: 'gemma4:e4b',
+          messages: [{ role: 'user', content: 'tu peux repondre ?' }],
+        }, {
+          authorization: `Bearer ${token}`,
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal(json.provider, 'local');
+        assert.equal(json.model, 'gemma4:e4b');
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('POST /api/chat propagates SD errors instead of returning a generic 500', async () => {
   await withServer(
     (app) => {

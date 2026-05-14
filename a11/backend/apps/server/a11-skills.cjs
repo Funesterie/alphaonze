@@ -2,6 +2,7 @@
 
 // apps/server/a11-skills.cjs
 // Routes /v1/a11/skill* qui délèguent à Qflush si disponible.
+const { runQflushSkill } = require('./src/qflush-integration.cjs');
 
 function getQflush() {
   // récupère infos mises dans globalThis par server.cjs
@@ -35,8 +36,8 @@ function attachA11SkillsRoutes(app) {
 
   // exécuter une skill via Qflush (si dispo)
   app.post("/v1/a11/skill", async (req, res) => {
-    const { available, mod } = getQflush();
-    if (!available || !mod) {
+    const { available } = getQflush();
+    if (!available || typeof runQflushSkill !== 'function') {
       return res
         .status(501)
         .json({ ok: false, error: "qflush_not_available" });
@@ -53,14 +54,7 @@ function attachA11SkillsRoutes(app) {
     }
 
     try {
-      const fn = mod.scream || mod.runSkill || mod.default;
-      if (typeof fn !== "function") {
-        return res
-          .status(500)
-          .json({ ok: false, error: "qflush_entrypoint_not_found" });
-      }
-
-      const result = await fn(skill, payload);
+      const result = await runQflushSkill(skill, payload);
       res.json({ ok: true, result });
     } catch (e) {
       console.error("[A11][SKILLS] skill error:", e && e.message);

@@ -476,15 +476,9 @@ async function _hornDispatch(skill, payload) {
   // Tenter Horn si Qflush disponible
   if (globalThis.__QFLUSH_AVAILABLE === true) {
     try {
-      const qflush = require('@funeste38/qflush');
-      // Horn peut être dans différents chemins selon la version
-      const horn = qflush.horn || qflush.Horn || (qflush.default && qflush.default.horn);
-      if (horn && typeof horn.scream === 'function') {
-        return await horn.scream(skill, payload);
-      }
-      // Tenter scream directement sur le module
-      if (typeof qflush.scream === 'function') {
-        return await qflush.scream(skill, payload);
+      const { runQflushSkill } = require('./src/qflush-integration.cjs');
+      if (typeof runQflushSkill === 'function') {
+        return await runQflushSkill(skill, payload);
       }
     } catch (_e) {
       // Fallback si Horn échoue

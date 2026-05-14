@@ -26,6 +26,10 @@ const {
   isOpenAiImageEnabled,
 } = require('../../lib/openai-image.cjs');
 const {
+  tryGenerateImageWithHuggingFace,
+  resolveHuggingFaceImageConfig,
+} = require('../../lib/hf-image.cjs');
+const {
   resolveImg2ImgStrengthPlan,
 } = require('../image/img2img-strength.cjs');
 
@@ -204,6 +208,33 @@ function resolveGeneratedImageWorkRoot() {
   }
 
   return defaultPath.join(resolvePublicWorkspaceRoot(), 'runtime', 'files', 'generated', 'images');
+}
+
+function buildGeneratedImageLocalPublicUrl(req, outputPath = '') {
+  const filePath = String(outputPath || '').trim();
+  if (!filePath) return '';
+  const absolutePath = defaultPath.resolve(filePath);
+  if (!defaultFs.existsSync(absolutePath)) return '';
+
+  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || '').trim();
+  if (runtimeRoot) {
+    const runtimeRelativePath = String(defaultPath.relative(runtimeRoot, absolutePath) || '').replace(/\\/g, '/');
+    if (runtimeRelativePath && !runtimeRelativePath.startsWith('..')) {
+      const publicPath = `/files/runtime/${runtimeRelativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
+      const origin = resolveRequestOrigin(req);
+      return origin ? `${origin}${publicPath}` : publicPath;
+    }
+  }
+
+  const publicWorkspaceRoot = resolvePublicWorkspaceRoot();
+  const workspaceRelativePath = String(defaultPath.relative(publicWorkspaceRoot, absolutePath) || '').replace(/\\/g, '/');
+  if (workspaceRelativePath && !workspaceRelativePath.startsWith('..')) {
+    const publicPath = `/files/${workspaceRelativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
+    const origin = resolveRequestOrigin(req);
+    return origin ? `${origin}${publicPath}` : publicPath;
+  }
+
+  return '';
 }
 
 function resolveSdImg2ImgStrengthPlan(requestBody = {}, {
@@ -411,11 +442,84 @@ function resolveOpenAiPreferredForImage(requestBody = {}) {
   if (explicitEngine === 'sd' || explicitEngine === 'stable-diffusion') return false;
   if (explicitEngine === 'openai' || explicitEngine === 'openai-image') return true;
 
-  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'openai,sd')
+  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'sd,hf,openai')
     .split(',')
     .map((entry) => String(entry || '').trim().toLowerCase())
     .filter(Boolean);
   return order[0] === 'openai' || order[0] === 'openai-image';
+}
+
+function resolveHuggingFacePreferredForImage(requestBody = {}) {
+  const config = resolveHuggingFaceImageConfig(process.env);
+  if (!config.enabled) return false;
+
+  const explicitEngine = String(
+    requestBody?.engine
+    || requestBody?.image_engine
+    || requestBody?.provider
+    || ''
+  ).trim().toLowerCase();
+  if (explicitEngine === 'sd' || explicitEngine === 'stable-diffusion') return false;
+  if (explicitEngine === 'hf' || explicitEngine === 'huggingface' || explicitEngine === 'huggingface-image') return true;
+
+  const order = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'sd,hf,openai')
+    .split(',')
+    .map((entry) => String(entry || '').trim().toLowerCase())
+    .filter(Boolean);
+  return order[0] === 'hf' || order[0] === 'huggingface' || order[0] === 'huggingface-image';
+}
+
+function normalizeImageProviderName(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'stable-diffusion' || normalized === 'stable_diffusion' || normalized === 'local-sd') return 'sd';
+  if (normalized === 'hf' || normalized === 'huggingface' || normalized === 'hugging_face' || normalized === 'huggingface-image') return 'hf';
+  if (normalized === 'openai-image') return 'openai';
+  if (normalized === 'sd' || normalized === 'openai') return normalized;
+  return '';
+}
+
+function resolveImageProviderOrder(requestBody = {}) {
+  const explicit = normalizeImageProviderName(
+    requestBody?.engine
+    || requestBody?.image_engine
+    || requestBody?.provider
+    || ''
+  );
+  if (explicit) return [explicit];
+
+  const configured = String(process.env.A11_IMAGE_PROVIDER_ORDER || 'sd,hf,openai')
+    .split(',')
+    .map(normalizeImageProviderName)
+    .filter(Boolean);
+  const order = configured.length ? configured : ['sd', 'hf', 'openai'];
+  return [...new Set(order)];
+}
+
+function normalizeImageToolPayload(payload = {}, provider = '') {
+  if (!payload || typeof payload !== 'object') return payload;
+  const next = {
+    ...payload,
+    provider: String(payload.provider || provider || payload.mode || '').trim() || undefined,
+    tool: payload.tool || 'generate_image',
+  };
+  if (next.url && !next.image_url) next.image_url = next.url;
+  if (next.image_url && !next.url) next.url = next.image_url;
+  if (!next.content_type && String(next.filename || next.url || next.image_url || '').match(/\.png(?:[?#].*)?$/i)) {
+    next.content_type = 'image/png';
+  }
+  if (!next.content_type && String(next.filename || next.url || next.image_url || '').match(/\.webp(?:[?#].*)?$/i)) {
+    next.content_type = 'image/webp';
+  }
+  if (!next.content_type && String(next.filename || next.url || next.image_url || '').match(/\.(?:jpe?g)(?:[?#].*)?$/i)) {
+    next.content_type = 'image/jpeg';
+  }
+  if (!next.content_type && next.ok !== false) next.content_type = 'image/png';
+  return next;
+}
+
+function isSuccessfulImagePayload(payload = {}) {
+  return Boolean(payload && payload.ok !== false && (payload.url || payload.image_url || payload.output_path || payload.local_path));
 }
 
 function normalizePromptFragment(value = '') {
@@ -710,6 +814,50 @@ function buildSdBackendUnavailablePayload({
   };
 }
 
+function resolveSdProxyPublicFileBaseUrl(req = null) {
+  const explicit = String(process.env.A11_SD_PUBLIC_FILE_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (explicit) return explicit;
+
+  const publicBase = String(process.env.PUBLIC_API_URL || process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (publicBase) return `${publicBase}/local-sd-files`;
+
+  const protocol = String(req?.headers?.['x-forwarded-proto'] || req?.protocol || 'http').trim() || 'http';
+  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').trim();
+  return host ? `${protocol}://${host}/local-sd-files` : '';
+}
+
+function rewriteSdProxyFileUrl(value = '', req = null) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return raw;
+  }
+
+  if (!parsed.pathname.startsWith('/files/')) return raw;
+
+  const base = resolveSdProxyPublicFileBaseUrl(req);
+  if (!base) return raw;
+
+  const rewrittenPath = parsed.pathname.replace(/^\/files\/?/, '/');
+  return `${base}${rewrittenPath}${parsed.search || ''}`;
+}
+
+function rewriteSdProxyResultFileUrls(payload = null, req = null) {
+  if (!payload || typeof payload !== 'object') return payload;
+
+  const next = { ...payload };
+  for (const key of ['url', 'image_url', 'file_url', 'download_url']) {
+    if (next[key]) {
+      next[key] = rewriteSdProxyFileUrl(next[key], req);
+    }
+  }
+  return next;
+}
+
 function resolveDependencies(overrides = {}) {
   return {
     fs: overrides.fs || defaultFs,
@@ -780,8 +928,11 @@ function createSdToolsRouter(overrides = {}) {
     );
     const inferredPromptAlreadyCompiled = !promptAlreadyCompiled && looksLikeCompiledSdPrompt(rawPrompt);
 
+    const skipSemanticImagePrepass = ['1', 'true', 'yes', 'on'].includes(
+      String(process.env.A11_IMAGE_SKIP_LLM_PREPASS || '').trim().toLowerCase()
+    );
     let semanticCompiledState = null;
-    if (!promptAlreadyCompiled && !inferredPromptAlreadyCompiled) {
+    if (!skipSemanticImagePrepass && !promptAlreadyCompiled && !inferredPromptAlreadyCompiled) {
       try {
         const maskResolution = await buildCanonicalImageMaskFromText(rawPrompt, {
           allowCompatFallback: true,
@@ -1083,7 +1234,7 @@ function createSdToolsRouter(overrides = {}) {
         }
 
         if (proxyResponse.ok && proxyJson) {
-          return proxyJson;
+          return rewriteSdProxyResultFileUrls(proxyJson, req);
         }
 
         if (!hasLocalScript) {
@@ -1151,10 +1302,14 @@ function createSdToolsRouter(overrides = {}) {
       });
 
       if (openAiFallback?.ok) {
+        const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, openAiFallback.outputPath || outputPath);
+        const imageUrl = openAiFallback.sourceUrl || localPublicUrl || null;
         return {
           ok: true,
-          url: openAiFallback.sourceUrl || null,
-          image_url: openAiFallback.sourceUrl || null,
+          url: imageUrl,
+          image_url: imageUrl,
+          output_path: openAiFallback.outputPath || outputPath,
+          local_path: openAiFallback.outputPath || outputPath,
           filename: path.basename(openAiFallback.outputPath || outputPath),
           prompt: finalPrompt,
           num_inference_steps,
@@ -1240,10 +1395,14 @@ function createSdToolsRouter(overrides = {}) {
       });
 
       if (openAiFallback?.ok) {
+        const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, openAiFallback.outputPath || outputPath);
+        const imageUrl = openAiFallback.sourceUrl || localPublicUrl || null;
         return {
           ok: true,
-          url: openAiFallback.sourceUrl || null,
-          image_url: openAiFallback.sourceUrl || null,
+          url: imageUrl,
+          image_url: imageUrl,
+          output_path: openAiFallback.outputPath || outputPath,
+          local_path: openAiFallback.outputPath || outputPath,
           filename: path.basename(openAiFallback.outputPath || outputPath),
           prompt: finalPrompt,
           num_inference_steps,
@@ -1284,15 +1443,25 @@ function createSdToolsRouter(overrides = {}) {
         buffer,
         contentType: 'image/png',
       });
+      const proxyOrigin = resolveRequestOrigin(req);
+      const proxyUrl = (proxyOrigin && uploadResult?.storageKey)
+        ? `${proxyOrigin}/api/public/r2/${String(uploadResult.storageKey)
+          .split('/')
+          .filter(Boolean)
+          .map((segment) => encodeURIComponent(segment))
+          .join('/')}`
+        : '';
+      const resolvedPublicUrl = uploadResult.url || proxyUrl || null;
       try {
         fs.unlinkSync(outputJson.output_path);
       } catch {}
 
       return {
         ok: true,
-        url: uploadResult.url || null,
-        image_url: uploadResult.url || null,
+        url: resolvedPublicUrl,
+        image_url: resolvedPublicUrl,
         filename,
+        storage_key: uploadResult.storageKey || null,
         prompt: finalPrompt,
         num_inference_steps,
         guidance_scale,
@@ -1329,6 +1498,8 @@ function createSdToolsRouter(overrides = {}) {
               ok: true,
               url: resolvedLocalUrl,
               image_url: resolvedLocalUrl,
+              output_path: outputFilePath,
+              local_path: outputFilePath,
               filename: defaultPath.basename(outputFilePath),
               prompt: finalPrompt,
               num_inference_steps,
@@ -1367,6 +1538,8 @@ function createSdToolsRouter(overrides = {}) {
             ok: true,
             url: resolvedLocalUrl,
             image_url: resolvedLocalUrl,
+            output_path: outputFilePath,
+            local_path: outputFilePath,
             filename: defaultPath.basename(outputFilePath || `sd_${Date.now()}.png`),
             prompt: finalPrompt,
             num_inference_steps,
@@ -1413,52 +1586,15 @@ function createSdToolsRouter(overrides = {}) {
 
     const width = Number(requestBody?.width || imageDimensionConfig.defaultWidth);
     const height = Number(requestBody?.height || imageDimensionConfig.defaultHeight);
-    const openAiFirst = resolveOpenAiPreferredForImage(requestBody);
+    const hfConfig = resolveHuggingFaceImageConfig();
     const openAiConfig = resolveOpenAiImageConfig();
+    const providerOrder = resolveImageProviderOrder(requestBody);
+    let lastFailure = null;
 
-    if (openAiFirst && openAiConfig.enabled && openAiConfig.apiKey) {
-      try {
-        const tempDir = resolveGeneratedImageWorkRoot();
-        fs.mkdirSync(tempDir, { recursive: true });
-        const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
-        const outputPath = path.join(tempDir, outputName);
-
-        const openAiResult = await tryGeneratePngWithOpenAI({
-          prompt: rawPrompt,
-          outputPath,
-          width,
-          height,
-          userId: req?.user?.id || 'image-tool',
-        });
-
-        if (openAiResult?.ok) {
-          return {
-            ok: true,
-            artifact_type: 'image',
-            tool: 'generate_image',
-            url: openAiResult.sourceUrl || null,
-            image_url: openAiResult.sourceUrl || null,
-            filename: path.basename(openAiResult.outputPath || outputPath),
-            prompt: rawPrompt,
-            width,
-            height,
-            num_inference_steps: Number(requestBody?.num_inference_steps || requestBody?.steps || 40),
-            guidance_scale: Number(requestBody?.guidance_scale || 8),
-            seed: requestBody?.seed !== undefined ? Number(requestBody.seed) : undefined,
-            mode: openAiResult.mode || 'openai-image',
-          };
-        }
-      } catch (error_) {
-        console.warn('[A11][generate_image] OpenAI image failed, fallback to SD:', error_?.message);
-      }
-    }
-
-    const sdResult = await generateSdInternal({ req, prompt: rawPrompt, body: requestBody });
-
-    // Vision Memory — analyse l'image générée en arrière-plan (fire-and-forget)
-    const _vm = getVisionMemory();
-    if (_vm && sdResult?.ok && (sdResult.image_url || sdResult.url)) {
-      const _imageLocator = sdResult.image_url || sdResult.url;
+    const analyzeGeneratedImage = (imagePayload) => {
+      const _vm = getVisionMemory();
+      if (!_vm || !imagePayload?.ok || !(imagePayload.image_url || imagePayload.url)) return;
+      const _imageLocator = imagePayload.image_url || imagePayload.url;
       const _userId = req?.user?.id || requestBody?.userId || 'unknown';
       const _convId = requestBody?.conversationId || requestBody?.conversation_id || '';
       setImmediate(() => {
@@ -1473,12 +1609,154 @@ function createSdToolsRouter(overrides = {}) {
           timeoutMs: 60000,
         }).catch(e => console.warn('[vision-memory] analyze failed:', e?.message));
       });
+    };
+
+    const recordFailure = (provider, payloadOrError, fallbackAllowed = true) => {
+      const message = String(payloadOrError?.message || payloadOrError?.error || payloadOrError || `${provider}_failed`);
+      lastFailure = {
+        ok: false,
+        provider,
+        error: String(payloadOrError?.error || `${provider}_failed`),
+        message,
+      };
+      if (fallbackAllowed) {
+        console.warn(`[A11][generate_image] ${provider} failed, fallback to next provider:`, message);
+      }
+    };
+
+    for (const provider of providerOrder) {
+      if (provider === 'sd') {
+        try {
+          const sdResult = normalizeImageToolPayload(
+            await generateSdInternal({ req, prompt: rawPrompt, body: requestBody }),
+            'sd'
+          );
+          if (isSuccessfulImagePayload(sdResult)) {
+            analyzeGeneratedImage(sdResult);
+            return sdResult;
+          }
+          recordFailure('sd', sdResult, providerOrder.length > 1);
+        } catch (error_) {
+          recordFailure('sd', error_, providerOrder.length > 1);
+        }
+        continue;
+      }
+
+      if (provider === 'hf') {
+        if (!hfConfig.enabled || !hfConfig.token) {
+          recordFailure('huggingface', {
+            error: hfConfig.enabled ? 'hf_image_unconfigured' : 'hf_image_disabled',
+            message: hfConfig.enabled
+              ? 'HF_TOKEN manquant pour la generation image Hugging Face.'
+              : 'La generation image Hugging Face est desactivee sur cet environnement.',
+          }, providerOrder.length > 1);
+          continue;
+        }
+        try {
+          const tempDir = resolveGeneratedImageWorkRoot();
+          fs.mkdirSync(tempDir, { recursive: true });
+          const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+          const outputPath = path.join(tempDir, outputName);
+          const hfResult = await tryGenerateImageWithHuggingFace({
+            prompt: rawPrompt,
+            outputPath,
+            width,
+            height,
+            steps: requestBody?.num_inference_steps || requestBody?.steps,
+            guidanceScale: requestBody?.guidance_scale,
+            userId: req?.user?.id || 'image-tool',
+          });
+          if (hfResult?.ok) {
+            const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, hfResult.outputPath || outputPath);
+            const imageUrl = hfResult.sourceUrl || localPublicUrl || null;
+            const payload = normalizeImageToolPayload({
+              ok: true,
+              artifact_type: 'image',
+              url: imageUrl,
+              image_url: imageUrl,
+              output_path: hfResult.outputPath || outputPath,
+              local_path: hfResult.outputPath || outputPath,
+              filename: path.basename(hfResult.outputPath || outputPath),
+              prompt: rawPrompt,
+              width: hfResult.width || width,
+              height: hfResult.height || height,
+              num_inference_steps: Number(requestBody?.num_inference_steps || requestBody?.steps || hfConfig.defaultSteps || 4),
+              guidance_scale: Number(requestBody?.guidance_scale || 8),
+              seed: requestBody?.seed !== undefined ? Number(requestBody.seed) : undefined,
+              mode: hfResult.mode || 'huggingface-image',
+              content_type: hfResult.contentType || 'image/jpeg',
+            }, 'huggingface');
+            analyzeGeneratedImage(payload);
+            return payload;
+          }
+          recordFailure('huggingface', hfResult, providerOrder.length > 1);
+        } catch (error_) {
+          recordFailure('huggingface', error_, providerOrder.length > 1);
+        }
+        continue;
+      }
+
+      if (provider === 'openai') {
+        if (!openAiConfig.enabled || !openAiConfig.apiKey) {
+          recordFailure('openai', {
+            error: openAiConfig.enabled ? 'openai_image_unconfigured' : 'openai_image_disabled',
+            message: openAiConfig.enabled
+              ? 'Cle OpenAI image manquante.'
+              : 'La generation image OpenAI est desactivee sur cet environnement.',
+          }, providerOrder.length > 1);
+          continue;
+        }
+        try {
+          const tempDir = resolveGeneratedImageWorkRoot();
+          fs.mkdirSync(tempDir, { recursive: true });
+          const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
+          const outputPath = path.join(tempDir, outputName);
+          const openAiResult = await tryGeneratePngWithOpenAI({
+            prompt: rawPrompt,
+            outputPath,
+            width,
+            height,
+            userId: req?.user?.id || 'image-tool',
+          });
+          if (openAiResult?.ok) {
+            const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, openAiResult.outputPath || outputPath);
+            const imageUrl = openAiResult.sourceUrl || localPublicUrl || null;
+            const payload = normalizeImageToolPayload({
+              ok: true,
+              artifact_type: 'image',
+              url: imageUrl,
+              image_url: imageUrl,
+              output_path: openAiResult.outputPath || outputPath,
+              local_path: openAiResult.outputPath || outputPath,
+              filename: path.basename(openAiResult.outputPath || outputPath),
+              prompt: rawPrompt,
+              width,
+              height,
+              num_inference_steps: Number(requestBody?.num_inference_steps || requestBody?.steps || 40),
+              guidance_scale: Number(requestBody?.guidance_scale || 8),
+              seed: requestBody?.seed !== undefined ? Number(requestBody.seed) : undefined,
+              mode: openAiResult.mode || 'openai-image',
+              content_type: 'image/png',
+            }, 'openai');
+            analyzeGeneratedImage(payload);
+            return payload;
+          }
+          recordFailure('openai', openAiResult, providerOrder.length > 1);
+        } catch (error_) {
+          recordFailure('openai', error_, providerOrder.length > 1);
+        }
+      }
     }
 
-    return {
-      ...sdResult,
-      tool: sdResult?.tool || 'generate_image',
-    };
+    return normalizeImageToolPayload(lastFailure || {
+      ok: false,
+      provider: providerOrder[0] || 'sd',
+      error: 'image_backend_unavailable',
+      message: 'Aucun backend image disponible.',
+    }, lastFailure?.provider || providerOrder[0] || 'sd');
+
+
+    // Vision Memory — analyse l'image générée en arrière-plan (fire-and-forget)
   }
 
   router.post('/tools/generate_sd', express.json({ limit: '2mb' }), async (req, res) => {

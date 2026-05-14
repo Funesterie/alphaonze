@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const http = require('node:http');
 
 const {
   buildStructuredLlmTraceMeta,
@@ -37,6 +38,50 @@ test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
     setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
+  }
+});
+
+test('isLlmEnrichmentEnabled can opt into the OpenAI-compatible chat provider', () => {
+  const previous = {
+    A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
+    A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    OLLAMA_BASE: process.env.OLLAMA_BASE,
+    A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
+    A11_TRANSLATION_ALLOW_GENERIC_OPENAI: process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI,
+    A11_OPENAI_BASE_URL: process.env.A11_OPENAI_BASE_URL,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    A11_OPENAI_MODEL: process.env.A11_OPENAI_MODEL,
+  };
+
+  process.env.A11_WAZAA_LLM_ENRICH = '';
+  process.env.A11_TRANSLATION_BASE_URL = '';
+  process.env.LLM_ROUTER_URL = '';
+  process.env.OLLAMA_BASE = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
+  process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = 'true';
+  process.env.A11_OPENAI_BASE_URL = 'https://api.groq.com/openai/v1';
+  process.env.A11_OPENAI_API_KEY = 'openai-compatible-test-key';
+  process.env.A11_OPENAI_MODEL = 'llama-3.3-70b-versatile';
+
+  try {
+    assert.equal(isLlmEnrichmentEnabled(), true);
+    const config = resolveTranslationConfig();
+    assert.equal(config.url, 'https://api.groq.com/openai/v1/chat/completions');
+    assert.equal(config.baseUrl, 'https://api.groq.com/openai/v1');
+    assert.equal(config.apiKey, 'openai-compatible-test-key');
+    assert.equal(config.model, 'llama-3.3-70b-versatile');
+    assert.equal(config.isConfigured, true);
+  } finally {
+    process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
+    process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
+    process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.OLLAMA_BASE = previous.OLLAMA_BASE;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
+    process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = previous.A11_TRANSLATION_ALLOW_GENERIC_OPENAI;
+    process.env.A11_OPENAI_BASE_URL = previous.A11_OPENAI_BASE_URL;
+    process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
+    process.env.A11_OPENAI_MODEL = previous.A11_OPENAI_MODEL;
   }
 });
 
@@ -215,6 +260,95 @@ test('callStructuredLlmJson strict mode throws a 503 when the structured LLM is 
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
     process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = previous.A11_TRANSLATION_ALLOW_GENERIC_OPENAI;
+  }
+});
+
+test('callStructuredLlmJson retries json_schema requests as json_object for compatible providers', async () => {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      const body = raw ? JSON.parse(raw) : {};
+      requests.push(body);
+
+      if (body?.response_format?.type === 'json_schema') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: {
+            message: 'response_format json_schema is not supported by this provider',
+          },
+        }));
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ ok: true, prompt: 'A11 portrait' }),
+            },
+          },
+        ],
+      }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const previous = {
+    A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    OLLAMA_BASE: process.env.OLLAMA_BASE,
+    A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
+    A11_TRANSLATION_MODEL: process.env.A11_TRANSLATION_MODEL,
+    A11_WAZAA_LLM_RETRIES: process.env.A11_WAZAA_LLM_RETRIES,
+  };
+
+  process.env.A11_TRANSLATION_BASE_URL = `http://127.0.0.1:${port}`;
+  process.env.LLM_ROUTER_URL = '';
+  process.env.OLLAMA_BASE = '';
+  setEnv('A11_TRANSLATION_API_KEY', 'test-key');
+  process.env.A11_TRANSLATION_MODEL = 'test-model';
+  process.env.A11_WAZAA_LLM_RETRIES = '0';
+
+  try {
+    const result = await callStructuredLlmJson({
+      text: 'genere une photo de A11',
+      systemPrompt: 'Return JSON',
+      responseFormat: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'image_request',
+          schema: {
+            type: 'object',
+            properties: {
+              ok: { type: 'boolean' },
+            },
+          },
+        },
+      },
+      strict: true,
+      stage: 'image_pipeline_direct_test',
+    });
+
+    assert.deepEqual(result, { ok: true, prompt: 'A11 portrait' });
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].response_format.type, 'json_schema');
+    assert.equal(requests[1].response_format.type, 'json_object');
+  } finally {
+    process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
+    process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.OLLAMA_BASE = previous.OLLAMA_BASE;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
+    process.env.A11_TRANSLATION_MODEL = previous.A11_TRANSLATION_MODEL;
+    process.env.A11_WAZAA_LLM_RETRIES = previous.A11_WAZAA_LLM_RETRIES;
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
   }
 });
 

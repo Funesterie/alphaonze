@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -12,6 +13,9 @@ const {
   t_schedule_email,
   t_list_resources,
   t_get_latest_resource,
+  t_a11_env_snapshot,
+  t_a11_archive_history,
+  t_a11_archive_read,
 } = require('../src/a11/tools-dispatcher.cjs');
 
 function restoreEnv(previous) {
@@ -62,6 +66,88 @@ async function withInternalApiServer(handler, callback) {
 function createWorkspaceTempFile(filename, content) {
   const fullPath = path.join(__dirname, filename);
   fs.writeFileSync(fullPath, content, 'utf8');
+  return fullPath;
+}
+
+test('env snapshot accepts canonical Cerbere stats without an ok flag', async () => {
+  const previous = {
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+  };
+
+  try {
+    await withInternalApiServer(async ({ req, res, url }) => {
+      if (req.method === 'GET' && url.pathname === '/api/stats') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          service: 'cerbere-router',
+          canonical: true,
+          llm: { provider: 'ollama', localModel: 'gemma4:e4b' },
+        }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    }, async ({ port }) => {
+      process.env.LLM_ROUTER_URL = `http://127.0.0.1:${port}`;
+      const result = await t_a11_env_snapshot();
+
+      assert.equal(result.ok, true);
+      assert.equal(result.snapshot.llm.ok, true);
+      assert.equal(result.snapshot.llm.service, 'cerbere-router');
+      assert.equal(result.snapshot.llm.llm.provider, 'ollama');
+    });
+  } finally {
+    restoreEnv(previous);
+  }
+});
+
+test('env snapshot falls back to the embedded llm stats route', async () => {
+  const previous = {
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+  };
+
+  try {
+    await withInternalApiServer(async ({ req, res, url }) => {
+      if (req.method === 'GET' && url.pathname === '/api/stats') {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'router_down' }));
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/llm/stats') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          service: 'cerbere-router',
+          routerKind: 'embedded-router',
+          llm: { provider: 'ollama' },
+        }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    }, async ({ port }) => {
+      process.env.LLM_ROUTER_URL = `http://127.0.0.1:${port}`;
+      const result = await t_a11_env_snapshot();
+
+      assert.equal(result.ok, true);
+      assert.equal(result.snapshot.llm.ok, true);
+      assert.equal(result.snapshot.llm.sourceUrl, `http://127.0.0.1:${port}/api/llm/stats`);
+      assert.equal(result.snapshot.llm.attempts.length, 1);
+      assert.equal(result.snapshot.llm.attempts[0].status, 503);
+    });
+  } finally {
+    restoreEnv(previous);
+  }
+});
+
+function writeMockCodexRollout(rootDir, filename, events) {
+  const sessionDir = path.join(rootDir, '2026', '04', '28');
+  fs.mkdirSync(sessionDir, { recursive: true });
+  const fullPath = path.join(sessionDir, filename);
+  const lines = events.map((entry) => JSON.stringify(entry));
+  fs.writeFileSync(fullPath, lines.join('\n') + '\n', 'utf8');
   return fullPath;
 }
 
@@ -547,4 +633,152 @@ test('resource listing helpers call the expected internal API routes', async () 
       token: 'token-resources',
     },
   ]);
+});
+
+test('archive helpers list local Codex rollout sessions and search their content', async () => {
+  const archiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-archive-history-'));
+
+  try {
+    writeMockCodexRollout(
+      archiveRoot,
+      'rollout-2026-04-28T13-33-25-019dd3dd-8e35-7743-9fee-a6dfcd5e97dc.jsonl',
+      [
+        {
+          timestamp: '2026-04-28T11:33:33.845Z',
+          type: 'session_meta',
+          payload: {
+            id: '019dd3dd-8e35-7743-9fee-a6dfcd5e97dc',
+            timestamp: '2026-04-28T11:33:25.703Z',
+            cwd: 'D:\\projets',
+          },
+        },
+        {
+          timestamp: '2026-04-28T11:33:33.847Z',
+          type: 'event_msg',
+          payload: {
+            type: 'thread_name_updated',
+            thread_name: 'Branche a11 avec API OpenAI',
+          },
+        },
+        {
+          timestamp: '2026-04-28T11:33:33.848Z',
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: "branche a11 (il a besoin d'un api open ai)",
+          },
+        },
+        {
+          timestamp: '2026-04-28T11:34:34.591Z',
+          type: 'event_msg',
+          payload: {
+            type: 'agent_message',
+            phase: 'commentary',
+            message: 'Je repere d’abord le projet et sa cle OpenAI.',
+          },
+        },
+      ]
+    );
+
+    const result = await t_a11_archive_history({
+      query: 'OpenAI',
+      roots: [archiveRoot],
+      limit: 10,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.filtered, 1);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].source, 'codex_rollout');
+    assert.equal(result.items[0].sessionId, '019dd3dd-8e35-7743-9fee-a6dfcd5e97dc');
+    assert.match(String(result.items[0].title || ''), /Branche a11/i);
+    assert.match(String(result.items[0].summary || ''), /api open ai/i);
+    assert.match(String(result.items[0].file || ''), /rollout-2026-04-28T13-33-25/i);
+  } finally {
+    fs.rmSync(archiveRoot, { recursive: true, force: true });
+  }
+});
+
+test('archive read helper returns the ordered local transcript for one Codex rollout session', async () => {
+  const archiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-archive-read-'));
+
+  try {
+    writeMockCodexRollout(
+      archiveRoot,
+      'rollout-2026-04-28T09-00-00-session-render-fix.jsonl',
+      [
+        {
+          timestamp: '2026-04-28T09:00:00.000Z',
+          type: 'session_meta',
+          payload: {
+            id: 'session-render-fix',
+            timestamp: '2026-04-28T09:00:00.000Z',
+            cwd: 'D:\\projets\\funesterie',
+          },
+        },
+        {
+          timestamp: '2026-04-28T09:00:01.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'thread_name_updated',
+            thread_name: 'Repare render pour A11',
+          },
+        },
+        {
+          timestamp: '2026-04-28T09:00:02.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: 'repare render',
+          },
+        },
+        {
+          timestamp: '2026-04-28T09:00:03.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'agent_message',
+            phase: 'commentary',
+            message: 'Je regarde la config Render actuelle.',
+          },
+        },
+        {
+          timestamp: '2026-04-28T09:00:04.000Z',
+          type: 'event_msg',
+          payload: {
+            type: 'agent_message',
+            phase: 'final_answer',
+            message: 'Le start command est corrige.',
+          },
+        },
+      ]
+    );
+
+    const historyResult = await t_a11_archive_history({
+      roots: [archiveRoot],
+      limit: 10,
+    });
+    const archiveId = historyResult.items[0]?.archiveId;
+
+    const readResult = await t_a11_archive_read({
+      archiveId,
+      roots: [archiveRoot],
+      maxMessages: 10,
+    });
+
+    assert.equal(readResult.ok, true);
+    assert.equal(readResult.source, 'codex_rollout');
+    assert.equal(readResult.sessionId, 'session-render-fix');
+    assert.equal(readResult.title, 'Repare render pour A11');
+    assert.equal(readResult.messages.length, 3);
+    assert.deepEqual(
+      readResult.messages.map((entry) => [entry.role, entry.phase || null, entry.text]),
+      [
+        ['user', null, 'repare render'],
+        ['assistant', 'commentary', 'Je regarde la config Render actuelle.'],
+        ['assistant', 'final_answer', 'Le start command est corrige.'],
+      ]
+    );
+  } finally {
+    fs.rmSync(archiveRoot, { recursive: true, force: true });
+  }
 });

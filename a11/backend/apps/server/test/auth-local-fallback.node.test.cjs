@@ -53,6 +53,67 @@ async function getJson(baseUrl, route, headers = {}) {
   };
 }
 
+test('K44 OAuth start pins the Google callback to https on public hosts', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    A11_GOOGLE_CLIENT_ID: process.env.A11_GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    A11_GOOGLE_CLIENT_SECRET: process.env.A11_GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+  };
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  delete process.env.A11_GOOGLE_CLIENT_ID;
+  delete process.env.A11_GOOGLE_CLIENT_SECRET;
+  delete process.env.GOOGLE_CALLBACK_URL;
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  delete process.env.GOOGLE_REDIRECT_URI;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/auth/google/start`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'k44.funesterie.me',
+        },
+      });
+      assert.equal(response.status, 302);
+      const location = response.headers.get('location');
+      assert.ok(location);
+      const redirectUrl = new URL(location);
+      assert.equal(redirectUrl.origin, 'https://accounts.google.com');
+      assert.equal(
+        redirectUrl.searchParams.get('redirect_uri'),
+        'https://k44.funesterie.me/api/auth/google/callback'
+      );
+    }
+  );
+});
+
 test('local auth store backs register and login when database is unavailable', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
   const previousFullAccessEmails = process.env.A11_FULL_ACCESS_EMAILS;

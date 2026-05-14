@@ -42,7 +42,7 @@ async function buildLongTermMemorySnippet() {
 
   const persona = await getKvValue(
     "a11.persona.core",
-    "Tu es A-11, l’assistant local NOSSEN de Funesterie, orienté dev, code, QFlush, Cerbère et VSIX."
+    "Je suis A-11, l'assistant local NOSSEN de Funesterie, oriente dev, code, QFlush, Cerbere et VSIX."
   );
 
   // Tu peux ajouter ce que tu veux ici (flags, préférences TTS, etc.)

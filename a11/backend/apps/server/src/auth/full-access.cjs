@@ -1,6 +1,15 @@
 'use strict';
 
-const DEFAULT_FULL_ACCESS_EMAILS = [];
+const DEFAULT_FULL_ACCESS_EMAILS = [
+  'funeste38@gmail.com',
+  'cellaurojeffrey@gmail.com',
+  'jeffrey38330@gmail.com',
+  'marvincellauro@gmail.com',
+  'giovannabrunetto@gmail.com',
+  'bayetgerard@gmail.com',
+  'boostro38@gmail.com',
+  'charlenejewitt@gmail.com',
+];
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();

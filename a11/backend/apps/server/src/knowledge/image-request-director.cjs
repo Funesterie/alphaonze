@@ -2,11 +2,11 @@ const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
 const { lookupDefinitionContext: defaultLookupDefinitionContext } = require('./definition-context.cjs');
 const { duckduckgoImageSearch: defaultDuckduckgoImageSearch } = require('../../lib/image-search.cjs');
 
-const IMAGE_REQUEST_DIRECTOR_SYSTEM_PROMPT = `Tu es un directeur de demande image pour A11.
-Tu reçois une demande image déjà structurée.
-Tu peux aider à mieux diriger la procédure, mais tu ne dois jamais changer le sujet principal, l intention, la palette, ni inventer un nouveau personnage principal.
+const IMAGE_REQUEST_DIRECTOR_SYSTEM_PROMPT = `Je suis un directeur de demande image pour A11.
+Je reçois une demande image déjà structurée.
+Je peux aider à mieux diriger la procédure, mais je ne dois jamais changer le sujet principal, l intention, la palette, ni inventer un nouveau personnage principal.
 
-Réponds uniquement en JSON strict avec cette forme :
+Je réponds uniquement en JSON strict avec cette forme :
 {
   "action_candidates": ["..."],
   "web_queries": ["..."],
