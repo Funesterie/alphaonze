@@ -33,7 +33,6 @@ const {
 } = require('../image/img2img-source-guard.cjs');
 const {
   resolveRetryStrength,
-  resolveStrengthFromProfile,
 } = require('../image/img2img-strength.cjs');
 const {
   normalizeVideoFormat,
@@ -73,6 +72,20 @@ function isLocalVideoRuntime(env = process.env) {
 
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isDisabledFlag(value) {
+  return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isSyntheticVideoFallbackEnabled(env = process.env) {
+  if (env?.A11_VIDEO_ALLOW_SYNTHETIC_FALLBACK !== undefined) {
+    return !isDisabledFlag(env.A11_VIDEO_ALLOW_SYNTHETIC_FALLBACK);
+  }
+  if (env?.A11_VIDEO_SYNTHETIC_FALLBACK !== undefined) {
+    return !isDisabledFlag(env.A11_VIDEO_SYNTHETIC_FALLBACK);
+  }
+  return true;
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -264,6 +277,13 @@ function normalizeVideoDimension(value, {
   return Math.max(min, Math.min(max, rounded));
 }
 
+function normalizeVideoFrameExtension(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/^\./, '');
+  if (normalized === 'jpeg') return 'jpg';
+  if (['png', 'jpg', 'webp', 'ppm'].includes(normalized)) return normalized;
+  return 'png';
+}
+
 const FFMPEG_CAPABILITY_CACHE = new Map();
 const WINDOWS_FFMPEG_CANDIDATES = [
   path.resolve(process.cwd(), '..', '..', '..', 'launchers', 'tools', 'ffmpeg', 'bin', 'ffmpeg.exe'),
@@ -404,11 +424,11 @@ function resolveVideoEnvConfig(env = process.env) {
     enabled: env.A11_VIDEO_ENABLED === undefined ? true : isTruthy(env.A11_VIDEO_ENABLED),
     localRuntime,
     backend: String(env.A11_VIDEO_BACKEND || 'sd-frame-sequence').trim().toLowerCase() || 'sd-frame-sequence',
-    defaultDurationSeconds: clampNumber(env.A11_VIDEO_DEFAULT_DURATION_SEC, 1, 30, 3),
-    maxDurationSeconds: clampNumber(env.A11_VIDEO_MAX_DURATION_SEC, 1, 60, 8),
-    defaultFps: clampNumber(env.A11_VIDEO_DEFAULT_FPS, 1, 30, 6),
-    maxFps: clampNumber(env.A11_VIDEO_MAX_FPS, 1, 60, 12),
-    maxRenderFrames: clampNumber(env.A11_VIDEO_MAX_RENDER_FRAMES, 2, 240, 24),
+    defaultDurationSeconds: clampNumber(env.A11_VIDEO_DEFAULT_DURATION_SEC, 4, 30, 4),
+    maxDurationSeconds: clampNumber(env.A11_VIDEO_MAX_DURATION_SEC, 4, 60, 12),
+    defaultFps: clampNumber(env.A11_VIDEO_DEFAULT_FPS, 3, 30, 3),
+    maxFps: clampNumber(env.A11_VIDEO_MAX_FPS, 4, 60, 12),
+    maxRenderFrames: clampNumber(env.A11_VIDEO_MAX_RENDER_FRAMES, 12, 240, 24),
     maxRenderSide,
     maxRenderPixels,
     minRenderSide,
@@ -423,6 +443,7 @@ function resolveVideoEnvConfig(env = process.env) {
       max: maxRenderSide,
     }),
     defaultFormat: normalizeVideoFormat(env.A11_VIDEO_DEFAULT_FORMAT || 'mp4', 'mp4'),
+    frameExtension: normalizeVideoFrameExtension(env.A11_VIDEO_FRAME_EXTENSION || env.A11_IMAGE_FRAME_EXTENSION || 'png'),
     sdSteps: clampNumber(env.A11_VIDEO_SD_STEPS, 4, 80, 24),
     sdGuidanceScale: clampNumber(env.A11_VIDEO_SD_GUIDANCE_SCALE, 1, 20, 6.5),
     ffmpegBin,
@@ -430,9 +451,9 @@ function resolveVideoEnvConfig(env = process.env) {
     mp4Preset: mp4Config.preset,
     mp4Quality: mp4Config.quality,
     ffmpegCapabilities: mp4Config.capabilities,
-    frameInitStrength: clampNumber(env.A11_VIDEO_FRAME_INIT_STRENGTH, 0.05, 0.6, 0.28),
-    frameReferenceStrength: clampNumber(env.A11_VIDEO_FRAME_REFERENCE_STRENGTH, 0.05, 0.6, 0.24),
-    frameReanchorEvery: clampNumber(env.A11_VIDEO_FRAME_REANCHOR_EVERY, 1, 12, 6),
+    frameInitStrength: clampNumber(env.A11_VIDEO_FRAME_INIT_STRENGTH, 0.05, 0.6, 0.22),
+    frameReferenceStrength: clampNumber(env.A11_VIDEO_FRAME_REFERENCE_STRENGTH, 0.05, 0.6, 0.18),
+    frameReanchorEvery: clampNumber(env.A11_VIDEO_FRAME_REANCHOR_EVERY, 4, 48, 12),
     useJanusFrameAnalysis: isTruthy(env.A11_VIDEO_USE_JANUS_FRAME_ANALYSIS),
     sequencePlanner: sequencePlannerConfig.sequencePlanner,
     sequencePlannerImageAware: sequencePlannerConfig.sequencePlannerImageAware,
@@ -1195,9 +1216,9 @@ function resolveVideoMotionPlan(prompt = '', config = {}) {
     return {
       key: 'mounted_archery',
       reason: 'mounted_archery_motion_detected',
-      minFrames: 8,
-      preferredFrameCount: 8,
-      preferredFps: 4,
+      minFrames: 12,
+      preferredFrameCount: 12,
+      preferredFps: 6,
       preferredDurationSeconds: 2,
     };
   }
@@ -1206,9 +1227,9 @@ function resolveVideoMotionPlan(prompt = '', config = {}) {
     return {
       key: 'transformation_rise',
       reason: 'transformation_motion_detected',
-      minFrames: 10,
-      preferredFrameCount: 10,
-      preferredFps: 5,
+      minFrames: 14,
+      preferredFrameCount: 14,
+      preferredFps: 7,
       preferredDurationSeconds: 2,
     };
   }
@@ -1218,73 +1239,73 @@ function resolveVideoMotionPlan(prompt = '', config = {}) {
       key: 'run_cycle',
       reason: 'running_motion_detected',
       regex: /\b(run|running|sprint|sprinting|dash|dashing|charge|charging|courir|court|course|sprinte|sprinter)\b/,
-      minFrames: 10,
-      preferredFrameCount: 10,
-      preferredFps: 5,
+      minFrames: 12,
+      preferredFrameCount: 12,
+      preferredFps: 6,
       preferredDurationSeconds: 2,
     },
     {
       key: 'dance_cycle',
       reason: 'dance_motion_detected',
       regex: /\b(dance|dancing|danse|danser|dansant|twirl|spin|spinning|pirouette|tournoie|tournoiement)\b/,
-      minFrames: 10,
-      preferredFrameCount: 10,
-      preferredFps: 5,
+      minFrames: 12,
+      preferredFrameCount: 12,
+      preferredFps: 6,
       preferredDurationSeconds: 2,
     },
     {
       key: 'walk_cycle',
       reason: 'walking_motion_detected',
       regex: /\b(walk|walking|step|stepping|stride|stroll|moving forward|marche|marcher|marchant|avance|avancant|avancer|pas devant|pas a pas|pas apres pas|un pas devant l autre)\b/,
-      minFrames: 8,
-      preferredFrameCount: 8,
-      preferredFps: 4,
+      minFrames: 10,
+      preferredFrameCount: 10,
+      preferredFps: 5,
       preferredDurationSeconds: 2,
     },
     {
       key: 'archery_shot',
       reason: 'archery_motion_detected',
       regex: /\b(arc|bow|fleche|fleches|arrow|arrows|bander|tir a l arc|tirant une fleche)\b/,
-      minFrames: 8,
-      preferredFrameCount: 8,
-      preferredFps: 4,
+      minFrames: 12,
+      preferredFrameCount: 12,
+      preferredFps: 6,
       preferredDurationSeconds: 2,
     },
     {
       key: 'power_up_loop',
       reason: 'power_up_motion_detected',
       regex: /\b(haki|aura|power up|powerup|charge|charging|ki|energie|energy|transformation|menacant|menacante|threatening|poing serre|poings serres|poings fermes|fists clenched)\b/,
-      minFrames: 8,
-      preferredFrameCount: 8,
-      preferredFps: 4,
+      minFrames: 12,
+      preferredFrameCount: 12,
+      preferredFps: 6,
       preferredDurationSeconds: 2,
     },
     {
       key: 'action_burst',
       reason: 'action_motion_detected',
       regex: /\b(kick|kicking|punch|punching|slash|slashing|swing|attaque|attack|attacking|jump|jumping|flip|frappe|coup de pied|saute|bondit|coup d epee|kamehameha|hadouken|beam|blast|rayon|energie|energy|combat|fight|fighting|battle|duel|affrontement|vs|versus)\b/,
-      minFrames: 6,
-      preferredFrameCount: 6,
-      preferredFps: 4,
-      preferredDurationSeconds: 1.5,
+      minFrames: 12,
+      preferredFrameCount: 12,
+      preferredFps: 6,
+      preferredDurationSeconds: 2,
     },
     {
       key: 'gesture_loop',
       reason: 'gesture_motion_detected',
       regex: /\b(wave|waving|salut|salue|smile|smiling|sourit|blink|blinking|cligne|nod|nodding|hoche|turns head|turn head|tourne la tete|regarde)\b/,
-      minFrames: 5,
-      preferredFrameCount: 5,
+      minFrames: 8,
+      preferredFrameCount: 8,
       preferredFps: 4,
-      preferredDurationSeconds: 1.25,
+      preferredDurationSeconds: 2,
     },
     {
       key: 'subtle_loop',
       reason: 'subtle_motion_detected',
       regex: /\b(idle|breath|breathing|respire|respiration|calme|standing still|immobile)\b/,
-      minFrames: 4,
-      preferredFrameCount: 4,
-      preferredFps: 3,
-      preferredDurationSeconds: 1.33,
+      minFrames: 8,
+      preferredFrameCount: 8,
+      preferredFps: 4,
+      preferredDurationSeconds: 2,
     },
   ];
 
@@ -1328,30 +1349,73 @@ function resolveVideoTimingPlan({
     || isTruthy(body?.manualTiming)
     || String(body?.timingMode || '').trim().toLowerCase() === 'manual'
   );
+  const timingMode = String(body?.timingMode || body?.timing_mode || '').trim().toLowerCase();
+  const autoTimingRequested = Boolean(
+    !strictTiming
+    && (
+      isTruthy(body?.autoTiming)
+      || isTruthy(body?.allowAutoTiming)
+      || ['auto', 'free', 'director', 'a11'].includes(timingMode)
+    )
+  );
+  const hasLegacyFramesOnly = (
+    hasOwnPositiveNumber(body, ['frames'])
+    && !hasOwnPositiveNumber(body, ['frameCount', 'frame_count'])
+  );
+  const legacyMiniClipTiming = Boolean(
+    !strictTiming
+    && !hasTextDuration
+    && !hasTextFps
+    && !hasTextFrameCount
+    && hasLegacyFramesOnly
+    && bodyFrameCount > 0
+    && bodyFrameCount <= 2
+    && (!bodyFps || bodyFps <= 1)
+    && !bodyDurationSeconds
+  );
+  const legacyDefaultTiming = Boolean(
+    !strictTiming
+    && !hasTextDuration
+    && !hasTextFps
+    && !hasTextFrameCount
+    && hasBodyDuration
+    && hasBodyFps
+    && !hasBodyFrameCount
+    && bodyDurationSeconds > 0
+    && bodyDurationSeconds <= 3
+    && bodyFps > 0
+    && bodyFps <= 1
+  );
   const durationLooksDefault = bodyDurationSeconds > 0 && bodyDurationSeconds === Number(config.defaultDurationSeconds || 0);
   const fpsLooksDefault = bodyFps > 0 && bodyFps === Number(config.defaultFps || 0);
+  const bodyDurationLooksAuto = autoTimingRequested || legacyMiniClipTiming || legacyDefaultTiming || durationLooksDefault;
+  const bodyFpsLooksAuto = autoTimingRequested || legacyMiniClipTiming || legacyDefaultTiming || fpsLooksDefault;
+  const bodyFrameCountLooksAuto = autoTimingRequested || legacyMiniClipTiming || legacyDefaultTiming;
   const explicitDuration = Boolean(
     hasTextDuration
-    || (hasBodyDuration && (strictTiming || !durationLooksDefault))
+    || (hasBodyDuration && (strictTiming || !bodyDurationLooksAuto))
   );
   const explicitFps = Boolean(
     hasTextFps
-    || (hasBodyFps && (strictTiming || !fpsLooksDefault))
+    || (hasBodyFps && (strictTiming || !bodyFpsLooksAuto))
   );
   const explicitFrameCount = Boolean(
     hasTextFrameCount
-    || hasBodyFrameCount
+    || (hasBodyFrameCount && (strictTiming || !bodyFrameCountLooksAuto))
   );
   const motionPlan = resolveVideoMotionPlan(prompt, config);
+  const effectiveParsedDurationSeconds = explicitDuration ? parsedDurationSeconds : 0;
+  const effectiveParsedFps = explicitFps ? parsedFps : 0;
+  const effectiveParsedFrameCount = explicitFrameCount ? parsedFrameCount : 0;
 
   let durationSeconds = clampNumber(
-    parsedDurationSeconds || config.defaultDurationSeconds,
+    effectiveParsedDurationSeconds || config.defaultDurationSeconds,
     1,
     config.maxDurationSeconds,
     config.defaultDurationSeconds
   );
   let fps = clampNumber(
-    parsedFps || config.defaultFps,
+    effectiveParsedFps || config.defaultFps,
     1,
     config.maxFps,
     config.defaultFps
@@ -1360,7 +1424,7 @@ function resolveVideoTimingPlan({
   let source = 'request_or_defaults';
 
   if (explicitFrameCount) {
-    frameCount = Math.max(2, Math.min(config.maxRenderFrames, Math.round(parsedFrameCount || 2)));
+    frameCount = Math.max(2, Math.min(config.maxRenderFrames, Math.round(effectiveParsedFrameCount || 2)));
     if (!explicitFps && motionPlan.key !== 'generic') {
       fps = clampNumber(motionPlan.preferredFps, 1, config.maxFps, config.defaultFps);
     }
@@ -1557,22 +1621,69 @@ function guessContentTypeFromPath(filePath = '') {
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
   if (ext === '.webp') return 'image/webp';
   if (ext === '.mp4') return 'video/mp4';
+  if (ext === '.ppm') return 'image/x-portable-pixmap';
   return 'image/png';
+}
+
+function encodePublicPath(value = '') {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function buildUrlFromPublicPath(req, publicPath = '') {
+  const normalizedPath = String(publicPath || '').trim();
+  if (!normalizedPath) return '';
+  const origin = resolveRequestOrigin(req);
+  return origin ? `${origin}${normalizedPath.startsWith('/') ? '' : '/'}${normalizedPath}` : normalizedPath;
+}
+
+function buildRuntimePublicUrl(req, absolutePath) {
+  const runtimeRoots = [
+    process.env.A11_RUNTIME_ROOT,
+  ];
+
+  const workspaceRoot = String(process.env.A11_WORKSPACE_ROOT || '').trim();
+  if (workspaceRoot) {
+    runtimeRoots.push(path.join(workspaceRoot, 'runtime'));
+  }
+  runtimeRoots.push(path.resolve(process.cwd(), '..', '..', '..', 'runtime'));
+
+  for (const root of runtimeRoots) {
+    const rawRoot = String(root || '').trim();
+    if (!rawRoot) continue;
+    const resolvedRoot = path.resolve(rawRoot);
+    const relativePath = String(path.relative(resolvedRoot, absolutePath) || '').replace(/\\/g, '/');
+    if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) continue;
+    return buildUrlFromPublicPath(req, `/files/runtime/${encodePublicPath(relativePath)}`);
+  }
+
+  return '';
 }
 
 function buildLocalPublicUrl(req, candidatePath) {
   const absolutePath = path.resolve(String(candidatePath || '').trim());
   if (!absolutePath || !fs.existsSync(absolutePath)) return '';
 
+  const runtimeUrl = buildRuntimePublicUrl(req, absolutePath);
+  if (runtimeUrl) return runtimeUrl;
+
   const backendWorkspaceRoot = path.resolve(
     String(process.env.A11_WORKSPACE_ROOT || path.resolve(process.cwd(), '..', '..')).trim()
   );
   const relativePath = String(path.relative(backendWorkspaceRoot, absolutePath) || '').replace(/\\/g, '/');
-  if (!relativePath || relativePath.startsWith('..')) return '';
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) return '';
 
-  const publicPath = `/files/${relativePath.split('/').filter(Boolean).map((segment) => encodeURIComponent(segment)).join('/')}`;
-  const origin = resolveRequestOrigin(req);
-  return origin ? `${origin}${publicPath}` : publicPath;
+  return buildUrlFromPublicPath(req, `/files/${encodePublicPath(relativePath)}`);
+}
+
+function buildPublicR2ProxyUrl(req, storageKey = '') {
+  const normalizedStorageKey = encodePublicPath(storageKey);
+  if (!normalizedStorageKey) return '';
+  return buildUrlFromPublicPath(req, `/api/public/r2/${normalizedStorageKey}`);
 }
 
 function isLoopbackUrl(value = '') {
@@ -1660,6 +1771,83 @@ async function downloadBinary(url, fetchImpl = defaultFetch) {
     throw new Error(`video_frame_download_failed:${response.status}`);
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+function resolveGeneratedImageLocalPath(sdResult = {}) {
+  const candidate = String(
+    sdResult?.output_path
+    || sdResult?.outputPath
+    || sdResult?.local_path
+    || sdResult?.localPath
+    || sdResult?.result?.output_path
+    || sdResult?.result?.outputPath
+    || sdResult?.result?.local_path
+    || sdResult?.result?.localPath
+    || sdResult?.file?.path
+    || sdResult?.file?.localPath
+    || ''
+  ).trim();
+  if (!candidate) return '';
+  const resolved = path.resolve(candidate);
+  return fs.existsSync(resolved) ? resolved : '';
+}
+
+function summarizeFrameGenerationFailure(sdResult = {}) {
+  if (!sdResult || typeof sdResult !== 'object') {
+    return { message: String(sdResult || '').trim() || null };
+  }
+  const upstream = sdResult.upstream && typeof sdResult.upstream === 'object'
+    ? {
+        provider: sdResult.upstream.provider || null,
+        status: Number(sdResult.upstream.status || 0) || null,
+      }
+    : null;
+  return {
+    ok: sdResult.ok === undefined ? null : Boolean(sdResult.ok),
+    error: sdResult.error || sdResult.code || null,
+    code: sdResult.code || null,
+    message: sdResult.message || null,
+    mode: sdResult.mode || sdResult.backend || null,
+    provider: sdResult.provider || null,
+    upstream,
+  };
+}
+
+function buildSyntheticVideoFrameBuffer({
+  width,
+  height,
+  frameIndex = 0,
+  frameCount = 1,
+  prompt = '',
+} = {}) {
+  const safeWidth = Math.max(64, Math.min(1920, Math.round(Number(width || 768) || 768)));
+  const safeHeight = Math.max(64, Math.min(1920, Math.round(Number(height || 768) || 768)));
+  const safeFrameCount = Math.max(1, Math.round(Number(frameCount || 1) || 1));
+  const progress = safeFrameCount <= 1 ? 0 : frameIndex / (safeFrameCount - 1);
+  const seed = crypto.createHash('sha1').update(String(prompt || 'a11-video')).digest();
+  const accentR = seed[0] || 162;
+  const accentG = seed[7] || 88;
+  const accentB = seed[13] || 255;
+  const header = Buffer.from(`P6\n${safeWidth} ${safeHeight}\n255\n`, 'ascii');
+  const pixels = Buffer.allocUnsafe(safeWidth * safeHeight * 3);
+  const waveCenter = 0.18 + (progress * 0.64);
+
+  let offset = 0;
+  for (let y = 0; y < safeHeight; y += 1) {
+    const fy = safeHeight <= 1 ? 0 : y / (safeHeight - 1);
+    for (let x = 0; x < safeWidth; x += 1) {
+      const fx = safeWidth <= 1 ? 0 : x / (safeWidth - 1);
+      const dx = fx - waveCenter;
+      const dy = fy - 0.5;
+      const glow = Math.max(0, 1 - Math.sqrt((dx * dx * 3.4) + (dy * dy * 1.8)));
+      const scan = ((x + y + frameIndex * 17) % 23) < 2 ? 18 : 0;
+      pixels[offset++] = Math.max(0, Math.min(255, Math.round(12 + accentR * glow + fx * 24 + scan)));
+      pixels[offset++] = Math.max(0, Math.min(255, Math.round(8 + accentG * glow + fy * 28 + scan)));
+      pixels[offset++] = Math.max(0, Math.min(255, Math.round(20 + accentB * glow + (1 - fx) * 36 + scan)));
+    }
+  }
+
+  return Buffer.concat([header, pixels]);
 }
 
 function resolveTtsBaseUrl(env = process.env) {
@@ -2003,6 +2191,7 @@ function frameNeedsPoseRewrite(framePlan = {}, motionProfile = 'generic') {
 function resolveVideoFrameStrengthProfile({
   motionProfile = 'generic',
   scene = {},
+  config = {},
 } = {}) {
   const normalizedMotionProfile = String(motionProfile || 'generic').trim() || 'generic';
   const highMotionProfile = [
@@ -2019,13 +2208,41 @@ function resolveVideoFrameStrengthProfile({
     'gesture_loop',
     'subtle_loop',
   ].includes(normalizedMotionProfile);
+  const referenceStrength = clampNumber(
+    config?.frameReferenceStrength,
+    0.05,
+    0.6,
+    scene?.sceneKey === 'solo_face' ? 0.14 : 0.18
+  );
+  const previousFrameStrength = clampNumber(
+    config?.frameInitStrength,
+    0.05,
+    0.6,
+    highMotionProfile ? 0.26 : (mediumMotionProfile ? 0.24 : 0.22)
+  );
+  const previousPoseStrength = clampNumber(
+    previousFrameStrength + (highMotionProfile ? 0.12 : 0.08),
+    0.12,
+    0.6,
+    highMotionProfile ? 0.38 : 0.32
+  );
+  const segmentStrength = clampNumber(
+    previousFrameStrength + (highMotionProfile ? 0.16 : 0.12),
+    0.12,
+    0.6,
+    highMotionProfile ? 0.42 : 0.36
+  );
+  const checkpointStrength = clampNumber(
+    previousFrameStrength + (highMotionProfile ? 0.22 : 0.16),
+    0.12,
+    0.6,
+    highMotionProfile ? 0.46 : 0.4
+  );
   const referenceAnchorPlan = {
     mode: 'auto',
     profile: 'preserve',
     reason: 'video_anchor_reference',
-    strength: resolveStrengthFromProfile('preserve', {
-      bias: scene?.sceneKey === 'solo_face' ? 0.18 : 0.28,
-    }),
+    strength: referenceStrength,
   };
   referenceAnchorPlan.retryStrength = resolveRetryStrength(referenceAnchorPlan.profile, referenceAnchorPlan.strength);
 
@@ -2033,9 +2250,7 @@ function resolveVideoFrameStrengthProfile({
     mode: 'auto',
     profile: 'preserve',
     reason: 'video_anchor_reanchor',
-    strength: resolveStrengthFromProfile('preserve', {
-      bias: scene?.sceneKey === 'solo_face' ? 0.1 : 0.18,
-    }),
+    strength: clampNumber(referenceStrength - 0.04, 0.05, 0.6, referenceStrength),
   };
   referenceReanchorPlan.retryStrength = resolveRetryStrength(referenceReanchorPlan.profile, referenceReanchorPlan.strength);
 
@@ -2043,9 +2258,7 @@ function resolveVideoFrameStrengthProfile({
     mode: 'auto',
     profile: 'motion_continuity',
     reason: 'video_frame_to_frame_continuity',
-    strength: resolveStrengthFromProfile('motion_continuity', {
-      bias: highMotionProfile ? 0.58 : (mediumMotionProfile ? 0.42 : 0.28),
-    }),
+    strength: previousFrameStrength,
   };
   previousFramePlan.retryStrength = resolveRetryStrength(previousFramePlan.profile, previousFramePlan.strength);
 
@@ -2053,9 +2266,7 @@ function resolveVideoFrameStrengthProfile({
     mode: 'auto',
     profile: 'balanced',
     reason: 'video_pose_shift_from_previous_frame',
-    strength: resolveStrengthFromProfile('balanced', {
-      bias: highMotionProfile ? 0.56 : (mediumMotionProfile ? 0.48 : 0.42),
-    }),
+    strength: previousPoseStrength,
   };
   previousPoseShiftPlan.retryStrength = resolveRetryStrength(previousPoseShiftPlan.profile, previousPoseShiftPlan.strength);
 
@@ -2063,9 +2274,7 @@ function resolveVideoFrameStrengthProfile({
     mode: 'auto',
     profile: 'motion_continuity',
     reason: 'video_segment_progression',
-    strength: resolveStrengthFromProfile('motion_continuity', {
-      bias: highMotionProfile ? 0.72 : (mediumMotionProfile ? 0.58 : 0.48),
-    }),
+    strength: segmentStrength,
   };
   segmentAnchorPlan.retryStrength = resolveRetryStrength(segmentAnchorPlan.profile, segmentAnchorPlan.strength);
 
@@ -2073,9 +2282,7 @@ function resolveVideoFrameStrengthProfile({
     mode: 'auto',
     profile: 'balanced',
     reason: 'video_pose_shift_from_anchor',
-    strength: resolveStrengthFromProfile('balanced', {
-      bias: highMotionProfile ? 0.66 : (mediumMotionProfile ? 0.56 : 0.48),
-    }),
+    strength: clampNumber(segmentStrength + 0.04, 0.12, 0.6, segmentStrength),
   };
   segmentPoseShiftPlan.retryStrength = resolveRetryStrength(segmentPoseShiftPlan.profile, segmentPoseShiftPlan.strength);
 
@@ -2083,9 +2290,7 @@ function resolveVideoFrameStrengthProfile({
     mode: 'auto',
     profile: 'balanced',
     reason: 'video_checkpoint_progression',
-    strength: resolveStrengthFromProfile('balanced', {
-      bias: highMotionProfile ? 0.76 : (mediumMotionProfile ? 0.64 : 0.54),
-    }),
+    strength: checkpointStrength,
   };
   checkpointPlan.retryStrength = resolveRetryStrength(checkpointPlan.profile, checkpointPlan.strength);
 
@@ -2106,6 +2311,7 @@ async function runFfmpegAssembly({
   format,
   framesDir,
   outputPath,
+  frameExtension = 'png',
   mp4Codec = 'libx264',
   mp4Preset = 'medium',
   mp4Quality = 19,
@@ -2116,6 +2322,7 @@ async function runFfmpegAssembly({
     format,
     framesDir,
     outputPath,
+    frameExtension,
     mp4Codec,
     mp4Preset,
     mp4Quality,
@@ -2153,12 +2360,14 @@ function buildFfmpegAssemblyArgs({
   format,
   framesDir,
   outputPath,
+  frameExtension = 'png',
   mp4Codec = 'libx264',
   mp4Preset = 'medium',
   mp4Quality = 19,
   audioPath = '',
 }) {
-  const inputPattern = path.join(framesDir, 'frame-%04d.png');
+  const safeFrameExtension = normalizeVideoFrameExtension(frameExtension);
+  const inputPattern = path.join(framesDir, `frame-%04d.${safeFrameExtension}`);
   const normalizedAudioPath = String(audioPath || '').trim();
   const audioArgs = normalizedAudioPath && format === 'mp4'
     ? ['-i', normalizedAudioPath]
@@ -2418,6 +2627,7 @@ function createGenerateVideoHandler(overrides = {}) {
     } = resolveVideoFrameStrengthProfile({
       motionProfile: sequencePlan?.motionProfile || request?.timingPlan?.motionProfile || 'generic',
       scene: referenceAnalysis?.scene || {},
+      config: request.config || {},
     });
     const referenceAnchorPlan = referenceAnalysis?.strengthPlan && Number.isFinite(Number(referenceAnalysis.strengthPlan.strength))
       ? referenceAnalysis.strengthPlan
@@ -2490,6 +2700,10 @@ function createGenerateVideoHandler(overrides = {}) {
     let anchorFrameUrl = String(effectiveInitialReference.initImageUrl || '').trim();
     let anchorFramePath = String(effectiveInitialReference.initImagePath || '').trim();
     const preferRemoteFrameReferences = hasSdProxyConfigured(process.env);
+    const videoWarnings = [];
+    let syntheticFallbackUsed = false;
+    let syntheticFallbackReason = null;
+    let frameAssemblyExtension = normalizeVideoFrameExtension(request.config.frameExtension || 'png');
 
     for (let frameIndex = 0; frameIndex < request.frameCount; frameIndex += 1) {
       const framePlan = normalizeStoryboardBeat(frameStoryboard[frameIndex] || {
@@ -2580,34 +2794,80 @@ function createGenerateVideoHandler(overrides = {}) {
         + ` prompt_2="${framePromptPlan.prompt_2}"`
         + ` prompt_3="${framePromptPlan.prompt_3}"`
       );
-      const sdResult = await generateSd({
-        req,
-        prompt: framePromptPlan.prompt,
-        body: frameBody,
-      });
-      const frameUrl = String(resolveGeneratedImageUrl(sdResult) || '').trim();
-      if (!frameUrl) {
-        const error = new Error('video_frame_generation_failed');
-        error.statusCode = 502;
-        error.payload = {
-          ok: false,
-          error: 'video_frame_generation_failed',
-          frameIndex,
-          result: sdResult,
-        };
-        throw error;
+      let frameUrl = '';
+      let generatedFramePath = '';
+      let syntheticFrame = false;
+      let summarizedResult = null;
+      if (!syntheticFallbackUsed) {
+        const sdResult = await generateSd({
+          req,
+          prompt: framePromptPlan.prompt,
+          body: frameBody,
+        });
+        frameUrl = String(resolveGeneratedImageUrl(sdResult) || '').trim();
+        generatedFramePath = resolveGeneratedImageLocalPath(sdResult);
+        if (!frameUrl && !generatedFramePath) {
+          summarizedResult = summarizeFrameGenerationFailure(sdResult);
+          const canUseSyntheticFallback = frameIndex === 0 && isSyntheticVideoFallbackEnabled(process.env);
+          if (!canUseSyntheticFallback) {
+            const error = new Error('video_frame_generation_failed');
+            error.statusCode = 502;
+            error.payload = {
+              ok: false,
+              error: 'video_frame_generation_failed',
+              frameIndex,
+              frameNumber: frameIndex + 1,
+              message: summarizedResult.message || summarizedResult.error || 'La generation image de cette frame n a pas renvoye d URL publique exploitable.',
+              result: summarizedResult,
+            };
+            throw error;
+          }
+
+          syntheticFallbackUsed = true;
+          syntheticFallbackReason = summarizedResult.message || summarizedResult.error || 'image_provider_unavailable';
+          frameAssemblyExtension = 'ppm';
+          videoWarnings.push({
+            code: 'video_synthetic_fallback',
+            frameNumber: frameIndex + 1,
+            reason: syntheticFallbackReason,
+          });
+          console.warn(
+            `[A11][video] frame provider unavailable at frame ${frameIndex + 1};`
+            + ` using synthetic fallback (${syntheticFallbackReason})`
+          );
+        }
       }
 
-      const frameBuffer = await downloadBinary(frameUrl, fetchImpl);
-      const framePath = path.join(workingPaths.framesDir, `frame-${String(frameIndex).padStart(4, '0')}.png`);
+      if (syntheticFallbackUsed) {
+        syntheticFrame = true;
+        frameUrl = '';
+        generatedFramePath = '';
+      }
+
+      const frameBuffer = syntheticFrame
+        ? buildSyntheticVideoFrameBuffer({
+            width: frameWidth,
+            height: frameHeight,
+            frameIndex,
+            frameCount: request.frameCount,
+            prompt: request.prompt,
+          })
+        : (generatedFramePath
+          ? await fsp.readFile(generatedFramePath)
+          : await downloadBinary(frameUrl, fetchImpl));
+      const frameExtension = frameAssemblyExtension;
+      const framePath = path.join(workingPaths.framesDir, `frame-${String(frameIndex).padStart(4, '0')}.${frameExtension}`);
       try {
         await fsp.writeFile(framePath, frameBuffer);
-        const writtenFrameMeta = await probeImg2ImgSource({ imagePath: framePath });
+        const writtenFrameMeta = syntheticFrame
+          ? { width: frameWidth, height: frameHeight }
+          : await probeImg2ImgSource({ imagePath: framePath });
         const actualFrameWidth = Number(writtenFrameMeta?.width || 0) || frameWidth;
         const actualFrameHeight = Number(writtenFrameMeta?.height || 0) || frameHeight;
         console.log(
           `[A11][video-runtime] Frame ${frameIndex + 1}/${request.frameCount} written: ${framePath}`
           + ` (${frameBuffer.length} bytes, ${actualFrameWidth}x${actualFrameHeight})`
+          + (syntheticFrame ? ' synthetic_fallback=true' : '')
         );
         if (actualFrameWidth !== frameWidth || actualFrameHeight !== frameHeight) {
           console.warn(
@@ -2619,19 +2879,22 @@ function createGenerateVideoHandler(overrides = {}) {
         console.error(`[A11][video-runtime] Erreur lors de l'écriture de la frame ${frameIndex + 1}: ${err && err.message}`);
         throw err;
       }
+      const framePublicUrl = frameUrl || buildLocalPublicUrl(req, framePath) || null;
       if (frameIndex === 0) {
-        firstFrameAnalysis = await maybeDescribeFirstFrameWithJanus(framePath, 'image/png', request.config);
+        firstFrameAnalysis = syntheticFrame
+          ? null
+          : await maybeDescribeFirstFrameWithJanus(framePath, guessContentTypeFromPath(framePath), request.config);
         if (!(anchorFramePath || anchorFrameUrl)) {
           anchorFramePath = framePath;
-          anchorFrameUrl = frameUrl;
+          anchorFrameUrl = framePublicUrl || '';
         }
       }
 
-      previousFrameUrl = frameUrl;
+      previousFrameUrl = framePublicUrl || '';
       previousFramePath = framePath;
       if (framePlan.checkpoint) {
         anchorFramePath = framePath;
-        anchorFrameUrl = frameUrl;
+        anchorFrameUrl = framePublicUrl || '';
         console.log(
           `[A11][video-checkpoint] frame=${frameIndex + 1} beat=${String(framePlan.label || 'continuite').trim() || 'continuite'} source=${framePath}`
         );
@@ -2647,9 +2910,10 @@ function createGenerateVideoHandler(overrides = {}) {
         soundCues: Array.isArray(framePlan.soundCues) ? framePlan.soundCues.slice() : [],
         continuityLocks: Array.isArray(framePlan.continuityLocks) ? framePlan.continuityLocks.slice() : [],
         sceneContext: String(framePlan.sceneContext || '').trim() || null,
-        url: frameUrl,
+        url: framePublicUrl,
         path: framePath,
         initSource: initSourceLabel,
+        syntheticFallback: syntheticFrame,
         motionProfile: sequencePlan.motionProfile,
       });
     }
@@ -2688,6 +2952,7 @@ function createGenerateVideoHandler(overrides = {}) {
       format: request.format,
       framesDir: workingPaths.framesDir,
       outputPath,
+      frameExtension: frameAssemblyExtension,
       mp4Codec: request.config.mp4Codec,
       mp4Preset: request.config.mp4Preset,
       mp4Quality: request.config.mp4Quality,
@@ -2733,7 +2998,8 @@ function createGenerateVideoHandler(overrides = {}) {
     }
 
     const localUrl = buildLocalPublicUrl(req, outputPath);
-    const videoUrl = String(uploaded?.url || localUrl || '').trim();
+    const r2ProxyUrl = buildPublicR2ProxyUrl(req, uploaded?.storageKey || '');
+    const videoUrl = String(uploaded?.url || r2ProxyUrl || localUrl || '').trim();
 
     return {
       ok: true,
@@ -2753,13 +3019,19 @@ function createGenerateVideoHandler(overrides = {}) {
       width: frameWidth,
       height: frameHeight,
       filename,
+      warnings: videoWarnings,
+      syntheticFallbackUsed,
+      syntheticFallbackReason,
       url: videoUrl || null,
       video_url: videoUrl || null,
+      local_url: localUrl || null,
+      r2_proxy_url: r2ProxyUrl || null,
       audio_url: audioTrack?.url || null,
       audioUrl: audioTrack?.url || null,
       audioText: audioTrack?.text || null,
       hasAudio: Boolean(audioTrack),
       outputPath,
+      storage_key: uploaded?.storageKey || null,
       audioPath: audioTrack?.path || null,
       firstFrameAnalysis,
       sourceMode: effectiveInitialReference.sourceMode || (!hasExplicitSource ? 'prompt_only' : null),
@@ -2801,6 +3073,7 @@ function createGenerateVideoHandler(overrides = {}) {
         index: frame.index,
         url: frame.url,
         initSource: frame.initSource,
+        syntheticFallback: Boolean(frame.syntheticFallback),
         prompt: frame.prompt,
         prompt_2: frame.prompt_2,
         prompt_3: frame.prompt_3,
