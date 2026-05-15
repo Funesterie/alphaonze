@@ -63,7 +63,7 @@ function resolveRequestOrigin(req = null) {
     || /^10\./.test(hostWithoutPort)
     || /^192\.168\./.test(hostWithoutPort)
     || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostWithoutPort);
-  const proto = !forwardedProto && rawProto === 'http' && !isLocalHost ? 'https' : rawProto;
+  const proto = rawProto === 'http' && !isLocalHost ? 'https' : rawProto;
   return `${proto || 'http'}://${forwardedHost}`;
 }
 
