@@ -3597,3 +3597,418 @@ html.a11-auth-page-root body {
   70% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
 }
+
+
+/* ================================================================
+   NOSSEN v2 — Design system A11 / Kaen44
+   Priorité haute (en fin de fichier) — surclasse le legacy.
+   ================================================================ */
+
+/* --- Tokens --- */
+:root {
+  --n-bg:           #060c17;
+  --n-surface:      #091422;
+  --n-surface-2:    #0c1a2e;
+  --n-border:       rgba(255,255,255,0.06);
+  --n-border-mid:   rgba(255,255,255,0.10);
+  --n-fg:           #dde9f6;
+  --n-fg-dim:       #5e748c;
+  --n-fg-muted:     #3a5168;
+  --n-r-xs:         4px;
+  --n-r-sm:         8px;
+  --n-r-md:         12px;
+  --n-r-lg:         18px;
+  --n-r-pill:       9999px;
+  /* A11 */
+  --a11-c1:         #22d3ee;
+  --a11-c2:         #38bdf8;
+  --a11-c3:         #818cf8;
+  --a11-glow:       rgba(34,211,238,0.18);
+  /* Kaen44 */
+  --kaen-c1:        #f59e0b;
+  --kaen-c2:        #ef4444;
+  --kaen-c3:        #e879f9;
+  --kaen-glow:      rgba(245,158,11,0.16);
+}
+
+/* --- Base --- */
+body {
+  background: var(--n-bg) !important;
+  font-feature-settings: "kern" 1, "liga" 1;
+  letter-spacing: -0.008em;
+}
+
+/* ----------------------------------------------------------------
+   HEADER
+---------------------------------------------------------------- */
+.header {
+  position: relative !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+/* Ligne de couleur en haut du header — A11 */
+.header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--a11-c1) 0%,
+    var(--a11-c2) 40%,
+    var(--a11-c3) 70%,
+    transparent 100%
+  );
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.4s ease;
+}
+
+/* Kaen44 override */
+[data-surface="kaen44"] .header::before {
+  background: linear-gradient(90deg,
+    var(--kaen-c2) 0%,
+    var(--kaen-c1) 45%,
+    var(--kaen-c3) 80%,
+    transparent 100%
+  );
+  opacity: 0.7;
+}
+
+/* ----------------------------------------------------------------
+   SIDEBAR
+---------------------------------------------------------------- */
+.sidebar {
+  background: rgba(6,12,23,0.97) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+  border-right: 1px solid var(--n-border) !important;
+}
+
+/* Items de conversation */
+.chat-item {
+  border-bottom: none !important;
+  border-radius: var(--n-r-sm);
+  margin: 2px 8px;
+  padding: 8px 10px;
+  transition: background 0.13s ease, box-shadow 0.13s ease;
+  cursor: pointer;
+}
+.chat-item:hover:not(.active) {
+  background: rgba(255,255,255,0.04);
+}
+.chat-item.active {
+  background: rgba(34,211,238,0.07) !important;
+  box-shadow: inset 2px 0 0 var(--a11-c1);
+}
+[data-surface="kaen44"] .chat-item.active {
+  background: rgba(245,158,11,0.08) !important;
+  box-shadow: inset 2px 0 0 var(--kaen-c1);
+}
+.chat-item .name {
+  font-size: 13px;
+  color: var(--n-fg);
+}
+.chat-item .time {
+  font-size: 11px;
+  color: var(--n-fg-dim);
+}
+
+/* Scrollbars sidebar */
+.chats::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar { width: 3px; }
+.chats::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.chats::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.07);
+  border-radius: 4px;
+}
+.chats::-webkit-scrollbar-thumb:hover,
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.14);
+}
+
+/* ----------------------------------------------------------------
+   ZONE CHAT — scroll-frame
+---------------------------------------------------------------- */
+.scroll-frame {
+  background: #060c17 !important;
+  border: 1px solid rgba(255,255,255,0.05) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.5) inset,
+    0 8px 40px rgba(0,0,0,0.35) !important;
+}
+
+/* Scrollbar chat */
+.scroll-frame::-webkit-scrollbar { width: 4px; }
+.scroll-frame::-webkit-scrollbar-track { background: transparent; }
+.scroll-frame::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.09);
+  border-radius: 4px;
+}
+.scroll-frame::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+/* ----------------------------------------------------------------
+   MESSAGES — bulles (système .row / .bubble)
+---------------------------------------------------------------- */
+.row {
+  margin-bottom: 14px;
+  animation: n-msg-in 0.22s cubic-bezier(.22,.61,.36,1) both;
+}
+
+@keyframes n-msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.row .bubble {
+  max-width: 76%;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.68;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Bulle IA */
+.row.assistant .bubble {
+  background: linear-gradient(155deg, #0d1c30 0%, #091320 100%) !important;
+  color: #cfe0f0 !important;
+  border: 1px solid rgba(34,211,238,0.09) !important;
+  border-radius: var(--n-r-xs) var(--n-r-md) var(--n-r-md) var(--n-r-md) !important;
+  box-shadow:
+    0 2px 18px rgba(0,0,0,0.35),
+    0 0 0 1px rgba(34,211,238,0.04) inset;
+}
+
+/* Bulle utilisateur — A11 */
+.row.user .bubble {
+  background: linear-gradient(145deg, #0c4460 0%, #0e5478 50%, #0f6292 100%) !important;
+  color: #ddf2ff !important;
+  border: 1px solid rgba(56,189,248,0.22) !important;
+  border-radius: var(--n-r-md) var(--n-r-xs) var(--n-r-md) var(--n-r-md) !important;
+  box-shadow: 0 2px 14px rgba(14,84,120,0.35);
+}
+
+/* Bulle utilisateur — Kaen44 */
+[data-surface="kaen44"] .row.user .bubble {
+  background: linear-gradient(145deg, #5a1e06 0%, #7c2a08 50%, #9a3410 100%) !important;
+  color: #ffe8d4 !important;
+  border: 1px solid rgba(245,158,11,0.2) !important;
+  box-shadow: 0 2px 14px rgba(154,52,16,0.3);
+}
+
+/* IA Kaen44 — légèrement plus chaud */
+[data-surface="kaen44"] .row.assistant .bubble {
+  background: linear-gradient(155deg, #1a1008 0%, #110c06 100%) !important;
+  border: 1px solid rgba(245,158,11,0.07) !important;
+}
+
+/* ----------------------------------------------------------------
+   MESSAGES — nouveau système (.message)
+---------------------------------------------------------------- */
+.message {
+  max-width: 840px;
+  margin: 0 auto 16px;
+  padding: 14px 18px;
+  border-radius: var(--n-r-md);
+  line-height: 1.72;
+  border: 1px solid rgba(255,255,255,0.05);
+  background: linear-gradient(155deg, #0a1827 0%, #081320 100%);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.message.user {
+  background: linear-gradient(145deg, #0c3e58 0%, #0e4f70 100%);
+  border-color: rgba(56,189,248,0.14);
+}
+.message .role {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n-fg-dim);
+  margin-bottom: 8px;
+}
+
+/* ----------------------------------------------------------------
+   COMPOSER / INPUT BAR
+---------------------------------------------------------------- */
+.composer {
+  background: linear-gradient(180deg, transparent 0%, rgba(6,12,23,0.6) 100%) !important;
+  border-top: 1px solid rgba(255,255,255,0.05) !important;
+  padding: 12px 14px 14px !important;
+}
+
+/* Textarea */
+.composer textarea,
+.a11-input-wrap textarea {
+  background: rgba(7,14,26,0.95) !important;
+  color: #cfe0f0 !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  border-radius: var(--n-r-md) !important;
+  padding: 12px 14px !important;
+  font-family: inherit !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+  caret-color: var(--a11-c1);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.composer textarea:focus,
+.a11-input-wrap textarea:focus {
+  outline: none !important;
+  border-color: rgba(34,211,238,0.28) !important;
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.06) !important;
+}
+[data-surface="kaen44"] .composer textarea:focus,
+[data-surface="kaen44"] .a11-input-wrap textarea:focus {
+  border-color: rgba(245,158,11,0.28) !important;
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.06) !important;
+  caret-color: var(--kaen-c1);
+}
+.composer textarea::placeholder {
+  color: var(--n-fg-muted) !important;
+}
+
+/* ----------------------------------------------------------------
+   BOUTON ENVOYER
+---------------------------------------------------------------- */
+.send-button {
+  border-radius: var(--n-r-md) !important;
+  border: none !important;
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 18px rgba(14,165,233,0.22) !important;
+  transition: filter 0.15s, transform 0.12s, box-shadow 0.15s !important;
+}
+.send-button:not(:disabled):hover {
+  filter: brightness(1.14) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 24px rgba(14,165,233,0.32) !important;
+}
+.send-button:not(:disabled):active {
+  transform: translateY(0) scale(0.96) !important;
+}
+.send-button:disabled {
+  opacity: 0.32 !important;
+  box-shadow: none !important;
+}
+[data-surface="kaen44"] .send-button {
+  background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%) !important;
+  box-shadow: 0 2px 18px rgba(245,158,11,0.2) !important;
+}
+[data-surface="kaen44"] .send-button:not(:disabled):hover {
+  box-shadow: 0 4px 24px rgba(245,158,11,0.32) !important;
+}
+
+/* ----------------------------------------------------------------
+   BOUTON MIC (inline)
+---------------------------------------------------------------- */
+.nossen-mic-btn {
+  background: rgba(10,20,36,0.92) !important;
+  border: 1.5px solid rgba(56,189,248,0.3) !important;
+  border-radius: var(--n-r-sm) !important;
+  color: #7dd3fc !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em;
+  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.12s !important;
+}
+.nossen-mic-btn:hover:not(:disabled) {
+  background: rgba(56,189,248,0.08) !important;
+  border-color: rgba(56,189,248,0.52) !important;
+  transform: translateY(-1px) !important;
+}
+.nossen-mic-btn.listening,
+.nossen-mic-btn.on {
+  background: rgba(14,116,144,0.85) !important;
+  color: #e0f9ff !important;
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 0 2px rgba(34,211,238,0.18), 0 0 20px rgba(34,211,238,0.28) !important;
+}
+[data-surface="kaen44"] .nossen-mic-btn {
+  border-color: rgba(245,158,11,0.3) !important;
+  color: #fcd34d !important;
+}
+[data-surface="kaen44"] .nossen-mic-btn:hover:not(:disabled) {
+  border-color: rgba(245,158,11,0.55) !important;
+  background: rgba(245,158,11,0.07) !important;
+}
+[data-surface="kaen44"] .nossen-mic-btn.listening,
+[data-surface="kaen44"] .nossen-mic-btn.on {
+  background: rgba(120,53,15,0.85) !important;
+  border-color: var(--kaen-c1) !important;
+  box-shadow: 0 0 0 2px rgba(245,158,11,0.18), 0 0 20px rgba(245,158,11,0.25) !important;
+}
+
+/* ----------------------------------------------------------------
+   GHOST BUTTONS
+---------------------------------------------------------------- */
+.btn.ghost {
+  background: transparent !important;
+  color: #7e99b4 !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  border-radius: var(--n-r-sm) !important;
+  transition: background 0.14s, color 0.14s, border-color 0.14s !important;
+}
+.btn.ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.05) !important;
+  color: #b8d0e8 !important;
+  border-color: rgba(255,255,255,0.16) !important;
+}
+.btn.ghost:disabled {
+  opacity: 0.38 !important;
+}
+
+/* ----------------------------------------------------------------
+   HINT / STATUS
+---------------------------------------------------------------- */
+.hint {
+  font-size: 11.5px;
+  color: var(--n-fg-dim);
+  letter-spacing: 0.01em;
+}
+.status.ok  { color: #34d399; }
+.status.bad { color: #f97316; }
+
+/* ----------------------------------------------------------------
+   ATTACHMENT CHIPS
+---------------------------------------------------------------- */
+.attachment-chip {
+  background: rgba(10,20,36,0.9);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: var(--n-r-pill);
+  color: #9bb8d0;
+  font-size: 12px;
+  padding: 4px 10px;
+  gap: 6px;
+  display: flex;
+  align-items: center;
+}
+.attachment-chip .remove {
+  color: #f87171;
+  opacity: 0.8;
+  cursor: pointer;
+  transition: opacity 0.14s;
+}
+.attachment-chip .remove:hover { opacity: 1; }
+
+/* ----------------------------------------------------------------
+   MINI POLICES / UTILITAIRES
+---------------------------------------------------------------- */
+.text-xs { font-size: 11px; }
+.tracking-wide { letter-spacing: 0.06em; }
+.uppercase { text-transform: uppercase; }
+.text-slate-400 { color: #6b809a; }
+
+/* ================================================================
+   FIN NOSSEN v2
+   ================================================================ */

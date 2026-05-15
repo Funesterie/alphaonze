@@ -2814,6 +2814,8 @@ export function App() {
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
+    // data-surface permet de cibler le thème en CSS sans inline styles
+    document.body.setAttribute('data-surface', isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
   }, [isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
