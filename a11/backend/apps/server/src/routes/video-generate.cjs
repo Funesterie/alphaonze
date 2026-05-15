@@ -5,6 +5,9 @@ const sdToolsModule = require('./sd-tools.cjs');
 const {
   createGenerateVideoHandler,
 } = require('../video/video-generate-runtime.cjs');
+const {
+  createEmergencyVideoAsset,
+} = require('../media/emergency-media.cjs');
 
 function normalizeProxyUrl(rawValue = '') {
   const value = String(rawValue || '').trim();
@@ -55,6 +58,27 @@ const asyncVideoJobs = new Map();
 
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isFalsey(value) {
+  return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
+function shouldUseEmergencyVideoFirst(body = {}) {
+  if (body?.forceRealVideo === true || isTruthy(body?.forceRealVideo)) return false;
+  if (body?.disableEmergencyVideo === true || isTruthy(body?.disableEmergencyVideo)) return false;
+  if (body?.emergencyVideo === true || isTruthy(body?.emergencyVideo)) return true;
+  const configured = process.env.A11_VIDEO_EMERGENCY_MODE || process.env.A11_EMERGENCY_MEDIA_MODE;
+  if (isFalsey(configured)) return false;
+  if (isTruthy(configured)) return true;
+  return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+}
+
+function shouldFallbackToEmergencyVideo(body = {}) {
+  if (body?.disableEmergencyVideo === true || isTruthy(body?.disableEmergencyVideo)) return false;
+  const configured = process.env.A11_VIDEO_EMERGENCY_FALLBACK;
+  if (isFalsey(configured)) return false;
+  return true;
 }
 
 function isAsyncVideoJobRequested(body = {}) {
@@ -511,14 +535,34 @@ function createVideoGenerateRouter(overrides = {}) {
   }
 
   async function generateVideoInternal(options = {}) {
+    const body = options.body || options.req?.body || {};
+    const prompt = options.prompt || body.prompt || body.message || '';
+    if (shouldUseEmergencyVideoFirst(body)) {
+      return createEmergencyVideoAsset({
+        prompt,
+        body,
+        req: options.req || null,
+      });
+    }
+
     const proxied = await generateViaProxy({
       req: options.req || null,
-      body: options.body || options.req?.body || {},
-      prompt: options.prompt || options.req?.body?.prompt || options.req?.body?.message || '',
+      body,
+      prompt,
     });
     if (proxied) return proxied;
 
-    return localGenerateVideoInternal(options);
+    try {
+      return await localGenerateVideoInternal(options);
+    } catch (error_) {
+      if (!shouldFallbackToEmergencyVideo(body)) throw error_;
+      console.error('[A11][video-route] emergency fallback after local failure:', String(error_?.message || error_));
+      return createEmergencyVideoAsset({
+        prompt,
+        body,
+        req: options.req || null,
+      });
+    }
   }
 
   function startAsyncVideoJob(req) {
@@ -568,6 +612,7 @@ function createVideoGenerateRouter(overrides = {}) {
         completedAt: Date.now(),
       });
     }).catch((error_) => {
+      console.error('[A11][video-job] generation failed:', String(error_?.stack || error_?.message || error_));
       asyncVideoJobs.set(jobId, {
         ...job,
         status: 'error',
@@ -594,6 +639,7 @@ function createVideoGenerateRouter(overrides = {}) {
       });
       return res.json(result);
     } catch (error_) {
+      console.error('[A11][video-route] generation failed:', String(error_?.stack || error_?.message || error_));
       return res.status(error_?.statusCode || 500).json(
         error_?.payload || {
           ok: false,
@@ -621,6 +667,26 @@ function createVideoGenerateRouter(overrides = {}) {
 
   router.post('/video/generate', express.json({ limit: '4mb' }), handleGenerate);
   router.post('/tools/generate_video', express.json({ limit: '4mb' }), handleGenerate);
+  router.get('/video/health', (_req, res) => {
+    res.json({
+      ok: true,
+      service: 'a11-video',
+      proxyConfigured: Boolean(resolveVideoProxyUrl()),
+      emergencyMode: shouldUseEmergencyVideoFirst({}),
+      emergencyFallback: shouldFallbackToEmergencyVideo({}),
+      asyncJobs: asyncVideoJobs.size,
+    });
+  });
+  router.get('/video/status', (_req, res) => {
+    res.json({
+      ok: true,
+      service: 'a11-video',
+      modes: ['generate', 'async-job', 'emergency-video'],
+      proxyConfigured: Boolean(resolveVideoProxyUrl()),
+      emergencyMode: shouldUseEmergencyVideoFirst({}),
+      asyncJobs: asyncVideoJobs.size,
+    });
+  });
   router.get('/video/jobs/:jobId', handleJobStatus);
   router.get('/tools/video_jobs/:jobId', handleJobStatus);
 

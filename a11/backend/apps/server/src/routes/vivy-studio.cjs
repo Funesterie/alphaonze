@@ -1,6 +1,17 @@
 'use strict';
 
 const express = require('express');
+const path = require('node:path');
+const {
+  buildMediaPipeline,
+  buildRoutingLines,
+  getMediaAgentRoleMatrix,
+} = require('../media/media-agent-roles.cjs');
+const {
+  createEmergencySongAsset,
+  createEmergencyVideoAsset,
+  getEmergencyMediaAssetPath,
+} = require('../media/emergency-media.cjs');
 
 const MODES = new Set(['voice', 'song', 'share']);
 
@@ -43,12 +54,9 @@ function compactUniqueLines(items, max = 2400) {
   return cleanText(lines.join('\n\n'), max);
 }
 
-function buildRouting() {
-  return [
-    'Vivy: je porte la voix, les paroles, la composition et l intention audio.',
-    'A11: je demande a A11 les images, la video, le montage et les assets.',
-    'Kaen44: je passe par Kaen44 pour l interface client, le suivi et le partage avec les personnes qui bossent dessus.',
-  ];
+function buildRouting(mode = 'song') {
+  const intent = mode === 'voice' ? 'audio' : mode === 'share' ? 'share' : 'song';
+  return buildRoutingLines(intent, { withAudio: true });
 }
 
 function buildVoiceProduction(input) {
@@ -210,7 +218,11 @@ function buildVivyStudioProduction(input) {
         ? buildShareProduction(input)
         : buildSongProduction(input);
 
-  const routing = buildRouting();
+  const routing = buildRouting(mode);
+  const mediaAgentRoles = getMediaAgentRoleMatrix();
+  const mediaPipeline = buildMediaPipeline(mode === 'voice' ? 'audio' : mode === 'share' ? 'share' : 'song', {
+    withAudio: true,
+  });
   const handoff = [
     production.brief,
     '',
@@ -228,30 +240,121 @@ function buildVivyStudioProduction(input) {
     brief: handoff,
     actions: production.actions,
     routing,
+    mediaAgentRoles,
+    mediaPipeline,
+    orchestration: {
+      mode: 'funesterie-media-roles-v1',
+      intent: mode,
+      promptOwner: mediaAgentRoles.prompt.primary,
+      audioOwner: mediaAgentRoles.audio.primary,
+      imageOwner: mediaAgentRoles.image.primary,
+      videoOwner: mediaAgentRoles.video.primary,
+      audioQaOwner: mediaAgentRoles.audio_qa.primary,
+      visionQaOwner: mediaAgentRoles.vision_qa.primary,
+      clientHandoffOwner: mediaAgentRoles.client_handoff.primary,
+    },
     tokenStored: false,
   };
 }
 
+function appendMediaToAssistant(assistant = '', media = null) {
+  if (!media?.url) return assistant;
+  const label = media.kind === 'video'
+    ? 'Clip video de secours'
+    : 'Maquette audio Vivy';
+  return [
+    assistant,
+    '',
+    'Media pret:',
+    `- ${label}: ${media.url}`,
+  ].join('\n');
+}
+
+async function buildEmergencyMediaForProduction(mode, input, req) {
+  if (input.disableEmergencyMedia === true || input.disableMedia === true) return null;
+  if (mode === 'song' || mode === 'voice') {
+    return createEmergencySongAsset(input, req);
+  }
+  if (mode === 'share') {
+    return createEmergencyVideoAsset({
+      prompt: input.shareInstruction || input.prompt || input.theme || input.songText || 'Vivy scene partage Funesterie',
+      body: {
+        ...input,
+        durationSeconds: input.durationSeconds || 4,
+        fps: input.fps || 12,
+        width: input.width || 512,
+        height: input.height || 512,
+      },
+      req,
+    });
+  }
+  return null;
+}
+
 function createVivyStudioRouter() {
   const router = express.Router();
+
+  router.get('/assets/:filename', async (req, res) => {
+    try {
+      const filePath = getEmergencyMediaAssetPath(req.params.filename);
+      if (!filePath) {
+        return res.status(404).json({ ok: false, error: 'asset_not_found' });
+      }
+      const extension = path.extname(filePath).toLowerCase();
+      if (extension !== '.wav' && extension !== '.mp4') {
+        return res.status(404).json({ ok: false, error: 'asset_not_found' });
+      }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.type(extension === '.mp4' ? 'video/mp4' : 'audio/wav');
+      return res.sendFile(filePath);
+    } catch {
+      return res.status(404).json({ ok: false, error: 'asset_not_found' });
+    }
+  });
 
   router.get('/health', (_req, res) => {
     res.json({
       ok: true,
       service: 'vivy-studio',
       modes: Array.from(MODES),
+      mediaAgentRoles: getMediaAgentRoleMatrix(),
+      pipelines: {
+        voice: buildMediaPipeline('audio', { withAudio: true }),
+        song: buildMediaPipeline('song', { withAudio: true }),
+        share: buildMediaPipeline('share', { withAudio: true }),
+      },
       tokenStored: false,
       writesByDefault: false,
+      emergencyMedia: {
+        audio: true,
+        video: true,
+      },
     });
   });
 
-  router.post('/produce', express.json({ limit: '96kb' }), (req, res) => {
+  router.post('/produce', express.json({ limit: '96kb' }), async (req, res) => {
     try {
       const input = req.body || {};
       const payload = buildVivyStudioProduction({
         ...input,
         shareToken: undefined,
       });
+      const media = await buildEmergencyMediaForProduction(payload.mode, input, req);
+      if (media?.url) {
+        payload.media = media;
+        if (media.kind === 'audio') {
+          payload.audio_url = media.audio_url;
+          payload.audioUrl = media.audioUrl;
+        }
+        if (media.kind === 'video') {
+          payload.video_url = media.video_url;
+          payload.videoUrl = media.videoUrl;
+        }
+        payload.assistant = appendMediaToAssistant(payload.assistant, media);
+        payload.brief = appendMediaToAssistant(payload.brief, media);
+        payload.summary = `${payload.summary} Media de secours pret.`;
+      }
       res.json(payload);
     } catch (error) {
       res.status(500).json({
