@@ -59,11 +59,12 @@ function resolveRequestOrigin(req = null) {
 }
 
 function buildPublicUrl(req, publicPath) {
+  const requestOrigin = resolveRequestOrigin(req);
   const origin = String(
-    process.env.PUBLIC_API_URL
+    requestOrigin
+    || process.env.PUBLIC_API_URL
     || process.env.API_URL
     || process.env.A11_SERVER_URL
-    || resolveRequestOrigin(req)
     || ''
   ).replace(/\/+$/, '');
   return origin ? `${origin}${publicPath}` : publicPath;
