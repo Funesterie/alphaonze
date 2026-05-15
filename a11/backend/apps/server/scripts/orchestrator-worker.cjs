@@ -28,7 +28,9 @@ const POLL_INTERVAL_MS = Number(process.env.ORCHESTRATOR_POLL_MS || 60_000); // 
 const STALE_TASK_THRESHOLD_MS = 30 * 60 * 1000; // 30 min sans update = relance
 const MAX_NUDGES = 3; // Max relances avant escalade
 const ORCHESTRATOR_ID = process.env.ORCHESTRATOR_ID || 'chatgpt-enterprise';
-const STATE_FILE = path.join(process.env.APPDATA || '.', 'Funesterie', 'orchestrator-state.json');
+const STATE_DIR = path.join(process.env.APPDATA || '.', 'Funesterie');
+const STATE_FILE = process.env.ORCHESTRATOR_STATE_FILE || path.join(STATE_DIR, 'task-dispatch-state.json');
+const LEGACY_STATE_FILE = path.join(STATE_DIR, 'orchestrator-state.json');
 
 function loadToken() {
   const candidates = [
@@ -95,15 +97,46 @@ async function mcpToolCall(toolName, args = {}) {
 // â”€â”€â”€ State Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function loadState() {
-  try {
-    if (fs.existsSync(STATE_FILE)) return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-  } catch { /* ignore */ }
+  for (const file of [STATE_FILE, LEGACY_STATE_FILE]) {
+    try {
+      if (fs.existsSync(file)) return normalizeState(JSON.parse(fs.readFileSync(file, 'utf8')));
+    } catch { /* ignore */ }
+  }
   return { tasks: [], lastPoll: null, nudges: {} };
 }
 
 function saveState(state) {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  fs.writeFileSync(STATE_FILE, JSON.stringify(normalizeState(state), null, 2));
+}
+
+function findOrCreateProjectThread() {
+  return 'discussion-2026-05-13T192551024Z-kiro-pc2-hooks-infra-status';
+}
+
+function normalizeState(raw) {
+  const state = raw && typeof raw === 'object' ? { ...raw } : {};
+  const assignments = Array.isArray(state.assignments) ? state.assignments : [];
+  const tasks = Array.isArray(state.tasks) && state.tasks.length
+    ? state.tasks
+    : assignments.map((assignment) => ({
+      id: String(assignment.taskId || assignment.id || ''),
+      text: String(assignment.taskText || assignment.text || ''),
+      status: assignment.status || 'queued',
+      keywords: assignment.keywords || [],
+      assignee: assignment.assignee || 'unassigned',
+      assignedAt: assignment.assignedAt || state.dispatchedAt || new Date().toISOString(),
+      lastUpdate: assignment.lastUpdate || state.dispatchedAt || new Date().toISOString(),
+    })).filter((task) => task.id);
+  return {
+    project: state.project || 'Funesterie',
+    threadId: state.threadId || findOrCreateProjectThread(state.project || 'Funesterie'),
+    dispatchedAt: state.dispatchedAt || null,
+    assignments,
+    tasks,
+    lastPoll: state.lastPoll || null,
+    nudges: state.nudges || {},
+  };
 }
 
 // â”€â”€â”€ Orchestration Logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

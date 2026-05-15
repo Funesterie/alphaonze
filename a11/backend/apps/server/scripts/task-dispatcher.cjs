@@ -171,7 +171,8 @@ function parseTasksFromMarkdown(content) {
   const lines = content.split('\n');
 
   for (const line of lines) {
-    const match = line.match(/^[-*]\s*\[([x ~-]?)\]\s*(?:\*?\s*)?(\d+(?:\.\d+)?)\s*(.+)/i);
+    const cleanLine = line.replace(/^\uFEFF/, '').trimStart();
+    const match = cleanLine.match(/^[-*]\s*\[([x ~-]?)\]\s*(?:\*?\s*)?(\d+(?:\.\d+)*)(?:[.)])?\s+(.+)/i);
     if (match) {
       const status = match[1].trim();
       const id = match[2];
@@ -214,23 +215,35 @@ function extractKeywords(text) {
 // â”€â”€â”€ Dispatch Logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function dispatchTasks(project, tasks) {
-  const agents = await getActiveAgents();
+  let agents = [];
+  try {
+    agents = await getActiveAgents();
+  } catch (err) {
+    console.error('[Dispatcher] Agent discovery failed, continuing unassigned:', err.message);
+  }
   if (agents.length === 0) {
     console.log('[Dispatcher] No active agents found. Posting tasks unassigned.');
   }
 
   const assignments = [];
+  const now = new Date().toISOString();
 
   for (const task of tasks) {
     if (task.status === 'done') continue;
 
     const agent = matchAgentToTask(agents, task.keywords);
     task.assignee = agent ? agent.name : 'unassigned';
+    task.status = task.status === 'not_started' ? 'queued' : task.status;
+    task.assignedAt = now;
+    task.lastUpdate = now;
     assignments.push({
       taskId: task.id,
       taskText: task.text,
+      status: task.status,
       assignee: task.assignee,
       keywords: task.keywords,
+      assignedAt: task.assignedAt,
+      lastUpdate: task.lastUpdate,
     });
   }
 
@@ -251,7 +264,15 @@ async function dispatchTasks(project, tasks) {
   }
 
   // Save state
-  saveState({ project, assignments, dispatchedAt: new Date().toISOString() });
+  saveState({
+    project,
+    threadId: findOrCreateProjectThread(project),
+    tasks,
+    assignments,
+    dispatchedAt: now,
+    lastPoll: null,
+    nudges: {},
+  });
 
   return assignments;
 }
@@ -347,6 +368,8 @@ Usage:
 `);
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+if (require.main === module) {
+  main().catch(err => { console.error(err); process.exit(1); });
+}
 
 module.exports = { dispatchTasks, getActiveAgents, matchAgentToTask, parseTasksFromMarkdown };
