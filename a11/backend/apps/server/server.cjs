@@ -7444,7 +7444,27 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
   return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface));
 }
 
-function sendEmbeddedUiDiagnostic(res) {
+function isLocalHostName(hostname) {
+  return ['localhost', '127.0.0.1', '::1'].includes(String(hostname || '').trim().toLowerCase());
+}
+
+function resolveMissingEmbeddedUiRedirect(req) {
+  const hostname = getRequestSurfaceHost(req);
+  if (isLocalHostName(hostname)) return '';
+  if (String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production') return '';
+
+  const surface = resolveEmbeddedUiSurface(req);
+  if (surface === 'vivy') return 'https://funesterie.me/vivy/';
+  if (surface === 'kaen44') return 'https://k44.funesterie.me/';
+  return 'https://a11.funesterie.pro/';
+}
+
+function sendEmbeddedUiDiagnostic(req, res) {
+  const redirectUrl = resolveMissingEmbeddedUiRedirect(req);
+  if (redirectUrl) {
+    return res.redirect(302, redirectUrl);
+  }
+
   const status = getEmbeddedUiStatus();
   const title = status.enabled
     ? 'Interface locale A11 indisponible'
@@ -7702,7 +7722,7 @@ function sendEmbeddedUiIndex(req, res) {
   }
 
   if (uiStatus.enabled || String(process.env.A11_LOCAL_MODE || '').trim() === '1') {
-    return sendEmbeddedUiDiagnostic(res);
+    return sendEmbeddedUiDiagnostic(req, res);
   }
 
   return res.status(200).json({ ok: true, service: 'a11-api' });
@@ -7757,7 +7777,7 @@ for (const route of ['/login', '/auth/success', '/reset-password', '/reset']) {
     }
 
     if (uiStatus.enabled || String(process.env.A11_LOCAL_MODE || '').trim() === '1') {
-      return sendEmbeddedUiDiagnostic(res);
+      return sendEmbeddedUiDiagnostic(_req, res);
     }
 
     return res.status(404).type('text/plain').send('Not found');
