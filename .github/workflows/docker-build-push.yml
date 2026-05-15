@@ -1,6 +1,7 @@
 name: Build & Push A11 to Docker Hub
 
 on:
+  workflow_dispatch:
   push:
     branches: [master]
     paths:
@@ -10,9 +11,11 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       DOCKERHUB_USERNAME: funeste38
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
