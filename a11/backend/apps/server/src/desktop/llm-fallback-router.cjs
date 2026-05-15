@@ -124,7 +124,7 @@ class LlmFallbackRouter {
   async _checkOllama() {
     try {
       const start = Date.now();
-      const result = await this._httpGet(`${this.ollamaUrl}/api/tags`, OLLAMA_TIMEOUT_MS);
+      await this._httpGet(`${this.ollamaUrl}/api/tags`, OLLAMA_TIMEOUT_MS);
       const latency = Date.now() - start;
       this.status.ollama = { available: true, lastCheck: new Date().toISOString(), latencyMs: latency };
     } catch {

@@ -9,11 +9,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
-const { URL } = require('node:url');
 
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4h
 const R2_UPDATE_MANIFEST_URL = 'https://files.funesterie.me/public/desktop/update-manifest.json';
-const GITHUB_RELEASES_URL = 'https://api.github.com/repos/funeste38/funesterie-desktop/releases/latest';
 
 class AutoUpdater {
   constructor(options = {}) {

@@ -36,7 +36,7 @@ function fastPathImageIntent(normalized) {
   const hasVisualStyle = /\b(cartoon|anime|pixel art|watercolor|cinematic|manga|render|3d|stylis[eÃ©]|stylized)\b/i.test(normalized);
   const hasTroubleshooting = /\b(explique|pourquoi|probl[eè]me|bug|erreur|fonctionne|marche)\b/i.test(normalized);
   if (hasTroubleshooting && !hasCreationVerb) return null;
-  if (hasCreationVerb && hasVisualWord) return { intent: 'image.generate', confidence: 0.95, reason: 'fast_path_creation_verb_visual_word' };
+  if (hasCreationVerb && (hasVisualWord || hasVisualStyle)) return { intent: 'image.generate', confidence: 0.95, reason: 'fast_path_creation_verb_visual_word' };
   return null;
 }
 

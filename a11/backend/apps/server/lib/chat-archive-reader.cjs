@@ -91,7 +91,7 @@ function resolveArchiveSources(options = {}) {
     const raw = String(entry || '').trim();
     if (!raw) continue;
 
-    let absolute = raw;
+    let absolute;
     try {
       absolute = path.resolve(raw);
     } catch {

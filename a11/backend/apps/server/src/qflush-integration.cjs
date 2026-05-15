@@ -770,7 +770,6 @@ async function runQflushFlow(flow, payload, options = {}) {
   // Fallback to EXE
   const exe = globalThis.__QFLUSH_PATH || process.env.QFLUSH_EXE_PATH;
   if (!exe) {
-    if (remoteFailure) throw remoteFailure;
     throw new Error('No qflush executable or compatible module found');
   }
   const { spawn } = require('child_process');

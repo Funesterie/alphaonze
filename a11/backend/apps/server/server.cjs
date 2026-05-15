@@ -1394,12 +1394,6 @@ const R2_ENDPOINT = String(process.env.R2_ENDPOINT || '').trim();
 const R2_ACCESS_KEY = String(process.env.R2_ACCESS_KEY || '').trim();
 const R2_SECRET_KEY = String(process.env.R2_SECRET_KEY || '').trim();
 const R2_BUCKET = String(process.env.R2_BUCKET || '').trim();
-const R2_PUBLIC_BASE_URL = String(
-  process.env.R2_PUBLIC_BASE_URL
-  || process.env.A11_R2_PUBLIC_BASE_URL
-  || process.env.R2_PUBLIC_URL
-  || ''
-).trim();
 const FILE_UPLOAD_MAX_BYTES = Number(process.env.FILE_UPLOAD_MAX_BYTES || 10 * 1024 * 1024);
 const TEMP_SHARED_FILE_TTL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_TTL_MS || 60 * 60 * 1000));
 const TEMP_SHARED_FILE_CLEANUP_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.A11_SHARED_FILE_CLEANUP_INTERVAL_MS || 60 * 1000));
@@ -5311,9 +5305,7 @@ function resolveFileUploadWriter() {
       const saved = saveBufferToLocalUploadStorage({
         uploadsRoot: PUBLIC_RUNTIME_UPLOADS_ROOT,
         filename,
-        storageKey: storageKey
-          ? `local/uploads/${path.basename(String(storageKey || '').trim())}`
-          : '',
+        storageKey: `local/uploads/${path.basename(String(storageKey || '').trim())}`,
         buffer,
         contentType,
         sanitizeFileName,

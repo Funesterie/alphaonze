@@ -13,7 +13,6 @@ const https = require('node:https');
 const { URL } = require('node:url');
 
 const DEFAULT_MCP_URL = 'https://mcp.funesterie.me/mcp';
-const DEFAULT_CHATGPT_MCP_URL = 'https://mcp.funesterie.me/chatgpt/mcp';
 const TOKEN_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const RECONNECT_DELAY_MS = 5000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;

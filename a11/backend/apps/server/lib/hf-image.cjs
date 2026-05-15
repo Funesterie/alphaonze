@@ -44,7 +44,9 @@ function imageExtensionFromContentType(contentType = '') {
 }
 
 function outputPathWithExtension(outputPath = '', extension = '.jpg') {
-  const normalizedExt = String(extension || '.jpg').startsWith('.') ? String(extension || '.jpg') : `.${extension}`;
+  const rawExt = String(extension ?? '').trim();
+  const safeExt = rawExt || '.jpg';
+  const normalizedExt = safeExt.startsWith('.') ? safeExt : `.${safeExt}`;
   const parsed = path.parse(String(outputPath || '').trim());
   if (!parsed.dir || !parsed.name) return String(outputPath || '').trim();
   return path.join(parsed.dir, `${parsed.name}${normalizedExt}`);

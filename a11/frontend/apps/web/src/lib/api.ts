@@ -921,11 +921,11 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   const fallbackBase = isPublicKaen44WebHost(currentHostname)
     ? DEFAULT_KAEN44_API_BASE
     : DEFAULT_PROD_API_BASE;
-  const authBase = isKaen44Surface
+  const googleBaseUrl = isKaen44Surface
     ? DEFAULT_PROD_API_BASE
     : normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || fallbackBase);
   const target = new URL(
-    buildApiUrlFromBase(authBase, '/api/auth/google/start'),
+    buildApiUrlFromBase(googleBaseUrl, '/api/auth/google/start'),
     currentOrigin || fallbackBase || 'https://a11.funesterie.pro'
   );
   target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
@@ -940,8 +940,8 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
 }
 
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
-  const authBase = normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro');
-  const target = new URL(buildApiUrlFromBase(authBase, '/api/auth/microsoft/start'), globalThis.location?.origin || 'https://a11.funesterie.pro');
+  const msBaseUrl = normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro');
+  const target = new URL(buildApiUrlFromBase(msBaseUrl, '/api/auth/microsoft/start'), globalThis.location?.origin || 'https://a11.funesterie.pro');
   target.searchParams.set('returnTo', returnTo || '/auth/success');
   target.searchParams.set('client', client || 'web');
   return target.toString();
@@ -2987,6 +2987,99 @@ export type ControlActionResponse = {
   error?: string;
 };
 
+export type PinkWardStatusResponse = {
+  ok: boolean;
+  id?: string;
+  label?: string;
+  timestamp?: string;
+  janus?: {
+    ok?: boolean;
+    provider?: string;
+    enabled?: boolean;
+    requestedGpu?: boolean;
+    cpuFallback?: boolean;
+    config?: {
+      pythonBin?: string;
+      workerScript?: string;
+      device?: string;
+      torchDtype?: string;
+      maxNewTokens?: number;
+      timeoutMs?: number;
+      workerScriptExists?: boolean;
+      pythonBinExists?: boolean | null;
+      model?: {
+        ref?: string;
+        label?: string;
+        source?: string;
+        local?: boolean;
+        exists?: boolean;
+      };
+    };
+    fallback?: {
+      enabled?: boolean;
+      model?: {
+        ref?: string;
+        label?: string;
+        source?: string;
+        local?: boolean;
+        exists?: boolean;
+      };
+    };
+    worker?: {
+      alive?: boolean;
+      ready?: boolean;
+      pending?: number;
+      pid?: number | null;
+      lastStdoutLine?: string | null;
+      stderrBytes?: number;
+    };
+  };
+  gpu?: {
+    ok?: boolean;
+    available?: boolean;
+    source?: string;
+    error?: string;
+    message?: string;
+    gpus?: Array<{
+      index?: number;
+      name?: string;
+      memoryTotalMb?: number | null;
+      memoryUsedMb?: number | null;
+      memoryFreeMb?: number | null;
+      utilizationGpuPercent?: number | null;
+    }>;
+  };
+  budget?: {
+    lane?: string;
+    totalGb?: number | null;
+    freeGb?: number | null;
+    usedGb?: number | null;
+    wantsGpu?: boolean;
+    wants7b?: boolean;
+    recommendation?: string;
+  };
+  a11host?: {
+    ok?: boolean;
+    available?: boolean;
+    mode?: string | null;
+    bridgeAvailable?: boolean;
+    headlessAvailable?: boolean;
+    capabilities?: Record<string, boolean>;
+  };
+  qflush?: {
+    available?: boolean;
+    remoteUrl?: string | null;
+    chatFlow?: string | null;
+    memorySummaryFlow?: string | null;
+    processes?: Record<string, any>;
+  };
+  fallback?: {
+    cpu?: boolean;
+    reason?: string;
+  };
+  error?: string;
+};
+
 export type RemoteProviderProfile = {
   id: string;
   label: string;
@@ -3052,6 +3145,25 @@ export async function fetchA11Capabilities(): Promise<A11CapabilitiesResponse> {
   }
 
   return data as A11CapabilitiesResponse;
+}
+
+export async function fetchPinkWardStatus(): Promise<PinkWardStatusResponse> {
+  const res = await authFetch(getApiUrl('/api/a11/pink-ward/status'), {
+    headers: buildAuthHeaders(),
+  });
+
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore parse errors
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `Pink Ward status failed (${res.status})`);
+  }
+
+  return data as PinkWardStatusResponse;
 }
 
 export async function fetchQflushStatus(): Promise<QflushStatusResponse> {
