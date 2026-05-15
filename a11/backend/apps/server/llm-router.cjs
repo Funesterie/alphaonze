@@ -161,6 +161,7 @@ function normalizeLlmProvider(value, fallback = "none") {
   if (normalized === "deepseek") return "deepseek";
   if (["together", "together_ai", "togetherai"].includes(normalized)) return "together";
   if (["huggingface", "hf", "hugging_face"].includes(normalized)) return "huggingface";
+  if (["gemini", "google", "google_genai", "google-genai", "genai"].includes(normalized)) return "gemini";
   if (["xai", "grok", "x.ai"].includes(normalized)) return "xai";
   if (["llama_server", "llama-server", "llama", "local"].includes(normalized)) return "llama_server";
   if (["none", "disabled", "off"].includes(normalized)) return "none";
@@ -186,6 +187,7 @@ const BACKENDS = {
   deepseek: normalizeBaseUrl(process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1"),
   together: normalizeBaseUrl(process.env.TOGETHER_BASE_URL || "https://api.together.xyz/v1"),
   huggingface: normalizeBaseUrl(process.env.HF_BASE_URL || "https://api-inference.huggingface.co/v1"),
+  gemini: normalizeBaseUrl(process.env.GEMINI_BASE_URL || process.env.GOOGLE_GENAI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta"),
   xai: normalizeBaseUrl(process.env.XAI_BASE_URL || "https://api.x.ai/v1"),
 };
 const OLLAMA_BASE = BACKENDS.ollama;
@@ -204,6 +206,7 @@ const DEFAULT_GROQ_MODEL = String(process.env.GROQ_MODEL || "llama-3.3-70b-versa
 const DEFAULT_DEEPSEEK_MODEL = String(process.env.DEEPSEEK_MODEL || "deepseek-chat").trim() || "deepseek-chat";
 const DEFAULT_TOGETHER_MODEL = String(process.env.TOGETHER_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo").trim() || "meta-llama/Llama-3.3-70B-Instruct-Turbo";
 const DEFAULT_HF_MODEL = String(process.env.HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct").trim() || "meta-llama/Llama-3.1-8B-Instruct";
+const DEFAULT_GEMINI_MODEL = String(process.env.GEMINI_MODEL || process.env.GOOGLE_GENAI_MODEL || process.env.A11_GEMINI_MODEL || "gemini-2.5-flash").trim() || "gemini-2.5-flash";
 const DEFAULT_XAI_MODEL = String(process.env.XAI_MODEL || "grok-3-fast").trim() || "grok-3-fast";
 const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
@@ -211,7 +214,7 @@ const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 
 const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
 const RUNTIME_FALLBACK_ORDER = String(
   process.env.A11_LLM_RUNTIME_FALLBACK_ORDER
-  || "openai,deepseek,together,xai,huggingface,ollama"
+  || "openai,gemini,deepseek,together,xai,huggingface,ollama"
 )
   .split(",")
   .map((entry) => normalizeLlmProvider(entry, ""))
@@ -258,6 +261,7 @@ function hasProviderCredential(provider) {
   if (provider === "deepseek") return Boolean(String(process.env.DEEPSEEK_API_KEY || "").trim());
   if (provider === "together") return Boolean(String(process.env.TOGETHER_API_KEY || "").trim());
   if (provider === "huggingface") return resolveHuggingFaceCredentialConfigured();
+  if (provider === "gemini") return resolveGeminiCredentialConfigured();
   if (provider === "xai") return Boolean(String(process.env.XAI_API_KEY || "").trim());
   if (provider === "ollama") return Boolean(BACKENDS.ollama);
   if (provider === "llama_server") return Boolean(BACKENDS.llama_server);
@@ -272,6 +276,29 @@ function resolveHuggingFaceCredentialConfigured() {
     || process.env.HUGGINGFACEHUB_API_TOKEN
     || ''
   ).trim());
+}
+
+function resolveGeminiApiKey() {
+  return String(
+    process.env.GOOGLE_GENAI_API_KEY
+    || process.env.GEMINI_API_KEY
+    || process.env.GOOGLE_API_KEY
+    || ''
+  ).trim();
+}
+
+function resolveGeminiCredentialConfigured() {
+  return Boolean(resolveGeminiApiKey());
+}
+
+function buildGeminiPublicStatus() {
+  return {
+    configured: resolveGeminiCredentialConfigured(),
+    enabled: LLM_PROVIDER === "gemini" || LLM_FALLBACK_PROVIDER === "gemini",
+    baseUrl: BACKENDS.gemini,
+    model: DEFAULT_GEMINI_MODEL,
+    fallbackProviderEnabled: LLM_FALLBACK_PROVIDER === "gemini",
+  };
 }
 
 function buildHuggingFacePublicStatus() {
@@ -338,6 +365,7 @@ async function resolveRuntimeFallbackTargets(failedTarget, requestedModel = "", 
     "groq",
     "together",
     "xai",
+    "gemini",
     "huggingface",
     "ollama",
     "llama_server",
@@ -354,6 +382,7 @@ async function resolveRuntimeFallbackTargets(failedTarget, requestedModel = "", 
     else if (provider === "deepseek") candidate = resolveDeepSeekTarget("", reason);
     else if (provider === "together") candidate = resolveTogetherTarget("", reason);
     else if (provider === "xai") candidate = resolveXAITarget("", reason);
+    else if (provider === "gemini") candidate = resolveGeminiTarget("", reason);
     else if (provider === "huggingface") candidate = resolveHuggingFaceTarget("", reason);
     else if (provider === "llama_server") candidate = resolveLlamaServerTarget(requestedModel, reason);
     else if (provider === "ollama") {
@@ -587,6 +616,18 @@ function resolveHuggingFaceTarget(requestedModel = "", reason = "") {
   };
 }
 
+function resolveGeminiTarget(requestedModel = "", reason = "") {
+  if (!BACKENDS.gemini || !resolveGeminiCredentialConfigured()) return null;
+  const model = String(requestedModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
+  return {
+    provider: "gemini",
+    model,
+    baseUrl: BACKENDS.gemini,
+    url: buildGeminiGenerateContentUrl(BACKENDS.gemini, model),
+    reason: reason || null,
+  };
+}
+
 async function resolveOllamaTarget(requestedModel = "", { emitLogs = true } = {}) {
   const tags = await getOllamaTags();
   if (!tags.ok) {
@@ -712,7 +753,17 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
       }
     }
 
-    // Fallback 6 : HuggingFace (open source, gratuit)
+    // Fallback 6 : Gemini (Google, REST natif)
+    if (LLM_FALLBACK_PROVIDER === "gemini" || LLM_FALLBACK_PROVIDER === "none") {
+      const geminiTarget = resolveGeminiTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
+      if (geminiTarget) {
+        if (emitLogs) logWarn(`[LLM] fallback=gemini (Google) reason=${ollamaResult.reason || "ollama_unavailable"}`);
+        rememberResolvedTarget(geminiTarget, { availableOllamaModels: ollamaResult.tags?.models || [] });
+        return geminiTarget;
+      }
+    }
+
+    // Fallback 7 : HuggingFace (open source, gratuit)
     if (LLM_FALLBACK_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "none") {
       const hasHfKey = resolveHuggingFaceCredentialConfigured();
       if ((LLM_FALLBACK_PROVIDER === "huggingface" || hasHfKey) && BACKENDS.huggingface) {
@@ -762,6 +813,16 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
     if (emitLogs) logInfo(`[LLM] provider=deepseek model=${deepseekTarget.model}`);
     rememberResolvedTarget(deepseekTarget);
     return deepseekTarget;
+  }
+
+  if (provider === "gemini") {
+    const geminiTarget = resolveGeminiTarget(requestedModel, "provider_forced");
+    if (!geminiTarget) {
+      throw new Error("gemini_credentials_missing");
+    }
+    if (emitLogs) logInfo(`[LLM] provider=gemini model=${geminiTarget.model}`);
+    rememberResolvedTarget(geminiTarget);
+    return geminiTarget;
   }
 
   if (provider === "llama_server") {
@@ -892,6 +953,84 @@ function toOpenAIStyleResponseFromOllama(payload, model) {
   };
 }
 
+function buildGeminiPayloadFromOpenAiBody(body = {}, messages = []) {
+  const systemParts = [];
+  const contents = [];
+
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const role = String(message?.role || "user").trim().toLowerCase();
+    const text = normalizeMessageContentForOllama(message?.content).trim();
+    if (!text) continue;
+    if (role === "system" || role === "developer") {
+      systemParts.push({ text });
+      continue;
+    }
+    contents.push({
+      role: role === "assistant" || role === "model" ? "model" : "user",
+      parts: [{ text }],
+    });
+  }
+
+  if (!contents.length) {
+    contents.push({ role: "user", parts: [{ text: normalizeMessageContentForOllama(body?.prompt || "OK").trim() || "OK" }] });
+  }
+
+  const generationConfig = {};
+  if (Number.isFinite(Number(body?.temperature))) generationConfig.temperature = Number(body.temperature);
+  if (Number.isFinite(Number(body?.top_p))) generationConfig.topP = Number(body.top_p);
+  const maxTokens = Number(body?.max_tokens ?? body?.maxTokens);
+  if (Number.isFinite(maxTokens) && maxTokens > 0) generationConfig.maxOutputTokens = Math.trunc(maxTokens);
+  const stop = Array.isArray(body?.stop)
+    ? body.stop.map((entry) => String(entry || '').trim()).filter(Boolean)
+    : (String(body?.stop || '').trim() ? [String(body.stop).trim()] : []);
+  if (stop.length) generationConfig.stopSequences = stop;
+
+  const responseFormatType = String(body?.response_format?.type || body?.responseFormat?.type || '').trim().toLowerCase();
+  if (responseFormatType === 'json_object' || responseFormatType === 'json_schema') {
+    generationConfig.responseMimeType = 'application/json';
+  }
+
+  return {
+    contents,
+    ...(systemParts.length ? { systemInstruction: { parts: systemParts } } : {}),
+    ...(Object.keys(generationConfig).length ? { generationConfig } : {}),
+  };
+}
+
+function toOpenAIStyleResponseFromGemini(payload = {}, model = DEFAULT_GEMINI_MODEL) {
+  const parts = payload?.candidates?.[0]?.content?.parts;
+  const content = Array.isArray(parts)
+    ? parts.map((part) => String(part?.text || '')).filter(Boolean).join('\n').trim()
+    : '';
+  const usage = payload?.usageMetadata || {};
+  const promptTokens = Number(usage.promptTokenCount || 0) || 0;
+  const completionTokens = Number(usage.candidatesTokenCount || usage.outputTokenCount || 0) || 0;
+  const finishReason = String(payload?.candidates?.[0]?.finishReason || '').trim().toLowerCase() || 'stop';
+
+  return {
+    id: `cerbere-gemini-${Date.now()}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: sanitizeAssistantText(content || "[Gemini: pas de sortie]"),
+        },
+        finish_reason: finishReason,
+      },
+    ],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: Number(usage.totalTokenCount || (promptTokens + completionTokens)) || 0,
+    },
+    provider: "gemini",
+  };
+}
+
 async function callResolvedLlmTarget(target, body = {}, messages = [], stream = false) {
   if (target.provider === "ollama") {
     const ollamaFormat = toOllamaStructuredFormat(body.response_format);
@@ -931,6 +1070,36 @@ async function callResolvedLlmTarget(target, body = {}, messages = [], stream = 
       ok: true,
       response: upstreamRes,
       data: toOpenAIStyleResponseFromOllama(rawJson || {}, target.model),
+      text: rawText,
+    };
+  }
+
+  if (target.provider === "gemini") {
+    const upstreamRes = await fetch(target.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildGeminiPayloadFromOpenAiBody(body, messages)),
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+    });
+
+    const rawText = await upstreamRes.text();
+    let rawJson = null;
+    if (rawText) {
+      try {
+        rawJson = JSON.parse(rawText);
+      } catch {
+        rawJson = null;
+      }
+    }
+
+    if (!upstreamRes.ok) {
+      return { ok: false, response: upstreamRes, text: rawText, data: rawJson };
+    }
+
+    return {
+      ok: true,
+      response: upstreamRes,
+      data: toOpenAIStyleResponseFromGemini(rawJson || {}, target.model),
       text: rawText,
     };
   }
@@ -1083,6 +1252,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
       ollamaPrimaryModel: OLLAMA_PRIMARY_MODEL,
       ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
       openaiModel: DEFAULT_OPENAI_MODEL,
+      geminiModel: DEFAULT_GEMINI_MODEL,
       localModel: DEFAULT_LOCAL_MODEL,
     },
     active,
@@ -1094,6 +1264,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
         apiKeyConfigured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
       },
       huggingface: buildHuggingFacePublicStatus(),
+      gemini: buildGeminiPublicStatus(),
       ollama: {
         configured: Boolean(BACKENDS.ollama),
         baseUrl: BACKENDS.ollama,
@@ -1121,6 +1292,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
 // expose simple stats for frontend dev checks
 router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
   const huggingface = buildHuggingFacePublicStatus();
+  const gemini = buildGeminiPublicStatus();
   res.json({
     service: "cerbere-router",
     version: "2.0.0",
@@ -1137,13 +1309,16 @@ router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
       ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
       localModel: DEFAULT_LOCAL_MODEL,
       openaiModel: DEFAULT_OPENAI_MODEL,
+      geminiModel: DEFAULT_GEMINI_MODEL,
       huggingfaceModel: DEFAULT_HF_MODEL,
       huggingface,
+      gemini,
     },
     providers: {
       huggingface,
+      gemini,
     },
-    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback", "runtime_provider_fallback", "huggingface_optional_fallback"],
+    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback", "runtime_provider_fallback", "huggingface_optional_fallback", "gemini_optional_fallback"],
   });
 });
 console.log("[Cerbère] Registered debug stats routes: /api/stats, /api/llm/stats");
@@ -1158,6 +1333,7 @@ router.get("/api/llm/models", async (_req, res) => {
         ollamaInstalled: snapshot.providers.ollama.models,
         localDefault: snapshot.configured.localModel,
         openaiDefault: snapshot.configured.openaiModel,
+        geminiDefault: snapshot.configured.geminiModel,
       },
     });
   } catch (error) {
@@ -1220,6 +1396,14 @@ function buildOpenAICompletionsUrl(baseUrl) {
   const normalized = (baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
   if (normalized.endsWith("/v1")) return `${normalized}/chat/completions`;
   return `${normalized}/v1/chat/completions`;
+}
+
+function buildGeminiGenerateContentUrl(baseUrl, model, apiKey = "") {
+  const normalized = normalizeBaseUrl(baseUrl || BACKENDS.gemini);
+  const modelRef = String(model || DEFAULT_GEMINI_MODEL).trim().replace(/^models\//i, '') || DEFAULT_GEMINI_MODEL;
+  const key = String(apiKey || resolveGeminiApiKey()).trim();
+  const query = key ? `?key=${encodeURIComponent(key)}` : '';
+  return `${normalized}/models/${encodeURIComponent(modelRef)}:generateContent${query}`;
 }
 
 function buildUpstreamHeaders(backendBase, provider = "openai") {
@@ -2222,8 +2406,10 @@ module.exports = {
   BACKENDS,
   __private__: {
     buildStructuredRouterTraceMeta,
+    buildGeminiPayloadFromOpenAiBody,
     buildOllamaOptionsFromOpenAiBody,
     callLlmWithRuntimeFallback,
+    resolveGeminiTarget,
     getConfiguredOllamaCandidates,
     isRuntimeFallbackStatus,
     looksLikeStructuredJson,
