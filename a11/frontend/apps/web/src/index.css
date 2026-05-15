@@ -1443,11 +1443,30 @@
 
 @media (max-width: 900px) {
   html, body, #root {
-    overflow-y: hidden;
     overflow-x: hidden;
     width: 100%;
     max-width: 100%;
     overscroll-behavior-x: none;
+  }
+
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root),
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root) body,
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root) #root {
+    height: 100%;
+    overflow-y: hidden;
+  }
+
+  html.a11-auth-page-root,
+  html.a11-auth-page-root body,
+  html.a11-auth-page-root #root,
+  html.kaen-public-page-root,
+  html.kaen-public-page-root body,
+  html.kaen-public-page-root #root {
+    height: auto !important;
+    min-height: 100%;
+    overflow-y: auto !important;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
   .header {
@@ -4042,3 +4061,72 @@ body {
 /* ================================================================
    FIN NOSSEN v2
    ================================================================ */
+
+/* ================================================================
+   Mobile interaction guardrails
+   Pages publiques/login scrollent avec le document; le chat connecte
+   garde un viewport fixe et laisse ses panneaux internes defiler.
+   ================================================================ */
+
+@media (max-width: 900px) {
+  html.a11-auth-page-root,
+  html.a11-auth-page-root body,
+  html.a11-auth-page-root #root,
+  html.kaen-public-page-root,
+  html.kaen-public-page-root body,
+  html.kaen-public-page-root #root {
+    height: auto !important;
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: pan-y !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  html.a11-auth-page-root .alpha-auth-shell,
+  html.a11-auth-page-root .kaen-auth-shell,
+  html.kaen-public-page-root .kaen-public-shell,
+  html.kaen-public-page-root .vivy-public-shell {
+    height: auto !important;
+    min-height: 100svh !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    touch-action: pan-y !important;
+  }
+
+  html.a11-auth-page-root .alpha-auth-card,
+  html.a11-auth-page-root .kaen-auth-card,
+  html.kaen-public-page-root .kaen-public-shell button,
+  html.kaen-public-page-root .kaen-public-shell a,
+  html.kaen-public-page-root .vivy-studio button,
+  html.kaen-public-page-root .vivy-studio input,
+  html.kaen-public-page-root .vivy-studio select,
+  html.kaen-public-page-root .vivy-studio textarea {
+    position: relative;
+    z-index: 2;
+    touch-action: manipulation;
+  }
+
+  .app-container.a11-shell {
+    height: 100svh !important;
+    min-height: 100svh !important;
+    overflow: hidden !important;
+  }
+
+  .a11-body,
+  .main {
+    min-height: 0 !important;
+  }
+
+  .scroll-frame,
+  .admin-scroll-panel,
+  .sidebar {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
