@@ -9,8 +9,19 @@ on:
     - cron: "0 3 * * 0" # Dimanche à 3h
 
 jobs:
+  disabled-note:
+    name: CodeQL disabled note
+    if: ${{ github.event.repository.private && vars.ENABLE_CODEQL != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skipped CodeQL upload
+        run: |
+          echo "CodeQL code scanning upload is skipped because this private repository does not have Code Security enabled."
+          echo "Set repository variable ENABLE_CODEQL=true after enabling Code Security to run the full analysis job."
+
   analyze:
     name: Analyze (${{ matrix.language }})
+    if: ${{ !github.event.repository.private || vars.ENABLE_CODEQL == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -37,7 +48,6 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
-        continue-on-error: ${{ github.event.repository.private && vars.ENABLE_CODEQL != 'true' }}
         with:
           category: "/language:${{ matrix.language }}"
 
