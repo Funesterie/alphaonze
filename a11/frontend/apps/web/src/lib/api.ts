@@ -1249,6 +1249,18 @@ export type VivyStudioAction = {
   ready: boolean;
 };
 
+export type VivyStudioMedia = {
+  kind?: 'audio' | 'video' | string;
+  provider?: string;
+  url?: string;
+  audioUrl?: string;
+  audio_url?: string;
+  videoUrl?: string;
+  video_url?: string;
+  content_type?: string;
+  filename?: string;
+};
+
 export type VivyStudioProductionInput = {
   mode: VivyStudioMode;
   voiceTool?: string;
@@ -1274,6 +1286,11 @@ export type VivyStudioProductionResult = {
   brief?: string;
   actions?: VivyStudioAction[];
   routing?: string[];
+  media?: VivyStudioMedia;
+  audioUrl?: string;
+  audio_url?: string;
+  videoUrl?: string;
+  video_url?: string;
   tokenStored?: boolean;
   error?: string;
   message?: string;

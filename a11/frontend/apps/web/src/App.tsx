@@ -1682,6 +1682,12 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
 }
 
 type VivyStudioMode = "voice" | "song" | "share";
+type VivyStudioMediaPreview = {
+  kind: "audio" | "video";
+  url: string;
+  provider?: string;
+  contentType?: string;
+};
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
 
@@ -1810,6 +1816,7 @@ function VivyStudioLab() {
   const [shareToken, setShareToken] = useState("");
   const [shareInstruction, setShareInstruction] = useState(String(initialDraft.shareInstruction || ""));
   const [vivyOutput, setVivyOutput] = useState(String(initialDraft.vivyOutput || ""));
+  const [vivyMedia, setVivyMedia] = useState<VivyStudioMediaPreview | null>(null);
   const [status, setStatus] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
@@ -1944,7 +1951,18 @@ function VivyStudioLab() {
       });
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
+      const audioUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || "").trim();
+      const videoUrl = String(payload?.videoUrl || payload?.video_url || payload?.media?.videoUrl || payload?.media?.video_url || "").trim();
+      const mediaUrl = audioUrl || videoUrl;
       setVivyOutput(text);
+      setVivyMedia(mediaUrl
+        ? {
+          kind: audioUrl ? "audio" : "video",
+          url: resolveApiAssetUrl(mediaUrl),
+          provider: String(payload?.media?.provider || "").trim() || undefined,
+          contentType: String(payload?.media?.content_type || "").trim() || undefined,
+        }
+        : null);
       setStatus(payload.summary || "Production Vivy ajoutee au brief.");
     } catch (error: any) {
       setStatus(`Production Vivy indisponible: ${error?.message || error}`);
@@ -2111,6 +2129,22 @@ function VivyStudioLab() {
             <button type="button" onClick={shareBrief}>Partager</button>
           </div>
           {status && <p>{status}</p>}
+          {vivyMedia && (
+            <div className="vivy-studio-media">
+              <strong>{vivyMedia.kind === "audio" ? "Audio Vivy pret" : "Clip Vivy pret"}</strong>
+              {vivyMedia.kind === "audio" ? (
+                <audio src={vivyMedia.url} controls preload="metadata" />
+              ) : (
+                <video src={vivyMedia.url} controls preload="metadata" playsInline />
+              )}
+              <a href={vivyMedia.url} target="_blank" rel="noreferrer">
+                Ouvrir le media
+              </a>
+              {(vivyMedia.provider || vivyMedia.contentType) && (
+                <small>{[vivyMedia.provider, vivyMedia.contentType].filter(Boolean).join(" - ")}</small>
+              )}
+            </div>
+          )}
         </aside>
       </div>
     </section>

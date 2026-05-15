@@ -3473,6 +3473,36 @@ html.a11-auth-page-root body {
   line-height: 1.45;
 }
 
+.vivy-studio-media {
+  display: grid !important;
+  gap: 8px !important;
+  padding: 12px;
+  border: 1px solid rgba(240, 121, 216, 0.28);
+  background: rgba(1, 1, 5, 0.72);
+}
+
+.vivy-studio-media strong {
+  color: #ffd2f4;
+  font-size: 14px;
+}
+
+.vivy-studio-media audio,
+.vivy-studio-media video {
+  width: 100%;
+  max-width: 100%;
+}
+
+.vivy-studio-media video {
+  background: #05030a;
+}
+
+.vivy-studio-media a,
+.vivy-studio-media small {
+  color: #f079d8;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .vivy-public-shell {
     padding: 0 !important;
