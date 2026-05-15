@@ -35,6 +35,53 @@ const {
   if (!process.env.A11_EARLY_DOTENV_PATH) process.env.A11_EARLY_DOTENV_PATH = envPath;
 })();
 
+// Render services can start this file directly, bypassing npm start.
+// Keep this worker best-effort so a corpus refresh never blocks the API.
+(() => {
+  const flagDisabled = (value) => ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
+  const alreadyRan = process.env.A11_STARTUP_WORKERS_DONE === '1';
+  const renderLike = process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.RENDER_SERVICE_NAME;
+  const productionLike = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+  const forced = process.env.A11_RUN_STARTUP_WORKERS === '1';
+  if (alreadyRan || flagDisabled(process.env.A11_RUN_STARTUP_WORKERS) || (!forced && !renderLike && !productionLike)) {
+    return;
+  }
+
+  const { spawn } = require('node:child_process');
+  const nodePath = require('node:path');
+  const workerPath = nodePath.resolve(__dirname, 'scripts/identity-archivist-worker.cjs');
+  const child = spawn(process.execPath, [workerPath, '--write-corpus'], {
+    cwd: __dirname,
+    env: {
+      ...process.env,
+      A11_STARTUP_WORKERS_DONE: '1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+
+  const logChunk = (level, prefix, chunk) => {
+    const text = String(chunk || '').trim();
+    if (!text) return;
+    for (const line of text.split(/\r?\n/)) {
+      console[level](`[StartupWorker] ${prefix}${line}`);
+    }
+  };
+
+  child.stdout.on('data', (chunk) => logChunk('log', '', chunk));
+  child.stderr.on('data', (chunk) => logChunk('warn', 'warn: ', chunk));
+  child.on('error', (error) => {
+    console.warn(`[StartupWorker] identity archivist failed to launch: ${error.message}`);
+  });
+  child.on('exit', (code, signal) => {
+    if (code === 0) {
+      console.log('[StartupWorker] identity archivist completed');
+      return;
+    }
+    console.warn(`[StartupWorker] identity archivist exited with code ${code ?? 'null'}${signal ? ` signal ${signal}` : ''}`);
+  });
+})();
+
 // Slack notification dashboard
 const { safeSlack, SlackDashboard } = require('./utils/slackNotify');
 
