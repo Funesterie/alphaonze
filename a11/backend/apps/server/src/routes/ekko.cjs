@@ -14,6 +14,30 @@ const express = require('express');
 const router = express.Router();
 
 // ------------------------------------------------------------------
+// Auth guard — EKKO_TOKEN (env var)
+// Si défini : vérifie X-Ekko-Token sur POST /ingest
+// Si absent  : localhost uniquement
+// ------------------------------------------------------------------
+const EKKO_TOKEN = String(process.env.EKKO_TOKEN || '').trim();
+
+function ekkoAuth(req, res, next) {
+  if (EKKO_TOKEN) {
+    const token = String(req.headers['x-ekko-token'] || '').trim();
+    if (token !== EKKO_TOKEN) {
+      return res.status(403).json({ ok: false, error: 'ekko_token_invalid' });
+    }
+    return next();
+  }
+  // Pas de token configuré → localhost seulement
+  const ip = req.ip || req.connection?.remoteAddress || '';
+  const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  if (!isLocal) {
+    return res.status(403).json({ ok: false, error: 'ekko_localhost_only' });
+  }
+  return next();
+}
+
+// ------------------------------------------------------------------
 // Mémoire courte Ekko (ring buffer — 50 events max)
 // ------------------------------------------------------------------
 const EKKO_MAX_EVENTS = 50;
@@ -64,7 +88,7 @@ function validateEkkoEvent(body) {
  * POST /api/ekko/ingest
  * Corps : EkkoEvent (JSON)
  */
-router.post('/ingest', express.json({ limit: '64kb' }), (req, res) => {
+router.post('/ingest', ekkoAuth, express.json({ limit: '64kb' }), (req, res) => {
   const event = validateEkkoEvent(req.body);
   if (!event) {
     return res.status(400).json({ ok: false, error: 'invalid_ekko_event' });

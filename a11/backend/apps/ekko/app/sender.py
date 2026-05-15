@@ -5,6 +5,7 @@ Utilise HTTP POST vers l'endpoint Ivy configuré.
 Retry automatique en cas d'échec réseau.
 """
 from __future__ import annotations
+import os
 import time
 import json
 import threading
@@ -15,6 +16,9 @@ import urllib.error
 
 from .config import EkkoConfig
 from .schema import EkkoEvent
+
+# Token lu depuis l'env (EKKO_TOKEN) — doit correspondre au serveur A11
+_EKKO_TOKEN = os.environ.get("EKKO_TOKEN", "").strip()
 
 _MAX_RETRY = 3
 _RETRY_DELAY_S = 1.0
@@ -71,14 +75,17 @@ class IvySender:
 
         for attempt in range(1, _MAX_RETRY + 1):
             try:
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Ekko-Version": "0.1.0",
+                }
+                if _EKKO_TOKEN:
+                    headers["X-Ekko-Token"] = _EKKO_TOKEN
                 req = urllib.request.Request(
                     endpoint,
                     data=payload,
                     method="POST",
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Ekko-Version": "0.1.0",
-                    },
+                    headers=headers,
                 )
                 timeout = int(self.config.ivy_timeout_s) or 5
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
