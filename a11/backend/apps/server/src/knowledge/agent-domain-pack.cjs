@@ -3,6 +3,12 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  buildIdentityPromptFragment,
+  compactIdentityProfile,
+  identityLinksForEntity,
+  resolveIdentityProfile,
+} = require('./identity-hashtags.cjs');
 
 const DEFAULT_HOOK_CHAIN = ['corpus', 'rome', 'doctor', 'piccolo', 'telemetry', 'neo4j'];
 
@@ -444,10 +450,31 @@ function buildAgentDomainPack(options = {}) {
 
   const agents = AGENTS.map((agent) => ({
     ...agent,
+    identity: compactIdentityProfile(resolveIdentityProfile(agent.id, {
+      type: 'agent',
+      name: agent.name,
+      domains: agent.domains,
+      summary: agent.role,
+    })),
     hookChain: ['mcp', ...DEFAULT_HOOK_CHAIN],
     sfxPalette: sfxAssets
       .filter((asset) => shouldAssignSfxToAgent(asset, agent.id))
       .map((asset) => asset.id),
+  })).map((agent) => ({
+    ...agent,
+    identityHashtags: agent.identity.hashtags,
+    identityPrompt: buildIdentityPromptFragment({
+      id: agent.identity.canonicalId,
+      profileId: agent.identity.id,
+      label: agent.identity.label,
+      identityType: agent.identity.identityType,
+      hashtags: agent.identity.hashtags,
+      functionalHashtags: agent.identity.functionalHashtags,
+      narrativeHashtags: agent.identity.narrativeHashtags,
+      visualIdentity: agent.identity.visualIdentity,
+      routingTags: agent.identity.routingTags,
+      sourceCardUse: agent.identity.sourceCardUse,
+    }),
   }));
 
   const culturalLanes = CULTURAL_LANES.map((lane) => ({
@@ -494,6 +521,7 @@ function buildAgentDomainPack(options = {}) {
       seedCards: seedCards.length,
       sfxAssets: sfxAssets.length,
       hooks: hooks.length,
+      identityProfiles: Array.from(new Set(agents.map((agent) => agent.identity?.id).filter(Boolean))).length,
       links: links.length,
     },
   };
@@ -604,6 +632,7 @@ function buildLinks({ agents, domains, tools, culturalLanes, seedCards, sfxAsset
     for (const tool of agent.tools) links.push([agent.id, 'CAN_USE_TOOL', tool]);
     for (const hook of agent.hookChain) links.push([agent.id, 'USES_HOOK', hook]);
     for (const sfx of agent.sfxPalette || []) links.push([agent.id, 'USES_SFX', sfx]);
+    for (const link of identityLinksForEntity(agent.id, agent.identity)) links.push([link.from, link.type, link.to]);
   }
   for (const domain of domains) {
     for (const hook of domain.hookChain || []) links.push([domain.id, 'INDEXED_BY_HOOK', hook]);
@@ -637,6 +666,7 @@ function summarizePack(pack) {
     seedCards: pack.summary.seedCards,
     sfxAssets: pack.summary.sfxAssets,
     hooks: pack.summary.hooks,
+    identityProfiles: pack.summary.identityProfiles,
     links: pack.summary.links,
   };
 }
@@ -653,6 +683,8 @@ function toMarkdown(pack) {
   ];
   for (const agent of pack.agents) {
     lines.push(`- ${agent.name}: ${agent.role}`);
+    lines.push(`  - identity: ${agent.identityHashtags.join(' ')}`);
+    lines.push(`  - visual: ${agent.identity.visualIdentity.style}; ${agent.identity.visualIdentity.representation}`);
     lines.push(`  - domains: ${agent.domains.join(', ')}`);
     lines.push(`  - tools: ${agent.tools.join(', ')}`);
   }
@@ -689,6 +721,7 @@ function toCypher(pack) {
     'CREATE CONSTRAINT a11_cultural_lane_id IF NOT EXISTS FOR (n:A11CulturalLane) REQUIRE n.id IS UNIQUE;',
     'CREATE CONSTRAINT a11_seed_card_id IF NOT EXISTS FOR (n:A11SeedCard) REQUIRE n.id IS UNIQUE;',
     'CREATE CONSTRAINT a11_sfx_asset_id IF NOT EXISTS FOR (n:A11SfxAsset) REQUIRE n.id IS UNIQUE;',
+    'CREATE CONSTRAINT funesterie_identity_profile_id IF NOT EXISTS FOR (n:FunesterieIdentityProfile) REQUIRE n.id IS UNIQUE;',
     '',
   ];
   lines.push(
@@ -699,10 +732,17 @@ function toCypher(pack) {
   for (const agent of pack.agents) {
     lines.push(
       `MERGE (n:A11AgentProfile {id: ${q(agent.id)}})`,
-      `SET n.name = ${q(agent.name)}, n.role = ${q(agent.role)}, n.surface = ${q(agent.surface)}, n.nindo = ${q(agent.nindo)};`,
+      `SET n.name = ${q(agent.name)}, n.role = ${q(agent.role)}, n.surface = ${q(agent.surface)}, n.nindo = ${q(agent.nindo)}, n.identityProfileId = ${q(agent.identity?.id || '')}, n.identityHashtags = ${qa(agent.identityHashtags || [])}, n.visualStyle = ${q(agent.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(agent.identity?.visualIdentity?.representation || '')};`,
       `MATCH (pack:A11DomainPack {id: ${q(pack.id)}}), (n:A11AgentProfile {id: ${q(agent.id)}}) MERGE (pack)-[:DESCRIBES_AGENT]->(n);`,
       ''
     );
+    if (agent.identity?.id) {
+      lines.push(
+        `MERGE (identity:FunesterieIdentityProfile {id: ${q(agent.identity.id)}})`,
+        `SET identity.label = ${q(agent.identity.label)}, identity.identityType = ${q(agent.identity.identityType)}, identity.hashtags = ${qa(agent.identity.hashtags || [])}, identity.visualStyle = ${q(agent.identity.visualIdentity?.style || '')};`,
+        ''
+      );
+    }
   }
   for (const domain of pack.domains) {
     lines.push(
@@ -759,6 +799,10 @@ function unique(items) {
 
 function q(value) {
   return JSON.stringify(String(value || ''));
+}
+
+function qa(values) {
+  return JSON.stringify((Array.isArray(values) ? values : []).map((value) => String(value || '')));
 }
 
 module.exports = {

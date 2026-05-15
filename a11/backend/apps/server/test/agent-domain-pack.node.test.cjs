@@ -53,6 +53,8 @@ test('agent domain pack covers A11, Kaen44 and Vivy with broad domains', () => {
   assert.ok(vivy.tools.includes('vivy-studio'));
   assert.ok(vivy.domains.includes('music'));
   assert.ok(vivy.sfxPalette.includes('sfx:notify'));
+  assert.ok(vivy.identityHashtags.includes('#voice-core'));
+  assert.match(vivy.identityPrompt, /pink-violet/);
 
   const graphDomain = pack.domains.find((domain) => domain.id === 'knowledge-graph');
   assert.ok(graphDomain.hookChain.includes('neo4j'));
@@ -70,11 +72,14 @@ test('agent domain pack exports markdown, cypher and graph triplets', () => {
   const triplets = buildGraphTriplets(pack);
 
   assert.equal(summary.agents, 3);
+  assert.equal(summary.identityProfiles, 3);
   assert.ok(summary.domains >= 15);
   assert.ok(summary.tools >= 20);
   assert.match(markdown, /Vivy/);
+  assert.match(markdown, /#multimodal-core/);
   assert.match(markdown, /Source Policy/);
   assert.match(cypher, /A11DomainPack/);
+  assert.match(cypher, /FunesterieIdentityProfile/);
   assert.match(cypher, /A11KnowledgeDomain/);
   assert.ok(triplets.some((triplet) => triplet.subject === 'Vivy' && triplet.predicate === 'has_domain'));
   assert.ok(triplets.some((triplet) => triplet.predicate === 'teaches'));
