@@ -1,0 +1,54 @@
+services:
+  a11-backend:
+    env_file:
+      - .env.container.local
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    volumes:
+      - type: bind
+        source: ${A11_HOST_RUNTIME:-D:/projets/funesterie/a11/runtime}
+        target: /app/runtime
+      - type: bind
+        source: ${A11_HOST_CORPUS:-D:/projets/funesterie/runtime/Corpus}
+        target: /app/runtime/Corpus
+        read_only: true
+      - type: bind
+        source: ${A11_HOST_MODULES:-D:/projets/funesterie/runtime/modules}
+        target: /app/runtime/modules
+        read_only: true
+    environment:
+      - A11_RUNTIME_ROOT=/app/runtime
+      - A11_WORKSPACE_ROOT=/app
+      - SERVE_STATIC=true
+      - A11_LOCAL_MODE=true
+      - A11_IMAGE_PIPELINE_MODE=remote
+      - A11_VISION_PROVIDER=none
+      - SD_DEVICE=cpu
+      - SD_MODEL_PROFILE=classic
+      - ENABLE_PIPER_HTTP=1
+      - A11_VOICE_MODULE_URL=http://a11-voice:5002
+      - TTS_URL=http://a11-voice:5002
+      - TTS_BASE_URL=http://a11-voice:5002
+      - A11_VOICE_CONVERSION_ENABLED=1
+      - A11_VOICE_CONVERTER_PROVIDER=ffmpeg-morph
+    depends_on:
+      - a11-voice
+
+  a11-voice:
+    build:
+      context: ../voice-module
+      dockerfile: Dockerfile
+    image: a11-voice-module:local
+    container_name: a11-voice
+    restart: unless-stopped
+    expose:
+      - "5002"
+    volumes:
+      - type: bind
+        source: ${A11_HOST_VOICE_OUT:-D:/projets/funesterie/a11/runtime/voice-out}
+        target: /app/out
+    environment:
+      - A11_VOICE_CONVERTER_PROVIDER=ffmpeg-morph
+      - A11_VOICE_CONVERSION_STRENGTH=0.45
+      - A11_VOICE_DEFAULT_F0_SHIFT=-1.5

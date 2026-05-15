@@ -597,6 +597,13 @@ async function runSdScript(payload = {}, options = {}) {
   }
 
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      resolve(value);
+    };
     const requestedOrDefaultProfile = requestedModelProfile || String(process.env.SD_MODEL_PROFILE || 'sd35').trim();
     const profileCompatibility = resolveCompatibleWindowsSdProfile(
       requestedOrDefaultProfile,
@@ -623,13 +630,29 @@ async function runSdScript(payload = {}, options = {}) {
       ...(compatibleTorchDtype ? { SD_TORCH_DTYPE: compatibleTorchDtype } : {}),
     };
     const py = spawn(pythonBin, args, { cwd: path.dirname(scriptPath), env: sdEnv });
+    const timeoutMs = Math.max(5000, Number(process.env.A11_SD_SCRIPT_TIMEOUT_MS || process.env.SD_SCRIPT_TIMEOUT_MS || 60000) || 60000);
+    const timeoutHandle = setTimeout(() => {
+      try {
+        py.kill('SIGTERM');
+      } catch {
+        // ignore kill errors
+      }
+      settle({
+        ok: false,
+        error: 'sd_timeout',
+        message: `Stable Diffusion local n'a pas repondu en ${Math.round(timeoutMs / 1000)}s.`,
+        scriptPath,
+        pythonBin,
+        timeoutMs,
+      });
+    }, timeoutMs);
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
 
     py.stdout.on('data', (data) => { stdout = Buffer.concat([stdout, data]); });
     py.stderr.on('data', (data) => { stderr = Buffer.concat([stderr, data]); });
     py.on('error', (error_) => {
-      resolve({
+      settle({
         ok: false,
         error: 'python_spawn_failed',
         message: String(error_?.message || error_),
@@ -638,6 +661,7 @@ async function runSdScript(payload = {}, options = {}) {
       });
     });
     py.on('close', (code, signal) => {
+      if (settled) return;
       const stdoutText = compactProcessOutput(stdout.toString());
       const stderrText = compactProcessOutput(stderr.toString());
       if (code !== 0) {
@@ -651,7 +675,7 @@ async function runSdScript(payload = {}, options = {}) {
           stderr: stderrText,
           stdout: stdoutText,
         });
-        return resolve({
+        return settle({
           ok: false,
           error: 'python_failed',
           message,
@@ -671,7 +695,7 @@ async function runSdScript(payload = {}, options = {}) {
         const parsed = JSON.parse(stdoutText || '{}');
         // Log the full JSON output from the Python script
         console.log('[SD][PYTHON][JSON_OUTPUT]', JSON.stringify(parsed, null, 2));
-        return resolve({
+        return settle({
           ...parsed,
           stdout: stdoutText,
           stderr: stderrText,
@@ -679,7 +703,7 @@ async function runSdScript(payload = {}, options = {}) {
           pythonBin,
         });
       } catch (error_) {
-        return resolve({
+        return settle({
           ok: false,
           error: 'bad_python_output',
           message: String(error_?.message || error_),

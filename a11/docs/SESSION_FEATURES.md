@@ -70,7 +70,7 @@
 
 ```bash
 # JWT (obligatoire pour les sessions)
-JWT_SECRET=<générer avec: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
+# JWT_SECRET is configured via the deployment secret store.
 JWT_EXPIRY=7d
 
 # Admin par défaut (local auth)
@@ -97,7 +97,7 @@ DATABASE_URL=postgresql://user:pass@host:5432/dbname
 QFLUSH_REDIS_URL=redis://localhost:6379
 
 # Email (optionnel, pour password reset)
-RESEND_API_KEY=<clé Resend>
+# RESEND_API_KEY is configured via the deployment secret store.
 # ou SMTP
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587

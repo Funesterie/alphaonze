@@ -65,6 +65,46 @@ test('runQflushFlow prefers the explicit Qflush remote over Dragon', async () =>
   }
 });
 
+test('runQflushFlow normalizes a status endpoint into the remote runner origin', async () => {
+  const envSnapshot = snapshotEnv([
+    'QFLUSH_URL',
+    'QFLUSH_REMOTE_URL',
+    'QFLUSH_BASE_URL',
+    'DRAGON_API_URL',
+    'A11_QFLUSH_USE_DRAGON',
+    'A11_QFLUSH_REMOTE_TIMEOUT_MS',
+    'A11_QFLUSH_REMOTE_RETRIES',
+  ]);
+  const originalFetch = global.fetch;
+
+  try {
+    delete process.env.QFLUSH_URL;
+    process.env.QFLUSH_REMOTE_URL = 'https://a11.funesterie.pro/api/qflush/status';
+    delete process.env.QFLUSH_BASE_URL;
+    delete process.env.DRAGON_API_URL;
+    delete process.env.A11_QFLUSH_USE_DRAGON;
+    process.env.A11_QFLUSH_REMOTE_TIMEOUT_MS = '50';
+    process.env.A11_QFLUSH_REMOTE_RETRIES = '0';
+
+    let capturedUrl = '';
+    global.fetch = async (url) => {
+      capturedUrl = String(url);
+      return new Response(JSON.stringify({ ok: true, target: 'qflush' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    const result = await runQflushFlow('a11.memory.ephemeral.v1', { key: 'ping' }, { requestId: 'req-status-url' });
+
+    assert.equal(capturedUrl, 'https://a11.funesterie.pro/api/admin/run');
+    assert.deepEqual(result, { ok: true, target: 'qflush' });
+  } finally {
+    global.fetch = originalFetch;
+    restoreEnv(envSnapshot);
+  }
+});
+
 test('runQflushFlow only uses Dragon as a Qflush runner when the compat flag is enabled', async () => {
   const envSnapshot = snapshotEnv([
     'QFLUSH_URL',
@@ -143,6 +183,37 @@ test('runQflushFlow surfaces an actionable upstream error payload', async () => 
     );
   } finally {
     global.fetch = originalFetch;
+    restoreEnv(envSnapshot);
+  }
+});
+
+test('runQflushFlow falls back to the local qflush module when the loopback daemon is unavailable', async () => {
+  const envSnapshot = snapshotEnv([
+    'QFLUSH_URL',
+    'QFLUSH_REMOTE_URL',
+    'QFLUSH_BASE_URL',
+    'DRAGON_API_URL',
+    'A11_QFLUSH_USE_DRAGON',
+    'A11_QFLUSH_REMOTE_TIMEOUT_MS',
+    'A11_QFLUSH_REMOTE_RETRIES',
+  ]);
+
+  try {
+    process.env.QFLUSH_URL = 'http://127.0.0.1:65531';
+    delete process.env.QFLUSH_REMOTE_URL;
+    delete process.env.QFLUSH_BASE_URL;
+    delete process.env.DRAGON_API_URL;
+    delete process.env.A11_QFLUSH_USE_DRAGON;
+    process.env.A11_QFLUSH_REMOTE_TIMEOUT_MS = '50';
+    process.env.A11_QFLUSH_REMOTE_RETRIES = '0';
+
+    const result = await runQflushFlow('a11.memory.summary.v1', {
+      messages: [{ role: 'user', content: 'bonjour' }],
+    }, { requestId: 'req-local-fallback-1' });
+
+    assert.equal(result.ok, true);
+    assert.equal(typeof result.output, 'string');
+  } finally {
     restoreEnv(envSnapshot);
   }
 });

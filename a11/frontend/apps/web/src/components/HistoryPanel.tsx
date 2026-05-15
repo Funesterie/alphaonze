@@ -15,6 +15,12 @@ type HistoryPanelProps = {
   onClose: () => void;
 };
 
+function displayConversationLabel(value?: string) {
+  const raw = String(value || "Discussion").trim() || "Discussion";
+  if (/qflush|vsix|mcp|neo4j|debug|diagnostic|port/i.test(raw)) return "Discussion";
+  return raw;
+}
+
 export const HistoryPanel: React.FC<HistoryPanelProps> = ({ onClose }) => {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,7 +32,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ onClose }) => {
     async function load() {
       const token = getAuthToken();
       if (!token) {
-        setError("A11_JWT_Missing");
+        setError("Session expiree. Reconnecte-toi pour revoir l'historique.");
         return;
       }
       setLoading(true);
@@ -77,7 +83,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ onClose }) => {
               Historique des conversations
             </span>
             <span className="text-xs text-slate-400">
-              Chargé depuis <code>a11_memory</code> (JSONL)
+              Historique lie a ton compte.
             </span>
           </div>
           <button
@@ -92,13 +98,12 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ onClose }) => {
         <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-3">
           <div className="flex-1">
             <label className="block text-[11px] text-slate-400 mb-1">
-              Filtrer par <code>conversationId</code> (ex: VSIX, Funesterie,
-              DebugQFlush)
+              Filtrer par nom de discussion ou projet
             </label>
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="VSIX, Funesterie, DebugQFlush..."
+              placeholder="Funesterie, facture, rendez-vous..."
               className="w-full text-xs px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
           </div>
@@ -135,7 +140,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ onClose }) => {
                     {e.type || "unknown"}
                   </span>
                   <span className="text-[11px] text-emerald-400">
-                    {e.conversationId || "default"}
+                    {displayConversationLabel(e.conversationId)}
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-500">
@@ -175,7 +180,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ onClose }) => {
                   <div className="text-slate-300">
                     <span className="font-semibold">Résumé actions :</span>{" "}
                     {e.explanation ||
-                      "[Actions exécutées par Cerbère / QFLUSH]"}
+                      "[Actions terminees par l'assistant]"}
                   </div>
                 </div>
               )}

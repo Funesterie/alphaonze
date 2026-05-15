@@ -38,6 +38,9 @@ module.exports = {
     'a11-files'
   ),
   publicBaseUrl: pickFirst(
-    process.env.R2_PUBLIC_BASE_URL
+    process.env.R2_PUBLIC_BASE_URL,
+    process.env.A11_R2_PUBLIC_BASE_URL,
+    process.env.R2_PUBLIC_URL,
+    'https://files.funesterie.me'
   ),
 };

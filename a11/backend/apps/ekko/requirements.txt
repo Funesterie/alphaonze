@@ -1,0 +1,36 @@
+# Ekko — dépendances Python
+# ============================================================
+# Core (toujours requis)
+flask>=3.0.0
+numpy>=1.24.0
+
+# ============================================================
+# Capture audio — un seul selon la plateforme
+#
+# Windows WASAPI loopback :
+#   pip install PyAudioWPATCH
+#
+# Linux PulseAudio / PipeWire + macOS BlackHole :
+#   pip install sounddevice
+#
+# Auto-détecté par capture.py
+
+# ============================================================
+# VAD (Voice Activity Detection) — optionnel mais recommandé
+# Niveau 1 (défaut)  : energy-based, sans dépendance
+# Niveau 2 (recommandé) : pip install webrtcvad
+# webrtcvad
+
+# ============================================================
+# Transcription locale (recommandé)
+# faster-whisper (CPU/GPU, léger, rapide)
+# pip install faster-whisper
+
+# ============================================================
+# Transcription cloud (optionnel)
+# openai   : pip install openai
+# groq     : pip install groq
+
+# ============================================================
+# Export audio WAV pour backends cloud
+# soundfile>=0.12.0

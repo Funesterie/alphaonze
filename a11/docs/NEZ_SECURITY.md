@@ -100,7 +100,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 ```json
 {
   "ok": true,
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "<JWT_TOKEN>",
   "user": {
     "id": "1",
     "username": "Djeff",
@@ -115,18 +115,19 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 ```bash
 curl -X POST http://localhost:3000/api/chat \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello"}'
 ```
 
 #### Option 2 : Header `X-NEZ-TOKEN`
 
-```bash
-curl -X POST http://localhost:3000/api/chat \
-  -H "X-NEZ-TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Hello"}'
+```powershell
+$headers = @{
+  "X-NEZ-TOKEN" = $env:NEZ_TOKEN
+  "Content-Type" = "application/json"
+}
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/chat" -Headers $headers -Body '{"message":"Hello"}'
 ```
 
 ---

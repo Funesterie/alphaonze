@@ -36,7 +36,18 @@ const {
 // ⚠️ IMPORTANT : importer le manifest AVANT d'utiliser WORKSPACE_ROOTS
 const { TOOL_MANIFEST, WORKSPACE_ROOTS, SAFE_DATA_ROOT } = require('./tools-manifest.cjs');
 const { runQflushFlow } = require('../qflush-integration.cjs');
+const {
+  callMcpTool,
+  checkMcpHealth,
+  getMcpConfig,
+  listMcpTools,
+  publicMcpConfig,
+} = require('../mcp-client.cjs');
 const { callA11Host, getA11HostStatus } = require('../../a11host.cjs');
+const {
+  listConversationArchives,
+  readConversationArchive,
+} = require('../../lib/chat-archive-reader.cjs');
 
 function resolveSafePath(p, label) {
   const raw = String(p || "").trim();
@@ -657,7 +668,7 @@ async function describeImageWithRemoteVision(source, args = {}) {
       messages: [
         {
           role: 'system',
-          content: 'Tu es un module de vision pour A11. Reponds en francais, en 1 ou 2 phrases courtes maximum, sans inventer.',
+          content: "Je suis le module de vision d'A11. Je reponds en francais, en 1 ou 2 phrases courtes maximum, sans inventer.",
         },
         {
           role: 'user',
@@ -1756,6 +1767,76 @@ async function t_qflush_memory_delete(args = {}) {
 
 async function t_qflush_memory_clear(args = {}) {
   return await runQflushMemoryOperation('clear', args);
+}
+
+// MCP bridge
+function decorateMcpToolsForA11(tools, config) {
+  if (!Array.isArray(tools)) return [];
+  return tools.map((tool) => ({
+    ...tool,
+    a11Allowed: config.allowAllTools || config.allowedTools.has(tool?.name),
+  }));
+}
+
+async function t_mcp_status(_args = {}) {
+  const config = getMcpConfig();
+  const health = await checkMcpHealth({ config });
+  return {
+    ok: health.ok,
+    mcp: publicMcpConfig(config),
+    health,
+  };
+}
+
+async function t_mcp_tools_list(args = {}) {
+  const config = getMcpConfig();
+  const result = await listMcpTools({ config });
+  const tools = decorateMcpToolsForA11(result?.result?.tools || [], config);
+  const allowedOnly = args.allowedOnly !== false;
+  return {
+    ok: true,
+    mcp: publicMcpConfig(config),
+    tools: allowedOnly ? tools.filter((tool) => tool.a11Allowed) : tools,
+    raw: result.result,
+  };
+}
+
+async function t_mcp_tool_call(args = {}) {
+  const name = String(args.name || args.tool || args.toolName || '').trim();
+  const toolArgs = args.arguments || args.args || args.params || args.payload || {};
+  const result = await callMcpTool(name, toolArgs);
+  return {
+    ok: true,
+    tool: name,
+    result: result.result,
+  };
+}
+
+async function t_romstation_state(_args = {}) {
+  const result = await callMcpTool('romstation_state', {});
+  return {
+    ok: true,
+    tool: 'romstation_state',
+    result: result.result,
+  };
+}
+
+async function t_romstation_mouse(args = {}) {
+  const result = await callMcpTool('romstation_mouse', args || {});
+  return {
+    ok: true,
+    tool: 'romstation_mouse',
+    result: result.result,
+  };
+}
+
+async function t_romstation_keyboard(args = {}) {
+  const result = await callMcpTool('romstation_keyboard', args || {});
+  return {
+    ok: true,
+    tool: 'romstation_keyboard',
+    result: result.result,
+  };
 }
 
 // FS
@@ -3002,6 +3083,169 @@ async function t_vs_build_solution() {
   };
 }
 
+function normalizeLlmStatsSnapshot(data, sourceUrl) {
+  const stats = data && typeof data === 'object' ? data : {};
+  const service = String(stats.service || '').trim().toLowerCase();
+  const routerKind = String(stats.routerKind || '').trim();
+  const provider = String(stats.llm?.provider || stats.provider || '').trim();
+  const explicitOk = typeof stats.ok === 'boolean' ? stats.ok : null;
+  const inferredOk = Boolean(
+    stats.canonical === true
+    || service === 'cerbere-router'
+    || routerKind
+    || provider
+  );
+
+  return {
+    ...stats,
+    ok: explicitOk === false ? false : (explicitOk === true || inferredOk),
+    sourceUrl,
+  };
+}
+
+function buildLlmStatsCandidateUrls() {
+  const configured = String(process.env.LLM_ROUTER_URL || '').trim().replace(/\/+$/, '');
+  const candidates = [];
+  if (configured) {
+    candidates.push(`${configured}/api/stats`);
+  } else {
+    candidates.push('http://127.0.0.1:4545/api/stats');
+  }
+
+  candidates.push(`${getInternalApiBaseUrl()}/api/llm/stats`);
+
+  return [...new Set(candidates)];
+}
+
+async function fetchLlmStatsSnapshot(url, timeoutMs = 2500) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { method: 'GET', signal: ctrl.signal });
+    const data = await r.json().catch(async () => ({
+      ok: false,
+      error: await r.text().catch(() => 'invalid_response'),
+    }));
+    if (!r.ok) {
+      return {
+        ok: false,
+        sourceUrl: url,
+        status: r.status,
+        ...(data && typeof data === 'object' ? data : { error: String(data) }),
+      };
+    }
+    return normalizeLlmStatsSnapshot(data, url);
+  } catch (e) {
+    return {
+      ok: false,
+      sourceUrl: url,
+      error: String(e && e.message ? e.message : e),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveLlmStatsSnapshot() {
+  const attempts = [];
+  for (const url of buildLlmStatsCandidateUrls()) {
+    const result = await fetchLlmStatsSnapshot(url);
+    if (result?.ok === true) {
+      if (attempts.length) {
+        return {
+          ...result,
+          attempts: attempts.map((entry) => ({
+            sourceUrl: entry.sourceUrl,
+            status: entry.status,
+            error: entry.error,
+          })),
+        };
+      }
+      return result;
+    }
+    attempts.push(result);
+  }
+  return {
+    ok: false,
+    error: 'llm_stats_unavailable',
+    attempts: attempts.map((entry) => ({
+      sourceUrl: entry.sourceUrl,
+      status: entry.status,
+      error: entry.error,
+    })),
+  };
+}
+
+async function collectRuntimeFileStats(rootDir, options = {}) {
+  const root = path.resolve(String(rootDir || ''));
+  const maxEntries = Math.max(1, Math.min(500, Number(options.maxEntries || 200)));
+  const maxDepth = Math.max(0, Math.min(8, Number(options.maxDepth || 5)));
+  const stats = {
+    root,
+    exists: false,
+    count: 0,
+    totalBytes: 0,
+    truncated: false,
+    latest: null,
+  };
+
+  async function visit(dir, depth) {
+    if (stats.count >= maxEntries) {
+      stats.truncated = true;
+      return;
+    }
+    let entries = [];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch (e) {
+      stats.error = String(e && e.message ? e.message : e);
+      return;
+    }
+
+    for (const entry of entries) {
+      if (stats.count >= maxEntries) {
+        stats.truncated = true;
+        return;
+      }
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < maxDepth) await visit(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      try {
+        const stat = await fsp.stat(fullPath);
+        stats.count += 1;
+        stats.totalBytes += Number(stat.size || 0);
+        const modifiedAt = stat.mtime instanceof Date ? stat.mtime.toISOString() : null;
+        if (!stats.latest || Number(stat.mtimeMs || 0) > Number(stats.latest.mtimeMs || 0)) {
+          stats.latest = {
+            path: fullPath,
+            sizeBytes: Number(stat.size || 0),
+            modifiedAt,
+            mtimeMs: Number(stat.mtimeMs || 0),
+          };
+        }
+      } catch (e) {
+        stats.error = String(e && e.message ? e.message : e);
+      }
+    }
+  }
+
+  try {
+    stats.exists = fs.existsSync(root);
+    if (stats.exists) await visit(root, 0);
+  } catch (e) {
+    stats.error = String(e && e.message ? e.message : e);
+  }
+
+  if (stats.latest) {
+    delete stats.latest.mtimeMs;
+  }
+
+  return stats;
+}
+
 async function t_a11_env_snapshot(_args = {}) {
   const tools = Object.keys(TOOL_IMPL || {}).sort();
   const roots = WORKSPACE_ROOTS.map(r => path.resolve(r));
@@ -3010,22 +3254,7 @@ async function t_a11_env_snapshot(_args = {}) {
     module: !!globalThis.__QFLUSH_MODULE,
     exePath: globalThis.__QFLUSH_PATH || null
   };
-  let llmStats = null;
-  try {
-    const routerUrl = (process.env.LLM_ROUTER_URL && process.env.LLM_ROUTER_URL.trim()) || 'http://127.0.0.1:4545';
-    const url = String(routerUrl).replace(/\/$/, '') + '/api/stats';
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 1000);
-    const r = await fetch(url, { method: 'GET', signal: ctrl.signal });
-    clearTimeout(t);
-    if (r.ok) {
-      llmStats = await r.json();
-    } else {
-      llmStats = { ok: false, status: r.status };
-    }
-  } catch (e) {
-    llmStats = { ok: false, error: String(e && e.message) };
-  }
+  const llmStats = await resolveLlmStatsSnapshot();
   const SAFE_ENV_KEYS = [
     'NODE_ENV','BACKEND','LLAMA_BASE','LLAMA_PORT','LLM_ROUTER_URL','PORT','HOST_SERVER'
   ];
@@ -3053,6 +3282,10 @@ async function t_a11_env_snapshot(_args = {}) {
     roots,
     qflush: qflushInfo,
     llm: llmStats,
+    storage: {
+      safeDataRoot: SAFE_DATA_ROOT,
+      runtimeFiles: await collectRuntimeFileStats(SAFE_DATA_ROOT),
+    },
     env: safeEnv,
     workspaces
   };
@@ -3073,6 +3306,16 @@ function ensureKvDir() {
   } catch (e) {
     console.warn('[A11][kv] mkdir failed:', e && e.message);
   }
+}
+
+function extractArchiveRoots(args = {}) {
+  if (Array.isArray(args.roots)) {
+    return args.roots.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  if (Array.isArray(args.archiveRoots)) {
+    return args.archiveRoots.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  return undefined;
 }
 
 function loadKvStore() {
@@ -3233,15 +3476,66 @@ async function t_a11_memory_history(args = {}) {
     console.warn('[A11][memory_history] memo error:', e && e.message);
   }
 
+  // --- Archives locales Codex / ChatGPT ---
+  let archiveItems = [];
+  let archiveTotal = 0;
+  try {
+    const archiveResult = await listConversationArchives({
+      query: prefix || args.query || '',
+      limit: Math.max(1, Math.min(80, Number(args.archiveLimit || args.limit || 20))),
+      roots: extractArchiveRoots(args),
+    });
+    archiveTotal = Number(archiveResult?.filtered || 0);
+    archiveItems = Array.isArray(archiveResult?.items)
+      ? archiveResult.items.map((item) => ({
+          type: 'chat_archive',
+          source: item.source,
+          archiveId: item.archiveId,
+          sessionId: item.sessionId || item.conversationId || null,
+          file: item.file,
+          updatedAt: item.updatedAt || item.createdAt || '',
+          summary: item.summary || item.title || '',
+        }))
+      : [];
+  } catch (e) {
+    console.warn('[A11][memory_history] archive error:', e && e.message);
+  }
+
   // --- Fusion ---
-  const items = [...kvItems, ...convItems, ...memoItems];
+  const items = [...kvItems, ...convItems, ...memoItems, ...archiveItems];
 
   return {
     ok: true,
-    total: kvKeys.length + convItems.length + memoItems.length,
+    total: kvKeys.length + convItems.length + memoItems.length + archiveTotal,
     filtered: items.length,
     items
   };
+}
+
+async function t_a11_archive_history(args = {}) {
+  const query = String(args.query || args.search || args.text || '').trim();
+  const limit = Math.max(1, Math.min(100, Number(args.limit || args.max || 20)));
+  return listConversationArchives({
+    query,
+    limit,
+    roots: extractArchiveRoots(args),
+  });
+}
+
+async function t_a11_archive_read(args = {}) {
+  const archiveId = String(args.archiveId || args.id || args.archive || '').trim();
+  const sessionId = String(args.sessionId || '').trim();
+  const conversationId = String(args.conversationId || '').trim();
+  const file = String(args.file || args.path || args.filePath || '').trim();
+  const maxMessages = Math.max(1, Math.min(400, Number(args.maxMessages || args.limit || 120)));
+  return readConversationArchive({
+    archiveId,
+    sessionId,
+    conversationId,
+    file,
+    maxMessages,
+    roots: extractArchiveRoots(args),
+  });
 }
 
 // --- TTS stubs (en attendant le vrai câblage) ---
@@ -3285,6 +3579,25 @@ function normalizeDispatchActionName(name) {
   }
   if (lowered === 'get_latest_resource' || lowered === 'latest_resource' || lowered === 'get-latest-resource') {
     return 'get_latest_resource';
+  }
+  if (
+    lowered === 'a11_archive_history' ||
+    lowered === 'archive_history' ||
+    lowered === 'search_archives' ||
+    lowered === 'search_archive_history' ||
+    lowered === 'codex_archive_history' ||
+    lowered === 'chatgpt_archive_history'
+  ) {
+    return 'a11_archive_history';
+  }
+  if (
+    lowered === 'a11_archive_read' ||
+    lowered === 'archive_read' ||
+    lowered === 'read_archive' ||
+    lowered === 'codex_archive_read' ||
+    lowered === 'chatgpt_archive_read'
+  ) {
+    return 'a11_archive_read';
   }
   if (lowered === 'send-email' || lowered === 'send_mail' || lowered === 'mail_user' || lowered === 'email_user') {
     return 'send_email';
@@ -3330,6 +3643,24 @@ function normalizeDispatchActionName(name) {
   }
   if (lowered === 'qflush_memory_clear' || lowered === 'memory_ephemeral_clear') {
     return 'qflush_memory_clear';
+  }
+  if (lowered === 'mcp_status' || lowered === 'mcp_health' || lowered === 'funesterie_mcp_status') {
+    return 'mcp_status';
+  }
+  if (lowered === 'mcp_tools' || lowered === 'mcp_tools_list' || lowered === 'mcp_list_tools' || lowered === 'list_mcp_tools') {
+    return 'mcp_tools_list';
+  }
+  if (lowered === 'mcp_call' || lowered === 'mcp_tool' || lowered === 'mcp_tool_call' || lowered === 'call_mcp_tool') {
+    return 'mcp_tool_call';
+  }
+  if (lowered === 'romstation' || lowered === 'romstation_state' || lowered === 'romstation_status') {
+    return 'romstation_state';
+  }
+  if (lowered === 'romstation_mouse' || lowered === 'romstation_click' || lowered === 'mouse_virtual') {
+    return 'romstation_mouse';
+  }
+  if (lowered === 'romstation_keyboard' || lowered === 'romstation_keys' || lowered === 'keyboard_virtual') {
+    return 'romstation_keyboard';
   }
 
   return normalized;
@@ -3500,8 +3831,48 @@ function normalizeDispatchActionArgs(actionName, rawArgs = {}) {
     args.limit = args.max || args.count || args.top || args.n || undefined;
   }
 
+  if (actionName === 'a11_archive_history') {
+    if (!args.query) {
+      args.query = args.search || args.text || args.prompt || '';
+    }
+    if (!args.limit) {
+      args.limit = args.max || args.count || args.top || args.n || undefined;
+    }
+  }
+
+  if (actionName === 'a11_archive_read') {
+    if (!args.archiveId) {
+      args.archiveId = args.id || args.archive || '';
+    }
+    if (!args.file) {
+      args.file = args.path || args.filePath || '';
+    }
+    if (!args.maxMessages) {
+      args.maxMessages = args.limit || args.max || args.count || undefined;
+    }
+  }
+
   if ((actionName === 'vision_analyze' || actionName === 'ocr_file') && !args.task) {
     args.task = actionName === 'ocr_file' ? 'ocr' : (args.mode || 'describe');
+  }
+
+  if (actionName === 'mcp_tool_call') {
+    if (!args.name) {
+      args.name = args.tool || args.toolName || '';
+    }
+    if (!args.arguments) {
+      args.arguments = args.args || args.params || args.payload || {};
+    }
+  }
+
+  if (actionName === 'romstation_keyboard') {
+    if (!args.from) args.from = 'a11';
+    if (!args.targetWindow) args.targetWindow = 'RomStation';
+  }
+
+  if (actionName === 'romstation_mouse') {
+    if (!args.from) args.from = 'a11';
+    if (!args.targetWindow) args.targetWindow = 'RomStation';
   }
 
   return args;
@@ -3515,6 +3886,14 @@ const TOOL_IMPL = {
   qflush_memory_list: t_qflush_memory_list,
   qflush_memory_delete: t_qflush_memory_delete,
   qflush_memory_clear: t_qflush_memory_clear,
+
+  // MCP / RomStation bridge
+  mcp_status: t_mcp_status,
+  mcp_tools_list: t_mcp_tools_list,
+  mcp_tool_call: t_mcp_tool_call,
+  romstation_state: t_romstation_state,
+  romstation_mouse: t_romstation_mouse,
+  romstation_keyboard: t_romstation_keyboard,
 
   // FS
   fs_read: t_fs_read,
@@ -3590,8 +3969,73 @@ const TOOL_IMPL = {
   a11_memory_write: t_a11_memory_write,
   a11_memory_read: t_a11_memory_read,
   a11_memory_history: t_a11_memory_history,
+  a11_archive_history: t_a11_archive_history,
+  a11_archive_read: t_a11_archive_read,
   a11_env_snapshot: t_a11_env_snapshot,
   a11_debug_echo: t_a11_debug_echo,
+
+  // MCP Bus — permet à A11 d'interroger le bus MCP partagé
+  mcp_query: async (args = {}) => {
+    const MCP_URL = process.env.A11_MCP_URL || 'https://mcp.funesterie.me/mcp';
+    const tool = String(args.tool || 'agent_presence').trim();
+    const toolArgs = args.arguments || {};
+    const body = JSON.stringify({
+      jsonrpc: '2.0', id: Date.now(),
+      method: 'tools/call',
+      params: { name: tool, arguments: toolArgs }
+    });
+    try {
+      const res = await fetch(MCP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+        body,
+        signal: AbortSignal.timeout(15000),
+      });
+      const text = await res.text();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.result && data.result.content && data.result.content[0]) {
+              const content = data.result.content[0].text;
+              try { return JSON.parse(content); } catch { return { raw: content }; }
+            }
+          } catch {}
+        }
+      }
+      return { ok: false, error: 'no_parseable_result', status: res.status };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+
+  // MCP raccourcis — outils fréquents
+  mcp_presence: async () => {
+    const MCP_URL = process.env.A11_MCP_URL || 'https://mcp.funesterie.me/mcp';
+    const body = JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name: 'agent_presence', arguments: { includeIdle: false } } });
+    try {
+      const res = await fetch(MCP_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' }, body, signal: AbortSignal.timeout(10000) });
+      const text = await res.text();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('data: ')) { try { const d = JSON.parse(line.slice(6)); if (d.result?.content?.[0]?.text) return JSON.parse(d.result.content[0].text); } catch {} }
+      }
+    } catch (err) { return { ok: false, error: err.message }; }
+    return { ok: false, error: 'no_result' };
+  },
+
+  mcp_discussions: async () => {
+    const MCP_URL = process.env.A11_MCP_URL || 'https://mcp.funesterie.me/mcp';
+    const body = JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name: 'discussion_list', arguments: { limit: 5, status: 'open' } } });
+    try {
+      const res = await fetch(MCP_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' }, body, signal: AbortSignal.timeout(10000) });
+      const text = await res.text();
+      for (const line of text.split('\n')) {
+        if (line.startsWith('data: ')) { try { const d = JSON.parse(line.slice(6)); if (d.result?.content?.[0]?.text) return JSON.parse(d.result.content[0].text); } catch {} }
+      }
+    } catch (err) { return { ok: false, error: err.message }; }
+    return { ok: false, error: 'no_result' };
+  },
+
   agent_log: async (args = {}) => {
     const level = String(args.level || 'info').trim().toLowerCase() || 'info';
     const message = String(args.message || '').trim() || '(vide)';
@@ -3797,6 +4241,8 @@ module.exports = {
   t_a11_memory_write,
   t_a11_memory_read,
   t_a11_memory_history,
+  t_a11_archive_history,
+  t_a11_archive_read,
   t_download_file,
   t_qflush_flow,
   t_qflush_memory_write,
@@ -3804,6 +4250,12 @@ module.exports = {
   t_qflush_memory_list,
   t_qflush_memory_delete,
   t_qflush_memory_clear,
+  t_mcp_status,
+  t_mcp_tools_list,
+  t_mcp_tool_call,
+  t_romstation_state,
+  t_romstation_mouse,
+  t_romstation_keyboard,
   t_fs_read,
   t_fs_write,
   t_write_file,

@@ -235,6 +235,8 @@ function buildJanusSequencePlannerPrompt({
     '- structuralState = the stable structural state to preserve for the frame',
     '- variation = the main visible change in the frame',
     '- rendererFocus = short visual details that help the final renderer',
+    '- preserve one continuous shot: same subject identity, outfit, proportions, environment, lighting, palette and art style unless the user explicitly asks for a cut',
+    '- prefer small incremental motion changes between neighboring frames instead of unrelated poster-like key frames',
     '- if unsure, stay very close to the heuristic baseline plan',
     `User prompt: ${String(request?.prompt || '').trim()}`,
     `Compiled base prompt: ${String(compiledBasePrompt || request?.prompt || '').trim()}`,

@@ -661,10 +661,11 @@ function resolveHeuristicSequencePlan(request = {}, options = {}) {
   const configuredReanchorEvery = Number(request?.config?.frameReanchorEvery || 0) || 0;
   const genericCompositionHints = [
     'garder l identite, la silhouette et la lecture du sujet',
-    'garder un cadrage globalement proche',
+    'garder une camera continue et un cadrage de base reconnaissable',
+    'garder le meme decor, la meme lumiere et la meme palette visuelle',
     'faire varier surtout la posture, le geste et les appuis du corps',
-    'eviter que le decor change plus que le personnage',
-    'laisser le moteur organiser librement la camera si la scene reste lisible',
+    'eviter que le decor, le costume ou le style changent entre deux frames',
+    'laisser seulement de petites variations de camera si elles servent le mouvement',
   ];
 
   let basePlan = null;

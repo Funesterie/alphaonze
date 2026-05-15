@@ -1,3 +1,5 @@
+import { uploadLocalImage } from './api';
+
 export default async function handleImportFiles(
   list: FileList | null,
   onText: (t: string) => void,
@@ -15,26 +17,15 @@ export default async function handleImportFiles(
       } else if (options?.uploadImages && f.type.startsWith('image/')) {
         // Upload vers le backend local — pas de fallback data-URL
         // (coller des mégaoctets de base64 dans le textarea casse tout)
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onerror = () => reject(new Error(`FileReader error on ${f.name}`));
-          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-          reader.readAsDataURL(f);
-        });
         try {
-          const res = await fetch('/api/upload/image-local', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contentBase64: dataUrl, filename: f.name }),
-          });
-          const data = res.ok ? await res.json() : null;
+          const data = await uploadLocalImage(f);
           const imageUrl = data?.url || null;
           if (imageUrl) {
             onText(`[image:${imageUrl}]`);
             console.log(`[Importer] Image uploaded locally: ${f.name} -> ${imageUrl}`);
           } else {
             // Upload a répondu mais sans URL — erreur propre, pas de base64
-            console.warn(`[Importer] Upload returned no URL for ${f.name} (status ${res.status})`);
+            console.warn(`[Importer] Upload returned no URL for ${f.name}`);
             onText(`[Erreur upload: ${f.name}]`);
           }
         } catch (error_) {

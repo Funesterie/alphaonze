@@ -24,7 +24,7 @@
 
    Example (use a random generator):
    ```
-   JWT_SECRET=aB$kL9mN2pQrS7tUvWxYz0C3dEfGhIjKlMnOpQrStUvWxYz0C3dEfGhIjKl
+   # JWT_SECRET is configured via the deployment secret store.
    ```
 
 4. Save & **Redeploy** your service
@@ -33,7 +33,7 @@
 
 Create `.env.local` in `apps/server/`:
 ```env
-JWT_SECRET=dev-secret-123
+# JWT_SECRET is configured via the deployment secret store.
 NODE_ENV=development
 ```
 

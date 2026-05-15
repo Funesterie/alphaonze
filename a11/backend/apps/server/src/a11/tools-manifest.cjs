@@ -80,6 +80,53 @@ const TOOL_MANIFEST = {
       prefix: "string (optionnel)"
     }
   },
+  mcp_status: {
+    description: "Verifie le pont MCP Funesterie connecte a A11 et retourne sa configuration publique.",
+    dangerLevel: "low",
+    args: {}
+  },
+  mcp_tools_list: {
+    description: "Liste les outils MCP disponibles pour A11, avec indicateur allowlist.",
+    dangerLevel: "low",
+    args: {
+      allowedOnly: "boolean (optionnel, true par defaut)"
+    }
+  },
+  mcp_tool_call: {
+    description: "Appelle un outil MCP autorise par la allowlist A11_MCP_TOOL_ALLOWLIST.",
+    dangerLevel: "medium",
+    args: {
+      name: "string (nom de l'outil MCP)",
+      arguments: "object (arguments de l'outil MCP)"
+    }
+  },
+  romstation_state: {
+    description: "Lit l'etat RomStation/emulateur via le MCP Funesterie.",
+    dangerLevel: "low",
+    args: {}
+  },
+  romstation_mouse: {
+    description: "Envoie une action souris virtuelle a RomStation via Qflush/MCP.",
+    dangerLevel: "medium",
+    args: {
+      from: "string (optionnel, identite appelante)",
+      targetWindow: "string (optionnel, titre ou process cible)",
+      action: "string (move, click, double_click)",
+      x: "number (coord X)",
+      y: "number (coord Y)",
+      coordinateMode: "string (window-normalized ou window-pixels)"
+    }
+  },
+  romstation_keyboard: {
+    description: "Envoie des touches clavier virtuelles a RomStation via Qflush/MCP.",
+    dangerLevel: "medium",
+    args: {
+      from: "string (optionnel, identite appelante)",
+      targetWindow: "string (optionnel, titre ou process cible)",
+      buttons: "string|string[] (touches a envoyer)",
+      layout: "string (optionnel, ex: bloody-roar-keyboard-azerty)"
+    }
+  },
   fs_read: {
     description: "Lire le contenu texte d’un fichier.",
     dangerLevel: "low",
@@ -455,6 +502,19 @@ const TOOL_MANIFEST = {
     dangerLevel: "low",
     description: "Outil de debug qui renvoie textuellement les arguments pour inspection."
   },
+  mcp_query: {
+    dangerLevel: "low",
+    description: "Interroge le bus MCP partagé Funesterie. Permet de lire la présence des agents, les discussions, les jobs, le statut Neo4j, etc.",
+    args: { tool: "string (nom du tool MCP: agent_presence, discussion_list, neo4j_status, a11_status, kaen44_status, agent_jobs, etc.)", arguments: "object (arguments du tool, optionnel)" }
+  },
+  mcp_presence: {
+    dangerLevel: "low",
+    description: "Raccourci: retourne la liste des agents actifs sur le bus MCP."
+  },
+  mcp_discussions: {
+    dangerLevel: "low",
+    description: "Raccourci: retourne les 5 dernières discussions ouvertes sur le bus MCP."
+  },
   write_file: {
     description: "Écrire un fichier texte (mode assistant, chemin relatif ou absolu dans le workspace).",
     dangerLevel: "medium",
@@ -478,6 +538,33 @@ const TOOL_MANIFEST = {
     dangerLevel: "low",
     args: {
       key: "string (clé de mémo à lire)"
+    }
+  },
+  a11_memory_history: {
+    description: "Liste l'historique local d'A-11: KV, conversations, memos et archives de chats locales.",
+    dangerLevel: "low",
+    args: {
+      prefix: "string (optionnel, filtre texte ou prefixe)",
+      limit: "number (optionnel)"
+    }
+  },
+  a11_archive_history: {
+    description: "Liste et recherche les archives locales de conversations Codex/ChatGPT accessibles a A-11.",
+    dangerLevel: "low",
+    args: {
+      query: "string (optionnel, texte a chercher dans les archives)",
+      limit: "number (optionnel, 1-100)"
+    }
+  },
+  a11_archive_read: {
+    description: "Lit une archive locale precise de conversation Codex/ChatGPT avec son transcript.",
+    dangerLevel: "low",
+    args: {
+      archiveId: "string (identifiant renvoye par a11_archive_history)",
+      sessionId: "string (optionnel, alias)",
+      conversationId: "string (optionnel, alias)",
+      file: "string (optionnel, chemin absolu vers l'archive)",
+      maxMessages: "number (optionnel, limite de messages a retourner)"
     }
   }
 };

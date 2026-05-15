@@ -1,12 +1,12 @@
 const normalizeMaskImageGenerate = require('./normalize-mask-image-generate.cjs');
 const { isLlmEnrichmentEnabled, callStructuredLlmJson } = require('./resolve-text-to-wazaa.cjs');
 
-const SPECIAL_IMAGE_COMPILER_SYSTEM_PROMPT = `Tu es un raffineur de compilateur image pour A11.
-Tu reçois un MASK image déjà structuré en français.
-Tu ne dois jamais changer le sujet principal, la palette, l'intention, les contraintes, ni ajouter un nouveau personnage ou un nouveau sujet principal.
-Tu dois seulement proposer des hints positifs et courts pour mieux cadrer une demande image complexe.
+const SPECIAL_IMAGE_COMPILER_SYSTEM_PROMPT = `Je suis un raffineur de compilateur image pour A11.
+Je reçois un MASK image déjà structuré en français.
+Je ne dois jamais changer le sujet principal, la palette, l'intention, les contraintes, ni ajouter un nouveau personnage ou un nouveau sujet principal.
+Je dois seulement proposer des hints positifs et courts pour mieux cadrer une demande image complexe.
 
-Réponds uniquement en JSON strict avec cette forme :
+Je réponds uniquement en JSON strict avec cette forme :
 {
   "composition_hints": ["..."],
   "environment_hints": ["..."],

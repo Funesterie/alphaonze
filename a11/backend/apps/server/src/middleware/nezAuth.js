@@ -13,6 +13,12 @@ function parseNezTokens(envValue) {
 
 const TOKENS = parseNezTokens(process.env.NEZ_TOKENS);
 const MODE = (process.env.NEZ_SECURITY_MODE || 'dev').toLowerCase();
+const LOCAL_BYPASS_ENABLED = !['false', '0', 'no', 'off'].includes(
+  String(
+    process.env.NEZ_ALLOW_LOCAL_BYPASS ||
+      (process.env.NODE_ENV === 'production' ? 'false' : 'true')
+  ).toLowerCase()
+);
 
 const nezAccessLog = [];
 
@@ -22,15 +28,29 @@ function registerIssuedToken(token) {
   issuedTokens.add(token);
 }
 
+function isLoopbackIp(value) {
+  const ip = String(value || '').trim().toLowerCase().replace(/^::ffff:/, '');
+  return ip === 'localhost' || ip === '127.0.0.1' || ip === '::1' || ip === '[::1]';
+}
+
 function isLocalRequest(req) {
   try {
     const host = (req.hostname || '').toLowerCase();
     const ip = (req.ip || '').toString();
-    if (host === 'localhost' || host === '127.0.0.1') return true;
-    if (ip === '127.0.0.1' || ip === '::1') return true;
-    // also allow if forwarded for contains localhost
     const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded && String(forwarded).includes('127.0.0.1')) return true;
+    const directRemote = req.socket?.remoteAddress || req.connection?.remoteAddress || '';
+
+    // A public reverse proxy may connect from 127.0.0.1 while forwarding an external
+    // client IP. In that case, never treat the request as local by default.
+    if (forwarded) {
+      if (process.env.NEZ_TRUST_FORWARD_LOCAL !== 'true') return false;
+      const firstForwardedIp = String(forwarded).split(',')[0].trim();
+      return isLoopbackIp(directRemote) && isLoopbackIp(firstForwardedIp);
+    }
+
+    if (isLoopbackIp(host)) return true;
+    if (isLoopbackIp(ip)) return true;
+    if (isLoopbackIp(directRemote)) return true;
   } catch (e) {}
   return false;
 }
@@ -51,8 +71,8 @@ function nezAuth(req, res, next) {
     return next();
   }
 
-  // 2) In dev mode, allow local requests when no tokens configured
-  if (MODE === 'dev' && isLocalRequest(req) && Object.keys(TOKENS).length === 0) {
+  // 2) In dev mode, allow local requests only when the local bypass is enabled.
+  if (MODE === 'dev' && LOCAL_BYPASS_ENABLED && isLocalRequest(req)) {
     return next();
   }
 
@@ -77,12 +97,6 @@ function nezAuth(req, res, next) {
       error: 'A11_Nezlephant_Filter',
       message: "Nezlephant ne t'a pas encore reconnu sur ce réseau (token manquant).",
     });
-  }
-
-  // Accept tokens issued by /api/auth/login (in-memory)
-  if (issuedTokens.has(headerToken)) {
-    req.nezClient = { id: 'session', token: headerToken, source: 'login' };
-    return next();
   }
 
   // Accept tokens issued by /api/auth/login (in-memory)
@@ -130,4 +144,12 @@ function getNezAccessLog() {
   return nezAccessLog.slice().reverse();
 }
 
-module.exports = { nezAuth, parseNezTokens, TOKENS, MODE, getNezAccessLog, registerIssuedToken };
+module.exports = {
+  nezAuth,
+  parseNezTokens,
+  TOKENS,
+  MODE,
+  LOCAL_BYPASS_ENABLED,
+  getNezAccessLog,
+  registerIssuedToken
+};

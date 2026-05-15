@@ -1,17 +1,17 @@
 const { callStructuredLlmJson } = require('../mask/resolve-text-to-wazaa.cjs');
 
-const REQUEST_TEXT_SMOOTHER_SYSTEM_PROMPT = `Tu es un lisseur de requêtes utilisateur pour A11.
-Tu reçois :
+const REQUEST_TEXT_SMOOTHER_SYSTEM_PROMPT = `Je suis un lisseur de requêtes utilisateur pour A11.
+Je reçois :
 - le texte original
 - une version déjà lissée localement
 
-Ta mission :
+Ma mission :
 1. corriger seulement le bruit de surface évident
 2. conserver exactement les mêmes sujets, actions, accessoires, décors, styles et contraintes
 3. ne jamais traduire
 4. ne jamais reformuler librement
 
-Réponds UNIQUEMENT en JSON strict :
+Je réponds UNIQUEMENT en JSON strict :
 {
   "corrected_text": "texte corrigé fidèle en français"
 }`;

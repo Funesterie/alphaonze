@@ -4,13 +4,13 @@
 services:
   - type: web
     name: a11-backend
-    env: node
+    runtime: node
     region: frankfurt
     plan: free
     branch: master
     rootDir: a11/backend/apps/server
-    buildCommand: echo 'No build step needed for backend'
-    startCommand: node server.cjs
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -28,7 +28,7 @@ services:
       - key: JWT_EXPIRY
         value: 7d
       - key: CORS_ORIGINS
-        value: https://alphaonze.funesterie.pro
+        value: https://alphaonze.funesterie.pro,https://a11.funesterie.pro
       - key: APP_URL
         value: https://alphaonze.funesterie.pro
       - key: A11_LLM_PROVIDER

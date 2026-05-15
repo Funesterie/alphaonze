@@ -15,6 +15,16 @@ test('buildRuntimeConfig prefers explicit Qflush URL over Dragon URL', () => {
   assert.equal(config.qflush.useDragonCompat, false);
 });
 
+test('buildRuntimeConfig normalizes Qflush status endpoints to the backend origin', () => {
+  const config = buildRuntimeConfig({
+    QFLUSH_REMOTE_URL: 'https://a11.funesterie.pro/api/qflush/status',
+    NODE_ENV: 'production',
+  });
+
+  assert.equal(config.qflush.remoteUrl, 'https://a11.funesterie.pro');
+  assert.equal(config.features.chat.qflushRemoteUrl, 'https://a11.funesterie.pro');
+});
+
 test('buildRuntimeConfig only falls back to Dragon when compatibility flag is enabled', () => {
   const disabledCompat = buildRuntimeConfig({
     DRAGON_API_URL: 'https://dragon.example.com',
@@ -47,6 +57,30 @@ test('buildRuntimeConfig disables qflush explicitly when A11_ENABLE_QFLUSH is fa
   assert.equal(config.qflush.chatFlow, '');
   assert.equal(config.features.chat.provider, 'ollama');
   assert.equal(config.features.chat.qflushRemoteUrl, '');
+});
+
+test('buildRuntimeConfig accepts launcher-style A11 Qflush flow aliases', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'development',
+    A11_ENABLE_QFLUSH: '1',
+    A11_LOCAL_MODE: '1',
+    A11_QFLUSH_CHAT_FLOW: 'a11.chat.v1',
+    A11_QFLUSH_MEMORY_SUMMARY_FLOW: 'a11.memory.summary.v1',
+  });
+
+  assert.equal(config.qflush.chatFlow, 'a11.chat.v1');
+  assert.equal(config.qflush.memorySummaryFlow, 'a11.memory.summary.v1');
+  assert.equal(config.features.memory.provider, 'local');
+});
+
+test('buildRuntimeConfig uses the local Qflush chat flow default when only Qflush is enabled', () => {
+  const config = buildRuntimeConfig({
+    NODE_ENV: 'development',
+    A11_ENABLE_QFLUSH: 'true',
+    A11_LOCAL_MODE: '1',
+  });
+
+  assert.equal(config.qflush.chatFlow, 'a11.chat.v1');
 });
 
 test('buildRuntimeConfig exposes production-safe feature providers', () => {

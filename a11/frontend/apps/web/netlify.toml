@@ -6,9 +6,30 @@
 [build.environment]
   NODE_VERSION = "22"
 
+[functions]
+  directory = "../../netlify/functions"
+
 [[redirects]]
   from = "/api/*"
-  to = "https://api.funesterie.pro/api/:splat"
+  to = "/.netlify/functions/a11-proxy/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/files/*"
+  to = "/.netlify/functions/a11-proxy/files/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/tts/*"
+  to = "/.netlify/functions/a11-proxy/tts/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/a11-proxy/health"
   status = 200
   force = true
 

@@ -16,11 +16,12 @@ function resolveOpenAiImageConfig() {
     || process.env.OPENAI_API_KEY
     || ''
   ).trim();
-  const baseUrl = String(
+  const imageBaseUrl = String(
     process.env.A11_OPENAI_IMAGE_BASE_URL
-    || process.env.OPENAI_BASE_URL
-    || 'https://api.openai.com/v1'
-  ).trim().replace(/\/+$/, '');
+    || process.env.OPENAI_IMAGE_BASE_URL
+    || ''
+  ).trim();
+  const baseUrl = String(imageBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '');
   const model = String(
     process.env.A11_OPENAI_IMAGE_MODEL
     || process.env.OPENAI_IMAGE_MODEL
@@ -177,9 +178,14 @@ function looksLikeOpenAiQuotaError(result = {}) {
   const message = String(result?.message || '').trim().toLowerCase();
 
   if (statusCode === 429) return true;
+  if (statusCode === 402) return true;
   if (errorCode.includes('insufficient_quota')) return true;
+  if (errorCode.includes('insufficient_balance')) return true;
+  if (errorCode.includes('billing_hard_limit')) return true;
   if (errorCode.includes('billing')) return true;
   if (message.includes('billing hard limit')) return true;
+  if (message.includes('billing_hard_limit')) return true;
+  if (message.includes('insufficient balance')) return true;
   if (message.includes('insufficient quota')) return true;
   if (message.includes('exceeded your current quota')) return true;
   return false;

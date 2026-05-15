@@ -98,6 +98,44 @@ def decode_image(image_b64):
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
 
+def model_floating_dtype(model):
+    try:
+        return next(p.dtype for p in model.parameters() if p.is_floating_point())
+    except StopIteration:
+        return torch.float32
+
+
+def align_prepared_tensors(prepared, model):
+    target_dtype = model_floating_dtype(model)
+
+    def convert(value):
+        if torch.is_tensor(value):
+            if torch.is_floating_point(value):
+                return value.to(device=model.device, dtype=target_dtype)
+            return value.to(device=model.device)
+        if isinstance(value, list):
+            return [convert(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(convert(item) for item in value)
+        return value
+
+    if hasattr(prepared, "items"):
+        for key, value in list(prepared.items()):
+            try:
+                prepared[key] = convert(value)
+            except Exception:
+                pass
+
+    for name in ("pixel_values", "images_seq_mask", "images_emb_mask", "input_ids", "attention_mask"):
+        if hasattr(prepared, name):
+            try:
+                setattr(prepared, name, convert(getattr(prepared, name)))
+            except Exception:
+                pass
+
+    return prepared
+
+
 @torch.inference_mode()
 def run_vision_text(model, processor, tokenizer, image, prompt, max_new_tokens=320, temperature=0.0):
     conversation = [
@@ -116,6 +154,7 @@ def run_vision_text(model, processor, tokenizer, image, prompt, max_new_tokens=3
         images=[image],
         force_batchify=True,
     ).to(model.device)
+    prepared = align_prepared_tensors(prepared, model)
     inputs_embeds = model.prepare_inputs_embeds(**prepared)
 
     do_sample = float(temperature or 0) > 0.01

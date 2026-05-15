@@ -73,6 +73,18 @@ less conservative than sequential offload, but still safer than loading the
 whole SD3 stack directly onto the GPU. The 1200 ms settle gives Ollama and any
 Janus worker time to release VRAM before SD starts.
 
+Current local CUDA wheel set:
+
+```powershell
+D:\projets\funesterie\a11\backend\apps\server\tools\sd\venv\Scripts\python.exe -m pip install --upgrade -r D:\projets\funesterie\a11\backend\apps\server\tools\sd\requirements.cuda-cu128.txt
+```
+
+Quick verification:
+
+```powershell
+D:\projets\funesterie\a11\backend\apps\server\tools\sd\venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"
+```
+
 ## Optional Python packages
 
 If you want to run the script directly, install at least:
@@ -81,3 +93,18 @@ If you want to run the script directly, install at least:
 - `diffusers`
 - `accelerate`
 - `safetensors`
+
+## Local status - 2026-05-08
+
+Verified local runtime:
+
+- Python `3.11.9`
+- Torch `2.11.0+cu128`
+- CUDA available on `NVIDIA GeForce RTX 5070`
+- Diffusers `0.38.0`
+- Transformers `5.8.0`
+- Accelerate `1.13.0`
+- Safetensors `0.8.0rc0`
+- Pillow `12.2.0`
+
+Audacity is installed on Windows through winget as `Audacity.Audacity 3.7.7`.

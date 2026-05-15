@@ -1,0 +1,125 @@
+# Render Blueprint - Kaen44 API fallback
+#
+# Purpose:
+# - API-only fallback for Kaen44 while Cloudflare routing on funesterie.me/api/*
+#   is investigated.
+# - Do not commit real secrets. Values marked sync: false must be filled in the
+#   Render Dashboard.
+#
+# Render docs:
+# - Blueprints are backed by render.yaml and can be customized during setup.
+# - Web services support healthCheckPath.
+# - Render Key Value uses type: keyvalue; redis is deprecated alias.
+
+services:
+  - type: web
+    name: kaen44-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    repo: https://github.com/Funesterie/alphaonze
+    branch: master
+    rootDir: a11/backend/apps/server
+    buildCommand: npm install --omit=dev
+    # API-only fallback: master currently has the Kaen env switches but not
+    # server-kaen44.cjs, so start the generic server with explicit Kaen env.
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST_SERVER
+        value: 0.0.0.0
+      - key: BACKEND
+        value: render
+      - key: SERVE_STATIC
+        value: "false"
+      - key: A11_PRODUCT
+        value: kaen44
+      - key: A11_INSTANCE_NAME
+        value: Kaen44
+      - key: A11_RUNTIME_PROFILE
+        value: kaen44
+      - key: A11_PUBLIC_HOST
+        value: k44.funesterie.me
+      - key: PUBLIC_APP_URL
+        value: https://k44.funesterie.me
+      - key: API_URL
+        value: https://k44.funesterie.me
+      - key: KAEN44_MODE
+        value: "1"
+      - key: A11_ALLOW_DEV_ROUTES
+        value: "false"
+      - key: A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS
+        value: "false"
+      - key: A11_RESPONDER_MODE
+        value: "off"
+      - key: NEZ_SECURITY_MODE
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: A11_FULL_ACCESS_EMAILS
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://funesterie.me,https://k44.funesterie.me,https://kaen44.funesterie.me,https://a11.funesterie.pro
+      - key: A11_LLM_PROVIDER
+        value: together
+      - key: LLM_ROUTER_URL
+        # Used only so /api/llm/stats can proxy to the embedded /api/stats route.
+        # If the service name changes, update this URL after deploy.
+        value: https://kaen44-api.onrender.com
+      - key: A11_LLM_FALLBACK_PROVIDER
+        value: deepseek
+      - key: DEFAULT_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: OPENAI_BASE_URL
+        value: https://api.together.xyz/v1
+      - key: OPENAI_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: A11_OPENAI_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: OPENAI_API_KEY
+        # Emergency Render profile uses Together through the existing
+        # OpenAI-compatible client path. Put the Together key here.
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
+      - key: HF_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kaen44-postgres
+          property: connectionString
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: kaen44-keyvalue
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: kaen44-keyvalue
+          property: port
+      - key: A11_ENABLE_QFLUSH
+        value: "0"
+      - key: MANAGE_CERBERE
+        value: "false"
+      - key: MANAGE_TTS
+        value: "false"
+
+  - type: keyvalue
+    name: kaen44-keyvalue
+    plan: free
+    region: frankfurt
+    ipAllowList: []
+
+databases:
+  - name: kaen44-postgres
+    databaseName: kaen44
+    plan: free
+    region: frankfurt
+    ipAllowList: []

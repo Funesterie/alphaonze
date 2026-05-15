@@ -13,6 +13,8 @@ const {
   validateCanonicalizedImageGenerateRequest,
 } = require('../src/mask/canonicalize-image-generate-request.cjs');
 
+const setEnv = (name, value) => { process.env[name] = value; };
+
 test('canonicalizeImageGenerateRequest rejects non-canonical special-compiler payloads instead of falling back locally', async () => {
   await assert.rejects(
     () => canonicalizeImageGenerateRequest(
@@ -49,7 +51,7 @@ test('canonicalizeImageGenerateRequest surfaces strict structured-llm configurat
 
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = '';
-  process.env.A11_TRANSLATION_API_KEY = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
   process.env.OPENAI_API_KEY = '';
   process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = '';
@@ -68,7 +70,7 @@ test('canonicalizeImageGenerateRequest surfaces strict structured-llm configurat
   } finally {
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
-    process.env.A11_TRANSLATION_API_KEY = previous.A11_TRANSLATION_API_KEY;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
     process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = previous.A11_TRANSLATION_ALLOW_GENERIC_OPENAI;

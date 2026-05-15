@@ -1,3 +1,5 @@
+const crypto = require('node:crypto');
+
 function decodeBase64Content(contentBase64) {
   const rawBase64 = String(contentBase64 || '').trim();
   const cleanBase64 = rawBase64.includes(',') ? rawBase64.split(',').pop() : rawBase64;
@@ -15,6 +17,13 @@ function decodeBase64Content(contentBase64) {
   }
 
   return buffer;
+}
+
+function buildContentAddressedStorageKey(userId, filename, buffer) {
+  const normalizedUserId = String(userId || 'anonymous').replace(/[^a-zA-Z0-9_-]/g, '_') || 'anonymous';
+  const safeFilename = String(filename || 'file.bin').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 180) || 'file.bin';
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  return `users/${normalizedUserId}/uploads/${hash}-${safeFilename}`;
 }
 
 async function ingestUploadedFile({
@@ -81,6 +90,7 @@ async function ingestUploadedFile({
     filename: safeFilename,
     buffer,
     contentType: normalizedContentType,
+    storageKey: buildContentAddressedStorageKey(normalizedUserId, safeFilename, buffer),
   });
 
   const record = await saveFileRecord({

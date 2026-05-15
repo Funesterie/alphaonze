@@ -29,9 +29,9 @@ const FRAME_PROMPTER_SUBJECT_STOPWORDS = new Set([
   'person', 'visible', 'full', 'body', 'shot', 'view',
 ]);
 
-const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `You are A11 video director and storyboard artist planning a frame-by-frame video sequence.
+const VIDEO_FRAME_PROMPTER_SYSTEM_PROMPT = `I am A11's video director and storyboard artist planning a frame-by-frame video sequence.
 
-Your job: read the user's request and produce N shot descriptions — one per frame — that a frame renderer will execute in sequence to produce a coherent video clip.
+My job: read the user's request and produce N shot descriptions — one per frame — that a frame renderer will execute in sequence to produce a coherent video clip.
 
 Think like a cinematographer writing a storyboard: each frame is a shot. Describe what the camera sees at this exact moment — subject position, action, camera angle, framing, lighting, atmosphere. Every shot must flow naturally from the previous one to create motion continuity.
 
@@ -45,6 +45,9 @@ For each frame description, include:
 Rules:
 - Stay faithful to the user's exact request — their subject, style, atmosphere, and action.
 - Each frame advances the motion by one visible step.
+- Treat the sequence as one continuous shot unless the user explicitly asks for cuts.
+- Keep the same main subject identity, outfit, proportions, background, lighting, lens and art style across every frame.
+- Use small incremental pose/action changes; do not redesign the subject or jump to unrelated key art between frames.
 - Write in English only.
 - No numbering in descriptions.
 
@@ -220,6 +223,8 @@ function buildFramePrompterInput({
   const instruction = [
     `Generate exactly ${frameCount} detailed frame descriptions in ENGLISH for: "${normalizedPrompt || normalizedSubject}".`,
     `Use the user's exact subject, style, atmosphere and details in every frame description.`,
+    'Keep one continuous shot: same subject identity, outfit, proportions, background, lighting, lens and art style across all frames.',
+    'Only advance the pose, gesture, effects and timing by small readable increments from one frame to the next.',
     framingNote,
     previousNote,
     sizeNote,

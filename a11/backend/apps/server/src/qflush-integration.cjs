@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
 const net = require('node:net');
+const { pathToFileURL } = require('node:url');
 const { spawn, spawnSync } = require('node:child_process');
 const { A11Supervisor } = require('./a11-supervisor.cjs');
 const { createUpstreamHttpError, fetchJsonWithRetry } = require('../lib/fetch-json-retry.cjs');
@@ -513,8 +514,32 @@ function shouldUseDragonAsQflushRunner() {
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
+function normalizeQflushRemoteBaseUrl(value = '') {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = String(parsed.pathname || '')
+      .replace(/\/+$/, '')
+      .replace(/\/api\/qflush\/(?:admin\/run|run|status)$/i, '')
+      .replace(/\/api\/qflush$/i, '')
+      .replace(/\/api\/admin\/run$/i, '')
+      || '/';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return raw
+      .replace(/\/api\/qflush\/(?:admin\/run|run|status)$/i, '')
+      .replace(/\/api\/qflush$/i, '')
+      .replace(/\/api\/admin\/run$/i, '')
+      .replace(/\/+$/, '');
+  }
+}
+
 function getQflushRemoteBaseUrl() {
-  return String(
+  return normalizeQflushRemoteBaseUrl(
     process.env.QFLUSH_URL
     || process.env.QFLUSH_REMOTE_URL
     || process.env.QFLUSH_BASE_URL
@@ -555,6 +580,109 @@ function getRemoteFlowRetryCount() {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2;
 }
 
+function isLoopbackUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function toFileImportSpecifier(filePath) {
+  return pathToFileURL(filePath).href;
+}
+
+function getQflushLocalModuleDir() {
+  return String(globalThis.__QFLUSH_MODULE_DIR || process.env.QFLUSH_MODULE_DIR || '').trim();
+}
+
+function getQflushLocalEntryPath() {
+  return String(globalThis.__QFLUSH_PATH || process.env.QFLUSH_ENTRYPOINT || '').trim();
+}
+
+function getQflushModuleCandidates() {
+  const moduleDir = getQflushLocalModuleDir();
+  const entryPath = getQflushLocalEntryPath();
+  const candidates = [];
+
+  if (entryPath && /\.m?js$/i.test(entryPath) && fs.existsSync(entryPath)) {
+    candidates.push(toFileImportSpecifier(entryPath));
+  }
+  if (moduleDir && fs.existsSync(moduleDir)) {
+    const daemonEntry = path.join(moduleDir, 'dist', 'daemon', 'qflushd.js');
+    const rootEntry = path.join(moduleDir, 'dist', 'index.js');
+    if (fs.existsSync(daemonEntry)) candidates.push(toFileImportSpecifier(daemonEntry));
+    if (fs.existsSync(rootEntry)) candidates.push(toFileImportSpecifier(rootEntry));
+  }
+
+  candidates.push('@funeste38/qflush/dist/daemon/qflushd.js');
+  candidates.push('@funeste38/qflush');
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function createQflushFlowAdapter(mod) {
+  if (typeof mod?.runFlow === 'function') {
+    return (flow, payload) => mod.runFlow(flow, payload || {});
+  }
+  if (typeof mod?.default?.runFlow === 'function') {
+    return (flow, payload) => mod.default.runFlow(flow, payload || {});
+  }
+  if (typeof mod?.run === 'function') {
+    return (flow, payload) => mod.run({ flow, payload: payload || {} });
+  }
+  if (typeof mod?.default?.run === 'function') {
+    return (flow, payload) => mod.default.run({ flow, payload: payload || {} });
+  }
+  return null;
+}
+
+async function importQflushModule(selectCandidate) {
+  let lastError = null;
+  for (const specifier of getQflushModuleCandidates()) {
+    try {
+      const mod = await import(specifier);
+      const candidate = selectCandidate(mod);
+      if (candidate) {
+        return { specifier, mod, candidate };
+      }
+    } catch (error_) {
+      lastError = error_;
+      console.warn(`[QFLUSH] Module candidate failed (${specifier}):`, error_.message);
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error('No qflush module candidate resolved');
+}
+
+function normalizeQflushSkillResult(result) {
+  if (!result || typeof result !== 'object') {
+    return result;
+  }
+
+  if (typeof result.out === 'string') {
+    const trimmed = result.out.trim();
+    if (trimmed) {
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return {
+          ok: result.code === 0 || result.code === undefined,
+          output: trimmed,
+          raw: result,
+        };
+      }
+    }
+  }
+
+  return result;
+}
+
 function shouldUseRemoteFlow(flow) {
   const normalizedFlow = String(flow || '').trim().toLowerCase();
   return normalizedFlow.startsWith('a11.');
@@ -564,6 +692,7 @@ async function runQflushFlow(flow, payload, options = {}) {
   const dragonApiUrl = getDragonApiUrl();
   const requestId = String(options.requestId || '').trim() || crypto.randomUUID();
   const { baseUrl: remoteUrl, target } = getRemoteFlowBaseUrl();
+  let remoteFailure = null;
   if (remoteUrl && shouldUseRemoteFlow(flow)) {
     // Route A11 flows through Dragon when a remote compat endpoint is configured.
     // We intentionally avoid the legacy /run endpoint.
@@ -619,36 +748,30 @@ async function runQflushFlow(flow, payload, options = {}) {
         message: e?.message || String(e),
         upstream: e?.upstream || null,
       }));
-      throw e;
+      if (!isLoopbackUrl(remoteUrl)) {
+        throw e;
+      }
+      remoteFailure = e;
+      console.warn(`[QFLUSH] Falling back to local module for ${flow}`);
     }
   }
 
   // Try canonical Node module entrypoints before falling back to an executable.
-  const moduleCandidates = [
-    '@funeste38/qflush',
-    '@funeste38/qflush/dist/daemon/qflushd.js',
-  ];
-
-  for (const specifier of moduleCandidates) {
-    try {
-      const mod = await import(specifier);
-      const candidate =
-        (typeof mod?.run === 'function' && mod.run)
-        || (typeof mod?.default?.run === 'function' && mod.default.run)
-        || (typeof mod?.runFlow === 'function' && ((request) => mod.runFlow(request.flow, request.payload || {})))
-        || (typeof mod?.default?.runFlow === 'function' && ((request) => mod.default.runFlow(request.flow, request.payload || {})));
-
-      if (typeof candidate === 'function') {
-        return await candidate({ flow, payload });
-      }
-    } catch (e) {
-      console.warn(`[QFLUSH] Module candidate failed (${specifier}):`, e.message);
+  try {
+    const { candidate } = await importQflushModule(createQflushFlowAdapter);
+    return await candidate(flow, payload || {});
+  } catch (error_) {
+    if (remoteFailure) {
+      throw remoteFailure;
     }
+    console.warn('[QFLUSH] Local module flow adapter unavailable:', error_.message);
   }
 
   // Fallback to EXE
   const exe = globalThis.__QFLUSH_PATH || process.env.QFLUSH_EXE_PATH;
-  if (!exe) throw new Error('No qflush executable or compatible module found');
+  if (!exe) {
+    throw new Error('No qflush executable or compatible module found');
+  }
   const { spawn } = require('child_process');
   const args = ['run', flow, '--input', JSON.stringify(payload)];
   return new Promise((resolve, reject) => {
@@ -670,6 +793,45 @@ async function runQflushFlow(flow, payload, options = {}) {
   });
 }
 
+async function runQflushSkill(skill, payload = {}, options = {}) {
+  const normalizedSkill = String(skill || '').trim();
+  if (!normalizedSkill) {
+    throw new Error('missing_skill');
+  }
+
+  if (
+    shouldUseRemoteFlow(normalizedSkill)
+    || normalizedSkill === 'web_fetch'
+    || normalizedSkill === 'fs.search'
+  ) {
+    return await runQflushFlow(normalizedSkill, payload || {}, options);
+  }
+
+  const { mod } = await importQflushModule((candidate) => {
+    const horn = candidate?.horn || candidate?.Horn || candidate?.default?.horn;
+    const scream = candidate?.scream || candidate?.default?.scream;
+    const runSkill = candidate?.runSkill || candidate?.default?.runSkill;
+    return horn || scream || runSkill || null;
+  });
+
+  const horn = mod?.horn || mod?.Horn || mod?.default?.horn;
+  if (horn && typeof horn.scream === 'function') {
+    return normalizeQflushSkillResult(await horn.scream(normalizedSkill, payload || {}, options));
+  }
+
+  const scream = mod?.scream || mod?.default?.scream;
+  if (typeof scream === 'function') {
+    return normalizeQflushSkillResult(await scream(normalizedSkill, payload || {}, options));
+  }
+
+  const runSkill = mod?.runSkill || mod?.default?.runSkill;
+  if (typeof runSkill === 'function') {
+    return await runSkill(normalizedSkill, payload || {}, options);
+  }
+
+  throw new Error('No qflush skill entrypoint available');
+}
+
 module.exports = {
   qflushAvailable,
   initQflush, // version asynchrone unique
@@ -681,5 +843,6 @@ module.exports = {
   setupA11Supervisor,
   // Export helper for external use
   findTTSScript,
-  runQflushFlow
+  runQflushFlow,
+  runQflushSkill
 };

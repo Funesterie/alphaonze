@@ -2,7 +2,8 @@
 
 /**
  * Service Stripe pour gérer les abonnements A11
- * Forfait : 2,99€/mois, annulable à tout moment
+ * Forfait public : A11 Studio leger, chat long + credits de creation.
+ * Les credits bonus sont attribues apres score de pertinence des apports utilisateur.
  */
 
 let stripe = null;
@@ -12,7 +13,7 @@ try {
   const apiKey = process.env.STRIPE_SECRET_KEY;
   if (apiKey) {
     stripe = new Stripe(apiKey, {
-      apiVersion: '2024-11-20.acacia',
+      apiVersion: process.env.STRIPE_API_VERSION || '2026-02-25.clover',
     });
   }
 } catch (error) {
@@ -36,13 +37,16 @@ async function createCheckoutSession(userId, userEmail) {
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
-    payment_method_types: ['card'],
+    // Let Stripe Checkout select every enabled method for the customer
+    // (cards, wallets, SEPA/Link/etc.) from the Stripe Dashboard.
     line_items: [
       {
         price: PRICE_ID,
         quantity: 1,
       },
     ],
+    billing_address_collection: 'auto',
+    allow_promotion_codes: true,
     success_url: `${SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: CANCEL_URL,
     client_reference_id: userId,

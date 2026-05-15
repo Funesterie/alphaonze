@@ -24,18 +24,25 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
+        continue-on-error: ${{ github.event.repository.private && vars.ENABLE_CODEQL != 'true' }}
         with:
           category: "/language:${{ matrix.language }}"
+
+      - name: CodeQL bootstrap note
+        if: ${{ github.event.repository.private && vars.ENABLE_CODEQL != 'true' }}
+        run: |
+          echo "CodeQL upload may require GitHub Advanced Security on private repos."
+          echo "Set repository variable ENABLE_CODEQL=true once code scanning is enabled."
