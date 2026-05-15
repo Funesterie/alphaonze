@@ -30,8 +30,24 @@ const {
   resolveHuggingFaceImageConfig,
 } = require('../../lib/hf-image.cjs');
 const {
+  tryGenerateImageWithReplicate,
+  resolveReplicateImageConfig,
+} = require('../../lib/replicate-image.cjs');
+const {
+  tryGenerateImageWithPollinations,
+  resolvePollinationsImageConfig,
+} = require('../../lib/pollinations-image.cjs');
+const {
   resolveImg2ImgStrengthPlan,
 } = require('../image/img2img-strength.cjs');
+const {
+  attachMediaAgentRoles,
+  buildMediaPipeline,
+  getMediaAgentRoleMatrix,
+} = require('../media/media-agent-roles.cjs');
+const {
+  createEmergencyImageAsset,
+} = require('../media/emergency-media.cjs');
 
 // Vision Memory — analyse automatique des images générées (fire-and-forget)
 let _visionMemory = null;
@@ -474,9 +490,29 @@ function normalizeImageProviderName(value = '') {
   if (!normalized) return '';
   if (normalized === 'stable-diffusion' || normalized === 'stable_diffusion' || normalized === 'local-sd') return 'sd';
   if (normalized === 'hf' || normalized === 'huggingface' || normalized === 'hugging_face' || normalized === 'huggingface-image') return 'hf';
+  if (normalized === 'replicate' || normalized === 'replicate-image') return 'replicate';
+  if (normalized === 'pollinations' || normalized === 'pollinations-image') return 'pollinations';
+  if (normalized === 'synthetic' || normalized === 'synthetic-frame' || normalized === 'emergency' || normalized === 'a11-emergency') return 'synthetic';
   if (normalized === 'openai-image') return 'openai';
   if (normalized === 'sd' || normalized === 'openai') return normalized;
   return '';
+}
+
+function hasExplicitImageProvider(requestBody = {}) {
+  return Boolean(normalizeImageProviderName(
+    requestBody?.engine
+    || requestBody?.image_engine
+    || requestBody?.provider
+    || ''
+  ));
+}
+
+function isEmergencyImageFallbackEnabled(requestBody = {}, env = process.env) {
+  const configured = String(env.A11_ENABLE_EMERGENCY_IMAGE_FALLBACK || env.A11_ENABLE_SYNTHETIC_IMAGE_FALLBACK || '').trim().toLowerCase();
+  if (['0', 'false', 'no', 'off'].includes(configured)) return false;
+  if (['1', 'true', 'yes', 'on', 'force'].includes(configured)) return true;
+  if (hasExplicitImageProvider(requestBody)) return false;
+  return String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
 }
 
 function resolveImageProviderOrder(requestBody = {}) {
@@ -496,7 +532,7 @@ function resolveImageProviderOrder(requestBody = {}) {
   return [...new Set(order)];
 }
 
-function normalizeImageToolPayload(payload = {}, provider = '') {
+function normalizeImageToolPayload(payload = {}, provider = '', options = {}) {
   if (!payload || typeof payload !== 'object') return payload;
   const next = {
     ...payload,
@@ -515,7 +551,7 @@ function normalizeImageToolPayload(payload = {}, provider = '') {
     next.content_type = 'image/jpeg';
   }
   if (!next.content_type && next.ok !== false) next.content_type = 'image/png';
-  return next;
+  return attachMediaAgentRoles(next, 'image', options);
 }
 
 function isSuccessfulImagePayload(payload = {}) {
@@ -1587,6 +1623,8 @@ function createSdToolsRouter(overrides = {}) {
     const width = Number(requestBody?.width || imageDimensionConfig.defaultWidth);
     const height = Number(requestBody?.height || imageDimensionConfig.defaultHeight);
     const hfConfig = resolveHuggingFaceImageConfig();
+    const replicateConfig = resolveReplicateImageConfig();
+    const pollinationsConfig = resolvePollinationsImageConfig();
     const openAiConfig = resolveOpenAiImageConfig();
     const providerOrder = resolveImageProviderOrder(requestBody);
     let lastFailure = null;
@@ -1625,6 +1663,26 @@ function createSdToolsRouter(overrides = {}) {
     };
 
     for (const provider of providerOrder) {
+      if (provider === 'synthetic') {
+        try {
+          const emergencyResult = await createEmergencyImageAsset({
+            prompt: rawPrompt,
+            body: requestBody,
+            req,
+          });
+          const payload = normalizeImageToolPayload({
+            ...emergencyResult,
+            mode: emergencyResult.mode || 'synthetic-frame',
+            provider: emergencyResult.provider || 'a11-emergency-svg',
+          }, 'synthetic-frame', { providerOrder });
+          analyzeGeneratedImage(payload);
+          return payload;
+        } catch (error_) {
+          recordFailure('synthetic-frame', error_, providerOrder.length > 1);
+        }
+        continue;
+      }
+
       if (provider === 'sd') {
         try {
           const sdResult = normalizeImageToolPayload(
@@ -1696,6 +1754,111 @@ function createSdToolsRouter(overrides = {}) {
         continue;
       }
 
+      if (provider === 'replicate') {
+        if (!replicateConfig.enabled || !replicateConfig.token) {
+          recordFailure('replicate', {
+            error: replicateConfig.enabled ? 'replicate_image_unconfigured' : 'replicate_image_disabled',
+            message: replicateConfig.enabled
+              ? 'REPLICATE_API_TOKEN manquant pour la generation image Replicate.'
+              : 'La generation image Replicate est desactivee sur cet environnement.',
+          }, providerOrder.length > 1);
+          continue;
+        }
+        try {
+          const tempDir = resolveGeneratedImageWorkRoot();
+          fs.mkdirSync(tempDir, { recursive: true });
+          const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.webp`;
+          const outputPath = path.join(tempDir, outputName);
+          const replicateResult = await tryGenerateImageWithReplicate({
+            prompt: rawPrompt,
+            outputPath,
+            width,
+            height,
+            steps: requestBody?.num_inference_steps || requestBody?.steps,
+            userId: req?.user?.id || 'image-tool',
+          });
+          if (replicateResult?.ok) {
+            const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, replicateResult.outputPath || outputPath);
+            const imageUrl = replicateResult.sourceUrl || localPublicUrl || null;
+            const payload = normalizeImageToolPayload({
+              ok: true,
+              artifact_type: 'image',
+              url: imageUrl,
+              image_url: imageUrl,
+              output_path: replicateResult.outputPath || outputPath,
+              local_path: replicateResult.outputPath || outputPath,
+              filename: path.basename(replicateResult.outputPath || outputPath),
+              prompt: rawPrompt,
+              width: replicateResult.width || width,
+              height: replicateResult.height || height,
+              num_inference_steps: Number(requestBody?.num_inference_steps || requestBody?.steps || replicateConfig.defaultSteps || 4),
+              guidance_scale: Number(requestBody?.guidance_scale || 8),
+              seed: requestBody?.seed !== undefined ? Number(requestBody.seed) : undefined,
+              mode: replicateResult.mode || 'replicate-image',
+              model: replicateResult.model || replicateConfig.model,
+              prediction_id: replicateResult.predictionId || undefined,
+              content_type: replicateResult.contentType || 'image/webp',
+            }, 'replicate');
+            analyzeGeneratedImage(payload);
+            return payload;
+          }
+          recordFailure('replicate', replicateResult, providerOrder.length > 1);
+        } catch (error_) {
+          recordFailure('replicate', error_, providerOrder.length > 1);
+        }
+        continue;
+      }
+
+      if (provider === 'pollinations') {
+        if (!pollinationsConfig.enabled) {
+          recordFailure('pollinations', {
+            error: 'pollinations_image_disabled',
+            message: 'La generation image Pollinations est desactivee sur cet environnement.',
+          }, providerOrder.length > 1);
+          continue;
+        }
+        try {
+          const tempDir = resolveGeneratedImageWorkRoot();
+          fs.mkdirSync(tempDir, { recursive: true });
+          const outputName = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.jpg`;
+          const outputPath = path.join(tempDir, outputName);
+          const pollinationsResult = await tryGenerateImageWithPollinations({
+            prompt: rawPrompt,
+            outputPath,
+            width,
+            height,
+            seed: requestBody?.seed,
+            userId: req?.user?.id || 'image-tool',
+          });
+          if (pollinationsResult?.ok) {
+            const localPublicUrl = buildGeneratedImageLocalPublicUrl(req, pollinationsResult.outputPath || outputPath);
+            const imageUrl = pollinationsResult.sourceUrl || localPublicUrl || null;
+            const payload = normalizeImageToolPayload({
+              ok: true,
+              artifact_type: 'image',
+              url: imageUrl,
+              image_url: imageUrl,
+              output_path: pollinationsResult.outputPath || outputPath,
+              local_path: pollinationsResult.outputPath || outputPath,
+              filename: path.basename(pollinationsResult.outputPath || outputPath),
+              prompt: rawPrompt,
+              width: pollinationsResult.width || width,
+              height: pollinationsResult.height || height,
+              seed: requestBody?.seed !== undefined ? Number(requestBody.seed) : undefined,
+              mode: pollinationsResult.mode || 'pollinations-image',
+              model: pollinationsResult.model || pollinationsConfig.model,
+              content_type: pollinationsResult.contentType || 'image/jpeg',
+            }, 'pollinations');
+            analyzeGeneratedImage(payload);
+            return payload;
+          }
+          recordFailure('pollinations', pollinationsResult, providerOrder.length > 1);
+        } catch (error_) {
+          recordFailure('pollinations', error_, providerOrder.length > 1);
+        }
+        continue;
+      }
+
       if (provider === 'openai') {
         if (!openAiConfig.enabled || !openAiConfig.apiKey) {
           recordFailure('openai', {
@@ -1748,16 +1911,51 @@ function createSdToolsRouter(overrides = {}) {
       }
     }
 
+    if (isEmergencyImageFallbackEnabled(requestBody)) {
+      try {
+        const emergencyResult = await createEmergencyImageAsset({
+          prompt: rawPrompt,
+          body: requestBody,
+          req,
+        });
+        const payload = normalizeImageToolPayload({
+          ...emergencyResult,
+          mode: emergencyResult.mode || 'synthetic-frame',
+          provider: emergencyResult.provider || 'a11-emergency-svg',
+          warning: lastFailure?.error || undefined,
+          message: lastFailure?.message || emergencyResult.message,
+        }, 'synthetic-frame', { providerOrder });
+        analyzeGeneratedImage(payload);
+        return payload;
+      } catch (error_) {
+        recordFailure('synthetic-frame', error_, false);
+      }
+    }
+
     return normalizeImageToolPayload(lastFailure || {
       ok: false,
       provider: providerOrder[0] || 'sd',
       error: 'image_backend_unavailable',
       message: 'Aucun backend image disponible.',
-    }, lastFailure?.provider || providerOrder[0] || 'sd');
+    }, lastFailure?.provider || providerOrder[0] || 'sd', { providerOrder });
 
 
     // Vision Memory — analyse l'image générée en arrière-plan (fire-and-forget)
   }
+
+  router.get('/tools/media_roles', (_req, res) => {
+    res.json({
+      ok: true,
+      service: 'a11-media-orchestration',
+      mediaAgentRoles: getMediaAgentRoleMatrix(),
+      pipelines: {
+        image: buildMediaPipeline('image'),
+        audio: buildMediaPipeline('audio'),
+        video: buildMediaPipeline('video', { withAudio: true }),
+        song: buildMediaPipeline('song', { withAudio: true }),
+      },
+    });
+  });
 
   router.post('/tools/generate_sd', express.json({ limit: '2mb' }), async (req, res) => {
     console.log('[DEBUG] Entrée dans /api/tools/generate_sd', {

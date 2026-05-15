@@ -4475,7 +4475,7 @@ function toImageChatProxyPayload({
     sdResult?.content_type || sdResult?.contentType || sdResult?.conversationResource?.contentType || sdResult?.file?.contentType,
     sdResult?.artifact_type
   );
-  const ok = sdResult?.ok !== false;
+  const ok = sdResult?.ok !== false && Boolean(imageUrl);
   const content = buildImageAssistantMessage({
     imageUrl,
     filename,

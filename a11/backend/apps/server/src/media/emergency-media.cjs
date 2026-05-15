@@ -43,6 +43,10 @@ function getVivyGeneratedDir() {
   return path.join(getRuntimeRoot(), 'files', 'generated', 'vivy');
 }
 
+function getGeneratedImageDir() {
+  return path.join(getRuntimeRoot(), 'files', 'generated', 'images');
+}
+
 function resolveRequestOrigin(req = null) {
   const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
   const proto = forwardedProto || req?.protocol || (req?.socket?.encrypted ? 'https' : 'http');
@@ -67,6 +71,114 @@ function buildPublicUrl(req, publicPath) {
 
 function hashSeed(value = '') {
   return crypto.createHash('sha256').update(String(value || '')).digest();
+}
+
+function escapeXml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function wrapSvgText(value = '', maxLineLength = 34, maxLines = 6) {
+  const words = cleanText(value, 420).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxLineLength && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines.length ? lines : ['Image fallback A11'];
+}
+
+function createEmergencyImageSvg({ prompt = '', width = 1024, height = 1024 } = {}) {
+  const safeWidth = Math.max(256, Math.min(1536, Math.round(Number(width || 1024) || 1024)));
+  const safeHeight = Math.max(256, Math.min(1536, Math.round(Number(height || 1024) || 1024)));
+  const seed = hashSeed(prompt);
+  const accent = `#${seed.subarray(0, 3).toString('hex')}`;
+  const secondary = `#${seed.subarray(3, 6).toString('hex')}`;
+  const lines = wrapSvgText(prompt).map(escapeXml);
+  const lineHeight = Math.max(26, Math.round(safeHeight * 0.045));
+  const startY = Math.round((safeHeight - (lines.length * lineHeight)) / 2);
+  const textLines = lines.map((line, index) => (
+    `<text x="50%" y="${startY + index * lineHeight}" text-anchor="middle" class="prompt">${line}</text>`
+  )).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${safeWidth}" height="${safeHeight}" viewBox="0 0 ${safeWidth} ${safeHeight}">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="44%" r="70%">
+      <stop offset="0%" stop-color="${accent}" stop-opacity="0.48"/>
+      <stop offset="54%" stop-color="#111827" stop-opacity="0.86"/>
+      <stop offset="100%" stop-color="#02040a" stop-opacity="1"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="${accent}"/>
+      <stop offset="55%" stop-color="#75f5d1"/>
+      <stop offset="100%" stop-color="${secondary}"/>
+    </linearGradient>
+    <filter id="soft">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <style>
+      .brand { font: 800 ${Math.max(42, Math.round(safeWidth * 0.08))}px Arial, sans-serif; fill: #ffffff; letter-spacing: 2px; }
+      .sub { font: 600 ${Math.max(18, Math.round(safeWidth * 0.026))}px Arial, sans-serif; fill: #b7f8e8; letter-spacing: 3px; }
+      .prompt { font: 600 ${Math.max(18, Math.round(safeWidth * 0.03))}px Arial, sans-serif; fill: #f7fbff; }
+      .note { font: 500 ${Math.max(14, Math.round(safeWidth * 0.018))}px Arial, sans-serif; fill: #a7b4c8; }
+    </style>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#glow)"/>
+  <circle cx="50%" cy="48%" r="${Math.round(Math.min(safeWidth, safeHeight) * 0.34)}" fill="none" stroke="url(#ring)" stroke-width="${Math.max(3, Math.round(safeWidth * 0.008))}" opacity="0.82"/>
+  <circle cx="50%" cy="48%" r="${Math.round(Math.min(safeWidth, safeHeight) * 0.28)}" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.16"/>
+  <circle cx="22%" cy="24%" r="${Math.round(safeWidth * 0.07)}" fill="${accent}" opacity="0.16" filter="url(#soft)"/>
+  <circle cx="79%" cy="74%" r="${Math.round(safeWidth * 0.09)}" fill="${secondary}" opacity="0.15" filter="url(#soft)"/>
+  <text x="50%" y="${Math.round(safeHeight * 0.22)}" text-anchor="middle" class="brand">A11</text>
+  <text x="50%" y="${Math.round(safeHeight * 0.285)}" text-anchor="middle" class="sub">FUNESTERIE IMAGE FALLBACK</text>
+  ${textLines}
+  <text x="50%" y="${Math.round(safeHeight * 0.84)}" text-anchor="middle" class="note">Generation de secours activee pendant la reprise media</text>
+</svg>`;
+}
+
+async function createEmergencyImageAsset({ prompt = '', body = {}, req = null } = {}) {
+  const title = cleanText(body.title || body.subject || prompt || body.message || 'A11 emergency image', 100);
+  const width = Math.max(256, Math.min(1536, Number(body.width || 1024) || 1024));
+  const height = Math.max(256, Math.min(1536, Number(body.height || 1024) || 1024));
+  const digest = crypto.createHash('sha1').update(`${title}\n${prompt}`).digest('hex').slice(0, 10);
+  const filename = `a11-emergency-image-${slugify(title, 'image')}-${digest}.svg`;
+  const dir = getGeneratedImageDir();
+  const filePath = path.join(dir, filename);
+  await fsp.mkdir(dir, { recursive: true });
+  if (!fs.existsSync(filePath)) {
+    await fsp.writeFile(filePath, createEmergencyImageSvg({ prompt: prompt || title, width, height }), 'utf8');
+  }
+  const url = buildPublicUrl(req, `/files/runtime/files/generated/images/${encodeURIComponent(filename)}`);
+  return {
+    ok: true,
+    kind: 'image',
+    artifact_type: 'image',
+    provider: 'a11-emergency-svg',
+    mode: 'synthetic-frame',
+    filename,
+    path: filePath,
+    output_path: filePath,
+    local_path: filePath,
+    url,
+    image_url: url,
+    content_type: 'image/svg+xml',
+    width,
+    height,
+    prompt: cleanText(prompt || title, 1600),
+    emergencyFallback: true,
+  };
 }
 
 function writeAscii(target, offset, value) {
@@ -280,6 +392,7 @@ function getEmergencyMediaAssetPath(filename = '') {
 }
 
 module.exports = {
+  createEmergencyImageAsset,
   createEmergencySongAsset,
   createEmergencyVideoAsset,
   getEmergencyMediaAssetPath,

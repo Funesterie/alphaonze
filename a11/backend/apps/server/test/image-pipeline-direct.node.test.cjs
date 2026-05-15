@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   buildImageSdPayload,
+  executeDirectImagePipeline,
 } = require('../src/image/image-pipeline-direct.cjs');
 
 test('buildImageSdPayload falls back to the user request when the structured LLM returns null', async () => {
@@ -30,4 +31,38 @@ test('buildImageSdPayload keeps image generation usable when the structured LLM 
   assert.equal(payload.prompt, 'red dragon in the sky');
   assert.equal(payload.fallback, true);
   assert.equal(payload.fallbackReason, 'invalid json');
+});
+
+test('executeDirectImagePipeline propagates image backend failures', async () => {
+  const result = await executeDirectImagePipeline({
+    userMessage: 'purple A11 symbol',
+    generateSd: async () => ({
+      ok: false,
+      error: 'pollinations_image_failed',
+      message: 'error code: 502',
+    }),
+    callStructuredLlmJson: async () => null,
+    env: {},
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.image_url, null);
+  assert.equal(result.error, 'pollinations_image_failed');
+  assert.equal(result.sdResult.error, 'pollinations_image_failed');
+});
+
+test('executeDirectImagePipeline refuses success without a public image URL', async () => {
+  const result = await executeDirectImagePipeline({
+    userMessage: 'purple A11 symbol',
+    generateSd: async () => ({
+      ok: true,
+      output_path: '/tmp/generated.png',
+    }),
+    callStructuredLlmJson: async () => null,
+    env: {},
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.image_url, null);
+  assert.equal(result.error, 'image_url_unavailable');
 });

@@ -954,3 +954,43 @@ test('generateImageInternal ignores stray OpenAI keys unless image OpenAI is exp
     }
   }
 });
+
+test('generateImageInternal can produce an emergency synthetic image when requested', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-emergency-image-'));
+  const previous = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    PUBLIC_API_URL: process.env.PUBLIC_API_URL,
+    A11_IMAGE_PROVIDER_ORDER: process.env.A11_IMAGE_PROVIDER_ORDER,
+    A11_ENABLE_EMERGENCY_IMAGE_FALLBACK: process.env.A11_ENABLE_EMERGENCY_IMAGE_FALLBACK,
+  };
+
+  process.env.A11_RUNTIME_ROOT = tempRoot;
+  process.env.PUBLIC_API_URL = 'https://a11.example.test';
+  process.env.A11_IMAGE_PROVIDER_ORDER = 'synthetic';
+  process.env.A11_ENABLE_EMERGENCY_IMAGE_FALLBACK = 'true';
+
+  try {
+    const { generateImageInternal } = createSdToolsRouter({
+      resolveSdProxyUrl: () => '',
+      resolveSdScriptPath: () => '',
+    });
+
+    const response = await generateImageInternal({
+      req: { headers: {} },
+      prompt: 'symbole A11 violet et vert',
+      body: { prompt: 'symbole A11 violet et vert', width: 512, height: 512 },
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.mode, 'synthetic-frame');
+    assert.equal(response.content_type, 'image/svg+xml');
+    assert.match(String(response.image_url || ''), /^https:\/\/a11\.example\.test\/files\/runtime\/files\/generated\/images\//);
+    assert.equal(fs.existsSync(response.output_path), true);
+  } finally {
+    try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch {}
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

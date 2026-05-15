@@ -285,12 +285,18 @@ async function executeDirectImagePipeline({
   };
 
   const result = await generateSd({ req, body: sdBody, prompt: sdPayload.prompt });
+  const imageUrl = result?.image_url || result?.url || null;
+  const ok = result?.ok !== false && Boolean(imageUrl);
 
   return {
-    ok: true,
+    ok,
+    ...(ok ? {} : {
+      error: result?.error || 'image_url_unavailable',
+      message: result?.message || 'La generation image n a pas fourni de lien exploitable.',
+    }),
     artifact_type: 'image',
-    image_url: result?.image_url || result?.url || null,
-    url: result?.image_url || result?.url || null,
+    image_url: imageUrl,
+    url: imageUrl,
     filename: result?.filename || null,
     prompt: sdPayload.prompt,
     subject: sdPayload.subject,
