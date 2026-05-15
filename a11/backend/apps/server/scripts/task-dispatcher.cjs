@@ -110,26 +110,91 @@ async function mcpToolCall(toolName, args = {}) {
   return mcpCall('tools/call', { name: toolName, arguments: args });
 }
 
+function parseToolTextPayload(text) {
+  if (!text || typeof text !== 'string') return null;
+  try {
+    return JSON.parse(text);
+  } catch { /* try embedded JSON below */ }
+
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function extractToolPayload(result) {
+  return result?.result?.structuredContent
+    || parseToolTextPayload(result?.result?.content?.[0]?.text)
+    || result?.result
+    || null;
+}
+
+function getLocalWorkerAgents() {
+  return [
+    {
+      id: 'identity-archivist-worker',
+      name: 'identity-archivist-worker',
+      role: 'corpus identity archivist worker',
+      capabilities: [
+        'code',
+        'corpus',
+        'corpus-lore',
+        'memory-routing',
+        'neo4j',
+        'neo4j-sync',
+        'graph-memory',
+        'identity-tags',
+        'shell',
+        'worker',
+      ],
+      status: 'local-ready',
+      note: 'Local worker for identity hashtag corpus generation.',
+    },
+    {
+      id: 'funesterie-orchestrator-worker',
+      name: 'funesterie-orchestrator-worker',
+      role: 'orchestration worker',
+      capabilities: [
+        'orchestration',
+        'task-orchestration',
+        'mcp',
+        'mcp-routing',
+        'infra',
+        'shell',
+        'worker',
+      ],
+      status: 'local-ready',
+      note: 'Local worker loop that tracks dispatched task state.',
+    },
+  ];
+}
+
 // â”€â”€â”€ Agent Discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function getActiveAgents() {
   const result = await mcpToolCall('agent_presence', { includeIdle: false });
-  const agents = result?.result?.content?.[0]?.text
-    ? JSON.parse(result.result.content[0].text)
-    : result?.result;
+  const payload = extractToolPayload(result);
+  const agents = payload?.presence ? payload : { presence: payload };
 
-  if (!agents?.presence?.agents) return [];
+  const discoveredAgents = Array.isArray(agents?.presence?.agents) ? agents.presence.agents : [];
 
-  return agents.presence.agents
-    .filter(a => a.active && a.name !== 'mcp-http-client')
-    .map(a => ({
-      id: a.id,
-      name: a.name,
-      role: a.role,
-      capabilities: a.capabilities || [],
-      status: a.status,
-      note: a.note,
-    }));
+  return [
+    ...discoveredAgents
+      .filter(a => a.active && a.name !== 'mcp-http-client')
+      .map(a => ({
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        capabilities: a.capabilities || [],
+        status: a.status,
+        note: a.note,
+      })),
+    ...getLocalWorkerAgents(),
+  ];
 }
 
 function matchAgentToTask(agents, taskKeywords = []) {
@@ -372,4 +437,12 @@ if (require.main === module) {
   main().catch(err => { console.error(err); process.exit(1); });
 }
 
-module.exports = { dispatchTasks, getActiveAgents, matchAgentToTask, parseTasksFromMarkdown };
+module.exports = {
+  dispatchTasks,
+  extractToolPayload,
+  getActiveAgents,
+  getLocalWorkerAgents,
+  matchAgentToTask,
+  parseTasksFromMarkdown,
+  parseToolTextPayload,
+};

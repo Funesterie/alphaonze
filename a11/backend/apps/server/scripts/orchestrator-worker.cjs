@@ -94,6 +94,29 @@ async function mcpToolCall(toolName, args = {}) {
   });
 }
 
+function parseToolTextPayload(text) {
+  if (!text || typeof text !== 'string') return null;
+  try {
+    return JSON.parse(text);
+  } catch { /* try embedded JSON below */ }
+
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function extractToolPayload(result) {
+  return result?.result?.structuredContent
+    || parseToolTextPayload(result?.result?.content?.[0]?.text)
+    || result?.result
+    || null;
+}
+
 // â”€â”€â”€ State Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function loadState() {
@@ -223,9 +246,8 @@ async function checkForCompletions(state) {
       limit: 20,
     });
 
-    const messages = result?.result?.content?.[0]?.text
-      ? JSON.parse(result.result.content[0].text)?.discussion?.messages || []
-      : [];
+    const payload = extractToolPayload(result);
+    const messages = payload?.discussion?.messages || [];
 
     for (const msg of messages) {
       const body = (msg.body || '').toLowerCase();
