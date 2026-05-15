@@ -9,6 +9,7 @@ const { URL } = require('node:url');
 const { withOllamaQueue, getQueueStats } = require('../core/ollama-queue.cjs');
 const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
 const { hasFullAccess } = require('../auth/full-access.cjs');
+const { callMcpTool } = require('../mcp-client.cjs');
 const {
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
@@ -48,6 +49,114 @@ function isInternalDisclosureRequest(text = '') {
 
 function internalAccessDenied() {
   return "Cette partie est reservee au groupe famille A11. Si tu es Jeffrey ou un compte famille, reconnecte-toi avec le bon compte et je reprends avec le ton complet; en attendant je peux quand meme aider sur l'action concrete, sans secrets ni tokens.";
+}
+
+function isRuntimeHooksOrProdAgentsDiagnosticRequest(text = '') {
+  const normalized = String(text || '').trim().toLowerCase();
+  if (!normalized) return false;
+  const target = /(piccolo|doctor|docteur|runtime hooks?|hooks? runtime|agent presence|presence des agents|agents? prod|prod agents|agents? de prod|a11.*mcp|k44.*mcp|mcp.*(token|oauth|access|acces|connexion)|acc(?:e|è)s.*mcp)/i.test(normalized);
+  const action = /(status|etat|état|health|presence|présence|check|verifie|vérifie|montre|donne|liste|affiche|qui|quoi|comment|pourquoi|fonctionne|marche|token|oauth|acc(?:e|è)s|r[eé]par|bug|route|incoh[eé]rence|utilise|lance|peut|besoin|diag)/i.test(normalized);
+  return target && (action || /\?/.test(normalized));
+}
+
+function extractMcpToolJson(toolResult) {
+  const text = String(toolResult?.result?.content?.[0]?.text || '').trim();
+  if (!text) return null;
+  const jsonStart = text.indexOf('{');
+  if (jsonStart < 0) return { raw: text };
+  try {
+    return JSON.parse(text.slice(jsonStart));
+  } catch (_) {
+    return { raw: text };
+  }
+}
+
+function findRuntimeHookModule(runtimeHooks, needle) {
+  const modules = Array.isArray(runtimeHooks?.modules) ? runtimeHooks.modules : [];
+  const loweredNeedle = String(needle || '').trim().toLowerCase();
+  if (!loweredNeedle) return null;
+  return modules.find((module) => {
+    const haystack = [
+      module?.id,
+      module?.name,
+      module?.kind,
+      module?.role,
+      ...(Array.isArray(module?.aliases) ? module.aliases : []),
+      ...(Array.isArray(module?.capabilities) ? module.capabilities : []),
+    ].map((value) => String(value || '').toLowerCase());
+    return haystack.some((value) => value.includes(loweredNeedle));
+  }) || null;
+}
+
+function buildRuntimeHooksDiagnosticAssistant(snapshot = {}) {
+  const runtimeHooks = snapshot.runtimeHooks || {};
+  const presence = snapshot.agentPresence || {};
+  const a11Health = snapshot.a11Health || {};
+  const kaen44Health = snapshot.kaen44Health || {};
+  const runtimeModules = Array.isArray(runtimeHooks.modules) ? runtimeHooks.modules : [];
+  const runtimeSummary = runtimeHooks.summary || {};
+  const piccolo = findRuntimeHookModule(runtimeHooks, 'piccolo');
+  const doctor = findRuntimeHookModule(runtimeHooks, 'doctor');
+  const agents = Array.isArray(presence?.presence?.agents) ? presence.presence.agents : [];
+  const activeAgents = agents.filter((agent) => agent?.active === true);
+  const focusAgents = agents.filter((agent) => /(?:a11|kaen44|k44|claude|codex)/i.test([
+    agent?.name,
+    agent?.role,
+    agent?.host,
+    agent?.identity,
+  ].join(' ')));
+  const visibleAgents = (focusAgents.length ? focusAgents : activeAgents).slice(0, 6);
+  const agentLabels = visibleAgents.map((agent) => {
+    const role = String(agent?.role || '').trim();
+    return role ? `${agent.name} (${role})` : String(agent?.name || '').trim();
+  }).filter(Boolean);
+  const prodAgents = activeAgents.filter((agent) => /(?:a11|kaen44|k44)/i.test([
+    agent?.name,
+    agent?.role,
+    agent?.host,
+    agent?.identity,
+  ].join(' ')));
+  const prodAgentLabels = prodAgents.slice(0, 6).map((agent) => {
+    const role = String(agent?.role || '').trim();
+    return role ? `${agent.name} (${role})` : String(agent?.name || '').trim();
+  }).filter(Boolean);
+  const lines = [
+    'Je viens de verifier le MCP.',
+    runtimeHooks.ok
+      ? `Runtime hooks: OK (${Number(runtimeSummary.modules || runtimeModules.length || 0)} modules, ${Number(runtimeSummary.links || 0)} liens).`
+      : 'Runtime hooks: indisponible.',
+    piccolo ? `Piccolo est bien present dans le manifeste runtime hooks.` : 'Piccolo n a pas ete trouve dans le manifeste runtime hooks.',
+    doctor ? `Doctor est bien present dans le manifeste runtime hooks.` : 'Doctor n a pas ete trouve dans le manifeste runtime hooks.',
+    presence?.presence
+      ? `Presence agents: ${Number(presence.presence.activeCount || 0)}/${Number(presence.presence.totalCount || 0)} actifs${agentLabels.length ? ` (${agentLabels.join(', ')})` : ''}.`
+      : 'Presence agents: indisponible.',
+    prodAgents.length
+      ? `Agents prod visibles: ${prodAgentLabels.join(', ')}.`
+      : 'Je ne vois pas de heartbeat A11/K44 actif dans la presence actuelle.',
+    a11Health?.status?.ok === true
+      ? `A11 health: OK (${a11Health.status.url}).`
+      : 'A11 health: KO ou indisponible.',
+    kaen44Health?.status?.ok === true
+      ? `Kaen44 health: OK (${kaen44Health.status.url}).`
+      : 'Kaen44 health: KO ou indisponible.',
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+async function readRuntimeHooksDiagnosticSnapshot() {
+  const [runtimeHooksResult, agentPresenceResult, a11HealthResult, kaen44HealthResult] = await Promise.allSettled([
+    callMcpTool('a11_runtime_hooks_status', {}),
+    callMcpTool('agent_presence', { includeIdle: true }),
+    callMcpTool('a11_status', {}),
+    callMcpTool('kaen44_status', {}),
+  ]);
+
+  return {
+    runtimeHooks: runtimeHooksResult.status === 'fulfilled' ? (extractMcpToolJson(runtimeHooksResult.value) || {}) : { ok: false, error: String(runtimeHooksResult.reason?.message || runtimeHooksResult.reason || 'runtime_hooks_failed') },
+    agentPresence: agentPresenceResult.status === 'fulfilled' ? (extractMcpToolJson(agentPresenceResult.value) || {}) : { ok: false, error: String(agentPresenceResult.reason?.message || agentPresenceResult.reason || 'agent_presence_failed') },
+    a11Health: a11HealthResult.status === 'fulfilled' ? (extractMcpToolJson(a11HealthResult.value) || {}) : { ok: false, error: String(a11HealthResult.reason?.message || a11HealthResult.reason || 'a11_status_failed') },
+    kaen44Health: kaen44HealthResult.status === 'fulfilled' ? (extractMcpToolJson(kaen44HealthResult.value) || {}) : { ok: false, error: String(kaen44HealthResult.reason?.message || kaen44HealthResult.reason || 'kaen44_status_failed') },
+  };
 }
 
 const FREE_CHAT_TOKEN_LIMIT = Math.max(300, Number(process.env.A11_CHAT_FREE_TOKEN_LIMIT || 1800) || 1800);
@@ -406,7 +515,7 @@ function createChatRouter(overrides = {}) {
         if (Array.isArray(req.body.messages)) {
           req.body.messages = req.body.messages.filter((message) => String(message?.role || '').toLowerCase() !== 'system');
         }
-        if (isInternalDisclosureRequest(userMessage)) {
+        if (!familyAccess && isInternalDisclosureRequest(userMessage)) {
           return res.json({ ok: true, mode: 'guarded', assistant: internalAccessDenied() });
         }
       }
@@ -416,6 +525,20 @@ function createChatRouter(overrides = {}) {
       if (isMcpAccessQuestion(userMessage)) {
         const assistant = buildMcpAccessReply({ familyAccess });
         return res.json({ ok: true, mode: 'mcp_status', assistant });
+      }
+
+      if (isRuntimeHooksOrProdAgentsDiagnosticRequest(userMessage)) {
+        try {
+          const snapshot = await readRuntimeHooksDiagnosticSnapshot();
+          return res.json({
+            ok: true,
+            mode: 'mcp_runtime_diagnostic',
+            assistant: buildRuntimeHooksDiagnosticAssistant(snapshot),
+            runtimeDiagnostic: snapshot,
+          });
+        } catch (diagnosticError) {
+          console.error('[A11][chat] MCP runtime diagnostic failed:', diagnosticError);
+        }
       }
 
       const agentIntent = detectAgentIntent(userMessage);
@@ -804,6 +927,19 @@ function createChatRouter(overrides = {}) {
       res.write('data: [DONE]\n\n');
       res.end();
       return;
+    }
+
+    if (isRuntimeHooksOrProdAgentsDiagnosticRequest(userMessage)) {
+      try {
+        const snapshot = await readRuntimeHooksDiagnosticSnapshot();
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.write(`data: ${JSON.stringify({ delta: buildRuntimeHooksDiagnosticAssistant(snapshot), model: 'a11-mcp-runtime-diagnostic' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      } catch (diagnosticError) {
+        console.error('[A11][chat/stream] MCP runtime diagnostic failed:', diagnosticError);
+      }
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
