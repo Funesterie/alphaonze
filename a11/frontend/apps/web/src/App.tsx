@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+﻿import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -10,17 +10,29 @@ import {
   fetchA11ConversationActivity,
   fetchA11ConversationResources,
   fetchRemoteProviderProfiles,
+  fetchA11PortraitFramebook,
+  fetchTtsVoiceReferences,
+  fetchAuthSession,
   hasAdminApiAccess,
   emailConversationResource,
+  clearAuthToken,
   getAuthDisplayName,
   getAuthStorageScope,
   login,
+  loginWithGoogleCredential,
   logout,
   getAuthToken,
   hasAuthToken,
   register,
   forgotPassword,
   resetPassword,
+  runVivyStudioProduction,
+  startGoogleOAuth,
+  setAuthToken,
+  startMicrosoftOAuth,
+  setAuthDisplayName,
+  transcribeAudioFile,
+  uploadTtsVoiceReference,
   saveRemoteProviderProfile,
   purgeMemoryNow,
   purgeTechnicalMemos,
@@ -31,13 +43,19 @@ import {
   type RemoteProviderProfile,
   type RemoteProviderSaveInput,
   type TechnicalMemoSummaryResponse,
+  type TtsVoiceReference,
+  type A11PortraitFrame,
+  type A11PortraitFramebook,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { A11ControlCenterPanel } from "./components/A11ControlCenterPanel";
 import { A11OpsStatusPanel } from "./components/A11OpsStatusPanel";
+import { PinkWardPanel } from "./components/PinkWardPanel";
 import { A11CommandConsolePanel } from "./components/A11CommandConsolePanel";
+import { QflushPortableTerminal } from "./components/QflushPortableTerminal";
 import { A11RemoteProvidersPanel } from "./components/A11RemoteProvidersPanel";
+import { EkkoIndicator } from "./components/EkkoIndicator";
 import { ConversationActivityPanel } from "./components/ConversationActivityPanel";
 import { ConversationResourcesPanel } from "./components/ConversationResourcesPanel";
 import { A11ActivityConsole, useA11Activity } from "./components/A11ActivityConsole";
@@ -47,6 +65,7 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { RenameConversationModal } from "./components/RenameConversationModal";
 import { SubscriptionPanel } from "./components/SubscriptionPanel";
 import { AdBanner } from "./components/AdBanner";
+import { CasinoHub } from "./components/CasinoHub";
 import ReactMarkdown from "react-markdown";
 import "./index.css";
 import {
@@ -59,6 +78,9 @@ import {
   setSpeechMuted,
   isSpeechMuted,
   retryPlayUrl,
+  unlockAudioOutput,
+  isAudioOutputUnlocked,
+  setSpeechRecognitionLanguage,
 } from "./lib/speech";
 import handleImportFiles from "./lib/importer";
 import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
@@ -126,6 +148,43 @@ type ChatModelChoice = {
   providerProfileId?: string;
 };
 
+type TtsProviderMode = "auto" | "piper" | "openai";
+type A11LanguageCode = "fr" | "en" | "it" | "es" | "de";
+
+const A11_LANGUAGE_CHOICES: Array<{
+  code: A11LanguageCode;
+  label: string;
+  speechLang: string;
+  sttCode: string;
+  ttsVoice: string;
+}> = [
+  { code: "fr", label: "Francais", speechLang: "fr-FR", sttCode: "fr", ttsVoice: "fr_FR-siwis-medium" },
+  { code: "en", label: "English", speechLang: "en-US", sttCode: "en", ttsVoice: "en_US-lessac-medium" },
+  { code: "it", label: "Italiano", speechLang: "it-IT", sttCode: "it", ttsVoice: "it_IT-paola-medium" },
+  { code: "es", label: "Espanol", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
+  { code: "de", label: "Deutsch", speechLang: "de-DE", sttCode: "de", ttsVoice: "de_DE-thorsten-medium" },
+];
+
+function normalizeA11LanguageCode(value: unknown): A11LanguageCode {
+  const raw = String(value || "").trim().toLowerCase();
+  return (A11_LANGUAGE_CHOICES.some((choice) => choice.code === raw) ? raw : "fr") as A11LanguageCode;
+}
+
+const AUDIO_FILE_NAME_RE = /\.(wav|mp3|m4a|mp4|ogg|opus|webm|flac)$/i;
+
+function isAudioLikeFile(file: File) {
+  const mime = String(file?.type || "").toLowerCase();
+  return mime.startsWith("audio/")
+    || mime === "video/webm"
+    || AUDIO_FILE_NAME_RE.test(String(file?.name || ""));
+}
+
+function toSyntheticFileList(files: File[]): FileList {
+  return Object.assign(files, {
+    item: (index: number) => files[index] || null,
+  }) as unknown as FileList;
+}
+
 function buildPublicAssetPath(relativePath: string) {
   const base = String((import.meta as any)?.env?.BASE_URL || "/").trim() || "/";
   const normalizedBase = `${base.replace(/\/+$/, "")}/`.replace(/^$/, "/");
@@ -147,6 +206,216 @@ const A11_AVATAR_IDLE_SRC = buildPublicAssetPath("a11_static.png");
 const A11_AVATAR_IDLE_FALLBACK_SRC = buildPublicAssetPath("assets/a11_static.png");
 const A11_AVATAR_TALKING_SRC = buildPublicAssetPath("A11_talking_smooth_8s.gif");
 const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking_smooth_8s.gif");
+const KAEN44_AVATAR_SRC = buildPublicAssetPath("assets/kaen44-copilot.png");
+const FUNESTERIE_LOGO_SRC = buildPublicAssetPath("assets/funesterie-logo.png");
+const KAEN44_DASHBOARD_REFERENCE_SRC = buildPublicAssetPath("assets/nossen-dashboard-reference.png");
+const A11_KAEN44_COMMAND_CARDS_SRC = buildPublicAssetPath("assets/a11-kaen44-command-cards.png");
+const FUNESTERIE_NEXUS_BOARD_SRC = buildPublicAssetPath("assets/funesterie-nexus-board.png");
+const FUNESTERIE_TEAM_SCENE_SRC = buildPublicAssetPath("assets/funesterie-team-scene.png");
+const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
+
+type FunesterieSurface = "a11" | "kaen44" | "vivy";
+
+const A11_PUBLIC_APP_URL = "https://a11.funesterie.pro/";
+const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
+const VIVY_PUBLIC_APP_URL = "https://funesterie.me/vivy/";
+
+function getLocationSnapshot() {
+  if (typeof window === "undefined") {
+    return { hostname: "", pathname: "/", port: "", search: "" };
+  }
+  return {
+    hostname: String(window.location.hostname || "").trim().toLowerCase(),
+    pathname: String(window.location.pathname || "/").trim().toLowerCase() || "/",
+    port: String(window.location.port || "").trim(),
+    search: String(window.location.search || ""),
+  };
+}
+
+function isLocalSurfaceHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function getCurrentSurfaceKind(): FunesterieSurface {
+  const { hostname, pathname, port, search } = getLocationSnapshot();
+  const params = new URLSearchParams(search);
+  const personaParam = String(params.get("persona") || "").trim().toLowerCase();
+  const storedPersona = (() => {
+    try {
+      return String(localStorage.getItem("a11:persona") || "").trim().toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+
+  const isLocalHost = isLocalSurfaceHost(hostname);
+  const isVivyHost = hostname === "vivy.funesterie.me"
+    || hostname === "vivy.funesterie.pro"
+    || hostname === "music.funesterie.me";
+  const isA11Host = hostname === "a11.funesterie.pro"
+    || hostname === "alphaonze.funesterie.pro"
+    || hostname === "api.funesterie.pro"
+    || (isLocalHost && port === "3000");
+  const isKaenHost = hostname === "funesterie.me"
+    || hostname === "www.funesterie.me"
+    || hostname === "k44.funesterie.me"
+    || hostname === "kaen44.funesterie.me"
+    || hostname === "kaen44.funesterie.pro"
+    || (isLocalHost && port === "3001");
+
+  if (/^\/vivy(?:\/|$)/.test(pathname) || isVivyHost || personaParam === "vivy") return "vivy";
+  if (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname) || personaParam === "kaen44" || personaParam === "kaen") return "kaen44";
+  if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname) || personaParam === "a11" || personaParam === "alphaonze") return "a11";
+  if (isKaenHost) return "kaen44";
+  if (isA11Host) return "a11";
+  if (storedPersona === "kaen44" || storedPersona === "kaen") return "kaen44";
+  if (storedPersona === "vivy") return "vivy";
+  return "a11";
+}
+
+function syncStoredSurface(surface: FunesterieSurface) {
+  try {
+    localStorage.setItem("a11:persona", surface === "kaen44" ? "kaen44" : surface);
+  } catch {
+    // Storage may be unavailable in embedded browsers.
+  }
+}
+
+function isVivyExperience() {
+  return getCurrentSurfaceKind() === "vivy";
+}
+
+export function isKaen44Experience() {
+  const surface = getCurrentSurfaceKind();
+  syncStoredSurface(surface);
+  return surface === "kaen44";
+}
+
+function getCurrentSurfaceBasePath(surface: FunesterieSurface = getCurrentSurfaceKind()) {
+  const { pathname } = getLocationSnapshot();
+  if (surface === "kaen44") {
+    if (/^\/kaen44(?:\/|$)/.test(pathname)) return "/kaen44";
+    if (/^\/k44(?:\/|$)/.test(pathname)) return "/k44";
+    return "";
+  }
+  if (surface === "a11") {
+    if (/^\/alphaonze(?:\/|$)/.test(pathname)) return "/alphaonze";
+    if (/^\/a11(?:\/|$)/.test(pathname)) return "/a11";
+    return "";
+  }
+  if (surface === "vivy") return /^\/vivy(?:\/|$)/.test(pathname) ? "/vivy" : "";
+  return "";
+}
+
+function buildSurfacePath(surface: FunesterieSurface, path = "/") {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const { hostname } = getLocationSnapshot();
+  const localHost = isLocalSurfaceHost(hostname);
+  const sameSurface = getCurrentSurfaceKind() === surface;
+  const base = sameSurface || localHost ? getCurrentSurfaceBasePath(surface) : "";
+  if (base) return `${base}${normalized === "/" ? "/" : normalized}`.replace(/\/{2,}/g, "/");
+  return normalized;
+}
+
+function getSurfaceLinks() {
+  const { hostname } = getLocationSnapshot();
+  if (isLocalSurfaceHost(hostname)) {
+    return {
+      a11: "/",
+      kaen44: "/k44/",
+      vivy: "/vivy/",
+      kaen44Login: "/k44/login",
+      kaen44Privacy: "/k44/privacy",
+      kaen44Terms: "/k44/terms",
+    };
+  }
+
+  return {
+    a11: A11_PUBLIC_APP_URL,
+    kaen44: KAEN44_PUBLIC_APP_URL,
+    vivy: VIVY_PUBLIC_APP_URL,
+    kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
+    kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
+    kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
+  };
+}
+
+function isLoginRoute(pathname: string) {
+  return /(?:^|\/)login\/?$/.test(String(pathname || "/").toLowerCase());
+}
+
+function isAuthSuccessRoute(pathname: string) {
+  return /(?:^|\/)auth\/success\/?$/.test(String(pathname || "/").toLowerCase());
+}
+
+function consumeOAuthTokenFromLocation() {
+  try {
+    const hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+    const searchParams = new URLSearchParams(String(window.location.search || ""));
+    const token = String(hashParams.get("a11_token") || hashParams.get("token") || searchParams.get("a11_token") || "").trim();
+    if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return false;
+    setAuthToken(token);
+    setAuthDisplayName(getAuthDisplayName() || "Utilisateur");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const DEFAULT_A11_PORTRAIT_FRAMEBOOK: A11PortraitFramebook = {
+  frames: [
+    {
+      id: "idle",
+      src: "a11_static.png",
+      holdMs: 1200,
+      transform: "scale(1)",
+      filter: "saturate(1.02) contrast(1.02)",
+      shadow: "0 0 12px rgba(34, 211, 238, 0.58)",
+    },
+    {
+      id: "thinking",
+      src: "a11_static.png",
+      holdMs: 240,
+      transform: "scale(1.025) translateY(-1px)",
+      filter: "saturate(1.12) contrast(1.08) hue-rotate(8deg)",
+      shadow: "0 0 18px rgba(168, 85, 247, 0.58)",
+    },
+    {
+      id: "speaking",
+      src: "A11_talking_smooth_8s.gif",
+      holdMs: 140,
+      transform: "scale(1.04)",
+      filter: "saturate(1.18) contrast(1.1)",
+      shadow: "0 0 18px rgba(45, 212, 191, 0.72)",
+    },
+  ],
+  sequences: {
+    idle: ["idle"],
+    thinking: ["thinking", "idle", "thinking"],
+    speaking: ["speaking"],
+    transition: ["thinking", "idle"],
+  },
+  audioSync: {
+    source: "speech_events_audio_clock",
+    frameDurationMs: 140,
+    transitionMs: 120,
+  },
+  policy: {
+    mode: "bounded_framebook",
+    foreground: true,
+    noInfiniteGeneration: true,
+    maxFrames: 8,
+  },
+};
+
+function resolvePortraitAssetPath(src = "") {
+  const raw = String(src || "").trim();
+  if (!raw) return A11_AVATAR_IDLE_SRC;
+  if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) {
+    return raw;
+  }
+  return buildPublicAssetPath(raw.replace(/^\/+/, ""));
+}
 
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
@@ -157,17 +426,28 @@ const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   },
 ];
 
-const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [];
+const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
+  {
+    value: "openai:gpt-4o-mini",
+    label: "A11 online",
+    provider: "openai",
+    model: "gpt-4o-mini",
+  },
+];
 
 function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
   const remoteChoices = remoteProfiles.map((profile) => ({
     value: `remote-profile:${profile.id}`,
-    label: `${profile.label} · ${profile.model}`,
+    label: `${profile.label} - ${profile.model}`,
     provider: "openai" as const,
     model: profile.model,
     providerProfileId: profile.id,
   }));
-  return [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
+  const isOnlineRuntime = typeof window !== "undefined"
+    && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+  return isOnlineRuntime
+    ? [...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices, ...LOCAL_CHAT_MODEL_CHOICES]
+    : [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
 }
 
 function resolveChatModelChoice(
@@ -264,7 +544,7 @@ function looksLikeActionEnvelope(value: string) {
 function looksCorruptedAssistantText(value: string) {
   const text = String(value || "").trim();
   if (!text) return false;
-  const replacementCount = (text.match(/�/g) || []).length;
+  const replacementCount = (text.match(/ï¿½/g) || []).length;
   if (replacementCount >= 3) return true;
   const suspiciousGlyphs = (text.match(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u024F\u2018-\u201F\u2026]/g) || []).length;
   return text.length >= 40 && suspiciousGlyphs / text.length > 0.2;
@@ -273,6 +553,18 @@ function looksCorruptedAssistantText(value: string) {
 function isAssistantHistoryPoisoned(value: string) {
   const text = String(value || "").trim();
   if (!text) return false;
+  const normalized = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (
+    normalized.includes("erreur lors de l'appel au chat a11")
+    || normalized.includes("jwt token manquant")
+    || normalized.includes("failed to fetch")
+    || normalized.includes("session a11 invalide")
+  ) {
+    return true;
+  }
   if (looksLikeLeakedActionTranscript(text)) return true;
   if (looksCorruptedAssistantText(text)) return true;
   return [
@@ -299,11 +591,11 @@ function normalizeAssistantMessagePayload(
     cleanedContent = "Je n'ai pas recu une confirmation exploitable pour cette action.";
   }
 
-  const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*Réponse potentiellement non vérifiée:\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
+  const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*Reponse potentiellement non verifiee:\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
   if (qflushVerifyMatch) {
     qflushVerification = {
       suspicious: true,
-      summary: String(qflushVerifyMatch[1] || "").trim() || "Réponse potentiellement non vérifiée",
+      summary: String(qflushVerifyMatch[1] || "").trim() || "Reponse potentiellement non verifiee",
       mode: "annotate",
     };
     cleanedContent = String(qflushVerifyMatch[2] || "").trim();
@@ -366,17 +658,17 @@ function normalizeAssistantMessagePayload(
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  if (/^["“][\s\S]*["”]$/.test(cleanedContent)) {
+  if (/^["][\s\S]*["]$/.test(cleanedContent)) {
     cleanedContent = cleanedContent.slice(1, -1).trim();
   }
 
   cleanedContent = cleanedContent.replace(/\n{3,}/g, "\n\n").trim();
   if (!cleanedContent && resolvedImageUrl) {
-    cleanedContent = "Image générée par A-11.";
+    cleanedContent = "Image generee par A-11.";
   } else if (!cleanedContent && resolvedVideoUrl) {
-    cleanedContent = "Vidéo générée par A-11.";
+    cleanedContent = "Video generee par A-11.";
   } else if (!cleanedContent && rawContent.trim()) {
-    cleanedContent = "A11 a traité la demande.";
+    cleanedContent = "A11 a traite la demande.";
   }
 
   return {
@@ -388,12 +680,86 @@ function normalizeAssistantMessagePayload(
   };
 }
 
+const A11_MAX_CONTEXT_CHARS = 420_000;
+const A11_MAX_MESSAGE_CHARS = 180_000;
+
+function trimChatContentForContext(content: string, maxChars: number) {
+  const text = String(content || "").trim();
+  if (text.length <= maxChars) return text;
+  const headChars = Math.max(8000, Math.floor(maxChars * 0.62));
+  const tailChars = Math.max(8000, maxChars - headChars - 220);
+  return [
+    text.slice(0, headChars).trimEnd(),
+    `\n\n[... contexte coupe par A11: ${text.length - headChars - tailChars} caracteres retires pour rester sous la limite du modele ...]\n\n`,
+    text.slice(-tailChars).trimStart(),
+  ].join("");
+}
+
 function sanitizeConversationHistoryForModel(messages: ChatMessage[]) {
-  return (Array.isArray(messages) ? messages : []).filter((message) => {
+  const cleanMessages = (Array.isArray(messages) ? messages : []).filter((message) => {
     if (!message || message.role === "system") return false;
     if (message.role !== "assistant") return true;
     return !isAssistantHistoryPoisoned(message.content);
   });
+
+  const trimmed = cleanMessages.map((message) => ({
+    ...message,
+    content: trimChatContentForContext(
+      [
+        message.content,
+        message.imageUrl ? `[image:${message.imageUrl}]` : "",
+        message.videoUrl ? `[video:${message.videoUrl}]` : "",
+        message.fileUrl ? `[file:${message.fileUrl}]` : "",
+      ].filter(Boolean).join("\n"),
+      A11_MAX_MESSAGE_CHARS
+    ),
+  }));
+
+  let usedChars = 0;
+  const selected: ChatMessage[] = [];
+  for (let index = trimmed.length - 1; index >= 0; index -= 1) {
+    const message = trimmed[index];
+    const contentLength = String(message.content || "").length;
+    const remaining = A11_MAX_CONTEXT_CHARS - usedChars;
+    if (remaining <= 0) break;
+    if (contentLength > remaining) {
+      selected.unshift({
+        ...message,
+        content: trimChatContentForContext(message.content, Math.max(8000, remaining)),
+      });
+      break;
+    }
+    selected.unshift(message);
+    usedChars += contentLength;
+  }
+
+  return selected;
+}
+
+function isLastImageRecallRequest(value: string) {
+  const text = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  if (!text) return false;
+  return /\b(envoi|envoie|envois|renvoi|renvoie|renvois|montre|affiche|donne|passe)\b/.test(text)
+    && /\b(la|le|moi|image|photo|visuel|resultat|result)\b/.test(text)
+    && !/\b(genere|cree|fabrique|nouvelle|nouveau)\b/.test(text);
+}
+
+function findLastVisibleMedia(messages: ChatMessage[]) {
+  const list = Array.isArray(messages) ? [...messages].reverse() : [];
+  for (const message of list) {
+    if (!message || message.role === "system") continue;
+    if (message.imageUrl) return { kind: "image" as const, url: message.imageUrl };
+    if (Array.isArray(message.imageUrls) && message.imageUrls[0]) {
+      return { kind: "image" as const, url: message.imageUrls[0] };
+    }
+    if (message.videoUrl) return { kind: "video" as const, url: message.videoUrl };
+    if (message.fileUrl) return { kind: "file" as const, url: message.fileUrl };
+  }
+  return null;
 }
 
 function shouldAutoplayAssistantMessage(content: string) {
@@ -402,14 +768,15 @@ function shouldAutoplayAssistantMessage(content: string) {
   return !isAssistantHistoryPoisoned(text);
 }
 
-function shouldSuppressAudioBlockedBannerOnCurrentDevice() {
+function isCompactViewportNow() {
   try {
-    const hasTouchPoints = Number((globalThis as any)?.navigator?.maxTouchPoints || 0) > 0;
-    const coarsePointer = typeof (globalThis as any)?.matchMedia === "function"
-      ? !!(globalThis as any).matchMedia("(pointer: coarse)").matches
-      : false;
-    const userAgent = String((globalThis as any)?.navigator?.userAgent || "").toLowerCase();
-    return hasTouchPoints || coarsePointer || /android|iphone|ipad|ipod|mobile/i.test(userAgent);
+    const win = globalThis as typeof globalThis & {
+      innerWidth?: number;
+      matchMedia?: (query: string) => { matches: boolean };
+    };
+    return Number(win.innerWidth || 0) <= 900
+      || Boolean(win.matchMedia?.("(max-width: 900px)")?.matches)
+      || Boolean(win.matchMedia?.("(pointer: coarse)")?.matches);
   } catch {
     return false;
   }
@@ -424,21 +791,38 @@ function buildScopedStorageKey(prefix: string, scope?: string | null) {
 }
 
 function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
+  void rawValue;
+  return null;
+/*
   const text = String(rawValue || "").trim().toLowerCase();
   if (!text) return null;
 
-  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|ça compile pas|failing build|build failed)/i;
+  const relaxedText = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[â€™']/g, " ")
+    .replace(/[^a-z0-9#+.\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const a11SelfExpressionQuestion = /\b(qu est ce que tu veux|qu est ce que tu voulais|tu veux quoi|ce que tu veux|de quoi as tu besoin|tu as besoin|t as besoin|comment tu te sens|est ce que ca va|ca va)\b/i;
+  if (a11SelfExpressionQuestion.test(relaxedText)) return null;
+  const asksForDiagnosticsWithoutAction = /(diagnostic|diagnostique|debug|depannage|bug|erreur|crash|logs?|stack|terminal|console|shell|commande|runtime|deploy|502|503|400|bad gateway|failed to load|status of|marche pas|fonctionne pas|probleme technique)/i.test(relaxedText)
+    && !/(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i.test(relaxedText);
+  if (asksForDiagnosticsWithoutAction) return null;
+
+  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|Ã§a compile pas|failing build|build failed)/i;
   const nodeKeywords = /(npm|vite|react|frontend|front|web|javascript|typescript|node)/i;
   const dotnetKeywords = /(dotnet|c#|csharp|csproj|solution|visual studio|sln|backend c#)/i;
+  const explicitRunnerRequest = /(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i;
 
-  if (/git\s+status|status\s+git|etat du repo|état du repo|etat repo|état repo/i.test(text)) {
+  if (/git\s+status|status\s+git|etat du repo|Ã©tat du repo|etat repo|Ã©tat repo/i.test(text)) {
     return {
       command: "git status",
       reason: "A11 a prepare un diagnostic de l'etat du repo.",
     };
   }
 
-  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les différences/i.test(text)) {
+  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les diffÃ©rences/i.test(text)) {
     return {
       command: "git diff",
       reason: "A11 a prepare un diff safe pour le diagnostic.",
@@ -452,7 +836,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
     };
   }
 
-  if (/npm\s+test|\btests?\b/i.test(text)) {
+  if (/npm\s+test/i.test(text) || (/\btests?\b/i.test(relaxedText) && explicitRunnerRequest.test(relaxedText))) {
     return {
       command: "npm test",
       reason: "A11 a pre-rempli une commande de test autorisee.",
@@ -473,7 +857,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
     };
   }
 
-  if (/diagnostic|diagnostique|debug|depannage|dépannage|pourquoi ca marche pas|pourquoi ça marche pas|probleme technique|problème technique/i.test(text)) {
+  if (/diagnostic|diagnostique|debug|depannage|dÃ©pannage|pourquoi ca marche pas|pourquoi Ã§a marche pas|probleme technique|problÃ¨me technique/i.test(text)) {
     return {
       command: "git status",
       reason: "A11 a ouvert la console avec un premier diagnostic safe.",
@@ -481,9 +865,51 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
   }
 
   return null;
+*/
 }
 
 const DEFAULT_SYSTEM_NINDO = "";
+
+const KAEN44_SYSTEM_PROMPT = [
+  "Je suis Kaen44, une assistante bureau universelle, locale-first, creative et utile, concue pour offrir une vraie alternative aux assistants integres trop fermes.",
+  "Je detecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partage. Je reponds dans la langue detectee par defaut, je peux changer de langue sans friction, et je demande une precision seulement si la langue ou l'intention est ambigue.",
+  "Ma mission est d'aider l'utilisateur a penser, produire, organiser, classer, depanner son ordinateur et transformer ses documents avec une presence claire, vive et concrete.",
+  "Je peux accompagner tous les projets raisonnables qu'un client peut esperer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM leger, idees de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de donnees simples, assistance informatique et suivi de projet.",
+  "Je distingue clairement ce qui tourne dans Kaen44 cote client et ce qui appartient a A11 cote serveur. A11 n'est pas installe localement chez les clients: je m'y connecte comme service distant quand c'est necessaire.",
+  "Je dispose d'une CLI client legere, `kaen44` ou `k44`, pour ouvrir l'application, verifier le statut local et enregistrer des tokens client de maniere chiffree avec Windows DPAPI. Je ne demande jamais a l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
+  "Je peux presenter une console de modules claire cote client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, deploiement, secrets et operations serveur restent reserves a A11/admin.",
+  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/cout anormal, je passe en mode limite transparent et je peux proposer Kaen44 Plus a 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je reduis les actions couteuses et je demande l'abonnement si necessaire.",
+  "Si un probleme technique, quota fournisseur ou limitation guard mode se declenche, je dois prevenir l'administrateur par email a cellaurojeffrey@gmail.com avec un resume bref: utilisateur, heure, type de probleme, action limitee et prochaine etape. Je ne joins jamais de tokens, secrets ou donnees sensibles.",
+  "Pour les personnes malvoyantes, handicapees ou fatiguees, je privilegie un mode accessibilite: grosses cibles, lecture vocale, dictee, contraste, navigation clavier, resume d'ecran et actions confirmees. Le controle souris/clavier/ecran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilite d'arret immediat.",
+  "Si un controle d'ecran avance est necessaire, je recommande un helper local dedie utilisant les API d'accessibilite Windows, pas une prise de controle cachee depuis une page web.",
+  "Quand un projet demande des outils supplementaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF equivalent, Git si le client gere du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image equivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base metier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les deploiements.",
+  "Pour la vision avancee, je peux m'appuyer sur Janus cote A11/serveur quand le projet implique analyse d'images, memoire visuelle, description de captures, controle de generations image/video ou extraction semantique visuelle. Janus n'est pas une dependance obligatoire du poste client.",
+  "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommande, avance, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus a un client non technique si le besoin peut etre couvert plus simplement.",
+  "Je parle comme une compagne de travail intelligente: directe, chaleureuse, precise, jamais corporate.",
+  "Je privilegie les actions utiles: resumer, classer, transformer, proposer l'etape suivante, preparer des fichiers, guider les reglages et expliquer sans noyer.",
+  "Je respecte les donnees personnelles: je ne demande pas d'acces inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou cles d'acces.",
+  "Face a une demande floue, je fais une hypothese raisonnable et j'avance, sauf si le risque est financier, destructif ou lie a des acces sensibles.",
+  "Dans mon contexte, Funesterie est le workspace et l'ecosysteme de Jeffrey Cellauro (Djeff / funeste), pas un mot generique ou lugubre.",
+  "NOSSEN est le nom interne de l'identite locale A11/Funesterie: dev, code, QFlush, Cerbere, VSIX et projets audio/Vivy. Si l'utilisateur demande NOSSEN, je reponds depuis ce contexte sans redemander ce que c'est.",
+  "Pour les factures de la societe Funesterie, je peux aider a recevoir, trier, extraire et suivre les pieces comptables quand elles sont fournies ou synchronisees.",
+  "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'echeance, le montant HT, la TVA, le montant TTC, la devise, le statut, les references de paiement et les anomalies possibles.",
+  "Je classe les factures par etat de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
+  "J'envoie les syntheses, alertes et suivis de factures Funesterie par email a cellaurojeffrey@gmail.com quand l'utilisateur me demande de gerer, verifier, classer ou suivre ces documents.",
+  "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une piece comptable sensible sans validation explicite de l'utilisateur.",
+  "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
+].join("\n");
+
+function resolveClientSystemPrompt() {
+  if (typeof window === "undefined") return undefined;
+  try {
+    if (isKaen44Experience()) {
+      return KAEN44_SYSTEM_PROMPT;
+    }
+  } catch {
+    // Keep backend default prompt.
+  }
+  return undefined;
+}
 
 function buildConversationArtifactContent(
   conversationMessages: ChatMessage[],
@@ -647,7 +1073,7 @@ function detectAssistantExportSuggestion(content: string): AssistantExportSugges
   return null;
 }
 
-// ── Carousel d'images dans les bulles de chat ─────────────────────────────────
+// â”€â”€ Carousel d'images dans les bulles de chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (url: string) => void }) {
   const [idx, setIdx] = React.useState(0);
   const total = images.length;
@@ -668,16 +1094,16 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
         <button
           type="button"
           className="msg-image-carousel-arrow"
-          aria-label="Image précédente"
+          aria-label="Image precedente"
           onClick={() => setIdx((i) => (i - 1 + total) % total)}
-        >‹</button>
+        >{"<"}</button>
         <span className="msg-image-carousel-counter">{idx + 1}/{total}</span>
         <button
           type="button"
           className="msg-image-carousel-arrow"
           aria-label="Image suivante"
           onClick={() => setIdx((i) => (i + 1) % total)}
-        >›</button>
+        >{">"}</button>
         <button
           type="button"
           className="msg-image-carousel-expand"
@@ -691,8 +1117,80 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
   );
 }
 
-// ✅ LOGIN PANEL
+// âœ… LOGIN PANEL
+const GOOGLE_IDENTITY_SCRIPT_ID = "google-identity-services";
+const GOOGLE_CLIENT_ID = String(
+  import.meta.env.VITE_GOOGLE_CLIENT_ID
+  || import.meta.env.VITE_A11_GOOGLE_CLIENT_ID
+  || ""
+).trim();
+const ENABLE_GOOGLE_IDENTITY_BUTTON = String(
+  import.meta.env.VITE_ENABLE_GOOGLE_IDENTITY_BUTTON
+  || ""
+).trim().toLowerCase() === "true";
+
+function isLocalDevSurface() {
+  if (typeof window === "undefined") return false;
+  const hostname = String(window.location.hostname || "").toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function activateLocalDevSession(onLoginSuccess: () => void) {
+  const display = "Djeff local";
+  clearAuthToken();
+  setAuthDisplayName(display);
+  try {
+    localStorage.setItem("a11:local-dev-bypass", "1");
+  } catch {
+    // Local storage can be unavailable in embedded surfaces.
+  }
+  onLoginSuccess();
+}
+
+function hasLocalDevSession() {
+  if (!isLocalDevSurface()) return false;
+  try {
+    return localStorage.getItem("a11:local-dev-bypass") === "1";
+  } catch {
+    return true;
+  }
+}
+
+let googleIdentityScriptPromise: Promise<void> | null = null;
+
+function loadGoogleIdentityScript() {
+  if ((window as any).google?.accounts?.id) {
+    return Promise.resolve();
+  }
+
+  if (googleIdentityScriptPromise) {
+    return googleIdentityScriptPromise;
+  }
+
+  googleIdentityScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.getElementById(GOOGLE_IDENTITY_SCRIPT_ID) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Chargement Google impossible")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = GOOGLE_IDENTITY_SCRIPT_ID;
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Chargement Google impossible"));
+    document.head.appendChild(script);
+  });
+
+  return googleIdentityScriptPromise;
+}
+
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  const isKaen44 = isKaen44Experience();
+  const localDevSurface = isLocalDevSurface();
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [username, setUsername] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
@@ -705,6 +1203,118 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [forgotError, setForgotError] = useState("");
   const [loading, setLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.add("a11-auth-page-root");
+    document.body.classList.add("a11-auth-page-body");
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search || "");
+      const authError = String(params.get("error") || "").trim().toLowerCase();
+      if (authError) {
+        const authErrorMessages: Record<string, string> = {
+          oauth_failed: "La connexion externe a echoue. Reessaie dans un instant.",
+          oauth_state_invalid: "La verification de connexion a expire ou ne correspond plus. Relance la connexion.",
+          oauth_state_expired: "La tentative de connexion a expire. Relance-la depuis cette page.",
+          session_verification_failed: "La connexion a reussi, mais la session n'a pas pu etre verifiee. Reessaie une fois.",
+          google_auth_not_configured: "La connexion Google n'est pas encore activee sur ce serveur.",
+          google_invalid_client: "La connexion Google est mal configuree cote serveur. Utilise Microsoft pendant que nous remplacons la cle Google.",
+          google_invalid_grant: "Google a refuse le code de connexion. Reessaie en repartant du bouton Google.",
+          google_redirect_uri_mismatch: "Google refuse l'URL de retour configuree pour cette application.",
+          google_access_denied: "La connexion Google a ete annulee.",
+          google_email_not_verified: "Ton adresse Google doit etre verifiee avant de pouvoir entrer ici.",
+          microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activee sur ce serveur.",
+          microsoft_invalid_client: "La connexion Microsoft est mal configuree cote serveur.",
+          microsoft_invalid_grant: "Microsoft a refuse le code de connexion. Reessaie en repartant du bouton Microsoft.",
+          microsoft_access_denied: "La connexion Microsoft a ete annulee.",
+          microsoft_email_missing: "Microsoft n'a pas renvoye d'adresse email exploitable pour la session.",
+        };
+
+        setMode("login");
+        setInfo("");
+        setGoogleLoading(false);
+        setMicrosoftLoading(false);
+        setError(authErrorMessages[authError] || "La connexion n'a pas pu etre finalisee.");
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+
+    return () => {
+      document.documentElement.classList.remove("a11-auth-page-root");
+      document.body.classList.remove("a11-auth-page-body");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ENABLE_GOOGLE_IDENTITY_BUTTON || !GOOGLE_CLIENT_ID || mode === "forgot" || !googleButtonRef.current) return;
+
+    let cancelled = false;
+    setGoogleLoading(true);
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (cancelled || !googleButtonRef.current) return;
+        const google = (window as any).google;
+        if (!google?.accounts?.id) {
+          throw new Error("Connexion Google indisponible");
+        }
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          use_fedcm_for_prompt: true,
+          callback: (response: { credential?: string }) => {
+            void (async () => {
+              setError("");
+              setInfo("");
+              setGoogleLoading(true);
+              try {
+                if (!response?.credential) throw new Error("Reponse Google incomplete");
+                await loginWithGoogleCredential(response.credential);
+                onLoginSuccess();
+              } catch (err) {
+                setError((err as Error).message || "Connexion Google impossible");
+              } finally {
+                setGoogleLoading(false);
+              }
+            })();
+          },
+        });
+        googleButtonRef.current.innerHTML = "";
+        google.accounts.id.renderButton(googleButtonRef.current, {
+          theme: "filled_blue",
+          size: "large",
+          type: "standard",
+          text: mode === "register" ? "signup_with" : "signin_with",
+          shape: "rectangular",
+          width: 340,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError((err as Error).message || "Connexion Google indisponible");
+      })
+      .finally(() => {
+        if (!cancelled) setGoogleLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, onLoginSuccess]);
+
+  const handleGoogleOAuth = () => {
+    setError("");
+    setInfo("");
+    setGoogleLoading(true);
+    startGoogleOAuth(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/auth/success"), "web");
+  };
+
+  const handleMicrosoftOAuth = () => {
+    setError("");
+    setInfo("");
+    setMicrosoftLoading(true);
+    startMicrosoftOAuth("/auth/success", "web");
+  };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {
     setMode(nextMode);
@@ -788,6 +1398,18 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     padding: "24px 16px calc(24px + env(safe-area-inset-bottom))",
     boxSizing: "border-box",
     gap: "20px",
+    background: isKaen44
+      ? "radial-gradient(circle at 50% 8%, rgba(245, 158, 11, 0.18), transparent 34%), radial-gradient(circle at 14% 72%, rgba(190, 18, 60, 0.14), transparent 32%), #130d0b"
+      : "linear-gradient(135deg, #020617 0%, #06131b 46%, #0b1214 100%)",
+    overflowX: "hidden",
+    overflowY: "auto",
+    touchAction: "pan-y",
+  };
+
+  const handleLocalDevLogin = () => {
+    setError("");
+    setInfo("Mode atelier local active.");
+    activateLocalDevSession(onLoginSuccess);
   };
   const authTabsStyle: React.CSSProperties = {
     display: "flex",
@@ -803,63 +1425,139 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     width: "min(100%, 340px)",
   };
   const authInputStyle: React.CSSProperties = {
-    padding: "10px",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
+    padding: isKaen44 ? "13px 14px" : "12px 13px",
+    borderRadius: isKaen44 ? "12px" : "8px",
+    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.28)" : "1px solid rgba(45, 212, 191, 0.28)",
     width: "100%",
     boxSizing: "border-box",
+    background: isKaen44 ? "rgba(25, 16, 12, 0.86)" : "rgba(2, 10, 18, 0.82)",
+    color: "#f8fafc",
+    outline: "none",
   };
+  const tabButtonStyle = (targetMode: "login" | "register" | "forgot"): React.CSSProperties => ({
+    padding: "10px 16px",
+    borderRadius: isKaen44 ? "999px" : "8px",
+    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.32)" : "1px solid rgba(45, 212, 191, 0.24)",
+    background: mode === targetMode
+      ? (isKaen44 ? "linear-gradient(135deg, #f59e0b, #e11d48)" : "linear-gradient(135deg, #22d3ee, #a3e635)")
+      : (isKaen44 ? "rgba(30, 19, 14, 0.76)" : "rgba(3, 12, 20, 0.84)"),
+    color: mode === targetMode ? "#160c07" : (isKaen44 ? "#f8e4c7" : "#d8f3f0"),
+    cursor: "pointer",
+    fontWeight: "bold",
+    boxShadow: mode === targetMode
+      ? (isKaen44 ? "0 14px 30px rgba(225, 29, 72, 0.22)" : "0 14px 30px rgba(20, 184, 166, 0.18)")
+      : "none",
+  });
 
   return (
-    <div style={authShellStyle}>
-      <h1>🔐 Connexion A11</h1>
+    <div className={isKaen44 ? "kaen-auth-shell" : "alpha-auth-shell"} style={authShellStyle}>
+      <div
+        className={isKaen44 ? "kaen-auth-card" : "alpha-auth-card"}
+      >
+      <h1>{isKaen44 ? "Connexion Kaen44" : "Connexion A11"}</h1>
+      {isKaen44 ? (
+        <>
+          <div className="kaen-auth-portrait" aria-hidden="true">
+            <img src={KAEN44_AVATAR_SRC} alt="" />
+          </div>
+          <div className="kaen-auth-title">Kaen44</div>
+          <div className="kaen-auth-subtitle">Copilote au quotidien</div>
+        </>
+      ) : (
+        <>
+          <div className="alpha-auth-mark" aria-hidden="true">
+            <span>A11</span>
+          </div>
+          <div className="alpha-auth-title">Alpha Onze</div>
+          <div className="alpha-auth-subtitle">Assistant doux pour documents, voix et creation</div>
+          <div className="alpha-auth-status" aria-label="Etat des couches A11">
+            <span>MCP</span>
+            <span>Kiro2</span>
+            <span>Gamepad</span>
+          </div>
+        </>
+      )}
       <div style={authTabsStyle}>
         <button
           type="button"
           onClick={() => switchMode("login")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: "999px",
-            border: "1px solid #334155",
-            background: mode === "login" ? "#7c3aed" : "#0f172a",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: "bold"
-          }}
+          style={tabButtonStyle("login")}
         >
           Connexion
         </button>
         <button
           type="button"
           onClick={() => switchMode("register")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: "999px",
-            border: "1px solid #334155",
-            background: mode === "register" ? "#7c3aed" : "#0f172a",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: "bold"
-          }}
+          style={tabButtonStyle("register")}
         >
           S'inscrire
         </button>
         <button
           type="button"
           onClick={() => switchMode("forgot")}
-          style={{
-            padding: "10px 16px",
-            borderRadius: "999px",
-            border: "1px solid #334155",
-            background: mode === "forgot" ? "#7c3aed" : "#0f172a",
-            color: "white",
-            cursor: "pointer",
-            fontWeight: "bold"
-          }}
+          style={tabButtonStyle("forgot")}
         >
           Reinitialiser
         </button>
       </div>
+      {mode !== "forgot" && (
+        <div style={{ width: "min(100%, 340px)", display: "flex", flexDirection: "column", gap: 10 }}>
+          {localDevSurface && (
+            <button
+              type="button"
+              onClick={handleLocalDevLogin}
+              className="alpha-auth-dev-button"
+              disabled={loading}
+            >
+              Entrer en mode atelier local
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleGoogleOAuth}
+            disabled={googleLoading || microsoftLoading || loading}
+            style={{
+              minHeight: 42,
+              borderRadius: isKaen44 ? 12 : 6,
+              border: isKaen44 ? "1px solid rgba(226, 232, 240, 0.18)" : "1px solid rgba(45, 212, 191, 0.24)",
+              background: googleLoading
+                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                : (isKaen44 ? "#f8fafc" : "#ffffff"),
+              color: "#111827",
+              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
+              fontWeight: 800,
+            }}
+          >
+            {googleLoading ? "Connexion Google..." : "Continuer avec Google"}
+          </button>
+          <button
+            type="button"
+            onClick={handleMicrosoftOAuth}
+            disabled={googleLoading || microsoftLoading || loading}
+            style={{
+              minHeight: 42,
+              borderRadius: isKaen44 ? 12 : 6,
+              border: isKaen44 ? "1px solid rgba(125, 211, 252, 0.28)" : "1px solid #334155",
+              background: microsoftLoading
+                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                : (isKaen44 ? "rgba(15, 23, 42, 0.9)" : "#0f172a"),
+              color: "#f8fafc",
+              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
+              fontWeight: 800,
+            }}
+          >
+            {microsoftLoading ? "Connexion Microsoft..." : "Continuer avec Microsoft"}
+          </button>
+          {ENABLE_GOOGLE_IDENTITY_BUTTON && GOOGLE_CLIENT_ID && (
+            <div style={{ minHeight: 42, display: "flex", justifyContent: "center" }}>
+              <div ref={googleButtonRef} style={{ width: "100%" }} />
+              {googleLoading && (
+                <span style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}>Google...</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {mode === "login" && (
         <form onSubmit={handleLogin} style={authFormStyle}>
           <input
@@ -883,10 +1581,10 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             disabled={loading}
             style={{
               padding: "10px 20px",
-              borderRadius: "4px",
+              borderRadius: isKaen44 ? "12px" : "8px",
               border: "none",
-              background: "#007bff",
-              color: "white",
+              background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "linear-gradient(135deg, #14b8a6, #a3e635)",
+              color: "#061018",
               cursor: "pointer",
               fontWeight: "bold"
             }}
@@ -934,10 +1632,10 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             disabled={loading}
             style={{
               padding: "10px 20px",
-              borderRadius: "4px",
+              borderRadius: isKaen44 ? "12px" : "8px",
               border: "none",
-              background: "#7c3aed",
-              color: "white",
+              background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "linear-gradient(135deg, #14b8a6, #a3e635)",
+              color: "#061018",
               cursor: "pointer",
               fontWeight: "bold"
             }}
@@ -962,9 +1660,9 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             disabled={forgotLoading}
             style={{
               padding: "10px 20px",
-              borderRadius: "4px",
-              border: "1px solid #334155",
-              background: "#0f172a",
+              borderRadius: isKaen44 ? "12px" : "8px",
+              border: isKaen44 ? "1px solid rgba(196, 181, 253, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
+              background: isKaen44 ? "rgba(10, 17, 34, 0.78)" : "rgba(3, 12, 20, 0.84)",
               color: "#e2e8f0",
               cursor: "pointer",
               fontWeight: "bold"
@@ -978,7 +1676,799 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
       {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
+      </div>
     </div>
+  );
+}
+
+type VivyStudioMode = "voice" | "song" | "share";
+
+const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
+
+const VIVY_STUDIO_MODES: Array<{
+  id: VivyStudioMode;
+  title: string;
+  label: string;
+  action: string;
+}> = [
+  {
+    id: "voice",
+    title: "Creation voix",
+    label: "Calibrer une voix, preparer Voicemod/RVC/A11 Voice et garder la reference propre.",
+    action: "Preparer calibration",
+  },
+  {
+    id: "song",
+    title: "Composition - production",
+    label: "Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.",
+    action: "Preparer chanson",
+  },
+  {
+    id: "share",
+    title: "Scene - partage",
+    label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
+    action: "Preparer partage",
+  },
+];
+
+function readVivyStudioDraft() {
+  try {
+    const raw = globalThis.localStorage?.getItem(VIVY_STUDIO_DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeVivyStudioDraft(value: Record<string, unknown>) {
+  try {
+    globalThis.localStorage?.setItem(VIVY_STUDIO_DRAFT_KEY, JSON.stringify(value));
+  } catch {
+    // Storage is optional for the public page.
+  }
+}
+
+function buildVivyStudioBrief(options: {
+  mode: VivyStudioMode;
+  voiceTool: string;
+  voiceInstruction: string;
+  voiceFileName: string;
+  songSource: string;
+  songMood: string;
+  songText: string;
+  shareTarget: string;
+  shareUrl: string;
+  shareTokenPresent: boolean;
+  shareInstruction: string;
+}) {
+  const active = VIVY_STUDIO_MODES.find((item) => item.id === options.mode) || VIVY_STUDIO_MODES[0];
+  const lines = [
+    "VIVY_STUDIO_HANDOFF",
+    `Atelier: ${active.title}`,
+    `Objectif: ${active.label}`,
+    "",
+  ];
+
+  if (options.mode === "voice") {
+    lines.push(
+      "Flux voix:",
+      `- Outil cible: ${options.voiceTool}`,
+      `- Reference audio: ${options.voiceFileName || "a fournir"}`,
+      `- Instruction: ${options.voiceInstruction || "definir le timbre, les limites et le style de modulation"}`,
+      "- Sortie attendue: profil vocal, notes de calibration, chaine d'effets et phrase de test.",
+      "- Securite: ne pas publier la reference brute sans accord."
+    );
+  }
+
+  if (options.mode === "song") {
+    lines.push(
+      "Flux chanson:",
+      `- Source: ${options.songSource}`,
+      `- Direction sonore: ${options.songMood}`,
+      `- Matiere: ${options.songText || "theme libre a developper"}`,
+      "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets a produire.",
+      "- Role: Vivy cree la chanson, A11 aide pour image/video si necessaire."
+    );
+  }
+
+  if (options.mode === "share") {
+    lines.push(
+      "Flux scene / partage:",
+      `- Canal: ${options.shareTarget}`,
+      `- Lien: ${options.shareUrl || "a fournir"}`,
+      `- Token fourni dans l'interface: ${options.shareTokenPresent ? "oui, local seulement" : "non"}`,
+      `- Instruction: ${options.shareInstruction || "preparer clip, titre, description et checklist publication"}`,
+      "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
+      "- Regle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
+    );
+  }
+
+  lines.push(
+    "",
+    "Routage recommande:",
+    "- Vivy: voix, paroles, composition, presence audio.",
+    "- A11: image, video, montage, generation d'assets.",
+    "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
+  );
+
+  return lines.join("\n");
+}
+
+function VivyStudioLab() {
+  const initialDraft = readVivyStudioDraft() || {};
+  const [activeMode, setActiveMode] = useState<VivyStudioMode>((initialDraft.mode as VivyStudioMode) || "voice");
+  const [voiceTool, setVoiceTool] = useState(String(initialDraft.voiceTool || "A11 Voice + Voicemod"));
+  const [voiceInstruction, setVoiceInstruction] = useState(String(initialDraft.voiceInstruction || ""));
+  const [voiceFile, setVoiceFile] = useState<File | null>(null);
+  const [voiceFileName, setVoiceFileName] = useState(String(initialDraft.voiceFileName || ""));
+  const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Theme"));
+  const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
+  const [songText, setSongText] = useState(String(initialDraft.songText || ""));
+  const [shareTarget, setShareTarget] = useState(String(initialDraft.shareTarget || "YouTube"));
+  const [shareUrl, setShareUrl] = useState(String(initialDraft.shareUrl || ""));
+  const [shareToken, setShareToken] = useState("");
+  const [shareInstruction, setShareInstruction] = useState(String(initialDraft.shareInstruction || ""));
+  const [vivyOutput, setVivyOutput] = useState(String(initialDraft.vivyOutput || ""));
+  const [status, setStatus] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  const baseBrief = useMemo(() => buildVivyStudioBrief({
+    mode: activeMode,
+    voiceTool,
+    voiceInstruction,
+    voiceFileName,
+    songSource,
+    songMood,
+    songText,
+    shareTarget,
+    shareUrl,
+    shareTokenPresent: Boolean(shareToken.trim()),
+    shareInstruction,
+  }), [
+    activeMode,
+    voiceTool,
+    voiceInstruction,
+    voiceFileName,
+    songSource,
+    songMood,
+    songText,
+    shareTarget,
+    shareUrl,
+    shareToken,
+    shareInstruction,
+  ]);
+  const brief = useMemo(
+    () => vivyOutput.trim() ? `${baseBrief}\n\nVIVY_PRODUCTION\n${vivyOutput.trim()}` : baseBrief,
+    [baseBrief, vivyOutput]
+  );
+
+  useEffect(() => {
+    writeVivyStudioDraft({
+      mode: activeMode,
+      voiceTool,
+      voiceInstruction,
+      voiceFileName,
+      songSource,
+      songMood,
+      songText,
+      shareTarget,
+      shareUrl,
+      shareInstruction,
+      tokenPresent: Boolean(shareToken.trim()),
+      vivyOutput,
+    });
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, songSource, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+
+  const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
+
+  async function copyBrief(nextStatus = "Brief copie pour les agents.") {
+    try {
+      await navigator.clipboard?.writeText(brief);
+      setStatus(nextStatus);
+    } catch {
+      setStatus("Copie auto indisponible: selectionne le brief et copie-le.");
+    }
+  }
+
+  async function shareBrief() {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Vivy - ${activeMeta.title}`,
+          text: brief,
+        });
+        setStatus("Partage systeme ouvert.");
+        return;
+      } catch {
+        // Fall back to clipboard below.
+      }
+    }
+    await copyBrief("Brief pret a coller dans l'equipe.");
+  }
+
+  async function saveBriefArtifact() {
+    setIsBusy(true);
+    setStatus("Sauvegarde du brief...");
+    try {
+      const slug = activeMode === "voice" ? "creation-voix" : activeMode === "song" ? "composition" : "scene-partage";
+      const result = await createTextArtifact({
+        filename: `vivy-${slug}-${Date.now()}.md`,
+        text: `# Vivy - ${activeMeta.title}\n\n${brief}\n`,
+        contentType: "text/markdown;charset=utf-8",
+        kind: "vivy_studio_brief",
+        description: `Brief Vivy ${activeMeta.title}`,
+      });
+      setStatus(result?.artifact?.url ? `Brief sauvegarde: ${result.artifact.url}` : "Brief sauvegarde dans A11.");
+    } catch (error: any) {
+      setStatus(`Sauvegarde A11 indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function uploadVoiceReference() {
+    if (!voiceFile) {
+      setStatus("Ajoute d'abord un fichier audio de reference.");
+      return;
+    }
+    setIsBusy(true);
+    setStatus("Upload reference voix...");
+    try {
+      const result = await uploadTtsVoiceReference(voiceFile, `Vivy - ${voiceFile.name}`, "private");
+      setVoiceFileName(result.reference?.originalName || result.reference?.label || voiceFile.name);
+      setStatus("Reference voix envoyee a A11.");
+    } catch (error: any) {
+      setStatus(`Upload voix indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function askVivy() {
+    setIsBusy(true);
+    setStatus("Vivy Studio prepare la production...");
+    try {
+      const payload = await runVivyStudioProduction({
+        mode: activeMode,
+        voiceTool,
+        voiceInstruction,
+        voiceFileName,
+        songSource,
+        songMood,
+        songText,
+        shareTarget,
+        shareUrl,
+        shareInstruction,
+        shareTokenPresent: Boolean(shareToken.trim()),
+      });
+      const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
+      if (!text) throw new Error("reponse_vide");
+      setVivyOutput(text);
+      setStatus(payload.summary || "Production Vivy ajoutee au brief.");
+    } catch (error: any) {
+      setStatus(`Production Vivy indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function openAgent(target: "a11" | "k44") {
+    await copyBrief(target === "a11" ? "Brief copie. Ouverture A11..." : "Brief copie. Ouverture Kaen44...");
+    const url = target === "a11" ? "https://a11.funesterie.pro/" : "https://k44.funesterie.me/#agents";
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <section id="vivy-studio" className="vivy-studio" aria-label="Atelier Vivy">
+      <div className="vivy-studio-head">
+        <div>
+          <h2>Atelier Vivy</h2>
+          <p>Voix, chanson, clip et partage equipes depuis les trois blocs de droite.</p>
+        </div>
+        <button type="button" onClick={shareBrief}>Partager le brief</button>
+      </div>
+
+      <div className="vivy-studio-grid">
+        <div className="vivy-studio-modes" role="tablist" aria-label="Modules Vivy">
+          {VIVY_STUDIO_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              role="tab"
+              aria-selected={activeMode === mode.id}
+              className={activeMode === mode.id ? "is-active" : ""}
+              onClick={() => setActiveMode(mode.id)}
+            >
+              <span>{mode.title}</span>
+              <small>{mode.label}</small>
+            </button>
+          ))}
+        </div>
+
+        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); void copyBrief(`${activeMeta.action}: brief pret.`); }}>
+          <h3>{activeMeta.title}</h3>
+
+          {activeMode === "voice" && (
+            <>
+              <label>
+                Outil voix
+                <select value={voiceTool} onChange={(event) => setVoiceTool(event.target.value)}>
+                  <option>A11 Voice + Voicemod</option>
+                  <option>A11 Voice + RVC</option>
+                  <option>Audacity + ffmpeg</option>
+                  <option>Voicemod live</option>
+                </select>
+              </label>
+              <label>
+                Reference audio
+                <input
+                  type="file"
+                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0] || null;
+                    setVoiceFile(file);
+                    setVoiceFileName(file?.name || "");
+                  }}
+                />
+              </label>
+              <label>
+                Instruction voix
+                <textarea
+                  rows={6}
+                  value={voiceInstruction}
+                  onChange={(event) => setVoiceInstruction(event.target.value)}
+                  placeholder="Ex: voix douce, proche micro, legere saturation pop, garder une diction claire."
+                />
+              </label>
+              <button type="button" onClick={uploadVoiceReference} disabled={isBusy || !voiceFile}>Envoyer reference a A11</button>
+            </>
+          )}
+
+          {activeMode === "song" && (
+            <>
+              <label>
+                Depart
+                <select value={songSource} onChange={(event) => setSongSource(event.target.value)}>
+                  <option>Theme</option>
+                  <option>Texte brut</option>
+                  <option>Paroles</option>
+                  <option>Instruction complete</option>
+                </select>
+              </label>
+              <label>
+                Couleur sonore
+                <input value={songMood} onChange={(event) => setSongMood(event.target.value)} />
+              </label>
+              <label>
+                Matiere creative
+                <textarea
+                  rows={8}
+                  value={songText}
+                  onChange={(event) => setSongText(event.target.value)}
+                  placeholder="Theme, paroles, ambiance, intention, histoire ou simple idee."
+                />
+              </label>
+            </>
+          )}
+
+          {activeMode === "share" && (
+            <>
+              <label>
+                Canal
+                <select value={shareTarget} onChange={(event) => setShareTarget(event.target.value)}>
+                  <option>YouTube</option>
+                  <option>OBS / Live</option>
+                  <option>SoundCloud</option>
+                  <option>Deezer</option>
+                  <option>Lien equipe</option>
+                </select>
+              </label>
+              <label>
+                Lien ou cible
+                <input
+                  value={shareUrl}
+                  onChange={(event) => setShareUrl(event.target.value)}
+                  placeholder="https://..."
+                />
+              </label>
+              <label>
+                Token local
+                <input
+                  type="password"
+                  value={shareToken}
+                  onChange={(event) => setShareToken(event.target.value)}
+                  placeholder="Non stocke, non copie dans le brief"
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Instruction publication
+                <textarea
+                  rows={6}
+                  value={shareInstruction}
+                  onChange={(event) => setShareInstruction(event.target.value)}
+                  placeholder="Ex: clip vertical 30s, titre court, description FR, tags Funesterie/Vivy."
+                />
+              </label>
+            </>
+          )}
+
+          <div className="vivy-studio-actions">
+            <button type="submit">{activeMeta.action}</button>
+            <button type="button" onClick={askVivy} disabled={isBusy}>Demander a Vivy</button>
+            <button type="button" onClick={() => openAgent("a11")}>Ouvrir A11</button>
+            <button type="button" onClick={() => openAgent("k44")}>Ouvrir Kaen44</button>
+            <button type="button" onClick={saveBriefArtifact} disabled={isBusy}>Sauver dans A11</button>
+          </div>
+        </form>
+
+        <aside className="vivy-studio-brief" aria-live="polite">
+          <h3>Brief agents</h3>
+          <pre>{brief}</pre>
+          <div>
+            <button type="button" onClick={() => copyBrief()}>Copier</button>
+            <button type="button" onClick={shareBrief}>Partager</button>
+          </div>
+          {status && <p>{status}</p>}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function VivyPublicSurface() {
+  return (
+    <>
+      <section className="vivy-public-stage" aria-label="Vivy presence musicale" tabIndex={0}>
+        <div className="vivy-public-poster-frame">
+          <img
+            className="vivy-public-poster"
+            src={VIVY_POSTER_SRC}
+            alt="Vivy, presence musicale Funesterie: voix, musique, creation et partage."
+          />
+        </div>
+        <div className="vivy-public-mobile-slices" aria-hidden="true">
+          <img className="vivy-mobile-slice vivy-mobile-slice--portrait" src={VIVY_POSTER_SRC} alt="" />
+          <img className="vivy-mobile-slice vivy-mobile-slice--voice" src={VIVY_POSTER_SRC} alt="" />
+          <img className="vivy-mobile-slice vivy-mobile-slice--production" src={VIVY_POSTER_SRC} alt="" />
+          <img className="vivy-mobile-slice vivy-mobile-slice--scene" src={VIVY_POSTER_SRC} alt="" />
+        </div>
+      </section>
+      <VivyStudioLab />
+    </>
+  );
+}
+
+function VivyPublicPage() {
+  useEffect(() => {
+    document.documentElement.classList.add("kaen-public-page-root");
+    document.body.classList.add("kaen-public-page-body");
+    return () => {
+      document.documentElement.classList.remove("kaen-public-page-root");
+      document.body.classList.remove("kaen-public-page-body");
+    };
+  }, []);
+
+  const surfaceLinks = getSurfaceLinks();
+
+  return (
+    <main className="kaen-public-shell kaen-public-shell--page vivy-public-shell">
+      <nav className="kaen-public-nav" aria-label="Navigation Vivy">
+        <a href={surfaceLinks.vivy} className="kaen-public-brand">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <span>
+            <strong>Vivy</strong>
+            <small>Presence musicale Funesterie</small>
+          </span>
+        </a>
+        <div>
+          <a href={surfaceLinks.vivy}>Vivy</a>
+          <a href="#vivy-studio">Studio</a>
+          <a href={surfaceLinks.kaen44}>Kaen44</a>
+          <a href={surfaceLinks.a11}>A11</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
+          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+        </div>
+      </nav>
+      <VivyPublicSurface />
+    </main>
+  );
+}
+
+function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy" }) {
+  useEffect(() => {
+    document.documentElement.classList.add("kaen-public-page-root");
+    document.body.classList.add("kaen-public-page-body");
+    return () => {
+      document.documentElement.classList.remove("kaen-public-page-root");
+      document.body.classList.remove("kaen-public-page-body");
+    };
+  }, []);
+
+  const isPrivacy = page === "privacy";
+  const isTerms = page === "terms";
+  const isVivy = page === "vivy";
+  const isHome = !isPrivacy && !isTerms && !isVivy;
+  const title = isPrivacy ? "Regles de confidentialite" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Funesterie";
+  const subtitle = isPrivacy
+    ? "Comment Kaen44 traite les donnees de connexion et les fichiers partages."
+    : isTerms
+      ? "Le cadre d'utilisation de Kaen44 et de ses services connectes."
+      : isVivy
+        ? "Presence musicale Funesterie pour voix, chansons originales et projets audio."
+        : "Nexus public pour A11, Kaen44, Vivy, MCP et les services Funesterie.";
+  const surfaceLinks = getSurfaceLinks();
+  const tabs = ["Accueil", "Agents IA", "Corpus", "Memoires", "Projets", "Vivy", "Transparence"];
+  const tabTargets: Record<string, string> = {
+    Accueil: surfaceLinks.kaen44,
+    "Agents IA": "#agents",
+    Corpus: "#corpus",
+    Memoires: "#corpus",
+    Projets: "#projets",
+    Vivy: surfaceLinks.vivy,
+    Transparence: surfaceLinks.kaen44Privacy,
+  };
+  const futureAgents = ["Qflush", "Aura", "RomStation"];
+
+  return (
+    <main className={`kaen-public-shell ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
+      <nav className="kaen-public-nav" aria-label="Navigation Kaen44">
+        <a href={surfaceLinks.kaen44} className="kaen-public-brand">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <span>
+            <strong>Funesterie</strong>
+            <small>Creer - comprendre - connecter</small>
+          </span>
+        </a>
+        <div>
+          <a href={surfaceLinks.kaen44}>Kaen44</a>
+          <a href={surfaceLinks.a11}>A11</a>
+          <a href={surfaceLinks.vivy}>Vivy</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
+          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+          <a href={surfaceLinks.kaen44Login} className="kaen-public-login">Connexion K44</a>
+        </div>
+      </nav>
+
+      {isVivy ? <VivyPublicSurface /> : null}
+
+      <section hidden={isVivy} className={`kaen-public-hero ${isHome ? "" : "kaen-public-hero--simple"}`}>
+        {isHome ? <img className="kaen-public-reference-haze" src={FUNESTERIE_TEAM_SCENE_SRC} alt="" /> : null}
+        {isHome ? (
+          <aside className="kaen-public-agent-card" aria-label="Identite Kaen44">
+            <strong>A11 + K44</strong>
+            <span>Orchestration MCP</span>
+            <div>
+              <em>Agents</em>
+              <em>Memoire</em>
+              <em>MCP</em>
+              <em>Services</em>
+            </div>
+            <p>Une seule porte pour piloter les agents, les hooks Neo4j et les interfaces publiques.</p>
+          </aside>
+        ) : null}
+        <div className="kaen-public-copy">
+          <h1>{isHome ? "FUNESTERIE" : title}</h1>
+          <p className="kaen-public-subline">
+            {isHome ? "A11, Kaen44 et Vivy connectes par MCP" : subtitle}
+          </p>
+          {isHome ? (
+            <>
+              <p>
+                La plateforme rassemble l'assistance, la memoire, les images, la voix et les
+                automatisations dans une interface lisible pour la demo.
+              </p>
+              <div className="kaen-public-actions">
+                <a href={surfaceLinks.kaen44Login}>Entrer dans K44</a>
+                <a href="#agents">Voir les agents</a>
+              </div>
+            </>
+          ) : null}
+          {isVivy ? (
+            <>
+              <p>
+                Vivy est une identite musicale originale de Funesterie. Elle sert a preparer des
+                chansons, voix, bandes-son, clips et publications audio lies aux projets creatifs.
+              </p>
+              <div className="kaen-public-actions">
+                <a href={surfaceLinks.kaen44Privacy}>Lire les regles de confidentialite</a>
+                <a href={surfaceLinks.kaen44Terms}>Lire les conditions</a>
+              </div>
+            </>
+          ) : null}
+        </div>
+        {isHome ? (
+          <figure className="kaen-public-hero-art" aria-label="Equipe Funesterie">
+            <img src={FUNESTERIE_TEAM_SCENE_SRC} alt="" />
+          </figure>
+        ) : null}
+        {!isHome ? (
+          <div className="kaen-public-avatar" aria-hidden="true">
+            <img src={KAEN44_AVATAR_SRC} alt="" />
+          </div>
+        ) : null}
+      </section>
+
+      {isHome ? (
+        <>
+          <nav className="kaen-public-tabs" aria-label="Sections Kaen44">
+            {tabs.map((tab) => (
+              <a key={tab} href={tabTargets[tab] || "#agents"}>
+                <i aria-hidden="true" />
+                <span>{tab}</span>
+              </a>
+            ))}
+          </nav>
+
+          <header className="kaen-public-section-title" id="agents">
+            <span>Nos agents IA</span>
+          </header>
+
+          <section className="kaen-public-agents" aria-label="Agents IA Funesterie">
+            <article className="kaen-public-agent-primary">
+              <img src={KAEN44_AVATAR_SRC} alt="" />
+              <strong>Kaen44</strong>
+              <span>Copilote quotidien</span>
+              <p>Assistance, memoire contextuelle, automatisation, outils locaux et accessibilite.</p>
+              <footer>
+                <b aria-hidden="true" />
+                <b aria-hidden="true" />
+                <b aria-hidden="true" />
+                <b aria-hidden="true" />
+              </footer>
+            </article>
+            <article className="kaen-public-agent-a11">
+              <div className="kaen-public-a11-visual" aria-hidden="true">
+                <img src={A11_KAEN44_COMMAND_CARDS_SRC} alt="" />
+              </div>
+              <strong>A11</strong>
+              <span>Moteur creatif</span>
+              <p>Creation, ideation, prototypes et systemes creatifs avances quand Kaen44 demande du renfort.</p>
+              <footer>
+                <b aria-hidden="true" />
+                <b aria-hidden="true" />
+                <b aria-hidden="true" />
+                <b aria-hidden="true" />
+              </footer>
+            </article>
+            {futureAgents.map((name) => (
+              <article key={name} className="kaen-public-empty-agent">
+                <div>?</div>
+                <strong>{name}</strong>
+                <span>A definir</span>
+                <p>Un futur renfort rejoindra l'equipe quand son role sera clair.</p>
+                <a href={surfaceLinks.kaen44Login}>Demander a Kaen44</a>
+              </article>
+            ))}
+          </section>
+
+          <section className="kaen-public-grid">
+            <article id="corpus" className="kaen-public-nexus-card">
+              <h2>Nexus Funesterie</h2>
+              <img src={FUNESTERIE_NEXUS_BOARD_SRC} alt="" />
+              <ul className="kaen-public-legend">
+                <li>Agents</li>
+                <li>Memoires</li>
+                <li>Conversations</li>
+                <li>Projets</li>
+              </ul>
+            </article>
+            <article id="vivy" className="kaen-public-vivy-card">
+              <h2>Vivy en ce moment</h2>
+              <div>
+                <img src={VIVY_POSTER_SRC} alt="" />
+                <p>Direction musicale en cours: voix, melodies et visuels Funesterie.</p>
+              </div>
+              <div className="kaen-wave" aria-hidden="true" />
+              <footer>
+                <span>01:24</span>
+                <button type="button" aria-label="Lecture"><i aria-hidden="true" /></button>
+                <span>03:58</span>
+              </footer>
+            </article>
+            <article id="projets" className="kaen-public-activity-card">
+              <h2>Activite recente</h2>
+              <p><span className="kaen-public-activity-icon" /> Vivy prepare une nouvelle melodie. <time>2 min</time></p>
+              <p><span className="kaen-public-activity-icon" /> Kaen44 a termine une tache d'organisation. <time>7 min</time></p>
+              <p><span className="kaen-public-activity-icon" /> A11 a relie trois idees creatives. <time>22 min</time></p>
+            </article>
+          </section>
+
+          <footer className="kaen-public-status-strip">
+            <span>Systeme distribue d'agents IA</span>
+            <span>Memoire partagee</span>
+            <span>Apprentissage continu</span>
+            <span>Respect du pacte</span>
+          </footer>
+        </>
+      ) : null}
+
+      {isPrivacy ? (
+        <section className="kaen-public-section">
+          <h2>Donnees utilisees</h2>
+          <p>
+            Kaen44 utilise les informations de compte necessaires a la connexion, les fichiers que
+            l'utilisateur importe ou autorise explicitement, et les messages envoyes dans le chat.
+          </p>
+          <h2>Google Drive</h2>
+          <p>
+            Lorsque l'utilisateur connecte Google Drive, Kaen44 demande uniquement les autorisations
+            necessaires pour afficher, telecharger et traiter les fichiers choisis par l'utilisateur.
+            Les acces peuvent etre retires depuis le compte Google de l'utilisateur.
+          </p>
+          <h2>Vivy, YouTube et plateformes audio</h2>
+          <p>
+            Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et
+            metadonnees fournis ou valides par l'utilisateur pour preparer des publications sur des
+            plateformes comme YouTube ou SoundCloud. Les fichiers prives ne sont pas publies sans
+            action explicite de l'utilisateur.
+          </p>
+          <h2>Contact</h2>
+          <p>
+            Pour toute question ou demande de suppression, contactez cellaurojeffrey@gmail.com.
+          </p>
+        </section>
+      ) : null}
+
+      {isTerms ? (
+        <section className="kaen-public-section">
+          <h2>Utilisation</h2>
+          <p>
+            Kaen44 fournit une assistance de productivite, de classement, de creation et de recherche
+            documentaire. L'utilisateur reste responsable des donnees qu'il partage et des validations
+            finales sur les documents, factures ou decisions importantes.
+          </p>
+          <h2>Limites</h2>
+          <p>
+            Kaen44 peut limiter les usages anormaux, couteux ou abusifs afin de proteger le service.
+            Les operations sensibles, paiements, suppressions ou actions administratives doivent etre
+            confirmees explicitement par l'utilisateur.
+          </p>
+          <h2>Vivy et contenus publies</h2>
+          <p>
+            Les chansons, voix, clips et metadonnees publies via Vivy doivent etre originaux,
+            autorises ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et
+            validations avant publication sur YouTube, SoundCloud ou tout autre service.
+          </p>
+          <h2>Contact</h2>
+          <p>
+            Pour toute question sur le service, contactez cellaurojeffrey@gmail.com.
+          </p>
+        </section>
+      ) : null}
+
+      {false && isVivy ? (
+        <section className="kaen-public-section">
+          <h2>Ce que fait Vivy</h2>
+          <p>
+            Vivy aide a transformer une idee musicale en piste exploitable: paroles, intention,
+            style vocal, export audio, page publique, lien SoundCloud ou clip YouTube.
+          </p>
+          <p>
+            Pour Alexa et les assistants vocaux, Vivy utilise un flux audio HTTPS direct controle par
+            Funesterie. Les pages YouTube et SoundCloud restent des surfaces publiques de diffusion,
+            pas des sources techniques obligatoires pour la lecture vocale.
+          </p>
+        </section>
+      ) : null}
+
+      {!isPrivacy && !isTerms && !isVivy ? (
+        <section className="kaen-public-section">
+          <h2>Ce que fait Kaen44</h2>
+          <p>
+            L'application sert de copilote bureautique: elle peut aider a lire des documents, trier
+            des factures, preparer des reponses, generer des idees visuelles simples, transcrire ou
+            resumer de l'audio, et guider l'utilisateur dans ses projets personnels ou professionnels.
+          </p>
+          <p>
+            Les connexions Google et Microsoft servent a recuperer les fichiers que l'utilisateur
+            souhaite traiter. Kaen44 affiche toujours des pages publiques de confidentialite et de
+            conditions d'utilisation avant la connexion.
+          </p>
+        </section>
+      ) : null}
+    </main>
   );
 }
 
@@ -1068,7 +2558,7 @@ function ResetPasswordPanel() {
     </div>
   );
 }
-// MuteButton : contrôle global du son
+// MuteButton : contrÃ´le global du son
 function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: boolean; fullWidth?: boolean }) {
   const [muted, setMuted] = useState(isSpeechMuted());
 
@@ -1097,7 +2587,7 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
   return (
     <button
       onClick={() => setMuted(m => !m)}
-      title={muted ? "Rétablir la voix d'A11" : "Couper la voix d'A11"}
+      title={muted ? "Retablir la voix d'A11" : "Couper la voix d'A11"}
       style={{
         fontSize: showLabel ? 13 : 20,
         padding: showLabel ? "10px 12px" : 6,
@@ -1112,17 +2602,191 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
       className="btn ghost"
     >
       {muted ? (
-        <span role="img" aria-label="Audio coupé">🔇</span>
+        <span aria-label="Audio coupe">Off</span>
       ) : (
-        <span role="img" aria-label="Audio actif">🔊</span>
+        <span aria-label="Audio actif">On</span>
       )}
-      {showLabel ? <span>{muted ? "Voix coupée" : "Voix active"}</span> : null}
+      {showLabel ? <span>{muted ? "Voix coupee" : "Voix active"}</span> : null}
     </button>
+  );
+}
+
+function Kaen44ModulesPanel({
+  isCompactLayout,
+  onBackToChat,
+  onOpenStudio,
+  onOpenAccount,
+  onQuickPrompt,
+}: {
+  isCompactLayout: boolean;
+  onBackToChat: () => void;
+  onOpenStudio: () => void;
+  onOpenAccount: () => void;
+  onQuickPrompt: (prompt: string) => void;
+}) {
+  const services = [
+    ["Documents", "Traiter un document", "Je veux traiter un document."],
+    ["Factures", "Preparer une facture", "Je veux preparer une facture."],
+    ["Voix", "Dicter ou transcrire", "Je veux dicter ou transcrire un audio."],
+    ["Aide", "Demander un renfort", "J'ai besoin d'aide sur une tache."],
+  ];
+
+  return (
+    <section className="kaen-modules-panel kaen-services-panel">
+      <div className="kaen-modules-hero kaen-services-hero" style={{ padding: isCompactLayout ? 16 : 22 }}>
+        <div className="kaen-services-copy">
+          <h2 style={{ fontSize: isCompactLayout ? 28 : 34 }}>Acces rapide</h2>
+          <div className="kaen-services-actions">
+            <button type="button" className="kaen-service-primary" onClick={onBackToChat}>
+              Message
+            </button>
+            <button type="button" className="kaen-service-secondary" onClick={onOpenStudio}>
+              Studio
+            </button>
+            <button type="button" className="kaen-service-secondary" onClick={onOpenAccount}>
+              Compte
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="kaen-services-grid" style={{ gridTemplateColumns: isCompactLayout ? "1fr" : "repeat(2, minmax(0, 1fr))" }}>
+        {services.map(([title, action, prompt], index) => (
+          <button key={title} type="button" className="kaen-module-card kaen-service-card-button" onClick={() => onQuickPrompt(prompt)}>
+            <div className="kaen-service-number">{String(index + 1).padStart(2, "0")}</div>
+            <h3>{title}</h3>
+            <p>{action}</p>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type PersonaDashboardProps = {
+  isKaen44: boolean;
+  displayName: string;
+  currentConversationId: string | null;
+  messageCount: number;
+  resourceCount: number;
+  activityCount: number;
+  onStartChat: () => void;
+  onOpenAdmin: () => void;
+  onOpenStudio: () => void;
+  onOpenInspector: () => void;
+};
+
+function PersonaDashboard({
+  isKaen44,
+  displayName,
+  currentConversationId,
+  messageCount,
+  resourceCount,
+  activityCount,
+  onStartChat,
+  onOpenAdmin,
+  onOpenStudio,
+  onOpenInspector,
+}: PersonaDashboardProps) {
+  const formatConversationLabel = (value: string | null) => {
+    const cleaned = String(value || "").trim().replace(/^chat-/, "");
+    if (!cleaned) return "nouvelle session";
+    if (/^\d{10,}$/.test(cleaned)) return "session locale";
+    return cleaned.replace(/[-_]+/g, " ").slice(0, 22);
+  };
+  const activeConversation = formatConversationLabel(currentConversationId);
+  const personaName = isKaen44 ? "Kaen44" : "A11";
+  const metrics = [
+    { label: isKaen44 ? "Dossiers" : "Fichiers", value: resourceCount || "0" },
+    { label: "Activite", value: activityCount || "0" },
+    { label: "Messages", value: messageCount || "0" },
+  ];
+  const focus = isKaen44
+    ? ["Documents", "Factures", "Voix", "Studio"]
+    : ["Documents", "Creation", "Voix", "Suivi", "Projets"];
+  const routes = isKaen44
+    ? ["Documents", "Factures", "Voix"]
+    : ["Reponses", "Fichiers", "Creation"];
+
+  return (
+    <section
+      className={`persona-dashboard ${isKaen44 ? "persona-dashboard--kaen" : "persona-dashboard--a11"}`}
+      aria-label={`${personaName} interface`}
+    >
+      <div className="persona-dashboard__copy">
+        <div className="persona-kicker">{isKaen44 ? "Interface cliente" : "Assistant de travail"}</div>
+        <h1>{isKaen44 ? "Que veux-tu faire ?" : "A11 garde le fil."}</h1>
+        <p>
+          {isKaen44
+            ? "Message, fichier, facture ou voix."
+            : "Un espace simple pour poser une demande, joindre des fichiers, creer des contenus et retrouver ce qui a deja ete fait sans etre noye dans les details internes."}
+        </p>
+        <div className="persona-actions" aria-label={`Actions ${personaName}`}>
+          <button type="button" className="persona-action persona-action--primary" onClick={onStartChat}>
+            {isKaen44 ? "Message" : "Chat"}
+          </button>
+          <button type="button" className="persona-action" onClick={isKaen44 ? onOpenAdmin : onOpenInspector}>
+            {isKaen44 ? "Services" : "Fichiers"}
+          </button>
+          <button type="button" className="persona-action" onClick={onOpenStudio}>
+            Studio
+          </button>
+        </div>
+      </div>
+
+      <div className="persona-dashboard__visual" aria-hidden="true">
+        {isKaen44 ? (
+          <div className="kaen-console-visual">
+            <div className="kaen-console-portrait">
+              <img src={KAEN44_AVATAR_SRC} alt="" />
+            </div>
+            <div className="kaen-console-stack">
+              {focus.map((item, index) => (
+                <span key={item} style={{ ["--delay" as any]: `${index * 90}ms` }}>
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="a11-network-visual">
+            {routes.map((route, index) => (
+              <div key={route} className={`a11-network-node a11-network-node--${index + 1}`}>
+                <span />
+                {route}
+              </div>
+            ))}
+            <div className="a11-network-core">
+              <img src={A11_AVATAR_IDLE_SRC} alt="" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="persona-metrics" aria-label={`Etat ${personaName}`}>
+        {metrics.map((metric) => (
+          <div key={metric.label} className="persona-metric">
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+          </div>
+        ))}
+        <div className="persona-metric persona-metric--wide">
+          <span>{displayName}</span>
+          <strong>{activeConversation}</strong>
+        </div>
+      </div>
+    </section>
   );
 }
 
 export function App() {
   type AdminSection = "cockpit" | "memory" | "runtime" | "console" | "ai" | "subscription";
+  type AppView = "chat" | "admin" | "casino";
+  const surfaceKind = getCurrentSurfaceKind();
+  syncStoredSurface(surfaceKind);
+  const isKaen44 = surfaceKind === "kaen44";
+  const isVivy = surfaceKind === "vivy";
+  const productName = isKaen44 ? "Kaen44" : "A11";
+  const surfaceLinks = getSurfaceLinks();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
@@ -1136,39 +2800,175 @@ export function App() {
   ]);
   const [ttsFallback, setTtsFallback] = useState(false);
   const [audioBlockedUrl, setAudioBlockedUrl] = useState<string | null>(null);
+  const [pendingMobileSpeech, setPendingMobileSpeech] = useState("");
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioTranscribing, setAudioTranscribing] = useState(false);
+  const [micStarting, setMicStarting] = useState(false);
+  const [micPermissionBlocked, setMicPermissionBlocked] = useState(false);
+  const [micStatusMessage, setMicStatusMessage] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.title = isVivy
+      ? "Vivy - Presence musicale Funesterie"
+      : isKaen44
+        ? "Kaen44 - Assistante bureau Funesterie"
+        : "A11 - Alpha Onze Funesterie";
+    // data-surface permet de cibler le thème en CSS sans inline styles
+    document.body.setAttribute('data-surface', isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+  }, [isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
     const onBlocked = (e: Event) => {
       const url = (e as CustomEvent).detail?.url;
-      if (shouldSuppressAudioBlockedBannerOnCurrentDevice()) return;
-      if (url) setAudioBlockedUrl(url);
+      if (isCompactViewportNow()) {
+        setAudioBlockedUrl(url || null);
+        setMicStatusMessage("Voix mobile prete: touche le bouton lecture apres un appui utilisateur.");
+        return;
+      }
+      if (!url) return;
+      setAudioBlockedUrl(url);
     };
     const onSpeechStart = () => {
       setAudioBlockedUrl(null);
       setAudioPlaying(true);
     };
     const onSpeechEnd = () => setAudioPlaying(false);
+    const onUnlocked = () => setAudioBlockedUrl(null);
     globalThis.addEventListener('a11:audioBlocked', onBlocked);
+    globalThis.addEventListener('a11:audioUnlocked', onUnlocked);
     globalThis.addEventListener('a11:speechstart', onSpeechStart);
     globalThis.addEventListener('a11:speechend', onSpeechEnd);
     return () => {
       globalThis.removeEventListener('a11:audioBlocked', onBlocked);
+      globalThis.removeEventListener('a11:audioUnlocked', onUnlocked);
       globalThis.removeEventListener('a11:speechstart', onSpeechStart);
       globalThis.removeEventListener('a11:speechend', onSpeechEnd);
     };
   }, []);
 
+  useEffect(() => {
+    const onMicError = (event: Event) => {
+      const detail = (event as CustomEvent<{ error?: string; message?: string }>).detail || {};
+      const error = String(detail.error || "");
+      setMicStarting(false);
+      setVoiceListening(false);
+      if (error === "not-allowed" || error === "service-not-allowed") {
+        setMicPermissionBlocked(true);
+        setMicStatusMessage("Micro bloque par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        setTtsFallback(true);
+        try {
+          localStorage.setItem("a11:tts-only", "1");
+        } catch {
+          // ignore storage access errors
+        }
+        return;
+      }
+      if (error) {
+        setMicStatusMessage(`Micro indisponible: ${error}`);
+        console.info("[A11] micro indisponible:", error);
+      }
+    };
+
+    globalThis.addEventListener("a11:micError", onMicError);
+    return () => globalThis.removeEventListener("a11:micError", onMicError);
+  }, []);
+
   // Check if already authenticated on mount
   useEffect(() => {
-    if (hasAuthToken()) {
-      setIsAuthenticated(true);
-      setDisplayName(getAuthDisplayName() || "Utilisateur");
-    }
     const pathname = window.location.pathname.toLowerCase();
     setIsResetRoute(pathname.includes('/reset-password') || pathname.includes('/reset'));
+    const hostname = window.location.hostname.toLowerCase();
+
+    const refreshCookieSession = () => {
+      void fetchAuthSession()
+        .then((session) => {
+          if (!session?.authenticated && !session?.user) return;
+          setIsAuthenticated(true);
+          setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
+          if (isAuthSuccessRoute(pathname)) {
+            window.history.replaceState({}, "", buildSurfacePath(getCurrentSurfaceKind(), "/"));
+          }
+        })
+        .catch(() => {
+          if (isAuthSuccessRoute(pathname)) {
+            window.history.replaceState({}, "", `${buildSurfacePath(getCurrentSurfaceKind(), "/login")}?error=session_verification_failed`);
+          }
+        });
+    };
+
+    if (isAuthSuccessRoute(pathname)) {
+      if (consumeOAuthTokenFromLocation()) {
+        setIsAuthenticated(true);
+        setDisplayName(getAuthDisplayName() || "Utilisateur");
+        window.history.replaceState({}, "", buildSurfacePath(getCurrentSurfaceKind(), "/"));
+        return;
+      }
+      refreshCookieSession();
+      return;
+    }
+
+    if (isLocalDevSurface() && !isLoginRoute(pathname) && !isVivyExperience()) {
+      activateLocalDevSession(() => {
+        setIsAuthenticated(true);
+        setDisplayName("Djeff local");
+      });
+      return;
+    }
+
+    if (hasAuthToken()) {
+      const scope = getAuthStorageScope();
+      if (scope) {
+        setIsAuthenticated(true);
+        setDisplayName(getAuthDisplayName() || "Utilisateur");
+        return;
+      }
+      clearAuthToken();
+      setAuthDisplayName("");
+    }
+
+    const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
+      || hostname === 'a11.funesterie.pro'
+      || hostname === 'alphaonze.funesterie.pro'
+      || hostname === 'k44.funesterie.me'
+      || hostname === 'funesterie.me'
+      || hostname === 'www.funesterie.me'
+      || hostname === 'kaen44.funesterie.me'
+      || hostname === 'vivy.funesterie.me';
+    if (!shouldCheckCookieSession) return;
+
+    refreshCookieSession();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setVoiceReferences([]);
+      setVoiceReferenceStatus("");
+      return;
+    }
+    void refreshVoiceReferences();
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const onDiagnostics = (event: Event) => {
+      const detail = (event as CustomEvent<any>).detail || {};
+      const score = detail?.comparison?.similarity;
+      if (typeof score === "number") {
+        setVoiceReferenceStatus(`Voix comparee: ${Math.round(score * 100)}%`);
+        return;
+      }
+      const via = String(detail?.via || detail?.provider || "").trim();
+      if (via) {
+        const label = via === "openai-tts" || via === "openai" ? "OpenAI"
+          : via === "spawn" || via === "piper" ? "Piper local"
+          : via === "espeak" || via === "espeak-ng" ? "Secours robot"
+          : via;
+        setVoiceReferenceStatus(`Audio: ${label}`);
+      }
+    };
+    globalThis.addEventListener("a11:ttsDiagnostics", onDiagnostics);
+    return () => globalThis.removeEventListener("a11:ttsDiagnostics", onDiagnostics);
   }, []);
 
   useEffect(() => {
@@ -1189,6 +2989,10 @@ export function App() {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       setA11History([]);
+      const freshChat = buildFreshChat("Session actuelle");
+      setChats([freshChat]);
+      setSelectedChatId(freshChat.id);
+      setMessages(freshChat.messages);
       setA11ConvId(null);
       setA11ConvMsgs([]);
       setConversationActivity([]);
@@ -1208,11 +3012,76 @@ export function App() {
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  // File d'attente — messages envoyés pendant qu'A11 réfléchit
+  const [portraitFramebook, setPortraitFramebook] = useState<A11PortraitFramebook>(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+  const [portraitFrameIndex, setPortraitFrameIndex] = useState(0);
+  // File d'attente â€” messages envoyÃ©s pendant qu'A11 rÃ©flÃ©chit
   const messageQueueRef = useRef<string[]>([]);
   const queueProcessingRef = useRef(false);
 
-  // Console d'activité A11
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+      return;
+    }
+    let cancelled = false;
+    fetchA11PortraitFramebook()
+      .then((framebook) => {
+        if (cancelled) return;
+        setPortraitFramebook(framebook);
+        setPortraitFrameIndex(0);
+      })
+      .catch((error_) => {
+        console.warn("[A11] portrait framebook unavailable", error_);
+        if (!cancelled) setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  const portraitFramesById = useMemo(() => {
+    const map = new Map<string, A11PortraitFrame>();
+    for (const frame of portraitFramebook.frames || []) {
+      if (frame?.id) map.set(frame.id, frame);
+    }
+    return map;
+  }, [portraitFramebook]);
+
+  const portraitSequenceName = audioPlaying ? "speaking" : sending ? "thinking" : "idle";
+  const portraitSequenceFrames = useMemo(() => {
+    const sequenceIds = portraitFramebook.sequences?.[portraitSequenceName]
+      || portraitFramebook.sequences?.idle
+      || ["idle"];
+    const frames = sequenceIds
+      .map((id) => portraitFramesById.get(id))
+      .filter(Boolean) as A11PortraitFrame[];
+    return frames.length ? frames : DEFAULT_A11_PORTRAIT_FRAMEBOOK.frames;
+  }, [portraitFramebook, portraitFramesById, portraitSequenceName]);
+
+  useEffect(() => {
+    setPortraitFrameIndex(0);
+  }, [portraitSequenceName]);
+
+  useEffect(() => {
+    if (portraitSequenceFrames.length <= 1) return;
+    const activeFrame = portraitSequenceFrames[portraitFrameIndex % portraitSequenceFrames.length];
+    const fallbackHoldMs = portraitFramebook.audioSync?.frameDurationMs || 160;
+    const holdMs = Math.max(80, Math.min(2000, Number(activeFrame?.holdMs || fallbackHoldMs) || fallbackHoldMs));
+    const timer = globalThis.setTimeout(() => {
+      setPortraitFrameIndex((index) => (index + 1) % portraitSequenceFrames.length);
+    }, holdMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [portraitFrameIndex, portraitFramebook.audioSync?.frameDurationMs, portraitSequenceFrames]);
+
+  const activePortraitFrame = portraitSequenceFrames[portraitFrameIndex % portraitSequenceFrames.length]
+    || DEFAULT_A11_PORTRAIT_FRAMEBOOK.frames[0];
+  const activePortraitSrc = resolvePortraitAssetPath(activePortraitFrame?.src || "a11_static.png");
+  const activePortraitTransitionMs = Math.max(
+    80,
+    Math.min(600, Number(portraitFramebook.audioSync?.transitionMs || 120) || 120)
+  );
+
+  // Console d'activitÃ© A11
   const {
     events: activityEvents,
     isActive: activityIsActive,
@@ -1226,6 +3095,61 @@ export function App() {
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
+  const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
+  const [selectedVoiceReferenceId, setSelectedVoiceReferenceId] = useState(() => {
+    try {
+      return localStorage.getItem("a11:tts:voice-reference-id") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [voiceReferenceStatus, setVoiceReferenceStatus] = useState("");
+  const [ttsVocalMode, setTtsVocalMode] = useState<"speech" | "adaptive" | "sing">(() => {
+    try {
+      const saved = localStorage.getItem("a11:tts:vocal-mode");
+      return saved === "speech" || saved === "sing" ? saved : "adaptive";
+    } catch {
+      return "adaptive";
+    }
+  });
+  const [ttsProviderMode, setTtsProviderMode] = useState<TtsProviderMode>(() => {
+    try {
+      const saved = localStorage.getItem("a11:tts:provider-mode");
+      return saved === "piper" || saved === "openai" ? saved : "auto";
+    } catch {
+      return "auto";
+    }
+  });
+  const [a11Language, setA11Language] = useState<A11LanguageCode>(() => {
+    try {
+      return normalizeA11LanguageCode(localStorage.getItem("a11:language"));
+    } catch {
+      return "fr";
+    }
+  });
+  const selectedA11Language = useMemo(
+    () => A11_LANGUAGE_CHOICES.find((choice) => choice.code === a11Language) || A11_LANGUAGE_CHOICES[0],
+    [a11Language]
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem("a11:tts:voice-reference-id", selectedVoiceReferenceId || "");
+      localStorage.setItem("a11:tts:vocal-mode", ttsVocalMode);
+      localStorage.setItem("a11:tts:provider-mode", ttsProviderMode);
+    } catch {
+      // ignore storage access errors
+    }
+  }, [selectedVoiceReferenceId, ttsProviderMode, ttsVocalMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("a11:language", selectedA11Language.code);
+      document.documentElement.lang = selectedA11Language.speechLang;
+    } catch {
+      // ignore storage/document access errors
+    }
+    setSpeechRecognitionLanguage(selectedA11Language.speechLang);
+  }, [selectedA11Language]);
   const toggleLockRef = useRef(false);
   const sendLockRef = useRef(false);
   const pendingMessageKeyRef = useRef("");
@@ -1235,7 +3159,10 @@ export function App() {
     [isAuthenticated]
   );
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
-  const [model, setModel] = useState("local:gemma4:e4b");
+  const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [model, setModel] = useState("openai:gpt-4o-mini");
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
@@ -1263,10 +3190,12 @@ export function App() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const [uploadFeedback, setUploadFeedback] = useState("");
+  const [imageJobActive, setImageJobActive] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
+  const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
   const [createArtifactError, setCreateArtifactError] = useState("");
@@ -1279,7 +3208,13 @@ export function App() {
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [activeView, setActiveView] = useState<'chat' | 'admin'>('chat');
+  const [activeView, setActiveView] = useState<AppView>(() => {
+    try {
+      return window.location.pathname.toLowerCase().includes("/casino") ? "casino" : "chat";
+    } catch {
+      return "chat";
+    }
+  });
   const [adminSection, setAdminSection] = useState<AdminSection>("cockpit");
   const [isCompactLayout, setIsCompactLayout] = useState(() => {
     try {
@@ -1288,6 +3223,7 @@ export function App() {
       return false;
     }
   });
+  const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
@@ -1304,6 +3240,21 @@ export function App() {
   const [technicalMemoConfirmOpen, setTechnicalMemoConfirmOpen] = useState(false);
   const [memoryPurgeDryRun, setMemoryPurgeDryRun] = useState(true);
   const [purgeHistory, setPurgeHistory] = useState<PurgeHistoryEntry[]>([]);
+
+  useEffect(() => {
+    if (!isKaen44) return;
+    if (adminSection !== "cockpit" && adminSection !== "subscription") {
+      setAdminSection("cockpit");
+    }
+  }, [adminSection, isKaen44]);
+
+  useEffect(() => {
+    if (activeView !== "admin") return;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.querySelector(".admin-scroll-panel")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }, [activeView, adminSection]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1351,6 +3302,35 @@ export function App() {
   }, [isCompactLayout]);
 
   useEffect(() => {
+    if (isCompactLayout) {
+      setAudioBlockedUrl(null);
+    }
+  }, [isCompactLayout]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeView !== "chat") return;
+    const hasConversationContent = messages.some((message) => (
+      message.role !== "system" && String(message.content || "").trim().length > 0
+    ));
+    if (isCompactLayout && !hasConversationContent && !sending && !imageJobActive) {
+      const frame = chatScrollFrameRef.current;
+      if (frame) frame.scrollTop = 0;
+      return;
+    }
+    const scrollToEnd = () => {
+      chatEndRef.current?.scrollIntoView({ block: "end", behavior: isCompactLayout ? "auto" : "smooth" });
+      const frame = chatScrollFrameRef.current;
+      if (frame) frame.scrollTop = frame.scrollHeight;
+    };
+    const rafId = globalThis.requestAnimationFrame(scrollToEnd);
+    const timeoutId = globalThis.setTimeout(scrollToEnd, isCompactLayout ? 120 : 220);
+    return () => {
+      globalThis.cancelAnimationFrame(rafId);
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [activeView, isAuthenticated, isCompactLayout, messages.length, sending, imageJobActive]);
+
+  useEffect(() => {
     if (!previewImageUrl) return;
 
     const handleEscape = (event: KeyboardEvent) => {
@@ -1365,7 +3345,22 @@ export function App() {
 
   // Load chat cache scoped to the authenticated user.
   useEffect(() => {
-    if (!isAuthenticated || !authStorageScope) return;
+    if (!isAuthenticated) return;
+
+    if (!authStorageScope) {
+      const initialChat = buildFreshChat("Session actuelle");
+      setChats([initialChat]);
+      setSelectedChatId(initialChat.id);
+      setMessages(initialChat.messages);
+      setA11ConvId(null);
+      setA11ConvMsgs([]);
+      setConversationActivity([]);
+      setConversationResources([]);
+      setActivityError("");
+      setResourceError("");
+      setUploadFeedback("");
+      return;
+    }
 
     try {
       localStorage.removeItem(CHAT_STORAGE_KEY_PREFIX);
@@ -1383,7 +3378,7 @@ export function App() {
           const normalizeSystemContent = (content: string) => {
             const value = String(content || '');
             if (
-              value.includes('utilise les capacités locales') ||
+              value.includes('utilise les capacitÃ©s locales') ||
               value.includes('assistant local NOSSEN')
             ) {
               return DEFAULT_SYSTEM_NINDO;
@@ -1581,7 +3576,7 @@ export function App() {
 
   async function refreshConversationActivity(conversationId?: string | null) {
     const targetConversationId = String(conversationId || "").trim();
-    if (!targetConversationId) {
+    if (!targetConversationId || hasLocalDevSession()) {
       setConversationActivity([]);
       setActivityError("");
       return;
@@ -1603,7 +3598,7 @@ export function App() {
 
   async function refreshConversationResources(conversationId?: string | null) {
     const targetConversationId = String(conversationId || "").trim();
-    if (!targetConversationId) {
+    if (!targetConversationId || hasLocalDevSession()) {
       setConversationResources([]);
       setResourceError("");
       return;
@@ -1761,7 +3756,7 @@ export function App() {
       } else if (payload.downloadAfterCreate) {
         setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree et telecharge.`);
       } else {
-        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} créé et stocké.`);
+        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree et stocke.`);
       }
     } catch (error_) {
       console.warn("[A11] artifact creation failed", error_);
@@ -1806,12 +3801,91 @@ export function App() {
     fileInputRef.current?.click();
   }
 
+  async function refreshVoiceReferences() {
+    try {
+      const refs = await fetchTtsVoiceReferences();
+      setVoiceReferences(refs);
+      if (isKaen44 && !selectedVoiceReferenceId) {
+        const kaenVoice = refs.find((ref) =>
+          String(ref.label || ref.originalName || "").toLowerCase().includes("kaen44 donna")
+        );
+        if (kaenVoice?.id) {
+          setSelectedVoiceReferenceId(kaenVoice.id);
+          setVoiceReferenceStatus("Voix Kaen44 Donna active");
+          return;
+        }
+      }
+      if (isVivy && !selectedVoiceReferenceId) {
+        const vivyVoice = refs.find((ref) => {
+          const name = String(ref.label || ref.originalName || "").toLowerCase();
+          return name.includes("vivy") || name.includes("vivi");
+        });
+        if (vivyVoice?.id) {
+          setSelectedVoiceReferenceId(vivyVoice.id);
+          setVoiceReferenceStatus("Voix Vivy active");
+          return;
+        }
+      }
+      if (selectedVoiceReferenceId && !refs.some((ref) => ref.id === selectedVoiceReferenceId)) {
+        setSelectedVoiceReferenceId("");
+      }
+    } catch (error_) {
+      console.warn("[A11] voice reference refresh failed", error_);
+      setVoiceReferenceStatus("References voix indisponibles");
+    }
+  }
+
+  function onVoiceReferenceClick() {
+    voiceReferenceInputRef.current?.click();
+  }
+
+  async function onVoiceReferenceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] || null;
+    e.target.value = "";
+    if (!file) return;
+    setVoiceReferenceStatus("Upload voix...");
+    try {
+      const label = file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Reference voix";
+      const result = await uploadTtsVoiceReference(file, label, "private");
+      setVoiceReferences(result.references);
+      if (result.reference?.id) {
+        setSelectedVoiceReferenceId(result.reference.id);
+      }
+      const analysis = result.reference?.analysis;
+      const suffix = analysis?.ok && analysis.durationMs
+        ? ` (${Math.round(analysis.durationMs / 100) / 10}s)`
+        : "";
+      setVoiceReferenceStatus(`Reference voix ajoutee${suffix}`);
+    } catch (error_) {
+      const message = (error_ as Error)?.message || String(error_);
+      setVoiceReferenceStatus(`Echec reference voix: ${message}`);
+    }
+  }
+
   async function handleImportedFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+    const allFiles = Array.from(files);
+    const importKey = allFiles
+      .map((file) => `${file.name}:${file.size}:${file.type}:${file.lastModified}`)
+      .sort()
+      .join("|");
+    const now = Date.now();
+    if (
+      importKey
+      && recentFileImportRef.current.key === importKey
+      && now - recentFileImportRef.current.at < 1500
+    ) {
+      console.info("[A11] duplicate file import ignored", importKey);
+      return;
+    }
+    recentFileImportRef.current = { key: importKey, at: now };
 
-    // Previews locaux immédiats (object URL, pas de réseau) — accumulés, pas remplacés
+    const audioFiles = allFiles.filter(isAudioLikeFile);
+    const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
+
+    // Previews locaux immÃ©diats (object URL, pas de rÃ©seau) â€” accumulÃ©s, pas remplacÃ©s
     const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of allFiles) {
       if (file.type.startsWith('image/')) {
         newPreviews.push({ name: file.name, url: URL.createObjectURL(file), isImage: true });
       } else {
@@ -1819,24 +3893,57 @@ export function App() {
       }
     }
     if (newPreviews.length > 0) {
-      // Accumuler — plusieurs drops successifs s'ajoutent
+      // Accumuler â€” plusieurs drops successifs s'ajoutent
       setDragPreviewUrls((prev) => {
         const next = [...prev, ...newPreviews];
-        // Pointer sur le premier nouveau fichier ajouté
+        // Pointer sur le premier nouveau fichier ajoutÃ©
         setPreviewCarouselIndex(prev.length);
         return next;
       });
-      // Pas de timeout : les chips restent jusqu'à l'envoi du message
+      // Pas de timeout : les chips restent jusqu'Ã  l'envoi du message
     }
 
-    // Upload et injection dans le textarea — on attend la fin pour avoir les URLs
-    await handleImportFiles(files, (txt: string) => {
-      setInput((prev) => (prev ? prev + "\n" + txt : txt));
-    }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
+    // Upload et injection dans le textarea â€” on attend la fin pour avoir les URLs
+    if (importerFiles.length > 0) {
+      await handleImportFiles(toSyntheticFileList(importerFiles), (txt: string) => {
+        setInput((prev) => (prev ? prev + "\n" + txt : txt));
+      }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
+    }
+
+    if (audioFiles.length > 0) {
+      setAudioTranscribing(true);
+      setUploadFeedback(`Transcription audio de ${audioFiles.length} fichier(s)...`);
+      const transcriptBlocks: string[] = [];
+      const failedAudio: string[] = [];
+      for (const file of audioFiles) {
+        try {
+          const transcript = await transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" });
+          if (transcript.text) {
+            transcriptBlocks.push(`[audio:${file.name}]\n${transcript.text}`);
+          } else {
+            failedAudio.push(file.name);
+          }
+        } catch (error_) {
+          console.warn("[A11] audio transcription failed", file.name, error_);
+          failedAudio.push(file.name);
+        }
+      }
+      if (transcriptBlocks.length > 0) {
+        setInput((prev) => {
+          const nextText = transcriptBlocks.join("\n\n");
+          return prev ? `${prev}\n${nextText}` : nextText;
+        });
+      }
+      setUploadFeedback(failedAudio.length > 0
+        ? `Transcription audio partielle: ${transcriptBlocks.length} ok, ${failedAudio.length} en echec.`
+        : `${transcriptBlocks.length} audio(s) transcrit(s).`
+      );
+      setAudioTranscribing(false);
+    }
 
     // Upload des fichiers non-image dans la conversation (PDF, etc.)
     const conversationId = a11ConvId || selectedChatId || undefined;
-    const nonImageFiles = Array.from(files).filter((f) => !f.type.startsWith('image/'));
+    const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
       const failed: string[] = [];
@@ -1872,6 +3979,7 @@ export function App() {
 
   async function onComposerDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounterRef.current = 0;
     setIsDragOver(false);
     const files = e.dataTransfer?.files || null;
@@ -1935,14 +4043,14 @@ export function App() {
       } else {
         setInput(() => txt);
       }
-    });
-  }, []);
+    }, { lang: selectedA11Language.speechLang });
+  }, [selectedA11Language.speechLang]);
 
   function normalizeOutgoingMessageKey(value: string) {
     return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
-  // Modifie la fonction sendMessage pour accepter un texte forcé
+  // Modifie la fonction sendMessage pour accepter un texte forcÃ©
 
   function extractImageUrlsFromText(text: string): { cleanText: string; imageUrls: string[] } {
     const imageUrls: string[] = [];
@@ -1952,7 +4060,7 @@ export function App() {
       .trim();
     return { cleanText, imageUrls };
   }
-  // ── File d'attente : l'utilisateur peut écrire pendant qu'A11 réfléchit ──────
+  // â”€â”€ File d'attente : l'utilisateur peut Ã©crire pendant qu'A11 rÃ©flÃ©chit â”€â”€â”€â”€â”€â”€
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
@@ -1961,8 +4069,9 @@ export function App() {
     const sourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
     if (!effectiveText) return;
+    void unlockAudioOutput();
 
-    // Afficher le message utilisateur immédiatement — sans bloquer l'input
+    // Afficher le message utilisateur immÃ©diatement â€” sans bloquer l'input
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
@@ -1983,16 +4092,37 @@ export function App() {
     });
     setPreviewCarouselIndex(0);
 
+    if (isLastImageRecallRequest(effectiveText)) {
+      const lastMedia = findLastVisibleMedia(messages);
+      const aiMsg: ChatMessage = {
+        id: `a-${Date.now()}`,
+        role: "assistant",
+        content: lastMedia
+          ? (lastMedia.kind === "image" ? "Oui, la voici." : "Oui, je te la remets ici.")
+          : "Je n'ai pas encore d'image affichable dans cette conversation.",
+        imageUrl: lastMedia?.kind === "image" ? lastMedia.url : null,
+        videoUrl: lastMedia?.kind === "video" ? lastMedia.url : null,
+        fileUrl: lastMedia?.kind === "file" ? lastMedia.url : null,
+        ts: new Date().toISOString(),
+      };
+      setMessages((prev) => {
+        const nm = [...prev, aiMsg];
+        updateChatMessages(selectedChatId, nm);
+        return nm;
+      });
+      return;
+    }
+
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
     if (suggestion) openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
 
-    // Si A11 traite déjà, mettre en file — l'utilisateur peut continuer à écrire
+    // Si A11 traite dÃ©jÃ , mettre en file â€” l'utilisateur peut continuer Ã  Ã©crire
     if (queueProcessingRef.current) {
       messageQueueRef.current.push(effectiveText);
       return;
     }
 
-    // Sinon démarrer le traitement
+    // Sinon dÃ©marrer le traitement
     void processMessageQueue(effectiveText, sourceImageUrl);
   }
 
@@ -2024,7 +4154,7 @@ export function App() {
 
       pendingMessageKeyRef.current = messageKey;
 
-      // Lire l'historique courant via ref pour éviter les closures périmées
+      // Lire l'historique courant via ref pour Ã©viter les closures pÃ©rimÃ©es
       let currentMessages: ChatMessage[] = [];
       setMessages((prev) => { currentMessages = prev; return prev; });
       await new Promise<void>((r) => setTimeout(r, 0));
@@ -2071,7 +4201,24 @@ export function App() {
         await refreshConversationResources(selectedChatId || a11ConvId);
 
         const spokenText = String(normalizedAssistant.content || assistantReply.content || "");
-        if (shouldAutoplayAssistantMessage(spokenText)) speak(spokenText, { lang: "fr-FR" });
+        const mobileAudioNeedsGesture = isCompactLayout && !isAudioOutputUnlocked();
+        const effectiveVocalMode = isVivy && ttsVocalMode === "adaptive" ? "sing" : ttsVocalMode;
+        if (shouldAutoplayAssistantMessage(spokenText) && !mobileAudioNeedsGesture) {
+          setPendingMobileSpeech("");
+          speak(spokenText, {
+            lang: selectedA11Language.speechLang,
+            voiceReferenceId: selectedVoiceReferenceId || undefined,
+            vocalMode: effectiveVocalMode,
+            persona: surfaceKind,
+            voicePersona: surfaceKind,
+            provider: ttsProviderMode === "auto" ? undefined : ttsProviderMode,
+            ttsProvider: ttsProviderMode,
+          });
+        } else if (mobileAudioNeedsGesture) {
+          setPendingMobileSpeech(spokenText);
+          setAudioBlockedUrl(null);
+          setMicStatusMessage("Voix mobile prete: touche le bouton lecture pour lancer le son.");
+        }
         lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
       } catch (err: any) {
         lastCompletedMessageRef.current = { key: "", at: 0 };
@@ -2088,7 +4235,7 @@ export function App() {
         });
       }
 
-      // Absorber les messages arrivés pendant ce traitement
+      // Absorber les messages arrivÃ©s pendant ce traitement
       while (messageQueueRef.current.length > 0) {
         toProcess.push({ text: messageQueueRef.current.shift()! });
       }
@@ -2110,12 +4257,36 @@ export function App() {
 
   async function toggleMic() {
     console.log("[A11] toggleMic clicked, current voiceListening=", voiceListening);
-    // If audio is playing, stop it immediately and do not toggle modes
-    if (audioPlaying) {
-      console.log("[A11] canceling audio playback via toggle");
-      cancelSpeech();
+    if (micStarting) {
+      console.log("[A11] toggle ignored while mic is starting");
       return;
     }
+    if (mobileVoiceReady && !voiceListening) {
+      void unlockAudioOutput();
+      if (audioBlockedUrl) {
+        retryPlayUrl(audioBlockedUrl);
+        setAudioBlockedUrl(null);
+        setMicStatusMessage("");
+        return;
+      }
+      const text = pendingMobileSpeech.trim();
+      if (text) {
+        setPendingMobileSpeech("");
+        setMicStatusMessage("");
+        const effectiveVocalMode = isVivy && ttsVocalMode === "adaptive" ? "sing" : ttsVocalMode;
+        speak(text, {
+          lang: selectedA11Language.speechLang,
+          voiceReferenceId: selectedVoiceReferenceId || undefined,
+          vocalMode: effectiveVocalMode,
+          persona: surfaceKind,
+          voicePersona: surfaceKind,
+          provider: ttsProviderMode === "auto" ? undefined : ttsProviderMode,
+          ttsProvider: ttsProviderMode,
+        });
+        return;
+      }
+    }
+    void unlockAudioOutput();
     const SpeechRecognition =
       (globalThis as any).SpeechRecognition ||
       (globalThis as any).webkitSpeechRecognition;
@@ -2127,12 +4298,14 @@ export function App() {
       toggleLockRef.current = true;
       setTimeout(() => { toggleLockRef.current = false; }, 600);
       // fallback: toggle TTS-only mode
+      setMicPermissionBlocked(false);
+      setMicStatusMessage("Reconnaissance vocale non disponible sur ce navigateur. Mode voix sortie uniquement.");
       setTtsFallback((v) => {
         const next = !v;
         // keep voiceListening false when using fallback
         if (next) {
           // enable TTS playback
-          console.log("[A11] SpeechRecognition not available — enabling TTS-only mode");
+          console.log("[A11] SpeechRecognition not available â€” enabling TTS-only mode");
         } else {
           console.log("[A11] Disabling TTS-only mode");
         }
@@ -2144,9 +4317,29 @@ export function App() {
     if (voiceListening) {
       try { stopMic(); } catch {};
       setVoiceListening(false);
-      cancelSpeech();
+      setMicStatusMessage("");
     } else {
-      try { await startMic(); setVoiceListening(true); } catch (e) { console.warn('startMic failed', e); }
+      try {
+        setMicStarting(true);
+        setMicStatusMessage("");
+        await startMic({ lang: selectedA11Language.speechLang });
+        setMicPermissionBlocked(false);
+        setTtsFallback(false);
+        setVoiceListening(true);
+      } catch (e) {
+        setVoiceListening(false);
+        setMicPermissionBlocked(true);
+        setTtsFallback(true);
+        setMicStatusMessage("Micro bloque ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        try {
+          localStorage.setItem('a11:tts-only', '1');
+        } catch {
+          // ignore storage access errors
+        }
+        console.info('startMic unavailable, keeping TTS-only mode', e);
+      } finally {
+        setMicStarting(false);
+      }
     }
   }
 
@@ -2159,6 +4352,10 @@ export function App() {
     setTimeout(() => { toggleLockRef.current = false; }, 600);
     const next = !ttsFallback;
     setTtsFallback(next);
+    if (next) {
+      setVoiceListening(false);
+      setMicStarting(false);
+    }
     console.log('[A11] toggleTtsOnly ->', next);
     if (next) {
       localStorage.setItem('a11:tts-only', '1');
@@ -2204,9 +4401,9 @@ export function App() {
     setDeleteDialogChatId(null);
   }
 
-  // Le system prompt est géré côté backend (system_prompt.txt)
-  // Le frontend n'envoie pas de prompt système — évite l'exposition dans les DevTools
-  const systemPrompt = undefined;
+  // Le system prompt est gÃ©rÃ© cÃ´tÃ© backend (system_prompt.txt)
+  // Le frontend n'envoie pas de prompt systÃ¨me â€” Ã©vite l'exposition dans les DevTools
+  const systemPrompt = resolveClientSystemPrompt();
 
   // Initialisation globale de window.speak au montage pour garantir le son
   useEffect(() => {
@@ -2249,11 +4446,51 @@ export function App() {
 
   useEffect(() => {
     if (!uploadFeedback) return;
+    if (imageJobActive) return;
     const timeout = globalThis.setTimeout(() => setUploadFeedback(""), 5000);
     return () => globalThis.clearTimeout(timeout);
-  }, [uploadFeedback]);
+  }, [uploadFeedback, imageJobActive]);
 
-  // Handler pour rafraîchir la liste de l'historique
+  useEffect(() => {
+    const onQueued = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      setImageJobActive(true);
+      const seconds = Math.max(1, Math.round(Number(detail.pollIntervalMs || 5000) / 1000));
+      setUploadFeedback(`Generation image en cours... verification toutes les ${seconds}s.`);
+    };
+    const onDone = () => {
+      setImageJobActive(false);
+      setUploadFeedback("Image prete.");
+    };
+    const onFailed = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      setImageJobActive(false);
+      setUploadFeedback(`Generation image interrompue: ${String(detail.message || detail.error || "erreur inconnue")}`);
+    };
+
+    window.addEventListener("a11:image-job.queued", onQueued);
+    window.addEventListener("a11:image-job.done", onDone);
+    window.addEventListener("a11:image-job.failed", onFailed);
+    return () => {
+      window.removeEventListener("a11:image-job.queued", onQueued);
+      window.removeEventListener("a11:image-job.done", onDone);
+      window.removeEventListener("a11:image-job.failed", onFailed);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const pathname = window.location.pathname.toLowerCase();
+      setActiveView(pathname.includes("/casino") ? "casino" : "chat");
+      setSettingsMenuOpen(false);
+      setSidebarOpen(false);
+      setInspectorOpen(false);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // Handler pour rafraÃ®chir la liste de l'historique
   async function refreshA11History() {
     setLoadingHistory(true);
     try {
@@ -2297,7 +4534,7 @@ export function App() {
       const conv = await fetchA11Conversation(convId);
       const normalizedMessages = mapBackendConversationMessages(conv.messages || []);
       setA11ConvMsgs(normalizedMessages);
-      setActiveView('chat');
+      openChatView();
       setSelectedChatId(convId);
       setMessages(normalizedMessages);
       setChats((prev) => {
@@ -2339,8 +4576,8 @@ export function App() {
       const removedTotal = effectiveRemoved.facts + effectiveRemoved.tasks + effectiveRemoved.files;
       setPurgeFeedback(
         result.dryRun
-          ? `Dry run OK (${removedTotal} candidats) • facts ${effectiveRemoved.facts}, tasks ${effectiveRemoved.tasks}, files ${effectiveRemoved.files}`
-          : `Purge OK (${removedTotal} supprimés) • facts ${result.before.facts}->${result.after.facts}, tasks ${result.before.tasks}->${result.after.tasks}, files ${result.before.files}->${result.after.files}`
+          ? `Dry run OK (${removedTotal} candidats) - facts ${effectiveRemoved.facts}, tasks ${effectiveRemoved.tasks}, files ${effectiveRemoved.files}`
+          : `Purge OK (${removedTotal} supprimes) - facts ${result.before.facts}->${result.after.facts}, tasks ${result.before.tasks}->${result.after.tasks}, files ${result.before.files}->${result.after.files}`
       );
       setPurgeHistory((prev) => [
         {
@@ -2504,14 +4741,69 @@ export function App() {
     setSidebarOpen(false);
   }
 
-  // HEADER avec bouton Mode DEV centré, select modèle à droite, mute à l'extrême droite
+  function pushA11Path(pathname: string) {
+    try {
+      const target = pathname || "/";
+      if (window.location.pathname !== target) {
+        window.history.pushState({}, "", target);
+      }
+    } catch {
+      // Navigation history is best-effort in embedded surfaces.
+    }
+  }
+
+  function openCasinoView() {
+    setActiveView("casino");
+    setSettingsMenuOpen(false);
+    setSidebarOpen(false);
+    setInspectorOpen(false);
+    pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/casino"));
+  }
+
+  function focusComposerSoon() {
+    window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        composerInputRef.current?.focus();
+      });
+    }, 0);
+  }
+
+  function openChatView() {
+    setActiveView("chat");
+    setSettingsMenuOpen(false);
+    setSidebarOpen(false);
+    setInspectorOpen(false);
+    pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/"));
+    focusComposerSoon();
+  }
+
+  function openKaenQuickPrompt(prompt: string) {
+    setInput(String(prompt || "").trim());
+    openChatView();
+  }
+
+  // HEADER avec bouton Mode DEV centrÃ©, select modÃ¨le Ã  droite, mute Ã  l'extrÃªme droite
   
-  // ✅ Check authentication
+  // âœ… Check authentication
   if (isResetRoute) {
     return <ResetPasswordPanel />;
   }
 
+  if (isVivy) {
+    return <VivyPublicPage />;
+  }
+
   if (!isAuthenticated) {
+    const pathname = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/";
+    const search = typeof window !== "undefined" ? window.location.search.toLowerCase() : "";
+    const forceLoginPanel = isLoginRoute(pathname) || search.includes("error=") || search.includes("show=1") || search.includes("login=1");
+    if (isKaen44 && !forceLoginPanel && !isAuthSuccessRoute(pathname)) {
+      const publicPage = pathname.includes("/privacy") ? "privacy"
+        : pathname.includes("/terms") ? "terms"
+          : pathname.includes("/vivy") ? "vivy"
+          : "home";
+      return <Kaen44PublicPage page={publicPage} />;
+    }
     return <LoginPanel onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
@@ -2519,21 +4811,33 @@ export function App() {
   const inspectorBadgeCount = conversationResources.length + conversationActivity.length;
   const utilityButtonStyle: React.CSSProperties = {
     padding: isCompactLayout ? "8px 10px" : "8px 12px",
-    borderRadius: 10,
-    border: "1px solid #1f2937",
-    background: "#020617",
-    color: "#e2e8f0",
+    borderRadius: isKaen44 ? 10 : 7,
+    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
+    background: isKaen44 ? "#1b100c" : "rgba(2, 12, 18, 0.88)",
+    color: isKaen44 ? "#f8e4c7" : "#d8f3f0",
     cursor: "pointer",
     fontSize: isCompactLayout ? 12 : 13,
     fontWeight: 600,
-    minHeight: 40,
+    minHeight: 44,
+  };
+  const quickChatButtonStyle: React.CSSProperties = {
+    ...utilityButtonStyle,
+    border: "1px solid transparent",
+    background: isKaen44
+      ? "linear-gradient(135deg, #f59e0b, #e11d48)"
+      : "linear-gradient(135deg, #14b8a6, #a3e635)",
+    color: isKaen44 ? "#170c07" : "#041018",
+    boxShadow: isKaen44
+      ? "0 12px 26px rgba(225, 29, 72, 0.22)"
+      : "0 12px 26px rgba(20, 184, 166, 0.18)",
+    fontWeight: 900,
   };
   const headerSelectStyle: React.CSSProperties = {
     padding: "8px 10px",
-    borderRadius: 10,
-    background: "#181f2a",
+    borderRadius: isKaen44 ? 10 : 7,
+    background: isKaen44 ? "#20130e" : "#04121a",
     color: "#e5e7eb",
-    border: "1px solid #22293a",
+    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.24)" : "1px solid rgba(45, 212, 191, 0.24)",
     fontSize: 13,
     minHeight: 40,
     minWidth: isCompactLayout ? 132 : 172,
@@ -2552,17 +4856,25 @@ export function App() {
     lineHeight: 1,
     letterSpacing: 0.6,
     whiteSpace: "nowrap",
-    background: "linear-gradient(135deg, #f5d0fe 0%, #c084fc 30%, #a855f7 58%, #7c3aed 100%)",
+    background: isKaen44
+      ? "linear-gradient(135deg, #fff7ed 0%, #f6c177 30%, #ef4444 62%, #be123c 100%)"
+      : "linear-gradient(135deg, #d8f3f0 0%, #22d3ee 36%, #a3e635 100%)",
     WebkitBackgroundClip: "text",
     color: "transparent",
-    textShadow: "0 0 24px rgba(168, 85, 247, 0.22)",
+    textShadow: isKaen44 ? "0 0 24px rgba(239, 68, 68, 0.22)" : "0 0 24px rgba(20, 184, 166, 0.22)",
   };
+  const activeAdminBorder = isKaen44 ? "#f59e0b" : "#14b8a6";
+  const inactiveAdminBorder = isKaen44 ? "rgba(245, 158, 11, 0.18)" : "#1f2937";
   const adminTabButtonStyle = (section: AdminSection): React.CSSProperties => ({
     padding: isCompactLayout ? "8px 10px" : "9px 12px",
     borderRadius: 999,
-    border: `1px solid ${adminSection === section ? "#7c3aed" : "#1f2937"}`,
-    background: adminSection === section ? "rgba(124, 58, 237, 0.2)" : "#0b1220",
-    color: adminSection === section ? "#f3e8ff" : "#cbd5e1",
+    border: `1px solid ${adminSection === section ? activeAdminBorder : inactiveAdminBorder}`,
+    background: adminSection === section
+      ? (isKaen44 ? "rgba(245, 158, 11, 0.16)" : "rgba(20, 184, 166, 0.16)")
+      : (isKaen44 ? "#1b100c" : "#0b1220"),
+    color: adminSection === section
+      ? (isKaen44 ? "#fed7aa" : "#ccfbf1")
+      : (isKaen44 ? "#e7c8a2" : "#cbd5e1"),
     cursor: "pointer",
     fontSize: 12,
     fontWeight: 700,
@@ -2570,23 +4882,38 @@ export function App() {
   });
 
   return (
-    <div className="app-container a11-shell" style={{ height: '100dvh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-      {/* ── Drag-and-drop overlay ── */}
+    <div
+      className={`app-container a11-shell ${isKaen44 ? "kaen-shell" : "alpha-shell"}`}
+      style={{
+        minHeight: '100vh',
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: 0,
+        overflow: 'hidden',
+        background: isKaen44 ? '#130d0b' : '#02080c',
+      }}
+    >
+      {/* â”€â”€ Drag-and-drop overlay â”€â”€ */}
       {isDragOver && (
         <div
           className="a11-drop-overlay"
-          onDragOver={(e) => e.preventDefault()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           onDrop={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             dragCounterRef.current = 0;
             setIsDragOver(false);
             void handleImportedFiles(e.dataTransfer?.files || null);
           }}
         >
           <div className="a11-drop-overlay-inner">
-            <div className="a11-drop-overlay-icon">📎</div>
-            <div className="a11-drop-overlay-label">Dépose ici</div>
-            <div className="a11-drop-overlay-hint">Images, texte, JSON, PDF…</div>
+            <div className="a11-drop-overlay-icon">FILE</div>
+            <div className="a11-drop-overlay-label">Depose ici</div>
+            <div className="a11-drop-overlay-hint">Images, texte, JSON, PDF...</div>
           </div>
         </div>
       )}
@@ -2599,8 +4926,11 @@ export function App() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: isCompactLayout ? "10px 12px" : "10px 20px",
-          borderBottom: "1px solid #111827",
-          background: "#0a101a",
+          borderBottom: isKaen44 ? "1px solid rgba(245, 158, 11, 0.16)" : "1px solid rgba(45, 212, 191, 0.14)",
+          background: isKaen44 ? "#160f0c" : "#041018",
+          backgroundImage: isKaen44
+            ? "linear-gradient(90deg, rgba(190, 18, 60, 0.18), rgba(22, 15, 12, 0.9) 42%, rgba(245, 158, 11, 0.1))"
+            : "linear-gradient(90deg, rgba(20, 184, 166, 0.16), rgba(4, 16, 24, 0.96) 38%, rgba(163, 230, 53, 0.08))",
           zIndex: settingsMenuOpen ? 90 : 50,
           gap: 12,
           flexWrap: isCompactLayout ? "wrap" : "nowrap",
@@ -2613,54 +4943,60 @@ export function App() {
               position: "relative",
               width: isCompactLayout ? 42 : 56,
               height: isCompactLayout ? 42 : 56,
-              borderRadius: 999,
+              borderRadius: isKaen44 ? 999 : 14,
               overflow: "hidden",
-              boxShadow: "0 0 12px #22d3ee99",
+              boxShadow: isKaen44
+                ? "0 0 0 1px rgba(245, 158, 11, 0.42), 0 0 22px rgba(225, 29, 72, 0.38)"
+                : "0 0 0 1px rgba(45, 212, 191, 0.42), 0 0 18px rgba(34, 211, 238, 0.32)",
               flexShrink: 0,
+              zIndex: 2,
+              transition: `box-shadow ${activePortraitTransitionMs}ms ease`,
             }}
           >
             <img
-              id="a11-avatar-idle"
-              src={A11_AVATAR_IDLE_SRC}
-              alt="A11"
-              fetchPriority="high"
-              onError={(event) => applyImageFallback(event, A11_AVATAR_IDLE_FALLBACK_SRC)}
+              id="a11-avatar-frame"
+              src={isKaen44 ? KAEN44_AVATAR_SRC : activePortraitSrc}
+              alt={isKaen44 ? "Kaen44" : "A11"}
+              loading="eager"
+              onError={(event) => applyImageFallback(
+                event,
+                isKaen44 ? A11_AVATAR_IDLE_FALLBACK_SRC : activePortraitSrc.includes("talking")
+                  ? A11_AVATAR_TALKING_FALLBACK_SRC
+                  : A11_AVATAR_IDLE_FALLBACK_SRC
+              )}
               style={{
                 position: "absolute",
                 inset: 0,
                 width: "100%",
                 height: "100%",
                 objectFit: "cover",
-                opacity: audioPlaying ? 0 : 1,
-                transition: "opacity 160ms linear",
-              }}
-            />
-            <img
-              id="a11-avatar-gif"
-              src={A11_AVATAR_TALKING_SRC}
-              alt=""
-              aria-hidden="true"
-              onError={(event) => applyImageFallback(event, A11_AVATAR_TALKING_FALLBACK_SRC)}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                opacity: audioPlaying ? 1 : 0,
-                transition: "opacity 160ms linear",
+                opacity: 1,
+                transform: activePortraitFrame?.transform || "scale(1)",
+                filter: activePortraitFrame?.filter || "none",
+                transition: `transform ${activePortraitTransitionMs}ms ease, filter ${activePortraitTransitionMs}ms ease`,
                 pointerEvents: "none",
+                willChange: audioPlaying || sending ? "transform, filter" : "auto",
               }}
             />
           </div>
           <div style={{ minWidth: 0 }}>
-            <div style={a11TitleStyle}>A11</div>
+            <div style={a11TitleStyle}>{isKaen44 ? "Kaen44" : "A11"}</div>
             {!isCompactLayout ? (
-              <div style={{ fontSize: 12, color: "#9ca3af" }}>Assistant local NOSSEN</div>
+              <div style={{ fontSize: 12, color: isKaen44 ? "#e7c8a2" : "#8bd9d0" }}>{isKaen44 ? "Copilote au quotidien" : "Documents, voix, creation"}</div>
             ) : null}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexShrink: 0 }}>
+          {activeView !== "chat" ? (
+            <button
+              type="button"
+              onClick={openChatView}
+              style={quickChatButtonStyle}
+              title={`Revenir au chat ${productName}`}
+            >
+              {isCompactLayout ? "Chat" : "Chat maintenant"}
+            </button>
+          ) : null}
           {isCompactLayout ? (
             <button
               type="button"
@@ -2685,7 +5021,7 @@ export function App() {
                 });
               }}
               style={utilityButtonStyle}
-              title="Afficher les réglages"
+              title="Afficher les reglages"
             >
               {settingsMenuOpen ? "Fermer" : "Menu"}
             </button>
@@ -2748,6 +5084,25 @@ export function App() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Langue</div>
+                  <select
+                    value={a11Language}
+                    onChange={(e) => setA11Language(normalizeA11LanguageCode(e.target.value))}
+                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                    title="Langue du chat, du micro, de la transcription et de la voix"
+                  >
+                    {A11_LANGUAGE_CHOICES.map((choice) => (
+                      <option key={choice.code} value={choice.code}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                    Chat, micro, transcription audio et voix {productName} utilisent cette langue.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Options</div>
                   <button
                     type="button"
@@ -2756,7 +5111,7 @@ export function App() {
                       if (isCompactLayout) setSettingsMenuOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                     title="Afficher les ressources et l'activite de conversation"
                   >
                     <span>Panneau conversation</span>
@@ -2768,7 +5123,103 @@ export function App() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Atelier audio</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    {(["adaptive", "speech", "sing"] as const).map((modeValue) => (
+                      <button
+                        key={modeValue}
+                        type="button"
+                        onClick={() => setTtsVocalMode(modeValue)}
+                        className={`btn ghost ${ttsVocalMode === modeValue ? "active" : ""}`}
+                        style={{ minHeight: 36, padding: "0 8px" }}
+                        title={`Mode vocal ${modeValue}`}
+                      >
+                        {modeValue === "adaptive" ? "Auto" : modeValue === "speech" ? "Parle" : "Chant"}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    {(["auto", "piper", "openai"] as const).map((providerValue) => (
+                      <button
+                        key={providerValue}
+                        type="button"
+                        onClick={() => setTtsProviderMode(providerValue)}
+                        className={`btn ghost ${ttsProviderMode === providerValue ? "active" : ""}`}
+                        style={{ minHeight: 36, padding: "0 8px" }}
+                        title={`Methode audio ${providerValue}`}
+                      >
+                        {providerValue === "auto" ? "Best" : providerValue === "piper" ? "Piper" : "OpenAI"}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onVoiceReferenceClick}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                    title={`Ajouter un WAV/MP3/WEBM de reference pour ${productName}`}
+                  >
+                    <span>Ajouter reference voix</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>WAV</span>
+                  </button>
+                  <select
+                    value={selectedVoiceReferenceId}
+                    onChange={(e) => setSelectedVoiceReferenceId(e.target.value)}
+                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                    title="Reference comparee a la voix generee"
+                  >
+                    <option value="">Voix {productName} auto</option>
+                    {voiceReferences.map((ref) => (
+                      <option key={ref.id} value={ref.id}>
+                        {ref.label || "Reference voix"}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                    {audioTranscribing
+                      ? "Analyse audio en cours..."
+                      : voiceReferenceStatus || `Importe un WAV: ${productName} l'ecoute comme reference sonore.`}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Navigation</div>
+                  <button
+                    type="button"
+                    onClick={openChatView}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span>Chat</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Direct</span>
+                  </button>
+                  <a
+                    href={isKaen44 ? surfaceLinks.a11 : surfaceLinks.kaen44}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
+                    title={isKaen44 ? "Ouvrir le site A11" : "Ouvrir le site Kaen44"}
+                  >
+                    <span>{isKaen44 ? "Ouvrir A11" : "Ouvrir Kaen44"}</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "A11" : "K44"}</span>
+                  </a>
+                  <a
+                    href={surfaceLinks.vivy}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
+                    title="Ouvrir le site Vivy"
+                  >
+                    <span>Ouvrir Vivy</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Vivy</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={openCasinoView}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span>Studio creatif</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Auto</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -2778,25 +5229,27 @@ export function App() {
                       setSidebarOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                   >
-                    <span>Abonnement</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>💳</span>
+                      <span>Abonnement</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Plan</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveView("admin");
-                      setAdminSection("ai");
-                      setSettingsMenuOpen(false);
-                      setSidebarOpen(false);
-                    }}
-                    className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
-                  >
-                    <span>Profils IA</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>{remoteProviderProfiles.length}</span>
-                  </button>
+                  {!isKaen44 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveView("admin");
+                        setAdminSection("ai");
+                        setSettingsMenuOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                      className="btn ghost"
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                    >
+                      <span>Aides connectees</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>{remoteProviderProfiles.length}</span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {
@@ -2806,10 +5259,10 @@ export function App() {
                       setSidebarOpen(false);
                     }}
                     className="btn ghost"
-                    style={{ width: "100%", justifyContent: "space-between" }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                   >
-                    <span>Espace admin</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Cockpit</span>
+                    <span>{isKaen44 ? "Services" : "Pilotage"}</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "Client" : "A11"}</span>
                   </button>
                 </div>
 
@@ -2839,7 +5292,10 @@ export function App() {
                     className="btn ghost"
                     style={{
                       width: "100%",
+                      display: "flex",
+                      alignItems: "center",
                       justifyContent: "space-between",
+                      gap: 10,
                       color: "#fca5a5",
                       borderColor: "#7f1d1d",
                     }}
@@ -2875,12 +5331,13 @@ export function App() {
         <aside
           className="sidebar"
           style={{
-            width: isCompactLayout ? 'min(86vw, 320px)' : 300,
-            borderRight: "1px solid #22293a",
-            background: "#0a101a",
+            width: isCompactLayout ? '100vw' : 300,
+            borderRight: isKaen44 ? "1px solid rgba(245, 158, 11, 0.16)" : "1px solid #22293a",
+            background: isKaen44 ? "#160f0c" : "#041018",
             display: 'flex',
             flexDirection: 'column',
-            minWidth: isCompactLayout ? 'min(86vw, 320px)' : 300,
+            minWidth: isCompactLayout ? '100vw' : 300,
+            maxWidth: isCompactLayout ? '100vw' : 300,
             position: isCompactLayout ? 'absolute' : 'relative',
             inset: isCompactLayout ? '0 auto 0 0' : 'auto',
             zIndex: 30,
@@ -2890,15 +5347,17 @@ export function App() {
           {/* Bloc conversations locales */}
           <div style={{ borderBottom: '1px solid #22293a', padding: '8px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 4px 16px' }}>
-              <span className="text-xs uppercase tracking-wide text-slate-400">Conversations locales</span>
+              <span className="text-xs uppercase tracking-wide text-slate-400">
+                {isKaen44 ? "Conversations" : "Sessions locales"}
+              </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button onClick={newConversation} className="btn ghost" style={{ fontSize: 13, padding: '2px 10px' }}>+ Nouvelle</button>
+                <button onClick={newConversation} className="btn ghost" style={{ fontSize: 13, padding: '2px 10px' }}>{isKaen44 ? "+ Nouveau" : "+ Session"}</button>
                 <button
                   type="button"
                   onClick={() => setClearHistoryConfirmOpen(true)}
                   className="btn ghost"
                   disabled={clearingHistory}
-                  title="Supprimer toutes les conversations locales et l'historique A-11"
+                  title={`Supprimer toutes les conversations locales et l'historique ${productName}`}
                   style={{
                     fontSize: 12,
                     padding: '2px 10px',
@@ -2929,7 +5388,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      setActiveView('chat');
+                      openChatView();
                       setSelectedChatId(chat.id);
                       setMessages(chat.messages);
                       setA11ConvId(null);
@@ -2942,8 +5401,8 @@ export function App() {
                     {chat.name}
                   </button>
                   <span style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={e => { e.stopPropagation(); renameChat(chat.id); }} title="Renommer" className="btn ghost" style={{ fontSize: 13 }}>✏️</button>
-                    <button onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} title="Supprimer" className="btn ghost" style={{ fontSize: 13 }}>🗑️</button>
+                    <button onClick={e => { e.stopPropagation(); renameChat(chat.id); }} title="Renommer" className="btn ghost" style={{ fontSize: 12, minWidth: 44, minHeight: 36 }}>Edit</button>
+                    <button onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} title="Supprimer" className="btn ghost" style={{ fontSize: 12, minWidth: 44, minHeight: 36 }}>Del</button>
                   </span>
                 </div>
               ))}
@@ -2953,14 +5412,18 @@ export function App() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
               <span className="text-xs uppercase tracking-wide text-slate-400">
-                Historique A-11
+                Historique {productName}
               </span>
-              <button onClick={refreshA11History} className="text-[11px] text-slate-400 hover:text-slate-200">
-                ↻
+              <button
+                onClick={refreshA11History}
+                className="btn ghost"
+                style={{ minWidth: 44, minHeight: 36, height: 36, padding: "0 8px", fontSize: 11 }}
+              >
+                Raf.
               </button>
             </div>
             {loadingHistory ? (
-              <div className="p-3 text-xs text-slate-400">Chargement…</div>
+              <div className="p-3 text-xs text-slate-400">Chargement...</div>
             ) : (
               <A11HistoryPanel
                 items={a11History}
@@ -2975,8 +5438,14 @@ export function App() {
         ) : null}
 
         <main className="main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {activeView === 'admin' ? (
+          {activeView === 'casino' ? (
+            <CasinoHub
+              isCompactLayout={isCompactLayout}
+              onBackToChat={openChatView}
+            />
+          ) : activeView === 'admin' ? (
             <div
+              className="admin-scroll-panel"
               style={{
                 flex: 1,
                 overflowY: 'auto',
@@ -2985,62 +5454,84 @@ export function App() {
               }}
             >
               <div style={{ width: '100%', maxWidth: 1080, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div
-                  style={{
-                    border: '1px solid #1f2937',
-                    borderRadius: 16,
-                    background: '#0b1220',
-                    padding: isCompactLayout ? 14 : 18,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 14,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 700, color: '#8b9bb4' }}>
-                        Vue admin
+                {(!isKaen44 || adminSection === 'subscription') ? (
+                  <div
+                    style={{
+                      border: '1px solid #1f2937',
+                      borderRadius: 16,
+                      background: '#0b1220',
+                      padding: isCompactLayout ? 14 : 18,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 14,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: 700, color: '#8b9bb4' }}>
+                          {isKaen44 ? "Kaen44" : "Espace pilotage"}
+                        </div>
+                        <h2 style={{ margin: '6px 0 0', color: '#e2e8f0' }}>{isKaen44 ? "Compte" : "Pilotage A11"}</h2>
+                        {!isKaen44 ? (
+                          <p style={{ color: '#94a3b8', margin: '8px 0 0', maxWidth: 720 }}>
+                            Les reglages avances restent ici, hors de l'interface principale. La vue chat garde seulement l'usage normal et les outils utiles.
+                          </p>
+                        ) : null}
                       </div>
-                      <h2 style={{ margin: '6px 0 0', color: '#e2e8f0' }}>Cockpit A11</h2>
-                      <p style={{ color: '#94a3b8', margin: '8px 0 0', maxWidth: 720 }}>
-                        Les éléments système restent ici, hors de l’interface utilisateur principale. La vue chat conserve uniquement l’usage normal et les outils utiles.
-                      </p>
+                      <button
+                        type="button"
+                        onClick={openChatView}
+                        className="btn ghost"
+                        style={{ alignSelf: 'flex-start', justifyContent: 'center' }}
+                      >
+                        Retour au chat
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveView('chat')}
-                      className="btn ghost"
-                      style={{ alignSelf: 'flex-start', justifyContent: 'center' }}
-                    >
-                      Retour au chat
-                    </button>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      <button type="button" onClick={() => setAdminSection('cockpit')} style={adminTabButtonStyle('cockpit')}>
+                        {isKaen44 ? "Services" : "Outils"}
+                      </button>
+                      {!isKaen44 ? (
+                        <button type="button" onClick={() => setAdminSection('memory')} style={adminTabButtonStyle('memory')}>
+                          Memoire
+                        </button>
+                      ) : null}
+                      {!isKaen44 ? (
+                        <button type="button" onClick={() => setAdminSection('runtime')} style={adminTabButtonStyle('runtime')}>
+                          Etat
+                        </button>
+                      ) : null}
+                      {!isKaen44 ? (
+                        <button type="button" onClick={() => setAdminSection('ai')} style={adminTabButtonStyle('ai')}>
+                          Aides
+                        </button>
+                      ) : null}
+                      {!isKaen44 ? (
+                        <button type="button" onClick={() => setAdminSection('console')} style={adminTabButtonStyle('console')}>
+                          Actions
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={() => setAdminSection('subscription')} style={adminTabButtonStyle('subscription')}>
+                        Abonnement
+                      </button>
+                    </div>
                   </div>
+                ) : null}
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <button type="button" onClick={() => setAdminSection('cockpit')} style={adminTabButtonStyle('cockpit')}>
-                      Cockpit
-                    </button>
-                    <button type="button" onClick={() => setAdminSection('memory')} style={adminTabButtonStyle('memory')}>
-                      Memoire
-                    </button>
-                    <button type="button" onClick={() => setAdminSection('runtime')} style={adminTabButtonStyle('runtime')}>
-                      Runtime
-                    </button>
-                    <button type="button" onClick={() => setAdminSection('ai')} style={adminTabButtonStyle('ai')}>
-                      IA
-                    </button>
-                    <button type="button" onClick={() => setAdminSection('console')} style={adminTabButtonStyle('console')}>
-                      Console
-                    </button>
-                    <button type="button" onClick={() => setAdminSection('subscription')} style={adminTabButtonStyle('subscription')}>
-                      Abonnement
-                    </button>
-                  </div>
-                </div>
+                {adminSection === 'cockpit' ? (
+                  isKaen44 ? (
+                    <Kaen44ModulesPanel
+                      isCompactLayout={isCompactLayout}
+                      onBackToChat={openChatView}
+                      onOpenStudio={openCasinoView}
+                      onOpenAccount={() => setAdminSection('subscription')}
+                      onQuickPrompt={openKaenQuickPrompt}
+                    />
+                  ) : <A11ControlCenterPanel />
+                ) : null}
 
-                {adminSection === 'cockpit' ? <A11ControlCenterPanel /> : null}
-
-                {adminSection === 'ai' ? (
+                {!isKaen44 && adminSection === 'ai' ? (
                   <A11RemoteProvidersPanel
                     profiles={remoteProviderProfiles}
                     loading={loadingRemoteProviders}
@@ -3058,11 +5549,12 @@ export function App() {
                 {adminSection === 'subscription' ? (
                   <SubscriptionPanel 
                     isAdmin={hasAdminApiAccess()} 
-                    onClose={() => setActiveView('chat')}
+                    productName={productName}
+                    onClose={openChatView}
                   />
                 ) : null}
 
-                {adminSection === 'memory' ? (
+                {!isKaen44 && adminSection === 'memory' ? (
                   <div
                     style={{
                       border: '1px solid #1f2937',
@@ -3211,21 +5703,21 @@ export function App() {
                         <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#0b1220', color: '#cbd5e1', fontSize: 12 }}>
                           <div style={{ color: '#8b9bb4', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, fontSize: 11 }}>Entrees</div>
                           <div style={{ marginTop: 6, color: '#e2e8f0', fontSize: 18, fontWeight: 800 }}>
-                            {loadingTechnicalMemos ? '...' : (technicalMemoSummary?.total ?? '—')}
+                            {loadingTechnicalMemos ? '...' : (technicalMemoSummary?.total ?? '-')}
                           </div>
                         </div>
                         <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#0b1220', color: '#cbd5e1', fontSize: 12 }}>
                           <div style={{ color: '#8b9bb4', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, fontSize: 11 }}>Plus recent</div>
                           <div style={{ marginTop: 6, color: '#e2e8f0' }}>
-                            {technicalMemoSummary?.latestTs ? new Date(technicalMemoSummary.latestTs).toLocaleString() : '—'}
+                            {technicalMemoSummary?.latestTs ? new Date(technicalMemoSummary.latestTs).toLocaleString() : '-'}
                           </div>
                         </div>
                         <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #1f2937', background: '#0b1220', color: '#cbd5e1', fontSize: 12 }}>
                           <div style={{ color: '#8b9bb4', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700, fontSize: 11 }}>Types</div>
                           <div style={{ marginTop: 6, color: '#e2e8f0' }}>
                             {technicalMemoSummary?.byType && Object.keys(technicalMemoSummary.byType).length
-                              ? Object.entries(technicalMemoSummary.byType).map(([type, count]) => `${type} (${count})`).join(' · ')
-                              : '—'}
+                              ? Object.entries(technicalMemoSummary.byType).map(([type, count]) => `${type} (${count})`).join(' - ')
+                              : '-'}
                           </div>
                         </div>
                       </div>
@@ -3262,24 +5754,52 @@ export function App() {
                   </div>
                 ) : null}
 
-                {adminSection === 'runtime' ? <A11OpsStatusPanel /> : null}
-                {adminSection === 'console' ? (
-                  <A11CommandConsolePanel
-                    prefillCommand={consoleSuggestion?.command || null}
-                    prefillReason={consoleSuggestion?.reason || null}
-                    prefillNonce={consoleSuggestion?.nonce || 0}
-                  />
+                {!isKaen44 && adminSection === 'runtime' ? (
+                  <>
+                    <PinkWardPanel />
+                    <A11OpsStatusPanel />
+                  </>
+                ) : null}
+                {!isKaen44 && adminSection === 'console' ? (
+                  <div style={{ display: 'grid', gap: 16 }}>
+                    <QflushPortableTerminal compact={isCompactLayout} />
+                    <A11CommandConsolePanel
+                      prefillCommand={consoleSuggestion?.command || null}
+                      prefillReason={consoleSuggestion?.reason || null}
+                      prefillNonce={consoleSuggestion?.nonce || 0}
+                    />
+                  </div>
                 ) : null}
               </div>
             </div>
           ) : (
           <>
-          <div className="scroll-frame" style={{ margin: isCompactLayout ? 8 : 12 }}>
+          <div ref={chatScrollFrameRef} className="scroll-frame" style={{ margin: isCompactLayout ? 8 : (isKaen44 ? 12 : 10) }}>
             <div className="log">
+              <PersonaDashboard
+                isKaen44={isKaen44}
+                displayName={userDisplayName}
+                currentConversationId={currentConversationId}
+                messageCount={messages.filter((message) => message.role !== "system").length}
+                resourceCount={conversationResources.length}
+                activityCount={conversationActivity.length}
+                onStartChat={openChatView}
+                onOpenAdmin={() => {
+                  if (!isKaen44) {
+                    setInspectorOpen(true);
+                    return;
+                  }
+                  setActiveView("admin");
+                  setAdminSection("cockpit");
+                  setSidebarOpen(false);
+                }}
+                onOpenStudio={openCasinoView}
+                onOpenInspector={() => setInspectorOpen(true)}
+              />
               {messages.map((m, idx) => {
                 const exportSuggestion = m.role === "assistant" ? detectAssistantExportSuggestion(m.content) : null;
                 let messageClassName = "message ";
-                let roleLabel = "Système / Nindo";
+                let roleLabel = "Systeme / Nindo";
                 let roleStyle: React.CSSProperties = {
                   color: "#9fb3c8",
                 };
@@ -3292,10 +5812,12 @@ export function App() {
                   };
                 } else if (m.role === "assistant") {
                   messageClassName = "message assistant";
-                  roleLabel = "A11";
+                  roleLabel = productName;
                   roleStyle = {
-                    color: "#c084fc",
-                    textShadow: "0 0 16px rgba(192, 132, 252, 0.24)",
+                    color: isKaen44 ? "#f6c177" : "#67e8f9",
+                    textShadow: isKaen44
+                      ? "0 0 16px rgba(245, 158, 11, 0.22)"
+                      : "0 0 16px rgba(103, 232, 249, 0.22)",
                   };
                 }
                 const contentNode = m.role === "assistant"
@@ -3357,7 +5879,7 @@ export function App() {
                             color: "#fbbf24",
                           }}
                         >
-                          Réponse non verifiee
+                          Reponse non verifiee
                         </div>
                         <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>
                           {String(m.qflushVerification.summary || "Cette reponse a ete marquee comme douteuse par le garde-fou local.")}
@@ -3380,7 +5902,7 @@ export function App() {
                               onClick={() => setPreviewImageUrl(imgs[0])}
                               aria-label="Agrandir l'image"
                             >
-                              <img src={imgs[0]} alt="Résultat A11" style={{ maxWidth: "320px", borderRadius: 12 }} />
+                              <img src={imgs[0]} alt={`Resultat ${productName}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
                               <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
                             </button>
                           </div>
@@ -3411,7 +5933,7 @@ export function App() {
                           >
                             <img
                               src={m.videoUrl}
-                              alt="Animation générée par A11"
+                              alt={`Animation generee par ${productName}`}
                               style={{ maxWidth: "320px", borderRadius: 12 }}
                             />
                           </a>
@@ -3435,7 +5957,7 @@ export function App() {
                             wordBreak: "break-all",
                           }}
                         >
-                          Ouvrir la vidéo
+                          Ouvrir la video
                         </a>
                       </div>
                     )}
@@ -3509,12 +6031,13 @@ export function App() {
                         }}
                         title="Copier tout le contenu"
                       >
-                        📋 Copier
+                        Copier
                       </button>
                     ) : null}
                   </div>
                 );
               })}
+              <div ref={chatEndRef} aria-hidden="true" />
             </div>
           </div>
 
@@ -3523,12 +6046,16 @@ export function App() {
             style={{
               padding: isCompactLayout ? "8px 10px calc(10px + env(safe-area-inset-bottom))" : undefined,
             }}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onDrop={(e) => {
+              e.stopPropagation();
               void onComposerDrop(e);
             }}
             onPaste={async (e) => {
-              // Paste global sur le composer (hors textarea) — images et fichiers
+              // Paste global sur le composer (hors textarea) â€” images et fichiers
               const items = e.clipboardData?.items;
               if (!items) return;
               const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
@@ -3543,15 +6070,16 @@ export function App() {
               }
             }}
           >
-            {/* Console d'activité A11 — affichée pendant et après les actions */}
+            {/* Console d'activite */}
             <A11ActivityConsole
               events={activityEvents}
               isActive={activityIsActive}
+              productLabel={productName}
               onClear={clearActivityEvents}
               collapsed={consoleCollapsed}
               onToggleCollapse={() => setConsoleCollapsed((v) => !v)}
             />
-            <div className="row">
+            <div className="row a11-composer-row">
               <button
                 type="button"
                 className="btn ghost import-inline"
@@ -3562,9 +6090,65 @@ export function App() {
                 {isCompactLayout ? "Import" : "Importer"}
               </button>
 
-              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+              <div
+                className="a11-voice-tools"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginRight: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={onVoiceReferenceClick}
+                  title="Ajouter une reference vocale WAV/MP3/WEBM"
+                  style={{ minWidth: 44, minHeight: 44, padding: isCompactLayout ? "0 9px" : "0 10px" }}
+                >
+                  Ref
+                </button>
+                {!isCompactLayout && (
+                  <select
+                    value={selectedVoiceReferenceId}
+                    onChange={(e) => setSelectedVoiceReferenceId(e.target.value)}
+                    title={`Reference vocale utilisee pour comparer la voix ${productName}`}
+                    style={{
+                      width: 138,
+                      minHeight: 44,
+                      background: "#0d0f13",
+                      color: "var(--text)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                      padding: "0 8px",
+                    }}
+                  >
+                    <option value="">Voix {productName} auto</option>
+                    {voiceReferences.map((ref) => (
+                      <option key={ref.id} value={ref.id}>
+                        {ref.label || "Reference voix"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
+                  onClick={() => setTtsVocalMode((mode) => mode === "sing" ? "adaptive" : "sing")}
+                  title={ttsVocalMode === "sing" ? "Mode chant actif" : "Activer le mode chant"}
+                  style={{ minHeight: 44, width: 44, padding: 0, fontWeight: 800 }}
+                >
+                  {ttsVocalMode === "sing" ? "S" : "A"}
+                </button>
+              </div>
+
+              <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea
-                  placeholder="Demande quelque chose à A11… (Ctrl+V pour coller une image)"
+                  ref={composerInputRef}
+                  placeholder={isCompactLayout
+                    ? (isKaen44 ? "Message Kaen44..." : "Message A11...")
+                    : (isKaen44 ? "Demande quelque chose a Kaen44... (Ctrl+V pour coller une image)" : "Demande quelque chose a A11... (Ctrl+V pour coller une image)")}
                   value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
                   onChange={(e) => {
                     const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
@@ -3591,7 +6175,7 @@ export function App() {
                       }
                       return;
                     }
-                    // Chercher des fichiers collés (depuis l'explorateur)
+                    // Chercher des fichiers collÃ©s (depuis l'explorateur)
                     const fileItems = Array.from(items).filter(item => item.kind === 'file' && !item.type.startsWith('image/'));
                     if (fileItems.length > 0) {
                       e.preventDefault();
@@ -3607,8 +6191,8 @@ export function App() {
                   style={{
                     width: '100%',
                     resize: 'none',
-                    minHeight: '42px',
-                    maxHeight: '35vh',
+                    minHeight: isCompactLayout ? '52px' : '42px',
+                    maxHeight: isCompactLayout ? '22vh' : '35vh',
                     background: '#0d0f13',
                     color: 'var(--text)',
                     border: '1px solid var(--border)',
@@ -3625,30 +6209,55 @@ export function App() {
                 className="send-button"
                 onClick={() => sendMessage()}
                 disabled={!input.trim()}
-                title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
+                title="Entree pour envoyer, Shift+Entree pour aller a la ligne"
                 style={sending ? { opacity: 0.7 } : undefined}
               >
                 {sending
-                  ? (messageQueueRef.current.length > 0 ? `⏳ +${messageQueueRef.current.length}` : "…")
-                  : "➤"
+                  ? (messageQueueRef.current.length > 0 ? `+${messageQueueRef.current.length}` : "...")
+                  : "Envoyer"
                 }
               </button>
 
+              <EkkoIndicator />
+
               <button
                 type="button"
-                className={`nossen-mic-btn inline ${(voiceListening || ttsFallback || audioPlaying) ? "listening" : ""}`}
+                className={`nossen-mic-btn inline ${(voiceListening || micStarting || audioPlaying) ? "listening" : ""}`}
                 onClick={toggleMic}
-                title="Toggle microphone / TTS"
-                style={{ marginLeft: 8 }}
+                disabled={micStarting}
+                aria-pressed={voiceListening}
+                aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloque" : voiceListening ? "Arreter le micro" : "Demarrer le micro"}
+                title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloque par le navigateur" : voiceListening ? "Arreter le micro" : "Demarrer le micro"}
+                style={{
+                  marginLeft: 8,
+                  opacity: micPermissionBlocked ? 0.78 : 1,
+                  borderColor: micPermissionBlocked ? "#7f1d1d" : undefined,
+                  color: micPermissionBlocked ? "#fecaca" : undefined,
+                }}
               >
-                {(voiceListening || ttsFallback || audioPlaying) ? "🎙️" : "🎤"}
+                {micStarting ? "..." : mobileVoiceReady ? "Play" : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
               </button>
             </div>
             <div className="hint">
-              Entrée pour envoyer · Shift+Entrée pour aller à la ligne · Ctrl+V pour coller une image
+              Entree pour envoyer - Shift+Entree pour aller a la ligne - Ctrl+V pour coller une image
+              {micStatusMessage && (
+                <span style={{ marginLeft: 8, color: micPermissionBlocked ? '#fca5a5' : '#93c5fd', fontWeight: 600 }}>
+                  {micStatusMessage}
+                </span>
+              )}
               {sending && messageQueueRef.current.length > 0 && (
                 <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 600 }}>
-                  ⏳ {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
+                  {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
+                </span>
+              )}
+              {voiceReferenceStatus && (
+                <span style={{ marginLeft: 8, color: "#93c5fd", fontWeight: 600 }}>
+                  {voiceReferenceStatus}
+                </span>
+              )}
+              {uploadFeedback && (
+                <span style={{ marginLeft: 8, color: imageJobActive ? "#f59e0b" : "#93c5fd", fontWeight: 600 }}>
+                  {uploadFeedback}
                 </span>
               )}
             </div>
@@ -3658,11 +6267,11 @@ export function App() {
               const p = dragPreviewUrls[idx];
               return (
                 <div className="a11-drop-carousel">
-                  {/* Thumbnail ou icône */}
+                  {/* Thumbnail ou icÃ´ne */}
                   <div className="a11-drop-carousel-media">
                     {p.isImage
                       ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
-                      : <span className="a11-drop-carousel-file-icon">📄</span>
+                      : <span className="a11-drop-carousel-file-icon">FILE</span>
                     }
                   </div>
 
@@ -3674,21 +6283,21 @@ export function App() {
                     )}
                   </div>
 
-                  {/* Flèches si plusieurs */}
+                  {/* FlÃ¨ches si plusieurs */}
                   {total > 1 && (
                     <div className="a11-drop-carousel-nav">
                       <button
                         type="button"
                         className="a11-drop-carousel-arrow"
-                        aria-label="Image précédente"
+                        aria-label="Image precedente"
                         onClick={() => setPreviewCarouselIndex((i) => (i - 1 + total) % total)}
-                      >‹</button>
+                      >&lt;</button>
                       <button
                         type="button"
                         className="a11-drop-carousel-arrow"
                         aria-label="Image suivante"
                         onClick={() => setPreviewCarouselIndex((i) => (i + 1) % total)}
-                      >›</button>
+                      >&gt;</button>
                     </div>
                   )}
 
@@ -3705,7 +6314,7 @@ export function App() {
                         return next;
                       });
                     }}
-                  >✕</button>
+                  >X</button>
                 </div>
               );
             })()}
@@ -3715,6 +6324,13 @@ export function App() {
               multiple
               style={{ display: 'none' }}
               onChange={onFileChange}
+            />
+            <input
+              ref={voiceReferenceInputRef}
+              type="file"
+              accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm"
+              style={{ display: 'none' }}
+              onChange={onVoiceReferenceFileChange}
             />
           </div>
           </>
@@ -3805,11 +6421,11 @@ export function App() {
           </>
         ) : null}
       </div>
-      {!isCompactLayout ? (
+      {!isCompactLayout && !isKaen44 ? (
       <>
         <AdBanner position="bottom" style={{ margin: '20px auto', maxWidth: '800px' }} />
         <footer className="footer">
-          A11 local · Ollama + TTS + image · Funesterie
+          {isKaen44 ? "Kaen44 local - voix - documents - Funesterie" : "A11 - chat - fichiers - voix - creation"}
         </footer>
       </>
       ) : null}
@@ -3828,7 +6444,7 @@ export function App() {
       <ConfirmModal
         open={!!deleteDialogChatId}
         title="Supprimer la conversation"
-        message="Cette conversation locale sera retirée de la liste actuelle."
+        message="Cette conversation locale sera retirÃ©e de la liste actuelle."
         confirmLabel="Supprimer"
         confirmTone="danger"
         onClose={() => setDeleteDialogChatId(null)}
@@ -3837,7 +6453,7 @@ export function App() {
       <ConfirmModal
         open={clearHistoryConfirmOpen}
         title="Supprimer tout l'historique"
-        message="Cette action va vider toutes les conversations locales du navigateur et l'historique A-11 cote serveur. Une nouvelle session propre sera recreee juste apres."
+        message={`Cette action va vider toutes les conversations locales du navigateur et l'historique ${productName} cote serveur. Une nouvelle session propre sera recreee juste apres.`}
         confirmLabel="Tout supprimer"
         confirmTone="danger"
         loading={clearingHistory}
@@ -3846,8 +6462,8 @@ export function App() {
       />
       <ConfirmModal
         open={!!deleteA11HistoryId}
-        title="Supprimer cette conversation A-11"
-        message="Cette conversation sera retiree de l'historique A-11 cote serveur et de la copie locale si elle est ouverte."
+        title={`Supprimer cette conversation ${productName}`}
+        message={`Cette conversation sera retiree de l'historique ${productName} cote serveur et de la copie locale si elle est ouverte.`}
         confirmLabel="Supprimer"
         confirmTone="danger"
         loading={!!deleteA11HistoryId && deletingA11HistoryId === deleteA11HistoryId}
@@ -3856,10 +6472,10 @@ export function App() {
       />
       <ConfirmModal
         open={purgeConfirmOpen}
-        title="Confirmer la purge mémoire"
+        title="Confirmer la purge memoire"
         message={memoryPurgeDryRun
-          ? "Lancer une simulation de purge de la mémoire structurée ?"
-          : "Déclencher immédiatement la purge réelle de la mémoire structurée ?"}
+          ? "Lancer une simulation de purge de la memoire structuree ?"
+          : "Declencher immediatement la purge reelle de la memoire structuree ?"}
         confirmLabel={memoryPurgeDryRun ? "Lancer le dry run" : "Lancer la purge"}
         confirmTone={memoryPurgeDryRun ? "primary" : "danger"}
         loading={purgingMemory}
@@ -3898,7 +6514,7 @@ export function App() {
           className="image-preview-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Aperçu de l'image"
+          aria-label="Apercu de l'image"
           onClick={() => setPreviewImageUrl(null)}
         >
           <div
@@ -3909,43 +6525,49 @@ export function App() {
               type="button"
               className="image-preview-close"
               onClick={() => setPreviewImageUrl(null)}
-              aria-label="Fermer l'aperçu"
+              aria-label="Fermer l'apercu"
             >
-              ×
+              X
             </button>
             <img
               src={previewImageUrl}
-              alt="Aperçu agrandi"
+              alt="Apercu agrandi"
               className="image-preview-modal-image"
             />
           </div>
         </div>
       )}
-      {audioBlockedUrl && (
+      {audioBlockedUrl && !isCompactLayout && (
         <div style={{
-          position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+          position: 'fixed',
+          bottom: isCompactLayout ? 'calc(92px + env(safe-area-inset-bottom))' : 80,
+          left: isCompactLayout ? 12 : '50%',
+          right: isCompactLayout ? 12 : 'auto',
+          transform: isCompactLayout ? 'none' : 'translateX(-50%)',
           background: '#1e293b', border: '1px solid #334155', borderRadius: 12,
           padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10,
           boxShadow: '0 4px 24px rgba(0,0,0,0.6)', zIndex: 9999,
-          color: '#e2e8f0', fontSize: 14, whiteSpace: 'nowrap',
+          color: '#e2e8f0', fontSize: 14, whiteSpace: 'normal',
+          flexWrap: 'wrap', justifyContent: isCompactLayout ? 'space-between' : 'center',
+          maxWidth: 'calc(100vw - 24px)',
         }}>
-          <span>🔇 Audio bloqué</span>
+          <span>Audio bloque</span>
           <button
             type="button"
-            onClick={() => { retryPlayUrl(audioBlockedUrl); setAudioBlockedUrl(null); }}
+            onClick={() => { void unlockAudioOutput(); retryPlayUrl(audioBlockedUrl); setAudioBlockedUrl(null); }}
             style={{
               background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8,
               padding: '6px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
             }}
           >
-            ▶ Jouer
+            Jouer
           </button>
           <button
             type="button"
             onClick={() => setAudioBlockedUrl(null)}
             style={{ background: 'none', color: '#94a3b8', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 2px' }}
             title="Ignorer"
-          >×</button>
+          >X</button>
         </div>
       )}
     </div>

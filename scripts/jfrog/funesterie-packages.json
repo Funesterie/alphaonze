@@ -1,0 +1,91 @@
+{
+  "scope": "@funeste38",
+  "registryPurpose": "Private Funesterie npm packages on JFrog Artifactory",
+  "packages": [
+    {
+      "path": "runtime/modules/envaptex",
+      "name": "@funeste38/envaptex",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/bat",
+      "name": "@funeste38/bat",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/freeland",
+      "name": "@funeste38/freeland",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/rome",
+      "name": "@funeste38/rome",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/qflush",
+      "name": "@funeste38/qflush",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/nezlephant",
+      "name": "@funeste38/nezlephant",
+      "tier": "security",
+      "publish": false,
+      "reason": "dry-run showed IDE files, old tarballs, and logs in the package; clean package files before publish"
+    },
+    {
+      "path": "runtime/modules/allmight",
+      "name": "@funeste38/allmight",
+      "tier": "agent",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/beam",
+      "name": "@funeste38/beam",
+      "tier": "experimental",
+      "publish": false
+    },
+    {
+      "path": "runtime/modules/freeland-bros",
+      "name": "@funeste38/freeland-bros",
+      "tier": "experimental",
+      "publish": false
+    },
+    {
+      "path": "runtime/modules/morphing",
+      "name": "@funeste38/morphing",
+      "tier": "experimental",
+      "publish": false
+    },
+    {
+      "path": "runtime/modules/scream",
+      "name": "@funeste38/scream",
+      "tier": "experimental",
+      "publish": false
+    }
+  ],
+  "skipped": [
+    {
+      "path": "runtime/modules/spyder",
+      "reason": "package.json currently declares @funeste38/qflush, which would collide with the real qflush package"
+    },
+    {
+      "path": "runtime/modules/nezlephant",
+      "reason": "package tarball currently includes .vs, old .tgz files, and logs"
+    },
+    {
+      "path": "runtime/modules/dragon",
+      "reason": "private and unscoped package; keep local until naming is clarified"
+    },
+    {
+      "path": "runtime/modules/katana",
+      "reason": "unscoped package; keep local until naming is clarified"
+    }
+  ]
+}

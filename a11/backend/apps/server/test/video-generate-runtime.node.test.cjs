@@ -200,8 +200,8 @@ test('normalizeVideoRequest upgrades implicit default timing to a full walk cycl
     });
 
     assert.equal(request.durationSeconds, 2);
-    assert.equal(request.fps, 4);
-    assert.equal(request.frameCount, 8);
+    assert.equal(request.fps, 5);
+    assert.equal(request.frameCount, 10);
     assert.equal(request.explicitDuration, false);
     assert.equal(request.explicitFps, false);
     assert.equal(request.timingPlan?.motionProfile, 'walk_cycle');
@@ -233,6 +233,38 @@ test('normalizeVideoRequest respects explicit timing written in the prompt even 
     assert.equal(request.frameCount, 3);
     assert.equal(request.explicitDuration, true);
     assert.equal(request.explicitFps, true);
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('normalizeVideoRequest ignores legacy tiny frontend timing unless manual timing is requested', () => {
+  const previousEnv = {
+    A11_VIDEO_DEFAULT_DURATION_SEC: process.env.A11_VIDEO_DEFAULT_DURATION_SEC,
+    A11_VIDEO_DEFAULT_FPS: process.env.A11_VIDEO_DEFAULT_FPS,
+    A11_VIDEO_MAX_RENDER_FRAMES: process.env.A11_VIDEO_MAX_RENDER_FRAMES,
+  };
+
+  process.env.A11_VIDEO_DEFAULT_DURATION_SEC = '1';
+  process.env.A11_VIDEO_DEFAULT_FPS = '1';
+  process.env.A11_VIDEO_MAX_RENDER_FRAMES = '4';
+
+  try {
+    const request = normalizeVideoRequest({
+      prompt: 'genere une video de dracaufeu qui utilise attaque deflagration',
+      fps: 1,
+      frames: 2,
+    });
+
+    assert.equal(request.durationSeconds, 2);
+    assert.equal(request.fps, 6);
+    assert.equal(request.frameCount, 12);
+    assert.equal(request.explicitFps, false);
+    assert.equal(request.explicitFrameCount, false);
+    assert.equal(request.timingPlan?.motionProfile, 'action_burst');
   } finally {
     for (const [key, value] of Object.entries(previousEnv)) {
       if (value === undefined) delete process.env[key];
@@ -288,7 +320,7 @@ test('normalizeVideoRequest detects transformation prompts as a staged transform
 
   assert.equal(request.timingPlan?.motionProfile, 'transformation_rise');
   assert.equal(request.timingPlan?.motionReason, 'transformation_motion_detected');
-  assert.equal(request.frameCount, 10);
+  assert.equal(request.frameCount, 14);
 });
 
 test('normalizeVideoRequest detects mounted archery prompts as a dedicated mounted archery plan', () => {
@@ -298,7 +330,7 @@ test('normalizeVideoRequest detects mounted archery prompts as a dedicated mount
 
   assert.equal(request.timingPlan?.motionProfile, 'mounted_archery');
   assert.equal(request.timingPlan?.motionReason, 'mounted_archery_motion_detected');
-  assert.equal(request.frameCount, 8);
+  assert.equal(request.frameCount, 12);
 });
 
 test('createGenerateVideoHandler reuses compiled SD prompts and assembles a video artifact', async () => {
@@ -470,6 +502,95 @@ test('createGenerateVideoHandler can synthesize and mux a requested audio track'
   assert.equal(fs.existsSync(ffmpegInvocation.audioPath), true);
   assert.ok(fetchCalls.some((url) => url.endsWith('/api/tts')));
   assert.ok(fetchCalls.some((url) => url.endsWith('/voice.wav')));
+});
+
+test('createGenerateVideoHandler accepts local SD frame paths and prefers the R2 proxy URL when public R2 URL is absent', async () => {
+  const previousEnv = {
+    A11_WORKSPACE_ROOT: process.env.A11_WORKSPACE_ROOT,
+    A11_VIDEO_WORK_ROOT: process.env.A11_VIDEO_WORK_ROOT,
+    A11_VIDEO_SEQUENCE_PLANNER: process.env.A11_VIDEO_SEQUENCE_PLANNER,
+  };
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-video-local-frame-'));
+  const imageRoot = path.join(tempRoot, 'runtime', 'files', 'generated', 'images');
+  fs.mkdirSync(imageRoot, { recursive: true });
+  process.env.A11_WORKSPACE_ROOT = tempRoot;
+  delete process.env.A11_VIDEO_WORK_ROOT;
+  process.env.A11_VIDEO_SEQUENCE_PLANNER = 'heuristic';
+
+  const calls = [];
+  let fetchCalled = false;
+
+  const generateVideo = createGenerateVideoHandler({
+    generateSd: async ({ body }) => {
+      calls.push(body);
+      const outputPath = path.join(imageRoot, `frame-source-${calls.length}.png`);
+      fs.writeFileSync(outputPath, TINY_PNG);
+      return {
+        ok: true,
+        output_path: outputPath,
+        local_path: outputPath,
+      };
+    },
+    fetch: async () => {
+      fetchCalled = true;
+      throw new Error('frame download should not be used when SD returns a local path');
+    },
+    uploadBufferToR2: async ({ filename, contentType, buffer }) => ({
+      storageKey: `users/video-tool/${filename}`,
+      filename,
+      contentType,
+      sizeBytes: buffer.length,
+    }),
+    buildCanonicalImageMaskFromText: async () => ({
+      rawMask: {
+        version: 'mask-1',
+        intent: 'image.generate',
+        raw: 'vivy chante',
+      },
+    }),
+    compileMaskImageGenerateRuntime: async () => ({
+      sdBody: {
+        prompt: 'vivy singing in a studio',
+      },
+    }),
+    runFfmpeg: async ({ outputPath }) => {
+      fs.writeFileSync(outputPath, Buffer.from('fake-video'));
+    },
+  });
+
+  try {
+    const result = await generateVideo({
+      req: {
+        headers: {
+          host: 'a11.funesterie.pro',
+          'x-forwarded-proto': 'https',
+        },
+        body: {},
+      },
+      prompt: 'vivy chante',
+      body: {
+        prompt: 'vivy chante',
+        frameCount: 2,
+        fps: 2,
+        strictTiming: true,
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(fetchCalled, false);
+    assert.equal(calls.length, 2);
+    assert.match(String(result.video_url || ''), /^https:\/\/a11\.funesterie\.pro\/api\/public\/r2\/users\/video-tool\/a11-video-/i);
+    assert.equal(result.video_url, result.r2_proxy_url);
+    assert.match(String(result.local_url || ''), /^https:\/\/a11\.funesterie\.pro\/files\/runtime\/files\/generated\/videos\//i);
+    assert.match(String(result.frames[0].url || ''), /^https:\/\/a11\.funesterie\.pro\/files\/runtime\/files\/generated\/videos\//i);
+    assert.equal(result.frames[0].syntheticFallback, false);
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('createGenerateVideoHandler does not expose loopback audio URLs to HTTPS clients', async () => {

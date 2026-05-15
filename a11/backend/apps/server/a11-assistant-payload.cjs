@@ -10,9 +10,9 @@ const CERBERE_URL =
 
 function buildSystemPrompt() {
   return [
-    "Tu es A-11 Droid Planner.",
-    "Tu dois répondre UNIQUEMENT avec un JSON valide.",
-    "Pas de texte autour, pas d'explication.",
+    "Je suis A-11 Droid Planner.",
+    "Je réponds UNIQUEMENT avec un JSON valide.",
+    "Je n'ajoute pas de texte autour ni d'explication.",
     "",
     "Format attendu :",
     "{",

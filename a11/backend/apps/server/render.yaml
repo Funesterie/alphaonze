@@ -5,9 +5,9 @@ services:
   # Backend API
   - type: web
     name: a11-backend
-    env: node
-    buildCommand: echo 'No build step needed'
-    startCommand: node server.cjs
+    runtime: node
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
     region: frankfurt
     plan: free
     branch: master
@@ -31,10 +31,14 @@ services:
         sync: false # Secret, à configurer manuellement
       - key: JWT_EXPIRY
         value: 7d
+      - key: A11_FULL_ACCESS_EMAILS
+        value: funeste38@gmail.com,cellaurojeffrey@gmail.com,marvincellauro@gmail.com,giovannabrunetto@gmail.com,bayetgerard@gmail.com,boostro38@gmail.com,charlenejewitt@gmail.com,jeffrey38330@gmail.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
 
       # CORS
       - key: CORS_ORIGINS
-        value: https://alphaonze.funesterie.pro
+        value: https://alphaonze.funesterie.pro,https://a11.funesterie.pro
       - key: APP_URL
         value: https://alphaonze.funesterie.pro
 
@@ -47,6 +51,10 @@ services:
         value: 60000
       - key: OPENAI_API_KEY
         sync: false # Secret, à configurer manuellement
+      - key: A11_LLM_LLAMA
+        sync: false # Secret Ollama Cloud/API key, alias local pour OLLAMA_API_KEY
+      - key: OLLAMA_API_KEY
+        sync: false # Secret officiel Ollama Cloud si on pointe vers https://ollama.com/api
 
       # LLM Fallbacks (optionnel)
       - key: A11_LLM_FALLBACK_PROVIDER
@@ -64,7 +72,7 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_PRICE_ID
-        value: price_1TQwxHHkqLcMgv548uBa6GDZ # 2,99€/mois Premium
+        sync: false # Price ID A11 Studio leger, 9 EUR/mois, a creer/configurer dans Stripe
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_SUCCESS_URL

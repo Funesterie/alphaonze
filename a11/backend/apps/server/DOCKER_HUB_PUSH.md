@@ -229,7 +229,7 @@ docker run -d \
   -p 3000:3000 \
   -e DATABASE_URL=postgresql://... \
   -e STRIPE_SECRET_KEY=sk_... \
-  -e JWT_SECRET=your-secret \
+  # JWT_SECRET is configured via the deployment secret store.
   funeste38/a11-backend:latest
 ```
 ````

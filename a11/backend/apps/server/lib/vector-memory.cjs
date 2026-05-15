@@ -5,6 +5,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getLogger } = require('./structured-logger.cjs');
+const {
+  isSemanticMemoryText,
+  shouldStoreSemanticExchange,
+} = require('./semantic-memory-filter.cjs');
 
 const logger = getLogger({ component: 'vector-memory' });
 
@@ -33,15 +37,40 @@ function cosineSimilarity(vecA, vecB) {
 /**
  * Génère un embedding vectoriel via Ollama
  */
+function isEnvEnabled(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function areEmbeddingsEnabled(options = {}, env = process.env) {
+  const explicit = isEnvEnabled(env.A11_ENABLE_EMBEDDINGS);
+  if (explicit !== null) return explicit;
+  if (options.ollamaBase || env.A11_EMBEDDING_BASE_URL || env.OLLAMA_BASE) return true;
+  if (String(env.NODE_ENV || '').trim().toLowerCase() === 'production') return false;
+  return true;
+}
+
+function resolveEmbeddingBaseUrl(options = {}, env = process.env) {
+  return options.ollamaBase || env.A11_EMBEDDING_BASE_URL || env.OLLAMA_BASE || 'http://127.0.0.1:11434';
+}
+
 async function generateEmbedding(text, options = {}) {
-  // Vérifier si les embeddings sont activés
-  const enableEmbeddings = process.env.A11_ENABLE_EMBEDDINGS !== 'false';
-  if (!enableEmbeddings) {
-    logger.debug('Embeddings disabled via A11_ENABLE_EMBEDDINGS=false');
+  const normalizedText = String(text || '').trim();
+  if (!isSemanticMemoryText(normalizedText, { maxChars: options.maxChars || 9000 })) {
+    logger.debug('Skipping embedding for non-semantic payload');
     return null;
   }
 
-  const ollamaBase = options.ollamaBase || process.env.OLLAMA_BASE || 'http://127.0.0.1:11434';
+  // Vérifier si les embeddings sont activés
+  const enableEmbeddings = areEmbeddingsEnabled(options);
+  if (!enableEmbeddings) {
+    logger.debug('Embeddings disabled or not configured');
+    return null;
+  }
+
+  const ollamaBase = resolveEmbeddingBaseUrl(options);
   const model = options.model || process.env.A11_EMBEDDING_MODEL || 'nomic-embed-text';
 
   try {
@@ -50,7 +79,7 @@ async function generateEmbedding(text, options = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        prompt: String(text || '').trim(),
+        prompt: normalizedText,
       }),
     });
 
@@ -61,7 +90,7 @@ async function generateEmbedding(text, options = {}) {
     const data = await response.json();
     return Array.isArray(data.embedding) ? data.embedding : null;
   } catch (error) {
-    logger.error('Failed to generate embedding', { error, text: text.slice(0, 100) });
+    logger.warn('Failed to generate embedding', { error: String(error?.message || error) });
     return null;
   }
 }
@@ -133,12 +162,16 @@ class VectorMemory {
    */
   async addExchange(userMessage, assistantMessage, metadata = {}) {
     if (!userMessage || !assistantMessage) return null;
+    if (!shouldStoreSemanticExchange(userMessage, assistantMessage)) {
+      this.logger.debug('Skipping vector memory for non-semantic exchange');
+      return null;
+    }
 
     const text = `User: ${userMessage}\nAssistant: ${assistantMessage}`;
     const embedding = await generateEmbedding(text);
 
     if (!embedding) {
-      this.logger.warn('Failed to generate embedding for exchange');
+      this.logger.debug('No embedding stored for exchange');
       return null;
     }
 
@@ -174,13 +207,13 @@ class VectorMemory {
     const k = options.k || 5;
     const minSimilarity = options.minSimilarity || 0.5;
 
-    if (!query || this.entries.length === 0) {
+    if (!query || this.entries.length === 0 || !isSemanticMemoryText(query)) {
       return [];
     }
 
     const queryEmbedding = await generateEmbedding(query);
     if (!queryEmbedding) {
-      this.logger.warn('Failed to generate embedding for query');
+      this.logger.debug('No embedding available for query');
       return [];
     }
 
@@ -315,4 +348,6 @@ module.exports = {
   createVectorMemory,
   generateEmbedding,
   cosineSimilarity,
+  areEmbeddingsEnabled,
+  resolveEmbeddingBaseUrl,
 };

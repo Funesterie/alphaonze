@@ -45,11 +45,11 @@ A11_LLM_PROVIDER=openai
 A11_LLM_FALLBACK_PROVIDER=groq
 
 # OpenAI
-OPENAI_API_KEY=sk-...
+# OPENAI_API_KEY is configured via the deployment secret store.
 OPENAI_MODEL=gpt-4o-mini
 
 # Groq (optionnel)
-GROQ_API_KEY=gsk_...
+# GROQ_API_KEY is configured via the deployment secret store.
 GROQ_MODEL=llama-3.3-70b-versatile
 
 # DeepSeek (optionnel)
@@ -68,8 +68,8 @@ A11_OLLAMA_PRIMARY_MODEL=gemma4:e4b
 ```bash
 A11_LLM_PROVIDER=openai
 A11_LLM_FALLBACK_PROVIDER=groq
-OPENAI_API_KEY=sk-...
-GROQ_API_KEY=gsk_...
+# OPENAI_API_KEY is configured via the deployment secret store.
+# GROQ_API_KEY is configured via the deployment secret store.
 ```
 
 - **Primary** : OpenAI (gpt-4o-mini) - fiable, qualité
@@ -80,7 +80,7 @@ GROQ_API_KEY=gsk_...
 ```bash
 A11_LLM_PROVIDER=groq
 A11_LLM_FALLBACK_PROVIDER=deepseek
-GROQ_API_KEY=gsk_...
+# GROQ_API_KEY is configured via the deployment secret store.
 DEEPSEEK_API_KEY=sk-...
 ```
 
@@ -93,7 +93,7 @@ DEEPSEEK_API_KEY=sk-...
 A11_LLM_PROVIDER=ollama
 A11_LLM_FALLBACK_PROVIDER=groq
 OLLAMA_BASE=http://127.0.0.1:11434
-GROQ_API_KEY=gsk_...
+# GROQ_API_KEY is configured via the deployment secret store.
 ```
 
 - **Primary** : Ollama (local, gratuit, privé)
@@ -105,9 +105,9 @@ GROQ_API_KEY=gsk_...
 A11_LLM_PROVIDER=ollama
 A11_LLM_FALLBACK_PROVIDER=none
 OLLAMA_BASE=http://127.0.0.1:11434
-GROQ_API_KEY=gsk_...
+# GROQ_API_KEY is configured via the deployment secret store.
 DEEPSEEK_API_KEY=sk-...
-OPENAI_API_KEY=sk-...
+# OPENAI_API_KEY is configured via the deployment secret store.
 ```
 
 - **Primary** : Ollama (local)
@@ -218,8 +218,8 @@ Pour la production sur Render :
 ```bash
 A11_LLM_PROVIDER=openai
 A11_LLM_FALLBACK_PROVIDER=groq
-OPENAI_API_KEY=sk-...
-GROQ_API_KEY=gsk_...
+# OPENAI_API_KEY is configured via the deployment secret store.
+# GROQ_API_KEY is configured via the deployment secret store.
 ```
 
 Cette configuration offre :

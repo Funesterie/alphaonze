@@ -32,6 +32,7 @@ const path = require('node:path');
 const { Router } = require('express');
 
 const ALLOWED_SECTIONS = ['nindo', 'nindo2', 'nindo3', 'identite', 'ambition'];
+const IMMUTABLE_SECTIONS = new Set(['nindo2']);
 const MAX_NINDO_COUNT = 3;
 const MAX_CONTENT_LENGTH = 2000;
 const MIN_REFERENCE_LENGTH = 10;
@@ -109,6 +110,12 @@ function logEvolution(entry) {
   fs.writeFileSync(EVOLUTION_LOG_PATH, JSON.stringify(log, null, 2), 'utf-8');
 }
 
+function replaceCompactLine(prompt, label, content) {
+  const pattern = new RegExp(`^${label}\\s*:\\s*.*$`, 'm');
+  if (!pattern.test(prompt)) return prompt;
+  return prompt.replace(pattern, `${label} : ${content.trim()}`);
+}
+
 function createSelfRewriteRouter({ verifyJWT }) {
   const router = Router();
 
@@ -157,15 +164,22 @@ function createSelfRewriteRouter({ verifyJWT }) {
     if (!section || typeof section !== 'string') {
       return res.status(400).json({ error: 'section manquante ou invalide' });
     }
-    if (!ALLOWED_SECTIONS.includes(section.toLowerCase())) {
+    const sectionKey = section.toLowerCase();
+    if (!ALLOWED_SECTIONS.includes(sectionKey)) {
       return res.status(403).json({
         error: `Section "${section}" non autorisée`,
         allowed: ALLOWED_SECTIONS,
       });
     }
+    if (IMMUTABLE_SECTIONS.has(sectionKey)) {
+      return res.status(403).json({
+        error: 'section_immutable',
+        section,
+        message: `Section "${section}" immuable — aucune modification effectuée.`,
+      });
+    }
 
     // Vérifier la limite de 3 Nindo
-    const sectionKey = section.toLowerCase();
     if (sectionKey.startsWith('nindo')) {
       try {
         const currentPrompt = fs.existsSync(PROMPT_PATH)
@@ -223,25 +237,31 @@ function createSelfRewriteRouter({ verifyJWT }) {
 
       if (sectionKey === 'nindo') {
         // Remplace le contenu du Nindo principal
-        newPrompt = currentPrompt.replace(
-          /(# Nindo\n)([\s\S]*?)(\n#|\n\nLimites|\n\nCapacité|\n\nSi la demande)/,
-          `$1${content.trim()}\n$3`
-        );
-      } else if (sectionKey === 'nindo2' || sectionKey === 'nindo3') {
-        const label = sectionKey === 'nindo2' ? 'Nindo2' : 'Nindo3';
-        const sectionHeader = `# ${label}`;
-        if (currentPrompt.includes(sectionHeader)) {
-          // Remplace le Nindo existant
+        newPrompt = replaceCompactLine(currentPrompt, 'Nindo', content);
+        if (newPrompt === currentPrompt) {
           newPrompt = currentPrompt.replace(
-            new RegExp(`(# ${label}\\n)([\\s\\S]*?)(\\n#|\\n\\nLimites|\\n\\nCapacité|\\n\\nSi la demande|$)`),
+            /(# Nindo\n)([\s\S]*?)(\n#|\n\nLimites|\n\nCapacité|\n\nSi la demande)/,
             `$1${content.trim()}\n$3`
           );
-        } else {
-          // Ajoute le nouveau Nindo avant "Limites:"
-          newPrompt = currentPrompt.replace(
-            /(\nLimites:)/,
-            `\n${sectionHeader}\n${content.trim()}\n$1`
-          );
+        }
+      } else if (sectionKey === 'nindo3') {
+        const label = 'Nindo3';
+        const sectionHeader = `# ${label}`;
+        newPrompt = replaceCompactLine(currentPrompt, label, content);
+        if (newPrompt === currentPrompt) {
+          if (currentPrompt.includes(sectionHeader)) {
+            // Remplace le Nindo existant
+            newPrompt = currentPrompt.replace(
+              new RegExp(`(# ${label}\\n)([\\s\\S]*?)(\\n#|\\n\\nLimites|\\n\\nCapacité|\\n\\nSi la demande|$)`),
+              `$1${content.trim()}\n$3`
+            );
+          } else {
+            // Ajoute le nouveau Nindo avant "Limites:"
+            newPrompt = currentPrompt.replace(
+              /(\nLimites:)/,
+              `\n${sectionHeader}\n${content.trim()}\n$1`
+            );
+          }
         }
       } else if (sectionKey === 'identite' || sectionKey === 'ambition') {
         // Remplace la ligne "Mon ambition : ..."

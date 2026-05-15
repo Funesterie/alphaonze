@@ -67,7 +67,7 @@ Key variables:
 - LLM_ROUTER_URL=https://cerbere.example.com
 - LOCAL_LLM_URL=https://llm.example.com
 - A11_ALLOW_PUBLIC_TUNNEL_LLM=1
-- OPENAI_API_KEY=...
+# OPENAI_API_KEY is configured via the deployment secret store.
 - TTS_BASE_URL=... (optional, for externalized TTS)
 
 Routing behavior:

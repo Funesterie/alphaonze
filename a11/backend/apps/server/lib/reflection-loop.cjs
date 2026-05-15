@@ -18,13 +18,13 @@ async function generateWithChainOfThought(prompt, options = {}) {
   const steps = [];
 
   // Étape 1 : Planification
-  const planningPrompt = `Tu es un assistant qui planifie sa réponse avant de répondre.
+  const planningPrompt = `Je suis un assistant qui planifie ma réponse avant de répondre.
 
 Question : ${prompt}
 
 Décompose cette question en étapes de raisonnement. Liste les étapes nécessaires pour répondre correctement.
 
-Réponds UNIQUEMENT avec les étapes, une par ligne, préfixées par un numéro :`;
+Je réponds UNIQUEMENT avec les étapes, une par ligne, préfixées par un numéro :`;
 
   try {
     const planningResponse = await callLLM(ollamaBase, model, planningPrompt);
@@ -95,13 +95,13 @@ async function generateWithTreeOfThought(prompt, options = {}) {
   const branches = [];
 
   // Générer plusieurs approches différentes
-  const approachesPrompt = `Tu es un assistant qui explore plusieurs approches pour répondre à une question.
+  const approachesPrompt = `Je suis un assistant qui explore plusieurs approches avant de répondre à une question.
 
 Question : ${prompt}
 
 Propose ${numBranches} approches différentes pour répondre à cette question. Pour chaque approche, donne un titre court.
 
-Réponds UNIQUEMENT avec les approches, une par ligne, préfixées par un numéro :`;
+Je réponds UNIQUEMENT avec les approches, une par ligne, préfixées par un numéro :`;
 
   try {
     const approachesResponse = await callLLM(ollamaBase, model, approachesPrompt);
@@ -157,13 +157,13 @@ async function verifySelfCorrect(prompt, response, options = {}) {
   const ollamaBase = options.ollamaBase || process.env.OLLAMA_BASE || 'http://127.0.0.1:11434';
   const model = options.model || process.env.A11_REASONING_MODEL || process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b';
 
-  const verificationPrompt = `Tu es un vérificateur critique qui détecte les erreurs et les incohérences.
+  const verificationPrompt = `Je suis un vérificateur critique: je détecte les erreurs et les incohérences.
 
 Question : ${prompt}
 
 Réponse proposée : ${response}
 
-Analyse cette réponse et réponds en JSON avec ce format :
+J'analyse cette réponse et je réponds en JSON avec ce format :
 {
   "isCorrect": true/false,
   "issues": ["liste des problèmes détectés"],

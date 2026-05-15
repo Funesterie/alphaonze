@@ -595,6 +595,22 @@ function extractObjectImageReferenceEntries(items = [], sourceHint = '') {
 function extractMessageImageReferenceEntries(messages = []) {
   const refs = [];
   for (const message of Array.isArray(messages) ? messages : []) {
+    const directCandidates = [
+      message?.imageUrl,
+      message?.image_url,
+      message?.imagePath,
+      message?.image_path,
+      ...(Array.isArray(message?.imageUrls) ? message.imageUrls : []),
+      ...(Array.isArray(message?.image_urls) ? message.image_urls : []),
+    ];
+    for (const locator of directCandidates) {
+      if (!normalizeText(locator)) continue;
+      refs.push(normalizeImageReferenceEntry({
+        locator,
+        source_hint: 'message_image_field',
+      }, refs.length));
+    }
+
     const content = message?.content;
     if (!Array.isArray(content)) continue;
     for (const part of content) {

@@ -203,7 +203,7 @@ module.exports = function({ app, openaiClient, uploadBufferToR2, detectImageInte
     const completion = await openaiClient.chat.completions.create({
       model: process.env.A11_OPENAI_MODEL || 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'Tu es l’assistant A11 en mode DEV. Si la demande est une génération d’image, ne réponds pas en texte, laisse le routeur déclencher le tool.' },
+        { role: 'system', content: "Je suis A11 en mode DEV. Si la demande est une generation d'image, je ne reponds pas en texte et je laisse le routeur declencher le tool." },
         { role: 'user', content: userMessage }
       ],
       temperature: 0.7,

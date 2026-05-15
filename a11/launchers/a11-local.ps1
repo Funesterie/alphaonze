@@ -1325,7 +1325,7 @@ function Build-ServiceDefinitions {
       A11_OLLAMA_PRIMARY_MODEL   = $ollamaPrimaryModel
       A11_OLLAMA_FALLBACK_MODEL  = $ollamaFallbackModel
       A11_LLM_REQUEST_TIMEOUT_MS = '90000'
-      OPENAI_API_KEY             = ''
+      # OPENAI_API_KEY is configured via the deployment secret store.
       OPENAI_BASE_URL            = ''
       OPENAI_MODEL               = ''
     }
@@ -1435,7 +1435,7 @@ function Build-ServiceDefinitions {
     LOCAL_DEFAULT_MODEL                  = $ollamaPrimaryModel
     DEFAULT_MODEL                        = $ollamaPrimaryModel
     OPENAI_BASE_URL                      = $(if ($useRemoteProvider) { $openAiBaseUrl } else { '' })
-    OPENAI_API_KEY                       = $(if ($useRemoteProvider) { $openAiApiKey } else { '' })
+    # OPENAI_API_KEY is configured via the deployment secret store.
     OPENAI_MODEL                         = $(if ($useRemoteProvider) { $openAiModel } else { '' })
     A11_OPENAI_MODEL                     = $(if ($useRemoteProvider) { $openAiModel } else { '' })
     A11_REMOTE_PROVIDER_ID               = $remoteProviderId

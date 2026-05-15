@@ -15,6 +15,12 @@ type Props = {
   onClose: () => void;
 };
 
+function displayConversationLabel(value?: string) {
+  const raw = String(value || "Discussion").trim() || "Discussion";
+  if (/qflush|vsix|mcp|neo4j|debug|diagnostic|port/i.test(raw)) return "Discussion";
+  return raw;
+}
+
 export const HistoryDrawer: React.FC<Props> = ({ open, onClose }) => {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,7 +32,7 @@ export const HistoryDrawer: React.FC<Props> = ({ open, onClose }) => {
     (async () => {
       const token = getAuthToken();
       if (!token) {
-        setError("A11_JWT_Missing");
+        setError("Session expiree. Reconnecte-toi pour revoir l'historique.");
         return;
       }
       setLoading(true);
@@ -82,7 +88,7 @@ export const HistoryDrawer: React.FC<Props> = ({ open, onClose }) => {
           <div className="flex flex-col">
             <span className="text-sm font-semibold">Historique des conversations</span>
             <span className="text-xs text-slate-400">
-              Chargé depuis a11_memory (JSONL)
+              Historique lie a ton compte.
             </span>
           </div>
           <button
@@ -96,12 +102,12 @@ export const HistoryDrawer: React.FC<Props> = ({ open, onClose }) => {
         {/* Filtre */}
         <div className="p-3 border-b border-slate-800 space-y-2">
           <label className="text-xs text-slate-400">
-            Filtrer par <code>conversationId</code>
+            Filtrer par nom de discussion ou projet
           </label>
           <input
             value={filterConvId}
             onChange={(e) => setFilterConvId(e.target.value)}
-            placeholder="ex: VSIX, Funesterie, Debug QFlush..."
+            placeholder="ex: Funesterie, facture, rendez-vous..."
             className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs focus:outline-none focus:ring focus:ring-amber-500/40"
           />
         </div>
@@ -127,7 +133,7 @@ export const HistoryDrawer: React.FC<Props> = ({ open, onClose }) => {
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="font-semibold text-amber-400 text-xs">
-                  {convId}
+                  {displayConversationLabel(convId)}
                 </span>
                 <span className="text-[10px] text-slate-500">
                   {list.length} entrées

@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasFullAccess, isFullAccessEmail } = require('../src/auth/full-access.cjs');
+
 /**
  * Middleware pour vérifier l'abonnement actif
  * Bloque l'accès aux fonctionnalités premium (génération image/vidéo) pour les non-abonnés
@@ -18,7 +20,7 @@ function createSubscriptionMiddleware(db) {
       const userRole = req.user?.role;
 
       // Les admins ont toujours accès
-      if (userRole === 'admin') {
+      if (userRole === 'admin' || hasFullAccess(req.user)) {
         return next();
       }
 
@@ -31,11 +33,21 @@ function createSubscriptionMiddleware(db) {
 
       // Vérifier l'abonnement dans la DB
       const result = await db.query(
-        'SELECT subscription_active, subscription_end_date FROM users WHERE id = $1',
+        'SELECT email, subscription_active, subscription_end_date FROM users WHERE id = $1',
         [userId]
       );
 
       const user = result.rows[0];
+
+      if (user && isFullAccessEmail(user.email)) {
+        if (!user.subscription_active) {
+          await db.query(
+            'UPDATE users SET subscription_active=true, subscription_end_date=NULL, updated_at=NOW() WHERE id=$1',
+            [userId]
+          );
+        }
+        return next();
+      }
 
       if (!user) {
         return res.status(404).json({
@@ -48,7 +60,7 @@ function createSubscriptionMiddleware(db) {
       if (!user.subscription_active) {
         return res.status(403).json({
           error: 'Abonnement requis',
-          message: 'Cette fonctionnalité nécessite un abonnement actif (2,99€/mois)',
+          message: 'Cette fonctionnalite necessite A11 Studio actif ou des credits de creation disponibles.',
           code: 'SUBSCRIPTION_REQUIRED',
           subscriptionUrl: '/api/subscription/create-checkout',
         });

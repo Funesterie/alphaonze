@@ -29,9 +29,9 @@ Ajouter dans `.env.local` :
 
 ```bash
 # Stripe Configuration
-STRIPE_SECRET_KEY=sk_test_...                    # Clé secrète Stripe (test ou prod)
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_...                        # ID du prix créé dans Stripe Dashboard
-STRIPE_WEBHOOK_SECRET=whsec_...                  # Secret du webhook Stripe
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 STRIPE_SUCCESS_URL=https://funesterie.pro/subscription/success
 STRIPE_CANCEL_URL=https://funesterie.pro/subscription/cancel
 STRIPE_PORTAL_RETURN_URL=https://funesterie.pro/account

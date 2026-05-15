@@ -36,10 +36,10 @@ https://dashboard.stripe.com/apikeys
 
 ```bash
 # Mode Test (recommandé pour commencer)
-STRIPE_SECRET_KEY=sk_test_VOTRE_CLE_SECRETE_ICI
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 
 # Ou Mode Production
-STRIPE_SECRET_KEY=sk_live_VOTRE_CLE_SECRETE_ICI
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 ```
 
 ## 🎯 Récupérer toutes les clés nécessaires
@@ -94,13 +94,13 @@ Si vous n'avez pas encore créé de webhook :
 # ============================================================
 
 # Clé secrète (BACKEND UNIQUEMENT - NE JAMAIS EXPOSER)
-STRIPE_SECRET_KEY=sk_test_VOTRE_CLE_SECRETE
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 
 # ID du prix (produit à 2,99€/mois)
 STRIPE_PRICE_ID=price_VOTRE_PRICE_ID
 
 # Secret du webhook
-STRIPE_WEBHOOK_SECRET=whsec_VOTRE_WEBHOOK_SECRET
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # URLs de redirection
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success

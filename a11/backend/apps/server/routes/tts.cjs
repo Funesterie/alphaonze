@@ -2,8 +2,22 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { spawn, spawnSync } = require('node:child_process');
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
 const buildTtsReadableText = require('../src/tts/build-tts-readable-text.cjs');
+const { extractRequestAuthToken } = require('../src/middleware/jwt-auth.cjs');
+const {
+  AUDIO_EXTENSIONS,
+  AUDIO_MIME_TYPES,
+  compareAudioBuffers,
+  deleteVoiceReference,
+  findVoiceReference,
+  isAllowedAudioUpload,
+  listLibraryVoiceReferences,
+  listVoiceReferences,
+  resolveVoiceReferenceForRequest,
+  saveVoiceReference,
+} = require('../src/tts/voice-reference-store.cjs');
 const {
   DEFAULT_TTS_MODEL_NAME,
   firstExistingPath,
@@ -16,6 +30,42 @@ const {
 } = require('../lib/tts-paths.cjs');
 
 const commandAvailabilityCache = new Map();
+let configuredVerifyJWT = null;
+
+function configureTtsRouter(options = {}) {
+  if (typeof options.verifyJWT === 'function') {
+    configuredVerifyJWT = options.verifyJWT;
+  }
+  return router;
+}
+
+function runOptionalJwt(req, res, next) {
+  if (!configuredVerifyJWT || !extractRequestAuthToken(req)) return next();
+  return configuredVerifyJWT(req, res, next);
+}
+
+function requireJwt(req, res, next) {
+  if (!configuredVerifyJWT) {
+    return res.status(503).json({
+      ok: false,
+      error: 'auth_unavailable',
+      message: 'Authentification indisponible sur ce runtime TTS.',
+    });
+  }
+  return configuredVerifyJWT(req, res, next);
+}
+
+const voiceReferenceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+    files: 2,
+  },
+  fileFilter(_req, file, cb) {
+    if (isAllowedAudioUpload(file)) return cb(null, true);
+    return cb(new Error(`Type de fichier audio non supporte: ${file.mimetype || 'unknown'}`));
+  },
+});
 
 function envBool(name, fallback = false) {
   const raw = String(process.env[name] || '').trim().toLowerCase();
@@ -27,6 +77,7 @@ function shouldPreferHttpTts() {
   const explicit = String(process.env.ENABLE_PIPER_HTTP || '').trim();
   if (explicit) return envBool('ENABLE_PIPER_HTTP', false);
   return Boolean(String(
+    process.env.A11_VOICE_MODULE_URL ||
     process.env.TTS_URL ||
     process.env.TTS_HOST ||
     process.env.TTS_BASE_URL ||
@@ -67,6 +118,7 @@ function getUrlOriginWithFallback(url, fallbackPort) {
 function getLocalTtsConfig() {
   const fallback = new URL('http://127.0.0.1:5002');
   const requestUrl =
+    parseHttpUrl(process.env.A11_VOICE_MODULE_URL, null) ||
     parseHttpUrl(process.env.TTS_URL, null) ||
     parseHttpUrl(process.env.TTS_HOST, null) ||
     parseHttpUrl(process.env.TTS_BASE_URL, null) ||
@@ -106,9 +158,52 @@ function getRemoteTtsBaseUrls(ttsConfig = getLocalTtsConfig()) {
   return Array.from(new Set(candidates));
 }
 
+function getRequestedVoiceReferenceId(req = {}) {
+  return String(
+    req?.body?.voiceReferenceId
+    || req?.body?.voiceRefId
+    || req?.body?.referenceId
+    || ''
+  ).trim();
+}
+
+function parseOptionalBoolean(value, fallback = null) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on', 'enable', 'enabled'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off', 'disable', 'disabled'].includes(raw)) return false;
+  return fallback;
+}
+
+function shouldTryVoiceConversion(req = {}, vocalMode = 'speech') {
+  const body = req?.body || {};
+  const explicitBody = parseOptionalBoolean(
+    body.voiceConversion ?? body.convertVoice ?? body.morphVoice ?? body.rvc,
+    null
+  );
+  if (explicitBody === false) return false;
+
+  const explicitEnv = parseOptionalBoolean(process.env.A11_VOICE_CONVERSION_ENABLED, null);
+  if (explicitEnv === false) return false;
+
+  const hasVoiceModule = Boolean(String(
+    process.env.A11_VOICE_MODULE_URL
+    || process.env.A11_VOICE_CONVERSION_URL
+    || process.env.TTS_URL
+    || process.env.TTS_BASE_URL
+    || ''
+  ).trim());
+  if (!hasVoiceModule) return false;
+  if (explicitBody === true || explicitEnv === true) return true;
+
+  const requestedId = getRequestedVoiceReferenceId(req);
+  return vocalMode === 'adaptive' || vocalMode === 'sing' || Boolean(requestedId);
+}
+
 function ensurePublicTtsDir() {
   const ttsDir = getPublicTtsDir();
   fs.mkdirSync(ttsDir, { recursive: true });
+  pruneOldTtsAssets();
   return ttsDir;
 }
 
@@ -122,6 +217,16 @@ function resolvePiperBinary() {
   ].filter(Boolean);
 
   for (const candidate of candidates) {
+    const normalizedCandidate = process.platform !== 'win32' && /\.exe$/i.test(candidate)
+      ? candidate.replace(/\.exe$/i, '')
+      : candidate;
+    if (normalizedCandidate !== candidate && fs.existsSync(path.resolve(normalizedCandidate))) {
+      const resolved = path.resolve(normalizedCandidate);
+      if (fs.statSync(resolved).isFile()) {
+        return { command: resolved, cwd: path.dirname(resolved) };
+      }
+    }
+
     // Command name on PATH (for example "piper")
     if (!candidate.includes(path.sep) && !candidate.includes('/')) {
       if (isCommandAvailable(candidate)) {
@@ -131,7 +236,35 @@ function resolvePiperBinary() {
     }
 
     const resolved = path.resolve(candidate);
-    if (fs.existsSync(resolved)) {
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+      return { command: resolved, cwd: path.dirname(resolved) };
+    }
+  }
+
+  return null;
+}
+
+function resolveEspeakBinary() {
+  const backendRoot = getBackendRoot();
+  const configured = String(process.env.ESPEAK_BIN || process.env.ESPEAK_PATH || '').trim();
+  const candidates = [
+    configured,
+    '/usr/bin/espeak-ng',
+    '/usr/local/bin/espeak-ng',
+    'espeak-ng',
+    'espeak',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (!candidate.includes(path.sep) && !candidate.includes('/')) {
+      if (isCommandAvailable(candidate)) {
+        return { command: candidate, cwd: backendRoot };
+      }
+      continue;
+    }
+
+    const resolved = path.resolve(candidate);
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
       return { command: resolved, cwd: path.dirname(resolved) };
     }
   }
@@ -182,6 +315,45 @@ function resolvePiperModel(requestedModel) {
   }
 
   return null;
+}
+
+const LANGUAGE_TTS_VOICES = Object.freeze({
+  fr: DEFAULT_TTS_MODEL_NAME,
+  en: 'en_US-lessac-medium',
+  it: 'it_IT-paola-medium',
+  es: 'es_ES-sharvard-medium',
+  de: 'de_DE-thorsten-medium',
+});
+
+function normalizeTtsLanguage(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.startsWith('fr')) return 'fr';
+  if (raw.startsWith('en')) return 'en';
+  if (raw.startsWith('it')) return 'it';
+  if (raw.startsWith('es')) return 'es';
+  if (raw.startsWith('de')) return 'de';
+  return '';
+}
+
+function resolveVoiceForRequest(body = {}) {
+  const explicit = String(body?.voice || body?.model || '').trim();
+  if (explicit) return explicit;
+  const shouldFollowLanguage = parseOptionalBoolean(
+    body?.forceLanguageVoice
+    ?? body?.ttsForceLanguageVoice
+    ?? process.env.A11_TTS_FORCE_LANGUAGE_VOICE,
+    false
+  ) === true;
+  if (!shouldFollowLanguage) return '';
+  const language = normalizeTtsLanguage(
+    body?.language
+    || body?.lang
+    || body?.locale
+    || body?.speechLanguage
+    || body?.speech_language
+  );
+  return language ? LANGUAGE_TTS_VOICES[language] : '';
 }
 
 function ensurePiperModelSidecars(modelPath) {
@@ -267,16 +439,9 @@ function parseJsonMaybe(value) {
   }
 }
 
-function isLoopbackHostname(hostname = '') {
-  const normalized = String(hostname || '').trim().toLowerCase();
-  return normalized === 'localhost'
-    || normalized === '127.0.0.1'
-    || normalized === '::1'
-    || normalized === '[::1]';
-}
-
 function isTtsOutPath(pathname = '') {
-  return String(pathname || '').replace(/\\/g, '/').startsWith('/out/');
+  const normalized = String(pathname || '').replace(/\\/g, '/');
+  return normalized.startsWith('/out/') || normalized.startsWith('/api/tts/out/');
 }
 
 function buildBackendTtsOutPath(value = '') {
@@ -294,18 +459,310 @@ function buildBackendTtsOutPath(value = '') {
   return `/api/tts/out/${encodeURIComponent(filename)}`;
 }
 
+function resolveLocalTtsAssetPath(value = '') {
+  const normalized = buildBackendTtsOutPath(value);
+  if (!normalized) return null;
+  const filename = path.posix.basename(decodeURIComponent(new URL(normalized, 'http://127.0.0.1').pathname));
+  return [
+    path.join(getPublicTtsDir(), filename),
+    path.join(getCanonicalTtsDir(), 'out', filename),
+  ].find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+async function loadTtsAudioBuffer(value = '', options = {}) {
+  const localPath = resolveLocalTtsAssetPath(value);
+  if (localPath) {
+    const buffer = fs.readFileSync(localPath);
+    if (options.consume === true) {
+      deleteGeneratedTtsAsset(localPath);
+    }
+    return {
+      buffer,
+      source: 'local',
+      contentType: contentTypeForTtsAsset(localPath),
+    };
+  }
+
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  let fetchUrl = '';
+  try {
+    const parsed = new URL(raw, 'http://127.0.0.1');
+    if (parsed.pathname.startsWith('/api/tts/out/')) {
+      const filename = path.posix.basename(decodeURIComponent(parsed.pathname));
+      const ttsConfig = getLocalTtsConfig();
+      fetchUrl = `${String(ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '')}/out/${encodeURIComponent(filename)}${options.consume === true ? '?consume=1' : ''}`;
+    } else if (parsed.pathname.startsWith('/out/')) {
+      if (options.consume === true) {
+        parsed.searchParams.set('consume', '1');
+      }
+      fetchUrl = parsed.toString();
+    } else if (/^https?:$/i.test(parsed.protocol)) {
+      fetchUrl = parsed.toString();
+    }
+  } catch {
+    fetchUrl = '';
+  }
+
+  if (!fetchUrl) return null;
+  const response = await fetch(fetchUrl, {
+    method: 'GET',
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) return null;
+  return {
+    buffer: Buffer.from(await response.arrayBuffer()),
+    source: 'remote',
+    contentType: String(response.headers?.get?.('content-type') || 'audio/wav'),
+  };
+}
+
+function normalizeVocalMode(body = {}) {
+  const raw = String(body?.vocalMode || body?.voiceMode || body?.mode || '').trim().toLowerCase();
+  if (body?.sing === true || body?.singMode === true || raw === 'sing' || raw === 'chant' || raw === 'song') {
+    return 'sing';
+  }
+  if (raw === 'adaptive' || raw === 'adapt' || raw === 'reference') return 'adaptive';
+  return 'speech';
+}
+
+function shapeTextForVocalMode(text = '', vocalMode = 'speech') {
+  const raw = String(text || '').trim();
+  if (!raw) return raw;
+  if (vocalMode !== 'sing') return raw;
+  return raw
+    .replace(/([.!?])\s+/g, '$1\n')
+    .replace(/,\s+/g, ', ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+async function enrichTtsPayloadWithAudioModule(payload, req, vocalMode) {
+  const user = req?.user || null;
+  const requestedId = getRequestedVoiceReferenceId(req);
+  const reference = resolveVoiceReferenceForRequest({
+    user,
+    requestedId,
+    preferredLabel: getPreferredVoiceReferenceLabel(req),
+  });
+
+  const baseModule = {
+    ok: true,
+    vocalMode,
+    reference: reference
+      ? {
+          id: reference.id,
+          label: reference.label,
+          scope: reference.scope,
+          analysis: reference.analysis || null,
+        }
+      : null,
+    comparison: null,
+  };
+
+  if (requestedId && !reference) {
+    return {
+      ...payload,
+      audioModule: {
+        ...baseModule,
+        ok: false,
+        error: 'voice_reference_unavailable',
+        message: 'Reference vocale introuvable ou non autorisee.',
+      },
+    };
+  }
+
+  if (!reference?.filePath || !fs.existsSync(reference.filePath)) {
+    return {
+      ...payload,
+      audioModule: {
+        ...baseModule,
+        note: 'Aucune reference vocale active pour comparer la sortie.',
+      },
+    };
+  }
+
+  const audioUrl = String(payload?.audioUrl || payload?.audio_url || '').trim();
+  if (!audioUrl) {
+    return {
+      ...payload,
+      audioModule: {
+        ...baseModule,
+        ok: false,
+        error: 'generated_audio_missing',
+      },
+    };
+  }
+
+  try {
+    const generated = await loadTtsAudioBuffer(audioUrl);
+    if (!generated?.buffer?.length) {
+      return {
+        ...payload,
+        audioModule: {
+          ...baseModule,
+          ok: false,
+          error: 'generated_audio_unavailable',
+        },
+      };
+    }
+    const referenceBuffer = fs.readFileSync(reference.filePath);
+    const comparison = compareAudioBuffers({
+      generatedBuffer: generated.buffer,
+      referenceBuffer,
+      generatedFile: { mimetype: generated.contentType || 'audio/wav' },
+      referenceFile: { mimetype: reference.mimeType || 'audio/wav' },
+    });
+
+    return {
+      ...payload,
+      audioModule: {
+        ...baseModule,
+        comparison,
+      },
+    };
+  } catch (error_) {
+    return {
+      ...payload,
+      audioModule: {
+        ...baseModule,
+        ok: false,
+        error: 'comparison_failed',
+        message: String(error_?.message || error_),
+      },
+    };
+  }
+}
+
+async function requestVoiceConversionWithModule(payload, req, vocalMode) {
+  if (!shouldTryVoiceConversion(req, vocalMode)) return payload;
+
+  const user = req?.user || null;
+  const requestedId = getRequestedVoiceReferenceId(req);
+  const reference = resolveVoiceReferenceForRequest({
+    user,
+    requestedId,
+    preferredLabel: getPreferredVoiceReferenceLabel(req),
+  });
+  const audioUrl = String(payload?.audioUrl || payload?.audio_url || '').trim();
+
+  if (!audioUrl || !reference?.filePath || !fs.existsSync(reference.filePath)) {
+    return {
+      ...payload,
+      voiceConversion: {
+        ok: false,
+        skipped: true,
+        reason: !audioUrl ? 'generated_audio_missing' : 'voice_reference_missing',
+      },
+    };
+  }
+
+  try {
+    const generated = await loadTtsAudioBuffer(audioUrl);
+    if (!generated?.buffer?.length) {
+      return {
+        ...payload,
+        voiceConversion: {
+          ok: false,
+          skipped: true,
+          reason: 'generated_audio_unavailable',
+        },
+      };
+    }
+
+    const referenceBuffer = fs.readFileSync(reference.filePath);
+    const buildConversionForm = () => {
+      const generatedBlob = new Blob([generated.buffer], { type: generated.contentType || 'audio/wav' });
+      const referenceBlob = new Blob([referenceBuffer], { type: reference.mimeType || 'audio/wav' });
+      const form = new FormData();
+      form.append('generated', generatedBlob, 'generated.wav');
+      form.append('reference', referenceBlob, reference.originalName || 'reference.wav');
+      form.append('mode', vocalMode || 'adaptive');
+      form.append('engine', String(req?.body?.voiceConversionEngine || req?.body?.conversionEngine || 'auto').trim() || 'auto');
+      if (req?.body?.voiceConversionStrength !== undefined) {
+        form.append('strength', String(req.body.voiceConversionStrength));
+      }
+      if (req?.body?.f0Shift !== undefined || req?.body?.voiceF0Shift !== undefined) {
+        form.append('f0Shift', String(req?.body?.f0Shift ?? req?.body?.voiceF0Shift));
+      }
+      return form;
+    };
+
+    const ttsConfig = getLocalTtsConfig();
+    const conversionBaseUrls = getRemoteTtsBaseUrls(ttsConfig);
+    let lastError = null;
+    for (const baseUrl of conversionBaseUrls) {
+      try {
+        const response = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/convert`, {
+          method: 'POST',
+          body: buildConversionForm(),
+          signal: AbortSignal.timeout(Number(process.env.A11_VOICE_CONVERSION_TIMEOUT_MS || 90000) || 90000),
+        });
+        const textBody = await response.text();
+        const parsed = parseJsonMaybe(textBody);
+        if (!response.ok || parsed?.ok === false) {
+          throw new Error(parsed?.detail || parsed?.message || parsed?.error || `voice_conversion_http_${response.status}`);
+        }
+        const convertedUrl = normalizeRemoteAssetUrl(baseUrl, parsed?.audio_url || parsed?.audioUrl || parsed?.url || '');
+        if (!convertedUrl) throw new Error('voice_conversion_missing_audio_url');
+        await loadTtsAudioBuffer(audioUrl, { consume: true }).catch(() => null);
+        return {
+          ...payload,
+          originalAudioUrl: audioUrl,
+          original_audio_url: audioUrl,
+          audioUrl: convertedUrl,
+          audio_url: convertedUrl,
+          via: `${payload?.via || payload?.provider || 'tts'}+voice-convert`,
+          voiceConversion: {
+            ok: true,
+            module: parsed?.module || 'a11-voice-module',
+            provider: parsed?.provider || parsed?.engine || 'voice-module',
+            engine: parsed?.engine || null,
+            strength: parsed?.strength ?? null,
+            durationMs: parsed?.duration_ms ?? parsed?.durationMs ?? null,
+            reference: {
+              id: reference.id,
+              label: reference.label,
+              scope: reference.scope,
+            },
+          },
+        };
+      } catch (error_) {
+        lastError = error_;
+      }
+    }
+
+    throw lastError || new Error('voice_conversion_unreachable');
+  } catch (error_) {
+    return {
+      ...payload,
+      voiceConversion: {
+        ok: false,
+        error: 'voice_conversion_failed',
+        message: String(error_?.message || error_).slice(0, 500),
+      },
+    };
+  }
+}
+
+async function finalizeTtsPayload(payload, req, vocalMode) {
+  const converted = await requestVoiceConversionWithModule(payload, req, vocalMode);
+  return enrichTtsPayloadWithAudioModule(converted, req, vocalMode);
+}
+
 function shouldProxyTtsAsset(baseUrl = '', value = '') {
   const assetUrl = String(value || '').trim();
   if (!assetUrl) return false;
 
   try {
     const parsed = new URL(assetUrl);
-    return isLoopbackHostname(parsed.hostname) && isTtsOutPath(parsed.pathname);
+    return isTtsOutPath(parsed.pathname);
   } catch {}
 
   try {
     const parsedBase = new URL(baseUrl);
-    return isLoopbackHostname(parsedBase.hostname) && isTtsOutPath(new URL(assetUrl, parsedBase).pathname);
+    return isTtsOutPath(new URL(assetUrl, parsedBase).pathname);
   } catch {
     return false;
   }
@@ -378,6 +835,199 @@ async function requestRemoteTts(payload) {
   }
 
   throw lastError;
+}
+
+function getOpenAiTtsApiKey() {
+  const fileCandidates = [
+    process.env.OPENAI_TTS_API_KEY_FILE,
+    process.env.A11_OPENAI_TTS_API_KEY_FILE,
+    '/app/runtime/secrets/openai_tts_key',
+  ].filter(Boolean);
+  for (const candidate of fileCandidates) {
+    try {
+      const value = fs.readFileSync(path.resolve(candidate), 'utf8').trim();
+      if (value) return value;
+    } catch {
+      // Secret file is optional.
+    }
+  }
+  return String(
+    process.env.OPENAI_TTS_API_KEY
+    || process.env.A11_OPENAI_TTS_API_KEY
+    || process.env.OPENAI_API_KEY
+    || process.env.A11_OPENAI_API_KEY
+    || ''
+  ).trim();
+}
+
+function getRequestedTtsProvider(body = {}) {
+  return String(body?.ttsProvider || body?.provider || '').trim().toLowerCase();
+}
+
+function shouldTryOpenAiTts(body = {}) {
+  const disabled = String(process.env.A11_OPENAI_TTS_ENABLED || process.env.OPENAI_TTS_ENABLED || '').trim().toLowerCase();
+  if (disabled === '0' || disabled === 'false' || disabled === 'off') return false;
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider === 'piper' || requestedProvider === 'local' || requestedProvider === 'espeak') return false;
+  return Boolean(getOpenAiTtsApiKey());
+}
+
+function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
+  const provider = getRequestedTtsProvider(body);
+  if (provider === 'openai') return shouldTryOpenAiTts(body);
+  if (provider === 'piper' || provider === 'local' || provider === 'espeak') return false;
+
+  const explicit = String(process.env.A11_OPENAI_TTS_FIRST || process.env.OPENAI_TTS_FIRST || '').trim().toLowerCase();
+  if (explicit === '1' || explicit === 'true' || explicit === 'yes' || explicit === 'on') {
+    return shouldTryOpenAiTts(body);
+  }
+  if (explicit === '0' || explicit === 'false' || explicit === 'no' || explicit === 'off') {
+    return false;
+  }
+
+  const hasReference = Boolean(String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim());
+  return shouldTryOpenAiTts(body) && (vocalMode === 'adaptive' || vocalMode === 'sing' || hasReference);
+}
+
+function getOpenAiTtsBaseUrl() {
+  return String(
+    process.env.OPENAI_TTS_BASE_URL
+    || process.env.A11_OPENAI_TTS_BASE_URL
+    || 'https://api.openai.com/v1'
+  ).trim().replace(/\/$/, '');
+}
+
+function normalizeOpenAiTtsVoice(value = '', vocalMode = 'speech') {
+  const supported = new Set([
+    'alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx',
+    'nova', 'sage', 'shimmer', 'verse', 'marin', 'cedar',
+  ]);
+  const raw = String(value || '').trim().toLowerCase();
+  if (supported.has(raw)) return raw;
+  if (vocalMode === 'sing') return String(process.env.OPENAI_TTS_SING_VOICE || 'ballad').trim() || 'ballad';
+  return String(process.env.OPENAI_TTS_VOICE || process.env.A11_OPENAI_TTS_VOICE || 'coral').trim() || 'coral';
+}
+
+function normalizeTtsPersona(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'vivy' || raw === 'vivi') return 'vivy';
+  if (raw === 'kaen44' || raw === 'k44' || raw === 'kaen') return 'kaen44';
+  return 'a11';
+}
+
+function getTtsPersonaFromBody(body = {}, fallback = '') {
+  return normalizeTtsPersona(
+    body?.voicePersona
+    || body?.ttsPersona
+    || body?.persona
+    || body?.surface
+    || fallback
+  );
+}
+
+function getPreferredVoiceReferenceLabel(req = {}) {
+  const persona = getTtsPersonaFromBody(req?.body || {});
+  if (persona === 'vivy') return 'vivy';
+  if (persona === 'kaen44') return 'kaen44';
+  return '';
+}
+
+function buildOpenAiTtsInstructions({ vocalMode = 'speech', reference = null, persona = 'a11' } = {}) {
+  const normalizedPersona = normalizeTtsPersona(persona);
+  const base = normalizedPersona === 'vivy'
+    ? [
+        'Voix Vivy en francais naturel, musicale, douce, claire et proche, sans effet robotique.',
+        'Garde une couleur originale Funesterie et ne cherche pas a imiter une personne reelle.',
+      ]
+    : normalizedPersona === 'kaen44'
+      ? [
+          'Voix Kaen44 en francais naturel, calme, claire, proche, sans effet robotique.',
+          'Indique par le style vocal que la voix est synthetique et ne cherche pas a imiter une personne reelle.',
+        ]
+      : [
+          'Voix A11 en francais naturel, chaleureuse, claire, proche, sans effet robotique.',
+          'Indique par le style vocal que la voix est synthetique et ne cherche pas a imiter une personne reelle.',
+        ];
+  if (vocalMode === 'sing') {
+    base.push('Donne une prosodie melodique et chantonnee, avec rythme doux, sans surjouer.');
+  } else if (vocalMode === 'adaptive') {
+    base.push('Adapte le rythme et lintonation au texte, en gardant une presence stable.');
+  }
+  if (reference?.analysis?.ok) {
+    base.push('Garde un volume stable et une articulation comparable a la reference sonore selectionnee.');
+  }
+  return base.join(' ');
+}
+
+async function requestOpenAiTts(text, body = {}, options = {}) {
+  const apiKey = getOpenAiTtsApiKey();
+  if (!apiKey) throw new Error('openai_tts_key_missing');
+
+  const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
+  const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
+  const reference = resolveVoiceReferenceForRequest({
+    user: options.user || null,
+    requestedId: String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim(),
+    preferredLabel: persona === 'vivy' ? 'vivy' : persona === 'kaen44' ? 'kaen44' : '',
+  });
+  const model = String(
+    body?.ttsModel
+    || process.env.OPENAI_TTS_MODEL
+    || process.env.A11_OPENAI_TTS_MODEL
+    || 'gpt-4o-mini-tts'
+  ).trim();
+  const modelFallbacks = Array.from(new Set([
+    model,
+    'tts-1',
+  ].filter(Boolean)));
+  const voice = normalizeOpenAiTtsVoice(body?.openAiVoice || body?.ttsVoice || body?.voice, vocalMode);
+  let response = null;
+  let resolvedModel = modelFallbacks[0];
+  let lastStatus = null;
+  for (const candidateModel of modelFallbacks) {
+    response = await fetch(`${getOpenAiTtsBaseUrl()}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: candidateModel,
+        voice,
+        input: String(text || '').slice(0, 4096),
+        instructions: buildOpenAiTtsInstructions({ vocalMode, reference, persona }),
+        response_format: 'wav',
+      }),
+      signal: AbortSignal.timeout(Number(process.env.OPENAI_TTS_TIMEOUT_MS || 30000) || 30000),
+    });
+    if (response.ok) {
+      resolvedModel = candidateModel;
+      break;
+    }
+    lastStatus = response.status;
+    await response.arrayBuffer().catch(() => null);
+    response = null;
+  }
+
+  if (!response?.ok) {
+    throw new Error(`openai_tts_http_${lastStatus || 'failed'}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  if (!audioBuffer.length) throw new Error('openai_tts_empty_audio');
+  const ttsDir = ensurePublicTtsDir();
+  const outFileName = `tts-out-${Date.now()}-openai.wav`;
+  fs.writeFileSync(path.join(ttsDir, outFileName), audioBuffer);
+  const audioUrl = buildBackendTtsOutPath(`/out/${outFileName}`);
+  return {
+    success: true,
+    provider: 'openai',
+    model: resolvedModel,
+    voice,
+    persona,
+    audioUrl,
+    audio_url: audioUrl,
+  };
 }
 
 async function probeSinglePiperHttpHealth(baseUrl, enabled) {
@@ -583,7 +1233,7 @@ function spawnPiperLocal(text, model) {
         responded = true;
         if (code === 0) {
           if (fs.existsSync(outFile)) {
-            return resolve({ success: true, audioUrl: `/tts/${outFileName}` });
+            return resolve({ success: true, audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`) });
           }
           return reject(new Error(`tts_failed_no_file${stderr ? ': ' + stderr.trim().slice(0, 500) : ''}`));
         }
@@ -598,6 +1248,80 @@ function spawnPiperLocal(text, model) {
         return reject(new Error(`tts_spawn_error: ${String(err?.message)}${details ? ' :: ' + details.slice(0, 500) : ''}`));
       });
 
+    } catch (err) {
+      return reject(err);
+    }
+  });
+}
+
+function normalizeEspeakVoice(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw.includes('fr_fr') || raw.includes('siwis') || raw === 'fr') return 'fr-fr';
+  if (/^[a-z]{2}(?:[-_][a-z]{2})?$/i.test(raw)) return raw.replace('_', '-');
+  return 'fr-fr';
+}
+
+function spawnEspeakLocal(text, voice, options = {}) {
+  return new Promise((resolve, reject) => {
+    try {
+      const espeak = resolveEspeakBinary();
+      if (!espeak) {
+        return reject(new Error('espeak-ng binary not found (install espeak-ng or set ESPEAK_BIN)'));
+      }
+
+      const ttsDir = ensurePublicTtsDir();
+      const ts = Date.now();
+      const outFileName = `tts-out-${ts}-espeak.wav`;
+      const outFile = path.join(ttsDir, outFileName);
+      const vocalMode = normalizeVocalMode(options);
+      const speed = vocalMode === 'sing'
+        ? Number(process.env.TTS_ESPEAK_SING_SPEED || 118)
+        : Number(process.env.TTS_ESPEAK_SPEED || 160);
+      const pitch = vocalMode === 'sing'
+        ? Number(process.env.TTS_ESPEAK_SING_PITCH || 72)
+        : Number(process.env.TTS_ESPEAK_PITCH || 50);
+      const amplitude = vocalMode === 'sing'
+        ? Number(process.env.TTS_ESPEAK_SING_AMPLITUDE || 150)
+        : Number(process.env.TTS_ESPEAK_AMPLITUDE || 120);
+      const args = [
+        '-v', normalizeEspeakVoice(voice),
+        '-s', String(speed || 160),
+        '-p', String(pitch || 50),
+        '-a', String(amplitude || 120),
+        '-w', outFile,
+        text,
+      ];
+
+      let stderr = '';
+      let stdout = '';
+      const p = spawn(espeak.command, args, {
+        cwd: espeak.cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      p.stdout.on('data', (chunk) => {
+        stdout += String(chunk || '');
+      });
+      p.stderr.on('data', (chunk) => {
+        stderr += String(chunk || '');
+      });
+      p.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outFile)) {
+          return resolve({
+            success: true,
+            audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`),
+            audio_url: buildBackendTtsOutPath(`/out/${outFileName}`),
+            provider: 'espeak-ng',
+          });
+        }
+        const details = stderr.trim() || stdout.trim();
+        return reject(new Error(`espeak_failed_exit_${code}${details ? ': ' + details.slice(0, 500) : ''}`));
+      });
+      p.on('error', (err) => {
+        const details = stderr.trim() || stdout.trim();
+        return reject(new Error(`espeak_spawn_error: ${String(err?.message)}${details ? ' :: ' + details.slice(0, 500) : ''}`));
+      });
     } catch (err) {
       return reject(err);
     }
@@ -632,6 +1356,7 @@ router.get('/tts/health', async (req, res) => {
   }
 
   const spawn = getSpawnReadiness(requestedVoice || DEFAULT_TTS_MODEL_NAME);
+  const espeak = resolveEspeakBinary();
   let httpWarning = null;
   if (preferHttpTts) {
     if (lastError?.name === 'TimeoutError') {
@@ -654,6 +1379,27 @@ router.get('/tts/health', async (req, res) => {
       modelPath: spawn.modelPath,
       modelJsonPath: spawn.modelJsonPath,
       espeakData: resolveEspeakData(),
+      openAiTtsConfigured: Boolean(getOpenAiTtsApiKey()),
+      voiceConversionConfigured: parseOptionalBoolean(process.env.A11_VOICE_CONVERSION_ENABLED, false) === true,
+    });
+  }
+
+  if (espeak) {
+    return res.json({
+      ok: true,
+      mode: 'espeak-ready',
+      warning: spawn.piperCommand ? 'piper_not_ready' : 'piper_binary_missing',
+      host,
+      port,
+      requestBaseUrl,
+      publicBaseUrl,
+      requestedModel: spawn.requestedModel,
+      piperCommand: spawn.piperCommand,
+      modelPath: spawn.modelPath,
+      modelJsonPath: spawn.modelJsonPath,
+      espeakCommand: espeak.command,
+      openAiTtsConfigured: Boolean(getOpenAiTtsApiKey()),
+      voiceConversionConfigured: parseOptionalBoolean(process.env.A11_VOICE_CONVERSION_ENABLED, false) === true,
     });
   }
 
@@ -728,6 +1474,187 @@ router.get('/tts/models', (req, res) => {
   }
 });
 
+router.get('/tts/sound/status', requireJwt, (_req, res) => {
+  const library = listLibraryVoiceReferences();
+  return res.json({
+    ok: true,
+    module: 'a11-sound-reference',
+    supportedUploads: {
+      mimeTypes: Array.from(AUDIO_MIME_TYPES),
+      extensions: Array.from(AUDIO_EXTENSIONS),
+      maxBytes: 25 * 1024 * 1024,
+    },
+    modes: ['speech', 'adaptive', 'sing'],
+    comparison: 'wav_pcm_features',
+    conversion: {
+      enabled: parseOptionalBoolean(process.env.A11_VOICE_CONVERSION_ENABLED, false) === true,
+      endpoint: '/api/voice/convert',
+      provider: String(process.env.A11_VOICE_CONVERTER_PROVIDER || 'ffmpeg-morph').trim(),
+    },
+    library: {
+      enabled: true,
+      count: library.length,
+      references: library.map((ref) => ({
+        id: ref.id,
+        label: ref.label,
+        scope: ref.scope,
+        source: ref.source,
+        analysis: ref.analysis || null,
+      })),
+    },
+  });
+});
+
+router.get('/tts/references', requireJwt, (req, res) => {
+  try {
+    return res.json({
+      ok: true,
+      references: listVoiceReferences({ user: req.user }),
+    });
+  } catch (error_) {
+    return res.status(500).json({
+      ok: false,
+      error: 'voice_reference_list_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
+router.post('/tts/references', requireJwt, voiceReferenceUpload.any(), (req, res) => {
+  try {
+    const files = Array.isArray(req.files) ? req.files : [];
+    const file = files.find((entry) => entry?.buffer?.length) || null;
+    if (!file) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_audio',
+        message: 'Envoie un fichier audio dans un champ voiceReference, audio ou file.',
+      });
+    }
+
+    const reference = saveVoiceReference({
+      user: req.user,
+      file,
+      label: req.body?.label || req.body?.name || file.originalname,
+      scope: req.body?.scope || 'private',
+    });
+
+    return res.status(201).json({
+      ok: true,
+      reference,
+      references: listVoiceReferences({ user: req.user }),
+    });
+  } catch (error_) {
+    const message = String(error_?.message || error_);
+    const status = message.startsWith('unsupported_audio_type') ? 415 : 500;
+    return res.status(status).json({
+      ok: false,
+      error: status === 415 ? 'unsupported_audio_type' : 'voice_reference_save_failed',
+      message,
+    });
+  }
+});
+
+router.get('/tts/references/:id/audio', requireJwt, (req, res) => {
+  try {
+    const reference = findVoiceReference({ user: req.user, id: req.params?.id, includePath: true });
+    if (!reference?.filePath || !fs.existsSync(reference.filePath)) {
+      return res.status(404).json({ ok: false, error: 'voice_reference_not_found' });
+    }
+    res.setHeader('Content-Type', reference.mimeType || contentTypeForTtsAsset(reference.filePath));
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.sendFile(reference.filePath);
+  } catch (error_) {
+    return res.status(500).json({
+      ok: false,
+      error: 'voice_reference_read_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
+router.delete('/tts/references/:id', requireJwt, (req, res) => {
+  try {
+    const deleted = deleteVoiceReference({ user: req.user, id: req.params?.id });
+    if (!deleted) return res.status(404).json({ ok: false, error: 'voice_reference_not_found' });
+    return res.json({
+      ok: true,
+      deleted: true,
+      references: listVoiceReferences({ user: req.user }),
+    });
+  } catch (error_) {
+    return res.status(500).json({
+      ok: false,
+      error: 'voice_reference_delete_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
+router.post('/tts/sound/compare', requireJwt, voiceReferenceUpload.any(), (req, res) => {
+  try {
+    const files = Array.isArray(req.files) ? req.files : [];
+    const generated = files.find((file) => /generated|output|audio/i.test(file.fieldname || '')) || files[0] || null;
+    const referenceUpload = files.find((file) => /reference|ref|voice/i.test(file.fieldname || '') && file !== generated) || files[1] || null;
+    const referenceId = String(req.body?.voiceReferenceId || req.body?.voiceRefId || req.body?.referenceId || '').trim();
+    const storedReference = referenceId
+      ? findVoiceReference({ user: req.user, id: referenceId, includePath: true })
+      : null;
+
+    if (!generated?.buffer?.length) {
+      return res.status(400).json({ ok: false, error: 'missing_generated_audio' });
+    }
+
+    let referenceBuffer = referenceUpload?.buffer || null;
+    let referenceFile = referenceUpload || null;
+    let reference = null;
+    if (!referenceBuffer && storedReference?.filePath && fs.existsSync(storedReference.filePath)) {
+      referenceBuffer = fs.readFileSync(storedReference.filePath);
+      referenceFile = { mimetype: storedReference.mimeType || 'audio/wav' };
+      reference = {
+        id: storedReference.id,
+        label: storedReference.label,
+        scope: storedReference.scope,
+      };
+    }
+    if (!referenceBuffer) {
+      return res.status(400).json({ ok: false, error: 'missing_reference_audio' });
+    }
+
+    return res.json({
+      ok: true,
+      reference,
+      comparison: compareAudioBuffers({
+        generatedBuffer: generated.buffer,
+        referenceBuffer,
+        generatedFile: generated,
+        referenceFile,
+      }),
+    });
+  } catch (error_) {
+    return res.status(500).json({
+      ok: false,
+      error: 'sound_compare_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
+router.use(['/tts/references', '/tts/sound/compare'], (err, _req, res, _next) => {
+  if (err?.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      ok: false,
+      error: 'file_too_large',
+      message: 'Fichier audio trop grand (max 25 MB).',
+    });
+  }
+  return res.status(400).json({
+    ok: false,
+    error: 'upload_error',
+    message: err?.message || 'Erreur upload audio.',
+  });
+});
+
 function contentTypeForTtsAsset(filename = '') {
   const ext = path.extname(String(filename || '').trim()).toLowerCase();
   if (ext === '.wav') return 'audio/wav';
@@ -739,14 +1666,96 @@ function contentTypeForTtsAsset(filename = '') {
   return 'application/octet-stream';
 }
 
+function parseTtsStreamPreference(body = {}) {
+  const raw = String(
+    body?.stream
+    ?? body?.audioStream
+    ?? body?.consumeAudio
+    ?? process.env.A11_TTS_STREAM_BY_DEFAULT
+    ?? ''
+  ).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on', 'stream', 'consume'].includes(raw);
+}
+
+function isInsideDirectory(parent, candidate) {
+  const parentPath = path.resolve(parent);
+  const candidatePath = path.resolve(candidate);
+  const relative = path.relative(parentPath, candidatePath);
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function isGeneratedTtsAssetPath(filePath = '') {
+  const resolved = path.resolve(filePath);
+  const filename = path.basename(resolved);
+  if (!/^(tts-out-|a11-voice-|a11-converted-).+\.(wav|mp3|ogg)$/i.test(filename)) {
+    return false;
+  }
+  return isInsideDirectory(getPublicTtsDir(), resolved)
+    || isInsideDirectory(path.join(getCanonicalTtsDir(), 'out'), resolved);
+}
+
+function deleteGeneratedTtsAsset(filePath = '') {
+  try {
+    if (!isGeneratedTtsAssetPath(filePath)) return false;
+    if (!fs.existsSync(filePath)) return false;
+    fs.unlinkSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pruneOldTtsAssets(maxAgeMs = Number(process.env.A11_TTS_ASSET_MAX_AGE_MS || 10 * 60 * 1000)) {
+  const dirs = [getPublicTtsDir(), path.join(getCanonicalTtsDir(), 'out')];
+  const now = Date.now();
+  for (const dir of dirs) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      for (const entry of fs.readdirSync(dir)) {
+        const filePath = path.join(dir, entry);
+        if (!isGeneratedTtsAssetPath(filePath)) continue;
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > maxAgeMs) {
+          deleteGeneratedTtsAsset(filePath);
+        }
+      }
+    } catch {
+      // Cleanup is opportunistic.
+    }
+  }
+}
+
+async function sendTtsPayloadResponse(req, res, payload) {
+  if (!parseTtsStreamPreference(req?.body || {})) {
+    return res.json(payload);
+  }
+
+  const audioUrl = String(payload?.audioUrl || payload?.audio_url || '').trim();
+  if (!audioUrl) return res.json(payload);
+
+  try {
+    const audio = await loadTtsAudioBuffer(audioUrl, { consume: true });
+    if (!audio?.buffer?.length) return res.json(payload);
+    res.setHeader('Content-Type', audio.contentType || 'audio/wav');
+    res.setHeader('Content-Length', String(audio.buffer.length));
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-A11-TTS-Stream', 'consumed');
+    return res.send(audio.buffer);
+  } catch (error_) {
+    console.warn('[TTS] stream response failed, returning JSON payload:', error_?.message || error_);
+    return res.json(payload);
+  }
+}
+
 router.get('/tts/out/:filename', async (req, res) => {
+  pruneOldTtsAssets();
   const filename = path.basename(String(req.params?.filename || '').trim());
   if (!filename || filename === '.' || filename === '..') {
     return res.status(400).json({ ok: false, error: 'invalid_tts_asset' });
   }
 
   const ttsConfig = getLocalTtsConfig();
-  const remoteUrl = `${String(ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '')}/out/${encodeURIComponent(filename)}`;
+  const remoteUrl = `${String(ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '')}/out/${encodeURIComponent(filename)}?consume=1`;
 
   try {
     const response = await fetch(remoteUrl, {
@@ -766,22 +1775,29 @@ router.get('/tts/out/:filename', async (req, res) => {
     // Fall back to the local canonical TTS output directory below.
   }
 
-  const localPath = path.join(getCanonicalTtsDir(), 'out', filename);
-  if (!fs.existsSync(localPath)) {
+  const localPath = [
+    path.join(getPublicTtsDir(), filename),
+    path.join(getCanonicalTtsDir(), 'out', filename),
+  ].find((candidate) => fs.existsSync(candidate));
+  if (!localPath) {
     return res.status(404).json({ ok: false, error: 'tts_asset_not_found' });
   }
 
   res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.on('finish', () => {
+    deleteGeneratedTtsAsset(localPath);
+  });
   return res.sendFile(localPath);
 });
 
-router.post('/tts/piper', async (req, res) => {
+router.post('/tts/piper', runOptionalJwt, async (req, res) => {
   try {
     const text = String(req.body?.text || '').trim();
-    const readableText = buildTtsReadableText(text);
-    const voice = String(req.body?.voice || req.body?.model || '').trim();
+    const vocalMode = normalizeVocalMode(req.body || {});
+    const readableText = shapeTextForVocalMode(buildTtsReadableText(text), vocalMode);
+    const voice = resolveVoiceForRequest(req.body || {});
     const preferHttpTts = shouldPreferHttpTts();
 
     if (!readableText) {
@@ -792,33 +1808,109 @@ router.post('/tts/piper', async (req, res) => {
     const preparedBody = {
       ...(req.body || {}),
       text: readableText,
+      voice,
+      model: voice || req.body?.model,
+      vocalMode,
     };
+    let openAiTtsErrorMessage = null;
+    const preferOpenAiTtsFirst = shouldPreferOpenAiTtsFirst(preparedBody, vocalMode);
+
+    if (preferOpenAiTtsFirst) {
+      try {
+        const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
+        const payload = await finalizeTtsPayload({
+          ...openAiTts,
+          via: 'openai-tts',
+          text: readableText,
+          vocalMode,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        }, req, vocalMode);
+        return sendTtsPayloadResponse(req, res, payload);
+      } catch (openAiTtsError) {
+        openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
+        console.warn('[TTS][OpenAI] preferred voice failed, trying local piper:', openAiTtsErrorMessage);
+      }
+    }
 
     if (preferHttpTts) {
       try {
         const remote = await requestRemoteTts(preparedBody);
-        return res.json({ ...remote, text: readableText });
+        const payload = await finalizeTtsPayload({ ...remote, text: readableText, vocalMode }, req, vocalMode);
+        return sendTtsPayloadResponse(req, res, payload);
       } catch (error_) {
         remoteError = String(error_?.message || error_);
         console.warn('[TTS][Piper] HTTP backend unavailable, trying local spawn:', remoteError);
       }
     }
 
+    let spawnErrorMessage = null;
     try {
       const local = await spawnPiperLocal(readableText, voice || null);
       const absoluteAudioUrl = String(local.audioUrl || local.audio_url || '').trim();
-      return res.json({
+      const payload = await finalizeTtsPayload({
         ...local,
         via: 'spawn',
         text: readableText,
+        vocalMode,
         audio_url: absoluteAudioUrl || null,
         audioUrl: absoluteAudioUrl || null,
-      });
+      }, req, vocalMode);
+      return sendTtsPayloadResponse(req, res, payload);
     } catch (spawnError) {
+      spawnErrorMessage = String(spawnError?.message || spawnError);
+    }
+
+    if (!preferOpenAiTtsFirst && shouldTryOpenAiTts(preparedBody)) {
+      try {
+        const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
+        const payload = await finalizeTtsPayload({
+          ...openAiTts,
+          via: 'openai-tts',
+          text: readableText,
+          vocalMode,
+          piperError: spawnErrorMessage,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        }, req, vocalMode);
+        return sendTtsPayloadResponse(req, res, payload);
+      } catch (openAiTtsError) {
+        openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
+        console.warn('[TTS][OpenAI] speech fallback failed, trying espeak:', openAiTtsErrorMessage);
+      }
+    }
+
+    try {
+      const fallback = await spawnEspeakLocal(readableText, voice || null, { vocalMode });
+      const absoluteAudioUrl = String(fallback.audioUrl || fallback.audio_url || '').trim();
+      const payload = await finalizeTtsPayload({
+        ...fallback,
+        via: 'espeak',
+        text: readableText,
+        vocalMode,
+        piperError: spawnErrorMessage,
+        openAiTtsError: openAiTtsErrorMessage,
+        audio_url: absoluteAudioUrl || null,
+        audioUrl: absoluteAudioUrl || null,
+      }, req, vocalMode);
+      return sendTtsPayloadResponse(req, res, payload);
+    } catch (espeakError) {
       return res.status(503).json({
         error: 'tts_unavailable',
         remoteError,
-        localError: String(spawnError?.message || spawnError),
+        localError: spawnErrorMessage,
+        openAiTtsError: openAiTtsErrorMessage,
+        fallbackError: String(espeakError?.message || espeakError),
       });
     }
   } catch (e) {
@@ -828,3 +1920,4 @@ router.post('/tts/piper', async (req, res) => {
 
 
 module.exports = router;
+module.exports.configureTtsRouter = configureTtsRouter;

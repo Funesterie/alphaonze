@@ -53,9 +53,79 @@ async function getJson(baseUrl, route, headers = {}) {
   };
 }
 
+test('K44 OAuth start pins the Google callback to https on public hosts', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    A11_GOOGLE_CLIENT_ID: process.env.A11_GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    A11_GOOGLE_CLIENT_SECRET: process.env.A11_GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+  };
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  delete process.env.A11_GOOGLE_CLIENT_ID;
+  delete process.env.A11_GOOGLE_CLIENT_SECRET;
+  delete process.env.GOOGLE_CALLBACK_URL;
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  delete process.env.GOOGLE_REDIRECT_URI;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/auth/google/start`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'k44.funesterie.me',
+        },
+      });
+      assert.equal(response.status, 302);
+      const location = response.headers.get('location');
+      assert.ok(location);
+      const redirectUrl = new URL(location);
+      assert.equal(redirectUrl.origin, 'https://accounts.google.com');
+      assert.equal(
+        redirectUrl.searchParams.get('redirect_uri'),
+        'https://k44.funesterie.me/api/auth/google/callback'
+      );
+    }
+  );
+});
+
 test('local auth store backs register and login when database is unavailable', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
+  const previousFullAccessEmails = process.env.A11_FULL_ACCESS_EMAILS;
+  process.env.A11_FULL_ACCESS_EMAILS = 'funeste38@gmail.com';
   t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  t.after(() => {
+    if (previousFullAccessEmails === undefined) {
+      delete process.env.A11_FULL_ACCESS_EMAILS;
+    } else {
+      process.env.A11_FULL_ACCESS_EMAILS = previousFullAccessEmails;
+    }
+  });
 
   const localAuthStore = createLocalAuthStore({
     filePath: path.join(tmpDir, 'local-users.json'),
@@ -100,6 +170,15 @@ test('local auth store backs register and login when database is unavailable', a
       assert.equal(duplicate.response.status, 400);
       assert.equal(duplicate.json.error, 'username_taken');
 
+      const fullAccess = await postJson(baseUrl, '/api/auth/register', {
+        username: 'FullAccessUser',
+        email: 'funeste38@gmail.com',
+        password: 'secret123',
+      });
+      assert.equal(fullAccess.response.status, 200);
+      assert.equal(fullAccess.json.user.fullAccess, true);
+      assert.equal(jwt.decode(fullAccess.json.token).fullAccess, true);
+
       const loggedIn = await postJson(baseUrl, '/api/auth/login', {
         email: 'local@example.test',
         password: 'secret123',
@@ -107,7 +186,42 @@ test('local auth store backs register and login when database is unavailable', a
       assert.equal(loggedIn.response.status, 200);
       assert.equal(loggedIn.json.success, true);
       assert.equal(loggedIn.json.user.email, 'local@example.test');
-      assert.equal(issuedTokens.length, 2);
+      assert.equal(issuedTokens.length, 3);
+    }
+  );
+});
+
+test('auth/me accepts the a11_session cookie without cookie-parser state', async () => {
+  const token = jwt.sign(
+    { id: 'cookie-user', username: 'CookieUser', email: 'cookie@example.test' },
+    'test-secret',
+    { expiresIn: '1h' }
+  );
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        defaultAdminUsername: 'Djeff',
+        defaultAdminPassword: '1991',
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const result = await getJson(baseUrl, '/api/auth/me', {
+        Cookie: `a11_session=${encodeURIComponent(token)}`,
+      });
+      assert.equal(result.response.status, 200);
+      assert.equal(result.json.ok, true);
+      assert.equal(result.json.authenticated, true);
+      assert.equal(result.json.user.email, 'cookie@example.test');
     }
   );
 });

@@ -368,6 +368,10 @@ function createA11ImageBrain(overrides = {}) {
       promptSeed,
     });
     const mode = modeDecision.mode;
+    const hasDirectSemanticGenerate = (
+      selectedIntentType === 'image.generate'
+      && Boolean(promptSeed?.subjectEntity || semanticAnalysis?.subject)
+    );
     trace.push(`mode_reason=${modeDecision.reason}`);
 
     if (mode === 'none') {
@@ -382,7 +386,7 @@ function createA11ImageBrain(overrides = {}) {
       };
     }
 
-    if (semanticDecision.shouldClarify && mode === 'generate') {
+    if (semanticDecision.shouldClarify && mode === 'generate' && !explicitImageIntent && !hasDirectSemanticGenerate) {
       const clarification = {
         handled: true,
         mode: 'clarify',

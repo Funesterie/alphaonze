@@ -2,7 +2,8 @@
 'use strict';
 
 /**
- * Script pour créer un prix Stripe à 3000€/mois
+ * Legacy filename kept for compatibility.
+ * Creates the current A11 Studio Stripe price: 149 EUR/month.
  * Usage: node create-3000eur-price.cjs
  */
 
@@ -11,100 +12,57 @@ require('dotenv').config({ path: '.env.local' });
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 async function createEnterprisePrice() {
-  console.log('🚀 Création du prix Enterprise à 3000€/mois...\n');
+  console.log('Creating A11 Studio price at 149 EUR/month...\n');
 
   try {
-    // Vérifier que Stripe est configuré
     if (!process.env.STRIPE_SECRET_KEY) {
-      throw new Error('STRIPE_SECRET_KEY non configuré dans .env.local');
+      throw new Error('STRIPE_SECRET_KEY is not configured in .env.local');
     }
 
-    // Créer le produit
-    console.log('📦 Création du produit...');
     const product = await stripe.products.create({
-      name: 'A11 Premium Enterprise',
-      description: 'Accès complet à A11 avec support prioritaire et fonctionnalités avancées',
+      name: 'A11 Studio',
+      description: 'A11 creation plan with monthly creation tokens and contribution rewards.',
       metadata: {
-        tier: 'enterprise',
+        tier: 'studio',
+        included_creation_tokens: '2500',
         created_by: 'create-3000eur-price.cjs',
+        supersedes: '3000-eur-legacy-price',
       },
     });
 
-    console.log('✅ Produit créé:', product.id);
-    console.log('   Nom:', product.name);
-    console.log('   Description:', product.description);
-    console.log('');
-
-    // Créer le prix
-    console.log('💰 Création du prix...');
     const price = await stripe.prices.create({
       product: product.id,
-      unit_amount: 300000, // 3000€ en centimes
+      unit_amount: 14900,
       currency: 'eur',
       recurring: {
         interval: 'month',
       },
       metadata: {
-        tier: 'enterprise',
+        tier: 'studio',
+        included_creation_tokens: '2500',
         created_by: 'create-3000eur-price.cjs',
       },
     });
 
-    console.log('✅ Prix créé:', price.id);
-    console.log('   Montant:', (price.unit_amount / 100).toFixed(2), price.currency.toUpperCase());
-    console.log('   Période:', price.recurring.interval);
-    console.log('');
-
-    // Instructions
-    console.log('📋 PROCHAINES ÉTAPES :');
-    console.log('');
-    console.log('1. Copie cet ID dans ton .env.local :');
-    console.log('');
-    console.log(`   STRIPE_PRICE_ID=${price.id}`);
-    console.log('');
-    console.log('2. Mets à jour render.yaml :');
-    console.log('');
-    console.log('   - key: STRIPE_PRICE_ID');
-    console.log(`     value: ${price.id}`);
-    console.log('');
-    console.log('3. Commit et push :');
-    console.log('');
-    console.log('   git add a11/backend/apps/server/render.yaml');
-    console.log('   git add a11/backend/apps/server/.env.local');
-    console.log('   git commit -m "feat: Update Stripe price to 3000 EUR"');
-    console.log('   git push origin master');
-    console.log('');
-    console.log('4. Configure sur Render Dashboard :');
-    console.log('');
-    console.log(`   STRIPE_PRICE_ID=${price.id}`);
-    console.log('');
-    console.log('🎯 Voir le prix sur Stripe Dashboard :');
-    console.log(`   https://dashboard.stripe.com/prices/${price.id}`);
-    console.log('');
+    console.log('Product created:', product.id);
+    console.log('Price created:', price.id);
+    console.log('Amount:', (price.unit_amount / 100).toFixed(2), price.currency.toUpperCase());
+    console.log('\nSet this value locally and in Render:');
+    console.log(`STRIPE_PRICE_ID=${price.id}`);
+    console.log('\nCommit message suggestion:');
+    console.log('feat: update A11 Studio Stripe price');
 
     return { product, price };
   } catch (error) {
-    console.error('❌ Erreur:', error.message);
-    if (error.type === 'StripeAuthenticationError') {
-      console.error('');
-      console.error('💡 Vérifie que STRIPE_SECRET_KEY est correct dans .env.local');
-      console.error('   Il doit commencer par sk_live_ ou sk_test_');
-    }
+    console.error('Stripe price creation failed:', error.message);
     throw error;
   }
 }
 
-// Exécuter
 if (require.main === module) {
   createEnterprisePrice()
-    .then(() => {
-      console.log('✅ Terminé avec succès !');
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('❌ Échec:', error.message);
-      process.exit(1);
-    });
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
 }
 
 module.exports = { createEnterprisePrice };

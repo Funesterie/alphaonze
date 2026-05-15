@@ -11,10 +11,22 @@ logs/
 runtime/
 .codex-tmp/
 
+# Local ML assets are mounted or downloaded outside the production image.
+tools/sd/venv/
+tools/sd/**/*.safetensors
+tools/sd/**/*.ckpt
+tools/sd/**/*.pt
+tools/sd/**/*.pth
+tools/vision/venv/
+tools/vision/models/
+tools/vision/__pycache__/
+**/__pycache__/
+*.pyc
+
 # Environment
 .env
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 # Git
 .git/

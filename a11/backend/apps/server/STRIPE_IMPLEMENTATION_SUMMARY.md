@@ -100,9 +100,9 @@ console.log("[Server] Subscription routes mounted under /api/subscription");
 
 ```bash
 # Stripe Configuration
-STRIPE_SECRET_KEY=
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=
-STRIPE_WEBHOOK_SECRET=
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
 STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
 STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
@@ -161,9 +161,9 @@ WHERE role = 'admin';
 Mettre à jour `.env.local` avec les valeurs Stripe :
 
 ```bash
-STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 ```
 
 ### 5. Tests

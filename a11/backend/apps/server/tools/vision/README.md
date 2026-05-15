@@ -77,6 +77,20 @@ D:\funesterie\a11\backend\apps\server\tools\vision\venv\Scripts\python.exe -m pi
 D:\funesterie\a11\backend\apps\server\tools\vision\venv\Scripts\python.exe -m pip install -r D:\funesterie\a11\backend\apps\server\tools\vision\requirements.txt
 ```
 
+Current Windows local CUDA setup reuses the SD venv for the heavy Torch package
+and keeps the Janus-specific packages in `tools/vision/venv`:
+
+```powershell
+D:\projets\funesterie\a11\backend\apps\server\tools\sd\venv\Scripts\python.exe -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128
+D:\projets\funesterie\a11\backend\apps\server\tools\vision\venv\Scripts\python.exe -m pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torchvision==0.26.0+cu128
+```
+
+Quick verification:
+
+```powershell
+D:\projets\funesterie\a11\backend\apps\server\tools\vision\venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"
+```
+
 Model download example:
 
 ```powershell

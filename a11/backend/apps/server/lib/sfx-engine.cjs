@@ -211,6 +211,83 @@ const SFX_DEFINITIONS = {
     { freq: NOTE.G4, duration: 0.10, wave: 'triangle', volume: 0.34 },
     { freq: NOTE.E4, duration: 0.15, wave: 'triangle', volume: 0.32, envelope: { attack: 0.01, decay: 0.05, sustain: 0.5, release: 0.08 } },
   ],
+
+  // Shikai - light draw and release.
+  shikai: [
+    { freq: NOTE.A4, duration: 0.04, wave: 'sawtooth', volume: 0.35, envelope: { attack: 0.005, decay: 0.02, sustain: 0.5, release: 0.02 } },
+    { freq: NOTE.D5, duration: 0.06, wave: 'triangle', volume: 0.45, envelope: { attack: 0.005, decay: 0.02, sustain: 0.7, release: 0.03 } },
+    { freq: NOTE.A5, duration: 0.10, wave: 'sine', volume: 0.35, envelope: { attack: 0.005, decay: 0.04, sustain: 0.5, release: 0.06 } },
+  ],
+
+  // Bankai - pressure burst.
+  bankai: [
+    { freq: NOTE.C3, duration: 0.10, wave: 'sawtooth', volume: 0.55, envelope: { attack: 0.01, decay: 0.04, sustain: 0.8, release: 0.04 } },
+    { freq: NOTE.C4, duration: 0.10, wave: 'square', volume: 0.65, envelope: { attack: 0.005, decay: 0.03, sustain: 0.8, release: 0.04 } },
+    { freq: NOTE.G4, duration: 0.12, wave: 'square', volume: 0.7, envelope: { attack: 0.005, decay: 0.04, sustain: 0.7, release: 0.06 } },
+    { freq: NOTE.C5, duration: 0.28, wave: 'sawtooth', volume: 0.58, envelope: { attack: 0.01, decay: 0.06, sustain: 0.5, release: 0.16 } },
+  ],
+
+  // Alert - active radar pulse.
+  alert: [
+    { freq: NOTE.C5, duration: 0.07, wave: 'sine', volume: 0.48 },
+    { freq: 0, duration: 0.04 },
+    { freq: NOTE.C5, duration: 0.07, wave: 'sine', volume: 0.42 },
+    { freq: 0, duration: 0.04 },
+    { freq: NOTE.G5, duration: 0.12, wave: 'sine', volume: 0.38, envelope: { attack: 0.005, decay: 0.04, sustain: 0.6, release: 0.06 } },
+  ],
+
+  // Gear 5 - bright bounce and small drums.
+  gear5: [
+    { freq: NOTE.C4, duration: 0.05, wave: 'triangle', volume: 0.55 },
+    { freq: NOTE.G4, duration: 0.05, wave: 'triangle', volume: 0.55 },
+    { freq: NOTE.C5, duration: 0.08, wave: 'square', volume: 0.45 },
+    { freq: NOTE.E5, duration: 0.05, wave: 'triangle', volume: 0.5 },
+    { freq: 0, duration: 0.03 },
+    { freq: NOTE.C3, duration: 0.06, wave: 'square', volume: 0.35 },
+    { freq: NOTE.C3, duration: 0.06, wave: 'square', volume: 0.35 },
+    { freq: NOTE.G5, duration: 0.16, wave: 'sine', volume: 0.36, envelope: { attack: 0.005, decay: 0.04, sustain: 0.5, release: 0.08 } },
+  ],
+
+  // Ultra Instinct - near-silence plus aura shimmer.
+  ui: [
+    { freq: 0, duration: 0.08 },
+    { freq: NOTE.E6, duration: 0.09, wave: 'sine', volume: 0.18, envelope: { attack: 0.02, decay: 0.02, sustain: 0.5, release: 0.07 } },
+    { freq: NOTE.C6, duration: 0.09, wave: 'sine', volume: 0.14, envelope: { attack: 0.02, decay: 0.02, sustain: 0.5, release: 0.07 } },
+    { freq: NOTE.G5, duration: 0.18, wave: 'triangle', volume: 0.12, envelope: { attack: 0.03, decay: 0.04, sustain: 0.4, release: 0.10 } },
+  ],
+
+  // Domain Expansion - barrier unfolding.
+  domain: [
+    { freq: NOTE.F3, duration: 0.10, wave: 'triangle', volume: 0.35 },
+    { freq: NOTE.C4, duration: 0.10, wave: 'triangle', volume: 0.40 },
+    { freq: NOTE.F4, duration: 0.10, wave: 'triangle', volume: 0.45 },
+    { freq: NOTE.Ab4, duration: 0.16, wave: 'sawtooth', volume: 0.42, envelope: { attack: 0.02, decay: 0.05, sustain: 0.6, release: 0.08 } },
+    { freq: NOTE.C5, duration: 0.28, wave: 'sine', volume: 0.30, envelope: { attack: 0.03, decay: 0.05, sustain: 0.5, release: 0.18 } },
+  ],
+
+  // Void - spaced echoes into silence.
+  void: [
+    { freq: NOTE.D4, duration: 0.08, wave: 'sine', volume: 0.34, envelope: { attack: 0.01, decay: 0.03, sustain: 0.5, release: 0.04 } },
+    { freq: 0, duration: 0.08 },
+    { freq: NOTE.D4, duration: 0.08, wave: 'sine', volume: 0.22, envelope: { attack: 0.01, decay: 0.03, sustain: 0.4, release: 0.05 } },
+    { freq: 0, duration: 0.12 },
+    { freq: NOTE.A3, duration: 0.12, wave: 'triangle', volume: 0.18, envelope: { attack: 0.02, decay: 0.04, sustain: 0.35, release: 0.08 } },
+    { freq: 0, duration: 0.18 },
+  ],
+
+  // Cri avec echo a levier - pull, shout, three fading rebounds.
+  cri_echo_levier: [
+    { freq: NOTE.G3, duration: 0.05, wave: 'sawtooth', volume: 0.45 },
+    { freq: NOTE.C3, duration: 0.07, wave: 'square', volume: 0.38 },
+    { freq: NOTE.C5, duration: 0.08, wave: 'sawtooth', volume: 0.65, envelope: { attack: 0.005, decay: 0.02, sustain: 0.9, release: 0.03 } },
+    { freq: NOTE.G5, duration: 0.10, wave: 'sawtooth', volume: 0.58, envelope: { attack: 0.005, decay: 0.03, sustain: 0.7, release: 0.05 } },
+    { freq: 0, duration: 0.06 },
+    { freq: NOTE.G5, duration: 0.08, wave: 'sine', volume: 0.32, envelope: { attack: 0.005, decay: 0.02, sustain: 0.45, release: 0.05 } },
+    { freq: 0, duration: 0.08 },
+    { freq: NOTE.E5, duration: 0.08, wave: 'sine', volume: 0.22, envelope: { attack: 0.005, decay: 0.02, sustain: 0.4, release: 0.05 } },
+    { freq: 0, duration: 0.10 },
+    { freq: NOTE.C5, duration: 0.14, wave: 'sine', volume: 0.16, envelope: { attack: 0.01, decay: 0.03, sustain: 0.3, release: 0.10 } },
+  ],
 };
 
 // ─── Gestion des fichiers SFX ─────────────────────────────────────────────────

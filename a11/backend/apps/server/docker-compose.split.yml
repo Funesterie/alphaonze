@@ -1,0 +1,65 @@
+services:
+  a11-backend:
+    command: ["sh", "-lc", "node scripts/apply-startup-schema.cjs && node server-a11.cjs"]
+    env_file:
+      - ./profiles/a11.env
+    environment:
+      - A11_PRODUCT=a11
+      - A11_INSTANCE_NAME=Alpha Onze
+      - A11_RUNTIME_PROFILE=prod
+      - PORT=3000
+      - PUBLIC_APP_URL=https://a11.funesterie.pro
+      - API_URL=https://a11.funesterie.pro
+      - A11_PUBLIC_HOST=a11.funesterie.pro
+      - A11_USAGE_GUARD_ADMIN_EMAIL=${A11_USAGE_GUARD_ADMIN_EMAIL:-cellaurojeffrey@gmail.com}
+
+  kaen44-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: a11-backend:latest
+    container_name: kaen44-backend
+    restart: unless-stopped
+    command: ["sh", "-lc", "node scripts/apply-startup-schema.cjs && node server-kaen44.cjs"]
+    env_file:
+      - ./profiles/kaen44.env
+    ports:
+      - "3001:3001"
+    environment:
+      - A11_PRODUCT=kaen44
+      - A11_INSTANCE_NAME=Kaen44
+      - A11_RUNTIME_PROFILE=kaen44
+      - KAEN44_MODE=1
+      - PORT=3001
+      - SERVE_STATIC=true
+      - PUBLIC_APP_URL=https://k44.funesterie.me
+      - FRONT_URL=https://k44.funesterie.me
+      - APP_URL=https://k44.funesterie.me
+      - API_URL=https://k44.funesterie.me
+      - PUBLIC_API_URL=https://k44.funesterie.me
+      - GOOGLE_CALLBACK_URL=https://k44.funesterie.me/api/auth/google/callback
+      - A11_GOOGLE_CALLBACK_URL=https://k44.funesterie.me/api/auth/google/callback
+      - A11_PUBLIC_HOST=k44.funesterie.me
+      - A11_ALLOW_DEV_ROUTES=false
+      - A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS=false
+      - A11_RESPONDER_MODE=off
+      - A11_USAGE_GUARD_ADMIN_EMAIL=${A11_USAGE_GUARD_ADMIN_EMAIL:-cellaurojeffrey@gmail.com}
+    volumes:
+      - kaen44-logs:/app/logs
+      - kaen44-runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - a11-network
+    depends_on:
+      - a11-voice
+
+volumes:
+  kaen44-logs:
+    driver: local
+  kaen44-runtime:
+    driver: local

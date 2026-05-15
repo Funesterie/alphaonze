@@ -65,22 +65,28 @@ function findTTSScript(quiet = false) {
 }
 
 function getTtsBinaryPathCandidates() {
-  return [
-    path.join(canonicalTtsDir, 'piper.exe'),
+  const linuxCandidates = [
     path.join(canonicalTtsDir, 'piper'),
-    path.join(canonicalTtsDir, 'piper', 'piper.exe'),
     path.join(canonicalTtsDir, 'piper', 'piper'),
-    path.join(backendRoot, 'piper', 'piper.exe'),
     path.join(backendRoot, 'piper', 'piper'),
-    '/app/apps/tts/piper.exe',
     '/app/apps/tts/piper',
-    '/app/apps/tts/piper/piper.exe',
     '/app/apps/tts/piper/piper',
-    '/app/tts/piper.exe',
     '/app/tts/piper',
-    '/app/tts/piper/piper.exe',
     '/app/tts/piper/piper',
   ];
+  const windowsCandidates = [
+    path.join(canonicalTtsDir, 'piper.exe'),
+    path.join(canonicalTtsDir, 'piper', 'piper.exe'),
+    path.join(backendRoot, 'piper', 'piper.exe'),
+    '/app/apps/tts/piper.exe',
+    '/app/apps/tts/piper/piper.exe',
+    '/app/tts/piper.exe',
+    '/app/tts/piper/piper.exe',
+  ];
+
+  return process.platform === 'win32'
+    ? [...windowsCandidates, ...linuxCandidates]
+    : [...linuxCandidates, ...windowsCandidates];
 }
 
 function getTtsModelDirCandidates() {

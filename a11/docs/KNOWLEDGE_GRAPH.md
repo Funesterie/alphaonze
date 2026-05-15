@@ -93,7 +93,7 @@ Utilise ces relations pour enrichir ta compréhension et ton raisonnement.
 # Neo4j (optionnel - fallback sur JSON si absent)
 NEO4J_URI=neo4j+s://aa4680d2.databases.neo4j.io
 NEO4J_USERNAME=aa4680d2
-NEO4J_PASSWORD=dehuqGOmjJau6DF4hrdIk03XhEoKOCP9m4mM8cLNm8M
+NEO4J_PASSWORD=<NEO4J_PASSWORD>
 NEO4J_DATABASE=aa4680d2
 
 # Modèle LLM pour extraction de triplets (défaut: gemma4:e4b)

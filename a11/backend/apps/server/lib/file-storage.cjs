@@ -210,7 +210,13 @@ function buildDefaultStorageConfig() {
     accessKeyId: String(process.env.R2_ACCESS_KEY || process.env.R2_ACCESS_KEY_ID || process.env.Access_Key_ID || r2Defaults.accessKeyId || '').trim(),
     secretAccessKey: String(process.env.R2_SECRET_KEY || process.env.R2_SECRET_ACCESS_KEY || process.env.Secret_Access_Key || r2Defaults.secretAccessKey || '').trim(),
     bucket: String(process.env.R2_BUCKET || process.env.R2_BUCKET_NAME || process.env.R2_BUCKET_ID || r2Defaults.bucket || '').trim(),
-    publicBaseUrl: String(process.env.R2_PUBLIC_BASE_URL || r2Defaults.publicBaseUrl || '').trim(),
+    publicBaseUrl: String(
+      process.env.R2_PUBLIC_BASE_URL
+      || process.env.A11_R2_PUBLIC_BASE_URL
+      || process.env.R2_PUBLIC_URL
+      || r2Defaults.publicBaseUrl
+      || ''
+    ).trim(),
   };
 }
 

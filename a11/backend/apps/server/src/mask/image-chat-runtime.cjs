@@ -2076,8 +2076,8 @@ function applyStrengthComponentPromptGuidance(compiledState = {}, mask = {}) {
   };
 }
 
-const IMAGE_COMPONENT_PROMPT_DIRECTOR_SYSTEM_PROMPT = `Tu es le directeur final du prompt Stable Diffusion pour A11.
-Tu interviens APRES la stabilisation du prompt final et APRES le calcul des strengths par composant.
+const IMAGE_COMPONENT_PROMPT_DIRECTOR_SYSTEM_PROMPT = `Je suis le directeur final du prompt Stable Diffusion pour A11.
+J'interviens APRES la stabilisation du prompt final et APRES le calcul des strengths par composant.
 
 Mission :
 - reformuler le prompt final de façon naturelle, fluide, fidele et complete
@@ -2088,7 +2088,7 @@ Mission :
 
 Règles :
 - pour les champs prompt et negative_prompt, utiliser strictement l anglais naturel, english only
-- tu n es pas un résumeur: ne jamais condenser, simplifier, raccourcir ou lisser agressivement une demande riche
+- je ne suis pas un résumeur: ne jamais condenser, simplifier, raccourcir ou lisser agressivement une demande riche
 - si la raw_request ou le current_prompt contient un détail visuel concret utile, il doit rester présent dans la sortie finale
 - si le prompt courant est deja riche et precis, le conserver presque intact et n ajuster que ce qui est necessaire pour l anglais, la fluidité et la cohérence
 - si la raw_request est plus riche que le current_prompt, réintégrer proprement ses détails concrets dans le prompt final
@@ -2097,7 +2097,7 @@ Règles :
 - conserver la densité visuelle: le prompt final peut rester long si la demande est longue
 - produire aussi un negative prompt propre et coherent sans ecraser les contraintes existantes
 
-Réponds uniquement en JSON strict :
+Je réponds uniquement en JSON strict :
 {
   "prompt": "prompt final reformulé",
   "negative_prompt": "negative prompt final"
@@ -3132,15 +3132,15 @@ async function reconcileCompiledImageTechnique(compiledState = {}, {
 function buildImagePromptRefinerSystemPrompt() {
   const languageInstruction = 'english only';
 
-  return `Tu es un réécrivain final de prompt Stable Diffusion pour A11.
-Tu reçois une demande image riche avec beaucoup de contexte interne.
-Ta mission est de produire un prompt FINAL propre, cohérent, complet et exploitable pour le générateur d'image.
+  return `Je suis un réécrivain final de prompt Stable Diffusion pour A11.
+Je reçois une demande image riche avec beaucoup de contexte interne.
+Ma mission est de produire un prompt FINAL propre, cohérent, complet et exploitable pour le générateur d'image.
 
 Règles strictes :
 - conserver exactement le sujet principal, le nombre de sujets, la relation entre eux, les couleurs importantes, le style demandé et les contraintes essentielles
 - ne jamais ajouter un nouveau personnage, un nouvel objet principal, une nouvelle action ou un nouveau décor important
 - supprimer biographies, contexte encyclopédique, redondances, répétitions, formulations bavardes et méta-instructions
-- tu n es pas un résumeur: ne jamais condenser, raccourcir, lisser ou simplifier agressivement une demande riche
+- je ne suis pas un résumeur: ne jamais condenser, raccourcir, lisser ou simplifier agressivement une demande riche
 - si le prompt courant est deja dense et precis, ne pas le resumer brutalement
 - si la raw_request contient plus de détails concrets que le current_prompt, les réintégrer proprement dans le prompt final
 - préserver tous les détails visuels concrets utiles: identité, visage, corpulence, posture, cadrage, tenue, accessoires, décor, éclairage, palette, ambiance et contraintes négatives utiles
@@ -3151,7 +3151,7 @@ Règles strictes :
 - pour les champs prompt et negative_prompt, utiliser strictement l anglais naturel: ${languageInstruction}
 - ne jamais melanger francais et anglais dans le meme prompt
 
-Réponds uniquement en JSON strict :
+Je réponds uniquement en JSON strict :
 {
   "prompt": "prompt final",
   "negative_prompt": "negative prompt final"
@@ -4405,6 +4405,14 @@ function resolveGeneratedImageUrl(sdResult) {
     || sdResult?.conversationResource?.downloadUrl
     || sdResult?.conversationResource?.url
     || sdResult?.result?.image_url
+    || sdResult?.result?.url
+    || sdResult?.result?.public_url
+    || sdResult?.data?.image_url
+    || sdResult?.data?.url
+    || sdResult?.output?.image_url
+    || sdResult?.output?.url
+    || sdResult?.artifact?.image_url
+    || sdResult?.artifact?.url
     || ''
   ).trim();
 }
@@ -4438,10 +4446,16 @@ function ensureImageFilename(filename, imageUrl, contentType = '', artifactType 
   return candidate;
 }
 
-function buildImageAssistantMessage({ imageUrl, filename }) {
+function buildImageAssistantMessage({ imageUrl, filename, ok = true, error = '', message = '' }) {
+  if (ok === false) {
+    const detail = String(message || error || '').trim();
+    return detail
+      ? `Je n'ai pas pu générer l'image. ${detail}`
+      : "Je n'ai pas pu générer l'image.";
+  }
   if (imageUrl && filename) return `C'est fait. L'image est prête. [ouvrir l'image](${imageUrl})`;
   if (imageUrl) return `C'est fait. L'image est prête. [ouvrir l'image](${imageUrl})`;
-  return "C'est fait. L'image a été générée.";
+  return "La génération image a répondu sans URL exploitable. Je ne peux pas l'afficher ici tant que le backend ne fournit pas de lien public.";
 }
 
 function toImageChatProxyPayload({
@@ -4461,10 +4475,19 @@ function toImageChatProxyPayload({
     sdResult?.content_type || sdResult?.contentType || sdResult?.conversationResource?.contentType || sdResult?.file?.contentType,
     sdResult?.artifact_type
   );
-  const content = buildImageAssistantMessage({ imageUrl, filename });
+  const ok = sdResult?.ok !== false;
+  const content = buildImageAssistantMessage({
+    imageUrl,
+    filename,
+    ok,
+    error: sdResult?.error,
+    message: sdResult?.message,
+  });
 
   return {
-    ok: sdResult?.ok !== false,
+    ok,
+    error: sdResult?.error || null,
+    message: sdResult?.message || null,
     id: `a11-img-${Date.now()}`,
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),

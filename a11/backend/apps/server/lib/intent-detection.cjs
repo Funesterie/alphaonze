@@ -21,6 +21,11 @@ function normalizeMessageForIntent(message) {
     .trim();
 }
 
+function isLegacyWordIntentDetectorsEnabled(env = process.env) {
+  const normalized = String(env.A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
 // ─── Fast-path heuristique minimal ───────────────────────────────────────────
 // Utilisé uniquement pour court-circuiter l'appel LLM sur les cas évidents.
 // Ne retourne jamais false — retourne null si incertain.
@@ -28,9 +33,10 @@ function normalizeMessageForIntent(message) {
 function fastPathImageIntent(normalized) {
   const hasCreationVerb = /\b(g[eé]n[eè]re|cr[eé]e|dessine|fabrique|produis|generate|create|draw|make|render)\b/i.test(normalized);
   const hasVisualWord = /\b(image|illustration|dessin|photo|visuel|portrait)\b/i.test(normalized);
+  const hasVisualStyle = /\b(cartoon|anime|pixel art|watercolor|cinematic|manga|render|3d|stylis[eÃ©]|stylized)\b/i.test(normalized);
   const hasTroubleshooting = /\b(explique|pourquoi|probl[eè]me|bug|erreur|fonctionne|marche)\b/i.test(normalized);
   if (hasTroubleshooting && !hasCreationVerb) return null;
-  if (hasCreationVerb && hasVisualWord) return { intent: 'image.generate', confidence: 0.95, reason: 'fast_path_creation_verb_visual_word' };
+  if (hasCreationVerb && (hasVisualWord || hasVisualStyle)) return { intent: 'image.generate', confidence: 0.95, reason: 'fast_path_creation_verb_visual_word' };
   return null;
 }
 
@@ -181,22 +187,8 @@ async function detectIntentWithLlm({
   }
 
   // Fast-path uniquement sans image ni historique — cas non ambigus
-  if (!hasImage && !hasHistory) {
-    const fastPath = fastPathVideoIntent(normalized)
-      || fastPathSoundIntent(normalized)
-      || fastPathImageIntent(normalized)
-      || fastPathWebImageIntent(normalized);
-    if (fastPath && fastPath.confidence >= 0.95) {
-      return { ...fastPath, subject: '' };
-    }
-  }
-
   if (typeof callStructuredLlmJson !== 'function') {
-    const fastPath = fastPathVideoIntent(normalized)
-      || fastPathSoundIntent(normalized)
-      || fastPathImageIntent(normalized)
-      || fastPathWebImageIntent(normalized);
-    return { ...(fastPath || { intent: 'chat.reply', confidence: 0.5, reason: 'llm_unavailable_fallback' }), subject: '' };
+    return { intent: 'chat.reply', confidence: 0.5, reason: 'llm_unavailable_no_word_detector', subject: '' };
   }
 
   // Construire un message naturel pour le LLM — pas de flags JSON qui induisent en erreur
@@ -235,8 +227,7 @@ async function detectIntentWithLlm({
     });
 
     if (!response || typeof response !== 'object') {
-      const fastPath = fastPathVideoIntent(normalized) || fastPathImageIntent(normalized);
-      return fastPath || { intent: 'chat.reply', confidence: 0.5, reason: 'llm_invalid_response', subject: '' };
+      return { intent: 'chat.reply', confidence: 0.5, reason: 'structured_intent_fallback', subject: '' };
     }
 
     const validIntents = ['image.generate', 'video.generate', 'sound.generate', 'web.image.search', 'web.search', 'code.python.generate', 'chat.reply'];
@@ -249,12 +240,8 @@ async function detectIntentWithLlm({
 
     return { intent, confidence, reason, subject };
   } catch (error) {
-    console.warn(`[A11][intent-detection] LLM error: ${String(error?.message || error)}, using fast-path`);
-    const fastPath = fastPathVideoIntent(normalized)
-      || fastPathSoundIntent(normalized)
-      || fastPathImageIntent(normalized)
-      || fastPathWebImageIntent(normalized);
-    return fastPath || { intent: 'chat.reply', confidence: 0.5, reason: 'llm_error_fallback', subject: '' };
+    console.warn(`[A11][intent-detection] LLM error: ${String(error?.message || error)}, defaulting to chat.reply`);
+    return { intent: 'chat.reply', confidence: 0.5, reason: 'llm_error_no_word_detector', subject: '' };
   }
 }
 
@@ -264,30 +251,35 @@ async function detectIntentWithLlm({
 // Pour la détection complète avec confiance, utiliser detectIntentWithLlm().
 
 function detectImageIntent(message) {
+  if (!isLegacyWordIntentDetectorsEnabled()) return false;
   if (!message || typeof message !== 'string') return false;
   const normalized = normalizeMessageForIntent(message);
   return Boolean(fastPathImageIntent(normalized));
 }
 
 function detectVideoIntent(message) {
+  if (!isLegacyWordIntentDetectorsEnabled()) return false;
   if (!message || typeof message !== 'string') return false;
   const normalized = normalizeMessageForIntent(message);
   return Boolean(fastPathVideoIntent(normalized));
 }
 
 function detectWebImageIntent(message) {
+  if (!isLegacyWordIntentDetectorsEnabled()) return false;
   if (!message || typeof message !== 'string') return false;
   const normalized = normalizeMessageForIntent(message);
   return Boolean(fastPathWebImageIntent(normalized));
 }
 
 function detectSoundIntent(message) {
+  if (!isLegacyWordIntentDetectorsEnabled()) return false;
   if (!message || typeof message !== 'string') return false;
   const normalized = normalizeMessageForIntent(message);
   return Boolean(fastPathSoundIntent(normalized));
 }
 
 function detectAgentIntent(message) {
+  if (!isLegacyWordIntentDetectorsEnabled()) return null;
   if (!message || typeof message !== 'string') return null;
   const normalized = normalizeMessageForIntent(message);
   const result = fastPathAgentIntent(normalized);
@@ -295,6 +287,7 @@ function detectAgentIntent(message) {
 }
 
 function detectShowcaseIntent(message) {
+  if (!isLegacyWordIntentDetectorsEnabled()) return null;
   if (!message || typeof message !== 'string') return null;
   const normalized = normalizeMessageForIntent(message);
   const result = fastPathShowcaseIntent(normalized);
@@ -349,5 +342,6 @@ module.exports = {
   detectAgentIntent,
   detectShowcaseIntent,
   extractWebImageSubject,
+  isLegacyWordIntentDetectorsEnabled,
   normalizeMessageForIntent,
 };
