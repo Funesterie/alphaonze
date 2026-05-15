@@ -168,7 +168,7 @@ async function drainLocalGpuBeforeSd({ modelProfile = '' } = {}) {
 
 function resolveRequestOrigin(req) {
   const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
-  const proto = forwardedProto || req?.protocol || (req?.socket?.encrypted ? 'https' : 'http');
+  const rawProto = forwardedProto || req?.protocol || (req?.socket?.encrypted ? 'https' : 'http');
   const forwardedHost = String(
     req?.headers?.['x-forwarded-host']
     || req?.headers?.host
@@ -182,6 +182,10 @@ function resolveRequestOrigin(req) {
   const hostWithoutPort = forwardedHost.split(':')[0];
   const port = forwardedHost.includes(':') ? forwardedHost.split(':')[1] : null;
   const isLoopback = hostWithoutPort === '127.0.0.1' || hostWithoutPort === 'localhost' || hostWithoutPort === '::1';
+  const isPrivateLan = /^10\./.test(hostWithoutPort)
+    || /^192\.168\./.test(hostWithoutPort)
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostWithoutPort);
+  const proto = !forwardedProto && rawProto === 'http' && !isLoopback && !isPrivateLan ? 'https' : rawProto;
 
   if (isLoopback) {
     // Priorité : variable d'env A11_PUBLIC_HOST, sinon IP LAN auto-détectée

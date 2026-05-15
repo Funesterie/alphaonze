@@ -49,13 +49,22 @@ function getGeneratedImageDir() {
 
 function resolveRequestOrigin(req = null) {
   const forwardedProto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim();
-  const proto = forwardedProto || req?.protocol || (req?.socket?.encrypted ? 'https' : 'http');
+  const rawProto = forwardedProto || req?.protocol || (req?.socket?.encrypted ? 'https' : 'http');
   const forwardedHost = String(
     req?.headers?.['x-forwarded-host']
     || req?.headers?.host
     || ''
   ).split(',')[0].trim();
-  return forwardedHost ? `${proto || 'http'}://${forwardedHost}` : '';
+  if (!forwardedHost) return '';
+  const hostWithoutPort = forwardedHost.split(':')[0];
+  const isLocalHost = hostWithoutPort === '127.0.0.1'
+    || hostWithoutPort === 'localhost'
+    || hostWithoutPort === '::1'
+    || /^10\./.test(hostWithoutPort)
+    || /^192\.168\./.test(hostWithoutPort)
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostWithoutPort);
+  const proto = !forwardedProto && rawProto === 'http' && !isLocalHost ? 'https' : rawProto;
+  return `${proto || 'http'}://${forwardedHost}`;
 }
 
 function buildPublicUrl(req, publicPath) {
