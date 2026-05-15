@@ -88,3 +88,20 @@ test('buildStructuredRouterTraceMeta captures structured-llm stage headers and r
     }
   );
 });
+
+test('buildGeminiPayloadFromOpenAiBody preserves system instruction and text messages', () => {
+  const payload = __private__.buildGeminiPayloadFromOpenAiBody(
+    { temperature: 0, max_tokens: 64, response_format: { type: 'json_object' } },
+    [
+      { role: 'system', content: 'Tu es A11.' },
+      { role: 'user', content: 'Réponds OK.' },
+      { role: 'assistant', content: 'OK.' },
+    ]
+  );
+
+  assert.deepEqual(payload.systemInstruction, { parts: [{ text: 'Tu es A11.' }] });
+  assert.deepEqual(payload.contents.map((entry) => entry.role), ['user', 'model']);
+  assert.equal(payload.generationConfig.temperature, 0);
+  assert.equal(payload.generationConfig.maxOutputTokens, 64);
+  assert.equal(payload.generationConfig.responseMimeType, 'application/json');
+});

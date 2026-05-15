@@ -23,6 +23,16 @@ const A11_MCP_CONTEXT = `
 - Je peux aussi donner le manifeste public: https://files.funesterie.me/public/mcp/funesterie-mcp-public-token.json
 `.trim();
 
+const A11_RUNTIME_MODULE_CONTEXT = `
+[A11/Funesterie runtime modules]
+- J'ai un acces controle au runtime Funesterie via le backend A11, le MCP et le pont Codex.
+- Je ne suis pas un chatbot isole: je peux m'appuyer sur l'inventaire runtime, WestSide Chopper, Funesterie Mixer, les runtime hooks, QFlush, Corpus, Rome, Linguistic Core, Janus/Vivy media et les workers whitelistes.
+- Chopper assemble les modules, expose leur sante et leurs recettes Rumble; Mixer route une demande vers les bons agents, workers, modules et outils MCP selon pertinence, sante, risque et latence.
+- Si Jeffrey me demande si j'ai acces au runtime, aux modules, a Chopper, a Mixer, a Corpus, a Rome ou aux workers, je ne reponds jamais "je n'ai pas d'acces direct". Je dis que oui, avec acces borne et sans secrets.
+- Si une surface ne peut pas executer une action precise, je parle d'une limite de surface ou de permission, pas d'une absence de runtime.
+- Je peux donner un statut court public; les chemins locaux detailles, secrets, tokens, routes privees et dumps complets restent reserves au groupe famille A11.
+`.trim();
+
 const A11_CREATIVE_PUBLIC_CONTEXT = `
 [A11/Funesterie creative public context]
 - Je connais Funesterie comme un travail pratique et creatif autour des documents, de la voix, de la musique, des images, de la video et de la publication.
@@ -40,6 +50,11 @@ function hasActiveIdentityContext(basePrompt = '') {
 function hasMcpContext(basePrompt = '') {
   return /\bMCP\b/i.test(basePrompt)
     && /(Model Context Protocol|a11_mcp_dimension_status|route-map|identity-route|Codex bridge|pont Codex|serveur MCP)/i.test(basePrompt);
+}
+
+function hasRuntimeModuleContext(basePrompt = '') {
+  return /\b(runtime|modules?|Chopper|Mixer|Rumble|workers?)\b/i.test(basePrompt)
+    && /(WestSide|Funesterie Mixer|runtime hooks|inventaire runtime|QFlush|Corpus|Rome)/i.test(basePrompt);
 }
 
 function hasCreativePublicContext(basePrompt = '') {
@@ -61,6 +76,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '') {
   }
   if (!hasMcpContext(basePrompt)) {
     sections.push(A11_MCP_CONTEXT);
+  }
+  if (!hasRuntimeModuleContext(basePrompt)) {
+    sections.push(A11_RUNTIME_MODULE_CONTEXT);
   }
 
   return sections.filter(Boolean).join('\n\n');
@@ -102,14 +120,54 @@ function buildMcpAccessReply({ familyAccess = false } = {}) {
   return lines.join('\n');
 }
 
+function isRuntimeModulesAccessQuestion(text = '') {
+  const normalized = normalizeMcpQuestionText(text);
+  if (!/(runtime|modules?|chopper|mixer|rumble|workers?|corpus|rome|qflush|hooks?|janus|vivy)/.test(normalized)) return false;
+  return /(acces|access|connect|branche|relie|status|statut|marche|dispo|voit|voir|outil|tools?|as[- ]?tu|t[' ]?as|tu as|tu peux|est[- ]?ce que|repond|fonctionnel|fonctionne|checker|verifie|verifier|\?)/.test(normalized);
+}
+
+function buildRuntimeModulesAccessReply({ familyAccess = false, chopperStatus = null, mixerStatus = null } = {}) {
+  const chopperSummary = chopperStatus?.summary || {};
+  const mixerSummary = mixerStatus?.summary || {};
+  const lines = [
+    'Oui. J ai acces au runtime Funesterie de facon controlee.',
+    'Je peux consulter l inventaire des modules, WestSide Chopper, Funesterie Mixer, les runtime hooks et les workers autorises, sans afficher de secret.',
+  ];
+
+  if (chopperSummary.modules || chopperSummary.rumbleRecipes) {
+    lines.push(`Chopper: ${Number(chopperSummary.installed || 0)}/${Number(chopperSummary.modules || 0)} modules installes, ${Number(chopperSummary.rumbleRecipesReady || 0)}/${Number(chopperSummary.rumbleRecipes || 0)} recettes pretes, Doctor ${chopperSummary.doctorStatus || 'unknown'} ${chopperSummary.doctorScore ? `(${chopperSummary.doctorScore}/100)` : ''}.`.trim());
+  } else {
+    lines.push('Chopper sert a assembler et diagnostiquer les modules runtime.');
+  }
+
+  if (mixerSummary.primaryRecipe || mixerSummary.topScore) {
+    lines.push(`Mixer: route active vers ${mixerSummary.primaryRecipe || 'une recette'}${mixerSummary.primaryRumble ? ` / ${mixerSummary.primaryRumble}` : ''}, score haut ${Number(mixerSummary.topScore || 0)}.`);
+  } else {
+    lines.push('Mixer sert a router les demandes vers les bons agents, modules, workers et outils MCP.');
+  }
+
+  if (familyAccess) {
+    lines.push('Je peux aussi lancer les checks bornes via les scripts/workerIds whitelistes quand la surface me le permet.');
+  } else {
+    lines.push('En surface publique, je donne un statut court et je garde chemins locaux, tokens, secrets et diagnostics complets hors chat.');
+  }
+
+  lines.push('Si une action precise ne passe pas ici, c est une limite de permission ou de surface, pas une absence d acces runtime.');
+  return lines.join('\n');
+}
+
 module.exports = {
   A11_CHAT_IDENTITY_CONTEXT,
   A11_CREATIVE_PUBLIC_CONTEXT,
   A11_MCP_CONTEXT,
+  A11_RUNTIME_MODULE_CONTEXT,
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
+  buildRuntimeModulesAccessReply,
   hasCreativePublicContext,
   hasActiveIdentityContext,
   hasMcpContext,
+  hasRuntimeModuleContext,
   isMcpAccessQuestion,
+  isRuntimeModulesAccessQuestion,
 };

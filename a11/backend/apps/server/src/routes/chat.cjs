@@ -13,12 +13,16 @@ const { callMcpTool } = require('../mcp-client.cjs');
 const {
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
+  buildRuntimeModulesAccessReply,
   isMcpAccessQuestion,
+  isRuntimeModulesAccessQuestion,
 } = require('../chat/a11-active-identity.cjs');
 const {
   callJanusVisionText,
   resolveVisionProvider,
 } = require('../../lib/janus-vision-runtime.cjs');
+const westsideChopper = require('../../lib/westside-chopper.cjs');
+const funesterieMixer = require('../../lib/funesterie-mixer.cjs');
 
 // Charge le system prompt depuis system_prompt.txt (première personne, identité complète d'A11)
 function loadSystemPrompt() {
@@ -157,6 +161,25 @@ async function readRuntimeHooksDiagnosticSnapshot() {
     a11Health: a11HealthResult.status === 'fulfilled' ? (extractMcpToolJson(a11HealthResult.value) || {}) : { ok: false, error: String(a11HealthResult.reason?.message || a11HealthResult.reason || 'a11_status_failed') },
     kaen44Health: kaen44HealthResult.status === 'fulfilled' ? (extractMcpToolJson(kaen44HealthResult.value) || {}) : { ok: false, error: String(kaen44HealthResult.reason?.message || kaen44HealthResult.reason || 'kaen44_status_failed') },
   };
+}
+
+function buildRuntimeModulesAccessAssistant({ familyAccess = false, request = '' } = {}) {
+  let chopperStatus = null;
+  let mixerStatus = null;
+  try {
+    chopperStatus = westsideChopper.buildChopperStatus();
+  } catch (_) {
+    chopperStatus = null;
+  }
+  try {
+    mixerStatus = funesterieMixer.buildMixerRoute({
+      request: request || 'runtime modules Chopper Mixer status',
+      topN: 8,
+    });
+  } catch (_) {
+    mixerStatus = null;
+  }
+  return buildRuntimeModulesAccessReply({ familyAccess, chopperStatus, mixerStatus });
 }
 
 const FREE_CHAT_TOKEN_LIMIT = Math.max(300, Number(process.env.A11_CHAT_FREE_TOKEN_LIMIT || 1800) || 1800);
@@ -515,7 +538,7 @@ function createChatRouter(overrides = {}) {
         if (Array.isArray(req.body.messages)) {
           req.body.messages = req.body.messages.filter((message) => String(message?.role || '').toLowerCase() !== 'system');
         }
-        if (!familyAccess && isInternalDisclosureRequest(userMessage)) {
+        if (!familyAccess && isInternalDisclosureRequest(userMessage) && !isRuntimeModulesAccessQuestion(userMessage)) {
           return res.json({ ok: true, mode: 'guarded', assistant: internalAccessDenied() });
         }
       }
@@ -525,6 +548,11 @@ function createChatRouter(overrides = {}) {
       if (isMcpAccessQuestion(userMessage)) {
         const assistant = buildMcpAccessReply({ familyAccess });
         return res.json({ ok: true, mode: 'mcp_status', assistant });
+      }
+
+      if (isRuntimeModulesAccessQuestion(userMessage)) {
+        const assistant = buildRuntimeModulesAccessAssistant({ familyAccess, request: userMessage });
+        return res.json({ ok: true, mode: 'runtime_modules_status', assistant });
       }
 
       if (isRuntimeHooksOrProdAgentsDiagnosticRequest(userMessage)) {
@@ -914,7 +942,7 @@ function createChatRouter(overrides = {}) {
         req.body.messages = req.body.messages.filter((message) => String(message?.role || '').toLowerCase() !== 'system');
       }
     }
-    if (!familyAccess && isInternalDisclosureRequest(userMessage)) {
+    if (!familyAccess && isInternalDisclosureRequest(userMessage) && !isRuntimeModulesAccessQuestion(userMessage)) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.write(`data: ${JSON.stringify({ delta: internalAccessDenied(), model: 'a11-guard' })}\n\n`);
       res.write('data: [DONE]\n\n');
@@ -924,6 +952,14 @@ function createChatRouter(overrides = {}) {
     if (isMcpAccessQuestion(userMessage)) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.write(`data: ${JSON.stringify({ delta: buildMcpAccessReply({ familyAccess }), model: 'a11-mcp-status' })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    if (isRuntimeModulesAccessQuestion(userMessage)) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.write(`data: ${JSON.stringify({ delta: buildRuntimeModulesAccessAssistant({ familyAccess, request: userMessage }), model: 'a11-runtime-modules-status' })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
       return;
@@ -1003,8 +1039,10 @@ chatEntrypoint.router = defaultRouter;
 chatEntrypoint.createChatRouter = createChatRouter;
 chatEntrypoint.buildA11ChatSystemPrompt = buildA11ChatSystemPrompt;
 chatEntrypoint.buildMcpAccessReply = buildMcpAccessReply;
+chatEntrypoint.buildRuntimeModulesAccessReply = buildRuntimeModulesAccessReply;
 chatEntrypoint.buildOllamaMessages = buildOllamaMessages;
 chatEntrypoint.normalizeConversationMessages = normalizeConversationMessages;
 chatEntrypoint.isMcpAccessQuestion = isMcpAccessQuestion;
+chatEntrypoint.isRuntimeModulesAccessQuestion = isRuntimeModulesAccessQuestion;
 
 module.exports = chatEntrypoint;

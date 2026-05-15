@@ -18,6 +18,9 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /\bMCP\b/);
   assert.match(prompt, /Model Context Protocol/i);
   assert.match(prompt, /a11_mcp_dimension_status/i);
+  assert.match(prompt, /WestSide Chopper/i);
+  assert.match(prompt, /Funesterie Mixer/i);
+  assert.match(prompt, /runtime Funesterie/i);
 });
 
 test('/api/llm/chat empty system prompt still receives active identity context', () => {
@@ -29,6 +32,8 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /\bVivy\b/);
   assert.match(prompt, /identite musicale/i);
   assert.match(prompt, /A11 MCP/i);
+  assert.match(prompt, /Chopper assemble les modules/i);
+  assert.match(prompt, /Mixer route une demande/i);
 });
 
 test('/api/chat Ollama fallback injects the active identity before the user message', () => {
@@ -76,5 +81,39 @@ test('/api/chat recognizes MCP access questions and answers without hallucinatin
   assert.match(reply, /Oui/);
   assert.match(reply, /MCP A11/);
   assert.match(reply, /a11_health/);
+  assert.doesNotMatch(reply, /\bNon\b/i);
+});
+
+test('/api/chat recognizes runtime module access questions and answers as bounded access', () => {
+  assert.equal(chatRouter.isRuntimeModulesAccessQuestion('est ce que tu as acces au runtime et les modules ?'), true);
+  assert.equal(chatRouter.isRuntimeModulesAccessQuestion('tu vois Chopper et Mixer ?'), true);
+  assert.equal(chatRouter.isRuntimeModulesAccessQuestion('comment ca va ?'), false);
+
+  const reply = chatRouter.buildRuntimeModulesAccessReply({
+    familyAccess: true,
+    chopperStatus: {
+      summary: {
+        modules: 20,
+        installed: 20,
+        rumbleRecipes: 6,
+        rumbleRecipesReady: 6,
+        doctorStatus: 'guarded',
+        doctorScore: 94,
+      },
+    },
+    mixerStatus: {
+      summary: {
+        primaryRecipe: 'video-analysis',
+        primaryRumble: 'Arm Point',
+        topScore: 79,
+      },
+    },
+  });
+
+  assert.match(reply, /Oui/);
+  assert.match(reply, /runtime Funesterie/i);
+  assert.match(reply, /Chopper: 20\/20 modules installes/i);
+  assert.match(reply, /Mixer: route active vers video-analysis/i);
+  assert.doesNotMatch(reply, /je n'ai pas.*acc[eè]s direct/i);
   assert.doesNotMatch(reply, /\bNon\b/i);
 });
