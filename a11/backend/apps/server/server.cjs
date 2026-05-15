@@ -1322,24 +1322,28 @@ app.options('*', cors(corsOptions));
 // ============================================================
 // PostgreSQL pool (Railway Postgres)
 // ============================================================
-function resolvePostgresSslConfig() {
-  const raw = String(process.env.DATABASE_SSL ?? process.env.PGSSLMODE ?? '').trim().toLowerCase();
-  if (['0', 'false', 'disable', 'disabled', 'off', 'no'].includes(raw)) return false;
-  if (['1', 'true', 'require', 'required', 'on', 'yes', 'verify-ca', 'verify-full'].includes(raw)) {
+function resolvePgSslConfig(connectionString = '') {
+  const explicit = String(process.env.PGSSLMODE || process.env.DATABASE_SSL_MODE || process.env.DATABASE_SSL || '')
+    .trim()
+    .toLowerCase();
+  if (['disable', 'false', '0', 'off'].includes(explicit)) return false;
+  if (['require', 'true', '1', 'on'].includes(explicit)) {
     return { rejectUnauthorized: false };
   }
   try {
-    const sslMode = new URL(process.env.DATABASE_URL || '').searchParams.get('sslmode')?.trim().toLowerCase();
-    if (['0', 'false', 'disable', 'disabled', 'off', 'no'].includes(sslMode)) return false;
-    if (['1', 'true', 'require', 'required', 'on', 'yes', 'verify-ca', 'verify-full'].includes(sslMode)) {
-      return { rejectUnauthorized: false };
+    const parsed = new URL(connectionString);
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    if (['localhost', '127.0.0.1', 'a11-postgres', 'postgres', 'db'].includes(host)) {
+      return false;
     }
-  } catch (_) {}
-  return false;
+  } catch (_) {
+    // Ignore URL parsing issues and fall back to the safe remote default.
+  }
+  return { rejectUnauthorized: false };
 }
 
 const db = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: resolvePostgresSslConfig() })
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: resolvePgSslConfig(process.env.DATABASE_URL) })
   : null;
 
 // Middleware de vérification d'abonnement (pour génération image/vidéo)
@@ -7543,6 +7547,21 @@ app.get([
   '/security',
   '/reset-password',
 ], sendEmbeddedUiIndex);
+
+for (const route of ['/login', '/auth/success', '/reset-password', '/reset']) {
+  app.get(route, (_req, res) => {
+    const uiStatus = getEmbeddedUiStatus();
+    if (uiStatus.ready) {
+      return res.sendFile(uiStatus.indexPath);
+    }
+
+    if (uiStatus.enabled || String(process.env.A11_LOCAL_MODE || '').trim() === '1') {
+      return sendEmbeddedUiDiagnostic(res);
+    }
+
+    return res.status(404).type('text/plain').send('Not found');
+  });
+}
 
 function getOpenAICompletionsUrl(baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1') {
   const base = String(baseUrl || 'https://api.openai.com/v1').trim().replace(/\/$/, '');

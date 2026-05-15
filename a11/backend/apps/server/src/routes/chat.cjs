@@ -731,7 +731,7 @@ function createChatRouter(overrides = {}) {
         req,
         body: req.body || {},
         userText: userMessage,
-        messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+        messages: requestMessages,
         executeRuntime: true,
       });
 

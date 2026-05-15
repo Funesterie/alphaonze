@@ -329,6 +329,26 @@ function redirectOAuthErrorWithState(res, frontendUrl, statePayload, errorCode) 
   return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
 }
 
+function resolvePublicOAuthError(provider, error) {
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
+  const code = String(error?.message || error || 'oauth_failed').trim().toLowerCase();
+
+  if (normalizedProvider === 'google') {
+    if (code === 'invalid_client') return 'google_invalid_client';
+    if (code === 'invalid_grant') return 'google_invalid_grant';
+    if (code === 'redirect_uri_mismatch') return 'google_redirect_uri_mismatch';
+    if (code === 'access_denied') return 'google_access_denied';
+  }
+
+  if (normalizedProvider === 'microsoft') {
+    if (code.includes('aadsts7000215') || code.includes('invalid client secret')) return 'microsoft_invalid_client';
+    if (code.includes('access_denied')) return 'microsoft_access_denied';
+    if (code.includes('invalid_grant')) return 'microsoft_invalid_grant';
+  }
+
+  return 'oauth_failed';
+}
+
 function readCookie(req, name) {
   return String(req?.cookies?.[name] || parseCookieHeader(req?.headers?.cookie)[name] || '').trim();
 }
@@ -937,11 +957,13 @@ function createAuthRouter({
       return redirectOAuthSuccess(res, frontendUrl, statePayload?.returnTo || '/auth/success', sessionToken, 'google');
     } catch (callbackError) {
       clearSessionCookies(req, res);
+      const publicError = resolvePublicOAuthError('google', callbackError);
       logOAuthTrace('google', 'callback_failed', req, normalizePublicAppUrl, {
         callbackUrl,
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
+        publicError,
       }, 'warn');
-      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, 'oauth_failed');
+      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(publicError)}`));
     }
   });
 
@@ -1064,11 +1086,13 @@ function createAuthRouter({
       return res.redirect(safeFrontendRedirect(frontendUrl, statePayload?.returnTo || '/auth/success'));
     } catch (callbackError) {
       clearSessionCookies(req, res);
+      const publicError = resolvePublicOAuthError('microsoft', callbackError);
       logOAuthTrace('microsoft', 'callback_failed', req, normalizePublicAppUrl, {
         callbackUrl,
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
+        publicError,
       }, 'warn');
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_failed'));
+      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(publicError)}`));
     }
   });
 

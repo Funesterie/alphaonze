@@ -16,7 +16,6 @@
     <script>
       (function () {
         var publicHosts = {
-          "178.105.86.89": true,
           "funesterie.me": true,
           "www.funesterie.me": true,
           "k44.funesterie.me": true,
@@ -120,6 +119,54 @@
           }
         }
 
+        function shouldRenderStaticKaen44Page() {
+          var hostname = String(location.hostname || "").toLowerCase();
+          var pathname = String(location.pathname || "/").toLowerCase();
+          return (hostname === "funesterie.me" || hostname === "www.funesterie.me")
+            && (
+              pathname === "/"
+              || pathname === "/privacy"
+              || pathname === "/privacy/"
+              || pathname === "/terms"
+              || pathname === "/terms/"
+              || pathname === "/vivy"
+              || pathname === "/vivy/"
+            );
+        }
+
+        function shouldRenderStaticLoginFallback() {
+          var pathname = String(location.pathname || "/").toLowerCase();
+          var search = String(location.search || "").toLowerCase();
+          return pathname === "/login"
+            || pathname.indexOf("/login/") === 0
+            || search.indexOf("error=") !== -1
+            || search.indexOf("show=1") !== -1
+            || search.indexOf("login=1") !== -1;
+        }
+
+        function resolveStaticLoginErrorMessage() {
+          var error = String(new URLSearchParams(location.search).get("error") || "").trim().toLowerCase();
+          if (!error) return "";
+          var messages = {
+            oauth_failed: "La connexion externe a echoue. Reessaie dans un instant.",
+            oauth_state_invalid: "La verification de connexion a expire ou ne correspond plus. Relance la connexion.",
+            oauth_state_expired: "La tentative de connexion a expire. Relance-la depuis cette page.",
+            session_verification_failed: "La connexion a reussi, mais la session n'a pas pu etre verifiee. Reessaie une fois.",
+            google_auth_not_configured: "La connexion Google n'est pas encore activee sur ce serveur.",
+            google_invalid_client: "La connexion Google est mal configuree cote serveur. Utilise Microsoft pendant que nous remplacons la cle Google.",
+            google_invalid_grant: "Google a refuse le code de connexion. Reessaie en repartant du bouton Google.",
+            google_redirect_uri_mismatch: "Google refuse l'URL de retour configuree pour cette application.",
+            google_access_denied: "La connexion Google a ete annulee.",
+            google_email_not_verified: "Ton adresse Google doit etre verifiee avant de pouvoir entrer ici.",
+            microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activee sur ce serveur.",
+            microsoft_invalid_client: "La connexion Microsoft est mal configuree cote serveur.",
+            microsoft_invalid_grant: "Microsoft a refuse le code de connexion. Reessaie en repartant du bouton Microsoft.",
+            microsoft_access_denied: "La connexion Microsoft a ete annulee.",
+            microsoft_email_missing: "Microsoft n'a pas renvoye d'adresse email exploitable pour la session."
+          };
+          return messages[error] || "La connexion n'a pas pu etre finalisee.";
+        }
+
         window.__A11_RESET_CLIENT_STATE__ = resetClientState;
 
         var params = new URLSearchParams(location.search);
@@ -142,6 +189,71 @@
         });
         window.addEventListener("unhandledrejection", function (event) {
           window.__A11_BOOT_ERROR__ = String(event && event.reason || "Promise rejetee");
+        });
+
+        window.addEventListener("DOMContentLoaded", function () {
+          var root = document.getElementById("root");
+          if (!root) return;
+
+          if (shouldRenderStaticKaen44Page()) {
+            root.innerHTML = [
+              '<main style="min-height:100vh;background:#080b14;color:#f8fafc;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;">',
+              '<header style="border-bottom:1px solid rgba(196,181,253,.16);background:#0b1020;">',
+              '<nav aria-label="Navigation Kaen44" style="max-width:1120px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">',
+              '<a href="/" style="color:#fff;text-decoration:none;font-size:24px;font-weight:900;letter-spacing:0;">Kaen44</a>',
+              '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;">',
+              '<a href="/privacy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Confidentialite</a>',
+              '<a href="/terms/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Conditions</a>',
+              '<a href="/login?show=1" style="color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:900;padding:10px 16px;border-radius:999px;">Ouvrir Kaen44</a>',
+              '</div>',
+              '</nav>',
+              '</header>',
+              '<section style="max-width:1120px;margin:0 auto;padding:64px 24px 44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:52px;align-items:center;">',
+              '<div>',
+              '<h1 style="margin:0 0 20px;font-size:clamp(46px,7vw,92px);line-height:.92;letter-spacing:0;">Kaen44</h1>',
+              '<p style="margin:0;max-width:720px;color:#e9d5ff;font-size:clamp(19px,2vw,24px);line-height:1.52;font-weight:650;">Une assistante bureau claire, vocale et accessible pour organiser les documents, traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien.</p>',
+              '<div style="margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;">',
+              '<a href="/login?show=1" style="min-height:46px;display:inline-flex;align-items:center;color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:950;padding:0 20px;border-radius:999px;">Connexion Kaen44</a>',
+              '<a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialite</a>',
+              '</div>',
+              '</div>',
+              '<figure style="margin:0;justify-self:center;width:min(100%,360px);">',
+              '<img src="/assets/kaen44-avatar.png" alt="Avatar et logo Kaen44" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;border:1px solid rgba(196,181,253,.5);box-shadow:0 24px 80px rgba(0,0,0,.45);" />',
+              '</figure>',
+              '</section>',
+              '<section style="border-top:1px solid rgba(196,181,253,.12);background:#0c1222;">',
+              '<div style="max-width:1120px;margin:0 auto;padding:44px 24px 54px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:22px;">',
+              '<article style="border-left:3px solid #a78bfa;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Documents et Drive</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 aide a lire, classer, resumer et transformer les fichiers que l&#39;utilisateur importe ou autorise explicitement.</p></article>',
+              '<article style="border-left:3px solid #67e8f9;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et preparer un suivi clair pour validation humaine.</p></article>',
+              '<article style="border-left:3px solid #f0abfc;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilite</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des reponses lisibles et une aide adaptee aux personnes fatiguees ou en difficulte.</p></article>',
+              '</div>',
+              '</section>',
+              '<footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;"><div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;"><span>Kaen44 par Funesterie</span><span><a href="/privacy/" style="color:#c4b5fd;">Regles de confidentialite</a> - <a href="/terms/" style="color:#c4b5fd;">Conditions d&#39;utilisation</a></span></div></footer>',
+              '</main>'
+            ].join("");
+            return;
+          }
+
+          if (shouldRenderStaticLoginFallback()) {
+            var host = String(location.hostname || "").toLowerCase();
+            var isA11Host = host === "a11.funesterie.pro" || host === "alphaonze.funesterie.pro";
+            var title = isA11Host ? "Connexion A11" : "Connexion Kaen44";
+            var accent = isA11Host ? "#3b82f6" : "#8b5cf6";
+            var errorMessage = resolveStaticLoginErrorMessage();
+            root.innerHTML = [
+              '<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#071021;color:#e5e7eb;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;padding:24px;">',
+              '<section style="width:min(100%,420px);display:flex;flex-direction:column;gap:14px;">',
+              '<h1 style="margin:0;font-size:42px;line-height:1.05;text-align:center;">' + title + '</h1>',
+              '<p style="margin:0;color:#bfdbfe;line-height:1.5;text-align:center;">Connexion de secours chargee. Tu peux passer par OAuth meme si l&#39;application React ne s&#39;est pas encore ouverte.</p>',
+              '<a href="/api/auth/google/start?returnTo=%2Fauth%2Fsuccess&client=web" style="min-height:46px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#ffffff;color:#111827;text-decoration:none;font-weight:800;">Continuer avec Google</a>',
+              '<a href="/api/auth/microsoft/start?returnTo=%2Fauth%2Fsuccess&client=web" style="min-height:46px;display:flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(125,211,252,.28);background:#0f172a;color:#f8fafc;text-decoration:none;font-weight:800;">Continuer avec Microsoft</a>',
+              (errorMessage ? '<div style="color:#f87171;font-size:14px;line-height:1.5;text-align:center;">' + errorMessage + '</div>' : ''),
+              '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:4px;"><a href="/" style="color:#c4b5fd;text-decoration:none;font-weight:700;">Accueil</a><a href="/privacy/" style="color:#c4b5fd;text-decoration:none;font-weight:700;">Confidentialite</a><a href="/terms/" style="color:#c4b5fd;text-decoration:none;font-weight:700;">Conditions</a></div>',
+              '<div style="height:2px;border-radius:999px;background:linear-gradient(135deg,' + accent + ',#67e8f9);opacity:.8;"></div>',
+              '</section>',
+              '</main>'
+            ].join("");
+          }
         });
 
         window.setTimeout(function () {

@@ -29,6 +29,7 @@ import {
   runVivyStudioProduction,
   startGoogleOAuth,
   setAuthToken,
+  startMicrosoftOAuth,
   setAuthDisplayName,
   transcribeAudioFile,
   uploadTtsVoiceReference,
@@ -50,6 +51,7 @@ import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { A11ControlCenterPanel } from "./components/A11ControlCenterPanel";
 import { A11OpsStatusPanel } from "./components/A11OpsStatusPanel";
+import { PinkWardPanel } from "./components/PinkWardPanel";
 import { A11CommandConsolePanel } from "./components/A11CommandConsolePanel";
 import { QflushPortableTerminal } from "./components/QflushPortableTerminal";
 import { A11RemoteProvidersPanel } from "./components/A11RemoteProvidersPanel";
@@ -1201,11 +1203,44 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.add("a11-auth-page-root");
     document.body.classList.add("a11-auth-page-body");
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search || "");
+      const authError = String(params.get("error") || "").trim().toLowerCase();
+      if (authError) {
+        const authErrorMessages: Record<string, string> = {
+          oauth_failed: "La connexion externe a echoue. Reessaie dans un instant.",
+          oauth_state_invalid: "La verification de connexion a expire ou ne correspond plus. Relance la connexion.",
+          oauth_state_expired: "La tentative de connexion a expire. Relance-la depuis cette page.",
+          session_verification_failed: "La connexion a reussi, mais la session n'a pas pu etre verifiee. Reessaie une fois.",
+          google_auth_not_configured: "La connexion Google n'est pas encore activee sur ce serveur.",
+          google_invalid_client: "La connexion Google est mal configuree cote serveur. Utilise Microsoft pendant que nous remplacons la cle Google.",
+          google_invalid_grant: "Google a refuse le code de connexion. Reessaie en repartant du bouton Google.",
+          google_redirect_uri_mismatch: "Google refuse l'URL de retour configuree pour cette application.",
+          google_access_denied: "La connexion Google a ete annulee.",
+          google_email_not_verified: "Ton adresse Google doit etre verifiee avant de pouvoir entrer ici.",
+          microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activee sur ce serveur.",
+          microsoft_invalid_client: "La connexion Microsoft est mal configuree cote serveur.",
+          microsoft_invalid_grant: "Microsoft a refuse le code de connexion. Reessaie en repartant du bouton Microsoft.",
+          microsoft_access_denied: "La connexion Microsoft a ete annulee.",
+          microsoft_email_missing: "Microsoft n'a pas renvoye d'adresse email exploitable pour la session.",
+        };
+
+        setMode("login");
+        setInfo("");
+        setGoogleLoading(false);
+        setMicrosoftLoading(false);
+        setError(authErrorMessages[authError] || "La connexion n'a pas pu etre finalisee.");
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+
     return () => {
       document.documentElement.classList.remove("a11-auth-page-root");
       document.body.classList.remove("a11-auth-page-body");
@@ -1271,6 +1306,13 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     startGoogleOAuth(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/auth/success"), "web");
+  };
+
+  const handleMicrosoftOAuth = () => {
+    setError("");
+    setInfo("");
+    setMicrosoftLoading(true);
+    startMicrosoftOAuth("/auth/success", "web");
   };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {
@@ -1472,20 +1514,38 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           <button
             type="button"
             onClick={handleGoogleOAuth}
-            disabled={googleLoading || loading}
+            disabled={googleLoading || microsoftLoading || loading}
             style={{
               minHeight: 42,
               borderRadius: isKaen44 ? 12 : 6,
               border: isKaen44 ? "1px solid rgba(226, 232, 240, 0.18)" : "1px solid rgba(45, 212, 191, 0.24)",
               background: googleLoading
-                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "rgba(8, 24, 32, 0.84)")
-                : (isKaen44 ? "#f8fafc" : "#d7fff5"),
-              color: isKaen44 ? "#111827" : "#08201c",
-              cursor: googleLoading || loading ? "wait" : "pointer",
+                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                : (isKaen44 ? "#f8fafc" : "#ffffff"),
+              color: "#111827",
+              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
               fontWeight: 800,
             }}
           >
             {googleLoading ? "Connexion Google..." : "Continuer avec Google"}
+          </button>
+          <button
+            type="button"
+            onClick={handleMicrosoftOAuth}
+            disabled={googleLoading || microsoftLoading || loading}
+            style={{
+              minHeight: 42,
+              borderRadius: isKaen44 ? 12 : 6,
+              border: isKaen44 ? "1px solid rgba(125, 211, 252, 0.28)" : "1px solid #334155",
+              background: microsoftLoading
+                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                : (isKaen44 ? "rgba(15, 23, 42, 0.9)" : "#0f172a"),
+              color: "#f8fafc",
+              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
+              fontWeight: 800,
+            }}
+          >
+            {microsoftLoading ? "Connexion Microsoft..." : "Continuer avec Microsoft"}
           </button>
           {ENABLE_GOOGLE_IDENTITY_BUTTON && GOOGLE_CLIENT_ID && (
             <div style={{ minHeight: 42, display: "flex", justifyContent: "center" }}>
@@ -4732,7 +4792,9 @@ export function App() {
 
   if (!isAuthenticated) {
     const pathname = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/";
-    if (isKaen44 && !isLoginRoute(pathname) && !isAuthSuccessRoute(pathname)) {
+    const search = typeof window !== "undefined" ? window.location.search.toLowerCase() : "";
+    const forceLoginPanel = isLoginRoute(pathname) || search.includes("error=") || search.includes("show=1") || search.includes("login=1");
+    if (isKaen44 && !forceLoginPanel && !isAuthSuccessRoute(pathname)) {
       const publicPage = pathname.includes("/privacy") ? "privacy"
         : pathname.includes("/terms") ? "terms"
           : pathname.includes("/vivy") ? "vivy"
@@ -5689,7 +5751,12 @@ export function App() {
                   </div>
                 ) : null}
 
-                {!isKaen44 && adminSection === 'runtime' ? <A11OpsStatusPanel /> : null}
+                {!isKaen44 && adminSection === 'runtime' ? (
+                  <>
+                    <PinkWardPanel />
+                    <A11OpsStatusPanel />
+                  </>
+                ) : null}
                 {!isKaen44 && adminSection === 'console' ? (
                   <div style={{ display: 'grid', gap: 16 }}>
                     <QflushPortableTerminal compact={isCompactLayout} />

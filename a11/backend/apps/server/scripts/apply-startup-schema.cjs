@@ -18,25 +18,29 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
-function resolvePostgresSslConfig() {
-  const raw = String(process.env.DATABASE_SSL ?? process.env.PGSSLMODE ?? '').trim().toLowerCase();
-  if (['0', 'false', 'disable', 'disabled', 'off', 'no'].includes(raw)) return false;
-  if (['1', 'true', 'require', 'required', 'on', 'yes', 'verify-ca', 'verify-full'].includes(raw)) {
+function resolvePgSslConfig(connectionString = '') {
+  const explicit = String(process.env.PGSSLMODE || process.env.DATABASE_SSL_MODE || process.env.DATABASE_SSL || '')
+    .trim()
+    .toLowerCase();
+  if (['disable', 'false', '0', 'off'].includes(explicit)) return false;
+  if (['require', 'true', '1', 'on'].includes(explicit)) {
     return { rejectUnauthorized: false };
   }
   try {
-    const sslMode = new URL(process.env.DATABASE_URL || '').searchParams.get('sslmode')?.trim().toLowerCase();
-    if (['0', 'false', 'disable', 'disabled', 'off', 'no'].includes(sslMode)) return false;
-    if (['1', 'true', 'require', 'required', 'on', 'yes', 'verify-ca', 'verify-full'].includes(sslMode)) {
-      return { rejectUnauthorized: false };
+    const parsed = new URL(connectionString);
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    if (['localhost', '127.0.0.1', 'a11-postgres', 'postgres', 'db'].includes(host)) {
+      return false;
     }
-  } catch (_) {}
-  return false;
+  } catch (_) {
+    // Ignore URL parsing issues and fall back to the safe remote default.
+  }
+  return { rejectUnauthorized: false };
 }
 
 const client = new Client({
   connectionString: databaseUrl,
-  ssl: resolvePostgresSslConfig(),
+  ssl: resolvePgSslConfig(databaseUrl),
 });
 
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();

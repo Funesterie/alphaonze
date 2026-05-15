@@ -939,6 +939,18 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
   globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client));
 }
 
+export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
+  const authBase = normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro');
+  const target = new URL(buildApiUrlFromBase(authBase, '/api/auth/microsoft/start'), globalThis.location?.origin || 'https://a11.funesterie.pro');
+  target.searchParams.set('returnTo', returnTo || '/auth/success');
+  target.searchParams.set('client', client || 'web');
+  return target.toString();
+}
+
+export function startMicrosoftOAuth(returnTo = '/auth/success', client = 'web') {
+  globalThis.location.assign(getMicrosoftOAuthStartUrl(returnTo, client));
+}
+
 export async function register(username: string, email: string, password: string) {
   const res = await fetch(getApiUrl('/api/auth/register'), {
     method: 'POST',
