@@ -23,59 +23,47 @@ if (Test-Path $EnvFile) {
   }
 }
 
-# --- Résoudre le chemin complet de python
-# NOTE : Start-Process NE cherche pas dans PATH comme le shell.
-# On résout le chemin source via Get-Command pour éviter ce piège.
+# --- Resoudre le chemin complet de python
+# Start-Process ne cherche pas dans PATH comme le shell.
+# On resout le chemin source via Get-Command.
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
 if (-not $pythonCmd) {
   $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue
 }
 if (-not $pythonCmd) {
-  Write-Host "[Ekko] Python introuvable dans le PATH — abandon."
+  Write-Host "[Ekko] Python introuvable dans le PATH - abandon."
   exit 1
 }
 $pythonExe = $pythonCmd.Source
 
-Write-Host "[Ekko] Python    : $pythonExe"
-Write-Host "[Ekko] Config    : $ConfigFile"
-Write-Host "[Ekko] Logs      : $LogOut"
-Write-Host "[Ekko] Demarrage en arriere-plan..."
+Write-Host "[Ekko] Python : $pythonExe"
+Write-Host "[Ekko] Config : $ConfigFile"
+Write-Host "[Ekko] Logs   : $LogOut"
+Write-Host "[Ekko] Lancement..."
 
-# IMPORTANT : ne pas utiliser -WindowStyle Hidden avec -RedirectStandard* en meme temps.
-# C'est un bug PowerShell 5.1/Windows : Start-Process retourne null silencieusement.
-# La sortie est de toute facon redirigee vers des fichiers, pas de fenetre apparaitra.
-$proc = $null
-try {
-  $proc = Start-Process `
-    -FilePath      $pythonExe `
-    -ArgumentList  "main.py", "--config", $ConfigFile `
-    -WorkingDirectory $EkkoRoot `
-    -RedirectStandardOutput $LogOut `
-    -RedirectStandardError  $LogErr `
-    -PassThru
-} catch {
-  Write-Host "[Ekko] Erreur Start-Process : $_"
-  Write-Host "[Ekko] Lance manuellement : cd $EkkoRoot && python main.py --config $ConfigFile"
-  exit 1
-}
+# NOTE: ne pas combiner -WindowStyle Hidden avec -PassThru + -RedirectStandard*
+# (bug PS 5.1 - retourne null). Sans -PassThru, on lit le PID via Get-CimInstance.
+Start-Process `
+  -FilePath      $pythonExe `
+  -ArgumentList  @("main.py", "--config", $ConfigFile) `
+  -WorkingDirectory $EkkoRoot `
+  -RedirectStandardOutput $LogOut `
+  -RedirectStandardError  $LogErr `
+  -WindowStyle Hidden
 
-if (-not $proc) {
-  Write-Host "[Ekko] Start-Process a retourne null — Python inaccessible."
-  Write-Host "[Ekko] Lance manuellement : cd $EkkoRoot && python main.py --config $ConfigFile"
-  exit 1
-}
+Start-Sleep -Milliseconds 1500
 
-# Attendre 1 s pour detecter un crash immediat
-Start-Sleep -Milliseconds 1200
-if ($proc.HasExited) {
-  Write-Host "[Ekko] Le processus s'est arrete immediatement (exit code $($proc.ExitCode))."
+# Trouver le PID du processus via la ligne de commande
+$ekkoProc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -and $_.CommandLine -match "ekko\.config" } |
+  Select-Object -First 1
+
+if ($ekkoProc) {
+  Write-Host "[Ekko] OK - PID $($ekkoProc.ProcessId) sur http://127.0.0.1:5012"
+  $ekkoProc.ProcessId | Out-File $PidFile -Encoding utf8 -NoNewline
+} else {
+  Write-Host "[Ekko] Processus non detecte apres 1.5s - voir logs: $LogErr"
   if (Test-Path $LogErr) {
-    Write-Host "[Ekko] --- stderr ---"
-    Get-Content $LogErr -ErrorAction SilentlyContinue | Select-Object -First 40 | ForEach-Object { Write-Host $_ }
-    Write-Host "[Ekko] ---"
+    Get-Content $LogErr -ErrorAction SilentlyContinue | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
   }
-  exit 1
 }
-
-Write-Host "[Ekko] OK — PID $($proc.Id) sur http://127.0.0.1:5012"
-$proc.Id | Out-File $PidFile -Encoding utf8 -NoNewline
