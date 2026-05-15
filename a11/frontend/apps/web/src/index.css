@@ -1820,7 +1820,10 @@ html.a11-auth-page-root body,
 html.a11-auth-page-root #root,
 html.kaen-public-page-root,
 html.kaen-public-page-root body,
-html.kaen-public-page-root #root {
+html.kaen-public-page-root #root,
+html.funesterie-cockpit-page-root,
+html.funesterie-cockpit-page-root body,
+html.funesterie-cockpit-page-root #root {
   height: auto !important;
   min-height: 100%;
   overflow-y: auto !important;
@@ -1830,6 +1833,435 @@ html.kaen-public-page-root #root {
 
 html.a11-auth-page-root body {
   overscroll-behavior-y: contain;
+}
+
+html.funesterie-cockpit-page-root body {
+  background: #030307;
+}
+
+.funesterie-cockpit-shell {
+  --cockpit-bg: #030307;
+  --cockpit-text: #fbf3ff;
+  --cockpit-muted: #d7c7df;
+  --cockpit-pink: #f079d8;
+  --cockpit-violet: #a76cff;
+  --cockpit-blue: #35bdf8;
+  --cockpit-gold: #f1b868;
+  --cockpit-line: rgba(167, 108, 255, 0.34);
+  --cockpit-panel: rgba(8, 8, 18, 0.78);
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding: 22px clamp(16px, 3vw, 42px) 28px;
+  color: var(--cockpit-text);
+  background:
+    radial-gradient(circle at 18% 28%, rgba(240, 121, 216, 0.18), transparent 24%),
+    radial-gradient(circle at 80% 26%, rgba(53, 189, 248, 0.15), transparent 26%),
+    linear-gradient(115deg, rgba(46, 22, 17, 0.72) 0%, rgba(5, 4, 11, 0.96) 38%, rgba(3, 3, 9, 1) 100%),
+    var(--cockpit-bg);
+}
+
+.funesterie-cockpit-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.34;
+  background-image:
+    linear-gradient(rgba(167, 108, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 189, 248, 0.06) 1px, transparent 1px);
+  background-size: 58px 58px;
+  mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+}
+
+.funesterie-cockpit-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.funesterie-cockpit-nav {
+  width: min(1520px, 100%);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+}
+
+.funesterie-cockpit-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--cockpit-text);
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.funesterie-cockpit-brand img {
+  width: 72px;
+  height: 56px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 24px rgba(240, 121, 216, 0.28));
+}
+
+.funesterie-cockpit-brand span {
+  display: grid;
+  gap: 4px;
+}
+
+.funesterie-cockpit-brand strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(24px, 3vw, 40px);
+  line-height: 1;
+  font-weight: 600;
+}
+
+.funesterie-cockpit-brand small {
+  color: #d9bbeb;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.funesterie-cockpit-nav div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.funesterie-cockpit-nav a {
+  color: #e8d9f3;
+  text-decoration: none;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.funesterie-cockpit-nav div a {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.funesterie-cockpit-nav div a:hover {
+  border-color: rgba(240, 121, 216, 0.28);
+  background: rgba(240, 121, 216, 0.08);
+}
+
+.funesterie-cockpit-nav-cta {
+  min-width: 148px;
+  text-align: center;
+  border-color: rgba(240, 121, 216, 0.46) !important;
+  background: rgba(8, 5, 20, 0.72);
+  box-shadow: 0 0 30px rgba(167, 108, 255, 0.2);
+}
+
+.funesterie-cockpit-hero {
+  width: min(1520px, 100%);
+  min-height: clamp(520px, 52vw, 740px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.82fr) minmax(360px, 1.1fr) minmax(260px, 0.82fr);
+  gap: clamp(18px, 3vw, 42px);
+  align-items: stretch;
+}
+
+.funesterie-cockpit-side,
+.funesterie-cockpit-center {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--cockpit-line);
+  border-radius: 8px;
+  background: var(--cockpit-panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.funesterie-cockpit-side > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.funesterie-cockpit-side::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 20%, rgba(3, 3, 7, 0.58) 56%, rgba(3, 3, 7, 0.96) 100%);
+}
+
+.funesterie-cockpit-side--vivy {
+  border-color: rgba(240, 121, 216, 0.42);
+}
+
+.funesterie-cockpit-side--vivy > img {
+  object-position: 38% 50%;
+}
+
+.funesterie-cockpit-side--a11 {
+  border-color: rgba(53, 189, 248, 0.38);
+}
+
+.funesterie-cockpit-side--a11 > img {
+  object-position: 52% 40%;
+}
+
+.funesterie-cockpit-side > div {
+  position: absolute;
+  z-index: 2;
+  left: 22px;
+  right: 22px;
+  bottom: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.funesterie-cockpit-side h2 {
+  margin: 0;
+  font-size: clamp(54px, 7vw, 94px);
+  line-height: 0.86;
+  color: var(--cockpit-pink);
+  font-family: "Segoe Script", "Brush Script MT", Georgia, serif;
+  text-shadow: 0 0 28px rgba(240, 121, 216, 0.34);
+}
+
+.funesterie-cockpit-side--a11 h2 {
+  color: var(--cockpit-blue);
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.funesterie-cockpit-side p,
+.funesterie-cockpit-center p,
+.funesterie-cockpit-connection p {
+  color: var(--cockpit-muted);
+  font-size: 16px;
+  line-height: 1.62;
+}
+
+.funesterie-cockpit-side a,
+.funesterie-cockpit-actions a,
+.funesterie-cockpit-connection button,
+.funesterie-cockpit-connection div > a {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border: 1px solid rgba(240, 121, 216, 0.46);
+  border-radius: 8px;
+  padding: 0 18px;
+  color: #fff7ff;
+  background: rgba(8, 5, 20, 0.76);
+  text-decoration: none;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.funesterie-cockpit-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: clamp(28px, 4vw, 58px);
+  border-color: rgba(241, 184, 104, 0.34);
+  background:
+    radial-gradient(circle at 50% 34%, rgba(241, 184, 104, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(9, 7, 15, 0.88), rgba(4, 4, 10, 0.94));
+}
+
+.funesterie-cockpit-center img {
+  width: min(100%, 540px);
+  max-height: 300px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 32px rgba(241, 184, 104, 0.24));
+}
+
+.funesterie-cockpit-center h1 {
+  margin: 20px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(58px, 7vw, 118px);
+  font-weight: 500;
+  line-height: 0.88;
+  color: #ffe3b3;
+  text-shadow: 0 0 30px rgba(241, 184, 104, 0.38), 0 0 74px rgba(240, 121, 216, 0.2);
+}
+
+.funesterie-cockpit-center p {
+  max-width: 680px;
+  margin: 22px auto 0;
+}
+
+.funesterie-cockpit-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.funesterie-cockpit-actions a:first-child,
+.funesterie-cockpit-connection button {
+  border-color: rgba(240, 121, 216, 0.62);
+  background: linear-gradient(135deg, rgba(240, 121, 216, 0.64), rgba(127, 70, 229, 0.52));
+  box-shadow: 0 0 34px rgba(240, 121, 216, 0.22);
+}
+
+.funesterie-cockpit-agents,
+.funesterie-cockpit-connection,
+.funesterie-cockpit-links {
+  width: min(1520px, 100%);
+  margin: 20px auto 0;
+}
+
+.funesterie-cockpit-agents {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.funesterie-cockpit-agent {
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(167, 108, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 7, 17, 0.76);
+  color: var(--cockpit-text);
+  text-decoration: none;
+}
+
+.funesterie-cockpit-agent img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.funesterie-cockpit-agent strong {
+  display: block;
+  color: #f0d7ff;
+  font-size: 20px;
+}
+
+.funesterie-cockpit-agent small {
+  color: #c9b9d4;
+  font-size: 13px;
+}
+
+.funesterie-cockpit-connection {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(320px, 0.72fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.funesterie-cockpit-connection > div,
+.funesterie-cockpit-connection aside {
+  border: 1px solid rgba(167, 108, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 7, 17, 0.78);
+  padding: clamp(18px, 3vw, 28px);
+}
+
+.funesterie-cockpit-kicker,
+.funesterie-cockpit-muted {
+  display: block;
+  color: #d9b3ff;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.funesterie-cockpit-connection h2,
+.funesterie-cockpit-connection h3 {
+  margin: 10px 0 0;
+  color: #fff2ff;
+  font-size: clamp(26px, 3vw, 48px);
+  line-height: 1.05;
+}
+
+.funesterie-cockpit-connection h3 {
+  font-size: 24px;
+}
+
+.funesterie-cockpit-connection div > a {
+  margin-left: 10px;
+  border-color: rgba(53, 189, 248, 0.42);
+}
+
+.funesterie-cockpit-connection button:disabled {
+  opacity: 0.66;
+  cursor: wait;
+}
+
+.funesterie-cockpit-oauth-message,
+.funesterie-cockpit-oauth-ok {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(241, 184, 104, 0.42);
+  border-radius: 8px;
+  background: rgba(72, 46, 11, 0.24);
+}
+
+.funesterie-cockpit-oauth-ok {
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(20, 83, 45, 0.22);
+}
+
+.funesterie-cockpit-connection aside ul {
+  margin: 8px 0 18px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+
+.funesterie-cockpit-connection aside li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e7ddec;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
+}
+
+.funesterie-cockpit-links {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.funesterie-cockpit-links a {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(167, 108, 255, 0.28);
+  border-radius: 8px;
+  color: #efdef8;
+  background: rgba(8, 7, 17, 0.72);
+  text-decoration: none;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .kaen-public-hero[hidden] {
@@ -2983,6 +3415,25 @@ html.a11-auth-page-root body {
 }
 
 @media (max-width: 1120px) {
+  .funesterie-cockpit-hero {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .funesterie-cockpit-center {
+    grid-column: 1 / -1;
+    order: -1;
+    min-height: 420px;
+  }
+
+  .funesterie-cockpit-agents,
+  .funesterie-cockpit-links {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .funesterie-cockpit-connection {
+    grid-template-columns: 1fr;
+  }
+
   .kaen-public-hero {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
     min-height: auto;
@@ -3093,6 +3544,70 @@ html.a11-auth-page-root body {
   .kaen-public-shell button,
   .kaen-public-shell a {
     touch-action: manipulation;
+  }
+
+  .funesterie-cockpit-shell {
+    padding: 14px;
+  }
+
+  .funesterie-cockpit-nav {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .funesterie-cockpit-nav div {
+    justify-content: flex-start;
+  }
+
+  .funesterie-cockpit-nav div a,
+  .funesterie-cockpit-nav-cta {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .funesterie-cockpit-hero,
+  .funesterie-cockpit-agents,
+  .funesterie-cockpit-links {
+    grid-template-columns: 1fr;
+  }
+
+  .funesterie-cockpit-center {
+    min-height: auto;
+    padding: 26px 18px;
+  }
+
+  .funesterie-cockpit-center img {
+    max-height: 190px;
+  }
+
+  .funesterie-cockpit-side {
+    min-height: 430px;
+  }
+
+  .funesterie-cockpit-side--a11 {
+    min-height: 390px;
+  }
+
+  .funesterie-cockpit-actions a,
+  .funesterie-cockpit-side a,
+  .funesterie-cockpit-connection button,
+  .funesterie-cockpit-connection div > a {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .funesterie-cockpit-connection div > a {
+    margin: 10px 0 0;
+  }
+
+  .funesterie-cockpit-agent {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .funesterie-cockpit-agent img {
+    width: 82px;
+    height: 82px;
   }
 
   .kaen-public-shell {

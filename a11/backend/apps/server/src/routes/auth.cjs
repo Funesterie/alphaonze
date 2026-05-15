@@ -246,10 +246,16 @@ function isAllowedOAuthFrontendOrigin(origin) {
   if ([
     'https://a11.funesterie.pro',
     'https://alphaonze.funesterie.pro',
+    'https://funesterie.pro',
+    'https://www.funesterie.pro',
+    'https://cockpit.funesterie.pro',
     'https://k44.funesterie.me',
     'https://kaen44.funesterie.me',
     'https://funesterie.me',
     'https://www.funesterie.me',
+    'https://vivy.funesterie.pro',
+    'https://vivy.funesterie.me',
+    'https://music.funesterie.me',
   ].includes(normalized)) {
     return true;
   }
@@ -306,27 +312,32 @@ function redirectOAuthSuccess(res, frontendUrl, returnTo, token, provider) {
   return res.redirect(needsFragmentToken ? appendOAuthTokenFragment(target, token, provider) : target);
 }
 
-function redirectOAuthErrorWithState(res, frontendUrl, statePayload, errorCode) {
+function redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode) {
   const error = encodeURIComponent(errorCode || 'oauth_failed');
-  const returnTo = String(statePayload?.returnTo || '').trim();
-  if (returnTo) {
-    try {
-      const target = new URL(resolveOAuthRedirectUrl(frontendUrl, returnTo));
-      if (/^\/k44(?:\/|$)/i.test(target.pathname)) {
-        target.pathname = '/k44/login';
-      } else if (/^\/kaen44(?:\/|$)/i.test(target.pathname)) {
-        target.pathname = '/kaen44/login';
-      } else {
-        target.pathname = '/login';
-      }
-      target.search = `?error=${error}`;
-      target.hash = '';
-      return res.redirect(target.toString());
-    } catch {
-      // fall through to regular frontend redirect
+  const safeReturnTo = String(returnTo || '').trim();
+  if (!safeReturnTo) return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
+
+  try {
+    const target = new URL(resolveOAuthRedirectUrl(frontendUrl, safeReturnTo));
+    if (/^\/k44(?:\/|$)/i.test(target.pathname)) {
+      target.pathname = '/k44/login';
+    } else if (/^\/kaen44(?:\/|$)/i.test(target.pathname)) {
+      target.pathname = '/kaen44/login';
+    } else if (/^\/cockpit(?:\/|$)/i.test(target.pathname)) {
+      target.pathname = '/cockpit';
+    } else {
+      target.pathname = '/login';
     }
+    target.search = `?error=${error}`;
+    target.hash = '';
+    return res.redirect(target.toString());
+  } catch {
+    return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
   }
-  return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
+}
+
+function redirectOAuthErrorWithState(res, frontendUrl, statePayload, errorCode) {
+  return redirectOAuthErrorToReturnTo(res, frontendUrl, statePayload?.returnTo, errorCode);
 }
 
 function resolvePublicOAuthError(provider, error) {
@@ -819,6 +830,8 @@ function createAuthRouter({
 
   function redirectOAuthError(req, res, errorCode) {
     const frontendUrl = resolveFrontendUrl(req, normalizePublicAppUrl);
+    const returnTo = String(req.query?.returnTo || '').trim();
+    if (returnTo) return redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode);
     return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(errorCode)}`));
   }
 
