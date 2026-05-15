@@ -1,0 +1,25 @@
+tunnel: 7a6fa064-9c6f-477f-865a-131240ce5f5e
+credentials-file: /etc/cloudflared/7a6fa064-9c6f-477f-865a-131240ce5f5e.json
+
+ingress:
+  - hostname: kaen44-hetzner-test.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: k44.funesterie.me
+  - hostname: k44.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: k44.funesterie.me
+  - hostname: kaen44.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: k44.funesterie.me
+  - hostname: funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: funesterie.me
+  - hostname: www.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: www.funesterie.me
+  - service: http_status:404

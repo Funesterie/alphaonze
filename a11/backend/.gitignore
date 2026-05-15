@@ -12,7 +12,13 @@ apps/web/
 apps/server/.env
 apps/server/.env.local
 apps/server/.env.*.local
+apps/server/profiles/*.env
+!apps/server/profiles/*.env.example
 apps/server/tmp-restart-*.log
+apps/server/codex-*.log
+apps/server/codex-*.err.log
+apps/server/codex-*.out.log
+apps/server/.env.online
 a11_memory/conversations/
 a11_memory/memos/memo_env_snapshot_*.json
 public/tts/

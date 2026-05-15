@@ -298,6 +298,24 @@ test("resolveUserRequest keeps non-conforming drawing questions in text mode", a
   assert.equal(resolution.mask.intent, 'chat.reply');
 });
 
+test("resolveUserRequest keeps archive lookups about Render in text mode", async () => {
+  const resolver = createTestIntentResolver({
+    detectIntentWithLlm: async () => ({
+      intent: 'chat.reply',
+      confidence: 0.5,
+      reason: 'test_low_confidence_text_reply',
+      subject: '',
+    }),
+  });
+  const resolution = await resolver.resolveUserRequest({
+    userText: 'Dans nos archives locales, retrouve la conversation ou on reparait Render et donne juste son titre.',
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'chat.reply');
+  assert.equal(resolution.mask.intent, 'chat.reply');
+});
+
 test('resolveUserRequest enriches doubtful image prompts with concise web definition context', async () => {
   const fakeTextToWazaa = async (text) => ({
     wazaa: '1.1',

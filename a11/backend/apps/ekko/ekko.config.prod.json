@@ -1,0 +1,41 @@
+{
+  "_comment": "Config PROD — Ekko tourne LOCAL, envoie vers a11.funesterie.pro",
+
+  "backend": "auto",
+  "sample_rate": 16000,
+  "chunk_ms": 30,
+  "max_silence_ms": 1200,
+  "min_speech_ms": 300,
+
+  "transcription_backend": "local",
+  "whisper_model": "base",
+  "language": "fr",
+
+  "require_opt_in": true,
+  "visual_indicator": true,
+  "transcript_ttl_s": 60,
+  "store_summary_only": true,
+
+  "app_whitelist": [],
+
+  "app_blacklist": [
+    "chrome.exe", "firefox.exe", "msedge.exe", "opera.exe", "brave.exe",
+    "chromium.exe", "vivaldi.exe", "waterfox.exe",
+    "Google Chrome", "Firefox", "Safari", "Microsoft Edge",
+    "1password.exe", "bitwarden.exe", "keepass.exe", "lastpass.exe",
+    "1Password", "Bitwarden", "KeePass",
+    "paypal.exe", "revolut.exe",
+    "signal.exe", "whatsapp.exe", "Signal", "WhatsApp"
+  ],
+
+  "keyword_blacklist": [
+    "mot de passe", "password", "code secret", "cvv", "pin",
+    "numéro de carte", "card number", "iban", "rib"
+  ],
+
+  "ivy_endpoint": "https://a11.funesterie.pro/api/ekko/ingest",
+  "ivy_timeout_s": 8.0,
+
+  "server_host": "127.0.0.1",
+  "server_port": 5012
+}

@@ -73,7 +73,7 @@ Pour la production, configurez le webhook Stripe:
 6. Ajoutez dans `.env.local`:
 
 ```env
-STRIPE_WEBHOOK_SECRET=whsec_XXXXXXXXXXXXXXXXXXXXXXXXXX
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 ```
 
 ## 🧪 Test Rapide

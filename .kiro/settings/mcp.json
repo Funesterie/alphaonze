@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "fetch": {
-      "command": "C:\\Users\\cella\\.local\\bin\\uvx.exe",
+      "command": "C:\\Users\\Djeff\\.local\\bin\\uvx.exe",
       "args": [
         "mcp-server-fetch"
       ],
@@ -9,9 +9,7 @@
         "PYTHONIOENCODING": "utf-8"
       },
       "disabled": false,
-      "autoApprove": [
-        "*"
-      ]
+      "autoApprove": []
     },
     "a11": {
       "command": "node",
@@ -19,18 +17,40 @@
         "D:\\projets\\funesterie\\a11\\backend\\apps\\server\\tools\\mcp\\a11-mcp-server.cjs"
       ],
       "env": {
-        "A11_BASE_URL": "http://localhost:3000",
-        "A11_NEZ_TOKEN": "nez:a11-client-funesterie-pro"
+        "A11_BASE_URL": "http://localhost:3000"
       },
       "disabled": false,
       "autoApprove": [
-        "a11_chat",
         "a11_health",
         "a11_llm_stats",
         "a11_vs_status",
         "a11_vs_project_structure",
-        "a11_shell",
-        "a11_shell_whitelist"
+        "a11_shell_whitelist",
+        "a11_mcp_dimension_status",
+        "a11_route_map",
+        "a11_identity_route"
+      ],
+      "disabledTools": []
+    },
+    "a11mcp-shared": {
+      "url": "https://mcp.funesterie.me/mcp",
+      "disabled": false,
+      "autoApprove": [
+        "agent_presence",
+        "agent_heartbeat",
+        "agent_jobs",
+        "neo4j_status",
+        "neo4j_read_query",
+        "a11_status",
+        "kaen44_status",
+        "qflush_status",
+        "search_project",
+        "shared_context_index",
+        "cloud_roots_index",
+        "search_cloud_roots",
+        "explain_env",
+        "discussion_list",
+        "discussion_read"
       ],
       "disabledTools": []
     }

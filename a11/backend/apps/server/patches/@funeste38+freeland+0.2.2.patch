@@ -1,0 +1,71 @@
+diff --git a/node_modules/@funeste38/freeland/dist/index.js b/node_modules/@funeste38/freeland/dist/index.js
+index 0c5553c..f3e9abc 100644
+--- a/node_modules/@funeste38/freeland/dist/index.js
++++ b/node_modules/@funeste38/freeland/dist/index.js
+@@ -179,6 +179,14 @@ function buildValue(partial) {
+         ...partial
+     };
+ }
++function assertSafeRelativePath(candidate, cwd) {
++    if (path.isAbsolute(candidate)) return;
++    const resolved = path.normalize(path.resolve(cwd, candidate));
++    const base = path.normalize(cwd);
++    if (resolved !== base && !resolved.startsWith(base + path.sep)) {
++        throw new Error(`Freeland path traversal blocked: '${candidate}' escapes cwd`);
++    }
++}
+ function classifyBufferValue(buffer, rawInput, current, format, source) {
+     const text = tryDecodeUtf8(buffer);
+     if (text !== null) {
+@@ -595,6 +603,7 @@ registerBuiltin("hex", (current, ctx) => {
+ });
+ registerBuiltin("file", (current, ctx) => {
+     const candidate = toStringValue(current.value);
++    assertSafeRelativePath(candidate, ctx.options.cwd);
+     const absolutePath = path.isAbsolute(candidate) ? candidate : path.resolve(ctx.options.cwd, candidate);
+     if (!fs.existsSync(absolutePath)) {
+         throw new Error(`Freeland file not found: ${absolutePath}`);
+@@ -633,6 +642,7 @@ registerBuiltin("file", (current, ctx) => {
+ });
+ registerBuiltin("path", (current, ctx) => {
+     const candidate = toStringValue(current.value);
++    assertSafeRelativePath(candidate, ctx.options.cwd);
+     const absolutePath = path.isAbsolute(candidate) ? candidate : path.resolve(ctx.options.cwd, candidate);
+     return classifyPathValue(absolutePath, ctx.rawInput, current);
+ });
+diff --git a/node_modules/@funeste38/freeland/src/index.ts b/node_modules/@funeste38/freeland/src/index.ts
+index c27d28d..6dd7035 100644
+--- a/node_modules/@funeste38/freeland/src/index.ts
++++ b/node_modules/@funeste38/freeland/src/index.ts
+@@ -260,6 +260,15 @@ function buildValue(partial: Partial<FreelandValue> & Pick<FreelandValue, "kind"
+   };
+ }
+ 
++function assertSafeRelativePath(candidate: string, cwd: string): void {
++  if (path.isAbsolute(candidate)) return;
++  const resolved = path.normalize(path.resolve(cwd, candidate));
++  const base = path.normalize(cwd);
++  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
++    throw new Error(`Freeland path traversal blocked: '${candidate}' escapes cwd`);
++  }
++}
++
+ function classifyBufferValue(
+   buffer: Buffer,
+   rawInput: string,
+@@ -761,6 +770,7 @@ registerBuiltin(
+   "file",
+   (current, ctx) => {
+     const candidate = toStringValue(current.value);
++    assertSafeRelativePath(candidate, ctx.options.cwd);
+     const absolutePath = path.isAbsolute(candidate) ? candidate : path.resolve(ctx.options.cwd, candidate);
+     if (!fs.existsSync(absolutePath)) {
+       throw new Error(`Freeland file not found: ${absolutePath}`);
+@@ -806,6 +816,7 @@ registerBuiltin(
+ 
+ registerBuiltin("path", (current, ctx) => {
+   const candidate = toStringValue(current.value);
++  assertSafeRelativePath(candidate, ctx.options.cwd);
+   const absolutePath = path.isAbsolute(candidate) ? candidate : path.resolve(ctx.options.cwd, candidate);
+   return classifyPathValue(absolutePath, ctx.rawInput, current);
+ });

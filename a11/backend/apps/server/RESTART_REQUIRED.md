@@ -47,7 +47,7 @@ A11_ALLOW_PUBLIC_TUNNEL_LLM=1         # ✅ Tunnel public LLM autorisé
 Ajoute ta clé OpenAI dans `.env.local` :
 
 ```bash
-OPENAI_API_KEY=sk-...
+# OPENAI_API_KEY is configured via the deployment secret store.
 ```
 
 Sans clé OpenAI, le placeholder PNG sera utilisé automatiquement.

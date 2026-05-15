@@ -41,7 +41,7 @@ pwsh -File run-sonar-analysis.ps1 -SonarUrl "https://your-sonar.com" -SonarToken
 
 ```javascript
 // ❌ MAUVAIS
-const stripe = new Stripe("sk_test_hardcoded_key");
+const stripe = new Stripe("STRIPE_TEST_SECRET_VALUE");
 
 // ✅ BON
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);

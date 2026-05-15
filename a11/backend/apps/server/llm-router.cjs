@@ -11,10 +11,16 @@ const fs = require("node:fs");
 {
   const _envLocalPath = path.resolve(__dirname, ".env.local");
   const _envPath = path.resolve(__dirname, ".env");
+  const _profileEnvLoaded = ["1", "true", "yes", "on"].includes(
+    String(process.env.A11_PROFILE_ENV_LOADED || "").trim().toLowerCase()
+  );
+  const _dotenvOverride =
+    !_profileEnvLoaded
+    && ["1", "true", "yes", "on"].includes(String(process.env.A11_DOTENV_OVERRIDE || "").trim().toLowerCase());
   if (fs.existsSync(_envLocalPath)) {
-    require("dotenv").config({ path: _envLocalPath, override: true });
+    require("dotenv").config({ path: _envLocalPath, override: _dotenvOverride });
   } else {
-    require("dotenv").config({ path: _envPath, override: true });
+    require("dotenv").config({ path: _envPath, override: _dotenvOverride });
   }
 }
 const express = require("express");
@@ -31,6 +37,7 @@ console.log(`[Cerbère] DEV_MODE=${DEV_MODE ? "true" : "false"}`);
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "127.0.0.1";
 const OLLAMA_PORT = process.env.OLLAMA_PORT || "11434";
 const DEFAULT_OLLAMA_BASE = `http://${OLLAMA_HOST}:${OLLAMA_PORT}`;
+const OLLAMA_API_KEY = String(process.env.OLLAMA_API_KEY || process.env.A11_LLM_LLAMA || "").trim();
 
 // Import A-11 agent prompts
 const {
@@ -202,6 +209,13 @@ const THINKER_MODEL = String(process.env.CERBERE_THINKER_MODEL || DEFAULT_OPENAI
 const MAKER_MODEL = String(process.env.CERBERE_MAKER_MODEL || DEFAULT_OPENAI_MODEL).trim() || DEFAULT_OPENAI_MODEL;
 const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 120000) || 120000;
 const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
+const RUNTIME_FALLBACK_ORDER = String(
+  process.env.A11_LLM_RUNTIME_FALLBACK_ORDER
+  || "openai,deepseek,together,xai,huggingface,ollama"
+)
+  .split(",")
+  .map((entry) => normalizeLlmProvider(entry, ""))
+  .filter(Boolean);
 
 const llmRuntimeState = {
   lastResolvedTarget: null,
@@ -236,6 +250,124 @@ function rememberResolvedTarget(target, extra = {}) {
   llmRuntimeState.lastResolvedAt = snapshot.resolvedAt;
   llmRuntimeState.lastError = null;
   return snapshot;
+}
+
+function hasProviderCredential(provider) {
+  if (provider === "openai") return Boolean(String(process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY || "").trim());
+  if (provider === "groq") return Boolean(String(process.env.GROQ_API_KEY || "").trim());
+  if (provider === "deepseek") return Boolean(String(process.env.DEEPSEEK_API_KEY || "").trim());
+  if (provider === "together") return Boolean(String(process.env.TOGETHER_API_KEY || "").trim());
+  if (provider === "huggingface") return resolveHuggingFaceCredentialConfigured();
+  if (provider === "xai") return Boolean(String(process.env.XAI_API_KEY || "").trim());
+  if (provider === "ollama") return Boolean(BACKENDS.ollama);
+  if (provider === "llama_server") return Boolean(BACKENDS.llama_server);
+  return false;
+}
+
+function resolveHuggingFaceCredentialConfigured() {
+  return Boolean(String(
+    process.env.HF_API_KEY
+    || process.env.HUGGINGFACE_HUB_TOKEN
+    || process.env.HF_TOKEN
+    || process.env.HUGGINGFACEHUB_API_TOKEN
+    || ''
+  ).trim());
+}
+
+function buildHuggingFacePublicStatus() {
+  const imageEnabled = ["1", "true", "yes", "on"].includes(
+    String(process.env.A11_ENABLE_HF_IMAGE || process.env.A11_ENABLE_HUGGINGFACE_IMAGE || "").trim().toLowerCase()
+  );
+  const imageEndpoint = String(
+    process.env.A11_HF_IMAGE_ENDPOINT
+    || process.env.A11_HUGGINGFACE_IMAGE_ENDPOINT
+    || "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+  ).trim();
+  return {
+    configured: resolveHuggingFaceCredentialConfigured(),
+    enabled: LLM_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "huggingface",
+    baseUrl: BACKENDS.huggingface,
+    model: DEFAULT_HF_MODEL,
+    fallbackProviderEnabled: LLM_FALLBACK_PROVIDER === "huggingface",
+    image: {
+      enabled: imageEnabled,
+      configured: imageEnabled && resolveHuggingFaceCredentialConfigured(),
+      endpoint: imageEndpoint,
+      defaultSteps: Math.max(1, Math.min(12, Math.round(Number(process.env.A11_HF_IMAGE_STEPS || 4) || 4))),
+    },
+  };
+}
+
+function isRuntimeFallbackStatus(status) {
+  const normalizedStatus = Number(status || 0);
+  return normalizedStatus === 402
+    || normalizedStatus === 408
+    || normalizedStatus === 409
+    || normalizedStatus === 425
+    || normalizedStatus === 429
+    || normalizedStatus >= 500;
+}
+
+function isRuntimeFallbackError(error) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    name.includes("timeout")
+    || name.includes("abort")
+    || message.includes("timeout")
+    || message.includes("rate_limit")
+    || message.includes("rate limit")
+    || message.includes("quota")
+    || message.includes("insufficient_balance")
+    || message.includes("insufficient balance")
+    || message.includes("payment required")
+    || message.includes("billing")
+    || message.includes("balance")
+    || message.includes("econnreset")
+    || message.includes("econnrefused")
+    || message.includes("socket")
+  );
+}
+
+async function resolveRuntimeFallbackTargets(failedTarget, requestedModel = "", reason = "runtime_failure") {
+  const failedProvider = normalizeLlmProvider(failedTarget?.provider, "");
+  const orderedProviders = Array.from(new Set([
+    ...RUNTIME_FALLBACK_ORDER,
+    "openai",
+    "deepseek",
+    "groq",
+    "together",
+    "xai",
+    "huggingface",
+    "ollama",
+    "llama_server",
+  ]));
+  const targets = [];
+
+  for (const provider of orderedProviders) {
+    if (!provider || provider === failedProvider) continue;
+    if (!hasProviderCredential(provider)) continue;
+
+    let candidate = null;
+    if (provider === "openai") candidate = resolveOpenAITarget("", reason);
+    else if (provider === "groq") candidate = resolveGroqTarget("", reason);
+    else if (provider === "deepseek") candidate = resolveDeepSeekTarget("", reason);
+    else if (provider === "together") candidate = resolveTogetherTarget("", reason);
+    else if (provider === "xai") candidate = resolveXAITarget("", reason);
+    else if (provider === "huggingface") candidate = resolveHuggingFaceTarget("", reason);
+    else if (provider === "llama_server") candidate = resolveLlamaServerTarget(requestedModel, reason);
+    else if (provider === "ollama") {
+      const ollama = await resolveOllamaTarget(requestedModel, { emitLogs: false });
+      candidate = ollama.ok ? ollama.target : null;
+    }
+
+    if (!candidate) continue;
+    const targetKey = `${candidate.provider}|${candidate.baseUrl}|${candidate.model}`;
+    const duplicate = targets.some((target) => `${target.provider}|${target.baseUrl}|${target.model}` === targetKey);
+    if (!duplicate) targets.push(candidate);
+  }
+
+  return targets;
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = LLM_REQUEST_TIMEOUT_MS) {
@@ -313,7 +445,9 @@ async function getOllamaTags({ force = false } = {}) {
   }
 
   try {
-    const { response, data, text } = await fetchJsonWithTimeout(buildOllamaTagsUrl(), {}, Math.min(LLM_REQUEST_TIMEOUT_MS, 6000));
+    const { response, data, text } = await fetchJsonWithTimeout(buildOllamaTagsUrl(), {
+      headers: buildOllamaHeaders(),
+    }, Math.min(LLM_REQUEST_TIMEOUT_MS, 6000));
     if (!response.ok) {
       return {
         ok: false,
@@ -580,7 +714,7 @@ async function resolveLlmTarget(requestedModel = "", { emitLogs = true } = {}) {
 
     // Fallback 6 : HuggingFace (open source, gratuit)
     if (LLM_FALLBACK_PROVIDER === "huggingface" || LLM_FALLBACK_PROVIDER === "none") {
-      const hasHfKey = !!(process.env.HF_API_KEY);
+      const hasHfKey = resolveHuggingFaceCredentialConfigured();
       if ((LLM_FALLBACK_PROVIDER === "huggingface" || hasHfKey) && BACKENDS.huggingface) {
         const hfTarget = resolveHuggingFaceTarget(requestedModel, ollamaResult.reason || "ollama_unavailable");
         if (hfTarget) {
@@ -758,6 +892,163 @@ function toOpenAIStyleResponseFromOllama(payload, model) {
   };
 }
 
+async function callResolvedLlmTarget(target, body = {}, messages = [], stream = false) {
+  if (target.provider === "ollama") {
+    const ollamaFormat = toOllamaStructuredFormat(body.response_format);
+    const ollamaOptions = buildOllamaOptionsFromOpenAiBody(body);
+    const ollamaThink = toOllamaThinkSetting(body);
+    const ollamaPayload = {
+      model: target.model,
+      messages: buildOllamaMessages(messages),
+      stream: false,
+      ...(ollamaFormat !== undefined ? { format: ollamaFormat } : {}),
+      ...(ollamaOptions ? { options: ollamaOptions } : {}),
+      ...(ollamaThink !== undefined ? { think: ollamaThink } : {}),
+    };
+
+    const upstreamRes = await fetch(target.url, {
+      method: "POST",
+      headers: buildOllamaHeaders(),
+      body: JSON.stringify(ollamaPayload),
+      signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+    });
+
+    const rawText = await upstreamRes.text();
+    let rawJson = null;
+    if (rawText) {
+      try {
+        rawJson = JSON.parse(rawText);
+      } catch {
+        rawJson = null;
+      }
+    }
+
+    if (!upstreamRes.ok) {
+      return { ok: false, response: upstreamRes, text: rawText, data: rawJson };
+    }
+
+    return {
+      ok: true,
+      response: upstreamRes,
+      data: toOpenAIStyleResponseFromOllama(rawJson || {}, target.model),
+      text: rawText,
+    };
+  }
+
+  const upstreamBody = { ...body, model: target.model, messages, stream };
+  const upstreamRes = await fetch(target.url, {
+    method: "POST",
+    headers: buildUpstreamHeaders(target.baseUrl, target.provider),
+    body: JSON.stringify(upstreamBody),
+    signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+  });
+
+  const rawText = await upstreamRes.text();
+  let rawJson = null;
+  if (rawText) {
+    try {
+      rawJson = JSON.parse(rawText);
+    } catch {
+      rawJson = null;
+    }
+  }
+
+  if (!upstreamRes.ok) {
+    return { ok: false, response: upstreamRes, text: rawText, data: rawJson };
+  }
+
+  if (typeof rawJson?.choices?.[0]?.message?.content === "string") {
+    rawJson.choices[0].message.content = sanitizeAssistantText(rawJson.choices[0].message.content);
+  }
+
+  return { ok: true, response: upstreamRes, data: rawJson, text: rawText };
+}
+
+async function callLlmWithRuntimeFallback(initialTarget, body = {}, messages = [], stream = false, requestedModel = "") {
+  const attempted = [];
+  const targets = [initialTarget];
+  let index = 0;
+
+  while (index < targets.length) {
+    const target = targets[index];
+    index += 1;
+
+    try {
+      const result = await callResolvedLlmTarget(target, body, messages, stream);
+      if (result.ok) {
+        if (attempted.length > 0) {
+          logWarn(`[LLM] runtime fallback recovered via ${target.provider}/${target.model}`);
+        }
+        rememberResolvedTarget(target, {
+          runtimeFallback: attempted.length > 0,
+          attempts: attempted,
+        });
+        return { target, result, attempts: attempted };
+      }
+
+      const status = result.response?.status || 502;
+      const detail = result.text || JSON.stringify(result.data || {});
+      attempted.push({
+        provider: target.provider,
+        model: target.model,
+        status,
+        detail: String(detail || "").slice(0, 500),
+      });
+      rememberLlmError(detail || `upstream_${status}`, {
+        provider: target.provider,
+        status,
+      });
+
+      if (!isRuntimeFallbackStatus(status)) {
+        return { target, result, attempts: attempted };
+      }
+
+      const fallbackTargets = await resolveRuntimeFallbackTargets(target, requestedModel, `upstream_${status}`);
+      for (const fallbackTarget of fallbackTargets) {
+        const key = `${fallbackTarget.provider}|${fallbackTarget.baseUrl}|${fallbackTarget.model}`;
+        const seen = targets.some((entry) => `${entry.provider}|${entry.baseUrl}|${entry.model}` === key);
+        if (!seen) {
+          logWarn(`[LLM] upstream ${target.provider} returned ${status}; trying fallback ${fallbackTarget.provider}/${fallbackTarget.model}`);
+          targets.push(fallbackTarget);
+        }
+      }
+    } catch (error) {
+      attempted.push({
+        provider: target.provider,
+        model: target.model,
+        status: "exception",
+        detail: String(error?.message || error || "").slice(0, 500),
+      });
+      rememberLlmError(error, { provider: target.provider });
+
+      if (!isRuntimeFallbackError(error)) {
+        throw error;
+      }
+
+      const fallbackTargets = await resolveRuntimeFallbackTargets(target, requestedModel, String(error?.message || "runtime_exception"));
+      for (const fallbackTarget of fallbackTargets) {
+        const key = `${fallbackTarget.provider}|${fallbackTarget.baseUrl}|${fallbackTarget.model}`;
+        const seen = targets.some((entry) => `${entry.provider}|${entry.baseUrl}|${entry.model}` === key);
+        if (!seen) {
+          logWarn(`[LLM] runtime exception on ${target.provider}; trying fallback ${fallbackTarget.provider}/${fallbackTarget.model}`);
+          targets.push(fallbackTarget);
+        }
+      }
+    }
+  }
+
+  return {
+    target: initialTarget,
+    result: {
+      ok: false,
+      response: { status: 502 },
+      text: "all_runtime_fallbacks_failed",
+      data: null,
+    },
+    attempts: attempted,
+  };
+}
+
 async function getLlmDebugSnapshot({ force = false } = {}) {
   const ollamaTags = await getOllamaTags({ force });
   const llamaHealth = await probeLlamaServerHealth();
@@ -802,6 +1093,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
         model: DEFAULT_OPENAI_MODEL,
         apiKeyConfigured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
       },
+      huggingface: buildHuggingFacePublicStatus(),
       ollama: {
         configured: Boolean(BACKENDS.ollama),
         baseUrl: BACKENDS.ollama,
@@ -828,6 +1120,7 @@ async function getLlmDebugSnapshot({ force = false } = {}) {
 
 // expose simple stats for frontend dev checks
 router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
+  const huggingface = buildHuggingFacePublicStatus();
   res.json({
     service: "cerbere-router",
     version: "2.0.0",
@@ -844,8 +1137,13 @@ router.get(["/api/stats", "/api/llm/stats"], (req, res) => {
       ollamaFallbackModel: OLLAMA_FALLBACK_MODEL,
       localModel: DEFAULT_LOCAL_MODEL,
       openaiModel: DEFAULT_OPENAI_MODEL,
+      huggingfaceModel: DEFAULT_HF_MODEL,
+      huggingface,
     },
-    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback"],
+    providers: {
+      huggingface,
+    },
+    features: ["strict_proxy", "multi_backend_routing", "smart_prompting", "ollama_fallback", "runtime_provider_fallback", "huggingface_optional_fallback"],
   });
 });
 console.log("[Cerbère] Registered debug stats routes: /api/stats, /api/llm/stats");
@@ -941,10 +1239,25 @@ function buildUpstreamHeaders(backendBase, provider = "openai") {
   if (provider === "together" && process.env.TOGETHER_API_KEY) {
     headers.Authorization = `Bearer ${process.env.TOGETHER_API_KEY}`;
   }
-  if (provider === "huggingface" && process.env.HF_API_KEY) {
-    headers.Authorization = `Bearer ${process.env.HF_API_KEY}`;
+  if (provider === "huggingface" && resolveHuggingFaceCredentialConfigured()) {
+    const hfToken = String(
+      process.env.HF_API_KEY
+      || process.env.HUGGINGFACE_HUB_TOKEN
+      || process.env.HF_TOKEN
+      || process.env.HUGGINGFACEHUB_API_TOKEN
+      || ''
+    ).trim();
+    headers.Authorization = `Bearer ${hfToken}`;
   }
   return headers;
+}
+
+function buildOllamaHeaders(extra = {}) {
+  return {
+    "Content-Type": "application/json",
+    ...(OLLAMA_API_KEY ? { Authorization: `Bearer ${OLLAMA_API_KEY}` } : {}),
+    ...extra,
+  };
 }
 
 // -------------------------------------------
@@ -1805,6 +2118,32 @@ router.post("/v1/chat/completions", async (req, res) => {
     const target = await resolveLlmTarget(model, { emitLogs: true });
     logStructuredRouterTrace(req, target);
 
+    const { target: finalTarget, result, attempts } = await callLlmWithRuntimeFallback(target, body, messages, stream, model);
+
+    if (!result.ok) {
+      const status = result.response?.status || 502;
+      const detail = result.text || JSON.stringify(result.data || {});
+      logError(`[CerbÃ¨re] Upstream error ${status} from ${finalTarget.url}: ${detail}`);
+      return res.status(status).json({
+        error: "upstream_error",
+        provider: finalTarget.provider,
+        status,
+        detail,
+        attempts,
+      });
+    }
+
+    const finalData = result.data || {};
+    if (attempts.length > 0) {
+      finalData.a11RuntimeFallback = {
+        recovered: true,
+        finalProvider: finalTarget.provider,
+        finalModel: finalTarget.model,
+        attempts,
+      };
+    }
+    return res.json(finalData);
+
     if (target.provider === "ollama") {
       const ollamaFormat = toOllamaStructuredFormat(body.response_format);
       const ollamaOptions = buildOllamaOptionsFromOpenAiBody(body);
@@ -1884,8 +2223,11 @@ module.exports = {
   __private__: {
     buildStructuredRouterTraceMeta,
     buildOllamaOptionsFromOpenAiBody,
+    callLlmWithRuntimeFallback,
     getConfiguredOllamaCandidates,
+    isRuntimeFallbackStatus,
     looksLikeStructuredJson,
+    resolveRuntimeFallbackTargets,
     toOllamaStructuredFormat,
   },
 };
@@ -2205,7 +2547,7 @@ async function buildDevSummaryWithLLM({ upstreamUrl, model, userPrompt, actionRe
     const messages = [
       {
         role: "system",
-        content: "Tu es A-11. Résume ce que tu viens de faire. Pas de JSON, pas de code. Réponse claire uniquement. Si un résultat contient un lien de fichier, recopie le lien exact dans la réponse.",
+        content: "Je suis A-11. Je resume ce que je viens de faire. Pas de JSON, pas de code. Reponse claire uniquement. Si un resultat contient un lien de fichier, je recopie le lien exact dans la reponse.",
       },
       {
         role: "user",

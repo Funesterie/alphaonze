@@ -89,12 +89,12 @@ Ajouter ces secrets :
 | Key                     | Value                                                                                  | Source            |
 | ----------------------- | -------------------------------------------------------------------------------------- | ----------------- |
 | `JWT_SECRET`            | `f564db4d80721484148880ee27f31a29f3e4fc005ee7f17b9026bf10a32aa7c6`                     | `.env.local`      |
-| `GROQ_API_KEY`          | `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`                             | Testé OK          |
+| `GROQ_API_KEY`          | `GROQ_API_KEY_VALUE`                             | Testé OK          |
 | `TOGETHER_API_KEY`      | (à obtenir sur api.together.xyz)                                                       | Optionnel         |
-| `XAI_API_KEY`           | `xai-n25Ds9q9muoRkWDxNtq9sgDqTOifeceuNTwPrB2Hyi5tJKavdwHvRJgLOc6S4RNeo7SZI5AJuR9D9NIw` | Nécessite crédits |
-| `STRIPE_SECRET_KEY`     | `sk_live_51SUZOwHkqLcMgv54...`                                                         | `.env.local`      |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_f0sF58jvmkKQroqTl009quZAlXyakCDG`                                               | `.env.local`      |
-| `RESEND_API_KEY`        | `re_gKNVuJrr_C3zBtFZ2SPcNRJSK1hUcmUnp`                                                 | `.env.local`      |
+| `XAI_API_KEY`           | `XAI_API_KEY_VALUE` | Nécessite crédits |
+| `STRIPE_SECRET_KEY`     | `STRIPE_LIVE_SECRET_VALUE...`                                                         | `.env.local`      |
+| `STRIPE_WEBHOOK_SECRET` | `STRIPE_WEBHOOK_SECRET_VALUE`                                               | `.env.local`      |
+| `RESEND_API_KEY`        | `RESEND_API_KEY_VALUE`                                                 | `.env.local`      |
 
 **Minimum vital pour que A11 réponde** : `JWT_SECRET` + `GROQ_API_KEY`
 

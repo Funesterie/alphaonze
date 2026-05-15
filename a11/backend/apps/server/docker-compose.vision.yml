@@ -1,0 +1,21 @@
+services:
+  a11-backend:
+    environment:
+      - A11_VISION_PROVIDER=janus
+      - A11_SCREEN_CACHE_ENABLED=1
+      - A11_VISUAL_CACHE_TTL_MS=30000
+      - A11_VISION_CLOUD_FALLBACK=false
+      - A11_VISION_GPU_DEVICE=nvidia.com/gpu=all
+    devices:
+      - nvidia.com/gpu=all
+
+  kaen44-backend:
+    environment:
+      - A11_VISION_PROVIDER=janus
+      - A11_SCREEN_CACHE_ENABLED=1
+      - A11_VISUAL_CACHE_TTL_MS=30000
+      - A11_VISION_CLOUD_FALLBACK=false
+      - A11_VISION_GPU_DEVICE=nvidia.com/gpu=all
+      - KAEN44_VISION_MODE=delegated
+    devices:
+      - nvidia.com/gpu=all

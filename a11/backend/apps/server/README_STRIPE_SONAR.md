@@ -38,9 +38,9 @@ Ajouter dans `.env.local` :
 
 ```bash
 # Stripe
-STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # SonarQube (optionnel)
 SONAR_HOST_URL=https://sonarqube.server/
@@ -62,7 +62,7 @@ psql $DATABASE_URL -f migrations/add-subscription-columns.sql
 
 # Vérifier les routes protégées
 curl -X POST http://localhost:3000/api/jobs/sd \
-  -H "Authorization: Bearer YOUR_JWT" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "un panda"}'
 

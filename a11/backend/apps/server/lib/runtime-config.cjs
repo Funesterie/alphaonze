@@ -1,6 +1,10 @@
 const { isOpenAiImageEnabled } = require('./openai-image.cjs');
 const { resolveEmailServiceConfigFromEnv } = require('./email-service.cjs');
 
+const DEFAULT_QFLUSH_CHAT_FLOW = 'a11.chat.v1';
+const DEFAULT_QFLUSH_MEMORY_SUMMARY_FLOW = 'a11.memory.summary.v1';
+const DEFAULT_QFLUSH_EPHEMERAL_MEMORY_FLOW = 'a11.memory.ephemeral.v1';
+
 function normalizeUrl(value, fallback = '') {
   const raw = String(value || '').trim();
   if (!raw) return fallback;
@@ -9,6 +13,29 @@ function normalizeUrl(value, fallback = '') {
     ? withoutLeadingSlashes
     : `https://${withoutLeadingSlashes}`;
   return withProtocol.replace(/\/+$/, '');
+}
+
+function normalizeQflushRemoteBaseUrl(value, fallback = '') {
+  const normalized = normalizeUrl(value, fallback);
+  if (!normalized) return '';
+  try {
+    const parsed = new URL(normalized);
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = String(parsed.pathname || '')
+      .replace(/\/+$/, '')
+      .replace(/\/api\/qflush\/(?:admin\/run|run|status)$/i, '')
+      .replace(/\/api\/qflush$/i, '')
+      .replace(/\/api\/admin\/run$/i, '')
+      || '/';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return normalized
+      .replace(/\/api\/qflush\/(?:admin\/run|run|status)$/i, '')
+      .replace(/\/api\/qflush$/i, '')
+      .replace(/\/api\/admin\/run$/i, '')
+      .replace(/\/+$/, '');
+  }
 }
 
 function toBoolean(value) {
@@ -74,6 +101,7 @@ function isQflushEnabled(env = {}) {
     env.QFLUSH_REMOTE_URL,
     env.QFLUSH_BASE_URL,
     env.QFLUSH_CHAT_FLOW,
+    env.A11_QFLUSH_CHAT_FLOW,
     (toBoolean(env.A11_QFLUSH_USE_DRAGON) ? env.DRAGON_API_URL : '')
   );
 }
@@ -136,7 +164,7 @@ function buildRuntimeConfig(env = process.env) {
   const qflushUseDragonCompat = toBoolean(env.A11_QFLUSH_USE_DRAGON);
   const qflushEnabled = isQflushEnabled(env);
   const declaredQflushRemoteUrl = qflushEnabled
-    ? normalizeUrl(
+    ? normalizeQflushRemoteBaseUrl(
       env.QFLUSH_URL
         || env.QFLUSH_REMOTE_URL
         || env.QFLUSH_BASE_URL
@@ -172,7 +200,7 @@ function buildRuntimeConfig(env = process.env) {
   const memorySummaryProvider = (() => {
     const configured = String(env.MEMORY_SUMMARY_PROVIDER || '').trim().toLowerCase();
     if (configured === 'openai' || configured === 'local') return configured;
-    if (qflushRemoteUrl || hasAnyValue(env.LLAMA_BASE, env.LOCAL_LLM_URL, env.OLLAMA_BASE, env.QFLUSH_CHAT_FLOW)) {
+    if (qflushRemoteUrl || hasAnyValue(env.LLAMA_BASE, env.LOCAL_LLM_URL, env.OLLAMA_BASE, env.QFLUSH_CHAT_FLOW, env.A11_QFLUSH_CHAT_FLOW)) {
       return 'local';
     }
     return openAiConfigured ? 'openai' : 'local';
@@ -205,15 +233,20 @@ function buildRuntimeConfig(env = process.env) {
       remoteUrl: qflushRemoteUrl,
       remoteSource: qflushRemoteSource,
       useDragonCompat: qflushUseDragonCompat && !declaredQflushRemoteUrl,
-      memorySummaryFlow: qflushEnabled ? String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim() : '',
-      ephemeralMemoryFlow: qflushEnabled ? String(env.QFLUSH_EPHEMERAL_MEMORY_FLOW || 'a11.memory.ephemeral.v1').trim() : '',
-      chatFlow: qflushEnabled ? String(env.QFLUSH_CHAT_FLOW || '').trim() : '',
+      memorySummaryFlow: qflushEnabled ? String(env.QFLUSH_MEMORY_SUMMARY_FLOW || env.A11_QFLUSH_MEMORY_SUMMARY_FLOW || DEFAULT_QFLUSH_MEMORY_SUMMARY_FLOW).trim() : '',
+      ephemeralMemoryFlow: qflushEnabled ? String(env.QFLUSH_EPHEMERAL_MEMORY_FLOW || env.A11_QFLUSH_EPHEMERAL_MEMORY_FLOW || DEFAULT_QFLUSH_EPHEMERAL_MEMORY_FLOW).trim() : '',
+      chatFlow: qflushEnabled ? String(env.QFLUSH_CHAT_FLOW || env.A11_QFLUSH_CHAT_FLOW || DEFAULT_QFLUSH_CHAT_FLOW).trim() : '',
       manageTts: toBoolean(env.MANAGE_TTS),
     },
     r2: {
       endpoint: String(env.R2_ENDPOINT || '').trim(),
       bucket: r2Bucket,
-      publicBaseUrl: normalizeUrl(env.R2_PUBLIC_BASE_URL || ''),
+      publicBaseUrl: normalizeUrl(
+        env.R2_PUBLIC_BASE_URL
+        || env.A11_R2_PUBLIC_BASE_URL
+        || env.R2_PUBLIC_URL
+        || ''
+      ),
     },
     mail: {
       from: String(resolvedMailConfig.fromEmail || 'A11 <onboarding@resend.dev>').trim(),
@@ -248,7 +281,7 @@ function buildRuntimeConfig(env = process.env) {
       },
       memory: {
         provider: memorySummaryProvider,
-        qflushFlow: String(env.QFLUSH_MEMORY_SUMMARY_FLOW || 'a11.memory.summary.v1').trim(),
+        qflushFlow: String(env.QFLUSH_MEMORY_SUMMARY_FLOW || env.A11_QFLUSH_MEMORY_SUMMARY_FLOW || DEFAULT_QFLUSH_MEMORY_SUMMARY_FLOW).trim(),
       },
       sd: {
         provider: sdProxyUrl

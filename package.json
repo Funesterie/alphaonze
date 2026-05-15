@@ -5,6 +5,14 @@
     "build": "npm --prefix a11/frontend run build && node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('a11/frontend/dist','dist',{recursive:true});\"",
     "build:frontend": "npm --prefix a11/frontend run build",
     "build:backend": "npm --prefix a11/backend/apps/server run build",
-    "build:a11": "npm --prefix a11 run build:all"
+    "build:a11": "npm --prefix a11 run build:all",
+    "worker:archivist": "npm --prefix a11/backend/apps/server run worker:archivist",
+    "worker:archivist:dry-run": "npm --prefix a11/backend/apps/server run worker:archivist:dry-run",
+    "worker:orchestrator": "npm --prefix a11/backend/apps/server run worker:orchestrator",
+    "worker:orchestrator:loop": "npm --prefix a11/backend/apps/server run worker:orchestrator:loop",
+    "worker:orchestrator:status": "npm --prefix a11/backend/apps/server run worker:orchestrator:status",
+    "dispatch": "npm --prefix a11/backend/apps/server run dispatch --",
+    "dispatch:agents": "npm --prefix a11/backend/apps/server run dispatch:agents",
+    "dispatch:status": "npm --prefix a11/backend/apps/server run dispatch:status"
   }
 }

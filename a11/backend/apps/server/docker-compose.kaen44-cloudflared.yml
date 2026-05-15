@@ -1,0 +1,9 @@
+services:
+  kaen44-cloudflared:
+    image: cloudflare/cloudflared:2026.3.0
+    container_name: kaen44-cloudflared
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ${KAEN44_CLOUDFLARED_DIR:-/home/deploy/cloudflared-kaen44}:/etc/cloudflared:ro

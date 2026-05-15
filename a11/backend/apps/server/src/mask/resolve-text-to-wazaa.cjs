@@ -23,6 +23,10 @@ function normalizeEnvValue(value = '') {
   return normalized;
 }
 
+function isTruthyEnv(value = '') {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
 function resolveImagePipelineMode() {
   const raw = String(process.env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
   if (raw === 'orchestrated' || raw === 'orchestrateur' || raw === 'smart') return 'smart';
@@ -87,14 +91,14 @@ function isLocalStructuredLlmBaseUrl(value = '', env = process.env) {
   );
 }
 
-const WAZAA_TRANSLATE_SYSTEM_PROMPT = `Tu es un analyseur d'intention structuré pour A11.
-Tu reçois un message utilisateur en français.
-Tu dois :
+const WAZAA_TRANSLATE_SYSTEM_PROMPT = `Je suis un analyseur d'intention structuré pour A11.
+Je reçois un message utilisateur en français.
+Je dois :
 1. déterminer l'intention
 2. extraire le sujet, les couleurs, l'environnement et le style
 3. reformuler la demande de façon simple et fidèle, en français
 
-Réponds UNIQUEMENT en JSON strict, sans explication :
+Je réponds UNIQUEMENT en JSON strict, sans explication :
 {
   "intent": "image.generate",
   "subject": "sujet principal en français",
@@ -135,11 +139,26 @@ function resolveTranslationConfig() {
   const explicitTranslationBaseUrl = normalizeBaseUrl(process.env.A11_TRANSLATION_BASE_URL || '');
   const routerBaseUrl = normalizeBaseUrl(process.env.LLM_ROUTER_URL || '');
   const localStructuredLlmBaseUrl = resolveLocalStructuredLlmBaseUrl(process.env);
-  const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || localStructuredLlmBaseUrl || '';
+  const allowGenericOpenAiFallback = isTruthyEnv(process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI);
+  const genericOpenAiBaseUrl = allowGenericOpenAiFallback
+    ? normalizeBaseUrl(
+      normalizeEnvValue(process.env.A11_OPENAI_BASE_URL)
+      || normalizeEnvValue(process.env.OPENAI_BASE_URL)
+      || 'https://api.openai.com/v1'
+    )
+    : '';
+  const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || localStructuredLlmBaseUrl || genericOpenAiBaseUrl || '';
   const url = buildChatCompletionsUrl(baseUrl);
 
   const apiKey = (
     process.env.A11_TRANSLATION_API_KEY
+    || (allowGenericOpenAiFallback
+      ? (
+        process.env.A11_OPENAI_API_KEY
+        || process.env.OPENAI_API_KEY
+        || (/groq\.com/i.test(baseUrl) ? process.env.GROQ_API_KEY : '')
+      )
+      : '')
     || ''
   );
 
@@ -150,6 +169,14 @@ function resolveTranslationConfig() {
 
   const model = (
     process.env.A11_TRANSLATION_MODEL
+    || (allowGenericOpenAiFallback
+      ? (
+        process.env.A11_OPENAI_MODEL
+        || process.env.OPENAI_MODEL
+        || process.env.GROQ_MODEL
+        || ''
+      )
+      : '')
     || process.env.A11_OLLAMA_PRIMARY_MODEL
     || process.env.LOCAL_DEFAULT_MODEL
     || process.env.DEFAULT_MODEL
@@ -231,6 +258,24 @@ function buildStructuredLlmError(code, message, {
   return error;
 }
 
+function shouldRetryStructuredLlmWithJsonObject(result = {}, responseFormat = null) {
+  if (!responseFormat || responseFormat.type !== 'json_schema') return false;
+
+  const status = Number(result?.status || 0) || 0;
+  if (status && status !== 400 && status !== 422) return false;
+
+  const rawText = String(result?.text || '').toLowerCase();
+  return rawText.includes('response_format')
+    || rawText.includes('json_schema')
+    || rawText.includes('json schema')
+    || rawText.includes('schema');
+}
+
+function downgradeJsonSchemaResponseFormat(responseFormat = null) {
+  if (!responseFormat || responseFormat.type !== 'json_schema') return responseFormat;
+  return { type: 'json_object' };
+}
+
 async function callStructuredLlmJson({
   text = '',
   systemPrompt = '',
@@ -286,7 +331,7 @@ async function callStructuredLlmJson({
     headers['X-NEZ-TOKEN'] = config.nezToken;
   }
 
-  const result = await fetchJsonWithRetry(config.url, {
+  let result = await fetchJsonWithRetry(config.url, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
@@ -295,6 +340,23 @@ async function callStructuredLlmJson({
     retries: Math.max(0, Number(process.env.A11_WAZAA_LLM_RETRIES || 2) || 0),
     logger: console,
   });
+
+  if (!result?.ok && shouldRetryStructuredLlmWithJsonObject(result, responseFormat)) {
+    const fallbackBody = {
+      ...body,
+      response_format: downgradeJsonSchemaResponseFormat(responseFormat),
+    };
+    console.warn(`[resolve-text-to-wazaa] Retrying ${stage} with response_format=json_object after json_schema rejection`);
+    result = await fetchJsonWithRetry(config.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(fallbackBody),
+    }, {
+      timeoutMs: Math.max(1000, Number(timeoutMs) || 90000),
+      retries: Math.max(0, Number(process.env.A11_WAZAA_LLM_RETRIES || 2) || 0),
+      logger: console,
+    });
+  }
 
   if (!result?.ok) {
     const status = Number(result?.status || 0) || 0;

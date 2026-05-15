@@ -46,6 +46,12 @@ const tables = [
       created_at TIMESTAMP DEFAULT NOW()
     )`
   },
+  { name: 'migrate_messages_user_id', sql: `ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_id TEXT` },
+  { name: 'migrate_messages_user_id_backfill', sql: `UPDATE messages SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''` },
+  { name: 'migrate_messages_user_id_default', sql: `ALTER TABLE messages ALTER COLUMN user_id SET DEFAULT 'legacy'` },
+  { name: 'migrate_messages_conversation_id', sql: `ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id TEXT` },
+  { name: 'migrate_messages_conversation_id_backfill', sql: `UPDATE messages SET conversation_id = 'legacy' WHERE conversation_id IS NULL OR conversation_id = ''` },
+  { name: 'migrate_messages_conversation_id_default', sql: `ALTER TABLE messages ALTER COLUMN conversation_id SET DEFAULT 'legacy'` },
   {
     name: 'idx_messages',
     sql: `CREATE INDEX IF NOT EXISTS idx_messages_user_conversation_created_at 

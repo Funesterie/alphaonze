@@ -1,0 +1,2 @@
+# False positive — authBase is a URL variable, not an API key
+a11/frontend/apps/web/src/lib/api.ts:generic-api-key:924

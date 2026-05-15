@@ -1,5 +1,8 @@
 /installHook.js.map /installHook.js.map 200
 /react_devtools_backend_compact.js.map /react_devtools_backend_compact.js.map 200
 /%3Canonymous%20code%3E /anonymous_code_placeholder.js 200
-/api/* /.netlify/functions/proxy/:splat 200!
+/api/* /.netlify/functions/a11-proxy/api/:splat 200!
+/files/* /.netlify/functions/a11-proxy/files/:splat 200!
+/tts/* /.netlify/functions/a11-proxy/tts/:splat 200!
+/health /.netlify/functions/a11-proxy/health 200!
 /* /index.html 200
