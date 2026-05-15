@@ -3592,3 +3592,52 @@ export async function createCustomerPortal(): Promise<CustomerPortalResponse> {
 
   return res.json();
 }
+
+// ------------------------------------------------------------------
+// Ekko — statut du module d'écoute audio système
+// ------------------------------------------------------------------
+export type EkkoRecentEvent = {
+  timestamp: string;
+  duration_ms: number;
+  confidence: number;
+  tags: string[];
+  app_name: string | null;
+  preview: string;
+};
+
+export type EkkoStatusResponse = {
+  ok: boolean;
+  stats: {
+    total_received: number;
+    last_received_at: string | null;
+    last_app: string | null;
+  };
+  recent: EkkoRecentEvent[];
+  /** Vrai si le module Python Ekko signale qu'il est en écoute active */
+  listening?: boolean;
+  error?: string;
+};
+
+/**
+ * Récupère le statut Ekko depuis /api/ekko/status.
+ * Pas d'auth requise (route publique locale), mais authFetch est utilisé
+ * pour homogénéité avec le reste de l'API.
+ */
+export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
+  const res = await authFetch(getApiUrl('/api/ekko/status'), {
+    headers: buildAuthHeaders(),
+  });
+
+  let data: any = {};
+  try {
+    data = await res.json();
+  } catch {
+    // ignore parse errors
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.error || `Ekko status failed (${res.status})`);
+  }
+
+  return data as EkkoStatusResponse;
+}

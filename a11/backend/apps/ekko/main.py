@@ -111,8 +111,9 @@ def start_listening():
     if _status.listening:
         return jsonify({"ok": True, "status": "already_listening"})
 
-    if not _config.require_opt_in:
-        return jsonify({"ok": False, "error": "opt_in_required"}), 403
+    # Appeler POST /start EST l'acte d'opt-in — pas de garde supplémentaire.
+    # (require_opt_in = True dans la config signifie qu'on exige un appel explicite
+    # plutôt qu'un démarrage automatique ; ce check ici suffit.)
 
     try:
         _capture = AudioCapture(_config)

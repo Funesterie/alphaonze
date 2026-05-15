@@ -7,7 +7,6 @@ Retry automatique en cas d'échec réseau.
 from __future__ import annotations
 import os
 import time
-import json
 import threading
 import queue
 from typing import Optional

@@ -11,7 +11,6 @@ Si désactivé, on envoie le transcript brut mais court.
 """
 from __future__ import annotations
 import re
-import time
 from typing import List, Optional
 
 from .config import EkkoConfig

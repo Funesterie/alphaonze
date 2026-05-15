@@ -11,7 +11,7 @@ et émet des segments complets à la transcription.
 """
 from __future__ import annotations
 import time
-from typing import Generator, List, Optional
+from typing import List, Optional
 import numpy as np
 
 from .config import EkkoConfig

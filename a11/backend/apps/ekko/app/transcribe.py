@@ -11,9 +11,7 @@ Le backend "local" nécessite : pip install faster-whisper
 from __future__ import annotations
 import io
 import os
-import time
 from typing import Optional
-import numpy as np
 
 from .config import EkkoConfig
 from .vad import VADSegment

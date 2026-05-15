@@ -6393,8 +6393,8 @@ app.use('/api/dump/rgba-brotli', verifyJWT, createDumpRgbaRouter({ runtimeRoot: 
 console.log('[Server] Dump RGBA Brotli routes mounted under /api/dump/rgba-brotli');
 
 // Ekko — module d'écoute audio système pour Ivy
-const ekkoRouter = require('./src/routes/ekko.cjs');
-app.use('/api/ekko', ekkoRouter);
+const createEkkoRouter = require('./src/routes/ekko.cjs');
+app.use('/api/ekko', createEkkoRouter({ writeMemoryKeyValue }));
 console.log('[Server] Ekko routes mounted under /api/ekko');
 
 // SFX — Sons de karma émotionnel (public, pas de JWT requis pour les WAV)

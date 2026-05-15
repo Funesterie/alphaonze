@@ -55,6 +55,7 @@ import { PinkWardPanel } from "./components/PinkWardPanel";
 import { A11CommandConsolePanel } from "./components/A11CommandConsolePanel";
 import { QflushPortableTerminal } from "./components/QflushPortableTerminal";
 import { A11RemoteProvidersPanel } from "./components/A11RemoteProvidersPanel";
+import { EkkoIndicator } from "./components/EkkoIndicator";
 import { ConversationActivityPanel } from "./components/ConversationActivityPanel";
 import { ConversationResourcesPanel } from "./components/ConversationResourcesPanel";
 import { A11ActivityConsole, useA11Activity } from "./components/A11ActivityConsole";
@@ -6214,6 +6215,8 @@ export function App() {
                   : "Envoyer"
                 }
               </button>
+
+              <EkkoIndicator />
 
               <button
                 type="button"

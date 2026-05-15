@@ -13,8 +13,7 @@ from __future__ import annotations
 import platform
 import queue
 import threading
-import time
-from typing import Optional, Callable
+from typing import Optional
 import numpy as np
 
 from .config import EkkoConfig
@@ -276,6 +275,7 @@ def _detect_backend() -> str:
             if result.returncode == 0:
                 return "pipewire"
         except Exception:
+            # Probe best-effort : pw-cli absent ou timeout — fallback PulseAudio intentionnel.
             pass
         return "pulse"
 
