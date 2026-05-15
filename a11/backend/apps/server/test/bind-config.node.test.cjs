@@ -19,3 +19,9 @@ test('resolveBindHost falls back to HOST_SERVER when HOST is unset', () => {
     HOST_SERVER: '0.0.0.0',
   }), '0.0.0.0');
 });
+
+test('resolveBindHost binds publicly on Render when no explicit host is set', () => {
+  assert.equal(resolveBindHost({
+    RENDER_SERVICE_ID: 'srv-example',
+  }), '0.0.0.0');
+});
