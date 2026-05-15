@@ -17,6 +17,7 @@ test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
     A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
     A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
     LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    A11_LLM_PROVIDER: process.env.A11_LLM_PROVIDER,
     A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
     A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -25,6 +26,7 @@ test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
   process.env.A11_WAZAA_LLM_ENRICH = '';
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = '';
+  process.env.A11_LLM_PROVIDER = '';
   setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
   process.env.OPENAI_API_KEY = 'generic-test-key';
@@ -35,6 +37,7 @@ test('isLlmEnrichmentEnabled ignores generic OPENAI_API_KEY by default', () => {
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
     setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
@@ -85,6 +88,61 @@ test('isLlmEnrichmentEnabled can opt into the OpenAI-compatible chat provider', 
   }
 });
 
+test('resolveTranslationConfig auto-wires the declared production OpenAI-compatible provider', () => {
+  const previous = {
+    A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
+    A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    OLLAMA_BASE: process.env.OLLAMA_BASE,
+    A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
+    A11_TRANSLATION_ALLOW_GENERIC_OPENAI: process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI,
+    A11_LLM_PROVIDER: process.env.A11_LLM_PROVIDER,
+    A11_OPENAI_BASE_URL: process.env.A11_OPENAI_BASE_URL,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_MODEL: process.env.A11_OPENAI_MODEL,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+  };
+
+  process.env.A11_WAZAA_LLM_ENRICH = '';
+  process.env.A11_TRANSLATION_BASE_URL = '';
+  process.env.LLM_ROUTER_URL = '';
+  process.env.OLLAMA_BASE = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
+  process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = '';
+  process.env.A11_LLM_PROVIDER = 'openai';
+  process.env.A11_OPENAI_BASE_URL = '';
+  process.env.OPENAI_BASE_URL = 'https://openrouter.ai/api/v1';
+  process.env.A11_OPENAI_API_KEY = '';
+  process.env.OPENAI_API_KEY = 'prod-openrouter-test-key';
+  process.env.A11_OPENAI_MODEL = '';
+  process.env.OPENAI_MODEL = 'meta-llama/llama-3.3-70b-instruct';
+
+  try {
+    const config = resolveTranslationConfig();
+    assert.equal(config.url, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(config.baseUrl, 'https://openrouter.ai/api/v1');
+    assert.equal(config.apiKey, 'prod-openrouter-test-key');
+    assert.equal(config.model, 'meta-llama/llama-3.3-70b-instruct');
+    assert.equal(config.isConfigured, true);
+  } finally {
+    process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
+    process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
+    process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.OLLAMA_BASE = previous.OLLAMA_BASE;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
+    process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = previous.A11_TRANSLATION_ALLOW_GENERIC_OPENAI;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
+    process.env.A11_OPENAI_BASE_URL = previous.A11_OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = previous.OPENAI_BASE_URL;
+    process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
+    process.env.A11_OPENAI_MODEL = previous.A11_OPENAI_MODEL;
+    process.env.OPENAI_MODEL = previous.OPENAI_MODEL;
+  }
+});
+
 test('isLlmEnrichmentEnabled still supports explicit scoped translation keys', () => {
   const previous = {
     A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
@@ -110,6 +168,7 @@ test('isLlmEnrichmentEnabled supports Cerbere router without OpenAI key', () => 
     A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,
     A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
     LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    A11_LLM_PROVIDER: process.env.A11_LLM_PROVIDER,
     A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
     A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -118,6 +177,7 @@ test('isLlmEnrichmentEnabled supports Cerbere router without OpenAI key', () => 
   process.env.A11_WAZAA_LLM_ENRICH = '';
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = 'https://cerbere.funesterie.me';
+  process.env.A11_LLM_PROVIDER = '';
   setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
   process.env.OPENAI_API_KEY = '';
@@ -128,6 +188,7 @@ test('isLlmEnrichmentEnabled supports Cerbere router without OpenAI key', () => 
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
     setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
@@ -233,6 +294,7 @@ test('callStructuredLlmJson strict mode throws a 503 when the structured LLM is 
 
   process.env.A11_TRANSLATION_BASE_URL = '';
   process.env.LLM_ROUTER_URL = '';
+  process.env.A11_LLM_PROVIDER = '';
   setEnv('A11_TRANSLATION_API_KEY', '');
   process.env.A11_OPENAI_API_KEY = '';
   process.env.OPENAI_API_KEY = '';
@@ -256,6 +318,7 @@ test('callStructuredLlmJson strict mode throws a 503 when the structured LLM is 
   } finally {
     process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
     setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;

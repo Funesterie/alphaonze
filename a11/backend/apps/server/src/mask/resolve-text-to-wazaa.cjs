@@ -27,6 +27,22 @@ function isTruthyEnv(value = '') {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function normalizeLlmProviderName(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (['openai', 'openrouter'].includes(normalized)) return 'openai';
+  return normalized;
+}
+
+function shouldUseConfiguredOpenAiCompatibleRuntime(env = process.env) {
+  const provider = normalizeLlmProviderName(env.A11_LLM_PROVIDER || env.LLM_PROVIDER || '');
+  if (provider !== 'openai') return false;
+  return Boolean(
+    normalizeEnvValue(env.A11_OPENAI_API_KEY)
+    || normalizeEnvValue(env.OPENAI_API_KEY)
+  );
+}
+
 function resolveImagePipelineMode() {
   const raw = String(process.env.A11_IMAGE_PIPELINE_MODE || '').trim().toLowerCase();
   if (raw === 'orchestrated' || raw === 'orchestrateur' || raw === 'smart') return 'smart';
@@ -139,7 +155,10 @@ function resolveTranslationConfig() {
   const explicitTranslationBaseUrl = normalizeBaseUrl(process.env.A11_TRANSLATION_BASE_URL || '');
   const routerBaseUrl = normalizeBaseUrl(process.env.LLM_ROUTER_URL || '');
   const localStructuredLlmBaseUrl = resolveLocalStructuredLlmBaseUrl(process.env);
-  const allowGenericOpenAiFallback = isTruthyEnv(process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI);
+  const explicitGenericOpenAiFallback = normalizeEnvValue(process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI);
+  const allowGenericOpenAiFallback = explicitGenericOpenAiFallback
+    ? isTruthyEnv(explicitGenericOpenAiFallback)
+    : shouldUseConfiguredOpenAiCompatibleRuntime(process.env);
   const genericOpenAiBaseUrl = allowGenericOpenAiFallback
     ? normalizeBaseUrl(
       normalizeEnvValue(process.env.A11_OPENAI_BASE_URL)
@@ -520,6 +539,7 @@ module.exports = {
   shouldEnrichWithLlm,
   isLlmEnrichmentEnabled,
   resolveTranslationConfig,
+  shouldUseConfiguredOpenAiCompatibleRuntime,
   resolveStructuredLlmRoute,
   buildStructuredLlmTraceMeta,
   callStructuredLlmJson,
