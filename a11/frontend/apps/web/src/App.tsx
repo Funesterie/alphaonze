@@ -208,6 +208,7 @@ const A11_AVATAR_TALKING_SRC = buildPublicAssetPath("A11_talking_smooth_8s.gif")
 const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking_smooth_8s.gif");
 const KAEN44_AVATAR_SRC = buildPublicAssetPath("assets/kaen44-copilot.png");
 const FUNESTERIE_LOGO_SRC = buildPublicAssetPath("assets/funesterie-logo.png");
+const A11_HOODED_SRC = buildPublicAssetPath("a11-hooded.png");
 const KAEN44_DASHBOARD_REFERENCE_SRC = buildPublicAssetPath("assets/nossen-dashboard-reference.png");
 const A11_KAEN44_COMMAND_CARDS_SRC = buildPublicAssetPath("assets/a11-kaen44-command-cards.png");
 const FUNESTERIE_NEXUS_BOARD_SRC = buildPublicAssetPath("assets/funesterie-nexus-board.png");
@@ -218,7 +219,8 @@ type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
 const A11_PUBLIC_APP_URL = "https://a11.funesterie.pro/";
 const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
-const VIVY_PUBLIC_APP_URL = "https://funesterie.me/vivy/";
+const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.pro/";
+const VIVY_PUBLIC_APP_URL = "https://funesterie.pro/vivy/";
 
 function getLocationSnapshot() {
   if (typeof window === "undefined") {
@@ -234,6 +236,22 @@ function getLocationSnapshot() {
 
 function isLocalSurfaceHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function isGeneralFunesterieHost(hostname: string) {
+  return [
+    "funesterie.pro",
+    "www.funesterie.pro",
+    "cockpit.funesterie.pro",
+  ].includes(String(hostname || "").trim().toLowerCase());
+}
+
+function isGeneralCockpitRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return pathname === "/" || /^\/cockpit(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/cockpit(?:\/|$)/.test(pathname);
 }
 
 function getCurrentSurfaceKind(): FunesterieSurface {
@@ -321,9 +339,16 @@ function getSurfaceLinks() {
   const { hostname } = getLocationSnapshot();
   if (isLocalSurfaceHost(hostname)) {
     return {
+      home: "/",
+      cockpit: "/cockpit/",
+      cockpitAuthSuccess: "/cockpit/auth/success",
       a11: "/",
+      a11Login: "/login",
+      a11Cockpit: "/admin",
       kaen44: "/k44/",
+      kaen44Cockpit: "/k44/cockpit",
       vivy: "/vivy/",
+      vivyStudio: "/vivy/#vivy-studio",
       kaen44Login: "/k44/login",
       kaen44Privacy: "/k44/privacy",
       kaen44Terms: "/k44/terms",
@@ -331,9 +356,16 @@ function getSurfaceLinks() {
   }
 
   return {
+    home: FUNESTERIE_PUBLIC_APP_URL,
+    cockpit: new URL("/cockpit/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    cockpitAuthSuccess: new URL("/cockpit/auth/success", FUNESTERIE_PUBLIC_APP_URL).toString(),
     a11: A11_PUBLIC_APP_URL,
+    a11Login: new URL("/login", A11_PUBLIC_APP_URL).toString(),
+    a11Cockpit: new URL("/cockpit", A11_PUBLIC_APP_URL).toString(),
     kaen44: KAEN44_PUBLIC_APP_URL,
+    kaen44Cockpit: new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString(),
     vivy: VIVY_PUBLIC_APP_URL,
+    vivyStudio: new URL("/vivy/#vivy-studio", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
@@ -2174,6 +2206,196 @@ function VivyPublicSurface() {
   );
 }
 
+function FunesterieCockpitPage({
+  authenticated,
+  displayName,
+}: {
+  authenticated: boolean;
+  displayName: string;
+}) {
+  const surfaceLinks = getSurfaceLinks();
+  const [googleStarting, setGoogleStarting] = useState(false);
+  const [oauthMessage, setOauthMessage] = useState("");
+
+  useEffect(() => {
+    document.documentElement.classList.add("funesterie-cockpit-page-root");
+    document.body.classList.add("funesterie-cockpit-page-body");
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      const error = String(params.get("error") || "").trim().toLowerCase();
+      const provider = String(params.get("provider") || "").trim().toLowerCase();
+      if (error) {
+        const messages: Record<string, string> = {
+          oauth_failed: "La connexion externe a echoue. Relance depuis le bouton Google.",
+          oauth_state_invalid: "La tentative a expire ou ne correspond plus. Relance une connexion propre.",
+          oauth_state_expired: "La tentative Google a expire. Relance depuis ce cockpit.",
+          google_auth_not_configured: "Google n'est pas encore configure sur le serveur A11.",
+          google_invalid_client: "Google refuse le client OAuth configure. Verifie l'ID client et le secret.",
+          google_invalid_grant: "Google a refuse le code de retour. Relance depuis ce cockpit.",
+          google_redirect_uri_mismatch: "Google refuse l'URL de retour. Ajoute le callback A11 dans Google Cloud.",
+          google_access_denied: "La connexion Google a ete annulee.",
+          google_email_not_verified: "L'adresse Google doit etre verifiee avant d'entrer.",
+          session_verification_failed: "La connexion est revenue, mais la session n'a pas pu etre confirmee.",
+        };
+        setOauthMessage(messages[error] || "La connexion Google n'a pas pu etre finalisee.");
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (provider === "google" || authenticated) {
+        setOauthMessage("Connexion Google recue. Le cockpit peut maintenant servir de retour stable.");
+      }
+    } catch {
+      // keep the cockpit usable when history/search are unavailable
+    }
+
+    return () => {
+      document.documentElement.classList.remove("funesterie-cockpit-page-root");
+      document.body.classList.remove("funesterie-cockpit-page-body");
+    };
+  }, [authenticated]);
+
+  function startCockpitGoogle() {
+    setGoogleStarting(true);
+    try {
+      const fallbackReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
+      const returnTo = typeof window !== "undefined"
+        ? new URL("/cockpit/auth/success", window.location.origin).toString()
+        : fallbackReturnTo;
+      startGoogleOAuth(returnTo, "funesterie-cockpit");
+    } catch {
+      setGoogleStarting(false);
+      setOauthMessage("Impossible de preparer l'URL Google depuis ce navigateur.");
+    }
+  }
+
+  const oauthOrigins = [
+    "https://funesterie.pro",
+    "https://www.funesterie.pro",
+    "https://a11.funesterie.pro",
+    "https://k44.funesterie.me",
+    "https://vivy.funesterie.pro",
+  ];
+  const oauthCallbacks = [
+    "https://a11.funesterie.pro/api/auth/google/callback",
+    "https://k44.funesterie.me/api/auth/google/callback",
+  ];
+
+  return (
+    <main className="funesterie-cockpit-shell">
+      <nav className="funesterie-cockpit-nav" aria-label="Navigation Funesterie">
+        <a className="funesterie-cockpit-brand" href={surfaceLinks.cockpit}>
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <span>
+            <strong>Funesterie</strong>
+            <small>Creer - comprendre - connecter</small>
+          </span>
+        </a>
+        <div>
+          <a href="#univers">Univers</a>
+          <a href="#agents">Agents</a>
+          <a href="#connexion">Connexion</a>
+          <a href={surfaceLinks.vivy}>Vivy</a>
+          <a href={surfaceLinks.kaen44Cockpit}>K44</a>
+          <a className="funesterie-cockpit-nav-cta" href={surfaceLinks.a11Login}>A11</a>
+        </div>
+      </nav>
+
+      <section className="funesterie-cockpit-hero" id="univers">
+        <article className="funesterie-cockpit-side funesterie-cockpit-side--vivy">
+          <img src={VIVY_POSTER_SRC} alt="" />
+          <div>
+            <h2>Vivy</h2>
+            <p>Presence musicale pour voix, chansons, ambiances et scenes audio.</p>
+            <a href={surfaceLinks.vivy}>Decouvrir Vivy</a>
+          </div>
+        </article>
+
+        <section className="funesterie-cockpit-center" aria-label="Cockpit general Funesterie">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <h1>Funesterie</h1>
+          <p>
+            Un point de rencontre clair pour A11, Kaen44, Vivy et les connexions Google.
+            Le cockpit general garde les portes lisibles avant d'entrer dans chaque agent.
+          </p>
+          <div className="funesterie-cockpit-actions">
+            <a href="#connexion">Connecter Google</a>
+            <a href={surfaceLinks.kaen44Cockpit}>Mini cockpit K44</a>
+          </div>
+        </section>
+
+        <article className="funesterie-cockpit-side funesterie-cockpit-side--a11">
+          <img src={A11_HOODED_SRC} alt="" />
+          <div>
+            <h2>A11</h2>
+            <p>Agent media pour analyser, structurer et transmettre les flux utiles.</p>
+            <a href={surfaceLinks.a11Login}>Entrer dans A11</a>
+          </div>
+        </article>
+      </section>
+
+      <section className="funesterie-cockpit-agents" id="agents" aria-label="Agents Funesterie">
+        {[
+          { name: "Kaen44", role: "Copilote quotidien", image: KAEN44_AVATAR_SRC, link: surfaceLinks.kaen44Cockpit },
+          { name: "A11", role: "Analyse media", image: A11_HOODED_SRC, link: surfaceLinks.a11Login },
+          { name: "Vivy", role: "Presence musicale", image: VIVY_POSTER_SRC, link: surfaceLinks.vivy },
+          { name: "NOSSEN", role: "Univers narratif", image: FUNESTERIE_NEXUS_BOARD_SRC, link: "#univers" },
+        ].map((agent) => (
+          <a key={agent.name} className="funesterie-cockpit-agent" href={agent.link}>
+            <img src={agent.image} alt="" />
+            <span>
+              <strong>{agent.name}</strong>
+              <small>{agent.role}</small>
+            </span>
+          </a>
+        ))}
+      </section>
+
+      <section className="funesterie-cockpit-connection" id="connexion" aria-label="Point de connexion Google">
+        <div>
+          <span className="funesterie-cockpit-kicker">Point de rencontre</span>
+          <h2>Google revient ici, les agents partent ensuite au bon endroit.</h2>
+          <p>
+            Ce cockpit donne une URL publique stable pour les retours de connexion. A11 garde la
+            session, K44 garde son mini cockpit, Vivy garde son espace musical.
+          </p>
+          <button type="button" onClick={startCockpitGoogle} disabled={googleStarting}>
+            {googleStarting ? "Ouverture Google..." : "Tester la connexion Google"}
+          </button>
+          <a href={surfaceLinks.a11Login}>Connexion classique A11</a>
+          {oauthMessage ? <p className="funesterie-cockpit-oauth-message">{oauthMessage}</p> : null}
+          {authenticated ? (
+            <p className="funesterie-cockpit-oauth-ok">
+              Session active pour {String(displayName || "Utilisateur").trim() || "Utilisateur"}.
+            </p>
+          ) : null}
+        </div>
+
+        <aside>
+          <h3>Google Cloud</h3>
+          <p className="funesterie-cockpit-muted">Origines JavaScript autorisees</p>
+          <ul>
+            {oauthOrigins.map((origin) => <li key={origin}>{origin}</li>)}
+          </ul>
+          <p className="funesterie-cockpit-muted">URI de redirection autorisees</p>
+          <ul>
+            {oauthCallbacks.map((callbackUrl) => <li key={callbackUrl}>{callbackUrl}</li>)}
+          </ul>
+          <p className="funesterie-cockpit-muted">Description conseillee</p>
+          <p>
+            Cockpit Funesterie pour connecter Google a A11, Kaen44 et Vivy, avec retour public
+            controle et actions utilisateur explicites.
+          </p>
+        </aside>
+      </section>
+
+      <section className="funesterie-cockpit-links" aria-label="Liens de redirection">
+        <a href={surfaceLinks.cockpit}>Cockpit general</a>
+        <a href={surfaceLinks.kaen44Cockpit}>Mini cockpit K44</a>
+        <a href={surfaceLinks.vivyStudio}>Studio Vivy</a>
+        <a href={surfaceLinks.a11Login}>Login A11</a>
+      </section>
+    </main>
+  );
+}
+
 function VivyPublicPage() {
   useEffect(() => {
     document.documentElement.classList.add("kaen-public-page-root");
@@ -2819,6 +3041,7 @@ export function App() {
   syncStoredSurface(surfaceKind);
   const isKaen44 = surfaceKind === "kaen44";
   const isVivy = surfaceKind === "vivy";
+  const isGeneralCockpit = isGeneralCockpitRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -2843,14 +3066,16 @@ export function App() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = isVivy
+    document.title = isGeneralCockpit
+      ? "Funesterie - Cockpit general"
+      : isVivy
       ? "Vivy - Presence musicale Funesterie"
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-  }, [isKaen44, isVivy]);
+    document.body.setAttribute('data-surface', isGeneralCockpit ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+  }, [isGeneralCockpit, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -2922,12 +3147,15 @@ export function App() {
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
           if (isAuthSuccessRoute(pathname)) {
-            window.history.replaceState({}, "", buildSurfacePath(getCurrentSurfaceKind(), "/"));
+            window.history.replaceState({}, "", pathname.includes("/cockpit/") ? "/cockpit" : buildSurfacePath(getCurrentSurfaceKind(), "/"));
           }
         })
         .catch(() => {
           if (isAuthSuccessRoute(pathname)) {
-            window.history.replaceState({}, "", `${buildSurfacePath(getCurrentSurfaceKind(), "/login")}?error=session_verification_failed`);
+            const failurePath = pathname.includes("/cockpit/")
+              ? "/cockpit?error=session_verification_failed"
+              : `${buildSurfacePath(getCurrentSurfaceKind(), "/login")}?error=session_verification_failed`;
+            window.history.replaceState({}, "", failurePath);
           }
         });
     };
@@ -2936,7 +3164,7 @@ export function App() {
       if (consumeOAuthTokenFromLocation()) {
         setIsAuthenticated(true);
         setDisplayName(getAuthDisplayName() || "Utilisateur");
-        window.history.replaceState({}, "", buildSurfacePath(getCurrentSurfaceKind(), "/"));
+        window.history.replaceState({}, "", pathname.includes("/cockpit/") ? "/cockpit" : buildSurfacePath(getCurrentSurfaceKind(), "/"));
         return;
       }
       refreshCookieSession();
@@ -2965,11 +3193,15 @@ export function App() {
     const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
       || hostname === 'a11.funesterie.pro'
       || hostname === 'alphaonze.funesterie.pro'
+      || hostname === 'funesterie.pro'
+      || hostname === 'www.funesterie.pro'
+      || hostname === 'cockpit.funesterie.pro'
       || hostname === 'k44.funesterie.me'
       || hostname === 'funesterie.me'
       || hostname === 'www.funesterie.me'
       || hostname === 'kaen44.funesterie.me'
-      || hostname === 'vivy.funesterie.me';
+      || hostname === 'vivy.funesterie.me'
+      || hostname === 'vivy.funesterie.pro';
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();
@@ -4821,6 +5053,10 @@ export function App() {
   // âœ… Check authentication
   if (isResetRoute) {
     return <ResetPasswordPanel />;
+  }
+
+  if (isGeneralCockpit) {
+    return <FunesterieCockpitPage authenticated={isAuthenticated} displayName={displayName} />;
   }
 
   if (isVivy) {

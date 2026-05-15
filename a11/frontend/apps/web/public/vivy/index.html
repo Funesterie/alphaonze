@@ -815,8 +815,9 @@
         <div>
           <a href="/vivy/">Vivy</a>
           <a href="#vivy-studio">Studio</a>
+          <a href="https://funesterie.pro/cockpit/">Cockpit</a>
           <a href="https://k44.funesterie.me/">Kaen44</a>
-          <a href="https://a11.funesterie.pro/">A11</a>
+          <a href="https://a11.funesterie.pro/login">A11</a>
         </div>
       </nav>
       <section class="vivy-poster-stage" aria-label="Vivy presence musicale" tabindex="0">
@@ -928,6 +929,7 @@
               <button type="button" data-vivy-ask>Demander a Vivy</button>
               <button type="button" data-vivy-open="a11">Ouvrir A11</button>
               <button type="button" data-vivy-open="k44">Ouvrir Kaen44</button>
+              <button type="button" data-vivy-open="cockpit">Cockpit general</button>
             </div>
           </form>
 
@@ -1216,8 +1218,18 @@
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-open]"), function (button) {
           button.addEventListener("click", function () {
             var target = button.getAttribute("data-vivy-open");
-            copyBrief(target === "a11" ? "Brief copie. Ouverture A11..." : "Brief copie. Ouverture Kaen44...");
-            window.open(target === "a11" ? "https://a11.funesterie.pro/" : "https://k44.funesterie.me/#agents", "_blank", "noopener,noreferrer");
+            var labels = {
+              a11: "Brief copie. Ouverture A11...",
+              k44: "Brief copie. Ouverture Kaen44...",
+              cockpit: "Brief copie. Ouverture du cockpit general..."
+            };
+            var urls = {
+              a11: "https://a11.funesterie.pro/login",
+              k44: "https://k44.funesterie.me/cockpit",
+              cockpit: "https://funesterie.pro/cockpit/"
+            };
+            copyBrief(labels[target] || "Brief copie.");
+            window.open(urls[target] || urls.cockpit, "_blank", "noopener,noreferrer");
           });
         });
 

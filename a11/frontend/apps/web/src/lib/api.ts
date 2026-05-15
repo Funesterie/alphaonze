@@ -249,12 +249,22 @@ function isPublicVivyWebHost(hostname: string | null | undefined) {
   ].includes(normalized);
 }
 
+function isPublicGeneralCockpitHost(hostname: string | null | undefined) {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return [
+    'funesterie.pro',
+    'www.funesterie.pro',
+    'cockpit.funesterie.pro',
+  ].includes(normalized);
+}
+
 function resolveDefaultOnlineApiBase() {
   const configured = normalizeApiBase(import.meta.env?.VITE_A11_ONLINE_API_BASE_URL);
   if (configured) return configured;
   try {
     const hostname = globalThis.location?.hostname;
-    if (isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
+    if (isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname) || isPublicGeneralCockpitHost(hostname)) return '';
   } catch {
     // ignore browser location issues
   }
@@ -292,7 +302,7 @@ function isPublicA11WebHost(hostname: string | null | undefined) {
 }
 
 function isPublicFunesterieWebHost(hostname: string | null | undefined) {
-  return isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname);
+  return isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname) || isPublicGeneralCockpitHost(hostname);
 }
 
 function isLocalApiBaseCandidate(baseValue: string | null | undefined) {
@@ -480,6 +490,9 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
           '178.105.86.89',
           'a11.funesterie.pro',
           'alphaonze.funesterie.pro',
+          'funesterie.pro',
+          'www.funesterie.pro',
+          'cockpit.funesterie.pro',
           'funesterie.me',
           'www.funesterie.me',
           'k44.funesterie.me',
@@ -487,6 +500,7 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
           'kaen44.funesterie.pro',
           'vivy.funesterie.me',
           'vivy.funesterie.pro',
+          'music.funesterie.me',
         ].includes(assetHost)
         && /^\/files\//i.test(parsed.pathname)
       ) {
