@@ -2,6 +2,7 @@
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
+const { execFile } = require('node:child_process');
 const { createFileStorage } = require('./lib/file-storage.cjs');
 let fileStorage = null;
 const {
@@ -131,6 +132,7 @@ const { fileURLToPath } = require('node:url');
 const fs = require('node:fs');
 const dotenv = require('dotenv');
 const { buildRuntimeConfig, getPublicRuntimeStatus } = require('./lib/runtime-config.cjs');
+const { getJanusVisionStatus } = require('./lib/janus-vision-runtime.cjs');
 
 // A11Host (VSIX + headless)
 const {
@@ -5770,6 +5772,16 @@ app.get('/api/a11/capabilities', verifyJWT, requireFamilyAccess, async (_req, re
   }
 });
 
+app.get('/api/a11/pink-ward/status', verifyJWT, requireFamilyAccess, async (_req, res) => {
+  try {
+    const status = await buildPinkWardStatus();
+    res.json(status);
+  } catch (err) {
+    console.warn('[A11] Pink Ward status failed:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.get('/api/control/status', verifyJWT, async (req, res) => {
   try {
     const status = await buildControlCenterStatus(req);
@@ -5962,6 +5974,151 @@ app.use('/api/image-atelier', verifyJWT, requireSubscription, require('./src/rou
 
 function getSupervisorInstance() {
   return globalThis.__A11_SUPERVISOR || globalThis.__A11_QFLUSH_SUPERVISOR || null;
+}
+
+function execFileText(command, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, {
+      windowsHide: true,
+      timeout: Number(options.timeoutMs || 1800),
+      maxBuffer: Number(options.maxBuffer || 64 * 1024),
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(String(stderr || error.message || error).trim() || 'exec_failed'));
+        return;
+      }
+      resolve(String(stdout || '').trim());
+    });
+  });
+}
+
+function parseNvidiaSmiSnapshot(raw = '') {
+  const lines = String(raw || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const gpus = lines.map((line, index) => {
+    const [name, total, used, free, utilization] = line.split(',').map((part) => String(part || '').trim());
+    const totalMb = Number(total || 0);
+    const usedMb = Number(used || 0);
+    const freeMb = Number(free || 0);
+    return {
+      index,
+      name: name || `GPU ${index}`,
+      memoryTotalMb: Number.isFinite(totalMb) ? totalMb : null,
+      memoryUsedMb: Number.isFinite(usedMb) ? usedMb : null,
+      memoryFreeMb: Number.isFinite(freeMb) ? freeMb : null,
+      utilizationGpuPercent: Number.isFinite(Number(utilization)) ? Number(utilization) : null,
+    };
+  });
+  return {
+    available: gpus.length > 0,
+    gpus,
+  };
+}
+
+async function getGpuSnapshot() {
+  try {
+    const raw = await execFileText('nvidia-smi', [
+      '--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu',
+      '--format=csv,noheader,nounits',
+    ], { timeoutMs: 1800 });
+    const parsed = parseNvidiaSmiSnapshot(raw);
+    return {
+      ok: true,
+      available: parsed.available,
+      source: 'nvidia-smi',
+      gpus: parsed.gpus,
+    };
+  } catch (error_) {
+    return {
+      ok: false,
+      available: false,
+      source: 'nvidia-smi',
+      error: 'nvidia_smi_unavailable',
+      message: String(error_?.message || error_ || 'nvidia-smi indisponible').slice(0, 220),
+      gpus: [],
+    };
+  }
+}
+
+function buildVramBudget({ gpu, janus }) {
+  const primaryGpu = Array.isArray(gpu?.gpus) ? gpu.gpus[0] : null;
+  const totalMb = Number(primaryGpu?.memoryTotalMb || 0);
+  const freeMb = Number(primaryGpu?.memoryFreeMb || 0);
+  const totalGb = totalMb > 0 ? Math.round((totalMb / 1024) * 10) / 10 : null;
+  const freeGb = freeMb > 0 ? Math.round((freeMb / 1024) * 10) / 10 : null;
+  const modelLabel = String(janus?.config?.model?.label || '').toLowerCase();
+  const wants7b = modelLabel.includes('7b') || String(janus?.config?.model?.ref || '').toLowerCase().includes('7b');
+  const wantsGpu = Boolean(janus?.requestedGpu);
+  const enoughFor7b = freeMb >= 9000;
+  const enoughFor1b = freeMb >= 3500;
+
+  let lane = 'cpu-safe';
+  let recommendation = 'CPU fallback actif ou GPU non detecte.';
+  if (gpu?.available && wantsGpu) {
+    if (wants7b && enoughFor7b) {
+      lane = 'gpu-7b';
+      recommendation = 'VRAM OK pour Janus Pro 7B.';
+    } else if (wants7b && !enoughFor7b && enoughFor1b) {
+      lane = 'gpu-1b-fallback';
+      recommendation = 'VRAM courte pour 7B: fallback 1B conseille.';
+    } else if (enoughFor1b) {
+      lane = 'gpu-1b';
+      recommendation = 'VRAM OK pour Janus Pro 1B.';
+    } else {
+      lane = 'cpu-fallback';
+      recommendation = 'VRAM insuffisante: rester en CPU/fallback.';
+    }
+  }
+
+  return {
+    lane,
+    totalGb,
+    freeGb,
+    usedGb: totalGb !== null && freeGb !== null ? Math.round((totalGb - freeGb) * 10) / 10 : null,
+    wantsGpu,
+    wants7b,
+    recommendation,
+  };
+}
+
+async function buildPinkWardStatus() {
+  const supervisor = getSupervisorInstance();
+  const qflushStatus = qflushIntegration.getStatus(supervisor);
+  const [a11host, gpu] = await Promise.all([
+    getA11HostStatus().catch((error_) => ({ ok: false, available: false, error: String(error_?.message || error_) })),
+    getGpuSnapshot(),
+  ]);
+  const janus = getJanusVisionStatus();
+
+  return {
+    ok: true,
+    id: 'pink-ward',
+    label: 'Pink Ward',
+    timestamp: new Date().toISOString(),
+    janus,
+    gpu,
+    budget: buildVramBudget({ gpu, janus }),
+    a11host: {
+      ok: Boolean(a11host?.ok),
+      available: Boolean(a11host?.available),
+      mode: a11host?.mode || null,
+      bridgeAvailable: Boolean(a11host?.bridgeAvailable),
+      headlessAvailable: Boolean(a11host?.headlessAvailable),
+      capabilities: a11host?.capabilities || {},
+    },
+    qflush: {
+      available: Boolean(qflushStatus?.available),
+      remoteUrl: qflushStatus?.remoteUrl || null,
+      chatFlow: qflushStatus?.chatFlow || null,
+      memorySummaryFlow: qflushStatus?.memorySummaryFlow || null,
+      processes: qflushStatus?.processes || {},
+    },
+    fallback: {
+      cpu: Boolean(janus?.cpuFallback || !gpu?.available),
+      reason: !gpu?.available
+        ? 'gpu_unavailable'
+        : (janus?.cpuFallback ? 'janus_cpu_device' : 'gpu_ready'),
+    },
+  };
 }
 
 function isLocalControlOrigin(req) {
@@ -6234,6 +6391,11 @@ console.log('[Server] Semantic media roulette mounted under /api/agent/media/rou
 const createDumpRgbaRouter = require('./src/routes/a11-dump-rgba.cjs');
 app.use('/api/dump/rgba-brotli', verifyJWT, createDumpRgbaRouter({ runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Dump RGBA Brotli routes mounted under /api/dump/rgba-brotli');
+
+// Ekko — module d'écoute audio système pour Ivy
+const ekkoRouter = require('./src/routes/ekko.cjs');
+app.use('/api/ekko', ekkoRouter);
+console.log('[Server] Ekko routes mounted under /api/ekko');
 
 // SFX — Sons de karma émotionnel (public, pas de JWT requis pour les WAV)
 const createSfxRouter = require('./src/routes/sfx.cjs');
