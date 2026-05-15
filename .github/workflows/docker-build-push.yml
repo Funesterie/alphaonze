@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DOCKERHUB_USERNAME: funeste38
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME || 'funeste38' }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
@@ -24,20 +24,15 @@ jobs:
         id: dockerhub
         shell: bash
         run: |
-          if [ -n "$DOCKERHUB_TOKEN" ]; then
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Docker Hub push skipped::Repository secret DOCKERHUB_TOKEN is not configured; validating the Docker build without pushing."
+          elif printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; then
             echo "push=true" >> "$GITHUB_OUTPUT"
           else
             echo "push=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Docker Hub push skipped::Repository secret DOCKERHUB_TOKEN is not configured; validating the Docker build without pushing."
+            echo "::warning title=Docker Hub push skipped::Docker Hub credentials were provided but login failed for user '$DOCKERHUB_USERNAME'. Validating the Docker build without pushing."
           fi
-
-      - name: Login to Docker Hub
-        if: steps.dockerhub.outputs.push == 'true'
-        shell: bash
-        run: |
-          printf '%s' "$DOCKERHUB_TOKEN" | docker login \
-            --username "$DOCKERHUB_USERNAME" \
-            --password-stdin
 
       - name: Build Docker image
         shell: bash
