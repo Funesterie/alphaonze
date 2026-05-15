@@ -618,7 +618,7 @@
 
       .vivy-studio-brief {
         display: grid;
-        grid-template-rows: auto minmax(260px, 1fr) auto auto;
+        grid-template-rows: auto minmax(260px, 1fr) auto auto auto;
         gap: 12px;
       }
 
@@ -643,6 +643,43 @@
         color: #ffd2f4;
         font-size: 13px;
         line-height: 1.45;
+      }
+
+      .vivy-studio-media {
+        margin: 0;
+        display: grid;
+        gap: 10px;
+        border: 1px solid rgba(240, 121, 216, 0.28);
+        background: rgba(1, 1, 5, 0.7);
+        padding: 12px;
+      }
+
+      .vivy-studio-media.is-hidden {
+        display: none;
+      }
+
+      .vivy-studio-media strong {
+        color: #ffd2f4;
+        font-size: 13px;
+        text-transform: uppercase;
+      }
+
+      .vivy-studio-media audio,
+      .vivy-studio-media video {
+        width: 100%;
+        display: block;
+        border-radius: 8px;
+        background: #05030a;
+      }
+
+      .vivy-studio-media video {
+        max-height: 320px;
+      }
+
+      .vivy-studio-media a {
+        color: #ffd2f4;
+        font-size: 13px;
+        font-weight: 800;
       }
 
       @media (max-width: 900px) {
@@ -742,7 +779,7 @@
         }
 
         .vivy-studio-brief {
-          grid-template-rows: auto auto auto auto;
+          grid-template-rows: auto auto auto auto auto;
         }
 
         .vivy-studio-brief pre {
@@ -901,6 +938,7 @@
               <button type="button" data-vivy-copy>Copier</button>
               <button type="button" data-vivy-share>Partager</button>
             </div>
+            <figure class="vivy-studio-media is-hidden" data-vivy-media></figure>
             <p class="vivy-studio-status" data-vivy-status></p>
           </aside>
         </div>
@@ -935,6 +973,7 @@
         var action = root.querySelector("[data-vivy-action]");
         var briefNode = root.querySelector("[data-vivy-brief]");
         var statusNode = root.querySelector("[data-vivy-status]");
+        var mediaNode = root.querySelector("[data-vivy-media]");
 
         function field(name) {
           return form.elements[name];
@@ -947,6 +986,108 @@
 
         function setStatus(text) {
           if (statusNode) statusNode.textContent = text || "";
+        }
+
+        function firstText() {
+          for (var i = 0; i < arguments.length; i += 1) {
+            var value = String(arguments[i] || "").trim();
+            if (value) return value;
+          }
+          return "";
+        }
+
+        function resolveMediaUrl(url) {
+          var value = String(url || "").trim();
+          if (!value) return "";
+          if (/^(?:https?:)?\/\//i.test(value) || value.indexOf("data:") === 0 || value.indexOf("blob:") === 0) return value;
+          if (value.charAt(0) === "/") return value;
+          return "/" + value.replace(/^\.?\//, "");
+        }
+
+        function setMediaPreview(payload) {
+          if (!mediaNode) return;
+          while (mediaNode.firstChild) mediaNode.removeChild(mediaNode.firstChild);
+
+          var media = payload && payload.media ? payload.media : {};
+          var audioUrl = resolveMediaUrl(firstText(payload && payload.audioUrl, payload && payload.audio_url, media.audioUrl, media.audio_url));
+          var videoUrl = resolveMediaUrl(firstText(payload && payload.videoUrl, payload && payload.video_url, media.videoUrl, media.video_url));
+          var url = audioUrl || videoUrl || resolveMediaUrl(firstText(media.url, payload && payload.url));
+
+          if (!url) {
+            mediaNode.classList.add("is-hidden");
+            return;
+          }
+
+          var isVideo = Boolean(videoUrl || (media.kind === "video") || /\.mp4(?:[?#].*)?$/i.test(url));
+          var title = document.createElement("strong");
+          title.textContent = isVideo ? "Clip Vivy pret" : "Audio Vivy pret";
+          mediaNode.appendChild(title);
+
+          var player = document.createElement(isVideo ? "video" : "audio");
+          player.controls = true;
+          if (isVideo) {
+            player.playsInline = true;
+            player.preload = "metadata";
+          } else {
+            player.preload = "metadata";
+          }
+          player.src = url;
+          mediaNode.appendChild(player);
+
+          var link = document.createElement("a");
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = isVideo ? "Ouvrir la video" : "Ouvrir l'audio";
+          mediaNode.appendChild(link);
+
+          mediaNode.classList.remove("is-hidden");
+        }
+
+        function buildProductionPayload() {
+          return {
+            mode: activeMode,
+            voiceTool: value("voiceTool"),
+            voiceFileName: voiceFileName,
+            voiceReferenceName: voiceFileName,
+            voiceInstruction: value("voiceInstruction"),
+            songSource: value("songSource"),
+            songMood: value("songMood"),
+            songText: value("songText"),
+            shareTarget: value("shareTarget"),
+            shareUrl: value("shareUrl"),
+            shareTokenPresent: Boolean(value("shareToken")),
+            shareInstruction: value("shareInstruction")
+          };
+        }
+
+        function runProduction(button) {
+          if (button) button.disabled = true;
+          setStatus("Vivy produit un fichier exploitable...");
+          return fetch("/api/vivy/studio/produce", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(buildProductionPayload())
+          }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              if (!response.ok || payload.ok === false) {
+                throw new Error(payload.message || payload.error || ("Vivy indisponible (" + response.status + ")"));
+              }
+              return payload;
+            });
+          }).then(function (payload) {
+            vivyOutput = String(payload.assistant || payload.brief || payload.summary || "").trim();
+            if (!vivyOutput) throw new Error("reponse_vide");
+            setMediaPreview(payload);
+            setStatus("Production Vivy prete. Le lecteur est disponible dans le brief.");
+            render();
+          }).catch(function (error) {
+            setMediaPreview(null);
+            setStatus("Production Vivy indisponible: " + (error && error.message ? error.message : error));
+          }).finally(function () {
+            if (button) button.disabled = false;
+          });
         }
 
         function buildBaseBrief() {
@@ -1050,7 +1191,7 @@
         });
         form.addEventListener("submit", function (event) {
           event.preventDefault();
-          copyBrief(modes[activeMode].action + ": brief pret.");
+          runProduction(action);
         });
 
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-copy]"), function (button) {
@@ -1082,43 +1223,7 @@
 
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-ask]"), function (button) {
           button.addEventListener("click", function () {
-            button.disabled = true;
-            setStatus("Vivy travaille sur le brief...");
-            var focusLine = activeMode === "song"
-              ? "Pour composition/production: donne titre, intention, structure, paroles, arrangement, voix guide et prochaines assets."
-              : activeMode === "voice"
-                ? "Pour creation voix: donne profil vocal, chaine d'effets, calibration, phrase de test et limites."
-                : "Pour scene/partage: donne plan clip, titre, description, tags, checklist OBS/upload et precautions token.";
-            fetch("/api/chat", {
-              method: "POST",
-              credentials: "include",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                message: [
-                  "Tu es Vivy, presence musicale Funesterie.",
-                  "Transforme ce handoff en production concrete, directement exploitable.",
-                  focusLine,
-                  "",
-                  buildBaseBrief()
-                ].join("\n")
-              })
-            }).then(function (response) {
-              return response.json().catch(function () { return {}; }).then(function (payload) {
-                if (!response.ok || payload.ok === false) {
-                  throw new Error(payload.message || payload.error || ("Vivy indisponible (" + response.status + ")"));
-                }
-                return payload;
-              });
-            }).then(function (payload) {
-              vivyOutput = String(payload.assistant || payload.message || payload.content || "").trim();
-              if (!vivyOutput) throw new Error("reponse_vide");
-              setStatus("Production Vivy ajoutee au brief.");
-              render();
-            }).catch(function (error) {
-              setStatus("Production Vivy indisponible: " + (error && error.message ? error.message : error));
-            }).finally(function () {
-              button.disabled = false;
-            });
+            runProduction(button);
           });
         });
 
