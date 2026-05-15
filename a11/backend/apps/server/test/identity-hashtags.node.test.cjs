@@ -18,10 +18,12 @@ test('identity hashtags define stable agent and universe archetypes', () => {
 
   assert.equal(a11.identityType, 'agent');
   assert.ok(a11.hashtags.includes('#multimodal-core'));
+  assert.ok(a11.visualHashtags.includes('#not-human-character'));
   assert.equal(a11.visualIdentity.humanRepresentationAllowed, false);
 
   assert.equal(kaen.id, 'kaen44');
   assert.ok(kaen.hashtags.includes('#field-agent'));
+  assert.ok(kaen.visualHashtags.includes('#human-character'));
   assert.equal(kaen.visualIdentity.humanRepresentationAllowed, true);
 
   assert.equal(nossen.identityType, 'universe');
@@ -43,4 +45,5 @@ test('technical module fallback stays non-human and graph-linkable', () => {
   assert.ok(layer.summary.profiles >= 1);
   assert.ok(links.some((link) => link.type === 'HAS_IDENTITY_PROFILE'));
   assert.ok(links.some((link) => link.type === 'HAS_IDENTITY_HASHTAG'));
+  assert.ok(links.some((link) => link.type === 'HAS_IDENTITY_TAG'));
 });

@@ -292,6 +292,7 @@ function identityFields(identity) {
     identityHashtags: identity.hashtags || [],
     functionalHashtags: identity.functionalHashtags || [],
     narrativeHashtags: identity.narrativeHashtags || [],
+    visualHashtags: identity.visualHashtags || [],
     visualIdentity: identity.visualIdentity || null,
     identityPrompt: buildIdentityPromptFragment({
       id: identity.canonicalId || identity.id,
@@ -301,6 +302,7 @@ function identityFields(identity) {
       hashtags: identity.hashtags || [],
       functionalHashtags: identity.functionalHashtags || [],
       narrativeHashtags: identity.narrativeHashtags || [],
+      visualHashtags: identity.visualHashtags || [],
       visualIdentity: identity.visualIdentity,
       routingTags: identity.routingTags || [],
       sourceCardUse: identity.sourceCardUse || '',
@@ -487,7 +489,7 @@ function toCypher(corpus) {
   for (const identity of identities) {
     lines.push(
       `MERGE (identity:FunesterieIdentityProfile {id: ${q(identity.id)}})`,
-      `SET identity.label = ${q(identity.label)}, identity.identityType = ${q(identity.identityType)}, identity.hashtags = ${qa(identity.hashtags)}, identity.visualStyle = ${q(identity.visualIdentity?.style || '')}, identity.palette = ${qa(identity.visualIdentity?.palette || [])}, identity.representation = ${q(identity.visualIdentity?.representation || '')}, identity.humanRepresentationAllowed = ${identity.visualIdentity?.humanRepresentationAllowed === true ? 'true' : 'false'};`,
+      `SET identity.label = ${q(identity.label)}, identity.identityType = ${q(identity.identityType)}, identity.hashtags = ${qa(identity.hashtags)}, identity.functionalHashtags = ${qa(identity.functionalHashtags || [])}, identity.narrativeHashtags = ${qa(identity.narrativeHashtags || [])}, identity.visualHashtags = ${qa(identity.visualHashtags || [])}, identity.visualStyle = ${q(identity.visualIdentity?.style || '')}, identity.palette = ${qa(identity.visualIdentity?.palette || [])}, identity.representation = ${q(identity.visualIdentity?.representation || '')}, identity.humanRepresentationAllowed = ${identity.visualIdentity?.humanRepresentationAllowed === true ? 'true' : 'false'};`,
       ''
     );
   }
@@ -502,9 +504,13 @@ function toCypher(corpus) {
   for (const card of corpus.sourceCards) {
     lines.push(
       `MERGE (card:FunesterieSourceCard {id: ${q(card.id)}})`,
-      `SET card.title = ${q(card.title)}, card.kind = ${q(card.kind)}, card.boundary = ${q(card.boundary)}, card.status = ${q(card.status)}, card.role = ${q(card.role)}, card.identityProfileId = ${q(card.identity?.id || '')}, card.identityType = ${q(card.identity?.identityType || '')}, card.identityHashtags = ${qa(card.identityHashtags || [])}, card.visualStyle = ${q(card.visualIdentity?.style || '')}, card.visualRepresentation = ${q(card.visualIdentity?.representation || '')};`,
+      `SET card.title = ${q(card.title)}, card.kind = ${q(card.kind)}, card.boundary = ${q(card.boundary)}, card.status = ${q(card.status)}, card.role = ${q(card.role)}, card.identityProfileId = ${q(card.identity?.id || '')}, card.identityType = ${q(card.identity?.identityType || '')}, card.identityHashtags = ${qa(card.identityHashtags || [])}, card.functionalHashtags = ${qa(card.functionalHashtags || [])}, card.narrativeHashtags = ${qa(card.narrativeHashtags || [])}, card.visualHashtags = ${qa(card.visualHashtags || [])}, card.visualStyle = ${q(card.visualIdentity?.style || '')}, card.visualRepresentation = ${q(card.visualIdentity?.representation || '')};`,
       ''
     );
+    for (const link of identityLinksForEntity(card.id, card.identity).filter((item) => item.type === 'HAS_IDENTITY_TAG' || item.type === 'HAS_IDENTITY_HASHTAG')) {
+      lines.push(`MATCH (card:FunesterieSourceCard {id: ${q(link.from)}}), (tag:FunesterieIdentityHashtag {id: ${q(link.to)}}) MERGE (card)-[:${link.type}]->(tag);`);
+    }
+    lines.push('');
   }
   return `${lines.join('\n')}\n`;
 }

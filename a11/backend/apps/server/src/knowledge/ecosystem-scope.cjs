@@ -268,6 +268,9 @@ function withIdentity(entity, entityId, context = {}) {
     ...entity,
     identity,
     identityHashtags: identity.hashtags,
+    functionalHashtags: identity.functionalHashtags,
+    narrativeHashtags: identity.narrativeHashtags,
+    visualHashtags: identity.visualHashtags,
   };
 }
 
@@ -533,7 +536,7 @@ function toCypher(scope) {
   for (const identity of scope.identityLayer.profiles) {
     lines.push(
       `MERGE (identity:FunesterieIdentityProfile {id: ${q(identity.id)}})`,
-      `SET identity.label = ${q(identity.label)}, identity.identityType = ${q(identity.identityType)}, identity.hashtags = ${qa(identity.hashtags)}, identity.functionalHashtags = ${qa(identity.functionalHashtags)}, identity.narrativeHashtags = ${qa(identity.narrativeHashtags)}, identity.visualStyle = ${q(identity.visualIdentity.style)}, identity.palette = ${qa(identity.visualIdentity.palette)}, identity.representation = ${q(identity.visualIdentity.representation)}, identity.humanRepresentationAllowed = ${identity.visualIdentity.humanRepresentationAllowed ? 'true' : 'false'};`,
+      `SET identity.label = ${q(identity.label)}, identity.identityType = ${q(identity.identityType)}, identity.hashtags = ${qa(identity.hashtags)}, identity.functionalHashtags = ${qa(identity.functionalHashtags)}, identity.narrativeHashtags = ${qa(identity.narrativeHashtags)}, identity.visualHashtags = ${qa(identity.visualHashtags || [])}, identity.visualStyle = ${q(identity.visualIdentity.style)}, identity.palette = ${qa(identity.visualIdentity.palette)}, identity.representation = ${q(identity.visualIdentity.representation)}, identity.humanRepresentationAllowed = ${identity.visualIdentity.humanRepresentationAllowed ? 'true' : 'false'};`,
       ''
     );
   }
@@ -548,14 +551,14 @@ function toCypher(scope) {
   for (const repo of scope.github.repos) {
     lines.push(
       `MERGE (n:FunesterieRepository {id: ${q(`repo:${repo.name}`)}})`,
-      `SET n.name = ${q(repo.name)}, n.url = ${q(repo.url)}, n.visibility = ${q(repo.visibility)}, n.defaultBranch = ${q(repo.defaultBranch)}, n.technicalRole = ${q(repo.profile?.technicalRole || '')}, n.confidence = ${q(repo.profile?.confidence || 'unknown')}, n.identityProfileId = ${q(repo.identity?.id || '')}, n.identityType = ${q(repo.identity?.identityType || '')}, n.identityHashtags = ${qa(repo.identityHashtags || [])}, n.visualStyle = ${q(repo.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(repo.identity?.visualIdentity?.representation || '')};`,
+      `SET n.name = ${q(repo.name)}, n.url = ${q(repo.url)}, n.visibility = ${q(repo.visibility)}, n.defaultBranch = ${q(repo.defaultBranch)}, n.technicalRole = ${q(repo.profile?.technicalRole || '')}, n.confidence = ${q(repo.profile?.confidence || 'unknown')}, n.identityProfileId = ${q(repo.identity?.id || '')}, n.identityType = ${q(repo.identity?.identityType || '')}, n.identityHashtags = ${qa(repo.identityHashtags || [])}, n.functionalHashtags = ${qa(repo.functionalHashtags || [])}, n.narrativeHashtags = ${qa(repo.narrativeHashtags || [])}, n.visualHashtags = ${qa(repo.visualHashtags || [])}, n.visualStyle = ${q(repo.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(repo.identity?.visualIdentity?.representation || '')};`,
       ''
     );
   }
   for (const moduleInfo of scope.localModules) {
     lines.push(
       `MERGE (n:FunesterieLocalModule {id: ${q(moduleInfo.id)}})`,
-      `SET n.name = ${q(moduleInfo.name)}, n.kind = ${q(moduleInfo.kind)}, n.relativePath = ${q(moduleInfo.relativePath)}, n.exists = ${moduleInfo.status.exists ? 'true' : 'false'}, n.identityProfileId = ${q(moduleInfo.identity?.id || '')}, n.identityType = ${q(moduleInfo.identity?.identityType || '')}, n.identityHashtags = ${qa(moduleInfo.identityHashtags || [])}, n.visualStyle = ${q(moduleInfo.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(moduleInfo.identity?.visualIdentity?.representation || '')};`,
+      `SET n.name = ${q(moduleInfo.name)}, n.kind = ${q(moduleInfo.kind)}, n.relativePath = ${q(moduleInfo.relativePath)}, n.exists = ${moduleInfo.status.exists ? 'true' : 'false'}, n.identityProfileId = ${q(moduleInfo.identity?.id || '')}, n.identityType = ${q(moduleInfo.identity?.identityType || '')}, n.identityHashtags = ${qa(moduleInfo.identityHashtags || [])}, n.functionalHashtags = ${qa(moduleInfo.functionalHashtags || [])}, n.narrativeHashtags = ${qa(moduleInfo.narrativeHashtags || [])}, n.visualHashtags = ${qa(moduleInfo.visualHashtags || [])}, n.visualStyle = ${q(moduleInfo.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(moduleInfo.identity?.visualIdentity?.representation || '')};`,
       ''
     );
   }

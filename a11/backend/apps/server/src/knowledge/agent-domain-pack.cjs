@@ -463,6 +463,9 @@ function buildAgentDomainPack(options = {}) {
   })).map((agent) => ({
     ...agent,
     identityHashtags: agent.identity.hashtags,
+    functionalHashtags: agent.identity.functionalHashtags,
+    narrativeHashtags: agent.identity.narrativeHashtags,
+    visualHashtags: agent.identity.visualHashtags,
     identityPrompt: buildIdentityPromptFragment({
       id: agent.identity.canonicalId,
       profileId: agent.identity.id,
@@ -471,6 +474,7 @@ function buildAgentDomainPack(options = {}) {
       hashtags: agent.identity.hashtags,
       functionalHashtags: agent.identity.functionalHashtags,
       narrativeHashtags: agent.identity.narrativeHashtags,
+      visualHashtags: agent.identity.visualHashtags,
       visualIdentity: agent.identity.visualIdentity,
       routingTags: agent.identity.routingTags,
       sourceCardUse: agent.identity.sourceCardUse,
@@ -684,6 +688,7 @@ function toMarkdown(pack) {
   for (const agent of pack.agents) {
     lines.push(`- ${agent.name}: ${agent.role}`);
     lines.push(`  - identity: ${agent.identityHashtags.join(' ')}`);
+    lines.push(`  - families: functional ${agent.functionalHashtags.join(' ')}; narrative ${agent.narrativeHashtags.join(' ')}; visual ${agent.visualHashtags.join(' ')}`);
     lines.push(`  - visual: ${agent.identity.visualIdentity.style}; ${agent.identity.visualIdentity.representation}`);
     lines.push(`  - domains: ${agent.domains.join(', ')}`);
     lines.push(`  - tools: ${agent.tools.join(', ')}`);
@@ -732,14 +737,14 @@ function toCypher(pack) {
   for (const agent of pack.agents) {
     lines.push(
       `MERGE (n:A11AgentProfile {id: ${q(agent.id)}})`,
-      `SET n.name = ${q(agent.name)}, n.role = ${q(agent.role)}, n.surface = ${q(agent.surface)}, n.nindo = ${q(agent.nindo)}, n.identityProfileId = ${q(agent.identity?.id || '')}, n.identityHashtags = ${qa(agent.identityHashtags || [])}, n.visualStyle = ${q(agent.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(agent.identity?.visualIdentity?.representation || '')};`,
+      `SET n.name = ${q(agent.name)}, n.role = ${q(agent.role)}, n.surface = ${q(agent.surface)}, n.nindo = ${q(agent.nindo)}, n.identityProfileId = ${q(agent.identity?.id || '')}, n.identityHashtags = ${qa(agent.identityHashtags || [])}, n.functionalHashtags = ${qa(agent.functionalHashtags || [])}, n.narrativeHashtags = ${qa(agent.narrativeHashtags || [])}, n.visualHashtags = ${qa(agent.visualHashtags || [])}, n.visualStyle = ${q(agent.identity?.visualIdentity?.style || '')}, n.visualRepresentation = ${q(agent.identity?.visualIdentity?.representation || '')};`,
       `MATCH (pack:A11DomainPack {id: ${q(pack.id)}}), (n:A11AgentProfile {id: ${q(agent.id)}}) MERGE (pack)-[:DESCRIBES_AGENT]->(n);`,
       ''
     );
     if (agent.identity?.id) {
       lines.push(
         `MERGE (identity:FunesterieIdentityProfile {id: ${q(agent.identity.id)}})`,
-        `SET identity.label = ${q(agent.identity.label)}, identity.identityType = ${q(agent.identity.identityType)}, identity.hashtags = ${qa(agent.identity.hashtags || [])}, identity.visualStyle = ${q(agent.identity.visualIdentity?.style || '')};`,
+        `SET identity.label = ${q(agent.identity.label)}, identity.identityType = ${q(agent.identity.identityType)}, identity.hashtags = ${qa(agent.identity.hashtags || [])}, identity.functionalHashtags = ${qa(agent.identity.functionalHashtags || [])}, identity.narrativeHashtags = ${qa(agent.identity.narrativeHashtags || [])}, identity.visualHashtags = ${qa(agent.identity.visualHashtags || [])}, identity.visualStyle = ${q(agent.identity.visualIdentity?.style || '')};`,
         ''
       );
     }

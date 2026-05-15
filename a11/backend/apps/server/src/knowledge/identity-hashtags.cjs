@@ -76,6 +76,19 @@ const REGISTRY = [
     },
     routing: ['music', 'voice', 'sfx', 'stage-share', 'video'],
   }),
+  profile('archiviste', 'Archiviste', 'agent', {
+    functional: ['#identity-archivist', '#tag-taxonomy', '#corpus-curation', '#safe-classification', '#neo4j-enrichment'],
+    narrative: ['#quiet-archivist', '#memory-librarian', '#evidence-first', '#keeper-of-roles'],
+    visual: {
+      style: 'violet-archive-curator',
+      palette: ['black', 'violet', 'gold', 'soft-white'],
+      representation: 'calm archivist presence with source cards, graph shelves and identity seals',
+      symbolicRepresentation: 'archive lantern, source cards and graph seals',
+      humanRepresentationAllowed: true,
+      promptAnchor: 'Archiviste as a calm curator of source cards and identity seals, violet archive light, graph shelves, no superhero armor.',
+    },
+    routing: ['corpus', 'identity', 'hashtags', 'neo4j', 'briefing'],
+  }),
   profile('mcp', 'MCP Bridge', 'pipeline', {
     functional: ['#mcp-core', '#tool-boundary', '#agent-bus', '#safe-bridge', '#capability-routing'],
     narrative: ['#controlled-gate', '#trusted-passage', '#no-secret-leak'],
@@ -192,13 +205,16 @@ const ALIASES = new Map([
   ['janus-vision', 'janus'],
   ['vision-dev', 'janus'],
   ['ekko-audio', 'ekko'],
+  ['identity-archivist-worker', 'archiviste'],
+  ['archivist', 'archiviste'],
 ]);
 
 function profile(id, label, identityType, options) {
   const visual = options.visual || systemVisual('abstract system artifact', ['black', 'white']);
   const functionalHashtags = normalizeHashtags(options.functional || []);
   const narrativeHashtags = normalizeHashtags(options.narrative || []);
-  const hashtags = mergeHashtags(functionalHashtags, narrativeHashtags);
+  const visualHashtags = normalizeHashtags(options.visualHashtags || visualHashtagsFor(visual, identityType));
+  const hashtags = mergeHashtags(functionalHashtags, narrativeHashtags, visualHashtags);
   return {
     id,
     profileId: `identity:${id}`,
@@ -207,6 +223,7 @@ function profile(id, label, identityType, options) {
     hashtags,
     functionalHashtags,
     narrativeHashtags,
+    visualHashtags,
     visualIdentity: normalizeVisualIdentity(visual),
     routingTags: normalizeTags(options.routing || []),
     sourceCardUse: options.sourceCardUse || `Use ${label} identity to keep routing, UI copy, prompts and graph links coherent.`,
@@ -243,6 +260,27 @@ function normalizeTags(values) {
 
 function normalizeHashtags(values) {
   return normalizeTags(values).map((value) => `#${value.replace(/[^a-z0-9-]+/g, '-')}`);
+}
+
+function visualHashtagsFor(visual, identityType) {
+  const normalizedVisual = normalizeVisualIdentity(visual);
+  const tags = [];
+  const style = normalizedVisual.style.toLowerCase();
+  const representation = normalizedVisual.representation.toLowerCase();
+  const palette = normalizedVisual.palette.map((item) => item.toLowerCase());
+  if (identityType === 'universe') tags.push('#nexus-world');
+  if (identityType === 'pipeline') tags.push('#flow-visual');
+  if (identityType === 'runtime') tags.push('#runtime-panel');
+  if (normalizedVisual.humanRepresentationAllowed) tags.push('#human-character', '#agent-presence');
+  else tags.push('#not-human-character', '#abstract-artifact');
+  if (/(violet|purple|lavender)/.test([...palette, style, representation].join(' '))) tags.push('#purple-neon');
+  if (/(blue|cyan)/.test([...palette, style, representation].join(' '))) tags.push('#blue-core');
+  if (/(pink|rose)/.test([...palette, style, representation].join(' '))) tags.push('#pink-signal');
+  if (/(gold|warm)/.test([...palette, style, representation].join(' '))) tags.push('#gold-accent');
+  if (/(green)/.test([...palette, style, representation].join(' '))) tags.push('#green-signal');
+  if (/card|library|shelf|archive/.test(representation)) tags.push('#source-card-ui');
+  if (/graph|constellation|node|relation/.test(representation)) tags.push('#graph-constellation');
+  return tags;
 }
 
 function mergeHashtags(...groups) {
@@ -318,27 +356,36 @@ function buildFallbackProfile(canonical, context = {}, entityId = canonical) {
 }
 
 function cloneProfile(profileValue, originalEntityId = '') {
+  const visualIdentity = normalizeVisualIdentity(profileValue.visualIdentity);
+  const functionalHashtags = normalizeHashtags(profileValue.functionalHashtags || []);
+  const narrativeHashtags = normalizeHashtags(profileValue.narrativeHashtags || []);
+  const visualHashtags = normalizeHashtags(profileValue.visualHashtags || visualHashtagsFor(visualIdentity, profileValue.identityType));
+  const hashtags = mergeHashtags(profileValue.hashtags || [], functionalHashtags, narrativeHashtags, visualHashtags);
   return {
     ...profileValue,
     entityId: String(originalEntityId || profileValue.id),
-    hashtags: [...profileValue.hashtags],
-    functionalHashtags: [...profileValue.functionalHashtags],
-    narrativeHashtags: [...profileValue.narrativeHashtags],
-    visualIdentity: { ...profileValue.visualIdentity, palette: [...profileValue.visualIdentity.palette] },
-    routingTags: [...profileValue.routingTags],
+    hashtags,
+    functionalHashtags,
+    narrativeHashtags,
+    visualHashtags,
+    visualIdentity,
+    routingTags: normalizeTags(profileValue.routingTags || []),
   };
 }
 
 function compactIdentityProfile(profileValue) {
   const profile = cloneProfile(profileValue);
+  const profileId = profile.profileId || (String(profile.id || '').startsWith('identity:') ? profile.id : `identity:${normalizeBareId(profile.id)}`);
+  const canonicalId = profile.canonicalId || (String(profile.id || '').startsWith('identity:') ? normalizeBareId(String(profile.id).replace(/^identity:/, '')) : profile.id);
   return {
-    id: profile.profileId,
-    canonicalId: profile.id,
+    id: profileId,
+    canonicalId,
     label: profile.label,
     identityType: profile.identityType,
     hashtags: profile.hashtags,
     functionalHashtags: profile.functionalHashtags,
     narrativeHashtags: profile.narrativeHashtags,
+    visualHashtags: profile.visualHashtags,
     visualIdentity: profile.visualIdentity,
     routingTags: profile.routingTags,
     sourceCardUse: profile.sourceCardUse,
@@ -360,7 +407,10 @@ function buildIdentityPromptFragment(profileOrId, options = {}) {
   }
   return [
     `Identity: ${compact.label} (${compact.identityType})`,
-    `Hashtags: ${compact.hashtags.join(' ')}`,
+    `Functional hashtags: ${compact.functionalHashtags.join(' ')}`,
+    `Narrative hashtags: ${compact.narrativeHashtags.join(' ')}`,
+    `Visual hashtags: ${compact.visualHashtags.join(' ')}`,
+    `All hashtags: ${compact.hashtags.join(' ')}`,
     `Visual style: ${visual.style}`,
     `Palette: ${visual.palette.join(', ') || 'brand-coherent'}`,
     `Representation: ${visual.representation}`,
@@ -382,6 +432,7 @@ function buildIdentityLayer(entities = []) {
         hashtags: entity.identity.hashtags || [],
         functionalHashtags: entity.identity.functionalHashtags || [],
         narrativeHashtags: entity.identity.narrativeHashtags || [],
+        visualHashtags: entity.identity.visualHashtags || [],
         visualIdentity: entity.identity.visualIdentity || systemVisual('abstract system artifact'),
         routingTags: entity.identity.routingTags || [],
         sourceCardUse: entity.identity.sourceCardUse || '',
@@ -403,6 +454,7 @@ function buildIdentityLayer(entities = []) {
       universes: profiles.filter((item) => item.identityType === 'universe').length,
       nonHumanVisualProfiles: profiles.filter((item) => item.visualIdentity?.humanRepresentationAllowed !== true).length,
       hashtags: Array.from(new Set(profiles.flatMap((item) => item.hashtags || []))).length,
+      visualHashtags: Array.from(new Set(profiles.flatMap((item) => item.visualHashtags || []))).length,
     },
   };
 }
@@ -413,6 +465,7 @@ function identityLinksForEntity(entityId, identity) {
   for (const hashtag of identity.hashtags || []) {
     links.push([identity.id, 'HAS_HASHTAG', hashtagNodeId(hashtag)]);
     links.push([entityId, 'HAS_IDENTITY_HASHTAG', hashtagNodeId(hashtag)]);
+    links.push([entityId, 'HAS_IDENTITY_TAG', hashtagNodeId(hashtag)]);
   }
   return links.map(([from, type, to]) => ({ from, type, to }));
 }
