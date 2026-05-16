@@ -1,0 +1,13 @@
+{
+  "name": "Qflush Gamepad Logger",
+  "version": "1.0.0",
+  "description": "Après chaque commande gamepad/keyboard envoyée via Qflush, journalise l'action",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [".*qflush_gamepad.*", ".*qflush_keyboard.*", ".*ki_play.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Une commande de jeu vient d'être envoyée. Note brièvement dans la mémoire (memory_write_safe) : quel jeu, quels boutons, quel intent, et le résultat (state retourné). Kind: note, scope: general, tags: retro, qflush."
+  }
+}

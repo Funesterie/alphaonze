@@ -297,7 +297,18 @@ function scoreSemanticIntents(levels, overrides = {}) {
   }
 
   // Signaux forts pour chat.reply (conversations, feedback, greetings, meta-discussion)
-  const greetingLike = /\b(salut|bonjour|bonsoir|hello|hi|hey|coucou|merci|thanks|ok|d'accord|bien|super|cool|genial|génial)\b/.test(normalizedText);
+  const greetingLike = (
+    (
+      /^(?:salut|bonjour|bonsoir|hello|hi|hey|coucou|merci|thanks|ok|d'accord)\b/.test(normalizedText)
+      && !creationLike
+      && !showLike
+    )
+    || (
+      /^(?:bien|super|cool|genial|génial|parfait|nickel)\b/.test(normalizedText)
+      && !creationLike
+      && !showLike
+    )
+  );
   const feedbackLike = /\b(j'aime|j'adore|c'est bien|c'est beau|bravo|excellent|parfait|top|nickel)\b/.test(normalizedText);
   const conversationLike = /\b(tu penses|tu crois|selon toi|d'apres toi|d'après toi|ton avis|que penses-tu|what do you think|in your opinion)\b/.test(normalizedText);
   const metaDiscussionLike = /\b(comment tu|pourquoi tu|explique-moi|dis-moi|raconte|parle-moi|how do you|why do you|tell me|explain)\b/.test(normalizedText);

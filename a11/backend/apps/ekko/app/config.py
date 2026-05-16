@@ -80,6 +80,51 @@ class EkkoConfig:
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
 
+    def apply_env_overrides(self) -> "EkkoConfig":
+        """Apply deploy/runtime overrides without rewriting the JSON file."""
+        string_keys = [
+            ("EKKO_BACKEND", "backend"),
+            ("EKKO_TRANSCRIPTION_BACKEND", "transcription_backend"),
+            ("EKKO_WHISPER_MODEL", "whisper_model"),
+            ("EKKO_LANGUAGE", "language"),
+            ("EKKO_IVY_ENDPOINT", "ivy_endpoint"),
+            ("EKKO_SERVER_HOST", "server_host"),
+        ]
+        int_keys = [
+            ("EKKO_SAMPLE_RATE", "sample_rate"),
+            ("EKKO_CHUNK_MS", "chunk_ms"),
+            ("EKKO_MAX_SILENCE_MS", "max_silence_ms"),
+            ("EKKO_MIN_SPEECH_MS", "min_speech_ms"),
+            ("EKKO_TRANSCRIPT_TTL_S", "transcript_ttl_s"),
+            ("EKKO_SERVER_PORT", "server_port"),
+        ]
+        float_keys = [
+            ("EKKO_IVY_TIMEOUT_S", "ivy_timeout_s"),
+        ]
+
+        for env_key, attr in string_keys:
+            value = os.environ.get(env_key, "").strip()
+            if value:
+                setattr(self, attr, value)
+
+        for env_key, attr in int_keys:
+            value = os.environ.get(env_key, "").strip()
+            if value:
+                try:
+                    setattr(self, attr, int(value))
+                except ValueError:
+                    pass
+
+        for env_key, attr in float_keys:
+            value = os.environ.get(env_key, "").strip()
+            if value:
+                try:
+                    setattr(self, attr, float(value))
+                except ValueError:
+                    pass
+
+        return self
+
     @classmethod
     def from_dict(cls, d: dict) -> "EkkoConfig":
         fields = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
@@ -89,8 +134,8 @@ class EkkoConfig:
     def load(cls, path: str = _DEFAULT_CONFIG_PATH) -> "EkkoConfig":
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
-                return cls.from_dict(json.load(f))
-        return cls()
+                return cls.from_dict(json.load(f)).apply_env_overrides()
+        return cls().apply_env_overrides()
 
     def save(self, path: str = _DEFAULT_CONFIG_PATH) -> None:
         with open(path, "w", encoding="utf-8") as f:

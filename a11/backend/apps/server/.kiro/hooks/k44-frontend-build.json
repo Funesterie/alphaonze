@@ -1,0 +1,13 @@
+{
+  "name": "K44 Frontend Lint",
+  "version": "1.0.0",
+  "description": "Lint les fichiers frontend Kaen44 après édition",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/frontend/**/*.ts", "**/frontend/**/*.tsx", "**/frontend/**/*.vue"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Un fichier frontend Kaen44 a été modifié. Vérifie qu'il n'y a pas d'erreurs TypeScript évidentes dans le fichier modifié. Si tu détectes un problème, signale-le."
+  }
+}

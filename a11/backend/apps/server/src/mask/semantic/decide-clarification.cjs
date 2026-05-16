@@ -103,10 +103,21 @@ function decideClarification(scoring) {
 
   // Paire web.search vs web.image.search : toujours résoudre en web.search sans clarifier
   const isWebSearchPair = [first?.type, second?.type].sort().join('::') === 'web.image.search::web.search';
+  const firstEvidence = Array.isArray(first?.evidence) ? first.evidence.join(' ') : '';
+  const clearImplicitImageRequest = Boolean(
+    first?.type === 'image.generate'
+    && scoring.summary?.actionSignal
+    && scoring.subject
+    && (
+      scoring.summary?.colorSignal
+      || /\b(?:mot-cle:image|pattern:)/i.test(firstEvidence)
+    )
+  );
 
   const shouldClarify = Boolean(
     (scoring.summary?.shouldClarifySuggestion || shouldClarifyImageSearchPair || hasMultipleStrongIntents)
     && !isWebSearchPair  // jamais clarifier web.search vs web.image.search
+    && !clearImplicitImageRequest
     && first
     && second
     && first.type !== 'chat.reply'

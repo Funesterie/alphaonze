@@ -218,6 +218,15 @@ const TOOL_MANIFEST = {
     dangerLevel: "low",
     args: { text: "string", task: "string (ex: 'summary', 'bullet-points', 'explain', 'refactor')" }
   },
+  agent_role_route: {
+    description: "Route une demande vers le bon agent Funesterie: A11 media/image/video, Vivy audio, Kaen44 prompts/client, QFlush runtime, Nexus supervision.",
+    dangerLevel: "low",
+    args: {
+      task: "string (demande utilisateur ou mission)",
+      modality: "string (optionnel: image, video, audio, prompt, runtime, supervision...)",
+      requestedAgent: "string (optionnel: a11, vivy, kaen44, qflush, nexus)"
+    }
+  },
   vs_status: {
     description: "Vérifier si Visual Studio / A11Host est connecté, lister les méthodes dispos.",
     dangerLevel: "low",

@@ -271,3 +271,21 @@ Get-ChildItem -Path "D:\projets\funesterie" -Directory -Recurse -Depth 2 |
 **Dernière mise à jour** : 2026-04-26  
 **Version** : 1.0.0  
 **Auteur** : Funesterie / A11 Team
+# WARNING - DEPRECATED AS OF 2026-05-16
+
+Do not run the cleanup commands from this document as-is.
+
+This document was written when `D:\projets\funesterie\runtime` was believed to
+be a small old runtime. It is no longer true. The current `runtime` tree may
+contain the large Corpus / Virtual Hard Disks mirror and active generated media.
+
+Use the safer plan first:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\scripts\cleanup\Audit-DDriveStructure.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\scripts\cleanup\Prepare-DDriveQuarantinePlan.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\scripts\backup\New-FunesterieBackupManifest.ps1
+```
+
+No old runtime cleanup script should be executed before a fresh backup manifest
+and a human-reviewed quarantine plan exist.

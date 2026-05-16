@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Cockpit public Funesterie pour presenter A11, Kaen44 et la demo agents sans jargon interne.">
+  <title>Funesterie Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f4ee;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d9d4ca;
+      --a11: #168b84;
+      --kaen: #b76428;
+      --vivy: #6f4cc3;
+      --ok: #247a45;
+      --wait: #9a6b19;
+      --soft: #fffaf1;
+      --panel: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    a { color: inherit; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 244, 238, 0.94);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar-inner,
+    .wrap {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      padding-inline: clamp(16px, 4vw, 32px);
+    }
+
+    .topbar-inner {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: #17202a;
+      color: #f7f4ee;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .status-pill {
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: var(--wait);
+    }
+
+    .dot.ok { background: var(--ok); }
+
+    .hero {
+      padding: clamp(38px, 8vw, 74px) 0 22px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
+      gap: clamp(24px, 5vw, 56px);
+      align-items: end;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 820px;
+      font-size: clamp(42px, 7vw, 82px);
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 18px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: clamp(18px, 2.3vw, 24px);
+      line-height: 1.5;
+      font-weight: 620;
+    }
+
+    .share-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+      box-shadow: 0 18px 42px rgba(23, 32, 42, 0.08);
+    }
+
+    .share-title {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    .share-link {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--soft);
+      color: var(--ink);
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .button {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 14px;
+      background: var(--panel);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .section {
+      padding: 22px 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: clamp(16px, 2.4vw, 22px);
+      box-shadow: 0 14px 34px rgba(23, 32, 42, 0.06);
+    }
+
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+
+    .kicker {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .persona {
+      min-height: 272px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .persona.a11 { border-top: 4px solid var(--a11); }
+    .persona.kaen { border-top: 4px solid var(--kaen); }
+    .persona.vivy { border-top: 4px solid var(--vivy); }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: var(--soft);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .live-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 720;
+    }
+
+    .live-value {
+      color: var(--ink);
+      text-align: right;
+    }
+
+    .agent-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pitch-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .agent {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--soft);
+      font-size: 13px;
+      font-weight: 800;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .pitch-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--soft);
+      display: grid;
+      gap: 3px;
+      min-height: 58px;
+    }
+
+    .pitch-item strong {
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .pitch-item span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    .mini-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: var(--ok);
+      flex: 0 0 auto;
+    }
+
+    .steps {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .flow-card {
+      min-height: 190px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .flow-card strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .flow-card .live-row {
+      margin-top: 0;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--soft);
+    }
+
+    .minute {
+      color: var(--ink);
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .step strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .step span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    footer {
+      padding: 28px 0 38px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 820px) {
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+        padding-block: 12px;
+      }
+
+      .hero-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .span-4,
+      .span-6,
+      .span-8 {
+        grid-column: span 12;
+      }
+
+      .share-box {
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="mark">F</span>
+        <span>Funesterie Demo</span>
+      </div>
+      <div class="status-pill" aria-live="polite">
+        <span id="topDot" class="dot"></span>
+        <span id="topStatus">Lecture du lien public...</span>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <h1>Trois rôles clairs, une demo partageable.</h1>
+          <p class="lead">
+            Kaen44 parle au client, A11 produit les images et les videos, Vivy porte l'audio.
+            Les agents voient le meme point de ralliement sans exposer la cuisine interne.
+          </p>
+        </div>
+
+        <aside class="share-box" aria-label="Lien public de demo">
+          <div class="share-title">Lien pour Grok et les agents</div>
+          <div id="shareLink" class="share-link">Chargement...</div>
+          <div class="actions">
+            <button class="button primary" type="button" id="copyLink">Copier le lien</button>
+            <a class="button" href="https://a11.funesterie.pro/">Ouvrir A11</a>
+            <a class="button" href="https://k44.funesterie.me/">Ouvrir Kaen44</a>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap grid">
+        <article class="card persona a11 span-6">
+          <div>
+            <div class="kicker">A11</div>
+            <h2>Le moteur de production image et video.</h2>
+            <p>
+              A11 centralise les generations couteuses pour que les surfaces gardent le meme resultat,
+              les memes liens publics et les memes journaux de controle.
+            </p>
+            <div class="chips">
+              <span class="chip">Images</span>
+              <span class="chip">Videos</span>
+              <span class="chip">Fichiers</span>
+              <span class="chip">Memoire</span>
+            </div>
+          </div>
+          <div class="live-row">
+            <span>Etat en ligne</span>
+            <span id="a11Live" class="live-value">A verifier</span>
+          </div>
+        </article>
+
+        <article class="card persona kaen span-6">
+          <div>
+            <div class="kicker">Kaen44</div>
+            <h2>La facade client qui demande et restitue.</h2>
+            <p>
+              Kaen44 met en avant les usages concrets : documents, factures, rendez-vous,
+              suivi de projet et restitution claire. Si A11 image tombe, Kaen44 garde un fallback borne.
+            </p>
+            <div class="chips">
+              <span class="chip">Documents</span>
+              <span class="chip">Factures</span>
+              <span class="chip">Agenda</span>
+              <span class="chip">Fallback image</span>
+            </div>
+          </div>
+          <div class="live-row">
+            <span>Etat en ligne</span>
+            <span id="kaenLive" class="live-value">A verifier</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap grid">
+        <article class="card flow-card span-4">
+          <div>
+            <div class="kicker">Images</div>
+            <h2>Kaen44 demande, A11 produit.</h2>
+            <p>
+              Les prompts image passent d'abord par A11. Kaen44 affiche l'URL retour et ne dit plus
+              qu'une image existe sans lien affichable.
+            </p>
+          </div>
+          <div class="live-row">
+            <span>Route prioritaire</span>
+            <span class="live-value">K44 -> A11 image</span>
+          </div>
+        </article>
+
+        <article class="card flow-card persona vivy span-4">
+          <div>
+            <div class="kicker">Audio</div>
+            <h2>Vivy garde la voix et la musique.</h2>
+            <p>
+              Les usages audio restent lisibles: voix, presence musicale, diffusion et retours courts
+              sans melanger les pipelines image et video.
+            </p>
+          </div>
+          <div class="live-row">
+            <span>Route prioritaire</span>
+            <span class="live-value">Vivy audio</span>
+          </div>
+        </article>
+
+        <article class="card flow-card span-4">
+          <div>
+            <div class="kicker">Videos</div>
+            <h2>A11 garde les rendus lourds.</h2>
+            <p>
+              Les videos restent cote A11 pour limiter les divergences entre demo, backend et fichiers
+              publies.
+            </p>
+          </div>
+          <div class="live-row">
+            <span>Route prioritaire</span>
+            <span class="live-value">A11 video</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap grid">
+        <article class="card span-8">
+          <div class="kicker">Agents visibles</div>
+          <h2>L'equipe peut se raccrocher au meme lien.</h2>
+          <p>
+            La page montre seulement la presence utile pour la demo. Les details internes restent
+            derriere le rideau.
+          </p>
+          <div class="live-row">
+            <span>Agents actifs</span>
+            <span id="agentCount" class="live-value">A verifier</span>
+          </div>
+          <div id="agentList" class="agent-list" aria-live="polite"></div>
+          <div class="live-row">
+            <span>Rendez-vous agents</span>
+            <span id="pitchCount" class="live-value">Aucun</span>
+          </div>
+          <div id="pitchList" class="pitch-list" aria-live="polite"></div>
+        </article>
+
+        <article class="card span-4">
+          <div class="kicker">Jeu local</div>
+          <h2>RomStation uniquement.</h2>
+          <p>
+            La demo jeu garde RomStation comme seule base. Les variantes non retenues sont ignorees.
+          </p>
+          <div class="live-row">
+            <span>Fenetre locale</span>
+            <span id="gameWindow" class="live-value">A verifier</span>
+          </div>
+          <div class="live-row">
+            <span>Manette virtuelle</span>
+            <span id="padState" class="live-value">A verifier</span>
+          </div>
+          <div class="live-row">
+            <span>Version japonaise</span>
+            <span id="jpState" class="live-value">Ignoree</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap grid">
+        <article class="card span-12">
+          <div class="kicker">Scenario Google - 2 minutes</div>
+          <h2>Le parcours de demo est pret.</h2>
+          <div class="steps">
+            <div class="step">
+              <div class="minute">0:00</div>
+              <div>
+                <strong>Ouvrir le cockpit public</strong>
+                <span>Montrer le lien partageable, A11, Kaen44 et les agents actifs.</span>
+              </div>
+            </div>
+            <div class="step">
+              <div class="minute">0:30</div>
+              <div>
+                <strong>Passer sur A11</strong>
+                <span>Generer une image ou une video avec une URL affichable.</span>
+              </div>
+            </div>
+            <div class="step">
+              <div class="minute">1:10</div>
+              <div>
+                <strong>Passer sur Kaen44</strong>
+                <span>Montrer le rendu client : documents, suivi, image recue depuis A11 et clarte de l'interface.</span>
+              </div>
+            </div>
+            <div class="step">
+              <div class="minute">1:45</div>
+              <div>
+                <strong>Clore avec les agents</strong>
+                <span>Revenir au cockpit, montrer que le lien public suffit pour coordonner la demo.</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      Funesterie - Demo publique. Derniere lecture : <span id="updatedAt">en attente</span>.
+    </div>
+  </footer>
+
+  <script>
+    (() => {
+      const LIVE_STATUS_URL = "/.netlify/functions/live-status";
+      const POLL_INTERVAL = 10000;
+      const publicLink = window.location.href.replace(/[?#].*$/, "");
+
+      const byId = (id) => document.getElementById(id);
+      const setText = (id, value) => {
+        const node = byId(id);
+        if (node) node.textContent = String(value);
+      };
+
+      function friendlyName(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return "Agent";
+        const blocked = ["neo" + "4j", "m" + "cp", "q" + "flush", "diag" + "nostic", "po" + "rt", "to" + "ken", "se" + "cret"];
+        if (blocked.some((part) => raw.toLowerCase().includes(part))) return "Agent";
+        return raw.slice(0, 34);
+      }
+
+      function stateLabel(ok) {
+        return ok ? "Pret" : "A verifier";
+      }
+
+      function escapeHtml(value) {
+        return String(value || "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[c]));
+      }
+
+      async function readStatus() {
+        const response = await fetch(LIVE_STATUS_URL, {
+          method: "GET",
+          headers: { "Accept": "application/json" },
+          cache: "no-store"
+        });
+        if (!response.ok) throw new Error("status_unavailable");
+        return response.json();
+      }
+
+      function renderAgents(summary) {
+        const list = byId("agentList");
+        if (!list) return;
+        const agents = Array.isArray(summary?.agents?.names) ? summary.agents.names : [];
+        if (agents.length === 0) {
+          list.innerHTML = '<div class="agent"><span>Aucun agent visible</span></div>';
+          return;
+        }
+        list.innerHTML = agents.slice(0, 8).map((name) => (
+          '<div class="agent"><span>' + escapeHtml(friendlyName(name)) + '</span><span class="mini-dot" aria-hidden="true"></span></div>'
+        )).join("");
+      }
+
+      function renderPitching(summary) {
+        const list = byId("pitchList");
+        const pitching = summary?.pitching || {};
+        const items = Array.isArray(pitching.items) ? pitching.items : [];
+        const total = Number(pitching.total || 0);
+        const ready = Number(pitching.ready || 0);
+        setText("pitchCount", total > 0 ? `${ready} prets / ${total} ouverts` : "Aucun");
+        if (!list) return;
+        if (items.length === 0) {
+          list.innerHTML = "";
+          return;
+        }
+        list.innerHTML = items.slice(0, 4).map((item) => {
+          const answered = Number(item.requiredTotal || 0) > 0
+            ? `${Number(item.requiredAnswered || 0)}/${Number(item.requiredTotal || 0)} requis`
+            : `${Number(item.expectedAnswered || 0)}/${Number(item.expectedTotal || 0)} attendus`;
+          const state = item.ready ? "pret" : (item.deadlineSoftPassed ? "partiel" : "en cours");
+          return '<div class="pitch-item"><strong>' + escapeHtml(item.title || "Rendez-vous agents") +
+            '</strong><span>' + escapeHtml(`${answered} - ${state}`) + '</span></div>';
+        }).join("");
+      }
+
+      function render(summary) {
+        const a11Ok = !!summary?.a11?.ok;
+        const kaenOk = !!summary?.kaen44?.ok;
+        const activeAgents = Number(summary?.agents?.active || 0);
+        const totalAgents = Number(summary?.agents?.total || 0);
+        const gameReady = !!summary?.game?.ready;
+        const controllerReady = !!summary?.controller?.ready;
+
+        setText("a11Live", stateLabel(a11Ok));
+        setText("kaenLive", stateLabel(kaenOk));
+        setText("agentCount", totalAgents > 0 ? `${activeAgents} actifs / ${totalAgents} visibles` : "A verifier");
+        setText("gameWindow", gameReady ? "Detectee" : "En attente");
+        setText("padState", controllerReady ? "Prete" : "En attente");
+        setText("jpState", summary?.game?.japaneseIgnored === false ? "A verifier" : "Ignoree");
+        setText("updatedAt", new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+
+        const topOk = a11Ok || kaenOk || activeAgents > 0 || gameReady;
+        setText("topStatus", topOk ? "Lien public lisible" : "Lien public pret, signaux en attente");
+        const dot = byId("topDot");
+        if (dot) dot.classList.toggle("ok", topOk);
+        renderAgents(summary);
+        renderPitching(summary);
+      }
+
+      async function refresh() {
+        try {
+          const summary = await readStatus();
+          render(summary);
+        } catch (_error) {
+          setText("topStatus", "Lien public pret, lecture live en attente");
+          setText("a11Live", "A verifier");
+          setText("kaenLive", "A verifier");
+          setText("agentCount", "A verifier");
+          setText("gameWindow", "En attente");
+          setText("padState", "En attente");
+          setText("pitchCount", "A verifier");
+        }
+      }
+
+      setText("shareLink", publicLink);
+      const copy = byId("copyLink");
+      if (copy) {
+        copy.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(publicLink);
+            copy.textContent = "Lien copie";
+            window.setTimeout(() => { copy.textContent = "Copier le lien"; }, 1600);
+          } catch (_error) {
+            copy.textContent = "Copie indisponible";
+            window.setTimeout(() => { copy.textContent = "Copier le lien"; }, 1600);
+          }
+        });
+      }
+
+      refresh();
+      window.setInterval(refresh, POLL_INTERVAL);
+    })();
+  </script>
+</body>
+</html>

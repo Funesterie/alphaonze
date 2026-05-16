@@ -21,8 +21,15 @@ try {
 }
 
 const PRICE_ID = process.env.STRIPE_PRICE_ID || 'price_default'; // À configurer dans Stripe Dashboard
-const SUCCESS_URL = process.env.STRIPE_SUCCESS_URL || 'https://funesterie.pro/subscription/success';
-const CANCEL_URL = process.env.STRIPE_CANCEL_URL || 'https://funesterie.pro/subscription/cancel';
+const DEFAULT_PUBLIC_BASE_URL = String(
+  process.env.A11_PUBLIC_BASE_URL
+    || process.env.PUBLIC_APP_URL
+    || process.env.FRONTEND_URL
+    || 'https://a11.funesterie.pro'
+).trim().replace(/\/+$/, '');
+const ACTIVE_PRICE_ID = String(process.env.STRIPE_PRICE_ID || '').trim();
+const SUCCESS_URL = process.env.STRIPE_SUCCESS_URL || `${DEFAULT_PUBLIC_BASE_URL}/subscription/success`;
+const CANCEL_URL = process.env.STRIPE_CANCEL_URL || `${DEFAULT_PUBLIC_BASE_URL}/subscription/cancel`;
 
 /**
  * Crée une session de checkout Stripe pour l'abonnement
@@ -35,13 +42,17 @@ async function createCheckoutSession(userId, userEmail) {
     throw new Error('Stripe non configuré');
   }
 
+  if (!ACTIVE_PRICE_ID) {
+    throw new Error('Stripe price non configure');
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     // Let Stripe Checkout select every enabled method for the customer
     // (cards, wallets, SEPA/Link/etc.) from the Stripe Dashboard.
     line_items: [
       {
-        price: PRICE_ID,
+        price: ACTIVE_PRICE_ID,
         quantity: 1,
       },
     ],
@@ -79,7 +90,7 @@ async function createCustomerPortalSession(customerId) {
 
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: process.env.STRIPE_PORTAL_RETURN_URL || 'https://funesterie.pro/account',
+    return_url: process.env.STRIPE_PORTAL_RETURN_URL || `${DEFAULT_PUBLIC_BASE_URL}/account`,
   });
 
   return {
@@ -146,7 +157,7 @@ async function cancelSubscription(subscriptionId) {
  * @returns {boolean}
  */
 function isStripeEnabled() {
-  return stripe !== null;
+  return stripe !== null && Boolean(ACTIVE_PRICE_ID);
 }
 
 module.exports = {

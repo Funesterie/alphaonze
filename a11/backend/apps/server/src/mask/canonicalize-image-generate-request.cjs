@@ -1,5 +1,6 @@
 const {
   detectPromptLanguageProfile,
+  translateImagePromptToEnglish,
 } = require('./build-sd-prompt-bundle.cjs');
 const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
@@ -743,6 +744,82 @@ function buildCanonicalizeImageGenerateRequestUserText(rawUserInput = '', option
   }, null, 2);
 }
 
+function buildCompatCanonicalEnglishInput(rawUserInput = '', options = {}) {
+  const raw = normalizeText(rawUserInput);
+  const translated = normalizeText(translateImagePromptToEnglish(raw) || raw);
+  let text = translated
+    .replace(/\bsalut\s+genere\s+moi\b/gi, '')
+    .replace(/\bgenere\s+moi\b/gi, '')
+    .replace(/\bgenerate\s+me\b/gi, '')
+    .replace(/\butilise\s+l\s+image\s+de\s+reference\b/gi, 'use the reference image')
+    .replace(/\bimage\s+de\s+reference\b/gi, 'reference image')
+    .replace(/\btransforme\b/gi, 'transform')
+    .replace(/\bmaquillage\s+inquietant\b/gi, 'unsettling makeup')
+    .replace(/\bdecor\b/gi, 'environment')
+    .replace(/\bpersonne\b/gi, 'person')
+    .replace(/\bvisage\b/gi, 'face')
+    .replace(/\blumiere\b/gi, 'lighting')
+    .replace(/\ben joker\b/gi, 'as a Joker-style character')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (options.referenceImagePresent === true) {
+    text = [
+      'use the reference image as an identity, pose, and framing reference',
+      text,
+    ].filter(Boolean).join(', ');
+  }
+
+  if (!/\bno readable text\b/i.test(text)) {
+    text = [text, 'no readable text'].filter(Boolean).join(', ');
+  }
+
+  return normalizeText(text);
+}
+
+function buildCompatCanonicalizedImageGenerateRequest(rawUserInput = '', options = {}, failureReasons = []) {
+  const raw = normalizeText(rawUserInput);
+  const canonicalEnglishInput = buildCompatCanonicalEnglishInput(raw, options);
+  const subject = normalizeText(
+    canonicalEnglishInput
+      .replace(/\b^(?:generate|create|make|draw|render)\b/i, '')
+      .replace(/\bno readable text\b/gi, '')
+      .split(/\b(?:in|with|wearing|holding|against|inside|on)\b/i)[0]
+  ) || canonicalEnglishInput;
+
+  return validateCanonicalizedImageGenerateRequest(
+    normalizeCanonicalizedImageGenerateRequest({
+      needsClarification: !subject || /^no readable text$/i.test(subject),
+      clarificationQuestion: !subject ? 'What subject should I generate?' : '',
+      canonicalEnglishInput,
+      structuredFields: {
+        subject: subject ? [subject] : [],
+        environment: [],
+        style: ['clean detailed image'],
+        composition: ['single clearly visible main subject'],
+        lighting: [],
+        palette: [],
+        constraints: {
+          promptInstructions: ['preserve the user request literally'],
+          negativeHints: ['readable text', 'watermark', 'logo'],
+          noText: true,
+          safeMode: true,
+        },
+      },
+      scenePolicy: {
+        subjectMode: 'single',
+        explicitSubjectCount: 1,
+      },
+      audit: {
+        rawUserInput: raw,
+        source: 'compat_local_canonicalizer',
+        fallbackUsed: true,
+        reason: failureReasons.length ? failureReasons.join('|') : 'structured_llm_unavailable',
+      },
+    }, raw)
+  );
+}
+
 function buildCanonicalizeImageGenerateRequestRetryText(rawUserInput = '', options = {}, {
   previousPayload = null,
   rejectionCode = '',
@@ -956,6 +1033,21 @@ async function canonicalizeImageGenerateRequest(rawUserInput = '', options = {})
   const statusCode = failureStatuses.find((status) => Number(status) === 503)
     || failureStatuses.find((status) => Number(status) >= 500)
     || 502;
+
+  if (options.allowCompatFallback === true) {
+    try {
+      const fallbackCanonicalizedRequest = buildCompatCanonicalizedImageGenerateRequest(
+        normalizedRawUserInput,
+        options,
+        failureReasons
+      );
+      logCanonicalizedImageGenerateRequest(fallbackCanonicalizedRequest, stage);
+      return fallbackCanonicalizedRequest;
+    } catch (fallbackError) {
+      failureReasons.push(`compat_local_canonicalizer:${String(fallbackError?.code || fallbackError?.message || fallbackError).trim()}`);
+    }
+  }
+
   const error = new Error('image_request_canonicalizer_failed');
   error.code = 'image_request_canonicalizer_failed';
   error.statusCode = statusCode;

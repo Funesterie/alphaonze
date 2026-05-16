@@ -19,17 +19,31 @@ const express = require('express');
 // ------------------------------------------------------------------
 const EKKO_TOKEN = String(process.env.EKKO_TOKEN || '').trim();
 
-function ekkoAuth(req, res, next) {
+function isLocalRequest(req) {
+  const ip = req.ip || req.connection?.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+function isValidEkkoToken(req) {
   if (EKKO_TOKEN) {
     const token = String(req.headers['x-ekko-token'] || '').trim();
-    if (token !== EKKO_TOKEN) {
+    return token === EKKO_TOKEN;
+  }
+  return false;
+}
+
+function isTrustedEkkoRequest(req) {
+  return isValidEkkoToken(req) || isLocalRequest(req);
+}
+
+function ekkoAuth(req, res, next) {
+  if (EKKO_TOKEN) {
+    if (!isValidEkkoToken(req)) {
       return res.status(403).json({ ok: false, error: 'ekko_token_invalid' });
     }
     return next();
   }
-  const ip = req.ip || req.connection?.remoteAddress || '';
-  const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
-  if (!isLocal) return res.status(403).json({ ok: false, error: 'ekko_localhost_only' });
+  if (!isLocalRequest(req)) return res.status(403).json({ ok: false, error: 'ekko_localhost_only' });
   return next();
 }
 
@@ -43,6 +57,40 @@ let _ekkoStats = {
   last_received_at: null,
   last_app: null,
 };
+
+function normalizeBaseUrl(value = '') {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function resolveEkkoControlUrl() {
+  return normalizeBaseUrl(process.env.A11_EKKO_CONTROL_URL || process.env.EKKO_CONTROL_URL || '');
+}
+
+async function readEkkoControlStatus() {
+  const baseUrl = resolveEkkoControlUrl();
+  if (!baseUrl || typeof fetch !== 'function') return null;
+  try {
+    const response = await fetch(`${baseUrl}/api/ekko/status`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!response.ok) {
+      return { ok: false, error: `ekko_control_status_${response.status}` };
+    }
+    const data = await response.json();
+    return {
+      ok: data?.ok !== false,
+      listening: Boolean(data?.listening),
+      paused: Boolean(data?.paused),
+      backend: String(data?.backend || '').trim() || null,
+      device_name: String(data?.device_name || '').trim() || null,
+      transcripts_sent: Number(data?.transcripts_sent || 0),
+      uptime_s: Number(data?.uptime_s || 0),
+      error: data?.error ? String(data.error) : null,
+    };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err || 'ekko_control_unreachable') };
+  }
+}
 
 // ------------------------------------------------------------------
 // Validation
@@ -151,28 +199,44 @@ function createEkkoRouter({ writeMemoryKeyValue, writeNeo4j } = {}) {
    * GET /api/ekko/status
    * Polling frontend (indicateur rouge).
    */
-  router.get('/status', (req, res) => {
+  router.get('/status', async (req, res) => {
     const limit  = Math.min(Number(req.query.limit ?? 10), EKKO_MAX_EVENTS);
-    const recent = _ekkoBuffer.slice(-limit).map((e) => ({
+    const trusted = isTrustedEkkoRequest(req);
+    const recent = trusted ? _ekkoBuffer.slice(-limit).map((e) => ({
       timestamp:   e.timestamp,
       duration_ms: e.duration_ms,
       confidence:  e.confidence,
       tags:        e.tags,
       app_name:    e.app_name,
       preview:     (e.summary || e.transcript).slice(0, 120),
-    }));
+    })) : [];
 
     // listening = true si un event a été reçu dans les 90 dernières secondes
     const lastTs = _ekkoStats.last_received_at;
-    const listening = !!lastTs && (Date.now() - Number(lastTs)) < 90_000;
+    const ringListening = !!lastTs && (Date.now() - Number(lastTs)) < 90_000;
+    const control = await readEkkoControlStatus();
+    const listening = ringListening || Boolean(control?.listening);
 
-    return res.json({ ok: true, stats: _ekkoStats, recent, listening });
+    return res.json({
+      ok: true,
+      stats: {
+        total_received: _ekkoStats.total_received,
+        last_received_at: _ekkoStats.last_received_at,
+        last_app: trusted ? _ekkoStats.last_app : null,
+      },
+      recent,
+      listening,
+      ingestReady: true,
+      controlReady: Boolean(control?.ok),
+      control,
+      redacted: !trusted,
+    });
   });
 
   /**
    * DELETE /api/ekko/flush — privacy wipe
    */
-  router.delete('/flush', (req, res) => {
+  router.delete('/flush', ekkoAuth, (req, res) => {
     const count = _ekkoBuffer.length;
     _ekkoBuffer.length = 0;
     console.log(`[Ekko] buffer vidé (${count} events)`);

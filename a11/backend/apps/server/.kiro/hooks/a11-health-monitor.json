@@ -1,0 +1,12 @@
+{
+  "name": "A11 Health Monitor",
+  "version": "1.0.0",
+  "description": "Vérifie la santé d'A11 après chaque tâche spec complétée",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/health' -TimeoutSec 5; Write-Host \\\"A11: $($r.status)\\\" } catch { Write-Host \\\"A11: DOWN - $($_.Exception.Message)\\\" }\""
+  }
+}

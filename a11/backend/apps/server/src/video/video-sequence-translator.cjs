@@ -560,6 +560,27 @@ function sanitizeWikidataArtifacts(value = '') {
     .trim();
 }
 
+function withMainSubjectContinuityPrefix(value = '') {
+  const text = transliterateForSd(value);
+  if (!text) return text;
+  if (/^main subject pose continuity\s*:/i.test(text)) return text;
+  return `main subject pose continuity: ${text}`;
+}
+
+function withSceneContinuityPrefix(value = '') {
+  const text = transliterateForSd(sanitizeWikidataArtifacts(value));
+  if (!text) return text;
+  if (/^scene camera decor continuity\s*:/i.test(text)) return text;
+  return `scene camera decor continuity: ${text}`;
+}
+
+function withVisibleFrameDeltaPrefix(value = '') {
+  const text = transliterateForSd(value);
+  if (!text) return text;
+  if (/^visible frame delta anatomy prop detail\s*:/i.test(text)) return text;
+  return `visible frame delta anatomy prop detail: ${text}`;
+}
+
 function buildIdentitySentence(sequencePlan = {}) {
   const motionProfile = String(sequencePlan?.motionProfile || 'generic').trim() || 'generic';
   const locks = normalizePromptList([
@@ -840,9 +861,9 @@ function buildFramePromptPlan(basePrompt = '', {
     structuralPrompt: translatedStructuralPrompt,
     stableIdentityPrompt: translatedStableIdentityPrompt,
     frameVariationPrompt: translatedFrameVariationPrompt,
-    prompt: transliterateForSd(translatedStructuralPrompt),
-    prompt_2: transliterateForSd(sanitizeWikidataArtifacts(translatedStableIdentityPrompt)),
-    prompt_3: transliterateForSd(translatedFrameVariationPrompt),
+    prompt: withMainSubjectContinuityPrefix(translatedStructuralPrompt),
+    prompt_2: withSceneContinuityPrefix(translatedStableIdentityPrompt),
+    prompt_3: withVisibleFrameDeltaPrefix(translatedFrameVariationPrompt),
     negative_prompt_video: 'text, watermark, caption, subtitle, label, signature, logo, letters, words, writing, inscription',
   };
 }

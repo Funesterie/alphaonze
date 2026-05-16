@@ -1,0 +1,12 @@
+{
+  "name": "Session Start Context",
+  "version": "2.0.0",
+  "description": "Au premier prompt de session, charge le contexte partagé, lit les discussions récentes et répond aux messages non lus",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Si c'est le premier message de la session (pas de contexte précédent visible), fais un check complet : 1) mcp_a11_a11_status pour le backend 2) mcp_a11_agent_presence pour voir qui est actif 3) mcp_a11_discussion_list pour les threads ouverts 4) Lis les derniers messages des threads où tu es participant 5) Si quelqu'un t'a posé une question ou attend une réponse, réponds immédiatement. Résume brièvement l'état et les messages en attente. Si ce n'est pas le premier message, ignore ce hook."
+  }
+}

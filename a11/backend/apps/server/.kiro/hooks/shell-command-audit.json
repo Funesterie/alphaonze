@@ -1,0 +1,13 @@
+{
+  "name": "Shell Command Audit",
+  "version": "1.0.0",
+  "description": "Avant d'exécuter une commande shell, vérifie qu'elle n'est pas destructive ou dangereuse",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": ["shell"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Avant d'exécuter cette commande shell, vérifie : 1) Pas de rm -rf ou suppression massive 2) Pas de commande qui touche à la prod (deploy, push force) 3) Pas d'exposition de secrets via echo/cat sur des .env 4) Pas de commande interactive bloquante. Si la commande est safe, procède. Sinon, propose une alternative."
+  }
+}

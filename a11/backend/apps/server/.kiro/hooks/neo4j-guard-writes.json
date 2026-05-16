@@ -1,0 +1,13 @@
+{
+  "name": "Neo4j Write Guard",
+  "version": "1.0.0",
+  "description": "Avant toute écriture Neo4j, vérifie que le label et les props sont conformes au schéma A11",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": [".*neo4j_write.*", ".*graph_write.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Avant d'écrire dans Neo4j, vérifie : 1) Le label est dans la liste autorisée (Agent, MemoryNote, Discussion, etc.) 2) Les props ne contiennent pas de secrets 3) Le champ 'from' et 'reason' sont renseignés. Si tout est OK, procède. Sinon, bloque et explique pourquoi."
+  }
+}

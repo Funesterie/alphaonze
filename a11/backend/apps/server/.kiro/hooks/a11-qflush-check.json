@@ -1,0 +1,13 @@
+{
+  "name": "A11 Qflush Check",
+  "version": "1.0.0",
+  "description": "Vérifie Qflush après modification des fichiers qflush",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/qflush*.cjs", "**/qflush*.js", "**/qflush-flow.cjs"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/qflush/status' -TimeoutSec 5; Write-Host \\\"Qflush: available=$($r.qflushAvailable) flows=$($r.flows.public.Count)\\\" } catch { Write-Host \\\"Qflush: DOWN\\\" }\""
+  }
+}

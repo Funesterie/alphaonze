@@ -533,7 +533,9 @@ const createChatRouter = require('./src/routes/chat.cjs');
 const {
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
+  buildRuntimeModulesAccessReply,
   isMcpAccessQuestion,
+  isRuntimeModulesAccessQuestion,
 } = require('./src/chat/a11-active-identity.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
 const createMemoryRouter = require('./src/routes/memory.cjs');
@@ -6549,7 +6551,7 @@ try {
   app.use('/api/runtime', verifyJWT, requireFamilyAccess, createRuntimeModulesRouter({
     moduleLoader: () => _moduleLoader,
   }));
-  console.log('[Server] Runtime module inventory routes mounted: /api/runtime/modules');
+  console.log('[Server] Runtime module inventory routes mounted: /api/runtime/modules, /api/runtime/chopper');
 } catch (e) {
   console.warn('[Server] Runtime module inventory routes failed to mount:', e.message);
 }
@@ -7732,15 +7734,24 @@ app.get('/', sendEmbeddedUiIndex);
 app.get([
   '/auth/success',
   '/login',
+  '/cockpit',
+  '/app',
+  '/workspace',
   '/a11',
   '/a11/',
   '/a11/login',
   '/a11/auth/success',
+  '/a11/cockpit',
+  '/a11/app',
+  '/a11/workspace',
   '/a11/casino',
   '/k44',
   '/k44/',
   '/k44/login',
   '/k44/auth/success',
+  '/k44/cockpit',
+  '/k44/app',
+  '/k44/workspace',
   '/k44/casino',
   '/k44/privacy',
   '/k44/terms',
@@ -7749,6 +7760,9 @@ app.get([
   '/kaen44/',
   '/kaen44/login',
   '/kaen44/auth/success',
+  '/kaen44/cockpit',
+  '/kaen44/app',
+  '/kaen44/workspace',
   '/kaen44/casino',
   '/kaen44/privacy',
   '/kaen44/terms',
@@ -9393,7 +9407,7 @@ function buildDeterministicDevActionReply(context) {
       if (storageIssues.length) {
         return `Diagnostic rapide: le runtime A11 repond, mais je n'ai pas pu verifier tout le stockage utilisateur (${storageIssues.join(' ; ')}).`;
       }
-      return resourcesCount || filesCount
+      return resourcesCount > 0 || filesCount > 0
         ? `Diagnostic rapide: le runtime A11 repond, et j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`
         : runtimeFilesCount
           ? `Diagnostic rapide: le runtime A11 repond. Le stockage utilisateur est vide, mais le runtime local contient ${runtimeFilesCount} fichier(s).`
@@ -9403,7 +9417,7 @@ function buildDeterministicDevActionReply(context) {
     if (okActions.has('list_resources') && okActions.has('list_stored_files')) {
       const resourcesCount = Number(results.find((entry) => entry.action === 'list_resources')?.count || 0);
       const filesCount = Number(results.find((entry) => entry.action === 'list_stored_files')?.count || 0);
-      return resourcesCount || filesCount
+      return resourcesCount > 0 || filesCount > 0
         ? `Je peux bien verifier le stockage A11. J'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`
         : "Je peux verifier le stockage A11, mais je n'ai trouve aucun fichier stocke pour le moment.";
     }
@@ -10360,6 +10374,8 @@ const CHAT_SAFE_RESOURCE_ACTIONS = Object.freeze([
   'list_stored_files',
   'get_latest_resource',
   'a11_env_snapshot',
+  'mcp_status',
+  'mcp_tools_list',
 ]);
 
 function buildRequestMessagesFromBody(body) {
@@ -10438,6 +10454,16 @@ function detectCapabilityDiagnosticReason(body) {
     messages: Array.isArray(body?.messages) ? body.messages : [],
   });
   if (conversationalDiagnostic) return conversationalDiagnostic;
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ');
+  const mentionsRuntimeSurface = /\b(runtime|mcp|outils?|tools?|fonctions?|fonctionnalites?|modules?|capacit(?:e|es)|capabilities|qflush|workers?|hooks?)\b/i.test(normalized);
+  const asksCheckup = /\b(check ?up|check|bilan|diagnostic|diagnostique|debug|etat|status|statut|verifie|verifier|teste|tester|controle|audit|inventaire|liste|donne les informations?)\b/i.test(normalized);
+  if (mentionsRuntimeSurface && asksCheckup) {
+    return 'diagnostiquer le runtime et le MCP A11';
+  }
   const asksDiagnostic = /(fonctionne pas|fonctionnent pas|qu['’]est ce qui|qu['’]est-ce qui|detaille|d[eé]taille|diagnostic|debug|problemes|probl[eè]mes|capacites|capacités|capabilites|capabilities)/i.test(text);
   if (!asksDiagnostic) return null;
   return 'diagnostiquer les capacites A11';
@@ -10660,6 +10686,8 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
       userId,
       actions: [
         { name: 'a11_env_snapshot', id: 'env-1', arguments: {} },
+        { name: 'mcp_status', id: 'mcp-status-1', arguments: {} },
+        { name: 'mcp_tools_list', id: 'mcp-tools-1', arguments: { allowedOnly: true } },
         { name: 'list_resources', id: 'res-1', arguments: { conversationId, limit: 12 } },
         { name: 'list_stored_files', id: 'files-1', arguments: { limit: 12 } },
       ],
@@ -10874,21 +10902,39 @@ function buildDirectSafeUserReply(cerbere, latestUserMessage = '', imagePath = n
       : (runtimeFilesCount && !resourcesCount && !filesCount)
         ? `Cote stockage utilisateur, je trouve 0 ressource(s) DB et 0 fichier(s) DB, mais le runtime local contient ${runtimeFilesCount} fichier(s).`
       : `Cote stockage, j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`;
+    const mcpStatusEntry = results.find((entry) => entry.action === 'mcp_status');
+    const mcpToolsEntry = results.find((entry) => entry.action === 'mcp_tools_list');
+    const mcpStatus = mcpStatusEntry?.result && typeof mcpStatusEntry.result === 'object' ? mcpStatusEntry.result : {};
+    const mcpHealth = mcpStatus.health && typeof mcpStatus.health === 'object' ? mcpStatus.health : {};
+    const mcpTools = Array.isArray(mcpToolsEntry?.result?.tools) ? mcpToolsEntry.result.tools : [];
+    const mcpIssues = [];
+    if (mcpStatusEntry) {
+      const mcpOk = mcpStatus.ok === true || mcpHealth.ok === true;
+      if (!mcpOk) {
+        mcpIssues.push(sanitizeDevActionError(mcpHealth.error || mcpStatus.error || mcpStatusEntry.error || 'MCP indisponible') || 'MCP indisponible');
+      }
+    }
+    if (mcpToolsEntry && mcpToolsEntry.ok === false) {
+      mcpIssues.push(sanitizeDevActionError(mcpToolsEntry.error || 'liste des outils MCP indisponible') || 'liste des outils MCP indisponible');
+    }
+    const mcpSentence = mcpStatusEntry || mcpToolsEntry
+      ? (mcpIssues.length
+        ? `Cote MCP, verification incomplete: ${mcpIssues.join(' ; ')}.`
+        : `Cote MCP, le pont repond et ${mcpTools.length} outil(s) autorise(s) sont visibles.`)
+      : '';
     const issues = [];
     if (snapshot.llm?.ok !== true) issues.push('le LLM local ne repond pas correctement');
     if (snapshot.qflush?.available !== true) issues.push('Qflush n est pas disponible');
     if (!issues.length) {
-      return storageIssues.length
-        ? `Diagnostic rapide: le runtime A11 repond. ${storageSentence}`
-        : `Diagnostic rapide: le runtime A11 repond, et j'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s).`;
+      return `Diagnostic rapide: le runtime A11 repond. ${mcpSentence ? `${mcpSentence} ` : ''}${storageSentence}`;
     }
-    return `Je vois surtout ces points a corriger: ${issues.join(' ; ')}. ${storageSentence}`;
+    return `Je vois surtout ces points a corriger: ${issues.join(' ; ')}. ${mcpSentence ? `${mcpSentence} ` : ''}${storageSentence}`;
   }
 
   if (results.some((entry) => entry.action === 'list_resources') || results.some((entry) => entry.action === 'list_stored_files')) {
     const resourcesCount = Number(results.find((entry) => entry.action === 'list_resources')?.result?.count || 0);
     const filesCount = Number(results.find((entry) => entry.action === 'list_stored_files')?.result?.count || 0);
-    return resourcesCount || filesCount
+    return resourcesCount > 0 || filesCount > 0
       ? `Oui. J'ai retrouve ${resourcesCount} ressource(s) de conversation et ${filesCount} fichier(s) stocke(s) dans l'espace A11.`
       : "Je peux verifier le stockage A11, mais je n'ai rien retrouve de stocke pour le moment.";
   }
@@ -11640,6 +11686,27 @@ function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structured
   );
 }
 
+function buildRuntimeModulesAccessAssistant({ familyAccess = false, request = '' } = {}) {
+  let chopperStatus = null;
+  let mixerStatus = null;
+  try {
+    const westsideChopper = require('./lib/westside-chopper.cjs');
+    chopperStatus = westsideChopper.buildChopperStatus();
+  } catch (_) {
+    chopperStatus = null;
+  }
+  try {
+    const funesterieMixer = require('./lib/funesterie-mixer.cjs');
+    mixerStatus = funesterieMixer.buildMixerRoute({
+      request: request || 'runtime modules Chopper Mixer status',
+      topN: 8,
+    });
+  } catch (_) {
+    mixerStatus = null;
+  }
+  return buildRuntimeModulesAccessReply({ familyAccess, chopperStatus, mixerStatus });
+}
+
 async function proxyQflushChat(req, res) {
   const requestId = ensureRequestId(req, res);
   const qflushChatFlow = getQflushChatFlow();
@@ -11943,6 +12010,17 @@ async function proxyChatToOpenAI(req, res) {
       await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
     appendChatTurnLogSafe(req.body, data, 'a11-mcp-status', userId);
+    return res.status(200).json(data);
+  }
+
+  if (isRuntimeModulesAccessQuestion(latestUserMessage)) {
+    const familyAccess = hasFullAccess(req.user, process.env);
+    const content = buildRuntimeModulesAccessAssistant({ familyAccess, request: latestUserMessage });
+    const data = toSimpleAssistantCompletion(content, 'a11-runtime-modules-status');
+    if (userId && content) {
+      await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
+    }
+    appendChatTurnLogSafe(req.body, data, 'a11-runtime-modules-status', userId);
     return res.status(200).json(data);
   }
 
@@ -12370,6 +12448,11 @@ app.post('/v1/chat/completions', async (req, res) => {
     const latestUserMessage = getLatestUserMessage(req.body || {});
     if (isMcpAccessQuestion(latestUserMessage)) {
       return proxyChatToOpenAI(req, res);
+    }
+    if (isRuntimeModulesAccessQuestion(latestUserMessage)) {
+      const familyAccess = hasFullAccess(req.user, process.env);
+      const content = buildRuntimeModulesAccessAssistant({ familyAccess, request: latestUserMessage });
+      return res.status(200).json(toSimpleAssistantCompletion(content, 'a11-runtime-modules-status'));
     }
     if (typeof protectedChatProxyRouter?.tryHandleIntentRequest === 'function') {
       const handled = await protectedChatProxyRouter.tryHandleIntentRequest(req, res);

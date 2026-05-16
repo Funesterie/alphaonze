@@ -1,0 +1,13 @@
+{
+  "name": "RomStation State Monitor",
+  "version": "1.0.0",
+  "description": "Avant toute interaction RomStation, vérifie l'état actuel pour adapter la stratégie",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": [".*romstation_mouse.*", ".*romstation_keyboard.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Avant d'interagir avec RomStation, lis d'abord romstation_state pour connaître la phase actuelle (launcher, menu, fight, loading). Adapte la commande en conséquence. Si le state indique que la fenêtre n'est pas trouvée, ne procède pas et informe l'utilisateur."
+  }
+}

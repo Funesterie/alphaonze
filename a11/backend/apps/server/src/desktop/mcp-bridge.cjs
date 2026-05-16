@@ -2,7 +2,7 @@
 /**
  * Funesterie Desktop â€” MCP Bridge
  *
- * GÃ¨re la connexion MCP depuis l'app Electron vers mcp.funesterie.me.
+ * GÃ¨re la connexion MCP depuis l'app Electron vers le MCP local et public.
  * Auto-refresh du token, reconnexion automatique, fallback gracieux.
  */
 
@@ -13,13 +13,20 @@ const https = require('node:https');
 const { URL } = require('node:url');
 
 const DEFAULT_MCP_URL = 'https://mcp.funesterie.me/mcp';
+const DEFAULT_LOCAL_MCP_URLS = [
+  'http://127.0.0.1:8788/mcp',
+  'http://127.0.0.1:8787/mcp',
+];
 const TOKEN_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const RECONNECT_DELAY_MS = 5000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 
 class McpBridge {
   constructor(options = {}) {
-    this.mcpUrl = options.mcpUrl || process.env.A11_MCP_URL || DEFAULT_MCP_URL;
+    this.mcpUrls = this._normalizeMcpUrls(options);
+    this.mcpUrl = this.mcpUrls[0] || DEFAULT_MCP_URL;
+    this.activeMcpUrl = this.mcpUrl;
+    this.endpointHealth = new Map();
     this.token = options.token || '';
     this.tokenFilePath = options.tokenFilePath || this._resolveTokenFilePath();
     this.connected = false;
@@ -28,6 +35,21 @@ class McpBridge {
     this.healthTimer = null;
     this.tokenRefreshTimer = null;
     this.eventHandlers = new Map();
+  }
+
+  _normalizeMcpUrls(options = {}) {
+    const envUrls = process.env.A11_MCP_URLS
+      ? String(process.env.A11_MCP_URLS).split(/[;,]/).map((value) => value.trim()).filter(Boolean)
+      : [];
+    const explicit = Array.isArray(options.mcpUrls) ? options.mcpUrls : [];
+    const defaultLocalUrls = options.includeDefaultLocalUrls === false ? [] : DEFAULT_LOCAL_MCP_URLS;
+    const defaultProdUrls = options.includeDefaultProdUrl === false ? [] : [DEFAULT_MCP_URL];
+    const legacy = options.mcpUrl || process.env.A11_MCP_URL || DEFAULT_MCP_URL;
+    const urls = [...explicit, ...envUrls, ...defaultLocalUrls, legacy, ...defaultProdUrls]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .map((value) => value.endsWith('/mcp') ? value : value.replace(/\/$/, '') + '/mcp');
+    return [...new Set(urls)];
   }
 
   /**
@@ -93,11 +115,18 @@ class McpBridge {
    */
   async healthCheck() {
     try {
-      const healthUrl = this.mcpUrl.replace('/mcp', '/health');
-      const result = await this._httpGet(healthUrl, 5000);
-      const data = JSON.parse(result);
-      this.connected = data.ok === true;
-      this.lastHealthCheck = { ok: this.connected, at: new Date().toISOString(), data };
+      const checks = await Promise.all(this.mcpUrls.map((url) => this._checkEndpoint(url)));
+      const healthy = checks.filter((check) => check.ok);
+      const preferred = healthy.find((check) => check.kind === 'local') || healthy[0] || checks[0];
+      this.connected = healthy.length > 0;
+      this.activeMcpUrl = preferred?.url || this.mcpUrl;
+      this.mcpUrl = this.activeMcpUrl;
+      this.lastHealthCheck = {
+        ok: this.connected,
+        at: new Date().toISOString(),
+        activeUrl: this.activeMcpUrl,
+        endpoints: checks,
+      };
       this._emit('health', this.lastHealthCheck);
       return this.lastHealthCheck;
     } catch (err) {
@@ -107,6 +136,55 @@ class McpBridge {
       this._scheduleReconnect();
       return this.lastHealthCheck;
     }
+  }
+
+  async _checkEndpoint(url) {
+    const kind = this._endpointKind(url);
+    const checkedAt = new Date().toISOString();
+    try {
+      const healthUrl = this._healthUrlFor(url);
+      const result = await this._httpGet(healthUrl, 5000);
+      const data = JSON.parse(result);
+      const ok = data.ok === true;
+      const health = { url, kind, ok, at: checkedAt, data };
+      this.endpointHealth.set(url, health);
+      return health;
+    } catch (err) {
+      const health = { url, kind, ok: false, at: checkedAt, error: err.message };
+      this.endpointHealth.set(url, health);
+      return health;
+    }
+  }
+
+  _healthUrlFor(url) {
+    const parsed = new URL(url);
+    parsed.pathname = parsed.pathname.replace(/\/mcp\/?$/, '/health');
+    if (!/\/health\/?$/.test(parsed.pathname)) parsed.pathname = '/health';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  }
+
+  _endpointKind(url) {
+    try {
+      const parsed = new URL(url);
+      return ['127.0.0.1', 'localhost', '::1'].includes(parsed.hostname) ? 'local' : 'prod';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  _healthyUrls() {
+    const healthy = this.mcpUrls.filter((url) => this.endpointHealth.get(url)?.ok);
+    const ordered = healthy.length ? healthy : this.mcpUrls;
+    return ordered.sort((a, b) => {
+      const ak = this._endpointKind(a) === 'local' ? 0 : 1;
+      const bk = this._endpointKind(b) === 'local' ? 0 : 1;
+      if (ak !== bk) return ak - bk;
+      if (a === this.activeMcpUrl) return -1;
+      if (b === this.activeMcpUrl) return 1;
+      return 0;
+    });
   }
 
   /**
@@ -120,8 +198,22 @@ class McpBridge {
       params: { name: toolName, arguments: args },
     });
 
-    const result = await this._httpPost(this.mcpUrl, body, 30_000);
-    return this._parseSSEResponse(result);
+    const errors = [];
+    for (const url of this._healthyUrls()) {
+      try {
+        const result = await this._httpPost(url, body, 30_000);
+        const parsed = this._parseSSEResponse(result);
+        if (parsed && !parsed.error && !parsed.result?.isError) {
+          this.activeMcpUrl = url;
+          this.mcpUrl = url;
+          return parsed;
+        }
+        errors.push({ url, error: parsed?.error || parsed?.result?.content || 'tool error' });
+      } catch (err) {
+        errors.push({ url, error: err.message });
+      }
+    }
+    return { error: { message: `MCP tool ${toolName} unavailable`, endpoints: errors } };
   }
 
   /**
@@ -135,8 +227,51 @@ class McpBridge {
       params: {},
     });
 
-    const result = await this._httpPost(this.mcpUrl, body, 15_000);
-    return this._parseSSEResponse(result);
+    const merged = new Map();
+    const endpoints = [];
+    const errors = [];
+
+    for (const url of this._healthyUrls()) {
+      try {
+        const result = await this._httpPost(url, body, 15_000);
+        const parsed = this._parseSSEResponse(result);
+        const tools = parsed?.result?.tools || parsed?.tools || [];
+        if (Array.isArray(tools)) {
+          for (const tool of tools) {
+            if (!tool?.name || merged.has(tool.name)) continue;
+            merged.set(tool.name, { ...tool, _funesterieEndpoint: this._endpointKind(url) });
+          }
+          endpoints.push({ url, kind: this._endpointKind(url), ok: true, count: tools.length });
+        }
+      } catch (err) {
+        errors.push({ url, kind: this._endpointKind(url), error: err.message });
+      }
+    }
+
+    if (merged.size) {
+      const preferred = [...endpoints]
+        .sort((a, b) => {
+          const ak = a.kind === 'local' ? 0 : 1;
+          const bk = b.kind === 'local' ? 0 : 1;
+          if (ak !== bk) return ak - bk;
+          return (b.count || 0) - (a.count || 0);
+        })[0];
+      if (preferred?.url) {
+        this.activeMcpUrl = preferred.url;
+        this.mcpUrl = preferred.url;
+      }
+      return {
+        jsonrpc: '2.0',
+        id: Date.now(),
+        result: {
+          tools: [...merged.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))),
+          endpoints,
+          errors,
+        },
+      };
+    }
+
+    return { error: { message: 'MCP tools unavailable', endpoints: errors } };
   }
 
   /**

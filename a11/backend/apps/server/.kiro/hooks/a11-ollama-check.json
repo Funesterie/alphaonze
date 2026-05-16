@@ -1,0 +1,13 @@
+{
+  "name": "A11 Ollama Check",
+  "version": "1.0.0",
+  "description": "Vérifie qu'Ollama est accessible quand on modifie la config LLM",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/.env.local", "**/llm-router.cjs", "**/ollama-queue.cjs"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 5; Write-Host \\\"Ollama: $($r.models.Count) models\\\" } catch { Write-Host \\\"Ollama: DOWN\\\" }\""
+  }
+}

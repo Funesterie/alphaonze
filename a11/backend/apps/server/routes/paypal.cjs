@@ -115,15 +115,30 @@ function summarizePayPalEvent(event) {
   };
 }
 
+function getRequestOrigin(req) {
+  const configured = String(
+    process.env.PAYPAL_PUBLIC_BASE_URL
+      || process.env.A11_PUBLIC_BASE_URL
+      || process.env.PUBLIC_API_URL
+      || ''
+  ).trim().replace(/\/+$/, '');
+  if (configured) return configured;
+
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim() || 'https';
+  return host ? `${proto}://${host}` : 'https://a11.funesterie.pro';
+}
+
 function createPaypalRouter({ db = null, fetchImpl = globalThis.fetch } = {}) {
   const router = express.Router();
 
-  router.get('/config', (_req, res) => {
+  router.get('/config', (req, res) => {
+    const origin = getRequestOrigin(req);
     res.json({
       ok: true,
       configured: hasPayPalWebhookConfig(process.env),
       receiverEmail: String(process.env.PAYPAL_RECEIVER_EMAIL || '').trim() || null,
-      webhookUrl: String(process.env.PAYPAL_WEBHOOK_URL || 'https://a11.funesterie.pro/api/paypal/webhook').trim(),
+      webhookUrl: String(process.env.PAYPAL_WEBHOOK_URL || `${origin}/api/paypal/webhook`).trim(),
       mode: String(process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || 'live').trim().toLowerCase(),
     });
   });

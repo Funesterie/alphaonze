@@ -226,6 +226,22 @@ def main():
     print(f"[Ekko] endpoint Ivy  : {_config.ivy_endpoint}")
     print(f"[Ekko] privacy       : opt-in={_config.require_opt_in}, indicator={_config.visual_indicator}")
 
+    use_waitress = os.environ.get("EKKO_USE_WAITRESS", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if use_waitress:
+        try:
+            from waitress import serve  # type: ignore
+
+            print("[Ekko] serveur WSGI : waitress")
+            serve(
+                app,
+                host=_config.server_host,
+                port=_config.server_port,
+                threads=int(os.environ.get("EKKO_WAITRESS_THREADS", "4") or 4),
+            )
+            return
+        except Exception as exc:
+            print(f"[Ekko] waitress indisponible, fallback Flask : {exc}")
+
     app.run(
         host=_config.server_host,
         port=_config.server_port,

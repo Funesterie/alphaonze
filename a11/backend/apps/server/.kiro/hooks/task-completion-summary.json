@@ -1,0 +1,12 @@
+{
+  "name": "Task Completion Summary",
+  "version": "1.0.0",
+  "description": "Après chaque fin de tâche spec, génère un résumé et le stocke en mémoire",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Une tâche spec vient d'être complétée. Écris un résumé concis dans la mémoire (memory_write_safe) avec : ce qui a été fait, les fichiers modifiés, et tout point d'attention pour la suite. Kind: agent_decision, scope: general."
+  }
+}

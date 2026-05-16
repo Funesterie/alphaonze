@@ -40,6 +40,10 @@ services:
       - GOOGLE_CALLBACK_URL=https://k44.funesterie.me/api/auth/google/callback
       - A11_GOOGLE_CALLBACK_URL=https://k44.funesterie.me/api/auth/google/callback
       - A11_PUBLIC_HOST=k44.funesterie.me
+      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - QFLUSH_REDIS_URL=${REDIS_URL}
       - A11_ALLOW_DEV_ROUTES=false
       - A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS=false
       - A11_RESPONDER_MODE=off

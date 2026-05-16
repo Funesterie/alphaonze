@@ -1,0 +1,13 @@
+{
+  "name": "Agent Presence Logger",
+  "version": "1.0.0",
+  "description": "Quand un heartbeat agent est envoyé, journalise la présence dans le graph Neo4j",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [".*agent_heartbeat.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Un heartbeat agent vient d'être envoyé. Mets à jour le nœud Agent correspondant dans Neo4j via graph_write_safe avec le statut, les capabilities, et le timestamp. Label: Agent, id: le nom de l'agent."
+  }
+}

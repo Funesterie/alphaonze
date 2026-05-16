@@ -1,0 +1,74 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "vivy",
+      "intents": [
+        {
+          "name": "SingIntent",
+          "slots": [
+            {
+              "name": "mood",
+              "type": "MusicMood"
+            }
+          ],
+          "samples": [
+            "chante",
+            "chante une chanson",
+            "lance une chanson",
+            "fais chanter vivy",
+            "chante quelque chose de {mood}",
+            "chante une musique {mood}"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.PauseIntent",
+          "samples": []
+        }
+      ],
+      "types": [
+        {
+          "name": "MusicMood",
+          "values": [
+            {
+              "name": {
+                "value": "calme"
+              }
+            },
+            {
+              "name": {
+                "value": "mélancolique"
+              }
+            },
+            {
+              "name": {
+                "value": "énergique"
+              }
+            },
+            {
+              "name": {
+                "value": "électro"
+              }
+            },
+            {
+              "name": {
+                "value": "poétique"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "Web Draft Review",
+  "version": "1.0.0",
+  "description": "Après écriture d'un draft web, vérifie la cohérence avec le site cible",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [".*web_draft_write.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Un draft web vient d'être écrit. Vérifie : 1) Le target est correct (funesterie-me, kaen44, vivy, etc.) 2) Le format est cohérent (md/html) 3) Le contenu ne contient pas de secrets ou données personnelles sensibles. Liste le draft dans web_draft_index pour confirmer qu'il est bien enregistré."
+  }
+}

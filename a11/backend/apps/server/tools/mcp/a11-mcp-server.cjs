@@ -19,6 +19,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { URL } = require('node:url');
+const workerSupervisor = require('../../lib/worker-supervisor.cjs');
+const westsideChopper = require('../../lib/westside-chopper.cjs');
+const funesterieMixer = require('../../lib/funesterie-mixer.cjs');
 
 // ---------------------------------------------------------------------------
 // Config
@@ -72,6 +75,39 @@ const RUNTIME_HOOKS_PATH = path.resolve(
 const RUNTIME_HOOKS_MD_PATH = path.resolve(
   process.env.A11_RUNTIME_HOOKS_MD_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-runtime-hooks.md')
 );
+const ECOSYSTEM_SCOPE_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_SCOPE_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-scope.json')
+);
+const ECOSYSTEM_SCOPE_MD_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_SCOPE_MD_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-scope.md')
+);
+const ECOSYSTEM_CORPUS_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_CORPUS_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-corpus.json')
+);
+const ECOSYSTEM_CORPUS_MD_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_CORPUS_MD_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-corpus.md')
+);
+const ECOSYSTEM_BRIEFING_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_BRIEFING_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-briefing.json')
+);
+const ECOSYSTEM_BRIEFING_HTML_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_BRIEFING_HTML_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-briefing.html')
+);
+const ECOSYSTEM_BRIEFING_PDF_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_BRIEFING_PDF_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-ecosystem-briefing.pdf')
+);
+const ECOSYSTEM_EXECUTIVE_VIEW_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_EXECUTIVE_VIEW_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-executive-view.md')
+);
+const ECOSYSTEM_ARCHITECTURE_VIEW_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_ARCHITECTURE_VIEW_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'funesterie-architecture-view.md')
+);
+const ECOSYSTEM_A11_IMAGE_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_A11_IMAGE_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'assets', 'a11-mcp-identity.png')
+);
+const ECOSYSTEM_FUNESTERIE_IMAGE_PATH = path.resolve(
+  process.env.A11_ECOSYSTEM_FUNESTERIE_IMAGE_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'assets', 'funesterie-ecosystem-identity.png')
+);
 const LOCAL_CONTEXT_PATH = path.resolve(
   process.env.A11_LOCAL_CONTEXT_PATH || 'D:\\projets\\funesterie\\docs\\A11_CONTEXT_2026-05-06.md'
 );
@@ -92,6 +128,72 @@ function stripBearer(value) {
   return String(value || '').replace(/^Bearer\s+/i, '').trim();
 }
 
+function envValue(name) {
+  return process.env[name] || readWindowsUserEnv(name) || '';
+}
+
+function resolveEnvPlaceholders(value) {
+  return String(value || '')
+    .replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => envValue(name))
+    .replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/g, (_, name) => envValue(name))
+    .replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_, name) => envValue(name));
+}
+
+function resolveTokenValue(value) {
+  const resolved = stripBearer(resolveEnvPlaceholders(value)).trim();
+  if (!resolved) return '';
+  if (/\$\{env:|\$env:|%[A-Za-z_][A-Za-z0-9_]*%/.test(resolved)) return '';
+  return resolved;
+}
+
+function localTokenCandidatePaths() {
+  const candidates = [
+    process.env.A11_MCP_TOKEN_FILE,
+    process.env.MCP_AUTH_TOKEN_FILE,
+    process.env.AGENT_STATE_DIR ? path.join(process.env.AGENT_STATE_DIR, 'mcp-token-current.txt') : '',
+    'G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'OneDrive', 'a11_memory', 'agent-bus', 'mcp-token-current.txt') : '',
+    'D:\\agent-bus\\mcp-token-current.txt',
+    'D:\\projets\\funesterie\\a11mcp\\.env',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Desktop', 'mcp-token.txt') : '',
+  ];
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function parseTokenFile(raw) {
+  const lines = String(raw || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+
+  for (const line of lines) {
+    const match = line.match(/^(?:MCP_AUTH_TOKEN|A11_MCP_TOKEN|A11_PUBLIC_MCP_TOKEN)\s*=\s*(.+)$/);
+    if (!match) continue;
+    const value = match[1].trim().replace(/^["']|["']$/g, '');
+    const token = resolveTokenValue(value);
+    if (token) return token;
+  }
+
+  if (lines.length === 1 && !lines[0].includes('=')) {
+    return resolveTokenValue(lines[0]);
+  }
+
+  return '';
+}
+
+function loadSharedMcpTokenFromFile() {
+  for (const candidate of localTokenCandidatePaths()) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const token = parseTokenFile(fs.readFileSync(candidate, 'utf8'));
+      if (token) return { token, source: 'token-file' };
+    } catch (_) {
+      // Ignore unreadable token candidates; other locations may still work.
+    }
+  }
+  return { token: '', source: 'missing' };
+}
+
 function getSharedMcpConfigFromKiro() {
   const config = readKiroMcpConfigSafe();
   const shared = config?.mcpServers?.['a11mcp-shared'] || config?.mcpServers?.['a11mcp-aura-local'] || null;
@@ -99,13 +201,20 @@ function getSharedMcpConfigFromKiro() {
   const headerToken = shared?.headers?.['x-mcp-token'] || shared?.headers?.['X-MCP-Token'] || '';
   return {
     url: String(shared?.url || '').trim(),
-    token: stripBearer(authorization) || String(headerToken || '').trim(),
+    token: resolveTokenValue(authorization) || resolveTokenValue(headerToken),
     source: shared ? 'kiro-config' : 'default',
   };
 }
 
 function resolveSharedMcpConfig() {
   const kiro = getSharedMcpConfigFromKiro();
+  const fileToken = loadSharedMcpTokenFromFile();
+  const envToken = resolveTokenValue(
+    process.env.A11_MCP_TOKEN
+    || process.env.A11_PUBLIC_MCP_TOKEN
+    || process.env.MCP_AUTH_TOKEN
+    || ''
+  );
   const url = String(
     process.env.A11_SHARED_MCP_URL
     || process.env.A11_PUBLIC_MCP_UPSTREAM_URL
@@ -114,18 +223,12 @@ function resolveSharedMcpConfig() {
     || kiro.url
     || DEFAULT_SHARED_MCP_URL
   ).trim().replace(/\/+$/, '');
-  const token = String(
-    process.env.A11_MCP_TOKEN
-    || process.env.A11_PUBLIC_MCP_TOKEN
-    || process.env.MCP_AUTH_TOKEN
-    || kiro.token
-    || ''
-  ).trim();
+  const token = envToken || kiro.token || fileToken.token || '';
   return {
     url,
     token,
     tokenPresent: Boolean(token),
-    source: token ? (process.env.A11_MCP_TOKEN || process.env.A11_PUBLIC_MCP_TOKEN || process.env.MCP_AUTH_TOKEN ? 'env' : kiro.source) : 'missing',
+    source: token ? (envToken ? 'env' : (kiro.token ? kiro.source : fileToken.source)) : 'missing',
   };
 }
 
@@ -548,6 +651,195 @@ const TOOLS = [
     },
   },
   {
+    name: 'a11_worker_status',
+    description:
+      'Retourne l etat du supervisor workers A11: scripts npm whitelistes, locks, logs capes et audit recent. Ne lance rien.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workerId: {
+          type: 'string',
+          description: 'Worker whiteliste a filtrer (optionnel).',
+        },
+        includeLogs: {
+          type: 'boolean',
+          description: 'Inclure une queue de log redacted et capee.',
+        },
+        maxLogChars: {
+          type: 'number',
+          description: 'Nombre max de caracteres de logs retournes.',
+        },
+        auditLimit: {
+          type: 'number',
+          description: 'Nombre d evenements audit recents a retourner.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_worker_start',
+    description:
+      'Lance un worker A11 via une whitelist stricte de scripts npm. Requiert agent. Aucun shell libre.',
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Agent appelant obligatoire: codex, kiro, a11, kaen44, claude, copilot, grok, gemini, etc.',
+        },
+        workerId: {
+          type: 'string',
+          description: 'Identifiant du worker whiteliste.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Raison courte pour audit.',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Retourne seulement le plan sans lancer le process.',
+        },
+      },
+      required: ['agent', 'workerId'],
+    },
+  },
+  {
+    name: 'a11_worker_stop',
+    description:
+      'Stoppe un worker A11 connu par son lock supervisor. Requiert agent. Aucun shell libre.',
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Agent appelant obligatoire.',
+        },
+        workerId: {
+          type: 'string',
+          description: 'Identifiant du worker whiteliste.',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Retourne seulement le plan sans stopper le process.',
+        },
+      },
+      required: ['agent', 'workerId'],
+    },
+  },
+  {
+    name: 'a11_worker_restart',
+    description:
+      'Redemarre un worker A11 via stop puis start, avec lock et audit. Requiert agent.',
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Agent appelant obligatoire.',
+        },
+        workerId: {
+          type: 'string',
+          description: 'Identifiant du worker whiteliste.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Raison courte pour audit.',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Retourne seulement le plan sans toucher au process.',
+        },
+      },
+      required: ['agent', 'workerId'],
+    },
+  },
+  {
+    name: 'a11_task_dispatch',
+    description:
+      'Cree une file de taches bornee puis lance le dispatcher existant via script npm whiteliste. Requiert agent.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Agent appelant obligatoire.',
+        },
+        project: {
+          type: 'string',
+          description: 'Nom du projet pour le dispatcher.',
+        },
+        tasks: {
+          type: 'array',
+          items: {
+            oneOf: [
+              { type: 'string' },
+              {
+                type: 'object',
+                properties: {
+                  text: { type: 'string' },
+                  title: { type: 'string' },
+                },
+              },
+            ],
+          },
+          description: 'Taches a convertir en checklist Markdown.',
+        },
+        markdown: {
+          type: 'string',
+          description: 'Checklist Markdown deja formatee.',
+        },
+        priority: {
+          type: 'string',
+          description: 'Priorite indicative.',
+        },
+        targetAgents: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Agents cibles indicatifs: claude, copilot, grok, gemini, etc.',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Retourne seulement le plan sans creer ni lancer.',
+        },
+      },
+      required: ['agent'],
+    },
+  },
+  {
+    name: 'a11_agent_jobs_status',
+    description:
+      'Retourne le job board supervisor, les jobs lances par MCP et la presence connue des agents externes.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Agent appelant optionnel pour audit de lecture.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Nombre max de jobs a retourner.',
+        },
+        includeLogs: {
+          type: 'boolean',
+          description: 'Inclure une queue de log redacted pour les jobs.',
+        },
+        maxLogChars: {
+          type: 'number',
+          description: 'Nombre max de caracteres de logs retournes.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'a11_mcp_dimension_status',
     description:
       'Retourne le statut du MCP dimensionnel maison : stdio, base A11 cible, route-map locale, contexte et pont Dragon/Kiro.',
@@ -582,6 +874,173 @@ const TOOLS = [
         includeMarkdown: {
           type: 'boolean',
           description: 'Inclure aussi le resume Markdown local si disponible.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_chopper_status',
+    description:
+      'Retourne le statut WestSide Chopper: assemblage global des modules Funesterie, lanes, dependances, gates et plan securise.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure le rendu Markdown du statut Chopper.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_chopper_plan',
+    description:
+      'Retourne uniquement le plan d actions WestSide Chopper et les workerIds MCP autorises pour assembler les modules.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_chopper_rumble',
+    description:
+      'Retourne les 3 Rumble Balls WestSide Chopper et les 7 combinaisons possibles pour orchestrer les modules par mode.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        readyOnly: {
+          type: 'boolean',
+          description: 'Retourner seulement les combinaisons pretes.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_chopper_recipes',
+    description:
+      'Retourne les recettes operationnelles WestSide Chopper: Memory Import, Scene Compiler, Video Analysis, Worker Repair, Agent Demo et Operation BB.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        readyOnly: {
+          type: 'boolean',
+          description: 'Retourner seulement les recettes pretes.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_chopper_doctor',
+    description:
+      'Retourne le score Doctor WestSide Chopper par module et les prochaines actions de reparation sans afficher de secret.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'a11_funesterie_mixer_status',
+    description:
+      'Retourne le statut Funesterie Mixer: scoring, route par defaut, contrat MCP et garde-fous. Ne lance aucune action.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request: {
+          type: 'string',
+          description: 'Demande optionnelle pour recalculer la route par defaut.',
+        },
+        topN: {
+          type: 'number',
+          description: 'Nombre de candidats a retourner.',
+        },
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure le rendu Markdown.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_funesterie_mixer_route',
+    description:
+      'Route une demande vers les meilleurs agents, modules, recettes Rumble, workers et outils MCP selon score pertinence/sante/risque.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request: {
+          type: 'string',
+          description: 'Demande utilisateur ou objectif operationnel a router.',
+        },
+        topN: {
+          type: 'number',
+          description: 'Nombre de candidats scores a retourner.',
+        },
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure le rendu Markdown.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_ecosystem_scope',
+    description:
+      'Retourne la carte metadata-only de l ecosysteme Funesterie: repos GitHub, packages, contrats, runtimes partages, orchestration et outils semantiques. Ne retourne aucun secret.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure aussi le resume Markdown local si disponible.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_ecosystem_corpus',
+    description:
+      'Retourne les source cards Corpus derivees de l ecosysteme Funesterie: briefs repo, domaines, risques, boundaries public/private et liens semantiques. Ne retourne aucun secret.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeMarkdown: {
+          type: 'boolean',
+          description: 'Inclure aussi le resume Markdown local si disponible.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_ecosystem_briefing',
+    description:
+      'Retourne les livrables briefing de l ecosysteme Funesterie: vue executive, vue architecture, HTML/PDF partageable et resume des fichiers generes. Ne retourne aucun secret.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeExecutive: {
+          type: 'boolean',
+          description: 'Inclure la vue executive Markdown si disponible.',
+        },
+        includeArchitecture: {
+          type: 'boolean',
+          description: 'Inclure la vue architecture Markdown si disponible.',
         },
       },
       required: [],
@@ -733,6 +1192,16 @@ function inferToolAnnotations(name = '') {
     'a11_mcp_dimension_status',
     'a11_route_map',
     'a11_runtime_hooks_status',
+    'a11_chopper_status',
+    'a11_chopper_plan',
+    'a11_chopper_rumble',
+    'a11_chopper_recipes',
+    'a11_chopper_doctor',
+    'a11_funesterie_mixer_status',
+    'a11_funesterie_mixer_route',
+    'a11_ecosystem_scope',
+    'a11_ecosystem_corpus',
+    'a11_ecosystem_briefing',
     'a11_identity_route',
   ].includes(normalized);
   const destructive = /delete|remove|purge|reset|revoke|overwrite/.test(normalized);
@@ -874,6 +1343,30 @@ async function handleTool(name, args) {
       return formatResult(res);
     }
 
+    case 'a11_worker_status': {
+      return formatObject(workerSupervisor.getWorkerStatus(args, { runtimeRoot: RUNTIME_ROOT }));
+    }
+
+    case 'a11_worker_start': {
+      return formatObject(workerSupervisor.startWorker(args, { runtimeRoot: RUNTIME_ROOT }));
+    }
+
+    case 'a11_worker_stop': {
+      return formatObject(workerSupervisor.stopWorker(args, { runtimeRoot: RUNTIME_ROOT }));
+    }
+
+    case 'a11_worker_restart': {
+      return formatObject(workerSupervisor.restartWorker(args, { runtimeRoot: RUNTIME_ROOT }));
+    }
+
+    case 'a11_task_dispatch': {
+      return formatObject(workerSupervisor.dispatchTasks(args, { runtimeRoot: RUNTIME_ROOT }));
+    }
+
+    case 'a11_agent_jobs_status': {
+      return formatObject(workerSupervisor.agentJobsStatus(args, { runtimeRoot: RUNTIME_ROOT }));
+    }
+
     case 'a11_mcp_dimension_status': {
       return formatObject(buildMcpDimensionStatus());
     }
@@ -884,6 +1377,111 @@ async function handleTool(name, args) {
 
     case 'a11_runtime_hooks_status': {
       return formatObject(buildRuntimeHooksStatus({ includeMarkdown: Boolean(args.includeMarkdown) }));
+    }
+
+    case 'a11_chopper_status': {
+      const status = westsideChopper.buildChopperStatus({ runtimeRoot: RUNTIME_ROOT });
+      return formatObject({
+        ...status,
+        ...(args.includeMarkdown ? { markdown: westsideChopper.buildMarkdown(status) } : {}),
+      });
+    }
+
+    case 'a11_chopper_plan': {
+      const status = westsideChopper.buildChopperStatus({ runtimeRoot: RUNTIME_ROOT });
+      return formatObject({
+        ok: status.ok,
+        generatedAt: status.generatedAt,
+        summary: status.summary,
+        gates: status.gates,
+        actionPlan: status.actionPlan,
+        mcpContract: status.mcpContract,
+      });
+    }
+
+    case 'a11_chopper_rumble': {
+      const status = westsideChopper.buildChopperStatus({ runtimeRoot: RUNTIME_ROOT });
+      const combinations = args.readyOnly
+        ? status.rumbleCombinations.filter((combo) => combo.ready)
+        : status.rumbleCombinations;
+      return formatObject({
+        ok: status.ok,
+        generatedAt: status.generatedAt,
+        summary: {
+          rumbleBalls: status.summary.rumbleBalls,
+          rumbleCombinations: combinations.length,
+          rumbleReady: combinations.filter((combo) => combo.ready).length,
+        },
+        rumbleBalls: status.rumbleBalls,
+        rumbleCombinations: combinations,
+      });
+    }
+
+    case 'a11_chopper_recipes': {
+      const status = westsideChopper.buildChopperStatus({ runtimeRoot: RUNTIME_ROOT });
+      const recipes = args.readyOnly
+        ? status.recipes.filter((recipe) => recipe.ready)
+        : status.recipes;
+      return formatObject({
+        ok: status.ok,
+        generatedAt: status.generatedAt,
+        summary: {
+          recipes: recipes.length,
+          ready: recipes.filter((recipe) => recipe.ready).length,
+          doctorStatus: status.summary.doctorStatus,
+          doctorScore: status.summary.doctorScore,
+        },
+        recipes,
+      });
+    }
+
+    case 'a11_chopper_doctor': {
+      const status = westsideChopper.buildChopperStatus({ runtimeRoot: RUNTIME_ROOT });
+      return formatObject({
+        ok: status.doctor.ok,
+        generatedAt: status.generatedAt,
+        summary: status.summary,
+        doctor: status.doctor,
+      });
+    }
+
+    case 'a11_funesterie_mixer_status': {
+      const status = funesterieMixer.buildMixerStatus({
+        runtimeRoot: RUNTIME_ROOT,
+        request: String(args.request || ''),
+        topN: Number(args.topN || 12),
+      });
+      return formatObject({
+        ...status,
+        ...(args.includeMarkdown ? { markdown: funesterieMixer.buildMarkdown(status) } : {}),
+      });
+    }
+
+    case 'a11_funesterie_mixer_route': {
+      const route = funesterieMixer.buildMixerRoute({
+        runtimeRoot: RUNTIME_ROOT,
+        request: String(args.request || ''),
+        topN: Number(args.topN || 12),
+      });
+      return formatObject({
+        ...route,
+        ...(args.includeMarkdown ? { markdown: funesterieMixer.buildMarkdown(route) } : {}),
+      });
+    }
+
+    case 'a11_ecosystem_scope': {
+      return formatObject(buildEcosystemScopeStatus({ includeMarkdown: Boolean(args.includeMarkdown) }));
+    }
+
+    case 'a11_ecosystem_corpus': {
+      return formatObject(buildEcosystemCorpusStatus({ includeMarkdown: Boolean(args.includeMarkdown) }));
+    }
+
+    case 'a11_ecosystem_briefing': {
+      return formatObject(buildEcosystemBriefingStatus({
+        includeExecutive: Boolean(args.includeExecutive),
+        includeArchitecture: Boolean(args.includeArchitecture),
+      }));
     }
 
     case 'a11_identity_route': {
@@ -1037,6 +1635,17 @@ function buildMcpDimensionStatus() {
       routeMapMarkdown: fileStatus(ROUTE_MAP_MD_PATH),
       runtimeHooks: fileStatus(RUNTIME_HOOKS_PATH),
       runtimeHooksMarkdown: fileStatus(RUNTIME_HOOKS_MD_PATH),
+      ecosystemScope: fileStatus(ECOSYSTEM_SCOPE_PATH),
+      ecosystemScopeMarkdown: fileStatus(ECOSYSTEM_SCOPE_MD_PATH),
+      ecosystemCorpus: fileStatus(ECOSYSTEM_CORPUS_PATH),
+      ecosystemCorpusMarkdown: fileStatus(ECOSYSTEM_CORPUS_MD_PATH),
+      ecosystemBriefing: fileStatus(ECOSYSTEM_BRIEFING_PATH),
+      ecosystemBriefingHtml: fileStatus(ECOSYSTEM_BRIEFING_HTML_PATH),
+      ecosystemBriefingPdf: fileStatus(ECOSYSTEM_BRIEFING_PDF_PATH),
+      ecosystemExecutiveView: fileStatus(ECOSYSTEM_EXECUTIVE_VIEW_PATH),
+      ecosystemArchitectureView: fileStatus(ECOSYSTEM_ARCHITECTURE_VIEW_PATH),
+      ecosystemA11Image: fileStatus(ECOSYSTEM_A11_IMAGE_PATH),
+      ecosystemFunesterieImage: fileStatus(ECOSYSTEM_FUNESTERIE_IMAGE_PATH),
       context: fileStatus(LOCAL_CONTEXT_PATH),
     },
     wiring: {
@@ -1080,6 +1689,85 @@ function buildRuntimeHooksStatus({ includeMarkdown = false } = {}) {
       ), 0),
     } : null,
     ...(includeMarkdown ? { markdown: readTextSafe(RUNTIME_HOOKS_MD_PATH) } : {}),
+  };
+}
+
+function buildEcosystemScopeStatus({ includeMarkdown = false } = {}) {
+  const scope = readJsonSafe(ECOSYSTEM_SCOPE_PATH);
+  return {
+    ok: Boolean(scope),
+    ecosystemScopePath: ECOSYSTEM_SCOPE_PATH,
+    scope,
+    summary: scope?.summary || null,
+    github: scope?.github ? {
+      org: scope.github.org,
+      repoCount: scope.github.repoCount,
+      repos: Array.isArray(scope.github.repos) ? scope.github.repos.map((repo) => ({
+        name: repo.name,
+        visibility: repo.visibility,
+        defaultBranch: repo.defaultBranch,
+        url: repo.url,
+        archived: repo.archived,
+      })) : [],
+    } : null,
+    sourcePolicy: scope?.sourcePolicy || null,
+    ...(includeMarkdown ? { markdown: readTextSafe(ECOSYSTEM_SCOPE_MD_PATH) } : {}),
+  };
+}
+
+function buildEcosystemCorpusStatus({ includeMarkdown = false } = {}) {
+  const corpus = readJsonSafe(ECOSYSTEM_CORPUS_PATH);
+  return {
+    ok: Boolean(corpus),
+    ecosystemCorpusPath: ECOSYSTEM_CORPUS_PATH,
+    corpus,
+    summary: corpus?.summary || null,
+    domains: Array.isArray(corpus?.domains) ? corpus.domains : [],
+    boundaries: Array.isArray(corpus?.boundaries) ? corpus.boundaries : [],
+    repoBriefs: Array.isArray(corpus?.repoBriefs) ? corpus.repoBriefs : [],
+    sourcePolicy: corpus?.sourcePolicy || null,
+    ...(includeMarkdown ? { markdown: readTextSafe(ECOSYSTEM_CORPUS_MD_PATH) } : {}),
+  };
+}
+
+function buildEcosystemBriefingStatus({ includeExecutive = false, includeArchitecture = false } = {}) {
+  const briefing = readJsonSafe(ECOSYSTEM_BRIEFING_PATH);
+  return {
+    ok: Boolean(briefing),
+    ecosystemBriefingPath: ECOSYSTEM_BRIEFING_PATH,
+    briefing: briefing ? {
+      id: briefing.id,
+      generatedAt: briefing.generatedAt,
+      mode: briefing.mode,
+      sourceScopeId: briefing.sourceScopeId,
+      sourceCorpusId: briefing.sourceCorpusId,
+      summary: briefing.summary || null,
+      executive: briefing.executive ? {
+        title: briefing.executive.title,
+        oneLine: briefing.executive.oneLine,
+        metrics: briefing.executive.metrics,
+        layers: briefing.executive.layers,
+        nextMoves: briefing.executive.nextMoves,
+      } : null,
+      architecture: briefing.architecture ? {
+        title: briefing.architecture.title,
+        pageCount: briefing.architecture.pageCount,
+        pages: Array.isArray(briefing.architecture.pages)
+          ? briefing.architecture.pages.map((page) => ({ number: page.number, title: page.title }))
+          : [],
+      } : null,
+    } : null,
+    files: {
+      json: fileStatus(ECOSYSTEM_BRIEFING_PATH),
+      html: fileStatus(ECOSYSTEM_BRIEFING_HTML_PATH),
+      pdf: fileStatus(ECOSYSTEM_BRIEFING_PDF_PATH),
+      executiveMarkdown: fileStatus(ECOSYSTEM_EXECUTIVE_VIEW_PATH),
+      architectureMarkdown: fileStatus(ECOSYSTEM_ARCHITECTURE_VIEW_PATH),
+      a11Image: fileStatus(ECOSYSTEM_A11_IMAGE_PATH),
+      funesterieImage: fileStatus(ECOSYSTEM_FUNESTERIE_IMAGE_PATH),
+    },
+    ...(includeExecutive ? { executiveMarkdown: readTextSafe(ECOSYSTEM_EXECUTIVE_VIEW_PATH, 24_000) } : {}),
+    ...(includeArchitecture ? { architectureMarkdown: readTextSafe(ECOSYSTEM_ARCHITECTURE_VIEW_PATH, 32_000) } : {}),
   };
 }
 

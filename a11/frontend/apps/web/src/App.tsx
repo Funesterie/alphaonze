@@ -215,6 +215,7 @@ const A11_KAEN44_COMMAND_CARDS_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const FUNESTERIE_NEXUS_BOARD_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const FUNESTERIE_TEAM_SCENE_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
+const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -341,6 +342,9 @@ function getSurfaceLinks() {
       kaen44Cockpit: "/k44/cockpit",
       vivy: "/vivy/",
       vivyStudio: "/vivy/#vivy-studio",
+      agents: "/k44/cockpit#agents",
+      qflush: "/k44/cockpit#qflush",
+      nossen: "/k44/cockpit#nossen",
       kaen44Login: "/k44/login",
       kaen44Privacy: "/k44/privacy",
       kaen44Terms: "/k44/terms",
@@ -358,6 +362,9 @@ function getSurfaceLinks() {
     kaen44Cockpit: new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString(),
     vivy: VIVY_PUBLIC_APP_URL,
     vivyStudio: new URL("/vivy/#vivy-studio", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    agents: new URL("/cockpit#agents", KAEN44_PUBLIC_APP_URL).toString(),
+    qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
+    nossen: new URL("/cockpit#nossen", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
@@ -366,6 +373,19 @@ function getSurfaceLinks() {
 
 function isLoginRoute(pathname: string) {
   return /(?:^|\/)login\/?$/.test(String(pathname || "/").toLowerCase());
+}
+
+function isCockpitRoute(pathname: string) {
+  return /(?:^|\/)(?:cockpit|app|workspace)\/?$/.test(String(pathname || "/").toLowerCase());
+}
+
+function isFunesterieHomeRoute(pathname: string) {
+  const path = String(pathname || "/").toLowerCase().replace(/\/+$/, "") || "/";
+  return path === "/"
+    || path === "/home"
+    || path === "/accueil"
+    || path === "/k44"
+    || path === "/kaen44";
 }
 
 function isAuthSuccessRoute(pathname: string) {
@@ -2390,11 +2410,11 @@ function FunesterieCockpitPage({
 
 function VivyPublicPage() {
   useEffect(() => {
-    document.documentElement.classList.add("kaen-public-page-root");
-    document.body.classList.add("kaen-public-page-body");
+    document.documentElement.classList.add("vivy-public-page-root");
+    document.body.classList.add("vivy-public-page-body");
     return () => {
-      document.documentElement.classList.remove("kaen-public-page-root");
-      document.body.classList.remove("kaen-public-page-body");
+      document.documentElement.classList.remove("vivy-public-page-root");
+      document.body.classList.remove("vivy-public-page-body");
     };
   }, []);
 
@@ -2420,6 +2440,211 @@ function VivyPublicPage() {
         </div>
       </nav>
       <VivyPublicSurface />
+    </main>
+  );
+}
+
+type SurfaceLinks = ReturnType<typeof getSurfaceLinks>;
+
+const FUNESTERIE_HOME_AGENTS = [
+  {
+    id: "vivy",
+    name: "Vivy",
+    role: "Agent audio",
+    text: "Creation vocale, musique, ambiance et emotions.",
+    href: "vivy",
+    image: VIVY_POSTER_SRC,
+    tone: "pink",
+    glyph: "♪",
+  },
+  {
+    id: "a11",
+    name: "A11",
+    role: "Agent media",
+    text: "Capture, analyse et structure les flux audio et video.",
+    href: "a11",
+    image: A11_HOODED_AGENT_SRC,
+    tone: "blue",
+    glyph: "≋",
+  },
+  {
+    id: "kaen44",
+    name: "Kaen44",
+    role: "Copilote quotidien",
+    text: "Assistance, organisation, suivi et relais vers les agents.",
+    href: "kaen44",
+    image: KAEN44_AVATAR_SRC,
+    tone: "violet",
+    glyph: "K",
+  },
+  {
+    id: "qflush",
+    name: "QFlush",
+    role: "Agent booster",
+    text: "Optimisation, automatisation et acceleration des flux.",
+    href: "qflush",
+    image: null,
+    tone: "green",
+    glyph: "ϟ",
+  },
+  {
+    id: "nossen",
+    name: "Nossen",
+    role: "Univers narratif",
+    text: "Relie les agents, les projets et la memoire creative.",
+    href: "nossen",
+    image: A11_HOODED_AGENT_SRC,
+    tone: "purple",
+    glyph: "◇",
+  },
+];
+
+function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
+  if (agentHref === "vivy") return surfaceLinks.vivy;
+  if (agentHref === "a11") return surfaceLinks.a11;
+  if (agentHref === "kaen44") return surfaceLinks.cockpit;
+  if (agentHref === "qflush") return surfaceLinks.qflush;
+  if (agentHref === "nossen") return surfaceLinks.nossen;
+  if (agentHref === "cockpit") return surfaceLinks.cockpit;
+  return surfaceLinks.cockpit;
+}
+
+function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
+  const navItems = [
+    ["Accueil", "#top"],
+    ["Univers", "#univers"],
+    ["Agents", "#agents"],
+    ["Missions", "#missions"],
+    ["Technologie", "#ecosystem"],
+    ["Contact", "#contact"],
+  ];
+
+  return (
+    <main id="top" className="fun-home-shell" aria-label="Accueil Funesterie connecte">
+      <nav className="fun-home-nav" aria-label="Navigation Funesterie">
+        <a href="#top" className="fun-home-brand" aria-label="Funesterie accueil">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <span>Funesterie</span>
+        </a>
+        <div className="fun-home-nav-links">
+          {navItems.map(([label, href]) => (
+            <a key={label} href={href}>{label}</a>
+          ))}
+        </div>
+        <a className="fun-home-cockpit" href={surfaceLinks.cockpit}>
+          Acceder au cockpit
+          <span aria-hidden="true">◇</span>
+        </a>
+      </nav>
+
+      <section className="fun-home-hero" aria-label="Funesterie, ecosysteme connecte">
+        <article className="fun-home-side fun-home-side--vivy">
+          <img src={VIVY_POSTER_SRC} alt="" />
+          <div>
+            <h2>Vivy</h2>
+            <strong>Presence musicale Funesterie</strong>
+            <p>Artiste, voix et ame de Funesterie. Vivy transforme les emotions en musique et les idees en creations sonores.</p>
+            <a href={surfaceLinks.vivy}><span aria-hidden="true">♪</span> Decouvrir Vivy</a>
+          </div>
+        </article>
+
+        <div className="fun-home-core">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <p>Funesterie est un ecosysteme d'agents intelligents au service de la creation, de la comprehension et de la connexion entre les mondes, les idees et les humains.</p>
+          <div className="fun-home-actions">
+            <a href="#univers">Decouvrir l'univers <span aria-hidden="true">*</span></a>
+            <a href="#agents">Explorer les agents</a>
+          </div>
+        </div>
+
+        <article className="fun-home-side fun-home-side--a11">
+          <img src={A11_HOODED_AGENT_SRC} alt="" />
+          <div>
+            <h2>A11</h2>
+            <strong>Agent media audio & video</strong>
+            <p>Il capture, analyse et structure les flux audio et video pour les transformer en information exploitable.</p>
+            <a href={surfaceLinks.a11}><span aria-hidden="true">≋</span> Decouvrir A11</a>
+          </div>
+        </article>
+      </section>
+
+      <section id="agents" className="fun-home-agents" aria-labelledby="fun-home-agents-title">
+        <h2 id="fun-home-agents-title">Nos agents</h2>
+        <div className="fun-home-agent-grid">
+          {FUNESTERIE_HOME_AGENTS.map((agent) => (
+            <a
+              key={agent.id}
+              className={`fun-home-agent-card fun-home-agent-card--${agent.tone}`}
+              href={buildHomeAgentHref(agent.href, surfaceLinks)}
+            >
+              <span className="fun-home-agent-media" aria-hidden="true">
+                {agent.image ? <img src={agent.image} alt="" /> : <b>{agent.glyph}</b>}
+              </span>
+              <span className="fun-home-agent-copy">
+                <strong>{agent.name}</strong>
+                <small>{agent.role}</small>
+                <span>{agent.text}</span>
+              </span>
+              <i aria-hidden="true">{agent.glyph}</i>
+            </a>
+          ))}
+          <a className="fun-home-agent-card fun-home-agent-card--empty" href={surfaceLinks.agents}>
+            <span className="fun-home-agent-media" aria-hidden="true"><b>+</b></span>
+            <span className="fun-home-agent-copy">
+              <strong>Et d'autres agents...</strong>
+              <small>L'ecosysteme est vivant.</small>
+              <span>De nouveaux roles peuvent rejoindre l'equipe quand leur utilite est claire.</span>
+            </span>
+          </a>
+        </div>
+      </section>
+
+      <section id="ecosystem" className="fun-home-connected" aria-label="Ecosysteme connecte">
+        <article>
+          <h2>Un ecosysteme connecte</h2>
+          <div className="fun-home-flow" aria-label="Kaen44 vers A11, Vivy, QFlush et Nossen">
+            {["Kaen44", "A11", "Vivy", "QFlush", "Nossen"].map((name, index) => (
+              <React.Fragment key={name}>
+                <span>{name.slice(0, 1)}</span>
+                <strong>{name}</strong>
+                {index < 4 ? <i aria-hidden="true">→</i> : null}
+              </React.Fragment>
+            ))}
+          </div>
+          <p>Connectes par le coeur Funesterie pour garder une seule experience lisible, du cockpit a la scene musicale.</p>
+        </article>
+
+        <article id="missions">
+          <h2>Capacites cles</h2>
+          <ul>
+            <li>Capture & ingestion</li>
+            <li>Analyse avancee</li>
+            <li>Transcription & sous-titres</li>
+            <li>Resumes intelligents</li>
+            <li>Recherche multimodale</li>
+          </ul>
+        </article>
+
+        <article id="univers">
+          <h2>Au service de</h2>
+          <ul className="fun-home-service-list">
+            <li>Createurs</li>
+            <li>Projets</li>
+            <li>Workflows</li>
+            <li>Agents IA</li>
+            <li>Ecosysteme Funesterie</li>
+            <li>Communautes</li>
+          </ul>
+        </article>
+      </section>
+
+      <footer id="contact" className="fun-home-footer">
+        <span>Funesterie</span>
+        <span>Creer</span>
+        <span>Comprendre</span>
+        <span>Connecter</span>
+        <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
+      </footer>
     </main>
   );
 }
@@ -2458,6 +2683,10 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
     Transparence: surfaceLinks.kaen44Privacy,
   };
   const futureAgents = ["Qflush", "Aura", "RomStation"];
+
+  if (isHome) {
+    return <FunesterieConnectedHomePage surfaceLinks={surfaceLinks} />;
+  }
 
   return (
     <main className={`kaen-public-shell ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
@@ -2942,86 +3171,409 @@ function PersonaDashboard({
     return cleaned.replace(/[-_]+/g, " ").slice(0, 22);
   };
   const activeConversation = formatConversationLabel(currentConversationId);
-  const personaName = isKaen44 ? "Kaen44" : "A11";
   const metrics = [
     { label: isKaen44 ? "Dossiers" : "Fichiers", value: resourceCount || "0" },
     { label: "Activite", value: activityCount || "0" },
     { label: "Messages", value: messageCount || "0" },
   ];
-  const focus = isKaen44
-    ? ["Documents", "Factures", "Voix", "Studio"]
-    : ["Documents", "Creation", "Voix", "Suivi", "Projets"];
-  const routes = isKaen44
-    ? ["Documents", "Factures", "Voix"]
-    : ["Reponses", "Fichiers", "Creation"];
 
-  return (
-    <section
-      className={`persona-dashboard ${isKaen44 ? "persona-dashboard--kaen" : "persona-dashboard--a11"}`}
-      aria-label={`${personaName} interface`}
-    >
-      <div className="persona-dashboard__copy">
-        <div className="persona-kicker">{isKaen44 ? "Interface cliente" : "Assistant de travail"}</div>
-        <h1>{isKaen44 ? "Que veux-tu faire ?" : "A11 garde le fil."}</h1>
-        <p>
-          {isKaen44
-            ? "Message, fichier, facture ou voix."
-            : "Un espace simple pour poser une demande, joindre des fichiers, creer des contenus et retrouver ce qui a deja ete fait sans etre noye dans les details internes."}
-        </p>
-        <div className="persona-actions" aria-label={`Actions ${personaName}`}>
-          <button type="button" className="persona-action persona-action--primary" onClick={onStartChat}>
-            {isKaen44 ? "Message" : "Chat"}
-          </button>
-          <button type="button" className="persona-action" onClick={isKaen44 ? onOpenAdmin : onOpenInspector}>
-            {isKaen44 ? "Services" : "Fichiers"}
-          </button>
-          <button type="button" className="persona-action" onClick={onOpenStudio}>
-            Studio
-          </button>
-        </div>
-      </div>
+  if (!isKaen44) {
+    const a11Modules = [
+      ["Capture", "Audio, video, ecran, camera et flux reseau."],
+      ["Analyse", "ASR, detection, reconnaissance et contexte."],
+      ["Traitement", "Nettoyage, decoupe, normalisation et enrichissement."],
+      ["Memoire", "Indexation Neo4j, tags, relations et decisions."],
+      ["Generation", "Synthese, resumes, visuels, clips et chapitres."],
+      ["Export", "Formats multiples, packages et partage controle."],
+      ["Integration", "MCP, hooks, workflows et agents IA."],
+      ["Diffusion", "Publication, API, streaming et suivi."],
+    ];
+    const capabilities = [
+      "Capture multi-sources",
+      "Analyse audio avancee",
+      "Analyse video & detection",
+      "Transcription & sous-titres",
+      "Extraction de metadonnees",
+      "Recherche multimodale",
+    ];
+    const stack = ["Whisper", "FFmpeg", "OpenCV", "PyTorch", "Neo4j", "Docker"];
+    const ecosystem = ["Kaen44", "A11", "Vivy", "QFlush", "Nossen"];
 
-      <div className="persona-dashboard__visual" aria-hidden="true">
-        {isKaen44 ? (
-          <div className="kaen-console-visual">
-            <div className="kaen-console-portrait">
-              <img src={KAEN44_AVATAR_SRC} alt="" />
+    return (
+      <section className="a11-media-dashboard" aria-label="A11 agent media audio et video">
+        <div className="a11-media-hero">
+          <div className="a11-media-copy">
+            <div className="a11-media-mark" aria-hidden="true">A</div>
+            <div>
+              <p className="a11-media-label">A11</p>
+              <h1>Agent media audio & video</h1>
+              <p className="a11-media-mantra">Capturer. Traiter. Comprendre. Creer. Partager.</p>
             </div>
-            <div className="kaen-console-stack">
-              {focus.map((item, index) => (
-                <span key={item} style={{ ["--delay" as any]: `${index * 90}ms` }}>
-                  {item}
-                </span>
+          </div>
+          <div className="a11-media-portrait" aria-hidden="true">
+            <img src={A11_HOODED_AGENT_SRC} alt="" />
+          </div>
+          <blockquote>
+            Je transforme le bruit du monde en information, et l'information en creation.
+            <cite>A11</cite>
+          </blockquote>
+        </div>
+
+        <div className="a11-media-panel a11-media-panel--role">
+          <h2>Role principal</h2>
+          <p>
+            A11 capture, analyse et structure les flux audio et video. Il extrait le sens,
+            genere des metadonnees et prepare des contenus prets a etre utilises par
+            l'ecosysteme Funesterie.
+          </p>
+        </div>
+
+        <div className="a11-media-panel a11-media-panel--capabilities">
+          <h2>Capacites cles</h2>
+          <ul>
+            {capabilities.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+
+        <div className="a11-media-modules" aria-label="Modules principaux A11">
+          {a11Modules.map(([title, text]) => (
+            <button
+              key={title}
+              type="button"
+              className="a11-media-module"
+              onClick={title === "Capture" || title === "Traitement" ? onOpenInspector : onOpenStudio}
+            >
+              <span aria-hidden="true">{title.slice(0, 3).toUpperCase()}</span>
+              <strong>{title}</strong>
+              <small>{text}</small>
+            </button>
+          ))}
+        </div>
+
+        <div className="a11-media-lower">
+          <article>
+            <h2>Integration ecosysteme</h2>
+            <div className="a11-media-flow" aria-label="Flux Kaen44 A11 Vivy QFlush Nossen">
+              {ecosystem.map((name, index) => (
+                <React.Fragment key={name}>
+                  <span>{name}</span>
+                  {index < ecosystem.length - 1 ? <i aria-hidden="true">-&gt;</i> : null}
+                </React.Fragment>
               ))}
             </div>
-          </div>
-        ) : (
-          <div className="a11-network-visual">
-            {routes.map((route, index) => (
-              <div key={route} className={`a11-network-node a11-network-node--${index + 1}`}>
-                <span />
-                {route}
-              </div>
-            ))}
-            <div className="a11-network-core">
-              <img src={A11_AVATAR_IDLE_SRC} alt="" />
+            <p>Connecte a tous les agents via MCP, Runtime Hooks et Neo4j.</p>
+          </article>
+          <article>
+            <h2>Stack technique</h2>
+            <div className="a11-media-stack">
+              {stack.map((item) => <span key={item}>{item}</span>)}
             </div>
-          </div>
-        )}
+          </article>
+          <article>
+            <h2>Session</h2>
+            <div className="persona-metrics a11-media-metrics" aria-label="Etat A11">
+              {metrics.map((metric) => (
+                <div key={metric.label} className="persona-metric">
+                  <span>{metric.label}</span>
+                  <strong>{metric.value}</strong>
+                </div>
+              ))}
+              <div className="persona-metric persona-metric--wide">
+                <span>{displayName}</span>
+                <strong>{activeConversation}</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    );
+  }
+
+  const k44Modules = [
+    ["A11 Core", "online"],
+    ["Chopper", "online"],
+    ["Mixer", "online"],
+    ["MCP Gateway", "online"],
+    ["Neo4j Memory", "online"],
+    ["Worker Net", "online"],
+    ["QFlush", "ready"],
+    ["Vivy", "standby"],
+  ];
+  const k44Agents = [
+    ["Kaen44", "active"],
+    ["A11", "ready"],
+    ["Vivy", "standby"],
+    ["QFlush", "ready"],
+    ["Nossen", "ready"],
+  ];
+  const k44Tasks = [
+    ["Analyse Funesterie MCP", "78%"],
+    ["Optimisation memoire Neo4j", "56%"],
+    ["Routing agents actifs", "92%"],
+    ["Rapport quotidien", "34%"],
+  ];
+  const k44Feed = [
+    ["OK", "Connexion MCP Gateway stable"],
+    ["OK", "Memoire Neo4j synchronisee"],
+    ["INFO", "7 agents operationnels"],
+    ["OK", "Mode standard actif"],
+  ];
+  const k44QuickActions = [
+    ["Nouvelle tache", onStartChat],
+    ["Recherche", onOpenInspector],
+    ["Memoire", onOpenAdmin],
+    ["Rapport", onOpenStudio],
+    ["Terminal", onOpenAdmin],
+    ["Parametres", onOpenAdmin],
+  ];
+  const k44Connections = [
+    ["MCP Servers", "securise"],
+    ["Cloud Link", "actif"],
+    ["Local Network", "connecte"],
+    ["K44 Vault", "securise"],
+  ];
+  const k44Security = [
+    ["Firewall", "actif"],
+    ["Encryption", "AES-256"],
+    ["Authentication", "device"],
+    ["Session", "securisee"],
+  ];
+  const k44Controls = [
+    ["Analyser", onOpenInspector],
+    ["Comprendre", onStartChat],
+    ["Anticiper", onOpenStudio],
+    ["Executer", onOpenAdmin],
+    ["Securiser", onOpenAdmin],
+    ["Optimiser", onOpenStudio],
+  ];
+
+  return (
+    <section className="k44-cockpit-dashboard" aria-label="K44 cockpit">
+      <header className="k44-cockpit-header">
+        <div className="k44-session">
+          <span>Session active</span>
+          <strong>ID : K44-{activeConversation}</strong>
+        </div>
+        <div className="k44-title">
+          <h1>K44 Cockpit</h1>
+          <p>Kaen44 - Copilote A11 - Funesterie Ecosystem</p>
+        </div>
+        <button type="button" className="k44-plus" onClick={onOpenStudio} aria-label="Ouvrir le studio">
+          +
+        </button>
+      </header>
+
+      <div className="k44-cockpit-grid">
+        <aside className="k44-side k44-side--left" aria-label="Modules et statut Kaen44">
+          <article className="k44-panel">
+            <div className="k44-panel-title">
+              <h2>K44 Modules</h2>
+              <span aria-hidden="true">x</span>
+            </div>
+            <div className="k44-list">
+              {k44Modules.map(([name, status]) => (
+                <div key={name} className="k44-row">
+                  <i aria-hidden="true">{name.slice(0, 1)}</i>
+                  <span>{name}</span>
+                  <strong>{status}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="k44-panel">
+            <div className="k44-panel-title">
+              <h2>Agent Status</h2>
+              <span aria-hidden="true">x</span>
+            </div>
+            <div className="k44-list">
+              {k44Agents.map(([name, status]) => (
+                <div key={name} className="k44-row k44-row--agent">
+                  <img src={KAEN44_AVATAR_SRC} alt="" />
+                  <span>{name}</span>
+                  <strong>{status}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="k44-panel k44-health-panel">
+            <div className="k44-panel-title">
+              <h2>System Health</h2>
+              <span aria-hidden="true">x</span>
+            </div>
+            <div className="k44-health-core">
+              <div className="k44-health-ring"><strong>97%</strong><span>optimal</span></div>
+              <div className="k44-health-bars">
+                {["CPU 42%", "MEM 66%", "NET 23%", "DISK 51%"].map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
+          </article>
+        </aside>
+
+        <main className="k44-core" aria-label="Poste central Kaen44">
+          <section className="k44-identity-panel">
+            <div className="k44-identity-copy">
+              <div className="k44-monogram">K</div>
+              <p>Kaen44</p>
+              <h2>Votre copilote au quotidien</h2>
+              <blockquote>
+                "Je simplifie."<br />
+                "J'anticipe."<br />
+                "Je securise."
+              </blockquote>
+            </div>
+            <div className="k44-portrait-frame" aria-hidden="true">
+              <img src={KAEN44_AVATAR_SRC} alt="" />
+            </div>
+            <div className="k44-auth-panel">
+              <span>Copilote A11</span>
+              <strong>Tier 4</strong>
+              <span>Mode operationnel</span>
+              <strong>Standard</strong>
+              <span>Personnalite</span>
+              <strong>Adaptative</strong>
+              <span>Fiabilite</span>
+              <strong>99.7%</strong>
+            </div>
+          </section>
+
+          <section className="k44-command-deck" aria-label="Commandes principales Kaen44">
+            <div className="k44-command-column">
+              {k44Controls.slice(0, 3).map(([label, action]) => (
+                <button key={label} type="button" onClick={action}>
+                  <span aria-hidden="true">K</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="k44-orb" onClick={onStartChat} aria-label="Demander a Kaen44">
+              <span>K</span>
+            </button>
+            <div className="k44-command-column">
+              {k44Controls.slice(3).map(([label, action]) => (
+                <button key={label} type="button" onClick={action}>
+                  {label}
+                  <span aria-hidden="true">K</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="k44-bottom-grid">
+            <article className="k44-panel">
+              <div className="k44-panel-title">
+                <h2>Taches actives</h2>
+                <span aria-hidden="true">x</span>
+              </div>
+              <div className="k44-tasks">
+                {k44Tasks.map(([label, progress], index) => (
+                  <div key={label} className="k44-task">
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <strong>{label}</strong>
+                    <em>{progress}</em>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="k44-panel">
+              <div className="k44-panel-title">
+                <h2>Feed systeme</h2>
+                <span aria-hidden="true">x</span>
+              </div>
+              <div className="k44-feed">
+                {k44Feed.map(([level, text]) => (
+                  <p key={text}><strong>[{level}]</strong> {text}</p>
+                ))}
+              </div>
+            </article>
+
+            <article className="k44-panel k44-resource-panel">
+              <div className="k44-panel-title">
+                <h2>Ressources</h2>
+                <span aria-hidden="true">x</span>
+              </div>
+              <div className="k44-resource-circles">
+                {metrics.map((metric) => (
+                  <div key={metric.label}>
+                    <strong>{metric.value}</strong>
+                    <span>{metric.label}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+        </main>
+
+        <aside className="k44-side k44-side--right" aria-label="Actions rapides et securite Kaen44">
+          <article className="k44-panel">
+            <div className="k44-panel-title">
+              <h2>Notifications</h2>
+              <span>7</span>
+            </div>
+            <div className="k44-feed k44-feed--right">
+              {["MCP Gateway synchronise", "Neo4j memoire optimisee", "Chopper queue : 3 taches", "A11 a termine une analyse"].map((item) => (
+                <p key={item}>{item}<time>00:15</time></p>
+              ))}
+            </div>
+          </article>
+
+          <article className="k44-panel">
+            <div className="k44-panel-title">
+              <h2>Acces rapide</h2>
+              <span aria-hidden="true">x</span>
+            </div>
+            <div className="k44-quick-grid">
+              {k44QuickActions.map(([label, action]) => (
+                <button key={label} type="button" onClick={action}>
+                  <span aria-hidden="true">{label.slice(0, 2).toUpperCase()}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <article className="k44-panel">
+            <div className="k44-panel-title">
+              <h2>Connexions</h2>
+              <span aria-hidden="true">x</span>
+            </div>
+            <div className="k44-list">
+              {k44Connections.map(([label, status]) => (
+                <div key={label} className="k44-row k44-row--compact">
+                  <span>{label}</span>
+                  <strong>{status}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="k44-panel">
+            <div className="k44-panel-title">
+              <h2>Securite</h2>
+              <span aria-hidden="true">K</span>
+            </div>
+            <div className="k44-list">
+              {k44Security.map(([label, status]) => (
+                <div key={label} className="k44-row k44-row--compact">
+                  <span>{label}</span>
+                  <strong>{status}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+        </aside>
       </div>
 
-      <div className="persona-metrics" aria-label={`Etat ${personaName}`}>
-        {metrics.map((metric) => (
-          <div key={metric.label} className="persona-metric">
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-          </div>
-        ))}
-        <div className="persona-metric persona-metric--wide">
-          <span>{displayName}</span>
-          <strong>{activeConversation}</strong>
-        </div>
-      </div>
+      <footer className="k44-console-strip" aria-label="Mode Kaen44">
+        <button type="button" onClick={onStartChat}>Mode standard</button>
+        <button type="button" onClick={onOpenInspector}>Focus equilibre</button>
+        <button type="button" onClick={onOpenStudio}>Voice activee</button>
+        <button type="button" onClick={onOpenAdmin}>Copilote Kaen44</button>
+      </footer>
     </section>
   );
 }
@@ -3139,7 +3691,8 @@ export function App() {
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
           if (isAuthSuccessRoute(pathname)) {
-            window.history.replaceState({}, "", pathname.includes("/cockpit/") ? "/cockpit" : buildSurfacePath(getCurrentSurfaceKind(), "/"));
+            const surface = getCurrentSurfaceKind();
+            window.history.replaceState({}, "", buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
           }
         })
         .catch(() => {
@@ -3156,14 +3709,16 @@ export function App() {
       if (consumeOAuthTokenFromLocation()) {
         setIsAuthenticated(true);
         setDisplayName(getAuthDisplayName() || "Utilisateur");
-        window.history.replaceState({}, "", pathname.includes("/cockpit/") ? "/cockpit" : buildSurfacePath(getCurrentSurfaceKind(), "/"));
+        const surface = getCurrentSurfaceKind();
+        window.history.replaceState({}, "", buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
         return;
       }
       refreshCookieSession();
       return;
     }
 
-    if (isLocalDevSurface() && !isLoginRoute(pathname) && !isVivyExperience()) {
+    const localPublicPreview = new URLSearchParams(window.location.search || "").get("public") === "1";
+    if (isLocalDevSurface() && !localPublicPreview && !isLoginRoute(pathname) && !isVivyExperience()) {
       activateLocalDevSession(() => {
         setIsAuthenticated(true);
         setDisplayName("Djeff local");
@@ -3570,7 +4125,7 @@ export function App() {
     const hasConversationContent = messages.some((message) => (
       message.role !== "system" && String(message.content || "").trim().length > 0
     ));
-    if (isCompactLayout && !hasConversationContent && !sending && !imageJobActive) {
+    if (!hasConversationContent && !sending && !imageJobActive) {
       const frame = chatScrollFrameRef.current;
       if (frame) frame.scrollTop = 0;
       return;
@@ -5058,7 +5613,12 @@ export function App() {
   if (!isAuthenticated) {
     const pathname = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/";
     const search = typeof window !== "undefined" ? window.location.search.toLowerCase() : "";
-    const forceLoginPanel = isLoginRoute(pathname) || search.includes("error=") || search.includes("show=1") || search.includes("login=1");
+    const forceLoginPanel = isLoginRoute(pathname)
+      || isCockpitRoute(pathname)
+      || search.includes("error=")
+      || search.includes("show=1")
+      || search.includes("login=1")
+      || search.includes("cockpit=1");
     if (isKaen44 && !forceLoginPanel && !isAuthSuccessRoute(pathname)) {
       const publicPage = pathname.includes("/privacy") ? "privacy"
         : pathname.includes("/terms") ? "terms"
@@ -5067,6 +5627,20 @@ export function App() {
       return <Kaen44PublicPage page={publicPage} />;
     }
     return <LoginPanel onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  if (isKaen44 && typeof window !== "undefined") {
+    const pathname = window.location.pathname.toLowerCase();
+    const search = window.location.search.toLowerCase();
+    const wantsApp = isCockpitRoute(pathname)
+      || isLoginRoute(pathname)
+      || isAuthSuccessRoute(pathname)
+      || search.includes("app=1")
+      || search.includes("cockpit=1")
+      || search.includes("show=1");
+    if (!wantsApp && isFunesterieHomeRoute(pathname)) {
+      return <Kaen44PublicPage page="home" />;
+    }
   }
 
   const userDisplayName = String(displayName || "").trim() || "Utilisateur";
@@ -5244,7 +5818,7 @@ export function App() {
           <div style={{ minWidth: 0 }}>
             <div style={a11TitleStyle}>{isKaen44 ? "Kaen44" : "A11"}</div>
             {!isCompactLayout ? (
-              <div style={{ fontSize: 12, color: isKaen44 ? "#e7c8a2" : "#8bd9d0" }}>{isKaen44 ? "Copilote au quotidien" : "Documents, voix, creation"}</div>
+              <div style={{ fontSize: 12, color: isKaen44 ? "#e7c8a2" : "#8bd9d0" }}>{isKaen44 ? "Copilote au quotidien" : "Agent media audio & video"}</div>
             ) : null}
           </div>
         </div>

@@ -34,6 +34,37 @@ function normalizeList(values = []) {
   )];
 }
 
+const CANONICAL_PROMPT_FRAGMENT_FIXUPS = [
+  [/\bportrait homme\b/gi, 'male portrait'],
+  [/\bportrait propre\b/gi, 'clean portrait'],
+  [/\bfond simple\b/gi, 'simple background'],
+  [/\bhaute qualit[^\s,.;:]*/gi, 'high quality'],
+  [/\bd[eÃé]cor sombre\b/gi, 'dark setting'],
+  [/\bd[eÃé]cor urbain inspire de Harlem\b/gi, 'Harlem-inspired urban environment'],
+  [/\bcostume joker elegant mais chaotique\b/gi, 'elegant but chaotic Joker-themed suit'],
+  [/\bmaquillage de clown inquietant mais credible\b/gi, 'unsettling but believable clown makeup'],
+  [/\bla batte custom doit etre bien visible\b/gi, 'the custom bat must be clearly visible'],
+  [/\ble d[eÃƒÃ©]cor doit rester secondaire mais immersif\b/gi, 'the background stays secondary but immersive'],
+  [/\brue brute avec graffitis(?: et immeubles uses)?\b/gi, 'raw street with graffiti and worn buildings'],
+  [/\bpersonnage entier visible\b/gi, 'full body visible'],
+  [/\bbatte custom clairement visible\b/gi, 'custom bat clearly visible'],
+  [/\bcomposition propre(?: et puissante)?\b/gi, 'clean composition'],
+  [/\blumiere dramatique\b/gi, 'dramatic lighting'],
+  [/\breflets de neons violets et verts\b/gi, 'purple and green neon reflections'],
+  [/\bcinematographique\b/gi, 'cinematic'],
+  [/\billustration nette\b/gi, 'clear illustration'],
+  [/\bherisson\b/gi, 'hedgehog'],
+  [/\blapin\b/gi, 'rabbit'],
+];
+
+function normalizeCanonicalPromptFragmentText(value = '') {
+  let next = normalizeText(value);
+  for (const [pattern, replacement] of CANONICAL_PROMPT_FRAGMENT_FIXUPS) {
+    next = next.replace(pattern, replacement);
+  }
+  return normalizeText(next);
+}
+
 function normalizeAtomicNegativeHintList(values = []) {
   const results = [];
   const seen = new Set();
@@ -97,14 +128,17 @@ function sanitizeReferenceLateralityPhrasing(value = '') {
 }
 
 function normalizeCanonicalAssemblyFragment(value = '') {
-  const text = sanitizeReferenceLateralityPhrasing(value)
+  const text = normalizeCanonicalPromptFragmentText(sanitizeReferenceLateralityPhrasing(value))
     .replace(/[.。]+$/g, '');
   if (!text) return '';
 
   if (/^(?:a\s+)?single subject$/i.test(text)) {
     return 'single clearly visible main subject';
   }
-  if (/^(?:single main subject|single clearly visible main subject|single well-framed subject|single well framed subject)$/i.test(text)) {
+  if (/^single main subject$/i.test(text)) {
+    return 'single main subject';
+  }
+  if (/^(?:single clearly visible main subject|single well-framed subject|single well framed subject)$/i.test(text)) {
     return 'single clearly visible main subject';
   }
   if (/^(?:no text|without readable text|no readable text)$/i.test(text)) {
@@ -142,8 +176,11 @@ function resolveCanonicalAssemblySemanticKey(value = '') {
   const lookup = normalizeLookup(normalizeCanonicalAssemblyFragment(value));
   if (!lookup) return '';
 
-  if (/\bkeep exactly the same face\b|\bsame face\b|\bexact same face\b|\bsame facial structure\b|\bfacial structure\b/.test(lookup)) {
+  if (/\bkeep exactly the same face\b|\bsame face\b|\bexact same face\b/.test(lookup)) {
     return 'identity_exact_face';
+  }
+  if (/\brecognizable face\b/.test(lookup) && /\bfacial structure\b/.test(lookup)) {
+    return 'identity_recognizable_structure';
   }
   if (/\bkeep the same eyes\b/.test(lookup) && /\bjawline\b/.test(lookup) && /\bsmile\b/.test(lookup)) {
     return 'identity_face_features';
@@ -1060,6 +1097,8 @@ function buildCanonicalEnglishDirectives(mask = {}, canonicalizedState = null) {
     directives.push('exactly two distinct readable subjects');
   } else if (scenePolicy.subjectMode === 'group') {
     directives.push('clear readable multi-subject composition');
+  } else if (scenePolicy.subjectMode === 'single') {
+    directives.push('single clearly visible main subject');
   }
   // Ne plus injecter "single clearly visible main subject" par défaut —
   // le LLM canonicalizer l'ajoute dans promptInstructions si nécessaire.
@@ -1203,10 +1242,11 @@ function buildPrimaryReferenceAnchorHints(mask = {}, language = 'en') {
 
 function buildCanonicalEnglishPromptInstructions(mask = {}, canonicalizedState = null) {
   return normalizeList([
-    ...(isReferenceHumanFigure(mask) ? buildReferenceHumanIdentityLockHints('en') : []),
-    ...buildPrimaryReferenceAnchorHints(mask, 'en'),
+    sanitizePositivePromptHint(mask?.meta?.subjectProfile?.promptInstruction || ''),
     ...(Array.isArray(mask?.meta?.promptInstructions) ? mask.meta.promptInstructions : []),
     ...(canonicalizedState?.structuredFields?.constraints?.promptInstructions || []),
+    ...(isReferenceHumanFigure(mask) ? buildReferenceHumanIdentityLockHints('en') : []),
+    ...buildPrimaryReferenceAnchorHints(mask, 'en'),
   ]).filter((entry) => looksCanonicalEnglishLiteral(entry));
 }
 

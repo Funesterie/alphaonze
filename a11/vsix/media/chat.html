@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{CSP_SOURCE}}; script-src 'nonce-{{NONCE}}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{STYLES_URI}}">
+  <title>A11 Chat</title>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>A11</h1>
+        <p id="status">Connexion au serveur...</p>
+      </div>
+      <div class="actions">
+        <button id="newConversation" type="button" title="Nouvelle conversation">+</button>
+        <button id="login" type="button">Login</button>
+        <button id="settings" type="button" title="Parametres">...</button>
+      </div>
+    </header>
+
+    <section id="messages" class="messages" aria-live="polite">
+      <article class="message assistant">
+        <div class="role">A11</div>
+        <p>Dis-moi ce que tu veux creer, comprendre ou corriger dans ce workspace.</p>
+      </article>
+    </section>
+
+    <form id="composer" class="composer">
+      <textarea id="prompt" rows="3" placeholder="Parler a A11..." autocomplete="off"></textarea>
+      <button id="send" type="submit">Envoyer</button>
+    </form>
+  </main>
+
+  <script nonce="{{NONCE}}">
+    const vscode = acquireVsCodeApi();
+    const messages = document.getElementById('messages');
+    const statusEl = document.getElementById('status');
+    const promptEl = document.getElementById('prompt');
+    const composer = document.getElementById('composer');
+    const loginButton = document.getElementById('login');
+    const newButton = document.getElementById('newConversation');
+    const settingsButton = document.getElementById('settings');
+
+    const streamNodes = new Map();
+    let isAuthenticated = false;
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function appendMessage(role, content) {
+      const article = document.createElement('article');
+      article.className = `message ${role}`;
+      article.innerHTML = `<div class="role">${role === 'user' ? 'Vous' : 'A11'}</div><p>${escapeHtml(content).replace(/\n/g, '<br>')}</p>`;
+      messages.appendChild(article);
+      messages.scrollTop = messages.scrollHeight;
+      return article.querySelector('p');
+    }
+
+    function updateStatus(data) {
+      isAuthenticated = !!data.isAuthenticated;
+      if (isAuthenticated && data.user) {
+        statusEl.textContent = `${data.user.email} - ${data.model || 'modele par defaut'}`;
+        loginButton.textContent = 'Logout';
+        return;
+      }
+      const remaining = typeof data.trialRemaining === 'number' ? data.trialRemaining : 0;
+      statusEl.textContent = `Essai gratuit - ${remaining} requetes restantes`;
+      loginButton.textContent = 'Login';
+    }
+
+    composer.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const text = promptEl.value.trim();
+      if (!text) return;
+      appendMessage('user', text);
+      promptEl.value = '';
+      vscode.postMessage({ type: 'sendMessage', text });
+    });
+
+    promptEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        composer.requestSubmit();
+      }
+    });
+
+    loginButton.addEventListener('click', () => {
+      vscode.postMessage({ type: isAuthenticated ? 'logout' : 'login' });
+    });
+
+    newButton.addEventListener('click', () => {
+      messages.innerHTML = '';
+      appendMessage('assistant', 'Nouvelle conversation ouverte.');
+      vscode.postMessage({ type: 'newConversation' });
+    });
+
+    settingsButton.addEventListener('click', () => {
+      vscode.postMessage({ type: 'openSettings' });
+    });
+
+    window.addEventListener('message', (event) => {
+      const message = event.data || {};
+      if (message.type === 'init') {
+        updateStatus(message);
+      }
+      if (message.type === 'typing') {
+        statusEl.classList.toggle('muted', !!message.show);
+      }
+      if (message.type === 'streamStart') {
+        const node = appendMessage('assistant', '');
+        streamNodes.set(message.messageId, node);
+      }
+      if (message.type === 'streamChunk') {
+        const node = streamNodes.get(message.messageId);
+        if (node) {
+          node.innerHTML += escapeHtml(message.delta).replace(/\n/g, '<br>');
+          messages.scrollTop = messages.scrollHeight;
+        }
+      }
+      if (message.type === 'streamEnd') {
+        streamNodes.delete(message.messageId);
+      }
+      if (message.type === 'error') {
+        appendMessage('assistant', `Erreur: ${message.message || 'requete impossible'}`);
+        streamNodes.delete(message.messageId);
+      }
+      if (message.type === 'trialExhausted') {
+        appendMessage('assistant', message.message || 'Essai gratuit epuise.');
+      }
+      if (message.type === 'trialUpdate') {
+        statusEl.textContent = `Essai gratuit - ${message.remaining} requetes restantes`;
+      }
+      if (message.type === 'injectMessage' && message.text) {
+        promptEl.value = message.text;
+      }
+      if (message.type === 'newConversation') {
+        streamNodes.clear();
+      }
+    });
+
+    vscode.postMessage({ type: 'ready' });
+  </script>
+</body>
+</html>

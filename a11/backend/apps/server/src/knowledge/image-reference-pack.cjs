@@ -258,7 +258,7 @@ function shouldRejectReferenceResult(entry = {}, options = {}) {
 
   const selectionScore = Number(entry?.selectionScore || 0) || 0;
   if (selectionScore > 0) {
-    const minimumScore = role === 'subject' ? 12 : 6;
+    const minimumScore = role === 'subject' && options?.strictSubject ? 12 : 6;
     if (selectionScore < minimumScore) return true;
   }
 

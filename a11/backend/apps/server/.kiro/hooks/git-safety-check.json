@@ -1,0 +1,13 @@
+{
+  "name": "Git Safety Check",
+  "version": "1.0.0",
+  "description": "Avant toute commande git, vérifie qu'on ne push pas sur main et qu'on n'expose pas de secrets",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": ["shell"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Si la commande contient 'git push', 'git commit', ou 'git add', vérifie : 1) On ne push pas directement sur main/master 2) Les fichiers stagés ne contiennent pas de .env ou secrets 3) Pas de --force sans confirmation explicite. Si ce n'est pas une commande git, ignore ce hook et procède normalement."
+  }
+}

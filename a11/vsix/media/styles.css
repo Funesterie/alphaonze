@@ -1,0 +1,126 @@
+:root {
+  color-scheme: dark;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--vscode-sideBar-background);
+  color: var(--vscode-sideBar-foreground);
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid var(--vscode-sideBar-border);
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.topbar p {
+  margin: 4px 0 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.topbar p.muted {
+  color: var(--vscode-progressBar-background);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+button {
+  min-height: 28px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.messages {
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.message {
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--vscode-sideBar-border);
+  border-radius: 6px;
+  background: var(--vscode-editor-background);
+}
+
+.message.user {
+  border-color: var(--vscode-focusBorder);
+}
+
+.role {
+  margin-bottom: 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.message p {
+  margin: 0;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--vscode-sideBar-border);
+  background: var(--vscode-sideBar-background);
+}
+
+textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  padding: 8px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+}
+
+textarea:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}

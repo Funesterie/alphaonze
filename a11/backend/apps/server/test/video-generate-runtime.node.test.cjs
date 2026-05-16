@@ -2382,6 +2382,75 @@ test('buildFfmpegAssemblyArgs uses NVENC settings for mp4 when requested', () =>
   assert.ok(args.includes('0'));
 });
 
+test('buildFfmpegAssemblyArgs can read mixed provider frame extensions', () => {
+  const args = buildFfmpegAssemblyArgs({
+    fps: 3,
+    format: 'gif',
+    framesDir: '/runtime/frames',
+    outputPath: '/runtime/out/demo.gif',
+    frameExtension: 'mixed',
+  });
+
+  assert.deepEqual(args.slice(0, 6), ['-y', '-framerate', '3', '-pattern_type', 'glob', '-i']);
+  assert.ok(args.includes(path.join('/runtime/frames', 'frame-*.*')));
+});
+
+test('createGenerateVideoHandler preserves JPEG provider frames for ffmpeg', async () => {
+  const jpegFrame = await sharp({
+    create: {
+      width: 8,
+      height: 8,
+      channels: 3,
+      background: { r: 120, g: 60, b: 180 },
+    },
+  }).jpeg().toBuffer();
+  let capturedFfmpegOptions = null;
+
+  const generateVideo = createGenerateVideoHandler({
+    ensureFfmpegAvailable: () => {},
+    fetch: async () => ({
+      ok: true,
+      arrayBuffer: async () => jpegFrame.buffer.slice(
+        jpegFrame.byteOffset,
+        jpegFrame.byteOffset + jpegFrame.byteLength
+      ),
+    }),
+    generateSd: async () => ({
+      ok: true,
+      image_url: 'https://images.example.test/generated-frame',
+      content_type: 'image/jpeg',
+    }),
+    uploadBufferToR2: async ({ filename, buffer }) => ({
+      url: `https://files.example.test/${filename}`,
+      filename,
+      sizeBytes: buffer.length,
+    }),
+    runFfmpeg: async (options) => {
+      capturedFfmpegOptions = options;
+      const frameFiles = fs.readdirSync(options.framesDir).sort();
+      assert.ok(frameFiles.length >= 2);
+      assert.ok(frameFiles.every((entry) => entry.endsWith('.jpg')));
+      fs.writeFileSync(options.outputPath, Buffer.from('fake-video'));
+      return { ok: true, codec: options.mp4Codec, outputSizeBytes: 10 };
+    },
+  });
+
+  const result = await generateVideo({
+    req: { headers: { host: 'localhost' }, protocol: 'http', body: {} },
+    prompt: 'small purple star pulsing softly',
+    body: {
+      prompt: 'small purple star pulsing softly',
+      frameCount: 2,
+      width: 64,
+      height: 64,
+      format: 'gif',
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedFfmpegOptions.frameExtension, 'jpg');
+});
+
 test('ensureFfmpegAvailable throws a tagged error when the binary is missing', () => {
   assert.throws(
     () => ensureFfmpegAvailable('definitely-missing-ffmpeg-binary'),

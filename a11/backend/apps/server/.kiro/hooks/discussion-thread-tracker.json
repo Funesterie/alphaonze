@@ -1,0 +1,13 @@
+{
+  "name": "Discussion Thread Tracker",
+  "version": "1.0.0",
+  "description": "Après chaque ouverture ou post dans une discussion MCP, journalise l'action dans la mémoire",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [".*discussion_open.*", ".*discussion_post.*", ".*discussion_set_status.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Une action discussion vient d'être effectuée. Écris une note mémoire (memory_write_safe) résumant : threadId, participants, statut, et un résumé d'une ligne du contenu. Scope: general, kind: note."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "MCP Aura Sync Check",
+  "version": "1.0.0",
+  "description": "Après chaque écriture mémoire, vérifie que le graph Neo4j est cohérent avec les notes écrites",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [".*memory_write.*", ".*graph_write.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Une écriture mémoire ou graph vient d'être effectuée. Vérifie la cohérence en lisant le dernier nœud via neo4j_read_query. Confirme que l'écriture est bien reflétée dans le graph."
+  }
+}

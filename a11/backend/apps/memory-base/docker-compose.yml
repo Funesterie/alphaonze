@@ -1,0 +1,24 @@
+services:
+  a11-memory-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: a11-memory-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${A11_MEMORY_DB:-a11_memory}
+      POSTGRES_USER: ${A11_MEMORY_USER:-a11}
+      POSTGRES_PASSWORD: ${A11_MEMORY_PASSWORD:-a11_memory_local_change_me}
+    ports:
+      - "127.0.0.1:${A11_MEMORY_PORT:-5437}:5432"
+    volumes:
+      - a11-memory-postgres:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${A11_MEMORY_USER:-a11} -d ${A11_MEMORY_DB:-a11_memory}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  a11-memory-postgres:
+    driver: local
