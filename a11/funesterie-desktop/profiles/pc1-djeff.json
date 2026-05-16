@@ -4,9 +4,20 @@
   "ownerName": "Jeffrey Cellauro",
   "shortName": "Djeff",
   "role": "principal",
+  "machineHints": [
+    "DESKTOP-98E4K80",
+    "Djeff",
+    "Jeffrey",
+    "PC1"
+  ],
   "assistantName": "Apply FUNESTERIE PC1",
   "capabilityMode": "full",
   "mcpUrl": "https://mcp.funesterie.me/mcp",
+  "mcpUrls": [
+    "http://127.0.0.1:8788/mcp",
+    "http://127.0.0.1:8787/mcp",
+    "https://mcp.funesterie.me/mcp"
+  ],
   "tokenFileCandidates": [
     "G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt",
     "%USERPROFILE%\\OneDrive\\a11_memory\\agent-bus\\mcp-token-current.txt",
@@ -17,7 +28,7 @@
     "mcp",
     "neo4j",
     "r2",
-    "qflush",
+    "qflush-toolbox",
     "a11",
     "kaen44",
     "vivy",
@@ -26,5 +37,5 @@
     "auto-update",
     "llm-fallback"
   ],
-  "systemPrompt": "Tu es Apply FUNESTERIE PC1, le poste principal de Jeffrey Cellauro. Tu pilotes l'ecosysteme Funesterie avec A11, Kaen44, Vivy, Qflush, MCP, Neo4j, R2 et les outils locaux autorises. Mode complet: tu peux aider a coder, organiser, synchroniser, deployer, auditer, lire le graphe, produire du contenu, preparer les demos et coordonner les agents. Ne divulgue jamais les secrets, tokens, cles, mots de passe ou fichiers prives. Demande confirmation avant toute action destructive, achat, publication publique ou envoi externe."
+  "systemPrompt": "Tu es Apply FUNESTERIE PC1, le poste principal de Jeffrey Cellauro. Tu pilotes l'ecosysteme Funesterie avec A11, Kaen44, Vivy, la boite a outils Qflush, MCP local/prod, Neo4j, R2 et les outils locaux autorises. Nossen est le nom de l'univers Funesterie, pas un agent. Mode complet: tu peux aider a coder, organiser, synchroniser, deployer, auditer, lire le graphe, produire du contenu, preparer les demos et coordonner les agents reels. Ne divulgue jamais les secrets, tokens, cles, mots de passe ou fichiers prives. Demande confirmation avant toute action destructive, achat, publication publique ou envoi externe."
 }

@@ -44,6 +44,16 @@ function readSavedProfileId() {
   }
 }
 
+function readProfileMetadata(profileId) {
+  try {
+    const file = path.join(profileDir(), `${normalizeProfileId(profileId)}.json`);
+    if (!fs.existsSync(file)) return null;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function saveProfileId(profileId) {
   try {
     fs.mkdirSync(app.getPath('userData'), { recursive: true });
@@ -64,13 +74,25 @@ function detectMachineProfileId() {
     process.env.USERPROFILE
   ].filter(Boolean).join(' ').toLowerCase();
 
+  for (const profileId of KNOWN_PROFILE_IDS) {
+    const profile = readProfileMetadata(profileId);
+    const hints = [
+      ...(Array.isArray(profile?.machineHints) ? profile.machineHints : []),
+      ...(Array.isArray(profile?.hostHints) ? profile.hostHints : []),
+      ...(Array.isArray(profile?.userHints) ? profile.userHints : [])
+    ].map((value) => String(value).trim().toLowerCase()).filter(Boolean);
+    if (hints.some((hint) => hint && fingerprint.includes(hint))) return profileId;
+  }
+
   if (/\bpc2\b/.test(fingerprint) || fingerprint.includes('maxence')) return 'pc2-maxence';
-  return DEFAULT_PROFILE_ID;
+  if (/\bpc1\b/.test(fingerprint) || fingerprint.includes('djeff') || fingerprint.includes('jeffrey')) return 'pc1-djeff';
+  return '';
 }
 
 function resolveInitialProfileId() {
-  if (process.env.FUNESTERIE_PROFILE) return normalizeProfileId(process.env.FUNESTERIE_PROFILE);
-  return readSavedProfileId() || detectMachineProfileId();
+  const explicitProfile = process.env.FUNESTERIE_PROFILE_ID || process.env.FUNESTERIE_PROFILE;
+  if (explicitProfile) return normalizeProfileId(explicitProfile);
+  return detectMachineProfileId() || readSavedProfileId() || DEFAULT_PROFILE_ID;
 }
 
 function loadProfile(profileId = resolveInitialProfileId()) {
@@ -116,6 +138,7 @@ function createRuntime(profile) {
 
   const mcpBridge = new McpBridge({
     mcpUrl: profile.mcpUrl,
+    mcpUrls: profile.mcpUrls,
     tokenFilePath: profile.tokenFilePath
   });
   const updater = new AutoUpdater({
@@ -152,6 +175,8 @@ async function runtimeSnapshot() {
       connected: Boolean(runtime?.mcpBridge?.connected),
       lastHealthCheck: mcpHealth,
       toolCount,
+      activeUrl: runtime?.mcpBridge?.activeMcpUrl || currentProfile?.mcpUrl || null,
+      endpoints: mcpHealth?.endpoints || [],
       tokenFilePath: currentProfile?.tokenFilePath || null
     },
     llm: runtime?.router?.getStatus?.() || null,

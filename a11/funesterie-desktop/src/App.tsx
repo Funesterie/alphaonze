@@ -1,54 +1,51 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Activity,
+  Bell,
   Bot,
   Brain,
   CheckCircle2,
+  ChevronRight,
+  CircleDot,
   Cpu,
   Database,
   Download,
+  FileText,
   Gamepad2,
+  Gauge,
   HardDrive,
+  Headphones,
   Hexagon,
-  LayoutDashboard,
+  History,
+  Image,
+  Layers3,
   Link2,
   Lock,
   MessageCircle,
+  Mic2,
   Monitor,
   Music2,
   Network,
+  Orbit,
+  Play,
   RefreshCw,
   Rocket,
+  Search,
   Send,
   Server,
   Settings,
   Shield,
   Sparkles,
   Terminal,
+  UserRound,
   Users,
+  WandSparkles,
   Workflow,
   Wrench,
   type LucideIcon
 } from "lucide-react";
 
 type FunesterieApi = NonNullable<Window["funesterie"]>;
-
-const api: FunesterieApi = window.funesterie ?? createDemoApi();
-
-function assetPath(filename: string) {
-  return `./assets/${filename}`;
-}
-
-const navItems = [
-  { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "tools", label: "MCP & Outils", icon: Wrench },
-  { id: "memory", label: "Memoire", icon: Database },
-  { id: "graph", label: "Graphes", icon: Network },
-  { id: "workflows", label: "Workflows", icon: Workflow },
-  { id: "discussions", label: "Discussions", icon: MessageCircle },
-  { id: "settings", label: "Parametres", icon: Settings }
-];
 
 type LiveAgent = {
   id: string;
@@ -84,59 +81,8 @@ type LiveModule = {
   name: string;
   state: string;
   color: string;
+  icon: LucideIcon;
 };
-
-const fallbackAgents: LiveAgent[] = [
-  { id: "a11", name: "A11", role: "Le pilote", color: "purple", avatar: "A11" },
-  { id: "kaen44", name: "Kaen44", role: "Le stratege", color: "blue", avatar: "K" },
-  { id: "vivy", name: "Vivy", role: "Presence musicale", color: "pink", avatar: "V" },
-  { id: "qflush", name: "Qflush", role: "Le booster", color: "green", avatar: "Q" }
-];
-
-const tools = [
-  { name: "search_project", text: "Recherche dans le projet", icon: Sparkles },
-  { name: "read_cloud_doc", text: "Lecture documents cloud", icon: Link2 },
-  { name: "neo4j_status", text: "Statut Aura / Neo4j", icon: Database },
-  { name: "memory_write_safe", text: "Ecriture memoire securisee", icon: Shield },
-  { name: "agent_presence", text: "Presence des agents", icon: Users }
-];
-
-const workflows = [
-  { title: "Pipeline de deploiement", state: "En cours", progress: 75, icon: Rocket },
-  { title: "Analyse de securite", state: "En cours", progress: 45, icon: Shield },
-  { title: "Generation de rapport", state: "En attente", progress: 18, icon: MessageCircle },
-  { title: "Optimisation systeme", state: "Termine", progress: 100, icon: CheckCircle2 }
-];
-
-const fallbackDiscussions: LiveDiscussion[] = [
-  { id: "fallback-node-error", title: "Erreur syntaxe Node.js", source: "A11, Kaen44, Vous", time: "14:32" },
-  { id: "fallback-mega-dump", title: "Traitement MEGA DUMP", source: "A11, Qflush", time: "13:15" },
-  { id: "fallback-pipeline", title: "Optimisation pipeline", source: "Kaen44, Vous", time: "12:45" },
-  { id: "fallback-vivy-assets", title: "Creation assets Vivy", source: "Vivy, Vous", time: "11:20" }
-];
-
-const AUTO_SYNC_INTERVAL_MS = 30_000;
-const HEARTBEAT_INTERVAL_MS = 60_000;
-
-const fallbackModules: LiveModule[] = [
-  { name: "MCP", state: "Connecte", color: "purple" },
-  { name: "Neo4j", state: "Connecte", color: "cyan" },
-  { name: "R2 Bucket", state: "Connecte", color: "green" },
-  { name: "Qflush", state: "Pret", color: "green" },
-  { name: "A11 local", state: "Auto", color: "blue" },
-  { name: "RomStation", state: "Pilote IA", color: "orange" }
-];
-
-const quickDomains = [
-  { title: "Agents & IA", icon: Bot },
-  { title: "Memoire & Graphe", icon: Brain },
-  { title: "MCP & Outils", icon: Network },
-  { title: "Automation", icon: Workflow },
-  { title: "Systemes", icon: Monitor },
-  { title: "Securite", icon: Lock },
-  { title: "Retro & Jeux", icon: Gamepad2 },
-  { title: "Creation & Media", icon: Music2 }
-];
 
 type ChatMessage = {
   id: string;
@@ -144,6 +90,122 @@ type ChatMessage = {
   body: string;
   meta?: string;
 };
+
+const api: FunesterieApi = window.funesterie ?? createDemoApi();
+
+const AUTO_SYNC_INTERVAL_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 60_000;
+
+const founderProfiles = new Set(["pc1-djeff"]);
+
+const sectionTabs = [
+  { id: "cockpit", label: "Cockpit", icon: Gauge },
+  { id: "agents", label: "Agents", icon: Bot },
+  { id: "memory", label: "Memoire", icon: Brain },
+  { id: "media", label: "Media", icon: Image },
+  { id: "terminal", label: "Terminal", icon: Terminal },
+  { id: "settings", label: "Systeme", icon: Settings }
+];
+
+const fallbackAgents: LiveAgent[] = [
+  { id: "kaen44", name: "Kaen44", role: "Copilote quotidien", color: "violet", avatar: "K", status: "active", active: true },
+  { id: "a11", name: "A11", role: "Agent media et memoire", color: "cyan", avatar: "A11", status: "ready", active: true },
+  { id: "vivy", name: "Vivy", role: "Presence musicale", color: "pink", avatar: "V", status: "standby", active: true },
+  { id: "codex", name: "Codex", role: "Developpement et coordination", color: "blue", avatar: "CD", status: "ready", active: true },
+  { id: "kiro", name: "Kiro", role: "Execution locale", color: "green", avatar: "KI", status: "ready", active: true },
+  { id: "claude", name: "Claude", role: "Audit et lecture", color: "gold", avatar: "CL", status: "standby", active: true }
+];
+
+const fallbackDiscussions: LiveDiscussion[] = [
+  { id: "founder-ui", title: "Cockpit fondateur", source: "Codex, K44, A11", time: "recent" },
+  { id: "runtime-repair", title: "Runtime et presence markers", source: "A11, Doctor", time: "recent" },
+  { id: "semantic", title: "Roulette media semantique", source: "A11, Vivy", time: "recent" },
+  { id: "desktop-update", title: "Funesterie Desktop 1.0.4", source: "PC1, PC2", time: "recent" }
+];
+
+const workflows = [
+  { title: "MCP public", state: "surveille", progress: 82, icon: Network, tone: "green" },
+  { title: "Neo4j memoire", state: "synchro", progress: 76, icon: Database, tone: "cyan" },
+  { title: "Agents prod", state: "presence", progress: 68, icon: Users, tone: "violet" },
+  { title: "Media Vivy", state: "atelier", progress: 44, icon: Music2, tone: "pink" },
+  { title: "Desktop update", state: "draft", progress: 61, icon: Download, tone: "blue" }
+];
+
+const semanticWheel = [
+  { word: "sapin", tone: "green", facets: ["foret", "hiver", "Noel", "humour noir", "odeur", "argot"] },
+  { word: "Black Pearl", tone: "gold", facets: ["liberte", "equipage", "chaos", "aventure", "style"] },
+  { word: "Vivy", tone: "pink", facets: ["voix", "scene", "emotion", "memoire sonore"] },
+  { word: "Nossen", tone: "violet", facets: ["mains libres", "pacte", "creation", "porte ouverte"] },
+  { word: "A11", tone: "cyan", facets: ["capture", "graphe", "media", "contexte"] },
+  { word: "K44", tone: "blue", facets: ["copilote", "quotidien", "route", "coordination"] }
+];
+
+const quickActions = [
+  { id: "presence", label: "Presence", icon: Users, tool: "agent_presence" },
+  { id: "neo4j", label: "Neo4j", icon: Database, tool: "neo4j_status" },
+  { id: "qflush", label: "Toolbox", icon: Wrench, tool: "qflush_status" },
+  { id: "doctor", label: "Doctor", icon: Shield, tool: "a11_runtime_hooks_status" },
+  { id: "memory", label: "Memoire", icon: Brain, tool: "memory_governance_schema" },
+  { id: "jobs", label: "Jobs", icon: Workflow, tool: "job_board_status" }
+];
+
+const assistantQuickTasks = [
+  {
+    id: "document",
+    label: "Document",
+    detail: "Ecrire, corriger ou resumer",
+    icon: FileText,
+    prompt: "Aide-moi avec un document. Demande-moi ce qu'il manque, puis prepare une version claire."
+  },
+  {
+    id: "facture",
+    label: "Facture",
+    detail: "Comprendre ou ranger",
+    icon: Database,
+    prompt: "Aide-moi avec une facture ou un justificatif. Dis-moi quoi importer et ce que tu peux en extraire."
+  },
+  {
+    id: "recherche",
+    label: "Recherche",
+    detail: "Trouver et expliquer",
+    icon: Search,
+    prompt: "Fais une recherche simple et explique-moi le resultat avec les prochaines etapes."
+  },
+  {
+    id: "image",
+    label: "Image",
+    detail: "Analyser ou preparer",
+    icon: Image,
+    prompt: "Aide-moi avec une image. Dis-moi ce que tu peux analyser, corriger ou preparer."
+  },
+  {
+    id: "voix",
+    label: "Voix",
+    detail: "Audio, micro, texte",
+    icon: Mic2,
+    prompt: "Aide-moi avec la voix ou l'audio. Prepare un plan simple et les fichiers necessaires."
+  },
+  {
+    id: "depanner",
+    label: "Depanner",
+    detail: "Probleme PC ou appli",
+    icon: Wrench,
+    prompt: "Aide-moi a depanner un probleme. Pose-moi les questions utiles, puis donne-moi des actions simples."
+  }
+];
+
+const agentArtwork: Record<string, string> = {
+  kaen44: "founder-k44-cockpit.png",
+  a11: "founder-a11-media.png",
+  vivy: "founder-vivy-studio.png",
+  codex: "founder-nossen-hub.png",
+  kiro: "founder-k44-cockpit.png",
+  claude: "founder-a11-media-alt.png"
+};
+
+function assetPath(filename: string) {
+  return `./assets/${filename}`;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -161,7 +223,7 @@ function tryParseJson(text: string): Record<string, unknown> | null {
       const parsed = JSON.parse(candidate);
       return asRecord(parsed) ?? ({ value: parsed } as Record<string, unknown>);
     } catch {
-      // continue
+      // keep trying MCP text envelopes
     }
   }
   return null;
@@ -191,6 +253,12 @@ function pickObject(value: unknown, key: string): Record<string, unknown> | null
   return record ? asRecord(record[key]) : null;
 }
 
+function mcpHasError(raw: unknown) {
+  const envelope = asRecord(raw);
+  const result = asRecord(envelope?.result);
+  return Boolean(envelope?.error || result?.isError || result?.error);
+}
+
 function formatRelativeTime(value?: string | null) {
   if (!value) return "recent";
   const ms = Date.parse(value);
@@ -205,13 +273,13 @@ function formatRelativeTime(value?: string | null) {
 function agentTone(name: string, role: string, status?: string, index = 0) {
   const text = `${name} ${role}`.toLowerCase();
   if (status === "offline") return "orange";
-  if (text.includes("a11") || text.includes("codex") || text.includes("builder") || text.includes("orchestr")) return "purple";
-  if (text.includes("kaen") || text.includes("dev") || text.includes("strate")) return "blue";
+  if (text.includes("a11") || text.includes("codex") || text.includes("media")) return "cyan";
+  if (text.includes("kaen") || text.includes("k44") || text.includes("copilote")) return "violet";
   if (text.includes("vivy") || text.includes("music") || text.includes("voice")) return "pink";
-  if (text.includes("qflush") || text.includes("booster") || text.includes("clean")) return "green";
-  if (text.includes("gemini") || text.includes("google")) return "cyan";
-  if (text.includes("grok")) return "orange";
-  return ["purple", "blue", "pink", "green", "cyan", "orange"][index % 6];
+  if (text.includes("qflush") || text.includes("booster")) return "green";
+  if (text.includes("doctor") || text.includes("piccolo") || text.includes("diag")) return "blue";
+  if (text.includes("nossen") || text.includes("story")) return "gold";
+  return ["violet", "cyan", "pink", "green", "blue", "gold"][index % 6];
 }
 
 function initials(name: string) {
@@ -235,7 +303,7 @@ function mapLiveAgents(raw: unknown): LiveAgent[] {
     const role = String(agent.role ?? agent.identity ?? "agent");
     const status = typeof agent.status === "string" ? agent.status : undefined;
     const liveAgent: LiveAgent = {
-      id: String(agent.id ?? name),
+      id: String(agent.id ?? name).toLowerCase(),
       name,
       role,
       active: typeof agent.active === "boolean" ? agent.active : status !== "offline",
@@ -285,22 +353,16 @@ function mapLiveDiscussions(raw: unknown): LiveDiscussion[] {
   return mapped;
 }
 
-function mcpHasError(raw: unknown) {
-  const envelope = asRecord(raw);
-  const result = asRecord(envelope?.result);
-  return Boolean(envelope?.error || result?.isError || result?.error);
-}
-
 function mapToolNames(raw: unknown) {
   const envelope = asRecord(raw);
   const result = asRecord(envelope?.result) ?? envelope;
   const payload = unwrapMcpPayload(raw) ?? result;
-  const tools = Array.isArray(result?.tools)
+  const list = Array.isArray(result?.tools)
     ? result.tools
     : Array.isArray(payload?.tools)
       ? payload.tools
       : [];
-  return tools
+  return list
     .map((item) => {
       const tool = asRecord(item);
       return typeof tool?.name === "string" ? tool.name : "";
@@ -310,15 +372,15 @@ function mapToolNames(raw: unknown) {
 }
 
 function probeState(raw: unknown, okLabel = "OK") {
-  if (!raw || mcpHasError(raw)) return { state: "Stale", color: "orange" };
+  if (!raw || mcpHasError(raw)) return { state: "stale", color: "orange" };
   return { state: okLabel, color: "green" };
 }
 
 function syncLabel(status: SyncStatus) {
-  if (status === "syncing") return "Syncing";
-  if (status === "stale") return "Stale";
-  if (status === "down") return "Down";
-  return "Connected";
+  if (status === "syncing") return "sync";
+  if (status === "stale") return "stale";
+  if (status === "down") return "down";
+  return "online";
 }
 
 function syncTone(status: SyncStatus) {
@@ -328,55 +390,92 @@ function syncTone(status: SyncStatus) {
   return "green";
 }
 
+function toolLabel(name: string) {
+  return name.replace(/_/g, " ");
+}
+
+function isDisplayAgent(agent: LiveAgent) {
+  const value = `${agent.id} ${agent.name}`.toLowerCase();
+  return !value.includes("qflush") && !value.includes("nossen");
+}
+
+function endpointRows(snapshot: DesktopSnapshot | null) {
+  const endpoints = snapshot?.mcp.endpoints?.length
+    ? snapshot.mcp.endpoints
+    : snapshot?.mcp.lastHealthCheck?.endpoints || [];
+  if (!endpoints.length) {
+    return [
+      { label: "MCP local", state: "scan", color: "orange" },
+      { label: "MCP prod", state: snapshot?.mcp.connected ? "online" : "scan", color: snapshot?.mcp.connected ? "green" : "orange" }
+    ];
+  }
+  const local = endpoints.find((endpoint) => endpoint.kind === "local");
+  const prod = endpoints.find((endpoint) => endpoint.kind === "prod");
+  return [
+    { label: "MCP local", state: local?.ok ? "online" : "repli", color: local?.ok ? "green" : "orange" },
+    { label: "MCP prod", state: prod?.ok ? "online" : "repli", color: prod?.ok ? "green" : "orange" }
+  ];
+}
+
 export default function App() {
-  const [activeView, setActiveView] = useState("dashboard");
+  const [activeSection, setActiveSection] = useState("cockpit");
   const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
   const [liveAgents, setLiveAgents] = useState<LiveAgent[]>(fallbackAgents);
+  const [selectedAgentId, setSelectedAgentId] = useState("kaen44");
   const [liveDiscussions, setLiveDiscussions] = useState<LiveDiscussion[]>(fallbackDiscussions);
-  const [liveModules, setLiveModules] = useState<LiveModule[]>(fallbackModules);
+  const [liveModules, setLiveModules] = useState<LiveModule[]>(fallbackModules());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("stale");
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [toolDiff, setToolDiff] = useState<ToolDiff>({ count: null, delta: 0, newTools: [] });
   const [mcpPanelError, setMcpPanelError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const lastHeartbeatAt = useRef(0);
-  const knownToolNames = useRef<Set<string> | null>(null);
-  const syncing = useRef(false);
+  const [commandInput, setCommandInput] = useState("");
+  const [terminalLines, setTerminalLines] = useState<string[]>([
+    "[presence] founder cockpit online",
+    "[mcp] waiting for first sync",
+    "[runtime] console kept alive by heartbeat markers"
+  ]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "seed-1",
       author: "Funesterie",
-      body: "Nexus local pret. Choisis PC1 ou PC2, puis envoie une demande pour router via Ollama, A11 ou le fallback cloud.",
+      body: "Dis-moi ce que tu veux faire. Je peux aider pour un document, une facture, une recherche, une image, la voix ou un probleme PC.",
       meta: "session locale"
     }
   ]);
-
-  const refresh = async () => {
-    await runAutoSync();
-  };
-
-  useEffect(() => {
-    refresh().catch(() => {});
-    const timer = window.setInterval(() => refresh().catch(() => {}), AUTO_SYNC_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, []);
+  const lastHeartbeatAt = useRef(0);
+  const knownToolNames = useRef<Set<string> | null>(null);
+  const syncing = useRef(false);
 
   const profile = snapshot?.profile;
+  const founderMode = profile ? founderProfiles.has(profile.id) : true;
+  const selectedAgent = useMemo(() => {
+    return liveAgents.find((agent) => agent.id.includes(selectedAgentId) || selectedAgentId.includes(agent.id)) ?? liveAgents[0] ?? fallbackAgents[0];
+  }, [liveAgents, selectedAgentId]);
+  const selectedArtwork = assetPath(agentArtwork[selectedAgent?.id] ?? agentArtwork[selectedAgentId] ?? "founder-k44-cockpit.png");
   const ramUsed = snapshot ? Math.round((snapshot.system.memoryUsed / snapshot.system.memoryTotal) * 100) : 0;
-  const mcpConnected = Boolean(snapshot?.mcp.connected);
   const llmProvider = snapshot?.llm?.activeProvider || "offline";
+  const mcpEndpoints = useMemo(() => endpointRows(snapshot), [snapshot]);
 
   const statusRows = useMemo(
     () => [
-      { label: "CPU", value: `${snapshot?.system.cpuCount ?? 0} coeurs`, icon: Cpu, tone: "cyan" },
-      { label: "RAM", value: `${ramUsed}% utilise`, icon: Activity, tone: "purple" },
-      { label: "MCP", value: mcpConnected ? syncLabel(syncStatus) : "A verifier", icon: Network, tone: mcpConnected ? syncTone(syncStatus) : "orange" },
+      { label: "CPU", value: `${snapshot?.system.cpuCount ?? 0}`, icon: Cpu, tone: "cyan" },
+      { label: "RAM", value: `${ramUsed}%`, icon: Activity, tone: "violet" },
+      { label: "MCP", value: syncLabel(syncStatus), icon: Network, tone: syncTone(syncStatus) },
+      { label: "Local", value: mcpEndpoints[0].state, icon: Monitor, tone: mcpEndpoints[0].color },
+      { label: "Prod", value: mcpEndpoints[1].state, icon: Server, tone: mcpEndpoints[1].color },
       { label: "LLM", value: llmProvider, icon: Bot, tone: llmProvider === "offline" ? "orange" : "green" },
-      { label: "Outils", value: toolDiff.count == null ? snapshot?.mcp.toolCount == null ? "scan" : `${snapshot.mcp.toolCount}` : `${toolDiff.count}`, icon: Wrench, tone: toolDiff.delta > 0 ? "green" : "cyan" }
+      { label: "Tools", value: toolDiff.count == null ? "scan" : `${toolDiff.count}`, icon: Wrench, tone: toolDiff.delta > 0 ? "green" : "cyan" }
     ],
-    [llmProvider, mcpConnected, ramUsed, snapshot, syncStatus, toolDiff]
+    [llmProvider, mcpEndpoints, ramUsed, snapshot, syncStatus, toolDiff]
   );
+
+  useEffect(() => {
+    runAutoSync().catch(() => {});
+    const timer = window.setInterval(() => runAutoSync().catch(() => {}), AUTO_SYNC_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function safeCallTool(name: string, args: Record<string, unknown> = {}) {
     try {
@@ -384,6 +483,10 @@ export default function App() {
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  function appendTerminal(line: string) {
+    setTerminalLines((items) => [`[${new Date().toLocaleTimeString("fr-FR")}] ${line}`, ...items].slice(0, 14));
   }
 
   function updateToolDiff(names: string[]) {
@@ -399,7 +502,7 @@ export default function App() {
     const nextDiff = {
       count: names.length,
       delta: previous ? newTools.length : 0,
-      newTools: newTools.slice(0, 5),
+      newTools: newTools.slice(0, 6),
       updatedAt: new Date().toISOString()
     };
     setToolDiff(nextDiff);
@@ -408,15 +511,19 @@ export default function App() {
 
   function updateModuleStatus(next: DesktopSnapshot, toolNames: string[], probes: Record<string, unknown>, nextStatus: SyncStatus, diff: ToolDiff) {
     const neo4j = probeState(probes.neo4j, "OK");
-    const qflush = probeState(probes.qflush, "OK");
-    const memory = probeState(probes.memory, "Synced");
+    const qflush = probeState(probes.qflush, "pret");
+    const memory = probeState(probes.memory, "sync");
+    const endpoints = endpointRows(next);
     setLiveModules([
-      { name: "MCP", state: next.mcp.connected ? syncLabel(nextStatus) : "Down", color: next.mcp.connected ? syncTone(nextStatus) : "orange" },
-      { name: "Tools", state: toolNames.length ? `${toolNames.length}` : "Scan", color: diff.delta > 0 ? "green" : "purple" },
-      { name: "Neo4j", state: neo4j.state, color: neo4j.color },
-      { name: "Qflush", state: qflush.state, color: qflush.color },
-      { name: "Memoire", state: memory.state, color: memory.color },
-      { name: "LLM", state: next.llm?.activeProvider || "offline", color: next.llm?.activeProvider === "offline" ? "orange" : "blue" }
+      { name: "MCP Gateway", state: next.mcp.connected ? syncLabel(nextStatus) : "down", color: next.mcp.connected ? syncTone(nextStatus) : "orange", icon: Network },
+      { name: "MCP Local", state: endpoints[0].state, color: endpoints[0].color, icon: Monitor },
+      { name: "MCP Prod", state: endpoints[1].state, color: endpoints[1].color, icon: Server },
+      { name: "Tool Registry", state: toolNames.length ? `${toolNames.length}` : "scan", color: diff.delta > 0 ? "green" : "violet", icon: Wrench },
+      { name: "Neo4j Aura", state: neo4j.state, color: neo4j.color, icon: Database },
+      { name: "Qflush Toolbox", state: qflush.state, color: qflush.color, icon: Rocket },
+      { name: "Memoire", state: memory.state, color: memory.color, icon: Brain },
+      { name: "Nossen Universe", state: "contexte", color: "gold", icon: Orbit },
+      { name: "Routeur LLM", state: next.llm?.activeProvider || "offline", color: next.llm?.activeProvider === "offline" ? "orange" : "blue", icon: Bot }
     ]);
   }
 
@@ -430,7 +537,7 @@ export default function App() {
       setSnapshot(next);
 
       if (!window.funesterie) {
-        setLiveModules(fallbackModules);
+        setLiveModules(fallbackModules());
         setSyncStatus(next.mcp.connected ? "connected" : "stale");
         setLastSyncAt(new Date().toISOString());
         return;
@@ -449,14 +556,16 @@ export default function App() {
           ? safeCallTool("agent_heartbeat", {
               agentId: `funesterie-desktop:${next.profile.id}`,
               name: next.profile.assistantName || "Funesterie Desktop",
-              role: "desktop-nexus-auto-sync",
+              role: next.profile.id === "pc1-djeff" ? "founder-desktop-nexus" : "assistant-desktop-client",
               host: next.system.hostname,
               status: "active",
-              capabilities: ["mcp-auto-sync", "desktop-ui", "tool-diff", "safe-heartbeat"],
-              profilePreset: "custom",
-              memoryScope: ["shared", "infra", "desktop"],
+              capabilities: next.profile.id === "pc1-djeff"
+                ? ["mcp-auto-sync", "desktop-ui", "founder-cockpit", "presence-marker"]
+                : ["mcp-auto-sync", "desktop-chat", "local-assistant", "family-helper"],
+              profilePreset: next.profile.id === "pc1-djeff" ? "founder" : "assistant",
+              memoryScope: ["shared", "infra", "desktop", "founders"],
               riskLevel: "low",
-              note: "Auto-sync UI heartbeat; no secret in payload.",
+              note: "Desktop UI heartbeat; no secret in payload.",
               checkInbox: false,
               autoReplyInbox: false
             })
@@ -468,13 +577,14 @@ export default function App() {
 
       if (heartbeat && !mcpHasError(heartbeat)) lastHeartbeatAt.current = now;
       const nextStatus: SyncStatus = next.mcp.connected ? "connected" : "stale";
-      setToolDiff((previous) => ({ ...previous, delta: currentDiff.delta, newTools: currentDiff.newTools }));
       updateModuleStatus(next, toolNames, { neo4j, qflush, memory }, nextStatus, currentDiff);
       setLastSyncAt(new Date().toISOString());
       setSyncStatus(nextStatus);
+      appendTerminal(`sync ok - ${toolNames.length || "?"} tools`);
     } catch (error) {
       setSyncStatus("down");
       setMcpPanelError(error instanceof Error ? error.message : "MCP auto-sync indisponible");
+      appendTerminal("sync down - fallback local");
     } finally {
       syncing.current = false;
     }
@@ -490,12 +600,13 @@ export default function App() {
 
     try {
       const [presenceResult, discussionResult] = await Promise.all([
-        api.callTool("agent_presence", { includeIdle: false }),
+        api.callTool("agent_presence", { includeIdle: true }),
         api.callTool("discussion_list", { status: "open", limit: 8 })
       ]);
       const nextAgents = mapLiveAgents(presenceResult);
       const nextDiscussions = mapLiveDiscussions(discussionResult);
-      setLiveAgents(nextAgents.length ? nextAgents : fallbackAgents);
+      const displayAgents = nextAgents.filter(isDisplayAgent);
+      setLiveAgents(displayAgents.length ? mergePriorityAgents(displayAgents) : fallbackAgents);
       setLiveDiscussions(nextDiscussions.length ? nextDiscussions : fallbackDiscussions);
       setMcpPanelError(null);
     } catch (error) {
@@ -510,15 +621,16 @@ export default function App() {
     try {
       const next = await api.setProfile(profileId);
       setSnapshot(next);
+      appendTerminal(`profile switched to ${profileId}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function sendMessage() {
-    const trimmed = chatInput.trim();
+  async function sendMessage(preset?: string) {
+    const trimmed = (preset ?? chatInput).trim();
     if (!trimmed || busy) return;
-    setChatInput("");
+    if (!preset) setChatInput("");
     const userMessage: ChatMessage = { id: crypto.randomUUID(), author: profile?.shortName || "Vous", body: trimmed };
     setMessages((items) => [...items, userMessage]);
     setBusy(true);
@@ -533,369 +645,455 @@ export default function App() {
           meta: result.provider ? `provider: ${result.provider}${result.model ? ` / ${result.model}` : ""}` : undefined
         }
       ]);
+      appendTerminal(`chat routed by ${result.provider || "router"}`);
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <main className="app-shell">
-      <aside className="brand-rail">
-        <div className="brand-mark">
-          <img src={assetPath("funesterie-icon.png")} alt="Funesterie" />
-        </div>
-        <div>
-          <h1>Funesterie Desktop</h1>
-          <p>L'univers Funesterie dans une seule application.</p>
-        </div>
-        <div className="identity-preview">
-          <img src={assetPath("funesterie-nexus-board.png")} alt="Equipe Funesterie" />
-        </div>
-        <div className="feature-strip">
-          <MiniFeature icon={Hexagon} title="Centralise" text="Services, agents et outils dans un seul poste." />
-          <MiniFeature icon={Link2} title="Connecte" text="PC1 et PC2 synchronises par MCP et memoire." />
-          <MiniFeature icon={Shield} title="Securise" text="Tokens hors UI, confirmation pour actions sensibles." />
-        </div>
-      </aside>
+  async function triggerQuickAction(action: (typeof quickActions)[number]) {
+    appendTerminal(`tool ${action.tool} requested`);
+    const result = await safeCallTool(action.tool);
+    if (mcpHasError(result)) {
+      appendTerminal(`tool ${action.tool} returned error`);
+      return;
+    }
+    appendTerminal(`tool ${action.tool} ok`);
+    await runAutoSync();
+  }
 
-      <section className="nexus-surface">
-        <header className="topbar">
-          <div className="topbar-title">
-            <Hexagon size={22} />
-            <span>Funesterie Nexus</span>
-          </div>
-          <div className="topbar-actions">
-            <div className={`sync-pill ${syncTone(syncStatus)}`}>
-              <span className={`state-dot ${syncTone(syncStatus)}`} />
-              <span>{syncLabel(syncStatus)}</span>
-              <small>{toolDiff.count == null ? "scan" : `${toolDiff.count} tools`}</small>
-            </div>
-            <button onClick={refresh} className="icon-button" title="Rafraichir" disabled={busy}>
-              <RefreshCw size={18} />
-            </button>
-            <button onClick={() => api.checkUpdates()} className="icon-button" title="Verifier les mises a jour">
-              <Download size={18} />
-            </button>
-            <div className="profile-pill">
-              <span className="profile-dot" />
-              <span>{profile?.shortName || "Djeff"}</span>
-              <small>{profile?.id === "pc2-maxence" ? "PC2" : "PC1"}</small>
+  function submitCommand() {
+    const trimmed = commandInput.trim();
+    if (!trimmed) return;
+    setCommandInput("");
+    appendTerminal(`command queued: ${trimmed}`);
+    sendMessage(trimmed).catch(() => {});
+  }
+
+  if (!founderMode) {
+    const connectionLabel = syncStatus === "connected" ? "Connecte" : syncStatus === "syncing" ? "Synchronise" : "Hors ligne";
+    return (
+      <main className="assistant-shell">
+        <div className="assistant-bg" />
+        <aside className="assistant-side">
+          <div className="assistant-profile">
+            <img src={assetPath("founder-k44-cockpit.png")} alt="Kaen44" />
+            <div>
+              <span>Funesterie pour</span>
+              <strong>{profile?.shortName || "Maxence"}</strong>
+              <small>{profile?.machineLabel || "PC2"}</small>
             </div>
           </div>
-        </header>
 
-        <div className="main-grid">
-          <nav className="sidebar-nav" aria-label="Navigation Funesterie">
-            {navItems.map((item) => {
-              const Icon = item.icon;
+          <div className="assistant-status-card">
+            <StatusPill color={syncTone(syncStatus)} label="MCP" value={connectionLabel} />
+            <StatusPill color={llmProvider === "offline" ? "orange" : "green"} label="Mode" value={llmProvider === "offline" ? "Local" : llmProvider} />
+            <button onClick={() => runAutoSync().catch(() => {})} disabled={busy}>
+              <RefreshCw size={17} />
+              <span>Verifier</span>
+            </button>
+          </div>
+
+          <div className="assistant-help">
+            <strong>Ce que tu peux demander</strong>
+            <p>Tu ecris normalement. L'assistant choisit les bons outils derriere.</p>
+          </div>
+        </aside>
+
+        <section className="assistant-main">
+          <header className="assistant-hero">
+            <div>
+              <p>{profile?.assistantName || "Apply FUNESTERIE PC2"}</p>
+              <h1>Que veux-tu faire ?</h1>
+              <span>Demande en une phrase. Je m'occupe de router vers A11, Kaen44, Vivy ou les outils MCP quand c'est autorise.</span>
+            </div>
+          </header>
+
+          <section className="assistant-quick" aria-label="Demandes rapides">
+            {assistantQuickTasks.map((task) => {
+              const Icon = task.icon;
               return (
-                <button key={item.id} className={activeView === item.id ? "active" : ""} onClick={() => setActiveView(item.id)}>
-                  <Icon size={17} />
-                  <span>{item.label}</span>
+                <button key={task.id} onClick={() => sendMessage(task.prompt).catch(() => {})} disabled={busy}>
+                  <Icon size={21} />
+                  <span>{task.label}</span>
+                  <small>{task.detail}</small>
                 </button>
               );
             })}
-          </nav>
+          </section>
 
-          <div className="dashboard">
-            <section className="panel hero-panel">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Tableau de bord</p>
-                  <h2>Deux PC. Un Nexus.</h2>
-                </div>
-                <div className="profile-switcher">
-                  <button className={profile?.id === "pc1-djeff" ? "selected" : ""} onClick={() => switchProfile("pc1-djeff")}>
-                    PC1 - Djeff
-                  </button>
-                  <button className={profile?.id === "pc2-maxence" ? "selected" : ""} onClick={() => switchProfile("pc2-maxence")}>
-                    PC2 - Maxence
-                  </button>
-                </div>
-              </div>
-
-              {(toolDiff.delta > 0 || mcpPanelError) && (
-                <div className="tool-diff-banner">
-                  <Sparkles size={16} />
-                  <div>
-                    <strong>{toolDiff.delta > 0 ? `${toolDiff.delta} nouveaux outils detectes` : "MCP live en repli local"}</strong>
-                    <small>
-                      {toolDiff.newTools.length ? toolDiff.newTools.join(", ") : mcpPanelError || "Les panels se resynchronisent automatiquement."}
-                    </small>
-                  </div>
-                </div>
-              )}
-
-              <div className="agent-row">
-                {liveAgents.slice(0, 4).map((agent) => (
-                  <div className={`agent-card ${agent.color} ${agent.active === false ? "offline" : ""}`} key={agent.id}>
-                    <div className="agent-avatar">{agent.avatar}</div>
-                    <strong>{agent.name}</strong>
-                    <span>{agent.role}</span>
-                    <small>{agent.active === false ? "hors ligne" : agent.status || "actif"}</small>
-                  </div>
-                ))}
-              </div>
-
-              <div className="activity-feed">
-                <div className="feed-title">
-                  <Activity size={16} />
-                  <span>Activite recente</span>
-                </div>
-                <FeedRow color="purple" text="A11 a analyse 12 fichiers" time="il y a 2 min" />
-                <FeedRow color="blue" text="Kaen44 a execute un script" time="il y a 5 min" />
-                <FeedRow color="pink" text="Vivy a prepare une presence media" time="il y a 12 min" />
-                <FeedRow color="green" text="Qflush a optimise le systeme" time="il y a 15 min" />
-              </div>
-            </section>
-
-            <section className="panel status-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">Statut systeme</p>
-                  <h2>{snapshot?.system.hostname || "Localhost"}</h2>
-                </div>
-              </div>
-              <div className="status-list">
-                {statusRows.map((row) => {
-                  const Icon = row.icon;
-                  return (
-                    <div className="status-row" key={row.label}>
-                      <Icon size={17} />
-                      <span>{row.label}</span>
-                      <strong className={row.tone}>{row.value}</strong>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="module-grid">
-                {liveModules.map((module) => (
-                  <div className="module-chip" key={module.name}>
-                    <span className={`state-dot ${module.color}`} />
-                    <span>{module.name}</span>
-                    <strong>{module.state}</strong>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="panel discussions-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">Discussions actives</p>
-                  <h2>File de travail</h2>
-                </div>
-              </div>
-              <div className="discussion-list">
-                {liveDiscussions.map((discussion, index) => (
-                  <div className="discussion-row" key={discussion.id || discussion.title}>
-                    <span className={`discussion-icon tone-${index}`} />
-                    <div>
-                      <strong>{discussion.title}</strong>
-                      <small>{discussion.source}</small>
-                    </div>
-                    <time>{discussion.time}</time>
-                  </div>
-                ))}
-                {mcpPanelError && <p className="panel-note">MCP live indisponible, affichage local.</p>}
-              </div>
-            </section>
-
-            <section className="panel tools-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">MCP & outils</p>
-                  <h2>Commandes rapides</h2>
-                </div>
-              </div>
-              <div className="tool-list">
-                {tools.map((tool) => {
-                  const Icon = tool.icon;
-                  return (
-                    <button key={tool.name} onClick={() => api.callTool(tool.name).then(refresh).catch(() => {})}>
-                      <Icon size={18} />
-                      <span>
-                        <strong>{tool.name}</strong>
-                        <small>{tool.text}</small>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="panel graph-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">Graphe de connaissances</p>
-                  <h2>Funesterie Nexus</h2>
-                </div>
-              </div>
-              <KnowledgeGraph />
-            </section>
-
-            <section className="panel workflows-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">Workflows actifs</p>
-                  <h2>Execution</h2>
-                </div>
-              </div>
-              <div className="workflow-list">
-                {workflows.map((flow) => {
-                  const Icon = flow.icon;
-                  return (
-                    <div className="workflow-row" key={flow.title}>
-                      <Icon size={18} />
-                      <div>
-                        <strong>{flow.title}</strong>
-                        <small>{flow.state} - {flow.progress}%</small>
-                        <span style={{ "--progress": `${flow.progress}%` } as CSSProperties} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="panel domains-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">Nos domaines</p>
-                  <h2>Surfaces actives</h2>
-                </div>
-              </div>
-              <div className="domain-grid">
-                {quickDomains.map((domain) => {
-                  const Icon = domain.icon;
-                  return (
-                    <button key={domain.title}>
-                      <Icon size={24} />
-                      <span>{domain.title}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-
-          <aside className="right-column">
-            <section className="panel pc-sync">
-              <div className="pc-visual">
-                <Monitor size={58} />
-                <div className="sync-line" />
-                <Hexagon size={52} />
-                <div className="sync-line" />
-                <Server size={58} />
-              </div>
-              <h2>Deux PC. Un Nexus.</h2>
-              <p>PC1 pilote, PC2 accompagne Maxence. Les tokens restent dans le fichier partage et les modules se reconnectent automatiquement.</p>
-              <div className="sync-checks">
-                <span><CheckCircle2 size={15} /> Synchronisation memoire {lastSyncAt ? `- ${formatRelativeTime(lastSyncAt)}` : ""}</span>
-                <span><CheckCircle2 size={15} /> MCP endpoint surveille - {syncLabel(syncStatus)}</span>
-                <span><CheckCircle2 size={15} /> Auto-update R2 - {snapshot?.update?.manifestUrl ? "pret" : "offline"}</span>
-              </div>
-            </section>
-
-            <section className="panel maxence-panel">
-              <div className="section-head compact">
-                <div>
-                  <p className="eyebrow">Assistant Maxence (PC2)</p>
-                  <h2>Prompt special integre</h2>
-                </div>
-              </div>
-              <p>Mode complet sur outils autorises, posture claire et protectrice pour aider Maxence sans exposer les secrets ni declencher d'action sensible sans confirmation.</p>
-              <div className="capability-list">
-                <span><Brain size={15} /> Analyse & debug</span>
-                <span><Terminal size={15} /> Developpement</span>
-                <span><Workflow size={15} /> Automation</span>
-                <span><Sparkles size={15} /> Creation</span>
-              </div>
-              <button className="primary-action" onClick={() => switchProfile("pc2-maxence")}>
-                Activer l'assistant Maxence
+          <section className="assistant-chat-card">
+            <div className="assistant-chat-log">
+              {messages.map((message) => (
+                <article key={message.id} className={message.author === profile?.shortName ? "from-user" : ""}>
+                  <header>
+                    <strong>{message.author}</strong>
+                    {message.meta && <small>{message.meta}</small>}
+                  </header>
+                  <p>{message.body}</p>
+                </article>
+              ))}
+            </div>
+            <div className="assistant-composer">
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    sendMessage().catch(() => {});
+                  }
+                }}
+                placeholder="Ex: aide-moi a faire un CV, comprendre une facture, chercher une info..."
+              />
+              <button onClick={() => sendMessage().catch(() => {})} disabled={busy || !chatInput.trim()}>
+                <Send size={20} />
+                <span>Envoyer</span>
               </button>
-            </section>
+            </div>
+          </section>
+        </section>
+      </main>
+    );
+  }
 
-            <section className="panel chat-panel">
-              <div className="section-head compact">
+  return (
+    <main className="founder-shell">
+      <div className="founder-background" />
+      <img className="founder-bg-image" src={assetPath("founder-nossen-hub.png")} alt="" aria-hidden="true" />
+      <aside className="founder-rail">
+        <div className="brand-lockup">
+          <img src={assetPath("founder-funesterie-logo.png")} alt="Funesterie" />
+          <div>
+            <span>Founder Console</span>
+            <strong>Funesterie</strong>
+          </div>
+        </div>
+
+        <div className="local-profile">
+          <UserRound size={17} />
+          <div>
+            <span>Profil local</span>
+            <strong>{profile?.shortName || "Djeff"}</strong>
+          </div>
+          <small>{snapshot?.system.hostname || "PC"}</small>
+        </div>
+
+        <nav className="section-nav" aria-label="Navigation fondateur">
+          {sectionTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button key={tab.id} className={activeSection === tab.id ? "active" : ""} onClick={() => setActiveSection(tab.id)}>
+                <Icon size={18} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <section className="rail-panel">
+          <PanelTitle eyebrow="Agents" title="Presence live" icon={Users} />
+          <div className="agent-stack">
+            {liveAgents.slice(0, 8).map((agent) => (
+              <button
+                key={agent.id}
+                className={`agent-line ${agent.color} ${selectedAgent?.id === agent.id ? "selected" : ""}`}
+                onClick={() => setSelectedAgentId(agent.id)}
+              >
+                <span>{agent.avatar}</span>
                 <div>
-                  <p className="eyebrow">Session locale</p>
-                  <h2>{profile?.assistantName || "Apply FUNESTERIE"}</h2>
+                  <strong>{agent.name}</strong>
+                  <small>{agent.status || (agent.active === false ? "offline" : "online")}</small>
                 </div>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="rail-panel compact">
+          <PanelTitle eyebrow="Session" title={profile?.id === "pc2-maxence" ? "PC2 Maxence" : "PC1 Djeff"} icon={Monitor} />
+          <div className="mini-meter">
+            <span style={{ "--value": `${Math.max(12, ramUsed)}%` } as CSSProperties} />
+          </div>
+          <p>{snapshot?.system.hostname || "FUNESTERIE-PC"} - {founderMode ? "mode fondateur" : "mode limite"}</p>
+        </section>
+      </aside>
+
+      <section className="command-surface">
+        <header className="founder-topbar">
+          <div>
+            <p>16/05/2026</p>
+            <strong>{new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</strong>
+          </div>
+          <div className="topbar-center">
+            <Hexagon size={26} />
+            <span>Apply Fondateur</span>
+            <small>PC1 + PC2 - MCP - Neo4j - Media - Jobs</small>
+          </div>
+          <div className="topbar-actions">
+            <StatusPill color={syncTone(syncStatus)} label="MCP" value={syncLabel(syncStatus)} />
+            <StatusPill color={llmProvider === "offline" ? "orange" : "green"} label="LLM" value={llmProvider} />
+            <button className="icon-button" onClick={() => runAutoSync().catch(() => {})} disabled={busy} title="Rafraichir">
+              <RefreshCw size={18} />
+            </button>
+            <button className="icon-button" onClick={() => api.checkUpdates().then(() => appendTerminal("update manifest checked"))} title="Verifier update">
+              <Download size={18} />
+            </button>
+          </div>
+        </header>
+
+        <div className="cockpit-grid">
+          <section className="panel hero-command">
+            <img src={selectedArtwork} alt={selectedAgent?.name || "Funesterie"} />
+            <div className="hero-shade" />
+            <div className="hero-copy">
+              <p>Copilote selectionne</p>
+              <h1>{selectedAgent?.name || "Kaen44"}</h1>
+              <span>{selectedAgent?.role || "Nexus fondateur"}</span>
+              <div className="hero-tags">
+                <b>{selectedAgent?.status || "online"}</b>
+                <b>{selectedAgent?.host || "MCP"}</b>
+                <b>{profile?.shortName || "Djeff"}</b>
               </div>
-              <div className="chat-log">
-                {messages.map((message) => (
-                  <article key={message.id} className={message.author === profile?.shortName ? "from-user" : ""}>
-                    <header>
-                      <strong>{message.author}</strong>
-                      {message.meta && <small>{message.meta}</small>}
-                    </header>
-                    <p>{message.body}</p>
-                  </article>
-                ))}
-              </div>
-              <div className="composer">
-                <textarea
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
+            </div>
+            <div className="hero-command-box">
+              <div className="command-input">
+                <Terminal size={18} />
+                <input
+                  value={commandInput}
+                  onChange={(event) => setCommandInput(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      sendMessage().catch(() => {});
-                    }
+                    if (event.key === "Enter") submitCommand();
                   }}
-                  placeholder="Demande quelque chose au Nexus..."
+                  placeholder="Demander, router, diagnostiquer, creer..."
                 />
-                <button onClick={() => sendMessage().catch(() => {})} disabled={busy || !chatInput.trim()} title="Envoyer">
-                  <Send size={18} />
+                <button onClick={submitCommand} title="Executer">
+                  <Play size={16} />
                 </button>
               </div>
-            </section>
-          </aside>
+            </div>
+          </section>
+
+          <section className="panel status-board">
+            <PanelTitle eyebrow="Modules" title="Etat global" icon={Gauge} />
+            <div className="status-grid">
+              {statusRows.map((row) => {
+                const Icon = row.icon;
+                return (
+                  <div className={`status-tile ${row.tone}`} key={row.label}>
+                    <Icon size={18} />
+                    <span>{row.label}</span>
+                    <strong>{row.value}</strong>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="module-list">
+              {liveModules.map((module) => {
+                const Icon = module.icon;
+                return (
+                  <div className="module-row" key={module.name}>
+                    <Icon size={17} />
+                    <span>{module.name}</span>
+                    <strong className={module.color}>{module.state}</strong>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="panel actions-board">
+            <PanelTitle eyebrow="Actions" title="Tools rapides" icon={Wrench} />
+            <div className="quick-grid">
+              {quickActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <button key={action.id} onClick={() => triggerQuickAction(action).catch(() => appendTerminal(`tool ${action.tool} unavailable`))}>
+                    <Icon size={21} />
+                    <span>{action.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {toolDiff.delta > 0 && (
+              <div className="new-tools">
+                <Sparkles size={16} />
+                <span>{toolDiff.newTools.map(toolLabel).join(", ")}</span>
+              </div>
+            )}
+            {mcpPanelError && (
+              <div className="new-tools orange">
+                <CircleDot size={16} />
+                <span>{mcpPanelError}</span>
+              </div>
+            )}
+          </section>
+
+          <section className="panel semantic-board">
+            <PanelTitle eyebrow="Roulette media" title="Pertinence creative" icon={Orbit} />
+            <div className="semantic-wheel" aria-label="Roulette semantique">
+              {semanticWheel.map((item, index) => (
+                <button
+                  key={item.word}
+                  className={item.tone}
+                  style={{ "--i": index } as CSSProperties}
+                  onClick={() => sendMessage(`Developpe la resonance semantique de "${item.word}" pour Funesterie.`).catch(() => {})}
+                >
+                  <span>{item.word}</span>
+                </button>
+              ))}
+              <div className="wheel-core">
+                <WandSparkles size={25} />
+                <strong>Resonance</strong>
+              </div>
+            </div>
+            <div className="facet-strip">
+              {semanticWheel[0].facets.map((facet) => (
+                <span key={facet}>{facet}</span>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel graph-board">
+            <PanelTitle eyebrow="Memoire" title="Graphe vivant" icon={Network} />
+            <KnowledgeGraph />
+          </section>
+
+          <section className="panel workflow-board">
+            <PanelTitle eyebrow="Jobs" title="Orchestration" icon={Workflow} />
+            <div className="workflow-list">
+              {workflows.map((flow) => {
+                const Icon = flow.icon;
+                return (
+                  <div className="workflow-row" key={flow.title}>
+                    <Icon size={18} />
+                    <div>
+                      <strong>{flow.title}</strong>
+                      <small>{flow.state} - {flow.progress}%</small>
+                      <span style={{ "--progress": `${flow.progress}%` } as CSSProperties} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="panel discussions-board">
+            <PanelTitle eyebrow="Messagerie" title="A chaque connexion" icon={MessageCircle} />
+            <div className="discussion-list">
+              {liveDiscussions.slice(0, 7).map((discussion, index) => (
+                <div className="discussion-row" key={discussion.id || discussion.title}>
+                  <span className={`discussion-dot tone-${index}`} />
+                  <div>
+                    <strong>{discussion.title}</strong>
+                    <small>{discussion.source}</small>
+                  </div>
+                  <time>{discussion.time}</time>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel media-board">
+            <PanelTitle eyebrow="Media" title="A11 + Vivy" icon={Headphones} />
+            <div className="media-split">
+              <button onClick={() => setSelectedAgentId("a11")}>
+                <img src={assetPath("founder-a11-media-alt.png")} alt="A11" />
+                <span>A11 capture</span>
+              </button>
+              <button onClick={() => setSelectedAgentId("vivy")}>
+                <img src={assetPath("founder-vivy-studio.png")} alt="Vivy" />
+                <span>Vivy voix</span>
+              </button>
+            </div>
+          </section>
+
+          <section className="panel terminal-board">
+            <PanelTitle eyebrow="Terminal" title="Journal local" icon={Terminal} />
+            <div className="terminal-lines">
+              {terminalLines.map((line, index) => (
+                <code key={`${line}-${index}`}>{line}</code>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel chat-board">
+            <PanelTitle eyebrow="Chat" title={profile?.assistantName || "Apply FUNESTERIE"} icon={MessageCircle} />
+            <div className="chat-log">
+              {messages.map((message) => (
+                <article key={message.id} className={message.author === profile?.shortName ? "from-user" : ""}>
+                  <header>
+                    <strong>{message.author}</strong>
+                    {message.meta && <small>{message.meta}</small>}
+                  </header>
+                  <p>{message.body}</p>
+                </article>
+              ))}
+            </div>
+            <div className="composer">
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    sendMessage().catch(() => {});
+                  }
+                }}
+                placeholder="Parle au Nexus..."
+              />
+              <button onClick={() => sendMessage().catch(() => {})} disabled={busy || !chatInput.trim()} title="Envoyer">
+                <Send size={18} />
+              </button>
+            </div>
+          </section>
         </div>
       </section>
     </main>
   );
 }
 
-function MiniFeature({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
+function PanelTitle({ eyebrow, title, icon: Icon }: { eyebrow: string; title: string; icon: LucideIcon }) {
   return (
-    <div>
-      <Icon size={25} />
-      <strong>{title}</strong>
-      <span>{text}</span>
+    <div className="panel-title">
+      <Icon size={18} />
+      <div>
+        <p>{eyebrow}</p>
+        <h2>{title}</h2>
+      </div>
     </div>
   );
 }
 
-function FeedRow({ color, text, time }: { color: string; text: string; time: string }) {
+function StatusPill({ color, label, value }: { color: string; label: string; value: string }) {
   return (
-    <div className="feed-row">
-      <span className={`state-dot ${color}`} />
-      <span>{text}</span>
-      <time>{time}</time>
+    <div className={`status-pill ${color}`}>
+      <span />
+      <small>{label}</small>
+      <strong>{value}</strong>
     </div>
   );
 }
 
 function KnowledgeGraph() {
   const nodes = [
-    ["A11", 50, 14, "purple"],
-    ["Kaen44", 82, 34, "cyan"],
-    ["Vivy", 18, 47, "pink"],
-    ["Qflush", 73, 78, "green"],
-    ["Memoire", 32, 80, "blue"],
-    ["Projets", 61, 60, "orange"],
-    ["Nexus", 50, 50, "white"]
+    ["Nexus", 50, 50, "white"],
+    ["Djeff", 25, 20, "gold"],
+    ["Max", 75, 20, "blue"],
+    ["A11", 18, 62, "cyan"],
+    ["K44", 37, 82, "violet"],
+    ["Vivy", 63, 82, "pink"],
+    ["Neo4j", 82, 62, "green"],
+    ["MCP", 50, 14, "orange"]
   ];
 
   return (
     <svg className="knowledge-svg" viewBox="0 0 100 100" role="img" aria-label="Graphe Funesterie">
-      {nodes.slice(0, -1).map((node) => (
+      {nodes.slice(1).map((node) => (
         <line key={`line-${node[0]}`} x1="50" y1="50" x2={node[1]} y2={node[2]} />
       ))}
-      <path d="M18 47 C32 28, 62 23, 82 34" />
-      <path d="M32 80 C51 92, 68 89, 73 78" />
+      <path d="M18 62 C31 24, 67 24, 82 62" />
+      <path d="M37 82 C47 92, 56 92, 63 82" />
       {nodes.map(([label, x, y, color]) => (
         <g key={label} className={`graph-node ${color}`} transform={`translate(${x} ${y})`}>
           <circle r={label === "Nexus" ? 12 : 8} />
@@ -906,20 +1104,64 @@ function KnowledgeGraph() {
   );
 }
 
+function mergePriorityAgents(agents: LiveAgent[]) {
+  const byKey = new Map<string, LiveAgent>();
+  [...agents, ...fallbackAgents].forEach((agent) => {
+    if (!isDisplayAgent(agent)) return;
+    const key = agent.id || agent.name.toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, agent);
+  });
+  return [...byKey.values()];
+}
+
+function fallbackModules(): LiveModule[] {
+  return [
+    { name: "MCP Gateway", state: "online", color: "green", icon: Network },
+    { name: "MCP Local", state: "auto", color: "green", icon: Monitor },
+    { name: "MCP Prod", state: "auto", color: "green", icon: Server },
+    { name: "Neo4j Aura", state: "online", color: "cyan", icon: Database },
+    { name: "Podman", state: "pret", color: "blue", icon: Server },
+    { name: "Docker", state: "pret", color: "blue", icon: Layers3 },
+    { name: "Qflush Toolbox", state: "pret", color: "green", icon: Rocket },
+    { name: "Nossen Universe", state: "contexte", color: "gold", icon: Orbit },
+    { name: "Presence", state: "active", color: "violet", icon: Bell },
+    { name: "Vivy", state: "audio", color: "pink", icon: Mic2 },
+    { name: "Disque", state: "watch", color: "gold", icon: HardDrive }
+  ];
+}
+
 function createDemoApi(): FunesterieApi {
+  const demoProfileId = new URLSearchParams(window.location.search).get("profile") === "pc2-maxence" ? "pc2-maxence" : "pc1-djeff";
+  const demoIsMax = demoProfileId === "pc2-maxence";
   const demoSnapshot: DesktopSnapshot = {
-    appVersion: "1.0.0",
+    appVersion: "1.0.3",
     profile: {
-      id: "pc1-djeff",
-      machineLabel: "PC1 - Djeff",
-      ownerName: "Jeffrey Cellauro",
-      shortName: "Djeff",
-      role: "principal",
-      assistantName: "Apply FUNESTERIE PC1",
+      id: demoProfileId,
+      machineLabel: demoIsMax ? "PC2 - Maxence" : "PC1 - Djeff",
+      ownerName: demoIsMax ? "Maxence Cellauro" : "Jeffrey Cellauro",
+      shortName: demoIsMax ? "Maxence" : "Djeff",
+      role: demoIsMax ? "assistant-family" : "principal",
+      assistantName: demoIsMax ? "Apply FUNESTERIE PC2" : "Apply FUNESTERIE PC1",
       capabilityMode: "full",
-      enabledModules: ["mcp", "neo4j", "r2", "qflush"]
+      enabledModules: ["mcp", "neo4j", "r2", "qflush-toolbox", "a11", "kaen44", "vivy"]
     },
-    mcp: { connected: true, toolCount: 57 },
+    mcp: {
+      connected: true,
+      toolCount: 72,
+      activeUrl: "http://127.0.0.1:8788/mcp",
+      endpoints: [
+        { url: "http://127.0.0.1:8788/mcp", kind: "local", ok: true },
+        { url: "https://mcp.funesterie.me/mcp", kind: "prod", ok: true }
+      ],
+      lastHealthCheck: {
+        ok: true,
+        activeUrl: "http://127.0.0.1:8788/mcp",
+        endpoints: [
+          { url: "http://127.0.0.1:8788/mcp", kind: "local", ok: true },
+          { url: "https://mcp.funesterie.me/mcp", kind: "prod", ok: true }
+        ]
+      }
+    },
     llm: { activeProvider: "ollama", hardware: { ramGB: 16, freeRamGB: 6, cpuCount: 12, recommendedModel: "gemma4:e4b" } },
     update: { manifestUrl: "https://files.funesterie.me/public/desktop/update-manifest.json" },
     system: {
@@ -948,7 +1190,7 @@ function createDemoApi(): FunesterieApi {
     callTool: async () => ({ ok: true }),
     chat: async (message: string) => ({
       provider: "demo",
-      text: `Recu: ${message}. En app Electron, cette demande passe par le routeur LLM de Kiro.`
+      text: `Recu: ${message}. En app Electron, cette demande passe par le routeur LLM local et le MCP Funesterie.`
     }),
     checkUpdates: async () => null,
     downloadUpdate: async () => true,

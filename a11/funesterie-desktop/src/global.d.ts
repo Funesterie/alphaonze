@@ -20,10 +20,13 @@ declare global {
     ownerName: string;
     shortName: string;
     role: string;
+    machineHints?: string[];
     assistantName: string;
     capabilityMode: string;
     enabledModules: string[];
     tokenFilePath?: string;
+    mcpUrl?: string;
+    mcpUrls?: string[];
   }
 
   interface DesktopSnapshot {
@@ -33,7 +36,9 @@ declare global {
       connected: boolean;
       toolCount: number | null;
       tokenFilePath?: string | null;
-      lastHealthCheck?: { ok?: boolean; at?: string; error?: string } | null;
+      activeUrl?: string | null;
+      endpoints?: Array<{ url?: string; kind?: string; ok?: boolean; at?: string; error?: string; count?: number }>;
+      lastHealthCheck?: { ok?: boolean; at?: string; error?: string; activeUrl?: string; endpoints?: Array<{ url?: string; kind?: string; ok?: boolean; at?: string; error?: string; count?: number }> } | null;
     };
     llm: {
       activeProvider?: string;
