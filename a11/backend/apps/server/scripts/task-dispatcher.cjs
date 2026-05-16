@@ -308,6 +308,10 @@ function extractKeywords(text) {
 // â”€â”€â”€ Dispatch Logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function dispatchTasks(project, tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    throw new Error('No tasks parsed; refusing to overwrite dispatcher state with an empty queue.');
+  }
+
   let agents = [];
   try {
     agents = await getActiveAgents();
