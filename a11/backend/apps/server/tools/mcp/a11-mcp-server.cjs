@@ -128,6 +128,72 @@ function stripBearer(value) {
   return String(value || '').replace(/^Bearer\s+/i, '').trim();
 }
 
+function envValue(name) {
+  return process.env[name] || readWindowsUserEnv(name) || '';
+}
+
+function resolveEnvPlaceholders(value) {
+  return String(value || '')
+    .replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) => envValue(name))
+    .replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)/g, (_, name) => envValue(name))
+    .replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (_, name) => envValue(name));
+}
+
+function resolveTokenValue(value) {
+  const resolved = stripBearer(resolveEnvPlaceholders(value)).trim();
+  if (!resolved) return '';
+  if (/\$\{env:|\$env:|%[A-Za-z_][A-Za-z0-9_]*%/.test(resolved)) return '';
+  return resolved;
+}
+
+function localTokenCandidatePaths() {
+  const candidates = [
+    process.env.A11_MCP_TOKEN_FILE,
+    process.env.MCP_AUTH_TOKEN_FILE,
+    process.env.AGENT_STATE_DIR ? path.join(process.env.AGENT_STATE_DIR, 'mcp-token-current.txt') : '',
+    'G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'OneDrive', 'a11_memory', 'agent-bus', 'mcp-token-current.txt') : '',
+    'D:\\agent-bus\\mcp-token-current.txt',
+    'D:\\projets\\funesterie\\a11mcp\\.env',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Desktop', 'mcp-token.txt') : '',
+  ];
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function parseTokenFile(raw) {
+  const lines = String(raw || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+
+  for (const line of lines) {
+    const match = line.match(/^(?:MCP_AUTH_TOKEN|A11_MCP_TOKEN|A11_PUBLIC_MCP_TOKEN)\s*=\s*(.+)$/);
+    if (!match) continue;
+    const value = match[1].trim().replace(/^["']|["']$/g, '');
+    const token = resolveTokenValue(value);
+    if (token) return token;
+  }
+
+  if (lines.length === 1 && !lines[0].includes('=')) {
+    return resolveTokenValue(lines[0]);
+  }
+
+  return '';
+}
+
+function loadSharedMcpTokenFromFile() {
+  for (const candidate of localTokenCandidatePaths()) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const token = parseTokenFile(fs.readFileSync(candidate, 'utf8'));
+      if (token) return { token, source: 'token-file' };
+    } catch (_) {
+      // Ignore unreadable token candidates; other locations may still work.
+    }
+  }
+  return { token: '', source: 'missing' };
+}
+
 function getSharedMcpConfigFromKiro() {
   const config = readKiroMcpConfigSafe();
   const shared = config?.mcpServers?.['a11mcp-shared'] || config?.mcpServers?.['a11mcp-aura-local'] || null;
@@ -135,13 +201,20 @@ function getSharedMcpConfigFromKiro() {
   const headerToken = shared?.headers?.['x-mcp-token'] || shared?.headers?.['X-MCP-Token'] || '';
   return {
     url: String(shared?.url || '').trim(),
-    token: stripBearer(authorization) || String(headerToken || '').trim(),
+    token: resolveTokenValue(authorization) || resolveTokenValue(headerToken),
     source: shared ? 'kiro-config' : 'default',
   };
 }
 
 function resolveSharedMcpConfig() {
   const kiro = getSharedMcpConfigFromKiro();
+  const fileToken = loadSharedMcpTokenFromFile();
+  const envToken = resolveTokenValue(
+    process.env.A11_MCP_TOKEN
+    || process.env.A11_PUBLIC_MCP_TOKEN
+    || process.env.MCP_AUTH_TOKEN
+    || ''
+  );
   const url = String(
     process.env.A11_SHARED_MCP_URL
     || process.env.A11_PUBLIC_MCP_UPSTREAM_URL
@@ -150,18 +223,12 @@ function resolveSharedMcpConfig() {
     || kiro.url
     || DEFAULT_SHARED_MCP_URL
   ).trim().replace(/\/+$/, '');
-  const token = String(
-    process.env.A11_MCP_TOKEN
-    || process.env.A11_PUBLIC_MCP_TOKEN
-    || process.env.MCP_AUTH_TOKEN
-    || kiro.token
-    || ''
-  ).trim();
+  const token = envToken || kiro.token || fileToken.token || '';
   return {
     url,
     token,
     tokenPresent: Boolean(token),
-    source: token ? (process.env.A11_MCP_TOKEN || process.env.A11_PUBLIC_MCP_TOKEN || process.env.MCP_AUTH_TOKEN ? 'env' : kiro.source) : 'missing',
+    source: token ? (envToken ? 'env' : (kiro.token ? kiro.source : fileToken.source)) : 'missing',
   };
 }
 

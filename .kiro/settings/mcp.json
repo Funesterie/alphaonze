@@ -17,7 +17,8 @@
         "D:\\projets\\funesterie\\a11\\backend\\apps\\server\\tools\\mcp\\a11-mcp-server.cjs"
       ],
       "env": {
-        "A11_BASE_URL": "http://localhost:3000"
+        "A11_BASE_URL": "http://localhost:3000",
+        "MCP_AUTH_TOKEN_FILE": "G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt"
       },
       "disabled": false,
       "autoApprove": [
@@ -34,6 +35,10 @@
     },
     "a11mcp-shared": {
       "url": "https://mcp.funesterie.me/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:MCP_AUTH_TOKEN}",
+        "X-MCP-Token": "${env:MCP_AUTH_TOKEN}"
+      },
       "disabled": false,
       "autoApprove": [
         "agent_presence",

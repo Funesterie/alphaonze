@@ -17,6 +17,11 @@ function callMcpOnce(message, extraEnv = {}) {
     const env = { ...process.env };
     delete env.A11_NEZ_TOKEN;
     delete env.NEZ_TOKENS;
+    delete env.A11_MCP_TOKEN;
+    delete env.A11_PUBLIC_MCP_TOKEN;
+    delete env.MCP_AUTH_TOKEN;
+    delete env.A11_MCP_TOKEN_FILE;
+    delete env.MCP_AUTH_TOKEN_FILE;
 
     const child = spawn(process.execPath, [MCP_SERVER_PATH], {
       cwd: SERVER_ROOT,
@@ -70,6 +75,35 @@ test('a11 MCP dimension status does not invent a default NEZ token', async () =>
   assert.equal(typeof status.sharedMcp?.tokenPresent, 'boolean');
   assert.equal(text.includes('Bearer '), false);
   assert.equal(text.includes('Authorization'), false);
+});
+
+test('a11 MCP shared token can come from a local token file without leaking it', async () => {
+  const tokenDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-mcp-token-'));
+  const tokenPath = path.join(tokenDir, 'mcp-token-current.txt');
+  const fakeToken = 'test-token-from-file-123';
+  try {
+    fs.writeFileSync(tokenPath, fakeToken, 'utf8');
+    const [response] = await callMcpOnce({
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/call',
+      params: {
+        name: 'a11_mcp_dimension_status',
+        arguments: {},
+      },
+    }, { MCP_AUTH_TOKEN_FILE: tokenPath });
+
+    assert.equal(response.id, 11);
+    const text = response.result.content[0].text;
+    const status = JSON.parse(text);
+    assert.equal(status.ok, true);
+    assert.equal(status.sharedMcp?.tokenPresent, true);
+    assert.equal(status.sharedMcp?.source, 'token-file');
+    assert.equal(text.includes(fakeToken), false);
+    assert.equal(text.includes('Authorization'), false);
+  } finally {
+    fs.rmSync(tokenDir, { recursive: true, force: true });
+  }
 });
 
 test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
