@@ -1,7 +1,19 @@
 services:
   a11-backend:
+    build:
+      args:
+        A11_INSTALL_JANUS: "1"
+        A11_JANUS_TORCH_INDEX_URL: ${A11_JANUS_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
+        A11_JANUS_TORCH_PACKAGES: ${A11_JANUS_TORCH_PACKAGES:-torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128}
     environment:
       - A11_VISION_PROVIDER=janus
+      - A11_JANUS_ENABLED=true
+      - A11_JANUS_PYTHON_PATH=${A11_JANUS_PYTHON_PATH:-/opt/janus-venv/bin/python}
+      - A11_JANUS_MODEL_ID=${A11_JANUS_MODEL_ID:-deepseek-ai/Janus-Pro-1B}
+      - A11_JANUS_DEVICE=${A11_JANUS_DEVICE:-cuda}
+      - A11_JANUS_TORCH_DTYPE=${A11_JANUS_TORCH_DTYPE:-auto}
+      - A11_JANUS_PREFER_LATEST=${A11_JANUS_PREFER_LATEST:-false}
+      - A11_JANUS_TIMEOUT_MS=${A11_JANUS_TIMEOUT_MS:-180000}
       - A11_SCREEN_CACHE_ENABLED=1
       - A11_VISUAL_CACHE_TTL_MS=30000
       - A11_VISION_CLOUD_FALLBACK=false
@@ -10,8 +22,20 @@ services:
       - nvidia.com/gpu=all
 
   kaen44-backend:
+    build:
+      args:
+        A11_INSTALL_JANUS: "1"
+        A11_JANUS_TORCH_INDEX_URL: ${A11_JANUS_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
+        A11_JANUS_TORCH_PACKAGES: ${A11_JANUS_TORCH_PACKAGES:-torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128}
     environment:
       - A11_VISION_PROVIDER=janus
+      - A11_JANUS_ENABLED=true
+      - A11_JANUS_PYTHON_PATH=${A11_JANUS_PYTHON_PATH:-/opt/janus-venv/bin/python}
+      - A11_JANUS_MODEL_ID=${A11_JANUS_MODEL_ID:-deepseek-ai/Janus-Pro-1B}
+      - A11_JANUS_DEVICE=${A11_JANUS_DEVICE:-cuda}
+      - A11_JANUS_TORCH_DTYPE=${A11_JANUS_TORCH_DTYPE:-auto}
+      - A11_JANUS_PREFER_LATEST=${A11_JANUS_PREFER_LATEST:-false}
+      - A11_JANUS_TIMEOUT_MS=${A11_JANUS_TIMEOUT_MS:-180000}
       - A11_SCREEN_CACHE_ENABLED=1
       - A11_VISUAL_CACHE_TTL_MS=30000
       - A11_VISION_CLOUD_FALLBACK=false

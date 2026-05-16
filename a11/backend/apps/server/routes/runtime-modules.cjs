@@ -3,6 +3,15 @@
 const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  buildChopperStatus,
+  buildMarkdown: buildChopperMarkdown,
+} = require('../lib/westside-chopper.cjs');
+const {
+  buildMixerRoute,
+  buildMixerStatus,
+  buildMarkdown: buildMixerMarkdown,
+} = require('../lib/funesterie-mixer.cjs');
 
 const EXCLUDED_DIRS = new Set([
   '.git',
@@ -358,6 +367,99 @@ function createRuntimeModulesRouter({ moduleLoader } = {}) {
       return res.status(500).json({
         ok: false,
         error: 'runtime_modules_status_failed',
+        message: String(err?.message || err),
+      });
+    }
+  });
+  router.get('/chopper/doctor', (_req, res) => {
+    try {
+      const status = buildChopperStatus();
+      return res.json({
+        ok: status.doctor.ok,
+        generatedAt: status.generatedAt,
+        summary: status.summary,
+        doctor: status.doctor,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: 'westside_chopper_doctor_failed',
+        message: String(err?.message || err),
+      });
+    }
+  });
+  router.get('/chopper/recipes', (_req, res) => {
+    try {
+      const status = buildChopperStatus();
+      return res.json({
+        ok: status.ok,
+        generatedAt: status.generatedAt,
+        summary: {
+          recipes: status.summary.rumbleRecipes,
+          ready: status.summary.rumbleRecipesReady,
+          doctorStatus: status.summary.doctorStatus,
+          doctorScore: status.summary.doctorScore,
+        },
+        recipes: status.recipes,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: 'westside_chopper_recipes_failed',
+        message: String(err?.message || err),
+      });
+    }
+  });
+  router.get('/chopper', (req, res) => {
+    try {
+      const status = buildChopperStatus();
+      if (String(req.query?.format || '').toLowerCase() === 'markdown') {
+        res.type('text/markdown');
+        return res.send(buildChopperMarkdown(status));
+      }
+      return res.json(status);
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: 'westside_chopper_status_failed',
+        message: String(err?.message || err),
+      });
+    }
+  });
+  router.get('/mixer/status', (req, res) => {
+    try {
+      const status = buildMixerStatus({
+        request: String(req.query?.request || ''),
+        topN: Number(req.query?.top || req.query?.topN || 12),
+      });
+      if (String(req.query?.format || '').toLowerCase() === 'markdown') {
+        res.type('text/markdown');
+        return res.send(buildMixerMarkdown(status));
+      }
+      return res.json(status);
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: 'funesterie_mixer_status_failed',
+        message: String(err?.message || err),
+      });
+    }
+  });
+  router.get('/mixer', (req, res) => {
+    try {
+      const route = buildMixerRoute({
+        request: String(req.query?.request || req.query?.q || ''),
+        topN: Number(req.query?.top || req.query?.topN || 12),
+      });
+      if (String(req.query?.format || '').toLowerCase() === 'markdown') {
+        res.type('text/markdown');
+        return res.send(buildMixerMarkdown(route));
+      }
+      return res.json(route);
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: 'funesterie_mixer_route_failed',
         message: String(err?.message || err),
       });
     }

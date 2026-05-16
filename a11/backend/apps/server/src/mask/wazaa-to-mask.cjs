@@ -563,27 +563,55 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
   const canonicalSubject = sanitizeImageSubjectCandidate(
     String(subjectProfile?.canonicalSubject || '').trim()
   );
-  const finalSubject = canonicalSubject || normalizedSubject;
+  const finalSubject = canonicalSubject || (
+    palette.length > 0
+    && subject
+    && normalizedSubject
+    && normalizeLookupText(subject) !== normalizeLookupText(normalizedSubject)
+      ? subject
+      : normalizedSubject
+  );
+  const positiveCompositionHints = buildPositiveCompositionHints(finalSubject || subject, promptSeedText, semanticMeta);
+  const metierHints = buildMetierSemanticHints(semanticMeta, subjectProfile);
+  const elementHints = buildElementSemanticHints(semanticMeta, subjectProfile);
+  const accessoryHints = buildAccessorySemanticHints(semanticMeta, promptSeedText);
+  const accessoryPromptInstructions = extractAccessoryPromptInstructions(promptSeedText);
+  const promptInstructions = toUniqueStrings([
+    subjectProfile?.promptInstruction,
+    ...(Array.isArray(metierHints.promptInstructions) ? metierHints.promptInstructions : []),
+    ...(Array.isArray(elementHints.promptInstructions) ? elementHints.promptInstructions : []),
+    ...(Array.isArray(accessoryHints.promptInstructions) ? accessoryHints.promptInstructions : []),
+    ...accessoryPromptInstructions,
+  ]);
 
-  // Style : uniquement ce qui vient du LLM/wazaa, pas d'injection heuristique
   const style = toUniqueStrings([
     styleEntity,
+    'haute qualité',
     ...(Array.isArray(semanticMeta?.styleWords) ? semanticMeta.styleWords : []),
     ...(Array.isArray(subjectProfile?.styleHints) ? subjectProfile.styleHints : []),
+    ...(Array.isArray(metierHints.style) ? metierHints.style : []),
+    ...(Array.isArray(elementHints.style) ? elementHints.style : []),
+    ...(Array.isArray(accessoryHints.style) ? accessoryHints.style : []),
   ]);
 
-  // Composition : uniquement ce qui vient du LLM/wazaa
   const composition = toUniqueStrings([
     ...(Array.isArray(subjectProfile?.composition) ? subjectProfile.composition : []),
+    ...positiveCompositionHints,
+    ...(Array.isArray(metierHints.composition) ? metierHints.composition : []),
+    ...(Array.isArray(elementHints.composition) ? elementHints.composition : []),
+    ...(Array.isArray(accessoryHints.composition) ? accessoryHints.composition : []),
   ]);
 
-  // Environment : uniquement ce qui vient du LLM/wazaa
   const profileEnvironment = Array.isArray(subjectProfile?.environment) ? subjectProfile.environment : [];
   const environment = explicitEnvironment
     ? [explicitEnvironment]
     : toUniqueStrings([
         ...(Array.isArray(semanticMeta?.sceneWords) ? semanticMeta.sceneWords : []),
         ...profileEnvironment,
+        ...(Array.isArray(metierHints.environment) ? metierHints.environment : []),
+        ...(Array.isArray(elementHints.environment) ? elementHints.environment : []),
+        ...(Array.isArray(accessoryHints.environment) ? accessoryHints.environment : []),
+        ...buildCoherentEnvironmentHints(finalSubject || subject, promptSeedText, definitionSummary),
       ]);
 
   return {
@@ -620,6 +648,8 @@ function buildImageGenerateMask(wazaa, sourceText, opts = {}) {
         ? { canonicalSubject }
         : {}),
       ...(subjectProfile ? { subjectProfile } : {}),
+      semantic: semanticMeta,
+      promptInstructions,
     },
     raw: sourceText,
   };

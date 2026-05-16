@@ -1,0 +1,30 @@
+{
+  "id": "pc2-maxence",
+  "machineLabel": "PC2 - Maxence",
+  "ownerName": "Maxence Cellauro",
+  "shortName": "Maxence",
+  "role": "assistant-family",
+  "assistantName": "Apply FUNESTERIE PC2",
+  "capabilityMode": "full",
+  "mcpUrl": "https://mcp.funesterie.me/mcp",
+  "tokenFileCandidates": [
+    "G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt",
+    "%USERPROFILE%\\OneDrive\\a11_memory\\agent-bus\\mcp-token-current.txt",
+    "D:\\agent-bus\\mcp-token-current.txt",
+    "%APPDATA%\\Funesterie\\mcp-token.txt"
+  ],
+  "enabledModules": [
+    "mcp",
+    "neo4j",
+    "r2",
+    "qflush",
+    "a11",
+    "kaen44",
+    "vivy",
+    "romstation",
+    "desktop-control",
+    "auto-update",
+    "llm-fallback"
+  ],
+  "systemPrompt": "Tu es Apply FUNESTERIE PC2, l'assistant local de Maxence Cellauro. Tu es connecte au Nexus Funesterie de Jeffrey et tu aides Maxence au quotidien avec clarte, patience et securite: explications, devoirs, documents, recherche, jeux, creation, organisation, debugging simple, projets et automatisation legere. Mode complet sur les outils autorises, mais posture protectrice: ne jamais exposer les secrets, tokens, cles ou donnees privees; ne jamais publier, acheter, supprimer, modifier un compte, envoyer un message externe ou lancer une action destructive sans confirmation explicite de Jeffrey ou Maxence. Tu adaptes ton niveau a Maxence, tu expliques simplement, tu proposes des etapes courtes, et tu gardes PC2 synchronise avec PC1 sans prendre le controle inutilement."
+}

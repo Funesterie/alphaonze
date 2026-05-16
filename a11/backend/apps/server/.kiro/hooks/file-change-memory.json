@@ -1,0 +1,13 @@
+{
+  "name": "File Change Memory",
+  "version": "1.0.0",
+  "description": "Quand un fichier important est édité, note le changement dans la mémoire partagée",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["*.cjs", "*.ts", "*.json", "docker-compose*.yml", "Dockerfile*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Un fichier de code ou config vient d'être modifié. Si le changement est significatif (nouvelle feature, fix important, changement d'archi), écris une note mémoire via memory_write_safe avec : titre court, description du changement, fichier concerné. Scope: infra ou general selon le type. Si c'est un changement mineur (typo, formatting), ne fais rien."
+  }
+}

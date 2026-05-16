@@ -19,6 +19,10 @@ const RUNTIME_HOOKS_PATH = path.resolve(
   process.env.A11_RUNTIME_HOOKS_PATH
   || path.join(process.env.A11_RUNTIME_ROOT || DEFAULT_RUNTIME_ROOT, 'knowledge-graph', 'a11-runtime-hooks.json')
 );
+const RUNTIME_MODULE_INDEX_PATH = path.resolve(
+  process.env.A11_RUNTIME_MODULE_INDEX_PATH
+  || path.join(path.dirname(RUNTIME_HOOKS_PATH), 'a11-runtime-module-index.json')
+);
 
 const LOCAL_TOOLS = [
   {
@@ -552,16 +556,25 @@ async function callLocalTool(req, toolName, args = {}) {
 
   if (toolName === 'a11_runtime_hooks_status') {
     const manifest = readJsonSafe(RUNTIME_HOOKS_PATH);
+    const moduleIndex = readJsonSafe(RUNTIME_MODULE_INDEX_PATH);
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
           ok: Boolean(manifest),
           runtimeHooksPath: RUNTIME_HOOKS_PATH,
+          runtimeModuleIndexPath: RUNTIME_MODULE_INDEX_PATH,
           summary: manifest ? {
             generatedAt: manifest.generatedAt || null,
             modules: Array.isArray(manifest.modules) ? manifest.modules.length : 0,
             links: Array.isArray(manifest.links) ? manifest.links.length : 0,
+            installedModules: Array.isArray(moduleIndex?.modules)
+              ? moduleIndex.modules.filter((entry) => entry?.installed).length
+              : 0,
+            minimumModulesOk: moduleIndex?.minimumOk === true,
+            minimumModules: Array.isArray(moduleIndex?.minimumRequired)
+              ? moduleIndex.minimumRequired.slice()
+              : ['rome', 'corpus'],
           } : null,
         }, null, 2),
       }],

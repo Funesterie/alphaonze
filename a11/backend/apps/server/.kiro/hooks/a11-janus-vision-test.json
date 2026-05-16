@@ -1,0 +1,13 @@
+{
+  "name": "A11 Janus Vision Test",
+  "version": "1.0.0",
+  "description": "Après édition du runtime Janus, vérifie que le endpoint vision dev répond",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/janus-vision-runtime.cjs", "**/vision-dev.cjs", "**/janus_vision_worker.py"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/dev/vision' -Method POST -ContentType 'application/json' -Body '{\\\"image\\\":\\\"data:image/png;base64,iVBORw0KGgo=\\\",\\\"prompt\\\":\\\"test\\\"}' -TimeoutSec 25; Write-Host \\\"Janus: OK\\\" } catch { Write-Host \\\"Janus: $($_.Exception.Message)\\\" }\""
+  }
+}

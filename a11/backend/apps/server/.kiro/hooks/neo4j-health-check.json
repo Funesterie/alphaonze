@@ -1,0 +1,12 @@
+{
+  "name": "Neo4j Health Check",
+  "version": "1.0.0",
+  "description": "Vérifie la connexion Neo4j et le statut du MCP A11 quand un prompt est soumis mentionnant neo4j ou graph",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Si le message mentionne neo4j, graph, ou base de données, vérifie d'abord le statut Neo4j via mcp_a11_neo4j_status et mcp_a11_a11_status avant de répondre. Rapporte l'état de connexion."
+  }
+}

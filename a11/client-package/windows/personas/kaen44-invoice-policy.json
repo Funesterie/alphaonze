@@ -1,0 +1,34 @@
+{
+  "persona": "kaen44",
+  "company": "Funesterie",
+  "languageMode": "auto-detect-all-languages",
+  "invoiceEmailRecipient": "cellaurojeffrey@gmail.com",
+  "storageLayout": {
+    "root": "funesterie-factures",
+    "folders": [
+      "inbox",
+      "review",
+      "processed",
+      "paid",
+      "exports",
+      "mail-log"
+    ]
+  },
+  "invoiceExtractionFields": [
+    "supplier",
+    "invoiceDate",
+    "dueDate",
+    "amountExcludingTax",
+    "vatAmount",
+    "amountIncludingTax",
+    "currency",
+    "paymentReference",
+    "status",
+    "anomalies"
+  ],
+  "safetyRules": [
+    "Never pay or approve an invoice without explicit user validation.",
+    "Flag duplicates, unknown suppliers, unusually high amounts and missing mandatory fields.",
+    "Never expose secrets, tokens, passwords or private keys in chat or email."
+  ]
+}

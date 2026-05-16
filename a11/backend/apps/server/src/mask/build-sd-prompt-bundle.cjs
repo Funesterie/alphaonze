@@ -142,6 +142,7 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['fond simple coherent avec le sujet', 'simple background consistent with the subject'],
   ['fond simple', 'simple background'],
   ['decor coherent avec la scene demandee', 'coherent decor matching the requested scene'],
+  ['decor sombre', 'dark setting'],
   ['decor naturel simple', 'simple natural setting'],
   ['decor simple', 'simple setting'],
   ['decor encombre', 'cluttered setting'],
@@ -180,6 +181,7 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['silhouette humaine complete', 'full human silhouette'],
   ['forme complete visible', 'full shape visible'],
   ['lecture simple et claire', 'simple clear composition'],
+  ['simple et lisible', 'simple and readable'],
   ['sujet centre', 'centered subject'],
   ['objet centre', 'centered object'],
   ['un seul sujet principal', 'single main subject'],
@@ -208,8 +210,10 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['garder le meme visage et la meme coiffure', 'keep the same face and hairstyle'],
   ['garder le meme visage et la meme identite', 'keep the same face and identity'],
   ['garder strictement le meme visage et la meme identite', 'keep exactly the same face and identity'],
+  ['conserver strictement le meme visage', 'keep exactly the same face'],
   ['garder exactement le meme visage, la meme structure faciale et la meme identite', 'keep exactly the same face, facial structure, and identity'],
   ['garder les memes yeux, les memes sourcils, le meme nez, la meme machoire et le meme sourire', 'keep the same eyes, eyebrows, nose, jawline, and smile from the reference image'],
+  ['garder la meme corpulence et la meme posture', 'preserve the same build and posture'],
   ['preserver la meme corpulence et la meme posture', 'preserve the same build and posture'],
   ['preserver une anatomie naturelle et des proportions stables', 'preserve natural anatomy and stable proportions'],
   ['preserver la pose et le cadrage de l image de reference', 'preserve the pose and framing from the reference image'],
@@ -241,8 +245,10 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['personne en personnage inspire du joker', 'the same person from the reference image transformed into a Joker-style version without altering identity'],
   ['costume joker elegant mais chaotique', 'elegant but chaotic Joker-themed suit'],
   ['maquillage de clown inquietant mais credible', 'unsettling but believable clown makeup'],
+  ['le decor doit rester secondaire mais immersif', 'the background stays secondary but immersive'],
   ['batte custom', 'custom bat'],
   ['rends la batte custom clairement visible', 'make the custom bat clearly visible'],
+  ['la batte custom doit etre visible et theatrale', 'the custom bat must be visible and theatrical'],
   ['la batte custom doit etre bien visible', 'the custom bat must be clearly visible'],
   ['batte custom clairement visible', 'custom bat clearly visible'],
   ['decor urbain inspire de harlem', 'Harlem-inspired urban environment'],
@@ -254,6 +260,9 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['immeuble use', 'worn building'],
   ['sol sale', 'dirty pavement'],
   ['atmosphere tendue', 'tense atmosphere'],
+  ['ambiance de quartier tendue et realiste', 'tense realistic neighborhood atmosphere'],
+  ['contrastes marques', 'strong contrast'],
+  ['rouge sale', 'dirty red'],
   ['reflets de neons', 'neon reflections'],
   ['reflets de neons violets et verts', 'purple and green neon reflections'],
   ['avec une lumiere dramatique', 'with dramatic lighting'],
@@ -263,7 +272,9 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['portrait live action credible', 'believable live-action portrait'],
   ['decor urbain sombre', 'dark urban setting'],
   ['style sombre, cinematographique et realiste', 'dark, cinematic, realistic style'],
+  ['sujet unique personnage entier visible', 'single full character visible'],
   ['personnage entier visible', 'full character visible'],
+  ['composition propre et puissante', 'clean powerful composition'],
   ['composition propre', 'clean composition'],
   ['couleurs violet, vert, rouge', 'purple, green, and red color palette'],
   ['rendre le changement de tenue clairement visible', 'make the outfit change clearly visible'],
@@ -400,6 +411,7 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['virage dynamique lisible', 'readable dynamic turn'],
   ['virage de circuit lisible', 'clearly readable racetrack turn'],
   ['circuit colore coherent avec l univers', 'colorful track consistent with the universe'],
+  ['circuit colore coherent', 'colorful coherent track'],
   ['energie arcade nette', 'clean arcade energy'],
   ['accessoires lisibles', 'readable accessories'],
   ['en pleine course', 'racing at full speed'],
@@ -409,6 +421,8 @@ const ENGLISH_PHRASE_REPLACEMENTS = [
   ['flammes a l echappement', 'exhaust flames'],
   ['montrer le sujet en pleine course sur un circuit coherent simple et lisible', 'show the subject racing on a simple coherent readable track'],
   ['ajouter un derapage visible avec legere fumee sur les pneus et de petites flammes a l echappement', 'add a visible drift with light tire smoke and small exhaust flames'],
+  ['ajouter un derapage visible avec legere fumee sur les pneus', 'add a visible drift with light tire smoke on the tires'],
+  ['de petites flammes a l echappement', 'small exhaust flames'],
   ['ajouter une petite energie visuelle coherente avec le personnage tout en gardant une scene simple et lisible', 'add a small visual energy consistent with the character while keeping the scene simple and readable'],
   ['oreilles longues bien visibles', 'long ears clearly visible'],
 ];
@@ -417,6 +431,8 @@ const ENGLISH_TOKEN_REPLACEMENTS = [
   ['couleurs', 'colors'],
   ['couleur', 'color'],
   ['demande', 'request'],
+  ['ajouter', 'add'],
+  ['ajoute', 'add'],
   ['sujet principal', 'main subject'],
   ['scene', 'scene'],
   ['simple', 'simple'],
@@ -460,6 +476,11 @@ const ENGLISH_TOKEN_REPLACEMENTS = [
   ['accessoires', 'accessories'],
   ['classique', 'classic'],
   ['fidele', 'faithful'],
+  ['decor', 'background'],
+  ['propre', 'clean'],
+  ['batte', 'bat'],
+  ['tenue', 'outfit'],
+  ['vert', 'green'],
   ['pleine', 'full'],
   ['course', 'race'],
   ['legere', 'light'],
@@ -474,6 +495,7 @@ const ENGLISH_TOKEN_REPLACEMENTS = [
   ['plage', 'beach'],
   ['cheval', 'horse'],
   ['sapin', 'fir tree'],
+  ['soleil', 'sun'],
   ['carotte', 'carrot'],
   ['tabouret', 'stool'],
   ['bouche', 'mouth'],
@@ -611,6 +633,24 @@ function normalizeIntentText(value = '') {
   return normalizeWhitespace(value)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bd[?]+cor\b/g, 'decor')
+    .replace(/\bd[?]+rapage\b/g, 'derapage')
+    .replace(/\bqualit[?]+/g, 'qualite')
+    .replace(/\banim[?]+/g, 'anime')
+    .replace(/l[?]+g[?]+re/g, 'legere')
+    .replace(/[?]+g[?]+re/g, 'legere')
+    .replace(/fum[?]+e/g, 'fumee')
+    .replace(/color[?]+/g, 'colore')
+    .replace(/[?]+\s*[?]+chappement/g, 'a l echappement')
+    .replace(/[?]+chappement/g, 'echappement')
+    .replace(/[?]+nergie/g, 'energie')
+    .replace(/\bfid[?]+le\b/g, 'fidele')
+    .replace(/\battach[?]+e\b/g, 'attachee')
+    .replace(/\bcoh[?]+rent\b/g, 'coherent')
+    .replace(/\brepr[?]+senter\b/g, 'representer')
+    .replace(/\bep[?]+e\b/g, 'epee')
+    .replace(/\blumi[?]+re\b/g, 'lumiere')
+    .replace(/\br[?]+f[?]+rence\b/g, 'reference')
     .replace(/\bd['’]\s*(un|une|des|le|la|les|l)\b/g, '$1')
     .replace(/\bl['’]\s*/g, '')
     .replace(/[’']/g, ' ')
@@ -892,7 +932,9 @@ function translateImagePromptToEnglish(value = '') {
 
   const phraseTranslated = replaceEnglishPatterns(normalizedSource, ENGLISH_PHRASE_REPLACEMENTS);
   const tokenTranslated = replaceEnglishPatterns(phraseTranslated, ENGLISH_TOKEN_REPLACEMENTS);
-  return normalizeEnglishText(tokenTranslated);
+  const contractStableText = tokenTranslated
+    .replace(/\bcoherent background matching the requested scene\b/g, 'coherent decor matching the requested scene');
+  return normalizeEnglishText(contractStableText);
 }
 
 function compileCharacterCountConstraints(rawPrompt = '') {

@@ -1,0 +1,10 @@
+diff --git a/node_modules/@funeste38/freeland-bros/dist/index.js b/node_modules/@funeste38/freeland-bros/dist/index.js
+index 813da4e..d58eb9d 100644
+--- a/node_modules/@funeste38/freeland-bros/dist/index.js
++++ b/node_modules/@funeste38/freeland-bros/dist/index.js
+@@ -1,4 +1,4 @@
+-import { adaptFreelandValue, resolveFreelandValue, toFreelandCube } from "freeland";
++import { adaptFreelandValue, resolveFreelandValue, toFreelandCube } from "@funeste38/freeland";
+ import { cubeToRgba } from "@funeste38/morphing";
+ function normalizeCube(cube) {
+     return {

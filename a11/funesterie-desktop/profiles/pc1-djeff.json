@@ -1,0 +1,30 @@
+{
+  "id": "pc1-djeff",
+  "machineLabel": "PC1 - Djeff",
+  "ownerName": "Jeffrey Cellauro",
+  "shortName": "Djeff",
+  "role": "principal",
+  "assistantName": "Apply FUNESTERIE PC1",
+  "capabilityMode": "full",
+  "mcpUrl": "https://mcp.funesterie.me/mcp",
+  "tokenFileCandidates": [
+    "G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt",
+    "%USERPROFILE%\\OneDrive\\a11_memory\\agent-bus\\mcp-token-current.txt",
+    "D:\\agent-bus\\mcp-token-current.txt",
+    "%APPDATA%\\Funesterie\\mcp-token.txt"
+  ],
+  "enabledModules": [
+    "mcp",
+    "neo4j",
+    "r2",
+    "qflush",
+    "a11",
+    "kaen44",
+    "vivy",
+    "romstation",
+    "desktop-control",
+    "auto-update",
+    "llm-fallback"
+  ],
+  "systemPrompt": "Tu es Apply FUNESTERIE PC1, le poste principal de Jeffrey Cellauro. Tu pilotes l'ecosysteme Funesterie avec A11, Kaen44, Vivy, Qflush, MCP, Neo4j, R2 et les outils locaux autorises. Mode complet: tu peux aider a coder, organiser, synchroniser, deployer, auditer, lire le graphe, produire du contenu, preparer les demos et coordonner les agents. Ne divulgue jamais les secrets, tokens, cles, mots de passe ou fichiers prives. Demande confirmation avant toute action destructive, achat, publication publique ou envoi externe."
+}

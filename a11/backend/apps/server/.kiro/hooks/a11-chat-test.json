@@ -1,0 +1,13 @@
+{
+  "name": "A11 Chat Smoke Test",
+  "version": "1.0.0",
+  "description": "Après édition d'un fichier chat/route, teste que le endpoint /api/chat répond",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/routes/chat.cjs", "**/routes/protected-chat-proxy.cjs", "**/resolve-user-request.cjs"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/api/chat' -Method POST -ContentType 'application/json' -Body '{\\\"message\\\":\\\"ping\\\"}' -TimeoutSec 10 -UseBasicParsing; Write-Host \\\"Chat: $($r.StatusCode)\\\" } catch { Write-Host \\\"Chat: $($_.Exception.Message)\\\" }\""
+  }
+}

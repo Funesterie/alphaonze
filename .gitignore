@@ -17,6 +17,7 @@
 *.png
 !a11/frontend/apps/web/public/favicon.png
 !a11/frontend/apps/web/public/logo*.png
+!a11/frontend/apps/web/public/a11-hooded.png
 !a11/frontend/apps/web/public/vivy-presence-musicale.png
 !a11/vsix/media/icon.png
 /a11/backend/apps/server/logs/
@@ -35,6 +36,8 @@
 /a11/a11desktoptauri/resources/a11-local/
 /a11/a11desktoptauri/src-tauri/target/
 /a11/a11desktoptauri/src-tauri/target-alt/
+/a11/funesterie-desktop/dist/
+/a11/funesterie-desktop/release/
 
 # Local binaries kept outside Git
 /a11/ngrok.exe
@@ -46,9 +49,24 @@ Thumbs.db
 
 # IDE and local packaging artifacts
 /.vs/
+/.vscode/
+/.claude/
 /.codex-tmp/
 /.codex-tmp/*.zip
 /.codex-tmp/**/*.zip
+/.jfrog/
+**/.jfrog/
+/.superpowers/brainstorm/
+/docs/ops_tmp/
+/codex-backups/
+/a11_handoff_*/
+/logs/
+/a11/logs/
+/lghub_installer.exe
+*.vsix
+
+# Nested MCP repository is versioned independently
+/a11mcp/
 
 # Monorepo-wide local dependencies and secrets
 **/node_modules/
@@ -72,6 +90,11 @@ Thumbs.db
 /a11/backend/apps/server/.a11_state/
 /a11/backend/apps/server/.qflash/
 /a11/backend/apps/server/tmp/
+/a11/backend/apps/runtime/files/generated/
+/a11/backend/apps/server/runtime/logs/
+/a11/backend/apps/server/runtime/voice-library/
+/a11/backend/runtime/voice-library/
+/a11/backend/apps/voice-module/samples/
 /a11/tmp/
 /a11/frontend/a11_memory/memos/
 /a11/frontend/apps/logs/
@@ -79,6 +102,11 @@ Thumbs.db
 # A11 frontend generated public bundles
 /a11/frontend/apps/web/public/assets/
 /a11/frontend/apps/web/public/legacy/
+/a11/frontend/apps/web/test-results/
+/a11/frontend/apps/web/*.log
+/a11/frontend/apps/web/*.pid
+/a11/funesterie-desktop/*.log
+/scripts/cockpit/*.log
 /a11/frontend/apps/web/public/*.map
 /a11/frontend/apps/web/public/index.html
 /a11/frontend/apps/web/public/index (2).html
@@ -134,8 +162,19 @@ Thumbs.db
 /a11/backend/libs/Logo et personnage Funesterie.png
 /spaces/a11/.gradio-local*.log
 Docker Desktop Installer.exe
+ChromeSetup.exe
+Claude Setup.exe
+*.msi
+/*.mp4
 
 # Secrets supplémentaires
+/secrets/
+ApiKeyUsageReport.csv
+credentials.routes.js
+credentials.store.js
+.kiro/settings/*.bak-token
+**/.kiro/settings/*.bak-token
+**/.chrome-qa*/
 **/.env.production
 **/.env.prod
 **/.env.online

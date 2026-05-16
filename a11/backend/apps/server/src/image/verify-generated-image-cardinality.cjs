@@ -40,11 +40,63 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, numeric));
 }
 
+function collectExpectedContractPromptCandidates({ mask, compiledState } = {}) {
+  const compiledMask = compiledState?.mask && typeof compiledState.mask === 'object'
+    ? compiledState.mask
+    : {};
+  const meta = {
+    ...((mask?.meta && typeof mask.meta === 'object') ? mask.meta : {}),
+    ...((compiledMask?.meta && typeof compiledMask.meta === 'object') ? compiledMask.meta : {}),
+  };
+  return [
+    mask?.raw,
+    compiledMask?.raw,
+    meta?.canonicalizedRequest?.audit?.rawUserInput,
+    meta?.promptCanonicalization?.rawUserInput,
+    meta?.originalSourceText,
+    meta?.sourceText,
+    meta?.promptSeedText,
+    meta?.promptText,
+    compiledState?.sdBody?.prompt,
+  ]
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+}
+
+function resolveReferenceSingleSubjectLabel({ mask, compiledState, fallback = '' } = {}) {
+  const compiledMask = compiledState?.mask && typeof compiledState.mask === 'object'
+    ? compiledState.mask
+    : {};
+  const subjectText = [
+    ...(Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : []),
+    ...(Array.isArray(compiledMask?.inputs?.subject) ? compiledMask.inputs.subject : []),
+  ].join(' ');
+  const semanticAccessories = [
+    ...(Array.isArray(mask?.meta?.semantic?.accessories) ? mask.meta.semantic.accessories : []),
+    ...(Array.isArray(compiledMask?.meta?.semantic?.accessories) ? compiledMask.meta.semantic.accessories : []),
+  ].map((entry) => String(entry?.label || entry?.key || '').trim()).join(' ');
+  const promptText = collectExpectedContractPromptCandidates({ mask, compiledState }).join(' ');
+  const lookup = normalizeText([subjectText, semanticAccessories, promptText].join(' '));
+
+  if (/\bjoker\b/.test(lookup) && /\b(?:custom bat|batte custom|bat)\b/.test(lookup)) {
+    return 'joker with a custom bat visible';
+  }
+  if (/\bjoker\b/.test(lookup)) return 'joker';
+
+  const translatedFallback = translateImagePromptToEnglish(fallback || subjectText || promptText);
+  return String(translatedFallback || fallback || subjectText || '').trim();
+}
+
 function inferExpectedImageContract({ mask, compiledState } = {}) {
-  const rawPrompt = String(mask?.raw || compiledState?.mask?.raw || '').trim();
+  const promptCandidates = collectExpectedContractPromptCandidates({ mask, compiledState });
+  const rawPrompt = promptCandidates[0] || '';
   const webImageDraft = mask?.meta?.webImageDraft && typeof mask.meta.webImageDraft === 'object'
     ? mask.meta.webImageDraft
-    : {};
+    : (
+      compiledState?.mask?.meta?.webImageDraft && typeof compiledState.mask.meta.webImageDraft === 'object'
+        ? compiledState.mask.meta.webImageDraft
+        : {}
+    );
   const sourceSceneKey = String(webImageDraft?.sceneKey || '').trim().toLowerCase();
   const disableMonoSubjectHeuristics = webImageDraft?.disableMonoSubjectHeuristics === true
     || ['duo_group', 'composite'].includes(sourceSceneKey);
@@ -55,7 +107,11 @@ function inferExpectedImageContract({ mask, compiledState } = {}) {
     };
   }
 
-  const pair = compileCharacterCountConstraints(rawPrompt);
+  let pair = null;
+  for (const candidate of promptCandidates) {
+    pair = compileCharacterCountConstraints(candidate);
+    if (pair?.count === 2) break;
+  }
   if (pair?.count === 2) {
     return {
       enabled: true,
@@ -75,17 +131,76 @@ function inferExpectedImageContract({ mask, compiledState } = {}) {
     };
   }
 
-  const single = compileSingleSubjectConstraints(rawPrompt);
-  if (single?.count === 1) {
+  const subjectProfileType = String(
+    mask?.meta?.subjectProfile?.type
+    || compiledState?.mask?.meta?.subjectProfile?.type
+    || ''
+  ).trim();
+  const hasReferenceImage = Boolean(String(
+    webImageDraft?.initImageUrl
+    || webImageDraft?.initImagePath
+    || mask?.meta?.reference_image_url
+    || mask?.meta?.init_image_url
+    || compiledState?.mask?.meta?.reference_image_url
+    || compiledState?.mask?.meta?.init_image_url
+    || compiledState?.sdBody?.init_image_url
+    || ''
+  ).trim());
+  if (hasReferenceImage && ['single_human_figure', 'reference_character'].includes(subjectProfileType)) {
+    const subjectLabel = resolveReferenceSingleSubjectLabel({ mask, compiledState, fallback: rawPrompt });
     return {
       enabled: true,
       subjectCount: 1,
-      subjectType: String(single.subject || '').trim() || 'subject',
-      subjectLabel: String(single.subject || '').trim() || '',
+      subjectType: subjectLabel || 'subject',
+      subjectLabel: subjectLabel || '',
+      allowGroup: false,
+      mode: 'single',
+      reason: 'reference_single_subject_prompt',
+    };
+  }
+
+  let single = null;
+  for (const candidate of promptCandidates) {
+    single = compileSingleSubjectConstraints(candidate);
+    if (single?.count === 1) break;
+    const translated = translateImagePromptToEnglish(candidate);
+    single = compileSingleSubjectConstraints(translated);
+    if (single?.count === 1) break;
+  }
+  if (single?.count === 1) {
+    const translatedSubject = translateImagePromptToEnglish(single.subject || '');
+    const subjectLabel = String(translatedSubject || single.subject || '').trim();
+    return {
+      enabled: true,
+      subjectCount: 1,
+      subjectType: subjectLabel || 'subject',
+      subjectLabel,
       allowGroup: false,
       mode: 'single',
       reason: 'single_subject_prompt',
     };
+  }
+
+  const subjectEntries = [
+    ...(Array.isArray(mask?.inputs?.subject) ? mask.inputs.subject : []),
+    ...(Array.isArray(compiledState?.mask?.inputs?.subject) ? compiledState.mask.inputs.subject : []),
+  ]
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+  const uniqueSubjectEntries = [...new Set(subjectEntries.map((entry) => translateImagePromptToEnglish(entry) || entry))];
+  if (uniqueSubjectEntries.length === 1 && !isMultiSubjectSceneRequest(uniqueSubjectEntries[0])) {
+    const subjectLabel = String(uniqueSubjectEntries[0] || '').trim();
+    if (subjectLabel) {
+      return {
+        enabled: true,
+        subjectCount: 1,
+        subjectType: subjectLabel,
+        subjectLabel,
+        allowGroup: false,
+        mode: 'single',
+        reason: 'single_subject_field',
+      };
+    }
   }
 
   return {

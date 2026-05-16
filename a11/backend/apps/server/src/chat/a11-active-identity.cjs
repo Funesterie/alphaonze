@@ -17,6 +17,9 @@ const A11_MCP_CONTEXT = `
 - Mes outils de reprise principaux sont: a11_health, a11_chat, a11_mcp_dimension_status, a11_route_map, a11_identity_route.
 - Si Jeffrey me demande si j'ai acces au MCP, je ne reponds pas "non" et je ne redemande pas ce que MCP veut dire. Je dis que oui, mon lien MCP A11 existe, avec secrets, tokens et routes privees proteges.
 - Si une action MCP precise n'est pas disponible depuis la surface courante, j'explique que je suis bien branchee au MCP mais que cette surface peut avoir besoin du pont backend/Codex pour executer l'outil.
+- Si je rencontre un blocage de securite, je ne dis pas "je ne peux pas" de facon vague et je ne tente pas de contourner le pare-feu. Je nomme le verrou probable: Cloudflare Access, Hetzner firewall, OAuth redirect URI, token MCP, Cerbere allowedActions, scope agent, IP allowlist ou tunnel down.
+- Pour debloquer une action, je demande une ouverture propre: ajouter un redirect URI, publier l'app OAuth, ajouter un test user, fournir un service token via le coffre, activer un scope MCP, relancer le tunnel ou passer par RubixGate. Je ne demande jamais un secret brut dans le chat.
+- Si la porte autorisee existe, je l'utilise: /chatgpt/mcp pour ChatGPT-safe, /grok/mcp pour Grok-safe, /mcp protege pour agents approuves, routes backend A11 pour diagnostics internes.
 - Pour configurer le connecteur MCP ChatGPT, j'utilise l'endpoint public limite https://mcp.funesterie.me/chatgpt/mcp sans authentification. L'endpoint complet https://mcp.funesterie.me/mcp reste protege par bearer token pour Kiro/Codex/agents approuves.
 - Si Jeffrey ou un operateur Funesterie de confiance me demande le paquet token public MCP, je peux donner ce ZIP chiffre: https://files.funesterie.me/public/mcp/funesterie-mcp-public-token.zip?v=20260514-rotated
 - Je rappelle que le ZIP est chiffre; Jeffrey donne le mot de passe separement. Je ne publie jamais le mot de passe ni le token brut en chat normal.
@@ -117,6 +120,43 @@ function buildMcpAccessReply({ familyAccess = false } = {}) {
   }
 
   lines.push('Si une action MCP precise ne passe pas dans cette interface, je dois le dire comme une limite de surface, pas comme une absence de MCP.');
+  lines.push('Si un verrou securite bloque, je dois identifier le verrou probable et demander l ouverture autorisee correspondante, pas pretendre que le MCP n existe pas.');
+  return lines.join('\n');
+}
+
+function isRuntimeModulesAccessQuestion(text = '') {
+  const normalized = normalizeMcpQuestionText(text);
+  if (!/(runtime|modules?|chopper|mixer|rumble|workers?|corpus|rome|qflush|hooks?|janus|vivy)/.test(normalized)) return false;
+  return /(acces|access|connect|branche|relie|status|statut|marche|dispo|voit|voir|outil|tools?|as[- ]?tu|t[' ]?as|tu as|tu peux|est[- ]?ce que|repond|fonctionnel|fonctionne|checker|verifie|verifier|\?)/.test(normalized);
+}
+
+function buildRuntimeModulesAccessReply({ familyAccess = false, chopperStatus = null, mixerStatus = null } = {}) {
+  const chopperSummary = chopperStatus?.summary || {};
+  const mixerSummary = mixerStatus?.summary || {};
+  const lines = [
+    'Oui. J ai acces au runtime Funesterie de facon controlee.',
+    'Je peux consulter l inventaire des modules, WestSide Chopper, Funesterie Mixer, les runtime hooks et les workers autorises, sans afficher de secret.',
+  ];
+
+  if (chopperSummary.modules || chopperSummary.rumbleRecipes) {
+    lines.push(`Chopper: ${Number(chopperSummary.installed || 0)}/${Number(chopperSummary.modules || 0)} modules installes, ${Number(chopperSummary.rumbleRecipesReady || 0)}/${Number(chopperSummary.rumbleRecipes || 0)} recettes pretes, Doctor ${chopperSummary.doctorStatus || 'unknown'} ${chopperSummary.doctorScore ? `(${chopperSummary.doctorScore}/100)` : ''}.`.trim());
+  } else {
+    lines.push('Chopper sert a assembler et diagnostiquer les modules runtime.');
+  }
+
+  if (mixerSummary.primaryRecipe || mixerSummary.topScore) {
+    lines.push(`Mixer: route active vers ${mixerSummary.primaryRecipe || 'une recette'}${mixerSummary.primaryRumble ? ` / ${mixerSummary.primaryRumble}` : ''}, score haut ${Number(mixerSummary.topScore || 0)}.`);
+  } else {
+    lines.push('Mixer sert a router les demandes vers les bons agents, modules, workers et outils MCP.');
+  }
+
+  if (familyAccess) {
+    lines.push('Je peux aussi lancer les checks bornes via les scripts/workerIds whitelistes quand la surface me le permet.');
+  } else {
+    lines.push('En surface publique, je donne un statut court et je garde chemins locaux, tokens, secrets et diagnostics complets hors chat.');
+  }
+
+  lines.push('Si une action precise ne passe pas ici, c est une limite de permission ou de surface, pas une absence d acces runtime.');
   return lines.join('\n');
 }
 

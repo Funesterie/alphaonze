@@ -1,0 +1,12 @@
+{
+  "name": "K44 Health Monitor",
+  "version": "1.0.0",
+  "description": "Vérifie la santé de Kaen44 après chaque tâche spec complétée",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:3001/health' -TimeoutSec 5; Write-Host \\\"K44 local: $($r.status)\\\" } catch { try { $r2 = Invoke-RestMethod -Uri 'https://funesterie.me/health' -TimeoutSec 5; Write-Host \\\"K44 prod: $($r2.status)\\\" } catch { Write-Host \\\"K44: DOWN\\\" } }\""
+  }
+}

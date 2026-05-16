@@ -1,0 +1,15 @@
+{
+  "name": "@funesterie/alexa-vivy-skill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Alexa Skill bridge for Vivy singing through A11/Kaen44 audio services.",
+  "main": "src/index.cjs",
+  "scripts": {
+    "check": "node --check src/index.cjs",
+    "pack:lambda": "npm install --omit=dev && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/package-lambda.ps1"
+  },
+  "dependencies": {
+    "ask-sdk-core": "^2.14.0"
+  },
+  "devDependencies": {}
+}

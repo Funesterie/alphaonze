@@ -48,6 +48,9 @@ const {
 const {
   createEmergencyImageAsset,
 } = require('../media/emergency-media.cjs');
+const {
+  enrichImagePromptWithLinguisticScene,
+} = require('../linguistics/linguistic-scene-parser.cjs');
 
 // Vision Memory — analyse automatique des images générées (fire-and-forget)
 let _visionMemory = null;
@@ -1022,7 +1025,7 @@ function createSdToolsRouter(overrides = {}) {
         preferLiteralColor: requestBody?.prefer_literal_color === true || requestBody?.image_interpretation === 'literal_color',
         forceColorPrompt: requestBody?.force_color_prompt === true,
       });
-    const finalPrompt = repairCompiledSdPromptArtifacts(
+    let finalPrompt = repairCompiledSdPromptArtifacts(
       promptAlreadyCompiled || inferredPromptAlreadyCompiled
         ? (repairedRawPrompt || rawPrompt)
         : (semanticCompiledState?.sdBody?.prompt || normalizeBundledProxyPrompt(promptBundle.prompt))
@@ -1033,12 +1036,26 @@ function createSdToolsRouter(overrides = {}) {
     const finalPrompt3 = repairCompiledSdPromptArtifacts(
       String(requestBody?.prompt_3 || requestBody?.prompt3 || '').trim()
     );
-    const finalNegativePrompt = mergeNegativePrompts(
+    let finalNegativePrompt = mergeNegativePrompts(
       semanticCompiledState?.sdBody?.negative_prompt,
       requestBody?.negative_prompt,
       Array.isArray(promptBundle?.negativeHints) ? promptBundle.negativeHints.join(', ') : '',
       buildBundleFallbackNegativeHints(promptBundle).join(', ')
     );
+    if (!promptAlreadyCompiled && !inferredPromptAlreadyCompiled) {
+      const linguisticPrompt = enrichImagePromptWithLinguisticScene({
+        rawPrompt,
+        prompt: finalPrompt,
+        negativePrompt: finalNegativePrompt,
+        context: {
+          activeAgent: requestBody?.agent || requestBody?.activeAgent || requestBody?.owner || '',
+          narrativeContext: requestBody?.narrativeContext || requestBody?.universe || '',
+          module: requestBody?.module || requestBody?.runtimeModule || '',
+        },
+      });
+      finalPrompt = linguisticPrompt.prompt || finalPrompt;
+      finalNegativePrompt = linguisticPrompt.negativePrompt || finalNegativePrompt;
+    }
     const finalNegativePrompt2 = String(
       requestBody?.negative_prompt_2 || requestBody?.negativePrompt2 || ''
     ).trim();

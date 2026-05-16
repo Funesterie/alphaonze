@@ -202,7 +202,10 @@ function getResponderStatusSnapshot(state, config = {}) {
 async function startResponderChannel(options = {}) {
   const enabled = normalizeBoolean(options.enabled, false);
   const host = String(options.host || '127.0.0.1').trim() || '127.0.0.1';
-  const port = Number(options.port || 3002);
+  const requestedPort = options.port === undefined || options.port === null || options.port === ''
+    ? 3002
+    : Number(options.port);
+  const port = Number.isFinite(requestedPort) && requestedPort >= 0 ? requestedPort : 3002;
   const token = normalizeToken(options.token);
   const mode = normalizeResponderMode(options.mode, 'off');
   const logger = options.logger || console;

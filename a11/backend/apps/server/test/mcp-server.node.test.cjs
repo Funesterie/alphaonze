@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -11,7 +12,7 @@ const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
 const MCP_SERVER_PATH = path.join(SERVER_ROOT, 'tools', 'mcp', 'a11-mcp-server.cjs');
 const KIRO_MCP_PATH = path.join(REPO_ROOT, '.kiro', 'settings', 'mcp.json');
 
-function callMcpOnce(message) {
+function callMcpOnce(message, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
     delete env.A11_NEZ_TOKEN;
@@ -23,6 +24,7 @@ function callMcpOnce(message) {
         ...env,
         A11_BASE_URL: 'http://127.0.0.1:3000',
         A11_MCP_DISABLE_WINDOWS_USER_ENV: '1',
+        ...extraEnv,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -88,14 +90,85 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   }
   const health = tools.find((tool) => tool.name === 'a11_health');
   const shell = tools.find((tool) => tool.name === 'a11_shell');
+  const ecosystem = tools.find((tool) => tool.name === 'a11_ecosystem_scope');
+  const ecosystemCorpus = tools.find((tool) => tool.name === 'a11_ecosystem_corpus');
+  const ecosystemBriefing = tools.find((tool) => tool.name === 'a11_ecosystem_briefing');
+  const chopperStatus = tools.find((tool) => tool.name === 'a11_chopper_status');
+  const chopperPlan = tools.find((tool) => tool.name === 'a11_chopper_plan');
+  const chopperRumble = tools.find((tool) => tool.name === 'a11_chopper_rumble');
+  const chopperRecipes = tools.find((tool) => tool.name === 'a11_chopper_recipes');
+  const chopperDoctor = tools.find((tool) => tool.name === 'a11_chopper_doctor');
+  const mixerStatus = tools.find((tool) => tool.name === 'a11_funesterie_mixer_status');
+  const mixerRoute = tools.find((tool) => tool.name === 'a11_funesterie_mixer_route');
+  const workerStatus = tools.find((tool) => tool.name === 'a11_worker_status');
+  const workerStart = tools.find((tool) => tool.name === 'a11_worker_start');
+  const taskDispatch = tools.find((tool) => tool.name === 'a11_task_dispatch');
+  const jobsStatus = tools.find((tool) => tool.name === 'a11_agent_jobs_status');
   const inbox = tools.find((tool) => tool.name === 'a11_kiro_inbox_check');
   const post = tools.find((tool) => tool.name === 'a11_kiro_discussion_post');
   assert.equal(health.annotations.readOnlyHint, true);
   assert.equal(shell.annotations.readOnlyHint, false);
+  assert.equal(ecosystem.annotations.readOnlyHint, true);
+  assert.equal(ecosystem.annotations.destructiveHint, false);
+  assert.equal(ecosystemCorpus.annotations.readOnlyHint, true);
+  assert.equal(ecosystemCorpus.annotations.destructiveHint, false);
+  assert.equal(ecosystemBriefing.annotations.readOnlyHint, true);
+  assert.equal(ecosystemBriefing.annotations.destructiveHint, false);
+  assert.equal(chopperStatus.annotations.readOnlyHint, true);
+  assert.equal(chopperStatus.annotations.destructiveHint, false);
+  assert.equal(chopperPlan.annotations.readOnlyHint, true);
+  assert.equal(chopperPlan.annotations.destructiveHint, false);
+  assert.equal(chopperRumble.annotations.readOnlyHint, true);
+  assert.equal(chopperRumble.annotations.destructiveHint, false);
+  assert.equal(chopperRecipes.annotations.readOnlyHint, true);
+  assert.equal(chopperRecipes.annotations.destructiveHint, false);
+  assert.equal(chopperDoctor.annotations.readOnlyHint, true);
+  assert.equal(chopperDoctor.annotations.destructiveHint, false);
+  assert.equal(mixerStatus.annotations.readOnlyHint, true);
+  assert.equal(mixerStatus.annotations.destructiveHint, false);
+  assert.equal(mixerRoute.annotations.readOnlyHint, true);
+  assert.equal(mixerRoute.annotations.destructiveHint, false);
+  assert.equal(workerStatus.annotations.readOnlyHint, true);
+  assert.equal(workerStart.annotations.readOnlyHint, false);
+  assert.equal(workerStart.annotations.destructiveHint, false);
+  assert.equal(taskDispatch.annotations.readOnlyHint, false);
+  assert.equal(taskDispatch.annotations.openWorldHint, true);
+  assert.equal(jobsStatus.annotations.readOnlyHint, true);
   assert.equal(inbox.annotations.readOnlyHint, true);
   assert.equal(inbox.annotations.openWorldHint, true);
   assert.equal(post.annotations.readOnlyHint, false);
   assert.equal(post.annotations.openWorldHint, true);
+});
+
+test('a11 MCP worker supervisor starts only as a whitelisted dry-run plan', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-mcp-worker-supervisor-'));
+  try {
+    const [response] = await callMcpOnce({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'a11_worker_start',
+        arguments: {
+          agent: 'codex',
+          workerId: 'identity-archivist-dry-run',
+          dryRun: true,
+        },
+      },
+    }, { A11_RUNTIME_ROOT: runtimeRoot });
+
+    assert.equal(response.id, 3);
+    const payload = JSON.parse(response.result.content[0].text);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.dryRun, true);
+    assert.equal(payload.command, 'npm run worker:archivist:dry-run');
+    assert.equal(
+      fs.existsSync(path.join(runtimeRoot, 'worker-supervisor', 'locks', 'identity-archivist-dry-run.lock.json')),
+      false
+    );
+  } finally {
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
 });
 
 test('Kiro MCP config avoids high-risk auto-approval', () => {

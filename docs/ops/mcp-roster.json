@@ -1,0 +1,302 @@
+{
+  "schema": "funesterie.mcp.roster.v1",
+  "updatedAt": "2026-05-15",
+  "status": "active",
+  "purpose": "Canonical secret-free roster for MCP-connected agents, service surfaces, tool scopes, and Operation BB readiness.",
+  "rules": [
+    "No raw secret, token, cookie, private key, JWT value, password, or provider credential belongs in this file.",
+    "Prefer public read-only endpoints first; use authenticated full MCP only for named agents with a bounded tool allowlist.",
+    "No free shell, docker.sock, root action, production deploy, broad Neo4j write, or worker start should be exposed to external agents by default.",
+    "All write-like actions must be scoped, audited, and reversible or append-only."
+  ],
+  "endpoints": {
+    "public_gemini": {
+      "url": "https://mcp.funesterie.me/gemini/mcp",
+      "transport": "http",
+      "auth": "none",
+      "exposure": "public-safe",
+      "status": "connected",
+      "notes": "Gemini CLI public read-only profile."
+    },
+    "public_chatgpt": {
+      "url": "https://mcp.funesterie.me/chatgpt/mcp",
+      "transport": "http",
+      "auth": "none",
+      "exposure": "public-safe",
+      "status": "available",
+      "notes": "ChatGPT-safe reduced tool surface."
+    },
+    "public_grok": {
+      "url": "https://mcp.funesterie.me/grok/mcp",
+      "transport": "http",
+      "auth": "none",
+      "exposure": "public-safe",
+      "status": "available",
+      "notes": "Grok-safe reduced tool surface. Prefer future Cloudflare proxy with X-Agent-Id for stronger gating."
+    },
+    "private_full": {
+      "url": "https://mcp.funesterie.me/mcp",
+      "transport": "http",
+      "auth": "bearer-or-oauth",
+      "exposure": "private",
+      "status": "connected",
+      "notes": "Full MCP endpoint. Client configs must reference env vars or OAuth, never inline bearer values."
+    },
+    "local_a11_kiro": {
+      "command": "node D:/projets/funesterie/a11/backend/apps/server/tools/mcp/a11-mcp-server.cjs",
+      "transport": "stdio",
+      "auth": "local-process",
+      "exposure": "local-only",
+      "status": "configured",
+      "notes": "Kiro local MCP for A11 route map, identity, and local diagnostics."
+    },
+    "a11_backend": {
+      "url": "https://a11.funesterie.pro",
+      "transport": "https",
+      "auth": "app-auth",
+      "exposure": "public-app",
+      "status": "healthy",
+      "notes": "A11 backend health returned OK on 2026-05-15."
+    }
+  },
+  "toolBundles": {
+    "public_readonly": [
+      "search",
+      "fetch",
+      "a11_status",
+      "kaen44_status",
+      "qflush_status",
+      "generated_bucket_status",
+      "generated_bucket_public_url"
+    ],
+    "private_safe": [
+      "agent_presence",
+      "agent_heartbeat",
+      "agent_inbox_check",
+      "agent_jobs",
+      "a11_worker_status",
+      "a11_agent_jobs_status",
+      "job_queue_schema",
+      "discussion_list",
+      "discussion_open",
+      "discussion_post",
+      "discussion_read",
+      "discussion_set_status",
+      "neo4j_status",
+      "neo4j_read_query",
+      "a11_runtime_hooks_status",
+      "a11_status",
+      "a11_llm_stats",
+      "kaen44_status",
+      "qflush_status",
+      "qflush_janus_status",
+      "qflush_vivy_audio_status",
+      "generated_bucket_status",
+      "generated_bucket_public_url",
+      "generated_bucket_list",
+      "generated_bucket_head",
+      "search",
+      "fetch"
+    ],
+    "operations_gated": [
+      "job_enqueue",
+      "job_lease",
+      "job_start",
+      "job_heartbeat",
+      "job_complete",
+      "job_fail",
+      "job_recover_expired",
+      "memory_write_safe",
+      "graph_write_safe",
+      "generated_bucket_put_text",
+      "generated_bucket_put_base64"
+    ],
+    "blocked_by_default": [
+      "shell",
+      "raw filesystem read outside allowlist",
+      "direct secret read",
+      "docker.sock",
+      "root",
+      "a11_worker_start",
+      "a11_worker_stop",
+      "a11_worker_restart",
+      "neo4j_write_query",
+      "production deploy",
+      "payment or billing mutation"
+    ]
+  },
+  "agents": [
+    {
+      "id": "codex",
+      "type": "coding-agent",
+      "status": "active",
+      "role": "implementation, review, local ops, integration commander",
+      "mcpAccess": ["private_full", "local workspace"],
+      "authMode": "local app context and existing machine credentials",
+      "allowedBundles": ["private_safe", "operations_gated with explicit human scope"],
+      "blocked": ["secret disclosure", "destructive git reset", "unscoped production mutation"],
+      "bbRole": "patch captain and verifier"
+    },
+    {
+      "id": "kiro",
+      "type": "ide-agent",
+      "status": "connected",
+      "role": "codebase navigation, spec execution, structured local diagnosis",
+      "mcpAccess": ["local_a11_kiro", "private_full"],
+      "authMode": "Kiro MCP config, private bearer handled outside docs",
+      "allowedBundles": ["private_safe"],
+      "blocked": ["free shell over MCP", "secret reads", "direct prod deploy"],
+      "bbRole": "local code navigator and route-map checker"
+    },
+    {
+      "id": "gemini-cli-pro",
+      "type": "external-llm-cli",
+      "status": "connected",
+      "role": "long-context reasoning, Google-side thinking, second-pass analysis",
+      "mcpAccess": ["public_gemini", "private_full"],
+      "authMode": "environment variable GEMINI_CLI_FUNESTERIE_MCP referenced by C:/Users/Djeff/.gemini/settings.json",
+      "allowedBundles": ["private_safe"],
+      "blocked": ["worker start/stop", "raw writes", "secrets", "production deploy"],
+      "bbRole": "analysis engine and consistency reviewer",
+      "lastCheck": "Gemini called qflush_status successfully on 2026-05-15."
+    },
+    {
+      "id": "chatgpt",
+      "type": "llm-agent",
+      "status": "available",
+      "role": "coordination, synthesis, public-safe MCP usage",
+      "mcpAccess": ["public_chatgpt", "private_full via OAuth only when configured"],
+      "authMode": "none for public-safe; OAuth for private connector",
+      "allowedBundles": ["public_readonly", "private_safe if OAuth scoped"],
+      "blocked": ["bearer pasted in chat", "secret reads", "direct prod mutation"],
+      "bbRole": "operator narrative and broad synthesis"
+    },
+    {
+      "id": "claude",
+      "type": "external-llm",
+      "status": "candidate",
+      "role": "deep review, docs, coherence, risk analysis",
+      "mcpAccess": ["public_chatgpt or private_full via OAuth-compatible client"],
+      "authMode": "OAuth preferred; no pasted bearer",
+      "allowedBundles": ["public_readonly", "private_safe after auth"],
+      "blocked": ["worker control", "broad graph writes", "secrets"],
+      "bbRole": "review and coherence lane"
+    },
+    {
+      "id": "copilot-cli",
+      "type": "github-agent",
+      "status": "quota-gated",
+      "role": "GitHub PR, CI, targeted code suggestions",
+      "mcpAccess": ["private_full if gh copilot mcp is available"],
+      "authMode": "GitHub CLI account plus MCP auth managed outside docs",
+      "allowedBundles": ["agent jobs", "discussion", "status checks"],
+      "blocked": ["secrets", "prod deploy", "unscoped repo-wide rewrites"],
+      "bbRole": "CI repair assistant"
+    },
+    {
+      "id": "grok",
+      "type": "external-llm",
+      "status": "candidate",
+      "role": "media analysis, adversarial review, challenge, fast alternate hypotheses",
+      "mcpAccess": ["public_grok", "future Cloudflare agent proxy"],
+      "authMode": "none public-safe; future X-Agent-Id proxy with server-side bearer injection",
+      "allowedBundles": ["public_readonly"],
+      "blocked": ["bearer visibility", "write tools", "worker control"],
+      "bbRole": "contradiction and sanity-check lane",
+      "policyDoc": "docs/ops/GROK_MEDIA_ANALYST_LANE_2026-05-15.md"
+    },
+    {
+      "id": "a11",
+      "type": "core-agent",
+      "status": "healthy",
+      "role": "memory, corpus, graph, identity, routing, local reasoning",
+      "mcpAccess": ["local_a11_kiro", "private_full"],
+      "authMode": "backend app auth and private MCP auth",
+      "allowedBundles": ["private_safe", "operations_gated when local"],
+      "blocked": ["secret publication", "unreviewed public jargon leak"],
+      "bbRole": "memory and routing owner"
+    },
+    {
+      "id": "kaen44",
+      "type": "operator-agent",
+      "status": "available",
+      "role": "client/demo copilot, desktop operator, accessible workflow support",
+      "mcpAccess": ["private_full", "A11 backend surfaces"],
+      "authMode": "app auth, private MCP when needed",
+      "allowedBundles": ["private_safe"],
+      "blocked": ["raw secrets", "unbounded automation"],
+      "bbRole": "client/demo surface owner"
+    },
+    {
+      "id": "vivy",
+      "type": "creative-agent",
+      "status": "available",
+      "role": "music, voice, audio identity, creative assets",
+      "mcpAccess": ["A11 backend surfaces", "qflush_vivy_audio_status"],
+      "authMode": "service scoped; no raw provider secrets in corpus",
+      "allowedBundles": ["status", "audio analysis status", "generated public artifact read"],
+      "blocked": ["copyrighted voice cloning", "unapproved publish"],
+      "bbRole": "audio/video identity lane"
+    },
+    {
+      "id": "qflush",
+      "type": "runtime-module",
+      "status": "active",
+      "role": "flow booster, bridge, input/runtime hooks, Janus/Vivy analysis triggers",
+      "mcpAccess": ["private_full status tools"],
+      "authMode": "module internal or private MCP",
+      "allowedBundles": ["status", "bounded runtime hooks"],
+      "blocked": ["free arbitrary input injection", "unsafe local control"],
+      "bbRole": "runtime automation lane"
+    },
+    {
+      "id": "cloudflare",
+      "type": "ops-surface",
+      "status": "active",
+      "role": "tunnels, public routes, future agent proxy, R2 public artifacts",
+      "mcpAccess": ["not an agent; managed by ops tools"],
+      "authMode": "dashboard/API secrets outside docs",
+      "allowedBundles": ["status and deploy only with human scope"],
+      "blocked": ["secret exposure", "unreviewed route takeover"],
+      "bbRole": "edge and public access lane"
+    },
+    {
+      "id": "render",
+      "type": "ops-surface",
+      "status": "active",
+      "role": "backend hosting, logs, deploy health",
+      "mcpAccess": ["not an agent; managed by Render/GitHub workflows"],
+      "authMode": "Render auth outside docs",
+      "allowedBundles": ["health, logs, manual deploy with scope"],
+      "blocked": ["unscoped rollback/deploy", "secret exposure"],
+      "bbRole": "backend deployment lane"
+    },
+    {
+      "id": "jfrog",
+      "type": "ops-surface",
+      "status": "available",
+      "role": "private packages and module publishing",
+      "mcpAccess": ["not an agent by default"],
+      "authMode": "JFrog CLI/OAuth outside docs",
+      "allowedBundles": ["package status and controlled publish"],
+      "blocked": ["public token in npmrc", "unreviewed package overwrite"],
+      "bbRole": "package hygiene lane"
+    }
+  ],
+  "operationBB": {
+    "status": "prepared-not-launched",
+    "launchRule": "Launch only after all readiness gates are green or explicitly waived by the human.",
+    "readinessGates": [
+      "MCP public and private endpoints healthy",
+      "Gemini/Kiro/Codex roster entries verified",
+      "Git worktree reviewed and unrelated changes preserved",
+      "Secrets scan planned before any screenshot/share/deploy",
+      "CI failures listed with owner and reproduction command",
+      "A11 backend 502/video/frame-generate issues reproduced",
+      "Worker queue status known and no duplicate loops running",
+      "Rollback route documented for Render/Cloudflare",
+      "Neo4j local/Aura read status checked",
+      "Demo UI routes checked mobile and desktop"
+    ]
+  }
+}

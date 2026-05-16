@@ -38,6 +38,10 @@ const {
   normalizeVideoFormat,
   parseVideoGenerateRequest,
 } = require('./video-request.cjs');
+const {
+  buildMediaPipeline,
+  getMediaAgentRoleMatrix,
+} = require('../media/media-agent-roles.cjs');
 
 function defaultFetch(...args) {
   if (typeof globalThis.fetch === 'function') {
@@ -280,8 +284,87 @@ function normalizeVideoDimension(value, {
 function normalizeVideoFrameExtension(value = '') {
   const normalized = String(value || '').trim().toLowerCase().replace(/^\./, '');
   if (normalized === 'jpeg') return 'jpg';
-  if (['png', 'jpg', 'webp', 'ppm'].includes(normalized)) return normalized;
+  if (['png', 'jpg', 'webp', 'ppm', 'mixed'].includes(normalized)) return normalized;
   return 'png';
+}
+
+function frameExtensionFromContentType(contentType = '') {
+  const normalized = String(contentType || '').trim().toLowerCase();
+  if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
+  if (normalized.includes('png')) return 'png';
+  if (normalized.includes('webp')) return 'webp';
+  if (normalized.includes('portable-pixmap') || normalized.includes('x-portable-pixmap')) return 'ppm';
+  return '';
+}
+
+function frameExtensionFromPathOrUrl(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return normalizeVideoFrameExtension(path.extname(parsed.pathname).replace(/^\./, ''));
+  } catch {
+    return normalizeVideoFrameExtension(path.extname(raw).replace(/^\./, ''));
+  }
+}
+
+function frameExtensionFromBuffer(buffer, fallback = '') {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return fallback;
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg';
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return 'png';
+  if (
+    buffer.length >= 12
+    && buffer.toString('ascii', 0, 4) === 'RIFF'
+    && buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'webp';
+  }
+  if (buffer[0] === 0x50 && (buffer[1] === 0x36 || buffer[1] === 0x33)) return 'ppm';
+  return fallback;
+}
+
+function resolveGeneratedFrameExtension({
+  sdResult = {},
+  generatedFramePath = '',
+  frameUrl = '',
+  frameBuffer = null,
+  fallback = 'png',
+} = {}) {
+  const contentType = String(
+    sdResult?.content_type
+    || sdResult?.contentType
+    || sdResult?.mime
+    || sdResult?.mime_type
+    || sdResult?.result?.content_type
+    || sdResult?.result?.contentType
+    || sdResult?.file?.contentType
+    || ''
+  ).trim();
+  const fromContentType = frameExtensionFromContentType(contentType);
+  const fromPath = frameExtensionFromPathOrUrl(
+    generatedFramePath
+    || sdResult?.filename
+    || sdResult?.output_path
+    || sdResult?.local_path
+    || sdResult?.outputPath
+    || sdResult?.localPath
+    || ''
+  );
+  const fromUrl = frameExtensionFromPathOrUrl(
+    frameUrl
+    || sdResult?.url
+    || sdResult?.image_url
+    || sdResult?.file_url
+    || sdResult?.download_url
+    || ''
+  );
+  return normalizeVideoFrameExtension(
+    frameExtensionFromBuffer(frameBuffer, '')
+    || fromContentType
+    || fromPath
+    || fromUrl
+    || fallback
+  );
 }
 
 const FFMPEG_CAPABILITY_CACHE = new Map();
@@ -453,8 +536,12 @@ function resolveVideoEnvConfig(env = process.env) {
     ffmpegCapabilities: mp4Config.capabilities,
     frameInitStrength: clampNumber(env.A11_VIDEO_FRAME_INIT_STRENGTH, 0.05, 0.6, 0.22),
     frameReferenceStrength: clampNumber(env.A11_VIDEO_FRAME_REFERENCE_STRENGTH, 0.05, 0.6, 0.18),
-    frameReanchorEvery: clampNumber(env.A11_VIDEO_FRAME_REANCHOR_EVERY, 4, 48, 12),
+    frameReanchorEvery: clampNumber(env.A11_VIDEO_FRAME_REANCHOR_EVERY, 1, 48, 12),
     useJanusFrameAnalysis: isTruthy(env.A11_VIDEO_USE_JANUS_FRAME_ANALYSIS),
+    useVideoRealityCheck: env.A11_VIDEO_REALITY_CHECK === undefined
+      ? isTruthy(env.A11_VIDEO_USE_JANUS_FRAME_ANALYSIS)
+      : isTruthy(env.A11_VIDEO_REALITY_CHECK),
+    videoRealityCheckFrameCount: clampNumber(env.A11_VIDEO_REALITY_CHECK_FRAME_COUNT, 1, 5, 3),
     sequencePlanner: sequencePlannerConfig.sequencePlanner,
     sequencePlannerImageAware: sequencePlannerConfig.sequencePlannerImageAware,
     sequencePlannerTimeoutMs: sequencePlannerConfig.sequencePlannerTimeoutMs,
@@ -1547,8 +1634,8 @@ function normalizeVideoRequest(body = {}, promptOverride = '') {
   });
   const durationSeconds = timingPlan.durationSeconds;
   const fps = timingPlan.fps;
-  const hasExplicitWidth = parsed.width !== undefined || body?.width !== undefined;
-  const hasExplicitHeight = parsed.height !== undefined || body?.height !== undefined;
+  const hasExplicitWidth = Number(body?.width || 0) > 0;
+  const hasExplicitHeight = Number(body?.height || 0) > 0;
   const requestedWidth = Number(parsed.width || body?.width || config.defaultWidth);
   const requestedHeight = Number(parsed.height || body?.height || config.defaultHeight);
   const fittedDimensions = fitRenderDimensionsWithinLimits({
@@ -1765,6 +1852,208 @@ function resolveVideoSdRequestOverrides(body = {}) {
   };
 }
 
+function mergePromptLists(...values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    for (const part of String(value || '').split(',')) {
+      const cleaned = part.trim();
+      if (!cleaned) continue;
+      const key = cleaned.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(cleaned);
+    }
+  }
+  return out.join(', ');
+}
+
+function extractCanonicalVideoSubject(rawMask = {}, compiledState = {}) {
+  const candidates = [
+    rawMask?.meta?.canonicalSubject,
+    rawMask?.meta?.subjectProfile?.canonicalSubject,
+    rawMask?.meta?.imageScratchpad?.canonicalSubject,
+    compiledState?.mask?.meta?.canonicalSubject,
+    compiledState?.mask?.meta?.subjectProfile?.canonicalSubject,
+    compiledState?.mask?.meta?.imageScratchpad?.canonicalSubject,
+    Array.isArray(rawMask?.inputs?.subject) ? rawMask.inputs.subject[0] : '',
+    Array.isArray(compiledState?.mask?.inputs?.subject) ? compiledState.mask.inputs.subject[0] : '',
+  ];
+  return String(candidates.find((value) => String(value || '').trim()) || '').trim();
+}
+
+function extractSubjectReferenceFromPack(pack = {}) {
+  const references = Array.isArray(pack?.references) ? pack.references : [];
+  const subjectReference = references.find((reference) => {
+    const role = String(reference?.role || '').trim().toLowerCase();
+    return (!role || role === 'subject' || role === 'character')
+      && String(reference?.imageUrl || reference?.image_url || reference?.url || '').trim();
+  });
+  if (!subjectReference) return null;
+  return {
+    imageUrl: String(subjectReference.imageUrl || subjectReference.image_url || subjectReference.url || '').trim(),
+    query: String(subjectReference.query || subjectReference.title || '').trim(),
+  };
+}
+
+function extractCompiledWebReference(compiledState = {}) {
+  return extractSubjectReferenceFromPack(compiledState?.mask?.meta?.webReferencePack)
+    || extractSubjectReferenceFromPack(compiledState?.rawMask?.meta?.webReferencePack)
+    || null;
+}
+
+function extractCompiledWebDraft(compiledState = {}) {
+  const draft = compiledState?.mask?.meta?.webImageDraft
+    || compiledState?.rawMask?.meta?.webImageDraft
+    || null;
+  const initImageUrl = String(
+    draft?.initImageUrl
+    || draft?.init_image_url
+    || compiledState?.sdBody?.init_image_url
+    || compiledState?.sdBody?.initImageUrl
+    || ''
+  ).trim();
+  if (!initImageUrl) return null;
+  return {
+    imageUrl: initImageUrl,
+    mode: String(draft?.mode || 'web-image-draft').trim() || 'web-image-draft',
+    reason: String(draft?.reason || 'compiled_web_draft').trim() || 'compiled_web_draft',
+  };
+}
+
+function shouldForceSubjectReferenceLookup({
+  canonicalSubject = '',
+  trustedReference = null,
+  compiledDraft = null,
+  motionProfile = 'generic',
+  resolveImageReferencePack = null,
+} = {}) {
+  if (!canonicalSubject || typeof resolveImageReferencePack !== 'function') return false;
+  const profile = String(motionProfile || 'generic').trim() || 'generic';
+  if (['archery_shot', 'mounted_archery', 'action_burst'].includes(profile)) return true;
+  if (compiledDraft) return true;
+  return !trustedReference;
+}
+
+function resolveCompiledRenderSizing(compiledState = {}) {
+  const renderSizing = compiledState?.mask?.meta?.renderSizing || {};
+  const sdBody = compiledState?.sdBody || {};
+  const width = Number(
+    renderSizing.resolvedWidth
+    || renderSizing.width
+    || sdBody.width
+    || 0
+  );
+  const height = Number(
+    renderSizing.resolvedHeight
+    || renderSizing.height
+    || sdBody.height
+    || 0
+  );
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return null;
+  return { width, height };
+}
+
+async function resolveVideoSemanticCompile({
+  request,
+  hasExplicitSource = false,
+  buildCanonicalImageMaskFromText = null,
+  compileMaskImageGenerateRuntime = null,
+  resolveImageReferencePack = null,
+  resolveImageWebDraft = null,
+} = {}) {
+  if (typeof buildCanonicalImageMaskFromText !== 'function' || typeof compileMaskImageGenerateRuntime !== 'function') {
+    return {
+      compiledPrompt: String(request?.prompt || '').trim(),
+      negativePrompt: '',
+      initialReference: null,
+      compiledState: null,
+      rawMask: null,
+      sizing: null,
+    };
+  }
+
+  const maskResolution = await buildCanonicalImageMaskFromText(String(request?.prompt || '').trim(), {
+    mode: 'video.generate',
+    intent: 'video.generate',
+  });
+  const rawMask = maskResolution?.rawMask || maskResolution?.mask || maskResolution || {};
+  const safeResolveImageWebDraft = typeof resolveImageWebDraft === 'function'
+    ? resolveImageWebDraft
+    : async () => null;
+  const safeResolveImageReferencePack = typeof resolveImageReferencePack === 'function'
+    ? resolveImageReferencePack
+    : async () => null;
+  const compileOptions = {
+    ...(hasExplicitSource ? { imageRequestMode: 'raw' } : {}),
+    resolveImageWebDraft: safeResolveImageWebDraft,
+    resolveImageReferencePack: safeResolveImageReferencePack,
+  };
+  const compiledState = await compileMaskImageGenerateRuntime(rawMask, compileOptions);
+  const sdBody = compiledState?.sdBody || {};
+  const compiledPrompt = String(sdBody.prompt || request?.prompt || '').trim();
+  const negativePrompt = String(sdBody.negative_prompt || sdBody.negativePrompt || '').trim();
+  const sizing = resolveCompiledRenderSizing(compiledState);
+  const canonicalSubject = extractCanonicalVideoSubject(rawMask, compiledState);
+  const trustedReference = extractCompiledWebReference(compiledState);
+  const compiledDraft = extractCompiledWebDraft(compiledState);
+  let initialReference = null;
+
+  if (!hasExplicitSource) {
+    const forceSubjectLookup = shouldForceSubjectReferenceLookup({
+      canonicalSubject,
+      trustedReference,
+      compiledDraft,
+      motionProfile: request?.timingPlan?.motionProfile || 'generic',
+      resolveImageReferencePack: safeResolveImageReferencePack,
+    });
+
+    if (forceSubjectLookup) {
+      const referencePack = await safeResolveImageReferencePack({
+        prompt: String(request?.prompt || '').trim(),
+        compiledPrompt,
+        canonicalSubject,
+        forceSubjectLookup: true,
+        subjectOnly: true,
+        motionProfile: String(request?.timingPlan?.motionProfile || 'generic').trim() || 'generic',
+      });
+      const subjectReference = extractSubjectReferenceFromPack(referencePack);
+      if (subjectReference?.imageUrl) {
+        initialReference = {
+          initImageUrl: subjectReference.imageUrl,
+          initImagePath: '',
+          sourceMode: 'web_reference_subject',
+        };
+      }
+    }
+
+    if (!initialReference && trustedReference?.imageUrl) {
+      initialReference = {
+        initImageUrl: trustedReference.imageUrl,
+        initImagePath: '',
+        sourceMode: 'web_reference_subject',
+      };
+    }
+
+    if (!initialReference && compiledDraft?.imageUrl && isTruthy(process.env.A11_VIDEO_ALLOW_IMPLICIT_WEB_INIT)) {
+      initialReference = {
+        initImageUrl: compiledDraft.imageUrl,
+        initImagePath: '',
+        sourceMode: compiledDraft.mode || 'web-image-draft',
+      };
+    }
+  }
+
+  return {
+    compiledPrompt,
+    negativePrompt,
+    initialReference,
+    compiledState,
+    rawMask,
+    sizing,
+  };
+}
+
 async function downloadBinary(url, fetchImpl = defaultFetch) {
   const response = await fetchImpl(url);
   if (!response.ok) {
@@ -1944,6 +2233,10 @@ async function synthesizeVideoAudioTrack({
     contentType,
     sizeBytes: buffer.length,
     gifUrl: String(payload.gif_url || payload.gifUrl || '').trim() || null,
+    owner: 'vivy',
+    role: 'audio',
+    provider: 'a11-voice',
+    fallbackChain: ['a11-voice', 'tts-piper', 'sfx-engine', 'silent-track'],
   };
 }
 
@@ -2098,6 +2391,14 @@ async function resolveInitialReferenceFrame({
       initImageUrl: publishedUrl,
       initImagePath: extractedFramePath,
       sourceMode: 'video_first_frame',
+    };
+  }
+
+  if (request.semanticInitialReference?.initImageUrl || request.semanticInitialReference?.initImagePath) {
+    return {
+      initImageUrl: String(request.semanticInitialReference.initImageUrl || '').trim(),
+      initImagePath: String(request.semanticInitialReference.initImagePath || '').trim(),
+      sourceMode: String(request.semanticInitialReference.sourceMode || 'web_reference_subject').trim() || 'web_reference_subject',
     };
   }
 
@@ -2329,7 +2630,7 @@ async function runFfmpegAssembly({
     audioPath,
   });
 
-  await new Promise((resolve, reject) => {
+  const result = await new Promise((resolve, reject) => {
     const child = spawn(ffmpegBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -2353,6 +2654,21 @@ async function runFfmpegAssembly({
       return reject(new Error(`ffmpeg_failed:${code}:${stderr || stdout}`));
     });
   });
+
+  let outputStats = null;
+  try {
+    outputStats = await fsp.stat(outputPath);
+  } catch (error_) {
+    throw new Error(`ffmpeg_output_missing:${String(error_?.message || error_)}`);
+  }
+  if (!outputStats.size) {
+    throw new Error(`ffmpeg_output_empty:${format}:${args.join(' ')}`);
+  }
+
+  return {
+    ...result,
+    outputSizeBytes: outputStats.size,
+  };
 }
 
 function buildFfmpegAssemblyArgs({
@@ -2367,7 +2683,9 @@ function buildFfmpegAssemblyArgs({
   audioPath = '',
 }) {
   const safeFrameExtension = normalizeVideoFrameExtension(frameExtension);
-  const inputPattern = path.join(framesDir, `frame-%04d.${safeFrameExtension}`);
+  const inputArgs = safeFrameExtension === 'mixed'
+    ? ['-pattern_type', 'glob', '-i', path.join(framesDir, 'frame-*.*')]
+    : ['-i', path.join(framesDir, `frame-%04d.${safeFrameExtension}`)];
   const normalizedAudioPath = String(audioPath || '').trim();
   const audioArgs = normalizedAudioPath && format === 'mp4'
     ? ['-i', normalizedAudioPath]
@@ -2376,13 +2694,13 @@ function buildFfmpegAssemblyArgs({
     ? ['-c:a', 'aac', '-b:a', '128k', '-af', 'apad', '-shortest']
     : [];
   return format === 'gif'
-    ? ['-y', '-framerate', String(fps), '-i', inputPattern, outputPath]
+    ? ['-y', '-framerate', String(fps), ...inputArgs, outputPath]
     : (
       /_nvenc$/i.test(String(mp4Codec || ''))
         ? [
             '-y',
             '-framerate', String(fps),
-            '-i', inputPattern,
+            ...inputArgs,
             ...audioArgs,
             '-c:v', String(mp4Codec || 'h264_nvenc'),
             '-preset', String(mp4Preset || 'p5'),
@@ -2398,7 +2716,7 @@ function buildFfmpegAssemblyArgs({
         : [
             '-y',
             '-framerate', String(fps),
-            '-i', inputPattern,
+            ...inputArgs,
             ...audioArgs,
             '-c:v', String(mp4Codec || 'libx264'),
             '-preset', String(mp4Preset || 'medium'),
@@ -2452,17 +2770,177 @@ async function maybeDescribeFirstFrameWithJanus(framePath, contentType = 'image/
   }
 }
 
-function buildVideoAssistantMessage({ videoUrl = '', filename = '' } = {}) {
-  if (videoUrl) {
-    return `La video est prete. [ouvrir la video](${videoUrl})`;
+function parseVideoRealityCheckJson(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const direct = raw.match(/^\s*\{[\s\S]*\}\s*$/);
+  const embedded = direct || raw.match(/\{[\s\S]*\}/);
+  if (!embedded) return null;
+  try {
+    return JSON.parse(embedded[0]);
+  } catch {
+    return null;
   }
-  return `La video ${filename || 'generee'} est prete.`;
+}
+
+function normalizeRealityScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return null;
+  return Math.max(0, Math.min(1, score));
+}
+
+function selectRealityCheckFrames(frames = [], maxCount = 3) {
+  const available = (Array.isArray(frames) ? frames : [])
+    .filter((frame) => frame && !frame.syntheticFallback && frame.path && fs.existsSync(frame.path));
+  if (!available.length) return [];
+
+  const indexes = [0, Math.floor((available.length - 1) / 2), available.length - 1];
+  const unique = [];
+  const seen = new Set();
+  for (const index of indexes) {
+    const frame = available[index];
+    if (!frame || seen.has(frame.index)) continue;
+    seen.add(frame.index);
+    unique.push(frame);
+    if (unique.length >= maxCount) break;
+  }
+  return unique;
+}
+
+function isRuntimeVisionUnavailable(errorMessage = '') {
+  const normalized = String(errorMessage || '').toLowerCase();
+  return normalized.includes('timeout')
+    || normalized.includes('worker_exited')
+    || normalized.includes('sigterm')
+    || normalized.includes('econnrefused')
+    || normalized.includes('unavailable');
+}
+
+async function runVideoRealityCheck({
+  request,
+  compiledPrompt = '',
+  frames = [],
+  sequencePlan = {},
+} = {}) {
+  if (!request?.config?.useVideoRealityCheck) return null;
+
+  const selectedFrames = selectRealityCheckFrames(
+    frames,
+    Number(request.config.videoRealityCheckFrameCount || 3) || 3
+  );
+  if (!selectedFrames.length) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'no_real_frame_available',
+      provider: 'janus',
+    };
+  }
+
+  const janus = resolveJanusVisionConfig({});
+  const checks = [];
+  for (const frame of selectedFrames) {
+    try {
+      const buffer = await fsp.readFile(frame.path);
+      const prompt = [
+        'Tu es le controle qualite video de A11.',
+        'Compare l intention demandee avec la frame reelle fournie.',
+        'Retourne uniquement un JSON strict avec ces champs:',
+        '{"score":0.0,"verdict":"match|partial|mismatch","visible":["..."],"missing":["..."],"drift":["..."],"summary":"..."}',
+        '',
+        `Intention utilisateur: ${String(request.prompt || '').trim()}`,
+        `Prompt compile: ${String(compiledPrompt || '').trim()}`,
+        `Objectif sequence: ${String(sequencePlan?.globalObjective || '').trim()}`,
+        `Frame ${Number(frame.index || 0) + 1}: ${String(frame.frameVariationPrompt || frame.prompt || '').trim()}`,
+      ].join('\n');
+      const result = await callJanusVisionText({
+        imageBuffer: buffer,
+        contentType: guessContentTypeFromPath(frame.path),
+        prompt,
+        maxNewTokens: Math.min(janus.maxNewTokens, 260),
+        timeoutMs: janus.timeoutMs,
+        modelRef: janus.modelRef,
+        device: janus.device,
+        torchDtype: janus.torchDtype,
+      });
+      const rawText = String(result?.text || result || '').trim();
+      const parsed = parseVideoRealityCheckJson(rawText) || {};
+      const score = normalizeRealityScore(parsed.score);
+      checks.push({
+        frameIndex: Number(frame.index || 0),
+        frameNumber: Number(frame.index || 0) + 1,
+        url: frame.url || null,
+        score,
+        verdict: String(parsed.verdict || (score !== null && score >= 0.72 ? 'match' : 'partial')).trim(),
+        visible: Array.isArray(parsed.visible) ? parsed.visible.map(String).slice(0, 8) : [],
+        missing: Array.isArray(parsed.missing) ? parsed.missing.map(String).slice(0, 8) : [],
+        drift: Array.isArray(parsed.drift) ? parsed.drift.map(String).slice(0, 8) : [],
+        summary: String(parsed.summary || rawText).trim().slice(0, 1200),
+      });
+    } catch (error_) {
+      const errorMessage = String(error_?.message || error_ || 'frame_reality_check_failed');
+      checks.push({
+        frameIndex: Number(frame.index || 0),
+        frameNumber: Number(frame.index || 0) + 1,
+        ok: false,
+        error: errorMessage,
+      });
+      if (isRuntimeVisionUnavailable(errorMessage)) break;
+    }
+  }
+
+  const scored = checks.map((entry) => entry.score).filter((score) => Number.isFinite(score));
+  const averageScore = scored.length
+    ? Math.round((scored.reduce((sum, score) => sum + score, 0) / scored.length) * 100) / 100
+    : null;
+  const verdict = averageScore === null
+    ? 'unknown'
+    : (averageScore >= 0.78 ? 'match' : (averageScore >= 0.48 ? 'partial' : 'mismatch'));
+  const ok = checks.some((entry) => entry.ok !== false);
+  const fallbackUsed = ok ? null : 'manual-review';
+
+  return {
+    ok,
+    provider: 'janus',
+    model: janus.modelRef,
+    fallbackUsed,
+    fallbackChain: ['janus', 'a11-reality-check', 'manual-review'],
+    score: averageScore,
+    verdict,
+    sampledFrames: checks.length,
+    generatedAt: new Date().toISOString(),
+    summary: ok ? checks
+      .map((entry) => entry.summary)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(' | ') || null
+      : 'Pink Ward/Janus indisponible ou trop lent; generation conservee et controle manuel recommande.',
+    checks,
+  };
+}
+
+function buildVideoAssistantMessage({ videoUrl = '', filename = '', realityCheck = null } = {}) {
+  const base = videoUrl
+    ? `La video est prete. [ouvrir la video](${videoUrl})`
+    : `La video ${filename || 'generee'} est prete.`;
+  if (!realityCheck || typeof realityCheck !== 'object') return base;
+  const verdict = String(realityCheck.verdict || '').trim();
+  const score = Number.isFinite(Number(realityCheck.score)) ? Number(realityCheck.score) : null;
+  const summary = String(realityCheck.summary || '').trim();
+  const label = verdict
+    ? `Controle reel: ${verdict}${score !== null ? ` (${Math.round(score * 100)}%)` : ''}.`
+    : 'Controle reel effectue.';
+  return `${base}\n${summary ? `${label} ${summary}` : label}`;
 }
 
 function toVideoChatProxyPayload(videoResult = {}) {
   const videoUrl = String(videoResult.video_url || videoResult.url || '').trim() || null;
   const filename = String(videoResult.filename || '').trim() || null;
-  const content = buildVideoAssistantMessage({ videoUrl, filename });
+  const content = buildVideoAssistantMessage({
+    videoUrl,
+    filename,
+    realityCheck: videoResult.realityCheck || videoResult.videoRealityCheck || null,
+  });
 
   return {
     ok: videoResult.ok !== false,
@@ -2483,6 +2961,7 @@ function toVideoChatProxyPayload(videoResult = {}) {
     frameCount: videoResult.frameCount,
     width: videoResult.width,
     height: videoResult.height,
+    realityCheck: videoResult.realityCheck || videoResult.videoRealityCheck || null,
     choices: [
       {
         index: 0,
@@ -2503,6 +2982,10 @@ function createGenerateVideoHandler(overrides = {}) {
   const uploadBufferToR2 = overrides.uploadBufferToR2 || defaultUploadBufferToR2;
   const runFfmpeg = overrides.runFfmpeg || runFfmpegAssembly;
   const ensureFfmpeg = overrides.ensureFfmpegAvailable || ensureFfmpegAvailable;
+  const buildCanonicalImageMaskFromText = overrides.buildCanonicalImageMaskFromText;
+  const compileMaskImageGenerateRuntime = overrides.compileMaskImageGenerateRuntime;
+  const resolveImageReferencePack = overrides.resolveImageReferencePack;
+  const resolveImageWebDraft = overrides.resolveImageWebDraft;
   const usesCustomFfmpegRunner = typeof overrides.runFfmpeg === 'function';
 
   return async function generateVideoInternal({ req, prompt, body = null }) {
@@ -2547,6 +3030,47 @@ function createGenerateVideoHandler(overrides = {}) {
         backend: request.config.backend,
       };
       throw error;
+    }
+
+    const semanticCompile = await resolveVideoSemanticCompile({
+      request,
+      hasExplicitSource,
+      buildCanonicalImageMaskFromText,
+      compileMaskImageGenerateRuntime,
+      resolveImageReferencePack,
+      resolveImageWebDraft,
+    });
+    if (semanticCompile.compiledPrompt) {
+      request.prompt = semanticCompile.compiledPrompt;
+    }
+    request.compiledNegativePrompt = semanticCompile.negativePrompt || '';
+    if (semanticCompile.initialReference) {
+      request.semanticInitialReference = semanticCompile.initialReference;
+    }
+    if (
+      semanticCompile.sizing
+      && !(request.explicitWidth || request.explicitHeight)
+    ) {
+      const fittedCompiledDimensions = fitRenderDimensionsWithinLimits({
+        width: semanticCompile.sizing.width,
+        height: semanticCompile.sizing.height,
+        fallbackWidth: request.width,
+        fallbackHeight: request.height,
+        minSide: request.config.minRenderSide,
+        maxSide: Math.max(
+          request.config.maxRenderSide,
+          Number(semanticCompile.sizing.width || 0),
+          Number(semanticCompile.sizing.height || 0)
+        ),
+        maxPixels: Math.max(
+          request.config.maxRenderPixels,
+          Number(semanticCompile.sizing.width || 0) * Number(semanticCompile.sizing.height || 0)
+        ),
+      });
+      request.width = fittedCompiledDimensions.width;
+      request.height = fittedCompiledDimensions.height;
+      request.requestedWidth = semanticCompile.sizing.width;
+      request.requestedHeight = semanticCompile.sizing.height;
     }
 
     if (!usesCustomFfmpegRunner) {
@@ -2616,6 +3140,29 @@ function createGenerateVideoHandler(overrides = {}) {
       ).trim(),
       fetchImpl,
     });
+    const canApplyRuntimeStoryboardFrameCount = Boolean(
+      !request.explicitFrameCount
+      && !request.explicitDuration
+      && !request.explicitFps
+    );
+    if (
+      canApplyRuntimeStoryboardFrameCount
+      && hasExplicitSource
+      && String(sequencePlan?.motionProfile || '').trim() === 'walk_cycle'
+      && Number(sequencePlan?.cycleLength || 0) > 0
+      && Number(sequencePlan.cycleLength) < request.frameCount
+    ) {
+      request.frameCount = Math.max(2, Math.round(Number(sequencePlan.cycleLength)));
+      request.durationSeconds = roundTimingValue(request.frameCount / Math.max(request.fps, 1));
+    } else if (
+      canApplyRuntimeStoryboardFrameCount
+      && String(sequencePlan?.motionProfile || '').trim() === 'transformation_rise'
+      && request.frameCount > 10
+    ) {
+      request.frameCount = 10;
+      request.fps = Math.min(request.fps, 5);
+      request.durationSeconds = roundTimingValue(request.frameCount / Math.max(request.fps, 1));
+    }
     const {
       referenceAnchorPlan: defaultReferenceAnchorPlan,
       referenceReanchorPlan: defaultReferenceReanchorPlan,
@@ -2704,6 +3251,7 @@ function createGenerateVideoHandler(overrides = {}) {
     let syntheticFallbackUsed = false;
     let syntheticFallbackReason = null;
     let frameAssemblyExtension = normalizeVideoFrameExtension(request.config.frameExtension || 'png');
+    let hasMixedFrameExtensions = false;
 
     for (let frameIndex = 0; frameIndex < request.frameCount; frameIndex += 1) {
       const framePlan = normalizeStoryboardBeat(frameStoryboard[frameIndex] || {
@@ -2750,7 +3298,10 @@ function createGenerateVideoHandler(overrides = {}) {
               : (poseRewriteNeeded ? previousPoseShiftPlan : previousFramePlan)))
       );
       const frameStrength = Number(frameStrengthPlan?.strength || 0);
-      const frameNegativePrompt = String(framePromptPlan.negative_prompt_video || '').trim();
+      const frameNegativePrompt = mergePromptLists(
+        request.compiledNegativePrompt,
+        framePromptPlan.negative_prompt_video
+      );
       const frameBody = {
         prompt: framePromptPlan.prompt,
         prompt_2: framePromptPlan.prompt_2,
@@ -2798,8 +3349,9 @@ function createGenerateVideoHandler(overrides = {}) {
       let generatedFramePath = '';
       let syntheticFrame = false;
       let summarizedResult = null;
+      let sdResult = null;
       if (!syntheticFallbackUsed) {
-        const sdResult = await generateSd({
+        sdResult = await generateSd({
           req,
           prompt: framePromptPlan.prompt,
           body: frameBody,
@@ -2855,7 +3407,31 @@ function createGenerateVideoHandler(overrides = {}) {
         : (generatedFramePath
           ? await fsp.readFile(generatedFramePath)
           : await downloadBinary(frameUrl, fetchImpl));
-      const frameExtension = frameAssemblyExtension;
+      const detectedFrameExtension = syntheticFrame
+        ? 'ppm'
+        : resolveGeneratedFrameExtension({
+            sdResult,
+            generatedFramePath,
+            frameUrl,
+            frameBuffer,
+            fallback: frameAssemblyExtension,
+          });
+      if (frameIndex === 0) {
+        frameAssemblyExtension = detectedFrameExtension;
+      } else if (detectedFrameExtension !== frameAssemblyExtension) {
+        hasMixedFrameExtensions = true;
+        videoWarnings.push({
+          code: 'video_mixed_frame_extensions',
+          frameNumber: frameIndex + 1,
+          expected: frameAssemblyExtension,
+          actual: detectedFrameExtension,
+        });
+        console.warn(
+          `[A11][video] mixed frame extension frame=${frameIndex + 1}`
+          + ` expected=${frameAssemblyExtension} actual=${detectedFrameExtension}`
+        );
+      }
+      const frameExtension = hasMixedFrameExtensions ? detectedFrameExtension : frameAssemblyExtension;
       const framePath = path.join(workingPaths.framesDir, `frame-${String(frameIndex).padStart(4, '0')}.${frameExtension}`);
       try {
         await fsp.writeFile(framePath, frameBuffer);
@@ -2892,7 +3468,7 @@ function createGenerateVideoHandler(overrides = {}) {
 
       previousFrameUrl = framePublicUrl || '';
       previousFramePath = framePath;
-      if (framePlan.checkpoint) {
+      if (framePlan.checkpoint && !(effectiveInitialReference.initImagePath || effectiveInitialReference.initImageUrl)) {
         anchorFramePath = framePath;
         anchorFrameUrl = framePublicUrl || '';
         console.log(
@@ -2952,7 +3528,7 @@ function createGenerateVideoHandler(overrides = {}) {
       format: request.format,
       framesDir: workingPaths.framesDir,
       outputPath,
-      frameExtension: frameAssemblyExtension,
+      frameExtension: hasMixedFrameExtensions ? 'mixed' : frameAssemblyExtension,
       mp4Codec: request.config.mp4Codec,
       mp4Preset: request.config.mp4Preset,
       mp4Quality: request.config.mp4Quality,
@@ -3000,6 +3576,16 @@ function createGenerateVideoHandler(overrides = {}) {
     const localUrl = buildLocalPublicUrl(req, outputPath);
     const r2ProxyUrl = buildPublicR2ProxyUrl(req, uploaded?.storageKey || '');
     const videoUrl = String(uploaded?.url || r2ProxyUrl || localUrl || '').trim();
+    const realityCheck = await runVideoRealityCheck({
+      request,
+      compiledPrompt: compiledBasePrompt,
+      frames,
+      sequencePlan,
+    });
+    const mediaAgentRoles = getMediaAgentRoleMatrix();
+    const mediaPipeline = buildMediaPipeline('video', {
+      withAudio: Boolean(audioRequest.enabled),
+    });
 
     return {
       ok: true,
@@ -3011,7 +3597,7 @@ function createGenerateVideoHandler(overrides = {}) {
       mode: request.config.backend,
       prompt: request.prompt,
       compiledPrompt: compiledBasePrompt,
-      negativePrompt: null,
+      negativePrompt: request.compiledNegativePrompt || null,
       format: request.format,
       durationSeconds: request.durationSeconds,
       fps: request.fps,
@@ -3034,6 +3620,21 @@ function createGenerateVideoHandler(overrides = {}) {
       storage_key: uploaded?.storageKey || null,
       audioPath: audioTrack?.path || null,
       firstFrameAnalysis,
+      realityCheck,
+      videoRealityCheck: realityCheck,
+      mediaAgentRoles,
+      mediaPipeline,
+      orchestration: {
+        mode: 'funesterie-media-roles-v1',
+        intent: audioRequest.enabled ? 'clip' : 'video',
+        promptOwner: mediaAgentRoles.prompt.primary,
+        imageOwner: mediaAgentRoles.image.primary,
+        audioOwner: mediaAgentRoles.audio.primary,
+        videoOwner: mediaAgentRoles.video.primary,
+        visionQaOwner: mediaAgentRoles.vision_qa.primary,
+        audioQaOwner: mediaAgentRoles.audio_qa.primary,
+        clientHandoffOwner: mediaAgentRoles.client_handoff.primary,
+      },
       sourceMode: effectiveInitialReference.sourceMode || (!hasExplicitSource ? 'prompt_only' : null),
       sourceSceneType: referenceAnalysis?.scene?.sceneType || null,
       sequencePlanning: {

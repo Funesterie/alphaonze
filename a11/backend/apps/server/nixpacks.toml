@@ -8,7 +8,11 @@ cmds = [
 	"/opt/venv/bin/python -m ensurepip --upgrade || true",
 	"/opt/venv/bin/pip --version",
 	"/opt/venv/bin/pip install --no-cache-dir piper-tts",
-	"/opt/venv/bin/pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r tools/sd/requirements.txt"
+	"/opt/venv/bin/pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r tools/sd/requirements.txt",
+	"python3 -m venv /opt/janus-venv",
+	"/opt/janus-venv/bin/python -m ensurepip --upgrade || true",
+	"/opt/janus-venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel",
+	"/opt/janus-venv/bin/pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r tools/vision/requirements.txt || echo '[A11] optional Janus runtime unavailable; continuing deploy'"
 ]
 
 [phases.build]

@@ -1,0 +1,13 @@
+{
+  "name": "Cloud Doc Access Log",
+  "version": "1.0.0",
+  "description": "Quand un document cloud est lu, note l'accès pour traçabilité",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [".*read_cloud_doc.*", ".*read_shared_doc.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Un document cloud/shared vient d'être lu. Si le contenu est pertinent pour le contexte de travail actuel, note dans la mémoire : quel document, quel root/namespace, et un résumé d'une ligne du contenu. Ne stocke jamais le contenu complet, juste la référence."
+  }
+}

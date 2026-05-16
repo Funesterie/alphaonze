@@ -60,6 +60,7 @@ const {
 const {
   compileCharacterCountConstraints,
   detectPromptLanguageProfile,
+  translateImagePromptToEnglish,
 } = require('./build-sd-prompt-bundle.cjs');
 const resolveImageDimensionConfig = normalizeMaskImageGenerate.resolveImageDimensionConfig;
 const resolveSdLocalRenderLimits = normalizeMaskImageGenerate.resolveSdLocalRenderLimits;
@@ -253,6 +254,8 @@ function isReferenceHumanJokerTransformation(mask = {}, prompt = '') {
   return hasJokerStyleTransformationSignal([
     prompt,
     mask?.raw,
+    mask?.meta?.initialRawUserInput,
+    mask?.meta?.userSourceText,
     mask?.meta?.originalSourceText,
     mask?.meta?.canonicalizedRequest?.canonicalEnglishInput,
     mask?.meta?.promptCanonicalization?.canonicalEnglishInput,
@@ -282,8 +285,8 @@ const SD_PROMPT_OUTPUT_LANGUAGE = 'en';
 const SD_PROMPT_OUTPUT_LABEL = 'english';
 const ENGLISH_MIXED_LANGUAGE_PATTERNS = [
   /\b(?:transforme|ajoute|remplace|garde|garder|preserver|préserver|rendre|montre|montrer|utilise|utiliser|avec|dans|sur|pour)\s+(?:the|a|an|with|and|or|of|to|for|from)\b/i,
-  /\b(?:the|a|an|with|and|or|of|to|for|from)\s+(?:meme|visage|identite|corpulence|posture|pose|cadrage|tenue|costume|maquillage|decor|ambiance|rue|sol|graffitis|lumiere|reflets|personnage|sujet|batte)\b/i,
-  /\b(?:keep|preserve|replace|transform|add|show|use|make)\s+(?:le|la|les|un|une|des|du|de|meme|visage|identite|corpulence|posture|pose|cadrage|tenue|costume|maquillage|decor|ambiance|rue|sol|graffitis|lumiere|reflets|personnage|sujet|batte)\b/i,
+  /\b(?:the|a|an|with|and|or|of|to|for|from)\s+(?:meme|visage|identite|corpulence|posture|cadrage|tenue|maquillage|decor|ambiance|rue|sol|graffitis|lumiere|reflets|personnage|sujet|batte)\b/i,
+  /\b(?:keep|preserve|replace|transform|add|show|use|make)\s+(?:le|la|les|un|une|des|du|de|meme|visage|identite|corpulence|posture|cadrage|tenue|maquillage|decor|ambiance|rue|sol|graffitis|lumiere|reflets|personnage|sujet|batte)\b/i,
   /\b(?:portrait|live action|high quality|dramatic|cinematic|realistic|noir|comic-book)\s+(?:sombre|sale|usee|usée|brute|theatrale|théâtrale|menaçante|menacante|inquietant|inquietante|fidele|lisible)\b/i,
 ];
 const ENGLISH_MIXED_LANGUAGE_LOOKUP_FRAGMENTS = [
@@ -331,6 +334,46 @@ const FRENCH_PROMPT_LEAK_LOOKUP_FRAGMENTS = [
 ];
 const SD_PROMPT_ENGLISH_PHRASE_FIXUPS = [
   [
+    /\bgarder (?:(?:la|the) )?meme corpulence et (?:(?:la|the) )?meme posture\b/gi,
+    'preserve the same build and posture',
+  ],
+  [
+    /\bbatte custom clairement visible\b/gi,
+    'custom bat clearly visible',
+  ],
+  [
+    /\bcomposition propre(?: et puissante)?\b/gi,
+    'clean powerful composition',
+  ],
+  [
+    /\bsujet unique personnage entier visible\b/gi,
+    'single full character visible',
+  ],
+  [
+    /\billustration science[- ]fiction nette\b/gi,
+    'clean science fiction illustration',
+  ],
+  [
+    /\bsimple et lisible\b/gi,
+    'simple and readable',
+  ],
+  [
+    /\bcircuit color[eÃ©] coherent avec l univers\b/gi,
+    'colorful track consistent with the universe',
+  ],
+  [
+    /\b[eÃ©]nergie arcade nette\b/gi,
+    'clean arcade energy',
+  ],
+  [
+    /\bl[eÃ©]g[eÃ¨]re fum[eÃ©]e\b/gi,
+    'light smoke',
+  ],
+  [
+    /\bde petites flammes [aÃ ] l [eÃ©]chappement\b/gi,
+    'small exhaust flames',
+  ],
+  [
     /\bgarder strictement (?:(?:le|the) )?meme (?:(?:visage|face)) et (?:(?:la|the) )?meme identite\b/gi,
     'keep exactly the same face and identity',
   ],
@@ -361,6 +404,90 @@ const SD_PROMPT_ENGLISH_PHRASE_FIXUPS = [
   [
     /\baccessoire bien visible\b/gi,
     'accessory clearly visible',
+  ],
+  [
+    /\bshow one full animal and bien readable\b/gi,
+    'show one full readable animal',
+  ],
+  [
+    /\bbien readable\b/gi,
+    'clearly readable',
+  ],
+  [
+    /\bun seul animal complet\b/gi,
+    'one full animal',
+  ],
+  [
+    /\bcorps complet bien visible\b/gi,
+    'full body clearly visible',
+  ],
+  [
+    /\bposture claire(?: et lisible)?\b/gi,
+    'clear readable pose',
+  ],
+  [
+    /\bsilhouette lisible\b/gi,
+    'clear silhouette',
+  ],
+  [
+    /\bforme compl[eÃ©]te visible\b/gi,
+    'full shape visible',
+  ],
+  [
+    /\bforme complète visible\b/gi,
+    'full shape visible',
+  ],
+  [
+    /\b(?:couleur|couleurs) lisibles? sur le sujet\b/gi,
+    'colors readable on the subject',
+  ],
+  [
+    /\bune seule personne compl[eÃ¨]te\b/gi,
+    'one full person',
+  ],
+  [
+    /\bune seule personne complète\b/gi,
+    'one full person',
+  ],
+  [
+    /\bun seul personnage complet\b/gi,
+    'one full character',
+  ],
+  [
+    /\bvisage unique bien lisible\b/gi,
+    'single clearly visible face',
+  ],
+  [
+    /\bsilhouette humaine compl[eÃ¨]te\b/gi,
+    'full human silhouette',
+  ],
+  [
+    /\bsilhouette humaine complète\b/gi,
+    'full human silhouette',
+  ],
+  [
+    /\bmontrer clairement une? figure de ([^,.;]+?) unique (?:et|and) reconnaissable\b/gi,
+    'show clearly one unique recognizable $1 figure',
+  ],
+  [
+    /\bshow clearly a figure de ([^,.;]+?) unique (?:et|and) recognizable\b/gi,
+    'show clearly one unique recognizable $1 figure',
+  ],
+  [
+    /\bmontrer clairement ([^,.;]+?) port[eÃ©] par (?:le|the) sujet principal\b/gi,
+    'show clearly $1 worn by the main subject',
+  ],
+  [
+    /\bmontrer clairement l accessoire ([^,.;]+?) avec (?:le|the) sujet principal\b/gi,
+    'show clearly the $1 accessory with the main subject',
+  ],
+  [
+    /\bmontrer clairement (?:le|the)? ?sujet principal en train de fumer avec ([^,.;]+?) visible pr[eÃ¨]s de (?:la|the) bouche\b/gi,
+    'show clearly the main subject smoking with $1 clearly visible near the mouth',
+  ],
+  [
+    /\bmontrer clairement (?:le|the)? ?sujet principal en train de fumer avec ([^,.;]+?) visible près de (?:la|the) bouche\b/gi,
+    'show clearly the main subject smoking with $1 clearly visible near the mouth',
   ],
   [
     /\bd[eé]cor simple et lisible\b/gi,
@@ -401,6 +528,94 @@ const SD_PROMPT_ENGLISH_PHRASE_FIXUPS = [
   [
     /\btexte\b/gi,
     'text',
+  ],
+  [
+    /\bportrait homme\b/gi,
+    'male portrait',
+  ],
+  [
+    /\bportrait propre\b/gi,
+    'clean portrait',
+  ],
+  [
+    /\bfond simple\b/gi,
+    'simple background',
+  ],
+  [
+    /\bdecor sombre\b/gi,
+    'dark setting',
+  ],
+  [
+    /\bdecor urbain inspire de Harlem\b/gi,
+    'Harlem-inspired urban environment',
+  ],
+  [
+    /\bhaute qualit[^\s,.;:]*/gi,
+    'high quality',
+  ],
+  [
+    /\bd[eÃé]cor sombre\b/gi,
+    'dark setting',
+  ],
+  [
+    /\bd[eÃé]cor urbain inspire de Harlem\b/gi,
+    'Harlem-inspired urban environment',
+  ],
+  [
+    /\bcostume joker elegant mais chaotique\b/gi,
+    'elegant but chaotic Joker-themed suit',
+  ],
+  [
+    /\bmaquillage de clown inquietant mais credible\b/gi,
+    'unsettling but believable clown makeup',
+  ],
+  [
+    /\bla batte custom doit etre bien visible\b/gi,
+    'the custom bat must be clearly visible',
+  ],
+  [
+    /\ble d[eÃƒÃ©]cor doit rester secondaire mais immersif\b/gi,
+    'the background stays secondary but immersive',
+  ],
+  [
+    /\brue brute avec graffitis(?: et immeubles uses)?\b/gi,
+    'raw street with graffiti and worn buildings',
+  ],
+  [
+    /\bpersonnage entier visible\b/gi,
+    'full body visible',
+  ],
+  [
+    /\bbatte custom clairement visible\b/gi,
+    'custom bat clearly visible',
+  ],
+  [
+    /\bcomposition propre(?: et puissante)?\b/gi,
+    'clean composition',
+  ],
+  [
+    /\blumiere dramatique\b/gi,
+    'dramatic lighting',
+  ],
+  [
+    /\breflets de neons violets et verts\b/gi,
+    'purple and green neon reflections',
+  ],
+  [
+    /\bcinematographique\b/gi,
+    'cinematic',
+  ],
+  [
+    /\billustration nette\b/gi,
+    'clear illustration',
+  ],
+  [
+    /\bherisson\b/gi,
+    'hedgehog',
+  ],
+  [
+    /\blapin\b/gi,
+    'rabbit',
   ],
   [
     /\bvisage fusionne\b/gi,
@@ -569,9 +784,10 @@ function hasEnglishMixedLanguageArtifacts(value = '') {
 }
 
 function isUsableEnglishPromptText(value = '', { allowUnknown = false } = {}) {
+  const text = normalizeSdPromptRewriteText(value);
   return (
-    isAcceptableSdRewriteLanguage(value, { allowUnknown })
-    && !hasEnglishMixedLanguageArtifacts(value)
+    isAcceptableSdRewriteLanguage(text, { allowUnknown })
+    && !hasEnglishMixedLanguageArtifacts(text)
   );
 }
 
@@ -629,6 +845,8 @@ function pickMostDetailedPromptText(values = []) {
 
 function resolveAuthoritativeRawRequest(mask = {}) {
   return pickMostDetailedPromptText([
+    mask?.meta?.initialRawUserInput,
+    mask?.meta?.userSourceText,
     mask?.meta?.originalSourceText,
     mask?.raw,
     mask?.meta?.sourceText,
@@ -1042,7 +1260,7 @@ function normalizePromptContextShape(value) {
       Object.entries(value).map(([key, entry]) => [key, normalizePromptContextShape(entry)])
     );
   }
-  if (typeof value === 'string') return normalizeText(value);
+  if (typeof value === 'string') return normalizeSdPromptRewriteText(value);
   return value;
 }
 
@@ -1068,6 +1286,23 @@ async function translateDetailedPromptFieldToEnglish(value = '', options = {}) {
     : { dominant: 'unknown', mixed: false };
   if (sourceProfile?.dominant === 'en' && sourceProfile?.mixed !== true) {
     return sourceText;
+  }
+  const normalizedSourceText = normalizeSdPromptRewriteText(sourceText);
+  if (isUsableEnglishPromptText(normalizedSourceText, { allowUnknown: true })) {
+    return normalizedSourceText;
+  }
+  const localTranslation = normalizeSdPromptRewriteText(
+    typeof translateImagePromptToEnglish === 'function'
+      ? translateImagePromptToEnglish(sourceText)
+      : ''
+  );
+  if (
+    localTranslation
+    && sourceText.length <= 220
+    && isUsableEnglishPromptText(localTranslation, { allowUnknown: true })
+    && !isOvercompressedPromptFieldRewrite(sourceText, localTranslation)
+  ) {
+    return localTranslation;
   }
 
   const translateOnce = async (previousRejected = '') => {
@@ -1111,7 +1346,16 @@ Strict rules:
 
   const firstAttempt = await translateOnce('');
   if (firstAttempt) return firstAttempt;
-  return translateOnce(options.previousRejected || '');
+  const retried = await translateOnce(options.previousRejected || '');
+  if (retried) return retried;
+  if (
+    localTranslation
+    && isUsableEnglishPromptText(localTranslation, { allowUnknown: true })
+    && !isOvercompressedPromptFieldRewrite(sourceText, localTranslation)
+  ) {
+    return localTranslation;
+  }
+  return '';
 }
 
 const NEGATIVE_PROMPT_HINT_LITERAL_RULES = [
@@ -1297,8 +1541,9 @@ async function repairPromptContextValueToEnglish(currentValue, sourceValue, opti
   if (!currentText || shouldSkipPromptContextEnglishRepair(pathSegments, currentText)) {
     return currentText;
   }
-  if (isUsableEnglishPromptText(currentText, { allowUnknown: true })) {
-    return currentText;
+  const locallyNormalizedText = normalizeSdPromptRewriteText(currentText);
+  if (isUsableEnglishPromptText(locallyNormalizedText, { allowUnknown: true })) {
+    return locallyNormalizedText;
   }
 
   const llmRepaired = await translateDetailedPromptFieldToEnglish(sourceText, {
@@ -1418,6 +1663,19 @@ async function translateStructuredPromptEntryToEnglish(value = '', options = {})
     return sourceText;
   }
 
+  const localTranslation = normalizeSdPromptRewriteText(
+    typeof translateImagePromptToEnglish === 'function'
+      ? translateImagePromptToEnglish(sourceText)
+      : ''
+  );
+  if (
+    localTranslation
+    && isUsableEnglishPromptText(localTranslation, { allowUnknown: true })
+    && !isOvercompressedPromptFieldRewrite(sourceText, localTranslation)
+  ) {
+    return localTranslation;
+  }
+
   const llmTranslation = await translateDetailedPromptFieldToEnglish(sourceText, options);
   if (llmTranslation) return llmTranslation;
 
@@ -1534,6 +1792,50 @@ function buildCanonicalEnglishInputFromStructuredFields(structuredFields = {}) {
   return toUniqueNormalizedStrings(sections).join(', ');
 }
 
+function cleanupFallbackImageSubjectCandidate(value = '') {
+  const text = normalizeText(value)
+    .replace(/^(?:a|an|the|un|une|le|la|les|du|de|des|d['’])\s+/i, '')
+    .replace(/\b(?:high quality|detailed|single main subject|clear centered composition|clear subject focus|simple clean background|literal interpretation)\b[\s\S]*$/i, '')
+    .replace(/\b(?:avec|with|dans|in|sur|on|sans|without|style|background|fond|lighting|couleurs?|palette)\b[\s\S]*$/i, '')
+    .replace(/[,.!?;:]+$/g, '')
+    .trim();
+  if (!text) return '';
+  if (/\b(?:tu peux|peux tu|generate|generer|g[?]+n[?]+rer|image|illustration|prompt|subject|background)\b/i.test(text)) {
+    return '';
+  }
+  return text.split(/\s+/).slice(0, 6).join(' ').trim();
+}
+
+function inferFallbackImageSubjectFromFreeformText(value = '') {
+  const source = normalizeText(value);
+  if (!source) return '';
+  const patterns = [
+    /\bimage\s+of\s+([^,.!?;]+)/i,
+    /\b(?:image|illustration|drawing|picture|photo)\s+(?:de|du|d['’]|of)\s+([^,.!?;]+)/i,
+    /\b(?:generate|render|draw|create|genere|g[?]+n[?]+rer|générer)\s+(?:an?\s+)?(?:image|illustration|drawing|picture|photo)\s+(?:de|du|d['’]|of)\s+([^,.!?;]+)/i,
+  ];
+  for (const pattern of patterns) {
+    const candidate = cleanupFallbackImageSubjectCandidate(pattern.exec(source)?.[1] || '');
+    if (candidate) {
+      return normalizeSdPromptRewriteText(
+        typeof translateImagePromptToEnglish === 'function'
+          ? translateImagePromptToEnglish(candidate)
+          : candidate
+      ) || candidate;
+    }
+  }
+  return '';
+}
+
+function isSuspiciousImageSubjectCandidate(value = '') {
+  const text = normalizeText(value);
+  if (!text) return true;
+  return (
+    /\b(?:tu peux|peux tu|generate|generer|g[?]+n[?]+rer|image of|a image|literal interpretation)\b/i.test(text)
+    || /[?]{2,}/.test(text)
+  );
+}
+
 async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
   const normalizedMask = normalizeMaskImageGenerate(mask);
   const compilerTarget = String(normalizedMask?.compiler?.target || '').trim().toLowerCase();
@@ -1553,23 +1855,36 @@ async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
   const existingAudit = existingCanonicalizedRequest?.audit && typeof existingCanonicalizedRequest.audit === 'object'
     ? existingCanonicalizedRequest.audit
     : {};
+  const shouldBypassReusableCanonicalFields = (
+    String(options.stage || '').trim() === 'post_enrichment'
+    && (
+      Number(meta?.specialCompilerAppliedHintsCount || 0) > 0
+      || Number(meta?.specialCompilerMemoryHintsAppliedCount || 0) > 0
+      || (meta?.imageScratchpad && typeof meta.imageScratchpad === 'object')
+      || (meta?.imageRequestDirector && typeof meta.imageRequestDirector === 'object')
+      || (meta?.webReferencePack && typeof meta.webReferencePack === 'object')
+    )
+  );
   const translationOptions = {
-    callStructuredLlmJson: options.callStructuredLlmJson,
+    callStructuredLlmJson: shouldBypassReusableCanonicalFields ? null : options.callStructuredLlmJson,
   };
-  const reusableCanonicalStructuredFields = [
+  const reusableCanonicalStructuredFields = shouldBypassReusableCanonicalFields
+    ? null
+    : [
     existingCanonicalizedRequest?.structuredFields,
     existingPromptCanonicalization?.structuredFields,
   ]
     .map((candidate) => normalizeCanonicalStructuredPromptFields(candidate))
     .find((candidate) => hasUsableCanonicalStructuredPromptFields(candidate))
     || null;
-  const rawUserInput = normalizeText(
-    existingAudit?.rawUserInput
-    || existingPromptCanonicalization?.rawUserInput
-    || resolveAuthoritativeRawRequest(normalizedMask)
-    || normalizedMask?.raw
-    || ''
-  );
+  const rawUserInput = pickMostDetailedPromptText([
+    meta?.initialRawUserInput,
+    meta?.userSourceText,
+    existingAudit?.rawUserInput,
+    existingPromptCanonicalization?.rawUserInput,
+    resolveAuthoritativeRawRequest(normalizedMask),
+    normalizedMask?.raw,
+  ]);
   const structuredPromptSource = buildCanonicalEnglishInputFromStructuredFields(
     buildStructuredPromptFieldsSnapshot(normalizedMask)
   );
@@ -1583,7 +1898,13 @@ async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
     || existingPromptCanonicalization?.canonicalEnglishInput
     || ''
   );
+  const shouldRefreshCanonicalEnglishInput = (
+    String(options.stage || '').trim() === 'post_enrichment'
+    && isRichPromptForDetailPreservation(canonicalTranslationSource)
+    && scorePromptDetailDensity(canonicalTranslationSource) > Math.max(260, Math.round(scorePromptDetailDensity(existingCanonicalEnglishInput) * 1.25))
+  );
   const canonicalEnglishInput = isUsableEnglishPromptText(existingCanonicalEnglishInput, { allowUnknown: true })
+    && !shouldRefreshCanonicalEnglishInput
     ? existingCanonicalEnglishInput
     : await translateStructuredPromptEntryToEnglish(canonicalTranslationSource || rawUserInput, translationOptions);
 
@@ -1598,6 +1919,25 @@ async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
         normalizedMask?.inputs?.[key] || [],
         translationOptions
       );
+  }
+  const fallbackSubject = inferFallbackImageSubjectFromFreeformText(
+    pickMostDetailedPromptText([
+      rawUserInput,
+      canonicalTranslationSource,
+      normalizedMask?.raw,
+      meta?.sourceText,
+      meta?.originalSourceText,
+    ])
+  );
+  if (
+    fallbackSubject
+    && (
+      !Array.isArray(translatedInputs.subject)
+      || translatedInputs.subject.length <= 0
+      || translatedInputs.subject.every((entry) => isSuspiciousImageSubjectCandidate(entry))
+    )
+  ) {
+    translatedInputs.subject = [fallbackSubject];
   }
 
   const translatedStructuredEntries = CANONICAL_STRUCTURED_PROMPT_KEYS.flatMap((key) => (
@@ -1621,6 +1961,17 @@ async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
     for (const key of ['subject', 'environment', 'style', 'composition']) {
       translatedInputs[key] = [canonicalEnglishInput];
     }
+  }
+  const structuredDetailText = normalizeText(translatedStructuredEntries.join(', '));
+  if (
+    !reusableCanonicalStructuredFields
+    && isRichPromptForDetailPreservation(canonicalEnglishInput)
+    && canonicalEnglishInput.length > Math.max(160, Math.round(structuredDetailText.length * 0.9))
+  ) {
+    translatedInputs.composition = toUniqueNormalizedStrings([
+      ...(Array.isArray(translatedInputs.composition) ? translatedInputs.composition : []),
+      canonicalEnglishInput,
+    ]);
   }
 
   const preservedPromptInstructions = Array.isArray(reusableCanonicalStructuredFields?.constraints?.prompt_instructions)
@@ -1709,6 +2060,8 @@ async function canonicalizeImageMaskPromptFlow(mask = {}, options = {}) {
       deferEnglishPromptLocalization: false,
       ...(resolvedCanonicalEnglishInput
         ? {
+            initialRawUserInput: normalizeText(meta?.initialRawUserInput || rawUserInput),
+            userSourceText: normalizeText(meta?.userSourceText || rawUserInput),
             originalSourceText: resolvedCanonicalEnglishInput,
             sourceText: resolvedCanonicalEnglishInput,
             promptSeedText: resolvedCanonicalEnglishInput,
@@ -1769,13 +2122,19 @@ async function enforceFinalCanonicalEnglishPrompt(compiledState = {}, options = 
         promptLanguage: SD_PROMPT_OUTPUT_LANGUAGE,
       })
       : null;
+    const upstreamCanonicalizationApplied = (
+      compiledState?.techniqueReconciler?.promptGuidance?.applied === true
+      && String(compiledState?.techniqueReconciler?.promptGuidance?.baseNormalization || '').trim()
+    );
     return {
       compiledState: normalizedCanonicalState || compiledState,
       finalPromptGuard: {
-        applied: Boolean(normalizedCanonicalState),
+        applied: Boolean(normalizedCanonicalState) || Boolean(upstreamCanonicalizationApplied),
         reason: normalizedCanonicalState
           ? 'normalized_existing_canonical_prompt'
-          : 'already_canonical',
+          : (upstreamCanonicalizationApplied
+              ? 'translated_current_prompt_to_canonical_english'
+              : 'already_canonical'),
       },
     };
   }
@@ -1925,15 +2284,23 @@ function buildStrengthComponentPromptGuidance({
   const props = strengthComponents.props && typeof strengthComponents.props === 'object'
     ? strengthComponents.props
     : {};
+  const referenceJokerTransformation = isReferenceHumanJokerTransformation(mask, prompt);
 
   const positiveHints = [];
   const negativeHints = [];
+
+  if (referenceJokerTransformation) {
+    positiveHints.push('make the outfit change clearly visible');
+    positiveHints.push('clearly redesign the background and atmosphere');
+    positiveHints.push('make the lighting and effects clearly visible');
+  }
 
   if (
     String(identity.profile || '').trim() === 'preserve'
     || Number(identity.strength) <= 0.34
   ) {
     positiveHints.push('keep exactly the same face and identity');
+    positiveHints.push('preserve the same recognizable face and the same facial structure from the reference image');
     positiveHints.push('keep the same eyes, eyebrows, nose, jawline, and smile from the reference image');
     positiveHints.push('preserve the pose and framing from the reference image');
     negativeHints.push('different face', 'different identity', 'different person');
@@ -1948,12 +2315,20 @@ function buildStrengthComponentPromptGuidance({
     negativeHints.push('bad anatomy', 'deformed hands', 'deformed eyes');
   }
 
+  if (hasReferenceHumanFigure(mask)) {
+    positiveHints.push('full body visible');
+  }
+
   if (String(outfit.profile || '').trim() === 'preserve') {
     positiveHints.push('preserve the silhouette and main outfit');
   } else if (
     ['balanced', 'restyle'].includes(String(outfit.profile || '').trim())
     && Number(outfit.strength) >= 0.58
   ) {
+    positiveHints.push('make the outfit change clearly visible');
+  }
+
+  if (referenceJokerTransformation) {
     positiveHints.push('make the outfit change clearly visible');
   }
 
@@ -1988,7 +2363,7 @@ function buildStrengthComponentPromptGuidance({
 
   return {
     language,
-    positiveHints: toUniqueNormalizedStrings(positiveHints).slice(0, 8),
+    positiveHints: toUniqueNormalizedStrings(positiveHints).slice(0, hasReferenceHumanFigure(mask) ? 12 : 8),
     negativeHints: toUniqueNormalizedStrings(negativeHints).slice(0, 6),
   };
 }
@@ -2033,7 +2408,7 @@ function applyStrengthComponentPromptGuidance(compiledState = {}, mask = {}) {
 
   const normalizedBasePrompt = normalizeReferenceHumanTransformationPrompt(sdBody?.prompt || '', mask);
   const nextPrompt = mergePromptHints(normalizedBasePrompt, guidance.positiveHints, {
-    maxHints: hasReferenceHumanFigure(mask) ? 8 : 4,
+    maxHints: hasReferenceHumanFigure(mask) ? 10 : 4,
     insertAfterLead: isReferenceHumanJokerTransformation(mask, normalizedBasePrompt),
   });
   const nextNegativePrompt = mergeNegativePromptHints(sdBody?.negative_prompt || '', guidance.negativeHints);
@@ -2209,6 +2584,23 @@ async function directStrengthComponentPromptGuidance(compiledState = {}, mask = 
           : 'rich_prompt_preserved',
       },
     };
+  }
+
+  const normalizedPrompt = normalizeSdPromptRewriteText(sdBody?.prompt || '');
+  const normalizedNegativePrompt = normalizeSdPromptRewriteText(sdBody?.negative_prompt || '');
+  const promptCanonical = isUsableEnglishPromptText(normalizedPrompt, { allowUnknown: true });
+  const negativeCanonical = !normalizedNegativePrompt
+    || isUsableEnglishPromptText(normalizedNegativePrompt, { allowUnknown: true });
+  if (promptCanonical && negativeCanonical) {
+    const normalizedCompiledState = {
+      ...effectiveCompiledState,
+      sdBody: {
+        ...sdBody,
+        prompt: normalizedPrompt,
+        negative_prompt: normalizedNegativePrompt || sdBody?.negative_prompt || '',
+      },
+    };
+    return applyStrengthComponentPromptGuidance(normalizedCompiledState, mask);
   }
 
   if (
@@ -3172,11 +3564,14 @@ function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
   if (typeof options.callStructuredLlmJson !== 'function') return false;
   if (String(compiledState?.imageRequestMode?.mode || '').trim().toLowerCase() === 'raw') return false;
 
-  const prompt = String(compiledState?.sdBody?.prompt || '').trim();
-  const negativePrompt = String(compiledState?.sdBody?.negative_prompt || '').trim();
+  const prompt = normalizeSdPromptRewriteText(compiledState?.sdBody?.prompt || '');
+  const negativePrompt = normalizeSdPromptRewriteText(compiledState?.sdBody?.negative_prompt || '');
   if (!prompt) return false;
   if (String(compiledState?.sdBody?.prompt_2 || compiledState?.sdBody?.prompt2 || '').trim()) return false;
   if (String(compiledState?.sdBody?.prompt_3 || compiledState?.sdBody?.prompt3 || '').trim()) return false;
+  const promptCanonical = isUsableEnglishPromptText(prompt, { allowUnknown: true });
+  const negativeCanonical = !negativePrompt || isUsableEnglishPromptText(negativePrompt, { allowUnknown: true });
+  if (promptCanonical && negativeCanonical) return false;
   const hasReferenceInitImage = Boolean(String(
     compiledState?.mask?.meta?.webImageDraft?.initImageUrl
     || compiledState?.mask?.meta?.webImageDraft?.initImagePath
@@ -3192,7 +3587,7 @@ function shouldRefineCompiledImagePrompt(compiledState = {}, options = {}) {
 
   return (
     prompt.length >= 160
-    || hasReferenceInitImage
+    || (hasReferenceInitImage && needsEnglishRewrite)
     || compiledState?.specialCompiler?.selection?.candidate === true
     || (Array.isArray(compiledState?.mask?.meta?.promptInstructions) && compiledState.mask.meta.promptInstructions.length > 2)
     || Boolean(compiledState?.mask?.meta?.imageScratchpad)

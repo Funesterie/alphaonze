@@ -13,7 +13,7 @@ test('runtime hooks manifest maps the expected A11 modules', () => {
   const manifest = buildManifest();
   const ids = new Set(manifest.modules.map((item) => item.id));
 
-  for (const expected of ['cortex', 'spyder', 'telemetry', 'rome', 'corpus', 'agent-domain-pack', 'piccolo', 'doctor', 'qflush']) {
+  for (const expected of ['cortex', 'spyder', 'telemetry', 'rome', 'corpus', 'agent-domain-pack', 'ecosystem-scope', 'ecosystem-corpus', 'piccolo', 'doctor', 'qflush']) {
     assert.equal(ids.has(expected), true, `${expected} should be present`);
   }
 
@@ -21,6 +21,8 @@ test('runtime hooks manifest maps the expected A11 modules', () => {
   assert.deepEqual(doctor.aliases, ['docteur']);
   assert.ok(manifest.links.some((link) => link.from === 'runtime-hooks' && link.to === 'neo4j'));
   assert.ok(manifest.links.some((link) => link.from === 'agent-domain-pack' && link.to === 'neo4j'));
+  assert.ok(manifest.links.some((link) => link.from === 'ecosystem-scope' && link.to === 'neo4j'));
+  assert.ok(manifest.links.some((link) => link.from === 'ecosystem-corpus' && link.to === 'neo4j'));
 });
 
 test('runtime hooks summary and cypher are usable without Neo4j', () => {
@@ -28,7 +30,7 @@ test('runtime hooks summary and cypher are usable without Neo4j', () => {
   const summary = summarizeManifest(manifest);
   const cypher = toCypher(manifest);
 
-  assert.equal(summary.modules, 9);
+  assert.equal(summary.modules, 11);
   assert.ok(summary.links >= 20);
   assert.match(cypher, /A11RuntimeHook/);
   assert.match(cypher, /MERGE \(n:A11RuntimeHook/);

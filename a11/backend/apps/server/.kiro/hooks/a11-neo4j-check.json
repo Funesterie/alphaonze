@@ -1,0 +1,13 @@
+{
+  "name": "A11 Neo4j Check",
+  "version": "1.0.0",
+  "description": "Vérifie la connexion Neo4j local après modification de config DB",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/neo4j*.cjs", "**/knowledge-graph.cjs", "**/.env.local"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:7474' -TimeoutSec 5; Write-Host \\\"Neo4j: OK\\\" } catch { Write-Host \\\"Neo4j: $($_.Exception.Message)\\\" }\""
+  }
+}

@@ -279,7 +279,6 @@ function detectSoundIntent(message) {
 }
 
 function detectAgentIntent(message) {
-  if (!isLegacyWordIntentDetectorsEnabled()) return null;
   if (!message || typeof message !== 'string') return null;
   const normalized = normalizeMessageForIntent(message);
   const result = fastPathAgentIntent(normalized);
@@ -287,7 +286,6 @@ function detectAgentIntent(message) {
 }
 
 function detectShowcaseIntent(message) {
-  if (!isLegacyWordIntentDetectorsEnabled()) return null;
   if (!message || typeof message !== 'string') return null;
   const normalized = normalizeMessageForIntent(message);
   const result = fastPathShowcaseIntent(normalized);

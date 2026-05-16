@@ -173,6 +173,68 @@ function resolveDefaultJanus1BFallbackRef() {
   return DEFAULT_MODEL_ID_1B;
 }
 
+function describeJanusModelRef(modelRef = '') {
+  const ref = String(modelRef || '').trim();
+  if (!ref) {
+    return {
+      ref: '',
+      label: 'Janus default',
+      source: 'default',
+      local: false,
+      exists: false,
+    };
+  }
+
+  const looksLocal = path.isAbsolute(ref) || /^[a-zA-Z]:[\\/]/.test(ref);
+  return {
+    ref,
+    label: looksLocal ? path.basename(ref) : ref,
+    source: looksLocal ? 'local' : 'huggingface',
+    local: looksLocal,
+    exists: looksLocal ? fs.existsSync(ref) : true,
+  };
+}
+
+function getJanusVisionStatus(overrides = {}) {
+  const provider = resolveVisionProvider(overrides);
+  const config = resolveJanusVisionConfig(overrides);
+  const model = describeJanusModelRef(config.modelRef);
+  const fallbackModel = describeJanusModelRef(resolveDefaultJanus1BFallbackRef());
+  const workerAlive = Boolean(workerState?.process && !workerState.process.killed);
+
+  return {
+    ok: true,
+    provider,
+    enabled: provider === 'janus',
+    requestedGpu: isGpuJanusDevice(config.device),
+    cpuFallback: provider !== 'janus' || !isGpuJanusDevice(config.device),
+    config: {
+      pythonBin: config.pythonBin,
+      workerScript: config.workerScript,
+      device: config.device,
+      torchDtype: config.torchDtype,
+      maxNewTokens: config.maxNewTokens,
+      timeoutMs: config.timeoutMs,
+      model,
+      workerScriptExists: fs.existsSync(config.workerScript),
+      pythonBinExists: path.isAbsolute(config.pythonBin) ? fs.existsSync(config.pythonBin) : null,
+    },
+    fallback: {
+      enabled: !hasExplicitJanusModelSelection(process.env) && isDefaultJanus7BModelRef(config.modelRef),
+      model: fallbackModel,
+    },
+    worker: {
+      alive: workerAlive,
+      ready: Boolean(workerState?.ready),
+      pending: workerState?.pending?.size || 0,
+      pid: workerAlive ? workerState.process.pid || null : null,
+      lastStdoutLine: workerState?.lastStdoutLine || null,
+      stderrBytes: workerState?.stderrBuffer ? Buffer.byteLength(String(workerState.stderrBuffer)) : 0,
+    },
+    timestamp: new Date().toISOString(),
+  };
+}
+
 let workerState = null;
 let requestCounter = 0;
 
@@ -482,6 +544,7 @@ function shutdownJanusVisionWorker() {
 module.exports = {
   callJanusText,
   callJanusVisionText,
+  getJanusVisionStatus,
   resolveJanusPythonBin,
   resolveJanusVisionConfig,
   resolveJanusWorkerScript,

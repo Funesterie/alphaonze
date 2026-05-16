@@ -1,0 +1,13 @@
+{
+  "name": "A11 Server Restart Reminder",
+  "version": "1.0.0",
+  "description": "Rappelle de redémarrer A11 après modification de server.cjs ou des routes principales",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["server.cjs", "**/routes/*.cjs"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Un fichier serveur A11 a été modifié. Rappelle à l'utilisateur qu'un restart du serveur A11 est nécessaire pour que les changements prennent effet. Propose de le faire si approprié."
+  }
+}

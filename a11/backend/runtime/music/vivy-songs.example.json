@@ -1,0 +1,18 @@
+{
+  "tracks": [
+    {
+      "title": "Vivy Demo",
+      "artist": "Funesterie",
+      "audioUrl": "https://media.funesterie.me/vivy/demo.mp3",
+      "soundcloudUrl": "https://soundcloud.com/funesterie/vivy-demo",
+      "source": "r2",
+      "license": "original-funesterie",
+      "audioFormat": "mp3",
+      "tags": [
+        "calme",
+        "poetique"
+      ],
+      "enabled": false
+    }
+  ]
+}

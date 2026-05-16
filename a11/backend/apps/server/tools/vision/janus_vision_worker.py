@@ -52,13 +52,14 @@ def emit(payload):
 
 def resolve_torch_dtype(dtype_name, device):
     normalized = str(dtype_name or "auto").strip().lower()
+    normalized_device = str(device or "").strip().lower()
     if normalized in ("bf16", "bfloat16"):
         return torch.bfloat16, "bfloat16"
     if normalized in ("fp16", "float16", "half"):
         return torch.float16, "float16"
     if normalized in ("fp32", "float32", "full"):
         return torch.float32, "float32"
-    if device == "cuda":
+    if normalized_device.startswith("cuda"):
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
             return torch.bfloat16, "bfloat16"
         return torch.float16, "float16"
@@ -66,7 +67,8 @@ def resolve_torch_dtype(dtype_name, device):
 
 
 def ensure_model(model_ref, device_name, dtype_name):
-    device = device_name if device_name == "cuda" and torch.cuda.is_available() else "cpu"
+    requested_device = str(device_name or "").strip().lower()
+    device = requested_device if requested_device.startswith("cuda") and torch.cuda.is_available() else "cpu"
     torch_dtype, normalized_dtype = resolve_torch_dtype(dtype_name, device)
     if (
         STATE["model"] is not None

@@ -32,9 +32,13 @@ const {
 const {
   resolveImageDimensionConfig,
 } = require('../mask/normalize-mask-image-generate.cjs');
+const {
+  enrichImagePromptWithLinguisticScene,
+} = require('../linguistics/linguistic-scene-parser.cjs');
 
 // ⚠️ IMPORTANT : importer le manifest AVANT d'utiliser WORKSPACE_ROOTS
 const { TOOL_MANIFEST, WORKSPACE_ROOTS, SAFE_DATA_ROOT } = require('./tools-manifest.cjs');
+const { routeAgentTask } = require('./agent-role-router.cjs');
 const { runQflushFlow } = require('../qflush-integration.cjs');
 const {
   callMcpTool,
@@ -2568,14 +2572,28 @@ async function t_generate_png(args = {}) {
     }
   }
 
-  const finalPrompt = compiledState
+  const compiledPrompt = compiledState
     ? String(compiledState.sdBody?.prompt || title).trim() || title
     : String(title || '').trim() || title;
-  const finalNegativePrompt = String(
+  const compiledNegativePrompt = String(
     args.negative_prompt
     || compiledState?.sdBody?.negative_prompt
     || ''
   ).trim();
+  const linguisticPrompt = promptAlreadyCompiled
+    ? { prompt: compiledPrompt, negativePrompt: compiledNegativePrompt, scene: null, applied: false }
+    : enrichImagePromptWithLinguisticScene({
+        rawPrompt: title,
+        prompt: compiledPrompt,
+        negativePrompt: compiledNegativePrompt,
+        context: {
+          activeAgent: args.agent || args.activeAgent || args.owner || '',
+          narrativeContext: args.narrativeContext || args.universe || '',
+          module: args.module || '',
+        },
+      });
+  const finalPrompt = linguisticPrompt.prompt || compiledPrompt;
+  const finalNegativePrompt = linguisticPrompt.negativePrompt || compiledNegativePrompt;
 
   const proxyUrl = resolveSdProxyUrl();
   if (proxyUrl) {
@@ -2628,6 +2646,8 @@ async function t_generate_png(args = {}) {
           mode: 'stable-diffusion-proxy',
           prompt: finalPrompt,
           promptRefiner: compiledState?.promptRefiner || null,
+          linguisticScene: linguisticPrompt?.scene || null,
+          semanticWeights: linguisticPrompt?.weights || null,
           compilerTarget: compiledState?.compiled?.meta?.compilerTarget || null,
           executionPlan: compiledState?.compiled?.value || null,
           sourceUrl: remoteImageUrl,
@@ -3296,6 +3316,10 @@ async function t_a11_debug_echo(args = {}) {
   return { ok: true, echo: args, type: typeof args };
 }
 
+async function t_agent_role_route(args = {}) {
+  return routeAgentTask(args);
+}
+
 // --- KV store pour a11_memory_* ---
 const A11_KV_ROOT = path.resolve((WORKSPACE_ROOTS[1] || WORKSPACE_ROOTS[0]), 'a11_memory');
 const A11_KV_STORE_PATH = path.join(A11_KV_ROOT, 'kv-store.json');
@@ -3662,6 +3686,9 @@ function normalizeDispatchActionName(name) {
   if (lowered === 'romstation_keyboard' || lowered === 'romstation_keys' || lowered === 'keyboard_virtual') {
     return 'romstation_keyboard';
   }
+  if (lowered === 'agent_role_route' || lowered === 'agent_route' || lowered === 'role_route' || lowered === 'route_agent') {
+    return 'agent_role_route';
+  }
 
   return normalized;
 }
@@ -3971,6 +3998,7 @@ const TOOL_IMPL = {
   a11_memory_history: t_a11_memory_history,
   a11_archive_history: t_a11_archive_history,
   a11_archive_read: t_a11_archive_read,
+  agent_role_route: t_agent_role_route,
   a11_env_snapshot: t_a11_env_snapshot,
   a11_debug_echo: t_a11_debug_echo,
 

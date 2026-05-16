@@ -20,10 +20,13 @@ RUN apt-get update \
       curl \
       espeak-ng \
       ffmpeg \
+      git \
       g++ \
       make \
       postgresql-client \
       python3 \
+      python3-pip \
+      python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Créer le répertoire de l'application
@@ -93,6 +96,20 @@ RUN set -eu; \
 
 # Copier le code source
 COPY . .
+
+# Optional Pink Ward / Janus runtime for GPU-enabled production images.
+# Standard builds keep this disabled; docker-compose.vision.yml enables it.
+ARG A11_INSTALL_JANUS=0
+ARG A11_JANUS_TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG A11_JANUS_TORCH_PACKAGES="torch torchvision torchaudio"
+RUN set -eu; \
+    if [ "${A11_INSTALL_JANUS}" = "1" ]; then \
+      python3 -m venv /opt/janus-venv; \
+      /opt/janus-venv/bin/python -m ensurepip --upgrade || true; \
+      /opt/janus-venv/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel; \
+      /opt/janus-venv/bin/python -m pip install --no-cache-dir --index-url "${A11_JANUS_TORCH_INDEX_URL}" ${A11_JANUS_TORCH_PACKAGES}; \
+      /opt/janus-venv/bin/python -m pip install --no-cache-dir --extra-index-url "${A11_JANUS_TORCH_INDEX_URL}" -r tools/vision/requirements.txt; \
+    fi
 
 # Créer les répertoires nécessaires
 RUN mkdir -p \

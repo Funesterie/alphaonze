@@ -39,7 +39,13 @@ function countEntries(values = []) {
 }
 
 function extractCoreImageRequestText(mask = {}) {
-  return normalizeText(mask?.raw || '')
+  return normalizeText(
+    mask?.meta?.canonicalizedRequest?.audit?.rawUserInput
+    || mask?.meta?.promptCanonicalization?.rawUserInput
+    || mask?.meta?.originalSourceText
+    || mask?.raw
+    || ''
+  )
     .replace(/^(?:tu peux|peux[- ]?tu|tu pourrais|pourrais[- ]?tu|je veux|je voudrais|j aimerais|j'aimerais)\s+/i, '')
     .replace(/^que\s+tu\s+/i, '')
     .replace(/^(?:genere|g[eé]n[eéè]r(?:e|er|é|ée)|cree|cr[eé]e(?:r|é|ée)?|dessine(?:r|é|ée)?|fabrique(?:r|é|ée)?|produis|produire|prepare|pr[eé]par(?:e|er|é|ée)|montre|affiche)\s+(?:moi\s+)?/i, '')

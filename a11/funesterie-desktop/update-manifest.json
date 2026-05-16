@@ -1,0 +1,9 @@
+﻿{
+    "version":  "1.0.3",
+    "downloadUrl":  "https://files.funesterie.me/public/desktop/Funesterie-Desktop-1.0.3-x64.exe",
+    "sha256":  "071A6FAE26FF1BAB145AC3FF966E8493CC533196A86A7DD1BD3CC2CA4C2DCA34",
+    "notes":  "Apply FUNESTERIE 1.0.3: demarrage profil PC1/PC2 persistant et auto-detection PC2, fix ecran noir conserve.",
+    "publishedAt":  "2026-05-14T11:12:47.8883697Z",
+    "channel":  "stable",
+    "minSupportedVersion":  "1.0.0"
+}

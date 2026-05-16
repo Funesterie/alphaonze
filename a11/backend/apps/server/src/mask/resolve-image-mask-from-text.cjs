@@ -44,27 +44,70 @@ async function buildCanonicalImageMaskFromText(text, opts = {}) {
   const rawUserInput = String(text || '').trim();
   if (!rawUserInput) return null;
   const canonicalizeImageGenerateRequest = opts.canonicalizeImageGenerateRequest || defaultCanonicalizeImageGenerateRequest;
-  const canonicalizedRequest = await canonicalizeImageGenerateRequest(rawUserInput, {
-    stage: 'resolve-image-mask-from-text',
-    callStructuredLlmJson: opts.callStructuredLlmJson,
-    referenceImagePresent: Boolean(
-      opts.referenceImageUrl
-      || opts.sourceImageUrl
-      || opts.body?.referenceImageUrl
-      || opts.body?.reference_image_url
-      || opts.body?.sourceImageUrl
-      || opts.body?.source_image_url
-    ),
-    referenceImageUrl: String(
-      opts.referenceImageUrl
-      || opts.sourceImageUrl
-      || opts.body?.referenceImageUrl
-      || opts.body?.reference_image_url
-      || opts.body?.sourceImageUrl
-      || opts.body?.source_image_url
-      || ''
-    ).trim(),
-  });
+  let canonicalizedRequest = null;
+  try {
+    canonicalizedRequest = await canonicalizeImageGenerateRequest(rawUserInput, {
+      stage: 'resolve-image-mask-from-text',
+      callStructuredLlmJson: opts.callStructuredLlmJson,
+      referenceImagePresent: Boolean(
+        opts.referenceImageUrl
+        || opts.sourceImageUrl
+        || opts.body?.referenceImageUrl
+        || opts.body?.reference_image_url
+        || opts.body?.sourceImageUrl
+        || opts.body?.source_image_url
+      ),
+      referenceImageUrl: String(
+        opts.referenceImageUrl
+        || opts.sourceImageUrl
+        || opts.body?.referenceImageUrl
+        || opts.body?.reference_image_url
+        || opts.body?.sourceImageUrl
+        || opts.body?.source_image_url
+        || ''
+      ).trim(),
+    });
+  } catch (error_) {
+    if (opts.allowCompatFallback !== true) throw error_;
+
+    let wazaa = null;
+    let rawMask = null;
+    try {
+      wazaa = await textToWazaa(rawUserInput, opts);
+      rawMask = wazaaToMask(wazaa, {
+        intentType: 'image.generate',
+        sourceText: rawUserInput,
+        semanticAnalysis: opts.analysis || null,
+      });
+    } catch (fallbackError) {
+      const error = new Error(String(error_?.message || fallbackError?.message || 'image_request_canonicalization_failed'));
+      error.code = error_?.code || 'image_request_canonicalization_failed';
+      error.statusCode = error_?.statusCode || 502;
+      error.payload = error_?.payload || {
+        ok: false,
+        error: error.code,
+        message: error.message,
+      };
+      throw error;
+    }
+
+    if (!rawMask || rawMask.intent !== 'image.generate') {
+      throw error_;
+    }
+
+    return {
+      rawMask: applyImageMaskOverrides(rawMask, opts.maskOptions || {}),
+      wazaa,
+      fallbackUsed: 'legacy-wazaa',
+      source: 'compat-wazaa',
+      requestTextSmootherResult: null,
+      canonicalizedRequest: null,
+      canonicalizerError: {
+        code: error_?.code || 'image_request_canonicalizer_failed',
+        message: String(error_?.message || error_),
+      },
+    };
+  }
 
   if (canonicalizedRequest?.needsClarification === true) {
     const error = new Error('image_generate_clarification_required');

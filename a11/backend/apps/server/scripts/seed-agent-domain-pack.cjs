@@ -18,9 +18,9 @@ const SERVER_ROOT = path.resolve(__dirname, '..');
 const A11_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..');
 const WORKSPACE_ROOT = path.resolve(A11_ROOT, '..');
 
-loadEnvIfExists(path.join(SERVER_ROOT, '.env.local'));
-loadEnvIfExists(path.join(SERVER_ROOT, '.env'));
-loadEnvIfExists(path.join(WORKSPACE_ROOT, 'a11mcp', '.env'));
+loadEnvIfExists(path.join(SERVER_ROOT, '.env.local'), true);
+loadEnvIfExists(path.join(SERVER_ROOT, '.env'), false);
+loadEnvIfExists(path.join(WORKSPACE_ROOT, 'a11mcp', '.env'), false);
 
 const RUNTIME_ROOT = path.resolve(process.env.A11_RUNTIME_ROOT || path.join(A11_ROOT, 'runtime'));
 const GRAPH_DIR = path.join(RUNTIME_ROOT, 'knowledge-graph');
@@ -463,7 +463,7 @@ function output(value) {
   }
 }
 
-function loadEnvIfExists(filePath) {
+function loadEnvIfExists(filePath, override = false) {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     for (const line of content.split(/\r?\n/)) {
@@ -474,7 +474,7 @@ function loadEnvIfExists(filePath) {
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
       }
-      if (key && !Object.prototype.hasOwnProperty.call(process.env, key)) process.env[key] = value;
+      if (key && (override || !Object.prototype.hasOwnProperty.call(process.env, key))) process.env[key] = value;
     }
   } catch {
     // Env files are optional.

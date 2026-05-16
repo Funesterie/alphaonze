@@ -15,9 +15,9 @@ const SERVER_ROOT = path.resolve(__dirname, '..');
 const A11_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..');
 const WORKSPACE_ROOT = path.resolve(A11_ROOT, '..');
 
-loadEnvIfExists(path.join(SERVER_ROOT, '.env.local'));
-loadEnvIfExists(path.join(SERVER_ROOT, '.env'));
-loadEnvIfExists(path.join(WORKSPACE_ROOT, 'a11mcp', '.env'));
+loadEnvIfExists(path.join(SERVER_ROOT, '.env.local'), true);
+loadEnvIfExists(path.join(SERVER_ROOT, '.env'), false);
+loadEnvIfExists(path.join(WORKSPACE_ROOT, 'a11mcp', '.env'), false);
 
 const RUNTIME_ROOT = path.resolve(process.env.A11_RUNTIME_ROOT || path.join(A11_ROOT, 'runtime'));
 const GRAPH_DIR = path.join(RUNTIME_ROOT, 'knowledge-graph');
@@ -131,6 +131,49 @@ const MODULES = [
     capabilities: ['agent-domain-index', 'culture-lanes', 'sfx-index', 'neo4j-domain-sync'],
   },
   {
+    id: 'ecosystem-scope',
+    name: 'Ecosystem Scope',
+    kind: 'data-hook',
+    role: 'cross-repo-org-index',
+    summary: 'Indexes Funesterie repos, packages, contracts, shared runtimes, orchestration layers and semantic tooling for MCP/GitHub navigation.',
+    sourcePaths: [
+      path.join(SERVER_ROOT, 'src', 'knowledge', 'ecosystem-scope.cjs'),
+      path.join(SERVER_ROOT, 'scripts', 'sync-ecosystem-scope-neo4j.cjs'),
+    ],
+    watchedFiles: [
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-scope.json'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-scope.md'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-scope.cypher'),
+    ],
+    capabilities: ['github-org-index', 'cross-repo-map', 'package-index', 'contract-index', 'mcp-scope-map'],
+  },
+  {
+    id: 'ecosystem-corpus',
+    name: 'Ecosystem Corpus',
+    kind: 'data-hook',
+    role: 'source-card-corpus-bridge',
+    summary: 'Turns ecosystem-scope into source cards, repo briefs, domain links and public/private boundaries for Corpus and Neo4j.',
+    sourcePaths: [
+      path.join(SERVER_ROOT, 'src', 'knowledge', 'ecosystem-corpus.cjs'),
+      path.join(SERVER_ROOT, 'src', 'knowledge', 'ecosystem-briefing.cjs'),
+      path.join(SERVER_ROOT, 'scripts', 'sync-ecosystem-corpus-neo4j.cjs'),
+      path.join(SERVER_ROOT, 'scripts', 'generate-ecosystem-briefing.cjs'),
+    ],
+    watchedFiles: [
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-corpus.json'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-corpus.md'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-corpus.cypher'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-briefing.json'),
+      path.join(GRAPH_DIR, 'funesterie-executive-view.md'),
+      path.join(GRAPH_DIR, 'funesterie-architecture-view.md'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-briefing.html'),
+      path.join(GRAPH_DIR, 'funesterie-ecosystem-briefing.pdf'),
+      path.join(GRAPH_DIR, 'assets', 'a11-mcp-identity.png'),
+      path.join(GRAPH_DIR, 'assets', 'funesterie-ecosystem-identity.png'),
+    ],
+    capabilities: ['source-cards', 'repo-briefs', 'domain-links', 'public-private-boundaries', 'corpus-feed', 'executive-briefing', 'architecture-briefing'],
+  },
+  {
     id: 'piccolo',
     name: 'Piccolo',
     kind: 'repair-hook',
@@ -186,6 +229,8 @@ const LINKS = [
   ['a11', 'USES_HOOK', 'rome'],
   ['a11', 'USES_HOOK', 'corpus'],
   ['a11', 'USES_HOOK', 'agent-domain-pack'],
+  ['a11', 'USES_HOOK', 'ecosystem-scope'],
+  ['a11', 'USES_HOOK', 'ecosystem-corpus'],
   ['a11', 'USES_HOOK', 'piccolo'],
   ['a11', 'USES_HOOK', 'doctor'],
   ['qflush', 'EXPOSES', 'cortex'],
@@ -203,6 +248,15 @@ const LINKS = [
   ['agent-domain-pack', 'ROUTES_WITH', 'rome'],
   ['agent-domain-pack', 'RUNS_CHECKS_WITH', 'doctor'],
   ['agent-domain-pack', 'RUNS_REPAIRS_WITH', 'piccolo'],
+  ['ecosystem-scope', 'FEEDS', 'corpus'],
+  ['ecosystem-scope', 'FEEDS', 'ecosystem-corpus'],
+  ['ecosystem-scope', 'ROUTES_WITH', 'rome'],
+  ['ecosystem-scope', 'RUNS_CHECKS_WITH', 'doctor'],
+  ['ecosystem-scope', 'WRITES_TO', 'neo4j'],
+  ['ecosystem-corpus', 'FEEDS', 'corpus'],
+  ['ecosystem-corpus', 'ROUTES_WITH', 'rome'],
+  ['ecosystem-corpus', 'RUNS_CHECKS_WITH', 'doctor'],
+  ['ecosystem-corpus', 'WRITES_TO', 'neo4j'],
   ['piccolo', 'RUNS_CHECKS_WITH', 'doctor'],
   ['doctor', 'REPORTS_TO', 'a11'],
   ['telemetry', 'WRITES_TO', 'neo4j'],
@@ -215,6 +269,8 @@ const LINKS = [
   ['agent-domain-pack', 'WRITES_TO', 'neo4j'],
   ['mcp', 'EXPOSES', 'runtime-hooks'],
   ['mcp', 'EXPOSES', 'agent-domain-pack'],
+  ['mcp', 'EXPOSES', 'ecosystem-scope'],
+  ['mcp', 'EXPOSES', 'ecosystem-corpus'],
   ['runtime-hooks', 'WRITES_TO', 'neo4j'],
 ];
 
@@ -700,7 +756,7 @@ function output(value) {
   }
 }
 
-function loadEnvIfExists(filePath) {
+function loadEnvIfExists(filePath, override = false) {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     for (const line of content.split(/\r?\n/)) {
@@ -711,7 +767,7 @@ function loadEnvIfExists(filePath) {
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
         value = value.slice(1, -1);
       }
-      if (key && !Object.prototype.hasOwnProperty.call(process.env, key)) process.env[key] = value;
+      if (key && (override || !Object.prototype.hasOwnProperty.call(process.env, key))) process.env[key] = value;
     }
   } catch {
     // env files are optional.

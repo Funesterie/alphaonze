@@ -277,6 +277,13 @@ function buildSpecialCompilerUserPrompt(mask = {}) {
     : null;
   const payload = {
     demande: normalizeText(mask?.raw || ''),
+    canonical_subject: normalizeText(
+      mask?.meta?.canonicalSubject
+      || mask?.meta?.imageScratchpad?.canonicalSubject
+      || mask?.meta?.subjectProfile?.canonicalSubject
+      || mask?.inputs?.subject?.[0]
+      || ''
+    ),
     sujet_principal: toUniqueStrings(mask?.inputs?.subject || []).slice(0, 3),
     environnement: toUniqueStrings(mask?.inputs?.environment || []).slice(0, 3),
     style: toUniqueStrings(mask?.inputs?.style || []).slice(0, 3),

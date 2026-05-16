@@ -1,0 +1,13 @@
+{
+  "name": "A11 MCP Connectivity",
+  "version": "1.0.0",
+  "description": "Vérifie la connectivité MCP public après modification de config MCP",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/.kiro/settings/mcp.json", "**/a11mcp/.env*"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "powershell -Command \"try { $r = Invoke-RestMethod -Uri 'https://mcp.funesterie.me/health' -TimeoutSec 5; Write-Host \\\"MCP Public: $($r.ok)\\\" } catch { Write-Host \\\"MCP Public: DOWN\\\" }\""
+  }
+}

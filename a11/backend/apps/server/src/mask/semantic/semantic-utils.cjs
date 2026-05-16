@@ -332,7 +332,10 @@ function extractStructuredSubjectCandidate(sourceText = '') {
   if (!stripped) return '';
 
   const match = /^(.+?)(?=\s+(?:avec|sans|dans|sur|sous|au milieu de|au bord de|près de|pres de|devant|derriere|derrière|contre|versus|vs|en train de|portant|tenant|assis|assise|marchant|marchante|courant|courante|fumant|fumante|lumi[eè]re|fond|background|lighting|style|couleurs?|palette)\b|[,.!?;:]|$)/i.exec(stripped);
-  return sanitizeStructuredSubjectCandidate(match?.[1] || stripped);
+  const candidate = String(match?.[1] || stripped || '')
+    .replace(/\s+(?:sortant|sorti|sortie)\b.*$/i, '')
+    .trim();
+  return sanitizeStructuredSubjectCandidate(candidate);
 }
 
 function shouldRejectWordAsSubject(entry = {}) {
