@@ -13,6 +13,10 @@
     "worker:orchestrator:status": "npm --prefix a11/backend/apps/server run worker:orchestrator:status",
     "dispatch": "npm --prefix a11/backend/apps/server run dispatch --",
     "dispatch:agents": "npm --prefix a11/backend/apps/server run dispatch:agents",
-    "dispatch:status": "npm --prefix a11/backend/apps/server run dispatch:status"
+    "dispatch:status": "npm --prefix a11/backend/apps/server run dispatch:status",
+    "forge": "node scripts/funesterie-forge.cjs",
+    "forge:status": "node scripts/funesterie-forge.cjs status",
+    "forge:repo-map": "node scripts/funesterie-forge.cjs repo-map",
+    "forge:doctor": "node scripts/funesterie-forge.cjs doctor"
   }
 }
