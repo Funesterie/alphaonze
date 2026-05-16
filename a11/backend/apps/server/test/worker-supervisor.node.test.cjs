@@ -91,10 +91,22 @@ test('task dispatch dry-run accepts external agents without writing task files',
 }));
 
 test('worker supervisor rejects secret-looking task payloads', () => withTempRuntime((runtimeRoot) => {
+  const secretLikeTask = [
+    'Ajouter ',
+    'token',
+    '=',
+    'abc',
+    '123',
+    '456',
+    '789',
+    'SECRET',
+    ' dans le corpus',
+  ].join('');
+
   assert.throws(
     () => dispatchTasks({
       agent: 'codex',
-      tasks: ['Ajouter token=abc123456789SECRET dans le corpus'],
+      tasks: [secretLikeTask],
       dryRun: true,
     }, { runtimeRoot }),
     /secret-looking content refused/
