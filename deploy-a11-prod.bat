@@ -1,6 +1,6 @@
 @echo off
 setlocal
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "D:\funesterie\deploy-a11-prod.ps1" %*
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0deploy-a11-prod.ps1" %*
 set EXITCODE=%ERRORLEVEL%
 if not "%EXITCODE%"=="0" (
   echo.

@@ -322,10 +322,12 @@ function Invoke-RailwayRedeploy {
   }
 }
 
+$scriptRoot = Split-Path -Parent $PSCommandPath
+
 $repoOrder = @(
   @{
     Name = "funesterie-monorepo"
-    Path = "D:\funesterie"
+    Path = $scriptRoot
     Branch = "master"
     RailwayService = "a11backend"
     Ignore = @(
