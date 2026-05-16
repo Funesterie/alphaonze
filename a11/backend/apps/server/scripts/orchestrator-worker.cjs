@@ -39,13 +39,13 @@ const LEGACY_STATE_FILE = resolveStateFile(process.env.ORCHESTRATOR_LEGACY_STATE
 function resolveStateFile(explicit, filename) {
   if (explicit) return path.resolve(explicit);
 
-  if (process.env.APPDATA) {
-    return path.join(process.env.APPDATA, 'Funesterie', filename);
-  }
-
   const agentBus = process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR;
   if (agentBus) {
     return path.join(agentBus, filename);
+  }
+
+  if (process.env.APPDATA) {
+    return path.join(process.env.APPDATA, 'Funesterie', filename);
   }
 
   if (fs.existsSync('/agent-bus')) {

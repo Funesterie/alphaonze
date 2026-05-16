@@ -630,7 +630,8 @@ for i in `$(seq 1 30); do
   sleep 2
 done
 "@
-& ssh @sshBase $Remote $remoteDeploy
+$remoteDeployEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n")))
+& ssh @sshBase $Remote "printf '%s' '$remoteDeployEncoded' | base64 -d | bash"
 if ($LASTEXITCODE -ne 0) { throw "Deploiement distant echoue" }
 
 Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp" -ForegroundColor Green
