@@ -84,6 +84,7 @@ Private safe tools:
 Operations-gated tools:
 
 - job enqueue/lease/start/complete/fail;
+- bounded Qflush keyboard macros;
 - append-only memory write;
 - safe graph write;
 - generated artifact publish.

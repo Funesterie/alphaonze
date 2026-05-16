@@ -110,6 +110,7 @@
       "job_complete",
       "job_fail",
       "job_recover_expired",
+      "qflush_keyboard_macro",
       "memory_write_safe",
       "graph_write_safe",
       "generated_bucket_put_text",
