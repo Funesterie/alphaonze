@@ -1099,7 +1099,7 @@ function createAuthRouter({
   router.get('/api/auth/me', (req, res) => {
     const token = extractRequestAuthToken(req);
     if (!token) {
-      return res.status(401).json({ ok: false, authenticated: false, error: 'A11_JWT_Missing' });
+      return res.json({ ok: true, authenticated: false, user: null });
     }
 
     try {

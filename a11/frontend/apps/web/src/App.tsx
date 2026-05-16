@@ -14,6 +14,7 @@ import {
   fetchTtsVoiceReferences,
   fetchAuthSession,
   hasAdminApiAccess,
+  hasAuthenticatedAdminApiAccess,
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
@@ -206,12 +207,12 @@ const A11_AVATAR_IDLE_SRC = buildPublicAssetPath("a11_static.png");
 const A11_AVATAR_IDLE_FALLBACK_SRC = buildPublicAssetPath("assets/a11_static.png");
 const A11_AVATAR_TALKING_SRC = buildPublicAssetPath("A11_talking_smooth_8s.gif");
 const A11_AVATAR_TALKING_FALLBACK_SRC = buildPublicAssetPath("assets/A11_talking_smooth_8s.gif");
-const KAEN44_AVATAR_SRC = buildPublicAssetPath("assets/kaen44-copilot.png");
+const KAEN44_AVATAR_SRC = buildPublicAssetPath("assets/kaen44-avatar.png");
 const FUNESTERIE_LOGO_SRC = buildPublicAssetPath("assets/funesterie-logo.png");
 const KAEN44_DASHBOARD_REFERENCE_SRC = buildPublicAssetPath("assets/nossen-dashboard-reference.png");
-const A11_KAEN44_COMMAND_CARDS_SRC = buildPublicAssetPath("assets/a11-kaen44-command-cards.png");
-const FUNESTERIE_NEXUS_BOARD_SRC = buildPublicAssetPath("assets/funesterie-nexus-board.png");
-const FUNESTERIE_TEAM_SCENE_SRC = buildPublicAssetPath("assets/funesterie-team-scene.png");
+const A11_KAEN44_COMMAND_CARDS_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
+const FUNESTERIE_NEXUS_BOARD_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
+const FUNESTERIE_TEAM_SCENE_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
@@ -240,13 +241,6 @@ function getCurrentSurfaceKind(): FunesterieSurface {
   const { hostname, pathname, port, search } = getLocationSnapshot();
   const params = new URLSearchParams(search);
   const personaParam = String(params.get("persona") || "").trim().toLowerCase();
-  const storedPersona = (() => {
-    try {
-      return String(localStorage.getItem("a11:persona") || "").trim().toLowerCase();
-    } catch {
-      return "";
-    }
-  })();
 
   const isLocalHost = isLocalSurfaceHost(hostname);
   const isVivyHost = hostname === "vivy.funesterie.me"
@@ -268,8 +262,6 @@ function getCurrentSurfaceKind(): FunesterieSurface {
   if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname) || personaParam === "a11" || personaParam === "alphaonze") return "a11";
   if (isKaenHost) return "kaen44";
   if (isA11Host) return "a11";
-  if (storedPersona === "kaen44" || storedPersona === "kaen") return "kaen44";
-  if (storedPersona === "vivy") return "vivy";
   return "a11";
 }
 
@@ -4452,7 +4444,7 @@ export function App() {
 
   useEffect(() => {
     if (!isAuthenticated || isResetRoute) return;
-    if (!hasAdminApiAccess()) {
+    if (!hasAuthenticatedAdminApiAccess()) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
