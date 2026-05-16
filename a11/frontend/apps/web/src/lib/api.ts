@@ -753,10 +753,7 @@ export function getAuthStorageScope() {
   return getAuthIdentity().storageScope;
 }
 
-export function hasAdminApiAccess() {
-  if (hasLocalDevBypassSession()) return true;
-
-  if (String(ADMIN_TOKEN || '').trim()) return true;
+function hasAdminIdentityClaims() {
   const payload = decodeJwtPayload(getAuthToken()) || {};
   const storedUser = getStoredAuthUserProfile() || {};
   const id = normalizeStorageScopePart(payload?.id || payload?.sub || '');
@@ -774,6 +771,20 @@ export function hasAdminApiAccess() {
     || role === 'admin'
     || storedUsername === 'admin'
     || storedRole === 'admin';
+}
+
+export function hasAuthenticatedAdminApiAccess() {
+  if (hasLocalDevBypassSession()) return true;
+
+  return hasAdminIdentityClaims();
+}
+
+export function hasAdminApiAccess() {
+  if (hasAuthenticatedAdminApiAccess()) return true;
+
+  if (String(ADMIN_TOKEN || '').trim()) return true;
+
+  return false;
 }
 
 export function getAuthDisplayName() {
@@ -895,6 +906,9 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   }
   if (data.token) {
     setAuthToken(data.token);
+  }
+  if (!data?.authenticated && !data?.user) {
+    return data;
   }
   setAuthUserProfile(data?.user);
   setAuthDisplayName(data?.user?.username || data?.user?.email || '');
@@ -3418,7 +3432,7 @@ export async function purgeTechnicalMemos(): Promise<TechnicalMemoPurgeResponse>
 }
 
 export async function fetchRemoteProviderProfiles(): Promise<RemoteProviderCatalogResponse> {
-  if (hasLocalDevBypassSession() || !hasAdminApiAccess()) {
+  if (hasLocalDevBypassSession() || !hasAuthenticatedAdminApiAccess()) {
     return {
       ok: true,
       enabled: false,
@@ -3448,7 +3462,7 @@ export async function fetchRemoteProviderProfiles(): Promise<RemoteProviderCatal
 }
 
 export async function saveRemoteProviderProfile(input: RemoteProviderSaveInput): Promise<RemoteProviderProfile> {
-  if (!hasAdminApiAccess()) {
+  if (!hasAuthenticatedAdminApiAccess()) {
     throw new Error('admin_required');
   }
   const headers = buildAuthHeaders('application/json');
@@ -3475,7 +3489,7 @@ export async function saveRemoteProviderProfile(input: RemoteProviderSaveInput):
 }
 
 export async function deleteRemoteProviderProfile(profileId: string): Promise<{ ok: boolean; removedId?: string }> {
-  if (!hasAdminApiAccess()) {
+  if (!hasAuthenticatedAdminApiAccess()) {
     throw new Error('admin_required');
   }
   const headers = buildAuthHeaders();
