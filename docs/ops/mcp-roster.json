@@ -1,6 +1,6 @@
 {
   "schema": "funesterie.mcp.roster.v1",
-  "updatedAt": "2026-05-15",
+  "updatedAt": "2026-05-16",
   "status": "active",
   "purpose": "Canonical secret-free roster for MCP-connected agents, service surfaces, tool scopes, and Operation BB readiness.",
   "rules": [
@@ -90,6 +90,9 @@
       "a11_llm_stats",
       "kaen44_status",
       "qflush_status",
+      "qflush_sources_status",
+      "qflush_sources_select",
+      "qflush_window_capture",
       "qflush_janus_status",
       "qflush_vivy_audio_status",
       "generated_bucket_status",

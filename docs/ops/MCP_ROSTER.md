@@ -1,7 +1,7 @@
 # Funesterie MCP Roster
 
 Status: active
-Last update: 2026-05-15
+Last update: 2026-05-16
 Canonical machine file: `docs/ops/mcp-roster.json`
 
 This is the secret-free control map for agents connected to Funesterie through MCP. It answers four questions before any big operation:
@@ -22,7 +22,7 @@ This is the secret-free control map for agents connected to Funesterie through M
 | Kiro local A11 | `node .../a11-mcp-server.cjs` | local process | configured | local A11 route map and diagnostics |
 | A11 backend | `https://a11.funesterie.pro` | app auth | healthy | product/backend surface |
 
-Health checked on 2026-05-15:
+Health checked on 2026-05-16:
 
 - `https://mcp.funesterie.me/health` returned OK.
 - `https://a11.funesterie.pro/health` returned OK.
@@ -77,6 +77,7 @@ Private safe tools:
 - job status and schema;
 - Neo4j read-only status/query;
 - A11, Kaen44, Qflush, Janus, Vivy status;
+- Qflush source profile, selected-window capture, and audio source selection;
 - generated bucket list/head;
 - search/fetch.
 
