@@ -159,6 +159,7 @@ function normalizeState(raw) {
     tasks,
     lastPoll: state.lastPoll || null,
     nudges: state.nudges || {},
+    escalations: state.escalations || {},
   };
 }
 
@@ -183,13 +184,14 @@ async function checkTaskProgress(state) {
         reason: `Pas de mise Ã  jour depuis ${Math.round(elapsed / 60000)} min`,
       });
       state.nudges[task.id] = nudgeCount + 1;
-    } else if (nudgeCount >= MAX_NUDGES) {
+    } else if (nudgeCount >= MAX_NUDGES && !state.escalations[task.id]) {
       // Too many nudges â€” escalate
       actions.push({
         type: 'escalate',
         task,
         reason: `${MAX_NUDGES} relances sans rÃ©ponse â€” escalade Ã  Djeff`,
       });
+      state.escalations[task.id] = new Date().toISOString();
     }
   }
 

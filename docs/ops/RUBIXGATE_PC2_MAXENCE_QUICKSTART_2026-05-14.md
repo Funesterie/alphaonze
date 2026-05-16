@@ -9,6 +9,20 @@ Objectif court terme : PC2 ne manipule aucun token. Maxence utilise Funesterie D
 3. Utiliser le bouton de mise a jour de l'application.
 4. Ne jamais coller de token dans un chat, un fichier, ou une capture.
 
+## Debloquer le job board PC2
+
+Sur PC2 uniquement, annoncer le worker capable de prendre les jobs
+`pc2-handoff` :
+
+```powershell
+cd D:\projets\funesterie\a11mcp
+.\scripts\Start-Pc2RubixGatePresenceWorker.ps1
+```
+
+Le script commence par `Confirm-RubixGatePc2Identity.ps1` et refuse de
+continuer si la machine n'est pas `DESKTOP-6UQGRCR` / `192.168.1.3`.
+Il n'affiche pas de secret et n'active aucune capsule tout seul.
+
 ## Cote operateur PC1
 
 Avant toute action sur PC2, verifier l'identite machine :

@@ -78,6 +78,31 @@ function isJapaneseVariant(state) {
   return /japanese|japan|jpn|\(j\)|\[j\]|\bjp\b/i.test(raw);
 }
 
+function summarizePitchingThreads(value) {
+  const threads = Array.isArray(value?.discussions) ? value.discussions : [];
+  const items = threads.slice(0, 6).map((thread) => {
+    const pitching = thread?.pitching || thread?.pitch || {};
+    const requiredAnswered = Number(pitching.requiredAnswered || 0);
+    const requiredTotal = Number(pitching.requiredTotal || 0);
+    const expectedAnswered = Number(pitching.expectedAnswered || 0);
+    const expectedTotal = Number(pitching.expectedTotal || 0);
+    return {
+      title: String(thread?.title || 'Rendez-vous agents').slice(0, 80),
+      ready: !!pitching.ready,
+      requiredAnswered,
+      requiredTotal,
+      expectedAnswered,
+      expectedTotal,
+      deadlineSoftPassed: !!pitching.deadlineSoftPassed,
+    };
+  });
+  return {
+    total: threads.length,
+    ready: items.filter((item) => item.ready).length,
+    items,
+  };
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers, body: '' };
@@ -97,9 +122,10 @@ exports.handler = async (event) => {
     callTool('agent_jobs'),
     callTool('romstation_state'),
     callTool('qflush_gamepad_status'),
+    callTool('discussion_list', { status: 'pitching', limit: 10 }),
   ]);
 
-  const [a11, kaen44, presence, jobs, romstation, controller] = settled.map((item) =>
+  const [a11, kaen44, presence, jobs, romstation, controller, pitchingThreads] = settled.map((item) =>
     item.status === 'fulfilled' ? item.value : null
   );
 
@@ -145,6 +171,7 @@ exports.handler = async (event) => {
       recentCount: Array.isArray(controllerStatus?.recent) ? controllerStatus.recent.length : 0,
       target: controllerStatus?.targetDefault === 'romstation' ? 'RomStation' : 'RomStation',
     },
+    pitching: summarizePitchingThreads(pitchingThreads),
   };
 
   return {

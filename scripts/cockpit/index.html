@@ -289,6 +289,12 @@
       margin-top: 14px;
     }
 
+    .pitch-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
     .agent {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -301,6 +307,27 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+    }
+
+    .pitch-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--soft);
+      display: grid;
+      gap: 3px;
+      min-height: 58px;
+    }
+
+    .pitch-item strong {
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .pitch-item span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 780;
     }
 
     .mini-dot {
@@ -540,6 +567,11 @@
             <span id="agentCount" class="live-value">A verifier</span>
           </div>
           <div id="agentList" class="agent-list" aria-live="polite"></div>
+          <div class="live-row">
+            <span>Rendez-vous agents</span>
+            <span id="pitchCount" class="live-value">Aucun</span>
+          </div>
+          <div id="pitchList" class="pitch-list" aria-live="polite"></div>
         </article>
 
         <article class="card span-4">
@@ -634,6 +666,16 @@
         return ok ? "Pret" : "A verifier";
       }
 
+      function escapeHtml(value) {
+        return String(value || "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[c]));
+      }
+
       async function readStatus() {
         const response = await fetch(LIVE_STATUS_URL, {
           method: "GET",
@@ -653,14 +695,30 @@
           return;
         }
         list.innerHTML = agents.slice(0, 8).map((name) => (
-          '<div class="agent"><span>' + friendlyName(name).replace(/[&<>"']/g, (c) => ({
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#39;"
-          }[c])) + '</span><span class="mini-dot" aria-hidden="true"></span></div>'
+          '<div class="agent"><span>' + escapeHtml(friendlyName(name)) + '</span><span class="mini-dot" aria-hidden="true"></span></div>'
         )).join("");
+      }
+
+      function renderPitching(summary) {
+        const list = byId("pitchList");
+        const pitching = summary?.pitching || {};
+        const items = Array.isArray(pitching.items) ? pitching.items : [];
+        const total = Number(pitching.total || 0);
+        const ready = Number(pitching.ready || 0);
+        setText("pitchCount", total > 0 ? `${ready} prets / ${total} ouverts` : "Aucun");
+        if (!list) return;
+        if (items.length === 0) {
+          list.innerHTML = "";
+          return;
+        }
+        list.innerHTML = items.slice(0, 4).map((item) => {
+          const answered = Number(item.requiredTotal || 0) > 0
+            ? `${Number(item.requiredAnswered || 0)}/${Number(item.requiredTotal || 0)} requis`
+            : `${Number(item.expectedAnswered || 0)}/${Number(item.expectedTotal || 0)} attendus`;
+          const state = item.ready ? "pret" : (item.deadlineSoftPassed ? "partiel" : "en cours");
+          return '<div class="pitch-item"><strong>' + escapeHtml(item.title || "Rendez-vous agents") +
+            '</strong><span>' + escapeHtml(`${answered} - ${state}`) + '</span></div>';
+        }).join("");
       }
 
       function render(summary) {
@@ -684,6 +742,7 @@
         const dot = byId("topDot");
         if (dot) dot.classList.toggle("ok", topOk);
         renderAgents(summary);
+        renderPitching(summary);
       }
 
       async function refresh() {
@@ -697,6 +756,7 @@
           setText("agentCount", "A verifier");
           setText("gameWindow", "En attente");
           setText("padState", "En attente");
+          setText("pitchCount", "A verifier");
         }
       }
 
