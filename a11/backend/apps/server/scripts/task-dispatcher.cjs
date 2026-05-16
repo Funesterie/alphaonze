@@ -28,13 +28,13 @@ function resolveDispatchStateFile() {
   const explicit = process.env.A11_DISPATCH_STATE_FILE || process.env.TASK_DISPATCH_STATE_FILE;
   if (explicit) return path.resolve(explicit);
 
-  if (process.env.APPDATA) {
-    return path.join(process.env.APPDATA, 'Funesterie', 'task-dispatch-state.json');
-  }
-
   const agentBus = process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR;
   if (agentBus) {
     return path.join(agentBus, 'task-dispatch-state.json');
+  }
+
+  if (process.env.APPDATA) {
+    return path.join(process.env.APPDATA, 'Funesterie', 'task-dispatch-state.json');
   }
 
   if (fs.existsSync('/agent-bus')) {
@@ -308,6 +308,10 @@ function extractKeywords(text) {
 // â”€â”€â”€ Dispatch Logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function dispatchTasks(project, tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    throw new Error('No tasks parsed; refusing to overwrite dispatcher state with an empty queue.');
+  }
+
   let agents = [];
   try {
     agents = await getActiveAgents();

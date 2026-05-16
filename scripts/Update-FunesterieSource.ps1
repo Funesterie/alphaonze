@@ -16,8 +16,15 @@ function Invoke-GitText {
     [Parameter(Mandatory = $true)][string[]]$GitArgs
   )
 
-  $output = @(& git -C $Root @GitArgs 2>&1)
-  $code = $LASTEXITCODE
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = @(& git -C $Root @GitArgs 2>&1)
+    $code = $LASTEXITCODE
+  }
+  finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   if ($code -ne 0) {
     throw "git $($GitArgs -join ' ') failed ($code): $($output -join "`n")"
   }
