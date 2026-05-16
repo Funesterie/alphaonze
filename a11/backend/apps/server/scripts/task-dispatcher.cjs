@@ -22,7 +22,35 @@ const { URL } = require('node:url');
 
 const MCP_URL = process.env.A11_MCP_URL || 'https://mcp.funesterie.me/mcp';
 const MCP_TOKEN = process.env.MCP_AUTH_TOKEN || loadTokenFromFile();
-const DISPATCH_STATE_FILE = path.join(process.env.APPDATA || '.', 'Funesterie', 'task-dispatch-state.json');
+const DISPATCH_STATE_FILE = resolveDispatchStateFile();
+
+function resolveDispatchStateFile() {
+  const explicit = process.env.A11_DISPATCH_STATE_FILE || process.env.TASK_DISPATCH_STATE_FILE;
+  if (explicit) return path.resolve(explicit);
+
+  if (process.env.APPDATA) {
+    return path.join(process.env.APPDATA, 'Funesterie', 'task-dispatch-state.json');
+  }
+
+  const agentBus = process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR;
+  if (agentBus) {
+    return path.join(agentBus, 'task-dispatch-state.json');
+  }
+
+  if (fs.existsSync('/agent-bus')) {
+    return '/agent-bus/task-dispatch-state.json';
+  }
+
+  if (process.env.XDG_STATE_HOME) {
+    return path.join(process.env.XDG_STATE_HOME, 'funesterie', 'task-dispatch-state.json');
+  }
+
+  if (process.env.HOME) {
+    return path.join(process.env.HOME, '.local', 'state', 'funesterie', 'task-dispatch-state.json');
+  }
+
+  return path.resolve(process.cwd(), '.funesterie', 'task-dispatch-state.json');
+}
 
 function loadTokenFromFile() {
   const candidates = [

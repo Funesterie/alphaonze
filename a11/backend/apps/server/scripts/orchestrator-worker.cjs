@@ -28,9 +28,40 @@ const POLL_INTERVAL_MS = Number(process.env.ORCHESTRATOR_POLL_MS || 60_000); // 
 const STALE_TASK_THRESHOLD_MS = 30 * 60 * 1000; // 30 min sans update = relance
 const MAX_NUDGES = 3; // Max relances avant escalade
 const ORCHESTRATOR_ID = process.env.ORCHESTRATOR_ID || 'chatgpt-enterprise';
-const STATE_DIR = path.join(process.env.APPDATA || '.', 'Funesterie');
-const STATE_FILE = process.env.ORCHESTRATOR_STATE_FILE || path.join(STATE_DIR, 'task-dispatch-state.json');
-const LEGACY_STATE_FILE = path.join(STATE_DIR, 'orchestrator-state.json');
+const STATE_FILE = resolveStateFile(
+  process.env.ORCHESTRATOR_STATE_FILE
+  || process.env.A11_DISPATCH_STATE_FILE
+  || process.env.TASK_DISPATCH_STATE_FILE,
+  'task-dispatch-state.json'
+);
+const LEGACY_STATE_FILE = resolveStateFile(process.env.ORCHESTRATOR_LEGACY_STATE_FILE, 'orchestrator-state.json');
+
+function resolveStateFile(explicit, filename) {
+  if (explicit) return path.resolve(explicit);
+
+  if (process.env.APPDATA) {
+    return path.join(process.env.APPDATA, 'Funesterie', filename);
+  }
+
+  const agentBus = process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR;
+  if (agentBus) {
+    return path.join(agentBus, filename);
+  }
+
+  if (fs.existsSync('/agent-bus')) {
+    return path.join('/agent-bus', filename);
+  }
+
+  if (process.env.XDG_STATE_HOME) {
+    return path.join(process.env.XDG_STATE_HOME, 'funesterie', filename);
+  }
+
+  if (process.env.HOME) {
+    return path.join(process.env.HOME, '.local', 'state', 'funesterie', filename);
+  }
+
+  return path.resolve(process.cwd(), '.funesterie', filename);
+}
 
 function loadToken() {
   const candidates = [
