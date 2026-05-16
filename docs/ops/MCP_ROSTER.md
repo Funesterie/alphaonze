@@ -33,20 +33,29 @@ Health checked on 2026-05-15:
 
 | Agent | Status | Role | MCP Access | BB Role |
 | --- | --- | --- | --- | --- |
-| `codex` | active | implementation, review, local ops | private full + local workspace | patch captain and verifier |
+| `chatgpt` | available | orchestration, priority, arbitration, synthesis | public-safe, OAuth private when configured | operator and route owner |
+| `chopper` | planned | repair, diagnostics, patches, tests, queues, configs | private safe via job board | fix owner |
+| `qflush` | active | perception/action, vision, bounded input/runtime hooks | private status/input tools | local eyes and hands |
+| `a11` | healthy | memory, graph, identity, routing, semantic context | local/private | memory owner |
+| `kaen44` | available | client/demo copilot, accessibility, documents | private/app surfaces | client surface owner |
+| `vivy` | available | audio/music/media identity | A11/Qflush status surfaces | audio/video lane |
+| `codex` | active | implementation, review, local ops | private full + local workspace | worker and verifier |
 | `kiro` | connected | codebase navigation and spec execution | local A11 + shared full MCP | route-map checker |
 | `gemini-cli-pro` | connected | long-context reasoning and second pass analysis | public Gemini + private full | analysis engine |
-| `chatgpt` | available | coordination and synthesis | public-safe, OAuth private when configured | operator narrative |
 | `claude` | candidate | deep review, docs, coherence | public-safe or OAuth private | review lane |
 | `copilot-cli` | quota-gated | PR, CI, targeted code suggestions | GitHub CLI + MCP when quota permits | CI repair assistant |
 | `grok` | candidate | media analysis, contradiction and fast alternate hypotheses | public Grok, future Cloudflare proxy | sanity-check lane |
-| `a11` | healthy | memory, graph, identity, routing | local/private | memory owner |
-| `kaen44` | available | client/demo copilot | private/app surfaces | demo owner |
-| `vivy` | available | audio/music identity | A11/Qflush status surfaces | audio/video lane |
-| `qflush` | active | runtime hooks and bridges | private status tools | runtime lane |
 | `cloudflare` | active | tunnels, routes, R2, future proxy | ops surface | edge lane |
 | `render` | active | backend hosting and logs | ops surface | deploy lane |
 | `jfrog` | available | private package/module registry | ops surface | package lane |
+
+Canonical dispatch:
+
+```txt
+ChatGPT -> Chopper/Qflush/A11/Kaen44/Vivy/Codex/Kiro
+```
+
+Use `agent_role_route` before dispatching fuzzy work. Qflush physical input remains opt-in and bounded.
 
 ## Tool Policy
 
@@ -63,6 +72,7 @@ Public read-only tools:
 Private safe tools:
 
 - presence and heartbeat;
+- agent role routing;
 - discussions;
 - job status and schema;
 - Neo4j read-only status/query;

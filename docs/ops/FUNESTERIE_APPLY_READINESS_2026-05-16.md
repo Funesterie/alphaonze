@@ -85,11 +85,13 @@ Added safe tool:
 
 Default ownership:
 
-- A11: image, video, vision, metadata, media ingest, publication packages
-- Vivy: audio, voice, music, lyrics, SFX, composition, Ekko
-- Kaen44: prompts, briefs, documents, invoices, client flow, accessibility, planning
-- QFlush: runtime, queues, desktop control, automation, optimization
-- Nexus: supervision, health, MCP/Neo4j sync, tool diffing
+- ChatGPT: orchestration, priority, arbitration, synthesis, dispatch.
+- Chopper: repair, diagnostics, patches, tests, configs, workers, queues.
+- Qflush: perception/action, vision, bounded mouse/keyboard/gamepad, UI smoke tests.
+- A11: memory, graph, corpus, identity, NOSSEN/lore, semantic context.
+- Kaen44: client/demo flows, accessibility, prompts, briefs, documents, invoices.
+- Vivy: audio, voice, music, lyrics, SFX, composition, Ekko/media identity.
+- Codex/Kiro: bounded implementation, verification, codebase navigation.
 
 The tool returns primary agent, ordered fallbacks, confidence, keyword hits and safety policy.
 
