@@ -23,6 +23,14 @@ Le script commence par `Confirm-RubixGatePc2Identity.ps1` et refuse de
 continuer si la machine n'est pas `DESKTOP-6UQGRCR` / `192.168.1.3`.
 Il n'affiche pas de secret et n'active aucune capsule tout seul.
 
+Regle console / workers :
+
+- Le launcher ne tue pas une console existante par defaut.
+- Si un worker est deja vivant, il rafraichit seulement le marker
+  `*-presence-marker.json` et garde le process en vie.
+- Pour demander un redemarrage propre, utiliser `-RequestRestart` : cela pose
+  un stop-file et attend que le worker sorte seul. Pas de kill force.
+
 ## Cote operateur PC1
 
 Avant toute action sur PC2, verifier l'identite machine :
