@@ -1756,6 +1756,27 @@ const VIVY_STUDIO_MODES: Array<{
   },
 ];
 
+function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "voice" || raw === "song" || raw === "share" ? raw : null;
+}
+
+function openVivyStudioMode(mode: VivyStudioMode) {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("vivy:select-mode", { detail: { mode } }));
+  } catch {
+    // CustomEvent can be unavailable in unusual embedded browsers.
+  }
+  const target = document.getElementById("vivy-studio");
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  if (window.location.hash !== "#vivy-studio") {
+    window.history.pushState({}, "", `${window.location.pathname}${window.location.search}#vivy-studio`);
+  }
+}
+
 function readVivyStudioDraft() {
   try {
     const raw = globalThis.localStorage?.getItem(VIVY_STUDIO_DRAFT_KEY);
@@ -1842,7 +1863,7 @@ function buildVivyStudioBrief(options: {
 
 function VivyStudioLab() {
   const initialDraft = readVivyStudioDraft() || {};
-  const [activeMode, setActiveMode] = useState<VivyStudioMode>((initialDraft.mode as VivyStudioMode) || "voice");
+  const [activeMode, setActiveMode] = useState<VivyStudioMode>(normalizeVivyStudioMode(initialDraft.mode) || "voice");
   const [voiceTool, setVoiceTool] = useState(String(initialDraft.voiceTool || "A11 Voice + Voicemod"));
   const [voiceInstruction, setVoiceInstruction] = useState(String(initialDraft.voiceInstruction || ""));
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
@@ -1858,6 +1879,17 @@ function VivyStudioLab() {
   const [vivyMedia, setVivyMedia] = useState<VivyStudioMediaPreview | null>(null);
   const [status, setStatus] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    const onSelectMode = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: unknown }>;
+      const nextMode = normalizeVivyStudioMode(customEvent.detail?.mode);
+      if (nextMode) setActiveMode(nextMode);
+    };
+
+    window.addEventListener("vivy:select-mode", onSelectMode);
+    return () => window.removeEventListener("vivy:select-mode", onSelectMode);
+  }, []);
 
   const baseBrief = useMemo(() => buildVivyStudioBrief({
     mode: activeMode,
@@ -2191,6 +2223,12 @@ function VivyStudioLab() {
 }
 
 function VivyPublicSurface() {
+  const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
+    { mode: "voice", label: "Ouvrir Creation voix dans l'atelier Vivy" },
+    { mode: "song", label: "Ouvrir Composition production dans l'atelier Vivy" },
+    { mode: "share", label: "Ouvrir Scene partage dans l'atelier Vivy" },
+  ];
+
   return (
     <>
       <section className="vivy-public-stage" aria-label="Vivy presence musicale" tabIndex={0}>
@@ -2200,6 +2238,17 @@ function VivyPublicSurface() {
             src={VIVY_POSTER_SRC}
             alt="Vivy, presence musicale Funesterie: voix, musique, creation et partage."
           />
+          <div className="vivy-public-hotspots" aria-label="Acces directs Vivy">
+            {hotspots.map((hotspot) => (
+              <button
+                key={hotspot.mode}
+                type="button"
+                className={`vivy-public-hotspot vivy-public-hotspot--${hotspot.mode}`}
+                onClick={() => openVivyStudioMode(hotspot.mode)}
+                aria-label={hotspot.label}
+              />
+            ))}
+          </div>
         </div>
         <div className="vivy-public-mobile-slices" aria-hidden="true">
           <img className="vivy-mobile-slice vivy-mobile-slice--portrait" src={VIVY_POSTER_SRC} alt="" />
@@ -2469,13 +2518,21 @@ const FUNESTERIE_HOME_AGENTS = [
 function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
   if (agentHref === "vivy") return surfaceLinks.vivy;
   if (agentHref === "a11") return surfaceLinks.a11;
-  if (agentHref === "kaen44") return surfaceLinks.cockpit;
+  if (agentHref === "kaen44") return surfaceLinks.kaen44;
   if (agentHref === "nossen") return surfaceLinks.nossen;
   if (agentHref === "cockpit") return surfaceLinks.cockpit;
   return surfaceLinks.cockpit;
 }
 
-function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
+function FunesterieConnectedHomePage({
+  surfaceLinks,
+  primarySurface = getCurrentSurfaceKind(),
+}: {
+  surfaceLinks: SurfaceLinks;
+  primarySurface?: FunesterieSurface;
+}) {
+  const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
+  const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Acceder au cockpit";
   const navItems = [
     ["Accueil", "#top"],
     ["Univers", "#univers"],
@@ -2497,8 +2554,8 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
             <a key={label} href={href}>{label}</a>
           ))}
         </div>
-        <a className="fun-home-cockpit" href={surfaceLinks.cockpit}>
-          Acceder au cockpit
+        <a className="fun-home-cockpit" href={primaryCockpitHref}>
+          {primaryCockpitLabel}
           <span aria-hidden="true">◇</span>
         </a>
       </nav>
@@ -2554,7 +2611,7 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
               <i aria-hidden="true">{agent.glyph}</i>
             </a>
           ))}
-          <a className="fun-home-agent-card fun-home-agent-card--empty" href={surfaceLinks.cockpit}>
+          <a className="fun-home-agent-card fun-home-agent-card--empty" href={primaryCockpitHref}>
             <span className="fun-home-agent-media" aria-hidden="true"><b>+</b></span>
             <span className="fun-home-agent-copy">
               <strong>Modules a venir</strong>
@@ -2650,7 +2707,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const futureAgents = ["Module media", "Module agentic", "Module jeu"];
 
   if (isHome) {
-    return <FunesterieConnectedHomePage surfaceLinks={surfaceLinks} />;
+    return <FunesterieConnectedHomePage surfaceLinks={surfaceLinks} primarySurface="kaen44" />;
   }
 
   return (
@@ -5547,7 +5604,7 @@ export function App() {
     setSettingsMenuOpen(false);
     setSidebarOpen(false);
     setInspectorOpen(false);
-    pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/"));
+    pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", isKaen44 ? "/cockpit" : "/"));
     focusComposerSoon();
   }
 
