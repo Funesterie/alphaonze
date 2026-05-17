@@ -1,9 +1,8 @@
 param(
   [string]$EnvFile = "D:\projets\funesterie\a11mcp\.env",
   [string[]]$Targets = @(
-    "G:\Mon Drive\a11_memory\agent-bus\mcp-token-current.txt",
-    "$env:USERPROFILE\OneDrive\a11_memory\agent-bus\mcp-token-current.txt",
-    "D:\agent-bus\mcp-token-current.txt"
+    "D:\agent-bus\mcp-token-current.txt",
+    "$env:APPDATA\Funesterie\mcp-token.txt"
   )
 )
 

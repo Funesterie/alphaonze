@@ -147,15 +147,17 @@ function resolveTokenValue(value) {
 }
 
 function localTokenCandidatePaths() {
+  const agentBusDir = process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR || 'D:\\agent-bus';
   const candidates = [
     process.env.A11_MCP_TOKEN_FILE,
     process.env.MCP_AUTH_TOKEN_FILE,
     process.env.AGENT_STATE_DIR ? path.join(process.env.AGENT_STATE_DIR, 'mcp-token-current.txt') : '',
-    'G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt',
-    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'OneDrive', 'a11_memory', 'agent-bus', 'mcp-token-current.txt') : '',
-    'D:\\agent-bus\\mcp-token-current.txt',
+    path.join(agentBusDir, 'mcp-token-current.txt'),
     'D:\\projets\\funesterie\\a11mcp\\.env',
     process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Desktop', 'mcp-token.txt') : '',
+    // Legacy sync folders. Keep last so Drive is never used as the live bus.
+    'G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'OneDrive', 'a11_memory', 'agent-bus', 'mcp-token-current.txt') : '',
   ];
   return [...new Set(candidates.filter(Boolean))];
 }

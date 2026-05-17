@@ -20,6 +20,8 @@ const DEFAULT_LOCAL_MCP_URLS = [
 const TOKEN_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const RECONNECT_DELAY_MS = 5000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
+const AUTH_ERROR_STATUS_CODES = new Set([401, 403]);
+const MCP_PROTOCOL_VERSION = '2024-11-05';
 
 class McpBridge {
   constructor(options = {}) {
@@ -53,21 +55,60 @@ class McpBridge {
   }
 
   /**
-   * Resolve token file path â€” checks OneDrive agent-bus first, then local
+   * Resolve token file path. Local/App Engine state wins; Drive paths are legacy fallbacks.
    */
   _resolveTokenFilePath() {
+    const agentBusDir = process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR || 'D:\\agent-bus';
     const candidates = [
-      // OneDrive shared (PC1 + PC2)
-      path.join(process.env.USERPROFILE || '', 'OneDrive', 'a11_memory', 'agent-bus', 'mcp-token-current.txt'),
-      // Local agent-bus
-      'D:\\agent-bus\\mcp-token-current.txt',
-      // AppData fallback
+      path.join(agentBusDir, 'mcp-token-current.txt'),
+      process.env.A11_MCP_TOKEN_FILE,
+      process.env.MCP_AUTH_TOKEN_FILE,
       path.join(process.env.APPDATA || '', 'Funesterie', 'mcp-token.txt'),
+      'D:\\projets\\funesterie\\a11mcp\\.env',
+      // Legacy sync folders. Keep last so Drive is never used as the live bus.
+      'G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt',
+      path.join(process.env.USERPROFILE || '', 'OneDrive', 'a11_memory', 'agent-bus', 'mcp-token-current.txt'),
     ];
-    for (const candidate of candidates) {
+    for (const candidate of candidates.filter(Boolean)) {
       if (fs.existsSync(candidate)) return candidate;
     }
-    return candidates[0]; // Default to OneDrive path
+    return path.join(agentBusDir, 'mcp-token-current.txt');
+  }
+
+  _normalizeToken(value) {
+    return String(value || '')
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+  }
+
+  _safeErrorMessage(err) {
+    const status = Number(err?.statusCode || 0);
+    const base = String(err?.message || err || 'request failed').trim();
+    if (AUTH_ERROR_STATUS_CODES.has(status)) {
+      return `HTTP ${status} MCP auth failed`;
+    }
+    return base.replace(this.token || '\u0000', '[redacted]');
+  }
+
+  _buildMcpHeaders(body = '') {
+    const headers = {
+      'Accept': 'application/json, text/event-stream',
+      'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+    };
+
+    if (body) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(body);
+    }
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+      headers['x-mcp-token'] = this.token;
+    }
+
+    return headers;
   }
 
   /**
@@ -80,8 +121,11 @@ class McpBridge {
         // Support both raw token and KEY=VALUE format
         const match = content.match(/^(?:MCP_AUTH_TOKEN\s*=\s*)?(.+)$/m);
         if (match) {
-          this.token = match[1].trim();
-          return true;
+          const nextToken = this._normalizeToken(match[1]);
+          if (nextToken) {
+            this.token = nextToken;
+            return true;
+          }
         }
       }
     } catch (err) {
@@ -201,7 +245,7 @@ class McpBridge {
     const errors = [];
     for (const url of this._healthyUrls()) {
       try {
-        const result = await this._httpPost(url, body, 30_000);
+        const result = await this._postMcp(url, body, 30_000);
         const parsed = this._parseSSEResponse(result);
         if (parsed && !parsed.error && !parsed.result?.isError) {
           this.activeMcpUrl = url;
@@ -210,7 +254,7 @@ class McpBridge {
         }
         errors.push({ url, error: parsed?.error || parsed?.result?.content || 'tool error' });
       } catch (err) {
-        errors.push({ url, error: err.message });
+        errors.push({ url, statusCode: err.statusCode, error: this._safeErrorMessage(err) });
       }
     }
     return { error: { message: `MCP tool ${toolName} unavailable`, endpoints: errors } };
@@ -233,8 +277,12 @@ class McpBridge {
 
     for (const url of this._healthyUrls()) {
       try {
-        const result = await this._httpPost(url, body, 15_000);
+        const result = await this._postMcp(url, body, 15_000);
         const parsed = this._parseSSEResponse(result);
+        if (parsed?.error || parsed?.result?.isError) {
+          errors.push({ url, kind: this._endpointKind(url), error: parsed.error || parsed.result?.content || 'tools/list error' });
+          continue;
+        }
         const tools = parsed?.result?.tools || parsed?.tools || [];
         if (Array.isArray(tools)) {
           for (const tool of tools) {
@@ -244,7 +292,7 @@ class McpBridge {
           endpoints.push({ url, kind: this._endpointKind(url), ok: true, count: tools.length });
         }
       } catch (err) {
-        errors.push({ url, kind: this._endpointKind(url), error: err.message });
+        errors.push({ url, kind: this._endpointKind(url), statusCode: err.statusCode, error: this._safeErrorMessage(err) });
       }
     }
 
@@ -290,6 +338,21 @@ class McpBridge {
     try { return JSON.parse(raw); } catch { return null; }
   }
 
+  async _postMcp(url, body, timeoutMs) {
+    if (!this.token) this.loadToken();
+    try {
+      return await this._httpPost(url, body, timeoutMs);
+    } catch (err) {
+      if (!AUTH_ERROR_STATUS_CODES.has(Number(err?.statusCode || 0))) throw err;
+      const previousToken = this.token;
+      this.loadToken();
+      if (this.token && this.token !== previousToken) {
+        return this._httpPost(url, body, timeoutMs);
+      }
+      throw err;
+    }
+  }
+
   /**
    * HTTP POST with auth
    */
@@ -297,25 +360,27 @@ class McpBridge {
     return new Promise((resolve, reject) => {
       const parsed = new URL(url);
       const lib = parsed.protocol === 'https:' ? https : http;
-      const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        'Content-Length': Buffer.byteLength(body),
-      };
-      if (this.token) {
-        headers['Authorization'] = `Bearer ${this.token}`;
-      }
+      const headers = this._buildMcpHeaders(body);
 
       const req = lib.request({
         hostname: parsed.hostname,
         port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
-        path: parsed.pathname,
+        path: `${parsed.pathname}${parsed.search || ''}`,
         method: 'POST',
         headers,
       }, (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        res.on('end', () => {
+          const responseText = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            const error = new Error(`HTTP ${res.statusCode}`);
+            error.statusCode = res.statusCode;
+            error.responseText = responseText;
+            return reject(error);
+          }
+          return resolve(responseText);
+        });
         res.on('error', reject);
       });
 
@@ -333,13 +398,21 @@ class McpBridge {
     return new Promise((resolve, reject) => {
       const parsed = new URL(url);
       const lib = parsed.protocol === 'https:' ? https : http;
-      const headers = {};
-      if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+      const headers = this._buildMcpHeaders();
 
-      const req = lib.get({ hostname: parsed.hostname, port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80), path: parsed.pathname, headers }, (res) => {
+      const req = lib.get({ hostname: parsed.hostname, port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80), path: `${parsed.pathname}${parsed.search || ''}`, headers }, (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        res.on('end', () => {
+          const responseText = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            const error = new Error(`HTTP ${res.statusCode}`);
+            error.statusCode = res.statusCode;
+            error.responseText = responseText;
+            return reject(error);
+          }
+          return resolve(responseText);
+        });
         res.on('error', reject);
       });
 

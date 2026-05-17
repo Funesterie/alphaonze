@@ -19,10 +19,10 @@
     "https://mcp.funesterie.me/mcp"
   ],
   "tokenFileCandidates": [
-    "G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt",
-    "%USERPROFILE%\\OneDrive\\a11_memory\\agent-bus\\mcp-token-current.txt",
     "D:\\agent-bus\\mcp-token-current.txt",
-    "%APPDATA%\\Funesterie\\mcp-token.txt"
+    "%APPDATA%\\Funesterie\\mcp-token.txt",
+    "G:\\Mon Drive\\a11_memory\\agent-bus\\mcp-token-current.txt",
+    "%USERPROFILE%\\OneDrive\\a11_memory\\agent-bus\\mcp-token-current.txt"
   ],
   "enabledModules": [
     "mcp",
