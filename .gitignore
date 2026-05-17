@@ -63,6 +63,7 @@ Thumbs.db
 /a11_handoff_*/
 /logs/
 /a11/logs/
+/tasks/forge/
 /lghub_installer.exe
 *.vsix
 
