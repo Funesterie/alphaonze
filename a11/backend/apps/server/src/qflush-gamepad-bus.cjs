@@ -177,8 +177,10 @@ function getGamepadBusDir(runtimeRoot) {
 
   if (configured) return path.resolve(configured);
 
-  const home = process.env.USERPROFILE || process.env.HOME || '';
-  if (home) return path.join(home, 'OneDrive', 'a11_memory', 'agent-bus');
+  if (process.platform === 'win32') return 'D:\\agent-bus';
+
+  const home = process.env.HOME || '';
+  if (home) return path.join(home, '.local', 'state', 'funesterie', 'agent-bus');
 
   return path.join(runtimeRoot || process.cwd(), 'agent-bus');
 }

@@ -10,8 +10,11 @@ $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $serverRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '..'))
-$memoryRoot = 'C:\Users\Djeff\OneDrive\a11_memory'
-$heartbeatScript = 'C:\Users\Djeff\OneDrive\a11_heartbeat\scripts\Send-HeartbeatSignal.ps1'
+$memoryRoot = $env:A11_SHARED_MEMORY_DIR
+if ([string]::IsNullOrWhiteSpace($memoryRoot)) {
+  $memoryRoot = 'D:\agent-bus\shared-memory'
+}
+$heartbeatScript = Join-Path $memoryRoot 'scripts\Send-HeartbeatSignal.ps1'
 $cudaRepairScript = Join-Path $memoryRoot 'scripts\Repair-PodmanCuda.ps1'
 
 function Write-Step([string]$Message) {

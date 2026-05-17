@@ -9,8 +9,8 @@ const neo4j = require('neo4j-driver');
 const DEFAULTS = {
   workspaceRoot: 'D:\\projets\\funesterie',
   codexHome: 'C:\\Users\\Djeff\\.codex',
-  agentBus: 'C:\\Users\\Djeff\\OneDrive\\a11_memory\\agent-bus',
-  heartbeatRoot: 'C:\\Users\\Djeff\\OneDrive\\a11_heartbeat',
+  agentBus: process.env.A11_AGENT_BUS_DIR || process.env.AGENT_BUS_DIR || 'D:\\agent-bus',
+  heartbeatRoot: process.env.A11_HEARTBEAT_ROOT || 'D:\\agent-bus\\heartbeat',
   uri: 'bolt://127.0.0.1:17687',
   database: 'neo4j',
 };
