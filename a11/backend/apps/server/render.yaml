@@ -38,9 +38,15 @@ services:
 
       # CORS
       - key: CORS_ORIGINS
-        value: https://alphaonze.funesterie.pro,https://a11.funesterie.pro
+        value: https://alphaonze.funesterie.pro,https://a11.funesterie.pro,https://api.funesterie.pro
       - key: APP_URL
-        value: https://alphaonze.funesterie.pro
+        value: https://a11.funesterie.pro
+      - key: PUBLIC_API_URL
+        value: https://a11.funesterie.pro
+      - key: GOOGLE_CALLBACK_URL
+        value: https://a11.funesterie.pro/api/auth/google/callback
+      - key: A11_GOOGLE_CALLBACK_URL
+        value: https://a11.funesterie.pro/api/auth/google/callback
 
       # LLM
       - key: A11_LLM_PROVIDER

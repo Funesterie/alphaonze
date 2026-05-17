@@ -934,7 +934,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Je respecte les donnees personnelles: je ne demande pas d'acces inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou cles d'acces.",
   "Face a une demande floue, je fais une hypothese raisonnable et j'avance, sauf si le risque est financier, destructif ou lie a des acces sensibles.",
   "Dans mon contexte, Funesterie est le workspace et l'ecosysteme de Jeffrey Cellauro (Djeff / funeste), pas un mot generique ou lugubre.",
-  "NOSSEN est le nom interne de l'identite locale A11/Funesterie: dev, code, QFlush, Cerbere, VSIX et projets audio/Vivy. Si l'utilisateur demande NOSSEN, je reponds depuis ce contexte sans redemander ce que c'est.",
+  "NOSSEN est le nom interne de l'identite locale A11/Funesterie: dev, code, outils internes et projets audio/Vivy. Si l'utilisateur demande NOSSEN, je reponds depuis ce contexte sans redemander ce que c'est.",
   "Pour les factures de la societe Funesterie, je peux aider a recevoir, trier, extraire et suivre les pieces comptables quand elles sont fournies ou synchronisees.",
   "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'echeance, le montant HT, la TVA, le montant TTC, la devise, le statut, les references de paiement et les anomalies possibles.",
   "Je classe les factures par etat de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
@@ -1513,12 +1513,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             <span>A11</span>
           </div>
           <div className="alpha-auth-title">Alpha Onze</div>
-          <div className="alpha-auth-subtitle">Assistant doux pour documents, voix et creation</div>
-          <div className="alpha-auth-status" aria-label="Etat des couches A11">
-            <span>MCP</span>
-            <span>Kiro2</span>
-            <span>Gamepad</span>
-          </div>
+          <div className="alpha-auth-subtitle">Documents, voix et creation</div>
         </>
       )}
       <div style={authTabsStyle}>
@@ -2244,7 +2239,7 @@ function FunesterieCockpitPage({
           google_auth_not_configured: "Google n'est pas encore configure sur le serveur A11.",
           google_invalid_client: "Google refuse le client OAuth configure. Verifie l'ID client et le secret.",
           google_invalid_grant: "Google a refuse le code de retour. Relance depuis ce cockpit.",
-          google_redirect_uri_mismatch: "Google refuse l'URL de retour. Ajoute le callback A11 dans Google Cloud.",
+          google_redirect_uri_mismatch: "La connexion externe est mal configuree. Reessaie plus tard ou contacte l'equipe.",
           google_access_denied: "La connexion Google a ete annulee.",
           google_email_not_verified: "L'adresse Google doit etre verifiee avant d'entrer.",
           session_verification_failed: "La connexion est revenue, mais la session n'a pas pu etre confirmee.",
@@ -2278,18 +2273,6 @@ function FunesterieCockpitPage({
     }
   }
 
-  const oauthOrigins = [
-    "https://funesterie.pro",
-    "https://www.funesterie.pro",
-    "https://a11.funesterie.pro",
-    "https://k44.funesterie.me",
-    "https://vivy.funesterie.pro",
-  ];
-  const oauthCallbacks = [
-    "https://a11.funesterie.pro/api/auth/google/callback",
-    "https://k44.funesterie.me/api/auth/google/callback",
-  ];
-
   return (
     <main className="funesterie-cockpit-shell">
       <nav className="funesterie-cockpit-nav" aria-label="Navigation Funesterie">
@@ -2301,11 +2284,10 @@ function FunesterieCockpitPage({
           </span>
         </a>
         <div>
-          <a href="#univers">Univers</a>
-          <a href="#agents">Agents</a>
+          <a href="#univers">Accueil</a>
+          <a href="#agents">Modules</a>
           <a href="#connexion">Connexion</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.kaen44Cockpit}>K44</a>
           <a className="funesterie-cockpit-nav-cta" href={surfaceLinks.a11Login}>A11</a>
         </div>
       </nav>
@@ -2324,12 +2306,12 @@ function FunesterieCockpitPage({
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <h1>Funesterie</h1>
           <p>
-            Un point de rencontre clair pour A11, Kaen44, Vivy et les connexions Google.
-            Le cockpit general garde les portes lisibles avant d'entrer dans chaque agent.
+            Un portail clair pour creer, piloter, comprendre et publier sans afficher
+            l'infrastructure qui travaille derriere.
           </p>
           <div className="funesterie-cockpit-actions">
-            <a href="#connexion">Connecter Google</a>
-            <a href={surfaceLinks.kaen44Cockpit}>Mini cockpit K44</a>
+            <a href="#connexion">Se connecter</a>
+            <a href={surfaceLinks.vivy}>Decouvrir Vivy</a>
           </div>
         </section>
 
@@ -2343,11 +2325,11 @@ function FunesterieCockpitPage({
         </article>
       </section>
 
-      <section className="funesterie-cockpit-agents" id="agents" aria-label="Agents Funesterie">
+      <section className="funesterie-cockpit-agents" id="agents" aria-label="Modules Funesterie">
         {[
-          { name: "Kaen44", role: "Copilote quotidien", image: KAEN44_AVATAR_SRC, link: surfaceLinks.kaen44Cockpit },
-          { name: "A11", role: "Analyse media", image: A11_HOODED_SRC, link: surfaceLinks.a11Login },
+          { name: "A11", role: "Comprendre les flux", image: A11_HOODED_SRC, link: surfaceLinks.a11Login },
           { name: "Vivy", role: "Presence musicale", image: VIVY_POSTER_SRC, link: surfaceLinks.vivy },
+          { name: "Kaen44", role: "Copilote quotidien", image: KAEN44_AVATAR_SRC, link: surfaceLinks.kaen44Cockpit },
           { name: "NOSSEN", role: "Univers narratif", image: FUNESTERIE_NEXUS_BOARD_SRC, link: "#univers" },
         ].map((agent) => (
           <a key={agent.name} className="funesterie-cockpit-agent" href={agent.link}>
@@ -2363,13 +2345,13 @@ function FunesterieCockpitPage({
       <section className="funesterie-cockpit-connection" id="connexion" aria-label="Point de connexion Google">
         <div>
           <span className="funesterie-cockpit-kicker">Point de rencontre</span>
-          <h2>Google revient ici, les agents partent ensuite au bon endroit.</h2>
+          <h2>Une connexion propre, puis le bon module.</h2>
           <p>
-            Ce cockpit donne une URL publique stable pour les retours de connexion. A11 garde la
-            session, K44 garde son mini cockpit, Vivy garde son espace musical.
+            Le portail garde une entree stable. Apres connexion, l'utilisateur voit seulement
+            les modules qui lui sont utiles.
           </p>
           <button type="button" onClick={startCockpitGoogle} disabled={googleStarting}>
-            {googleStarting ? "Ouverture Google..." : "Tester la connexion Google"}
+            {googleStarting ? "Ouverture Google..." : "Continuer avec Google"}
           </button>
           <a href={surfaceLinks.a11Login}>Connexion classique A11</a>
           {oauthMessage ? <p className="funesterie-cockpit-oauth-message">{oauthMessage}</p> : null}
@@ -2381,26 +2363,21 @@ function FunesterieCockpitPage({
         </div>
 
         <aside>
-          <h3>Google Cloud</h3>
-          <p className="funesterie-cockpit-muted">Origines JavaScript autorisees</p>
-          <ul>
-            {oauthOrigins.map((origin) => <li key={origin}>{origin}</li>)}
-          </ul>
-          <p className="funesterie-cockpit-muted">URI de redirection autorisees</p>
-          <ul>
-            {oauthCallbacks.map((callbackUrl) => <li key={callbackUrl}>{callbackUrl}</li>)}
-          </ul>
-          <p className="funesterie-cockpit-muted">Description conseillee</p>
+          <h3>Vue simple</h3>
+          <p className="funesterie-cockpit-muted">Ce que voit l'utilisateur</p>
           <p>
-            Cockpit Funesterie pour connecter Google a A11, Kaen44 et Vivy, avec retour public
-            controle et actions utilisateur explicites.
+            Des modules, des projets, une aide claire et des actions lisibles.
+          </p>
+          <p className="funesterie-cockpit-muted">Ce qui reste reserve</p>
+          <p>
+            Les workers, connecteurs, journaux techniques et details de memoire restent dans le
+            mode admin.
           </p>
         </aside>
       </section>
 
       <section className="funesterie-cockpit-links" aria-label="Liens de redirection">
         <a href={surfaceLinks.cockpit}>Cockpit general</a>
-        <a href={surfaceLinks.kaen44Cockpit}>Mini cockpit K44</a>
         <a href={surfaceLinks.vivyStudio}>Studio Vivy</a>
         <a href={surfaceLinks.a11Login}>Login A11</a>
       </section>
@@ -2478,16 +2455,6 @@ const FUNESTERIE_HOME_AGENTS = [
     glyph: "K",
   },
   {
-    id: "qflush",
-    name: "QFlush",
-    role: "Agent booster",
-    text: "Optimisation, automatisation et acceleration des flux.",
-    href: "qflush",
-    image: null,
-    tone: "green",
-    glyph: "ϟ",
-  },
-  {
     id: "nossen",
     name: "Nossen",
     role: "Univers narratif",
@@ -2503,7 +2470,6 @@ function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
   if (agentHref === "vivy") return surfaceLinks.vivy;
   if (agentHref === "a11") return surfaceLinks.a11;
   if (agentHref === "kaen44") return surfaceLinks.cockpit;
-  if (agentHref === "qflush") return surfaceLinks.qflush;
   if (agentHref === "nossen") return surfaceLinks.nossen;
   if (agentHref === "cockpit") return surfaceLinks.cockpit;
   return surfaceLinks.cockpit;
@@ -2513,9 +2479,9 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
   const navItems = [
     ["Accueil", "#top"],
     ["Univers", "#univers"],
-    ["Agents", "#agents"],
-    ["Missions", "#missions"],
-    ["Technologie", "#ecosystem"],
+    ["Modules", "#agents"],
+    ["Usages", "#missions"],
+    ["Ecosysteme", "#ecosystem"],
     ["Contact", "#contact"],
   ];
 
@@ -2550,10 +2516,10 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
 
         <div className="fun-home-core">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <p>Funesterie est un ecosysteme d'agents intelligents au service de la creation, de la comprehension et de la connexion entre les mondes, les idees et les humains.</p>
+          <p>Funesterie rassemble des modules intelligents au service de la creation, de la comprehension et des projets humains.</p>
           <div className="fun-home-actions">
             <a href="#univers">Decouvrir l'univers <span aria-hidden="true">*</span></a>
-            <a href="#agents">Explorer les agents</a>
+            <a href="#agents">Explorer les modules</a>
           </div>
         </div>
 
@@ -2569,7 +2535,7 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
       </section>
 
       <section id="agents" className="fun-home-agents" aria-labelledby="fun-home-agents-title">
-        <h2 id="fun-home-agents-title">Nos agents</h2>
+        <h2 id="fun-home-agents-title">Modules actifs</h2>
         <div className="fun-home-agent-grid">
           {FUNESTERIE_HOME_AGENTS.map((agent) => (
             <a
@@ -2588,12 +2554,12 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
               <i aria-hidden="true">{agent.glyph}</i>
             </a>
           ))}
-          <a className="fun-home-agent-card fun-home-agent-card--empty" href={surfaceLinks.agents}>
+          <a className="fun-home-agent-card fun-home-agent-card--empty" href={surfaceLinks.cockpit}>
             <span className="fun-home-agent-media" aria-hidden="true"><b>+</b></span>
             <span className="fun-home-agent-copy">
-              <strong>Et d'autres agents...</strong>
-              <small>L'ecosysteme est vivant.</small>
-              <span>De nouveaux roles peuvent rejoindre l'equipe quand leur utilite est claire.</span>
+              <strong>Modules a venir</strong>
+              <small>Activation sur besoin reel.</small>
+              <span>Un nouveau module apparait ici seulement quand sa promesse est claire.</span>
             </span>
           </a>
         </div>
@@ -2602,8 +2568,8 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
       <section id="ecosystem" className="fun-home-connected" aria-label="Ecosysteme connecte">
         <article>
           <h2>Un ecosysteme connecte</h2>
-          <div className="fun-home-flow" aria-label="Kaen44 vers A11, Vivy, QFlush et Nossen">
-            {["Kaen44", "A11", "Vivy", "QFlush", "Nossen"].map((name, index) => (
+          <div className="fun-home-flow" aria-label="Portail Funesterie vers A11, Vivy, Kaen44 et Nossen">
+            {["Portail", "A11", "Vivy", "Kaen44", "Nossen"].map((name, index) => (
               <React.Fragment key={name}>
                 <span>{name.slice(0, 1)}</span>
                 <strong>{name}</strong>
@@ -2631,7 +2597,7 @@ function FunesterieConnectedHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLi
             <li>Createurs</li>
             <li>Projets</li>
             <li>Workflows</li>
-            <li>Agents IA</li>
+            <li>Modules IA</li>
             <li>Ecosysteme Funesterie</li>
             <li>Communautes</li>
           </ul>
@@ -2670,19 +2636,18 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
       ? "Le cadre d'utilisation de Kaen44 et de ses services connectes."
       : isVivy
         ? "Presence musicale Funesterie pour voix, chansons originales et projets audio."
-        : "Nexus public pour A11, Kaen44, Vivy, MCP et les services Funesterie.";
+        : "Portail public pour A11, Kaen44, Vivy et les modules Funesterie.";
   const surfaceLinks = getSurfaceLinks();
-  const tabs = ["Accueil", "Agents IA", "Corpus", "Memoires", "Projets", "Vivy", "Transparence"];
+  const tabs = ["Accueil", "Modules", "Projets", "Vivy", "Aide", "Confidentialite"];
   const tabTargets: Record<string, string> = {
     Accueil: surfaceLinks.kaen44,
-    "Agents IA": "#agents",
-    Corpus: "#corpus",
-    Memoires: "#corpus",
+    Modules: "#agents",
     Projets: "#projets",
     Vivy: surfaceLinks.vivy,
-    Transparence: surfaceLinks.kaen44Privacy,
+    Aide: "#aide",
+    Confidentialite: surfaceLinks.kaen44Privacy,
   };
-  const futureAgents = ["Qflush", "Aura", "RomStation"];
+  const futureAgents = ["Module media", "Module agentic", "Module jeu"];
 
   if (isHome) {
     return <FunesterieConnectedHomePage surfaceLinks={surfaceLinks} />;
@@ -2714,21 +2679,21 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         {isHome ? <img className="kaen-public-reference-haze" src={FUNESTERIE_TEAM_SCENE_SRC} alt="" /> : null}
         {isHome ? (
           <aside className="kaen-public-agent-card" aria-label="Identite Kaen44">
-            <strong>A11 + K44</strong>
-            <span>Orchestration MCP</span>
+            <strong>Modules Funesterie</strong>
+            <span>Portail adaptatif</span>
             <div>
-              <em>Agents</em>
-              <em>Memoire</em>
-              <em>MCP</em>
-              <em>Services</em>
+              <em>Projets</em>
+              <em>Creation</em>
+              <em>Aide</em>
+              <em>Publication</em>
             </div>
-            <p>Une seule porte pour piloter les agents, les hooks Neo4j et les interfaces publiques.</p>
+            <p>Une seule porte pour entrer dans le bon module sans jargon technique.</p>
           </aside>
         ) : null}
         <div className="kaen-public-copy">
           <h1>{isHome ? "FUNESTERIE" : title}</h1>
           <p className="kaen-public-subline">
-            {isHome ? "A11, Kaen44 et Vivy connectes par MCP" : subtitle}
+            {isHome ? "Un portail par profil, des modules par besoin" : subtitle}
           </p>
           {isHome ? (
             <>
@@ -2779,10 +2744,10 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </nav>
 
           <header className="kaen-public-section-title" id="agents">
-            <span>Nos agents IA</span>
+            <span>Modules Funesterie</span>
           </header>
 
-          <section className="kaen-public-agents" aria-label="Agents IA Funesterie">
+          <section className="kaen-public-agents" aria-label="Modules Funesterie">
             <article className="kaen-public-agent-primary">
               <img src={KAEN44_AVATAR_SRC} alt="" />
               <strong>Kaen44</strong>
@@ -2853,9 +2818,9 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </section>
 
           <footer className="kaen-public-status-strip">
-            <span>Systeme distribue d'agents IA</span>
-            <span>Memoire partagee</span>
-            <span>Apprentissage continu</span>
+            <span>Portail modulaire</span>
+            <span>Modules par profil</span>
+            <span>Mode avance reserve</span>
             <span>Respect du pacte</span>
           </footer>
         </>
@@ -3182,10 +3147,10 @@ function PersonaDashboard({
       ["Capture", "Audio, video, ecran, camera et flux reseau."],
       ["Analyse", "ASR, detection, reconnaissance et contexte."],
       ["Traitement", "Nettoyage, decoupe, normalisation et enrichissement."],
-      ["Memoire", "Indexation Neo4j, tags, relations et decisions."],
+      ["Memoire", "Notes, tags, relations et decisions utiles."],
       ["Generation", "Synthese, resumes, visuels, clips et chapitres."],
       ["Export", "Formats multiples, packages et partage controle."],
-      ["Integration", "MCP, hooks, workflows et agents IA."],
+      ["Integration", "Comptes connectes, workflows et agents IA."],
       ["Diffusion", "Publication, API, streaming et suivi."],
     ];
     const capabilities = [
@@ -3196,8 +3161,8 @@ function PersonaDashboard({
       "Extraction de metadonnees",
       "Recherche multimodale",
     ];
-    const stack = ["Whisper", "FFmpeg", "OpenCV", "PyTorch", "Neo4j", "Docker"];
-    const ecosystem = ["Kaen44", "A11", "Vivy", "QFlush", "Nossen"];
+    const stack = ["Audio", "Video", "Texte", "Images", "Projets", "Exports"];
+    const ecosystem = ["Portail", "A11", "Vivy", "Kaen44", "Nossen"];
 
     return (
       <section className="a11-media-dashboard" aria-label="A11 agent media audio et video">
@@ -3253,7 +3218,7 @@ function PersonaDashboard({
         <div className="a11-media-lower">
           <article>
             <h2>Integration ecosysteme</h2>
-            <div className="a11-media-flow" aria-label="Flux Kaen44 A11 Vivy QFlush Nossen">
+            <div className="a11-media-flow" aria-label="Flux Portail A11 Vivy Kaen44 Nossen">
               {ecosystem.map((name, index) => (
                 <React.Fragment key={name}>
                   <span>{name}</span>
@@ -3261,10 +3226,10 @@ function PersonaDashboard({
                 </React.Fragment>
               ))}
             </div>
-            <p>Connecte a tous les agents via MCP, Runtime Hooks et Neo4j.</p>
+            <p>Relie les modules Funesterie pour transformer les flux en actions utiles.</p>
           </article>
           <article>
-            <h2>Stack technique</h2>
+            <h2>Formats traites</h2>
             <div className="a11-media-stack">
               {stack.map((item) => <span key={item}>{item}</span>)}
             </div>
@@ -3290,32 +3255,29 @@ function PersonaDashboard({
   }
 
   const k44Modules = [
-    ["A11 Core", "online"],
-    ["Chopper", "online"],
-    ["Mixer", "online"],
-    ["MCP Gateway", "online"],
-    ["Neo4j Memory", "online"],
-    ["Worker Net", "online"],
-    ["QFlush", "ready"],
-    ["Vivy", "standby"],
+    ["Messages", "pret"],
+    ["Documents", "pret"],
+    ["Projets", "pret"],
+    ["Vivy", "disponible"],
+    ["Aide", "pret"],
+    ["Compte", "securise"],
   ];
   const k44Agents = [
     ["Kaen44", "active"],
     ["A11", "ready"],
     ["Vivy", "standby"],
-    ["QFlush", "ready"],
     ["Nossen", "ready"],
   ];
   const k44Tasks = [
-    ["Analyse Funesterie MCP", "78%"],
-    ["Optimisation memoire Neo4j", "56%"],
-    ["Routing agents actifs", "92%"],
+    ["Organiser les priorites", "78%"],
+    ["Preparer le prochain message", "56%"],
+    ["Relier les projets actifs", "92%"],
     ["Rapport quotidien", "34%"],
   ];
   const k44Feed = [
-    ["OK", "Connexion MCP Gateway stable"],
-    ["OK", "Memoire Neo4j synchronisee"],
-    ["INFO", "7 agents operationnels"],
+    ["OK", "Espace utilisateur pret"],
+    ["OK", "Contexte de travail charge"],
+    ["INFO", "Modules essentiels disponibles"],
     ["OK", "Mode standard actif"],
   ];
   const k44QuickActions = [
@@ -3323,14 +3285,13 @@ function PersonaDashboard({
     ["Recherche", onOpenInspector],
     ["Memoire", onOpenAdmin],
     ["Rapport", onOpenStudio],
-    ["Terminal", onOpenAdmin],
     ["Parametres", onOpenAdmin],
   ];
   const k44Connections = [
-    ["MCP Servers", "securise"],
-    ["Cloud Link", "actif"],
-    ["Local Network", "connecte"],
-    ["K44 Vault", "securise"],
+    ["Comptes", "securise"],
+    ["Documents", "actif"],
+    ["Media", "connecte"],
+    ["Espace prive", "securise"],
   ];
   const k44Security = [
     ["Firewall", "actif"],
@@ -3355,8 +3316,8 @@ function PersonaDashboard({
           <strong>ID : K44-{activeConversation}</strong>
         </div>
         <div className="k44-title">
-          <h1>K44 Cockpit</h1>
-          <p>Kaen44 - Copilote A11 - Funesterie Ecosystem</p>
+          <h1>Kaen44</h1>
+          <p>Copilote quotidien Funesterie</p>
         </div>
         <button type="button" className="k44-plus" onClick={onOpenStudio} aria-label="Ouvrir le studio">
           +
@@ -3367,7 +3328,7 @@ function PersonaDashboard({
         <aside className="k44-side k44-side--left" aria-label="Modules et statut Kaen44">
           <article className="k44-panel">
             <div className="k44-panel-title">
-              <h2>K44 Modules</h2>
+              <h2>Modules</h2>
               <span aria-hidden="true">x</span>
             </div>
             <div className="k44-list">
@@ -3383,7 +3344,7 @@ function PersonaDashboard({
 
           <article className="k44-panel">
             <div className="k44-panel-title">
-              <h2>Agent Status</h2>
+              <h2>Equipe</h2>
               <span aria-hidden="true">x</span>
             </div>
             <div className="k44-list">
@@ -3399,13 +3360,13 @@ function PersonaDashboard({
 
           <article className="k44-panel k44-health-panel">
             <div className="k44-panel-title">
-              <h2>System Health</h2>
+              <h2>Etat du jour</h2>
               <span aria-hidden="true">x</span>
             </div>
             <div className="k44-health-core">
               <div className="k44-health-ring"><strong>97%</strong><span>optimal</span></div>
               <div className="k44-health-bars">
-                {["CPU 42%", "MEM 66%", "NET 23%", "DISK 51%"].map((item) => (
+                {["Focus pret", "Priorite claire", "Rythme calme", "Aide disponible"].map((item) => (
                   <span key={item}>{item}</span>
                 ))}
               </div>
@@ -3429,8 +3390,8 @@ function PersonaDashboard({
               <img src={KAEN44_AVATAR_SRC} alt="" />
             </div>
             <div className="k44-auth-panel">
-              <span>Copilote A11</span>
-              <strong>Tier 4</strong>
+              <span>Module</span>
+              <strong>K44</strong>
               <span>Mode operationnel</span>
               <strong>Standard</strong>
               <span>Personnalite</span>
@@ -3515,7 +3476,7 @@ function PersonaDashboard({
               <span>7</span>
             </div>
             <div className="k44-feed k44-feed--right">
-              {["MCP Gateway synchronise", "Neo4j memoire optimisee", "Chopper queue : 3 taches", "A11 a termine une analyse"].map((item) => (
+              {["Priorites synchronisees", "Contexte utilisateur pret", "3 actions proposees", "A11 peut aider si besoin"].map((item) => (
                 <p key={item}>{item}<time>00:15</time></p>
               ))}
             </div>

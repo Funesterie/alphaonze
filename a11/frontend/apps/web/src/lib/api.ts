@@ -264,7 +264,8 @@ function resolveDefaultOnlineApiBase() {
   if (configured) return configured;
   try {
     const hostname = globalThis.location?.hostname;
-    if (isPublicA11WebHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname) || isPublicGeneralCockpitHost(hostname)) return '';
+    if (isPublicA11WebHost(hostname) || isPublicGeneralCockpitHost(hostname)) return DEFAULT_PROD_API_BASE;
+    if (isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
   } catch {
     // ignore browser location issues
   }
