@@ -2379,7 +2379,6 @@ function FunesterieCockpitPage({
           { name: "A11", role: "Comprendre les flux", image: A11_HOODED_SRC, link: surfaceLinks.a11Login },
           { name: "Vivy", role: "Presence musicale", image: VIVY_POSTER_SRC, link: surfaceLinks.vivy },
           { name: "Kaen44", role: "Copilote quotidien", image: KAEN44_AVATAR_SRC, link: surfaceLinks.kaen44Cockpit },
-          { name: "NOSSEN", role: "Univers narratif", image: FUNESTERIE_NEXUS_BOARD_SRC, link: "#univers" },
         ].map((agent) => (
           <a key={agent.name} className="funesterie-cockpit-agent" href={agent.link}>
             <img src={agent.image} alt="" />
@@ -2503,23 +2502,12 @@ const FUNESTERIE_HOME_AGENTS = [
     tone: "violet",
     glyph: "K",
   },
-  {
-    id: "nossen",
-    name: "Nossen",
-    role: "Univers narratif",
-    text: "Relie les agents, les projets et la memoire creative.",
-    href: "nossen",
-    image: A11_HOODED_AGENT_SRC,
-    tone: "purple",
-    glyph: "◇",
-  },
 ];
 
 function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
   if (agentHref === "vivy") return surfaceLinks.vivy;
   if (agentHref === "a11") return surfaceLinks.a11;
   if (agentHref === "kaen44") return surfaceLinks.kaen44;
-  if (agentHref === "nossen") return surfaceLinks.nossen;
   if (agentHref === "cockpit") return surfaceLinks.cockpit;
   return surfaceLinks.cockpit;
 }
@@ -2625,8 +2613,8 @@ function FunesterieConnectedHomePage({
       <section id="ecosystem" className="fun-home-connected" aria-label="Ecosysteme connecte">
         <article>
           <h2>Un ecosysteme connecte</h2>
-          <div className="fun-home-flow" aria-label="Portail Funesterie vers A11, Vivy, Kaen44 et Nossen">
-            {["Portail", "A11", "Vivy", "Kaen44", "Nossen"].map((name, index) => (
+          <div className="fun-home-flow" aria-label="Portail Funesterie vers A11, Vivy, Kaen44 et l'univers">
+            {["Portail", "A11", "Vivy", "Kaen44", "Univers"].map((name, index) => (
               <React.Fragment key={name}>
                 <span>{name.slice(0, 1)}</span>
                 <strong>{name}</strong>
@@ -2672,6 +2660,127 @@ function FunesterieConnectedHomePage({
   );
 }
 
+function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
+  const agents = [
+    {
+      id: "kaen44",
+      name: "Kaen44",
+      role: "Orchestrateur",
+      status: "Agent actif",
+      text: "Recoit la demande, priorise, lance les actions utiles et revient avec une suite claire.",
+      href: surfaceLinks.kaen44Cockpit,
+      image: KAEN44_AVATAR_SRC,
+      action: "Ouvrir K44",
+    },
+    {
+      id: "a11",
+      name: "A11",
+      role: "Agent media",
+      status: "Pret au relais",
+      text: "Capture, lit, transcrit et structure les flux audio, video, images et documents.",
+      href: surfaceLinks.a11,
+      image: A11_HOODED_AGENT_SRC,
+      action: "Appeler A11",
+    },
+    {
+      id: "vivy",
+      name: "Vivy",
+      role: "Agent musical",
+      status: "Studio disponible",
+      text: "Prepare voix, chansons, scenes et publications quand la mission devient creative.",
+      href: surfaceLinks.vivyStudio,
+      image: VIVY_POSTER_SRC,
+      action: "Ouvrir Vivy",
+    },
+  ];
+  const loop = [
+    "Demande utilisateur",
+    "Choix de l'agent",
+    "Execution autonome",
+    "Retour exploitable",
+  ];
+
+  return (
+    <main id="top" className="k44-agent-home-shell" aria-label="Accueil Kaen44 agents autonomes">
+      <nav className="k44-agent-home-nav" aria-label="Navigation Kaen44">
+        <a href={surfaceLinks.kaen44} className="k44-agent-home-brand">
+          <img src={KAEN44_AVATAR_SRC} alt="" />
+          <span>
+            <strong>Kaen44</strong>
+            <small>Agents autonomes</small>
+          </span>
+        </a>
+        <div>
+          <a href="#agents">Agents</a>
+          <a href="#mission">Mission</a>
+          <a href={surfaceLinks.vivy}>Vivy</a>
+          <a href={surfaceLinks.a11}>A11</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
+        </div>
+        <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
+      </nav>
+
+      <section className="k44-agent-home-hero" aria-label="Kaen44 pilote les agents">
+        <div className="k44-agent-home-copy">
+          <h1>Kaen44 pilote les agents autonomes.</h1>
+          <p>
+            Une entree courte pour lancer du vrai travail : Kaen44 comprend la demande,
+            appelle A11 ou Vivy si besoin, puis garde le suivi dans le cockpit.
+          </p>
+          <div className="k44-agent-home-actions">
+            <a href={surfaceLinks.kaen44Cockpit}>Ouvrir le cockpit</a>
+            <a href="#agents">Voir les agents</a>
+          </div>
+        </div>
+
+        <aside className="k44-agent-home-loop" aria-label="Boucle autonome">
+          <strong>Boucle de travail</strong>
+          {loop.map((item, index) => (
+            <span key={item}>
+              <i>{String(index + 1).padStart(2, "0")}</i>
+              {item}
+            </span>
+          ))}
+        </aside>
+      </section>
+
+      <section id="agents" className="k44-agent-home-grid" aria-label="Agents autonomes disponibles">
+        {agents.map((agent) => (
+          <a key={agent.id} className={`k44-agent-home-card k44-agent-home-card--${agent.id}`} href={agent.href}>
+            <span className="k44-agent-home-card-media">
+              <img src={agent.image} alt="" />
+            </span>
+            <span className="k44-agent-home-card-copy">
+              <small>{agent.status}</small>
+              <strong>{agent.name}</strong>
+              <em>{agent.role}</em>
+              <span>{agent.text}</span>
+              <b>{agent.action}</b>
+            </span>
+          </a>
+        ))}
+      </section>
+
+      <section id="mission" className="k44-agent-home-mission" aria-label="Mission Kaen44">
+        <article>
+          <h2>Pas une page vitrine. Une table de dispatch.</h2>
+          <p>
+            K44 sert a confier une mission, distribuer le travail et recuperer un resultat.
+            Les descriptions longues restent dans la documentation, pas dans l'entree principale.
+          </p>
+        </article>
+        <article>
+          <h2>Nossen n'est pas un agent.</h2>
+          <p>
+            Nossen reste un univers et une memoire narrative. Il peut nourrir le contexte,
+            mais il ne remplace pas Kaen44, A11 ou Vivy dans la liste des agents a lancer.
+          </p>
+        </article>
+      </section>
+    </main>
+  );
+}
+
 function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy" }) {
   useEffect(() => {
     document.documentElement.classList.add("kaen-public-page-root");
@@ -2707,7 +2816,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const futureAgents = ["Module media", "Module agentic", "Module jeu"];
 
   if (isHome) {
-    return <FunesterieConnectedHomePage surfaceLinks={surfaceLinks} primarySurface="kaen44" />;
+    return <Kaen44AutonomousHomePage surfaceLinks={surfaceLinks} />;
   }
 
   return (
@@ -3219,7 +3328,7 @@ function PersonaDashboard({
       "Recherche multimodale",
     ];
     const stack = ["Audio", "Video", "Texte", "Images", "Projets", "Exports"];
-    const ecosystem = ["Portail", "A11", "Vivy", "Kaen44", "Nossen"];
+    const ecosystem = ["Portail", "A11", "Vivy", "Kaen44", "Univers"];
 
     return (
       <section className="a11-media-dashboard" aria-label="A11 agent media audio et video">
@@ -3275,7 +3384,7 @@ function PersonaDashboard({
         <div className="a11-media-lower">
           <article>
             <h2>Integration ecosysteme</h2>
-            <div className="a11-media-flow" aria-label="Flux Portail A11 Vivy Kaen44 Nossen">
+            <div className="a11-media-flow" aria-label="Flux Portail A11 Vivy Kaen44 Univers">
               {ecosystem.map((name, index) => (
                 <React.Fragment key={name}>
                   <span>{name}</span>
@@ -3323,7 +3432,6 @@ function PersonaDashboard({
     ["Kaen44", "active"],
     ["A11", "ready"],
     ["Vivy", "standby"],
-    ["Nossen", "ready"],
   ];
   const k44Tasks = [
     ["Organiser les priorites", "78%"],
