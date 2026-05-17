@@ -4911,6 +4911,7 @@ body {
 .k44-panel,
 .k44-identity-panel,
 .k44-command-deck,
+.k44-nossen-panel,
 .k44-console-strip {
   border: 1px solid var(--k44-line);
   border-radius: 8px;
@@ -4965,6 +4966,98 @@ body {
   font-size: 12px;
   font-weight: 850;
   text-transform: uppercase;
+}
+
+.k44-nossen-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 14px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 12% 26%, rgba(183, 108, 255, 0.18), transparent 28%),
+    linear-gradient(135deg, rgba(18, 12, 42, 0.9), rgba(5, 6, 17, 0.94));
+  scroll-margin-top: 16px;
+}
+
+.k44-nossen-copy {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+.k44-nossen-copy span,
+.k44-nossen-agents small {
+  color: var(--k44-green);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.k44-nossen-copy h2 {
+  margin: 0;
+  color: #f4eeff;
+  font-size: clamp(28px, 4vw, 52px);
+  line-height: 0.95;
+  text-transform: uppercase;
+  text-shadow: 0 0 24px rgba(183, 108, 255, 0.44);
+}
+
+.k44-nossen-copy p,
+.k44-nossen-agents p {
+  margin: 0;
+  color: var(--k44-muted);
+  line-height: 1.5;
+}
+
+.k44-nossen-agents {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.k44-nossen-agents article {
+  min-height: 148px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-areas:
+    "img name"
+    "img role"
+    "text text";
+  align-content: start;
+  gap: 5px 10px;
+  border: 1px solid rgba(203, 158, 255, 0.13);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.k44-nossen-agents img {
+  grid-area: img;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(203, 158, 255, 0.24);
+}
+
+.k44-nossen-agents strong {
+  grid-area: name;
+  align-self: end;
+  color: #f4eeff;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.k44-nossen-agents small {
+  grid-area: role;
+}
+
+.k44-nossen-agents p {
+  grid-area: text;
+  font-size: 12px;
 }
 
 .k44-plus {
@@ -5454,6 +5547,7 @@ body {
   }
 
   .k44-cockpit-header,
+  .k44-nossen-panel,
   .k44-identity-panel,
   .k44-command-deck,
   .k44-bottom-grid,
@@ -5468,6 +5562,10 @@ body {
 
   .k44-plus {
     justify-self: start;
+  }
+
+  .k44-nossen-agents {
+    grid-template-columns: 1fr;
   }
 
   .k44-identity-panel {

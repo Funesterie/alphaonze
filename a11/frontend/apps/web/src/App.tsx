@@ -2665,54 +2665,55 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
     {
       id: "kaen44",
       name: "Kaen44",
-      role: "Orchestrateur",
-      status: "Agent actif",
-      text: "Recoit la demande, priorise, lance les actions utiles et revient avec une suite claire.",
+      role: "Agent bureau",
+      status: "Dans Nossen",
+      text: "Accueil, suivi, organisation et cockpit quotidien pour garder le travail lisible.",
       href: surfaceLinks.kaen44Cockpit,
       image: KAEN44_AVATAR_SRC,
-      action: "Ouvrir K44",
+      action: "Voir Kaen44",
     },
     {
       id: "a11",
       name: "A11",
       role: "Agent media",
-      status: "Pret au relais",
+      status: "Dans Nossen",
       text: "Capture, lit, transcrit et structure les flux audio, video, images et documents.",
       href: surfaceLinks.a11,
       image: A11_HOODED_AGENT_SRC,
-      action: "Appeler A11",
+      action: "Voir A11",
     },
     {
       id: "vivy",
       name: "Vivy",
       role: "Agent musical",
-      status: "Studio disponible",
-      text: "Prepare voix, chansons, scenes et publications quand la mission devient creative.",
+      status: "Dans Nossen",
+      text: "Voix, chansons, scenes et publications quand l'univers devient musical.",
       href: surfaceLinks.vivyStudio,
       image: VIVY_POSTER_SRC,
-      action: "Ouvrir Vivy",
+      action: "Voir Vivy",
     },
   ];
-  const loop = [
-    "Demande utilisateur",
-    "Choix de l'agent",
-    "Execution autonome",
-    "Retour exploitable",
+  const map = [
+    "Univers Nossen",
+    "Agents autonomes",
+    "Roles separes",
+    "Acces clairs",
   ];
 
   return (
-    <main id="top" className="k44-agent-home-shell" aria-label="Accueil Kaen44 agents autonomes">
-      <nav className="k44-agent-home-nav" aria-label="Navigation Kaen44">
+    <main id="top" className="k44-agent-home-shell" aria-label="Presentation de Nossen et de ses agents">
+      <nav className="k44-agent-home-nav" aria-label="Navigation Nossen">
         <a href={surfaceLinks.kaen44} className="k44-agent-home-brand">
-          <img src={KAEN44_AVATAR_SRC} alt="" />
+          <img src={FUNESTERIE_NEXUS_BOARD_SRC} alt="" />
           <span>
-            <strong>Kaen44</strong>
-            <small>Agents autonomes</small>
+            <strong>Nossen</strong>
+            <small>Univers Funesterie</small>
           </span>
         </a>
         <div>
+          <a href="#nossen">Nossen</a>
           <a href="#agents">Agents</a>
-          <a href="#mission">Mission</a>
+          <a href="#roles">Roles</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
@@ -2720,22 +2721,23 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
 
-      <section className="k44-agent-home-hero" aria-label="Kaen44 pilote les agents">
+      <section id="nossen" className="k44-agent-home-hero" aria-label="Nossen presente ses agents">
         <div className="k44-agent-home-copy">
-          <h1>Kaen44 pilote les agents autonomes.</h1>
+          <h1>Nossen presente ses agents.</h1>
           <p>
-            Une entree courte pour lancer du vrai travail : Kaen44 comprend la demande,
-            appelle A11 ou Vivy si besoin, puis garde le suivi dans le cockpit.
+            Nossen est le cadre narratif et creatif de Funesterie. Dedans, chaque agent
+            a son role propre : Kaen44 pour le quotidien, A11 pour les medias, Vivy pour
+            la presence musicale.
           </p>
           <div className="k44-agent-home-actions">
-            <a href={surfaceLinks.kaen44Cockpit}>Ouvrir le cockpit</a>
             <a href="#agents">Voir les agents</a>
+            <a href={surfaceLinks.kaen44Cockpit}>Ouvrir Kaen44</a>
           </div>
         </div>
 
-        <aside className="k44-agent-home-loop" aria-label="Boucle autonome">
-          <strong>Boucle de travail</strong>
-          {loop.map((item, index) => (
+        <aside className="k44-agent-home-loop" aria-label="Carte de Nossen">
+          <strong>Carte de Nossen</strong>
+          {map.map((item, index) => (
             <span key={item}>
               <i>{String(index + 1).padStart(2, "0")}</i>
               {item}
@@ -2744,7 +2746,7 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         </aside>
       </section>
 
-      <section id="agents" className="k44-agent-home-grid" aria-label="Agents autonomes disponibles">
+      <section id="agents" className="k44-agent-home-grid" aria-label="Agents dans Nossen">
         {agents.map((agent) => (
           <a key={agent.id} className={`k44-agent-home-card k44-agent-home-card--${agent.id}`} href={agent.href}>
             <span className="k44-agent-home-card-media">
@@ -2761,19 +2763,19 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         ))}
       </section>
 
-      <section id="mission" className="k44-agent-home-mission" aria-label="Mission Kaen44">
-        <article>
-          <h2>Pas une page vitrine. Une table de dispatch.</h2>
-          <p>
-            K44 sert a confier une mission, distribuer le travail et recuperer un resultat.
-            Les descriptions longues restent dans la documentation, pas dans l'entree principale.
-          </p>
-        </article>
+      <section id="roles" className="k44-agent-home-mission" aria-label="Roles dans Nossen">
         <article>
           <h2>Nossen n'est pas un agent.</h2>
           <p>
-            Nossen reste un univers et une memoire narrative. Il peut nourrir le contexte,
-            mais il ne remplace pas Kaen44, A11 ou Vivy dans la liste des agents a lancer.
+            Nossen est l'univers commun : une memoire, une ambiance et un cadre pour
+            comprendre ce qui relie les agents sans les confondre.
+          </p>
+        </article>
+        <article>
+          <h2>Les agents gardent leur place.</h2>
+          <p>
+            Kaen44, A11 et Vivy sont presentes cote a cote. Les roles sont separes :
+            chacun sert son domaine.
           </p>
         </article>
       </section>
@@ -3433,6 +3435,26 @@ function PersonaDashboard({
     ["A11", "ready"],
     ["Vivy", "standby"],
   ];
+  const nossenAgents = [
+    {
+      name: "Kaen44",
+      role: "Agent bureau",
+      text: "Interface quotidienne, suivi, dossiers et cockpit utilisateur.",
+      image: KAEN44_AVATAR_SRC,
+    },
+    {
+      name: "A11",
+      role: "Agent media",
+      text: "Audio, video, documents, transcription et analyse des flux.",
+      image: A11_HOODED_AGENT_SRC,
+    },
+    {
+      name: "Vivy",
+      role: "Agent musical",
+      text: "Voix, chansons, presence scene et publication creative.",
+      image: VIVY_POSTER_SRC,
+    },
+  ];
   const k44Tasks = [
     ["Organiser les priorites", "78%"],
     ["Preparer le prochain message", "56%"],
@@ -3488,6 +3510,27 @@ function PersonaDashboard({
           +
         </button>
       </header>
+
+      <section id="nossen" className="k44-nossen-panel" aria-label="Presentation de Nossen et des agents">
+        <div className="k44-nossen-copy">
+          <span>Univers Funesterie</span>
+          <h2>Nossen</h2>
+          <p>
+            Nossen est le cadre commun : il donne le contexte, la memoire et la couleur
+            de l'ecosysteme. Les agents qui y vivent gardent chacun leur specialite.
+          </p>
+        </div>
+        <div className="k44-nossen-agents" aria-label="Agents dans Nossen">
+          {nossenAgents.map((agent) => (
+            <article key={agent.name}>
+              <img src={agent.image} alt="" />
+              <strong>{agent.name}</strong>
+              <small>{agent.role}</small>
+              <p>{agent.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <div className="k44-cockpit-grid">
         <aside className="k44-side k44-side--left" aria-label="Modules et statut Kaen44">
