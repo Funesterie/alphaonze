@@ -1369,7 +1369,7 @@ const corsOptions = {
 
 // Use CORS middleware globally
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 // ============================================================
 // PostgreSQL pool (Railway Postgres)
