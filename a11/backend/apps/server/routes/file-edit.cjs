@@ -269,9 +269,10 @@ function registerFileEditRoutes(router) {
   });
 
   // Get edit history for a file
-  router.get('/edit/history/:path(*)', async (req, res) => {
+  router.get('/edit/history/*path', async (req, res) => {
     try {
-      const filePath = req.params.path;
+      const pathParam = req.params.path;
+      const filePath = Array.isArray(pathParam) ? pathParam.join('/') : String(pathParam || '');
       if (!filePath) return res.status(400).json({ error: 'path required' });
 
       const fullPath = path.resolve(filePath);

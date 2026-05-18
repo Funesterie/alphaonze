@@ -6886,11 +6886,12 @@ app.get('/api/public/resources/:id/download', async (req, res) => {
   }
 });
 
-app.get('/api/public/r2/*', async (req, res) => {
+app.get('/api/public/r2/*key', async (req, res) => {
   try {
-    const rawStorageKey = Array.isArray(req.params)
-      ? String(req.params[0] || '').trim()
-      : String(req.params?.[0] || '').trim();
+    const rawParam = req.params?.key;
+    const rawStorageKey = Array.isArray(rawParam)
+      ? rawParam.join('/').trim()
+      : String(rawParam || '').trim();
     const storageKey = rawStorageKey
       .split('/')
       .filter(Boolean)
@@ -6924,7 +6925,7 @@ app.get('/api/public/r2/*', async (req, res) => {
     }
     console.error('[R2] public proxy download failed:', message);
     notifySlackError('R2 public proxy download failed', message, {
-      route: `/api/public/r2/${String(req.params?.[0] || '').trim()}`,
+      route: `/api/public/r2/${rawStorageKey}`,
     });
     return res.status(500).json({ ok: false, error: 'public_r2_download_failed', message });
   }
