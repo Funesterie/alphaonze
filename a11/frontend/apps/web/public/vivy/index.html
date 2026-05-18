@@ -560,6 +560,44 @@
         line-height: 1.48;
       }
 
+      .vivy-chat-file-list,
+      .vivy-chat-attachments {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .vivy-chat-file-list span,
+      .vivy-chat-attachments span {
+        max-width: min(100%, 360px);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        border: 1px solid rgba(240, 121, 216, 0.24);
+        border-radius: 999px;
+        padding: 0 9px;
+        background: rgba(240, 121, 216, 0.1);
+        color: #f7d6ef;
+        font-size: 12px;
+        font-weight: 750;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .vivy-chat-attachments {
+        margin-top: 10px;
+      }
+
+      .vivy-chat-attachments button {
+        min-height: 22px;
+        width: 22px;
+        padding: 0;
+        border-radius: 999px;
+        line-height: 1;
+      }
+
       .vivy-chat-compose {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -1082,14 +1120,17 @@
             <button type="button" data-vivy-chat-prompt="Prepare une voix Vivy douce, proche micro, avec une phrase test.">Voix</button>
             <button type="button" data-vivy-chat-prompt="Transforme cette idee en chanson Vivy avec structure et refrain.">Chanson</button>
             <button type="button" data-vivy-chat-prompt="Prepare une scene courte pour publier Vivy en clip vertical.">Scene</button>
+            <button type="button" data-vivy-chat-file-button>Fichier</button>
             <button type="submit">Envoyer</button>
           </div>
         </form>
+        <div class="vivy-chat-attachments" data-vivy-chat-attachments></div>
         <div class="vivy-chat-reference" data-vivy-chat-reference>
           <span data-vivy-chat-reference-label>Ref voix privee attendue</span>
           <button type="button" data-vivy-chat-reference-button>Audio</button>
         </div>
         <input type="file" accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg" hidden data-vivy-chat-reference-file />
+        <input type="file" accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf" multiple hidden data-vivy-chat-file />
         <p class="vivy-chat-status" data-vivy-chat-status></p>
       </section>
       <section id="vivy-studio" class="vivy-studio" aria-label="Atelier Vivy">
@@ -1220,9 +1261,15 @@
         var refLabel = root.querySelector("[data-vivy-chat-reference-label]");
         var refButton = root.querySelector("[data-vivy-chat-reference-button]");
         var refFile = root.querySelector("[data-vivy-chat-reference-file]");
+        var attachmentsRoot = root.querySelector("[data-vivy-chat-attachments]");
+        var fileButton = root.querySelector("[data-vivy-chat-file-button]");
+        var fileInput = root.querySelector("[data-vivy-chat-file]");
         var storageKey = "vivy:public-chat";
+        var conversationKey = "vivy:conversation-id:static";
         var referenceKey = "vivy:voice-reference:static";
+        var conversationId = getConversationId();
         var messages = readMessages();
+        var attachedFiles = [];
         var sending = false;
         var awaitingReference = false;
 
@@ -1253,6 +1300,86 @@
 
         function setStatus(text) {
           if (status) status.textContent = text || "";
+        }
+
+        function getConversationId() {
+          try {
+            var existing = localStorage.getItem(conversationKey) || "";
+            if (existing) return existing;
+            var next = "vivy-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+            localStorage.setItem(conversationKey, next);
+            return next;
+          } catch (_) {
+            return "vivy-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+          }
+        }
+
+        function formatSize(sizeBytes) {
+          var size = Number(sizeBytes || 0);
+          if (!size || !isFinite(size)) return "";
+          if (size < 1024) return size + " o";
+          if (size < 1024 * 1024) return Math.round(size / 1024) + " Ko";
+          return (size / (1024 * 1024)).toFixed(1) + " Mo";
+        }
+
+        function renderAttachments() {
+          if (!attachmentsRoot) return;
+          attachmentsRoot.innerHTML = "";
+          attachedFiles.forEach(function (file, index) {
+            var chip = document.createElement("span");
+            chip.textContent = file.filename + (file.sizeBytes ? " - " + formatSize(file.sizeBytes) : "");
+            var remove = document.createElement("button");
+            remove.type = "button";
+            remove.textContent = "x";
+            remove.setAttribute("aria-label", "Retirer " + file.filename);
+            remove.addEventListener("click", function () {
+              attachedFiles.splice(index, 1);
+              renderAttachments();
+            });
+            chip.appendChild(remove);
+            attachmentsRoot.appendChild(chip);
+          });
+        }
+
+        function canReadPreview(file) {
+          var name = String(file && file.name || "").toLowerCase();
+          return file && file.size <= 90000 && (
+            String(file.type || "").indexOf("text/") === 0
+            || /\.(txt|md|markdown|json|csv|srt|vtt|lyrics?|prompt)$/i.test(name)
+          );
+        }
+
+        function readTextPreview(file) {
+          return new Promise(function (resolve) {
+            if (!canReadPreview(file)) return resolve("");
+            var reader = new FileReader();
+            reader.onerror = function () { resolve(""); };
+            reader.onload = function () { resolve(String(reader.result || "").slice(0, 6000)); };
+            reader.readAsText(file);
+          });
+        }
+
+        function addConversationFiles(fileList) {
+          var selected = Array.prototype.slice.call(fileList || []).slice(0, 4);
+          if (!selected.length) return;
+          setStatus("Vivy ajoute les fichiers au contexte...");
+          Promise.all(selected.map(function (file) {
+            return readTextPreview(file).then(function (preview) {
+              return {
+                id: "local-" + Date.now() + "-" + Math.random().toString(16).slice(2),
+                filename: file.name,
+                contentType: file.type || "application/octet-stream",
+                sizeBytes: file.size,
+                description: preview ? "Extrait texte lu localement pour Vivy." : "Fichier joint a la conversation Vivy.",
+                textPreview: preview,
+                uploaded: false
+              };
+            });
+          })).then(function (files) {
+            attachedFiles = attachedFiles.concat(files).slice(-6);
+            renderAttachments();
+            setStatus("Fichiers ajoutes au contexte Vivy");
+          });
         }
 
         function wantsVoiceReference(text) {
@@ -1292,14 +1419,25 @@
             body.textContent = message.content || "";
             article.appendChild(speaker);
             article.appendChild(body);
+            if (Array.isArray(message.files) && message.files.length) {
+              var files = document.createElement("div");
+              files.className = "vivy-chat-file-list";
+              message.files.forEach(function (file) {
+                var chip = document.createElement("span");
+                chip.textContent = (file.filename || "fichier") + (file.sizeBytes ? " - " + formatSize(file.sizeBytes) : "");
+                files.appendChild(chip);
+              });
+              article.appendChild(files);
+            }
             log.appendChild(article);
           });
           log.scrollTop = log.scrollHeight;
           renderReference(awaitingReference);
+          renderAttachments();
         }
 
-        function addMessage(role, content) {
-          messages.push({ role: role, content: String(content || ""), ts: new Date().toISOString() });
+        function addMessage(role, content, files) {
+          messages.push({ role: role, content: String(content || ""), files: files || undefined, ts: new Date().toISOString() });
           messages = messages.slice(-24);
           saveMessages();
           render();
@@ -1313,19 +1451,27 @@
 
         function send(text) {
           text = String(text || "").trim();
-          if (!text || sending) return;
+          var filesForMessage = attachedFiles.slice(0, 6);
+          if ((!text && !filesForMessage.length) || sending) return;
           var voiceRequest = wantsVoiceReference(text);
           awaitingReference = voiceRequest;
-          addMessage("user", text);
+          addMessage("user", text || "J'ajoute ces fichiers pour Vivy.", filesForMessage);
+          attachedFiles = [];
+          renderAttachments();
           if (input) input.value = "";
           sending = true;
-          setStatus(voiceRequest ? "Vivy attend un audio de reference" : "Vivy ecoute...");
+          setStatus(voiceRequest ? "Vivy attend un audio de reference" : "Vivy ecoute et range l'idee...");
           renderReference(voiceRequest);
           fetch("/api/vivy/studio/chat", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: text, history: chatHistory() })
+            body: JSON.stringify({
+              message: text || "J'ajoute ces fichiers pour Vivy.",
+              conversationId: conversationId,
+              files: filesForMessage,
+              history: chatHistory()
+            })
           }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (payload) {
               if (!response.ok || payload.ok === false) {
@@ -1340,7 +1486,10 @@
               assistant += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte.";
             }
             addMessage("assistant", assistant);
-            setStatus(payload.mode ? "Mode " + payload.mode : "Vivy prete");
+            var memoryText = payload.semanticMemory && payload.semanticMemory.stored || payload.memoryStored
+              ? "Idee rangee dans la memoire Vivy"
+              : "Vivy prete";
+            setStatus(payload.aiMode === "llm" ? memoryText + " - IA active" : memoryText);
           }).catch(function (error) {
             var message = "Je n'arrive pas a joindre le studio Vivy pour l'instant: " + (error && error.message ? error.message : error);
             if (voiceRequest) {
@@ -1410,6 +1559,13 @@
             var file = refFile.files && refFile.files[0] ? refFile.files[0] : null;
             refFile.value = "";
             uploadReference(file);
+          });
+        }
+        if (fileButton && fileInput) {
+          fileButton.addEventListener("click", function () { fileInput.click(); });
+          fileInput.addEventListener("change", function () {
+            addConversationFiles(fileInput.files);
+            fileInput.value = "";
           });
         }
 
