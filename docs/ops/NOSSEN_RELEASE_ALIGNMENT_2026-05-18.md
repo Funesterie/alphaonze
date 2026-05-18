@@ -35,23 +35,17 @@ manifest keeps GitHub aligned with the npmjs and JFrog publications.
 | `@nossen/dragon-upstream` | `1.0.0` | `@nossen/dragon-upstream@1.0.0` |
 | `@nossen/dragon` | `1.0.0` | `@nossen/dragon@1.0.0` |
 | `@nossen/qflush` | `1.0.1` | `@nossen/qflush@1.0.1` |
-| `@nossen/qflash` | `1.0.1` | `@nossen/qflash@1.0.1` |
 
 ## Patch notes
 
 - `@nossen/qflush@1.0.0` remains public but is deprecated on npmjs because it
   referenced legacy `@funeste38/*` runtime dependencies.
-- `@nossen/qflash@1.0.0` remains public but is deprecated on npmjs because its
-  installer still referenced the legacy package name.
-- New consumers should use `@nossen/qflush@^1.0.1` and
-  `@nossen/qflash@^1.0.1`.
+- New consumers should use `@nossen/qflush@^1.0.1`.
 
 ## Validation summary
 
 - Base module install/build/test passes completed before publication.
 - `@nossen/envaptex`: 16 test files, 283 tests passing.
 - `@nossen/qflush`: 24 test files, 39 tests passing.
-- `@nossen/qflash`: SmartChain smoke tests passing.
 - Fresh install check: `@nossen/qflush-runner@1.0.0` resolves
   `@nossen/qflush@1.0.1`.
-- Fresh install check: `@nossen/qflash@1.0.1` has no legacy installer reference.
