@@ -7730,11 +7730,21 @@ function sendEmbeddedUiIndex(req, res) {
   return res.status(200).json({ ok: true, service: 'a11-api' });
 }
 
-app.get('/', sendEmbeddedUiIndex);
+function sendEmbeddedUiRoot(req, res) {
+  const hostname = getRequestSurfaceHost(req);
+  if (hostname === 'funesterie.me' || hostname === 'www.funesterie.me') {
+    return res.redirect(302, '/cockpit/');
+  }
+  return sendEmbeddedUiIndex(req, res);
+}
+
+app.get('/', sendEmbeddedUiRoot);
 app.get([
   '/auth/success',
   '/login',
   '/cockpit',
+  '/agents',
+  '/agents/',
   '/app',
   '/workspace',
   '/a11',
