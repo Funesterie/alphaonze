@@ -231,8 +231,6 @@ function isPublicKaen44WebHost(hostname: string | null | undefined) {
   const normalized = String(hostname || '').trim().toLowerCase();
   if (!normalized) return false;
   return [
-    'funesterie.me',
-    'www.funesterie.me',
     'k44.funesterie.me',
     'kaen44.funesterie.me',
     'kaen44.funesterie.pro',
@@ -253,6 +251,8 @@ function isPublicGeneralCockpitHost(hostname: string | null | undefined) {
   const normalized = String(hostname || '').trim().toLowerCase();
   if (!normalized) return false;
   return [
+    'funesterie.me',
+    'www.funesterie.me',
     'funesterie.pro',
     'www.funesterie.pro',
     'cockpit.funesterie.pro',

@@ -339,6 +339,22 @@ function buildSurfacePath(surface: FunesterieSurface, path = "/") {
   return normalized;
 }
 
+function buildAuthSuccessReturnTo(surface: FunesterieSurface) {
+  const path = buildSurfacePath(surface, "/auth/success");
+  if (typeof window === "undefined") return path;
+
+  const { hostname } = getLocationSnapshot();
+  if (surface === "kaen44" && !isLocalSurfaceHost(hostname)) {
+    return new URL("/auth/success", KAEN44_PUBLIC_APP_URL).toString();
+  }
+
+  if (surface === "vivy" && !isLocalSurfaceHost(hostname)) {
+    return new URL("/auth/success", VIVY_PUBLIC_APP_URL).toString();
+  }
+
+  return new URL(path, window.location.origin).toString();
+}
+
 function getSurfaceLinks() {
   const { hostname } = getLocationSnapshot();
   if (isLocalSurfaceHost(hostname)) {
@@ -1365,14 +1381,16 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setError("");
     setInfo("");
     setGoogleLoading(true);
-    startGoogleOAuth(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/auth/success"), "web");
+    const surface = isKaen44 ? "kaen44" : "a11";
+    startGoogleOAuth(buildAuthSuccessReturnTo(surface), isKaen44 ? "kaen44-web" : "web");
   };
 
   const handleMicrosoftOAuth = () => {
     setError("");
     setInfo("");
     setMicrosoftLoading(true);
-    startMicrosoftOAuth("/auth/success", "web");
+    const surface = isKaen44 ? "kaen44" : "a11";
+    startMicrosoftOAuth(buildAuthSuccessReturnTo(surface), isKaen44 ? "kaen44-web" : "web");
   };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {

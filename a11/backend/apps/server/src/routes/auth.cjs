@@ -103,7 +103,39 @@ function normalizeSameSite(value) {
   return '';
 }
 
+function resolveRequestPinnedFrontendUrl(req) {
+  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim();
+  const hostname = host.replace(/:\d+$/, '').toLowerCase();
+  const mapped = {
+    'k44.funesterie.me': 'https://k44.funesterie.me',
+    'kaen44.funesterie.me': 'https://kaen44.funesterie.me',
+    'kaen44.funesterie.pro': 'https://kaen44.funesterie.pro',
+    'funesterie.me': 'https://funesterie.me',
+    'www.funesterie.me': 'https://funesterie.me',
+    'a11.funesterie.pro': 'https://a11.funesterie.pro',
+    'alphaonze.funesterie.pro': 'https://alphaonze.funesterie.pro',
+    'funesterie.pro': 'https://funesterie.pro',
+    'www.funesterie.pro': 'https://funesterie.pro',
+    'cockpit.funesterie.pro': 'https://cockpit.funesterie.pro',
+    'vivy.funesterie.me': 'https://vivy.funesterie.me',
+    'vivy.funesterie.pro': 'https://vivy.funesterie.pro',
+    'music.funesterie.me': 'https://music.funesterie.me',
+  };
+  if (mapped[hostname]) return mapped[hostname];
+
+  const origin = resolveRequestOrigin(req).replace(/\/+$/, '');
+  if (!origin) return '';
+  try {
+    const parsed = new URL(origin);
+    if (['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) return origin;
+  } catch {}
+  return '';
+}
+
 function resolveFrontendUrl(req, normalizePublicAppUrl) {
+  const requestPinned = resolveRequestPinnedFrontendUrl(req);
+  if (requestPinned) return requestPinned;
+
   const raw = process.env.FRONTEND_URL
     || process.env.PUBLIC_FRONTEND_URL
     || process.env.APP_URL
