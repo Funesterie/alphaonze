@@ -362,7 +362,7 @@ function getSurfaceLinks() {
   const { hostname } = getLocationSnapshot();
   if (isLocalSurfaceHost(hostname)) {
     return {
-      home: "/",
+      home: FUNESTERIE_PUBLIC_APP_URL,
       cockpit: "/cockpit/",
       cockpitAuthSuccess: "/cockpit/auth/success",
       a11: "/",
@@ -378,8 +378,8 @@ function getSurfaceLinks() {
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
       kaen44Login: "/k44/login",
-      kaen44Privacy: "/k44/privacy",
-      kaen44Terms: "/k44/terms",
+      kaen44Privacy: "/privacy/",
+      kaen44Terms: "/terms/",
     };
   }
 
@@ -400,8 +400,8 @@ function getSurfaceLinks() {
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
-    kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
-    kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
+    kaen44Privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    kaen44Terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
   };
 }
 
@@ -2888,6 +2888,7 @@ function FunesterieCockpitPage({
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href="#etat">État</a>
           <a href={surfaceLinks.agents}>Agents</a>
           <span className="funesterie-ops-nav-agents" aria-label="Accès agents">
@@ -2980,12 +2981,13 @@ function VivyPublicPage() {
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href="#vivy-studio">Studio</a>
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
-          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
+          <a href={surfaceLinks.terms}>Conditions</a>
         </div>
       </nav>
       <VivyPublicSurface />
@@ -3078,59 +3080,17 @@ function FunesterieConnectedHomePage({
 }) {
   const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
   const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
-  const [accountBusy, setAccountBusy] = useState<"" | "google" | "microsoft" | "subscription">("");
-  const [accountMessage, setAccountMessage] = useState("");
+  const [accountBusy, setAccountBusy] = useState<"" | "google">("");
   const navItems = [
-    ["Accueil", "#top"],
-    ["Lore", "#lore"],
+    ["Accueil", surfaceLinks.home],
     ["Agents", "#agents"],
-    ["Accès", "#access"],
-    ["Compte", "#account"],
   ];
 
   const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
 
   function startHomeGoogle() {
     setAccountBusy("google");
-    setAccountMessage("Redirection vers Google...");
     startGoogleOAuth(accountReturnTo, "funesterie-home");
-  }
-
-  function startHomeMicrosoft() {
-    setAccountBusy("microsoft");
-    setAccountMessage("Redirection vers Microsoft...");
-    startMicrosoftOAuth(accountReturnTo, "funesterie-home");
-  }
-
-  async function openSubscription() {
-    if (!authenticated) {
-      setAccountMessage("Connecte-toi d'abord, puis l'abonnement s'ouvrira depuis ton compte.");
-      startHomeGoogle();
-      return;
-    }
-
-    setAccountBusy("subscription");
-    setAccountMessage("Ouverture de l'espace abonnement...");
-    try {
-      const portal = await createCustomerPortal();
-      if (portal?.url) {
-        window.location.assign(portal.url);
-        return;
-      }
-      throw new Error("portal_missing_url");
-    } catch {
-      try {
-        const checkout = await createCheckoutSession();
-        if (checkout?.url) {
-          window.location.assign(checkout.url);
-          return;
-        }
-        throw new Error("checkout_missing_url");
-      } catch {
-        setAccountBusy("");
-        setAccountMessage("Abonnement indisponible pour le moment. Le cockpit reste accessible.");
-      }
-    }
   }
 
   return (
@@ -3165,12 +3125,15 @@ function FunesterieConnectedHomePage({
         <div className="fun-home-core">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <p>
-            Funesterie est l'univers commun. Nossen garde le contexte, les agents gardent leur spécialité,
-            et le cockpit montre simplement ce qui est joignable.
+            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+            Les agents gardent chacun leur spécialité.
           </p>
           <div className="fun-home-actions">
-            <a href="#lore">Lire le lore <span aria-hidden="true">*</span></a>
-            <a href="#account">Se connecter</a>
+            <a href="#agents">Projet <span aria-hidden="true">*</span></a>
+            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+              {accountBusy === "google" ? "Google..." : authenticated ? "Session active" : "Se connecter"}
+            </button>
             <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
         </div>
@@ -3217,57 +3180,6 @@ function FunesterieConnectedHomePage({
         </div>
       </section>
 
-      <section id="lore" className="fun-home-connected" aria-label="Lore et accès Funesterie">
-        <article>
-          <h2>Lore commun</h2>
-          <div className="fun-home-flow" aria-label="Funesterie relie Nossen, Kaen44, A11 et Vivy">
-            {["Nossen", "Kaen44", "A11", "Vivy"].map((name, index) => (
-              <React.Fragment key={name}>
-                <span>{name.slice(0, 1)}</span>
-                <strong>{name}</strong>
-                {index < 3 ? <i aria-hidden="true">→</i> : null}
-              </React.Fragment>
-            ))}
-          </div>
-          <p>
-            Nossen n'est pas un agent. C'est le cadre commun: mémoire, ambiance,
-            règles de confiance et continuité entre les surfaces.
-          </p>
-        </article>
-
-        <article id="access">
-          <h2>Accès rapides</h2>
-          <ul className="fun-home-service-list">
-            <li><a href={surfaceLinks.cockpit}>Cockpit opérationnel</a></li>
-            <li><a href={surfaceLinks.agents}>Présentation des agents</a></li>
-            <li><a href={surfaceLinks.kaen44}>Kaen44</a></li>
-            <li><a href={surfaceLinks.a11}>A11</a></li>
-            <li><a href={surfaceLinks.vivy}>Vivy</a></li>
-          </ul>
-        </article>
-
-        <article id="account" className="fun-home-account-card">
-          <h2>Compte</h2>
-          <p>
-            {authenticated
-              ? `Session active${displayName ? `: ${displayName}` : ""}.`
-              : "Connexion centralisée pour accéder aux agents, aux fichiers autorisés et à l'abonnement."}
-          </p>
-          <div className="fun-home-account-actions">
-            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-              {accountBusy === "google" ? "Google..." : "Google"}
-            </button>
-            <button type="button" onClick={startHomeMicrosoft} disabled={Boolean(accountBusy)}>
-              {accountBusy === "microsoft" ? "Microsoft..." : "Microsoft"}
-            </button>
-            <button type="button" onClick={openSubscription} disabled={Boolean(accountBusy)}>
-              {accountBusy === "subscription" ? "Ouverture..." : "Abonnement"}
-            </button>
-          </div>
-          {accountMessage ? <small>{accountMessage}</small> : null}
-        </article>
-      </section>
-
       <footer id="contact" className="fun-home-footer">
         <span>Funesterie</span>
         <span>Nossen</span>
@@ -3296,11 +3208,12 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href="#agents">Agents</a>
           <a href={surfaceLinks.cockpit}>Cockpit</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
         </div>
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
@@ -3363,12 +3276,12 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const surfaceLinks = getSurfaceLinks();
   const tabs = ["Accueil", "Modules", "Projets", "Vivy", "Aide", "Confidentialité"];
   const tabTargets: Record<string, string> = {
-    Accueil: surfaceLinks.kaen44,
+    Accueil: surfaceLinks.home,
     Modules: "#agents",
     Projets: "#projets",
     Vivy: surfaceLinks.vivy,
     Aide: "#aide",
-    Confidentialité: surfaceLinks.kaen44Privacy,
+    Confidentialité: surfaceLinks.privacy,
   };
   const futureAgents = ["Module media", "Module agentic", "Module jeu"];
 
@@ -3379,7 +3292,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   return (
     <main className={`kaen-public-shell ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
       <nav className="kaen-public-nav" aria-label="Navigation Kaen44">
-        <a href={surfaceLinks.kaen44} className="kaen-public-brand">
+        <a href={surfaceLinks.home} className="kaen-public-brand">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
             <strong>Funesterie</strong>
@@ -3387,11 +3300,12 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
-          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
+          <a href={surfaceLinks.terms}>Conditions</a>
           <a href={surfaceLinks.kaen44Login} className="kaen-public-login">Connexion K44</a>
         </div>
       </nav>
@@ -3437,8 +3351,8 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
                 chansons, voix, bandes-son, clips et publications audio liées aux projets créatifs.
               </p>
               <div className="kaen-public-actions">
-                <a href={surfaceLinks.kaen44Privacy}>Lire les règles de confidentialité</a>
-                <a href={surfaceLinks.kaen44Terms}>Lire les conditions</a>
+                <a href={surfaceLinks.privacy}>Lire les règles de confidentialité</a>
+                <a href={surfaceLinks.terms}>Lire les conditions</a>
               </div>
             </>
           ) : null}
@@ -3924,6 +3838,9 @@ export function App() {
   const isGeneralAgents = isGeneralAgentsRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
+  const publicPolicyPage = typeof window !== "undefined"
+    ? getPublicPolicyPage(window.location.pathname)
+    : null;
   const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
@@ -3947,7 +3864,11 @@ export function App() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = isGeneralCockpit
+    document.title = publicPolicyPage === "privacy"
+      ? "Funesterie - Confidentialité"
+      : publicPolicyPage === "terms"
+      ? "Funesterie - Conditions"
+      : isGeneralCockpit
       ? "Funesterie - Cockpit général"
       : isGeneralHome
       ? "Funesterie - Accueil"
@@ -3959,8 +3880,8 @@ export function App() {
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-  }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy]);
+    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+  }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -5957,6 +5878,10 @@ export function App() {
     return <ResetPasswordPanel />;
   }
 
+  if (publicPolicyPage) {
+    return <Kaen44PublicPage page={publicPolicyPage} />;
+  }
+
   if (isGeneralHome) {
     return (
       <FunesterieConnectedHomePage
@@ -6273,6 +6198,42 @@ export function App() {
                     paddingBottom: "calc(14px + env(safe-area-inset-bottom))",
                   }}
                 >
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Navigation</div>
+                  <a
+                    href={surfaceLinks.home}
+                    className="btn ghost"
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      textDecoration: "none",
+                    }}
+                    title="Retourner à l'accueil Funesterie"
+                  >
+                    <span>Accueil</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Funesterie</span>
+                  </a>
+                  <a
+                    href={surfaceLinks.privacy}
+                    className="btn ghost"
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      textDecoration: "none",
+                    }}
+                    title="Lire les règles de confidentialité"
+                  >
+                    <span>Confidentialité</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Public</span>
+                  </a>
+                </div>
+
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Modele</div>
                   <select
