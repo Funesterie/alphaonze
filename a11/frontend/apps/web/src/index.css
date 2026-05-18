@@ -4970,7 +4970,7 @@ body {
 
 .k44-nossen-panel {
   display: grid;
-  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 0.36fr) minmax(0, 0.74fr) minmax(260px, 0.52fr);
   gap: 14px;
   align-items: stretch;
   margin-bottom: 14px;
@@ -5058,6 +5058,42 @@ body {
 .k44-nossen-agents p {
   grid-area: text;
   font-size: 12px;
+}
+
+.k44-nossen-workflow {
+  display: grid;
+  gap: 8px;
+}
+
+.k44-nossen-workflow span {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 0.36fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(203, 158, 255, 0.13);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.k44-nossen-workflow i {
+  color: var(--k44-green);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.k44-nossen-workflow strong {
+  color: #f4eeff;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.k44-nossen-workflow small {
+  color: var(--k44-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .k44-plus {
@@ -5671,6 +5707,7 @@ body {
 .k44-agent-home-nav,
 .k44-agent-home-hero,
 .k44-agent-home-grid,
+.k44-agent-home-workflow,
 .k44-agent-home-mission {
   width: min(1240px, 100%);
   margin-inline: auto;
@@ -5766,6 +5803,7 @@ body {
 .k44-agent-home-copy,
 .k44-agent-home-loop,
 .k44-agent-home-card,
+.k44-agent-home-workflow,
 .k44-agent-home-mission article {
   border: 1px solid var(--k44-home-line);
   border-radius: 8px;
@@ -5942,6 +5980,88 @@ body {
   font-size: 11px;
 }
 
+.k44-agent-home-workflow {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.38fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  margin-bottom: 18px;
+  padding: clamp(18px, 3vw, 28px);
+}
+
+.k44-agent-home-workflow > div {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+}
+
+.k44-agent-home-workflow > div span {
+  color: var(--k44-home-cyan);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.k44-agent-home-workflow h2 {
+  margin: 0;
+  color: #fff4df;
+  font-size: clamp(28px, 4vw, 48px);
+  line-height: 1;
+}
+
+.k44-agent-home-workflow > div p {
+  margin: 0;
+  color: var(--k44-home-muted);
+  line-height: 1.58;
+}
+
+.k44-agent-home-workflow ol {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k44-agent-home-workflow li {
+  min-height: 172px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.k44-agent-home-workflow li i {
+  color: var(--k44-home-cyan);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.k44-agent-home-workflow li strong {
+  color: var(--k44-home-gold);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.k44-agent-home-workflow li span {
+  color: #fff3df;
+  font-size: 17px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.k44-agent-home-workflow li p {
+  margin: 0;
+  color: var(--k44-home-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .k44-agent-home-mission {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5971,6 +6091,8 @@ body {
   .k44-agent-home-nav,
   .k44-agent-home-hero,
   .k44-agent-home-grid,
+  .k44-agent-home-workflow,
+  .k44-agent-home-workflow ol,
   .k44-agent-home-mission {
     grid-template-columns: 1fr;
   }

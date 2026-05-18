@@ -2699,6 +2699,28 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
     "Roles separes",
     "Acces clairs",
   ];
+  const workflow = [
+    {
+      step: "Contexte",
+      title: "Entrer dans Nossen",
+      text: "On part de l'univers, du projet ou du besoin a comprendre.",
+    },
+    {
+      step: "Agent",
+      title: "Choisir la bonne surface",
+      text: "Kaen44 pour le quotidien, A11 pour les medias, Vivy pour la musique.",
+    },
+    {
+      step: "Action",
+      title: "Travailler dans l'agent",
+      text: "Chaque agent agit dans son domaine, avec sa propre surface et ses limites.",
+    },
+    {
+      step: "Memoire",
+      title: "Revenir avec le resultat",
+      text: "Le resultat reste lisible dans le cockpit et peut nourrir le contexte.",
+    },
+  ];
 
   return (
     <main id="top" className="k44-agent-home-shell" aria-label="Presentation de Nossen et de ses agents">
@@ -2761,6 +2783,27 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
             </span>
           </a>
         ))}
+      </section>
+
+      <section id="workflow" className="k44-agent-home-workflow" aria-label="Workflow Nossen">
+        <div>
+          <span>Workflow</span>
+          <h2>Comment utiliser Nossen</h2>
+          <p>
+            Nossen sert de carte commune. Le workflow choisit l'agent utile, puis garde
+            le resultat comprehensible pour la suite.
+          </p>
+        </div>
+        <ol>
+          {workflow.map((item, index) => (
+            <li key={item.title}>
+              <i>{String(index + 1).padStart(2, "0")}</i>
+              <strong>{item.step}</strong>
+              <span>{item.title}</span>
+              <p>{item.text}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
       <section id="roles" className="k44-agent-home-mission" aria-label="Roles dans Nossen">
@@ -3455,6 +3498,12 @@ function PersonaDashboard({
       image: VIVY_POSTER_SRC,
     },
   ];
+  const nossenWorkflow = [
+    ["01", "Contexte", "Partir de Nossen, du projet, de la scene ou du dossier."],
+    ["02", "Agent", "Ouvrir Kaen44, A11 ou Vivy selon le type de travail."],
+    ["03", "Action", "Faire avancer la tache dans la surface specialisee."],
+    ["04", "Retour", "Garder le resultat clair pour la suite du cockpit."],
+  ];
   const k44Tasks = [
     ["Organiser les priorites", "78%"],
     ["Preparer le prochain message", "56%"],
@@ -3528,6 +3577,15 @@ function PersonaDashboard({
               <small>{agent.role}</small>
               <p>{agent.text}</p>
             </article>
+          ))}
+        </div>
+        <div className="k44-nossen-workflow" aria-label="Workflow Nossen">
+          {nossenWorkflow.map(([number, title, text]) => (
+            <span key={title}>
+              <i>{number}</i>
+              <strong>{title}</strong>
+              <small>{text}</small>
+            </span>
           ))}
         </div>
       </section>
