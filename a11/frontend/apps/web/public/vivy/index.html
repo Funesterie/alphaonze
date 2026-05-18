@@ -1088,8 +1088,8 @@
       <section class="vivy-poster-stage" aria-label="Vivy présence musicale" tabindex="0">
         <div class="vivy-poster-frame">
           <img src="/vivy-presence-musicale.png" alt="Vivy, présence musicale Funesterie: voix, musique, création et partage." />
-          <div class="vivy-poster-hotspots" aria-label="Acces rapides Vivy">
-            <button type="button" data-vivy-jump="voice" aria-label="Ouvrir Creation voix"></button>
+          <div class="vivy-poster-hotspots" aria-label="Accès rapides Vivy">
+            <button type="button" data-vivy-jump="voice" aria-label="Ouvrir création voix"></button>
             <button type="button" data-vivy-jump="song" aria-label="Ouvrir Composition production"></button>
             <button type="button" data-vivy-jump="share" aria-label="Ouvrir scène partage"></button>
           </div>
@@ -1113,7 +1113,7 @@
         <form class="vivy-chat-compose" data-vivy-chat-form>
           <textarea name="message" rows="3" placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."></textarea>
           <div>
-            <button type="button" data-vivy-chat-prompt="Prepare une voix Vivy douce, proche micro, avec une phrase test.">Voix</button>
+            <button type="button" data-vivy-chat-prompt="Prépare une voix Vivy douce, proche micro, avec une phrase test.">Voix</button>
             <button type="button" data-vivy-chat-prompt="Transforme cette idée en chanson Vivy avec structure et refrain.">Chanson</button>
             <button type="button" data-vivy-chat-prompt="Prépare une scène courte pour publier Vivy en clip vertical.">Scène</button>
             <button type="button" data-vivy-chat-file-button>Fichier</button>
@@ -1129,10 +1129,10 @@
         <input type="file" accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf" multiple hidden data-vivy-chat-file />
         <p class="vivy-chat-status" data-vivy-chat-status></p>
       </section>
-      <section id="vivy-studio" class="vivy-studio" aria-label="Atelier Vivy">
+      <section id="vivy-studio" class="vivy-studio" aria-label="Studio Vivy">
         <div class="vivy-studio-head">
           <div>
-            <h2>Atelier Vivy</h2>
+            <h2>Studio Vivy</h2>
             <p>Voix, chanson, clip et partage prêts depuis les trois blocs de droite.</p>
           </div>
           <button type="button" data-vivy-share>Partager le brief</button>
@@ -1141,12 +1141,12 @@
         <div class="vivy-studio-grid">
           <div class="vivy-studio-modes" role="tablist" aria-label="Modules Vivy">
             <button type="button" class="is-active" data-vivy-mode="voice" role="tab" aria-selected="true">
-              <span>Creation voix</span>
+              <span>Création voix</span>
               <small>Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.</small>
             </button>
             <button type="button" data-vivy-mode="song" role="tab" aria-selected="false">
               <span>Composition - production</span>
-              <small>Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.</small>
+              <small>Transformer un thème, texte ou paroles en brief chanson utilisable par Vivy.</small>
             </button>
             <button type="button" data-vivy-mode="share" role="tab" aria-selected="false">
               <span>Scène - partage</span>
@@ -1155,7 +1155,7 @@
           </div>
 
           <form class="vivy-studio-form" data-vivy-form>
-            <h3 data-vivy-form-title>Creation voix</h3>
+            <h3 data-vivy-form-title>Création voix</h3>
 
             <div data-vivy-panel="voice">
               <label>
@@ -1173,18 +1173,18 @@
               </label>
               <label>
                 Instruction voix
-                <textarea name="voiceInstruction" rows="6" placeholder="Ex: voix douce, proche micro, legere saturation pop, garder une diction claire."></textarea>
+                <textarea name="voiceInstruction" rows="6" placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."></textarea>
               </label>
             </div>
 
             <div data-vivy-panel="song" hidden>
               <label>
-                Depart
+                Départ
                 <select name="songSource">
-                  <option>Theme</option>
+                  <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
-                  <option>Instruction complete</option>
+                  <option>Instruction complète</option>
                 </select>
               </label>
               <label>
@@ -1192,7 +1192,7 @@
                 <input name="songMood" value="Electro pop dark cinematographique" />
               </label>
               <label>
-                Matiere creative
+                Matière créative
                 <textarea name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
               </label>
             </div>
@@ -1214,7 +1214,7 @@
               </label>
               <label>
                 Token local
-                <input name="shareToken" type="password" placeholder="Non stocke, non copie dans le brief" autocomplete="off" />
+                <input name="shareToken" type="password" placeholder="Non stocké, non copié dans le brief" autocomplete="off" />
               </label>
               <label>
                 Instruction publication
@@ -1223,11 +1223,11 @@
             </div>
 
             <div class="vivy-studio-actions">
-              <button type="submit" data-vivy-action>Preparer calibration</button>
-              <button type="button" data-vivy-ask>Demander a Vivy</button>
+              <button type="submit" data-vivy-action>Préparer calibration</button>
+              <button type="button" data-vivy-ask>Demander à Vivy</button>
               <button type="button" data-vivy-open="a11">Ouvrir A11</button>
               <button type="button" data-vivy-open="k44">Ouvrir Kaen44</button>
-              <button type="button" data-vivy-open="cockpit">Cockpit general</button>
+              <button type="button" data-vivy-open="cockpit">Cockpit général</button>
             </div>
           </form>
 
@@ -1260,7 +1260,7 @@
         var attachmentsRoot = root.querySelector("[data-vivy-chat-attachments]");
         var fileButton = root.querySelector("[data-vivy-chat-file-button]");
         var fileInput = root.querySelector("[data-vivy-chat-file]");
-        var storageKey = "vivy:public-chat";
+        var storageKey = "vivy:public-chat:v2";
         var conversationKey = "vivy:conversation-id:static";
         var referenceKey = "vivy:voice-reference:static";
         var conversationId = getConversationId();
@@ -1598,19 +1598,19 @@
         if (!root) return;
         var modes = {
           voice: {
-            title: "Creation voix",
+            title: "Création voix",
             label: "Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.",
-            action: "Preparer calibration"
+            action: "Préparer calibration"
           },
           song: {
             title: "Composition - production",
-            label: "Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.",
-            action: "Preparer chanson"
+            label: "Transformer un thème, texte ou paroles en brief chanson utilisable par Vivy.",
+            action: "Préparer chanson"
           },
           share: {
             title: "Scène - partage",
             label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
-            action: "Preparer partage"
+            action: "Préparer partage"
           }
         };
         var activeMode = "voice";
@@ -1751,8 +1751,8 @@
               "Flux voix:",
               "- Outil cible: " + value("voiceTool"),
               "- Référence audio: " + (voiceFileName || "à fournir"),
-              "- Instruction: " + (value("voiceInstruction") || "definir le timbre, les limites et le style de modulation"),
-              "- Sortie attendue: profil vocal, notes de calibration, chaine d'effets et phrase de test.",
+              "- Instruction: " + (value("voiceInstruction") || "définir le timbre, les limites et le style de modulation"),
+              "- Sortie attendue: profil vocal, notes de calibration, chaîne d'effets et phrase de test.",
               "- Sécurité: ne pas publier la référence brute sans accord."
             );
           }
@@ -1762,8 +1762,8 @@
               "Flux chanson:",
               "- Source: " + value("songSource"),
               "- Direction sonore: " + (value("songMood") || "Electro pop dark cinematographique"),
-              "- Matiere: " + (value("songText") || "theme libre a developper"),
-              "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets a produire.",
+              "- Matière: " + (value("songText") || "thème libre à développer"),
+              "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
               "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
             );
           }
@@ -1776,14 +1776,14 @@
               "- Token fourni dans l'interface: " + (value("shareToken") ? "oui, local seulement" : "non"),
               "- Instruction: " + (value("shareInstruction") || "préparer clip, titre, description et checklist publication"),
               "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
-              "- Regle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
+              "- Règle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
             );
           }
 
           lines.push(
             "",
-            "Routage recommande:",
-            "- Vivy: voix, paroles, composition, presence audio.",
+            "Routage recommandé:",
+            "- Vivy: voix, paroles, composition, présence audio.",
             "- A11: image, vidéo, montage, génération d'assets.",
             "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
           );
@@ -1813,12 +1813,12 @@
           var text = buildBrief();
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(function () {
-              setStatus(message || "Brief copie pour les agents.");
+              setStatus(message || "Brief copié pour les agents.");
             }).catch(function () {
-              setStatus("Copie auto indisponible: selectionne le brief et copie-le.");
+              setStatus("Copie auto indisponible: sélectionne le brief et copie-le.");
             });
           } else {
-            setStatus("Copie auto indisponible: selectionne le brief et copie-le.");
+            setStatus("Copie auto indisponible: sélectionne le brief et copie-le.");
           }
         }
 
@@ -1861,7 +1861,7 @@
             var text = buildBrief();
             if (navigator.share) {
               navigator.share({ title: "Vivy - " + modes[activeMode].title, text: text }).then(function () {
-                setStatus("Partage systeme ouvert.");
+                setStatus("Partage système ouvert.");
               }).catch(function () {
                 copyBrief("Brief prêt à coller dans l'équipe.");
               });
@@ -1875,16 +1875,16 @@
           button.addEventListener("click", function () {
             var target = button.getAttribute("data-vivy-open");
             var labels = {
-              a11: "Brief copie. Ouverture A11...",
-              k44: "Brief copie. Ouverture Kaen44...",
-              cockpit: "Brief copie. Ouverture du cockpit general..."
+              a11: "Brief copié. Ouverture A11...",
+              k44: "Brief copié. Ouverture Kaen44...",
+              cockpit: "Brief copié. Ouverture du cockpit général..."
             };
             var urls = {
               a11: "https://a11.funesterie.pro/login",
               k44: "https://k44.funesterie.me/cockpit",
               cockpit: "https://funesterie.me/cockpit/"
             };
-            copyBrief(labels[target] || "Brief copie.");
+            copyBrief(labels[target] || "Brief copié.");
             window.open(urls[target] || urls.cockpit, "_blank", "noopener,noreferrer");
           });
         });

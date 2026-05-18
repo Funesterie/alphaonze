@@ -1748,7 +1748,7 @@ type VivyStudioMediaPreview = {
 };
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
-const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat";
+const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 
@@ -1983,8 +1983,8 @@ function buildVivyStudioBrief(options: {
       "Flux voix:",
       `- Outil cible: ${options.voiceTool}`,
       `- Référence audio: ${options.voiceFileName || "à fournir"}`,
-      `- Instruction: ${options.voiceInstruction || "definir le timbre, les limites et le style de modulation"}`,
-      "- Sortie attendue: profil vocal, notes de calibration, chaine d'effets et phrase de test.",
+      `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
+      "- Sortie attendue: profil vocal, notes de calibration, chaîne d'effets et phrase de test.",
       "- Sécurité: ne pas publier la référence brute sans accord."
     );
   }
@@ -1994,8 +1994,8 @@ function buildVivyStudioBrief(options: {
       "Flux chanson:",
       `- Source: ${options.songSource}`,
       `- Direction sonore: ${options.songMood}`,
-      `- Matiere: ${options.songText || "theme libre a developper"}`,
-      "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets a produire.",
+      `- Matière: ${options.songText || "thème libre à développer"}`,
+      "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
       "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
     );
   }
@@ -2008,14 +2008,14 @@ function buildVivyStudioBrief(options: {
       `- Token fourni dans l'interface: ${options.shareTokenPresent ? "oui, local seulement" : "non"}`,
       `- Instruction: ${options.shareInstruction || "préparer clip, titre, description et checklist publication"}`,
       "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
-      "- Regle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
+      "- Règle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
     );
   }
 
   lines.push(
     "",
-    "Routage recommande:",
-    "- Vivy: voix, paroles, composition, presence audio.",
+    "Routage recommandé:",
+    "- Vivy: voix, paroles, composition, présence audio.",
     "- A11: image, vidéo, montage, génération d'assets.",
     "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
   );
@@ -2030,7 +2030,7 @@ function VivyStudioLab() {
   const [voiceInstruction, setVoiceInstruction] = useState(String(initialDraft.voiceInstruction || ""));
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voiceFileName, setVoiceFileName] = useState(String(initialDraft.voiceFileName || ""));
-  const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Theme"));
+  const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Thème"));
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
   const [shareTarget, setShareTarget] = useState(String(initialDraft.shareTarget || "YouTube"));
@@ -2102,12 +2102,12 @@ function VivyStudioLab() {
 
   const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
 
-  async function copyBrief(nextStatus = "Brief copie pour les agents.") {
+  async function copyBrief(nextStatus = "Brief copié pour les agents.") {
     try {
       await navigator.clipboard?.writeText(brief);
       setStatus(nextStatus);
     } catch {
-      setStatus("Copie auto indisponible: selectionne le brief et copie-le.");
+      setStatus("Copie auto indisponible: sélectionne le brief et copie-le.");
     }
   }
 
@@ -2118,7 +2118,7 @@ function VivyStudioLab() {
           title: `Vivy - ${activeMeta.title}`,
           text: brief,
         });
-        setStatus("Partage systeme ouvert.");
+        setStatus("Partage système ouvert.");
         return;
       } catch {
         // Fall back to clipboard below.
@@ -2167,7 +2167,7 @@ function VivyStudioLab() {
 
   async function askVivy() {
     setIsBusy(true);
-    setStatus("Vivy Studio prepare la production...");
+    setStatus("Vivy Studio prépare la production...");
     try {
       const payload = await runVivyStudioProduction({
         mode: activeMode,
@@ -2205,16 +2205,16 @@ function VivyStudioLab() {
   }
 
   async function openAgent(target: "a11" | "k44") {
-    await copyBrief(target === "a11" ? "Brief copie. Ouverture A11..." : "Brief copie. Ouverture Kaen44...");
+    await copyBrief(target === "a11" ? "Brief copié. Ouverture A11..." : "Brief copié. Ouverture Kaen44...");
     const url = target === "a11" ? "https://a11.funesterie.pro/" : "https://k44.funesterie.me/#agents";
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (
-    <section id="vivy-studio" className="vivy-studio" aria-label="Atelier Vivy">
+    <section id="vivy-studio" className="vivy-studio" aria-label="Studio Vivy">
       <div className="vivy-studio-head">
         <div>
-          <h2>Atelier Vivy</h2>
+          <h2>Studio Vivy</h2>
           <p>Voix, chanson, clip et partage prêts depuis les trois blocs de droite.</p>
         </div>
         <button type="button" onClick={shareBrief}>Partager le brief</button>
@@ -2269,7 +2269,7 @@ function VivyStudioLab() {
                   rows={6}
                   value={voiceInstruction}
                   onChange={(event) => setVoiceInstruction(event.target.value)}
-                  placeholder="Ex: voix douce, proche micro, legere saturation pop, garder une diction claire."
+                  placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."
                 />
               </label>
               <button type="button" onClick={uploadVoiceReference} disabled={isBusy || !voiceFile}>Envoyer référence à A11</button>
@@ -2279,12 +2279,12 @@ function VivyStudioLab() {
           {activeMode === "song" && (
             <>
               <label>
-                Depart
+                Départ
                 <select value={songSource} onChange={(event) => setSongSource(event.target.value)}>
-                  <option>Theme</option>
+                  <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
-                  <option>Instruction complete</option>
+                  <option>Instruction complète</option>
                 </select>
               </label>
               <label>
@@ -2292,7 +2292,7 @@ function VivyStudioLab() {
                 <input value={songMood} onChange={(event) => setSongMood(event.target.value)} />
               </label>
               <label>
-                Matiere creative
+                Matière créative
                 <textarea
                   rows={8}
                   value={songText}
@@ -2329,7 +2329,7 @@ function VivyStudioLab() {
                   type="password"
                   value={shareToken}
                   onChange={(event) => setShareToken(event.target.value)}
-                  placeholder="Non stocke, non copie dans le brief"
+                  placeholder="Non stocké, non copié dans le brief"
                   autoComplete="off"
                 />
               </label>
@@ -2347,7 +2347,7 @@ function VivyStudioLab() {
 
           <div className="vivy-studio-actions">
             <button type="submit">{activeMeta.action}</button>
-            <button type="button" onClick={askVivy} disabled={isBusy}>Demander a Vivy</button>
+            <button type="button" onClick={askVivy} disabled={isBusy}>Demander à Vivy</button>
             <button type="button" onClick={() => openAgent("a11")}>Ouvrir A11</button>
             <button type="button" onClick={() => openAgent("k44")}>Ouvrir Kaen44</button>
             <button type="button" onClick={saveBriefArtifact} disabled={isBusy}>Sauver dans A11</button>
@@ -2657,9 +2657,9 @@ function VivyPublicChat() {
 
 function VivyPublicSurface() {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
-    { mode: "voice", label: "Ouvrir création voix dans l'atelier Vivy" },
-    { mode: "song", label: "Ouvrir Composition production dans l'atelier Vivy" },
-    { mode: "share", label: "Ouvrir scène partage dans l'atelier Vivy" },
+    { mode: "voice", label: "Ouvrir création voix dans le Studio Vivy" },
+    { mode: "song", label: "Ouvrir Composition production dans le Studio Vivy" },
+    { mode: "share", label: "Ouvrir scène partage dans le Studio Vivy" },
   ];
 
   return (
@@ -2731,7 +2731,7 @@ function FunesterieCockpitPage({
       {
         id: "a11",
         name: "A11",
-        role: "Agent media",
+        role: "Agent média",
         url: surfaceLinks.a11,
         healthUrl: new URL("/health", A11_PUBLIC_APP_URL).toString(),
         note: "Audio, vidéo, documents, analyse.",
@@ -2963,7 +2963,7 @@ function VivyPublicPage() {
           <a href="#vivy-studio">Studio</a>
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
           <a href={surfaceLinks.kaen44Terms}>Conditions</a>
         </div>
       </nav>
@@ -2987,7 +2987,7 @@ function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
     {
       id: "a11",
       name: "A11",
-      role: "Agent media",
+      role: "Agent média",
       text: "Audio, vidéo, documents et analyse.",
       image: A11_HOODED_AGENT_SRC,
       href: surfaceLinks.a11Cockpit,
@@ -3017,7 +3017,7 @@ const FUNESTERIE_HOME_AGENTS = [
   {
     id: "a11",
     name: "A11",
-    role: "Agent media",
+    role: "Agent média",
     text: "Capture, analyse et structure les flux audio et vidéo.",
     href: "a11",
     image: A11_HOODED_AGENT_SRC,
@@ -3213,7 +3213,7 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
           <a href={surfaceLinks.cockpit}>Cockpit</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
         </div>
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
@@ -3222,8 +3222,8 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         <div className="k44-agent-home-copy">
           <h1>Agents Funesterie.</h1>
           <p>
-            Trois surfaces distinctes pour travailler sans melanger les usages :
-            Kaen44 pour le quotidien, A11 pour les medias, Vivy pour la musique.
+            Trois surfaces distinctes pour travailler sans mélanger les usages :
+            Kaen44 pour le quotidien, A11 pour les médias, Vivy pour la musique.
           </p>
           <div className="k44-agent-home-actions">
             <a href={surfaceLinks.cockpit}>Ouvrir le cockpit</a>
@@ -3267,21 +3267,21 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const isHome = !isPrivacy && !isTerms && !isVivy;
   const title = isPrivacy ? "Règles de confidentialité" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Funesterie";
   const subtitle = isPrivacy
-    ? "Comment Kaen44 traite les donnees de connexion et les fichiers partages."
+    ? "Comment Kaen44 traite les données de connexion et les fichiers partagés."
     : isTerms
-      ? "Le cadre d'utilisation de Kaen44 et de ses services connectes."
+      ? "Le cadre d'utilisation de Kaen44 et de ses services connectés."
       : isVivy
-        ? "Presence musicale Funesterie pour voix, chansons originales et projets audio."
+        ? "Présence musicale Funesterie pour voix, chansons originales et projets audio."
         : "Portail public pour A11, Kaen44, Vivy et les modules Funesterie.";
   const surfaceLinks = getSurfaceLinks();
-  const tabs = ["Accueil", "Modules", "Projets", "Vivy", "Aide", "Confidentialite"];
+  const tabs = ["Accueil", "Modules", "Projets", "Vivy", "Aide", "Confidentialité"];
   const tabTargets: Record<string, string> = {
     Accueil: surfaceLinks.kaen44,
     Modules: "#agents",
     Projets: "#projets",
     Vivy: surfaceLinks.vivy,
     Aide: "#aide",
-    Confidentialite: surfaceLinks.kaen44Privacy,
+    Confidentialité: surfaceLinks.kaen44Privacy,
   };
   const futureAgents = ["Module media", "Module agentic", "Module jeu"];
 
@@ -3303,7 +3303,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
           <a href={surfaceLinks.kaen44Terms}>Conditions</a>
           <a href={surfaceLinks.kaen44Login} className="kaen-public-login">Connexion K44</a>
         </div>
@@ -3319,7 +3319,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
             <span>Portail adaptatif</span>
             <div>
               <em>Projets</em>
-              <em>Creation</em>
+              <em>Création</em>
               <em>Aide</em>
               <em>Publication</em>
             </div>
@@ -3401,7 +3401,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
                 <img src={A11_KAEN44_COMMAND_CARDS_SRC} alt="" />
               </div>
               <strong>A11</strong>
-              <span>Moteur creatif</span>
+              <span>Moteur créatif</span>
               <p>Création, idéation, prototypes et systèmes créatifs avancés quand Kaen44 demande du renfort.</p>
               <footer>
                 <b aria-hidden="true" />
@@ -3414,9 +3414,9 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               <article key={name} className="kaen-public-empty-agent">
                 <div>?</div>
                 <strong>{name}</strong>
-                <span>A definir</span>
+                <span>À définir</span>
                 <p>Un futur renfort rejoindra l'équipe quand son rôle sera clair.</p>
-                <a href={surfaceLinks.kaen44Login}>Demander a Kaen44</a>
+                <a href={surfaceLinks.kaen44Login}>Demander à Kaen44</a>
               </article>
             ))}
           </section>
@@ -3427,7 +3427,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               <img src={FUNESTERIE_NEXUS_BOARD_SRC} alt="" />
               <ul className="kaen-public-legend">
                 <li>Agents</li>
-                <li>Memoires</li>
+                <li>Mémoires</li>
                 <li>Conversations</li>
                 <li>Projets</li>
               </ul>
@@ -3436,7 +3436,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               <h2>Vivy en ce moment</h2>
               <div>
                 <img src={VIVY_POSTER_SRC} alt="" />
-                <p>Direction musicale en cours: voix, melodies et visuels Funesterie.</p>
+                <p>Direction musicale en cours: voix, mélodies et visuels Funesterie.</p>
               </div>
               <div className="kaen-wave" aria-hidden="true" />
               <footer>
@@ -3446,9 +3446,9 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               </footer>
             </article>
             <article id="projets" className="kaen-public-activity-card">
-              <h2>Activite recente</h2>
-              <p><span className="kaen-public-activity-icon" /> Vivy prepare une nouvelle melodie. <time>2 min</time></p>
-              <p><span className="kaen-public-activity-icon" /> Kaen44 a termine une tache d'organisation. <time>7 min</time></p>
+              <h2>Activité récente</h2>
+              <p><span className="kaen-public-activity-icon" /> Vivy prépare une nouvelle mélodie. <time>2 min</time></p>
+              <p><span className="kaen-public-activity-icon" /> Kaen44 a terminé une tâche d'organisation. <time>7 min</time></p>
               <p><span className="kaen-public-activity-icon" /> A11 a relié trois idées créatives. <time>22 min</time></p>
             </article>
           </section>
@@ -3456,7 +3456,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           <footer className="kaen-public-status-strip">
             <span>Portail modulaire</span>
             <span>Modules par profil</span>
-            <span>Mode avance reserve</span>
+            <span>Mode avancé réservé</span>
             <span>Respect du pacte</span>
           </footer>
         </>
@@ -3464,10 +3464,10 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
 
       {isPrivacy ? (
         <section className="kaen-public-section">
-          <h2>Donnees utilisees</h2>
+          <h2>Données utilisées</h2>
           <p>
             Kaen44 utilise les informations de compte nécessaires à la connexion, les fichiers que
-            l'utilisateur importe ou autorise explicitement, et les messages envoyes dans le chat.
+            l'utilisateur importe ou autorise explicitement, et les messages envoyés dans le chat.
           </p>
           <h2>Google Drive</h2>
           <p>
@@ -3479,7 +3479,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           <p>
             Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et
             métadonnées fournies ou validées par l'utilisateur pour préparer des publications sur des
-            plateformes comme YouTube ou SoundCloud. Les fichiers prives ne sont pas publies sans
+            plateformes comme YouTube ou SoundCloud. Les fichiers privés ne sont pas publiés sans
             action explicite de l'utilisateur.
           </p>
           <h2>Contact</h2>
@@ -3493,20 +3493,20 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         <section className="kaen-public-section">
           <h2>Utilisation</h2>
           <p>
-            Kaen44 fournit une assistance de productivite, de classement, de creation et de recherche
-            documentaire. L'utilisateur reste responsable des donnees qu'il partage et des validations
-            finales sur les documents, factures ou decisions importantes.
+            Kaen44 fournit une assistance de productivité, de classement, de création et de recherche
+            documentaire. L'utilisateur reste responsable des données qu'il partage et des validations
+            finales sur les documents, factures ou décisions importantes.
           </p>
           <h2>Limites</h2>
           <p>
-            Kaen44 peut limiter les usages anormaux, couteux ou abusifs afin de proteger le service.
-            Les operations sensibles, paiements, suppressions ou actions administratives doivent etre
-            confirmees explicitement par l'utilisateur.
+            Kaen44 peut limiter les usages anormaux, coûteux ou abusifs afin de protéger le service.
+            Les opérations sensibles, paiements, suppressions ou actions administratives doivent être
+            confirmées explicitement par l'utilisateur.
           </p>
           <h2>Vivy et contenus publies</h2>
           <p>
             Les chansons, voix, clips et métadonnées publiés via Vivy doivent être originaux,
-            autorises ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et
+            autorisés ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et
             validations avant publication sur YouTube, SoundCloud ou tout autre service.
           </p>
           <h2>Contact</h2>
@@ -3524,7 +3524,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
             style vocal, export audio, page publique, lien SoundCloud ou clip YouTube.
           </p>
           <p>
-            Pour Alexa et les assistants vocaux, Vivy utilise un flux audio HTTPS direct controle par
+            Pour Alexa et les assistants vocaux, Vivy utilise un flux audio HTTPS direct contrôlé par
             Funesterie. Les pages YouTube et SoundCloud restent des surfaces publiques de diffusion,
             pas des sources techniques obligatoires pour la lecture vocale.
           </p>
@@ -3535,9 +3535,9 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         <section className="kaen-public-section">
           <h2>Ce que fait Kaen44</h2>
           <p>
-            L'application sert de copilote bureautique: elle peut aider a lire des documents, trier
+            L'application sert de copilote bureautique: elle peut aider à lire des documents, trier
             des factures, préparer des réponses, générer des idées visuelles simples, transcrire ou
-            resumer de l'audio, et guider l'utilisateur dans ses projets personnels ou professionnels.
+            résumer de l'audio, et guider l'utilisateur dans ses projets personnels ou professionnels.
           </p>
           <p>
             Les connexions Google et Microsoft servent à récupérer les fichiers que l'utilisateur
@@ -3706,14 +3706,14 @@ function Kaen44ModulesPanel({
     ["Documents", "Traiter un document", "Je veux traiter un document."],
     ["Factures", "Préparer une facture", "Je veux préparer une facture."],
     ["Voix", "Dicter ou transcrire", "Je veux dicter ou transcrire un audio."],
-    ["Aide", "Demander un renfort", "J'ai besoin d'aide sur une tache."],
+    ["Aide", "Demander un renfort", "J'ai besoin d'aide sur une tâche."],
   ];
 
   return (
     <section className="kaen-modules-panel kaen-services-panel">
       <div className="kaen-modules-hero kaen-services-hero" style={{ padding: isCompactLayout ? 16 : 22 }}>
         <div className="kaen-services-copy">
-          <h2 style={{ fontSize: isCompactLayout ? 28 : 34 }}>Acces rapide</h2>
+          <h2 style={{ fontSize: isCompactLayout ? 28 : 34 }}>Accès rapide</h2>
           <div className="kaen-services-actions">
             <button type="button" className="kaen-service-primary" onClick={onBackToChat}>
               Message
@@ -3775,18 +3775,18 @@ function PersonaDashboard({
   const surfaceLinks = getSurfaceLinks();
   const metrics = [
     { label: isKaen44 ? "Dossiers" : "Fichiers", value: resourceCount || "0" },
-    { label: "Activite", value: activityCount || "0" },
+    { label: "Activité", value: activityCount || "0" },
     { label: "Messages", value: messageCount || "0" },
   ];
 
   if (!isKaen44) {
     const a11Modules = [
       ["Capture", "Audio, vidéo, écran, caméra et flux réseau."],
-      ["Analyse", "ASR, detection, reconnaissance et contexte."],
-      ["Traitement", "Nettoyage, decoupe, normalisation et enrichissement."],
-      ["Memoire", "Notes, tags, relations et decisions utiles."],
+      ["Analyse", "ASR, détection, reconnaissance et contexte."],
+      ["Traitement", "Nettoyage, découpe, normalisation et enrichissement."],
+      ["Mémoire", "Notes, tags, relations et décisions utiles."],
       ["Génération", "Synthèse, résumés, visuels, clips et chapitres."],
-      ["Export", "Formats multiples, packages et partage controle."],
+      ["Export", "Formats multiples, packages et partage contrôlé."],
       ["Intégration", "Comptes connectés, workflows et agents IA."],
       ["Diffusion", "Publication, API, streaming et suivi."],
     ];
@@ -3798,7 +3798,7 @@ function PersonaDashboard({
       "Extraction de métadonnées",
       "Recherche multimodale",
     ];
-    const stack = ["Audio", "Video", "Texte", "Images", "Projets", "Exports"];
+    const stack = ["Audio", "Vidéo", "Texte", "Images", "Projets", "Exports"];
     const ecosystem = ["Portail", "A11", "Vivy", "Kaen44", "Univers"];
 
     return (
@@ -3816,13 +3816,13 @@ function PersonaDashboard({
             <img src={A11_HOODED_AGENT_SRC} alt="" />
           </div>
           <blockquote>
-            Je transforme le bruit du monde en information, et l'information en creation.
+            Je transforme le bruit du monde en information, et l'information en création.
             <cite>A11</cite>
           </blockquote>
         </div>
 
         <div className="a11-media-panel a11-media-panel--role">
-          <h2>Role principal</h2>
+          <h2>Rôle principal</h2>
           <p>
             A11 capture, analyse et structure les flux audio et vidéo. Il extrait le sens,
             génère des métadonnées et prépare des contenus prêts à être utilisés par
@@ -3898,7 +3898,7 @@ function PersonaDashboard({
       <header className="k44-agent-strip-header">
         <div className="k44-title">
           <h1>Agents</h1>
-          <p>Acces rapides</p>
+          <p>Accès rapides</p>
         </div>
         <div className="k44-simple-actions">
           <button type="button" onClick={onStartChat}>Discussion</button>
@@ -3956,11 +3956,11 @@ export function App() {
 
   useEffect(() => {
     document.title = isGeneralCockpit
-      ? "Funesterie - Cockpit general"
+      ? "Funesterie - Cockpit général"
       : isGeneralAgents
       ? "Funesterie - Agents"
       : isVivy
-      ? "Vivy - Presence musicale Funesterie"
+      ? "Vivy - Présence musicale Funesterie"
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";

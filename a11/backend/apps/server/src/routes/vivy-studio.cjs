@@ -172,7 +172,7 @@ function formatVivyFilesForPrompt(files = []) {
       `Fichier ${index + 1}: ${file.filename}`,
       file.contentType ? `type ${file.contentType}` : '',
       file.sizeBytes ? `taille ${formatFileSize(file.sizeBytes)}` : '',
-      file.url ? `stocke ${file.url}` : '',
+      file.url ? `stocké ${file.url}` : '',
       file.description ? `description ${file.description}` : '',
       file.textPreview ? `extrait:\n${file.textPreview}` : '',
     ].filter(Boolean);
