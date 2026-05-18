@@ -1,6 +1,10 @@
 {
   "name": "dragon",
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "private": true,
   "type": "module",
   "packageManager": "npm@11.14.1",

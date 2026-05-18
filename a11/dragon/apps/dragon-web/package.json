@@ -1,6 +1,10 @@
 {
   "name": "@nossen/dragon-web",
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "private": true,
   "type": "module",
   "description": "Dragon web cockpit for runtime supervision and orchestration.",

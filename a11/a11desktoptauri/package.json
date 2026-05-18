@@ -2,6 +2,10 @@
   "name": "a11-local-desktop",
   "private": true,
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

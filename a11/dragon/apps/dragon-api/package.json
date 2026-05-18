@@ -1,6 +1,10 @@
 {
   "name": "@nossen/dragon-api",
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "private": true,
   "type": "module",
   "main": "dist/server.js",

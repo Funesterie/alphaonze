@@ -1,6 +1,10 @@
 {
   "name": "a11-control",
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "private": true,
   "description": "Canonical local and production entrypoint for A11",
   "scripts": {

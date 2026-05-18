@@ -3,6 +3,10 @@
   "displayName": "A11 — AI Coding Agent",
   "description": "The best AI coding agent. Powered by A11/funesterie.",
   "version": "1.0.0",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "publisher": "funesterie",
   "engines": {
     "vscode": "^1.85.0"

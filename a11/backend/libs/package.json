@@ -4,6 +4,10 @@
   "private": false,
   "description": "QFlush – Funesterie Command Line & Logic System (ROME, SPYDER, CORTEX, NPZ, PICCOLO, SUPERVISOR).",
   "license": "SEE LICENSE IN LICENSE",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "author": "NOSSEN <contact@funesterie.me>",
   "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/backend/libs#readme",
   "repository": {

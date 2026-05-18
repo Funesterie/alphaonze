@@ -1,6 +1,10 @@
 {
   "name": "funesterie-desktop",
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "private": true,
   "description": "Funesterie Desktop Nexus for PC1 and PC2.",
   "main": "electron/main.cjs",

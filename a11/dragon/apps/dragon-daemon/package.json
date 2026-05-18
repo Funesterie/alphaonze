@@ -1,6 +1,10 @@
 {
   "name": "@nossen/dragon",
   "version": "1.0.0",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "type": "module",
   "main": "dist/server.js",
   "types": "dist/server.d.ts",

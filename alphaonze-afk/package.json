@@ -2,6 +2,10 @@
   "name": "alphaonze-afk",
   "private": true,
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "scripts": {
     "start": "node server.cjs"
   }

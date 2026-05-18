@@ -19,5 +19,9 @@
     "forge:repo-map": "node scripts/funesterie-forge.cjs repo-map",
     "forge:doctor": "node scripts/funesterie-forge.cjs doctor"
   },
-  "version": "0.0.1"
+  "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  }
 }

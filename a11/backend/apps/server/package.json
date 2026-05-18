@@ -1,6 +1,10 @@
 {
   "name": "a11-server",
   "version": "0.0.1",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "private": true,
   "description": "Backend AlphaOnze server (Express)",
   "main": "dist/index.js",
