@@ -19,10 +19,8 @@ function createDecommissionedDevRoutesRouter() {
   router.all('/chat/dev', gone('chat-dev'));
   router.all('/chat/mask', gone('chat-mask'));
   router.all('/agent', gone('agent-dev'));
-  router.all('/edit', gone('file-edit'));
-  router.all('/edit/*splat', gone('file-edit'));
-  router.all('/v1/vs', gone('a11host-vs'));
-  router.all('/v1/vs/*splat', gone('a11host-vs'));
+  router.all(/^\/edit(?:\/.*)?$/, gone('file-edit'));
+  router.all(/^\/v1\/vs(?:\/.*)?$/, gone('a11host-vs'));
 
   return router;
 }
