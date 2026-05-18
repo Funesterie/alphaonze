@@ -1,6 +1,10 @@
 {
   "scope": "@nossen",
   "registryPurpose": "NOSSEN npm packages mirrored on JFrog Artifactory",
+  "funding": {
+    "type": "custom",
+    "url": "https://paypal.me/funeste38"
+  },
   "packages": [
     {
       "path": "runtime/modules/allmight",

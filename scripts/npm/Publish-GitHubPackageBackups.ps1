@@ -3,6 +3,7 @@ param(
   [string]$Scope = "@funesterie",
   [string]$Registry = "https://npm.pkg.github.com",
   [string]$RepositoryUrl = "git+https://github.com/Funesterie/alphaonze.git",
+  [string]$FundingUrl = "https://paypal.me/funeste38",
   [string]$WorkRoot = "$env:TEMP\funesterie-github-package-backups",
   [switch]$DryRun
 )
@@ -115,6 +116,10 @@ foreach ($packageDir in $packages) {
   Set-JsonProperty -Object $json -Name "repository" -Value ([ordered]@{
     type = "git"
     url = $RepositoryUrl
+  })
+  Set-JsonProperty -Object $json -Name "funding" -Value ([ordered]@{
+    type = "custom"
+    url = $FundingUrl
   })
   Set-JsonProperty -Object $json -Name "funesterieBackup" -Value ([ordered]@{
     sourceName = $originalJson.name

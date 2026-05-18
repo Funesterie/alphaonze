@@ -58,6 +58,17 @@ function Test-NpmPackageVersionExists {
 }
 
 $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+$funding = if ($manifest.funding -and $manifest.funding.url) {
+  [ordered]@{
+    type = if ($manifest.funding.type) { [string]$manifest.funding.type } else { "custom" }
+    url = [string]$manifest.funding.url
+  }
+} else {
+  [ordered]@{
+    type = "custom"
+    url = "https://paypal.me/funeste38"
+  }
+}
 $packages = @($manifest.packages | Where-Object {
   $_.publish -eq $true -or ($IncludeExperimental -and $_.publish -ne $true)
 })
@@ -78,6 +89,36 @@ if ($Publish) {
   }
 }
 
+function Set-JsonProperty {
+  param(
+    [Parameter(Mandatory = $true)]$Object,
+    [Parameter(Mandatory = $true)][string]$Name,
+    $Value
+  )
+
+  if ($Object.PSObject.Properties.Name -contains $Name) {
+    $Object.$Name = $Value
+  } else {
+    $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+  }
+}
+
+function Ensure-PackageFunding {
+  param(
+    [Parameter(Mandatory = $true)][string]$PackageJsonPath,
+    [Parameter(Mandatory = $true)]$Funding
+  )
+
+  $json = Get-Content -Raw -LiteralPath $PackageJsonPath | ConvertFrom-Json
+  $currentUrl = if ($json.funding -and $json.funding.url) { [string]$json.funding.url } else { "" }
+  $currentType = if ($json.funding -and $json.funding.type) { [string]$json.funding.type } else { "" }
+  if ($currentUrl -ne [string]$Funding.url -or $currentType -ne [string]$Funding.type) {
+    Set-JsonProperty -Object $json -Name "funding" -Value $Funding
+    $json | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $PackageJsonPath -Encoding UTF8
+  }
+  return $json
+}
+
 $summary = @()
 
 foreach ($entry in $packages) {
@@ -88,7 +129,7 @@ foreach ($entry in $packages) {
     throw "Missing package.json for $($entry.name) at $packageJsonPath"
   }
 
-  $packageJson = Get-Content -Raw -LiteralPath $packageJsonPath | ConvertFrom-Json
+  $packageJson = Ensure-PackageFunding -PackageJsonPath $packageJsonPath -Funding $funding
   if ($packageJson.name -ne $entry.name) {
     throw "Manifest name mismatch for $($entry.path): expected $($entry.name), found $($packageJson.name)"
   }
