@@ -3570,11 +3570,11 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
       className="btn ghost"
     >
       {muted ? (
-        <span aria-label="Audio coupe">Off</span>
+        <span aria-label="Sortie coupee">Off</span>
       ) : (
-        <span aria-label="Audio actif">On</span>
+        <span aria-label="Sortie automatique">On</span>
       )}
-      {showLabel ? <span>{muted ? "Voix coupee" : "Voix active"}</span> : null}
+      {showLabel ? <span>{muted ? "Sortie coupee" : "Sortie auto"}</span> : null}
     </button>
   );
 }
@@ -6222,7 +6222,7 @@ export function App() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Champions</div>
+                  <div style={menuSectionTitleStyle}>Agents</div>
                   <a
                     href={surfaceLinks.kaen44Cockpit}
                     className="btn ghost"
@@ -7156,29 +7156,6 @@ export function App() {
                 >
                   Ref
                 </button>
-                {!isCompactLayout && (
-                  <select
-                    value={selectedVoiceReferenceId}
-                    onChange={(e) => setSelectedVoiceReferenceId(e.target.value)}
-                    title={`Reference vocale utilisee pour comparer la voix ${productName}`}
-                    style={{
-                      width: 138,
-                      minHeight: 44,
-                      background: "#0d0f13",
-                      color: "var(--text)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 10,
-                      padding: "0 8px",
-                    }}
-                  >
-                    <option value="">Voix {productName} auto</option>
-                    {voiceReferences.map((ref) => (
-                      <option key={ref.id} value={ref.id}>
-                        {ref.label || "Reference voix"}
-                      </option>
-                    ))}
-                  </select>
-                )}
                 <button
                   type="button"
                   className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
