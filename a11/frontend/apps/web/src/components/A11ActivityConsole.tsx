@@ -122,6 +122,9 @@ function ActivityRow({
   const cfg = KIND_CONFIG[event.kind] ?? KIND_CONFIG.info;
   const isRunning = event.status === "running" || event.status === "pending";
   const isError = event.status === "error";
+  const kindLabel = publicActivityLabel(cfg.label);
+  const eventLabel = publicActivityLabel(event.label);
+  const showEventLabel = eventLabel && eventLabel.toLowerCase() !== kindLabel.toLowerCase();
 
   return (
     <div
@@ -147,9 +150,11 @@ function ActivityRow({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ color: cfg.color, fontSize: 12, fontWeight: 600 }}>
-            {publicActivityLabel(cfg.label)}
+            {kindLabel}
           </span>
-          <span style={{ color: "#e2e8f0", fontSize: 12 }}>{publicActivityLabel(event.label)}</span>
+          {showEventLabel ? (
+            <span style={{ color: "#e2e8f0", fontSize: 12 }}>{eventLabel}</span>
+          ) : null}
           <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto", flexShrink: 0 }}>
             {formatDuration(event.startedAt, event.endedAt)}
           </span>
@@ -471,10 +476,18 @@ export function useA11Activity() {
     const actions = Array.isArray(agent?.actions) ? agent.actions : [];
     const results = Array.isArray(agent?.results) ? agent.results : [];
     const allEntries = [...actions, ...results];
+    const seenEntries = new Set<string>();
 
     for (const entry of allEntries) {
       const tool = String(entry?.name || entry?.tool || entry?.action || "").toLowerCase();
       const result = entry?.result || entry;
+      const entryKey = [
+        tool,
+        entry?.arguments?.query || entry?.query || "",
+        result?.image_url || result?.imageUrl || result?.url || "",
+      ].map((value) => String(value || "").trim().toLowerCase()).join("|");
+      if (entryKey && seenEntries.has(entryKey)) continue;
+      if (entryKey) seenEntries.add(entryKey);
 
       if (tool.includes("web_search") || tool.includes("search_web")) {
         const query = String(entry?.arguments?.query || entry?.query || "").trim();

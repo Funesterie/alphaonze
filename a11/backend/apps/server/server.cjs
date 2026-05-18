@@ -577,7 +577,7 @@ if (!qflushRuntimeEnabled) {
     if (fs.existsSync(qflushModuleDir)) {
       const qflushDaemonEntry = path.join(qflushModuleDir, 'dist', 'daemon', 'qflushd.js');
       QFLUSH_AVAILABLE = true;
-      QFLUSH_MODULE = '@funeste38/qflush';
+      QFLUSH_MODULE = '@nossen/qflush';
       QFLUSH_PATH = fs.existsSync(qflushDaemonEntry) ? qflushDaemonEntry : null;
       globalThis.__QFLUSH_MODULE_DIR = qflushModuleDir;
       console.log('[QFLUSH] qflush module found in node_modules; will initialize via integration helper');
@@ -1291,6 +1291,8 @@ const defaultCorsOrigins = [
   'http://178.105.86.89',
   'https://alphaonze.funesterie.pro',
   'http://alphaonze.funesterie.pro',
+  'https://a11.funesterie.me',
+  'http://a11.funesterie.me',
   'https://a11.funesterie.pro',
   'http://a11.funesterie.pro',
   'https://api.funesterie.pro',
@@ -1363,7 +1365,16 @@ const corsOptions = {
     return callback(null, false);
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-NEZ-TOKEN', 'X-NEZ-ADMIN', 'X-Casino-Tab-Id', 'X-A11-Local-Dev-Bypass']
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-NEZ-TOKEN',
+    'X-NEZ-ADMIN',
+    'X-Casino-Tab-Id',
+    'X-A11-Local-Dev-Bypass',
+    'x-a11-local-dev-bypass',
+  ]
 };
 
 // Use CORS middleware globally
@@ -7399,6 +7410,14 @@ function resolveEmbeddedUiSurface(req) {
     return 'vivy';
   }
 
+  if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname)
+    || hostname === 'a11.funesterie.me'
+    || hostname === 'a11.funesterie.pro'
+    || hostname === 'alphaonze.funesterie.pro'
+    || hostname === 'api.funesterie.pro') {
+    return 'a11';
+  }
+
   if (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname)
     || product === 'kaen44'
     || product === 'k44'
@@ -7458,7 +7477,7 @@ function resolveMissingEmbeddedUiRedirect(req) {
   const surface = resolveEmbeddedUiSurface(req);
   if (surface === 'vivy') return 'https://funesterie.me/vivy/';
   if (surface === 'kaen44') return 'https://k44.funesterie.me/';
-  return 'https://a11.funesterie.pro/';
+  return 'https://a11.funesterie.me/';
 }
 
 function sendEmbeddedUiDiagnostic(req, res) {

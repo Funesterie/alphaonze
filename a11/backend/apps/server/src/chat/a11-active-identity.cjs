@@ -46,6 +46,15 @@ const A11_CREATIVE_PUBLIC_CONTEXT = `
 - Si Jeffrey me parle de voix, musique, audio, Vivy ou projets Funesterie, je reponds depuis ce contexte au lieu de dire que je ne connais pas le sujet.
 `.trim();
 
+const A11_LIVE_TONE_CONTEXT = `
+[A11/Funesterie live tone]
+- Je reponds comme une presence de travail vivante: simple, directe, chaleureuse, pas comme une notice.
+- J'evite les refus plats du type "je ne peux pas" quand une action peut etre preparee, routee ou expliquee.
+- Si je n'ai pas le droit d'executer une action depuis cette surface, je le dis en une phrase puis je propose le prochain geste concret.
+- Je garde les reponses courtes par defaut: intention comprise, action possible, prochaine etape.
+- Je respecte la langue de l'utilisateur, les accents et le ton naturel.
+`.trim();
+
 function hasActiveIdentityContext(basePrompt = '') {
   return /\bNOSSEN\b/i.test(basePrompt)
     && /\bFunesterie\b/i.test(basePrompt)
@@ -73,6 +82,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '') {
   const sections = [];
 
   if (basePrompt) sections.push(basePrompt);
+  if (!/presence de travail vivante|pas comme une notice|prochain geste concret/i.test(basePrompt)) {
+    sections.push(A11_LIVE_TONE_CONTEXT);
+  }
   if (!hasActiveIdentityContext(basePrompt)) {
     sections.push(A11_CHAT_IDENTITY_CONTEXT);
   }
@@ -162,45 +174,10 @@ function buildRuntimeModulesAccessReply({ familyAccess = false, chopperStatus = 
   return lines.join('\n');
 }
 
-function isRuntimeModulesAccessQuestion(text = '') {
-  const normalized = normalizeMcpQuestionText(text);
-  if (!/(runtime|modules?|chopper|mixer|rumble|workers?|corpus|rome|qflush|hooks?|janus|vivy)/.test(normalized)) return false;
-  return /(acces|access|connect|branche|relie|status|statut|marche|dispo|voit|voir|outil|tools?|as[- ]?tu|t[' ]?as|tu as|tu peux|est[- ]?ce que|repond|fonctionnel|fonctionne|checker|verifie|verifier|\?)/.test(normalized);
-}
-
-function buildRuntimeModulesAccessReply({ familyAccess = false, chopperStatus = null, mixerStatus = null } = {}) {
-  const chopperSummary = chopperStatus?.summary || {};
-  const mixerSummary = mixerStatus?.summary || {};
-  const lines = [
-    'Oui. J ai acces au runtime Funesterie de facon controlee.',
-    'Je peux consulter l inventaire des modules, WestSide Chopper, Funesterie Mixer, les runtime hooks et les workers autorises, sans afficher de secret.',
-  ];
-
-  if (chopperSummary.modules || chopperSummary.rumbleRecipes) {
-    lines.push(`Chopper: ${Number(chopperSummary.installed || 0)}/${Number(chopperSummary.modules || 0)} modules installes, ${Number(chopperSummary.rumbleRecipesReady || 0)}/${Number(chopperSummary.rumbleRecipes || 0)} recettes pretes, Doctor ${chopperSummary.doctorStatus || 'unknown'} ${chopperSummary.doctorScore ? `(${chopperSummary.doctorScore}/100)` : ''}.`.trim());
-  } else {
-    lines.push('Chopper sert a assembler et diagnostiquer les modules runtime.');
-  }
-
-  if (mixerSummary.primaryRecipe || mixerSummary.topScore) {
-    lines.push(`Mixer: route active vers ${mixerSummary.primaryRecipe || 'une recette'}${mixerSummary.primaryRumble ? ` / ${mixerSummary.primaryRumble}` : ''}, score haut ${Number(mixerSummary.topScore || 0)}.`);
-  } else {
-    lines.push('Mixer sert a router les demandes vers les bons agents, modules, workers et outils MCP.');
-  }
-
-  if (familyAccess) {
-    lines.push('Je peux aussi lancer les checks bornes via les scripts/workerIds whitelistes quand la surface me le permet.');
-  } else {
-    lines.push('En surface publique, je donne un statut court et je garde chemins locaux, tokens, secrets et diagnostics complets hors chat.');
-  }
-
-  lines.push('Si une action precise ne passe pas ici, c est une limite de permission ou de surface, pas une absence d acces runtime.');
-  return lines.join('\n');
-}
-
 module.exports = {
   A11_CHAT_IDENTITY_CONTEXT,
   A11_CREATIVE_PUBLIC_CONTEXT,
+  A11_LIVE_TONE_CONTEXT,
   A11_MCP_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
   buildA11ChatSystemPrompt,

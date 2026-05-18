@@ -112,6 +112,7 @@ function resolveRequestPinnedFrontendUrl(req) {
     'kaen44.funesterie.pro': 'https://kaen44.funesterie.pro',
     'funesterie.me': 'https://funesterie.me',
     'www.funesterie.me': 'https://funesterie.me',
+    'a11.funesterie.me': 'https://a11.funesterie.me',
     'a11.funesterie.pro': 'https://a11.funesterie.pro',
     'alphaonze.funesterie.pro': 'https://alphaonze.funesterie.pro',
     'funesterie.pro': 'https://funesterie.pro',
@@ -141,11 +142,11 @@ function resolveFrontendUrl(req, normalizePublicAppUrl) {
     || process.env.APP_URL
     || process.env.FRONT_URL
     || req?.headers?.origin
-    || 'https://a11.funesterie.pro';
+    || 'https://a11.funesterie.me';
   const normalized = typeof normalizePublicAppUrl === 'function'
     ? normalizePublicAppUrl(raw)
     : String(raw || '').trim().replace(/\/+$/, '');
-  return normalized || 'https://a11.funesterie.pro';
+  return normalized || 'https://a11.funesterie.me';
 }
 
 function resolvePublicApiOrigin(req, normalizePublicAppUrl) {
@@ -154,11 +155,11 @@ function resolvePublicApiOrigin(req, normalizePublicAppUrl) {
     || process.env.BASE_URL
     || process.env.BACKEND_URL
     || resolveRequestOrigin(req)
-    || 'https://a11.funesterie.pro';
+    || 'https://a11.funesterie.me';
   const normalized = typeof normalizePublicAppUrl === 'function'
     ? normalizePublicAppUrl(raw)
     : String(raw || '').trim().replace(/\/+$/, '');
-  return normalized || resolveRequestOrigin(req) || 'https://a11.funesterie.pro';
+  return normalized || resolveRequestOrigin(req) || 'https://a11.funesterie.me';
 }
 
 function resolveRequestHostname(req) {
@@ -294,7 +295,7 @@ function logOAuthTrace(provider, event, req, normalizePublicAppUrl, extra = {}, 
 }
 
 function safeFrontendRedirect(frontendUrl, pathOrUrl = '/auth/success') {
-  const base = String(frontendUrl || 'https://a11.funesterie.pro').replace(/\/+$/, '');
+  const base = String(frontendUrl || 'https://a11.funesterie.me').replace(/\/+$/, '');
   const raw = String(pathOrUrl || '/auth/success').trim();
   if (!raw || raw.startsWith('//')) return `${base}/auth/success`;
   if (/^https?:\/\//i.test(raw)) {
@@ -313,6 +314,7 @@ function isAllowedOAuthFrontendOrigin(origin) {
   if (!normalized) return false;
   if ([
     'https://a11.funesterie.pro',
+    'https://a11.funesterie.me',
     'https://alphaonze.funesterie.pro',
     'https://funesterie.pro',
     'https://www.funesterie.pro',
@@ -338,7 +340,7 @@ function isAllowedOAuthFrontendOrigin(origin) {
 }
 
 function resolveOAuthRedirectUrl(frontendUrl, pathOrUrl = '/auth/success') {
-  const base = String(frontendUrl || 'https://a11.funesterie.pro').replace(/\/+$/, '');
+  const base = String(frontendUrl || 'https://a11.funesterie.me').replace(/\/+$/, '');
   const raw = String(pathOrUrl || '/auth/success').trim();
   if (!raw || raw.startsWith('//')) return `${base}/auth/success`;
 
@@ -372,7 +374,7 @@ function redirectOAuthSuccess(res, frontendUrl, returnTo, token, provider) {
   let needsFragmentToken = false;
   try {
     const targetOrigin = new URL(target).origin;
-    const frontendOrigin = new URL(String(frontendUrl || 'https://a11.funesterie.pro')).origin;
+    const frontendOrigin = new URL(String(frontendUrl || 'https://a11.funesterie.me')).origin;
     needsFragmentToken = targetOrigin !== frontendOrigin;
   } catch {
     needsFragmentToken = false;

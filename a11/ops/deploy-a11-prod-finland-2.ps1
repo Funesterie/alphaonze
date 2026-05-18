@@ -344,7 +344,7 @@ services:
       A11_RUNTIME_PROFILE: kaen44
       A11_PUBLIC_HOST: k44.funesterie.me
       A11_SD_PROXY_URL: http://a11-backend:3000/api/tools/generate_sd
-      A11_SD_PUBLIC_FILE_BASE_URL: https://a11.funesterie.pro/files
+      A11_SD_PUBLIC_FILE_BASE_URL: https://a11.funesterie.me/files
       PUBLIC_APP_URL: https://k44.funesterie.me
       FRONT_URL: https://k44.funesterie.me
       APP_URL: https://k44.funesterie.me
@@ -400,20 +400,32 @@ Set-Content -LiteralPath (Join-Path $ServerStage "docker-compose.prod.yml") -Val
 $caddy = @'
 http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44.funesterie.pro, http://vivy.funesterie.me, http://vivy.funesterie.pro {
   encode zstd gzip
-  reverse_proxy kaen44-backend:3001
+  @a11Path path /a11 /a11/*
+  handle @a11Path {
+    reverse_proxy a11-backend:3000
+  }
+  handle {
+    reverse_proxy kaen44-backend:3001
+  }
 }
 
 https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, https://kaen44.funesterie.me, https://kaen44.funesterie.pro, https://vivy.funesterie.me, https://vivy.funesterie.pro {
   encode zstd gzip
-  reverse_proxy kaen44-backend:3001
+  @a11Path path /a11 /a11/*
+  handle @a11Path {
+    reverse_proxy a11-backend:3000
+  }
+  handle {
+    reverse_proxy kaen44-backend:3001
+  }
 }
 
-http://a11.funesterie.pro, http://api.funesterie.pro {
+http://a11.funesterie.me, http://a11.funesterie.pro, http://api.funesterie.pro {
   encode zstd gzip
   reverse_proxy a11-backend:3000
 }
 
-https://a11.funesterie.pro, https://api.funesterie.pro {
+https://a11.funesterie.me, https://a11.funesterie.pro, https://api.funesterie.pro {
   encode zstd gzip
   reverse_proxy a11-backend:3000
 }
@@ -499,18 +511,18 @@ $overrides = [ordered]@{
   QFLUSH_PUBLIC_URL = ""
   PUBLIC_QFLUSH_URL = ""
   QFLUSH_HEALTH_URL = ""
-  PUBLIC_APP_URL = "https://a11.funesterie.pro"
-  FRONT_URL = "https://a11.funesterie.pro"
-  APP_URL = "https://a11.funesterie.pro"
-  API_URL = "https://a11.funesterie.pro"
-  PUBLIC_API_URL = "https://a11.funesterie.pro"
-  A11_SERVER_URL = "https://a11.funesterie.pro"
-  A11_PUBLIC_HOST = "a11.funesterie.pro"
+  PUBLIC_APP_URL = "https://a11.funesterie.me"
+  FRONT_URL = "https://a11.funesterie.me"
+  APP_URL = "https://a11.funesterie.me"
+  API_URL = "https://a11.funesterie.me"
+  PUBLIC_API_URL = "https://a11.funesterie.me"
+  A11_SERVER_URL = "https://a11.funesterie.me"
+  A11_PUBLIC_HOST = "a11.funesterie.me"
   A11_MCP_URL = "https://mcp.funesterie.me/mcp"
   FUNESTERIE_MCP_URL = "https://mcp.funesterie.me/mcp"
   A11_PUBLIC_MCP_UPSTREAM_URL = "https://mcp.funesterie.me/mcp"
-  GOOGLE_CALLBACK_URL = "https://a11.funesterie.pro/api/auth/google/callback"
-  A11_GOOGLE_CALLBACK_URL = "https://a11.funesterie.pro/api/auth/google/callback"
+  GOOGLE_CALLBACK_URL = "https://a11.funesterie.me/api/auth/google/callback"
+  A11_GOOGLE_CALLBACK_URL = "https://a11.funesterie.me/api/auth/google/callback"
   A11_SESSION_COOKIE_SAMESITE = "lax"
   NEZ_SECURITY_MODE = "strict"
   A11_ENABLE_QFLUSH = "1"

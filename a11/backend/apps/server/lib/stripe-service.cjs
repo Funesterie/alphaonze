@@ -25,7 +25,7 @@ const DEFAULT_PUBLIC_BASE_URL = String(
   process.env.A11_PUBLIC_BASE_URL
     || process.env.PUBLIC_APP_URL
     || process.env.FRONTEND_URL
-    || 'https://a11.funesterie.pro'
+    || 'https://a11.funesterie.me'
 ).trim().replace(/\/+$/, '');
 const ACTIVE_PRICE_ID = String(process.env.STRIPE_PRICE_ID || '').trim();
 const SUCCESS_URL = process.env.STRIPE_SUCCESS_URL || `${DEFAULT_PUBLIC_BASE_URL}/subscription/success`;

@@ -131,7 +131,7 @@ try {
     started = [bool]$Start
     composeFiles = $composeFiles
     stable = @{
-      a11 = 'https://a11.funesterie.pro'
+      a11 = 'https://a11.funesterie.me'
       kaen44 = 'https://funesterie.me'
     }
     preview = @{

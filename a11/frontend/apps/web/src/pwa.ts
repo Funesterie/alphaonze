@@ -4,6 +4,7 @@ function shouldDisableServiceWorker() {
   const isPublicA11Host = [
     '178.105.86.89',
     'alphaonze.funesterie.pro',
+    'a11.funesterie.me',
     'a11.funesterie.pro',
     'api.funesterie.pro',
     'funesterie.me',

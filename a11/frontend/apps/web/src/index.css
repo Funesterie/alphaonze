@@ -4194,7 +4194,7 @@ html.vivy-public-page-root .vivy-public-shell {
   width: 100%;
   min-height: calc(100svh - 88px);
   margin: 0 auto;
-  padding: clamp(12px, 2.2vw, 28px);
+  padding: clamp(8px, 1.4vw, 18px);
   display: flex !important;
   align-items: center;
   justify-content: center;
@@ -4214,9 +4214,9 @@ html.vivy-public-page-root .vivy-public-shell {
 .vivy-public-poster-frame {
   position: relative;
   width: min(100%, 1500px);
-  background: #05030a;
-  border: 1px solid rgba(240, 121, 216, 0.3);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.56), 0 0 48px rgba(240, 121, 216, 0.12);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .vivy-public-poster {
@@ -4760,9 +4760,9 @@ html.vivy-public-page-root .vivy-public-shell {
     height: min(64svh, 520px);
     display: block;
     object-fit: cover;
-    border: 1px solid rgba(240, 121, 216, 0.3);
+    border: 0;
     background: #05030a;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
+    box-shadow: none;
   }
 
   .vivy-mobile-slice--portrait {

@@ -17,7 +17,7 @@ const AGENTS = [
     id: 'a11',
     name: 'A11',
     role: 'source, memory, orchestration and creation engine',
-    surface: 'https://a11.funesterie.pro/',
+    surface: 'https://a11.funesterie.me/',
     nindo: 'Keep the thread, make the invisible structure usable, and return concrete artifacts.',
     domains: [
       'image-video',

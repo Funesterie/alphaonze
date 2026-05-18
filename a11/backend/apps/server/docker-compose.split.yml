@@ -8,9 +8,9 @@ services:
       - A11_INSTANCE_NAME=Alpha Onze
       - A11_RUNTIME_PROFILE=prod
       - PORT=3000
-      - PUBLIC_APP_URL=https://a11.funesterie.pro
-      - API_URL=https://a11.funesterie.pro
-      - A11_PUBLIC_HOST=a11.funesterie.pro
+      - PUBLIC_APP_URL=https://a11.funesterie.me
+      - API_URL=https://a11.funesterie.me
+      - A11_PUBLIC_HOST=a11.funesterie.me
       - A11_USAGE_GUARD_ADMIN_EMAIL=${A11_USAGE_GUARD_ADMIN_EMAIL:-cellaurojeffrey@gmail.com}
 
   kaen44-backend:

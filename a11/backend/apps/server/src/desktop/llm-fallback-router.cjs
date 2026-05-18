@@ -20,7 +20,7 @@ class LlmFallbackRouter {
   constructor(options = {}) {
     this.ollamaUrl = options.ollamaUrl || 'http://127.0.0.1:11434';
     this.a11LocalUrl = options.a11LocalUrl || 'http://127.0.0.1:3000';
-    this.a11ProdUrl = options.a11ProdUrl || 'https://a11.funesterie.pro';
+    this.a11ProdUrl = options.a11ProdUrl || 'https://a11.funesterie.me';
     this.openRouterKey = options.openRouterKey || process.env.OPENROUTER_API_KEY || '';
     this.preferredModel = options.model || 'gemma4:e4b';
     this.cloudModel = options.cloudModel || 'anthropic/claude-3-haiku';
@@ -90,7 +90,7 @@ class LlmFallbackRouter {
       } catch { /* fallthrough */ }
     }
 
-    // 3. A11 prod (a11.funesterie.pro)
+    // 3. A11 prod (a11.funesterie.me)
     if (this.status.a11Prod.available) {
       try {
         const result = await this._callA11Prod(message);

@@ -224,9 +224,9 @@ const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
-const A11_PUBLIC_APP_URL = "https://a11.funesterie.pro/";
 const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
 const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.me/";
+const A11_PUBLIC_APP_URL = "https://a11.funesterie.me/";
 const VIVY_PUBLIC_APP_URL = "https://vivy.funesterie.me/";
 
 function getLocationSnapshot() {
@@ -288,7 +288,8 @@ function getCurrentSurfaceKind(): FunesterieSurface {
   const isVivyHost = hostname === "vivy.funesterie.me"
     || hostname === "vivy.funesterie.pro"
     || hostname === "music.funesterie.me";
-  const isA11Host = hostname === "a11.funesterie.pro"
+  const isA11Host = hostname === "a11.funesterie.me"
+    || hostname === "a11.funesterie.pro"
     || hostname === "alphaonze.funesterie.pro"
     || hostname === "api.funesterie.pro"
     || (isLocalHost && port === "3000");
@@ -2234,7 +2235,7 @@ function VivyStudioLab() {
 
   async function openAgent(target: "a11" | "k44") {
     await copyBrief(target === "a11" ? "Brief copié. Ouverture A11..." : "Brief copié. Ouverture Kaen44...");
-    const url = target === "a11" ? "https://a11.funesterie.pro/" : "https://k44.funesterie.me/#agents";
+    const url = target === "a11" ? A11_PUBLIC_APP_URL : "https://k44.funesterie.me/#agents";
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -4086,6 +4087,7 @@ export function App() {
     }
 
     const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
+      || hostname === 'a11.funesterie.me'
       || hostname === 'a11.funesterie.pro'
       || hostname === 'alphaonze.funesterie.pro'
       || hostname === 'funesterie.pro'
@@ -4314,6 +4316,7 @@ export function App() {
   const toggleLockRef = useRef(false);
   const sendLockRef = useRef(false);
   const pendingMessageKeyRef = useRef("");
+  const pendingSubmitAtRef = useRef(0);
   const lastCompletedMessageRef = useRef({ key: "", at: 0 });
   const authStorageScope = useMemo(
     () => (isAuthenticated ? getAuthStorageScope() : ""),
@@ -5027,14 +5030,20 @@ export function App() {
     if (!files || files.length === 0) return;
     const allFiles = Array.from(files);
     const importKey = allFiles
-      .map((file) => `${file.name}:${file.size}:${file.type}:${file.lastModified}`)
+      .map((file) => {
+        const name = String(file.name || "").trim();
+        const stableName = /^paste-\d+\.[a-z0-9]+$/i.test(name)
+          ? "clipboard-image"
+          : name;
+        return `${stableName}:${file.size}:${file.type}`;
+      })
       .sort()
       .join("|");
     const now = Date.now();
     if (
       importKey
       && recentFileImportRef.current.key === importKey
-      && now - recentFileImportRef.current.at < 1500
+      && now - recentFileImportRef.current.at < 3000
     ) {
       console.info("[A11] duplicate file import ignored", importKey);
       return;
@@ -5230,6 +5239,18 @@ export function App() {
     const sourceImageUrl = previewImageUrl || undefined;
     const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
     if (!effectiveText) return;
+    const submitKey = normalizeOutgoingMessageKey(`${effectiveText}\n${sourceImageUrl || ""}`);
+    const now = Date.now();
+    if (
+      submitKey
+      && pendingMessageKeyRef.current === submitKey
+      && now - pendingSubmitAtRef.current < 2500
+    ) {
+      console.info("[A11] duplicate message submit ignored", submitKey);
+      return;
+    }
+    pendingMessageKeyRef.current = submitKey;
+    pendingSubmitAtRef.current = now;
     void unlockAudioOutput();
 
     // Afficher le message utilisateur immédiatement : sans bloquer l'input
@@ -7187,21 +7208,6 @@ export function App() {
             onDrop={(e) => {
               e.stopPropagation();
               void onComposerDrop(e);
-            }}
-            onPaste={async (e) => {
-  // Paste global sur le composer (hors textarea) : images et fichiers
-              const items = e.clipboardData?.items;
-              if (!items) return;
-              const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
-              if (imageItem) {
-                e.preventDefault();
-                const file = imageItem.getAsFile();
-                if (file) {
-                  const renamedFile = new File([file], `paste-${Date.now()}.png`, { type: file.type });
-                  const fileList = Object.assign([renamedFile], { item: (i: number) => [renamedFile][i] }) as unknown as FileList;
-                  await handleImportedFiles(fileList);
-                }
-              }
             }}
           >
             {/* Console d'activite */}

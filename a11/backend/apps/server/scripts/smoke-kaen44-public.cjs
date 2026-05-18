@@ -6,7 +6,7 @@ const https = require('node:https');
 
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 30000);
 
-const a11Base = (process.env.A11_PUBLIC_BASE || 'https://a11.funesterie.pro').replace(/\/$/, '');
+const a11Base = (process.env.A11_PUBLIC_BASE || 'https://a11.funesterie.me').replace(/\/$/, '');
 const kaen44Base = (process.env.KAEN44_PUBLIC_BASE || 'https://k44.funesterie.me').replace(/\/$/, '');
 const funesterieBase = (process.env.FUNESTERIE_PUBLIC_BASE || 'https://funesterie.me').replace(/\/$/, '');
 const renderBase = (process.env.KAEN44_RENDER_BASE || 'https://kaen44-api.onrender.com').replace(/\/$/, '');

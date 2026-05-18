@@ -126,7 +126,7 @@ function getRequestOrigin(req) {
 
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim() || 'https';
-  return host ? `${proto}://${host}` : 'https://a11.funesterie.pro';
+  return host ? `${proto}://${host}` : 'https://a11.funesterie.me';
 }
 
 function createPaypalRouter({ db = null, fetchImpl = globalThis.fetch } = {}) {
