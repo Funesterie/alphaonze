@@ -6457,7 +6457,7 @@ app.use('/api/vivy/alexa', createVivyAlexaRouter({ runtimeRoot: PUBLIC_RUNTIME_R
 console.log('[Server] Vivy Alexa routes mounted under /api/vivy/alexa');
 
 const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
-app.use('/api/vivy/studio', createVivyStudioRouter());
+app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
 // Qflush Flow — A11 contrôle ses flows directement (Jarvis mode)

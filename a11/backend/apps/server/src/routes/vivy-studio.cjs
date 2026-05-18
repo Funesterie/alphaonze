@@ -1,7 +1,9 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('node:crypto');
 const path = require('node:path');
+const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
 const {
   buildMediaPipeline,
   buildRoutingLines,
@@ -12,6 +14,17 @@ const {
   createEmergencyVideoAsset,
   getEmergencyMediaAssetPath,
 } = require('../media/emergency-media.cjs');
+const {
+  addEpisode,
+  getEpisodes,
+} = require('../../lib/episodic-memory.cjs');
+
+let OpenAI = null;
+try {
+  OpenAI = require('openai');
+} catch (_) {
+  OpenAI = null;
+}
 
 const MODES = new Set(['voice', 'song', 'share']);
 
@@ -52,6 +65,169 @@ function compactUniqueLines(items, max = 2400) {
   }
 
   return cleanText(lines.join('\n\n'), max);
+}
+
+function hashShort(value, max = 24) {
+  return crypto
+    .createHash('sha256')
+    .update(String(value || ''))
+    .digest('hex')
+    .slice(0, max);
+}
+
+function getVivyOpenAIConfig() {
+  const baseURL = process.env.VIVY_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+  const normalizedBaseUrl = String(baseURL || '');
+  const apiKey = /groq/i.test(normalizedBaseUrl)
+    ? (process.env.VIVY_GROQ_API_KEY || process.env.GROQ_API_KEY || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
+    : (/openrouter\.ai/i.test(normalizedBaseUrl)
+      ? (process.env.VIVY_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
+      : (process.env.VIVY_OPENAI_API_KEY || process.env.OPENAI_API_KEY || process.env.A11_OPENAI_API_KEY));
+  const model = cleanOneLine(
+    process.env.VIVY_CHAT_MODEL || process.env.A11_OPENAI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    'gpt-4o-mini',
+    80
+  );
+
+  return { baseURL, apiKey: String(apiKey || '').trim(), model };
+}
+
+function createVivyOpenAIClient() {
+  if (!OpenAI) return null;
+  const config = getVivyOpenAIConfig();
+  if (!config.apiKey) return null;
+  return {
+    client: new OpenAI({
+      baseURL: config.baseURL,
+      apiKey: config.apiKey,
+      defaultHeaders: {
+        'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
+      },
+    }),
+    model: config.model,
+  };
+}
+
+function resolveVivyMemoryUser(req, input = {}) {
+  const authenticated = cleanOneLine(
+    req?.user?.id || req?.user?.email || req?.user?.username,
+    '',
+    120
+  );
+  if (authenticated) return `user:${authenticated}`;
+
+  const conversationId = cleanOneLine(input.conversationId, '', 120);
+  if (conversationId) return `vivy-public:${hashShort(conversationId)}`;
+
+  const token = extractRequestAuthToken(req);
+  if (token) return `vivy-token:${hashShort(token)}`;
+
+  const requestHint = [
+    req?.ip,
+    req?.socket?.remoteAddress,
+    req?.headers?.['user-agent'],
+  ].join('|');
+  return `vivy-session:${hashShort(requestHint || 'anonymous')}`;
+}
+
+function normalizeVivyFileAttachment(file) {
+  if (!file || typeof file !== 'object') return null;
+  const filename = cleanOneLine(file.filename || file.name || file.originalName, '', 180);
+  if (!filename) return null;
+
+  const contentType = cleanOneLine(file.contentType || file.type, 'application/octet-stream', 120);
+  const size = Number(file.sizeBytes ?? file.size ?? 0);
+  return {
+    id: cleanOneLine(file.id || file.storageKey || filename, filename, 180),
+    filename,
+    contentType,
+    sizeBytes: Number.isFinite(size) && size > 0 ? size : 0,
+    url: cleanOneLine(file.url || file.downloadUrl, '', 800),
+    description: cleanText(file.description || file.summary, 900),
+    textPreview: cleanText(file.textPreview || file.preview || file.excerpt, 1800),
+    uploaded: file.uploaded === true,
+  };
+}
+
+function normalizeVivyFiles(input = {}) {
+  const files = Array.isArray(input.files) ? input.files : [];
+  return files.map(normalizeVivyFileAttachment).filter(Boolean).slice(0, 6);
+}
+
+function formatFileSize(sizeBytes = 0) {
+  const size = Number(sizeBytes || 0);
+  if (!Number.isFinite(size) || size <= 0) return '';
+  if (size < 1024) return `${size} o`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} Ko`;
+  return `${(size / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function formatVivyFilesForPrompt(files = []) {
+  if (!files.length) return '';
+  return files.map((file, index) => {
+    const details = [
+      `Fichier ${index + 1}: ${file.filename}`,
+      file.contentType ? `type ${file.contentType}` : '',
+      file.sizeBytes ? `taille ${formatFileSize(file.sizeBytes)}` : '',
+      file.url ? `stocke ${file.url}` : '',
+      file.description ? `description ${file.description}` : '',
+      file.textPreview ? `extrait:\n${file.textPreview}` : '',
+    ].filter(Boolean);
+    return details.join('\n');
+  }).join('\n\n');
+}
+
+function buildVivyMemoryContext(userId) {
+  const result = getEpisodes(userId, { limit: 8, days: 45 });
+  if (!result?.ok || !Array.isArray(result.episodes) || !result.episodes.length) return '';
+  return result.episodes
+    .filter((episode) => String(episode?.type || '').startsWith('vivy_'))
+    .slice(-6)
+    .map((episode) => `- ${cleanText(episode.content, 420)}`)
+    .filter(Boolean)
+    .join('\n');
+}
+
+function rememberVivyEpisode(userId, type, content, metadata = {}) {
+  try {
+    const result = addEpisode(userId, type, cleanText(content, 1800), {
+      ...metadata,
+      private: true,
+      source: 'vivy-studio-chat',
+    });
+    if (result?.ok) {
+      return { stored: true, episodeId: result.episode?.id || null, totalEpisodes: result.totalEpisodes };
+    }
+  } catch (_) {
+    // Memory must never break the chat.
+  }
+  return { stored: false };
+}
+
+function buildVivySystemPrompt(mode) {
+  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scene/publication' : 'chanson/idee';
+  return [
+    'Tu es Vivy, une IA musicale et creative de Funesterie.',
+    'Tu n es pas une boite a ordres: tu dialogues, tu comprends l intention, tu aides a faire evoluer les idees et tu les ranges en memoire semantique privee.',
+    `Mode courant: ${modeLabel}.`,
+    'Reponds en francais naturel, chaleureux, precis, sans liste mecanique quand une conversation suffit.',
+    'Quand une idee arrive, reformule ce que tu as compris, propose une direction exploitable et ajoute une petite suite concrete.',
+    'Si l utilisateur veut changer ta voix, demande un court fichier audio de reference et rappelle qu il reste prive pour son compte.',
+    'Si des fichiers sont joints, integre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
+    'Ne revele jamais de secret, token, chemin prive sensible ou configuration interne.',
+  ].join('\n');
+}
+
+function normalizeVivyChatHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .slice(-10)
+    .map((entry) => {
+      const role = String(entry?.role || '').toLowerCase() === 'assistant' ? 'assistant' : 'user';
+      const content = cleanText(entry?.content, 900);
+      return content ? { role, content } : null;
+    })
+    .filter(Boolean);
 }
 
 function buildRouting(mode = 'song') {
@@ -229,6 +405,7 @@ function summarizeChatMessage(message = '') {
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
   const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
+  const files = normalizeVivyFiles(input);
   const history = Array.isArray(input.history)
     ? input.history
       .slice(-6)
@@ -251,11 +428,15 @@ function buildVivyChat(input) {
     ? production.actions.filter((action) => action?.ready).map((action) => action.label).slice(0, 3)
     : [];
   const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scene / partage' : 'composition';
+  const fileLine = files.length
+    ? `J'ai aussi note ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
+    : '';
   const assistant = [
-    'Je suis Vivy. Je pars de ton message.',
-    `Lecture: ${summarizeChatMessage(message)}`,
-    `Direction: ${modeLabel}. ${production.summary}`,
-    readyActions.length ? `Actions pretes: ${readyActions.join(', ')}.` : 'Action prete: clarifier le theme et preparer le brief.',
+    `Je te suis. Je garde cette idee dans le fil Vivy et je pars sur ${modeLabel}.`,
+    `Ce que je comprends: ${summarizeChatMessage(message)}`,
+    fileLine,
+    production.summary,
+    readyActions.length ? `Je peux deja preparer: ${readyActions.join(', ')}.` : 'Je peux clarifier le theme et preparer une premiere direction.',
     mode === 'voice'
       ? 'Envoie-moi une intention de timbre, une phrase test ou une reference vocale, et je te fais une calibration propre.'
       : mode === 'share'
@@ -274,7 +455,91 @@ function buildVivyChat(input) {
     routing: production.routing,
     tokenStored: false,
     writesByDefault: false,
+    aiMode: 'fallback',
+    files,
   };
+}
+
+async function buildVivyAiChat(input, req) {
+  const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
+  const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
+  const files = normalizeVivyFiles(input);
+  const fallback = buildVivyChat({ ...input, files, mode });
+  const userId = resolveVivyMemoryUser(req, input);
+  const fileContext = formatVivyFilesForPrompt(files);
+  const memoryText = compactUniqueLines([
+    message ? `Message: ${message}` : '',
+    fileContext ? `Fichiers:\n${fileContext}` : '',
+  ], 1800);
+  const semanticMemory = memoryText
+    ? rememberVivyEpisode(userId, 'vivy_idea', memoryText, {
+      mode,
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      fileCount: files.length,
+    })
+    : { stored: false };
+
+  const llmBundle = createVivyOpenAIClient();
+  if (!llmBundle || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
+    return {
+      ...fallback,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  try {
+    const memoryContext = buildVivyMemoryContext(userId);
+    const history = normalizeVivyChatHistory(input.history);
+    const userContent = compactUniqueLines([
+      message,
+      fileContext ? `Pieces jointes et contexte fichier:\n${fileContext}` : '',
+    ], 4200) || 'Continue la conversation Vivy avec douceur et precision.';
+
+    const messages = [
+      { role: 'system', content: buildVivySystemPrompt(mode) },
+      memoryContext ? { role: 'system', content: `Memoire Vivy recente, privee pour cette session:\n${memoryContext}` } : null,
+      ...history,
+      { role: 'user', content: userContent },
+    ].filter(Boolean);
+
+    const completion = await llmBundle.client.chat.completions.create({
+      model: llmBundle.model,
+      messages,
+      temperature: Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
+      max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
+    });
+    const assistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
+    if (!assistant) {
+      return {
+        ...fallback,
+        semanticMemory,
+        memoryStored: semanticMemory.stored,
+      };
+    }
+
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode,
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+    });
+
+    return {
+      ...fallback,
+      assistant,
+      content: assistant,
+      aiMode: 'llm',
+      model: llmBundle.model,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  } catch (error) {
+    return {
+      ...fallback,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+      llmError: cleanOneLine(error?.message || error, 'vivy_llm_failed', 180),
+    };
+  }
 }
 
 function buildVivyStudioProduction(input) {
@@ -359,8 +624,12 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
   return null;
 }
 
-function createVivyStudioRouter() {
+function createVivyStudioRouter({ verifyJWT } = {}) {
   const router = express.Router();
+  const optionalAuth = (req, res, next) => {
+    if (typeof verifyJWT !== 'function' || !extractRequestAuthToken(req)) return next();
+    return verifyJWT(req, res, next);
+  };
 
   router.get('/assets/:filename', async (req, res) => {
     try {
@@ -394,6 +663,11 @@ function createVivyStudioRouter() {
       },
       tokenStored: false,
       writesByDefault: false,
+      conversationalAi: {
+        enabled: Boolean(createVivyOpenAIClient()),
+        memory: 'episodic-private',
+        files: true,
+      },
       emergencyMedia: {
         audio: true,
         video: true,
@@ -433,12 +707,12 @@ function createVivyStudioRouter() {
     }
   });
 
-  router.post('/chat', express.json({ limit: '96kb' }), async (req, res) => {
+  router.post('/chat', optionalAuth, express.json({ limit: '512kb' }), async (req, res) => {
     try {
-      res.json(buildVivyChat({
+      res.json(await buildVivyAiChat({
         ...(req.body || {}),
         shareToken: undefined,
-      }));
+      }, req));
     } catch (error) {
       res.status(500).json({
         ok: false,
@@ -455,4 +729,5 @@ module.exports = {
   createVivyStudioRouter,
   buildVivyStudioProduction,
   buildVivyChat,
+  buildVivyAiChat,
 };

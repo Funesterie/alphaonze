@@ -1294,12 +1294,26 @@ export type VivyStudioMedia = {
   filename?: string;
 };
 
+export type VivyChatFileAttachment = {
+  id?: string;
+  filename: string;
+  contentType?: string;
+  sizeBytes?: number;
+  url?: string;
+  downloadUrl?: string;
+  description?: string;
+  textPreview?: string;
+  uploaded?: boolean;
+};
+
 export type VivyStudioProductionInput = {
   mode: VivyStudioMode;
   message?: string;
   prompt?: string;
   text?: string;
   history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string; ts?: string }>;
+  conversationId?: string;
+  files?: VivyChatFileAttachment[];
   voiceTool?: string;
   voiceInstruction?: string;
   voiceFileName?: string;
@@ -1330,6 +1344,15 @@ export type VivyStudioProductionResult = {
   videoUrl?: string;
   video_url?: string;
   tokenStored?: boolean;
+  aiMode?: 'llm' | 'fallback' | string;
+  model?: string;
+  memoryStored?: boolean;
+  semanticMemory?: {
+    stored?: boolean;
+    episodeId?: string | null;
+    totalEpisodes?: number;
+  };
+  files?: VivyChatFileAttachment[];
   error?: string;
   message?: string;
 };
@@ -1359,6 +1382,8 @@ export async function chatWithVivy(
     message?: string;
     history?: VivyStudioProductionInput['history'];
     mode?: VivyStudioMode;
+    conversationId?: string;
+    files?: VivyChatFileAttachment[];
   }
 ): Promise<VivyStudioProductionResult> {
   const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {

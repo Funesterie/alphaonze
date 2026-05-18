@@ -1,9 +1,20 @@
-const test = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
+const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+
+const vivyMemoryDir = path.join(os.tmpdir(), `vivy-studio-test-memory-${process.pid}`);
+process.env.A11_EPISODIC_MEMORY_DIR = vivyMemoryDir;
+process.env.VIVY_CHAT_DISABLE_LLM = 'true';
 
 const { createVivyStudioRouter, buildVivyStudioProduction } = require('../src/routes/vivy-studio.cjs');
+
+after(() => {
+  fs.rmSync(vivyMemoryDir, { recursive: true, force: true });
+});
 
 async function withServer(registerRoutes, runAssertions) {
   const app = express();
@@ -87,4 +98,29 @@ test('song mode accepts natural aliases from client prompts', () => {
   assert.match(result.brief, /Tokyo sous la pluie/);
   assert.match(result.brief, /Neons sur le sol/);
   assert.match(result.brief, /refrain lumineux/);
+});
+
+test('POST /api/vivy/studio/chat stores semantic context and accepts file metadata', async () => {
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter());
+  }, async (baseUrl) => {
+    const { response, json } = await postJson(baseUrl, '/api/vivy/studio/chat', {
+      conversationId: 'vivy-test-conversation',
+      message: 'Garde cette idee de chanson intime pour Vivy.',
+      files: [{
+        filename: 'idee-vivy.txt',
+        contentType: 'text/plain',
+        sizeBytes: 54,
+        textPreview: 'Nossen sous la pluie, voix proche, refrain doux.',
+      }],
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.service, 'vivy-chat');
+    assert.equal(json.memoryStored, true);
+    assert.equal(json.semanticMemory.stored, true);
+    assert.match(json.assistant, /Vivy|idee/i);
+    assert.doesNotMatch(JSON.stringify(json), /secret-token-value/);
+  });
 });

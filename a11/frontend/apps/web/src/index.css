@@ -4372,6 +4372,44 @@ html.vivy-public-page-root .vivy-public-shell {
   line-height: 1.48;
 }
 
+.vivy-chat-file-list,
+.vivy-chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vivy-chat-file-list span,
+.vivy-chat-attachments span {
+  max-width: min(100%, 360px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border: 1px solid rgba(240, 121, 216, 0.24);
+  border-radius: 999px;
+  padding: 0 9px;
+  background: rgba(240, 121, 216, 0.1);
+  color: #f7d6ef;
+  font-size: 12px;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vivy-chat-attachments {
+  margin-top: 10px;
+}
+
+.vivy-chat-attachments button {
+  min-height: 22px;
+  width: 22px;
+  padding: 0;
+  border-radius: 999px;
+  line-height: 1;
+}
+
 .vivy-chat-compose {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

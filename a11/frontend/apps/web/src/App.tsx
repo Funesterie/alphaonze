@@ -46,6 +46,7 @@ import {
   type RemoteProviderSaveInput,
   type TechnicalMemoSummaryResponse,
   type TtsVoiceReference,
+  type VivyChatFileAttachment,
   type A11PortraitFrame,
   type A11PortraitFramebook,
 } from "./lib/api";
@@ -1743,13 +1744,19 @@ type VivyStudioMediaPreview = {
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat";
+const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
+
+type VivyPublicChatFile = VivyChatFileAttachment & {
+  uploadState?: "stored" | "local";
+};
 
 type VivyPublicChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   ts: string;
+  files?: VivyPublicChatFile[];
 };
 
 const VIVY_STUDIO_MODES: Array<{
@@ -1798,6 +1805,23 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
         role: entry?.role === "user" ? "user" as const : "assistant" as const,
         content: String(entry?.content || "").trim(),
         ts: String(entry?.ts || new Date().toISOString()),
+        files: Array.isArray(entry?.files)
+          ? entry.files
+            .map((file: any) => ({
+              id: String(file?.id || file?.storageKey || file?.filename || file?.name || ""),
+              filename: String(file?.filename || file?.name || "").trim(),
+              contentType: String(file?.contentType || file?.type || "").trim(),
+              sizeBytes: Number(file?.sizeBytes || file?.size || 0) || 0,
+              url: String(file?.url || file?.downloadUrl || "").trim(),
+              downloadUrl: String(file?.downloadUrl || file?.url || "").trim(),
+              description: String(file?.description || "").trim(),
+              textPreview: String(file?.textPreview || "").trim(),
+              uploaded: file?.uploaded === true,
+              uploadState: file?.uploadState === "stored" ? "stored" as const : "local" as const,
+            }))
+            .filter((file: VivyPublicChatFile) => file.filename)
+            .slice(0, 6)
+          : undefined,
       }))
       .filter((entry) => entry.content);
     return messages.length ? messages.slice(-24) : [buildVivyGreeting()];
@@ -1812,6 +1836,53 @@ function writeVivyPublicChat(messages: VivyPublicChatMessage[]) {
   } catch {
     // Local history is best effort only.
   }
+}
+
+function getVivyConversationStorageKey() {
+  try {
+    return `${VIVY_PUBLIC_CONVERSATION_ID_KEY}:${getAuthStorageScope() || "public"}`;
+  } catch {
+    return `${VIVY_PUBLIC_CONVERSATION_ID_KEY}:public`;
+  }
+}
+
+function readOrCreateVivyConversationId() {
+  try {
+    const key = getVivyConversationStorageKey();
+    const existing = String(globalThis.localStorage?.getItem(key) || "").trim();
+    if (existing) return existing;
+    const next = `vivy-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    globalThis.localStorage?.setItem(key, next);
+    return next;
+  } catch {
+    return `vivy-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function formatVivyFileSize(sizeBytes?: number) {
+  const size = Number(sizeBytes || 0);
+  if (!Number.isFinite(size) || size <= 0) return "";
+  if (size < 1024) return `${size} o`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} Ko`;
+  return `${(size / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function canReadVivyFilePreview(file: File) {
+  const name = file.name.toLowerCase();
+  return file.size <= 90_000 && (
+    file.type.startsWith("text/")
+    || /\.(txt|md|markdown|json|csv|srt|vtt|lyrics?|prompt)$/i.test(name)
+  );
+}
+
+function readVivyFileTextPreview(file: File): Promise<string> {
+  if (!canReadVivyFilePreview(file)) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve("");
+    reader.onload = () => resolve(String(reader.result || "").slice(0, 6000));
+    reader.readAsText(file);
+  });
 }
 
 function getVivyVoiceReferenceStorageKey() {
@@ -2310,13 +2381,16 @@ function VivyStudioLab() {
 
 function VivyPublicChat() {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => readVivyPublicChat());
+  const [conversationId] = useState(() => readOrCreateVivyConversationId());
   const [draft, setDraft] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<VivyPublicChatFile[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [status, setStatus] = useState("");
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     writeVivyPublicChat(messages);
@@ -2328,28 +2402,43 @@ function VivyPublicChat() {
 
   async function sendMessage(textOverride?: string) {
     const text = String(textOverride ?? draft).trim();
-    if (!text || isSending) return;
+    const filesForMessage = attachedFiles.slice(0, 6);
+    if ((!text && !filesForMessage.length) || isSending) return;
 
     const now = new Date().toISOString();
     const userMessage: VivyPublicChatMessage = {
       id: `vivy-user-${Date.now()}`,
       role: "user",
-      content: text,
+      content: text || "J'ajoute ces fichiers pour Vivy.",
       ts: now,
+      files: filesForMessage,
     };
     const nextMessages = [...messages, userMessage].slice(-24);
     const voiceChangeRequested = isVivyVoiceChangeRequest(text);
     setMessages(nextMessages);
     setDraft("");
+    setAttachedFiles([]);
     setIsSending(true);
     setAwaitingVoiceReference(voiceChangeRequested);
     setStatus(voiceChangeRequested
       ? (voiceReferenceName ? `Reference voix active: ${voiceReferenceName}` : "Vivy attend un audio de reference")
-      : "Vivy ecoute...");
+      : "Vivy ecoute et range l'idee...");
 
     try {
       const payload = await chatWithVivy({
-        message: text,
+        message: text || userMessage.content,
+        conversationId,
+        files: filesForMessage.map((file) => ({
+          id: file.id,
+          filename: file.filename,
+          contentType: file.contentType,
+          sizeBytes: file.sizeBytes,
+          url: file.url || file.downloadUrl,
+          downloadUrl: file.downloadUrl,
+          description: file.description,
+          textPreview: file.textPreview,
+          uploaded: file.uploaded,
+        })),
         history: nextMessages.map((entry) => ({
           role: entry.role,
           content: entry.content,
@@ -2368,7 +2457,12 @@ function VivyPublicChat() {
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
-      setStatus(payload.mode ? `Mode ${payload.mode}` : "Vivy prete");
+      const memoryText = payload.semanticMemory?.stored || payload.memoryStored
+        ? "Idee rangee dans la memoire Vivy"
+        : "Vivy prete";
+      setStatus(payload.aiMode === "llm"
+        ? `${memoryText} - IA active`
+        : memoryText);
     } catch (error: any) {
       const voiceFailureInstruction = voiceChangeRequested
         ? "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte."
@@ -2412,9 +2506,55 @@ function VivyPublicChat() {
     }
   }
 
+  async function onVivyConversationFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files || []).slice(0, 4);
+    event.target.value = "";
+    if (!selected.length) return;
+
+    setStatus("Vivy ajoute les fichiers au contexte...");
+    const nextFiles: VivyPublicChatFile[] = [];
+    for (const file of selected) {
+      const textPreview = await readVivyFileTextPreview(file);
+      const baseFile: VivyPublicChatFile = {
+        id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        filename: file.name,
+        contentType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        description: textPreview ? "Extrait texte lu localement pour Vivy." : "Fichier joint a la conversation Vivy.",
+        textPreview,
+        uploaded: false,
+        uploadState: "local",
+      };
+
+      try {
+        const upload = await uploadConversationFile(file, { conversationId });
+        const resource = upload.conversationResource || upload.file || null;
+        nextFiles.push({
+          ...baseFile,
+          id: String(resource?.id || resource?.storageKey || baseFile.id),
+          url: resource?.url,
+          downloadUrl: resource?.downloadUrl || resource?.url,
+          contentType: resource?.contentType || baseFile.contentType,
+          sizeBytes: resource?.sizeBytes || baseFile.sizeBytes,
+          uploaded: true,
+          uploadState: "stored",
+        });
+      } catch {
+        nextFiles.push(baseFile);
+      }
+    }
+
+    setAttachedFiles((current) => [...current, ...nextFiles].slice(-6));
+    const stored = nextFiles.filter((file) => file.uploadState === "stored").length;
+    setStatus(stored
+      ? `${nextFiles.length} fichier${nextFiles.length > 1 ? "s" : ""} pret${nextFiles.length > 1 ? "s" : ""} pour Vivy`
+      : "Fichiers ajoutes en contexte local");
+  }
+
   function resetChat() {
     const next = [buildVivyGreeting()];
     setMessages(next);
+    setAttachedFiles([]);
     setStatus("Conversation remise a zero");
   }
 
@@ -2433,6 +2573,15 @@ function VivyPublicChat() {
           <article key={message.id} className={`vivy-chat-message vivy-chat-message--${message.role}`}>
             <span>{message.role === "user" ? "Vous" : "Vivy"}</span>
             <p>{message.content}</p>
+            {message.files?.length ? (
+              <div className="vivy-chat-file-list" aria-label="Fichiers joints au message">
+                {message.files.map((file) => (
+                  <span key={`${message.id}-${file.id || file.filename}`}>
+                    {file.filename}{file.sizeBytes ? ` - ${formatVivyFileSize(file.sizeBytes)}` : ""}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </article>
         ))}
         {isSending && (
@@ -2455,9 +2604,26 @@ function VivyPublicChat() {
           <button type="button" onClick={() => void sendMessage("Prepare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
           <button type="button" onClick={() => void sendMessage("Transforme cette idee en chanson Vivy avec structure et refrain.")}>Chanson</button>
           <button type="button" onClick={() => void sendMessage("Prepare une scene courte pour publier Vivy en clip vertical.")}>Scene</button>
-          <button type="submit" disabled={isSending || !draft.trim()}>Envoyer</button>
+          <button type="button" onClick={() => fileInputRef.current?.click()}>Fichier</button>
+          <button type="submit" disabled={isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
       </form>
+      {attachedFiles.length ? (
+        <div className="vivy-chat-attachments" aria-label="Fichiers prets pour Vivy">
+          {attachedFiles.map((file) => (
+            <span key={file.id || file.filename}>
+              {file.filename}{file.sizeBytes ? ` - ${formatVivyFileSize(file.sizeBytes)}` : ""}
+              <button
+                type="button"
+                aria-label={`Retirer ${file.filename}`}
+                onClick={() => setAttachedFiles((current) => current.filter((entry) => entry !== file))}
+              >
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       {(awaitingVoiceReference || voiceReferenceName) && (
         <div className="vivy-chat-reference">
           <span>{voiceReferenceName ? `Ref voix: ${voiceReferenceName}` : "Ref voix privee attendue"}</span>
@@ -2471,6 +2637,14 @@ function VivyPublicChat() {
         type="file"
         accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg"
         onChange={onVivyVoiceReferenceChange}
+        hidden
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf"
+        multiple
+        onChange={onVivyConversationFileChange}
         hidden
       />
       {status && <p className="vivy-chat-status">{status}</p>}
