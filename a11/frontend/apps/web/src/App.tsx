@@ -3821,12 +3821,13 @@ function PersonaDashboard({
   const surfaceLinks = getSurfaceLinks();
   const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
   const currentAgentId = isKaen44 ? "kaen44" : "a11";
-  const companionAgentId = isKaen44 ? "a11" : "kaen44";
   const currentAgent = agentShortcuts.find((agent) => agent.id === currentAgentId) ?? agentShortcuts[0];
-  const companionAgent = agentShortcuts.find((agent) => agent.id === companionAgentId) ?? agentShortcuts[1];
   const currentSummary = isKaen44
     ? "Accueil, suivi et organisation quotidienne pour garder le travail lisible."
     : "Préparation des médias, documents, images et notes utiles aux projets.";
+  const currentDetail = isKaen44
+    ? "Kaen44 garde la conversation, les priorités et les dossiers au même endroit."
+    : "A11 accompagne les fichiers, l'image, la vidéo, l'audio et les notes sans panneau inutile.";
 
   return (
     <section className={`k44-agent-strip-panel k44-agent-profile-panel ${isKaen44 ? "" : "a11-agent-strip-panel"}`} aria-label={`${currentAgent.name} présentation`}>
@@ -3835,20 +3836,14 @@ function PersonaDashboard({
         <div className="k44-agent-profile-copy">
           <span>Agent actif</span>
           <h1>{currentAgent.name}</h1>
-          <p>{currentAgent.role}</p>
+          <p className="k44-agent-profile-role">{currentAgent.role}</p>
           <strong>{currentSummary}</strong>
+          <p className="k44-agent-profile-detail">{currentDetail}</p>
           <div className="k44-simple-actions">
             <button type="button" onClick={onStartChat}>Discussion</button>
             <button type="button" onClick={onOpenInspector}>Menu</button>
           </div>
         </div>
-        <a href={companionAgent.href} className={`k44-agent-profile-link k44-agent-profile-link--${companionAgent.id}`}>
-          <img src={companionAgent.image} alt="" />
-          <span>
-            <small>Autre agent</small>
-            <strong>{companionAgent.name}</strong>
-          </span>
-        </a>
       </div>
     </section>
   );

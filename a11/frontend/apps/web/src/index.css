@@ -5858,7 +5858,7 @@ body {
 
 .k44-agent-profile-main {
   display: grid;
-  grid-template-columns: 124px minmax(0, 1fr) minmax(180px, 0.34fr);
+  grid-template-columns: 124px minmax(0, 1fr);
   align-items: center;
   gap: clamp(16px, 2vw, 28px);
 }
@@ -5893,12 +5893,21 @@ body {
   text-shadow: 0 0 28px rgba(183, 108, 255, 0.45);
 }
 
-.k44-agent-profile-copy p {
+.k44-agent-profile-role {
   margin: 0;
   color: var(--k44-purple-soft);
   font-size: 15px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.k44-agent-profile-detail {
+  max-width: 680px;
+  margin: 0;
+  color: #bbaed1;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .k44-agent-profile-copy strong {
@@ -6588,10 +6597,6 @@ body {
 
   .k44-agent-profile-image {
     width: 104px;
-  }
-
-  .k44-agent-profile-link {
-    grid-column: 1 / -1;
   }
 
   .k44-cockpit-header,
