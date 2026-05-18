@@ -1,6 +1,6 @@
 # AlphaOnze Public
 
-Reverse proxy local pour servir A11 sur `alphaonze.funesterie.pro` sans Railway.
+Reverse proxy local pour servir A11 sur `a11.funesterie.me` sans Railway.
 
 Le serveur AlphaOnze standalone retombe maintenant sur `127.0.0.1:8088` par defaut. L'exposition publique doit passer par Caddy uniquement.
 
@@ -40,13 +40,13 @@ Le script `freebox-port-forward.ps1` peut creer une redirection Freebox via l'AP
 
 ## HTTPS
 
-Caddy est configure avec `Caddyfile` pour servir `alphaonze.funesterie.pro` en HTTPS et renvoyer vers A11.
+Caddy est configure avec `Caddyfile` pour servir `a11.funesterie.me` en HTTPS et renvoyer vers A11.
 
-Etat actuel: acces public actif via Freebox `80/443 -> 192.168.1.2:80/443`, puis Caddy `alphaonze.funesterie.pro -> 127.0.0.1:3000`.
+Etat actuel: acces public actif via Freebox `80/443 -> 192.168.1.2:80/443`, puis Caddy `a11.funesterie.me -> 127.0.0.1:3000`.
 
 Pour ce mode, il faut:
 
-- DNS: `alphaonze.funesterie.pro` en `A` vers l'IPv4 publique
+- DNS: `a11.funesterie.me` en `A` vers l'IPv4 publique
 - Freebox: TCP port externe 80 vers `192.168.1.2:80`
 - Freebox: TCP port externe 443 vers `192.168.1.2:443`
 - Freebox OS: acces distant desactive, ping WAN desactive, nouvelles demandes de token desactivees

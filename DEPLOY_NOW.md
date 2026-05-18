@@ -81,7 +81,7 @@ Redéploie le frontend.
 **URLs Finales** :
 
 - Backend : `https://a11-backend.onrender.com`
-- Frontend : `https://alphaonze.funesterie.pro`
+- Frontend : `https://a11.funesterie.me`
 - Health : `https://a11-backend.onrender.com/health`
 
 **Configuration** :

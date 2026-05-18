@@ -38,7 +38,7 @@ Risques:
 
 ## Decision
 
-Visible dans `cp.funesterie.pro`: oui | non | role only
+Visible dans `cp.funesterie.me`: oui | non | role only
 
 Visible hors authentification: oui | non
 

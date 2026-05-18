@@ -36,7 +36,7 @@ Donnees utilisees: fichiers audio/video fournis, metadonnees de publication, lie
 
 Agents impliques: Vivy, A11 en renfort media, cp pour l'entree portail.
 
-Domaine ou chemin: `vivy.funesterie.pro` ou `cp.funesterie.pro/vivy`.
+Domaine ou chemin: `vivy.funesterie.me` ou `cp.funesterie.me/vivy`.
 
 Ce qui doit rester cache: secrets OAuth, tokens, workers, logs, MCP brut, Neo4j brut, outils internes.
 
@@ -44,7 +44,7 @@ Risques: melanger artiste publique, outil connecte et console admin.
 
 ## Decision
 
-Visible dans `cp.funesterie.pro`: oui, module Createur/Media.
+Visible dans `cp.funesterie.me`: oui, module Createur/Media.
 
 Visible hors authentification: oui, vitrine publique limitee.
 

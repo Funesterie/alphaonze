@@ -231,7 +231,7 @@ DEFAULT_ADMIN_PASSWORD=1991
 DEFAULT_ADMIN_EMAIL=djeff@a11.local
 
 # CORS
-CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:5173,http://localhost:3000,https://alphaonze.funesterie.pro
+CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:5173,http://localhost:3000,https://a11.funesterie.me
 ```
 
 ---
@@ -251,7 +251,7 @@ curl -X POST http://localhost:3000/api/chat \
 ### Test 2 : Requête Externe sans Token (doit échouer)
 
 ```bash
-curl -X POST https://alphaonze.funesterie.pro/api/chat \
+curl -X POST https://a11.funesterie.me/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello"}'
 ```
@@ -270,12 +270,12 @@ curl -X POST https://alphaonze.funesterie.pro/api/chat \
 
 ```bash
 # 1. Obtenir un token
-TOKEN=$(curl -X POST https://alphaonze.funesterie.pro/api/auth/login \
+TOKEN=$(curl -X POST https://a11.funesterie.me/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"Djeff","password":"1991"}' | jq -r '.token')
 
 # 2. Utiliser le token
-curl -X POST https://alphaonze.funesterie.pro/api/chat \
+curl -X POST https://a11.funesterie.me/api/chat \
   -H "X-NEZ-TOKEN: $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello"}'
@@ -355,7 +355,7 @@ ollama pull gemma4:e4b
    curl http://localhost:3000/api/chat -d '{"message":"Hello"}'
 
    # Externe (doit échouer sans token)
-   curl https://alphaonze.funesterie.pro/api/chat -d '{"message":"Hello"}'
+   curl https://a11.funesterie.me/api/chat -d '{"message":"Hello"}'
    ```
 
 ### Production (Railway)
@@ -370,7 +370,7 @@ ollama pull gemma4:e4b
 2. **Vérifier les CORS** :
 
    ```bash
-   CORS_ORIGINS=https://a11.funesterie.pro,https://alphaonze.funesterie.pro
+   CORS_ORIGINS=https://a11.funesterie.me,https://a11.funesterie.me
    ```
 
 3. **Workspace Ollama** : Non applicable (Railway n'utilise pas Ollama local)

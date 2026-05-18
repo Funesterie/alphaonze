@@ -6178,7 +6178,7 @@ function isLocalControlOrigin(req) {
   return candidates.some((value) =>
     value.includes('127.0.0.1') ||
     value.includes('localhost') ||
-    value.includes('api.funesterie.me')
+    value.includes('a11.funesterie.me')
   );
 }
 

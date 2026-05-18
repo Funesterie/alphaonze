@@ -154,7 +154,7 @@ Créer un nouveau service Render :
 2. **GitHub** → Activer Dependabot + Secret scanning (2 minutes)
 3. **Render** → Ajouter `JWT_SECRET` + `GROQ_API_KEY` (1 minute)
 4. **Render** → Clear build cache & deploy (5 minutes)
-5. **Tester** → https://alphaonze.funesterie.pro (vérifier que A11 répond)
+5. **Tester** → https://a11.funesterie.me (vérifier que A11 répond)
 
 ---
 

@@ -212,7 +212,7 @@
       "properties": {
         "a11.serverUrl": {
           "type": "string",
-          "default": "https://a11.funesterie.pro",
+          "default": "https://a11.funesterie.me",
           "description": "URL du serveur A11 utilise par la VSIX de production"
         },
         "a11.googleClientId": {

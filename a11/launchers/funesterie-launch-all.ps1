@@ -214,7 +214,7 @@ function Start-CaddyIfNeeded {
     (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages\CaddyServer.Caddy_Microsoft.Winget.Source_8wekyb3d8bbwe\caddy.exe')
   )
   if (-not $caddy) {
-    Write-WarnLine 'Caddy introuvable, alphaonze.funesterie.pro ne peut pas demarrer en HTTPS local.'
+    Write-WarnLine 'Caddy introuvable, a11.funesterie.me ne peut pas demarrer en HTTPS local.'
     return
   }
 
@@ -303,7 +303,7 @@ try {
 
   Write-Info 'Termine.'
   Write-Info 'A11 local: http://127.0.0.1:3000'
-  Write-Info 'A11 public: https://alphaonze.funesterie.pro/'
+  Write-Info 'A11 public: https://a11.funesterie.me/'
 }
 finally {
   Complete

@@ -35,7 +35,7 @@ $bundle = Build-ServiceDefinitions `
   -LocalTtsUrl 'http://127.0.0.1:5002' `
   -LocalLlmUrl 'http://127.0.0.1:4545' `
   -LocalQflushUrl 'http://127.0.0.1:43421' `
-  -PublicApiUrl 'https://alphaonze.funesterie.pro' `
+  -PublicApiUrl 'https://a11.funesterie.me' `
   -WebDistDirectory (Join-Path $launcherDirectory '..\frontend\apps\web\dist')
 
 $llmService = $bundle.Services | Where-Object { $_.Key -eq 'llm' } | Select-Object -First 1

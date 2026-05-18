@@ -19,7 +19,7 @@
   2. **Premium A11** (2,99€/mois) - gradient rose
 - Rotation toutes les 10 secondes
 - Liens cliquables :
-  - Blueprint → `mailto:djeff@funesterie.pro`
+  - Blueprint → `mailto:djeff@funesterie.me`
   - Premium → `/subscription`
 
 **Test :**
@@ -269,7 +269,7 @@ Voir `a11/backend/apps/server/MULTI_LLM_SETUP.md` pour :
    - Vérifier le déploiement sur Render
 
 4. **Tester** :
-   - Vérifier les publicités sur https://alphaonze.funesterie.pro
+   - Vérifier les publicités sur https://a11.funesterie.me
    - Vérifier le fallback LLM avec `/api/llm/active`
 
 ---

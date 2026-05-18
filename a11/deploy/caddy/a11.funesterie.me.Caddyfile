@@ -1,4 +1,4 @@
-a11.funesterie.pro, alphaonze.funesterie.pro, api.funesterie.pro {
+a11.funesterie.me {
 	encode zstd gzip
 
 	@blocked_admin path /api/v1/vs/* /api/v1/fs/* /api/admin/* /api/tools/run /api/browse* /api/agent/shell* /api/runtime*

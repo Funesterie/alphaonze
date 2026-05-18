@@ -174,7 +174,7 @@ Le **A11 Blueprint** est le **code source complet** du système A11, prêt à d�
 
 ### 4. Support
 
-- Email : djeff@funesterie.pro
+- Email : djeff@funesterie.me
 - Discord : Serveur privé Blueprint
 - Réponse sous 48h (jours ouvrés)
 
@@ -182,9 +182,9 @@ Le **A11 Blueprint** est le **code source complet** du système A11, prêt à d�
 
 **Intéressé par le Blueprint ?**
 
-- 📧 Email : djeff@funesterie.pro
+- 📧 Email : djeff@funesterie.me
 - 💬 Discord : [Serveur Funesterie](https://discord.gg/funesterie)
-- 🌐 Site : https://alphaonze.funesterie.pro
+- 🌐 Site : https://a11.funesterie.me
 
 **Questions fréquentes :**
 
@@ -201,10 +201,10 @@ A: Oui, garantie satisfait ou remboursé 14 jours si le Blueprint ne correspond 
 A: Oui, pendant 6 mois. Après, vous pouvez souscrire au Support Étendu (500€/mois) pour continuer à recevoir les mises à jour.
 
 **Q: Puis-je voir une démo avant d'acheter ?**
-A: Oui, testez A11 gratuitement sur https://alphaonze.funesterie.pro pour voir les fonctionnalités en action.
+A: Oui, testez A11 gratuitement sur https://a11.funesterie.me pour voir les fonctionnalités en action.
 
 ---
 
 **Prêt à lancer votre propre assistant IA ?** 🚀
 
-[Acheter le Blueprint (8000€)](mailto:djeff@funesterie.pro?subject=Achat%20Blueprint%20A11)
+[Acheter le Blueprint (8000€)](mailto:djeff@funesterie.me?subject=Achat%20Blueprint%20A11)

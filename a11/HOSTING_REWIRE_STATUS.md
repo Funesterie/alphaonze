@@ -7,7 +7,7 @@ Date: 2026-04-06
 - Project: `a11backend`
 - Environment: `production`
 - Service: `a11backend`
-- Public domain: `https://api.funesterie.pro`
+- Public domain: `https://a11.funesterie.me`
 - Target repo: `Funesterie/funesterie`
 - Target branch: `master`
 - Target root directory: `a11/backend/apps/server`
@@ -27,14 +27,14 @@ Commande de verification utile:
 ```powershell
 railway status --json
 railway logs --build --latest -s a11backend -n 120
-curl.exe -s -o NUL -w "A11_API /health %{http_code}\n" https://api.funesterie.pro/health
+curl.exe -s -o NUL -w "A11_API /health %{http_code}\n" https://a11.funesterie.me/health
 ```
 
 ## Netlify Frontend
 
 - Site: `a11funesterie`
 - Site ID: `62907e1d-70c0-4a65-ae1a-e1bb906be9e3`
-- Public domain: `https://a11.funesterie.pro`
+- Public domain: `https://a11.funesterie.me`
 - Desired repo: `Funesterie/funesterie`
 - Desired branch: `master`
 - Desired base directory: `a11/frontend`
@@ -48,7 +48,7 @@ Etat actuel:
 - une config monorepo canonique existe maintenant a `a11/frontend/netlify.toml`
 - la config `a11/frontend/apps/web/netlify.toml` a ete corrigee pour rester valide en execution locale
 - un deploy production Netlify a ete publie directement depuis `a11/frontend/dist`
-- la sante publique frontend est confirmee (`https://a11.funesterie.pro/` repond `200`)
+- la sante publique frontend est confirmee (`https://a11.funesterie.me/` repond `200`)
 - le repo Git source a ete remplace par `Funesterie/funesterie`
 - la branche de production est maintenant `master`
 - la base directory active est `a11/frontend`

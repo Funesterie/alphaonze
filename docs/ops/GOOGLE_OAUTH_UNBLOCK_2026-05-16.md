@@ -5,8 +5,8 @@
 Les endpoints applicatifs en production sont sains et demandent uniquement les scopes de login basiques :
 
 ```txt
-https://a11.funesterie.pro/api/auth/google/start
-redirect_uri=https://a11.funesterie.pro/api/auth/google/callback
+https://a11.funesterie.me/api/auth/google/start
+redirect_uri=https://a11.funesterie.me/api/auth/google/callback
 scope=openid email profile
 
 https://k44.funesterie.me/api/auth/google/start
@@ -73,7 +73,7 @@ Le scope youtube.upload est utilise uniquement pour publier, a la demande explic
 Funesterie separe les clients OAuth par usage. Le client A11/Kaen44 sert uniquement au login web avec openid email profile. Les scopes media sensibles drive.file et youtube.upload sont reserves a un client Vivy distinct, utilise seulement quand l'utilisateur demande une operation media. Les secrets ne sont pas exposes dans l'interface, les tokens sont stockes cote serveur/local securise, et les logs redactent les jetons et secrets.
 
 Comptes de test disponibles sur demande. Les routes OAuth publiques sont :
-- https://a11.funesterie.pro/api/auth/google/start
+- https://a11.funesterie.me/api/auth/google/start
 - https://k44.funesterie.me/api/auth/google/start
 
 La demonstration video montrera :

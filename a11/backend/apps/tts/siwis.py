@@ -406,7 +406,7 @@ def notify_a11_avatar(gif_path: str, endpoint: str = ""):
         os.environ.get("API_URL", ""),
         os.environ.get("BACKEND_URL", ""),
         "http://a11backendrailway.railway.internal:8080",
-        "https://api.funesterie.pro",
+        "https://a11.funesterie.me",
     ]:
         normalized = _normalize_avatar_endpoint(candidate)
         if normalized and normalized not in candidate_endpoints:

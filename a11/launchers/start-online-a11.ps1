@@ -27,8 +27,8 @@ function Test-HttpReady {
   }
 }
 
-$frontendUrl = 'https://a11.funesterie.pro'
-$apiUrl = 'https://api.funesterie.pro/health'
+$frontendUrl = 'https://a11.funesterie.me'
+$apiUrl = 'https://a11.funesterie.me/health'
 
 $frontendOk = Test-HttpReady -Url $frontendUrl
 $apiOk = Test-HttpReady -Url $apiUrl

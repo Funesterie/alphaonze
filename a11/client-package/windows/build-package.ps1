@@ -1,6 +1,6 @@
 param(
   [string]$OutDir = "E:\A11\ops\client-package",
-  [string]$Url = "https://a11.funesterie.pro",
+  [string]$Url = "https://a11.funesterie.me",
   [string]$AppName = "A11 Client",
   [string]$InstallSlug = "A11Client",
   [string]$PackagePrefix = "A11-Client-Windows"

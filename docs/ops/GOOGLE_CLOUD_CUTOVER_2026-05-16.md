@@ -26,7 +26,7 @@ Publishing is needed for broader external users. Sensitive scopes such as Drive 
 
 Use public HTTPS only:
 
-- app origin: `https://a11.funesterie.pro`
+- app origin: `https://a11.funesterie.me`
 - K44 origin: `https://k44.funesterie.me`
 - Cloudflare Access origin only if it is the actual OAuth entrypoint
 

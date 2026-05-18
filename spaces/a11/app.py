@@ -53,7 +53,7 @@ CSS = """
 .a11-muted { color: var(--a11-muted); }
 """
 
-A11_API_BASE = (os.environ.get("A11_API_BASE") or "https://api.funesterie.pro").rstrip("/")
+A11_API_BASE = (os.environ.get("A11_API_BASE") or "https://a11.funesterie.me").rstrip("/")
 A11_CHAT_ENDPOINT = f"{A11_API_BASE}/api/ai/chat"
 A11_UPLOAD_ENDPOINT = f"{A11_API_BASE}/api/upload/image-local"
 A11_SD_JOB_ENDPOINT = f"{A11_API_BASE}/api/jobs/sd"

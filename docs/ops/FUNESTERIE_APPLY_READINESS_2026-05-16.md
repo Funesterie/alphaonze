@@ -32,28 +32,28 @@ Known healthy:
 - `https://funesterie.me/vivy/`
 - `https://funesterie.me/a11/`
 - `https://funesterie.me/k44/`
-- `https://a11.funesterie.pro/`
-- `https://a11.funesterie.pro/health`
+- `https://a11.funesterie.me/`
+- `https://a11.funesterie.me/health`
 - `https://k44.funesterie.me/`
 - `https://k44.funesterie.me/health`
 - `https://mcp.funesterie.me/health`
 
 Protected by design:
 
-- `https://a11.funesterie.pro/api/a11/pink-ward/status` -> 401 without JWT
-- `https://a11.funesterie.pro/api/runtime/modules` -> 401 without JWT
-- `https://a11.funesterie.pro/api/runtime/chopper` -> 401 without JWT
-- `https://a11.funesterie.pro/api/runtime/mixer` -> 401 without JWT
+- `https://a11.funesterie.me/api/a11/pink-ward/status` -> 401 without JWT
+- `https://a11.funesterie.me/api/runtime/modules` -> 401 without JWT
+- `https://a11.funesterie.me/api/runtime/chopper` -> 401 without JWT
+- `https://a11.funesterie.me/api/runtime/mixer` -> 401 without JWT
 
 Public redacted status:
 
-- `https://a11.funesterie.pro/api/ekko/status` -> 200, no secrets
+- `https://a11.funesterie.me/api/ekko/status` -> 200, no secrets
 
 ## Payments
 
 Stripe:
 
-- checkout and portal defaults now derive from `A11_PUBLIC_BASE_URL` / `PUBLIC_APP_URL` / `FRONTEND_URL`, falling back to `https://a11.funesterie.pro`
+- checkout and portal defaults now derive from `A11_PUBLIC_BASE_URL` / `PUBLIC_APP_URL` / `FRONTEND_URL`, falling back to `https://a11.funesterie.me`
 - checkout now refuses to start without a real `STRIPE_PRICE_ID`
 - `isStripeEnabled()` now requires both Stripe secret and price id
 

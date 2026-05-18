@@ -19,7 +19,7 @@ function Read-KaenConfig {
   }
   return [pscustomobject]@{
     appName = "Kaen44"
-    url = "https://alphaonze.funesterie.pro/?persona=kaen44"
+    url = "https://a11.funesterie.me/?persona=kaen44"
   }
 }
 

@@ -6,7 +6,7 @@ Date: 2026-05-09
 
 Initialiser A11 et Kaen44 ensemble sans melanger les roles:
 
-- A11 reste le cerveau prive/admin sur `https://a11.funesterie.pro`.
+- A11 reste le cerveau prive/admin sur `https://a11.funesterie.me`.
 - Kaen44 reste l'application publique/client sur `https://funesterie.me`.
 - Les deux utilisent leurs profils secrets separes.
 - La vision GPU est activee seulement quand Podman/CUDA fonctionne.

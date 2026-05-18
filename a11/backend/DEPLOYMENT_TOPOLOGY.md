@@ -3,17 +3,17 @@
 ## Domain Ownership
 
 - `funesterie.me` is managed on Cloudflare.
-- `funesterie.pro` is not managed in the connected Cloudflare account.
-- `api.funesterie.pro` currently resolves to Railway.
-- `a11.funesterie.pro` is the public frontend hostname.
+- `funesterie.me` is not managed in the connected Cloudflare account.
+- `a11.funesterie.me` currently resolves to Railway.
+- `a11.funesterie.me` is the public frontend hostname.
 
 ## Public vs Local Domains
 
 Use the domains with one clear responsibility each:
 
-- `a11.funesterie.pro`
+- `a11.funesterie.me`
   Public frontend on Netlify.
-- `api.funesterie.pro`
+- `a11.funesterie.me`
   Public A11 API on Railway.
 - `files.funesterie.me`
   Public Cloudflare R2 file hostname.
@@ -24,29 +24,29 @@ Use the domains with one clear responsibility each:
 - `sd.funesterie.me`
   Local backend image proxy on port `3000`.
 
-Do not point the LLM router to `api.funesterie.pro` or `api.funesterie.me`.
+Do not point the LLM router to `a11.funesterie.me` or `api.funesterie.me`.
 
 ## Runtime Topology
 
 Public web flow:
 
-1. Browser -> `a11.funesterie.pro`
-2. Frontend -> `api.funesterie.pro`
+1. Browser -> `a11.funesterie.me`
+2. Frontend -> `a11.funesterie.me`
 3. Railway backend -> `cerbere.funesterie.me`
 4. Cerbere local -> local GGUF on `127.0.0.1:8080`
 
 Public image flow:
 
-1. Browser -> `a11.funesterie.pro`
-2. Frontend -> `api.funesterie.pro`
+1. Browser -> `a11.funesterie.me`
+2. Frontend -> `a11.funesterie.me`
 3. Railway backend -> `sd.funesterie.me/api/tools/generate_sd`
 4. Local backend -> vendored SD helper in `apps/server/tools/sd`
 5. Local Python runtime -> `llm/scripts/venv`
 
 Public video flow:
 
-1. Browser -> `a11.funesterie.pro`
-2. Frontend -> `api.funesterie.pro`
+1. Browser -> `a11.funesterie.me`
+2. Frontend -> `a11.funesterie.me`
 3. Railway backend -> `sd.funesterie.me/api/tools/generate_video`
 4. Local backend -> local SD + FFmpeg/NVENC pipeline on Windows
 
@@ -74,7 +74,7 @@ Local maintenance flow:
 Set these on `a11backend` when using the local GGUF through Cerbere:
 
 ```env
-PUBLIC_API_URL=https://api.funesterie.pro
+PUBLIC_API_URL=https://a11.funesterie.me
 BACKEND=local
 LLM_ROUTER_URL=https://cerbere.funesterie.me
 A11_ALLOW_PUBLIC_TUNNEL_LLM=1
@@ -103,8 +103,8 @@ LLAMA_BASE=
 Public frontend should use only the API bases:
 
 ```env
-VITE_A11_API_BASE_URL=https://api.funesterie.pro
-VITE_A11_ONLINE_API_BASE_URL=https://api.funesterie.pro
+VITE_A11_API_BASE_URL=https://a11.funesterie.me
+VITE_A11_ONLINE_API_BASE_URL=https://a11.funesterie.me
 VITE_A11_LOCAL_API_BASE_URL=https://api.funesterie.me
 VITE_LLM_ROUTER_URL=
 ```

@@ -1,5 +1,5 @@
 {
-  "_comment": "Config PROD — Ekko tourne LOCAL, envoie vers a11.funesterie.pro",
+  "_comment": "Config PROD — Ekko tourne LOCAL, envoie vers a11.funesterie.me",
 
   "backend": "auto",
   "sample_rate": 16000,
@@ -33,7 +33,7 @@
     "numéro de carte", "card number", "iban", "rib"
   ],
 
-  "ivy_endpoint": "https://a11.funesterie.pro/api/ekko/ingest",
+  "ivy_endpoint": "https://a11.funesterie.me/api/ekko/ingest",
   "ivy_timeout_s": 8.0,
 
   "server_host": "127.0.0.1",

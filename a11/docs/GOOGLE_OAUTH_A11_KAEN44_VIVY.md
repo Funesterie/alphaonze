@@ -29,25 +29,25 @@ Create or keep one Google OAuth web client per public app surface.
 Authorized JavaScript origins:
 
 ```txt
-https://a11.funesterie.pro
+https://a11.funesterie.me
 ```
 
 Authorized redirect URIs:
 
 ```txt
-https://a11.funesterie.pro/api/auth/google/callback
+https://a11.funesterie.me/api/auth/google/callback
 ```
 
-Only add the `alphaonze.funesterie.pro` origin/callback if that hostname is
+Only add the `a11.funesterie.me` origin/callback if that hostname is
 actually routed to the A11 backend. As of this check, the live OAuth start
-endpoint that works is `a11.funesterie.pro`.
+endpoint that works is `a11.funesterie.me`.
 
 Server profile:
 
 ```env
-PUBLIC_APP_URL=https://a11.funesterie.pro
-API_URL=https://a11.funesterie.pro
-GOOGLE_CALLBACK_URL=https://a11.funesterie.pro/api/auth/google/callback
+PUBLIC_APP_URL=https://a11.funesterie.me
+API_URL=https://a11.funesterie.me
+GOOGLE_CALLBACK_URL=https://a11.funesterie.me/api/auth/google/callback
 A11_SESSION_COOKIE_SAMESITE=lax
 ```
 

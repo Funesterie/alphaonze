@@ -51,7 +51,7 @@ Right-click in the editor to access A11 commands:
 
 ```json
 {
-  "a11.serverUrl": "https://a11.funesterie.pro",
+  "a11.serverUrl": "https://a11.funesterie.me",
   "a11.model": "gpt-4o-mini",
   "a11.autoSuggest": true,
   "a11.theme": "auto"
@@ -65,8 +65,8 @@ Right-click in the editor to access A11 commands:
 
 ## Privacy
 
-Your code is sent to the A11 backend for processing. The chat web surface lives at [alphaonze.funesterie.pro](https://alphaonze.funesterie.pro); the production VSIX endpoint is [a11.funesterie.pro](https://a11.funesterie.pro).
+Your code is sent to the A11 backend for processing. The chat web surface lives at [a11.funesterie.me](https://a11.funesterie.me); the production VSIX endpoint is [a11.funesterie.me](https://a11.funesterie.me).
 
 ---
 
-Made with ❤️ by [funesterie](https://funesterie.pro)
+Made with ❤️ by [funesterie](https://funesterie.me)

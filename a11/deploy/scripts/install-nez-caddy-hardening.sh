@@ -18,8 +18,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 case "$profile" in
   a11)
-    source_file="$repo_root/deploy/caddy/a11.funesterie.pro.Caddyfile"
-    target_file="/etc/caddy/Caddyfile.d/a11.funesterie.pro.Caddyfile"
+    source_file="$repo_root/deploy/caddy/a11.funesterie.me.Caddyfile"
+    target_file="/etc/caddy/Caddyfile.d/a11.funesterie.me.Caddyfile"
     ;;
   kaen44)
     source_file="$repo_root/deploy/caddy/kaen44.funesterie.me.Caddyfile"
