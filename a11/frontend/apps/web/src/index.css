@@ -6426,6 +6426,15 @@ body {
   padding: clamp(18px, 3vw, 34px) 0 18px;
 }
 
+.k44-agent-home-hero--compact {
+  min-height: auto;
+  grid-template-columns: 1fr;
+}
+
+.k44-agent-home-hero--compact .k44-agent-home-copy {
+  min-height: clamp(300px, 34vw, 440px);
+}
+
 .k44-agent-home-copy,
 .k44-agent-home-loop,
 .k44-agent-home-card,

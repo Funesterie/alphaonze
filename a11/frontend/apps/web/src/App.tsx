@@ -259,6 +259,14 @@ function isGeneralCockpitRoute() {
   return isLocalSurfaceHost(hostname) && /^\/cockpit(?:\/|$)/.test(pathname);
 }
 
+function isGeneralAgentsRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/agents(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/agents(?:\/|$)/.test(pathname);
+}
+
 function getCurrentSurfaceKind(): FunesterieSurface {
   const { hostname, pathname, port, search } = getLocationSnapshot();
   const params = new URLSearchParams(search);
@@ -343,9 +351,9 @@ function getSurfaceLinks() {
       kaen44Cockpit: "/k44/cockpit",
       vivy: "/vivy/",
       vivyStudio: "/vivy/#vivy-studio",
-      agents: "/k44/cockpit#agents",
+      agents: "/agents/",
       qflush: "/k44/cockpit#qflush",
-      nossen: "/k44/cockpit#nossen",
+      nossen: "/agents/",
       kaen44Login: "/k44/login",
       kaen44Privacy: "/k44/privacy",
       kaen44Terms: "/k44/terms",
@@ -363,9 +371,9 @@ function getSurfaceLinks() {
     kaen44Cockpit: new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString(),
     vivy: VIVY_PUBLIC_APP_URL,
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
-    agents: new URL("/cockpit#agents", KAEN44_PUBLIC_APP_URL).toString(),
+    agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
-    nossen: new URL("/cockpit#nossen", KAEN44_PUBLIC_APP_URL).toString(),
+    nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
     kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
@@ -2574,6 +2582,10 @@ function FunesterieCockpitPage({
     document.documentElement.classList.add("funesterie-cockpit-page-root");
     document.body.classList.add("funesterie-cockpit-page-body");
     try {
+      const { hostname, pathname } = getLocationSnapshot();
+      if (isGeneralFunesterieHost(hostname) && pathname === "/") {
+        window.history.replaceState({}, "", "/cockpit/");
+      }
       const params = new URLSearchParams(window.location.search || "");
       const error = String(params.get("error") || "").trim().toLowerCase();
       const provider = String(params.get("provider") || "").trim().toLowerCase();
@@ -2674,7 +2686,7 @@ function FunesterieCockpitPage({
         </a>
         <div>
           <a href="#etat">Etat</a>
-          <a href="#workflow">Workflow</a>
+          <a href={surfaceLinks.agents}>Agents</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href={surfaceLinks.kaen44}>K44</a>
           <a href={surfaceLinks.a11Login}>A11</a>
@@ -2710,25 +2722,6 @@ function FunesterieCockpitPage({
             <b>{statusMeta[serviceStatus[service.id] || "checking"].detail}</b>
           </a>
         ))}
-      </section>
-
-      <section id="workflow" className="funesterie-ops-flow" aria-label="Workflow essentiel Funesterie">
-        <div>
-          <span>Workflow</span>
-          <h2>Tout est connecte, chacun garde son role.</h2>
-          <p>
-            Funesterie.me sert de tableau d'etat. On ouvre ensuite la surface utile :
-            K44 pour le quotidien, A11 pour les medias, Vivy pour la musique.
-          </p>
-        </div>
-        <ol>
-          {["Etat", "Surface", "Action", "Retour"].map((step, index) => (
-            <li key={step}>
-              <i>{String(index + 1).padStart(2, "0")}</i>
-              <strong>{step}</strong>
-            </li>
-          ))}
-        </ol>
       </section>
 
       <section className="funesterie-ops-actions" aria-label="Actions cockpit">
@@ -2981,7 +2974,6 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
       id: "kaen44",
       name: "Kaen44",
       role: "Agent bureau",
-      status: "Dans Nossen",
       text: "Accueil, suivi, organisation et cockpit quotidien pour garder le travail lisible.",
       href: surfaceLinks.kaen44Cockpit,
       image: KAEN44_AVATAR_SRC,
@@ -2991,7 +2983,6 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
       id: "a11",
       name: "A11",
       role: "Agent media",
-      status: "Dans Nossen",
       text: "Capture, lit, transcrit et structure les flux audio, video, images et documents.",
       href: surfaceLinks.a11,
       image: A11_HOODED_AGENT_SRC,
@@ -3001,56 +2992,26 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
       id: "vivy",
       name: "Vivy",
       role: "Agent musical",
-      status: "Dans Nossen",
       text: "Voix, chansons, scenes et publications quand l'univers devient musical.",
       href: surfaceLinks.vivyStudio,
       image: VIVY_POSTER_SRC,
       action: "Voir Vivy",
     },
   ];
-  const map = [
-    "Univers Nossen",
-    "Agents autonomes",
-    "Roles separes",
-    "Acces clairs",
-  ];
-  const workflow = [
-    {
-      step: "Contexte",
-      title: "Entrer dans Nossen",
-      text: "On part de l'univers, du projet ou du besoin a comprendre.",
-    },
-    {
-      step: "Agent",
-      title: "Choisir la bonne surface",
-      text: "Kaen44 pour le quotidien, A11 pour les medias, Vivy pour la musique.",
-    },
-    {
-      step: "Action",
-      title: "Travailler dans l'agent",
-      text: "Chaque agent agit dans son domaine, avec sa propre surface et ses limites.",
-    },
-    {
-      step: "Memoire",
-      title: "Revenir avec le resultat",
-      text: "Le resultat reste lisible dans le cockpit et peut nourrir le contexte.",
-    },
-  ];
 
   return (
-    <main id="top" className="k44-agent-home-shell" aria-label="Presentation de Nossen et de ses agents">
-      <nav className="k44-agent-home-nav" aria-label="Navigation Nossen">
-        <a href={surfaceLinks.kaen44} className="k44-agent-home-brand">
-          <img src={FUNESTERIE_NEXUS_BOARD_SRC} alt="" />
+    <main id="top" className="k44-agent-home-shell" aria-label="Presentation des agents Funesterie">
+      <nav className="k44-agent-home-nav" aria-label="Navigation agents Funesterie">
+        <a href={surfaceLinks.agents} className="k44-agent-home-brand">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
-            <strong>Nossen</strong>
-            <small>Univers Funesterie</small>
+            <strong>Agents</strong>
+            <small>Funesterie</small>
           </span>
         </a>
         <div>
-          <a href="#nossen">Nossen</a>
           <a href="#agents">Agents</a>
-          <a href="#roles">Roles</a>
+          <a href={surfaceLinks.cockpit}>Cockpit</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.kaen44Privacy}>Confidentialite</a>
@@ -3058,39 +3019,27 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
 
-      <section id="nossen" className="k44-agent-home-hero" aria-label="Nossen presente ses agents">
+      <section className="k44-agent-home-hero k44-agent-home-hero--compact" aria-label="Presentation des agents Funesterie">
         <div className="k44-agent-home-copy">
-          <h1>Nossen presente ses agents.</h1>
+          <h1>Agents Funesterie.</h1>
           <p>
-            Nossen est le cadre narratif et creatif de Funesterie. Dedans, chaque agent
-            a son role propre : Kaen44 pour le quotidien, A11 pour les medias, Vivy pour
-            la presence musicale.
+            Trois surfaces distinctes pour travailler sans melanger les usages :
+            Kaen44 pour le quotidien, A11 pour les medias, Vivy pour la musique.
           </p>
           <div className="k44-agent-home-actions">
-            <a href="#agents">Voir les agents</a>
+            <a href={surfaceLinks.cockpit}>Ouvrir le cockpit</a>
             <a href={surfaceLinks.kaen44Cockpit}>Ouvrir Kaen44</a>
           </div>
         </div>
-
-        <aside className="k44-agent-home-loop" aria-label="Carte de Nossen">
-          <strong>Carte de Nossen</strong>
-          {map.map((item, index) => (
-            <span key={item}>
-              <i>{String(index + 1).padStart(2, "0")}</i>
-              {item}
-            </span>
-          ))}
-        </aside>
       </section>
 
-      <section id="agents" className="k44-agent-home-grid" aria-label="Agents dans Nossen">
+      <section id="agents" className="k44-agent-home-grid" aria-label="Agents Funesterie">
         {agents.map((agent) => (
           <a key={agent.id} className={`k44-agent-home-card k44-agent-home-card--${agent.id}`} href={agent.href}>
             <span className="k44-agent-home-card-media">
               <img src={agent.image} alt="" />
             </span>
             <span className="k44-agent-home-card-copy">
-              <small>{agent.status}</small>
               <strong>{agent.name}</strong>
               <em>{agent.role}</em>
               <span>{agent.text}</span>
@@ -3098,44 +3047,6 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
             </span>
           </a>
         ))}
-      </section>
-
-      <section id="workflow" className="k44-agent-home-workflow" aria-label="Workflow Nossen">
-        <div>
-          <span>Workflow</span>
-          <h2>Comment utiliser Nossen</h2>
-          <p>
-            Nossen sert de carte commune. Le workflow choisit l'agent utile, puis garde
-            le resultat comprehensible pour la suite.
-          </p>
-        </div>
-        <ol>
-          {workflow.map((item, index) => (
-            <li key={item.title}>
-              <i>{String(index + 1).padStart(2, "0")}</i>
-              <strong>{item.step}</strong>
-              <span>{item.title}</span>
-              <p>{item.text}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section id="roles" className="k44-agent-home-mission" aria-label="Roles dans Nossen">
-        <article>
-          <h2>Nossen n'est pas un agent.</h2>
-          <p>
-            Nossen est l'univers commun : une memoire, une ambiance et un cadre pour
-            comprendre ce qui relie les agents sans les confondre.
-          </p>
-        </article>
-        <article>
-          <h2>Les agents gardent leur place.</h2>
-          <p>
-            Kaen44, A11 et Vivy sont presentes cote a cote. Les roles sont separes :
-            chacun sert son domaine.
-          </p>
-        </article>
       </section>
     </main>
   );
@@ -3850,6 +3761,7 @@ export function App() {
   const isKaen44 = surfaceKind === "kaen44";
   const isVivy = surfaceKind === "vivy";
   const isGeneralCockpit = isGeneralCockpitRoute();
+  const isGeneralAgents = isGeneralAgentsRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -3876,14 +3788,16 @@ export function App() {
   useEffect(() => {
     document.title = isGeneralCockpit
       ? "Funesterie - Cockpit general"
+      : isGeneralAgents
+      ? "Funesterie - Agents"
       : isVivy
       ? "Vivy - Presence musicale Funesterie"
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', isGeneralCockpit ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-  }, [isGeneralCockpit, isKaen44, isVivy]);
+    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+  }, [isGeneralAgents, isGeneralCockpit, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -5868,6 +5782,10 @@ export function App() {
 
   if (isGeneralCockpit) {
     return <FunesterieCockpitPage authenticated={isAuthenticated} displayName={displayName} />;
+  }
+
+  if (isGeneralAgents) {
+    return <Kaen44PublicPage page="home" />;
   }
 
   if (isVivy) {
