@@ -354,6 +354,8 @@ function getSurfaceLinks() {
       vivy: "/vivy/",
       vivyStudio: "/vivy/#vivy-studio",
       agents: "/agents/",
+      privacy: "/privacy/",
+      terms: "/terms/",
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
       kaen44Login: "/k44/login",
@@ -374,6 +376,8 @@ function getSurfaceLinks() {
     vivy: VIVY_PUBLIC_APP_URL,
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
@@ -2625,14 +2629,12 @@ function VivyPublicChat() {
           ))}
         </div>
       ) : null}
-      {(awaitingVoiceReference || voiceReferenceName) && (
-        <div className="vivy-chat-reference">
-          <span>{voiceReferenceName ? `Réf voix: ${voiceReferenceName}` : "Réf voix privée attendue"}</span>
-          <button type="button" onClick={() => voiceReferenceInputRef.current?.click()}>
-            Audio
-          </button>
-        </div>
-      )}
+      <div className={`vivy-chat-reference ${awaitingVoiceReference ? "is-needed" : ""}`}>
+        <span>{voiceReferenceName ? `Réf voix: ${voiceReferenceName}` : "Réf voix privée attendue"}</span>
+        <button type="button" onClick={() => voiceReferenceInputRef.current?.click()}>
+          Audio
+        </button>
+      </div>
       <input
         ref={voiceReferenceInputRef}
         type="file"
@@ -2655,7 +2657,7 @@ function VivyPublicChat() {
 
 function VivyPublicSurface() {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
-    { mode: "voice", label: "Ouvrir Creation voix dans l'atelier Vivy" },
+    { mode: "voice", label: "Ouvrir création voix dans l'atelier Vivy" },
     { mode: "song", label: "Ouvrir Composition production dans l'atelier Vivy" },
     { mode: "share", label: "Ouvrir scène partage dans l'atelier Vivy" },
   ];
@@ -2747,10 +2749,10 @@ function FunesterieCockpitPage({
       {
         id: "mcp",
         name: "MCP",
-        role: "Memoire et outils",
+        role: "Mémoire et outils",
         url: "https://mcp.funesterie.me/mcp",
         healthUrl: "https://mcp.funesterie.me/health",
-        note: "Canal d'outils et contexte partage.",
+        note: "Canal d'outils et contexte partagé.",
       },
     ];
   }, [surfaceLinks.a11, surfaceLinks.cockpit, surfaceLinks.kaen44, surfaceLinks.vivy]);
@@ -2861,13 +2863,13 @@ function FunesterieCockpitPage({
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
             <strong>Funesterie</strong>
-            <small>Cockpit operationnel</small>
+            <small>Cockpit opérationnel</small>
           </span>
         </a>
         <div>
-          <a href="#etat">Etat</a>
+          <a href="#etat">État</a>
           <a href={surfaceLinks.agents}>Agents</a>
-          <span className="funesterie-ops-nav-agents" aria-label="Acces agents">
+          <span className="funesterie-ops-nav-agents" aria-label="Accès agents">
             {agentShortcuts.map((agent) => (
               <a key={agent.id} href={agent.href} title={agent.name}>
                 <img src={agent.image} alt="" />
@@ -2878,7 +2880,7 @@ function FunesterieCockpitPage({
         </div>
       </nav>
 
-      <section className="funesterie-ops-hero" aria-label="Etat operationnel Funesterie">
+      <section className="funesterie-ops-hero" aria-label="État opérationnel Funesterie">
         <div>
           <span>funesterie.me/cockpit</span>
           <h1>Cockpit essentiel.</h1>
@@ -2894,7 +2896,7 @@ function FunesterieCockpitPage({
         </aside>
       </section>
 
-      <section id="etat" className="funesterie-ops-status-grid" aria-label="Etat des services Funesterie">
+      <section id="etat" className="funesterie-ops-status-grid" aria-label="État des services Funesterie">
         {cockpitServices.map((service) => (
           <a key={service.id} href={service.url} className={`funesterie-ops-status-card is-${serviceStatus[service.id] || "checking"}`}>
             {"image" in service && service.image ? <img className="funesterie-ops-status-thumb" src={service.image} alt="" /> : null}
@@ -2920,7 +2922,14 @@ function FunesterieCockpitPage({
           </button>
         </div>
         <aside>
-          {oauthMessage ? <p>{oauthMessage}</p> : <p>Les détails admin restent hors de ce cockpit public.</p>}
+          {oauthMessage ? (
+            <p>{oauthMessage}</p>
+          ) : (
+            <p>
+              Les détails admin restent hors de ce cockpit public.{" "}
+              <a href={surfaceLinks.privacy}>Règles de confidentialité</a>
+            </p>
+          )}
         </aside>
       </section>
     </main>
