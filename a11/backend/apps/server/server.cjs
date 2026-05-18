@@ -7735,6 +7735,11 @@ function sendEmbeddedUiRoot(req, res) {
   if (hostname === 'funesterie.me' || hostname === 'www.funesterie.me') {
     return res.redirect(302, '/cockpit/');
   }
+  if (hostname === 'k44.funesterie.me'
+    || hostname === 'kaen44.funesterie.me'
+    || hostname === 'kaen44.funesterie.pro') {
+    return res.redirect(302, '/cockpit/');
+  }
   return sendEmbeddedUiIndex(req, res);
 }
 
