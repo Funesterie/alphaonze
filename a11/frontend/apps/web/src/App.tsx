@@ -221,8 +221,8 @@ type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
 const A11_PUBLIC_APP_URL = "https://a11.funesterie.pro/";
 const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
-const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.pro/";
-const VIVY_PUBLIC_APP_URL = "https://funesterie.pro/vivy/";
+const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.me/";
+const VIVY_PUBLIC_APP_URL = "https://vivy.funesterie.me/";
 
 function getLocationSnapshot() {
   if (typeof window === "undefined") {
@@ -242,6 +242,8 @@ function isLocalSurfaceHost(hostname: string) {
 
 function isGeneralFunesterieHost(hostname: string) {
   return [
+    "funesterie.me",
+    "www.funesterie.me",
     "funesterie.pro",
     "www.funesterie.pro",
     "cockpit.funesterie.pro",
@@ -269,9 +271,7 @@ function getCurrentSurfaceKind(): FunesterieSurface {
     || hostname === "alphaonze.funesterie.pro"
     || hostname === "api.funesterie.pro"
     || (isLocalHost && port === "3000");
-  const isKaenHost = hostname === "funesterie.me"
-    || hostname === "www.funesterie.me"
-    || hostname === "k44.funesterie.me"
+  const isKaenHost = hostname === "k44.funesterie.me"
     || hostname === "kaen44.funesterie.me"
     || hostname === "kaen44.funesterie.pro"
     || (isLocalHost && port === "3001");
@@ -361,7 +361,7 @@ function getSurfaceLinks() {
     kaen44: KAEN44_PUBLIC_APP_URL,
     kaen44Cockpit: new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString(),
     vivy: VIVY_PUBLIC_APP_URL,
-    vivyStudio: new URL("/vivy/#vivy-studio", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/cockpit#agents", KAEN44_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/cockpit#nossen", KAEN44_PUBLIC_APP_URL).toString(),
@@ -1512,8 +1512,6 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           <div className="alpha-auth-mark" aria-hidden="true">
             <span>A11</span>
           </div>
-          <div className="alpha-auth-title">Alpha Onze</div>
-          <div className="alpha-auth-subtitle">Documents, voix et creation</div>
         </>
       )}
       <div style={authTabsStyle}>
@@ -2272,6 +2270,54 @@ function FunesterieCockpitPage({
   const surfaceLinks = getSurfaceLinks();
   const [googleStarting, setGoogleStarting] = useState(false);
   const [oauthMessage, setOauthMessage] = useState("");
+  const cockpitServices = useMemo(() => {
+    const sameOrigin = typeof window !== "undefined" ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL.replace(/\/+$/, "");
+    return [
+      {
+        id: "funesterie",
+        name: "Funesterie.me",
+        role: "Cockpit public",
+        url: surfaceLinks.cockpit,
+        healthUrl: `${sameOrigin}/`,
+        note: "Point d'entree commun.",
+      },
+      {
+        id: "k44",
+        name: "K44",
+        role: "Agent bureau",
+        url: surfaceLinks.kaen44,
+        healthUrl: new URL("/health", KAEN44_PUBLIC_APP_URL).toString(),
+        note: "Suivi quotidien et interface client.",
+      },
+      {
+        id: "a11",
+        name: "A11",
+        role: "Agent media",
+        url: surfaceLinks.a11,
+        healthUrl: new URL("/health", A11_PUBLIC_APP_URL).toString(),
+        note: "Audio, video, documents, analyse.",
+      },
+      {
+        id: "vivy",
+        name: "Vivy",
+        role: "Agent musical",
+        url: surfaceLinks.vivy,
+        healthUrl: new URL("/health", VIVY_PUBLIC_APP_URL).toString(),
+        note: "Voix, musique, scene, publication.",
+      },
+      {
+        id: "mcp",
+        name: "MCP",
+        role: "Memoire et outils",
+        url: "https://mcp.funesterie.me/mcp",
+        healthUrl: "https://mcp.funesterie.me/health",
+        note: "Canal d'outils et contexte partage.",
+      },
+    ];
+  }, [surfaceLinks.a11, surfaceLinks.cockpit, surfaceLinks.kaen44, surfaceLinks.vivy]);
+  const [serviceStatus, setServiceStatus] = useState<Record<string, "checking" | "ok" | "down">>(() =>
+    Object.fromEntries(cockpitServices.map((service) => [service.id, "checking"]))
+  );
 
   useEffect(() => {
     document.documentElement.classList.add("funesterie-cockpit-page-root");
@@ -2308,6 +2354,40 @@ function FunesterieCockpitPage({
     };
   }, [authenticated]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setServiceStatus(Object.fromEntries(cockpitServices.map((service) => [service.id, "checking"])));
+
+    async function probe(service: { id: string; healthUrl: string }) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 4500);
+      try {
+        const url = new URL(service.healthUrl, window.location.origin);
+        const sameOrigin = url.origin === window.location.origin;
+        const response = await fetch(url.toString(), {
+          cache: "no-store",
+          mode: sameOrigin ? "cors" : "no-cors",
+          signal: controller.signal,
+        });
+        const ok = response.type === "opaque" || response.ok;
+        if (!cancelled) {
+          setServiceStatus((current) => ({ ...current, [service.id]: ok ? "ok" : "down" }));
+        }
+      } catch {
+        if (!cancelled) {
+          setServiceStatus((current) => ({ ...current, [service.id]: "down" }));
+        }
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    cockpitServices.forEach((service) => void probe(service));
+    return () => {
+      cancelled = true;
+    };
+  }, [cockpitServices]);
+
   function startCockpitGoogle() {
     setGoogleStarting(true);
     try {
@@ -2322,112 +2402,96 @@ function FunesterieCockpitPage({
     }
   }
 
+  const statusMeta: Record<"checking" | "ok" | "down", { label: string; detail: string }> = {
+    checking: { label: "verification", detail: "Test en cours" },
+    ok: { label: "operationnel", detail: "Joignable" },
+    down: { label: "a verifier", detail: "Non confirme" },
+  };
+  const operationalCount = cockpitServices.filter((service) => serviceStatus[service.id] === "ok").length;
+  const totalCount = cockpitServices.length;
+  const cockpitReady = operationalCount === totalCount;
+
   return (
-    <main className="funesterie-cockpit-shell">
-      <nav className="funesterie-cockpit-nav" aria-label="Navigation Funesterie">
-        <a className="funesterie-cockpit-brand" href={surfaceLinks.cockpit}>
+    <main className="funesterie-ops-shell">
+      <nav className="funesterie-ops-nav" aria-label="Navigation Funesterie">
+        <a className="funesterie-ops-brand" href={surfaceLinks.cockpit}>
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
             <strong>Funesterie</strong>
-            <small>Creer - comprendre - connecter</small>
+            <small>Cockpit operationnel</small>
           </span>
         </a>
         <div>
-          <a href="#univers">Accueil</a>
-          <a href="#agents">Modules</a>
-          <a href="#connexion">Connexion</a>
+          <a href="#etat">Etat</a>
+          <a href="#workflow">Workflow</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
-          <a className="funesterie-cockpit-nav-cta" href={surfaceLinks.a11Login}>A11</a>
+          <a href={surfaceLinks.kaen44}>K44</a>
+          <a href={surfaceLinks.a11Login}>A11</a>
         </div>
       </nav>
 
-      <section className="funesterie-cockpit-hero" id="univers">
-        <article className="funesterie-cockpit-side funesterie-cockpit-side--vivy">
-          <img src={VIVY_POSTER_SRC} alt="" />
-          <div>
-            <h2>Vivy</h2>
-            <p>Presence musicale pour voix, chansons, ambiances et scenes audio.</p>
-            <a href={surfaceLinks.vivy}>Decouvrir Vivy</a>
-          </div>
-        </article>
-
-        <section className="funesterie-cockpit-center" aria-label="Cockpit general Funesterie">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <h1>Funesterie</h1>
+      <section className="funesterie-ops-hero" aria-label="Etat operationnel Funesterie">
+        <div>
+          <span>funesterie.me/cockpit</span>
+          <h1>Cockpit essentiel.</h1>
           <p>
-            Un portail clair pour creer, piloter, comprendre et publier sans afficher
-            l'infrastructure qui travaille derriere.
+            Une vue courte pour savoir si Funesterie, K44, A11, Vivy et le MCP sont
+            joignables. Pas de cockpit admin ici : seulement l'etat et les sorties utiles.
           </p>
-          <div className="funesterie-cockpit-actions">
-            <a href="#connexion">Se connecter</a>
-            <a href={surfaceLinks.vivy}>Decouvrir Vivy</a>
-          </div>
-        </section>
-
-        <article className="funesterie-cockpit-side funesterie-cockpit-side--a11">
-          <img src={A11_HOODED_SRC} alt="" />
-          <div>
-            <h2>A11</h2>
-            <p>Agent media pour analyser, structurer et transmettre les flux utiles.</p>
-            <a href={surfaceLinks.a11Login}>Entrer dans A11</a>
-          </div>
-        </article>
+        </div>
+        <aside className={cockpitReady ? "is-ok" : "is-warn"}>
+          <strong>{operationalCount}/{totalCount}</strong>
+          <span>{cockpitReady ? "Tout repond" : "Verification partielle"}</span>
+          <small>{authenticated ? `Session: ${String(displayName || "Utilisateur").trim() || "Utilisateur"}` : "Session publique"}</small>
+        </aside>
       </section>
 
-      <section className="funesterie-cockpit-agents" id="agents" aria-label="Modules Funesterie">
-        {[
-          { name: "A11", role: "Comprendre les flux", image: A11_HOODED_SRC, link: surfaceLinks.a11Login },
-          { name: "Vivy", role: "Presence musicale", image: VIVY_POSTER_SRC, link: surfaceLinks.vivy },
-          { name: "Kaen44", role: "Copilote quotidien", image: KAEN44_AVATAR_SRC, link: surfaceLinks.kaen44Cockpit },
-        ].map((agent) => (
-          <a key={agent.name} className="funesterie-cockpit-agent" href={agent.link}>
-            <img src={agent.image} alt="" />
+      <section id="etat" className="funesterie-ops-status-grid" aria-label="Etat des services Funesterie">
+        {cockpitServices.map((service) => (
+          <a key={service.id} href={service.url} className={`funesterie-ops-status-card is-${serviceStatus[service.id] || "checking"}`}>
             <span>
-              <strong>{agent.name}</strong>
-              <small>{agent.role}</small>
+              <i aria-hidden="true" />
+              {statusMeta[serviceStatus[service.id] || "checking"].label}
             </span>
+            <strong>{service.name}</strong>
+            <em>{service.role}</em>
+            <small>{service.note}</small>
+            <b>{statusMeta[serviceStatus[service.id] || "checking"].detail}</b>
           </a>
         ))}
       </section>
 
-      <section className="funesterie-cockpit-connection" id="connexion" aria-label="Point de connexion Google">
+      <section id="workflow" className="funesterie-ops-flow" aria-label="Workflow essentiel Funesterie">
         <div>
-          <span className="funesterie-cockpit-kicker">Point de rencontre</span>
-          <h2>Une connexion propre, puis le bon module.</h2>
+          <span>Workflow</span>
+          <h2>Tout est connecte, chacun garde son role.</h2>
           <p>
-            Le portail garde une entree stable. Apres connexion, l'utilisateur voit seulement
-            les modules qui lui sont utiles.
+            Funesterie.me sert de tableau d'etat. On ouvre ensuite la surface utile :
+            K44 pour le quotidien, A11 pour les medias, Vivy pour la musique.
           </p>
-          <button type="button" onClick={startCockpitGoogle} disabled={googleStarting}>
-            {googleStarting ? "Ouverture Google..." : "Continuer avec Google"}
-          </button>
-          <a href={surfaceLinks.a11Login}>Connexion classique A11</a>
-          {oauthMessage ? <p className="funesterie-cockpit-oauth-message">{oauthMessage}</p> : null}
-          {authenticated ? (
-            <p className="funesterie-cockpit-oauth-ok">
-              Session active pour {String(displayName || "Utilisateur").trim() || "Utilisateur"}.
-            </p>
-          ) : null}
         </div>
-
-        <aside>
-          <h3>Vue simple</h3>
-          <p className="funesterie-cockpit-muted">Ce que voit l'utilisateur</p>
-          <p>
-            Des modules, des projets, une aide claire et des actions lisibles.
-          </p>
-          <p className="funesterie-cockpit-muted">Ce qui reste reserve</p>
-          <p>
-            Les workers, connecteurs, journaux techniques et details de memoire restent dans le
-            mode admin.
-          </p>
-        </aside>
+        <ol>
+          {["Etat", "Surface", "Action", "Retour"].map((step, index) => (
+            <li key={step}>
+              <i>{String(index + 1).padStart(2, "0")}</i>
+              <strong>{step}</strong>
+            </li>
+          ))}
+        </ol>
       </section>
 
-      <section className="funesterie-cockpit-links" aria-label="Liens de redirection">
-        <a href={surfaceLinks.cockpit}>Cockpit general</a>
-        <a href={surfaceLinks.vivyStudio}>Studio Vivy</a>
-        <a href={surfaceLinks.a11Login}>Login A11</a>
+      <section className="funesterie-ops-actions" aria-label="Actions cockpit">
+        <div>
+          <a href={surfaceLinks.kaen44}>Ouvrir K44</a>
+          <a href={surfaceLinks.a11Login}>Ouvrir A11</a>
+          <a href={surfaceLinks.vivy}>Ouvrir Vivy</a>
+          <button type="button" onClick={startCockpitGoogle} disabled={googleStarting}>
+            {googleStarting ? "Google..." : "Tester Google"}
+          </button>
+        </div>
+        <aside>
+          {oauthMessage ? <p>{oauthMessage}</p> : <p>Les details admin restent hors de ce cockpit public.</p>}
+        </aside>
       </section>
     </main>
   );
@@ -2496,7 +2560,7 @@ const FUNESTERIE_HOME_AGENTS = [
     id: "kaen44",
     name: "Kaen44",
     role: "Copilote quotidien",
-    text: "Assistance, organisation, suivi et relais vers les agents.",
+    text: "Assistance, organisation, suivi et dossiers quotidiens.",
     href: "kaen44",
     image: KAEN44_AVATAR_SRC,
     tone: "violet",
@@ -3347,6 +3411,7 @@ function PersonaDashboard({
     return cleaned.replace(/[-_]+/g, " ").slice(0, 22);
   };
   const activeConversation = formatConversationLabel(currentConversationId);
+  const surfaceLinks = getSurfaceLinks();
   const metrics = [
     { label: isKaen44 ? "Dossiers" : "Fichiers", value: resourceCount || "0" },
     { label: "Activite", value: activityCount || "0" },
@@ -3465,102 +3530,44 @@ function PersonaDashboard({
     );
   }
 
-  const k44Modules = [
-    ["Messages", "pret"],
-    ["Documents", "pret"],
-    ["Projets", "pret"],
-    ["Vivy", "disponible"],
-    ["Aide", "pret"],
-    ["Compte", "securise"],
-  ];
-  const k44Agents = [
-    ["Kaen44", "active"],
-    ["A11", "ready"],
-    ["Vivy", "standby"],
-  ];
   const nossenAgents = [
     {
       name: "Kaen44",
       role: "Agent bureau",
       text: "Interface quotidienne, suivi, dossiers et cockpit utilisateur.",
       image: KAEN44_AVATAR_SRC,
+      href: surfaceLinks.kaen44Cockpit,
     },
     {
       name: "A11",
       role: "Agent media",
       text: "Audio, video, documents, transcription et analyse des flux.",
       image: A11_HOODED_AGENT_SRC,
+      href: surfaceLinks.a11,
     },
     {
       name: "Vivy",
       role: "Agent musical",
       text: "Voix, chansons, presence scene et publication creative.",
       image: VIVY_POSTER_SRC,
+      href: surfaceLinks.vivyStudio,
     },
-  ];
-  const nossenWorkflow = [
-    ["01", "Contexte", "Partir de Nossen, du projet, de la scene ou du dossier."],
-    ["02", "Agent", "Ouvrir Kaen44, A11 ou Vivy selon le type de travail."],
-    ["03", "Action", "Faire avancer la tache dans la surface specialisee."],
-    ["04", "Retour", "Garder le resultat clair pour la suite du cockpit."],
-  ];
-  const k44Tasks = [
-    ["Organiser les priorites", "78%"],
-    ["Preparer le prochain message", "56%"],
-    ["Relier les projets actifs", "92%"],
-    ["Rapport quotidien", "34%"],
-  ];
-  const k44Feed = [
-    ["OK", "Espace utilisateur pret"],
-    ["OK", "Contexte de travail charge"],
-    ["INFO", "Modules essentiels disponibles"],
-    ["OK", "Mode standard actif"],
-  ];
-  const k44QuickActions = [
-    ["Nouvelle tache", onStartChat],
-    ["Recherche", onOpenInspector],
-    ["Memoire", onOpenAdmin],
-    ["Rapport", onOpenStudio],
-    ["Parametres", onOpenAdmin],
-  ];
-  const k44Connections = [
-    ["Comptes", "securise"],
-    ["Documents", "actif"],
-    ["Media", "connecte"],
-    ["Espace prive", "securise"],
-  ];
-  const k44Security = [
-    ["Firewall", "actif"],
-    ["Encryption", "AES-256"],
-    ["Authentication", "device"],
-    ["Session", "securisee"],
-  ];
-  const k44Controls = [
-    ["Analyser", onOpenInspector],
-    ["Comprendre", onStartChat],
-    ["Anticiper", onOpenStudio],
-    ["Executer", onOpenAdmin],
-    ["Securiser", onOpenAdmin],
-    ["Optimiser", onOpenStudio],
   ];
 
   return (
-    <section className="k44-cockpit-dashboard" aria-label="K44 cockpit">
+    <section className="k44-cockpit-dashboard k44-cockpit-dashboard--simple" aria-label="K44 cockpit">
       <header className="k44-cockpit-header">
-        <div className="k44-session">
-          <span>Session active</span>
-          <strong>ID : K44-{activeConversation}</strong>
-        </div>
         <div className="k44-title">
           <h1>Kaen44</h1>
-          <p>Copilote quotidien Funesterie</p>
+          <p>Nossen et ses agents</p>
         </div>
-        <button type="button" className="k44-plus" onClick={onOpenStudio} aria-label="Ouvrir le studio">
-          +
-        </button>
+        <div className="k44-simple-actions">
+          <button type="button" onClick={onStartChat}>Discussion</button>
+          <button type="button" onClick={onOpenInspector}>Menu</button>
+        </div>
       </header>
 
-      <section id="nossen" className="k44-nossen-panel" aria-label="Presentation de Nossen et des agents">
+      <section id="nossen" className="k44-nossen-panel k44-nossen-panel--simple" aria-label="Presentation de Nossen et des agents">
         <div className="k44-nossen-copy">
           <span>Univers Funesterie</span>
           <h2>Nossen</h2>
@@ -3571,236 +3578,15 @@ function PersonaDashboard({
         </div>
         <div className="k44-nossen-agents" aria-label="Agents dans Nossen">
           {nossenAgents.map((agent) => (
-            <article key={agent.name}>
+            <a key={agent.name} href={agent.href}>
               <img src={agent.image} alt="" />
               <strong>{agent.name}</strong>
               <small>{agent.role}</small>
               <p>{agent.text}</p>
-            </article>
-          ))}
-        </div>
-        <div className="k44-nossen-workflow" aria-label="Workflow Nossen">
-          {nossenWorkflow.map(([number, title, text]) => (
-            <span key={title}>
-              <i>{number}</i>
-              <strong>{title}</strong>
-              <small>{text}</small>
-            </span>
+            </a>
           ))}
         </div>
       </section>
-
-      <div className="k44-cockpit-grid">
-        <aside className="k44-side k44-side--left" aria-label="Modules et statut Kaen44">
-          <article className="k44-panel">
-            <div className="k44-panel-title">
-              <h2>Modules</h2>
-              <span aria-hidden="true">x</span>
-            </div>
-            <div className="k44-list">
-              {k44Modules.map(([name, status]) => (
-                <div key={name} className="k44-row">
-                  <i aria-hidden="true">{name.slice(0, 1)}</i>
-                  <span>{name}</span>
-                  <strong>{status}</strong>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="k44-panel">
-            <div className="k44-panel-title">
-              <h2>Equipe</h2>
-              <span aria-hidden="true">x</span>
-            </div>
-            <div className="k44-list">
-              {k44Agents.map(([name, status]) => (
-                <div key={name} className="k44-row k44-row--agent">
-                  <img src={KAEN44_AVATAR_SRC} alt="" />
-                  <span>{name}</span>
-                  <strong>{status}</strong>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="k44-panel k44-health-panel">
-            <div className="k44-panel-title">
-              <h2>Etat du jour</h2>
-              <span aria-hidden="true">x</span>
-            </div>
-            <div className="k44-health-core">
-              <div className="k44-health-ring"><strong>97%</strong><span>optimal</span></div>
-              <div className="k44-health-bars">
-                {["Focus pret", "Priorite claire", "Rythme calme", "Aide disponible"].map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            </div>
-          </article>
-        </aside>
-
-        <main className="k44-core" aria-label="Poste central Kaen44">
-          <section className="k44-identity-panel">
-            <div className="k44-identity-copy">
-              <div className="k44-monogram">K</div>
-              <p>Kaen44</p>
-              <h2>Votre copilote au quotidien</h2>
-              <blockquote>
-                "Je simplifie."<br />
-                "J'anticipe."<br />
-                "Je securise."
-              </blockquote>
-            </div>
-            <div className="k44-portrait-frame" aria-hidden="true">
-              <img src={KAEN44_AVATAR_SRC} alt="" />
-            </div>
-            <div className="k44-auth-panel">
-              <span>Module</span>
-              <strong>K44</strong>
-              <span>Mode operationnel</span>
-              <strong>Standard</strong>
-              <span>Personnalite</span>
-              <strong>Adaptative</strong>
-              <span>Fiabilite</span>
-              <strong>99.7%</strong>
-            </div>
-          </section>
-
-          <section className="k44-command-deck" aria-label="Commandes principales Kaen44">
-            <div className="k44-command-column">
-              {k44Controls.slice(0, 3).map(([label, action]) => (
-                <button key={label} type="button" onClick={action}>
-                  <span aria-hidden="true">K</span>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="k44-orb" onClick={onStartChat} aria-label="Demander a Kaen44">
-              <span>K</span>
-            </button>
-            <div className="k44-command-column">
-              {k44Controls.slice(3).map(([label, action]) => (
-                <button key={label} type="button" onClick={action}>
-                  {label}
-                  <span aria-hidden="true">K</span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="k44-bottom-grid">
-            <article className="k44-panel">
-              <div className="k44-panel-title">
-                <h2>Taches actives</h2>
-                <span aria-hidden="true">x</span>
-              </div>
-              <div className="k44-tasks">
-                {k44Tasks.map(([label, progress], index) => (
-                  <div key={label} className="k44-task">
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <strong>{label}</strong>
-                    <em>{progress}</em>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="k44-panel">
-              <div className="k44-panel-title">
-                <h2>Feed systeme</h2>
-                <span aria-hidden="true">x</span>
-              </div>
-              <div className="k44-feed">
-                {k44Feed.map(([level, text]) => (
-                  <p key={text}><strong>[{level}]</strong> {text}</p>
-                ))}
-              </div>
-            </article>
-
-            <article className="k44-panel k44-resource-panel">
-              <div className="k44-panel-title">
-                <h2>Ressources</h2>
-                <span aria-hidden="true">x</span>
-              </div>
-              <div className="k44-resource-circles">
-                {metrics.map((metric) => (
-                  <div key={metric.label}>
-                    <strong>{metric.value}</strong>
-                    <span>{metric.label}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-        </main>
-
-        <aside className="k44-side k44-side--right" aria-label="Actions rapides et securite Kaen44">
-          <article className="k44-panel">
-            <div className="k44-panel-title">
-              <h2>Notifications</h2>
-              <span>7</span>
-            </div>
-            <div className="k44-feed k44-feed--right">
-              {["Priorites synchronisees", "Contexte utilisateur pret", "3 actions proposees", "A11 peut aider si besoin"].map((item) => (
-                <p key={item}>{item}<time>00:15</time></p>
-              ))}
-            </div>
-          </article>
-
-          <article className="k44-panel">
-            <div className="k44-panel-title">
-              <h2>Acces rapide</h2>
-              <span aria-hidden="true">x</span>
-            </div>
-            <div className="k44-quick-grid">
-              {k44QuickActions.map(([label, action]) => (
-                <button key={label} type="button" onClick={action}>
-                  <span aria-hidden="true">{label.slice(0, 2).toUpperCase()}</span>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </article>
-
-          <article className="k44-panel">
-            <div className="k44-panel-title">
-              <h2>Connexions</h2>
-              <span aria-hidden="true">x</span>
-            </div>
-            <div className="k44-list">
-              {k44Connections.map(([label, status]) => (
-                <div key={label} className="k44-row k44-row--compact">
-                  <span>{label}</span>
-                  <strong>{status}</strong>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="k44-panel">
-            <div className="k44-panel-title">
-              <h2>Securite</h2>
-              <span aria-hidden="true">K</span>
-            </div>
-            <div className="k44-list">
-              {k44Security.map(([label, status]) => (
-                <div key={label} className="k44-row k44-row--compact">
-                  <span>{label}</span>
-                  <strong>{status}</strong>
-                </div>
-              ))}
-            </div>
-          </article>
-        </aside>
-      </div>
-
-      <footer className="k44-console-strip" aria-label="Mode Kaen44">
-        <button type="button" onClick={onStartChat}>Mode standard</button>
-        <button type="button" onClick={onOpenInspector}>Focus equilibre</button>
-        <button type="button" onClick={onOpenStudio}>Voice activee</button>
-        <button type="button" onClick={onOpenAdmin}>Copilote Kaen44</button>
-      </footer>
     </section>
   );
 }

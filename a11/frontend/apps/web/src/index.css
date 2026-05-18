@@ -1842,6 +1842,387 @@ html.funesterie-cockpit-page-root body {
   background: #030307;
 }
 
+.funesterie-ops-shell,
+.funesterie-ops-shell * {
+  box-sizing: border-box;
+  letter-spacing: 0;
+  min-width: 0;
+}
+
+.funesterie-ops-shell {
+  --ops-bg: #050609;
+  --ops-panel: rgba(12, 15, 21, 0.88);
+  --ops-panel-strong: rgba(16, 20, 28, 0.96);
+  --ops-line: rgba(177, 196, 216, 0.18);
+  --ops-text: #f6f1fa;
+  --ops-muted: #bfc4d1;
+  --ops-ok: #39e58f;
+  --ops-warn: #f2b84a;
+  --ops-down: #ff6b6b;
+  --ops-cyan: #44d1d5;
+  min-height: 100vh;
+  padding: 18px clamp(14px, 3vw, 34px) 28px;
+  color: var(--ops-text);
+  background:
+    radial-gradient(circle at 16% 12%, rgba(68, 209, 213, 0.14), transparent 26%),
+    radial-gradient(circle at 84% 16%, rgba(242, 184, 74, 0.12), transparent 28%),
+    linear-gradient(145deg, #08090d 0%, #050609 62%, #07100f 100%);
+}
+
+.funesterie-ops-shell a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.funesterie-ops-nav,
+.funesterie-ops-hero,
+.funesterie-ops-status-grid,
+.funesterie-ops-flow,
+.funesterie-ops-actions {
+  width: min(1180px, 100%);
+  margin-inline: auto;
+}
+
+.funesterie-ops-nav {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: minmax(190px, auto) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--ops-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(6, 8, 12, 0.78);
+  backdrop-filter: blur(16px);
+}
+
+.funesterie-ops-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.funesterie-ops-brand img {
+  width: 48px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.funesterie-ops-brand span {
+  display: grid;
+  gap: 2px;
+}
+
+.funesterie-ops-brand strong {
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.funesterie-ops-brand small,
+.funesterie-ops-status-card span,
+.funesterie-ops-flow > div span {
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-nav > div {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.funesterie-ops-nav > div a {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #e9edf5;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-nav > div a:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.funesterie-ops-hero {
+  min-height: 300px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.28fr);
+  gap: 14px;
+  align-items: stretch;
+  padding: 18px 0 14px;
+}
+
+.funesterie-ops-hero > div,
+.funesterie-ops-hero aside,
+.funesterie-ops-status-card,
+.funesterie-ops-flow,
+.funesterie-ops-actions {
+  border: 1px solid var(--ops-line);
+  border-radius: 8px;
+  background: var(--ops-panel);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.funesterie-ops-hero > div {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  padding: clamp(24px, 4vw, 48px);
+}
+
+.funesterie-ops-hero > div > span {
+  color: var(--ops-cyan);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-hero h1 {
+  margin: 0;
+  color: #fff8ff;
+  font-size: clamp(42px, 6vw, 82px);
+  line-height: 0.96;
+  font-weight: 950;
+}
+
+.funesterie-ops-hero p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--ops-muted);
+  font-size: clamp(16px, 1.5vw, 20px);
+  line-height: 1.55;
+}
+
+.funesterie-ops-hero aside {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+  background: var(--ops-panel-strong);
+}
+
+.funesterie-ops-hero aside strong {
+  color: var(--ops-ok);
+  font-size: 58px;
+  line-height: 1;
+}
+
+.funesterie-ops-hero aside.is-warn strong {
+  color: var(--ops-warn);
+}
+
+.funesterie-ops-hero aside span {
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-hero aside small {
+  color: var(--ops-muted);
+}
+
+.funesterie-ops-status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding-bottom: 14px;
+}
+
+.funesterie-ops-status-card {
+  min-height: 190px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+}
+
+.funesterie-ops-status-card span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.funesterie-ops-status-card i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--ops-warn);
+  box-shadow: 0 0 16px rgba(242, 184, 74, 0.42);
+}
+
+.funesterie-ops-status-card.is-ok i {
+  background: var(--ops-ok);
+  box-shadow: 0 0 16px rgba(57, 229, 143, 0.42);
+}
+
+.funesterie-ops-status-card.is-down i {
+  background: var(--ops-down);
+  box-shadow: 0 0 16px rgba(255, 107, 107, 0.42);
+}
+
+.funesterie-ops-status-card strong {
+  color: #fff8ff;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.funesterie-ops-status-card em {
+  color: var(--ops-cyan);
+  font-style: normal;
+  font-weight: 850;
+}
+
+.funesterie-ops-status-card small {
+  color: var(--ops-muted);
+  line-height: 1.45;
+}
+
+.funesterie-ops-status-card b {
+  align-self: end;
+  color: #f6f1fa;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-flow {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.52fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 18px;
+}
+
+.funesterie-ops-flow > div {
+  display: grid;
+  gap: 8px;
+}
+
+.funesterie-ops-flow h2 {
+  margin: 0;
+  color: #fff8ff;
+  font-size: clamp(24px, 3vw, 40px);
+  line-height: 1;
+}
+
+.funesterie-ops-flow p {
+  margin: 0;
+  color: var(--ops-muted);
+  line-height: 1.55;
+}
+
+.funesterie-ops-flow ol {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.funesterie-ops-flow li {
+  min-height: 86px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.funesterie-ops-flow li i {
+  color: var(--ops-cyan);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.funesterie-ops-flow li strong {
+  color: #fff8ff;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.35fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+}
+
+.funesterie-ops-actions div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.funesterie-ops-actions a,
+.funesterie-ops-actions button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #f6f1fa;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.funesterie-ops-actions a:first-child {
+  color: #08100f;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--ops-ok), var(--ops-cyan));
+}
+
+.funesterie-ops-actions aside p {
+  margin: 0;
+  color: var(--ops-muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .funesterie-ops-nav,
+  .funesterie-ops-hero,
+  .funesterie-ops-flow,
+  .funesterie-ops-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .funesterie-ops-nav > div {
+    justify-content: flex-start;
+  }
+
+  .funesterie-ops-status-grid,
+  .funesterie-ops-flow ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .funesterie-ops-shell {
+    padding: 10px;
+  }
+
+  .funesterie-ops-status-grid,
+  .funesterie-ops-flow ol {
+    grid-template-columns: 1fr;
+  }
+}
+
 html.vivy-public-page-root body {
   background: #05030a;
   overscroll-behavior-y: auto;
@@ -4906,6 +5287,39 @@ body {
   margin-bottom: 14px;
 }
 
+.k44-cockpit-dashboard--simple .k44-cockpit-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.k44-cockpit-dashboard--simple .k44-title {
+  text-align: left;
+}
+
+.k44-simple-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.k44-simple-actions button {
+  min-height: 42px;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #f8e4c7;
+  background: rgba(30, 19, 14, 0.76);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.k44-simple-actions button:hover {
+  border-color: var(--k44-line-strong);
+  background: rgba(39, 21, 78, 0.9);
+}
+
 .k44-session,
 .k44-plus,
 .k44-panel,
@@ -4981,6 +5395,10 @@ body {
   scroll-margin-top: 16px;
 }
 
+.k44-nossen-panel--simple {
+  grid-template-columns: minmax(240px, 0.38fr) minmax(0, 1fr);
+}
+
 .k44-nossen-copy {
   display: grid;
   align-content: center;
@@ -5018,7 +5436,8 @@ body {
   gap: 10px;
 }
 
-.k44-nossen-agents article {
+.k44-nossen-agents article,
+.k44-nossen-agents a {
   min-height: 148px;
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
@@ -5032,6 +5451,12 @@ body {
   border-radius: 8px;
   padding: 10px;
   background: rgba(255, 255, 255, 0.035);
+  text-decoration: none;
+}
+
+.k44-nossen-agents a:hover {
+  border-color: rgba(95, 255, 171, 0.34);
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .k44-nossen-agents img {

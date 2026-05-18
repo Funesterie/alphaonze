@@ -1363,7 +1363,7 @@ const corsOptions = {
     return callback(null, false);
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-NEZ-TOKEN', 'X-NEZ-ADMIN', 'X-Casino-Tab-Id']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-NEZ-TOKEN', 'X-NEZ-ADMIN', 'X-Casino-Tab-Id', 'X-A11-Local-Dev-Bypass']
 };
 
 // Use CORS middleware globally
