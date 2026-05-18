@@ -1284,6 +1284,7 @@ function loadGoogleIdentityScript() {
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const isKaen44 = isKaen44Experience();
   const localDevSurface = isLocalDevSurface();
+  const surfaceLinks = getSurfaceLinks();
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [username, setUsername] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
@@ -1770,6 +1771,21 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
       {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
+      <div
+        className="alpha-auth-policy-links"
+        style={{
+          display: "flex",
+          gap: "12px",
+          justifyContent: "center",
+          flexWrap: "wrap",
+          width: "min(100%, 340px)",
+          marginTop: "2px",
+          fontSize: "12px",
+        }}
+      >
+        <a href={surfaceLinks.privacy}>Confidentialité</a>
+        <a href={surfaceLinks.terms}>Conditions</a>
+      </div>
       </div>
     </div>
   );
@@ -3314,6 +3330,8 @@ function FunesterieConnectedHomePage({
         <span>Nossen</span>
         <span>Agents</span>
         <span>Compte</span>
+        <a href={surfaceLinks.privacy}>Confidentialité</a>
+        <a href={surfaceLinks.terms}>Conditions</a>
         <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
       </footer>
     </main>

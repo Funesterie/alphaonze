@@ -341,6 +341,17 @@
   opacity: 0.68;
 }
 
+.alpha-auth-policy-links a {
+  color: #c4b5fd;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.alpha-auth-policy-links a:hover {
+  color: #f8fafc;
+  text-decoration: underline;
+}
+
 .kaen-auth-shell::before,
 .kaen-auth-shell::after {
   content: "";
