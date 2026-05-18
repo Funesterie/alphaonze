@@ -3,7 +3,7 @@ import { exec, spawn } from "node:child_process";
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { DragonActionExecution, DragonIntegrationTarget } from "@funeste38/dragon-contracts";
+import type { DragonActionExecution, DragonIntegrationTarget } from "@nossen/dragon-contracts";
 
 export const A11_PORT = 3000;
 export const CERBERE_PORT = 4545;

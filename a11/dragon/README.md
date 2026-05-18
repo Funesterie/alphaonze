@@ -6,11 +6,11 @@ It keeps the ecosystem map that points toward `qflush`, `A11`, `a11ba`, `a11fron
 
 ## Workspace
 
-- `apps/dragon-daemon`: published as `@funeste38/dragon`
+- `apps/dragon-daemon`: published as `@nossen/dragon`
 - `apps/dragon-api`: Railway-ready API shell
 - `apps/dragon-web`: Netlify-ready React cockpit
-- `packages/contracts`: published as `@funeste38/dragon-contracts`
-- `packages/upstream`: published as `@funeste38/dragon-upstream`
+- `packages/contracts`: published as `@nossen/dragon-contracts`
+- `packages/upstream`: published as `@nossen/dragon-upstream`
 
 ## Local Commands
 

@@ -617,8 +617,8 @@ function getQflushModuleCandidates() {
     if (fs.existsSync(rootEntry)) candidates.push(toFileImportSpecifier(rootEntry));
   }
 
-  candidates.push('@funeste38/qflush/dist/daemon/qflushd.js');
-  candidates.push('@funeste38/qflush');
+  candidates.push('@nossen/qflush/dist/daemon/qflushd.js');
+  candidates.push('@nossen/qflush');
 
   return [...new Set(candidates.filter(Boolean))];
 }

@@ -2,12 +2,27 @@
   "name": "a11-coder",
   "displayName": "A11 — AI Coding Agent",
   "description": "The best AI coding agent. Powered by A11/funesterie.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "funesterie",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["AI", "Chat", "Other"],
-  "keywords": ["ai", "coding", "agent", "a11", "funesterie", "copilot"],
-  "activationEvents": ["onStartupFinished"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "coding",
+    "agent",
+    "a11",
+    "funesterie",
+    "copilot"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "icon": "media/icon.png",
   "repository": {
@@ -26,51 +41,167 @@
     },
     "views": {
       "a11-sidebar": [
-        { "type": "webview", "id": "a11.chatView", "name": "Chat" },
-        { "type": "tree", "id": "a11.historyView", "name": "Historique" },
-        { "type": "tree", "id": "a11.statusView", "name": "Statut" }
+        {
+          "type": "webview",
+          "id": "a11.chatView",
+          "name": "Chat"
+        },
+        {
+          "type": "tree",
+          "id": "a11.historyView",
+          "name": "Historique"
+        },
+        {
+          "type": "tree",
+          "id": "a11.statusView",
+          "name": "Statut"
+        }
       ]
     },
     "commands": [
-      { "command": "a11.chat", "title": "A11: Chat" },
-      { "command": "a11.explain", "title": "A11: Expliquer le code" },
-      { "command": "a11.fix", "title": "A11: Corriger les erreurs" },
-      { "command": "a11.refactor", "title": "A11: Refactoriser" },
-      { "command": "a11.generate", "title": "A11: Générer du code" },
-      { "command": "a11.test", "title": "A11: Générer des tests" },
-      { "command": "a11.review", "title": "A11: Code review" },
-      { "command": "a11.commit", "title": "A11: Générer un message de commit" },
-      { "command": "a11.docs", "title": "A11: Générer la documentation" },
-      { "command": "a11.optimize", "title": "A11: Optimiser les performances" },
-      { "command": "a11.security", "title": "A11: Audit de sécurité" },
-      { "command": "a11.login", "title": "A11: Se connecter" },
-      { "command": "a11.logout", "title": "A11: Se déconnecter" },
-      { "command": "a11.status", "title": "A11: Statut du serveur" },
-      { "command": "a11.openChat", "title": "A11: Ouvrir le chat" },
-      { "command": "a11.inlineChat", "title": "A11: Chat inline" },
-      { "command": "a11.newConversation", "title": "A11: Nouvelle conversation" }
+      {
+        "command": "a11.chat",
+        "title": "A11: Chat"
+      },
+      {
+        "command": "a11.explain",
+        "title": "A11: Expliquer le code"
+      },
+      {
+        "command": "a11.fix",
+        "title": "A11: Corriger les erreurs"
+      },
+      {
+        "command": "a11.refactor",
+        "title": "A11: Refactoriser"
+      },
+      {
+        "command": "a11.generate",
+        "title": "A11: Générer du code"
+      },
+      {
+        "command": "a11.test",
+        "title": "A11: Générer des tests"
+      },
+      {
+        "command": "a11.review",
+        "title": "A11: Code review"
+      },
+      {
+        "command": "a11.commit",
+        "title": "A11: Générer un message de commit"
+      },
+      {
+        "command": "a11.docs",
+        "title": "A11: Générer la documentation"
+      },
+      {
+        "command": "a11.optimize",
+        "title": "A11: Optimiser les performances"
+      },
+      {
+        "command": "a11.security",
+        "title": "A11: Audit de sécurité"
+      },
+      {
+        "command": "a11.login",
+        "title": "A11: Se connecter"
+      },
+      {
+        "command": "a11.logout",
+        "title": "A11: Se déconnecter"
+      },
+      {
+        "command": "a11.status",
+        "title": "A11: Statut du serveur"
+      },
+      {
+        "command": "a11.openChat",
+        "title": "A11: Ouvrir le chat"
+      },
+      {
+        "command": "a11.inlineChat",
+        "title": "A11: Chat inline"
+      },
+      {
+        "command": "a11.newConversation",
+        "title": "A11: Nouvelle conversation"
+      }
     ],
     "menus": {
       "editor/context": [
-        { "command": "a11.explain", "group": "a11@1", "when": "editorHasSelection" },
-        { "command": "a11.fix", "group": "a11@2" },
-        { "command": "a11.refactor", "group": "a11@3", "when": "editorHasSelection" },
-        { "command": "a11.generate", "group": "a11@4" },
-        { "command": "a11.test", "group": "a11@5", "when": "editorHasSelection" },
-        { "command": "a11.review", "group": "a11@6" },
-        { "command": "a11.docs", "group": "a11@7", "when": "editorHasSelection" },
-        { "command": "a11.optimize", "group": "a11@8", "when": "editorHasSelection" },
-        { "command": "a11.security", "group": "a11@9" }
+        {
+          "command": "a11.explain",
+          "group": "a11@1",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "a11.fix",
+          "group": "a11@2"
+        },
+        {
+          "command": "a11.refactor",
+          "group": "a11@3",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "a11.generate",
+          "group": "a11@4"
+        },
+        {
+          "command": "a11.test",
+          "group": "a11@5",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "a11.review",
+          "group": "a11@6"
+        },
+        {
+          "command": "a11.docs",
+          "group": "a11@7",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "a11.optimize",
+          "group": "a11@8",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "a11.security",
+          "group": "a11@9"
+        }
       ],
       "editor/title": [
-        { "command": "a11.inlineChat", "group": "navigation" }
+        {
+          "command": "a11.inlineChat",
+          "group": "navigation"
+        }
       ]
     },
     "keybindings": [
-      { "command": "a11.chat", "key": "ctrl+shift+a", "mac": "cmd+shift+a" },
-      { "command": "a11.explain", "key": "ctrl+shift+e", "mac": "cmd+shift+e", "when": "editorHasSelection" },
-      { "command": "a11.fix", "key": "ctrl+shift+f", "mac": "cmd+shift+f" },
-      { "command": "a11.inlineChat", "key": "ctrl+i", "mac": "cmd+i", "when": "editorTextFocus" }
+      {
+        "command": "a11.chat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "a11.explain",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "a11.fix",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f"
+      },
+      {
+        "command": "a11.inlineChat",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
+        "when": "editorTextFocus"
+      }
     ],
     "configuration": {
       "title": "A11 Agent",
@@ -97,7 +228,11 @@
         },
         "a11.theme": {
           "type": "string",
-          "enum": ["dark", "light", "auto"],
+          "enum": [
+            "dark",
+            "light",
+            "auto"
+          ],
           "default": "auto",
           "description": "Thème de l'interface"
         },
@@ -117,12 +252,12 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "@vscode/vsce": "^2.22.0",
-    "eslint": "^8.0.0",
-    "typescript": "^5.3.0"
+    "@types/node": "^25.9.0",
+    "@types/vscode": "^1.120.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "@vscode/vsce": "^3.9.1",
+    "eslint": "^10.4.0",
+    "typescript": "^6.0.3"
   }
 }

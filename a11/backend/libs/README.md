@@ -1,5 +1,7 @@
 # QFLUSH — Orchestrateur Funesterie
 
+Distribution npm NOSSEN: `@nossen/qflush`. La branche `1.0.x` remplace les anciennes dépendances `@funeste38/*` par les modules publics `@nossen/*` pour permettre une installation fraîche depuis npmjs ou le miroir JFrog.
+
 QFLUSH est l’orchestrateur principal de l’écosystème Funesterie. Il permet de piloter, superviser, configurer et tester tous les modules internes (cortex, spyder, nezlephant, npz, piccolo, etc.) depuis une seule CLI.
 
 ---
@@ -107,7 +109,7 @@ npm publish --access public
 Pour installer et utiliser globalement :
 
 ```sh
-npm install -g @funeste38/qflush
+npm install -g @nossen/qflush
 qflush --help
 ```
 

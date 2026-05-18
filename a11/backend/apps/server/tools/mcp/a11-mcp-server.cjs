@@ -624,7 +624,7 @@ const TOOLS = [
       properties: {
         command: {
           type: 'string',
-          description: 'Commande à exécuter (ex: "npm install @funeste38/qflush", "git status", "node script.cjs").',
+          description: 'Commande à exécuter (ex: "npm install @nossen/qflush", "git status", "node script.cjs").',
         },
         args: {
           type: 'array',

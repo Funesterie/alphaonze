@@ -1,6 +1,6 @@
 {
   "name": "a11-control",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Canonical local and production entrypoint for A11",
   "scripts": {

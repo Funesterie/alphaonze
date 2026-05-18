@@ -1,4 +1,4 @@
-declare module "@funeste38/nezlephant";
-declare module "@funeste38/freeland";
-declare module "@funeste38/bat";
-declare module "@funeste38/envaptex";
+declare module "@nossen/nezlephant";
+declare module "@nossen/freeland";
+declare module "@nossen/bat";
+declare module "@nossen/envaptex";

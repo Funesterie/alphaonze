@@ -45,7 +45,7 @@ function loadSecretScanner() {
             // Prefer local scanner shipped in this repo. If an external spyder package is installed,
             // attempt to load it at runtime but don't keep a static reference that TypeScript must resolve.
             try {
-                maybe_1 = eval("typeof require !== 'undefined' ? require('@funeste38/spyder/decoders/secrets') : undefined");
+                maybe_1 = eval("typeof require !== 'undefined' ? require('@nossen/spyder/decoders/secrets') : undefined");
                 if (maybe_1 && typeof maybe_1.scanFileForSecrets === 'function') {
                     return [2 /*return*/, { scanFileForSecrets: function (filePath, options) { return Promise.resolve(maybe_1.scanFileForSecrets(filePath, options)); } }];
                 }

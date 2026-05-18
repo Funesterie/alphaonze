@@ -1,6 +1,6 @@
 {
-  "name": "@funeste38/dragon-api",
-  "version": "0.2.0",
+  "name": "@nossen/dragon-api",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "main": "dist/server.js",
@@ -15,13 +15,13 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@funeste38/dragon-contracts": "^0.2.0",
-    "@funeste38/dragon-upstream": "^0.2.0",
-    "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "@nossen/dragon-contracts": "^1.0.0",
+    "@nossen/dragon-upstream": "^1.0.0"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.18",
-    "@types/express": "^5.0.5"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6"
   }
 }

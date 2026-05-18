@@ -55,7 +55,7 @@ const FUNESTERIE_MODULES = [
   },
   {
     id: 'qflush',
-    packageName: '@funeste38/qflush',
+    packageName: '@nossen/qflush',
     capabilities: ['flow-runner', 'bridge-hooks', 'gamepad-keyboard-mouse'],
   },
   {

@@ -1,9 +1,9 @@
 # Ekko — dépendances Python
 # ============================================================
 # Core (toujours requis)
-flask>=3.0.0
-numpy>=1.24.0
-waitress>=3.0.0
+flask>=3.1.3
+numpy>=2.4.5
+waitress>=3.0.2
 
 # ============================================================
 # Capture audio — un seul selon la plateforme

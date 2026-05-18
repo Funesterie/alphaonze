@@ -18,4 +18,4 @@ ENV DRAGON_SERVICE=api
 
 EXPOSE 4600
 
-CMD ["sh", "-lc", "if [ \"$DRAGON_SERVICE\" = \"daemon\" ]; then npm --workspace @funeste38/dragon run start; else npm --workspace @funeste38/dragon-api run start; fi"]
+CMD ["sh", "-lc", "if [ \"$DRAGON_SERVICE\" = \"daemon\" ]; then npm --workspace @nossen/dragon run start; else npm --workspace @nossen/dragon-api run start; fi"]

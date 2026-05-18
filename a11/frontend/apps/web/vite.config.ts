@@ -60,12 +60,6 @@ export default {
       }
     }
   },
-  optimizeDeps: {
-    // Ensure esbuild generates sourcemaps for pre-bundled dependencies
-    esbuildOptions: {
-      sourcemap: true
-    }
-  },
   build: {
     sourcemap: true
   },

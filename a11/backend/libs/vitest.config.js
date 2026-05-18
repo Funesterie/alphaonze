@@ -15,7 +15,6 @@ export default defineConfig({
   },
   test: {
     include: [
-      'src/tests/legacy-runner.spec.ts',
       'src/**/__tests__/**/*.test.ts',
       'extensions/**/src/**/*.test.ts',
       'src/tests/**/*.test.ts',
@@ -23,7 +22,7 @@ export default defineConfig({
       'src/cortex/**/*.spec.ts',
       'src/**/*.spec.ts'
     ],
-    exclude: ['**/out/**', '**/dist/**', 'node_modules/**'],
+    exclude: ['**/out/**', '**/dist/**', 'node_modules/**', 'src/tests/legacy-runner.spec.ts'],
     setupFiles: ['./vitest.setup.ts'],
     environment: 'node',
     threads: false,

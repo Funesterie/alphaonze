@@ -1,6 +1,6 @@
 {
-  "name": "@funeste38/dragon",
-  "version": "0.2.0",
+  "name": "@nossen/dragon",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Funesterie/funesterie.git"
+    "url": "git+https://github.com/Funesterie/funesterie.git"
   },
   "bugs": {
     "url": "https://github.com/Funesterie/funesterie/issues"
@@ -30,11 +30,11 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@funeste38/dragon-contracts": "^0.2.0",
-    "@funeste38/dragon-upstream": "^0.2.0",
-    "express": "^5.1.0"
+    "express": "^5.2.1",
+    "@nossen/dragon-contracts": "^1.0.0",
+    "@nossen/dragon-upstream": "^1.0.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.5"
+    "@types/express": "^5.0.6"
   }
 }

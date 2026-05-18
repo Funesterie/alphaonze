@@ -29,8 +29,8 @@ export type CustomsReport = {
 export type CustomsScanner = (mod: ModuleDescriptor) => Promise<CustomsIssue[]>;
 
 export const MODULES: ModuleDescriptor[] = [
-  { name: 'freeland', pkg: '@funeste38/freeland', cwd: process.cwd(), requiredEnv: ['FREELAND_DB_URL'], requiredFiles: ['freeland.config.json'] },
-  { name: 'bat', pkg: '@funeste38/bat', cwd: process.cwd(), requiredEnv: ['BAT_TOKEN'], requiredFiles: ['bat.config.json'] },
+  { name: 'freeland', pkg: '@nossen/freeland', cwd: process.cwd(), requiredEnv: ['FREELAND_DB_URL'], requiredFiles: ['freeland.config.json'] },
+  { name: 'bat', pkg: '@nossen/bat', cwd: process.cwd(), requiredEnv: ['BAT_TOKEN'], requiredFiles: ['bat.config.json'] },
 ];
 
 export const envScanner: CustomsScanner = async (mod) => {

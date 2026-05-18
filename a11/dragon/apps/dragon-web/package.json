@@ -1,6 +1,6 @@
 {
-  "name": "@funeste38/dragon-web",
-  "version": "0.2.0",
+  "name": "@nossen/dragon-web",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "Dragon web cockpit for runtime supervision and orchestration.",
@@ -11,14 +11,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@funeste38/dragon-contracts": "^0.2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "@nossen/dragon-contracts": "^1.0.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.7.0",
-    "vite": "^7.2.1"
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "vite": "^8.0.13"
   }
 }

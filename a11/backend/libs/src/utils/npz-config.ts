@@ -12,7 +12,7 @@ export function getNpzNamespace(): string {
     // try to require the nezlephant package directly to avoid loading the whole lib index
     // which may pull packages that are not compatible in the runner.
      
-    const nez = require('@funeste38/nezlephant');
+    const nez = require('@nossen/nezlephant');
     if (nez) {
       if (typeof nez.encode === 'function') {
         const out = nez.encode(seed);

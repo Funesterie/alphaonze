@@ -1,4 +1,4 @@
-# Publishing @funeste38/qflash
+# Publishing @nossen/qflush
 
 Checklist before publishing:
 
@@ -22,7 +22,7 @@ Testing globally without publishing:
 
 - Link locally: `cd qflash && npm link`
 - Test: `qflash --help` or `qflash start`
-- Remove link: `npm unlink -g @funeste38/qflash`
+- Remove link: `npm unlink -g @nossen/qflush`
 
 Notes on 2FA:
 - If your npm account requires 2FA for publishing, you'll be prompted for the OTP.

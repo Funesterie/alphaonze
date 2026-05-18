@@ -1,6 +1,6 @@
 THIRD-PARTY LICENSES AND NOTICES
 
-This project "@funeste38/qflash" includes third-party components that are
+This project "@nossen/qflush" includes third-party components that are
 licensed under their respective open-source licenses. For full license
 texts, see the packages under "node_modules" or each package's repository.
 
@@ -16,25 +16,25 @@ Required attribution and notices:
   with qflash, include the envapt LICENSE file (from node_modules/envapt)
   in your distribution (for example: /licenses/envapt-LICENSE.txt).
 
-- @funeste38/envaptex
+- @nossen/envaptex
   Copyright (c) the original authors
-  License: see node_modules/@funeste38/envaptex/package.json (include its LICENSE)
+  License: see node_modules/@nossen/envaptex/package.json (include its LICENSE)
 
-- @funeste38/rome
+- @nossen/rome
   Copyright (c) the original authors
-  License: see node_modules/@funeste38/rome/package.json (include its LICENSE)
+  License: see node_modules/@nossen/rome/package.json (include its LICENSE)
 
-- @funeste38/nezlephant
+- @nossen/nezlephant
   Copyright (c) the original authors
-  License: see node_modules/@funeste38/nezlephant/package.json (include its LICENSE)
+  License: see node_modules/@nossen/nezlephant/package.json (include its LICENSE)
 
-- @funeste38/freeland
+- @nossen/freeland
   Copyright (c) the original authors
-  License: see node_modules/@funeste38/freeland/package.json (include its LICENSE)
+  License: see node_modules/@nossen/freeland/package.json (include its LICENSE)
 
-- @funeste38/bat
+- @nossen/bat
   Copyright (c) the original authors
-  License: see node_modules/@funeste38/bat/package.json (include its LICENSE)
+  License: see node_modules/@nossen/bat/package.json (include its LICENSE)
 
 RECOMMENDATION FOR DISTRIBUTION
 

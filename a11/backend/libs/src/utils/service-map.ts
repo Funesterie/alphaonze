@@ -13,7 +13,7 @@ export const SERVICE_MAP = {
     candidates: [
       local("src/spyder"),
       local("spyder/apps/spyder-core"),
-      "node_modules/@funeste38/spyder",
+      "node_modules/@nossen/spyder",
     ],
     entry: "dist/index.js",
   },

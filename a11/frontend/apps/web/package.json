@@ -1,6 +1,6 @@
 {
   "name": "a11-web",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -15,11 +15,11 @@
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.9.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react-swc": "^3.11.0",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.21"
+    "@vitejs/plugin-react-swc": "^4.3.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13"
   }
 }

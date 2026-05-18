@@ -18,5 +18,6 @@
     "forge:status": "node scripts/funesterie-forge.cjs status",
     "forge:repo-map": "node scripts/funesterie-forge.cjs repo-map",
     "forge:doctor": "node scripts/funesterie-forge.cjs doctor"
-  }
+  },
+  "version": "0.0.1"
 }

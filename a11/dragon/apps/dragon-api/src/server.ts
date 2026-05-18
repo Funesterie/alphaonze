@@ -17,7 +17,7 @@ import type {
   DragonTimelineLevel,
   DragonTimelineSnapshot,
   UpstreamProbe
-} from "@funeste38/dragon-contracts";
+} from "@nossen/dragon-contracts";
 
 import {
   buildSystemSnapshot,
@@ -29,7 +29,7 @@ import {
   readIntegrationLogs,
   resolveDragonManifestPath,
   runDragonDaemonCycle
-} from "@funeste38/dragon-upstream";
+} from "@nossen/dragon-upstream";
 import { runDragonEphemeralMemoryFlow } from "./compat-memory.js";
 
 const port = Number(process.env.PORT ?? process.env.DRAGON_API_PORT ?? 4600);

@@ -7,7 +7,7 @@ export async function loadSecretScanner(): Promise<SecretScanner> {
   try {
     // dynamic require via eval to avoid TypeScript resolving this module name at compile time
     // eslint-disable-next-line no-eval
-    const maybe = eval("typeof require !== 'undefined' ? require('@funeste38/spyder/decoders/secrets') : undefined");
+    const maybe = eval("typeof require !== 'undefined' ? require('@nossen/spyder/decoders/secrets') : undefined");
     if (maybe && typeof maybe.scanFileForSecrets === 'function') {
       return { scanFileForSecrets: (filePath: string, options?: any) => Promise.resolve(maybe.scanFileForSecrets(filePath, options)) } as SecretScanner;
     }

@@ -1,6 +1,6 @@
 {
   "name": "@funesterie/alexa-vivy-skill",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Alexa Skill bridge for Vivy singing through A11/Kaen44 audio services.",
   "main": "src/index.cjs",
