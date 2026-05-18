@@ -2527,6 +2527,7 @@ function FunesterieCockpitPage({
   displayName: string;
 }) {
   const surfaceLinks = getSurfaceLinks();
+  const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [googleStarting, setGoogleStarting] = useState(false);
   const [oauthMessage, setOauthMessage] = useState("");
   const cockpitServices = useMemo(() => {
@@ -2539,6 +2540,7 @@ function FunesterieCockpitPage({
         url: surfaceLinks.cockpit,
         healthUrl: `${sameOrigin}/`,
         note: "Point d'entree commun.",
+        image: FUNESTERIE_LOGO_SRC,
       },
       {
         id: "k44",
@@ -2547,6 +2549,7 @@ function FunesterieCockpitPage({
         url: surfaceLinks.kaen44,
         healthUrl: new URL("/health", KAEN44_PUBLIC_APP_URL).toString(),
         note: "Suivi quotidien et interface client.",
+        image: KAEN44_AVATAR_SRC,
       },
       {
         id: "a11",
@@ -2555,6 +2558,7 @@ function FunesterieCockpitPage({
         url: surfaceLinks.a11,
         healthUrl: new URL("/health", A11_PUBLIC_APP_URL).toString(),
         note: "Audio, video, documents, analyse.",
+        image: A11_HOODED_AGENT_SRC,
       },
       {
         id: "vivy",
@@ -2563,6 +2567,7 @@ function FunesterieCockpitPage({
         url: surfaceLinks.vivy,
         healthUrl: new URL("/health", VIVY_PUBLIC_APP_URL).toString(),
         note: "Voix, musique, scene, publication.",
+        image: VIVY_POSTER_SRC,
       },
       {
         id: "mcp",
@@ -2687,9 +2692,14 @@ function FunesterieCockpitPage({
         <div>
           <a href="#etat">Etat</a>
           <a href={surfaceLinks.agents}>Agents</a>
-          <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.kaen44}>K44</a>
-          <a href={surfaceLinks.a11Login}>A11</a>
+          <span className="funesterie-ops-nav-agents" aria-label="Acces agents">
+            {agentShortcuts.map((agent) => (
+              <a key={agent.id} href={agent.href} title={agent.name}>
+                <img src={agent.image} alt="" />
+                <span>{agent.name}</span>
+              </a>
+            ))}
+          </span>
         </div>
       </nav>
 
@@ -2712,6 +2722,7 @@ function FunesterieCockpitPage({
       <section id="etat" className="funesterie-ops-status-grid" aria-label="Etat des services Funesterie">
         {cockpitServices.map((service) => (
           <a key={service.id} href={service.url} className={`funesterie-ops-status-card is-${serviceStatus[service.id] || "checking"}`}>
+            {"image" in service && service.image ? <img className="funesterie-ops-status-thumb" src={service.image} alt="" /> : null}
             <span>
               <i aria-hidden="true" />
               {statusMeta[serviceStatus[service.id] || "checking"].label}
@@ -2778,6 +2789,35 @@ function VivyPublicPage() {
 }
 
 type SurfaceLinks = ReturnType<typeof getSurfaceLinks>;
+
+function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
+  return [
+    {
+      id: "kaen44",
+      name: "Kaen44",
+      role: "Agent bureau",
+      text: "Interface quotidienne, suivi et organisation.",
+      image: KAEN44_AVATAR_SRC,
+      href: surfaceLinks.kaen44Cockpit,
+    },
+    {
+      id: "a11",
+      name: "A11",
+      role: "Agent media",
+      text: "Audio, video, documents et analyse.",
+      image: A11_HOODED_AGENT_SRC,
+      href: surfaceLinks.a11Cockpit,
+    },
+    {
+      id: "vivy",
+      name: "Vivy",
+      role: "Agent musical",
+      text: "Voix, chansons, scenes et publication.",
+      image: VIVY_POSTER_SRC,
+      href: surfaceLinks.vivy,
+    },
+  ];
+}
 
 const FUNESTERIE_HOME_AGENTS = [
   {
@@ -2969,35 +3009,10 @@ function FunesterieConnectedHomePage({
 }
 
 function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
-  const agents = [
-    {
-      id: "kaen44",
-      name: "Kaen44",
-      role: "Agent bureau",
-      text: "Accueil, suivi, organisation et cockpit quotidien pour garder le travail lisible.",
-      href: surfaceLinks.kaen44Cockpit,
-      image: KAEN44_AVATAR_SRC,
-      action: "Voir Kaen44",
-    },
-    {
-      id: "a11",
-      name: "A11",
-      role: "Agent media",
-      text: "Capture, lit, transcrit et structure les flux audio, video, images et documents.",
-      href: surfaceLinks.a11,
-      image: A11_HOODED_AGENT_SRC,
-      action: "Voir A11",
-    },
-    {
-      id: "vivy",
-      name: "Vivy",
-      role: "Agent musical",
-      text: "Voix, chansons, scenes et publications quand l'univers devient musical.",
-      href: surfaceLinks.vivyStudio,
-      image: VIVY_POSTER_SRC,
-      action: "Voir Vivy",
-    },
-  ];
+  const agents = getFunesterieAgentShortcuts(surfaceLinks).map((agent) => ({
+    ...agent,
+    action: `Voir ${agent.name}`,
+  }));
 
   return (
     <main id="top" className="k44-agent-home-shell" aria-label="Presentation des agents Funesterie">
@@ -3692,36 +3707,14 @@ function PersonaDashboard({
     );
   }
 
-  const nossenAgents = [
-    {
-      name: "Kaen44",
-      role: "Agent bureau",
-      text: "Interface quotidienne, suivi, dossiers et cockpit utilisateur.",
-      image: KAEN44_AVATAR_SRC,
-      href: surfaceLinks.kaen44Cockpit,
-    },
-    {
-      name: "A11",
-      role: "Agent media",
-      text: "Audio, video, documents, transcription et analyse des flux.",
-      image: A11_HOODED_AGENT_SRC,
-      href: surfaceLinks.a11,
-    },
-    {
-      name: "Vivy",
-      role: "Agent musical",
-      text: "Voix, chansons, presence scene et publication creative.",
-      image: VIVY_POSTER_SRC,
-      href: surfaceLinks.vivyStudio,
-    },
-  ];
+  const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
 
   return (
-    <section className="k44-cockpit-dashboard k44-cockpit-dashboard--simple" aria-label="K44 cockpit">
-      <header className="k44-cockpit-header">
+    <section className="k44-agent-strip-panel" aria-label="Agents Funesterie">
+      <header className="k44-agent-strip-header">
         <div className="k44-title">
-          <h1>Kaen44</h1>
-          <p>Nossen et ses agents</p>
+          <h1>Agents</h1>
+          <p>Acces rapides</p>
         </div>
         <div className="k44-simple-actions">
           <button type="button" onClick={onStartChat}>Discussion</button>
@@ -3729,26 +3722,17 @@ function PersonaDashboard({
         </div>
       </header>
 
-      <section id="nossen" className="k44-nossen-panel k44-nossen-panel--simple" aria-label="Presentation de Nossen et des agents">
-        <div className="k44-nossen-copy">
-          <span>Univers Funesterie</span>
-          <h2>Nossen</h2>
-          <p>
-            Nossen est le cadre commun : il donne le contexte, la memoire et la couleur
-            de l'ecosysteme. Les agents qui y vivent gardent chacun leur specialite.
-          </p>
-        </div>
-        <div className="k44-nossen-agents" aria-label="Agents dans Nossen">
-          {nossenAgents.map((agent) => (
-            <a key={agent.name} href={agent.href}>
-              <img src={agent.image} alt="" />
+      <div className="k44-agent-strip-grid">
+        {agentShortcuts.map((agent) => (
+          <a key={agent.id} href={agent.href} className={`k44-agent-strip-card k44-agent-strip-card--${agent.id}`}>
+            <img src={agent.image} alt="" />
+            <span>
               <strong>{agent.name}</strong>
               <small>{agent.role}</small>
-              <p>{agent.text}</p>
-            </a>
-          ))}
-        </div>
-      </section>
+            </span>
+          </a>
+        ))}
+      </div>
     </section>
   );
 }
@@ -3764,6 +3748,7 @@ export function App() {
   const isGeneralAgents = isGeneralAgentsRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
+  const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
@@ -6141,33 +6126,22 @@ export function App() {
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Agents</div>
-                  <a
-                    href={surfaceLinks.kaen44Cockpit}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
-                    title="Ouvrir Kaen44"
-                  >
-                    <span>Kaen44</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Bureau</span>
-                  </a>
-                  <a
-                    href={surfaceLinks.a11Cockpit}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
-                    title="Ouvrir A11"
-                  >
-                    <span>A11</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Media</span>
-                  </a>
-                  <a
-                    href={surfaceLinks.vivy}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
-                    title="Ouvrir Vivy"
-                  >
-                    <span>Vivy</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Voix</span>
-                  </a>
+                  <div className="fun-agent-menu-grid">
+                    {agentShortcuts.map((agent) => (
+                      <a
+                        key={agent.id}
+                        href={agent.href}
+                        className={`fun-agent-menu-card fun-agent-menu-card--${agent.id}`}
+                        title={`Ouvrir ${agent.name}`}
+                      >
+                        <img src={agent.image} alt="" />
+                        <span>
+                          <strong>{agent.name}</strong>
+                          <small>{agent.role}</small>
+                        </span>
+                      </a>
+                    ))}
+                  </div>
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

@@ -1950,6 +1950,26 @@ html.funesterie-cockpit-page-root body {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.funesterie-ops-nav-agents {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.funesterie-ops-nav-agents a {
+  gap: 7px;
+  padding: 0 9px !important;
+}
+
+.funesterie-ops-nav-agents img {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
 .funesterie-ops-hero {
   min-height: 300px;
   display: grid;
@@ -2036,11 +2056,23 @@ html.funesterie-cockpit-page-root body {
 }
 
 .funesterie-ops-status-card {
+  position: relative;
   min-height: 190px;
   display: grid;
   align-content: start;
   gap: 8px;
   padding: 14px;
+  overflow: hidden;
+}
+
+.funesterie-ops-status-thumb {
+  width: 54px;
+  height: 54px;
+  justify-self: end;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
 }
 
 .funesterie-ops-status-card span {
@@ -2204,6 +2236,12 @@ html.funesterie-cockpit-page-root body {
 
   .funesterie-ops-nav > div {
     justify-content: flex-start;
+  }
+
+  .funesterie-ops-nav-agents {
+    width: 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
   }
 
   .funesterie-ops-status-grid,
@@ -5439,6 +5477,55 @@ body {
   box-shadow: 0 0 28px rgba(183, 108, 255, 0.24) !important;
 }
 
+.fun-agent-menu-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.fun-agent-menu-card {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(203, 158, 255, 0.2);
+  border-radius: 10px;
+  padding: 7px;
+  color: #f4eeff;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.fun-agent-menu-card:hover {
+  border-color: rgba(95, 255, 171, 0.34);
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.fun-agent-menu-card img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(203, 158, 255, 0.26);
+}
+
+.fun-agent-menu-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.fun-agent-menu-card strong {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.fun-agent-menu-card small {
+  color: #bfb0ce;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
 .k44-cockpit-dashboard {
   width: min(1240px, 100%);
   max-width: 100%;
@@ -5580,6 +5667,86 @@ body {
   color: var(--k44-purple-soft);
   font-size: 12px;
   font-weight: 850;
+  text-transform: uppercase;
+}
+
+.k44-agent-strip-panel {
+  width: min(1240px, 100%);
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 auto 14px;
+  padding: 14px;
+  color: var(--k44-text);
+  border: 1px solid rgba(181, 116, 255, 0.28);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(183, 108, 255, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(6, 7, 19, 0.9), rgba(3, 4, 11, 0.96));
+  box-shadow: inset 0 0 0 1px rgba(203, 158, 255, 0.04), 0 18px 54px rgba(0, 0, 0, 0.3);
+}
+
+.k44-agent-strip-panel,
+.k44-agent-strip-panel * {
+  box-sizing: border-box;
+  letter-spacing: 0;
+  min-width: 0;
+}
+
+.k44-agent-strip-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.k44-agent-strip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.k44-agent-strip-card {
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(203, 158, 255, 0.16);
+  border-radius: 8px;
+  padding: 10px;
+  color: #f4eeff;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.k44-agent-strip-card:hover {
+  border-color: rgba(95, 255, 171, 0.36);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.k44-agent-strip-card img {
+  width: 68px;
+  height: 68px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(203, 158, 255, 0.26);
+}
+
+.k44-agent-strip-card span {
+  display: grid;
+  gap: 6px;
+}
+
+.k44-agent-strip-card strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.k44-agent-strip-card small {
+  color: var(--k44-green);
+  font-size: 11px;
+  font-weight: 900;
   text-transform: uppercase;
 }
 
@@ -6208,6 +6375,17 @@ body {
     padding: 12px;
   }
 
+  .k44-agent-strip-panel {
+    width: 100%;
+    max-width: min(100%, calc(100vw - 96px));
+    padding: 12px;
+  }
+
+  .k44-agent-strip-header,
+  .k44-agent-strip-grid {
+    grid-template-columns: 1fr;
+  }
+
   .k44-cockpit-header,
   .k44-nossen-panel,
   .k44-identity-panel,
@@ -6257,6 +6435,25 @@ body {
   .k44-cockpit-dashboard {
     max-width: min(100%, calc(100vw - 28px));
     padding: 10px;
+  }
+
+  .k44-agent-strip-panel {
+    max-width: min(100%, calc(100vw - 28px));
+    padding: 10px;
+  }
+
+  .k44-agent-strip-card {
+    min-height: 76px;
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .k44-agent-strip-card img {
+    width: 56px;
+    height: 56px;
+  }
+
+  .k44-agent-strip-card strong {
+    font-size: 19px;
   }
 
   .k44-title h1 {
