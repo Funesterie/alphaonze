@@ -16,8 +16,6 @@ import {
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
   chatWithVivy,
-  createCheckoutSession,
-  createCustomerPortal,
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
@@ -3136,58 +3134,16 @@ function FunesterieConnectedHomePage({
   const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
   const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
   const [accountBusy, setAccountBusy] = useState<"" | "google" | "microsoft" | "subscription">("");
-  const [accountMessage, setAccountMessage] = useState("");
   const navItems = [
     ["Accueil", "#top"],
-    ["Lore", "#lore"],
     ["Agents", "#agents"],
-    ["Accès", "#access"],
-    ["Compte", "#account"],
   ];
 
   const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
 
   function startHomeGoogle() {
     setAccountBusy("google");
-    setAccountMessage("Redirection vers Google...");
     startGoogleOAuth(accountReturnTo, "funesterie-home");
-  }
-
-  function startHomeMicrosoft() {
-    setAccountBusy("microsoft");
-    setAccountMessage("Redirection vers Microsoft...");
-    startMicrosoftOAuth(accountReturnTo, "funesterie-home");
-  }
-
-  async function openSubscription() {
-    if (!authenticated) {
-      setAccountMessage("Connecte-toi d'abord, puis l'abonnement s'ouvrira depuis ton compte.");
-      startHomeGoogle();
-      return;
-    }
-
-    setAccountBusy("subscription");
-    setAccountMessage("Ouverture de l'espace abonnement...");
-    try {
-      const portal = await createCustomerPortal();
-      if (portal?.url) {
-        window.location.assign(portal.url);
-        return;
-      }
-      throw new Error("portal_missing_url");
-    } catch {
-      try {
-        const checkout = await createCheckoutSession();
-        if (checkout?.url) {
-          window.location.assign(checkout.url);
-          return;
-        }
-        throw new Error("checkout_missing_url");
-      } catch {
-        setAccountBusy("");
-        setAccountMessage("Abonnement indisponible pour le moment. Le cockpit reste accessible.");
-      }
-    }
   }
 
   return (
@@ -3222,12 +3178,15 @@ function FunesterieConnectedHomePage({
         <div className="fun-home-core">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <p>
-            Funesterie est l'univers commun. Nossen garde le contexte, les agents gardent leur spécialité,
-            et le cockpit montre simplement ce qui est joignable.
+            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+            Les agents gardent chacun leur spécialité.
           </p>
           <div className="fun-home-actions">
-            <a href="#lore">Lire le lore <span aria-hidden="true">*</span></a>
-            <a href="#account">Se connecter</a>
+            <a href="#agents">Projet <span aria-hidden="true">*</span></a>
+            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+              {accountBusy === "google" ? "Google..." : authenticated ? "Session active" : "Se connecter"}
+            </button>
             <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
         </div>
@@ -3274,62 +3233,10 @@ function FunesterieConnectedHomePage({
         </div>
       </section>
 
-      <section id="lore" className="fun-home-connected" aria-label="Lore et accès Funesterie">
-        <article>
-          <h2>Lore commun</h2>
-          <div className="fun-home-flow" aria-label="Funesterie relie Nossen, Kaen44, A11 et Vivy">
-            {["Nossen", "Kaen44", "A11", "Vivy"].map((name, index) => (
-              <React.Fragment key={name}>
-                <span>{name.slice(0, 1)}</span>
-                <strong>{name}</strong>
-                {index < 3 ? <i aria-hidden="true">→</i> : null}
-              </React.Fragment>
-            ))}
-          </div>
-          <p>
-            Nossen n'est pas un agent. C'est le cadre commun: mémoire, ambiance,
-            règles de confiance et continuité entre les surfaces.
-          </p>
-        </article>
-
-        <article id="access">
-          <h2>Accès rapides</h2>
-          <ul className="fun-home-service-list">
-            <li><a href={surfaceLinks.cockpit}>Cockpit opérationnel</a></li>
-            <li><a href={surfaceLinks.agents}>Présentation des agents</a></li>
-            <li><a href={surfaceLinks.kaen44}>Kaen44</a></li>
-            <li><a href={surfaceLinks.a11}>A11</a></li>
-            <li><a href={surfaceLinks.vivy}>Vivy</a></li>
-          </ul>
-        </article>
-
-        <article id="account" className="fun-home-account-card">
-          <h2>Compte</h2>
-          <p>
-            {authenticated
-              ? `Session active${displayName ? `: ${displayName}` : ""}.`
-              : "Connexion centralisée pour accéder aux agents, aux fichiers autorisés et à l'abonnement."}
-          </p>
-          <div className="fun-home-account-actions">
-            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-              {accountBusy === "google" ? "Google..." : "Google"}
-            </button>
-            <button type="button" onClick={startHomeMicrosoft} disabled={Boolean(accountBusy)}>
-              {accountBusy === "microsoft" ? "Microsoft..." : "Microsoft"}
-            </button>
-            <button type="button" onClick={openSubscription} disabled={Boolean(accountBusy)}>
-              {accountBusy === "subscription" ? "Ouverture..." : "Abonnement"}
-            </button>
-          </div>
-          {accountMessage ? <small>{accountMessage}</small> : null}
-        </article>
-      </section>
-
       <footer id="contact" className="fun-home-footer">
         <span>Funesterie</span>
         <span>Nossen</span>
         <span>Agents</span>
-        <span>Compte</span>
         <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href={surfaceLinks.terms}>Conditions</a>
         <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
@@ -3913,59 +3820,35 @@ function PersonaDashboard({
 }: PersonaDashboardProps) {
   const surfaceLinks = getSurfaceLinks();
   const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
+  const currentAgentId = isKaen44 ? "kaen44" : "a11";
+  const companionAgentId = isKaen44 ? "a11" : "kaen44";
+  const currentAgent = agentShortcuts.find((agent) => agent.id === currentAgentId) ?? agentShortcuts[0];
+  const companionAgent = agentShortcuts.find((agent) => agent.id === companionAgentId) ?? agentShortcuts[1];
+  const currentSummary = isKaen44
+    ? "Accueil, suivi et organisation quotidienne pour garder le travail lisible."
+    : "Préparation des médias, documents, images et notes utiles aux projets.";
 
-  if (!isKaen44) {
-    return (
-      <section className="k44-agent-strip-panel a11-agent-strip-panel" aria-label="A11">
-        <header className="k44-agent-strip-header">
-          <div className="k44-title">
-            <h1>A11</h1>
-            <p>Accès rapides</p>
-          </div>
+  return (
+    <section className={`k44-agent-strip-panel k44-agent-profile-panel ${isKaen44 ? "" : "a11-agent-strip-panel"}`} aria-label={`${currentAgent.name} présentation`}>
+      <div className="k44-agent-profile-main">
+        <img className="k44-agent-profile-image" src={currentAgent.image} alt="" />
+        <div className="k44-agent-profile-copy">
+          <span>Agent actif</span>
+          <h1>{currentAgent.name}</h1>
+          <p>{currentAgent.role}</p>
+          <strong>{currentSummary}</strong>
           <div className="k44-simple-actions">
             <button type="button" onClick={onStartChat}>Discussion</button>
             <button type="button" onClick={onOpenInspector}>Menu</button>
           </div>
-        </header>
-
-        <div className="k44-agent-strip-grid">
-          {agentShortcuts.map((agent) => (
-            <a key={agent.id} href={agent.href} className={`k44-agent-strip-card k44-agent-strip-card--${agent.id}`}>
-              <img src={agent.image} alt="" />
-              <span>
-                <strong>{agent.name}</strong>
-                <small>{agent.role}</small>
-              </span>
-            </a>
-          ))}
         </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="k44-agent-strip-panel" aria-label="Agents Funesterie">
-      <header className="k44-agent-strip-header">
-        <div className="k44-title">
-          <h1>Agents</h1>
-          <p>Accès rapides</p>
-        </div>
-        <div className="k44-simple-actions">
-          <button type="button" onClick={onStartChat}>Discussion</button>
-          <button type="button" onClick={onOpenInspector}>Menu</button>
-        </div>
-      </header>
-
-      <div className="k44-agent-strip-grid">
-        {agentShortcuts.map((agent) => (
-          <a key={agent.id} href={agent.href} className={`k44-agent-strip-card k44-agent-strip-card--${agent.id}`}>
-            <img src={agent.image} alt="" />
-            <span>
-              <strong>{agent.name}</strong>
-              <small>{agent.role}</small>
-            </span>
-          </a>
-        ))}
+        <a href={companionAgent.href} className={`k44-agent-profile-link k44-agent-profile-link--${companionAgent.id}`}>
+          <img src={companionAgent.image} alt="" />
+          <span>
+            <small>Autre agent</small>
+            <strong>{companionAgent.name}</strong>
+          </span>
+        </a>
       </div>
     </section>
   );

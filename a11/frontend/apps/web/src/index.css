@@ -5852,6 +5852,100 @@ body {
   text-transform: uppercase;
 }
 
+.k44-agent-profile-panel {
+  padding: clamp(14px, 1.8vw, 22px);
+}
+
+.k44-agent-profile-main {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) minmax(180px, 0.34fr);
+  align-items: center;
+  gap: clamp(16px, 2vw, 28px);
+}
+
+.k44-agent-profile-image {
+  width: 124px;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(203, 158, 255, 0.36);
+  box-shadow: 0 0 28px rgba(183, 108, 255, 0.2);
+}
+
+.k44-agent-profile-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.k44-agent-profile-copy span,
+.k44-agent-profile-link small {
+  color: var(--k44-green);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.k44-agent-profile-copy h1 {
+  margin: 0;
+  color: #f4eeff;
+  font-size: clamp(34px, 4vw, 58px);
+  line-height: 0.95;
+  text-shadow: 0 0 28px rgba(183, 108, 255, 0.45);
+}
+
+.k44-agent-profile-copy p {
+  margin: 0;
+  color: var(--k44-purple-soft);
+  font-size: 15px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.k44-agent-profile-copy strong {
+  max-width: 580px;
+  color: #ddd3eb;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.k44-agent-profile-link {
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(203, 158, 255, 0.16);
+  border-radius: 8px;
+  padding: 10px;
+  color: #f4eeff;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.k44-agent-profile-link:hover {
+  border-color: rgba(95, 255, 171, 0.36);
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.k44-agent-profile-link img {
+  width: 62px;
+  height: 62px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(203, 158, 255, 0.26);
+}
+
+.k44-agent-profile-link span {
+  display: grid;
+  gap: 6px;
+}
+
+.k44-agent-profile-link strong {
+  overflow-wrap: anywhere;
+  font-size: 20px;
+  line-height: 1;
+}
+
 .k44-nossen-panel {
   display: grid;
   grid-template-columns: minmax(220px, 0.36fr) minmax(0, 0.74fr) minmax(260px, 0.52fr);
@@ -6488,6 +6582,18 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .k44-agent-profile-main {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+
+  .k44-agent-profile-image {
+    width: 104px;
+  }
+
+  .k44-agent-profile-link {
+    grid-column: 1 / -1;
+  }
+
   .k44-cockpit-header,
   .k44-nossen-panel,
   .k44-identity-panel,
@@ -6556,6 +6662,25 @@ body {
 
   .k44-agent-strip-card strong {
     font-size: 19px;
+  }
+
+  .k44-agent-profile-main {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .k44-agent-profile-image {
+    width: 112px;
+  }
+
+  .k44-agent-profile-copy .k44-simple-actions {
+    justify-content: center;
+  }
+
+  .k44-agent-profile-link {
+    width: 100%;
+    max-width: 360px;
   }
 
   .k44-title h1 {
@@ -7090,7 +7215,6 @@ body {
 .fun-home-nav,
 .fun-home-hero,
 .fun-home-agents,
-.fun-home-connected,
 .fun-home-footer {
   width: min(1360px, 100%);
   margin-inline: auto;
@@ -7209,17 +7333,19 @@ body {
 }
 
 .fun-home-actions,
-.fun-home-side div a,
-.fun-home-account-actions {
+.fun-home-side div a {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
+.fun-home-actions {
+  justify-content: center;
+}
+
 .fun-home-actions a,
-.fun-home-side a,
-.fun-home-account-actions a,
-.fun-home-account-actions button {
+.fun-home-actions button,
+.fun-home-side a {
   min-height: 46px;
   display: inline-flex;
   align-items: center;
@@ -7240,13 +7366,8 @@ body {
   background: linear-gradient(135deg, rgba(54, 212, 196, 0.28), rgba(66, 183, 238, 0.18));
 }
 
-.fun-home-account-actions button:first-child {
-  border-color: rgba(54, 212, 196, 0.62);
-  background: linear-gradient(135deg, rgba(54, 212, 196, 0.28), rgba(66, 183, 238, 0.18));
-}
-
-.fun-home-account-actions button:disabled {
-  opacity: 0.64;
+.fun-home-actions button:disabled {
+  opacity: 0.68;
   cursor: progress;
 }
 
@@ -7285,7 +7406,6 @@ body {
 }
 
 .fun-home-side h2,
-.fun-home-connected h2,
 .fun-home-agents h2 {
   margin: 0;
   color: #fff8ff;
@@ -7410,99 +7530,6 @@ body {
 .fun-home-agent-card--violet { border-color: rgba(170, 132, 255, 0.32); }
 .fun-home-agent-card--purple { border-color: rgba(203, 158, 255, 0.28); }
 .fun-home-agent-card--empty { border-color: rgba(233, 184, 108, 0.32); }
-
-.fun-home-connected {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.7fr) minmax(260px, 0.7fr);
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.fun-home-connected article {
-  border: 1px solid var(--fun-line);
-  border-radius: 8px;
-  padding: clamp(16px, 2vw, 24px);
-  background: rgba(8, 10, 16, 0.78);
-}
-
-.fun-home-connected h2 {
-  font-size: clamp(22px, 2.2vw, 34px);
-  margin-bottom: 12px;
-}
-
-.fun-home-connected p,
-.fun-home-connected li {
-  color: var(--fun-muted);
-  font-size: 15px;
-  line-height: 1.55;
-}
-
-.fun-home-connected ul,
-.fun-home-service-list {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.fun-home-connected li {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.fun-home-connected li a {
-  width: 100%;
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  color: #f4eefa;
-}
-
-.fun-home-account-card {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-}
-
-.fun-home-account-card p {
-  margin: 0;
-}
-
-.fun-home-account-card small {
-  color: #e9b86c;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.fun-home-flow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px;
-  margin: 4px 0 14px;
-}
-
-.fun-home-flow span {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  border: 1px solid rgba(54, 212, 196, 0.38);
-  color: #eafffb;
-  background: rgba(54, 212, 196, 0.08);
-  font-weight: 950;
-}
-
-.fun-home-flow strong,
-.fun-home-flow i {
-  color: #f4eefa;
-  font-size: 13px;
-  font-style: normal;
-}
 
 .fun-home-footer {
   min-height: 58px;
@@ -7800,7 +7827,6 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .fun-home-connected,
   .a11-media-lower {
     grid-template-columns: 1fr;
   }
@@ -7845,10 +7871,6 @@ body {
   .fun-home-agent-grid,
   .a11-media-modules {
     grid-template-columns: 1fr;
-  }
-
-  .fun-home-connected {
-    gap: 10px;
   }
 
   .fun-home-footer a {
