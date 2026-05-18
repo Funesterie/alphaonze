@@ -360,7 +360,7 @@ function getSurfaceLinks() {
   const { hostname } = getLocationSnapshot();
   if (isLocalSurfaceHost(hostname)) {
     return {
-      home: "/",
+      home: FUNESTERIE_PUBLIC_APP_URL,
       cockpit: "/cockpit/",
       cockpitAuthSuccess: "/cockpit/auth/success",
       a11: "/",
@@ -376,8 +376,8 @@ function getSurfaceLinks() {
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
       kaen44Login: "/k44/login",
-      kaen44Privacy: "/k44/privacy",
-      kaen44Terms: "/k44/terms",
+      kaen44Privacy: "/privacy/",
+      kaen44Terms: "/terms/",
     };
   }
 
@@ -398,8 +398,8 @@ function getSurfaceLinks() {
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
-    kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
-    kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
+    kaen44Privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    kaen44Terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
   };
 }
 
@@ -2943,6 +2943,7 @@ function FunesterieCockpitPage({
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href="#etat">État</a>
           <a href={surfaceLinks.agents}>Agents</a>
           <span className="funesterie-ops-nav-agents" aria-label="Accès agents">
@@ -3035,12 +3036,13 @@ function VivyPublicPage({ authenticated = false }: { authenticated?: boolean }) 
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href="#vivy-studio">Studio</a>
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
-          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
+          <a href={surfaceLinks.terms}>Conditions</a>
         </div>
       </nav>
       <VivyPublicSurface authenticated={authenticated} />
@@ -3135,7 +3137,7 @@ function FunesterieConnectedHomePage({
   const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
   const [accountBusy, setAccountBusy] = useState<"" | "google" | "microsoft" | "subscription">("");
   const navItems = [
-    ["Accueil", "#top"],
+    ["Accueil", surfaceLinks.home],
     ["Agents", "#agents"],
   ];
 
@@ -3262,11 +3264,12 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href="#agents">Agents</a>
           <a href={surfaceLinks.cockpit}>Cockpit</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
         </div>
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
@@ -3329,12 +3332,12 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const surfaceLinks = getSurfaceLinks();
   const tabs = ["Accueil", "Modules", "Projets", "Vivy", "Aide", "Confidentialité"];
   const tabTargets: Record<string, string> = {
-    Accueil: surfaceLinks.kaen44,
+    Accueil: surfaceLinks.home,
     Modules: "#agents",
     Projets: "#projets",
     Vivy: surfaceLinks.vivy,
     Aide: "#aide",
-    Confidentialité: surfaceLinks.kaen44Privacy,
+    Confidentialité: surfaceLinks.privacy,
   };
   const futureAgents = ["Module media", "Module agentic", "Module jeu"];
 
@@ -3345,7 +3348,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   return (
     <main className={`kaen-public-shell ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
       <nav className="kaen-public-nav" aria-label="Navigation Kaen44">
-        <a href={surfaceLinks.kaen44} className="kaen-public-brand">
+        <a href={surfaceLinks.home} className="kaen-public-brand">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
             <strong>Funesterie</strong>
@@ -3353,11 +3356,12 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </span>
         </a>
         <div>
+          <a href={surfaceLinks.home}>Accueil</a>
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
-          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
+          <a href={surfaceLinks.terms}>Conditions</a>
           <a href={surfaceLinks.kaen44Login} className="kaen-public-login">Connexion K44</a>
         </div>
       </nav>
@@ -3403,8 +3407,8 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
                 chansons, voix, bandes-son, clips et publications audio liées aux projets créatifs.
               </p>
               <div className="kaen-public-actions">
-                <a href={surfaceLinks.kaen44Privacy}>Lire les règles de confidentialité</a>
-                <a href={surfaceLinks.kaen44Terms}>Lire les conditions</a>
+                <a href={surfaceLinks.privacy}>Lire les règles de confidentialité</a>
+                <a href={surfaceLinks.terms}>Lire les conditions</a>
               </div>
             </>
           ) : null}
@@ -3861,6 +3865,9 @@ export function App() {
   const isGeneralAgents = isGeneralAgentsRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
+  const publicPolicyPage = typeof window !== "undefined"
+    ? getPublicPolicyPage(window.location.pathname)
+    : null;
   const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
@@ -3884,7 +3891,11 @@ export function App() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = isGeneralCockpit
+    document.title = publicPolicyPage === "privacy"
+      ? "Funesterie - Confidentialité"
+      : publicPolicyPage === "terms"
+      ? "Funesterie - Conditions"
+      : isGeneralCockpit
       ? "Funesterie - Cockpit général"
       : isGeneralHome
       ? "Funesterie - Accueil"
@@ -3896,8 +3907,8 @@ export function App() {
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-  }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy]);
+    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+  }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -5959,9 +5970,6 @@ export function App() {
     return <ResetPasswordPanel />;
   }
 
-  const publicPolicyPage = typeof window !== "undefined"
-    ? getPublicPolicyPage(window.location.pathname)
-    : null;
   if (publicPolicyPage) {
     return <Kaen44PublicPage page={publicPolicyPage} />;
   }
@@ -6282,6 +6290,42 @@ export function App() {
                     paddingBottom: "calc(14px + env(safe-area-inset-bottom))",
                   }}
                 >
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Navigation</div>
+                  <a
+                    href={surfaceLinks.home}
+                    className="btn ghost"
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      textDecoration: "none",
+                    }}
+                    title="Retourner à l'accueil Funesterie"
+                  >
+                    <span>Accueil</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Funesterie</span>
+                  </a>
+                  <a
+                    href={surfaceLinks.privacy}
+                    className="btn ghost"
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      textDecoration: "none",
+                    }}
+                    title="Lire les règles de confidentialité"
+                  >
+                    <span>Confidentialité</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Public</span>
+                  </a>
+                </div>
+
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Modele</div>
                   <select
