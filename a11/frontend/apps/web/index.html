@@ -23,6 +23,7 @@
           "kaen44.funesterie.pro": true,
           "vivy.funesterie.me": true,
           "vivy.funesterie.pro": true,
+          "a11.funesterie.me": true,
           "alphaonze.funesterie.pro": true,
           "a11.funesterie.pro": true,
           "api.funesterie.pro": true
@@ -38,6 +39,7 @@
           || hostname === "kaen44.funesterie.pro"
           || isK44Path;
         var isA11Host = hostname === "alphaonze.funesterie.pro"
+          || hostname === "a11.funesterie.me"
           || hostname === "a11.funesterie.pro"
           || hostname === "api.funesterie.pro"
           || (isLocalHost && port === "3000" && !isK44Path && !isVivyPath);
@@ -234,7 +236,7 @@
 
           if (shouldRenderStaticLoginFallback()) {
             var host = String(location.hostname || "").toLowerCase();
-            var isA11Host = host === "a11.funesterie.pro" || host === "alphaonze.funesterie.pro";
+            var isA11Host = host === "a11.funesterie.me" || host === "a11.funesterie.pro" || host === "alphaonze.funesterie.pro";
             var title = isA11Host ? "Connexion A11" : "Connexion Kaen44";
             var accent = isA11Host ? "#3b82f6" : "#8b5cf6";
             var errorMessage = resolveStaticLoginErrorMessage();
@@ -283,7 +285,7 @@
           <nav aria-label="Navigation Kaen44" style="max-width:1120px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">
             <a href="/" style="color:#fff;text-decoration:none;font-size:24px;font-weight:900;letter-spacing:0;">Kaen44</a>
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;">
-              <a href="https://a11.funesterie.pro/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">A11</a>
+              <a href="https://a11.funesterie.me/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">A11</a>
               <a href="/vivy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Vivy</a>
               <a href="/privacy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Confidentialite</a>
               <a href="/terms/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Conditions</a>
