@@ -240,7 +240,7 @@ https://github.com/funeste38/funesterie
 
 ## Support
 
-Email: djeff@funesterie.pro
+Email: djeff@funesterie.me
 
 ````
 

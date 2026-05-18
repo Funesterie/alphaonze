@@ -17,12 +17,12 @@ test('buildRuntimeConfig prefers explicit Qflush URL over Dragon URL', () => {
 
 test('buildRuntimeConfig normalizes Qflush status endpoints to the backend origin', () => {
   const config = buildRuntimeConfig({
-    QFLUSH_REMOTE_URL: 'https://a11.funesterie.pro/api/qflush/status',
+    QFLUSH_REMOTE_URL: 'https://a11.funesterie.me/api/qflush/status',
     NODE_ENV: 'production',
   });
 
-  assert.equal(config.qflush.remoteUrl, 'https://a11.funesterie.pro');
-  assert.equal(config.features.chat.qflushRemoteUrl, 'https://a11.funesterie.pro');
+  assert.equal(config.qflush.remoteUrl, 'https://a11.funesterie.me');
+  assert.equal(config.features.chat.qflushRemoteUrl, 'https://a11.funesterie.me');
 });
 
 test('buildRuntimeConfig only falls back to Dragon when compatibility flag is enabled', () => {

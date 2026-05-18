@@ -109,17 +109,10 @@ function resolveRequestPinnedFrontendUrl(req) {
   const mapped = {
     'k44.funesterie.me': 'https://k44.funesterie.me',
     'kaen44.funesterie.me': 'https://kaen44.funesterie.me',
-    'kaen44.funesterie.pro': 'https://kaen44.funesterie.pro',
     'funesterie.me': 'https://funesterie.me',
     'www.funesterie.me': 'https://funesterie.me',
     'a11.funesterie.me': 'https://a11.funesterie.me',
-    'a11.funesterie.pro': 'https://a11.funesterie.pro',
-    'alphaonze.funesterie.pro': 'https://alphaonze.funesterie.pro',
-    'funesterie.pro': 'https://funesterie.pro',
-    'www.funesterie.pro': 'https://funesterie.pro',
-    'cockpit.funesterie.pro': 'https://cockpit.funesterie.pro',
     'vivy.funesterie.me': 'https://vivy.funesterie.me',
-    'vivy.funesterie.pro': 'https://vivy.funesterie.pro',
     'music.funesterie.me': 'https://music.funesterie.me',
   };
   if (mapped[hostname]) return mapped[hostname];
@@ -169,7 +162,7 @@ function resolveRequestHostname(req) {
 
 function resolveHostPinnedOAuthCallback(req, provider) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me', 'kaen44.funesterie.pro'].includes(hostname)) return '';
+  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
   const origin = resolveRequestOrigin(req).replace(/\/+$/, '');
   if (!origin) return '';
   const publicOrigin = origin.replace(/^http:\/\//i, 'https://');
@@ -216,7 +209,7 @@ function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
 
 function resolveCanonicalOAuthStartRedirect(req, provider) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me', 'kaen44.funesterie.pro'].includes(hostname)) return '';
+  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
 
   const explicitCallback = provider === 'microsoft'
     ? resolveExplicitMicrosoftCallbackUrl()
@@ -313,17 +306,11 @@ function isAllowedOAuthFrontendOrigin(origin) {
   const normalized = String(origin || '').trim().toLowerCase().replace(/\/+$/, '');
   if (!normalized) return false;
   if ([
-    'https://a11.funesterie.pro',
     'https://a11.funesterie.me',
-    'https://alphaonze.funesterie.pro',
-    'https://funesterie.pro',
-    'https://www.funesterie.pro',
-    'https://cockpit.funesterie.pro',
-    'https://k44.funesterie.me',
-    'https://kaen44.funesterie.me',
     'https://funesterie.me',
     'https://www.funesterie.me',
-    'https://vivy.funesterie.pro',
+    'https://k44.funesterie.me',
+    'https://kaen44.funesterie.me',
     'https://vivy.funesterie.me',
     'https://music.funesterie.me',
   ].includes(normalized)) {
@@ -1250,7 +1237,7 @@ function createAuthRouter({
       );
 
       const appUrl = emailService.getStatus().appUrl
-        || normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://alphaonze.funesterie.pro');
+        || normalizePublicAppUrl(process.env.APP_URL || process.env.FRONT_URL || 'https://a11.funesterie.me');
       const link = `${appUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
       const mailResult = await emailService.sendPasswordResetEmail({
         to: user.email,

@@ -562,7 +562,7 @@ test('createGenerateVideoHandler accepts local SD frame paths and prefers the R2
     const result = await generateVideo({
       req: {
         headers: {
-          host: 'a11.funesterie.pro',
+          host: 'a11.funesterie.me',
           'x-forwarded-proto': 'https',
         },
         body: {},
@@ -662,7 +662,7 @@ test('createGenerateVideoHandler does not expose loopback audio URLs to HTTPS cl
     const result = await generateVideo({
       req: {
         headers: {
-          host: 'alphaonze.funesterie.pro',
+          host: 'a11.funesterie.me',
           'x-forwarded-proto': 'https',
         },
         body: {},

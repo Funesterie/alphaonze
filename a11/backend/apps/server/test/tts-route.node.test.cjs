@@ -110,7 +110,7 @@ test('tts piper route rewrites loopback TTS asset URLs to backend proxy paths', 
       },
       async (baseUrl) => {
         const result = await postJson(baseUrl, '/api/tts/piper', { text: 'bonjour' }, {
-          host: 'alphaonze.funesterie.pro',
+          host: 'a11.funesterie.me',
           'x-forwarded-proto': 'https',
         });
 

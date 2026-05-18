@@ -79,7 +79,7 @@ test('runQflushFlow normalizes a status endpoint into the remote runner origin',
 
   try {
     delete process.env.QFLUSH_URL;
-    process.env.QFLUSH_REMOTE_URL = 'https://a11.funesterie.pro/api/qflush/status';
+    process.env.QFLUSH_REMOTE_URL = 'https://a11.funesterie.me/api/qflush/status';
     delete process.env.QFLUSH_BASE_URL;
     delete process.env.DRAGON_API_URL;
     delete process.env.A11_QFLUSH_USE_DRAGON;
@@ -97,7 +97,7 @@ test('runQflushFlow normalizes a status endpoint into the remote runner origin',
 
     const result = await runQflushFlow('a11.memory.ephemeral.v1', { key: 'ping' }, { requestId: 'req-status-url' });
 
-    assert.equal(capturedUrl, 'https://a11.funesterie.pro/api/admin/run');
+    assert.equal(capturedUrl, 'https://a11.funesterie.me/api/admin/run');
     assert.deepEqual(result, { ok: true, target: 'qflush' });
   } finally {
     global.fetch = originalFetch;

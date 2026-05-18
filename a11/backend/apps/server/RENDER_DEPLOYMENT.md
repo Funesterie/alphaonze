@@ -62,9 +62,9 @@ Ajoute ces variables dans **Environment** :
 # STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_1TQwxHHkqLcMgv548uBa6GDZ
 # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
-STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
-STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
-STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
+STRIPE_SUCCESS_URL=https://a11.funesterie.me/subscription/success
+STRIPE_CANCEL_URL=https://a11.funesterie.me/subscription/cancel
+STRIPE_PORTAL_RETURN_URL=https://a11.funesterie.me/account
 ```
 
 #### 🔑 JWT & Security
@@ -78,15 +78,15 @@ NEZ_SECURITY_MODE=production
 #### 🌐 CORS & URLs
 
 ```bash
-CORS_ORIGINS=https://alphaonze.funesterie.pro,https://a11-backend.onrender.com
-APP_URL=https://alphaonze.funesterie.pro
+CORS_ORIGINS=https://a11.funesterie.me,https://a11-backend.onrender.com
+APP_URL=https://a11.funesterie.me
 ```
 
 #### 📧 Email (Resend)
 
 ```bash
 # RESEND_API_KEY is configured via the deployment secret store.
-EMAIL_FROM=A11 <a11@funesterie.pro>
+EMAIL_FROM=A11 <a11@funesterie.me>
 ```
 
 #### 🗄️ Databases

@@ -20,13 +20,8 @@
           "www.funesterie.me": true,
           "k44.funesterie.me": true,
           "kaen44.funesterie.me": true,
-          "kaen44.funesterie.pro": true,
           "vivy.funesterie.me": true,
-          "vivy.funesterie.pro": true,
-          "a11.funesterie.me": true,
-          "alphaonze.funesterie.pro": true,
-          "a11.funesterie.pro": true,
-          "api.funesterie.pro": true
+          "a11.funesterie.me": true
         };
         var hostname = String(location.hostname || "").toLowerCase();
         var pathname = String(location.pathname || "/").toLowerCase();
@@ -36,15 +31,10 @@
         var isVivyPath = /^\/vivy(?:\/|$)/.test(pathname);
         var isK44Host = hostname === "k44.funesterie.me"
           || hostname === "kaen44.funesterie.me"
-          || hostname === "kaen44.funesterie.pro"
           || isK44Path;
-        var isA11Host = hostname === "alphaonze.funesterie.pro"
-          || hostname === "a11.funesterie.me"
-          || hostname === "a11.funesterie.pro"
-          || hostname === "api.funesterie.pro"
+        var isA11Host = hostname === "a11.funesterie.me"
           || (isLocalHost && port === "3000" && !isK44Path && !isVivyPath);
         var isVivyHost = hostname === "vivy.funesterie.me"
-          || hostname === "vivy.funesterie.pro"
           || isVivyPath;
         var isPublicHost = !!publicHosts[hostname];
 
@@ -122,7 +112,7 @@
         function shouldRenderStaticKaen44Page() {
           var hostname = String(location.hostname || "").toLowerCase();
           var pathname = String(location.pathname || "/").toLowerCase();
-          return (hostname === "k44.funesterie.me" || hostname === "kaen44.funesterie.me" || hostname === "kaen44.funesterie.pro")
+          return (hostname === "k44.funesterie.me" || hostname === "kaen44.funesterie.me")
             && (
               pathname === "/"
               || pathname === "/privacy"
@@ -236,7 +226,7 @@
 
           if (shouldRenderStaticLoginFallback()) {
             var host = String(location.hostname || "").toLowerCase();
-            var isA11Host = host === "a11.funesterie.me" || host === "a11.funesterie.pro" || host === "alphaonze.funesterie.pro";
+            var isA11Host = host === "a11.funesterie.me";
             var title = isA11Host ? "Connexion A11" : "Connexion Kaen44";
             var accent = isA11Host ? "#3b82f6" : "#8b5cf6";
             var errorMessage = resolveStaticLoginErrorMessage();

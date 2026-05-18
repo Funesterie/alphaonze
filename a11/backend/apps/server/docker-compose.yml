@@ -43,11 +43,11 @@ services:
       
       # Email (Resend)
       - RESEND_API_KEY=${RESEND_API_KEY}
-      - EMAIL_FROM=${EMAIL_FROM:-A11 <a11@funesterie.pro>}
-      - APP_URL=${APP_URL:-https://alphaonze.funesterie.pro}
+      - EMAIL_FROM=${EMAIL_FROM:-A11 <a11@funesterie.me>}
+      - APP_URL=${APP_URL:-https://a11.funesterie.me}
       
       # CORS
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://178.105.86.89,https://alphaonze.funesterie.pro,http://alphaonze.funesterie.pro,https://a11.funesterie.pro,http://a11.funesterie.pro,https://api.funesterie.pro,http://api.funesterie.pro}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://178.105.86.89,https://a11.funesterie.me,http://a11.funesterie.me,https://a11.funesterie.me,http://a11.funesterie.me,https://a11.funesterie.me,http://a11.funesterie.me}
       
       # Sécurité
       - NEZ_SECURITY_MODE=production

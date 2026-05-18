@@ -52,7 +52,7 @@ function resolveEmailServiceConfigFromEnv(env = process.env) {
       env.APP_URL,
       env.FRONT_URL,
       env.A11_APP_URL
-    ) || 'https://alphaonze.funesterie.pro',
+    ) || 'https://a11.funesterie.me',
     smtpUrl: firstNonEmpty(
       env.SMTP_URL,
       env.MAIL_URL,
@@ -176,7 +176,7 @@ function createEmailService(config = {}) {
   const ResendCtor = typeof config.resendCtor === 'function' ? config.resendCtor : Resend;
   const resendApiKey = String(config.resendApiKey || '').trim();
   const fromEmail = String(config.fromEmail || 'A11 <onboarding@resend.dev>').trim();
-  const appUrl = String(config.appUrl || 'https://alphaonze.funesterie.pro').trim();
+  const appUrl = String(config.appUrl || 'https://a11.funesterie.me').trim();
   const resendClient = resendApiKey ? new ResendCtor(resendApiKey) : null;
   const smtpClient = createSmtpClient(config, config.transportFactory);
 

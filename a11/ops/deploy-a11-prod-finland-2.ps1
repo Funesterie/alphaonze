@@ -398,7 +398,7 @@ $compose = $compose.Replace("/srv/a11", $RemoteRoot)
 Set-Content -LiteralPath (Join-Path $ServerStage "docker-compose.prod.yml") -Value $compose -Encoding UTF8
 
 $caddy = @'
-http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44.funesterie.pro, http://vivy.funesterie.me, http://vivy.funesterie.pro {
+http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://vivy.funesterie.me {
   encode zstd gzip
   @a11Path path /a11 /a11/*
   handle @a11Path {
@@ -409,7 +409,7 @@ http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http:/
   }
 }
 
-https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, https://kaen44.funesterie.me, https://kaen44.funesterie.pro, https://vivy.funesterie.me, https://vivy.funesterie.pro {
+https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, https://kaen44.funesterie.me, https://vivy.funesterie.me {
   encode zstd gzip
   @a11Path path /a11 /a11/*
   handle @a11Path {
@@ -420,12 +420,12 @@ https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, htt
   }
 }
 
-http://a11.funesterie.me, http://a11.funesterie.pro, http://api.funesterie.pro {
+http://a11.funesterie.me {
   encode zstd gzip
   reverse_proxy a11-backend:3000
 }
 
-https://a11.funesterie.me, https://a11.funesterie.pro, https://api.funesterie.pro {
+https://a11.funesterie.me {
   encode zstd gzip
   reverse_proxy a11-backend:3000
 }

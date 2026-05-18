@@ -1,4 +1,4 @@
-const TARGET_ORIGIN = String(process.env.A11_PROXY_TARGET_ORIGIN || 'https://a11.funesterie.pro').replace(/\/+$/, '');
+const TARGET_ORIGIN = String(process.env.A11_PROXY_TARGET_ORIGIN || 'https://a11.funesterie.me').replace(/\/+$/, '');
 
 function normalizeProxyPath(eventPath = '') {
   const rawPath = String(eventPath || '').replace(/\\/g, '/');

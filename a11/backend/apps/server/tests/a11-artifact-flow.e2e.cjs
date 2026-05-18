@@ -143,7 +143,7 @@ async function run() {
   assert.ok(fs.existsSync(flowPdf.outputPath), 'Expected flow PDF file to exist');
 
   const flowBuffer = await fsp.readFile(flowPdf.outputPath);
-  const publicLink = 'https://api.funesterie.pro/api/public/resources/42/download?token=e2e-token';
+  const publicLink = 'https://a11.funesterie.me/api/public/resources/42/download?token=e2e-token';
   let uploadedPayload = null;
   let emailPayload = null;
 

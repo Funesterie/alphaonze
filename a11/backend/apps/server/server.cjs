@@ -1289,14 +1289,8 @@ app.get('/avatar.gif', (req, res) => {
 // CORS configuration: allow local dev origins and production origin
 const defaultCorsOrigins = [
   'http://178.105.86.89',
-  'https://alphaonze.funesterie.pro',
-  'http://alphaonze.funesterie.pro',
   'https://a11.funesterie.me',
   'http://a11.funesterie.me',
-  'https://a11.funesterie.pro',
-  'http://a11.funesterie.pro',
-  'https://api.funesterie.pro',
-  'http://api.funesterie.pro',
   'https://funesterie.me',
   'http://funesterie.me',
   'https://www.funesterie.me',
@@ -1305,12 +1299,8 @@ const defaultCorsOrigins = [
   'http://k44.funesterie.me',
   'https://kaen44.funesterie.me',
   'http://kaen44.funesterie.me',
-  'https://kaen44.funesterie.pro',
-  'http://kaen44.funesterie.pro',
   'https://vivy.funesterie.me',
-  'http://vivy.funesterie.me',
-  'https://vivy.funesterie.pro',
-  'http://vivy.funesterie.pro'
+  'http://vivy.funesterie.me'
 ];
 const trustedNetlifyOrigins = [];
 const normalizeOrigin = (origin) => String(origin || '').trim().replace(/\/$/, '');
@@ -2902,7 +2892,7 @@ async function fetchRemoteImageBuffer(imageUrl) {
   const response = await fetch(normalizedUrl, {
     method: 'GET',
     headers: {
-      'user-agent': 'A11/1.0 (+https://alphaonze.funesterie.pro)',
+      'user-agent': 'A11/1.0 (+https://a11.funesterie.me)',
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
   });
@@ -3133,7 +3123,7 @@ async function fetchRemoteImageBuffer(imageUrl) {
   const response = await fetch(normalizedUrl, {
     method: 'GET',
     headers: {
-      'user-agent': 'A11/1.0 (+https://alphaonze.funesterie.pro)',
+      'user-agent': 'A11/1.0 (+https://a11.funesterie.me)',
       accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     },
   });
@@ -5404,7 +5394,7 @@ const EXPLICIT_PUBLIC_API_BASE_URL = String(
 ).trim();
 const PUBLIC_API_BASE_URL = normalizePublicAppUrl(
   EXPLICIT_PUBLIC_API_BASE_URL
-  || 'https://alphaonze.funesterie.pro'
+  || 'https://a11.funesterie.me'
 );
 
 if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-in-production') {
@@ -5581,7 +5571,7 @@ ensureExpiredSharedFilesCleanupTimer();
 const resolvedEmailConfig = resolveEmailServiceConfigFromEnv(process.env);
 const emailService = createEmailService({
   ...resolvedEmailConfig,
-  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://alphaonze.funesterie.pro'),
+  appUrl: normalizePublicAppUrl(resolvedEmailConfig.appUrl || 'https://a11.funesterie.me'),
 });
 const emailStatus = emailService.getStatus();
 if (emailStatus.configured) {
@@ -6360,7 +6350,7 @@ async function buildControlCenterStatus(req) {
       key: isLocalControlOrigin(req) ? 'local' : 'online',
       label: isLocalControlOrigin(req) ? 'Local tunnel' : 'Online',
       requestOrigin,
-      frontendUrl: runtime?.config?.frontendUrl || 'https://alphaonze.funesterie.pro',
+      frontendUrl: runtime?.config?.frontendUrl || 'https://a11.funesterie.me',
       publicApiUrl: runtime?.config?.publicApiUrl || requestOrigin || '',
       controlEnabled,
       controlReason: controlEnabled
@@ -7405,16 +7395,12 @@ function resolveEmbeddedUiSurface(req) {
 
   if (/^\/vivy(?:\/|$)/.test(pathname)
     || hostname === 'vivy.funesterie.me'
-    || hostname === 'vivy.funesterie.pro'
     || hostname === 'music.funesterie.me') {
     return 'vivy';
   }
 
   if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname)
-    || hostname === 'a11.funesterie.me'
-    || hostname === 'a11.funesterie.pro'
-    || hostname === 'alphaonze.funesterie.pro'
-    || hostname === 'api.funesterie.pro') {
+    || hostname === 'a11.funesterie.me') {
     return 'a11';
   }
 
@@ -7424,8 +7410,7 @@ function resolveEmbeddedUiSurface(req) {
     || hostname === 'funesterie.me'
     || hostname === 'www.funesterie.me'
     || hostname === 'k44.funesterie.me'
-    || hostname === 'kaen44.funesterie.me'
-    || hostname === 'kaen44.funesterie.pro') {
+    || hostname === 'kaen44.funesterie.me') {
     return 'kaen44';
   }
 
@@ -7755,8 +7740,7 @@ function sendEmbeddedUiRoot(req, res) {
     return res.redirect(302, '/cockpit/');
   }
   if (hostname === 'k44.funesterie.me'
-    || hostname === 'kaen44.funesterie.me'
-    || hostname === 'kaen44.funesterie.pro') {
+    || hostname === 'kaen44.funesterie.me') {
     return res.redirect(302, '/cockpit/');
   }
   return sendEmbeddedUiIndex(req, res);

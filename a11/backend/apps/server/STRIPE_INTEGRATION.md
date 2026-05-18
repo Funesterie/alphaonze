@@ -32,9 +32,9 @@ Ajouter dans `.env.local` :
 # STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_...                        # ID du prix créé dans Stripe Dashboard
 # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
-STRIPE_SUCCESS_URL=https://funesterie.pro/subscription/success
-STRIPE_CANCEL_URL=https://funesterie.pro/subscription/cancel
-STRIPE_PORTAL_RETURN_URL=https://funesterie.pro/account
+STRIPE_SUCCESS_URL=https://funesterie.me/subscription/success
+STRIPE_CANCEL_URL=https://funesterie.me/subscription/cancel
+STRIPE_PORTAL_RETURN_URL=https://funesterie.me/account
 ```
 
 ### Création du produit dans Stripe Dashboard
@@ -45,7 +45,7 @@ STRIPE_PORTAL_RETURN_URL=https://funesterie.pro/account
 4. Prix : 2,99€/mois (récurrent)
 5. Copier le `price_id` (commence par `price_...`)
 6. Configurer le webhook :
-   - URL : `https://api.funesterie.pro/api/subscription/webhook`
+   - URL : `https://a11.funesterie.me/api/subscription/webhook`
    - Événements : `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`
    - Copier le `webhook_secret` (commence par `whsec_...`)
 

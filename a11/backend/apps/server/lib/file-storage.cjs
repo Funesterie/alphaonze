@@ -24,7 +24,7 @@ function sanitizeFileName(name) {
 
 function normalizePublicAppUrl(rawUrl) {
   let url = String(rawUrl || '').trim();
-  if (!url) url = 'https://alphaonze.funesterie.pro';
+  if (!url) url = 'https://a11.funesterie.me';
   url = url.replace(/^\/+/, '');
   if (!/^https?:\/\//i.test(url)) {
     url = `https://${url}`;

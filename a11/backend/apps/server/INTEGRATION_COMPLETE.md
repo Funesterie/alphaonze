@@ -174,13 +174,13 @@ npm run test:contracts
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Frontend                             │
-│                    (alphaonze.funesterie.pro)               │
+│                    (a11.funesterie.me)               │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Backend (server.cjs)                      │
-│                   (api.funesterie.pro:3000)                  │
+│                   (a11.funesterie.me:3000)                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Routes d'abonnement (/api/subscription)                    │
 │  ├─ POST /create-checkout → Stripe Checkout                 │

@@ -176,7 +176,7 @@ function buildRuntimeConfig(env = process.env) {
   const qflushRemoteSource = declaredQflushRemoteUrl
     ? 'qflush'
     : (qflushRemoteUrl ? 'dragon-compat' : '');
-  const frontendUrl = normalizeUrl(env.APP_URL || env.FRONT_URL || 'https://alphaonze.funesterie.pro');
+  const frontendUrl = normalizeUrl(env.APP_URL || env.FRONT_URL || 'https://a11.funesterie.me');
   const ttsInternalUrl = String(env.TTS_URL || env.TTS_HOST || '').trim();
   const ttsPublicBaseUrl = normalizeUrl(env.TTS_PUBLIC_BASE_URL || env.TTS_BASE_URL || '');
   const publicApiUrl = normalizeUrl(env.PUBLIC_API_URL || env.API_URL || env.A11_SERVER_URL || '');

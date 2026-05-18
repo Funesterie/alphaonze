@@ -131,8 +131,8 @@ test('video proxy rewrites local generated media paths to the public backend ori
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        host: 'a11.funesterie.pro',
-        'x-forwarded-host': 'a11.funesterie.pro',
+        host: 'a11.funesterie.me',
+        'x-forwarded-host': 'a11.funesterie.me',
         'x-forwarded-proto': 'https',
       },
       body: JSON.stringify({
@@ -145,9 +145,9 @@ test('video proxy rewrites local generated media paths to the public backend ori
 
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
-    assert.equal(payload.video_url, 'https://a11.funesterie.pro/files/runtime/files/generated/videos/job-123/demo.mp4');
+    assert.equal(payload.video_url, 'https://a11.funesterie.me/files/runtime/files/generated/videos/job-123/demo.mp4');
     assert.equal(payload.url, payload.video_url);
-    assert.equal(payload.frames[0].image_url, 'https://a11.funesterie.pro/files/runtime/files/generated/images/job-123/frame-0000.png');
+    assert.equal(payload.frames[0].image_url, 'https://a11.funesterie.me/files/runtime/files/generated/images/job-123/frame-0000.png');
     assert.equal(payload.frames[0].url, payload.frames[0].image_url);
   } finally {
     await new Promise((resolve) => appServer.close(resolve));

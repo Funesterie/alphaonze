@@ -277,9 +277,9 @@ STRIPE_PRICE_ID=price_...
 # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # URLs de redirection
-STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
-STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
-STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
+STRIPE_SUCCESS_URL=https://a11.funesterie.me/subscription/success
+STRIPE_CANCEL_URL=https://a11.funesterie.me/subscription/cancel
+STRIPE_PORTAL_RETURN_URL=https://a11.funesterie.me/account
 
 # SonarQube (optionnel)
 SONAR_HOST_URL=https://sonarqube.server/

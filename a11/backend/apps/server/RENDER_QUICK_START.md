@@ -101,8 +101,8 @@ NEZ_SECURITY_MODE=production
 JWT_EXPIRY=7d
 
 # CORS
-CORS_ORIGINS=https://alphaonze.funesterie.pro
-APP_URL=https://alphaonze.funesterie.pro
+CORS_ORIGINS=https://a11.funesterie.me
+APP_URL=https://a11.funesterie.me
 
 # Databases (colle les URLs copiées)
 DATABASE_URL=<postgresql_internal_url>
@@ -118,13 +118,13 @@ A11_LLM_TIMEOUT_MS=60000
 # STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=price_1TQwxHHkqLcMgv548uBa6GDZ
 # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
-STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
-STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
-STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
+STRIPE_SUCCESS_URL=https://a11.funesterie.me/subscription/success
+STRIPE_CANCEL_URL=https://a11.funesterie.me/subscription/cancel
+STRIPE_PORTAL_RETURN_URL=https://a11.funesterie.me/account
 
 # Email
 # RESEND_API_KEY is configured via the deployment secret store.
-EMAIL_FROM=A11 <a11@funesterie.pro>
+EMAIL_FROM=A11 <a11@funesterie.me>
 
 # Features
 A11_ENABLE_QFLUSH=0
@@ -178,7 +178,7 @@ Redéploie le frontend.
 ## 🎯 URL Finale
 
 - **Backend API** : `https://a11-backend.onrender.com`
-- **Frontend** : `https://alphaonze.funesterie.pro`
+- **Frontend** : `https://a11.funesterie.me`
 - **Health** : `https://a11-backend.onrender.com/health`
 
 ---

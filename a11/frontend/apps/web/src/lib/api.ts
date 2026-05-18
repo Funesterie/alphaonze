@@ -1,4 +1,4 @@
-﻿// --- Génération d'image via backend DALL·E ---
+// --- Génération d'image via backend DALL·E ---
 type A11GenerationSourceOptions = {
   sourceImageUrl?: string | null;
   width?: number;
@@ -233,7 +233,6 @@ function isPublicKaen44WebHost(hostname: string | null | undefined) {
   return [
     'k44.funesterie.me',
     'kaen44.funesterie.me',
-    'kaen44.funesterie.pro',
   ].includes(normalized);
 }
 
@@ -242,7 +241,6 @@ function isPublicVivyWebHost(hostname: string | null | undefined) {
   if (!normalized) return false;
   return [
     'vivy.funesterie.me',
-    'vivy.funesterie.pro',
     'music.funesterie.me',
   ].includes(normalized);
 }
@@ -253,9 +251,6 @@ function isPublicGeneralCockpitHost(hostname: string | null | undefined) {
   return [
     'funesterie.me',
     'www.funesterie.me',
-    'funesterie.pro',
-    'www.funesterie.pro',
-    'cockpit.funesterie.pro',
   ].includes(normalized);
 }
 
@@ -296,10 +291,7 @@ function isPublicA11WebHost(hostname: string | null | undefined) {
   if (!normalized) return false;
   return [
     '178.105.86.89',
-    'alphaonze.funesterie.pro',
     'a11.funesterie.me',
-    'a11.funesterie.pro',
-    'api.funesterie.pro',
   ].includes(normalized);
 }
 
@@ -488,21 +480,13 @@ export function resolveApiAssetUrl(rawValue: string | null | undefined) {
       const assetHost = parsed.hostname.toLowerCase();
       if (
         [
-          'api.funesterie.pro',
-          '178.105.86.89',
           'a11.funesterie.me',
-          'a11.funesterie.pro',
-          'alphaonze.funesterie.pro',
-          'funesterie.pro',
-          'www.funesterie.pro',
-          'cockpit.funesterie.pro',
+          '178.105.86.89',
           'funesterie.me',
           'www.funesterie.me',
           'k44.funesterie.me',
           'kaen44.funesterie.me',
-          'kaen44.funesterie.pro',
           'vivy.funesterie.me',
-          'vivy.funesterie.pro',
           'music.funesterie.me',
         ].includes(assetHost)
         && /^\/files\//i.test(parsed.pathname)

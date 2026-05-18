@@ -1,20 +1,12 @@
 const A11_CACHE = "a11-pwa-v4";
 const A11_PUBLIC_HOSTS_WITHOUT_SW = new Set([
   "178.105.86.89",
-  "alphaonze.funesterie.pro",
   "a11.funesterie.me",
-  "a11.funesterie.pro",
-  "api.funesterie.pro",
-  "funesterie.pro",
-  "www.funesterie.pro",
-  "cockpit.funesterie.pro",
   "funesterie.me",
   "www.funesterie.me",
   "k44.funesterie.me",
   "kaen44.funesterie.me",
-  "kaen44.funesterie.pro",
   "vivy.funesterie.me",
-  "vivy.funesterie.pro",
 ]);
 const A11_STATIC_ASSETS = [
   "/manifest.webmanifest",

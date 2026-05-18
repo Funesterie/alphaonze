@@ -103,9 +103,9 @@ console.log("[Server] Subscription routes mounted under /api/subscription");
 # STRIPE_SECRET_KEY is configured via the deployment secret store.
 STRIPE_PRICE_ID=
 # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
-STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
-STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
-STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
+STRIPE_SUCCESS_URL=https://a11.funesterie.me/subscription/success
+STRIPE_CANCEL_URL=https://a11.funesterie.me/subscription/cancel
+STRIPE_PORTAL_RETURN_URL=https://a11.funesterie.me/account
 ```
 
 ## Prochaines étapes
@@ -147,7 +147,7 @@ WHERE role = 'admin';
    - Prix : 2,99€/mois (récurrent)
    - Copier le `price_id`
 3. Configurer le webhook :
-   - URL : `https://api.funesterie.pro/api/subscription/webhook`
+   - URL : `https://a11.funesterie.me/api/subscription/webhook`
    - Événements :
      - `checkout.session.completed`
      - `customer.subscription.created`
@@ -195,13 +195,13 @@ stripe listen --forward-to localhost:3000/api/subscription/webhook
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Frontend                             │
-│                    (alphaonze.funesterie.pro)               │
+│                    (a11.funesterie.me)               │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Backend (server.cjs)                      │
-│                   (api.funesterie.pro:3000)                  │
+│                   (a11.funesterie.me:3000)                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Routes d'abonnement (/api/subscription)                    │
 │  ├─ POST /create-checkout → Stripe Checkout                 │

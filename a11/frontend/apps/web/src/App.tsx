@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -249,9 +249,6 @@ function isGeneralFunesterieHost(hostname: string) {
   return [
     "funesterie.me",
     "www.funesterie.me",
-    "funesterie.pro",
-    "www.funesterie.pro",
-    "cockpit.funesterie.pro",
   ].includes(String(hostname || "").trim().toLowerCase());
 }
 
@@ -286,16 +283,11 @@ function getCurrentSurfaceKind(): FunesterieSurface {
 
   const isLocalHost = isLocalSurfaceHost(hostname);
   const isVivyHost = hostname === "vivy.funesterie.me"
-    || hostname === "vivy.funesterie.pro"
     || hostname === "music.funesterie.me";
   const isA11Host = hostname === "a11.funesterie.me"
-    || hostname === "a11.funesterie.pro"
-    || hostname === "alphaonze.funesterie.pro"
-    || hostname === "api.funesterie.pro"
     || (isLocalHost && port === "3000");
   const isKaenHost = hostname === "k44.funesterie.me"
     || hostname === "kaen44.funesterie.me"
-    || hostname === "kaen44.funesterie.pro"
     || (isLocalHost && port === "3001");
 
   if (/^\/vivy(?:\/|$)/.test(pathname) || isVivyHost || personaParam === "vivy") return "vivy";
@@ -4088,17 +4080,11 @@ export function App() {
 
     const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
       || hostname === 'a11.funesterie.me'
-      || hostname === 'a11.funesterie.pro'
-      || hostname === 'alphaonze.funesterie.pro'
-      || hostname === 'funesterie.pro'
-      || hostname === 'www.funesterie.pro'
-      || hostname === 'cockpit.funesterie.pro'
       || hostname === 'k44.funesterie.me'
       || hostname === 'funesterie.me'
       || hostname === 'www.funesterie.me'
       || hostname === 'kaen44.funesterie.me'
-      || hostname === 'vivy.funesterie.me'
-      || hostname === 'vivy.funesterie.pro';
+      || hostname === 'vivy.funesterie.me';
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();

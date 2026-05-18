@@ -36,7 +36,7 @@ test('paypal config exposes public business receiver and webhook status', async 
   process.env.PAYPAL_CLIENT_ID = 'client';
   process.env.PAYPAL_CLIENT_SECRET = 'secret';
   process.env.PAYPAL_WEBHOOK_ID = 'webhook';
-  process.env.PAYPAL_WEBHOOK_URL = 'https://a11.funesterie.pro/api/paypal/webhook';
+  process.env.PAYPAL_WEBHOOK_URL = 'https://a11.funesterie.me/api/paypal/webhook';
 
   try {
     await withServer(async (baseUrl) => {
@@ -46,7 +46,7 @@ test('paypal config exposes public business receiver and webhook status', async 
       assert.equal(payload.ok, true);
       assert.equal(payload.configured, true);
       assert.equal(payload.receiverEmail, 'cellaurojeffrey@hotmail.com');
-      assert.equal(payload.webhookUrl, 'https://a11.funesterie.pro/api/paypal/webhook');
+      assert.equal(payload.webhookUrl, 'https://a11.funesterie.me/api/paypal/webhook');
       assert.equal(payload.mode, 'sandbox');
     });
   } finally {

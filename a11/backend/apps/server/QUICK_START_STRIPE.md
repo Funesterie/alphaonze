@@ -23,7 +23,7 @@
 1. Dans le Dashboard Stripe, aller dans **Développeurs** → **Webhooks**
 2. Cliquer sur **Ajouter un endpoint**
 3. Remplir :
-   - **URL de l'endpoint** : `https://api.funesterie.pro/api/subscription/webhook`
+   - **URL de l'endpoint** : `https://a11.funesterie.me/api/subscription/webhook`
    - Pour le test local : `http://localhost:3000/api/subscription/webhook`
 4. Sélectionner les événements :
    - `checkout.session.completed`
