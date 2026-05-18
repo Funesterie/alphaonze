@@ -4230,6 +4230,150 @@ html.vivy-public-page-root .vivy-public-shell {
   display: none;
 }
 
+.vivy-chat {
+  width: min(100% - clamp(24px, 4vw, 56px), 1500px);
+  margin: 0 auto clamp(20px, 4vw, 42px);
+  padding: clamp(16px, 2.6vw, 28px);
+  border: 1px solid rgba(240, 121, 216, 0.28);
+  background:
+    linear-gradient(135deg, rgba(240, 121, 216, 0.14), transparent 42%),
+    rgba(5, 3, 10, 0.82);
+  box-shadow: 0 20px 64px rgba(0, 0, 0, 0.32);
+}
+
+.vivy-chat-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.vivy-chat-head h2 {
+  margin: 0;
+  color: #ffd2f4;
+  font-size: clamp(22px, 2.6vw, 34px);
+  line-height: 1.08;
+}
+
+.vivy-chat-head p,
+.vivy-chat-status {
+  margin: 8px 0 0;
+  color: #e8bfdc;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.vivy-chat button,
+.vivy-chat textarea {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.vivy-chat button {
+  min-height: 40px;
+  border: 1px solid rgba(240, 121, 216, 0.34);
+  border-radius: 8px;
+  padding: 0 13px;
+  background: rgba(240, 121, 216, 0.12);
+  color: #ffd2f4;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.vivy-chat button:hover,
+.vivy-chat button:focus-visible {
+  border-color: rgba(240, 121, 216, 0.82);
+  background: rgba(240, 121, 216, 0.22);
+}
+
+.vivy-chat button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.vivy-chat-log {
+  display: grid;
+  gap: 10px;
+  max-height: min(46svh, 460px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(240, 121, 216, 0.18);
+  background: rgba(1, 1, 5, 0.54);
+}
+
+.vivy-chat-message {
+  width: min(82%, 860px);
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(240, 121, 216, 0.2);
+  background: rgba(17, 10, 28, 0.78);
+}
+
+.vivy-chat-message--user {
+  justify-self: end;
+  background: rgba(240, 121, 216, 0.18);
+}
+
+.vivy-chat-message span {
+  color: #f079d8;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.vivy-chat-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #fff3fc;
+  font-size: 14px;
+  line-height: 1.48;
+}
+
+.vivy-chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 12px;
+  align-items: stretch;
+}
+
+.vivy-chat-compose textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 84px;
+  border: 1px solid rgba(240, 121, 216, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 1, 5, 0.72);
+  color: #fff3fc;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+  outline: none;
+}
+
+.vivy-chat-compose textarea:focus {
+  border-color: rgba(240, 121, 216, 0.78);
+  box-shadow: 0 0 0 3px rgba(240, 121, 216, 0.12);
+}
+
+.vivy-chat-compose div {
+  min-width: 150px;
+  display: grid;
+  gap: 8px;
+}
+
+.vivy-chat-compose button[type="submit"] {
+  background: linear-gradient(135deg, #f079d8, #8f3eff);
+  color: #120516;
+  border-color: transparent;
+}
+
 .vivy-studio {
   width: min(100% - clamp(24px, 4vw, 56px), 1500px);
   margin: 0 auto clamp(32px, 6vw, 76px);
@@ -4534,6 +4678,37 @@ html.vivy-public-page-root .vivy-public-shell {
     width: calc(100% - 24px);
     margin-bottom: 30px;
     padding: 14px;
+  }
+
+  .vivy-chat {
+    width: calc(100% - 24px);
+    padding: 14px;
+  }
+
+  .vivy-chat-head {
+    display: grid;
+    align-items: start;
+  }
+
+  .vivy-chat-head button {
+    width: 100%;
+  }
+
+  .vivy-chat-log {
+    max-height: 58svh;
+  }
+
+  .vivy-chat-message {
+    width: 100%;
+  }
+
+  .vivy-chat-compose {
+    grid-template-columns: 1fr;
+  }
+
+  .vivy-chat-compose div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
   }
 
   .vivy-studio-head {

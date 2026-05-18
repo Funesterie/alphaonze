@@ -15,6 +15,7 @@ import {
   fetchAuthSession,
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
+  chatWithVivy,
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
@@ -1727,6 +1728,14 @@ type VivyStudioMediaPreview = {
 };
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
+const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat";
+
+type VivyPublicChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  ts: string;
+};
 
 const VIVY_STUDIO_MODES: Array<{
   id: VivyStudioMode;
@@ -1753,6 +1762,42 @@ const VIVY_STUDIO_MODES: Array<{
     action: "Preparer partage",
   },
 ];
+
+function buildVivyGreeting(): VivyPublicChatMessage {
+  return {
+    id: "vivy-greeting",
+    role: "assistant",
+    content: "Je suis Vivy. Parle-moi d'une voix, d'une chanson, d'une ambiance ou d'une scene a publier.",
+    ts: new Date().toISOString(),
+  };
+}
+
+function readVivyPublicChat(): VivyPublicChatMessage[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(VIVY_PUBLIC_CHAT_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return [buildVivyGreeting()];
+    const messages = parsed
+      .map((entry) => ({
+        id: String(entry?.id || `vivy-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        role: entry?.role === "user" ? "user" as const : "assistant" as const,
+        content: String(entry?.content || "").trim(),
+        ts: String(entry?.ts || new Date().toISOString()),
+      }))
+      .filter((entry) => entry.content);
+    return messages.length ? messages.slice(-24) : [buildVivyGreeting()];
+  } catch {
+    return [buildVivyGreeting()];
+  }
+}
+
+function writeVivyPublicChat(messages: VivyPublicChatMessage[]) {
+  try {
+    globalThis.localStorage?.setItem(VIVY_PUBLIC_CHAT_KEY, JSON.stringify(messages.slice(-24)));
+  } catch {
+    // Local history is best effort only.
+  }
+}
 
 function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
   const raw = String(value || "").trim().toLowerCase();
@@ -2220,6 +2265,122 @@ function VivyStudioLab() {
   );
 }
 
+function VivyPublicChat() {
+  const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => readVivyPublicChat());
+  const [draft, setDraft] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [status, setStatus] = useState("");
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    writeVivyPublicChat(messages);
+  }, [messages]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length, isSending]);
+
+  async function sendMessage(textOverride?: string) {
+    const text = String(textOverride ?? draft).trim();
+    if (!text || isSending) return;
+
+    const now = new Date().toISOString();
+    const userMessage: VivyPublicChatMessage = {
+      id: `vivy-user-${Date.now()}`,
+      role: "user",
+      content: text,
+      ts: now,
+    };
+    const nextMessages = [...messages, userMessage].slice(-24);
+    setMessages(nextMessages);
+    setDraft("");
+    setIsSending(true);
+    setStatus("Vivy ecoute...");
+
+    try {
+      const payload = await chatWithVivy({
+        message: text,
+        history: nextMessages.map((entry) => ({
+          role: entry.role,
+          content: entry.content,
+          ts: entry.ts,
+        })),
+      });
+      const assistantText = String(payload.assistant || payload.content || payload.summary || "").trim()
+        || "Je suis la, mais je n'ai pas encore assez de matiere. Donne-moi une ambiance, une phrase ou une direction.";
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-assistant-${Date.now()}`,
+        role: "assistant",
+        content: assistantText,
+        ts: new Date().toISOString(),
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-24));
+      setStatus(payload.mode ? `Mode ${payload.mode}` : "Vivy prete");
+    } catch (error: any) {
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-error-${Date.now()}`,
+        role: "assistant",
+        content: `Je n'arrive pas a joindre le studio Vivy pour l'instant: ${error?.message || error}`,
+        ts: new Date().toISOString(),
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-24));
+      setStatus("Connexion Vivy a verifier");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  function resetChat() {
+    const next = [buildVivyGreeting()];
+    setMessages(next);
+    setStatus("Conversation remise a zero");
+  }
+
+  return (
+    <section className="vivy-chat" aria-label="Chat Vivy">
+      <div className="vivy-chat-head">
+        <div>
+          <h2>Parler a Vivy</h2>
+          <p>Voix, chanson, ambiance ou scene: Vivy transforme l'idee en direction exploitable.</p>
+        </div>
+        <button type="button" onClick={resetChat}>Reset</button>
+      </div>
+
+      <div className="vivy-chat-log" aria-live="polite">
+        {messages.map((message) => (
+          <article key={message.id} className={`vivy-chat-message vivy-chat-message--${message.role}`}>
+            <span>{message.role === "user" ? "Vous" : "Vivy"}</span>
+            <p>{message.content}</p>
+          </article>
+        ))}
+        {isSending && (
+          <article className="vivy-chat-message vivy-chat-message--assistant">
+            <span>Vivy</span>
+            <p>Je compose la reponse...</p>
+          </article>
+        )}
+        <div ref={endRef} aria-hidden="true" />
+      </div>
+
+      <form className="vivy-chat-compose" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."
+          rows={3}
+        />
+        <div>
+          <button type="button" onClick={() => void sendMessage("Prepare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
+          <button type="button" onClick={() => void sendMessage("Transforme cette idee en chanson Vivy avec structure et refrain.")}>Chanson</button>
+          <button type="button" onClick={() => void sendMessage("Prepare une scene courte pour publier Vivy en clip vertical.")}>Scene</button>
+          <button type="submit" disabled={isSending || !draft.trim()}>Envoyer</button>
+        </div>
+      </form>
+      {status && <p className="vivy-chat-status">{status}</p>}
+    </section>
+  );
+}
+
 function VivyPublicSurface() {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
     { mode: "voice", label: "Ouvrir Creation voix dans l'atelier Vivy" },
@@ -2255,6 +2416,7 @@ function VivyPublicSurface() {
           <img className="vivy-mobile-slice vivy-mobile-slice--scene" src={VIVY_POSTER_SRC} alt="" />
         </div>
       </section>
+      <VivyPublicChat />
       <VivyStudioLab />
     </>
   );

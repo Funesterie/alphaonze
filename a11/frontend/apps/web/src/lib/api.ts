@@ -1296,6 +1296,10 @@ export type VivyStudioMedia = {
 
 export type VivyStudioProductionInput = {
   mode: VivyStudioMode;
+  message?: string;
+  prompt?: string;
+  text?: string;
+  history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string; ts?: string }>;
   voiceTool?: string;
   voiceInstruction?: string;
   voiceFileName?: string;
@@ -1306,6 +1310,7 @@ export type VivyStudioProductionInput = {
   shareUrl?: string;
   shareTokenPresent?: boolean;
   shareInstruction?: string;
+  disableEmergencyMedia?: boolean;
 };
 
 export type VivyStudioProductionResult = {
@@ -1345,6 +1350,31 @@ export async function runVivyStudioProduction(
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Vivy Studio indisponible (${res.status})`);
+  }
+  return payload as VivyStudioProductionResult;
+}
+
+export async function chatWithVivy(
+  input: {
+    message?: string;
+    history?: VivyStudioProductionInput['history'];
+    mode?: VivyStudioMode;
+  }
+): Promise<VivyStudioProductionResult> {
+  const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({
+      ...input,
+      shareToken: undefined,
+      shareTokenPresent: false,
+      disableEmergencyMedia: true,
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Chat Vivy indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
 }

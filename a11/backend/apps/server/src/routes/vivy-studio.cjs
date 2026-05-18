@@ -209,6 +209,74 @@ function buildShareProduction(input) {
   };
 }
 
+function inferVivyChatMode(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  if (/\b(voix|voice|chanter|chant|timbre|micro|rvc|voicemod|parle|speech)\b/i.test(normalized)) {
+    return 'voice';
+  }
+  if (/\b(publie|publier|youtube|clip|short|scene|partage|upload|description|tags|miniature)\b/i.test(normalized)) {
+    return 'share';
+  }
+  return 'song';
+}
+
+function summarizeChatMessage(message = '') {
+  const cleaned = cleanText(message, 360);
+  if (!cleaned) return 'on part sur une intention musicale a preciser.';
+  return cleaned.replace(/\s+/g, ' ');
+}
+
+function buildVivyChat(input) {
+  const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
+  const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
+  const history = Array.isArray(input.history)
+    ? input.history
+      .slice(-6)
+      .map((entry) => `${cleanOneLine(entry?.role, 'user', 24)}: ${cleanText(entry?.content, 260)}`)
+      .filter(Boolean)
+    : [];
+
+  const production = buildVivyStudioProduction({
+    ...input,
+    mode,
+    songSource: input.songSource || 'Conversation',
+    songText: mode === 'song' ? compactUniqueLines([history.join('\n'), message], 2200) : input.songText,
+    voiceInstruction: mode === 'voice' ? compactUniqueLines([history.join('\n'), message], 1200) : input.voiceInstruction,
+    shareInstruction: mode === 'share' ? compactUniqueLines([history.join('\n'), message], 1200) : input.shareInstruction,
+    shareToken: undefined,
+    shareTokenPresent: false,
+  });
+
+  const readyActions = Array.isArray(production.actions)
+    ? production.actions.filter((action) => action?.ready).map((action) => action.label).slice(0, 3)
+    : [];
+  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scene / partage' : 'composition';
+  const assistant = [
+    'Je suis Vivy. Je pars de ton message.',
+    `Lecture: ${summarizeChatMessage(message)}`,
+    `Direction: ${modeLabel}. ${production.summary}`,
+    readyActions.length ? `Actions pretes: ${readyActions.join(', ')}.` : 'Action prete: clarifier le theme et preparer le brief.',
+    mode === 'voice'
+      ? 'Envoie-moi une intention de timbre, une phrase test ou une reference vocale, et je te fais une calibration propre.'
+      : mode === 'share'
+        ? 'Donne-moi le canal, le format et la contrainte de publication, et je prepare le plan de scene.'
+        : 'Donne-moi un theme, une phrase ou une ambiance, et je transforme ca en chanson exploitable.',
+  ].join('\n\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode,
+    assistant,
+    content: assistant,
+    summary: production.summary,
+    actions: production.actions,
+    routing: production.routing,
+    tokenStored: false,
+    writesByDefault: false,
+  };
+}
+
 function buildVivyStudioProduction(input) {
   const mode = parseMode(input.mode);
   const production =
@@ -365,10 +433,26 @@ function createVivyStudioRouter() {
     }
   });
 
+  router.post('/chat', express.json({ limit: '96kb' }), async (req, res) => {
+    try {
+      res.json(buildVivyChat({
+        ...(req.body || {}),
+        shareToken: undefined,
+      }));
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: 'vivy_chat_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
   return router;
 }
 
 module.exports = {
   createVivyStudioRouter,
   buildVivyStudioProduction,
+  buildVivyChat,
 };
