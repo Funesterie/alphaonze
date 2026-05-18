@@ -2664,14 +2664,14 @@ function VivyPublicSurface() {
 
   return (
     <>
-      <section className="vivy-public-stage" aria-label="Vivy presence musicale" tabIndex={0}>
+      <section className="vivy-public-stage" aria-label="Vivy présence musicale" tabIndex={0}>
         <div className="vivy-public-poster-frame">
           <img
             className="vivy-public-poster"
             src={VIVY_POSTER_SRC}
-            alt="Vivy, presence musicale Funesterie: voix, musique, creation et partage."
+            alt="Vivy, présence musicale Funesterie: voix, musique, création et partage."
           />
-          <div className="vivy-public-hotspots" aria-label="Acces directs Vivy">
+          <div className="vivy-public-hotspots" aria-label="Accès directs Vivy">
             {hotspots.map((hotspot) => (
               <button
                 key={hotspot.mode}
