@@ -31,10 +31,10 @@ async function withServer(registerRoutes, runAssertions) {
   }
 }
 
-async function postJson(baseUrl, route, body) {
+async function postJson(baseUrl, route, body, headers = {}) {
   const response = await fetch(baseUrl + route, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
   const text = await response.text();
@@ -222,6 +222,86 @@ test('auth/me accepts the a11_session cookie without cookie-parser state', async
       assert.equal(result.json.ok, true);
       assert.equal(result.json.authenticated, true);
       assert.equal(result.json.user.email, 'cookie@example.test');
+    }
+  );
+});
+
+test('auth logout invalidates every token for the same user', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-session-state-'));
+  const previousStateFile = process.env.A11_AUTH_SESSION_STATE_FILE;
+  process.env.A11_AUTH_SESSION_STATE_FILE = path.join(tmpDir, 'session-state.json');
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  t.after(() => {
+    if (previousStateFile === undefined) {
+      delete process.env.A11_AUTH_SESSION_STATE_FILE;
+    } else {
+      process.env.A11_AUTH_SESSION_STATE_FILE = previousStateFile;
+    }
+  });
+
+  const localAuthStore = createLocalAuthStore({
+    filePath: path.join(tmpDir, 'local-users.json'),
+    logger: { warn() {} },
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore,
+        defaultAdminUsername: 'Djeff',
+        defaultAdminPassword: '1991',
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const registered = await postJson(baseUrl, '/api/auth/register', {
+        username: 'GlobalLogout',
+        email: 'global-logout@example.test',
+        password: 'secret123',
+      });
+      assert.equal(registered.response.status, 200);
+
+      const secondLogin = await postJson(baseUrl, '/api/auth/login', {
+        email: 'global-logout@example.test',
+        password: 'secret123',
+      });
+      assert.equal(secondLogin.response.status, 200);
+
+      const beforeLogout = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${secondLogin.json.token}`,
+      });
+      assert.equal(beforeLogout.response.status, 200);
+      assert.equal(beforeLogout.json.authenticated, true);
+
+      const logoutResponse = await postJson(baseUrl, '/api/auth/logout', {}, {
+        Authorization: `Bearer ${registered.json.token}`,
+      });
+      assert.equal(logoutResponse.response.status, 200);
+      assert.equal(logoutResponse.json.global, true);
+
+      const oldSiblingToken = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${secondLogin.json.token}`,
+      });
+      assert.equal(oldSiblingToken.response.status, 401);
+      assert.equal(oldSiblingToken.json.error, 'A11_JWT_Revoked');
+
+      const freshLogin = await postJson(baseUrl, '/api/auth/login', {
+        email: 'global-logout@example.test',
+        password: 'secret123',
+      });
+      assert.equal(freshLogin.response.status, 200);
+      const freshSession = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${freshLogin.json.token}`,
+      });
+      assert.equal(freshSession.response.status, 200);
+      assert.equal(freshSession.json.authenticated, true);
     }
   );
 });

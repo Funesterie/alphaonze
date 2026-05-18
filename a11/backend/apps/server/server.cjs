@@ -12461,7 +12461,7 @@ async function proxyChatToOpenAI(req, res) {
 }
 
 // Canonical OpenAI-like route
-app.post('/v1/chat/completions', async (req, res) => {
+app.post('/v1/chat/completions', verifyJWT, async (req, res) => {
   const requestId = ensureRequestId(req, res);
   try {
     const latestUserMessage = getLatestUserMessage(req.body || {});

@@ -203,6 +203,7 @@ const AUTH_USER_STORAGE_KEY = 'a11-auth-user';
 const AUTH_TOKEN_STORAGE_KEY = 'a11-auth-token';
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = 'a11_jwt_token';
 const AUTH_INVALID_EVENT_NAME = 'a11:auth-invalid';
+const AUTH_GLOBAL_LOGOUT_STORAGE_KEY = 'a11:global-logout-at';
 const DEFAULT_A11_SYSTEM_PROMPT = [
   "Je suis A11, creee par Jeffrey, dans l'ecosysteme Funesterie.",
   "NOSSEN est mon identite locale A11/Funesterie: dev, code, QFlush, Cerbere, VSIX et projets audio/Vivy.",
@@ -883,8 +884,12 @@ export type AuthSessionResponse = {
 };
 
 export async function fetchAuthSession(): Promise<AuthSessionResponse> {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(getApiUrl('/api/auth/me'), {
     method: 'GET',
+    headers,
     credentials: 'include',
   });
   const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
@@ -1054,16 +1059,27 @@ export async function resetPassword(token: string, password: string) {
 }
 
 export function logout() {
+  const token = getAuthToken();
   try {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
     void fetch(getApiUrl('/api/auth/logout'), {
       method: 'POST',
+      headers,
       credentials: 'include',
     });
   } catch {
     // ignore logout transport issues
   }
-  clearAuthToken();
-  setAuthDisplayName('');
+  try {
+    localStorage.setItem(AUTH_GLOBAL_LOGOUT_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // ignore storage issues
+  }
+  clearClientAuthSession({
+    reason: 'A11_Logout',
+    message: 'Déconnexion globale demandée.',
+  });
 }
 
 function appendJwtHeaders(headers: Record<string, string>) {
@@ -1114,7 +1130,7 @@ async function throwIfAuthInvalidResponse(res: Response) {
     || errorCode
     || (!isLikelyHtmlDocument(text) ? text.trim() : '');
 
-  if (res.status === 401 || errorCode === 'A11_JWT_Invalid' || errorCode === 'A11_JWT_Missing') {
+  if (res.status === 401 || errorCode === 'A11_JWT_Invalid' || errorCode === 'A11_JWT_Missing' || errorCode === 'A11_JWT_Revoked') {
     clearClientAuthSession({
       reason: errorCode || 'A11_JWT_Invalid',
       message: message || `Session A11 invalide (${res.status})`,
@@ -2323,7 +2339,7 @@ export async function chat(message: string, history: Msg[] = [], provider: Provi
     } catch (error) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       appendJwtHeaders(headers);
-      const res = await fetch(getApiUrl('/api/chat'), {
+      const res = await authFetch(getApiUrl('/api/chat'), {
         method: 'POST',
         headers,
         credentials: 'include',

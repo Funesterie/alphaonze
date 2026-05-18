@@ -655,6 +655,10 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     if (typeof verifyJWT !== 'function' || !extractRequestAuthToken(req)) return next();
     return verifyJWT(req, res, next);
   };
+  const requireAuth = (req, res, next) => {
+    if (typeof verifyJWT !== 'function') return next();
+    return verifyJWT(req, res, next);
+  };
 
   router.get('/assets/:filename', async (req, res) => {
     try {
@@ -700,7 +704,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     });
   });
 
-  router.post('/produce', express.json({ limit: '96kb' }), async (req, res) => {
+  router.post('/produce', requireAuth, express.json({ limit: '96kb' }), async (req, res) => {
     try {
       const input = req.body || {};
       const payload = buildVivyStudioProduction({
@@ -732,7 +736,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     }
   });
 
-  router.post('/chat', optionalAuth, express.json({ limit: '512kb' }), async (req, res) => {
+  router.post('/chat', requireAuth, express.json({ limit: '512kb' }), async (req, res) => {
     try {
       res.json(await buildVivyAiChat({
         ...(req.body || {}),

@@ -409,6 +409,13 @@ function isLoginRoute(pathname: string) {
   return /(?:^|\/)login\/?$/.test(String(pathname || "/").toLowerCase());
 }
 
+function getPublicPolicyPage(pathname: string): "privacy" | "terms" | null {
+  const normalized = String(pathname || "/").toLowerCase();
+  if (/(?:^|\/)(?:privacy|confidentialite|confidentiality)(?:\/|$)/.test(normalized)) return "privacy";
+  if (/(?:^|\/)(?:terms|conditions|cgu)(?:\/|$)/.test(normalized)) return "terms";
+  return null;
+}
+
 function isCockpitRoute(pathname: string) {
   return /(?:^|\/)(?:cockpit|app|workspace)\/?$/.test(String(pathname || "/").toLowerCase());
 }
@@ -1223,6 +1230,14 @@ function activateLocalDevSession(onLoginSuccess: () => void) {
     // Local storage can be unavailable in embedded surfaces.
   }
   onLoginSuccess();
+}
+
+function clearLocalDevSession() {
+  try {
+    localStorage.removeItem("a11:local-dev-bypass");
+  } catch {
+    // Local storage can be unavailable in embedded surfaces.
+  }
 }
 
 function hasLocalDevSession() {
@@ -2405,7 +2420,7 @@ function VivyStudioLab() {
   );
 }
 
-function VivyPublicChat() {
+function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => readVivyPublicChat());
   const [conversationId] = useState(() => readOrCreateVivyConversationId());
   const [draft, setDraft] = useState("");
@@ -2417,6 +2432,7 @@ function VivyPublicChat() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const surfaceLinks = getSurfaceLinks();
 
   useEffect(() => {
     writeVivyPublicChat(messages);
@@ -2427,6 +2443,10 @@ function VivyPublicChat() {
   }, [messages.length, isSending]);
 
   async function sendMessage(textOverride?: string) {
+    if (!authenticated) {
+      setStatus("Connecte-toi pour parler à Vivy.");
+      return;
+    }
     const text = toUnicodeText(textOverride ?? draft);
     const filesForMessage = attachedFiles.slice(0, 6);
     if ((!text && !filesForMessage.length) || isSending) return;
@@ -2510,6 +2530,10 @@ function VivyPublicChat() {
     const file = event.target.files?.[0] || null;
     event.target.value = "";
     if (!file) return;
+    if (!authenticated) {
+      setStatus("Connecte-toi pour ajouter une référence voix privée.");
+      return;
+    }
     setStatus("Vivy garde la référence voix...");
     try {
       const label = `Vivy - ${toUnicodeLine(file.name.replace(/\.[^.]+$/, ""), "référence voix", 54)}`;
@@ -2536,6 +2560,10 @@ function VivyPublicChat() {
     const selected = Array.from(event.target.files || []).slice(0, 4);
     event.target.value = "";
     if (!selected.length) return;
+    if (!authenticated) {
+      setStatus("Connecte-toi pour joindre des fichiers à Vivy.");
+      return;
+    }
 
     setStatus("Vivy ajoute les fichiers au contexte...");
     const nextFiles: VivyPublicChatFile[] = [];
@@ -2589,12 +2617,24 @@ function VivyPublicChat() {
       <div className="vivy-chat-head">
         <div>
           <h2>Parler à Vivy</h2>
-          <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
+          <p>{authenticated
+            ? "Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable."
+            : "Connexion requise pour discuter avec l'IA. Les règles restent accessibles sans session."}</p>
         </div>
-        <button type="button" onClick={resetChat}>Reset</button>
+        {authenticated ? <button type="button" onClick={resetChat}>Reset</button> : null}
       </div>
+      {!authenticated ? (
+        <div className="vivy-chat-locked" role="note">
+          <strong>Session requise</strong>
+          <span>Vivy peut garder des idées et fichiers en mémoire privée seulement après connexion.</span>
+          <div>
+            <a href={surfaceLinks.kaen44Login}>Se connecter</a>
+            <a href={surfaceLinks.privacy}>Confidentialité</a>
+          </div>
+        </div>
+      ) : null}
 
-      <div className="vivy-chat-log" aria-live="polite">
+      <div className="vivy-chat-log" aria-live="polite" aria-disabled={!authenticated}>
         {messages.map((message) => (
           <article key={message.id} className={`vivy-chat-message vivy-chat-message--${message.role}`}>
             <span>{message.role === "user" ? "Vous" : "Vivy"}</span>
@@ -2625,13 +2665,14 @@ function VivyPublicChat() {
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."
           rows={3}
+          disabled={!authenticated}
         />
         <div>
-          <button type="button" onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
-          <button type="button" onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
-          <button type="button" onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
-          <button type="button" onClick={() => fileInputRef.current?.click()}>Fichier</button>
-          <button type="submit" disabled={isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
+          <button type="button" disabled={!authenticated} onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
+          <button type="button" disabled={!authenticated} onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
+          <button type="button" disabled={!authenticated} onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
+          <button type="button" disabled={!authenticated} onClick={() => fileInputRef.current?.click()}>Fichier</button>
+          <button type="submit" disabled={!authenticated || isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
       </form>
       {attachedFiles.length ? (
@@ -2676,7 +2717,7 @@ function VivyPublicChat() {
   );
 }
 
-function VivyPublicSurface() {
+function VivyPublicSurface({ authenticated }: { authenticated: boolean }) {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
     { mode: "voice", label: "Ouvrir création voix dans le Studio Vivy" },
     { mode: "song", label: "Ouvrir Composition production dans le Studio Vivy" },
@@ -2711,7 +2752,7 @@ function VivyPublicSurface() {
           <img className="vivy-mobile-slice vivy-mobile-slice--scene" src={VIVY_POSTER_SRC} alt="" />
         </div>
       </section>
-      <VivyPublicChat />
+      <VivyPublicChat authenticated={authenticated} />
       <VivyStudioLab />
     </>
   );
@@ -2957,7 +2998,7 @@ function FunesterieCockpitPage({
   );
 }
 
-function VivyPublicPage() {
+function VivyPublicPage({ authenticated = false }: { authenticated?: boolean }) {
   useEffect(() => {
     document.documentElement.classList.add("vivy-public-page-root");
     document.body.classList.add("vivy-public-page-body");
@@ -2988,7 +3029,7 @@ function VivyPublicPage() {
           <a href={surfaceLinks.kaen44Terms}>Conditions</a>
         </div>
       </nav>
-      <VivyPublicSurface />
+      <VivyPublicSurface authenticated={authenticated} />
     </main>
   );
 }
@@ -3354,9 +3395,9 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const isHome = !isPrivacy && !isTerms && !isVivy;
   const title = isPrivacy ? "Règles de confidentialité" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Funesterie";
   const subtitle = isPrivacy
-    ? "Comment Kaen44 traite les données de connexion et les fichiers partagés."
+    ? "Comment Funesterie traite les données de connexion, fichiers et messages partagés."
     : isTerms
-      ? "Le cadre d'utilisation de Kaen44 et de ses services connectés."
+      ? "Le cadre d'utilisation de Funesterie et de ses services connectés."
       : isVivy
         ? "Présence musicale Funesterie pour voix, chansons originales et projets audio."
         : "Portail public pour A11, Kaen44, Vivy et les modules Funesterie.";
@@ -3396,7 +3437,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         </div>
       </nav>
 
-      {isVivy ? <VivyPublicSurface /> : null}
+      {isVivy ? <VivyPublicSurface authenticated={false} /> : null}
 
       <section hidden={isVivy} className={`kaen-public-hero ${isHome ? "" : "kaen-public-hero--simple"}`}>
         {isHome ? <img className="kaen-public-reference-haze" src={FUNESTERIE_TEAM_SCENE_SRC} alt="" /> : null}
@@ -3553,8 +3594,8 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         <section className="kaen-public-section">
           <h2>Données utilisées</h2>
           <p>
-            Kaen44 utilise les informations de compte nécessaires à la connexion, les fichiers que
-            l'utilisateur importe ou autorise explicitement, et les messages envoyés dans le chat.
+            Funesterie utilise les informations de compte nécessaires à la connexion, les fichiers que
+            l'utilisateur importe ou autorise explicitement, et les messages envoyés aux agents.
           </p>
           <h2>Google Drive</h2>
           <p>
@@ -3580,7 +3621,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         <section className="kaen-public-section">
           <h2>Utilisation</h2>
           <p>
-            Kaen44 fournit une assistance de productivité, de classement, de création et de recherche
+            Funesterie fournit une assistance de productivité, de classement, de création et de recherche
             documentaire. L'utilisateur reste responsable des données qu'il partage et des validations
             finales sur les documents, factures ou décisions importantes.
           </p>
@@ -4058,8 +4099,20 @@ export function App() {
       return;
     }
 
-    const localPublicPreview = new URLSearchParams(window.location.search || "").get("public") === "1";
-    if (isLocalDevSurface() && !localPublicPreview && !isLoginRoute(pathname) && !isVivyExperience()) {
+    const localParams = new URLSearchParams(window.location.search || "");
+    const localPublicPreview = localParams.get("public") === "1";
+    const localDevBypassRequested = localParams.get("local") === "1" || localParams.get("a11-local-dev") === "1";
+    if (isLocalDevSurface() && !localDevBypassRequested && !isLoginRoute(pathname)) {
+      clearLocalDevSession();
+    }
+    if (
+      isLocalDevSurface()
+      && localDevBypassRequested
+      && !localPublicPreview
+      && !isLoginRoute(pathname)
+      && !getPublicPolicyPage(pathname)
+      && !isVivyExperience()
+    ) {
       activateLocalDevSession(() => {
         setIsAuthenticated(true);
         setDisplayName("Djeff local");
@@ -4158,6 +4211,59 @@ export function App() {
     globalThis.addEventListener("a11:auth-invalid", onAuthInvalid);
     return () => globalThis.removeEventListener("a11:auth-invalid", onAuthInvalid);
   }, []);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== "a11:global-logout-at" || !event.newValue) return;
+      clearAuthToken();
+      setAuthDisplayName("");
+      globalThis.dispatchEvent(new CustomEvent("a11:auth-invalid", {
+        detail: {
+          reason: "A11_Logout",
+          message: "Déconnexion globale reçue.",
+        },
+      }));
+    };
+    globalThis.addEventListener("storage", onStorage);
+    return () => globalThis.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    const refreshSession = () => {
+      void fetchAuthSession()
+        .then((session) => {
+          if (cancelled) return;
+          if (!session?.authenticated && !session?.user) {
+            clearAuthToken();
+            setAuthDisplayName("");
+            globalThis.dispatchEvent(new CustomEvent("a11:auth-invalid", {
+              detail: {
+                reason: "A11_Session_Missing",
+                message: "La session n'est plus active.",
+              },
+            }));
+          }
+        })
+        .catch(() => {
+          // fetchAuthSession déclenche déjà l'événement auth-invalid sur 401.
+        });
+    };
+    const onFocus = () => refreshSession();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshSession();
+    };
+    const interval = window.setInterval(refreshSession, 45000);
+    globalThis.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      globalThis.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [isAuthenticated]);
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -5957,6 +6063,13 @@ export function App() {
     return <ResetPasswordPanel />;
   }
 
+  const publicPolicyPage = typeof window !== "undefined"
+    ? getPublicPolicyPage(window.location.pathname)
+    : null;
+  if (publicPolicyPage) {
+    return <Kaen44PublicPage page={publicPolicyPage} />;
+  }
+
   if (isGeneralHome) {
     return (
       <FunesterieConnectedHomePage
@@ -5976,7 +6089,7 @@ export function App() {
   }
 
   if (isVivy) {
-    return <VivyPublicPage />;
+    return <VivyPublicPage authenticated={isAuthenticated} />;
   }
 
   if (!isAuthenticated) {

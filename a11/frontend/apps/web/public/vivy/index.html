@@ -538,6 +538,40 @@
         opacity: 0.5;
       }
 
+      .vivy-chat textarea:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .vivy-chat-locked {
+        display: grid;
+        gap: 8px;
+        margin: 0 0 12px;
+        padding: 12px 14px;
+        border: 1px solid rgba(240, 121, 216, 0.34);
+        border-radius: 8px;
+        background: rgba(240, 121, 216, 0.1);
+        color: #fbe4f5;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .vivy-chat-locked strong {
+        color: #ff7de1;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      .vivy-chat-locked a {
+        width: fit-content;
+        color: #ffd2f4;
+        font-weight: 850;
+      }
+
+      .vivy-chat-locked[hidden] {
+        display: none;
+      }
+
       .vivy-chat-log {
         display: grid;
         gap: 10px;
@@ -1127,6 +1161,12 @@
           </div>
           <button type="button" data-vivy-chat-reset>Reset</button>
         </div>
+        <div class="vivy-chat-locked" data-vivy-chat-locked>
+          <strong>Session requise</strong>
+          <span>Connecte-toi pour parler à Vivy, envoyer des fichiers ou garder une référence vocale privée.</span>
+          <a href="https://k44.funesterie.me/login">Se connecter</a>
+          <a href="https://funesterie.me/privacy/">Confidentialité</a>
+        </div>
         <div class="vivy-chat-log" aria-live="polite" data-vivy-chat-log></div>
         <form class="vivy-chat-compose" data-vivy-chat-form>
           <textarea name="message" rows="3" placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."></textarea>
@@ -1278,6 +1318,7 @@
         var attachmentsRoot = root.querySelector("[data-vivy-chat-attachments]");
         var fileButton = root.querySelector("[data-vivy-chat-file-button]");
         var fileInput = root.querySelector("[data-vivy-chat-file]");
+        var lockedBox = root.querySelector("[data-vivy-chat-locked]");
         var storageKey = "vivy:public-chat:v2";
         var conversationKey = "vivy:conversation-id:static";
         var referenceKey = "vivy:voice-reference:static";
@@ -1286,6 +1327,10 @@
         var attachedFiles = [];
         var sending = false;
         var awaitingReference = false;
+        var authenticated = false;
+        var chatControls = Array.prototype.slice.call(root.querySelectorAll(
+          "textarea, button[data-vivy-chat-prompt], button[data-vivy-chat-file-button], button[data-vivy-chat-reference-button], button[type='submit']"
+        ));
 
         function unicodeText(value, maxLength) {
           var text = String(value || "")
@@ -1339,6 +1384,52 @@
 
         function setStatus(text) {
           if (status) status.textContent = text || "";
+        }
+
+        function readAuthToken() {
+          try {
+            return String(localStorage.getItem("a11-auth-token") || localStorage.getItem("a11_jwt_token") || "").trim();
+          } catch (_) {
+            return "";
+          }
+        }
+
+        function setLocked(locked) {
+          authenticated = !locked;
+          root.classList.toggle("is-locked", locked);
+          if (lockedBox) lockedBox.hidden = !locked;
+          chatControls.forEach(function (control) {
+            control.disabled = locked;
+          });
+        }
+
+        function requireSession() {
+          if (authenticated) return true;
+          setLocked(true);
+          setStatus("Connecte-toi pour parler à Vivy.");
+          return false;
+        }
+
+        function refreshSession() {
+          var headers = {};
+          var token = readAuthToken();
+          if (token) headers.Authorization = "Bearer " + token;
+          return fetch("/api/auth/me", {
+            method: "GET",
+            credentials: "include",
+            headers: headers
+          }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              var ok = response.ok && (payload.authenticated || payload.user);
+              setLocked(!ok);
+              setStatus(ok ? "" : "Connecte-toi pour parler à Vivy.");
+              return ok;
+            });
+          }).catch(function () {
+            setLocked(true);
+            setStatus("Connecte-toi pour parler à Vivy.");
+            return false;
+          });
         }
 
         function getConversationId() {
@@ -1399,6 +1490,7 @@
         }
 
         function addConversationFiles(fileList) {
+          if (!requireSession()) return;
           var selected = Array.prototype.slice.call(fileList || []).slice(0, 4);
           if (!selected.length) return;
           setStatus("Vivy ajoute les fichiers au contexte...");
@@ -1489,6 +1581,7 @@
         }
 
         function send(text) {
+          if (!requireSession()) return;
           text = unicodeText(text);
           var filesForMessage = attachedFiles.slice(0, 6);
           if ((!text && !filesForMessage.length) || sending) return;
@@ -1542,6 +1635,7 @@
         }
 
         function uploadReference(file) {
+          if (!requireSession()) return;
           if (!file) return;
           var label = "Vivy - " + unicodeLine(String(file.name || "référence voix").replace(/\.[^.]+$/, ""), "référence voix", 54);
           var body = new FormData();
@@ -1609,6 +1703,8 @@
         }
 
         render();
+        setLocked(true);
+        refreshSession();
       })();
 
       (function () {

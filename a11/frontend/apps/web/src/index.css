@@ -4338,6 +4338,53 @@ html.vivy-public-page-root .vivy-public-shell {
   opacity: 0.5;
 }
 
+.vivy-chat-locked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 14px;
+  border: 1px solid rgba(240, 121, 216, 0.34);
+  border-radius: 8px;
+  background: rgba(240, 121, 216, 0.1);
+  color: #ffd2f4;
+}
+
+.vivy-chat-locked strong,
+.vivy-chat-locked span {
+  min-width: 0;
+}
+
+.vivy-chat-locked span {
+  flex: 1 1 280px;
+  color: #e8bfdc;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.vivy-chat-locked div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vivy-chat-locked a {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(240, 121, 216, 0.42);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #ffd2f4;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
 .vivy-chat-log {
   display: grid;
   gap: 10px;
