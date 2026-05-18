@@ -4,11 +4,18 @@ const DEFAULT_FULL_ACCESS_EMAILS = [
   'funeste38@gmail.com',
   'cellaurojeffrey@gmail.com',
   'jeffrey38330@gmail.com',
+  'cellauromarvin@gmail.com',
   'marvincellauro@gmail.com',
   'giovannabrunetto@gmail.com',
   'bayetgerard@gmail.com',
+  'cjcarme38@yahoo.fr',
+  'valerie.atek@gmail.com',
+  'jewitt.charlene@gmail.com',
   'boostro38@gmail.com',
   'charlenejewitt@gmail.com',
+  'cellaurojeffrey_38@hotmail.com',
+  'cellaurojeffrey@hotmail.com',
+  'cellaurojeffrey@funesterie.onmicrosoft.com',
 ];
 
 function normalizeEmail(value) {
