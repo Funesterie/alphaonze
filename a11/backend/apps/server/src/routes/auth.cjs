@@ -173,10 +173,17 @@ function resolveRequestHostname(req) {
 
 function resolveHostPinnedOAuthCallback(req, provider) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
-  const origin = resolveRequestOrigin(req).replace(/\/+$/, '');
-  if (!origin) return '';
-  const publicOrigin = origin.replace(/^http:\/\//i, 'https://');
+  const mapped = {
+    'funesterie.me': 'https://funesterie.me',
+    'www.funesterie.me': 'https://funesterie.me',
+    'k44.funesterie.me': 'https://k44.funesterie.me',
+    'kaen44.funesterie.me': 'https://kaen44.funesterie.me',
+    'a11.funesterie.me': 'https://a11.funesterie.me',
+    'vivy.funesterie.me': 'https://vivy.funesterie.me',
+    'music.funesterie.me': 'https://music.funesterie.me',
+  };
+  const publicOrigin = mapped[hostname];
+  if (!publicOrigin) return '';
   return `${publicOrigin}/api/auth/${provider}/callback`;
 }
 
@@ -190,10 +197,10 @@ function resolveExplicitGoogleCallbackUrl() {
 }
 
 function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
-  const explicit = resolveExplicitGoogleCallbackUrl();
-  if (explicit) return explicit;
   const hostPinned = resolveHostPinnedOAuthCallback(req, 'google');
   if (hostPinned) return hostPinned;
+  const explicit = resolveExplicitGoogleCallbackUrl();
+  if (explicit) return explicit;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/google/callback`;
 }
 
@@ -211,14 +218,16 @@ function resolveExplicitMicrosoftCallbackUrl() {
 }
 
 function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
-  const explicit = resolveExplicitMicrosoftCallbackUrl();
-  if (explicit) return explicit;
   const hostPinned = resolveHostPinnedOAuthCallback(req, 'microsoft');
   if (hostPinned) return hostPinned;
+  const explicit = resolveExplicitMicrosoftCallbackUrl();
+  if (explicit) return explicit;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/microsoft/callback`;
 }
 
 function resolveCanonicalOAuthStartRedirect(req, provider) {
+  if (!isTruthy(process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT)) return '';
+
   const hostname = resolveRequestHostname(req);
   if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
 
