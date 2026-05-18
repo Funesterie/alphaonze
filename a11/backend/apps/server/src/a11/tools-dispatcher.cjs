@@ -1651,7 +1651,7 @@ const PROTECTED_PATH_SEGMENTS = new Set([
   '.git',
   '.env',
   '.a11_backups',
-  '.qflash',
+  '.qflush',
   '.qflush'
 ]);
 

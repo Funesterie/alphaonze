@@ -39,7 +39,7 @@ manifest keeps GitHub aligned with the npmjs and JFrog publications.
 ## Patch notes
 
 - `@nossen/qflush@1.0.0` remains public but is deprecated on npmjs because it
-  referenced legacy `@funeste38/*` runtime dependencies.
+  referenced pre-reset runtime dependencies.
 - New consumers should use `@nossen/qflush@^1.0.1`.
 
 ## Validation summary

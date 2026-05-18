@@ -2,7 +2,7 @@
 
 ## Current state
 
-- Railway CLI is logged in as `funeste38@gmail.com`.
+- Railway CLI is logged in as `contact@funesterie.me`.
 - This backup Railway account currently sees no projects with `railway project list --json`.
 - Local Railway CLI has no linked project in this repository yet.
 - Railway remote MCP was installed for Codex/Claude; Copilot config was repaired manually with a `railway` remote MCP entry.
@@ -19,7 +19,7 @@
 To recover the old Railway/n8n/A11 project, one of these must happen:
 
 1. Log the CLI/browser into the original Railway account/workspace that owns the project.
-2. Invite `funeste38@gmail.com` to the original Railway workspace/project.
+2. Invite `contact@funesterie.me` to the original Railway workspace/project.
 3. If the old project is gone or billing-locked, create a new Railway project and restore from exported backups.
 
 ## Safe Postgres/n8n recovery procedure

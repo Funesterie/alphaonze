@@ -56,9 +56,9 @@ function seedRuntimeIndex(runtimeRoot) {
   const modules = ids.map((id) => {
     const packageJson = path.join(runtimeRoot, 'fake-packages', id, 'package.json');
     writeJson(packageJson, {
-      name: id === 'corpus' || id === 'linguistic-core' || id === 'mask' ? id : `@funeste38/${id}`,
+      name: id === 'corpus' || id === 'linguistic-core' || id === 'mask' ? id : `@nossen/${id}`,
       version: '1.0.0',
-      dependencies: id === 'qflush' ? { '@funeste38/rome': '^1.0.0', '@funeste38/beam': '^1.0.0' } : {},
+      dependencies: id === 'qflush' ? { '@nossen/rome': '^1.0.0', '@nossen/beam': '^1.0.0' } : {},
     });
     return {
       id,

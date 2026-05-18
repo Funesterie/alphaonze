@@ -1,10 +1,10 @@
 import { logger } from "../utils/logger.js";
 
 export function showHelp() {
-  logger.info(`qflash - Funesterie orchestrator`);
+  logger.info(`qflush - Funesterie orchestrator`);
   console.log(`
 Usage:
-  qflash [command] [options]
+  qflush [command] [options]
 
 Commands:
   start        Launch selected services (default: detect → config → start)
@@ -20,10 +20,10 @@ Options (examples):
   --force                                          Force restart semantics (implies kill before start)
 
 Examples:
-  qflash start --service rome --path D:/rome
-  qflash start --service nezlephant --service freeland --fresh
-  qflash config --service freeland
-  qflash purge --fresh
+  qflush start --service rome --path D:/rome
+  qflush start --service nezlephant --service freeland --fresh
+  qflush config --service freeland
+  qflush purge --fresh
 
 `);
 }

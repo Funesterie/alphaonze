@@ -13,7 +13,7 @@ Required attribution and notices:
 
   Note: Apache-2.0 requires you to retain the license and copyright
   notice when redistributing. If you bundle or redistribute envapt
-  with qflash, include the envapt LICENSE file (from node_modules/envapt)
+  with qflush, include the envapt LICENSE file (from node_modules/envapt)
   in your distribution (for example: /licenses/envapt-LICENSE.txt).
 
 - @nossen/envaptex

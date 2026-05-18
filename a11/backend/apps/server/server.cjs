@@ -573,7 +573,7 @@ if (!qflushRuntimeEnabled) {
   try {
     // Avoid requiring 'qflush' at top-level because the package may auto-run its pipeline on require()
     // Instead detect presence of the package and defer requiring it to the qflush-integration helper
-    const qflushModuleDir = path.join(BASE, 'node_modules', '@funeste38', 'qflush');
+    const qflushModuleDir = path.join(BASE, 'node_modules', '@nossen', 'qflush');
     if (fs.existsSync(qflushModuleDir)) {
       const qflushDaemonEntry = path.join(qflushModuleDir, 'dist', 'daemon', 'qflushd.js');
       QFLUSH_AVAILABLE = true;

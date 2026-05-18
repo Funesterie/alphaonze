@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$Registry = $env:JFROG_NPM_REGISTRY,
-  [string]$Scope = $(if ($env:JFROG_NPM_SCOPE) { $env:JFROG_NPM_SCOPE } else { "@funeste38" }),
+  [string]$Scope = $(if ($env:JFROG_NPM_SCOPE) { $env:JFROG_NPM_SCOPE } else { "@nossen" }),
   [string]$OutputPath = (Join-Path (Get-Location) ".npmrc.jfrog"),
   [switch]$Force
 )

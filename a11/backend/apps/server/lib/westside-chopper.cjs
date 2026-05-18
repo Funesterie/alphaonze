@@ -400,7 +400,7 @@ function dependencyIds(packageJson = {}) {
     ...(packageJson.optionalDependencies || {}),
   };
   return Object.keys(deps)
-    .filter((name) => name.startsWith('@funeste38/') || name.startsWith('@funesterie/'))
+    .filter((name) => name.startsWith('@nossen/') || name.startsWith('@funesterie/'))
     .map(normalizeId)
     .filter(Boolean)
     .sort();
@@ -408,9 +408,9 @@ function dependencyIds(packageJson = {}) {
 
 function buildFallbackIndex(runtimeRoot) {
   const modules = Object.entries(MODULE_ROLES).map(([id, role]) => {
-    const funeste38Path = packageJsonPathFromPackageName(`@funeste38/${id}`);
+    const nossenPath = packageJsonPathFromPackageName(`@nossen/${id}`);
     const funesteriePath = packageJsonPathFromPackageName(`@funesterie/${id}`);
-    const packagePath = exists(funeste38Path) ? funeste38Path : (exists(funesteriePath) ? funesteriePath : '');
+    const packagePath = exists(nossenPath) ? nossenPath : (exists(funesteriePath) ? funesteriePath : '');
     const packageJson = packagePath ? readJsonSafe(packagePath) : null;
     const moduleDir = id === 'corpus'
       ? path.join(runtimeRoot, 'modules', 'Corpus')

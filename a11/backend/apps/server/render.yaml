@@ -32,7 +32,7 @@ services:
       - key: JWT_EXPIRY
         value: 7d
       - key: A11_FULL_ACCESS_EMAILS
-        value: funeste38@gmail.com,cellaurojeffrey@gmail.com,marvincellauro@gmail.com,giovannabrunetto@gmail.com,bayetgerard@gmail.com,boostro38@gmail.com,charlenejewitt@gmail.com,jeffrey38330@gmail.com
+        value: cellaurojeffrey@gmail.com,marvincellauro@gmail.com,giovannabrunetto@gmail.com,bayetgerard@gmail.com,boostro38@gmail.com,charlenejewitt@gmail.com,jeffrey38330@gmail.com
       - key: GOOGLE_CLIENT_ID
         sync: false
 

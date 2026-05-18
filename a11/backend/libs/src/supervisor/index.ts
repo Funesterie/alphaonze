@@ -13,7 +13,7 @@ type ProcRecord = {
   detached?: boolean;
 };
 
-const STATE_DIR = join(process.cwd(), '.qflash');
+const STATE_DIR = join(process.cwd(), '.qflush');
 const LOGS_DIR = join(STATE_DIR, 'logs');
 const STATE_FILE = join(STATE_DIR, 'services.json');
 let procs: Record<string, ProcRecord> = {};

@@ -48,14 +48,14 @@ Ni Docker ni Podman ne sont correctement configurés sur ta machine.
 
    # Login
    docker login
-   # Username: funeste38
+   # Username: <dockerhub-username-or-namespace>
    # Password: [ton mot de passe Docker Hub]
 
    # Tag
-   docker tag a11-backend:latest funeste38/a11-backend:latest
+   docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 
    # Push
-   docker push funeste38/a11-backend:latest
+   docker push <dockerhub-namespace>/a11-backend:latest
    ```
 
 ### Option 2 : Réparer Podman (Plus Complexe)
@@ -153,13 +153,13 @@ Si tu as accès à une autre machine (Linux, Mac, ou Windows avec Docker) :
 
    ```bash
    cd a11/backend/apps/server
-   docker build -t funeste38/a11-backend:latest .
+   docker build -t <dockerhub-namespace>/a11-backend:latest .
    ```
 
 3. **Login et Push**
    ```bash
    docker login
-   docker push funeste38/a11-backend:latest
+   docker push <dockerhub-namespace>/a11-backend:latest
    ```
 
 ## 🌐 Utiliser Docker Hub Build (Automatique)
@@ -178,7 +178,7 @@ Docker Hub peut builder automatiquement depuis GitHub :
 
 3. **Docker Hub va automatiquement**
    - Builder l'image à chaque push sur GitHub
-   - Publier l'image sur `funeste38/a11-backend:latest`
+   - Publier l'image sur `<dockerhub-namespace>/a11-backend:latest`
 
 ## ✅ Prochaines Étapes
 

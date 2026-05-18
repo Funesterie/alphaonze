@@ -58,6 +58,6 @@ Blueprint package can include source access, backend, frontend, memory, agent or
 
 ## Contact policy
 
-Public contact: funeste38@gmail.com
+Public contact: contact@funesterie.me
 
 Phone number is not published in the app or repository. It is shared only after a qualified request, budget confirmation, and, when needed, NDA or written scope.

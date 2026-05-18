@@ -7,7 +7,7 @@
 - **Language**: JavaScript (CommonJS) for server code; TypeScript compiled to JS for the `libs` package
 - **Key libraries**: `openai`, `axios`, `jsonwebtoken`, `bcrypt`, `pg` (PostgreSQL), `multer`, `sharp`, `tesseract.js`, `pdfkit`, `ws`, `nodemailer`/`resend`, `playwright`, `helmet`, `compression`, `cors`, `http-proxy-middleware`
 - **Storage**: Cloudflare R2 (S3-compatible) via `@aws-sdk/client-s3`
-- **Internal packages** (`@funeste38/*`): `qflush`, `rome`, `bat`, `envaptex`, `freeland`, `nezlephant`
+- **Internal packages** (`@nossen/*`): `qflush`, `rome`, `bat`, `envaptex`, `freeland`, `nezlephant`
 - **Entry point**: `server.cjs`
 - **No build step** — server runs directly with `node server.cjs`
 

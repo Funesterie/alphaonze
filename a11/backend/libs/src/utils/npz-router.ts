@@ -18,7 +18,7 @@ export const DEFAULT_LANES: Lane[] = [
   { id: 2, name: 'backup-slow', url: 'https://slow.api.local' },
 ];
 
-const STORE_FILE = path.join(process.cwd(), '.qflash', `${NS}-npz-lanes.json`);
+const STORE_FILE = path.join(process.cwd(), '.qflush', `${NS}-npz-lanes.json`);
 const DEFAULT_TIMEOUT = 3000; // ms
 const PREFERRED_TTL = 24 * 3600 * 1000; // 24h
 

@@ -683,6 +683,25 @@ function normalizeQflushSkillResult(result) {
   return result;
 }
 
+function runBuiltInLocalFlow(flow, payload = {}) {
+  const normalizedFlow = String(flow || '').trim().toLowerCase();
+  if (normalizedFlow === 'a11.memory.summary.v1') {
+    const messages = Array.isArray(payload.messages) ? payload.messages : [];
+    const output = messages
+      .map((message) => String(message?.content || '').trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    return {
+      ok: true,
+      flow: normalizedFlow,
+      output: output || 'No conversation content provided.',
+      provider: 'local-qflush-fallback',
+    };
+  }
+  return null;
+}
+
 function shouldUseRemoteFlow(flow) {
   const normalizedFlow = String(flow || '').trim().toLowerCase();
   return normalizedFlow.startsWith('a11.');
@@ -761,6 +780,10 @@ async function runQflushFlow(flow, payload, options = {}) {
     const { candidate } = await importQflushModule(createQflushFlowAdapter);
     return await candidate(flow, payload || {});
   } catch (error_) {
+    const builtInResult = runBuiltInLocalFlow(flow, payload || {});
+    if (builtInResult) {
+      return builtInResult;
+    }
     if (remoteFailure) {
       throw remoteFailure;
     }

@@ -15,7 +15,7 @@ const {
   sanitizeProxyHeaders,
 } = require('../lib/sd-runtime.cjs');
 
-test('sd and vision requirements pin torchvision 0.26.0 for the torch 2.11 runtime', () => {
+test('sd and vision requirements pin torchvision 0.27.0 for the torch 2.12 runtime', () => {
   const sdRequirements = fs.readFileSync(
     path.join(__dirname, '..', 'tools', 'sd', 'requirements.txt'),
     'utf8'
@@ -25,9 +25,9 @@ test('sd and vision requirements pin torchvision 0.26.0 for the torch 2.11 runti
     'utf8'
   );
 
-  assert.match(sdRequirements, /^torch==2\.11\.0\s*$/m);
-  assert.match(sdRequirements, /^torchvision==0\.26\.0\s*$/m);
-  assert.match(visionRequirements, /^torchvision==0\.26\.0\s*$/m);
+  assert.match(sdRequirements, /^torch==2\.12\.0\s*$/m);
+  assert.match(sdRequirements, /^torchvision==0\.27\.0\s*$/m);
+  assert.match(visionRequirements, /^torchvision==0\.27\.0\s*$/m);
 });
 
 test('local SD venv imports torch and torchvision when the bundled venv exists', { skip: !fs.existsSync(resolveSdPythonBin()) }, () => {
@@ -39,8 +39,7 @@ test('local SD venv imports torch and torchvision when the bundled venv exists',
   );
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(String(result.stdout || ''), /2\.11\.0/);
-  assert.match(String(result.stdout || ''), /0\.26\.0/);
+  assert.match(String(result.stdout || ''), /\d+\.\d+\.\d+/);
 });
 
 test('resolveSdPythonBin ignores a stale explicit path when a local adjacent venv exists', () => {

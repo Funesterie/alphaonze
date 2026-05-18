@@ -83,7 +83,7 @@ async function handleHealthCheck(mod: string, flags: Record<string, unknown>) {
 }
 
 export async function runStart(opts?: QFlushOptions) {
-  logger.info("qflash: starting modules...");
+  logger.info("qflush: starting modules...");
   const detected = opts?.detected ?? (await detectModules());
   // Filtrer les paths undefined pour respecter Record<string, string>
   const rawPaths = resolvePaths(detected);
@@ -100,5 +100,5 @@ export async function runStart(opts?: QFlushOptions) {
     services.map((mod) => launchModule(mod, opts, paths, flags, waitForStart))
   );
 
-  logger.success("qflash: start sequence initiated for selected modules");
+  logger.success("qflush: start sequence initiated for selected modules");
 }

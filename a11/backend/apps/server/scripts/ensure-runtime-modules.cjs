@@ -15,42 +15,42 @@ const MINIMUM_MODULES = ['rome', 'corpus', 'linguistic-core'];
 const FUNESTERIE_MODULES = [
   {
     id: 'allmight',
-    packageName: '@funeste38/allmight',
+    packageName: '@nossen/allmight',
     capabilities: ['code-audit', 'duplicate-detection', 'safe-refactor-planning'],
   },
   {
     id: 'bat',
-    packageName: '@funeste38/bat',
+    packageName: '@nossen/bat',
     capabilities: ['request-control', 'retry-policy', 'backend-routing'],
   },
   {
     id: 'beam',
-    packageName: '@funeste38/beam',
+    packageName: '@nossen/beam',
     capabilities: ['signal-bridge', 'runtime-linking', 'agent-transport'],
   },
   {
     id: 'envaptex',
-    packageName: '@funeste38/envaptex',
+    packageName: '@nossen/envaptex',
     capabilities: ['env-config', 'typed-env', 'runtime-configuration'],
   },
   {
     id: 'freeland',
-    packageName: '@funeste38/freeland',
+    packageName: '@nossen/freeland',
     capabilities: ['value-resolution', 'normalization', 'runtime-compatibility'],
   },
   {
     id: 'freeland-bros',
-    packageName: '@funeste38/freeland-bros',
+    packageName: '@nossen/freeland-bros',
     capabilities: ['diagnostics', 'visualization', 'freeland-explanations'],
   },
   {
     id: 'morphing',
-    packageName: '@funeste38/morphing',
+    packageName: '@nossen/morphing',
     capabilities: ['media-transform', 'image-variation', 'controlled-morphing'],
   },
   {
     id: 'nezlephant',
-    packageName: '@funeste38/nezlephant',
+    packageName: '@nossen/nezlephant',
     capabilities: ['capsule-encoding', 'oc8', 'payload-protection'],
   },
   {
@@ -60,12 +60,12 @@ const FUNESTERIE_MODULES = [
   },
   {
     id: 'scream',
-    packageName: '@funeste38/scream',
+    packageName: '@nossen/scream',
     capabilities: ['audio-signal', 'voice-hooks', 'sound-runtime'],
   },
   {
     id: 'spyder',
-    packageName: '@funeste38/spyder',
+    packageName: '@nossen/spyder',
     capabilities: ['protocol', 'packet-transport', 'agent-bus'],
   },
   {
@@ -246,7 +246,7 @@ function resolveFunesterieModuleDescriptor(moduleSpec = {}, context = {}) {
 }
 
 function resolveRomeDescriptor(runtimeRoots) {
-  const packageRoot = path.join(SERVER_ROOT, 'node_modules', '@funeste38', 'rome');
+  const packageRoot = path.join(SERVER_ROOT, 'node_modules', '@nossen', 'rome');
   const packageJsonPath = path.join(packageRoot, 'package.json');
   const packageJson = readJsonOptional(packageJsonPath);
   const sourceMirror = findFirstExisting(runtimeRoots.map((root) => path.join(root, 'modules', 'rome')));
@@ -257,7 +257,7 @@ function resolveRomeDescriptor(runtimeRoots) {
     kind: 'runtime-module',
     installed: Boolean(packageJson || sourceMirror),
     minimumRequired: true,
-    source: packageJson ? 'npm:@funeste38/rome' : (sourceMirror ? 'runtime-module-mirror' : 'missing'),
+    source: packageJson ? 'npm:@nossen/rome' : (sourceMirror ? 'runtime-module-mirror' : 'missing'),
     version: String(packageJson?.version || '').trim() || null,
     entrypoints: {
       cli: pathExists(path.join(packageRoot, 'dist', 'cli.js')) ? path.join(packageRoot, 'dist', 'cli.js') : null,

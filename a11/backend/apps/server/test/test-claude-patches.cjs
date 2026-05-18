@@ -11,7 +11,7 @@ function ko(name, err) { failed++; console.log(`  FAIL  ${name}\n        ${err.m
 console.log('\n[freeland] path traversal guard');
 (async () => {
   try {
-    const { resolveFreelandValue } = require('@funeste38/freeland');
+    const { resolveFreelandValue } = require('@nossen/freeland');
 
     // Should THROW: relative path that escapes cwd
     try {
@@ -38,7 +38,7 @@ console.log('\n[freeland] path traversal guard');
   // === Test 2: nezlephant payload overflow ===
   console.log('\n[nezlephant] payload overflow guard');
   try {
-    const { encodeToOC8Png } = require('@funeste38/nezlephant');
+    const { encodeToOC8Png } = require('@nossen/nezlephant');
 
     // Should THROW: payload too large for explicit dimensions
     const bigPayload = Buffer.alloc(1000); // 1000 bytes
@@ -76,7 +76,7 @@ console.log('\n[freeland] path traversal guard');
   // === Test 3: spyder packet validation ===
   console.log('\n[spyder] packet checksum + valid field');
   try {
-    const { encodePacket, decodePacket } = require('@funeste38/spyder/dist/protocol/packet.js');
+    const { encodePacket, decodePacket } = require('@nossen/spyder/dist/protocol/packet.js');
 
     const payload = new Uint8Array([1, 2, 3, 4]);
     const encoded = encodePacket(1, payload);

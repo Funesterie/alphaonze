@@ -34,7 +34,7 @@ async function getKvValue(key, fallback = null) {
 async function buildLongTermMemorySnippet() {
   const kv = await loadKv();
 
-  const userName = await getKvValue("user.name", "funeste38");
+  const userName = await getKvValue("user.name", "nossen");
   const userLang = await getKvValue("user.lang", "fr-FR");
 
   const wsCode = await getKvValue("a11.workspace.code", "D:/A11");

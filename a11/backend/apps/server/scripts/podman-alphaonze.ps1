@@ -1,6 +1,6 @@
 param(
-  [string]$DockerUser = "funeste38",
-  [string]$Image = "docker.io/funeste38/alphaonze:latest",
+  [string]$DockerUser = "nossen",
+  [string]$Image = "docker.io/nossen/alphaonze:latest",
   [switch]$Build,
   [switch]$Push,
   [switch]$Up

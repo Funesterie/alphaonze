@@ -1,120 +1,113 @@
-# QFLUSH — Orchestrateur Funesterie
+# @nossen/qflush
 
-Distribution npm NOSSEN: `@nossen/qflush`. La branche `1.0.x` remplace les anciennes dépendances `@funeste38/*` par les modules publics `@nossen/*` pour permettre une installation fraîche depuis npmjs ou le miroir JFrog.
+QFlush is the NOSSEN command-line orchestrator for local automation, runtime
+modules, compose files, NPZ routing, Cortex packets, and supervised service
+processes.
 
-QFLUSH est l’orchestrateur principal de l’écosystème Funesterie. Il permet de piloter, superviser, configurer et tester tous les modules internes (cortex, spyder, nezlephant, npz, piccolo, etc.) depuis une seule CLI.
+It is designed for operators who need one small CLI that can inspect, prepare,
+start, stop, and clean an A11/Funesterie workspace without wiring every module
+by hand.
 
----
+## Install
 
-## 🚀 Fonctionnalités principales
-
-- **Orchestration complète** : Démarrage, arrêt, purge, inspection, logs, redémarrage de tous les services Funesterie.
-- **Superviseur intégré** : Gestion des processus, logs, état, arrêt propre, purge d’état.
-- **SmartChain** : Pipeline intelligent qui enchaîne automatiquement les étapes nécessaires selon la commande et les flags.
-- **Support YAML/FCL** : Composition de modules via `funesterie.yml` ou `funesterie.fcl`.
-- **Gestion de la configuration** : Génération automatique des fichiers `.env` et config manquants.
-- **Gestion de licence** : Activation, statut, et gestion de licence commerciale.
-- **NPZ** : Résolution, exécution, scoring et routage de paquets NPZ.
-- **Cortex** : Décodage, application et orchestration de paquets cortex (JSON/PNG).
-- **Spyder** : Décodage, gestion de secrets, healthcheck, etc.
-- **Piccolo** : Auto-réparation, snapshot, tests safe, migration.
-- **Extensible** : Ajoutez vos propres modules/services via le mapping `SERVICE_MAP`.
-
----
-
-## 📦 Structure du projet
-
-- `src/commands/` : Toutes les commandes CLI (start, kill, purge, inspect, config, compose, license, piccolo, checksum, apply, etc.)
-- `src/supervisor/` : Superviseur de processus (startProcess, stopProcess, listRunning, etc.)
-- `src/compose/` : Parsing et gestion des fichiers compose (YAML/FCL)
-- `src/utils/` : Utilitaires NPZ, logger, paths, exec, etc.
-- `src/cortex/` : Codec, router, types, applyPacket, etc.
-- `src/spyder/` : Décodage, lamp, core, secrets, etc.
-- `src/piccolo/` : Outils de réparation, tests safe, migration.
-- `src/services/` : Abstraction et gestion des services intégrés.
-- `src/core/` : Fonctions cœur (gandalf-light, a11Client, etc.)
-
----
-
-## 🛠️ Commandes principales
-
-| Commande | Description |
-|----------|-------------|
-| `qflush start` | Démarre tous les services/modules (auto-détection ou ciblé) |
-| `qflush kill` | Arrête proprement tous les processus supervisés |
-| `qflush purge` | Supprime caches, logs, sessions, état du superviseur |
-| `qflush inspect` | Affiche l’état des services et ports actifs |
-| `qflush config` | Génère les fichiers `.env`/config manquants |
-| `qflush compose up/down/restart/logs` | Orchestration multi-module via fichiers compose |
-| `qflush license` | Activation, statut, et gestion de licence commerciale |
-| `qflush piccolo` | Outils d’auto-réparation, snapshot, tests safe |
-| `qflush checksum` | Stockage et vérification de checksums (NPZ) |
-| `qflush apply` | Applique des paquets “cortex” (JSON/PNG) |
-| `qflush help` | Affiche l’aide et la liste des commandes |
-
----
-
-## ⚡ Exemples d’utilisation
-
-```sh
-# Démarrer tout l’écosystème
-qflush start
-
-# Démarrer un service spécifique
-qflush start --service nezlephant
-
-# Purger tous les caches, logs, sessions
-qflush purge
-
-# Inspecter l’état des services
-qflush inspect
-
-# Générer les fichiers .env manquants
-qflush config
-
-# Orchestration via compose
-qflush compose up
-qflush compose down
-qflush compose logs nezlephant
-
-# Activer une licence
-qflush license activate <clé>
-
-# Appliquer un paquet cortex
-qflush apply --approve
-```
-
----
-
-## 🧙 Modules internes Funesterie
-
-- **gandalf-light** (`src/core/gandalf-light.ts`) : Orchestration, audit, signalisation, télémétrie.
-- **gollum-paths** (`src/rome/gollum-paths.ts`) : Résolution avancée des chemins, mapping de modules.
-- **a11Client** (`src/core/a11Client.ts`) : Client pour le module A-11 (IA, analyse, etc.).
-- **horn** (`src/core/horn.ts`) : Utilitaire de signalisation/notification.
-- **rome-tag** (`src/rome/rome-tag.ts`) : Gestion des tags et métadonnées pour Rome.
-
----
-
-## 📦 Publication et installation
-
-Pour publier une nouvelle version :
-
-```sh
-npm version major   # ou minor/patch selon le cas
-npm run build
-npm publish --access public
-```
-
-Pour installer et utiliser globalement :
-
-```sh
+```powershell
 npm install -g @nossen/qflush
 qflush --help
 ```
 
----
+For project-local use:
 
-## 📝 Licence
+```powershell
+npm install @nossen/qflush
+npx qflush --help
+```
 
-Projet Funesterie — voir la licence commerciale pour FCL si besoin.
+## What It Does
+
+- Detects runtime modules and starts selected services.
+- Generates missing environment and config files.
+- Supervises background processes and stores logs under `.qflush/logs`.
+- Reads `funesterie.yml` or `funesterie.fcl` compose definitions.
+- Routes NPZ lanes with fallback scoring and circuit-breaker state.
+- Applies Cortex packets from JSON or PNG carriers.
+- Exposes small automation helpers used by A11, Rome, Spyder, Nezlephant, and
+  Freeland flows.
+
+## CLI
+
+| Command | Purpose |
+| --- | --- |
+| `qflush start` | Launch detected or selected modules. |
+| `qflush kill` | Stop supervised processes. |
+| `qflush purge` | Clear caches, logs, sessions, and supervisor state. |
+| `qflush inspect` | Show active services and ports. |
+| `qflush config` | Generate missing configuration files. |
+| `qflush compose up` | Start modules from `funesterie.yml` or `funesterie.fcl`. |
+| `qflush compose down` | Stop composed services and clear supervisor state. |
+| `qflush compose logs <name>` | Tail a supervised module log. |
+| `qflush doctor` | Run local health checks. |
+| `qflush tool-run` | Execute a guarded tool command through QFlush. |
+
+## Examples
+
+```powershell
+qflush start
+qflush start --service rome --path D:/rome
+qflush start --service nezlephant --service freeland --fresh
+qflush compose up --background
+qflush compose logs rome
+qflush purge --fresh
+qflush doctor
+```
+
+## Programmatic Use
+
+```ts
+import { buildPipeline, executePipeline } from "@nossen/qflush";
+
+const { pipeline, options } = buildPipeline(["start", "--service", "rome"]);
+await executePipeline(pipeline, options);
+```
+
+## Runtime Dependencies
+
+QFlush uses the public NOSSEN package set:
+
+- `@nossen/bat`
+- `@nossen/envaptex`
+- `@nossen/freeland`
+- `@nossen/nezlephant`
+- `@nossen/rome`
+
+Installations should resolve from npmjs by default, or from the configured
+Funesterie JFrog mirror when an internal registry is required.
+
+## Quality Gates
+
+Run these checks before publishing or tagging a release:
+
+```powershell
+npm install
+npm run build
+npm test
+npm pack --dry-run
+```
+
+The published package exposes the `qflush` binary from `dist/cli.js`; keep the
+compiled `dist` output current before release.
+
+## Publishing
+
+```powershell
+npm version patch
+npm run build
+npm test
+npm publish --access public
+```
+
+For JFrog, generate `.npmrc.jfrog` with `scripts/jfrog/Write-JFrogNpmrc.ps1`
+and publish through the repository manifest.
+
+## License
+
+See the repository license files for commercial and non-commercial terms.

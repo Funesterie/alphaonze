@@ -22,7 +22,7 @@ export async function runCompose(argv: string[]) {
       logger.info(`Bringing up ${m} from ${def.path || 'package'}`);
       if (bg) {
         // start in background using supervisor
-        const logPath = `${process.cwd()}/.qflash/logs/${m}.log`;
+        const logPath = `${process.cwd()}/.qflush/logs/${m}.log`;
         startProcess(m, def.path || m, [], { cwd: def.path || process.cwd(), detached: true, logPath });
       } else {
         await runStart({ services: [m], modulePaths: { [m]: def.path }, flags: {} } as any);
@@ -55,12 +55,12 @@ export async function runCompose(argv: string[]) {
   if (sub === 'logs') {
     const name = argv[1];
     if (!name) { logger.info('Specify module name'); return; }
-    const logFile = `${process.cwd()}/.qflash/logs/${name}.log`;
+    const logFile = `${process.cwd()}/.qflush/logs/${name}.log`;
     if (!fs.existsSync(logFile)) { logger.info('No log file found'); return; }
     const t = new Tail(logFile, { fromBeginning: false });
     t.on('line', (data: any) => console.log(data));
     t.on('error', (err: any) => console.error(err));
     return;
   }
-  logger.info('Usage: qflash compose [up|down|restart|logs]');
+  logger.info('Usage: qflush compose [up|down|restart|logs]');
 }

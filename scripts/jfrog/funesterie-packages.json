@@ -1,91 +1,118 @@
 {
-  "scope": "@funeste38",
-  "registryPurpose": "Private Funesterie npm packages on JFrog Artifactory",
+  "scope": "@nossen",
+  "registryPurpose": "NOSSEN npm packages mirrored on JFrog Artifactory",
   "packages": [
     {
-      "path": "runtime/modules/envaptex",
-      "name": "@funeste38/envaptex",
+      "path": "runtime/modules/allmight",
+      "name": "@nossen/allmight",
+      "tier": "agent",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/bat/packages/bat",
+      "name": "@nossen/bat",
       "tier": "core",
       "publish": true
     },
     {
-      "path": "runtime/modules/bat",
-      "name": "@funeste38/bat",
+      "path": "runtime/modules/bat/packages/bat-system",
+      "name": "@nossen/bat-system",
+      "tier": "compatibility",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/beam",
+      "name": "@nossen/beam",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/envaptex/envapt-superimg",
+      "name": "@nossen/envapt-superimg",
+      "tier": "media",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/envaptex",
+      "name": "@nossen/envaptex",
       "tier": "core",
       "publish": true
     },
     {
       "path": "runtime/modules/freeland",
-      "name": "@funeste38/freeland",
+      "name": "@nossen/freeland",
       "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/freeland-bros",
+      "name": "@nossen/freeland-bros",
+      "tier": "diagnostics",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/katana",
+      "name": "@nossen/katana",
+      "tier": "tools",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/morphing",
+      "name": "@nossen/morphing",
+      "tier": "core",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/nezlephant/nezlephant/nezlephant",
+      "name": "@nossen/nezlephant",
+      "tier": "media",
+      "publish": true
+    },
+    {
+      "path": "a11/backend/libs",
+      "name": "@nossen/qflush",
+      "tier": "orchestrator",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/qflush/runner-package",
+      "name": "@nossen/qflush-runner",
+      "tier": "orchestrator",
       "publish": true
     },
     {
       "path": "runtime/modules/rome",
-      "name": "@funeste38/rome",
+      "name": "@nossen/rome",
       "tier": "core",
       "publish": true
     },
     {
-      "path": "runtime/modules/qflush",
-      "name": "@funeste38/qflush",
-      "tier": "core",
+      "path": "runtime/modules/scentgate",
+      "name": "@nossen/scentgate",
+      "tier": "research",
       "publish": true
-    },
-    {
-      "path": "runtime/modules/nezlephant",
-      "name": "@funeste38/nezlephant",
-      "tier": "security",
-      "publish": false,
-      "reason": "dry-run showed IDE files, old tarballs, and logs in the package; clean package files before publish"
-    },
-    {
-      "path": "runtime/modules/allmight",
-      "name": "@funeste38/allmight",
-      "tier": "agent",
-      "publish": true
-    },
-    {
-      "path": "runtime/modules/beam",
-      "name": "@funeste38/beam",
-      "tier": "experimental",
-      "publish": false
-    },
-    {
-      "path": "runtime/modules/freeland-bros",
-      "name": "@funeste38/freeland-bros",
-      "tier": "experimental",
-      "publish": false
-    },
-    {
-      "path": "runtime/modules/morphing",
-      "name": "@funeste38/morphing",
-      "tier": "experimental",
-      "publish": false
     },
     {
       "path": "runtime/modules/scream",
-      "name": "@funeste38/scream",
-      "tier": "experimental",
-      "publish": false
+      "name": "@nossen/scream",
+      "tier": "semantic",
+      "publish": true
+    },
+    {
+      "path": "runtime/modules/spyder/packages/spyder",
+      "name": "@nossen/spyder",
+      "tier": "agent",
+      "publish": true
     }
   ],
   "skipped": [
     {
-      "path": "runtime/modules/spyder",
-      "reason": "package.json currently declares @funeste38/qflush, which would collide with the real qflush package"
-    },
-    {
-      "path": "runtime/modules/nezlephant",
-      "reason": "package tarball currently includes .vs, old .tgz files, and logs"
+      "path": "runtime/Corpus",
+      "reason": "archive and corpus snapshots are intentionally excluded from package publishing"
     },
     {
       "path": "runtime/modules/dragon",
-      "reason": "private and unscoped package; keep local until naming is clarified"
-    },
-    {
-      "path": "runtime/modules/katana",
-      "reason": "unscoped package; keep local until naming is clarified"
+      "reason": "Dragon packages are released from their dedicated package train"
     }
   ]
 }

@@ -9,7 +9,7 @@ Write-Host ""
 
 # Configuration
 $IMAGE_NAME = "a11-backend"
-$DOCKER_HUB_USER = "funeste38"
+$DOCKER_HUB_USER = "nossen"
 $DOCKER_HUB_REPO = "$DOCKER_HUB_USER/$IMAGE_NAME"
 $VERSION = "v1.0.0"
 $DATE_TAG = Get-Date -Format "yyyy-MM-dd"

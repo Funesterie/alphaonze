@@ -4,7 +4,7 @@
 FROM node:20-bookworm-slim
 
 # Métadonnées
-LABEL maintainer="Jeffrey Cellauro <funeste38@gmail.com>"
+LABEL maintainer="NOSSEN <contact@funesterie.me>"
 LABEL description="A11 Backend - Assistant IA avec Stripe"
 LABEL version="1.0.0"
 
@@ -84,13 +84,13 @@ ARG JFROG_NPM_AUTH_TOKEN
 ARG JFROG_NPM_REGISTRY=https://trialhnuk69.jfrog.io/artifactory/api/npm/funesterie-npm/
 RUN set -eu; \
     if [ -n "${JFROG_NPM_AUTH_TOKEN:-}" ]; then \
-      npm config set @funeste38:registry "${JFROG_NPM_REGISTRY}"; \
+      npm config set @nossen:registry "${JFROG_NPM_REGISTRY}"; \
       auth_target="$(node -e "const u=new URL(process.env.JFROG_NPM_REGISTRY); console.log((u.host + u.pathname).replace(/\/$/, ''))")"; \
       npm config set "//$auth_target/:_authToken" "${JFROG_NPM_AUTH_TOKEN}"; \
     fi; \
     npm ci --include=dev; \
     npm prune --omit=dev; \
-    npm config delete @funeste38:registry || true; \
+    npm config delete @nossen:registry || true; \
     auth_target="$(node -e "const u=new URL(process.env.JFROG_NPM_REGISTRY); console.log((u.host + u.pathname).replace(/\/$/, ''))")"; \
     npm config delete "//$auth_target/:_authToken" || true
 

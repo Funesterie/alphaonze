@@ -52,7 +52,7 @@ async function createBlueprintOneTimePrice() {
     console.log('\nSave these values:');
     console.log(`STRIPE_BLUEPRINT_DEPLOYMENT_PRODUCT_ID=${product.id}`);
     console.log(`STRIPE_BLUEPRINT_DEPLOYMENT_PRICE_ID=${price.id}`);
-    console.log('\nPublic contact: funeste38@gmail.com');
+    console.log('\nPublic contact: contact@funesterie.me');
     console.log('Phone contact is shared only after qualification.');
 
     return { product, price };

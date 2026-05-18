@@ -68,6 +68,6 @@ if (first === "tool-run") {
 const { pipeline, options } = buildPipeline(argv);
 
 executePipeline(pipeline, options).catch((err) => {
-  console.error("qflash: fatal", err);
+  console.error("qflush: fatal", err);
   process.exit(1);
 });

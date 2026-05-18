@@ -90,7 +90,7 @@ Thumbs.db
 /a11/a11_memory/
 /a11/backend/a11_memory/memos/
 /a11/backend/apps/server/.a11_state/
-/a11/backend/apps/server/.qflash/
+/a11/backend/apps/server/.qflush/
 /a11/backend/apps/server/tmp/
 /a11/backend/apps/runtime/files/generated/
 /a11/backend/apps/server/runtime/logs/

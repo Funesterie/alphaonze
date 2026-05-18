@@ -1,32 +1,78 @@
 # Publishing @nossen/qflush
 
-Checklist before publishing:
+Use this checklist when releasing QFlush to npmjs and the Funesterie JFrog npm
+registry.
 
-- Bump `version` in `package.json` if republishing.
-- Ensure `dist/index.js` exists and starts with `#!/usr/bin/env node`.
-- Run `npm run build` and verify `dist` contains compiled JS and `.d.ts` files.
-- Run `node dist/index.js --help` to verify CLI runs.
-- Run `npm pack` to inspect the tarball contents before publishing.
-- Ensure `package.json` `bin` points to `dist/index.js`.
-- If using `.npmignore`, ensure it does not exclude `dist`.
-- Confirm `prepare` script in `package.json` is present to auto-build on publish.
+## Preflight
 
-Publish steps:
+```powershell
+cd D:\projets\funesterie\a11\backend\libs
+npm install
+npm run build
+npm test
+npm pack --dry-run
+```
 
-1. Login to npm: `npm login` (use account that owns `@funeste38` scope)
-2. From project root `cd qflash`
-3. Build: `npm run build`
-4. Publish: `npm publish --access public`
+Verify the pack output includes:
 
-Testing globally without publishing:
+- `dist/**`
+- `README.md`
+- `PUBLISH.md`
+- license and trademark files
+- installer and example assets that are intentionally published
 
-- Link locally: `cd qflash && npm link`
-- Test: `qflash --help` or `qflash start`
-- Remove link: `npm unlink -g @nossen/qflush`
+## Version
 
-Notes on 2FA:
-- If your npm account requires 2FA for publishing, you'll be prompted for the OTP.
+Npm versions are immutable. If the package was already published, bump the
+patch version before publishing again:
 
-Troubleshooting:
-- If publish fails due to package name, ensure the scope `@funeste38` exists and you have permission.
-- If `dist` missing on publish, `prepare` should build, but check logs for errors.
+```powershell
+npm version patch
+```
+
+## npmjs
+
+```powershell
+npm whoami
+npm publish --access public
+```
+
+If the npm account enforces two-factor authentication, npm will ask for the OTP
+during publish.
+
+## JFrog
+
+```powershell
+cd D:\projets\funesterie
+$env:JFROG_NPM_REGISTRY = "https://trialhnuk69.jfrog.io/artifactory/api/npm/funesterie-npm-local/"
+.\scripts\jfrog\Write-JFrogNpmrc.ps1 -Force
+.\scripts\jfrog\Publish-FunesteriePackages.ps1 -Publish
+```
+
+Use the virtual repository again for installs after publishing:
+
+```powershell
+$env:JFROG_NPM_REGISTRY = "https://trialhnuk69.jfrog.io/artifactory/api/npm/funesterie-npm/"
+.\scripts\jfrog\Write-JFrogNpmrc.ps1 -Force
+```
+
+## GitHub
+
+Tag the exact package version that was published:
+
+```powershell
+git tag @nossen/qflush@<version>
+git push origin @nossen/qflush@<version>
+```
+
+Update `docs/ops/NOSSEN_RELEASE_ALIGNMENT_2026-05-18.md` if the package train
+changes.
+
+## Smoke Test
+
+```powershell
+npm install -g @nossen/qflush
+qflush --version
+qflush --help
+qflush doctor
+```

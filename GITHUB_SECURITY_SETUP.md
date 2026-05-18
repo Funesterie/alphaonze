@@ -17,7 +17,7 @@
 Clique **"New repository secret"** :
 
 - Name : `DOCKERHUB_TOKEN`
-- Value : `dckr_pat_OyRSKvswYxPMT6LfDpZYj4r1KZw`
+- Value : `<docker-hub-access-token>`
 
 ### 2. Activer Dependabot
 
@@ -112,13 +112,13 @@ Si tu veux utiliser Docker Hub au lieu de déployer depuis GitHub :
 
 ### 1. Rendre le repo Docker Hub public (ou upgrader)
 
-**URL** : https://hub.docker.com/repository/docker/funeste38/a11/general
+**URL** : `https://hub.docker.com/repository/docker/<dockerhub-namespace>/a11/general`
 
 Les repos Docker Hub privés nécessitent un plan payant. Si tu veux rester gratuit, rendre le repo public.
 
 ### 2. Attendre que GitHub Actions build l'image
 
-Une fois le secret `DOCKERHUB_TOKEN` ajouté sur GitHub, le workflow va builder et pusher `funeste38/a11:latest` automatiquement.
+Une fois le secret `DOCKERHUB_TOKEN` ajouté sur GitHub, le workflow va builder et pusher `<dockerhub-namespace>/a11:latest` automatiquement.
 
 ### 3. Déployer depuis Docker Hub sur Render
 
@@ -126,7 +126,7 @@ Créer un nouveau service Render :
 
 - **Type** : Web Service
 - **Source** : Docker Hub
-- **Image** : `funeste38/a11:latest`
+- **Image** : `<dockerhub-namespace>/a11:latest`
 - **Port** : 3000
 - **Health Check** : `/health`
 

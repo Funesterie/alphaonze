@@ -1,5 +1,5 @@
 param(
-  [string]$PackageRoot = "D:\projets\funesterie\a11\backend\apps\server\node_modules\@funeste38",
+  [string]$PackageRoot = "D:\projets\funesterie\a11\backend\apps\server\node_modules\@nossen",
   [string]$Scope = "@funesterie",
   [string]$Registry = "https://npm.pkg.github.com",
   [string]$RepositoryUrl = "git+https://github.com/Funesterie/alphaonze.git",
@@ -37,11 +37,11 @@ function Convert-VersionRangeToBackupScope {
     [Parameter(Mandatory = $true)][string]$Range
   )
 
-  if ($Name -notlike "@funeste38/*") {
+  if ($Name -notlike "@nossen/*") {
     return $Range
   }
 
-  $unscoped = $Name.Substring("@funeste38/".Length)
+  $unscoped = $Name.Substring("@nossen/".Length)
   return "npm:$Scope/$unscoped@$Range"
 }
 
@@ -56,8 +56,8 @@ function Rewrite-DependencyObject {
   foreach ($prop in $DependencyObject.PSObject.Properties) {
     $name = [string]$prop.Name
     $value = [string]$prop.Value
-    if ($name -like "@funeste38/*") {
-      $unscoped = $name.Substring("@funeste38/".Length)
+    if ($name -like "@nossen/*") {
+      $unscoped = $name.Substring("@nossen/".Length)
       $rewritten["$Scope/$unscoped"] = $value
     } else {
       $rewritten[$name] = Convert-VersionRangeToBackupScope -Name $name -Range $value
@@ -119,7 +119,7 @@ foreach ($packageDir in $packages) {
   Set-JsonProperty -Object $json -Name "funesterieBackup" -Value ([ordered]@{
     sourceName = $originalJson.name
     sourceVersion = $originalJson.version
-    sourceScope = "@funeste38"
+    sourceScope = "@nossen"
     backupScope = $Scope
     generatedAt = (Get-Date).ToUniversalTime().ToString("o")
   })

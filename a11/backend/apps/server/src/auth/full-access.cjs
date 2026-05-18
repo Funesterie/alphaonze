@@ -1,7 +1,6 @@
 'use strict';
 
 const DEFAULT_FULL_ACCESS_EMAILS = [
-  'funeste38@gmail.com',
   'cellaurojeffrey@gmail.com',
   'jeffrey38330@gmail.com',
   'cellauromarvin@gmail.com',

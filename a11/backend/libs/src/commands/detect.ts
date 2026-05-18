@@ -3,7 +3,7 @@ import { logger } from "../utils/logger.js";
 import { QFlushOptions } from "../chain/smartChain.js";
 
 export async function runDetect(_opts?: QFlushOptions) {
-  logger.info("qflash: detecting modules...");
+  logger.info("qflush: detecting modules...");
   const detected = await detectModules();
   for (const k of Object.keys(detected)) {
     const v = detected[k];

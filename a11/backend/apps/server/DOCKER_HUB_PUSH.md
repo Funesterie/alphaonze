@@ -2,7 +2,7 @@
 
 ## 📋 Prérequis
 
-- Compte Docker Hub : `funeste38`
+- Compte Docker Hub : `<dockerhub-namespace>`
 - Image buildée localement : `a11-backend:latest`
 - Docker ou Podman installé
 
@@ -12,7 +12,7 @@
 
 ```powershell
 docker login
-# Username: funeste38
+# Username: <dockerhub-username-or-namespace>
 # Password: [ton mot de passe Docker Hub]
 ```
 
@@ -20,7 +20,7 @@ docker login
 
 ```powershell
 podman login docker.io
-# Username: funeste38
+# Username: <dockerhub-username-or-namespace>
 # Password: [ton mot de passe Docker Hub]
 ```
 
@@ -30,34 +30,34 @@ podman login docker.io
 
 ```powershell
 # Avec Docker
-docker tag a11-backend:latest funeste38/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 
 # Avec Podman
-podman tag a11-backend:latest funeste38/a11-backend:latest
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 ```
 
 ### Option 2 : Tag avec Version
 
 ```powershell
 # Avec Docker
-docker tag a11-backend:latest funeste38/a11-backend:v1.0.0
-docker tag a11-backend:latest funeste38/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:v1.0.0
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 
 # Avec Podman
-podman tag a11-backend:latest funeste38/a11-backend:v1.0.0
-podman tag a11-backend:latest funeste38/a11-backend:latest
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:v1.0.0
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 ```
 
 ### Option 3 : Tag avec Date
 
 ```powershell
 # Avec Docker
-docker tag a11-backend:latest funeste38/a11-backend:2026-04-28
-docker tag a11-backend:latest funeste38/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:2026-04-28
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 
 # Avec Podman
-podman tag a11-backend:latest funeste38/a11-backend:2026-04-28
-podman tag a11-backend:latest funeste38/a11-backend:latest
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:2026-04-28
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
 ```
 
 ## 📤 Push vers Docker Hub
@@ -66,29 +66,29 @@ podman tag a11-backend:latest funeste38/a11-backend:latest
 
 ```powershell
 # Avec Docker
-docker push funeste38/a11-backend:latest
+docker push <dockerhub-namespace>/a11-backend:latest
 
 # Avec Podman
-podman push funeste38/a11-backend:latest
+podman push <dockerhub-namespace>/a11-backend:latest
 ```
 
 ### Push avec Version
 
 ```powershell
 # Avec Docker
-docker push funeste38/a11-backend:v1.0.0
-docker push funeste38/a11-backend:latest
+docker push <dockerhub-namespace>/a11-backend:v1.0.0
+docker push <dockerhub-namespace>/a11-backend:latest
 
 # Avec Podman
-podman push funeste38/a11-backend:v1.0.0
-podman push funeste38/a11-backend:latest
+podman push <dockerhub-namespace>/a11-backend:v1.0.0
+podman push <dockerhub-namespace>/a11-backend:latest
 ```
 
 ## ✅ Vérification
 
 ### Sur Docker Hub
 
-1. Aller sur https://hub.docker.com/r/funeste38/a11-backend
+1. Aller sur https://hub.docker.com/r/<dockerhub-namespace>/a11-backend
 2. Vérifier que l'image apparaît
 3. Vérifier les tags disponibles
 
@@ -96,20 +96,20 @@ podman push funeste38/a11-backend:latest
 
 ```powershell
 # Avec Docker
-docker search funeste38/a11-backend
+docker search <dockerhub-namespace>/a11-backend
 
 # Avec Podman
-podman search funeste38/a11-backend
+podman search <dockerhub-namespace>/a11-backend
 ```
 
 ## 📥 Pull de l'Image (Pour Tester)
 
 ```powershell
 # Avec Docker
-docker pull funeste38/a11-backend:latest
+docker pull <dockerhub-namespace>/a11-backend:latest
 
 # Avec Podman
-podman pull funeste38/a11-backend:latest
+podman pull <dockerhub-namespace>/a11-backend:latest
 ```
 
 ## 🚀 Utilisation de l'Image Publique
@@ -121,7 +121,7 @@ docker run -d `
   --name a11-backend `
   -p 3000:3000 `
   --env-file .env.docker `
-  funeste38/a11-backend:latest
+  <dockerhub-namespace>/a11-backend:latest
 ```
 
 ### Podman Run
@@ -131,7 +131,7 @@ podman run -d `
   --name a11-backend `
   -p 3000:3000 `
   --env-file .env.docker `
-  funeste38/a11-backend:latest
+  <dockerhub-namespace>/a11-backend:latest
 ```
 
 ### Docker Compose
@@ -141,7 +141,7 @@ Modifier `docker-compose.yml` :
 ```yaml
 services:
   a11-backend:
-    image: funeste38/a11-backend:latest # Au lieu de build: .
+    image: <dockerhub-namespace>/a11-backend:latest # Au lieu de build: .
     container_name: a11-backend
     # ... reste de la config
 ```
@@ -155,14 +155,14 @@ services:
 docker build -t a11-backend:latest .
 
 # Tag multiple
-docker tag a11-backend:latest funeste38/a11-backend:latest
-docker tag a11-backend:latest funeste38/a11-backend:v1.0.0
-docker tag a11-backend:latest funeste38/a11-backend:stable
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:v1.0.0
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:stable
 
 # Push tous les tags
-docker push funeste38/a11-backend:latest
-docker push funeste38/a11-backend:v1.0.0
-docker push funeste38/a11-backend:stable
+docker push <dockerhub-namespace>/a11-backend:latest
+docker push <dockerhub-namespace>/a11-backend:v1.0.0
+docker push <dockerhub-namespace>/a11-backend:stable
 ```
 
 ### Tags Suggérés
@@ -185,22 +185,22 @@ docker build -t a11-backend:latest .
 ### 2. Re-tag
 
 ```powershell
-docker tag a11-backend:latest funeste38/a11-backend:latest
-docker tag a11-backend:latest funeste38/a11-backend:v1.0.1
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:v1.0.1
 ```
 
 ### 3. Push
 
 ```powershell
-docker push funeste38/a11-backend:latest
-docker push funeste38/a11-backend:v1.0.1
+docker push <dockerhub-namespace>/a11-backend:latest
+docker push <dockerhub-namespace>/a11-backend:v1.0.1
 ```
 
 ## 🗑️ Supprimer une Image de Docker Hub
 
 Les images ne peuvent être supprimées que depuis le site web :
 
-1. Aller sur https://hub.docker.com/r/funeste38/a11-backend
+1. Aller sur https://hub.docker.com/r/<dockerhub-namespace>/a11-backend
 2. Cliquer sur "Manage Repository"
 3. Aller dans "Tags"
 4. Supprimer le tag souhaité
@@ -230,13 +230,13 @@ docker run -d \
   -e DATABASE_URL=postgresql://... \
   -e STRIPE_SECRET_KEY=sk_... \
   # JWT_SECRET is configured via the deployment secret store.
-  funeste38/a11-backend:latest
+  <dockerhub-namespace>/a11-backend:latest
 ```
 ````
 
 ## Documentation
 
-https://github.com/funeste38/funesterie
+https://github.com/Funesterie/funesterie
 
 ## Support
 
@@ -251,7 +251,7 @@ Email: djeff@funesterie.me
 **Actuellement : Publique** (gratuit sur Docker Hub)
 
 Pour rendre l'image privée :
-1. Aller sur https://hub.docker.com/r/funeste38/a11-backend/settings
+1. Aller sur https://hub.docker.com/r/<dockerhub-namespace>/a11-backend/settings
 2. Cliquer sur "Make Private"
 3. Confirmer
 
@@ -279,15 +279,15 @@ docker build -t a11-backend:latest .
 docker login
 
 # 3. Tag
-docker tag a11-backend:latest funeste38/a11-backend:latest
-docker tag a11-backend:latest funeste38/a11-backend:v1.0.0
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:v1.0.0
 
 # 4. Push
-docker push funeste38/a11-backend:latest
-docker push funeste38/a11-backend:v1.0.0
+docker push <dockerhub-namespace>/a11-backend:latest
+docker push <dockerhub-namespace>/a11-backend:v1.0.0
 
 # 5. Vérifier
-docker search funeste38/a11-backend
+docker search <dockerhub-namespace>/a11-backend
 ````
 
 ### Avec Podman
@@ -301,15 +301,15 @@ podman build -t a11-backend:latest .
 podman login docker.io
 
 # 3. Tag
-podman tag a11-backend:latest funeste38/a11-backend:latest
-podman tag a11-backend:latest funeste38/a11-backend:v1.0.0
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
+podman tag a11-backend:latest <dockerhub-namespace>/a11-backend:v1.0.0
 
 # 4. Push
-podman push funeste38/a11-backend:latest
-podman push funeste38/a11-backend:v1.0.0
+podman push <dockerhub-namespace>/a11-backend:latest
+podman push <dockerhub-namespace>/a11-backend:v1.0.0
 
 # 5. Vérifier
-podman search funeste38/a11-backend
+podman search <dockerhub-namespace>/a11-backend
 ```
 
 ## 🌐 URL de l'Image
@@ -317,23 +317,23 @@ podman search funeste38/a11-backend
 Une fois pushée, l'image sera disponible à :
 
 ```
-docker.io/funeste38/a11-backend:latest
+docker.io/<dockerhub-namespace>/a11-backend:latest
 ```
 
 Ou simplement :
 
 ```
-funeste38/a11-backend:latest
+<dockerhub-namespace>/a11-backend:latest
 ```
 
 ## ✅ Checklist
 
 - [ ] Image buildée localement
 - [ ] Connecté à Docker Hub (`docker login`)
-- [ ] Image taguée (`docker tag a11-backend:latest funeste38/a11-backend:latest`)
-- [ ] Image pushée (`docker push funeste38/a11-backend:latest`)
-- [ ] Vérification sur https://hub.docker.com/r/funeste38/a11-backend
-- [ ] Test pull (`docker pull funeste38/a11-backend:latest`)
+- [ ] Image taguée (`docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest`)
+- [ ] Image pushée (`docker push <dockerhub-namespace>/a11-backend:latest`)
+- [ ] Vérification sur https://hub.docker.com/r/<dockerhub-namespace>/a11-backend
+- [ ] Test pull (`docker pull <dockerhub-namespace>/a11-backend:latest`)
 - [ ] Description ajoutée sur Docker Hub
 
 ---
@@ -343,6 +343,6 @@ funeste38/a11-backend:latest
 Commande rapide :
 
 ```powershell
-docker tag a11-backend:latest funeste38/a11-backend:latest
-docker push funeste38/a11-backend:latest
+docker tag a11-backend:latest <dockerhub-namespace>/a11-backend:latest
+docker push <dockerhub-namespace>/a11-backend:latest
 ```

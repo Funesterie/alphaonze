@@ -25,7 +25,7 @@
 - Google Drive for desktop accepte officiellement jusqu'a 4 comptes.
 - La machine montre un seul compte DriveFS monte sous `G:\Mon Drive`.
 - Si ajout du compte AlphaOnze bloque, piste prioritaire:
-  - partager le dossier/Drive AlphaOnze avec `funeste38@gmail.com`
+  - partager le dossier/Drive AlphaOnze avec `contact@funesterie.me`
   - depuis Drive web, ajouter un raccourci a Mon Drive
   - laisser Drive Desktop synchroniser le raccourci sous `G:\Mon Drive`
 

@@ -579,10 +579,10 @@ test('createGenerateVideoHandler accepts local SD frame paths and prefers the R2
     assert.equal(result.ok, true);
     assert.equal(fetchCalled, false);
     assert.equal(calls.length, 2);
-    assert.match(String(result.video_url || ''), /^https:\/\/a11\.funesterie\.pro\/api\/public\/r2\/users\/video-tool\/a11-video-/i);
+    assert.match(String(result.video_url || ''), /^https:\/\/a11\.funesterie\.me\/api\/public\/r2\/users\/video-tool\/a11-video-/i);
     assert.equal(result.video_url, result.r2_proxy_url);
-    assert.match(String(result.local_url || ''), /^https:\/\/a11\.funesterie\.pro\/files\/runtime\/files\/generated\/videos\//i);
-    assert.match(String(result.frames[0].url || ''), /^https:\/\/a11\.funesterie\.pro\/files\/runtime\/files\/generated\/videos\//i);
+    assert.match(String(result.local_url || ''), /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\//i);
+    assert.match(String(result.frames[0].url || ''), /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\//i);
     assert.equal(result.frames[0].syntheticFallback, false);
   } finally {
     for (const [key, value] of Object.entries(previousEnv)) {
@@ -680,7 +680,7 @@ test('createGenerateVideoHandler does not expose loopback audio URLs to HTTPS cl
 
     assert.equal(result.ok, true);
     assert.equal(result.hasAudio, true);
-    assert.match(String(result.audio_url || ''), /^https:\/\/alphaonze\.funesterie\.pro\/files\//i);
+    assert.match(String(result.audio_url || ''), /^https:\/\/a11\.funesterie\.me\/files\//i);
     assert.doesNotMatch(String(result.audio_url || ''), /127\.0\.0\.1|http:\/\/127/i);
   } finally {
     if (previousWorkspaceRoot === undefined) delete process.env.A11_WORKSPACE_ROOT;

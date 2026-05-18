@@ -28,7 +28,7 @@
 ## Supervision notes (important)
 - Prefer launching submodules via Node API or `spawn(process.execPath, [cliPath])` instead of shell `npx` to avoid quoting/space issues on Windows.
 - Supervisor code: `apps/server/src/a11-supervisor.cjs` and integration: `apps/server/src/qflush-integration.cjs`.
-- qflush logs: `apps/server/.qflash/logs/`
+- qflush logs: `apps/server/.qflush/logs/`
 
 ## Troubleshooting quick checklist
 - Verify backend health: `http://127.0.0.1:3000/health`.

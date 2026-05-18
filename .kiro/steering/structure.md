@@ -9,7 +9,7 @@ funesterie/
   a11/
     backend/apps/server/   ← Backend API (Railway deploy root)
     backend/apps/tts/      ← Local TTS service (Piper)
-    backend/libs/          ← @funeste38/qflush published library
+    backend/libs/          ← @nossen/qflush published library
     frontend/apps/web/     ← Frontend SPA (Netlify deploy root)
     launchers/             ← Windows orchestration scripts
     runtime/               ← Generated local runtime (gitignored)

@@ -100,7 +100,7 @@ installs, keep `JFROG_NPM_REGISTRY` on the virtual repository:
 The generated `.npmrc.jfrog` does not contain the token value. It contains:
 
 ```txt
-@funeste38:registry=https://<tenant>.jfrog.io/artifactory/api/npm/funesterie-npm/
+@nossen:registry=https://<tenant>.jfrog.io/artifactory/api/npm/funesterie-npm/
 //<tenant>.jfrog.io/artifactory/api/npm/funesterie-npm/:_authToken=${JFROG_NPM_AUTH_TOKEN}
 ```
 
@@ -153,15 +153,26 @@ $env:JFROG_NPM_REGISTRY = "https://trialhnuk69.jfrog.io/artifactory/api/npm/fune
 .\scripts\jfrog\Write-JFrogNpmrc.ps1 -Force
 ```
 
-The first publish set is intentionally conservative:
+The publish set follows the NOSSEN package train:
 
 ```txt
-@funeste38/envaptex
-@funeste38/bat
-@funeste38/freeland
-@funeste38/rome
-@funeste38/qflush
-@funeste38/allmight
+@nossen/allmight
+@nossen/bat
+@nossen/bat-system
+@nossen/beam
+@nossen/envapt-superimg
+@nossen/envaptex
+@nossen/freeland
+@nossen/freeland-bros
+@nossen/katana
+@nossen/morphing
+@nossen/nezlephant
+@nossen/qflush
+@nossen/qflush-runner
+@nossen/rome
+@nossen/scentgate
+@nossen/scream
+@nossen/spyder
 ```
 
 Experimental packages are listed in
@@ -174,17 +185,11 @@ npm lifecycle scripts during publish, add `-RunLifecycleScripts`.
 ## Current exclusions
 
 ```txt
-runtime/modules/spyder
-  skipped because its package name currently collides with @funeste38/qflush
-
-runtime/modules/nezlephant
-  skipped until its package tarball stops including .vs, old .tgz files, and logs
-
 runtime/modules/dragon
-  skipped because it is private and unscoped
+  package train is tracked separately under the Dragon package set
 
-runtime/modules/katana
-  skipped because it is unscoped
+runtime/Corpus
+  archive and corpus snapshots are never scanned for npm publishing
 ```
 
 ## Install from JFrog
@@ -192,8 +197,8 @@ runtime/modules/katana
 With `.npmrc.jfrog` and `JFROG_NPM_AUTH_TOKEN` loaded:
 
 ```powershell
-npm install @funeste38/qflush --userconfig .\.npmrc.jfrog
-npm install @funeste38/rome --userconfig .\.npmrc.jfrog
+npm install @nossen/qflush --userconfig .\.npmrc.jfrog
+npm install @nossen/rome --userconfig .\.npmrc.jfrog
 ```
 
 ## Safety rules

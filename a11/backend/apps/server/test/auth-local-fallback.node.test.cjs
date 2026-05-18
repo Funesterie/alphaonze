@@ -117,7 +117,7 @@ test('K44 OAuth start pins the Google callback to https on public hosts', async 
 test('local auth store backs register and login when database is unavailable', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
   const previousFullAccessEmails = process.env.A11_FULL_ACCESS_EMAILS;
-  process.env.A11_FULL_ACCESS_EMAILS = 'funeste38@gmail.com';
+  process.env.A11_FULL_ACCESS_EMAILS = 'cellaurojeffrey@gmail.com';
   t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
   t.after(() => {
     if (previousFullAccessEmails === undefined) {
@@ -172,7 +172,7 @@ test('local auth store backs register and login when database is unavailable', a
 
       const fullAccess = await postJson(baseUrl, '/api/auth/register', {
         username: 'FullAccessUser',
-        email: 'funeste38@gmail.com',
+        email: 'cellaurojeffrey@gmail.com',
         password: 'secret123',
       });
       assert.equal(fullAccess.response.status, 200);

@@ -2,7 +2,7 @@
 
 /**
  * dual-backend-router.cjs
- * Routeur entre 2 backends A11 via @funeste38/bat (EchoRadar + wrapEcho).
+ * Routeur entre 2 backends A11 via @nossen/bat (EchoRadar + wrapEcho).
  *
  * Backend 1 (port 3000) : A11 principal — répond en priorité
  * Backend 2 (port 3001) : Cerbère fallback — prend le relais si A11 est occupé
@@ -14,7 +14,7 @@
  *  - La détection de surcharge (classify)
  */
 
-const { EchoRadar, Wings, wrapEcho, defaultProfiles } = require('@funeste38/bat');
+const { EchoRadar, Wings, wrapEcho, defaultProfiles } = require('@nossen/bat');
 
 // ---------------------------------------------------------------------------
 // Configuration
