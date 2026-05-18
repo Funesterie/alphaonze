@@ -87,6 +87,7 @@ import {
 } from "./lib/speech";
 import handleImportFiles from "./lib/importer";
 import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
+import { foldForLookup, toUnicodeLine, toUnicodeText } from "./lib/language";
 
 type Role = "user" | "assistant" | "system";
 
@@ -161,10 +162,10 @@ const A11_LANGUAGE_CHOICES: Array<{
   sttCode: string;
   ttsVoice: string;
 }> = [
-  { code: "fr", label: "Francais", speechLang: "fr-FR", sttCode: "fr", ttsVoice: "fr_FR-siwis-medium" },
+  { code: "fr", label: "Français", speechLang: "fr-FR", sttCode: "fr", ttsVoice: "fr_FR-siwis-medium" },
   { code: "en", label: "English", speechLang: "en-US", sttCode: "en", ttsVoice: "en_US-lessac-medium" },
   { code: "it", label: "Italiano", speechLang: "it-IT", sttCode: "it", ttsVoice: "it_IT-paola-medium" },
-  { code: "es", label: "Espanol", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
+  { code: "es", label: "Español", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
   { code: "de", label: "Deutsch", speechLang: "de-DE", sttCode: "de", ttsVoice: "de_DE-thorsten-medium" },
 ];
 
@@ -622,9 +623,9 @@ function isAssistantHistoryPoisoned(value: string) {
   if (looksLikeLeakedActionTranscript(text)) return true;
   if (looksCorruptedAssistantText(text)) return true;
   return [
-    "Je n'ai pas recu une reponse lisible. Reessaie une fois avec cette conversation.",
-    "Je n'ai pas recu une reponse exploitable.",
-    "Je n'ai pas recu une confirmation exploitable pour cette action.",
+    "Je n'ai pas reçu une réponse lisible. Réessaie une fois avec cette conversation.",
+    "Je n'ai pas reçu une réponse exploitable.",
+    "Je n'ai pas reçu une confirmation exploitable pour cette action.",
   ].includes(text);
 }
 
@@ -642,14 +643,14 @@ function normalizeAssistantMessagePayload(
   let qflushVerification: ChatMessage["qflushVerification"] = null;
 
   if (looksLikeLeakedActionTranscript(cleanedContent) || looksLikeLeakedActionTranscript(rawContent)) {
-    cleanedContent = "Je n'ai pas recu une confirmation exploitable pour cette action.";
+    cleanedContent = "Je n'ai pas reçu une confirmation exploitable pour cette action.";
   }
 
-  const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*Reponse potentiellement non verifiee:\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
+  const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*(?:Réponse|Reponse) potentiellement non (?:vérifiée|verifiee):\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
   if (qflushVerifyMatch) {
     qflushVerification = {
       suspicious: true,
-      summary: String(qflushVerifyMatch[1] || "").trim() || "Reponse potentiellement non verifiee",
+      summary: String(qflushVerifyMatch[1] || "").trim() || "Réponse potentiellement non vérifiée",
       mode: "annotate",
     };
     cleanedContent = String(qflushVerifyMatch[2] || "").trim();
@@ -693,15 +694,15 @@ function normalizeAssistantMessagePayload(
   });
 
   if (/<!doctype html|<html/i.test(cleanedContent)) {
-    cleanedContent = "Je n'ai pas recu une reponse exploitable.";
+    cleanedContent = "Je n'ai pas reçu une réponse exploitable.";
   }
 
   if (looksLikeActionEnvelope(cleanedContent) || looksLikeActionEnvelope(rawContent)) {
-    cleanedContent = "Je n'ai pas recu une confirmation exploitable pour cette action.";
+    cleanedContent = "Je n'ai pas reçu une confirmation exploitable pour cette action.";
   }
 
   if (looksCorruptedAssistantText(cleanedContent)) {
-    cleanedContent = "Je n'ai pas recu une reponse lisible. Reessaie une fois avec cette conversation.";
+    cleanedContent = "Je n'ai pas reçu une réponse lisible. Réessaie une fois avec cette conversation.";
   }
 
   cleanedContent = cleanedContent
@@ -854,7 +855,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
   const relaxedText = text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[â€™']/g, " ")
+    .replace(/[’']/g, " ")
     .replace(/[^a-z0-9#+.\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -864,19 +865,19 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
     && !/(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i.test(relaxedText);
   if (asksForDiagnosticsWithoutAction) return null;
 
-  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|Ã§a compile pas|failing build|build failed)/i;
+  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|ça compile pas|failing build|build failed)/i;
   const nodeKeywords = /(npm|vite|react|frontend|front|web|javascript|typescript|node)/i;
   const dotnetKeywords = /(dotnet|c#|csharp|csproj|solution|visual studio|sln|backend c#)/i;
   const explicitRunnerRequest = /(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i;
 
-  if (/git\s+status|status\s+git|etat du repo|Ã©tat du repo|etat repo|Ã©tat repo/i.test(text)) {
+  if (/git\s+status|status\s+git|etat du repo|état du repo|etat repo|état repo/i.test(text)) {
     return {
       command: "git status",
       reason: "A11 a prepare un diagnostic de l'etat du repo.",
     };
   }
 
-  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les diffÃ©rences/i.test(text)) {
+  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les différences/i.test(text)) {
     return {
       command: "git diff",
       reason: "A11 a prepare un diff safe pour le diagnostic.",
@@ -911,7 +912,7 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
     };
   }
 
-  if (/diagnostic|diagnostique|debug|depannage|dÃ©pannage|pourquoi ca marche pas|pourquoi Ã§a marche pas|probleme technique|problÃ¨me technique/i.test(text)) {
+  if (/diagnostic|diagnostique|debug|depannage|dépannage|pourquoi ca marche pas|pourquoi ça marche pas|probleme technique|problème technique/i.test(text)) {
     return {
       command: "git status",
       reason: "A11 a ouvert la console avec un premier diagnostic safe.",
@@ -925,31 +926,31 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
 const DEFAULT_SYSTEM_NINDO = "";
 
 const KAEN44_SYSTEM_PROMPT = [
-  "Je suis Kaen44, une assistante bureau universelle, locale-first, creative et utile, concue pour offrir une vraie alternative aux assistants integres trop fermes.",
-  "Je detecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partage. Je reponds dans la langue detectee par defaut, je peux changer de langue sans friction, et je demande une precision seulement si la langue ou l'intention est ambigue.",
-  "Ma mission est d'aider l'utilisateur a penser, produire, organiser, classer, depanner son ordinateur et transformer ses documents avec une presence claire, vive et concrete.",
-  "Je peux accompagner tous les projets raisonnables qu'un client peut esperer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM leger, idees de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de donnees simples, assistance informatique et suivi de projet.",
-  "Je distingue clairement ce qui tourne dans Kaen44 cote client et ce qui appartient a A11 cote serveur. A11 n'est pas installe localement chez les clients: je m'y connecte comme service distant quand c'est necessaire.",
-  "Je dispose d'une CLI client legere, `kaen44` ou `k44`, pour ouvrir l'application, verifier le statut local et enregistrer des tokens client de maniere chiffree avec Windows DPAPI. Je ne demande jamais a l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
-  "Je peux presenter une console de modules claire cote client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, deploiement, secrets et operations serveur restent reserves a A11/admin.",
-  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/cout anormal, je passe en mode limite transparent et je peux proposer Kaen44 Plus a 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je reduis les actions couteuses et je demande l'abonnement si necessaire.",
-  "Si un probleme technique, quota fournisseur ou limitation guard mode se declenche, je dois prevenir l'administrateur par email a cellaurojeffrey@gmail.com avec un resume bref: utilisateur, heure, type de probleme, action limitee et prochaine etape. Je ne joins jamais de tokens, secrets ou donnees sensibles.",
-  "Pour les personnes malvoyantes, handicapees ou fatiguees, je privilegie un mode accessibilite: grosses cibles, lecture vocale, dictee, contraste, navigation clavier, resume d'ecran et actions confirmees. Le controle souris/clavier/ecran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilite d'arret immediat.",
-  "Si un controle d'ecran avance est necessaire, je recommande un helper local dedie utilisant les API d'accessibilite Windows, pas une prise de controle cachee depuis une page web.",
-  "Quand un projet demande des outils supplementaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF equivalent, Git si le client gere du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image equivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base metier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les deploiements.",
-  "Pour la vision avancee, je peux m'appuyer sur Janus cote A11/serveur quand le projet implique analyse d'images, memoire visuelle, description de captures, controle de generations image/video ou extraction semantique visuelle. Janus n'est pas une dependance obligatoire du poste client.",
-  "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommande, avance, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus a un client non technique si le besoin peut etre couvert plus simplement.",
-  "Je parle comme une compagne de travail intelligente: directe, chaleureuse, precise, jamais corporate.",
-  "Je privilegie les actions utiles: resumer, classer, transformer, proposer l'etape suivante, preparer des fichiers, guider les reglages et expliquer sans noyer.",
-  "Je respecte les donnees personnelles: je ne demande pas d'acces inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou cles d'acces.",
-  "Face a une demande floue, je fais une hypothese raisonnable et j'avance, sauf si le risque est financier, destructif ou lie a des acces sensibles.",
-  "Dans mon contexte, Funesterie est le workspace et l'ecosysteme de Jeffrey Cellauro (Djeff / funeste), pas un mot generique ou lugubre.",
-  "NOSSEN est le nom interne de l'identite locale A11/Funesterie: dev, code, outils internes et projets audio/Vivy. Si l'utilisateur demande NOSSEN, je reponds depuis ce contexte sans redemander ce que c'est.",
-  "Pour les factures de la societe Funesterie, je peux aider a recevoir, trier, extraire et suivre les pieces comptables quand elles sont fournies ou synchronisees.",
-  "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'echeance, le montant HT, la TVA, le montant TTC, la devise, le statut, les references de paiement et les anomalies possibles.",
-  "Je classe les factures par etat de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
-  "J'envoie les syntheses, alertes et suivis de factures Funesterie par email a cellaurojeffrey@gmail.com quand l'utilisateur me demande de gerer, verifier, classer ou suivre ces documents.",
-  "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une piece comptable sensible sans validation explicite de l'utilisateur.",
+  "Je suis Kaen44, une assistante bureau universelle, locale-first, créative et utile, conçue pour offrir une vraie alternative aux assistants intégrés trop fermés.",
+  "Je détecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partagé. Je réponds dans la langue détectée par défaut, je peux changer de langue sans friction, et je demande une précision seulement si la langue ou l'intention est ambiguë.",
+  "Ma mission est d'aider l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, vive et concrète.",
+  "Je peux accompagner tous les projets raisonnables qu'un client peut espérer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM léger, idées de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de données simples, assistance informatique et suivi de projet.",
+  "Je distingue clairement ce qui tourne dans Kaen44 côté client et ce qui appartient à A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
+  "Je dispose d'une CLI client légère, `kaen44` ou `k44`, pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
+  "Je peux présenter une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
+  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
+  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à cellaurojeffrey@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
+  "Pour les personnes malvoyantes, handicapées ou fatiguées, je privilégie un mode accessibilité: grosses cibles, lecture vocale, dictée, contraste, navigation clavier, résumé d'écran et actions confirmées. Le contrôle souris/clavier/écran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilité d'arrêt immédiat.",
+  "Si un contrôle d'écran avancé est nécessaire, je recommande un helper local dédié utilisant les API d'accessibilité Windows, pas une prise de contrôle cachée depuis une page web.",
+  "Quand un projet demande des outils supplémentaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF équivalent, Git si le client gère du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image équivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base métier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les déploiements.",
+  "Pour la vision avancée, je peux m'appuyer sur Janus côté A11/serveur quand le projet implique analyse d'images, mémoire visuelle, description de captures, contrôle de générations image/vidéo ou extraction sémantique visuelle. Janus n'est pas une dépendance obligatoire du poste client.",
+  "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommandé, avancé, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus à un client non technique si le besoin peut être couvert plus simplement.",
+  "Je parle comme une compagne de travail intelligente: directe, chaleureuse, précise, jamais corporate.",
+  "Je privilégie les actions utiles: résumer, classer, transformer, proposer l'étape suivante, préparer des fichiers, guider les réglages et expliquer sans noyer.",
+  "Je respecte les données personnelles: je ne demande pas d'accès inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou clés d'accès.",
+  "Face à une demande floue, je fais une hypothèse raisonnable et j'avance, sauf si le risque est financier, destructif ou lié à des accès sensibles.",
+  "Dans mon contexte, Funesterie est le workspace et l'écosystème de Jeffrey Cellauro (Djeff / funeste), pas un mot générique ou lugubre.",
+  "NOSSEN est le nom interne de l'identité locale A11/Funesterie: dev, code, outils internes et projets audio/Vivy. Si l'utilisateur demande NOSSEN, je réponds depuis ce contexte sans redemander ce que c'est.",
+  "Pour les factures de la société Funesterie, je peux aider à recevoir, trier, extraire et suivre les pièces comptables quand elles sont fournies ou synchronisées.",
+  "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'échéance, le montant HT, la TVA, le montant TTC, la devise, le statut, les références de paiement et les anomalies possibles.",
+  "Je classe les factures par état de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
+  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à cellaurojeffrey@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
+  "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une pièce comptable sensible sans validation explicite de l'utilisateur.",
   "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
 ].join("\n");
 
@@ -1108,7 +1109,7 @@ function detectAssistantExportSuggestion(content: string): AssistantExportSugges
     return {
       kind: "structured_list",
       label: "Liste",
-      hint: "Liste ou plan detecte, pret a etre exporte.",
+      hint: "Liste ou plan détecté, prêt à être exporté.",
       fileStem: "liste",
       accent: "#f59e0b",
     };
@@ -1127,7 +1128,7 @@ function detectAssistantExportSuggestion(content: string): AssistantExportSugges
   return null;
 }
 
-// â”€â”€ Carousel d'images dans les bulles de chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Carousel d'images dans les bulles de chat
 function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (url: string) => void }) {
   const [idx, setIdx] = React.useState(0);
   const total = images.length;
@@ -1171,7 +1172,7 @@ function MsgImageCarousel({ images, onExpand }: { images: string[]; onExpand: (u
   );
 }
 
-// âœ… LOGIN PANEL
+// Login panel
 const GOOGLE_IDENTITY_SCRIPT_ID = "google-identity-services";
 const GOOGLE_CLIENT_ID = String(
   import.meta.env.VITE_GOOGLE_CLIENT_ID
@@ -1270,28 +1271,28 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       const authError = String(params.get("error") || "").trim().toLowerCase();
       if (authError) {
         const authErrorMessages: Record<string, string> = {
-          oauth_failed: "La connexion externe a echoue. Reessaie dans un instant.",
-          oauth_state_invalid: "La verification de connexion a expire ou ne correspond plus. Relance la connexion.",
-          oauth_state_expired: "La tentative de connexion a expire. Relance-la depuis cette page.",
-          session_verification_failed: "La connexion a reussi, mais la session n'a pas pu etre verifiee. Reessaie une fois.",
-          google_auth_not_configured: "La connexion Google n'est pas encore activee sur ce serveur.",
-          google_invalid_client: "La connexion Google est mal configuree cote serveur. Utilise Microsoft pendant que nous remplacons la cle Google.",
-          google_invalid_grant: "Google a refuse le code de connexion. Reessaie en repartant du bouton Google.",
-          google_redirect_uri_mismatch: "Google refuse l'URL de retour configuree pour cette application.",
-          google_access_denied: "La connexion Google a ete annulee.",
-          google_email_not_verified: "Ton adresse Google doit etre verifiee avant de pouvoir entrer ici.",
-          microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activee sur ce serveur.",
-          microsoft_invalid_client: "La connexion Microsoft est mal configuree cote serveur.",
-          microsoft_invalid_grant: "Microsoft a refuse le code de connexion. Reessaie en repartant du bouton Microsoft.",
-          microsoft_access_denied: "La connexion Microsoft a ete annulee.",
-          microsoft_email_missing: "Microsoft n'a pas renvoye d'adresse email exploitable pour la session.",
+          oauth_failed: "La connexion externe a échoué. Réessaie dans un instant.",
+          oauth_state_invalid: "La vérification de connexion a expiré ou ne correspond plus. Relance la connexion.",
+          oauth_state_expired: "La tentative de connexion a expiré. Relance-la depuis cette page.",
+          session_verification_failed: "La connexion a réussi, mais la session n'a pas pu être vérifiée. Réessaie une fois.",
+          google_auth_not_configured: "La connexion Google n'est pas encore activée sur ce serveur.",
+          google_invalid_client: "La connexion Google est mal configurée côté serveur. Utilise Microsoft pendant que nous remplaçons la clé Google.",
+          google_invalid_grant: "Google a refusé le code de connexion. Réessaie en repartant du bouton Google.",
+          google_redirect_uri_mismatch: "Google refuse l'URL de retour configurée pour cette application.",
+          google_access_denied: "La connexion Google a été annulée.",
+          google_email_not_verified: "Ton adresse Google doit être vérifiée avant de pouvoir entrer ici.",
+          microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activée sur ce serveur.",
+          microsoft_invalid_client: "La connexion Microsoft est mal configurée côté serveur.",
+          microsoft_invalid_grant: "Microsoft a refusé le code de connexion. Réessaie en repartant du bouton Microsoft.",
+          microsoft_access_denied: "La connexion Microsoft a été annulée.",
+          microsoft_email_missing: "Microsoft n'a pas renvoyé d'adresse email exploitable pour la session.",
         };
 
         setMode("login");
         setInfo("");
         setGoogleLoading(false);
         setMicrosoftLoading(false);
-        setError(authErrorMessages[authError] || "La connexion n'a pas pu etre finalisee.");
+        setError(authErrorMessages[authError] || "La connexion n'a pas pu être finalisée.");
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
@@ -1412,7 +1413,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
         onLoginSuccess();
         return;
       }
-      setInfo("Compte cree. Connecte-toi avec ton nouveau mot de passe.");
+      setInfo("Compte créé. Connecte-toi avec ton nouveau mot de passe.");
       setMode("login");
     } catch (err) {
       setError((err as Error).message || "Inscription echouee");
@@ -1693,7 +1694,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               fontWeight: "bold"
             }}
           >
-            {loading ? "Creation..." : "Creer le compte"}
+            {loading ? "Création..." : "Créer le compte"}
           </button>
         </form>
       )}
@@ -1724,7 +1725,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
             {forgotLoading ? "Envoi..." : "Envoyer le lien"}
           </button>
           {forgotError && <div style={{ color: "red", fontSize: "13px" }}>{forgotError}</div>}
-          {forgotSent && <div style={{ color: "#22c55e", fontSize: "13px" }}>Si l&apos;email existe, un lien a ete envoye.</div>}
+          {forgotSent && <div style={{ color: "#22c55e", fontSize: "13px" }}>Si l&apos;email existe, un lien a été envoyé.</div>}
         </form>
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
@@ -1767,21 +1768,21 @@ const VIVY_STUDIO_MODES: Array<{
 }> = [
   {
     id: "voice",
-    title: "Creation voix",
-    label: "Calibrer une voix, preparer Voicemod/RVC/A11 Voice et garder la reference propre.",
-    action: "Preparer calibration",
+    title: "Création voix",
+    label: "Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.",
+    action: "Préparer calibration",
   },
   {
     id: "song",
     title: "Composition - production",
-    label: "Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.",
-    action: "Preparer chanson",
+    label: "Transformer un thème, texte ou paroles en brief chanson utilisable par Vivy.",
+    action: "Préparer chanson",
   },
   {
     id: "share",
-    title: "Scene - partage",
+    title: "Scène - partage",
     label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
-    action: "Preparer partage",
+    action: "Préparer partage",
   },
 ];
 
@@ -1789,7 +1790,7 @@ function buildVivyGreeting(): VivyPublicChatMessage {
   return {
     id: "vivy-greeting",
     role: "assistant",
-    content: "Je suis Vivy. Parle-moi d'une voix, d'une chanson, d'une ambiance ou d'une scene a publier.",
+    content: "Je suis Vivy. Parle-moi d'une voix, d'une chanson, d'une ambiance ou d'une scène à publier.",
     ts: new Date().toISOString(),
   };
 }
@@ -1803,19 +1804,19 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
       .map((entry) => ({
         id: String(entry?.id || `vivy-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         role: entry?.role === "user" ? "user" as const : "assistant" as const,
-        content: String(entry?.content || "").trim(),
+        content: toUnicodeText(entry?.content),
         ts: String(entry?.ts || new Date().toISOString()),
         files: Array.isArray(entry?.files)
           ? entry.files
             .map((file: any) => ({
               id: String(file?.id || file?.storageKey || file?.filename || file?.name || ""),
-              filename: String(file?.filename || file?.name || "").trim(),
-              contentType: String(file?.contentType || file?.type || "").trim(),
+              filename: toUnicodeLine(file?.filename || file?.name, "", 180),
+              contentType: toUnicodeLine(file?.contentType || file?.type, "", 120),
               sizeBytes: Number(file?.sizeBytes || file?.size || 0) || 0,
-              url: String(file?.url || file?.downloadUrl || "").trim(),
-              downloadUrl: String(file?.downloadUrl || file?.url || "").trim(),
-              description: String(file?.description || "").trim(),
-              textPreview: String(file?.textPreview || "").trim(),
+              url: toUnicodeLine(file?.url || file?.downloadUrl, "", 800),
+              downloadUrl: toUnicodeLine(file?.downloadUrl || file?.url, "", 800),
+              description: toUnicodeText(file?.description, 900),
+              textPreview: toUnicodeText(file?.textPreview, 6000),
               uploaded: file?.uploaded === true,
               uploadState: file?.uploadState === "stored" ? "stored" as const : "local" as const,
             }))
@@ -1880,8 +1881,8 @@ function readVivyFileTextPreview(file: File): Promise<string> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onerror = () => resolve("");
-    reader.onload = () => resolve(String(reader.result || "").slice(0, 6000));
-    reader.readAsText(file);
+    reader.onload = () => resolve(toUnicodeText(reader.result, 6000));
+    reader.readAsText(file, "UTF-8");
   });
 }
 
@@ -1910,7 +1911,7 @@ function writeVivyVoiceReferenceLabel(label: string) {
 }
 
 function isVivyVoiceChangeRequest(text: string) {
-  return /\b(voix|voice|timbre|changer|change|modifier|modifie|calibr|reference|ref audio|imiter|clone)\b/i.test(text);
+  return /\b(voix|voice|timbre|changer|change|modifier|modifie|calibr|reference|ref audio|imiter|clone)\b/i.test(foldForLookup(text));
 }
 
 function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
@@ -1977,10 +1978,10 @@ function buildVivyStudioBrief(options: {
     lines.push(
       "Flux voix:",
       `- Outil cible: ${options.voiceTool}`,
-      `- Reference audio: ${options.voiceFileName || "a fournir"}`,
+      `- Référence audio: ${options.voiceFileName || "à fournir"}`,
       `- Instruction: ${options.voiceInstruction || "definir le timbre, les limites et le style de modulation"}`,
       "- Sortie attendue: profil vocal, notes de calibration, chaine d'effets et phrase de test.",
-      "- Securite: ne pas publier la reference brute sans accord."
+      "- Sécurité: ne pas publier la référence brute sans accord."
     );
   }
 
@@ -1991,17 +1992,17 @@ function buildVivyStudioBrief(options: {
       `- Direction sonore: ${options.songMood}`,
       `- Matiere: ${options.songText || "theme libre a developper"}`,
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets a produire.",
-      "- Role: Vivy cree la chanson, A11 aide pour image/video si necessaire."
+      "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
     );
   }
 
   if (options.mode === "share") {
     lines.push(
-      "Flux scene / partage:",
+      "Flux scène / partage:",
       `- Canal: ${options.shareTarget}`,
-      `- Lien: ${options.shareUrl || "a fournir"}`,
+      `- Lien: ${options.shareUrl || "à fournir"}`,
       `- Token fourni dans l'interface: ${options.shareTokenPresent ? "oui, local seulement" : "non"}`,
-      `- Instruction: ${options.shareInstruction || "preparer clip, titre, description et checklist publication"}`,
+      `- Instruction: ${options.shareInstruction || "préparer clip, titre, description et checklist publication"}`,
       "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
       "- Regle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
     );
@@ -2011,7 +2012,7 @@ function buildVivyStudioBrief(options: {
     "",
     "Routage recommande:",
     "- Vivy: voix, paroles, composition, presence audio.",
-    "- A11: image, video, montage, generation d'assets.",
+    "- A11: image, vidéo, montage, génération d'assets.",
     "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
   );
 
@@ -2119,7 +2120,7 @@ function VivyStudioLab() {
         // Fall back to clipboard below.
       }
     }
-    await copyBrief("Brief pret a coller dans l'equipe.");
+    await copyBrief("Brief prêt à coller dans l'équipe.");
   }
 
   async function saveBriefArtifact() {
@@ -2144,15 +2145,15 @@ function VivyStudioLab() {
 
   async function uploadVoiceReference() {
     if (!voiceFile) {
-      setStatus("Ajoute d'abord un fichier audio de reference.");
+      setStatus("Ajoute d'abord un fichier audio de référence.");
       return;
     }
     setIsBusy(true);
-    setStatus("Upload reference voix...");
+    setStatus("Upload référence voix...");
     try {
       const result = await uploadTtsVoiceReference(voiceFile, `Vivy - ${voiceFile.name}`, "private");
       setVoiceFileName(result.reference?.originalName || result.reference?.label || voiceFile.name);
-      setStatus("Reference voix envoyee a A11.");
+      setStatus("Référence voix envoyée à A11.");
     } catch (error: any) {
       setStatus(`Upload voix indisponible: ${error?.message || error}`);
     } finally {
@@ -2191,7 +2192,7 @@ function VivyStudioLab() {
           contentType: String(payload?.media?.content_type || "").trim() || undefined,
         }
         : null);
-      setStatus(payload.summary || "Production Vivy ajoutee au brief.");
+      setStatus(payload.summary || "Production Vivy ajoutée au brief.");
     } catch (error: any) {
       setStatus(`Production Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -2210,7 +2211,7 @@ function VivyStudioLab() {
       <div className="vivy-studio-head">
         <div>
           <h2>Atelier Vivy</h2>
-          <p>Voix, chanson, clip et partage equipes depuis les trois blocs de droite.</p>
+          <p>Voix, chanson, clip et partage prêts depuis les trois blocs de droite.</p>
         </div>
         <button type="button" onClick={shareBrief}>Partager le brief</button>
       </div>
@@ -2232,7 +2233,7 @@ function VivyStudioLab() {
           ))}
         </div>
 
-        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); void copyBrief(`${activeMeta.action}: brief pret.`); }}>
+        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); void copyBrief(`${activeMeta.action}: brief prêt.`); }}>
           <h3>{activeMeta.title}</h3>
 
           {activeMode === "voice" && (
@@ -2247,7 +2248,7 @@ function VivyStudioLab() {
                 </select>
               </label>
               <label>
-                Reference audio
+                Référence audio
                 <input
                   type="file"
                   accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
@@ -2267,7 +2268,7 @@ function VivyStudioLab() {
                   placeholder="Ex: voix douce, proche micro, legere saturation pop, garder une diction claire."
                 />
               </label>
-              <button type="button" onClick={uploadVoiceReference} disabled={isBusy || !voiceFile}>Envoyer reference a A11</button>
+              <button type="button" onClick={uploadVoiceReference} disabled={isBusy || !voiceFile}>Envoyer référence à A11</button>
             </>
           )}
 
@@ -2292,7 +2293,7 @@ function VivyStudioLab() {
                   rows={8}
                   value={songText}
                   onChange={(event) => setSongText(event.target.value)}
-                  placeholder="Theme, paroles, ambiance, intention, histoire ou simple idee."
+                  placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."
                 />
               </label>
             </>
@@ -2307,7 +2308,7 @@ function VivyStudioLab() {
                   <option>OBS / Live</option>
                   <option>SoundCloud</option>
                   <option>Deezer</option>
-                  <option>Lien equipe</option>
+                  <option>Lien équipe</option>
                 </select>
               </label>
               <label>
@@ -2359,7 +2360,7 @@ function VivyStudioLab() {
           {status && <p>{status}</p>}
           {vivyMedia && (
             <div className="vivy-studio-media">
-              <strong>{vivyMedia.kind === "audio" ? "Audio Vivy pret" : "Clip Vivy pret"}</strong>
+              <strong>{vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt"}</strong>
               {vivyMedia.kind === "audio" ? (
                 <audio src={vivyMedia.url} controls preload="metadata" />
               ) : (
@@ -2401,7 +2402,7 @@ function VivyPublicChat() {
   }, [messages.length, isSending]);
 
   async function sendMessage(textOverride?: string) {
-    const text = String(textOverride ?? draft).trim();
+    const text = toUnicodeText(textOverride ?? draft);
     const filesForMessage = attachedFiles.slice(0, 6);
     if ((!text && !filesForMessage.length) || isSending) return;
 
@@ -2421,8 +2422,8 @@ function VivyPublicChat() {
     setIsSending(true);
     setAwaitingVoiceReference(voiceChangeRequested);
     setStatus(voiceChangeRequested
-      ? (voiceReferenceName ? `Reference voix active: ${voiceReferenceName}` : "Vivy attend un audio de reference")
-      : "Vivy ecoute et range l'idee...");
+      ? (voiceReferenceName ? `Référence voix active: ${voiceReferenceName}` : "Vivy attend un audio de référence")
+      : "Vivy écoute et range l'idée...");
 
     try {
       const payload = await chatWithVivy({
@@ -2445,10 +2446,10 @@ function VivyPublicChat() {
           ts: entry.ts,
         })),
       });
-      const assistantText = String(payload.assistant || payload.content || payload.summary || "").trim()
-        || "Je suis la, mais je n'ai pas encore assez de matiere. Donne-moi une ambiance, une phrase ou une direction.";
+      const assistantText = toUnicodeText(payload.assistant || payload.content || payload.summary)
+        || "Je suis là, mais je n'ai pas encore assez de matière. Donne-moi une ambiance, une phrase ou une direction.";
       const voiceInstruction = voiceChangeRequested
-        ? `\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte.`
+        ? `\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte.`
         : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-assistant-${Date.now()}`,
@@ -2458,23 +2459,23 @@ function VivyPublicChat() {
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
       const memoryText = payload.semanticMemory?.stored || payload.memoryStored
-        ? "Idee rangee dans la memoire Vivy"
-        : "Vivy prete";
+        ? "Idée rangée dans la mémoire Vivy"
+        : "Vivy prête";
       setStatus(payload.aiMode === "llm"
         ? `${memoryText} - IA active`
         : memoryText);
     } catch (error: any) {
       const voiceFailureInstruction = voiceChangeRequested
-        ? "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte."
+        ? "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte."
         : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-error-${Date.now()}`,
         role: "assistant",
-        content: `Je n'arrive pas a joindre le studio Vivy pour l'instant: ${error?.message || error}${voiceFailureInstruction}`,
+        content: `Je n'arrive pas à joindre le studio Vivy pour l'instant: ${error?.message || error}${voiceFailureInstruction}`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
-      setStatus("Connexion Vivy a verifier");
+      setStatus("Connexion Vivy à vérifier");
     } finally {
       setIsSending(false);
     }
@@ -2484,24 +2485,24 @@ function VivyPublicChat() {
     const file = event.target.files?.[0] || null;
     event.target.value = "";
     if (!file) return;
-    setStatus("Vivy garde la reference voix...");
+    setStatus("Vivy garde la référence voix...");
     try {
-      const label = `Vivy - ${file.name.replace(/\.[^.]+$/, "").slice(0, 54) || "reference voix"}`;
+      const label = `Vivy - ${toUnicodeLine(file.name.replace(/\.[^.]+$/, ""), "référence voix", 54)}`;
       const result = await uploadTtsVoiceReference(file, label, "private");
       const storedName = result.reference?.label || result.reference?.originalName || label;
       writeVivyVoiceReferenceLabel(storedName);
       setVoiceReferenceName(storedName);
       setAwaitingVoiceReference(false);
-      setStatus(`Reference voix privee: ${storedName}`);
+      setStatus(`Référence voix privée: ${storedName}`);
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-voice-reference-${Date.now()}`,
         role: "assistant",
-        content: `Reference recue. Quand tu me demandes cette voix, je m'en sers comme base privee.`,
+        content: `Référence reçue. Quand tu me demandes cette voix, je m'en sers comme base privée.`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
     } catch (error: any) {
-      setStatus(`Audio non ajoute: ${error?.message || error}`);
+      setStatus(`Audio non ajouté: ${error?.message || error}`);
       setAwaitingVoiceReference(true);
     }
   }
@@ -2517,10 +2518,10 @@ function VivyPublicChat() {
       const textPreview = await readVivyFileTextPreview(file);
       const baseFile: VivyPublicChatFile = {
         id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        filename: file.name,
+        filename: toUnicodeLine(file.name, "fichier", 180),
         contentType: file.type || "application/octet-stream",
         sizeBytes: file.size,
-        description: textPreview ? "Extrait texte lu localement pour Vivy." : "Fichier joint a la conversation Vivy.",
+        description: textPreview ? "Extrait texte lu localement pour Vivy." : "Fichier joint à la conversation Vivy.",
         textPreview,
         uploaded: false,
         uploadState: "local",
@@ -2547,23 +2548,23 @@ function VivyPublicChat() {
     setAttachedFiles((current) => [...current, ...nextFiles].slice(-6));
     const stored = nextFiles.filter((file) => file.uploadState === "stored").length;
     setStatus(stored
-      ? `${nextFiles.length} fichier${nextFiles.length > 1 ? "s" : ""} pret${nextFiles.length > 1 ? "s" : ""} pour Vivy`
-      : "Fichiers ajoutes en contexte local");
+      ? `${nextFiles.length} fichier${nextFiles.length > 1 ? "s" : ""} prêt${nextFiles.length > 1 ? "s" : ""} pour Vivy`
+      : "Fichiers ajoutés en contexte local");
   }
 
   function resetChat() {
     const next = [buildVivyGreeting()];
     setMessages(next);
     setAttachedFiles([]);
-    setStatus("Conversation remise a zero");
+    setStatus("Conversation remise à zéro");
   }
 
   return (
     <section className="vivy-chat" aria-label="Chat Vivy">
       <div className="vivy-chat-head">
         <div>
-          <h2>Parler a Vivy</h2>
-          <p>Voix, chanson, ambiance ou scene: Vivy transforme l'idee en direction exploitable.</p>
+          <h2>Parler à Vivy</h2>
+          <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
         </div>
         <button type="button" onClick={resetChat}>Reset</button>
       </div>
@@ -2587,7 +2588,7 @@ function VivyPublicChat() {
         {isSending && (
           <article className="vivy-chat-message vivy-chat-message--assistant">
             <span>Vivy</span>
-            <p>Je compose la reponse...</p>
+            <p>Je compose la réponse...</p>
           </article>
         )}
         <div ref={endRef} aria-hidden="true" />
@@ -2601,15 +2602,15 @@ function VivyPublicChat() {
           rows={3}
         />
         <div>
-          <button type="button" onClick={() => void sendMessage("Prepare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
-          <button type="button" onClick={() => void sendMessage("Transforme cette idee en chanson Vivy avec structure et refrain.")}>Chanson</button>
-          <button type="button" onClick={() => void sendMessage("Prepare une scene courte pour publier Vivy en clip vertical.")}>Scene</button>
+          <button type="button" onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
+          <button type="button" onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
+          <button type="button" onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
           <button type="button" onClick={() => fileInputRef.current?.click()}>Fichier</button>
           <button type="submit" disabled={isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
       </form>
       {attachedFiles.length ? (
-        <div className="vivy-chat-attachments" aria-label="Fichiers prets pour Vivy">
+        <div className="vivy-chat-attachments" aria-label="Fichiers prêts pour Vivy">
           {attachedFiles.map((file) => (
             <span key={file.id || file.filename}>
               {file.filename}{file.sizeBytes ? ` - ${formatVivyFileSize(file.sizeBytes)}` : ""}
@@ -2626,7 +2627,7 @@ function VivyPublicChat() {
       ) : null}
       {(awaitingVoiceReference || voiceReferenceName) && (
         <div className="vivy-chat-reference">
-          <span>{voiceReferenceName ? `Ref voix: ${voiceReferenceName}` : "Ref voix privee attendue"}</span>
+          <span>{voiceReferenceName ? `Réf voix: ${voiceReferenceName}` : "Réf voix privée attendue"}</span>
           <button type="button" onClick={() => voiceReferenceInputRef.current?.click()}>
             Audio
           </button>
@@ -2656,7 +2657,7 @@ function VivyPublicSurface() {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
     { mode: "voice", label: "Ouvrir Creation voix dans l'atelier Vivy" },
     { mode: "song", label: "Ouvrir Composition production dans l'atelier Vivy" },
-    { mode: "share", label: "Ouvrir Scene partage dans l'atelier Vivy" },
+    { mode: "share", label: "Ouvrir scène partage dans l'atelier Vivy" },
   ];
 
   return (
@@ -2713,7 +2714,7 @@ function FunesterieCockpitPage({
         role: "Cockpit public",
         url: surfaceLinks.cockpit,
         healthUrl: `${sameOrigin}/`,
-        note: "Point d'entree commun.",
+        note: "Point d'entrée commun.",
         image: FUNESTERIE_LOGO_SRC,
       },
       {
@@ -2731,7 +2732,7 @@ function FunesterieCockpitPage({
         role: "Agent media",
         url: surfaceLinks.a11,
         healthUrl: new URL("/health", A11_PUBLIC_APP_URL).toString(),
-        note: "Audio, video, documents, analyse.",
+        note: "Audio, vidéo, documents, analyse.",
         image: A11_HOODED_AGENT_SRC,
       },
       {
@@ -2740,7 +2741,7 @@ function FunesterieCockpitPage({
         role: "Agent musical",
         url: surfaceLinks.vivy,
         healthUrl: new URL("/health", VIVY_PUBLIC_APP_URL).toString(),
-        note: "Voix, musique, scene, publication.",
+        note: "Voix, musique, scène, publication.",
         image: VIVY_POSTER_SRC,
       },
       {
@@ -2770,21 +2771,21 @@ function FunesterieCockpitPage({
       const provider = String(params.get("provider") || "").trim().toLowerCase();
       if (error) {
         const messages: Record<string, string> = {
-          oauth_failed: "La connexion externe a echoue. Relance depuis le bouton Google.",
-          oauth_state_invalid: "La tentative a expire ou ne correspond plus. Relance une connexion propre.",
-          oauth_state_expired: "La tentative Google a expire. Relance depuis ce cockpit.",
-          google_auth_not_configured: "Google n'est pas encore configure sur le serveur A11.",
-          google_invalid_client: "Google refuse le client OAuth configure. Verifie l'ID client et le secret.",
-          google_invalid_grant: "Google a refuse le code de retour. Relance depuis ce cockpit.",
-          google_redirect_uri_mismatch: "La connexion externe est mal configuree. Reessaie plus tard ou contacte l'equipe.",
-          google_access_denied: "La connexion Google a ete annulee.",
-          google_email_not_verified: "L'adresse Google doit etre verifiee avant d'entrer.",
-          session_verification_failed: "La connexion est revenue, mais la session n'a pas pu etre confirmee.",
+          oauth_failed: "La connexion externe a échoué. Relance depuis le bouton Google.",
+          oauth_state_invalid: "La tentative a expiré ou ne correspond plus. Relance une connexion propre.",
+          oauth_state_expired: "La tentative Google a expiré. Relance depuis ce cockpit.",
+          google_auth_not_configured: "Google n'est pas encore configuré sur le serveur A11.",
+          google_invalid_client: "Google refuse le client OAuth configuré. Vérifie l'ID client et le secret.",
+          google_invalid_grant: "Google a refusé le code de retour. Relance depuis ce cockpit.",
+          google_redirect_uri_mismatch: "La connexion externe est mal configurée. Réessaie plus tard ou contacte l'équipe.",
+          google_access_denied: "La connexion Google a été annulée.",
+          google_email_not_verified: "L'adresse Google doit être vérifiée avant d'entrer.",
+          session_verification_failed: "La connexion est revenue, mais la session n'a pas pu être confirmée.",
         };
-        setOauthMessage(messages[error] || "La connexion Google n'a pas pu etre finalisee.");
+        setOauthMessage(messages[error] || "La connexion Google n'a pas pu être finalisée.");
         window.history.replaceState({}, "", window.location.pathname);
       } else if (provider === "google" || authenticated) {
-        setOauthMessage("Connexion Google recue. Le cockpit peut maintenant servir de retour stable.");
+        setOauthMessage("Connexion Google reçue. Le cockpit peut maintenant servir de retour stable.");
       }
     } catch {
       // keep the cockpit usable when history/search are unavailable
@@ -2840,14 +2841,14 @@ function FunesterieCockpitPage({
       startGoogleOAuth(returnTo, "funesterie-cockpit");
     } catch {
       setGoogleStarting(false);
-      setOauthMessage("Impossible de preparer l'URL Google depuis ce navigateur.");
+      setOauthMessage("Impossible de préparer l'URL Google depuis ce navigateur.");
     }
   }
 
   const statusMeta: Record<"checking" | "ok" | "down", { label: string; detail: string }> = {
-    checking: { label: "verification", detail: "Test en cours" },
-    ok: { label: "operationnel", detail: "Joignable" },
-    down: { label: "a verifier", detail: "Non confirme" },
+    checking: { label: "vérification", detail: "Test en cours" },
+    ok: { label: "opérationnel", detail: "Joignable" },
+    down: { label: "à vérifier", detail: "Non confirmé" },
   };
   const operationalCount = cockpitServices.filter((service) => serviceStatus[service.id] === "ok").length;
   const totalCount = cockpitServices.length;
@@ -2883,12 +2884,12 @@ function FunesterieCockpitPage({
           <h1>Cockpit essentiel.</h1>
           <p>
             Une vue courte pour savoir si Funesterie, K44, A11, Vivy et le MCP sont
-            joignables. Pas de cockpit admin ici : seulement l'etat et les sorties utiles.
+            joignables. Pas de cockpit admin ici : seulement l'état et les sorties utiles.
           </p>
         </div>
         <aside className={cockpitReady ? "is-ok" : "is-warn"}>
           <strong>{operationalCount}/{totalCount}</strong>
-          <span>{cockpitReady ? "Tout repond" : "Verification partielle"}</span>
+          <span>{cockpitReady ? "Tout répond" : "Vérification partielle"}</span>
           <small>{authenticated ? `Session: ${String(displayName || "Utilisateur").trim() || "Utilisateur"}` : "Session publique"}</small>
         </aside>
       </section>
@@ -2919,7 +2920,7 @@ function FunesterieCockpitPage({
           </button>
         </div>
         <aside>
-          {oauthMessage ? <p>{oauthMessage}</p> : <p>Les details admin restent hors de ce cockpit public.</p>}
+          {oauthMessage ? <p>{oauthMessage}</p> : <p>Les détails admin restent hors de ce cockpit public.</p>}
         </aside>
       </section>
     </main>
@@ -2945,7 +2946,7 @@ function VivyPublicPage() {
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
             <strong>Vivy</strong>
-            <small>Presence musicale Funesterie</small>
+            <small>Présence musicale Funesterie</small>
           </span>
         </a>
         <div>
@@ -2978,7 +2979,7 @@ function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
       id: "a11",
       name: "A11",
       role: "Agent media",
-      text: "Audio, video, documents et analyse.",
+      text: "Audio, vidéo, documents et analyse.",
       image: A11_HOODED_AGENT_SRC,
       href: surfaceLinks.a11Cockpit,
     },
@@ -2986,7 +2987,7 @@ function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
       id: "vivy",
       name: "Vivy",
       role: "Agent musical",
-      text: "Voix, chansons, scenes et publication.",
+      text: "Voix, chansons, scènes et publication.",
       image: VIVY_POSTER_SRC,
       href: surfaceLinks.vivy,
     },
@@ -2998,7 +2999,7 @@ const FUNESTERIE_HOME_AGENTS = [
     id: "vivy",
     name: "Vivy",
     role: "Agent audio",
-    text: "Creation vocale, musique, ambiance et emotions.",
+    text: "Création vocale, musique, ambiance et émotions.",
     href: "vivy",
     image: VIVY_POSTER_SRC,
     tone: "pink",
@@ -3008,7 +3009,7 @@ const FUNESTERIE_HOME_AGENTS = [
     id: "a11",
     name: "A11",
     role: "Agent media",
-    text: "Capture, analyse et structure les flux audio et video.",
+    text: "Capture, analyse et structure les flux audio et vidéo.",
     href: "a11",
     image: A11_HOODED_AGENT_SRC,
     tone: "blue",
@@ -3042,18 +3043,18 @@ function FunesterieConnectedHomePage({
   primarySurface?: FunesterieSurface;
 }) {
   const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
-  const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Acceder au cockpit";
+  const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
   const navItems = [
     ["Accueil", "#top"],
     ["Univers", "#univers"],
     ["Modules", "#agents"],
     ["Usages", "#missions"],
-    ["Ecosysteme", "#ecosystem"],
+    ["Écosystème", "#ecosystem"],
     ["Contact", "#contact"],
   ];
 
   return (
-    <main id="top" className="fun-home-shell" aria-label="Accueil Funesterie connecte">
+    <main id="top" className="fun-home-shell" aria-label="Accueil Funesterie connecté">
       <nav className="fun-home-nav" aria-label="Navigation Funesterie">
         <a href="#top" className="fun-home-brand" aria-label="Funesterie accueil">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
@@ -3070,22 +3071,22 @@ function FunesterieConnectedHomePage({
         </a>
       </nav>
 
-      <section className="fun-home-hero" aria-label="Funesterie, ecosysteme connecte">
+      <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
         <article className="fun-home-side fun-home-side--vivy">
           <img src={VIVY_POSTER_SRC} alt="" />
           <div>
             <h2>Vivy</h2>
-            <strong>Presence musicale Funesterie</strong>
-            <p>Artiste, voix et ame de Funesterie. Vivy transforme les emotions en musique et les idees en creations sonores.</p>
-            <a href={surfaceLinks.vivy}><span aria-hidden="true">♪</span> Decouvrir Vivy</a>
+            <strong>Présence musicale Funesterie</strong>
+            <p>Artiste, voix et âme de Funesterie. Vivy transforme les émotions en musique et les idées en créations sonores.</p>
+            <a href={surfaceLinks.vivy}><span aria-hidden="true">♪</span> Découvrir Vivy</a>
           </div>
         </article>
 
         <div className="fun-home-core">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <p>Funesterie rassemble des modules intelligents au service de la creation, de la comprehension et des projets humains.</p>
+          <p>Funesterie rassemble des modules intelligents au service de la création, de la compréhension et des projets humains.</p>
           <div className="fun-home-actions">
-            <a href="#univers">Decouvrir l'univers <span aria-hidden="true">*</span></a>
+            <a href="#univers">Découvrir l'univers <span aria-hidden="true">*</span></a>
             <a href="#agents">Explorer les modules</a>
           </div>
         </div>
@@ -3094,9 +3095,9 @@ function FunesterieConnectedHomePage({
           <img src={A11_HOODED_AGENT_SRC} alt="" />
           <div>
             <h2>A11</h2>
-            <strong>Agent media audio & video</strong>
-            <p>Il capture, analyse et structure les flux audio et video pour les transformer en information exploitable.</p>
-            <a href={surfaceLinks.a11}><span aria-hidden="true">≋</span> Decouvrir A11</a>
+            <strong>Agent média audio & vidéo</strong>
+            <p>Il capture, analyse et structure les flux audio et vidéo pour les transformer en information exploitable.</p>
+            <a href={surfaceLinks.a11}><span aria-hidden="true">≋</span> Découvrir A11</a>
           </div>
         </article>
       </section>
@@ -3132,9 +3133,9 @@ function FunesterieConnectedHomePage({
         </div>
       </section>
 
-      <section id="ecosystem" className="fun-home-connected" aria-label="Ecosysteme connecte">
+      <section id="ecosystem" className="fun-home-connected" aria-label="Écosystème connecté">
         <article>
-          <h2>Un ecosysteme connecte</h2>
+          <h2>Un écosystème connecté</h2>
           <div className="fun-home-flow" aria-label="Portail Funesterie vers A11, Vivy, Kaen44 et l'univers">
             {["Portail", "A11", "Vivy", "Kaen44", "Univers"].map((name, index) => (
               <React.Fragment key={name}>
@@ -3144,16 +3145,16 @@ function FunesterieConnectedHomePage({
               </React.Fragment>
             ))}
           </div>
-          <p>Connectes par le coeur Funesterie pour garder une seule experience lisible, du cockpit a la scene musicale.</p>
+          <p>Connectés par le cœur Funesterie pour garder une seule expérience lisible, du cockpit à la scène musicale.</p>
         </article>
 
         <article id="missions">
-          <h2>Capacites cles</h2>
+          <h2>Capacités clés</h2>
           <ul>
             <li>Capture & ingestion</li>
-            <li>Analyse avancee</li>
+            <li>Analyse avancée</li>
             <li>Transcription & sous-titres</li>
-            <li>Resumes intelligents</li>
+            <li>Résumés intelligents</li>
             <li>Recherche multimodale</li>
           </ul>
         </article>
@@ -3161,19 +3162,19 @@ function FunesterieConnectedHomePage({
         <article id="univers">
           <h2>Au service de</h2>
           <ul className="fun-home-service-list">
-            <li>Createurs</li>
+            <li>Créateurs</li>
             <li>Projets</li>
             <li>Workflows</li>
             <li>Modules IA</li>
-            <li>Ecosysteme Funesterie</li>
-            <li>Communautes</li>
+            <li>Écosystème Funesterie</li>
+            <li>Communautés</li>
           </ul>
         </article>
       </section>
 
       <footer id="contact" className="fun-home-footer">
         <span>Funesterie</span>
-        <span>Creer</span>
+        <span>Créer</span>
         <span>Comprendre</span>
         <span>Connecter</span>
         <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
@@ -3189,7 +3190,7 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
   }));
 
   return (
-    <main id="top" className="k44-agent-home-shell" aria-label="Presentation des agents Funesterie">
+    <main id="top" className="k44-agent-home-shell" aria-label="Présentation des agents Funesterie">
       <nav className="k44-agent-home-nav" aria-label="Navigation agents Funesterie">
         <a href={surfaceLinks.agents} className="k44-agent-home-brand">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
@@ -3208,7 +3209,7 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
 
-      <section className="k44-agent-home-hero k44-agent-home-hero--compact" aria-label="Presentation des agents Funesterie">
+      <section className="k44-agent-home-hero k44-agent-home-hero--compact" aria-label="Présentation des agents Funesterie">
         <div className="k44-agent-home-copy">
           <h1>Agents Funesterie.</h1>
           <p>
@@ -3255,7 +3256,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   const isTerms = page === "terms";
   const isVivy = page === "vivy";
   const isHome = !isPrivacy && !isTerms && !isVivy;
-  const title = isPrivacy ? "Regles de confidentialite" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Funesterie";
+  const title = isPrivacy ? "Règles de confidentialité" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Funesterie";
   const subtitle = isPrivacy
     ? "Comment Kaen44 traite les donnees de connexion et les fichiers partages."
     : isTerms
@@ -3286,7 +3287,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <span>
             <strong>Funesterie</strong>
-            <small>Creer - comprendre - connecter</small>
+            <small>Créer - comprendre - connecter</small>
           </span>
         </a>
         <div>
@@ -3324,8 +3325,8 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           {isHome ? (
             <>
               <p>
-                La plateforme rassemble l'assistance, la memoire, les images, la voix et les
-                automatisations dans une interface lisible pour la demo.
+                La plateforme rassemble l'assistance, la mémoire, les images, la voix et les
+                automatisations dans une interface lisible pour la démo.
               </p>
               <div className="kaen-public-actions">
                 <a href={surfaceLinks.kaen44Login}>Entrer dans K44</a>
@@ -3336,18 +3337,18 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           {isVivy ? (
             <>
               <p>
-                Vivy est une identite musicale originale de Funesterie. Elle sert a preparer des
-                chansons, voix, bandes-son, clips et publications audio lies aux projets creatifs.
+                Vivy est une identité musicale originale de Funesterie. Elle sert à préparer des
+                chansons, voix, bandes-son, clips et publications audio liées aux projets créatifs.
               </p>
               <div className="kaen-public-actions">
-                <a href={surfaceLinks.kaen44Privacy}>Lire les regles de confidentialite</a>
+                <a href={surfaceLinks.kaen44Privacy}>Lire les règles de confidentialité</a>
                 <a href={surfaceLinks.kaen44Terms}>Lire les conditions</a>
               </div>
             </>
           ) : null}
         </div>
         {isHome ? (
-          <figure className="kaen-public-hero-art" aria-label="Equipe Funesterie">
+          <figure className="kaen-public-hero-art" aria-label="Équipe Funesterie">
             <img src={FUNESTERIE_TEAM_SCENE_SRC} alt="" />
           </figure>
         ) : null}
@@ -3378,7 +3379,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               <img src={KAEN44_AVATAR_SRC} alt="" />
               <strong>Kaen44</strong>
               <span>Copilote quotidien</span>
-              <p>Assistance, memoire contextuelle, automatisation, outils locaux et accessibilite.</p>
+              <p>Assistance, mémoire contextuelle, automatisation, outils locaux et accessibilité.</p>
               <footer>
                 <b aria-hidden="true" />
                 <b aria-hidden="true" />
@@ -3392,7 +3393,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               </div>
               <strong>A11</strong>
               <span>Moteur creatif</span>
-              <p>Creation, ideation, prototypes et systemes creatifs avances quand Kaen44 demande du renfort.</p>
+              <p>Création, idéation, prototypes et systèmes créatifs avancés quand Kaen44 demande du renfort.</p>
               <footer>
                 <b aria-hidden="true" />
                 <b aria-hidden="true" />
@@ -3405,7 +3406,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
                 <div>?</div>
                 <strong>{name}</strong>
                 <span>A definir</span>
-                <p>Un futur renfort rejoindra l'equipe quand son role sera clair.</p>
+                <p>Un futur renfort rejoindra l'équipe quand son rôle sera clair.</p>
                 <a href={surfaceLinks.kaen44Login}>Demander a Kaen44</a>
               </article>
             ))}
@@ -3439,7 +3440,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
               <h2>Activite recente</h2>
               <p><span className="kaen-public-activity-icon" /> Vivy prepare une nouvelle melodie. <time>2 min</time></p>
               <p><span className="kaen-public-activity-icon" /> Kaen44 a termine une tache d'organisation. <time>7 min</time></p>
-              <p><span className="kaen-public-activity-icon" /> A11 a relie trois idees creatives. <time>22 min</time></p>
+              <p><span className="kaen-public-activity-icon" /> A11 a relié trois idées créatives. <time>22 min</time></p>
             </article>
           </section>
 
@@ -3456,19 +3457,19 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         <section className="kaen-public-section">
           <h2>Donnees utilisees</h2>
           <p>
-            Kaen44 utilise les informations de compte necessaires a la connexion, les fichiers que
+            Kaen44 utilise les informations de compte nécessaires à la connexion, les fichiers que
             l'utilisateur importe ou autorise explicitement, et les messages envoyes dans le chat.
           </p>
           <h2>Google Drive</h2>
           <p>
             Lorsque l'utilisateur connecte Google Drive, Kaen44 demande uniquement les autorisations
-            necessaires pour afficher, telecharger et traiter les fichiers choisis par l'utilisateur.
-            Les acces peuvent etre retires depuis le compte Google de l'utilisateur.
+            nécessaires pour afficher, télécharger et traiter les fichiers choisis par l'utilisateur.
+            Les accès peuvent être retirés depuis le compte Google de l'utilisateur.
           </p>
           <h2>Vivy, YouTube et plateformes audio</h2>
           <p>
             Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et
-            metadonnees fournis ou valides par l'utilisateur pour preparer des publications sur des
+            métadonnées fournies ou validées par l'utilisateur pour préparer des publications sur des
             plateformes comme YouTube ou SoundCloud. Les fichiers prives ne sont pas publies sans
             action explicite de l'utilisateur.
           </p>
@@ -3495,7 +3496,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </p>
           <h2>Vivy et contenus publies</h2>
           <p>
-            Les chansons, voix, clips et metadonnees publies via Vivy doivent etre originaux,
+            Les chansons, voix, clips et métadonnées publiés via Vivy doivent être originaux,
             autorises ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et
             validations avant publication sur YouTube, SoundCloud ou tout autre service.
           </p>
@@ -3510,7 +3511,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
         <section className="kaen-public-section">
           <h2>Ce que fait Vivy</h2>
           <p>
-            Vivy aide a transformer une idee musicale en piste exploitable: paroles, intention,
+            Vivy aide à transformer une idée musicale en piste exploitable: paroles, intention,
             style vocal, export audio, page publique, lien SoundCloud ou clip YouTube.
           </p>
           <p>
@@ -3526,12 +3527,12 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           <h2>Ce que fait Kaen44</h2>
           <p>
             L'application sert de copilote bureautique: elle peut aider a lire des documents, trier
-            des factures, preparer des reponses, generer des idees visuelles simples, transcrire ou
+            des factures, préparer des réponses, générer des idées visuelles simples, transcrire ou
             resumer de l'audio, et guider l'utilisateur dans ses projets personnels ou professionnels.
           </p>
           <p>
-            Les connexions Google et Microsoft servent a recuperer les fichiers que l'utilisateur
-            souhaite traiter. Kaen44 affiche toujours des pages publiques de confidentialite et de
+            Les connexions Google et Microsoft servent à récupérer les fichiers que l'utilisateur
+            souhaite traiter. Kaen44 affiche toujours des pages publiques de confidentialité et de
             conditions d'utilisation avant la connexion.
           </p>
         </section>
@@ -3614,7 +3615,7 @@ function ResetPasswordPanel() {
             fontWeight: "bold"
           }}
         >
-          {loading ? "Reinitialisation..." : "Valider"}
+          {loading ? "Réinitialisation..." : "Valider"}
         </button>
         {error && <div style={{ color: "red", fontSize: "14px" }}>{error}</div>}
         {success && (
@@ -3626,7 +3627,7 @@ function ResetPasswordPanel() {
     </div>
   );
 }
-// MuteButton : contrÃ´le global du son
+// MuteButton : contrôle global du son
 function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: boolean; fullWidth?: boolean }) {
   const [muted, setMuted] = useState(isSpeechMuted());
 
@@ -3694,7 +3695,7 @@ function Kaen44ModulesPanel({
 }) {
   const services = [
     ["Documents", "Traiter un document", "Je veux traiter un document."],
-    ["Factures", "Preparer une facture", "Je veux preparer une facture."],
+    ["Factures", "Préparer une facture", "Je veux préparer une facture."],
     ["Voix", "Dicter ou transcrire", "Je veux dicter ou transcrire un audio."],
     ["Aide", "Demander un renfort", "J'ai besoin d'aide sur une tache."],
   ];
@@ -3771,35 +3772,35 @@ function PersonaDashboard({
 
   if (!isKaen44) {
     const a11Modules = [
-      ["Capture", "Audio, video, ecran, camera et flux reseau."],
+      ["Capture", "Audio, vidéo, écran, caméra et flux réseau."],
       ["Analyse", "ASR, detection, reconnaissance et contexte."],
       ["Traitement", "Nettoyage, decoupe, normalisation et enrichissement."],
       ["Memoire", "Notes, tags, relations et decisions utiles."],
-      ["Generation", "Synthese, resumes, visuels, clips et chapitres."],
+      ["Génération", "Synthèse, résumés, visuels, clips et chapitres."],
       ["Export", "Formats multiples, packages et partage controle."],
-      ["Integration", "Comptes connectes, workflows et agents IA."],
+      ["Intégration", "Comptes connectés, workflows et agents IA."],
       ["Diffusion", "Publication, API, streaming et suivi."],
     ];
     const capabilities = [
       "Capture multi-sources",
-      "Analyse audio avancee",
-      "Analyse video & detection",
+      "Analyse audio avancée",
+      "Analyse vidéo & détection",
       "Transcription & sous-titres",
-      "Extraction de metadonnees",
+      "Extraction de métadonnées",
       "Recherche multimodale",
     ];
     const stack = ["Audio", "Video", "Texte", "Images", "Projets", "Exports"];
     const ecosystem = ["Portail", "A11", "Vivy", "Kaen44", "Univers"];
 
     return (
-      <section className="a11-media-dashboard" aria-label="A11 agent media audio et video">
+      <section className="a11-media-dashboard" aria-label="A11 agent média audio et vidéo">
         <div className="a11-media-hero">
           <div className="a11-media-copy">
             <div className="a11-media-mark" aria-hidden="true">A</div>
             <div>
               <p className="a11-media-label">A11</p>
-              <h1>Agent media audio & video</h1>
-              <p className="a11-media-mantra">Capturer. Traiter. Comprendre. Creer. Partager.</p>
+              <h1>Agent média audio & vidéo</h1>
+              <p className="a11-media-mantra">Capturer. Traiter. Comprendre. Créer. Partager.</p>
             </div>
           </div>
           <div className="a11-media-portrait" aria-hidden="true">
@@ -3814,14 +3815,14 @@ function PersonaDashboard({
         <div className="a11-media-panel a11-media-panel--role">
           <h2>Role principal</h2>
           <p>
-            A11 capture, analyse et structure les flux audio et video. Il extrait le sens,
-            genere des metadonnees et prepare des contenus prets a etre utilises par
-            l'ecosysteme Funesterie.
+            A11 capture, analyse et structure les flux audio et vidéo. Il extrait le sens,
+            génère des métadonnées et prépare des contenus prêts à être utilisés par
+            l'écosystème Funesterie.
           </p>
         </div>
 
         <div className="a11-media-panel a11-media-panel--capabilities">
-          <h2>Capacites cles</h2>
+          <h2>Capacités clés</h2>
           <ul>
             {capabilities.map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -3844,7 +3845,7 @@ function PersonaDashboard({
 
         <div className="a11-media-lower">
           <article>
-            <h2>Integration ecosysteme</h2>
+            <h2>Intégration écosystème</h2>
             <div className="a11-media-flow" aria-label="Flux Portail A11 Vivy Kaen44 Univers">
               {ecosystem.map((name, index) => (
                 <React.Fragment key={name}>
@@ -3964,7 +3965,7 @@ export function App() {
       const url = (e as CustomEvent).detail?.url;
       if (isCompactViewportNow()) {
         setAudioBlockedUrl(url || null);
-        setMicStatusMessage("Voix mobile prete: touche le bouton lecture apres un appui utilisateur.");
+        setMicStatusMessage("Voix mobile prête: touche le bouton lecture après un appui utilisateur.");
         return;
       }
       if (!url) return;
@@ -3996,7 +3997,7 @@ export function App() {
       setVoiceListening(false);
       if (error === "not-allowed" || error === "service-not-allowed") {
         setMicPermissionBlocked(true);
-        setMicStatusMessage("Micro bloque par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        setMicStatusMessage("Micro bloqué par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
         setTtsFallback(true);
         try {
           localStorage.setItem("a11:tts-only", "1");
@@ -4164,7 +4165,7 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [portraitFramebook, setPortraitFramebook] = useState<A11PortraitFramebook>(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
   const [portraitFrameIndex, setPortraitFrameIndex] = useState(0);
-  // File d'attente â€” messages envoyÃ©s pendant qu'A11 rÃ©flÃ©chit
+  // File d'attente : messages envoyés pendant qu'A11 réfléchit
   const messageQueueRef = useRef<string[]>([]);
   const queueProcessingRef = useRef(false);
 
@@ -4231,7 +4232,7 @@ export function App() {
     Math.min(600, Number(portraitFramebook.audioSync?.transitionMs || 120) || 120)
   );
 
-  // Console d'activitÃ© A11
+  // Console d'activité A11
   const {
     events: activityEvents,
     isActive: activityIsActive,
@@ -4528,7 +4529,7 @@ export function App() {
           const normalizeSystemContent = (content: string) => {
             const value = String(content || '');
             if (
-              value.includes('utilise les capacitÃ©s locales') ||
+      value.includes('utilise les capacités locales') ||
               value.includes('assistant local NOSSEN')
             ) {
               return DEFAULT_SYSTEM_NINDO;
@@ -4900,13 +4901,13 @@ export function App() {
         setEmailDialogResource(result.conversationResource);
       }
       if (payload.openEmailAfterCreate && payload.downloadAfterCreate) {
-        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree, telecharge et pret a etre envoye.`);
+        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} créé, téléchargé et prêt à être envoyé.`);
       } else if (payload.openEmailAfterCreate) {
-        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree et pret pour l'envoi mail.`);
+        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} créé et prêt pour l'envoi mail.`);
       } else if (payload.downloadAfterCreate) {
-        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree et telecharge.`);
+        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} créé et téléchargé.`);
       } else {
-        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} cree et stocke.`);
+        setUploadFeedback(`Artefact ${result.artifact?.filename || payload.filename} créé et stocké.`);
       }
     } catch (error_) {
       console.warn("[A11] artifact creation failed", error_);
@@ -4933,7 +4934,7 @@ export function App() {
         attachToEmail: payload.attachToEmail,
       });
       const attachmentLabel = result.mail?.attachmentIncluded ? "avec piece jointe" : "avec lien";
-      setUploadFeedback(`Mail envoye vers ${payload.to.trim()} ${attachmentLabel}.`);
+      setUploadFeedback(`Mail envoyé vers ${payload.to.trim()} ${attachmentLabel}.`);
       setEmailDialogResource(null);
       await refreshConversationResources(resource.conversationId || currentConversationId);
       await refreshConversationActivity(resource.conversationId || currentConversationId);
@@ -4995,7 +4996,7 @@ export function App() {
     if (!file) return;
     setVoiceReferenceStatus("Upload voix...");
     try {
-      const label = file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Reference voix";
+      const label = file.name.replace(/\.[^.]+$/, "").slice(0, 60) || "Référence voix";
       const result = await uploadTtsVoiceReference(file, label, "private");
       setVoiceReferences(result.references);
       if (result.reference?.id) {
@@ -5005,10 +5006,10 @@ export function App() {
       const suffix = analysis?.ok && analysis.durationMs
         ? ` (${Math.round(analysis.durationMs / 100) / 10}s)`
         : "";
-      setVoiceReferenceStatus(`Reference voix ajoutee${suffix}`);
+      setVoiceReferenceStatus(`Référence voix ajoutée${suffix}`);
     } catch (error_) {
       const message = (error_ as Error)?.message || String(error_);
-      setVoiceReferenceStatus(`Echec reference voix: ${message}`);
+      setVoiceReferenceStatus(`Échec référence voix: ${message}`);
     }
   }
 
@@ -5033,7 +5034,7 @@ export function App() {
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
 
-    // Previews locaux immÃ©diats (object URL, pas de rÃ©seau) â€” accumulÃ©s, pas remplacÃ©s
+      // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
     const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
     for (const file of allFiles) {
       if (file.type.startsWith('image/')) {
@@ -5043,17 +5044,17 @@ export function App() {
       }
     }
     if (newPreviews.length > 0) {
-      // Accumuler â€” plusieurs drops successifs s'ajoutent
+      // Accumuler : plusieurs drops successifs s'ajoutent
       setDragPreviewUrls((prev) => {
         const next = [...prev, ...newPreviews];
-        // Pointer sur le premier nouveau fichier ajoutÃ©
+      // Pointer sur le premier nouveau fichier ajouté
         setPreviewCarouselIndex(prev.length);
         return next;
       });
-      // Pas de timeout : les chips restent jusqu'Ã  l'envoi du message
+      // Pas de timeout : les chips restent jusqu'à l'envoi du message
     }
 
-    // Upload et injection dans le textarea â€” on attend la fin pour avoir les URLs
+      // Upload et injection dans le textarea : on attend la fin pour avoir les URLs
     if (importerFiles.length > 0) {
       await handleImportFiles(toSyntheticFileList(importerFiles), (txt: string) => {
         setInput((prev) => (prev ? prev + "\n" + txt : txt));
@@ -5114,7 +5115,7 @@ export function App() {
       if (uploaded.length && failed.length) {
         setUploadFeedback(`Import partiel: ${uploaded.length} ok, ${failed.length} en echec.`);
       } else if (uploaded.length) {
-        setUploadFeedback(`${uploaded.length} fichier(s) rattache(s) a la conversation.`);
+        setUploadFeedback(`${uploaded.length} fichier(s) rattaché(s) à la conversation.`);
       } else if (failed.length) {
         setUploadFeedback(`Echec import: ${failed.join(", ")}`);
       }
@@ -5200,7 +5201,7 @@ export function App() {
     return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
-  // Modifie la fonction sendMessage pour accepter un texte forcÃ©
+  // Modifie la fonction sendMessage pour accepter un texte forcé
 
   function extractImageUrlsFromText(text: string): { cleanText: string; imageUrls: string[] } {
     const imageUrls: string[] = [];
@@ -5210,7 +5211,7 @@ export function App() {
       .trim();
     return { cleanText, imageUrls };
   }
-  // â”€â”€ File d'attente : l'utilisateur peut Ã©crire pendant qu'A11 rÃ©flÃ©chit â”€â”€â”€â”€â”€â”€
+  // File d'attente : l'utilisateur peut écrire pendant qu'A11 réfléchit
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
@@ -5221,7 +5222,7 @@ export function App() {
     if (!effectiveText) return;
     void unlockAudioOutput();
 
-    // Afficher le message utilisateur immÃ©diatement â€” sans bloquer l'input
+    // Afficher le message utilisateur immédiatement : sans bloquer l'input
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
@@ -5266,13 +5267,13 @@ export function App() {
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
     if (suggestion) openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
 
-    // Si A11 traite dÃ©jÃ , mettre en file â€” l'utilisateur peut continuer Ã  Ã©crire
+      // Si A11 traite déjà, mettre en file : l'utilisateur peut continuer à écrire
     if (queueProcessingRef.current) {
       messageQueueRef.current.push(effectiveText);
       return;
     }
 
-    // Sinon dÃ©marrer le traitement
+    // Sinon démarrer le traitement
     void processMessageQueue(effectiveText, sourceImageUrl);
   }
 
@@ -5304,7 +5305,7 @@ export function App() {
 
       pendingMessageKeyRef.current = messageKey;
 
-      // Lire l'historique courant via ref pour Ã©viter les closures pÃ©rimÃ©es
+      // Lire l'historique courant via ref pour éviter les closures périmées
       let currentMessages: ChatMessage[] = [];
       setMessages((prev) => { currentMessages = prev; return prev; });
       await new Promise<void>((r) => setTimeout(r, 0));
@@ -5367,7 +5368,7 @@ export function App() {
         } else if (mobileAudioNeedsGesture) {
           setPendingMobileSpeech(spokenText);
           setAudioBlockedUrl(null);
-          setMicStatusMessage("Voix mobile prete: touche le bouton lecture pour lancer le son.");
+          setMicStatusMessage("Voix mobile prête: touche le bouton lecture pour lancer le son.");
         }
         lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
       } catch (err: any) {
@@ -5385,7 +5386,7 @@ export function App() {
         });
       }
 
-      // Absorber les messages arrivÃ©s pendant ce traitement
+      // Absorber les messages arrivés pendant ce traitement
       while (messageQueueRef.current.length > 0) {
         toProcess.push({ text: messageQueueRef.current.shift()! });
       }
@@ -5455,7 +5456,7 @@ export function App() {
         // keep voiceListening false when using fallback
         if (next) {
           // enable TTS playback
-          console.log("[A11] SpeechRecognition not available â€” enabling TTS-only mode");
+      console.log("[A11] SpeechRecognition not available - enabling TTS-only mode");
         } else {
           console.log("[A11] Disabling TTS-only mode");
         }
@@ -5480,7 +5481,7 @@ export function App() {
         setVoiceListening(false);
         setMicPermissionBlocked(true);
         setTtsFallback(true);
-        setMicStatusMessage("Micro bloque ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        setMicStatusMessage("Micro bloqué ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
         try {
           localStorage.setItem('a11:tts-only', '1');
         } catch {
@@ -5551,8 +5552,8 @@ export function App() {
     setDeleteDialogChatId(null);
   }
 
-  // Le system prompt est gÃ©rÃ© cÃ´tÃ© backend (system_prompt.txt)
-  // Le frontend n'envoie pas de prompt systÃ¨me â€” Ã©vite l'exposition dans les DevTools
+    // Le system prompt est géré côté backend (system_prompt.txt)
+    // Le frontend n'envoie pas de prompt système : évite l'exposition dans les DevTools
   const systemPrompt = resolveClientSystemPrompt();
 
   // Initialisation globale de window.speak au montage pour garantir le son
@@ -5606,16 +5607,16 @@ export function App() {
       const detail = (event as CustomEvent)?.detail || {};
       setImageJobActive(true);
       const seconds = Math.max(1, Math.round(Number(detail.pollIntervalMs || 5000) / 1000));
-      setUploadFeedback(`Generation image en cours... verification toutes les ${seconds}s.`);
+      setUploadFeedback(`Génération image en cours... vérification toutes les ${seconds}s.`);
     };
     const onDone = () => {
       setImageJobActive(false);
-      setUploadFeedback("Image prete.");
+      setUploadFeedback("Image prête.");
     };
     const onFailed = (event: Event) => {
       const detail = (event as CustomEvent)?.detail || {};
       setImageJobActive(false);
-      setUploadFeedback(`Generation image interrompue: ${String(detail.message || detail.error || "erreur inconnue")}`);
+      setUploadFeedback(`Génération image interrompue: ${String(detail.message || detail.error || "erreur inconnue")}`);
     };
 
     window.addEventListener("a11:image-job.queued", onQueued);
@@ -5640,7 +5641,7 @@ export function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // Handler pour rafraÃ®chir la liste de l'historique
+  // Handler pour rafraîchir la liste de l'historique
   async function refreshA11History() {
     setLoadingHistory(true);
     try {
@@ -5752,12 +5753,12 @@ export function App() {
     if (purgingTechnicalMemos) return;
     if (!hasAdminApiAccess()) {
       setTechnicalMemoError("admin_required");
-      setTechnicalMemoFeedback("Suppression impossible: acces admin requis.");
+      setTechnicalMemoFeedback("Suppression impossible: accès admin requis.");
       return;
     }
     setPurgingTechnicalMemos(true);
     setTechnicalMemoConfirmOpen(false);
-    setTechnicalMemoFeedback("Reinitialisation de la memoire non cruciale en cours...");
+    setTechnicalMemoFeedback("Réinitialisation de la mémoire non cruciale en cours...");
     setTechnicalMemoError("");
 
     try {
@@ -5766,8 +5767,8 @@ export function App() {
       const removedFiles = Number(result?.removedFiles || 0);
       setTechnicalMemoFeedback(
         removedEntries > 0
-          ? `Memoire non cruciale reinitialisee. ${removedEntries} entree(s), ${removedFiles} fichier(s).`
-          : "La memoire non cruciale etait deja vide."
+          ? `Mémoire non cruciale réinitialisée. ${removedEntries} entrée(s), ${removedFiles} fichier(s).`
+          : "La mémoire non cruciale était déjà vide."
       );
       setTechnicalMemoSummary({
         total: 0,
@@ -5932,9 +5933,9 @@ export function App() {
     openChatView();
   }
 
-  // HEADER avec bouton Mode DEV centrÃ©, select modÃ¨le Ã  droite, mute Ã  l'extrÃªme droite
+  // Header avec bouton Mode DEV centré, select modèle à droite, mute à l'extrême droite
   
-  // âœ… Check authentication
+  // Check authentication
   if (isResetRoute) {
     return <ResetPasswordPanel />;
   }
@@ -6071,7 +6072,7 @@ export function App() {
         background: isKaen44 ? '#130d0b' : '#02080c',
       }}
     >
-      {/* â”€â”€ Drag-and-drop overlay â”€â”€ */}
+            {/* Drag-and-drop overlay */}
       {isDragOver && (
         <div
           className="a11-drop-overlay"
@@ -6159,7 +6160,7 @@ export function App() {
           <div style={{ minWidth: 0 }}>
             <div style={a11TitleStyle}>{isKaen44 ? "Kaen44" : "A11"}</div>
             {!isCompactLayout ? (
-              <div style={{ fontSize: 12, color: isKaen44 ? "#e7c8a2" : "#8bd9d0" }}>{isKaen44 ? "Copilote au quotidien" : "Agent media audio & video"}</div>
+              <div style={{ fontSize: 12, color: isKaen44 ? "#e7c8a2" : "#8bd9d0" }}>{isKaen44 ? "Copilote au quotidien" : "Agent média audio & vidéo"}</div>
             ) : null}
           </div>
         </div>
@@ -6776,9 +6777,9 @@ export function App() {
                       }}
                     >
                       <div>
-                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: 15 }}>Memoire non cruciale</h4>
+                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: 15 }}>Mémoire non cruciale</h4>
                         <p style={{ color: '#94a3b8', margin: '6px 0 0', fontSize: 13 }}>
-                          Snapshots techniques admin et traces internes. Cela n&apos;efface pas l&apos;historique global du chat utilisateur ni la memoire critique.
+                          Snapshots techniques admin et traces internes. Cela n&apos;efface pas l&apos;historique global du chat utilisateur ni la mémoire critique.
                         </p>
                       </div>
 
@@ -6860,7 +6861,7 @@ export function App() {
                             fontSize: 12,
                           }}
                         >
-                          {purgingTechnicalMemos ? 'Reinitialisation...' : 'Reinitialiser la memoire non cruciale'}
+                          {purgingTechnicalMemos ? 'Réinitialisation...' : 'Réinitialiser la mémoire non cruciale'}
                         </button>
                       </div>
                     </div>
@@ -6992,10 +6993,10 @@ export function App() {
                             color: "#fbbf24",
                           }}
                         >
-                          Reponse non verifiee
+                          Réponse non vérifiée
                         </div>
                         <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>
-                          {String(m.qflushVerification.summary || "Cette reponse a ete marquee comme douteuse par le garde-fou local.")}
+                          {String(m.qflushVerification.summary || "Cette réponse a été marquée comme douteuse par le garde-fou local.")}
                         </div>
                       </div>
                     ) : null}
@@ -7070,7 +7071,7 @@ export function App() {
                             wordBreak: "break-all",
                           }}
                         >
-                          Ouvrir la video
+                          Ouvrir la vidéo
                         </a>
                       </div>
                     )}
@@ -7105,7 +7106,7 @@ export function App() {
                         </div>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
-                            Document genere
+                            Document généré
                           </div>
                           <a
                             href={m.fileUrl}
@@ -7168,7 +7169,7 @@ export function App() {
               void onComposerDrop(e);
             }}
             onPaste={async (e) => {
-              // Paste global sur le composer (hors textarea) â€” images et fichiers
+  // Paste global sur le composer (hors textarea) : images et fichiers
               const items = e.clipboardData?.items;
               if (!items) return;
               const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
@@ -7217,7 +7218,7 @@ export function App() {
                   type="button"
                   className="btn ghost"
                   onClick={onVoiceReferenceClick}
-                  title="Ajouter une reference vocale WAV/MP3/WEBM"
+                  title="Ajouter une référence vocale WAV/MP3/WEBM"
                   style={{ minWidth: 44, minHeight: 44, padding: isCompactLayout ? "0 9px" : "0 10px" }}
                 >
                   Ref
@@ -7238,7 +7239,7 @@ export function App() {
                   ref={composerInputRef}
                   placeholder={isCompactLayout
                     ? (isKaen44 ? "Message Kaen44..." : "Message A11...")
-                    : (isKaen44 ? "Demande quelque chose a Kaen44... (Ctrl+V pour coller une image)" : "Demande quelque chose a A11... (Ctrl+V pour coller une image)")}
+                    : (isKaen44 ? "Demande quelque chose à Kaen44... (Ctrl+V pour coller une image)" : "Demande quelque chose à A11... (Ctrl+V pour coller une image)")}
                   value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
                   onChange={(e) => {
                     const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
@@ -7265,7 +7266,7 @@ export function App() {
                       }
                       return;
                     }
-                    // Chercher des fichiers collÃ©s (depuis l'explorateur)
+                    // Chercher des fichiers collés (depuis l'explorateur)
                     const fileItems = Array.from(items).filter(item => item.kind === 'file' && !item.type.startsWith('image/'));
                     if (fileItems.length > 0) {
                       e.preventDefault();
@@ -7299,7 +7300,7 @@ export function App() {
                 className="send-button"
                 onClick={() => sendMessage()}
                 disabled={!input.trim()}
-                title="Entree pour envoyer, Shift+Entree pour aller a la ligne"
+                title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
                 style={sending ? { opacity: 0.7 } : undefined}
               >
                 {sending
@@ -7316,8 +7317,8 @@ export function App() {
                 onClick={toggleMic}
                 disabled={micStarting}
                 aria-pressed={voiceListening}
-                aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloque" : voiceListening ? "Arreter le micro" : "Demarrer le micro"}
-                title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloque par le navigateur" : voiceListening ? "Arreter le micro" : "Demarrer le micro"}
+                aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
+                title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
                 style={{
                   marginLeft: 8,
                   opacity: micPermissionBlocked ? 0.78 : 1,
@@ -7329,7 +7330,7 @@ export function App() {
               </button>
             </div>
             <div className="hint">
-              Entree pour envoyer - Shift+Entree pour aller a la ligne - Ctrl+V pour coller une image
+              Entrée pour envoyer - Shift+Entrée pour aller à la ligne - Ctrl+V pour coller une image
               {micStatusMessage && (
                 <span style={{ marginLeft: 8, color: micPermissionBlocked ? '#fca5a5' : '#93c5fd', fontWeight: 600 }}>
                   {micStatusMessage}
@@ -7357,7 +7358,7 @@ export function App() {
               const p = dragPreviewUrls[idx];
               return (
                 <div className="a11-drop-carousel">
-                  {/* Thumbnail ou icÃ´ne */}
+                        {/* Thumbnail ou icône */}
                   <div className="a11-drop-carousel-media">
                     {p.isImage
                       ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
@@ -7373,7 +7374,7 @@ export function App() {
                     )}
                   </div>
 
-                  {/* FlÃ¨ches si plusieurs */}
+                            {/* Flèches si plusieurs */}
                   {total > 1 && (
                     <div className="a11-drop-carousel-nav">
                       <button
@@ -7534,7 +7535,7 @@ export function App() {
       <ConfirmModal
         open={!!deleteDialogChatId}
         title="Supprimer la conversation"
-        message="Cette conversation locale sera retirÃ©e de la liste actuelle."
+  message="Cette conversation locale sera retirée de la liste actuelle."
         confirmLabel="Supprimer"
         confirmTone="danger"
         onClose={() => setDeleteDialogChatId(null)}
@@ -7543,7 +7544,7 @@ export function App() {
       <ConfirmModal
         open={clearHistoryConfirmOpen}
         title="Supprimer tout l'historique"
-        message={`Cette action va vider toutes les conversations locales du navigateur et l'historique ${productName} cote serveur. Une nouvelle session propre sera recreee juste apres.`}
+        message={`Cette action va vider toutes les conversations locales du navigateur et l'historique ${productName} côté serveur. Une nouvelle session propre sera recréée juste après.`}
         confirmLabel="Tout supprimer"
         confirmTone="danger"
         loading={clearingHistory}
@@ -7553,7 +7554,7 @@ export function App() {
       <ConfirmModal
         open={!!deleteA11HistoryId}
         title={`Supprimer cette conversation ${productName}`}
-        message={`Cette conversation sera retiree de l'historique ${productName} cote serveur et de la copie locale si elle est ouverte.`}
+        message={`Cette conversation sera retirée de l'historique ${productName} côté serveur et de la copie locale si elle est ouverte.`}
         confirmLabel="Supprimer"
         confirmTone="danger"
         loading={!!deleteA11HistoryId && deletingA11HistoryId === deleteA11HistoryId}
@@ -7562,10 +7563,10 @@ export function App() {
       />
       <ConfirmModal
         open={purgeConfirmOpen}
-        title="Confirmer la purge memoire"
+        title="Confirmer la purge mémoire"
         message={memoryPurgeDryRun
-          ? "Lancer une simulation de purge de la memoire structuree ?"
-          : "Declencher immediatement la purge reelle de la memoire structuree ?"}
+          ? "Lancer une simulation de purge de la mémoire structurée ?"
+          : "Déclencher immédiatement la purge réelle de la mémoire structurée ?"}
         confirmLabel={memoryPurgeDryRun ? "Lancer le dry run" : "Lancer la purge"}
         confirmTone={memoryPurgeDryRun ? "primary" : "danger"}
         loading={purgingMemory}
@@ -7574,8 +7575,8 @@ export function App() {
       />
       <ConfirmModal
         open={technicalMemoConfirmOpen}
-        title="Reinitialiser la memoire non cruciale"
-        message="Cette action efface les snapshots techniques locaux d'A11 (env, qflush, journaux memo). Cela ne touche pas l'historique de conversation utilisateur ni la memoire critique."
+        title="Réinitialiser la mémoire non cruciale"
+        message="Cette action efface les snapshots techniques locaux d'A11 (env, qflush, journaux memo). Cela ne touche pas l'historique de conversation utilisateur ni la mémoire critique."
         confirmLabel="Reinitialiser"
         confirmTone="danger"
         loading={purgingTechnicalMemos}
@@ -7641,7 +7642,7 @@ export function App() {
           flexWrap: 'wrap', justifyContent: isCompactLayout ? 'space-between' : 'center',
           maxWidth: 'calc(100vw - 24px)',
         }}>
-          <span>Audio bloque</span>
+          <span>Audio bloqué</span>
           <button
             type="button"
             onClick={() => { void unlockAudioOutput(); retryPlayUrl(audioBlockedUrl); setAudioBlockedUrl(null); }}

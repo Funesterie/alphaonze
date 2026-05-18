@@ -49,7 +49,7 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
     mode: 'song',
     songSource: 'Paroles',
     songMood: 'electro pop sombre',
-    songText: 'Entre lumiere et ombre, Vivy chante pour Funesterie.',
+    songText: 'Entre lumière et ombre, Vivy chante pour Funesterie.',
     shareToken: 'must-not-leak',
   });
 
@@ -57,7 +57,7 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
   assert.equal(result.mode, 'song');
   assert.equal(result.tokenStored, false);
   assert.match(result.brief, /VIVY_SONG_PRODUCTION/);
-  assert.match(result.brief, /Entre lumiere et ombre/);
+    assert.match(result.brief, /Entre lumière et ombre/);
   assert.doesNotMatch(result.brief, /must-not-leak/);
 });
 
@@ -79,7 +79,7 @@ test('POST /api/vivy/studio/produce accepts share mode and never echoes secret t
     assert.equal(json.mode, 'share');
     assert.equal(json.tokenStored, false);
     assert.match(json.brief, /VIVY_SCENE_SHARE/);
-    assert.match(json.brief, /Token fourni dans UI: oui, non envoye au serveur/);
+    assert.match(json.brief, /Token fourni dans UI: oui, non envoyé au serveur/);
     assert.doesNotMatch(JSON.stringify(json), /secret-token-value/);
   });
 });
@@ -88,15 +88,15 @@ test('song mode accepts natural aliases from client prompts', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
     theme: 'Tokyo sous la pluie',
-    lyrics: 'Neons sur le sol, Vivy garde le tempo.',
+    lyrics: 'Néons sur le sol, Vivy garde le tempo.',
     instruction: 'refrain lumineux, couplets sombres',
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'song');
-  assert.match(result.summary, /Pack composition pret/);
+  assert.match(result.summary, /Pack composition prêt/);
   assert.match(result.brief, /Tokyo sous la pluie/);
-  assert.match(result.brief, /Neons sur le sol/);
+  assert.match(result.brief, /Néons sur le sol/);
   assert.match(result.brief, /refrain lumineux/);
 });
 
@@ -106,9 +106,9 @@ test('POST /api/vivy/studio/chat stores semantic context and accepts file metada
   }, async (baseUrl) => {
     const { response, json } = await postJson(baseUrl, '/api/vivy/studio/chat', {
       conversationId: 'vivy-test-conversation',
-      message: 'Garde cette idee de chanson intime pour Vivy.',
+      message: 'Garde cette idée de chanson intime pour Vivy.',
       files: [{
-        filename: 'idee-vivy.txt',
+        filename: 'idée-vivy.txt',
         contentType: 'text/plain',
         sizeBytes: 54,
         textPreview: 'Nossen sous la pluie, voix proche, refrain doux.',
@@ -118,9 +118,11 @@ test('POST /api/vivy/studio/chat stores semantic context and accepts file metada
     assert.equal(response.status, 200);
     assert.equal(json.ok, true);
     assert.equal(json.service, 'vivy-chat');
+    assert.equal(json.language, 'fr');
     assert.equal(json.memoryStored, true);
     assert.equal(json.semanticMemory.stored, true);
-    assert.match(json.assistant, /Vivy|idee/i);
+    assert.match(json.assistant, /Vivy|idée/i);
     assert.doesNotMatch(JSON.stringify(json), /secret-token-value/);
+    assert.doesNotMatch(JSON.stringify(json), /Ã|Â|â€|�/);
   });
 });

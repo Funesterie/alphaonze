@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vivy - Funesterie</title>
-    <meta name="description" content="Vivy, presence musicale Funesterie pour voix, chansons originales et projets audio Nossen." />
-    <meta property="og:title" content="Vivy - Presence musicale Funesterie" />
-    <meta property="og:description" content="Voix, musique, composition, clips et publications audio lies aux projets creatifs Funesterie." />
+    <meta name="description" content="Vivy, présence musicale Funesterie pour voix, chansons originales et projets audio Nossen." />
+    <meta property="og:title" content="Vivy - Présence musicale Funesterie" />
+    <meta property="og:description" content="Voix, musique, composition, clips et publications audio liés aux projets créatifs Funesterie." />
     <meta property="og:image" content="/vivy-presence-musicale.png" />
     <style>
       :root {
@@ -1095,7 +1095,7 @@
           <div class="vivy-poster-hotspots" aria-label="Acces rapides Vivy">
             <button type="button" data-vivy-jump="voice" aria-label="Ouvrir Creation voix"></button>
             <button type="button" data-vivy-jump="song" aria-label="Ouvrir Composition production"></button>
-            <button type="button" data-vivy-jump="share" aria-label="Ouvrir Scene partage"></button>
+            <button type="button" data-vivy-jump="share" aria-label="Ouvrir scène partage"></button>
           </div>
         </div>
         <div class="vivy-mobile-slices" aria-hidden="true">
@@ -1108,8 +1108,8 @@
       <section class="vivy-chat" aria-label="Chat Vivy" data-vivy-chat>
         <div class="vivy-chat-head">
           <div>
-            <h2>Parler a Vivy</h2>
-            <p>Voix, chanson, ambiance ou scene: Vivy transforme l'idee en direction exploitable.</p>
+            <h2>Parler à Vivy</h2>
+            <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
           </div>
           <button type="button" data-vivy-chat-reset>Reset</button>
         </div>
@@ -1118,15 +1118,15 @@
           <textarea name="message" rows="3" placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."></textarea>
           <div>
             <button type="button" data-vivy-chat-prompt="Prepare une voix Vivy douce, proche micro, avec une phrase test.">Voix</button>
-            <button type="button" data-vivy-chat-prompt="Transforme cette idee en chanson Vivy avec structure et refrain.">Chanson</button>
-            <button type="button" data-vivy-chat-prompt="Prepare une scene courte pour publier Vivy en clip vertical.">Scene</button>
+            <button type="button" data-vivy-chat-prompt="Transforme cette idée en chanson Vivy avec structure et refrain.">Chanson</button>
+            <button type="button" data-vivy-chat-prompt="Prépare une scène courte pour publier Vivy en clip vertical.">Scène</button>
             <button type="button" data-vivy-chat-file-button>Fichier</button>
             <button type="submit">Envoyer</button>
           </div>
         </form>
         <div class="vivy-chat-attachments" data-vivy-chat-attachments></div>
         <div class="vivy-chat-reference" data-vivy-chat-reference>
-          <span data-vivy-chat-reference-label>Ref voix privee attendue</span>
+          <span data-vivy-chat-reference-label>Réf voix privée attendue</span>
           <button type="button" data-vivy-chat-reference-button>Audio</button>
         </div>
         <input type="file" accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg" hidden data-vivy-chat-reference-file />
@@ -1137,7 +1137,7 @@
         <div class="vivy-studio-head">
           <div>
             <h2>Atelier Vivy</h2>
-            <p>Voix, chanson, clip et partage equipes depuis les trois blocs de droite.</p>
+            <p>Voix, chanson, clip et partage prêts depuis les trois blocs de droite.</p>
           </div>
           <button type="button" data-vivy-share>Partager le brief</button>
         </div>
@@ -1146,14 +1146,14 @@
           <div class="vivy-studio-modes" role="tablist" aria-label="Modules Vivy">
             <button type="button" class="is-active" data-vivy-mode="voice" role="tab" aria-selected="true">
               <span>Creation voix</span>
-              <small>Calibrer une voix, preparer Voicemod/RVC/A11 Voice et garder la reference propre.</small>
+              <small>Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.</small>
             </button>
             <button type="button" data-vivy-mode="song" role="tab" aria-selected="false">
               <span>Composition - production</span>
               <small>Transformer un theme, texte ou paroles en brief chanson utilisable par Vivy.</small>
             </button>
             <button type="button" data-vivy-mode="share" role="tab" aria-selected="false">
-              <span>Scene - partage</span>
+              <span>Scène - partage</span>
               <small>Assembler clip, lien, canal et consignes de publication sans exposer les secrets.</small>
             </button>
           </div>
@@ -1172,7 +1172,7 @@
                 </select>
               </label>
               <label>
-                Reference audio
+                Référence audio
                 <input name="voiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" />
               </label>
               <label>
@@ -1197,7 +1197,7 @@
               </label>
               <label>
                 Matiere creative
-                <textarea name="songText" rows="8" placeholder="Theme, paroles, ambiance, intention, histoire ou simple idee."></textarea>
+                <textarea name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
               </label>
             </div>
 
@@ -1209,7 +1209,7 @@
                   <option>OBS / Live</option>
                   <option>SoundCloud</option>
                   <option>Deezer</option>
-                  <option>Lien equipe</option>
+                  <option>Lien équipe</option>
                 </select>
               </label>
               <label>
@@ -1273,10 +1273,35 @@
         var sending = false;
         var awaitingReference = false;
 
+        function unicodeText(value, maxLength) {
+          var text = String(value || "")
+            .replace(/\r\n/g, "\n")
+            .replace(/\u0000/g, "")
+            .normalize("NFC")
+            .trim();
+          return maxLength > 0 ? text.slice(0, maxLength) : text;
+        }
+
+        function unicodeLine(value, fallback, maxLength) {
+          return unicodeText(value, maxLength || 160).replace(/\s+/g, " ") || (fallback || "");
+        }
+
+        function foldLookup(value) {
+          return unicodeText(value)
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[’']/g, " ")
+            .replace(/[-_/]/g, " ")
+            .replace(/[^\p{L}\p{N}\s]/gu, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLocaleLowerCase("fr-FR");
+        }
+
         function greeting() {
           return {
             role: "assistant",
-            content: "Je suis Vivy. Parle-moi d'une voix, d'une chanson, d'une ambiance ou d'une scene a publier."
+            content: "Je suis Vivy. Parle-moi d'une voix, d'une chanson, d'une ambiance ou d'une scène à publier."
           };
         }
 
@@ -1354,8 +1379,8 @@
             if (!canReadPreview(file)) return resolve("");
             var reader = new FileReader();
             reader.onerror = function () { resolve(""); };
-            reader.onload = function () { resolve(String(reader.result || "").slice(0, 6000)); };
-            reader.readAsText(file);
+            reader.onload = function () { resolve(unicodeText(reader.result, 6000)); };
+            reader.readAsText(file, "UTF-8");
           });
         }
 
@@ -1367,10 +1392,10 @@
             return readTextPreview(file).then(function (preview) {
               return {
                 id: "local-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-                filename: file.name,
+                filename: unicodeLine(file.name, "fichier", 180),
                 contentType: file.type || "application/octet-stream",
                 sizeBytes: file.size,
-                description: preview ? "Extrait texte lu localement pour Vivy." : "Fichier joint a la conversation Vivy.",
+                description: preview ? "Extrait texte lu localement pour Vivy." : "Fichier joint à la conversation Vivy.",
                 textPreview: preview,
                 uploaded: false
               };
@@ -1378,12 +1403,12 @@
           })).then(function (files) {
             attachedFiles = attachedFiles.concat(files).slice(-6);
             renderAttachments();
-            setStatus("Fichiers ajoutes au contexte Vivy");
+            setStatus("Fichiers ajoutés au contexte Vivy");
           });
         }
 
         function wantsVoiceReference(text) {
-          return /\b(voix|voice|timbre|changer|change|modifier|modifie|calibr|reference|ref audio|imiter|clone)\b/i.test(String(text || ""));
+          return /\b(voix|voice|timbre|changer|change|modifier|modifie|calibr|reference|ref audio|imiter|clone)\b/i.test(foldLookup(text));
         }
 
         function getReferenceName() {
@@ -1404,7 +1429,7 @@
           var name = getReferenceName();
           if (!refBox || !refLabel) return;
           refBox.classList.toggle("is-visible", Boolean(visible || name));
-          refLabel.textContent = name ? "Ref voix: " + name : "Ref voix privee attendue";
+          refLabel.textContent = name ? "Réf voix: " + name : "Réf voix privée attendue";
         }
 
         function render() {
@@ -1437,7 +1462,7 @@
         }
 
         function addMessage(role, content, files) {
-          messages.push({ role: role, content: String(content || ""), files: files || undefined, ts: new Date().toISOString() });
+          messages.push({ role: role, content: unicodeText(content), files: files || undefined, ts: new Date().toISOString() });
           messages = messages.slice(-24);
           saveMessages();
           render();
@@ -1450,7 +1475,7 @@
         }
 
         function send(text) {
-          text = String(text || "").trim();
+          text = unicodeText(text);
           var filesForMessage = attachedFiles.slice(0, 6);
           if ((!text && !filesForMessage.length) || sending) return;
           var voiceRequest = wantsVoiceReference(text);
@@ -1460,7 +1485,7 @@
           renderAttachments();
           if (input) input.value = "";
           sending = true;
-          setStatus(voiceRequest ? "Vivy attend un audio de reference" : "Vivy ecoute et range l'idee...");
+          setStatus(voiceRequest ? "Vivy attend un audio de référence" : "Vivy écoute et range l'idée...");
           renderReference(voiceRequest);
           fetch("/api/vivy/studio/chat", {
             method: "POST",
@@ -1481,22 +1506,22 @@
             });
           }).then(function (payload) {
             var assistant = String(payload.assistant || payload.content || payload.summary || "").trim()
-              || "Je suis la. Donne-moi une ambiance, une phrase ou une direction.";
+              || "Je suis là. Donne-moi une ambiance, une phrase ou une direction.";
             if (voiceRequest) {
-              assistant += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte.";
+              assistant += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte.";
             }
             addMessage("assistant", assistant);
             var memoryText = payload.semanticMemory && payload.semanticMemory.stored || payload.memoryStored
-              ? "Idee rangee dans la memoire Vivy"
-              : "Vivy prete";
+              ? "Idée rangée dans la mémoire Vivy"
+              : "Vivy prête";
             setStatus(payload.aiMode === "llm" ? memoryText + " - IA active" : memoryText);
           }).catch(function (error) {
-            var message = "Je n'arrive pas a joindre le studio Vivy pour l'instant: " + (error && error.message ? error.message : error);
+            var message = "Je n'arrive pas à joindre le studio Vivy pour l'instant: " + (error && error.message ? error.message : error);
             if (voiceRequest) {
-              message += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte.";
+              message += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte.";
             }
             addMessage("assistant", message);
-            setStatus("Connexion Vivy a verifier");
+            setStatus("Connexion Vivy à vérifier");
           }).finally(function () {
             sending = false;
           });
@@ -1504,12 +1529,12 @@
 
         function uploadReference(file) {
           if (!file) return;
-          var label = "Vivy - " + String(file.name || "reference voix").replace(/\.[^.]+$/, "").slice(0, 54);
+          var label = "Vivy - " + unicodeLine(String(file.name || "référence voix").replace(/\.[^.]+$/, ""), "référence voix", 54);
           var body = new FormData();
           body.append("file", file);
           body.append("label", label);
           body.append("visibility", "private");
-          setStatus("Vivy garde la reference voix...");
+          setStatus("Vivy garde la référence voix...");
           fetch("/api/tts/references", {
             method: "POST",
             credentials: "include",
@@ -1526,11 +1551,11 @@
             setReferenceName(name);
             awaitingReference = false;
             renderReference(true);
-            addMessage("assistant", "Reference recue. Quand tu me demandes cette voix, je m'en sers comme base privee.");
-            setStatus("Reference voix privee: " + name);
+            addMessage("assistant", "Référence reçue. Quand tu me demandes cette voix, je m'en sers comme base privée.");
+            setStatus("Référence voix privée: " + name);
           }).catch(function (error) {
             renderReference(true);
-            setStatus("Audio non ajoute: " + (error && error.message ? error.message : error));
+            setStatus("Audio non ajouté: " + (error && error.message ? error.message : error));
           });
         }
 
@@ -1549,7 +1574,7 @@
           reset.addEventListener("click", function () {
             messages = [greeting()];
             saveMessages();
-            setStatus("Conversation remise a zero");
+            setStatus("Conversation remise à zéro");
             render();
           });
         }
@@ -1578,7 +1603,7 @@
         var modes = {
           voice: {
             title: "Creation voix",
-            label: "Calibrer une voix, preparer Voicemod/RVC/A11 Voice et garder la reference propre.",
+            label: "Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.",
             action: "Preparer calibration"
           },
           song: {
@@ -1587,7 +1612,7 @@
             action: "Preparer chanson"
           },
           share: {
-            title: "Scene - partage",
+            title: "Scène - partage",
             label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
             action: "Preparer partage"
           }
@@ -1647,7 +1672,7 @@
 
           var isVideo = Boolean(videoUrl || (media.kind === "video") || /\.mp4(?:[?#].*)?$/i.test(url));
           var title = document.createElement("strong");
-          title.textContent = isVideo ? "Clip Vivy pret" : "Audio Vivy pret";
+          title.textContent = isVideo ? "Clip Vivy prêt" : "Audio Vivy prêt";
           mediaNode.appendChild(title);
 
           var player = document.createElement(isVideo ? "video" : "audio");
@@ -1665,7 +1690,7 @@
           link.href = url;
           link.target = "_blank";
           link.rel = "noopener noreferrer";
-          link.textContent = isVideo ? "Ouvrir la video" : "Ouvrir l'audio";
+          link.textContent = isVideo ? "Ouvrir la vidéo" : "Ouvrir l'audio";
           mediaNode.appendChild(link);
 
           mediaNode.classList.remove("is-hidden");
@@ -1707,7 +1732,7 @@
             vivyOutput = String(payload.assistant || payload.brief || payload.summary || "").trim();
             if (!vivyOutput) throw new Error("reponse_vide");
             setMediaPreview(payload);
-            setStatus("Production Vivy prete. Le lecteur est disponible dans le brief.");
+            setStatus("Production Vivy prête. Le lecteur est disponible dans le brief.");
             render();
           }).catch(function (error) {
             setMediaPreview(null);
@@ -1729,10 +1754,10 @@
             lines.push(
               "Flux voix:",
               "- Outil cible: " + value("voiceTool"),
-              "- Reference audio: " + (voiceFileName || "a fournir"),
+              "- Référence audio: " + (voiceFileName || "à fournir"),
               "- Instruction: " + (value("voiceInstruction") || "definir le timbre, les limites et le style de modulation"),
               "- Sortie attendue: profil vocal, notes de calibration, chaine d'effets et phrase de test.",
-              "- Securite: ne pas publier la reference brute sans accord."
+              "- Sécurité: ne pas publier la référence brute sans accord."
             );
           }
 
@@ -1743,17 +1768,17 @@
               "- Direction sonore: " + (value("songMood") || "Electro pop dark cinematographique"),
               "- Matiere: " + (value("songText") || "theme libre a developper"),
               "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets a produire.",
-              "- Role: Vivy cree la chanson, A11 aide pour image/video si necessaire."
+              "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
             );
           }
 
           if (activeMode === "share") {
             lines.push(
-              "Flux scene / partage:",
+              "Flux scène / partage:",
               "- Canal: " + value("shareTarget"),
-              "- Lien: " + (value("shareUrl") || "a fournir"),
+              "- Lien: " + (value("shareUrl") || "à fournir"),
               "- Token fourni dans l'interface: " + (value("shareToken") ? "oui, local seulement" : "non"),
-              "- Instruction: " + (value("shareInstruction") || "preparer clip, titre, description et checklist publication"),
+              "- Instruction: " + (value("shareInstruction") || "préparer clip, titre, description et checklist publication"),
               "- Sortie attendue: clip/short, titre, description, tags, miniature, checklist OBS ou upload.",
               "- Regle token: ne jamais coller le token dans un chat public; utiliser OAuth ou coffre local."
             );
@@ -1763,7 +1788,7 @@
             "",
             "Routage recommande:",
             "- Vivy: voix, paroles, composition, presence audio.",
-            "- A11: image, video, montage, generation d'assets.",
+            "- A11: image, vidéo, montage, génération d'assets.",
             "- Kaen44: interface client, fichiers, suivi et partage avec les personnes qui bossent dessus."
           );
           return lines.join("\n");
@@ -1842,10 +1867,10 @@
               navigator.share({ title: "Vivy - " + modes[activeMode].title, text: text }).then(function () {
                 setStatus("Partage systeme ouvert.");
               }).catch(function () {
-                copyBrief("Brief pret a coller dans l'equipe.");
+                copyBrief("Brief prêt à coller dans l'équipe.");
               });
             } else {
-              copyBrief("Brief pret a coller dans l'equipe.");
+              copyBrief("Brief prêt à coller dans l'équipe.");
             }
           });
         });

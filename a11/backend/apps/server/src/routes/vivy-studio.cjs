@@ -18,6 +18,13 @@ const {
   addEpisode,
   getEpisodes,
 } = require('../../lib/episodic-memory.cjs');
+const {
+  normalizeTextNfc,
+  normalizeOneLineNfc,
+  foldTextForLookup,
+  detectTextLanguage,
+  buildLanguageInstruction,
+} = require('../../lib/language-text.cjs');
 
 let OpenAI = null;
 try {
@@ -29,15 +36,11 @@ try {
 const MODES = new Set(['voice', 'song', 'share']);
 
 function cleanText(value, max = 2000) {
-  return String(value || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\u0000/g, '')
-    .trim()
-    .slice(0, max);
+  return normalizeTextNfc(value, max);
 }
 
 function cleanOneLine(value, fallback = '', max = 160) {
-  return cleanText(value, max).replace(/\s+/g, ' ') || fallback;
+  return normalizeOneLineNfc(value, fallback, max);
 }
 
 function parseMode(value) {
@@ -57,7 +60,7 @@ function compactUniqueLines(items, max = 2400) {
     const value = cleanText(item, max);
     if (!value) continue;
 
-    const key = value.toLowerCase();
+    const key = foldTextForLookup(value);
     if (seen.has(key)) continue;
 
     seen.add(key);
@@ -204,17 +207,33 @@ function rememberVivyEpisode(userId, type, content, metadata = {}) {
   return { stored: false };
 }
 
-function buildVivySystemPrompt(mode) {
-  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scene/publication' : 'chanson/idee';
+function detectVivyInputLanguage(input = {}, fallback = 'fr') {
+  const files = normalizeVivyFiles(input);
+  const historyText = Array.isArray(input.history)
+    ? input.history.slice(-8).map((entry) => entry?.content || '').join('\n')
+    : '';
+  return detectTextLanguage([
+    input.language,
+    input.message,
+    input.prompt,
+    input.songText,
+    input.text,
+    historyText,
+    files.map((file) => [file.filename, file.description, file.textPreview].filter(Boolean).join('\n')).join('\n'),
+  ].filter(Boolean).join('\n'), fallback);
+}
+
+function buildVivySystemPrompt(mode, language = 'fr') {
+  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scène/publication' : 'chanson/idée';
   return [
-    'Tu es Vivy, une IA musicale et creative de Funesterie.',
-    'Tu n es pas une boite a ordres: tu dialogues, tu comprends l intention, tu aides a faire evoluer les idees et tu les ranges en memoire semantique privee.',
+    'Tu es Vivy, une IA musicale et créative de Funesterie.',
+    "Tu n'es pas une boîte à ordres : tu dialogues, tu comprends l'intention, tu aides à faire évoluer les idées et tu les ranges en mémoire sémantique privée.",
     `Mode courant: ${modeLabel}.`,
-    'Reponds en francais naturel, chaleureux, precis, sans liste mecanique quand une conversation suffit.',
-    'Quand une idee arrive, reformule ce que tu as compris, propose une direction exploitable et ajoute une petite suite concrete.',
-    'Si l utilisateur veut changer ta voix, demande un court fichier audio de reference et rappelle qu il reste prive pour son compte.',
-    'Si des fichiers sont joints, integre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
-    'Ne revele jamais de secret, token, chemin prive sensible ou configuration interne.',
+    buildLanguageInstruction(language),
+    "Quand une idée arrive, reformule ce que tu as compris, propose une direction exploitable et ajoute une petite suite concrète.",
+    "Si l'utilisateur veut changer ta voix, demande un court fichier audio de référence et rappelle qu'il reste privé pour son compte.",
+    'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
+    'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
   ].join('\n');
 }
 
@@ -242,45 +261,45 @@ function buildVoiceProduction(input) {
 
   const steps = [
     referenceName
-      ? `Reference audio recue: ${referenceName}. La garder privee et l'utiliser comme repere de timbre.`
-      : 'Ajouter une reference audio avant calibration fine.',
-    `Chaine cible: ${tool}.`,
+      ? `Référence audio reçue: ${referenceName}. La garder privée et l'utiliser comme repère de timbre.`
+      : 'Ajouter une référence audio avant calibration fine.',
+    `Chaîne cible: ${tool}.`,
     instruction
       ? `Direction: ${instruction}`
-      : 'Definir proximite micro, energie, diction, souffle, saturation et limites de transformation.',
-    'Phrase test: "Je garde la lumiere dans ma voix, meme quand la nuit devient scene."',
-    'Verifier trois passes: voix parlee claire, voix chantee courte, voix chuchotee controlee.',
+      : 'Définir proximité micro, énergie, diction, souffle, saturation et limites de transformation.',
+    'Phrase test: "Je garde la lumière dans ma voix, même quand la nuit devient scène."',
+    'Vérifier trois passes: voix parlée claire, voix chantée courte, voix chuchotée contrôlée.',
   ];
 
   return {
     title: 'Calibration voix Vivy',
-    summary: 'Profil vocal et chaine de calibration prets pour module voix.',
+    summary: 'Profil vocal et chaîne de calibration prêts pour module voix.',
     brief: [
       'VIVY_VOICE_CALIBRATION',
       `Outil: ${tool}`,
-      `Reference: ${referenceName || 'a fournir'}`,
+      `Référence: ${referenceName || 'à fournir'}`,
       '',
       'Plan:',
       lineList(steps),
       '',
       'Limites:',
       lineList([
-        'Ne pas publier la reference brute.',
-        'Ne pas stocker de token ou cle dans le brief.',
-        'Garder une sortie claire et reversible: original, voix generee, voix convertie.',
+        'Ne pas publier la référence brute.',
+        'Ne pas stocker de token ou clé dans le brief.',
+        'Garder une sortie claire et réversible: original, voix générée, voix convertie.',
       ]),
     ].join('\n'),
     actions: [
-      { id: 'upload_reference', label: 'Envoyer reference a A11', target: '/api/tts/references', ready: Boolean(referenceName) },
-      { id: 'tts_test', label: 'Generer phrase test', target: '/api/tts/piper', ready: true },
-      { id: 'voice_convert', label: 'Convertir vers reference', target: '/api/voice/convert', ready: Boolean(referenceName) },
+      { id: 'upload_reference', label: 'Envoyer référence à A11', target: '/api/tts/references', ready: Boolean(referenceName) },
+      { id: 'tts_test', label: 'Générer phrase test', target: '/api/tts/piper', ready: true },
+      { id: 'voice_convert', label: 'Convertir vers référence', target: '/api/voice/convert', ready: Boolean(referenceName) },
     ],
   };
 }
 
 function buildSongProduction(input) {
-  const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
-  const mood = cleanOneLine(input.songMood || input.mood || input.style, 'Electro pop dark cinematographique', 160);
+  const source = cleanOneLine(input.songSource || input.source, 'Thème', 80);
+  const mood = cleanOneLine(input.songMood || input.mood || input.style, 'Electro pop sombre cinématographique', 160);
   const material = compactUniqueLines([
     input.songText,
     input.lyrics,
@@ -299,7 +318,7 @@ function buildSongProduction(input) {
 
   const chorus = hasMaterial
     ? material.split(/\n+/).slice(0, 4).join(' / ')
-    : 'Donne-moi un theme, quelques paroles ou une intention pour produire une chanson complete.';
+    : 'Donne-moi un thème, quelques paroles ou une intention pour produire une chanson complète.';
 
   const briefLines = [
     'VIVY_SONG_PRODUCTION',
@@ -307,36 +326,36 @@ function buildSongProduction(input) {
     `Direction sonore: ${mood}`,
     `Titre de travail: ${title}`,
     '',
-    'Structure proposee:',
+    'Structure proposée:',
     lineList([
       'Intro: texture sombre, respiration vocale courte, motif synth discret.',
       'Couplet 1: voix proche, diction nette, tension contenue.',
-      'Pre-refrain: montee harmonique, percussion legere, ouverture stereo.',
+      'Pré-refrain: montée harmonique, percussion légère, ouverture stéréo.',
       `Refrain guide: ${chorus}`,
-      'Pont: silence, basse tenue, voix doublee en arriere-plan.',
+      'Pont: silence, basse tenue, voix doublée en arrière-plan.',
       'Final: retour du motif, sortie courte pour clip ou short.',
     ]),
     '',
-    'Assets a produire:',
+    'Assets à produire:',
     lineList([
-      'Paroles finalisees',
-      'Voix guide TTS ou reference chantee',
+      'Paroles finalisées',
+      'Voix guide TTS ou référence chantée',
       'Image/miniature par A11',
-      'Clip court si scene-partage est active',
+      'Clip court si scène-partage est active',
     ]),
   ];
 
   return {
     title: `Chanson Vivy - ${title}`,
     summary: hasMaterial
-      ? 'Pack composition pret: structure, direction, refrain guide et assets.'
-      : 'Pack incomplet: ajoute theme, texte ou paroles pour generer une chanson utile.',
+      ? 'Pack composition prêt: structure, direction, refrain guide et assets.'
+      : 'Pack incomplet: ajoute thème, texte ou paroles pour générer une chanson utile.',
     brief: briefLines.join('\n'),
     actions: [
       { id: 'lyrics_refine', label: 'Finaliser paroles', target: '/api/chat', ready: hasMaterial },
-      { id: 'voice_guide', label: 'Creer voix guide', target: '/api/tts/piper', ready: hasMaterial },
-      { id: 'cover_image', label: 'Creer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
-      { id: 'clip_video', label: 'Creer clip A11', target: '/api/video/generate', ready: hasMaterial },
+      { id: 'voice_guide', label: 'Créer voix guide', target: '/api/tts/piper', ready: hasMaterial },
+      { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
+      { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
   };
 }
@@ -350,16 +369,16 @@ function buildShareProduction(input) {
   const brief = [
     'VIVY_SCENE_SHARE',
     `Canal: ${target}`,
-    `Lien cible: ${url || 'a fournir'}`,
-    `Token fourni dans UI: ${tokenPresent ? 'oui, non envoye au serveur' : 'non'}`,
+    `Lien cible: ${url || 'à fournir'}`,
+    `Token fourni dans UI: ${tokenPresent ? 'oui, non envoyé au serveur' : 'non'}`,
     '',
     'Plan publication:',
     lineList([
-      instruction || 'Preparer titre, description, tags, miniature et format clip.',
-      'Creer une version courte verticale 20-40 secondes.',
-      'Generer miniature A11 avec lisibilite mobile.',
-      'Verifier droits audio et credits Funesterie.',
-      'Utiliser OAuth ou coffre local pour publication, jamais un token colle en clair.',
+      instruction || 'Préparer titre, description, tags, miniature et format clip.',
+      'Créer une version courte verticale 20-40 secondes.',
+      'Générer miniature A11 avec lisibilité mobile.',
+      'Vérifier droits audio et crédits Funesterie.',
+      'Utiliser OAuth ou coffre local pour publication, jamais un token collé en clair.',
     ]),
     '',
     'Sortie attendue:',
@@ -368,25 +387,25 @@ function buildShareProduction(input) {
       'Description courte',
       'Tags',
       'Checklist OBS/upload',
-      'Lien equipe partageable',
+      'Lien équipe partageable',
     ]),
   ].join('\n');
 
   return {
-    title: `Scene Vivy - ${target}`,
-    summary: 'Plan de clip et publication pret sans exposer de secret.',
+    title: `Scène Vivy - ${target}`,
+    summary: 'Plan de clip et publication prêt sans exposer de secret.',
     brief,
     actions: [
-      { id: 'render_clip', label: 'Generer clip A11', target: '/api/video/generate', ready: Boolean(instruction || url) },
-      { id: 'make_thumbnail', label: 'Generer miniature', target: '/api/tools/generate_sd', ready: true },
+      { id: 'render_clip', label: 'Générer clip A11', target: '/api/video/generate', ready: Boolean(instruction || url) },
+      { id: 'make_thumbnail', label: 'Générer miniature', target: '/api/tools/generate_sd', ready: true },
       { id: 'publish_oauth', label: 'Publier via OAuth', target: target.toLowerCase().includes('youtube') ? '/api/auth/youtube' : 'external-oauth', ready: false },
-      { id: 'team_link', label: 'Partager a l equipe', target: 'system-share', ready: true },
+      { id: 'team_link', label: "Partager à l'équipe", target: 'system-share', ready: true },
     ],
   };
 }
 
 function inferVivyChatMode(message = '') {
-  const normalized = String(message || '').toLowerCase();
+  const normalized = foldTextForLookup(message);
   if (/\b(voix|voice|chanter|chant|timbre|micro|rvc|voicemod|parle|speech)\b/i.test(normalized)) {
     return 'voice';
   }
@@ -398,7 +417,7 @@ function inferVivyChatMode(message = '') {
 
 function summarizeChatMessage(message = '') {
   const cleaned = cleanText(message, 360);
-  if (!cleaned) return 'on part sur une intention musicale a preciser.';
+  if (!cleaned) return 'on part sur une intention musicale à préciser.';
   return cleaned.replace(/\s+/g, ' ');
 }
 
@@ -406,6 +425,7 @@ function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
   const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
   const files = normalizeVivyFiles(input);
+  const language = detectVivyInputLanguage({ ...input, files });
   const history = Array.isArray(input.history)
     ? input.history
       .slice(-6)
@@ -427,21 +447,21 @@ function buildVivyChat(input) {
   const readyActions = Array.isArray(production.actions)
     ? production.actions.filter((action) => action?.ready).map((action) => action.label).slice(0, 3)
     : [];
-  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scene / partage' : 'composition';
+  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scène / partage' : 'composition';
   const fileLine = files.length
-    ? `J'ai aussi note ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
+    ? `J'ai aussi noté ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
     : '';
   const assistant = [
-    `Je te suis. Je garde cette idee dans le fil Vivy et je pars sur ${modeLabel}.`,
+    `Je te suis. Je garde cette idée dans le fil Vivy et je pars sur ${modeLabel}.`,
     `Ce que je comprends: ${summarizeChatMessage(message)}`,
     fileLine,
     production.summary,
-    readyActions.length ? `Je peux deja preparer: ${readyActions.join(', ')}.` : 'Je peux clarifier le theme et preparer une premiere direction.',
+    readyActions.length ? `Je peux déjà préparer: ${readyActions.join(', ')}.` : 'Je peux clarifier le thème et préparer une première direction.',
     mode === 'voice'
-      ? 'Envoie-moi une intention de timbre, une phrase test ou une reference vocale, et je te fais une calibration propre.'
+      ? 'Envoie-moi une intention de timbre, une phrase test ou une référence vocale, et je te fais une calibration propre.'
       : mode === 'share'
-        ? 'Donne-moi le canal, le format et la contrainte de publication, et je prepare le plan de scene.'
-        : 'Donne-moi un theme, une phrase ou une ambiance, et je transforme ca en chanson exploitable.',
+        ? 'Donne-moi le canal, le format et la contrainte de publication, et je prépare le plan de scène.'
+        : 'Donne-moi un thème, une phrase ou une ambiance, et je transforme ça en chanson exploitable.',
   ].join('\n\n');
 
   return {
@@ -456,6 +476,7 @@ function buildVivyChat(input) {
     tokenStored: false,
     writesByDefault: false,
     aiMode: 'fallback',
+    language,
     files,
   };
 }
@@ -464,6 +485,7 @@ async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
   const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
   const files = normalizeVivyFiles(input);
+  const language = detectVivyInputLanguage({ ...input, files });
   const fallback = buildVivyChat({ ...input, files, mode });
   const userId = resolveVivyMemoryUser(req, input);
   const fileContext = formatVivyFilesForPrompt(files);
@@ -483,6 +505,7 @@ async function buildVivyAiChat(input, req) {
   if (!llmBundle || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
     return {
       ...fallback,
+      language,
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
@@ -493,12 +516,12 @@ async function buildVivyAiChat(input, req) {
     const history = normalizeVivyChatHistory(input.history);
     const userContent = compactUniqueLines([
       message,
-      fileContext ? `Pieces jointes et contexte fichier:\n${fileContext}` : '',
-    ], 4200) || 'Continue la conversation Vivy avec douceur et precision.';
+      fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
+    ], 4200) || 'Continue la conversation Vivy avec douceur et précision.';
 
     const messages = [
-      { role: 'system', content: buildVivySystemPrompt(mode) },
-      memoryContext ? { role: 'system', content: `Memoire Vivy recente, privee pour cette session:\n${memoryContext}` } : null,
+      { role: 'system', content: buildVivySystemPrompt(mode, language) },
+      memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
       ...history,
       { role: 'user', content: userContent },
     ].filter(Boolean);
@@ -529,12 +552,14 @@ async function buildVivyAiChat(input, req) {
       content: assistant,
       aiMode: 'llm',
       model: llmBundle.model,
+      language,
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
   } catch (error) {
     return {
       ...fallback,
+      language,
       semanticMemory,
       memoryStored: semanticMemory.stored,
       llmError: cleanOneLine(error?.message || error, 'vivy_llm_failed', 180),
@@ -593,12 +618,12 @@ function buildVivyStudioProduction(input) {
 function appendMediaToAssistant(assistant = '', media = null) {
   if (!media?.url) return assistant;
   const label = media.kind === 'video'
-    ? 'Clip video de secours'
+    ? 'Clip vidéo de secours'
     : 'Maquette audio Vivy';
   return [
     assistant,
     '',
-    'Media pret:',
+    'Média prêt:',
     `- ${label}: ${media.url}`,
   ].join('\n');
 }
@@ -610,7 +635,7 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
   }
   if (mode === 'share') {
     return createEmergencyVideoAsset({
-      prompt: input.shareInstruction || input.prompt || input.theme || input.songText || 'Vivy scene partage Funesterie',
+      prompt: input.shareInstruction || input.prompt || input.theme || input.songText || 'Vivy scène partage Funesterie',
       body: {
         ...input,
         durationSeconds: input.durationSeconds || 4,
@@ -695,7 +720,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         }
         payload.assistant = appendMediaToAssistant(payload.assistant, media);
         payload.brief = appendMediaToAssistant(payload.brief, media);
-        payload.summary = `${payload.summary} Media de secours pret.`;
+        payload.summary = `${payload.summary} Média de secours prêt.`;
       }
       res.json(payload);
     } catch (error) {

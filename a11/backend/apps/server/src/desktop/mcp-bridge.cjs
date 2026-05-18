@@ -1,8 +1,8 @@
 ﻿'use strict';
 /**
- * Funesterie Desktop â€” MCP Bridge
+ * Funesterie Desktop - MCP Bridge
  *
- * GÃ¨re la connexion MCP depuis l'app Electron vers le MCP local et public.
+ * Gère la connexion MCP depuis l'app Electron vers le MCP local et public.
  * Auto-refresh du token, reconnexion automatique, fallback gracieux.
  */
 
@@ -135,7 +135,7 @@ class McpBridge {
   }
 
   /**
-   * Start the bridge â€” connect, health check, token refresh
+   * Start the bridge - connect, health check, token refresh
    */
   start() {
     this.loadToken();
@@ -145,7 +145,7 @@ class McpBridge {
   }
 
   /**
-   * Stop the bridge â€” cleanup timers
+   * Stop the bridge - cleanup timers
    */
   stop() {
     if (this.healthTimer) clearInterval(this.healthTimer);
@@ -155,7 +155,7 @@ class McpBridge {
   }
 
   /**
-   * Health check â€” verify MCP is reachable
+   * Health check - verify MCP is reachable
    */
   async healthCheck() {
     try {

@@ -1,9 +1,9 @@
 ﻿'use strict';
 /**
- * Funesterie Desktop â€” LLM Fallback Router
+ * Funesterie Desktop - LLM Fallback Router
  *
- * Routing hybride automatique : Ollama local â†’ A11 local â†’ A11 prod â†’ OpenRouter â†’ cache offline
- * DÃ©tecte le hardware et adapte la stratÃ©gie sans intervention utilisateur.
+ * Routing hybride automatique : Ollama local -> A11 local -> A11 prod -> OpenRouter -> cache offline.
+ * Détecte le hardware et adapte la stratégie sans intervention utilisateur.
  */
 
 const http = require('node:http');
@@ -107,7 +107,7 @@ class LlmFallbackRouter {
     }
 
     // 5. Offline mode
-    return { provider: 'offline', text: "Je suis temporairement hors ligne. RÃ©essaie dans quelques instants." };
+    return { provider: 'offline', text: "Je suis temporairement hors ligne. Réessaie dans quelques instants." };
   }
 
   /**

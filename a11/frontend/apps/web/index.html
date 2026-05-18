@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <title>A11 - Alpha Onze Funesterie</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la memoire et les outils connectes." />
+    <meta name="description" content="A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la mémoire et les outils connectés." />
     <meta name="theme-color" content="#0c1020" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -49,10 +49,10 @@
         var isPublicHost = !!publicHosts[hostname];
 
         if (isVivyHost) {
-          document.title = "Vivy - Presence musicale Funesterie";
+          document.title = "Vivy - Présence musicale Funesterie";
           var vivyDescription = document.querySelector('meta[name="description"]');
           if (vivyDescription) {
-            vivyDescription.setAttribute("content", "Vivy est la presence musicale Funesterie pour voix, chansons originales, clips et projets audio.");
+            vivyDescription.setAttribute("content", "Vivy est la présence musicale Funesterie pour voix, chansons originales, clips et projets audio.");
           }
           var vivyAppleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
           if (vivyAppleTitle) {
@@ -72,7 +72,7 @@
           document.title = "A11 - Alpha Onze Funesterie";
           var description = document.querySelector('meta[name="description"]');
           if (description) {
-            description.setAttribute("content", "A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la memoire et les outils connectes.");
+            description.setAttribute("content", "A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la mémoire et les outils connectés.");
           }
           var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
           if (appleTitle) {
@@ -148,20 +148,20 @@
           var error = String(new URLSearchParams(location.search).get("error") || "").trim().toLowerCase();
           if (!error) return "";
           var messages = {
-            oauth_failed: "La connexion externe a echoue. Reessaie dans un instant.",
-            oauth_state_invalid: "La verification de connexion a expire ou ne correspond plus. Relance la connexion.",
-            oauth_state_expired: "La tentative de connexion a expire. Relance-la depuis cette page.",
-            session_verification_failed: "La connexion a reussi, mais la session n'a pas pu etre verifiee. Reessaie une fois.",
-            google_auth_not_configured: "La connexion Google n'est pas encore activee sur ce serveur.",
-            google_invalid_client: "La connexion Google est mal configuree cote serveur. Utilise Microsoft pendant que nous remplacons la cle Google.",
-            google_invalid_grant: "Google a refuse le code de connexion. Reessaie en repartant du bouton Google.",
-            google_redirect_uri_mismatch: "Google refuse l'URL de retour configuree pour cette application.",
-            google_access_denied: "La connexion Google a ete annulee.",
-            google_email_not_verified: "Ton adresse Google doit etre verifiee avant de pouvoir entrer ici.",
-            microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activee sur ce serveur.",
-            microsoft_invalid_client: "La connexion Microsoft est mal configuree cote serveur.",
-            microsoft_invalid_grant: "Microsoft a refuse le code de connexion. Reessaie en repartant du bouton Microsoft.",
-            microsoft_access_denied: "La connexion Microsoft a ete annulee.",
+            oauth_failed: "La connexion externe a échoué. Réessaie dans un instant.",
+            oauth_state_invalid: "La vérification de connexion a expiré ou ne correspond plus. Relance la connexion.",
+            oauth_state_expired: "La tentative de connexion a expiré. Relance-la depuis cette page.",
+            session_verification_failed: "La connexion a réussi, mais la session n'a pas pu être vérifiée. Réessaie une fois.",
+            google_auth_not_configured: "La connexion Google n'est pas encore activée sur ce serveur.",
+            google_invalid_client: "La connexion Google est mal configurée côté serveur. Utilise Microsoft pendant que nous remplaçons la clé Google.",
+            google_invalid_grant: "Google a refusé le code de connexion. Réessaie en repartant du bouton Google.",
+            google_redirect_uri_mismatch: "Google refuse l'URL de retour configurée pour cette application.",
+            google_access_denied: "La connexion Google a été annulée.",
+            google_email_not_verified: "Ton adresse Google doit être vérifiée avant de pouvoir entrer ici.",
+            microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activée sur ce serveur.",
+            microsoft_invalid_client: "La connexion Microsoft est mal configurée côté serveur.",
+            microsoft_invalid_grant: "Microsoft a refusé le code de connexion. Réessaie en repartant du bouton Microsoft.",
+            microsoft_access_denied: "La connexion Microsoft a été annulée.",
             microsoft_email_missing: "Microsoft n'a pas renvoye d'adresse email exploitable pour la session."
           };
           return messages[error] || "La connexion n'a pas pu etre finalisee.";
@@ -214,7 +214,7 @@
               '<p style="margin:0;max-width:720px;color:#e9d5ff;font-size:clamp(19px,2vw,24px);line-height:1.52;font-weight:650;">Une assistante bureau claire, vocale et accessible pour organiser les documents, traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien.</p>',
               '<div style="margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;">',
               '<a href="/login?show=1" style="min-height:46px;display:inline-flex;align-items:center;color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:950;padding:0 20px;border-radius:999px;">Connexion Kaen44</a>',
-              '<a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialite</a>',
+              '<a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialité</a>',
               '</div>',
               '</div>',
               '<figure style="margin:0;justify-self:center;width:min(100%,360px);">',
@@ -224,11 +224,11 @@
               '<section style="border-top:1px solid rgba(196,181,253,.12);background:#0c1222;">',
               '<div style="max-width:1120px;margin:0 auto;padding:44px 24px 54px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:22px;">',
               '<article style="border-left:3px solid #a78bfa;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Documents et Drive</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 aide a lire, classer, resumer et transformer les fichiers que l&#39;utilisateur importe ou autorise explicitement.</p></article>',
-              '<article style="border-left:3px solid #67e8f9;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et preparer un suivi clair pour validation humaine.</p></article>',
-              '<article style="border-left:3px solid #f0abfc;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilite</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des reponses lisibles et une aide adaptee aux personnes fatiguees ou en difficulte.</p></article>',
+              '<article style="border-left:3px solid #67e8f9;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et préparer un suivi clair pour validation humaine.</p></article>',
+              '<article style="border-left:3px solid #f0abfc;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilité</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des réponses lisibles et une aide adaptée aux personnes fatiguées ou en difficulté.</p></article>',
               '</div>',
               '</section>',
-              '<footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;"><div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;"><span>Kaen44 par Funesterie</span><span><a href="/privacy/" style="color:#c4b5fd;">Regles de confidentialite</a> - <a href="/terms/" style="color:#c4b5fd;">Conditions d&#39;utilisation</a></span></div></footer>',
+              '<footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;"><div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;"><span>Kaen44 par Funesterie</span><span><a href="/privacy/" style="color:#c4b5fd;">Règles de confidentialité</a> - <a href="/terms/" style="color:#c4b5fd;">Conditions d&#39;utilisation</a></span></div></footer>',
               '</main>'
             ].join("");
             return;
@@ -263,7 +263,7 @@
             '<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#071021;color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:24px;">',
             '<section style="width:min(100%,420px);display:flex;flex-direction:column;gap:14px;">',
             '<h1 style="margin:0;font-size:28px;">Kaen44</h1>',
-            '<p style="margin:0;color:#bfdbfe;line-height:1.5;">Demarrage bloque cote navigateur. Je peux nettoyer le cache local et relancer proprement.</p>',
+            '<p style="margin:0;color:#bfdbfe;line-height:1.5;">Démarrage bloqué côté navigateur. Je peux nettoyer le cache local et relancer proprement.</p>',
             '<button id="a11-boot-reset" style="min-height:44px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:800;">Relancer Kaen44</button>',
             '<button id="a11-boot-hard-reset" style="min-height:44px;border:1px solid #334155;border-radius:10px;background:#0f172a;color:#e5e7eb;font-weight:700;">Reset cache conversations local</button>',
             '<pre style="white-space:pre-wrap;color:#94a3b8;font-size:12px;">' + String(window.__A11_BOOT_ERROR__ || "").replace(/[<>&]/g, function (c) { return ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]; }) + '</pre>',
@@ -302,7 +302,7 @@
             </p>
             <div style="margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;">
               <a href="/login" style="min-height:46px;display:inline-flex;align-items:center;color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:950;padding:0 20px;border-radius:999px;">Connexion Kaen44</a>
-              <a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialite</a>
+              <a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialité</a>
             </div>
           </div>
           <figure style="margin:0;justify-self:center;width:min(100%,360px);">
@@ -317,18 +317,18 @@
             </article>
             <article style="border-left:3px solid #67e8f9;padding-left:18px;">
               <h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2>
-              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et preparer un suivi clair pour validation humaine.</p>
+              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et préparer un suivi clair pour validation humaine.</p>
             </article>
             <article style="border-left:3px solid #f0abfc;padding-left:18px;">
-              <h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilite</h2>
-              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des reponses lisibles et une aide adaptee aux personnes fatiguees ou en difficulte.</p>
+              <h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilité</h2>
+              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des réponses lisibles et une aide adaptée aux personnes fatiguées ou en difficulté.</p>
             </article>
           </div>
         </section>
         <footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;">
           <div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;">
             <span>Kaen44 par Funesterie</span>
-            <span><a href="/privacy/" style="color:#c4b5fd;">Regles de confidentialite</a> · <a href="/terms/" style="color:#c4b5fd;">Conditions d'utilisation</a></span>
+            <span><a href="/privacy/" style="color:#c4b5fd;">Règles de confidentialité</a> · <a href="/terms/" style="color:#c4b5fd;">Conditions d'utilisation</a></span>
           </div>
         </footer>
       </main>
