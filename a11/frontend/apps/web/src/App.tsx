@@ -1458,9 +1458,10 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   };
   const authTabsStyle: React.CSSProperties = {
     display: "flex",
-    gap: "10px",
+    gap: "6px",
     marginBottom: "8px",
-    flexWrap: "wrap",
+    width: "min(100%, 340px)",
+    flexWrap: "nowrap",
     justifyContent: "center",
   };
   const authFormStyle: React.CSSProperties = {
@@ -1480,7 +1481,9 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     outline: "none",
   };
   const tabButtonStyle = (targetMode: "login" | "register" | "forgot"): React.CSSProperties => ({
-    padding: "10px 16px",
+    flex: "1 1 0",
+    minWidth: 0,
+    padding: "10px 8px",
     borderRadius: isKaen44 ? "999px" : "8px",
     border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.32)" : "1px solid rgba(45, 212, 191, 0.24)",
     background: mode === targetMode
@@ -1492,6 +1495,9 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     boxShadow: mode === targetMode
       ? (isKaen44 ? "0 14px 30px rgba(225, 29, 72, 0.22)" : "0 14px 30px rgba(20, 184, 166, 0.18)")
       : "none",
+    fontSize: 12,
+    lineHeight: 1,
+    whiteSpace: "nowrap",
   });
 
   return (
@@ -1528,14 +1534,14 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           onClick={() => switchMode("register")}
           style={tabButtonStyle("register")}
         >
-          S'inscrire
+          Inscrire
         </button>
         <button
           type="button"
           onClick={() => switchMode("forgot")}
           style={tabButtonStyle("forgot")}
         >
-          Reinitialiser
+          Reset
         </button>
       </div>
       {mode !== "forgot" && (
@@ -1706,7 +1712,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               fontWeight: "bold"
             }}
           >
-            {forgotLoading ? "Envoi..." : "Envoyer le lien de reinitialisation"}
+            {forgotLoading ? "Envoi..." : "Envoyer le lien"}
           </button>
           {forgotError && <div style={{ color: "red", fontSize: "13px" }}>{forgotError}</div>}
           {forgotSent && <div style={{ color: "#22c55e", fontSize: "13px" }}>Si l&apos;email existe, un lien a ete envoye.</div>}
@@ -1729,6 +1735,7 @@ type VivyStudioMediaPreview = {
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat";
+const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 
 type VivyPublicChatMessage = {
   id: string;
@@ -1797,6 +1804,34 @@ function writeVivyPublicChat(messages: VivyPublicChatMessage[]) {
   } catch {
     // Local history is best effort only.
   }
+}
+
+function getVivyVoiceReferenceStorageKey() {
+  try {
+    return `${VIVY_PUBLIC_VOICE_REFERENCE_KEY}:${getAuthStorageScope() || "public"}`;
+  } catch {
+    return `${VIVY_PUBLIC_VOICE_REFERENCE_KEY}:public`;
+  }
+}
+
+function readVivyVoiceReferenceLabel() {
+  try {
+    return String(globalThis.localStorage?.getItem(getVivyVoiceReferenceStorageKey()) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeVivyVoiceReferenceLabel(label: string) {
+  try {
+    globalThis.localStorage?.setItem(getVivyVoiceReferenceStorageKey(), label);
+  } catch {
+    // Local reference pointer is best effort; the upload itself stays server-side and private.
+  }
+}
+
+function isVivyVoiceChangeRequest(text: string) {
+  return /\b(voix|voice|timbre|changer|change|modifier|modifie|calibr|reference|ref audio|imiter|clone)\b/i.test(text);
 }
 
 function normalizeVivyStudioMode(value: unknown): VivyStudioMode | null {
@@ -2270,7 +2305,10 @@ function VivyPublicChat() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [status, setStatus] = useState("");
+  const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
+  const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     writeVivyPublicChat(messages);
@@ -2292,10 +2330,14 @@ function VivyPublicChat() {
       ts: now,
     };
     const nextMessages = [...messages, userMessage].slice(-24);
+    const voiceChangeRequested = isVivyVoiceChangeRequest(text);
     setMessages(nextMessages);
     setDraft("");
     setIsSending(true);
-    setStatus("Vivy ecoute...");
+    setAwaitingVoiceReference(voiceChangeRequested);
+    setStatus(voiceChangeRequested
+      ? (voiceReferenceName ? `Reference voix active: ${voiceReferenceName}` : "Vivy attend un audio de reference")
+      : "Vivy ecoute...");
 
     try {
       const payload = await chatWithVivy({
@@ -2308,25 +2350,57 @@ function VivyPublicChat() {
       });
       const assistantText = String(payload.assistant || payload.content || payload.summary || "").trim()
         || "Je suis la, mais je n'ai pas encore assez de matiere. Donne-moi une ambiance, une phrase ou une direction.";
+      const voiceInstruction = voiceChangeRequested
+        ? `\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte.`
+        : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-assistant-${Date.now()}`,
         role: "assistant",
-        content: assistantText,
+        content: `${assistantText}${voiceInstruction}`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
       setStatus(payload.mode ? `Mode ${payload.mode}` : "Vivy prete");
     } catch (error: any) {
+      const voiceFailureInstruction = voiceChangeRequested
+        ? "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en reference privee pour ton compte."
+        : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-error-${Date.now()}`,
         role: "assistant",
-        content: `Je n'arrive pas a joindre le studio Vivy pour l'instant: ${error?.message || error}`,
+        content: `Je n'arrive pas a joindre le studio Vivy pour l'instant: ${error?.message || error}${voiceFailureInstruction}`,
         ts: new Date().toISOString(),
       };
       setMessages((current) => [...current, assistantMessage].slice(-24));
       setStatus("Connexion Vivy a verifier");
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function onVivyVoiceReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+    event.target.value = "";
+    if (!file) return;
+    setStatus("Vivy garde la reference voix...");
+    try {
+      const label = `Vivy - ${file.name.replace(/\.[^.]+$/, "").slice(0, 54) || "reference voix"}`;
+      const result = await uploadTtsVoiceReference(file, label, "private");
+      const storedName = result.reference?.label || result.reference?.originalName || label;
+      writeVivyVoiceReferenceLabel(storedName);
+      setVoiceReferenceName(storedName);
+      setAwaitingVoiceReference(false);
+      setStatus(`Reference voix privee: ${storedName}`);
+      const assistantMessage: VivyPublicChatMessage = {
+        id: `vivy-voice-reference-${Date.now()}`,
+        role: "assistant",
+        content: `Reference recue. Quand tu me demandes cette voix, je m'en sers comme base privee.`,
+        ts: new Date().toISOString(),
+      };
+      setMessages((current) => [...current, assistantMessage].slice(-24));
+    } catch (error: any) {
+      setStatus(`Audio non ajoute: ${error?.message || error}`);
+      setAwaitingVoiceReference(true);
     }
   }
 
@@ -2376,6 +2450,21 @@ function VivyPublicChat() {
           <button type="submit" disabled={isSending || !draft.trim()}>Envoyer</button>
         </div>
       </form>
+      {(awaitingVoiceReference || voiceReferenceName) && (
+        <div className="vivy-chat-reference">
+          <span>{voiceReferenceName ? `Ref voix: ${voiceReferenceName}` : "Ref voix privee attendue"}</span>
+          <button type="button" onClick={() => voiceReferenceInputRef.current?.click()}>
+            Audio
+          </button>
+        </div>
+      )}
+      <input
+        ref={voiceReferenceInputRef}
+        type="file"
+        accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg"
+        onChange={onVivyVoiceReferenceChange}
+        hidden
+      />
       {status && <p className="vivy-chat-status">{status}</p>}
     </section>
   );
@@ -6130,71 +6219,41 @@ export function App() {
                       {inspectorOpen ? "Ouvert" : (inspectorBadgeCount ? `${inspectorBadgeCount}` : "Ferme")}
                     </span>
                   </button>
-                  <MuteButton showLabel fullWidth />
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Atelier audio</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                    {(["adaptive", "speech", "sing"] as const).map((modeValue) => (
-                      <button
-                        key={modeValue}
-                        type="button"
-                        onClick={() => setTtsVocalMode(modeValue)}
-                        className={`btn ghost ${ttsVocalMode === modeValue ? "active" : ""}`}
-                        style={{ minHeight: 36, padding: "0 8px" }}
-                        title={`Mode vocal ${modeValue}`}
-                      >
-                        {modeValue === "adaptive" ? "Auto" : modeValue === "speech" ? "Parle" : "Chant"}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                    {(["auto", "piper", "openai"] as const).map((providerValue) => (
-                      <button
-                        key={providerValue}
-                        type="button"
-                        onClick={() => setTtsProviderMode(providerValue)}
-                        className={`btn ghost ${ttsProviderMode === providerValue ? "active" : ""}`}
-                        style={{ minHeight: 36, padding: "0 8px" }}
-                        title={`Methode audio ${providerValue}`}
-                      >
-                        {providerValue === "auto" ? "Best" : providerValue === "piper" ? "Piper" : "OpenAI"}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onVoiceReferenceClick}
+                  <div style={menuSectionTitleStyle}>Champions</div>
+                  <a
+                    href={surfaceLinks.kaen44Cockpit}
                     className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                    title={`Ajouter un WAV/MP3/WEBM de reference pour ${productName}`}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
+                    title="Ouvrir Kaen44"
                   >
-                    <span>Ajouter reference voix</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>WAV</span>
-                  </button>
-                  <select
-                    value={selectedVoiceReferenceId}
-                    onChange={(e) => setSelectedVoiceReferenceId(e.target.value)}
-                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
-                    title="Reference comparee a la voix generee"
+                    <span>Kaen44</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Bureau</span>
+                  </a>
+                  <a
+                    href={surfaceLinks.a11Cockpit}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
+                    title="Ouvrir A11"
                   >
-                    <option value="">Voix {productName} auto</option>
-                    {voiceReferences.map((ref) => (
-                      <option key={ref.id} value={ref.id}>
-                        {ref.label || "Reference voix"}
-                      </option>
-                    ))}
-                  </select>
-                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
-                    {audioTranscribing
-                      ? "Analyse audio en cours..."
-                      : voiceReferenceStatus || `Importe un WAV: ${productName} l'ecoute comme reference sonore.`}
-                  </div>
+                    <span>A11</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Media</span>
+                  </a>
+                  <a
+                    href={surfaceLinks.vivy}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
+                    title="Ouvrir Vivy"
+                  >
+                    <span>Vivy</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Voix</span>
+                  </a>
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Navigation</div>
+                  <div style={menuSectionTitleStyle}>Services</div>
                   <button
                     type="button"
                     onClick={openChatView}
@@ -6203,47 +6262,6 @@ export function App() {
                   >
                     <span>Chat</span>
                     <span style={{ color: "#94a3b8", fontWeight: 700 }}>Direct</span>
-                  </button>
-                  <a
-                    href={isKaen44 ? surfaceLinks.a11 : surfaceLinks.kaen44}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
-                    title={isKaen44 ? "Ouvrir le site A11" : "Ouvrir le site Kaen44"}
-                  >
-                    <span>{isKaen44 ? "Ouvrir A11" : "Ouvrir Kaen44"}</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "A11" : "K44"}</span>
-                  </a>
-                  <a
-                    href={surfaceLinks.vivy}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textDecoration: "none" }}
-                    title="Ouvrir le site Vivy"
-                  >
-                    <span>Ouvrir Vivy</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Vivy</span>
-                  </a>
-                  <button
-                    type="button"
-                    onClick={openCasinoView}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                  >
-                    <span>Studio creatif</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Auto</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveView("admin");
-                      setAdminSection("subscription");
-                      setSettingsMenuOpen(false);
-                      setSidebarOpen(false);
-                    }}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                  >
-                      <span>Abonnement</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Plan</span>
                   </button>
                   {!isKaen44 ? (
                     <button
@@ -6274,6 +6292,24 @@ export function App() {
                   >
                     <span>{isKaen44 ? "Services" : "Pilotage"}</span>
                     <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "Client" : "A11"}</span>
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={menuSectionTitleStyle}>Abonnement</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveView("admin");
+                      setAdminSection("subscription");
+                      setSettingsMenuOpen(false);
+                      setSidebarOpen(false);
+                    }}
+                    className="btn ghost"
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span>Plan</span>
+                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Compte</span>
                   </button>
                 </div>
 
@@ -6807,10 +6843,10 @@ export function App() {
                 onOpenStudio={openCasinoView}
                 onOpenInspector={() => setInspectorOpen(true)}
               />
-              {messages.map((m, idx) => {
+              {messages.filter((message) => message.role !== "system").map((m, idx) => {
                 const exportSuggestion = m.role === "assistant" ? detectAssistantExportSuggestion(m.content) : null;
                 let messageClassName = "message ";
-                let roleLabel = "Systeme / Nindo";
+                let roleLabel = productName;
                 let roleStyle: React.CSSProperties = {
                   color: "#9fb3c8",
                 };

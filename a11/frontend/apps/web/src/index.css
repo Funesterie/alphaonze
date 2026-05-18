@@ -4374,6 +4374,32 @@ html.vivy-public-page-root .vivy-public-shell {
   border-color: transparent;
 }
 
+.vivy-chat-reference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1px solid rgba(240, 121, 216, 0.22);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(240, 121, 216, 0.08);
+}
+
+.vivy-chat-reference span {
+  min-width: 0;
+  color: #f7d6ef;
+  font-size: 13px;
+  font-weight: 760;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vivy-chat-reference button {
+  flex: 0 0 auto;
+}
+
 .vivy-studio {
   width: min(100% - clamp(24px, 4vw, 56px), 1500px);
   margin: 0 auto clamp(32px, 6vw, 76px);
@@ -7497,5 +7523,54 @@ body {
 
   .a11-media-portrait {
     min-height: 240px;
+  }
+}
+
+@media (max-width: 760px) {
+  .composer .a11-composer-row {
+    flex-wrap: wrap !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .composer .a11-input-wrap {
+    flex: 1 1 100% !important;
+    order: 1;
+  }
+
+  .composer .import-inline {
+    flex: 1 1 84px;
+    order: 2;
+    margin-right: 0 !important;
+    min-height: 40px;
+  }
+
+  .composer .a11-voice-tools {
+    flex: 0 1 auto;
+    order: 3;
+    margin-right: 0 !important;
+  }
+
+  .composer .a11-voice-tools button {
+    min-height: 40px !important;
+  }
+
+  .composer .send-button {
+    flex: 1 1 94px;
+    order: 4;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 40px;
+  }
+
+  .composer .nossen-mic-btn.inline {
+    order: 5;
+    width: 48px !important;
+    flex: 0 0 48px;
+    margin-left: 0 !important;
+  }
+
+  .vivy-chat-reference {
+    align-items: stretch;
   }
 }
