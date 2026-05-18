@@ -33,9 +33,7 @@
         var isLocalHost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
         var isK44Path = /^\/(?:k44|kaen44)(?:\/|$)/.test(pathname);
         var isVivyPath = /^\/vivy(?:\/|$)/.test(pathname);
-        var isK44Host = hostname === "funesterie.me"
-          || hostname === "www.funesterie.me"
-          || hostname === "k44.funesterie.me"
+        var isK44Host = hostname === "k44.funesterie.me"
           || hostname === "kaen44.funesterie.me"
           || hostname === "kaen44.funesterie.pro"
           || isK44Path;
@@ -122,7 +120,7 @@
         function shouldRenderStaticKaen44Page() {
           var hostname = String(location.hostname || "").toLowerCase();
           var pathname = String(location.pathname || "/").toLowerCase();
-          return (hostname === "funesterie.me" || hostname === "www.funesterie.me")
+          return (hostname === "k44.funesterie.me" || hostname === "kaen44.funesterie.me" || hostname === "kaen44.funesterie.pro")
             && (
               pathname === "/"
               || pathname === "/privacy"

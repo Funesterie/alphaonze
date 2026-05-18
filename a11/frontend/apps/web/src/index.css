@@ -7151,14 +7151,17 @@ body {
 }
 
 .fun-home-actions,
-.fun-home-side div a {
+.fun-home-side div a,
+.fun-home-account-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
 .fun-home-actions a,
-.fun-home-side a {
+.fun-home-side a,
+.fun-home-account-actions a,
+.fun-home-account-actions button {
   min-height: 46px;
   display: inline-flex;
   align-items: center;
@@ -7169,11 +7172,24 @@ body {
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
 }
 
 .fun-home-actions a:first-child {
   border-color: rgba(54, 212, 196, 0.62);
   background: linear-gradient(135deg, rgba(54, 212, 196, 0.28), rgba(66, 183, 238, 0.18));
+}
+
+.fun-home-account-actions button:first-child {
+  border-color: rgba(54, 212, 196, 0.62);
+  background: linear-gradient(135deg, rgba(54, 212, 196, 0.28), rgba(66, 183, 238, 0.18));
+}
+
+.fun-home-account-actions button:disabled {
+  opacity: 0.64;
+  cursor: progress;
 }
 
 .fun-home-side > img {
@@ -7377,6 +7393,30 @@ body {
   display: flex;
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.fun-home-connected li a {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  color: #f4eefa;
+}
+
+.fun-home-account-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.fun-home-account-card p {
+  margin: 0;
+}
+
+.fun-home-account-card small {
+  color: #e9b86c;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .fun-home-flow {

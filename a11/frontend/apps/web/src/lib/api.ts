@@ -951,7 +951,7 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
     ? DEFAULT_KAEN44_API_BASE
     : DEFAULT_PROD_API_BASE;
   const googleBaseUrl = isKaen44Surface
-    ? (DEFAULT_KAEN44_API_BASE || fallbackBase)
+    ? normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || fallbackBase)
     : normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || fallbackBase);
   const target = new URL(
     buildApiUrlFromBase(googleBaseUrl, '/api/auth/google/start'),
@@ -971,7 +971,7 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
   const isKaen44Surface = isKaen44WebSurface();
   const msBaseUrl = isKaen44Surface
-    ? normalizeApiBase(DEFAULT_KAEN44_API_BASE || 'https://k44.funesterie.me')
+    ? normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro')
     : normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.pro');
   const target = new URL(buildApiUrlFromBase(msBaseUrl, '/api/auth/microsoft/start'), globalThis.location?.origin || msBaseUrl || 'https://a11.funesterie.pro');
   target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));

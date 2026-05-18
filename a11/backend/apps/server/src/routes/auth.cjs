@@ -175,16 +175,20 @@ function resolveHostPinnedOAuthCallback(req, provider) {
   return `${publicOrigin}/api/auth/${provider}/callback`;
 }
 
-function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
-  const hostPinned = resolveHostPinnedOAuthCallback(req, 'google');
-  if (hostPinned) return hostPinned;
-  const explicit = String(
+function resolveExplicitGoogleCallbackUrl() {
+  return String(
     process.env.GOOGLE_CALLBACK_URL
     || process.env.A11_GOOGLE_CALLBACK_URL
     || process.env.GOOGLE_REDIRECT_URI
     || ''
   ).trim();
+}
+
+function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
+  const explicit = resolveExplicitGoogleCallbackUrl();
   if (explicit) return explicit;
+  const hostPinned = resolveHostPinnedOAuthCallback(req, 'google');
+  if (hostPinned) return hostPinned;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/google/callback`;
 }
 
@@ -192,17 +196,49 @@ function getMicrosoftTenantId(env = process.env) {
   return String(env.MICROSOFT_TENANT_ID || env.AZURE_TENANT_ID || env.MS_TENANT_ID || 'organizations').trim() || 'organizations';
 }
 
-function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
-  const hostPinned = resolveHostPinnedOAuthCallback(req, 'microsoft');
-  if (hostPinned) return hostPinned;
-  const explicit = String(
+function resolveExplicitMicrosoftCallbackUrl() {
+  return String(
     process.env.MICROSOFT_REDIRECT_URI
     || process.env.MICROSOFT_CALLBACK_URL
     || process.env.AZURE_REDIRECT_URI
     || ''
   ).trim();
+}
+
+function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
+  const explicit = resolveExplicitMicrosoftCallbackUrl();
   if (explicit) return explicit;
+  const hostPinned = resolveHostPinnedOAuthCallback(req, 'microsoft');
+  if (hostPinned) return hostPinned;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/microsoft/callback`;
+}
+
+function resolveCanonicalOAuthStartRedirect(req, provider) {
+  const hostname = resolveRequestHostname(req);
+  if (!['k44.funesterie.me', 'kaen44.funesterie.me', 'kaen44.funesterie.pro'].includes(hostname)) return '';
+
+  const explicitCallback = provider === 'microsoft'
+    ? resolveExplicitMicrosoftCallbackUrl()
+    : resolveExplicitGoogleCallbackUrl();
+  if (!explicitCallback) return '';
+
+  try {
+    const callbackUrl = new URL(explicitCallback);
+    const callbackHost = callbackUrl.hostname.toLowerCase();
+    if (!callbackHost || callbackHost === hostname) return '';
+
+    const target = new URL(`/api/auth/${provider}/start`, `${callbackUrl.protocol}//${callbackUrl.host}`);
+    for (const [key, value] of Object.entries(req?.query || {})) {
+      if (Array.isArray(value)) {
+        value.forEach((entry) => target.searchParams.append(key, String(entry)));
+      } else if (value !== undefined && value !== null) {
+        target.searchParams.set(key, String(value));
+      }
+    }
+    return target.toString();
+  } catch {
+    return '';
+  }
 }
 
 function getMicrosoftOAuthBaseUrl(env = process.env) {
@@ -868,6 +904,14 @@ function createAuthRouter({
   }
 
   router.get('/api/auth/google/start', (req, res) => {
+    const canonicalStart = resolveCanonicalOAuthStartRedirect(req, 'google');
+    if (canonicalStart) {
+      logOAuthTrace('google', 'start_canonical_redirect', req, normalizePublicAppUrl, {
+        canonicalStart,
+      });
+      return res.redirect(canonicalStart);
+    }
+
     const { clientId, clientSecret, callbackUrl } = getGoogleOAuthConfig(req);
     if (!clientId || !clientSecret || !callbackUrl) {
       logOAuthTrace('google', 'start_not_configured', req, normalizePublicAppUrl, {
@@ -1013,6 +1057,14 @@ function createAuthRouter({
   });
 
   router.get('/api/auth/microsoft/start', (req, res) => {
+    const canonicalStart = resolveCanonicalOAuthStartRedirect(req, 'microsoft');
+    if (canonicalStart) {
+      logOAuthTrace('microsoft', 'start_canonical_redirect', req, normalizePublicAppUrl, {
+        canonicalStart,
+      });
+      return res.redirect(canonicalStart);
+    }
+
     const { clientId, clientSecret, callbackUrl } = getMicrosoftOAuthConfig(req);
     if (!clientId || !clientSecret || !callbackUrl) {
       logOAuthTrace('microsoft', 'start_not_configured', req, normalizePublicAppUrl, {

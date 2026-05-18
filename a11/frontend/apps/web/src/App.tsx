@@ -16,6 +16,8 @@ import {
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
   chatWithVivy,
+  createCheckoutSession,
+  createCustomerPortal,
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
@@ -256,9 +258,17 @@ function isGeneralFunesterieHost(hostname: string) {
 function isGeneralCockpitRoute() {
   const { hostname, pathname } = getLocationSnapshot();
   if (isGeneralFunesterieHost(hostname)) {
-    return pathname === "/" || /^\/cockpit(?:\/|$)/.test(pathname);
+    return /^\/cockpit(?:\/|$)/.test(pathname);
   }
   return isLocalSurfaceHost(hostname) && /^\/cockpit(?:\/|$)/.test(pathname);
+}
+
+function isGeneralHomeRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return pathname === "/" || /^\/(?:home|accueil)(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/(?:home|accueil)(?:\/|$)/.test(pathname);
 }
 
 function isGeneralAgentsRoute() {
@@ -3025,8 +3035,8 @@ const FUNESTERIE_HOME_AGENTS = [
   {
     id: "vivy",
     name: "Vivy",
-    role: "Agent audio",
-    text: "Création vocale, musique, ambiance et émotions.",
+    role: "Agent musical",
+    text: "Idées de voix, chansons, scènes et présence créative.",
     href: "vivy",
     image: VIVY_POSTER_SRC,
     tone: "pink",
@@ -3036,7 +3046,7 @@ const FUNESTERIE_HOME_AGENTS = [
     id: "a11",
     name: "A11",
     role: "Agent média",
-    text: "Capture, analyse et structure les flux audio et vidéo.",
+    text: "Prépare les médias, les documents et les résumés utiles.",
     href: "a11",
     image: A11_HOODED_AGENT_SRC,
     tone: "blue",
@@ -3045,8 +3055,8 @@ const FUNESTERIE_HOME_AGENTS = [
   {
     id: "kaen44",
     name: "Kaen44",
-    role: "Copilote quotidien",
-    text: "Assistance, organisation, suivi et dossiers quotidiens.",
+    role: "Agent bureau",
+    text: "Accueil, suivi, organisation et interface quotidienne.",
     href: "kaen44",
     image: KAEN44_AVATAR_SRC,
     tone: "violet",
@@ -3065,20 +3075,70 @@ function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
 function FunesterieConnectedHomePage({
   surfaceLinks,
   primarySurface = getCurrentSurfaceKind(),
+  authenticated = false,
+  displayName = "",
 }: {
   surfaceLinks: SurfaceLinks;
   primarySurface?: FunesterieSurface;
+  authenticated?: boolean;
+  displayName?: string;
 }) {
   const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
   const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
+  const [accountBusy, setAccountBusy] = useState<"" | "google" | "microsoft" | "subscription">("");
+  const [accountMessage, setAccountMessage] = useState("");
   const navItems = [
     ["Accueil", "#top"],
-    ["Univers", "#univers"],
-    ["Modules", "#agents"],
-    ["Usages", "#missions"],
-    ["Écosystème", "#ecosystem"],
-    ["Contact", "#contact"],
+    ["Lore", "#lore"],
+    ["Agents", "#agents"],
+    ["Accès", "#access"],
+    ["Compte", "#account"],
   ];
+
+  const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
+
+  function startHomeGoogle() {
+    setAccountBusy("google");
+    setAccountMessage("Redirection vers Google...");
+    startGoogleOAuth(accountReturnTo, "funesterie-home");
+  }
+
+  function startHomeMicrosoft() {
+    setAccountBusy("microsoft");
+    setAccountMessage("Redirection vers Microsoft...");
+    startMicrosoftOAuth(accountReturnTo, "funesterie-home");
+  }
+
+  async function openSubscription() {
+    if (!authenticated) {
+      setAccountMessage("Connecte-toi d'abord, puis l'abonnement s'ouvrira depuis ton compte.");
+      startHomeGoogle();
+      return;
+    }
+
+    setAccountBusy("subscription");
+    setAccountMessage("Ouverture de l'espace abonnement...");
+    try {
+      const portal = await createCustomerPortal();
+      if (portal?.url) {
+        window.location.assign(portal.url);
+        return;
+      }
+      throw new Error("portal_missing_url");
+    } catch {
+      try {
+        const checkout = await createCheckoutSession();
+        if (checkout?.url) {
+          window.location.assign(checkout.url);
+          return;
+        }
+        throw new Error("checkout_missing_url");
+      } catch {
+        setAccountBusy("");
+        setAccountMessage("Abonnement indisponible pour le moment. Le cockpit reste accessible.");
+      }
+    }
+  }
 
   return (
     <main id="top" className="fun-home-shell" aria-label="Accueil Funesterie connecté">
@@ -3104,17 +3164,21 @@ function FunesterieConnectedHomePage({
           <div>
             <h2>Vivy</h2>
             <strong>Présence musicale Funesterie</strong>
-            <p>Artiste, voix et âme de Funesterie. Vivy transforme les émotions en musique et les idées en créations sonores.</p>
+            <p>Une présence musicale pour poser des idées, des voix, des chansons et des scènes.</p>
             <a href={surfaceLinks.vivy}><span aria-hidden="true">♪</span> Découvrir Vivy</a>
           </div>
         </article>
 
         <div className="fun-home-core">
           <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <p>Funesterie rassemble des modules intelligents au service de la création, de la compréhension et des projets humains.</p>
+          <p>
+            Funesterie est l'univers commun. Nossen garde le contexte, les agents gardent leur spécialité,
+            et le cockpit montre simplement ce qui est joignable.
+          </p>
           <div className="fun-home-actions">
-            <a href="#univers">Découvrir l'univers <span aria-hidden="true">*</span></a>
-            <a href="#agents">Explorer les modules</a>
+            <a href="#lore">Lire le lore <span aria-hidden="true">*</span></a>
+            <a href="#account">Se connecter</a>
+            <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
         </div>
 
@@ -3122,15 +3186,15 @@ function FunesterieConnectedHomePage({
           <img src={A11_HOODED_AGENT_SRC} alt="" />
           <div>
             <h2>A11</h2>
-            <strong>Agent média audio & vidéo</strong>
-            <p>Il capture, analyse et structure les flux audio et vidéo pour les transformer en information exploitable.</p>
+            <strong>Agent média</strong>
+            <p>Un espace pour préparer les fichiers, les signaux et les notes utiles aux projets.</p>
             <a href={surfaceLinks.a11}><span aria-hidden="true">≋</span> Découvrir A11</a>
           </div>
         </article>
       </section>
 
       <section id="agents" className="fun-home-agents" aria-labelledby="fun-home-agents-title">
-        <h2 id="fun-home-agents-title">Modules actifs</h2>
+        <h2 id="fun-home-agents-title">Agents</h2>
         <div className="fun-home-agent-grid">
           {FUNESTERIE_HOME_AGENTS.map((agent) => (
             <a
@@ -3152,58 +3216,70 @@ function FunesterieConnectedHomePage({
           <a className="fun-home-agent-card fun-home-agent-card--empty" href={primaryCockpitHref}>
             <span className="fun-home-agent-media" aria-hidden="true"><b>+</b></span>
             <span className="fun-home-agent-copy">
-              <strong>Modules a venir</strong>
-              <small>Activation sur besoin reel.</small>
-              <span>Un nouveau module apparait ici seulement quand sa promesse est claire.</span>
+              <strong>À venir</strong>
+              <small>Activation utile</small>
+              <span>Un nouvel accès apparaît seulement quand son rôle est clair.</span>
             </span>
           </a>
         </div>
       </section>
 
-      <section id="ecosystem" className="fun-home-connected" aria-label="Écosystème connecté">
+      <section id="lore" className="fun-home-connected" aria-label="Lore et accès Funesterie">
         <article>
-          <h2>Un écosystème connecté</h2>
-          <div className="fun-home-flow" aria-label="Portail Funesterie vers A11, Vivy, Kaen44 et l'univers">
-            {["Portail", "A11", "Vivy", "Kaen44", "Univers"].map((name, index) => (
+          <h2>Lore commun</h2>
+          <div className="fun-home-flow" aria-label="Funesterie relie Nossen, Kaen44, A11 et Vivy">
+            {["Nossen", "Kaen44", "A11", "Vivy"].map((name, index) => (
               <React.Fragment key={name}>
                 <span>{name.slice(0, 1)}</span>
                 <strong>{name}</strong>
-                {index < 4 ? <i aria-hidden="true">→</i> : null}
+                {index < 3 ? <i aria-hidden="true">→</i> : null}
               </React.Fragment>
             ))}
           </div>
-          <p>Connectés par le cœur Funesterie pour garder une seule expérience lisible, du cockpit à la scène musicale.</p>
+          <p>
+            Nossen n'est pas un agent. C'est le cadre commun: mémoire, ambiance,
+            règles de confiance et continuité entre les surfaces.
+          </p>
         </article>
 
-        <article id="missions">
-          <h2>Capacités clés</h2>
-          <ul>
-            <li>Capture & ingestion</li>
-            <li>Analyse avancée</li>
-            <li>Transcription & sous-titres</li>
-            <li>Résumés intelligents</li>
-            <li>Recherche multimodale</li>
-          </ul>
-        </article>
-
-        <article id="univers">
-          <h2>Au service de</h2>
+        <article id="access">
+          <h2>Accès rapides</h2>
           <ul className="fun-home-service-list">
-            <li>Créateurs</li>
-            <li>Projets</li>
-            <li>Workflows</li>
-            <li>Modules IA</li>
-            <li>Écosystème Funesterie</li>
-            <li>Communautés</li>
+            <li><a href={surfaceLinks.cockpit}>Cockpit opérationnel</a></li>
+            <li><a href={surfaceLinks.agents}>Présentation des agents</a></li>
+            <li><a href={surfaceLinks.kaen44}>Kaen44</a></li>
+            <li><a href={surfaceLinks.a11}>A11</a></li>
+            <li><a href={surfaceLinks.vivy}>Vivy</a></li>
           </ul>
+        </article>
+
+        <article id="account" className="fun-home-account-card">
+          <h2>Compte</h2>
+          <p>
+            {authenticated
+              ? `Session active${displayName ? `: ${displayName}` : ""}.`
+              : "Connexion centralisée pour accéder aux agents, aux fichiers autorisés et à l'abonnement."}
+          </p>
+          <div className="fun-home-account-actions">
+            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+              {accountBusy === "google" ? "Google..." : "Google"}
+            </button>
+            <button type="button" onClick={startHomeMicrosoft} disabled={Boolean(accountBusy)}>
+              {accountBusy === "microsoft" ? "Microsoft..." : "Microsoft"}
+            </button>
+            <button type="button" onClick={openSubscription} disabled={Boolean(accountBusy)}>
+              {accountBusy === "subscription" ? "Ouverture..." : "Abonnement"}
+            </button>
+          </div>
+          {accountMessage ? <small>{accountMessage}</small> : null}
         </article>
       </section>
 
       <footer id="contact" className="fun-home-footer">
         <span>Funesterie</span>
-        <span>Créer</span>
-        <span>Comprendre</span>
-        <span>Connecter</span>
+        <span>Nossen</span>
+        <span>Agents</span>
+        <span>Compte</span>
         <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
       </footer>
     </main>
@@ -3773,143 +3849,47 @@ type PersonaDashboardProps = {
 
 function PersonaDashboard({
   isKaen44,
-  displayName,
-  currentConversationId,
-  messageCount,
-  resourceCount,
-  activityCount,
+  displayName: _displayName,
+  currentConversationId: _currentConversationId,
+  messageCount: _messageCount,
+  resourceCount: _resourceCount,
+  activityCount: _activityCount,
   onStartChat,
   onOpenAdmin,
   onOpenStudio,
   onOpenInspector,
 }: PersonaDashboardProps) {
-  const formatConversationLabel = (value: string | null) => {
-    const cleaned = String(value || "").trim().replace(/^chat-/, "");
-    if (!cleaned) return "nouvelle session";
-    if (/^\d{10,}$/.test(cleaned)) return "session locale";
-    return cleaned.replace(/[-_]+/g, " ").slice(0, 22);
-  };
-  const activeConversation = formatConversationLabel(currentConversationId);
   const surfaceLinks = getSurfaceLinks();
-  const metrics = [
-    { label: isKaen44 ? "Dossiers" : "Fichiers", value: resourceCount || "0" },
-    { label: "Activité", value: activityCount || "0" },
-    { label: "Messages", value: messageCount || "0" },
-  ];
+  const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
 
   if (!isKaen44) {
-    const a11Modules = [
-      ["Capture", "Audio, vidéo, écran, caméra et flux réseau."],
-      ["Analyse", "ASR, détection, reconnaissance et contexte."],
-      ["Traitement", "Nettoyage, découpe, normalisation et enrichissement."],
-      ["Mémoire", "Notes, tags, relations et décisions utiles."],
-      ["Génération", "Synthèse, résumés, visuels, clips et chapitres."],
-      ["Export", "Formats multiples, packages et partage contrôlé."],
-      ["Intégration", "Comptes connectés, workflows et agents IA."],
-      ["Diffusion", "Publication, API, streaming et suivi."],
-    ];
-    const capabilities = [
-      "Capture multi-sources",
-      "Analyse audio avancée",
-      "Analyse vidéo & détection",
-      "Transcription & sous-titres",
-      "Extraction de métadonnées",
-      "Recherche multimodale",
-    ];
-    const stack = ["Audio", "Vidéo", "Texte", "Images", "Projets", "Exports"];
-    const ecosystem = ["Portail", "A11", "Vivy", "Kaen44", "Univers"];
-
     return (
-      <section className="a11-media-dashboard" aria-label="A11 agent média audio et vidéo">
-        <div className="a11-media-hero">
-          <div className="a11-media-copy">
-            <div className="a11-media-mark" aria-hidden="true">A</div>
-            <div>
-              <p className="a11-media-label">A11</p>
-              <h1>Agent média audio & vidéo</h1>
-              <p className="a11-media-mantra">Capturer. Traiter. Comprendre. Créer. Partager.</p>
-            </div>
+      <section className="k44-agent-strip-panel a11-agent-strip-panel" aria-label="A11">
+        <header className="k44-agent-strip-header">
+          <div className="k44-title">
+            <h1>A11</h1>
+            <p>Accès rapides</p>
           </div>
-          <div className="a11-media-portrait" aria-hidden="true">
-            <img src={A11_HOODED_AGENT_SRC} alt="" />
+          <div className="k44-simple-actions">
+            <button type="button" onClick={onStartChat}>Discussion</button>
+            <button type="button" onClick={onOpenInspector}>Menu</button>
           </div>
-          <blockquote>
-            Je transforme le bruit du monde en information, et l'information en création.
-            <cite>A11</cite>
-          </blockquote>
-        </div>
+        </header>
 
-        <div className="a11-media-panel a11-media-panel--role">
-          <h2>Rôle principal</h2>
-          <p>
-            A11 capture, analyse et structure les flux audio et vidéo. Il extrait le sens,
-            génère des métadonnées et prépare des contenus prêts à être utilisés par
-            l'écosystème Funesterie.
-          </p>
-        </div>
-
-        <div className="a11-media-panel a11-media-panel--capabilities">
-          <h2>Capacités clés</h2>
-          <ul>
-            {capabilities.map((item) => <li key={item}>{item}</li>)}
-          </ul>
-        </div>
-
-        <div className="a11-media-modules" aria-label="Modules principaux A11">
-          {a11Modules.map(([title, text]) => (
-            <button
-              key={title}
-              type="button"
-              className="a11-media-module"
-              onClick={title === "Capture" || title === "Traitement" ? onOpenInspector : onOpenStudio}
-            >
-              <span aria-hidden="true">{title.slice(0, 3).toUpperCase()}</span>
-              <strong>{title}</strong>
-              <small>{text}</small>
-            </button>
+        <div className="k44-agent-strip-grid">
+          {agentShortcuts.map((agent) => (
+            <a key={agent.id} href={agent.href} className={`k44-agent-strip-card k44-agent-strip-card--${agent.id}`}>
+              <img src={agent.image} alt="" />
+              <span>
+                <strong>{agent.name}</strong>
+                <small>{agent.role}</small>
+              </span>
+            </a>
           ))}
-        </div>
-
-        <div className="a11-media-lower">
-          <article>
-            <h2>Intégration écosystème</h2>
-            <div className="a11-media-flow" aria-label="Flux Portail A11 Vivy Kaen44 Univers">
-              {ecosystem.map((name, index) => (
-                <React.Fragment key={name}>
-                  <span>{name}</span>
-                  {index < ecosystem.length - 1 ? <i aria-hidden="true">-&gt;</i> : null}
-                </React.Fragment>
-              ))}
-            </div>
-            <p>Relie les modules Funesterie pour transformer les flux en actions utiles.</p>
-          </article>
-          <article>
-            <h2>Formats traites</h2>
-            <div className="a11-media-stack">
-              {stack.map((item) => <span key={item}>{item}</span>)}
-            </div>
-          </article>
-          <article>
-            <h2>Session</h2>
-            <div className="persona-metrics a11-media-metrics" aria-label="Etat A11">
-              {metrics.map((metric) => (
-                <div key={metric.label} className="persona-metric">
-                  <span>{metric.label}</span>
-                  <strong>{metric.value}</strong>
-                </div>
-              ))}
-              <div className="persona-metric persona-metric--wide">
-                <span>{displayName}</span>
-                <strong>{activeConversation}</strong>
-              </div>
-            </div>
-          </article>
         </div>
       </section>
     );
   }
-
-  const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
 
   return (
     <section className="k44-agent-strip-panel" aria-label="Agents Funesterie">
@@ -3947,6 +3927,7 @@ export function App() {
   const isKaen44 = surfaceKind === "kaen44";
   const isVivy = surfaceKind === "vivy";
   const isGeneralCockpit = isGeneralCockpitRoute();
+  const isGeneralHome = isGeneralHomeRoute();
   const isGeneralAgents = isGeneralAgentsRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
@@ -3975,6 +3956,8 @@ export function App() {
   useEffect(() => {
     document.title = isGeneralCockpit
       ? "Funesterie - Cockpit général"
+      : isGeneralHome
+      ? "Funesterie - Accueil"
       : isGeneralAgents
       ? "Funesterie - Agents"
       : isVivy
@@ -3983,8 +3966,8 @@ export function App() {
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-  }, [isGeneralAgents, isGeneralCockpit, isKaen44, isVivy]);
+    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+  }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -5595,14 +5578,14 @@ export function App() {
   }, [isAuthenticated, isResetRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isResetRoute) return;
+    if (!isAuthenticated || isResetRoute || isKaen44) return;
     if (!hasAuthenticatedAdminApiAccess()) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
     }
     refreshRemoteAiProfiles();
-  }, [isAuthenticated, isResetRoute]);
+  }, [isAuthenticated, isResetRoute, isKaen44]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -5965,6 +5948,16 @@ export function App() {
   // Check authentication
   if (isResetRoute) {
     return <ResetPasswordPanel />;
+  }
+
+  if (isGeneralHome) {
+    return (
+      <FunesterieConnectedHomePage
+        surfaceLinks={surfaceLinks}
+        authenticated={isAuthenticated}
+        displayName={displayName}
+      />
+    );
   }
 
   if (isGeneralCockpit) {

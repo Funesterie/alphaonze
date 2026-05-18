@@ -82,7 +82,11 @@ class BootErrorBoundary extends React.Component<{ children: React.ReactNode }, B
   }
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+const rootElement = document.getElementById("root") as HTMLElement;
+const reactRoot = (window as any).__A11_REACT_ROOT__
+  || ((window as any).__A11_REACT_ROOT__ = ReactDOM.createRoot(rootElement));
+
+reactRoot.render(
   <React.StrictMode>
     <BootErrorBoundary>
       <App />
