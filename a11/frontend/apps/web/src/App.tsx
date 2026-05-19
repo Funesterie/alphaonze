@@ -5889,10 +5889,22 @@ export function App() {
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/casino"));
   }
 
-  function focusComposerSoon() {
+  function focusComposerSoon(revealConversation = false) {
     window.setTimeout(() => {
       window.requestAnimationFrame(() => {
-        composerInputRef.current?.focus();
+        if (revealConversation) {
+          const behavior: ScrollBehavior = isCompactLayout ? "auto" : "smooth";
+          const frame = chatScrollFrameRef.current;
+          if (frame) {
+            frame.scrollTo({ top: frame.scrollHeight, behavior });
+            window.setTimeout(() => {
+              frame.scrollTop = frame.scrollHeight;
+            }, isCompactLayout ? 0 : 360);
+          }
+          chatEndRef.current?.scrollIntoView({ block: "end", behavior });
+          composerInputRef.current?.scrollIntoView({ block: "nearest", behavior });
+        }
+        composerInputRef.current?.focus({ preventScroll: true });
       });
     }, 0);
   }
@@ -5903,7 +5915,7 @@ export function App() {
     setSidebarOpen(false);
     setInspectorOpen(false);
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", isKaen44 ? "/cockpit" : "/"));
-    focusComposerSoon();
+    focusComposerSoon(true);
   }
 
   function openKaenQuickPrompt(prompt: string) {
