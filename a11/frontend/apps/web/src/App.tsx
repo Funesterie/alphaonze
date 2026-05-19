@@ -1781,6 +1781,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           fontSize: "12px",
         }}
       >
+        <a href={surfaceLinks.home}>Accueil</a>
         <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href={surfaceLinks.terms}>Conditions</a>
       </div>
