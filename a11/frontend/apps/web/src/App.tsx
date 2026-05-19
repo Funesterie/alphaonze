@@ -2820,10 +2820,6 @@ function FunesterieCockpitPage({
     document.documentElement.classList.add("funesterie-cockpit-page-root");
     document.body.classList.add("funesterie-cockpit-page-body");
     try {
-      const { hostname, pathname } = getLocationSnapshot();
-      if (isGeneralFunesterieHost(hostname) && pathname === "/") {
-        window.history.replaceState({}, "", "/cockpit/");
-      }
       const params = new URLSearchParams(window.location.search || "");
       const error = String(params.get("error") || "").trim().toLowerCase();
       const provider = String(params.get("provider") || "").trim().toLowerCase();
@@ -2939,8 +2935,7 @@ function FunesterieCockpitPage({
 
       <section className="funesterie-ops-hero" aria-label="État opérationnel Funesterie">
         <div>
-          <span>funesterie.me/cockpit</span>
-          <h1>Cockpit essentiel.</h1>
+          <h1>État</h1>
           <p>
             Une vue courte pour savoir si Funesterie, K44, A11, Vivy et le MCP sont
             joignables. Pas de cockpit admin ici : seulement l'état et les sorties utiles.
@@ -3803,59 +3798,30 @@ function PersonaDashboard({
 }: PersonaDashboardProps) {
   const surfaceLinks = getSurfaceLinks();
   const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
+  const currentAgentId = isKaen44 ? "kaen44" : "a11";
+  const currentAgent = agentShortcuts.find((agent) => agent.id === currentAgentId) ?? agentShortcuts[0];
+  const currentSummary = isKaen44
+    ? "Accueil, suivi et organisation quotidienne pour garder le travail lisible."
+    : "Préparation des médias, documents, images et notes utiles aux projets.";
+  const currentDetail = isKaen44
+    ? "Kaen44 garde la conversation, les priorités et les dossiers au même endroit."
+    : "A11 accompagne les fichiers, l'image, la vidéo, l'audio et les notes sans panneau inutile.";
 
-  if (!isKaen44) {
-    return (
-      <section className="k44-agent-strip-panel a11-agent-strip-panel" aria-label="A11">
-        <header className="k44-agent-strip-header">
-          <div className="k44-title">
-            <h1>A11</h1>
-            <p>Accès rapides</p>
-          </div>
+  return (
+    <section className={`k44-agent-strip-panel k44-agent-profile-panel ${isKaen44 ? "" : "a11-agent-strip-panel"}`} aria-label={`${currentAgent.name} présentation`}>
+      <div className="k44-agent-profile-main">
+        <img className="k44-agent-profile-image" src={currentAgent.image} alt="" />
+        <div className="k44-agent-profile-copy">
+          <span>Agent actif</span>
+          <h1>{currentAgent.name}</h1>
+          <p className="k44-agent-profile-role">{currentAgent.role}</p>
+          <strong>{currentSummary}</strong>
+          <p className="k44-agent-profile-detail">{currentDetail}</p>
           <div className="k44-simple-actions">
             <button type="button" onClick={onStartChat}>Discussion</button>
             <button type="button" onClick={onOpenInspector}>Menu</button>
           </div>
-        </header>
-
-        <div className="k44-agent-strip-grid">
-          {agentShortcuts.map((agent) => (
-            <a key={agent.id} href={agent.href} className={`k44-agent-strip-card k44-agent-strip-card--${agent.id}`}>
-              <img src={agent.image} alt="" />
-              <span>
-                <strong>{agent.name}</strong>
-                <small>{agent.role}</small>
-              </span>
-            </a>
-          ))}
         </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="k44-agent-strip-panel" aria-label="Agents Funesterie">
-      <header className="k44-agent-strip-header">
-        <div className="k44-title">
-          <h1>Agents</h1>
-          <p>Accès rapides</p>
-        </div>
-        <div className="k44-simple-actions">
-          <button type="button" onClick={onStartChat}>Discussion</button>
-          <button type="button" onClick={onOpenInspector}>Menu</button>
-        </div>
-      </header>
-
-      <div className="k44-agent-strip-grid">
-        {agentShortcuts.map((agent) => (
-          <a key={agent.id} href={agent.href} className={`k44-agent-strip-card k44-agent-strip-card--${agent.id}`}>
-            <img src={agent.image} alt="" />
-            <span>
-              <strong>{agent.name}</strong>
-              <small>{agent.role}</small>
-            </span>
-          </a>
-        ))}
       </div>
     </section>
   );

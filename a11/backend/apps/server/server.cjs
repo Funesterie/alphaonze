@@ -7737,9 +7737,6 @@ function sendEmbeddedUiIndex(req, res) {
 
 function sendEmbeddedUiRoot(req, res) {
   const hostname = getRequestSurfaceHost(req);
-  if (hostname === 'funesterie.me' || hostname === 'www.funesterie.me') {
-    return res.redirect(302, '/cockpit/');
-  }
   if (hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
     return res.redirect(302, '/cockpit/');
@@ -7752,6 +7749,9 @@ app.get([
   '/auth/success',
   '/login',
   '/cockpit',
+  '/cockpit/',
+  '/cockpit/etat',
+  '/cockpit/auth/success',
   '/agents',
   '/agents/',
   '/app',

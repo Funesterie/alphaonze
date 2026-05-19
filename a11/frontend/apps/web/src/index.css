@@ -5794,6 +5794,70 @@ body {
   text-transform: uppercase;
 }
 
+.k44-agent-profile-panel {
+  padding: clamp(14px, 1.8vw, 22px);
+}
+
+.k44-agent-profile-main {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(16px, 2vw, 28px);
+}
+
+.k44-agent-profile-image {
+  width: 124px;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(203, 158, 255, 0.36);
+  box-shadow: 0 0 28px rgba(183, 108, 255, 0.2);
+}
+
+.k44-agent-profile-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.k44-agent-profile-copy span {
+  color: var(--k44-green);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.k44-agent-profile-copy h1 {
+  margin: 0;
+  color: #f4eeff;
+  font-size: clamp(34px, 4vw, 58px);
+  line-height: 0.95;
+  text-shadow: 0 0 28px rgba(183, 108, 255, 0.45);
+}
+
+.k44-agent-profile-role {
+  margin: 0;
+  color: var(--k44-purple-soft);
+  font-size: 15px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.k44-agent-profile-detail {
+  max-width: 680px;
+  margin: 0;
+  color: #bbaed1;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.k44-agent-profile-copy strong {
+  max-width: 580px;
+  color: #ddd3eb;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
 .k44-nossen-panel {
   display: grid;
   grid-template-columns: minmax(220px, 0.36fr) minmax(0, 0.74fr) minmax(260px, 0.52fr);
@@ -6430,6 +6494,14 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .k44-agent-profile-main {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+
+  .k44-agent-profile-image {
+    width: 104px;
+  }
+
   .k44-cockpit-header,
   .k44-nossen-panel,
   .k44-identity-panel,
@@ -6498,6 +6570,20 @@ body {
 
   .k44-agent-strip-card strong {
     font-size: 19px;
+  }
+
+  .k44-agent-profile-main {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .k44-agent-profile-image {
+    width: 112px;
+  }
+
+  .k44-agent-profile-copy .k44-simple-actions {
+    justify-content: center;
   }
 
   .k44-title h1 {
