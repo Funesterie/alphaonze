@@ -3961,13 +3961,23 @@ export function App() {
       setVoiceListening(false);
       if (error === "not-allowed" || error === "service-not-allowed") {
         setMicPermissionBlocked(true);
-        setMicStatusMessage("Micro bloqué par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
-        setTtsFallback(true);
+        setMicStatusMessage("Micro bloqué par le navigateur. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
+        setTtsFallback(false);
         try {
-          localStorage.setItem("a11:tts-only", "1");
+          localStorage.removeItem("a11:tts-only");
         } catch {
           // ignore storage access errors
         }
+        return;
+      }
+      if (error === "network" || error === "audio-capture" || error === "aborted") {
+        setMicPermissionBlocked(false);
+        setTtsFallback(false);
+        setMicStatusMessage("Dictée navigateur instable. Je passe par A11: parle, puis reclique MIC pour envoyer.");
+        console.info("[A11] SpeechRecognition fallback to server STT:", error);
+        void startServerMicCapture(error === "network" ? "speech-network" : "speech-fallback").catch((fallbackError) => {
+          console.info("[A11] server STT fallback unavailable", fallbackError);
+        });
         return;
       }
       if (error) {
@@ -4204,6 +4214,12 @@ export function App() {
   } = useA11Activity();
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
+  const serverMicRecorderRef = useRef<MediaRecorder | null>(null);
+  const serverMicStreamRef = useRef<MediaStream | null>(null);
+  const serverMicChunksRef = useRef<Blob[]>([]);
+  const serverMicStopTimerRef = useRef<number | null>(null);
+  const serverMicStartingRef = useRef(false);
+  useEffect(() => () => cleanupServerMicCapture(), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
@@ -5384,10 +5400,163 @@ export function App() {
     }
   }
 
+  function getServerMicMimeType(): string {
+    const recorder = (globalThis as any).MediaRecorder;
+    if (!recorder || typeof recorder.isTypeSupported !== "function") return "";
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+    return candidates.find((mime) => recorder.isTypeSupported(mime)) || "";
+  }
+
+  function cleanupServerMicCapture() {
+    if (serverMicStopTimerRef.current) {
+      window.clearTimeout(serverMicStopTimerRef.current);
+      serverMicStopTimerRef.current = null;
+    }
+    const stream = serverMicStreamRef.current;
+    serverMicStreamRef.current = null;
+    serverMicRecorderRef.current = null;
+    serverMicStartingRef.current = false;
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        try { track.stop(); } catch {}
+      }
+    }
+  }
+
+  function stopServerMicCapture() {
+    const recorder = serverMicRecorderRef.current;
+    if (!recorder) return false;
+    try {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+        setMicStatusMessage("Je transcris ta voix avec A11...");
+        return true;
+      }
+    } catch (error) {
+      console.warn("[A11] server mic stop failed", error);
+      cleanupServerMicCapture();
+    }
+    return false;
+  }
+
+  async function startServerMicCapture(reason = "manual") {
+    if (serverMicStartingRef.current) return;
+    const activeRecorder = serverMicRecorderRef.current;
+    if (activeRecorder && activeRecorder.state !== "inactive") return;
+    const mediaDevices = (navigator as any)?.mediaDevices;
+    const RecorderCtor = (globalThis as any).MediaRecorder;
+    if (!mediaDevices?.getUserMedia || !RecorderCtor) {
+      setMicPermissionBlocked(false);
+      setTtsFallback(false);
+      setMicStatusMessage("Micro non disponible ici. Importe un fichier audio, A11 le transcrira.");
+      throw new Error("MediaRecorder not available");
+    }
+
+    serverMicStartingRef.current = true;
+    setMicStarting(true);
+    setMicPermissionBlocked(false);
+    setTtsFallback(false);
+    setMicStatusMessage("Ouverture du micro A11...");
+
+    try {
+      const stream = await mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const mimeType = getServerMicMimeType();
+      const recorder = mimeType
+        ? new RecorderCtor(stream, { mimeType })
+        : new RecorderCtor(stream);
+      serverMicStreamRef.current = stream;
+      serverMicRecorderRef.current = recorder;
+      serverMicChunksRef.current = [];
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          serverMicChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = (event: Event) => {
+        console.warn("[A11] server mic recorder error", event);
+        cleanupServerMicCapture();
+        setVoiceListening(false);
+        setMicStarting(false);
+        setAudioTranscribing(false);
+        setMicStatusMessage("Capture micro interrompue. Tu peux aussi importer un audio.");
+      };
+
+      recorder.onstop = () => {
+        const chunks = [...serverMicChunksRef.current];
+        const type = mimeType || chunks[0]?.type || "audio/webm";
+        cleanupServerMicCapture();
+        setVoiceListening(false);
+        setMicStarting(false);
+        if (!chunks.length) {
+          setMicStatusMessage("Je n'ai pas capté de voix. Réessaie ou importe un audio.");
+          return;
+        }
+        const blob = new Blob(chunks, { type });
+        const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+        const file = new File([blob], `a11-mic-${Date.now()}.${extension}`, { type });
+        setAudioTranscribing(true);
+        setMicStatusMessage("Je transcris ta voix avec A11...");
+        transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" })
+          .then((transcript) => {
+            const text = String(transcript || "").trim();
+            if (!text) {
+              setMicStatusMessage("A11 n'a rien entendu de net. Réessaie avec une phrase plus proche du micro.");
+              return;
+            }
+            setMicStatusMessage("");
+            setInput("");
+            sendMessage(text);
+          })
+          .catch((error) => {
+            console.warn("[A11] server mic transcription failed", error);
+            setMicStatusMessage("Transcription indisponible pour l'instant. Importe un audio ou réessaie.");
+          })
+          .finally(() => setAudioTranscribing(false));
+      };
+
+      recorder.start(1000);
+      serverMicStartingRef.current = false;
+      setMicStarting(false);
+      setVoiceListening(true);
+      setMicStatusMessage(
+        reason === "speech-network"
+          ? "Chrome a lâché la dictée. A11 enregistre: parle, puis reclique MIC pour envoyer."
+          : "A11 enregistre: parle, puis reclique MIC pour envoyer."
+      );
+      serverMicStopTimerRef.current = window.setTimeout(() => {
+        stopServerMicCapture();
+      }, 60_000);
+    } catch (error) {
+      cleanupServerMicCapture();
+      setVoiceListening(false);
+      setMicStarting(false);
+      setMicPermissionBlocked(true);
+      setMicStatusMessage("Micro bloqué ou indisponible. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
+      throw error;
+    }
+  }
+
   async function toggleMic() {
     console.log("[A11] toggleMic clicked, current voiceListening=", voiceListening);
     if (micStarting) {
       console.log("[A11] toggle ignored while mic is starting");
+      return;
+    }
+    if (serverMicRecorderRef.current && serverMicRecorderRef.current.state !== "inactive") {
+      stopServerMicCapture();
       return;
     }
     if (mobileVoiceReady && !voiceListening) {
@@ -5426,20 +5595,11 @@ export function App() {
       }
       toggleLockRef.current = true;
       setTimeout(() => { toggleLockRef.current = false; }, 600);
-      // fallback: toggle TTS-only mode
-      setMicPermissionBlocked(false);
-      setMicStatusMessage("Reconnaissance vocale non disponible sur ce navigateur. Mode voix sortie uniquement.");
-      setTtsFallback((v) => {
-        const next = !v;
-        // keep voiceListening false when using fallback
-        if (next) {
-          // enable TTS playback
-      console.log("[A11] SpeechRecognition not available - enabling TTS-only mode");
-        } else {
-          console.log("[A11] Disabling TTS-only mode");
-        }
-        return next;
-      });
+      try {
+        await startServerMicCapture("no-speech-api");
+      } catch (error) {
+        console.info("[A11] server mic fallback unavailable", error);
+      }
       return;
     }
 
@@ -5457,15 +5617,25 @@ export function App() {
         setVoiceListening(true);
       } catch (e) {
         setVoiceListening(false);
-        setMicPermissionBlocked(true);
-        setTtsFallback(true);
-        setMicStatusMessage("Micro bloqué ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
-        try {
-          localStorage.setItem('a11:tts-only', '1');
-        } catch {
-          // ignore storage access errors
+        const message = String((e as Error)?.message || e || "").toLowerCase();
+        const canUseServerFallback =
+          message.includes("network") ||
+          message.includes("not available") ||
+          message.includes("timeout") ||
+          message.includes("ended before start") ||
+          message.includes("stopped");
+        if (canUseServerFallback) {
+          try {
+            await startServerMicCapture(message.includes("network") ? "speech-network" : "speech-fallback");
+            return;
+          } catch (fallbackError) {
+            console.info("[A11] server mic fallback failed", fallbackError);
+          }
         }
-        console.info('startMic unavailable, keeping TTS-only mode', e);
+        setMicPermissionBlocked(true);
+        setTtsFallback(false);
+        setMicStatusMessage("Micro bloqué ou indisponible. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
+        console.info("startMic unavailable", e);
       } finally {
         setMicStarting(false);
       }
