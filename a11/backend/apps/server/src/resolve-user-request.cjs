@@ -467,7 +467,7 @@ function isOptionalCanonicalizerUnavailable(error_ = null) {
     : {};
   const reasons = Array.isArray(details.reasons) ? details.reasons.join(' ') : '';
   const upstreamBody = String(details.upstream?.body || error_?.upstream?.body || '').trim();
-  return /structured_llm_unconfigured|llm_unavailable|not configured/i.test(`${reasons} ${upstreamBody}`);
+  return /structured_llm_unconfigured|llm_unavailable|not configured|missing authentication|unauthorized|llm_upstream_401|\b401\b/i.test(`${reasons} ${upstreamBody}`);
 }
 
 function shouldPropagateExplicitCanonicalizerFailure(error_ = null, deps = {}) {
@@ -996,6 +996,7 @@ function createIntentResolver(overrides = {}) {
           callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
           referenceImagePresent: Boolean(primaryReferenceUrl),
           referenceImageUrl: primaryReferenceUrl,
+          allowCompatFallback: true,
         });
       } catch (error_) {
         if (shouldSurfaceCanonicalizerDiagnostic(error_)) {

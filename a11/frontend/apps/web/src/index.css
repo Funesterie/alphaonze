@@ -7245,6 +7245,7 @@ body {
 }
 
 .fun-home-actions a,
+.fun-home-actions button,
 .fun-home-side a,
 .fun-home-account-actions a,
 .fun-home-account-actions button {
@@ -7266,6 +7267,17 @@ body {
 .fun-home-actions a:first-child {
   border-color: rgba(54, 212, 196, 0.62);
   background: linear-gradient(135deg, rgba(54, 212, 196, 0.28), rgba(66, 183, 238, 0.18));
+}
+
+.fun-home-actions button:disabled {
+  opacity: 0.68;
+  cursor: progress;
+}
+
+.fun-home-session-link {
+  border-color: rgba(233, 184, 108, 0.44) !important;
+  background: rgba(233, 184, 108, 0.08) !important;
+  color: #fff5d7 !important;
 }
 
 .fun-home-account-actions button:first-child {
@@ -7345,6 +7357,51 @@ body {
   color: #fff;
   font-size: 14px;
   text-transform: uppercase;
+}
+
+.fun-home-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  margin: 0 0 20px;
+  border: 1px solid rgba(233, 184, 108, 0.28);
+  border-radius: 8px;
+  padding: clamp(18px, 2.5vw, 28px);
+  background:
+    radial-gradient(circle at 8% 0, rgba(233, 184, 108, 0.12), transparent 32%),
+    rgba(8, 10, 16, 0.78);
+}
+
+.fun-home-project h2 {
+  margin: 0 0 8px;
+  color: #fff8ee;
+  font-size: clamp(24px, 3vw, 38px);
+  line-height: 1.05;
+}
+
+.fun-home-project p {
+  max-width: 920px;
+  margin: 0;
+  color: var(--fun-muted);
+  font-size: clamp(16px, 1.4vw, 20px);
+  line-height: 1.58;
+}
+
+.fun-home-project a {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(54, 212, 196, 0.44);
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #e9fffb;
+  background: rgba(54, 212, 196, 0.08);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .fun-home-agents {
@@ -7826,6 +7883,14 @@ body {
 
   .fun-home-agent-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fun-home-project {
+    grid-template-columns: 1fr;
+  }
+
+  .fun-home-project a {
+    justify-self: start;
   }
 
   .fun-home-connected,

@@ -7239,7 +7239,7 @@ const _usageGuardAlerts = new Map();
 const USAGE_GUARD_ADMIN_EMAIL = String(
   process.env.A11_USAGE_GUARD_ADMIN_EMAIL
   || process.env.KAEN44_ADMIN_EMAIL
-  || 'cellaurojeffrey@gmail.com'
+  || 'funeste38@gmail.com'
 ).trim();
 const USAGE_GUARD_ALERT_COOLDOWN_MS = Number(process.env.A11_USAGE_GUARD_ALERT_COOLDOWN_MS || 5 * 60_000);
 
@@ -10152,6 +10152,99 @@ function buildMiniCerbereDegradedReply() {
   ].join(' ');
 }
 
+function isQflushUnavailableError(error_) {
+  const pieces = [
+    error_?.error,
+    error_?.code,
+    error_?.message,
+    error_?.upstream?.body,
+    error_?.response?.data,
+  ];
+  const text = pieces
+    .map((piece) => {
+      if (!piece) return '';
+      if (typeof piece === 'string') return piece;
+      try {
+        return JSON.stringify(piece);
+      } catch {
+        return String(piece);
+      }
+    })
+    .join(' ')
+    .toLowerCase();
+
+  return /no qflush executable|no qflush module|qflush module candidate|qflush_unreachable|local module flow adapter unavailable|package subpath .*qflush|no "exports" main defined|no exports main defined|compatible module found/.test(text);
+}
+
+async function runApiChatFallbackForQflush(req, requestId) {
+  const body = req.body || {};
+  const requestMessages = buildRequestMessagesFromBody(body);
+  const latestUserMessage = getLatestUserMessage(body)
+    || String(body.message || body.prompt || '').trim()
+    || buildPromptFromMessages(requestMessages);
+
+  if (!String(latestUserMessage || '').trim()) {
+    throw new Error('missing_fallback_message');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Request-Id': requestId,
+  };
+  const authToken = getAuthTokenFromRequest(req);
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+
+  const fallbackBody = {
+    message: latestUserMessage,
+    prompt: latestUserMessage,
+    messages: requestMessages,
+    conversationId: body.conversationId || body.convId || body.sessionId || null,
+    userId: req.user?.id || body._user || body.userId || null,
+    sourceImageUrl: body.sourceImageUrl || body.source_image_url || body.imageUrl || null,
+  };
+
+  const response = await fetch(`http://127.0.0.1:${PORT}/api/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(fallbackBody),
+    signal: AbortSignal.timeout(Number(process.env.A11_QFLUSH_CHAT_FALLBACK_TIMEOUT_MS || 90000) || 90000),
+  });
+
+  const raw = await response.text();
+  let data = null;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { raw };
+  }
+
+  if (!response.ok) {
+    const error_ = new Error(String(data?.message || data?.error || `fallback_chat_${response.status}`));
+    error_.status = response.status;
+    error_.payload = data;
+    throw error_;
+  }
+
+  const assistant = normalizeAssistantOutput(
+    data?.assistant
+    || extractAssistantText(data)
+    || data?.message
+    || data?.content
+    || ''
+  );
+
+  if (!assistant) {
+    throw new Error('empty_fallback_chat_reply');
+  }
+
+  return {
+    data,
+    assistant,
+  };
+}
+
 async function loadUserMemoryContext(userId, latestUserMessage, conversationId) {
   const normalizedUserId = String(userId || '').trim();
   const normalizedLatestMessage = String(latestUserMessage || '').trim();
@@ -11891,6 +11984,33 @@ async function proxyQflushChat(req, res) {
     return res.status(200).json(data);
   } catch (err) {
     console.error('[A11] Error proxying chat via QFLUSH:', requestId, err && (err.message || err.toString()));
+    if (isQflushUnavailableError(err)) {
+      try {
+        const fallback = await runApiChatFallbackForQflush(req, requestId);
+        const userId = String(req.user?.id || req.body?._user || '').trim();
+        const conversationId = normalizeConversationId(req.body?.conversationId || req.body?.convId || req.body?.sessionId);
+        const content = fallback.assistant;
+        const data = toSimpleAssistantCompletion(content, 'a11-chat-fallback');
+        data.qflushFallback = {
+          ok: true,
+          mode: fallback.data?.mode || null,
+          reason: truncateText(String(err?.message || err || 'qflush_unavailable'), 300),
+        };
+        if (fallback.data?.taskId) {
+          data.taskId = fallback.data.taskId;
+        }
+        if (fallback.data?.a11Agent) {
+          data.a11Agent = fallback.data.a11Agent;
+        }
+        if (userId && content) {
+          await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
+        }
+        appendChatTurnLogSafe(req.body, data, 'a11-chat-fallback', userId);
+        return res.status(200).json(data);
+      } catch (fallbackError) {
+        console.warn('[A11] QFLUSH chat fallback failed:', fallbackError?.message || fallbackError);
+      }
+    }
     const localProviderFallbackBody = {
       ...(req.body || {}),
       a11SkipQflush: true,

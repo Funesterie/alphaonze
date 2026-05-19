@@ -751,8 +751,6 @@ function hasAdminIdentityClaims() {
   const storedUsername = normalizeStorageScopePart(storedUser?.username || '');
   const storedRole = normalizeStorageScopePart(storedUser?.role || '');
   return payload?.isAdmin === true
-    || payload?.fullAccess === true
-    || storedUser?.fullAccess === true
     || id === 'admin'
     || username === 'admin'
     || role === 'admin'

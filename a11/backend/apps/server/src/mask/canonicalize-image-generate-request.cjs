@@ -749,6 +749,9 @@ function buildCompatCanonicalEnglishInput(rawUserInput = '', options = {}) {
   const translated = normalizeText(translateImagePromptToEnglish(raw) || raw);
   let text = translated
     .replace(/\bsalut\s+genere\s+moi\b/gi, '')
+    .replace(/\bessaie\s+de\s+genere\s+an\s+image\s+/gi, '')
+    .replace(/\bgenere\s+an\s+image\s+/gi, '')
+    .replace(/\bgenerate\s+an\s+image\s+(?:of\s+)?/gi, '')
     .replace(/\bgenere\s+moi\b/gi, '')
     .replace(/\bgenerate\s+me\b/gi, '')
     .replace(/\butilise\s+l\s+image\s+de\s+reference\b/gi, 'use the reference image')
@@ -760,6 +763,11 @@ function buildCompatCanonicalEnglishInput(rawUserInput = '', options = {}) {
     .replace(/\bvisage\b/gi, 'face')
     .replace(/\blumiere\b/gi, 'lighting')
     .replace(/\ben joker\b/gi, 'as a Joker-style character')
+    .replace(/\bsamourai\b/gi, 'samurai')
+    .replace(/\bepee\b/gi, 'sword')
+    .replace(/\benflammee?\b/gi, 'flaming')
+    .replace(/\bwith an sword flaming\b/gi, 'with a flaming sword')
+    .replace(/\ban sword\b/gi, 'a sword')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -903,6 +911,14 @@ function shouldRetryCanonicalizerFailure(error_ = null) {
   ].includes(code);
 }
 
+function shouldUseCompatCanonicalizerFallback(failureReasons = []) {
+  const reasonText = Array.isArray(failureReasons)
+    ? failureReasons.join(' ')
+    : String(failureReasons || '');
+  if (!reasonText.trim()) return true;
+  return !/canonicalized_request_not_english_only|canonicalized_request_cardinality_conflict|canonicalized_request_missing_named_entity|missing_canonical_english_input|missing_canonical_subject/i.test(reasonText);
+}
+
 function buildCanonicalizerAttemptPlan(caller = null, rawUserInput = '', options = {}, requestPayload = {}) {
   if (!caller || typeof caller?.fn !== 'function') return [];
   return [
@@ -1034,7 +1050,7 @@ async function canonicalizeImageGenerateRequest(rawUserInput = '', options = {})
     || failureStatuses.find((status) => Number(status) >= 500)
     || 502;
 
-  if (options.allowCompatFallback === true) {
+  if (options.allowCompatFallback === true && shouldUseCompatCanonicalizerFallback(failureReasons)) {
     try {
       const fallbackCanonicalizedRequest = buildCompatCanonicalizedImageGenerateRequest(
         normalizedRawUserInput,

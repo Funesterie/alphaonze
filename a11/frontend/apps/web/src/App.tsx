@@ -964,7 +964,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Je dispose d'une CLI client légère, `kaen44` ou `k44`, pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
   "Je peux présenter une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
   "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
-  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à cellaurojeffrey@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
+  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à funeste38@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
   "Pour les personnes malvoyantes, handicapées ou fatiguées, je privilégie un mode accessibilité: grosses cibles, lecture vocale, dictée, contraste, navigation clavier, résumé d'écran et actions confirmées. Le contrôle souris/clavier/écran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilité d'arrêt immédiat.",
   "Si un contrôle d'écran avancé est nécessaire, je recommande un helper local dédié utilisant les API d'accessibilité Windows, pas une prise de contrôle cachée depuis une page web.",
   "Quand un projet demande des outils supplémentaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF équivalent, Git si le client gère du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image équivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base métier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les déploiements.",
@@ -979,7 +979,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Pour les factures de la société Funesterie, je peux aider à recevoir, trier, extraire et suivre les pièces comptables quand elles sont fournies ou synchronisées.",
   "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'échéance, le montant HT, la TVA, le montant TTC, la devise, le statut, les références de paiement et les anomalies possibles.",
   "Je classe les factures par état de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
-  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à cellaurojeffrey@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
+  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à funeste38@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
   "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une pièce comptable sensible sans validation explicite de l'utilisateur.",
   "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
 ].join("\n");
@@ -3160,10 +3160,14 @@ function FunesterieConnectedHomePage({
             Les agents gardent chacun leur spécialité.
           </p>
           <div className="fun-home-actions">
-            <a href="#agents">Projet <span aria-hidden="true">*</span></a>
-            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-              {accountBusy === "google" ? "Google..." : authenticated ? "Session active" : "Se connecter"}
-            </button>
+            <a href="#projet">Projet</a>
+            {authenticated ? (
+              <a className="fun-home-session-link" href={surfaceLinks.cockpit}>Session ouverte</a>
+            ) : (
+              <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+                {accountBusy === "google" ? "Connexion..." : "Se connecter"}
+              </button>
+            )}
             <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
         </div>
@@ -3177,6 +3181,18 @@ function FunesterieConnectedHomePage({
             <a href={surfaceLinks.a11}><span aria-hidden="true">≋</span> Découvrir A11</a>
           </div>
         </article>
+      </section>
+
+      <section id="projet" className="fun-home-project" aria-labelledby="fun-home-project-title">
+        <div>
+          <h2 id="fun-home-project-title">Projet Funesterie</h2>
+          <p>
+            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+            Les agents gardent chacun leur spécialité.
+          </p>
+        </div>
+        <a href={surfaceLinks.agents}>Voir les agents</a>
       </section>
 
       <section id="agents" className="fun-home-agents" aria-labelledby="fun-home-agents-title">
@@ -3215,7 +3231,7 @@ function FunesterieConnectedHomePage({
         <span>Nossen</span>
         <span>Agents</span>
         <span>Compte</span>
-        <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
+        <a href="mailto:funeste38@gmail.com">Contact</a>
       </footer>
     </main>
   );
@@ -3495,27 +3511,50 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
 
       {isPrivacy ? (
         <section className="kaen-public-section">
-          <h2>Données utilisées</h2>
+          <h2>Responsable du traitement</h2>
           <p>
-            Kaen44 utilise les informations de compte nécessaires à la connexion, les fichiers que
-            l'utilisateur importe ou autorise explicitement, et les messages envoyés dans le chat.
+            Les services Funesterie, Kaen44, A11 et Vivy sont exploités par Funesterie.
+            Pour toute demande relative aux données personnelles, le contact officiel est
+            funeste38@gmail.com.
           </p>
-          <h2>Google Drive</h2>
+          <h2>Données traitées</h2>
           <p>
-            Lorsque l'utilisateur connecte Google Drive, Kaen44 demande uniquement les autorisations
-            nécessaires pour afficher, télécharger et traiter les fichiers choisis par l'utilisateur.
-            Les accès peuvent être retirés depuis le compte Google de l'utilisateur.
+            Les services traitent les informations de compte nécessaires à la connexion, les
+            messages envoyés dans les chats, les fichiers importés ou autorisés explicitement par
+            l'utilisateur, ainsi que les métadonnées techniques strictement utiles au fonctionnement,
+            à la sécurité et au suivi des demandes.
           </p>
-          <h2>Vivy, YouTube et plateformes audio</h2>
+          <h2>Finalités</h2>
           <p>
-            Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et
-            métadonnées fournies ou validées par l'utilisateur pour préparer des publications sur des
-            plateformes comme YouTube ou SoundCloud. Les fichiers privés ne sont pas publiés sans
-            action explicite de l'utilisateur.
+            Les données sont utilisées pour fournir l'accès au compte, permettre les échanges avec
+            les agents, traiter les fichiers choisis par l'utilisateur, préparer des contenus,
+            maintenir la sécurité du service, diagnostiquer les erreurs et respecter les obligations
+            légales applicables.
           </p>
-          <h2>Contact</h2>
+          <h2>Services connectés</h2>
           <p>
-            Pour toute question ou demande de suppression, contactez cellaurojeffrey@gmail.com.
+            Lorsque l'utilisateur connecte Google, Microsoft, Google Drive, YouTube ou une autre
+            plateforme, Funesterie demande uniquement les autorisations nécessaires à l'action
+            demandée. Les fichiers privés, références vocales, images, vidéos et documents ne sont
+            pas publiés sans action explicite de l'utilisateur.
+          </p>
+          <h2>Conservation et droits</h2>
+          <p>
+            Les données sont conservées pendant la durée nécessaire au service, à la sécurité, à la
+            preuve des actions demandées ou au respect d'une obligation légale. L'utilisateur peut
+            demander l'accès, la rectification, l'effacement, la limitation ou l'opposition au
+            traitement de ses données.
+          </p>
+          <h2>Sécurité et confidentialité</h2>
+          <p>
+            Funesterie applique une séparation entre espaces publics, sessions utilisateur, outils
+            internes et secrets techniques. Les tokens, mots de passe, clés privées et contenus de
+            coffre ne sont pas affichés publiquement et ne doivent pas être transmis dans les chats.
+          </p>
+          <h2>Contact officiel</h2>
+          <p>
+            Pour toute question, demande d'exercice de droits ou demande de suppression, contactez
+            funeste38@gmail.com.
           </p>
         </section>
       ) : null}
@@ -3542,7 +3581,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </p>
           <h2>Contact</h2>
           <p>
-            Pour toute question sur le service, contactez cellaurojeffrey@gmail.com.
+            Pour toute question sur le service, contactez funeste38@gmail.com.
           </p>
         </section>
       ) : null}
