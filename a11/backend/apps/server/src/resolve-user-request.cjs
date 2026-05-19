@@ -255,8 +255,8 @@ function isExplicitImageGenerationRequest(text = '') {
   const normalized = normalizeLookup(text);
   if (!normalized) return false;
 
-  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw|render)\b/.test(normalized);
-  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork|render)\b/.test(normalized);
+  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw)\b/.test(normalized);
+  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork)\b/.test(normalized);
   const troubleshootingCue = /\b(pourquoi|comment|probleme|bug|erreur|marche pas|fonctionne pas|peux tu|peux pas|capable|capacite)\b/.test(normalized);
 
   if (!creationCue || !imageCue) return false;
@@ -726,8 +726,7 @@ function createIntentResolver(overrides = {}) {
     const forcedReferenceImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
       && hasReferenceImageForRequest
       && isImageTransformRequest(userText);
-    const forcedExplicitImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
-      && isExplicitImageGenerationRequest(userText);
+    const forcedExplicitImageIntent = isExplicitImageGenerationRequest(userText);
     const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
       ? 'image.generate'
       : (shouldAcceptLlmIntent(llmIntentResult) ? llmIntentResult.intent : null);
@@ -746,7 +745,7 @@ function createIntentResolver(overrides = {}) {
       );
     }
 
-    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType) {
+    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType && !forcedExplicitImageIntent) {
       return {
         traceId,
         pipeline,

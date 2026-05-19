@@ -1715,6 +1715,23 @@ function normalizeTextForIntentMatching(value) {
     .toLowerCase();
 }
 
+function isExplicitImageGenerationUserText(value = '') {
+  const normalized = normalizeTextForIntentMatching(value);
+  if (!normalized) return false;
+
+  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|fais moi|fais|make|generate|create|draw)\b/.test(normalized);
+  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|avatar|artwork)\b/.test(normalized);
+  const searchCue = /\b(cherche|chercher|recherche|trouve|trouver|web|internet|google|image existante|deja existante|source)\b/.test(normalized);
+
+  return creationCue && imageCue && !searchCue;
+}
+
+function stripClarificationChoicePrefix(value = '') {
+  return String(value || '')
+    .replace(/^\s*(?:\d+[\).\s-]+|option\s+\d+\s*[:.-]?\s*)/i, '')
+    .trim();
+}
+
 function stripImageGenerationCommandPrefix(value = '') {
   return String(value || '')
     .replace(/^(?:peux[- ]?tu\s+)?(?:s(?:tp|il te plait|’il te plait|il te plaît)\s+)?/i, '')
@@ -1751,7 +1768,7 @@ function detectImagePromptAmbiguity(rawPrompt = '') {
 
   const colorPrompt = `${subject} de couleur ${color}${suffix ? ` ${suffix}` : ''}`.trim();
   const floralPrompt = `${subject}${suffix ? ` ${suffix}` : ''} entoure de ${color === 'orange' ? 'fruits oranges' : `${color}s`}`.trim();
-  const question = `Quand tu dis "${subject} ${color}", tu veux dire 1. ${subject} de couleur ${color} ou 2. ${subject} avec ${color === 'orange' ? 'des oranges' : `des ${color}s / fleurs`} ?`;
+  const question = `Quand tu dis "${subject} ${color}", tu veux la couleur ${color}, ou un decor avec ${color === 'orange' ? 'des oranges' : `des ${color}s / fleurs`} ?`;
 
   return {
     kind: 'image_generation',
@@ -1937,17 +1954,16 @@ function buildClarificationReply(question, options = [], meta = null) {
     ? options
       .map((entry) => {
         if (entry && typeof entry === 'object') {
-          return String(entry.promptLine || entry.label || '').trim();
+          return stripClarificationChoicePrefix(entry.label || entry.promptLine || '');
         }
-        return String(entry || '').trim();
+        return stripClarificationChoicePrefix(entry || '');
       })
       .filter(Boolean)
     : [];
   return [
     normalizedQuestion,
     normalizedRecommendation,
-    optionLines.length ? optionLines.join('\n') : '',
-    "Tu peux repondre juste par 1, 2, dire \"vas-y\", ou reformuler clairement ce que tu veux.",
+    optionLines.length ? `Je peux partir sur ${optionLines.join(' ou ')}. Dis-moi juste ce que tu veux.` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -11422,15 +11438,24 @@ async function tryRunDirectSafeUserIntent({ body, userId, conversationId, reques
     })
     : null;
   const semanticDecision = semanticAnalysis?.decision || null;
-  const semanticSelectedIntentType = String(
+  const explicitImageGenerationRequest = isExplicitImageGenerationUserText(latestUserMessage);
+  let semanticSelectedIntentType = String(
     forcedSemanticIntentType
     || semanticDecision?.selectedIntentType
     || semanticAnalysis?.summary?.selectedIntentType
     || semanticAnalysis?.topIntents?.[0]?.type
     || ''
   ).trim();
+  if (!forcedSemanticIntentType && explicitImageGenerationRequest) {
+    semanticSelectedIntentType = 'image.generate';
+  }
 
-  if (allowLegacyWordAutomation && !forcedSemanticIntentType && semanticDecision?.shouldClarify) {
+  if (
+    allowLegacyWordAutomation
+    && !forcedSemanticIntentType
+    && semanticDecision?.shouldClarify
+    && !explicitImageGenerationRequest
+  ) {
     const pending = normalizedUserId
       ? await upsertPendingClarification({
         userId: normalizedUserId,
