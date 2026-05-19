@@ -409,6 +409,13 @@ function isLoginRoute(pathname: string) {
   return /(?:^|\/)login\/?$/.test(String(pathname || "/").toLowerCase());
 }
 
+function getPublicPolicyPage(pathname: string): "privacy" | "terms" | null {
+  const normalized = String(pathname || "/").toLowerCase();
+  if (/(?:^|\/)(?:privacy|confidentialite|confidentiality)(?:\/|$)/.test(normalized)) return "privacy";
+  if (/(?:^|\/)(?:terms|conditions|cgu)(?:\/|$)/.test(normalized)) return "terms";
+  return null;
+}
+
 function isCockpitRoute(pathname: string) {
   return /(?:^|\/)(?:cockpit|app|workspace)\/?$/.test(String(pathname || "/").toLowerCase());
 }
