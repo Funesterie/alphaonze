@@ -1,7 +1,11 @@
+param(
+  [string]$RepoRoot = "D:\projets\funesterie"
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = "D:\projets\funesterie"
+$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $A11Root = Join-Path $RepoRoot "a11"
 $ServerRoot = Join-Path $A11Root "backend\apps\server"
 $VoiceRoot = Join-Path $A11Root "backend\apps\voice-module"
