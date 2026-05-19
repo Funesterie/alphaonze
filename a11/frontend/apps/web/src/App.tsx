@@ -1276,6 +1276,7 @@ function loadGoogleIdentityScript() {
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const isKaen44 = isKaen44Experience();
   const localDevSurface = isLocalDevSurface();
+  const surfaceLinks = getSurfaceLinks();
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [username, setUsername] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
@@ -1541,6 +1542,28 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     lineHeight: 1,
     whiteSpace: "nowrap",
   });
+  const authQuickLinksStyle: React.CSSProperties = {
+    display: "flex",
+    gap: "8px",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    width: "min(100%, 340px)",
+    marginTop: "2px",
+  };
+  const authQuickLinkStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 34,
+    padding: "8px 12px",
+    borderRadius: isKaen44 ? "999px" : "8px",
+    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
+    background: isKaen44 ? "rgba(30, 19, 14, 0.76)" : "rgba(3, 12, 20, 0.84)",
+    color: isKaen44 ? "#f8e4c7" : "#d8f3f0",
+    fontSize: 12,
+    fontWeight: 800,
+    textDecoration: "none",
+  };
 
   return (
     <div className={isKaen44 ? "kaen-auth-shell" : "alpha-auth-shell"} style={authShellStyle}>
@@ -1762,6 +1785,11 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
       {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
+      <nav style={authQuickLinksStyle} aria-label="Liens publics">
+        <a href={surfaceLinks.home} style={authQuickLinkStyle}>Accueil</a>
+        <a href={surfaceLinks.privacy} style={authQuickLinkStyle}>Confidentialité</a>
+        <a href={surfaceLinks.terms} style={authQuickLinkStyle}>Conditions</a>
+      </nav>
       </div>
     </div>
   );
