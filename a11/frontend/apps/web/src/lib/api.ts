@@ -3720,7 +3720,10 @@ export type EkkoStatusResponse = {
  * pour homogénéité avec le reste de l'API.
  */
 export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
-  const res = await authFetch(getApiUrl('/api/ekko/status'), {
+  const statusUrl = isLocalDevSurface()
+    ? '/api/ekko/status'
+    : getApiUrl('/api/ekko/status');
+  const res = await authFetch(statusUrl, {
     headers: buildAuthHeaders(),
   });
 

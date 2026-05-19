@@ -221,6 +221,10 @@ const FUNESTERIE_NEXUS_BOARD_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const FUNESTERIE_TEAM_SCENE_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
 const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
+const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
+const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
+const NOSSEN_VIVY_BOOSTER_SRC = buildPublicAssetPath("assets/nossen-vivy-booster.png");
+const NOSSEN_A11_DERBI_SRC = buildPublicAssetPath("assets/nossen-a11-derbi.png");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -3063,7 +3067,7 @@ const FUNESTERIE_HOME_AGENTS = [
     role: "Agent musical",
     text: "Idées de voix, chansons, scènes et présence créative.",
     href: "vivy",
-    image: VIVY_POSTER_SRC,
+    image: NOSSEN_VIVY_BOOSTER_SRC,
     tone: "pink",
     glyph: "♪",
   },
@@ -3073,7 +3077,7 @@ const FUNESTERIE_HOME_AGENTS = [
     role: "Agent média",
     text: "Prépare les médias, les documents et les résumés utiles.",
     href: "a11",
-    image: A11_HOODED_AGENT_SRC,
+    image: NOSSEN_A11_DERBI_SRC,
     tone: "blue",
     glyph: "≋",
   },
@@ -3083,9 +3087,40 @@ const FUNESTERIE_HOME_AGENTS = [
     role: "Agent bureau",
     text: "Accueil, suivi, organisation et interface quotidienne.",
     href: "kaen44",
-    image: KAEN44_AVATAR_SRC,
+    image: NOSSEN_K44_TZR_SRC,
     tone: "violet",
     glyph: "K",
+  },
+];
+
+const FUNESTERIE_RIDE_CREW_POSTERS = [
+  {
+    id: "djeff",
+    name: "Djeff",
+    role: "Rider origine",
+    text: "Énergie brute, moto bêta et signal de départ du ride crew.",
+    image: NOSSEN_DJEFF_BETA_SRC,
+  },
+  {
+    id: "kaen44",
+    name: "Kaen44",
+    role: "Copilote au quotidien",
+    text: "Assistance intelligente, accessibilité et soutien aux personnes.",
+    image: NOSSEN_K44_TZR_SRC,
+  },
+  {
+    id: "vivy",
+    name: "Vivy",
+    role: "Présence musicale",
+    text: "Voix, scène, émotions et histoire dans chaque battement.",
+    image: NOSSEN_VIVY_BOOSTER_SRC,
+  },
+  {
+    id: "a11",
+    name: "A11",
+    role: "Agent média",
+    text: "Documents, signaux, préparation et mémoire du réseau.",
+    image: NOSSEN_A11_DERBI_SRC,
   },
 ];
 
@@ -3113,7 +3148,9 @@ function FunesterieConnectedHomePage({
   const [accountBusy, setAccountBusy] = useState<"" | "google">("");
   const navItems = [
     ["Accueil", surfaceLinks.home],
-    ["Agents", "#agents"],
+    ["Ride crew", "#ride-crew"],
+    ["Agents", surfaceLinks.agents],
+    ["Confidentialité", surfaceLinks.privacy],
   ];
 
   const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
@@ -3143,7 +3180,7 @@ function FunesterieConnectedHomePage({
 
       <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
         <article className="fun-home-side fun-home-side--vivy">
-          <img src={VIVY_POSTER_SRC} alt="" />
+          <img src={NOSSEN_VIVY_BOOSTER_SRC} alt="" />
           <div>
             <h2>Vivy</h2>
             <strong>Présence musicale Funesterie</strong>
@@ -3160,7 +3197,7 @@ function FunesterieConnectedHomePage({
             Les agents gardent chacun leur spécialité.
           </p>
           <div className="fun-home-actions">
-            <a href="#projet">Projet</a>
+            <a href="#ride-crew">Ride crew</a>
             {authenticated ? (
               <a className="fun-home-session-link" href={surfaceLinks.cockpit}>Session ouverte</a>
             ) : (
@@ -3173,7 +3210,7 @@ function FunesterieConnectedHomePage({
         </div>
 
         <article className="fun-home-side fun-home-side--a11">
-          <img src={A11_HOODED_AGENT_SRC} alt="" />
+          <img src={NOSSEN_A11_DERBI_SRC} alt="" />
           <div>
             <h2>A11</h2>
             <strong>Agent média</strong>
@@ -3183,46 +3220,25 @@ function FunesterieConnectedHomePage({
         </article>
       </section>
 
-      <section id="projet" className="fun-home-project" aria-labelledby="fun-home-project-title">
-        <div>
-          <h2 id="fun-home-project-title">Projet Funesterie</h2>
+      <section id="ride-crew" className="fun-home-posters" aria-labelledby="fun-home-posters-title">
+        <div className="fun-home-posters-head">
+          <h2 id="fun-home-posters-title">Nossen Ride Crew</h2>
           <p>
-            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
-            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
-            Les agents gardent chacun leur spécialité.
+            Quatre présences pour garder l’univers lisible : origine, assistance,
+            voix et préparation média.
           </p>
         </div>
-        <a href={surfaceLinks.agents}>Voir les agents</a>
-      </section>
-
-      <section id="agents" className="fun-home-agents" aria-labelledby="fun-home-agents-title">
-        <h2 id="fun-home-agents-title">Agents</h2>
-        <div className="fun-home-agent-grid">
-          {FUNESTERIE_HOME_AGENTS.map((agent) => (
-            <a
-              key={agent.id}
-              className={`fun-home-agent-card fun-home-agent-card--${agent.tone}`}
-              href={buildHomeAgentHref(agent.href, surfaceLinks)}
-            >
-              <span className="fun-home-agent-media" aria-hidden="true">
-                {agent.image ? <img src={agent.image} alt="" /> : <b>{agent.glyph}</b>}
-              </span>
-              <span className="fun-home-agent-copy">
-                <strong>{agent.name}</strong>
-                <small>{agent.role}</small>
-                <span>{agent.text}</span>
-              </span>
-              <i aria-hidden="true">{agent.glyph}</i>
-            </a>
+        <div className="fun-home-poster-grid">
+          {FUNESTERIE_RIDE_CREW_POSTERS.map((poster) => (
+            <article key={poster.id} className={`fun-home-poster fun-home-poster--${poster.id}`}>
+              <img src={poster.image} alt={`${poster.name} - ${poster.role}`} />
+              <div>
+                <strong>{poster.name}</strong>
+                <small>{poster.role}</small>
+                <span>{poster.text}</span>
+              </div>
+            </article>
           ))}
-          <a className="fun-home-agent-card fun-home-agent-card--empty" href={primaryCockpitHref}>
-            <span className="fun-home-agent-media" aria-hidden="true"><b>+</b></span>
-            <span className="fun-home-agent-copy">
-              <strong>À venir</strong>
-              <small>Activation utile</small>
-              <span>Un nouvel accès apparaît seulement quand son rôle est clair.</span>
-            </span>
-          </a>
         </div>
       </section>
 
@@ -3231,6 +3247,7 @@ function FunesterieConnectedHomePage({
         <span>Nossen</span>
         <span>Agents</span>
         <span>Compte</span>
+        <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href="mailto:funeste38@gmail.com">Contact</a>
       </footer>
     </main>
@@ -3238,10 +3255,22 @@ function FunesterieConnectedHomePage({
 }
 
 function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
-  const agents = getFunesterieAgentShortcuts(surfaceLinks).map((agent) => ({
-    ...agent,
-    action: `Voir ${agent.name}`,
-  }));
+  const agents = [
+    ...FUNESTERIE_HOME_AGENTS.map((agent) => ({
+      ...agent,
+      href: buildHomeAgentHref(agent.href, surfaceLinks),
+    })),
+    {
+      id: "future",
+      name: "À venir",
+      role: "Activation utile",
+      text: "Un nouvel accès apparaît seulement quand son rôle est clair.",
+      href: surfaceLinks.cockpit,
+      image: "",
+      tone: "empty",
+      glyph: "+",
+    },
+  ];
 
   return (
     <main id="top" className="k44-agent-home-shell" aria-label="Présentation des agents Funesterie">
@@ -3258,38 +3287,25 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
           <a href="#agents">Agents</a>
           <a href={surfaceLinks.cockpit}>Cockpit</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
+          <a href={surfaceLinks.kaen44}>K44</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.privacy}>Confidentialité</a>
         </div>
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
 
-      <section className="k44-agent-home-hero k44-agent-home-hero--compact" aria-label="Présentation des agents Funesterie">
-        <div className="k44-agent-home-copy">
-          <h1>Agents Funesterie.</h1>
-          <p>
-            Trois surfaces distinctes pour travailler sans mélanger les usages :
-            Kaen44 pour le quotidien, A11 pour les médias, Vivy pour la musique.
-          </p>
-          <div className="k44-agent-home-actions">
-            <a href={surfaceLinks.cockpit}>Ouvrir le cockpit</a>
-            <a href={surfaceLinks.kaen44Cockpit}>Ouvrir Kaen44</a>
-          </div>
-        </div>
-      </section>
-
-      <section id="agents" className="k44-agent-home-grid" aria-label="Agents Funesterie">
+      <section id="agents" className="fun-agents-page-list" aria-label="Agents Funesterie">
         {agents.map((agent) => (
-          <a key={agent.id} className={`k44-agent-home-card k44-agent-home-card--${agent.id}`} href={agent.href}>
-            <span className="k44-agent-home-card-media">
-              <img src={agent.image} alt="" />
+          <a key={agent.id} className={`fun-agents-page-card fun-agents-page-card--${agent.tone}`} href={agent.href}>
+            <span className="fun-agents-page-media" aria-hidden="true">
+              {agent.image ? <img src={agent.image} alt="" /> : <b>{agent.glyph}</b>}
             </span>
-            <span className="k44-agent-home-card-copy">
+            <span className="fun-agents-page-copy">
               <strong>{agent.name}</strong>
               <em>{agent.role}</em>
               <span>{agent.text}</span>
-              <b>{agent.action}</b>
             </span>
+            <i aria-hidden="true">{agent.glyph}</i>
           </a>
         ))}
       </section>
@@ -4049,17 +4065,25 @@ export function App() {
       setAuthDisplayName("");
     }
 
-    const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
+    const isPublicInformationRoute =
+      Boolean(publicPolicyPage)
+      || isGeneralHome
+      || isGeneralAgents
+      || (isKaen44 && isFunesterieHomeRoute(pathname) && !isCockpitRoute(pathname))
+      || isVivyExperience();
+    const shouldCheckCookieSession = !isPublicInformationRoute && (
+      isAuthSuccessRoute(pathname)
       || hostname === 'a11.funesterie.me'
       || hostname === 'k44.funesterie.me'
       || hostname === 'funesterie.me'
       || hostname === 'www.funesterie.me'
       || hostname === 'kaen44.funesterie.me'
-      || hostname === 'vivy.funesterie.me';
+      || hostname === 'vivy.funesterie.me'
+    );
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();
-  }, []);
+  }, [isGeneralAgents, isGeneralHome, isKaen44, publicPolicyPage]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -4352,6 +4376,7 @@ export function App() {
   });
   const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarHidden, setDesktopSidebarHidden] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingA11HistoryId, setDeletingA11HistoryId] = useState<string | null>(null);
@@ -5133,7 +5158,9 @@ export function App() {
     setConversationResources([]);
     setActivityError("");
     setUploadFeedback("");
+    setActiveView("chat");
     setSidebarOpen(false);
+    setDesktopSidebarHidden(true);
   }
 
   // Global drag-and-drop overlay
@@ -6083,6 +6110,7 @@ export function App() {
     setActiveView("chat");
     setSettingsMenuOpen(false);
     setSidebarOpen(false);
+    setDesktopSidebarHidden(true);
     setInspectorOpen(false);
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", isKaen44 ? "/cockpit" : "/"));
     focusComposerSoon(true);
@@ -6184,6 +6212,7 @@ export function App() {
       : "0 12px 26px rgba(20, 184, 166, 0.18)",
     fontWeight: 900,
   };
+  const conversationPanelVisible = isCompactLayout ? sidebarOpen : !desktopSidebarHidden;
   const headerSelectStyle: React.CSSProperties = {
     padding: "8px 10px",
     borderRadius: isKaen44 ? 10 : 7,
@@ -6349,16 +6378,22 @@ export function App() {
               {isCompactLayout ? "Chat" : "Chat maintenant"}
             </button>
           ) : null}
-          {isCompactLayout ? (
-            <button
-              type="button"
-              onClick={() => setSidebarOpen((value) => !value)}
-              style={utilityButtonStyle}
-              title="Ouvrir les conversations et l'historique"
-            >
-              {sidebarOpen ? "Fermer" : "Discussions"}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (isCompactLayout) {
+                setSidebarOpen((value) => !value);
+                setSettingsMenuOpen(false);
+                setInspectorOpen(false);
+                return;
+              }
+              setDesktopSidebarHidden((value) => !value);
+            }}
+            style={utilityButtonStyle}
+            title={conversationPanelVisible ? "Fermer les conversations et l'historique" : "Ouvrir les conversations et l'historique"}
+          >
+            {conversationPanelVisible ? "Fermer" : "Discussions"}
+          </button>
           <div ref={settingsMenuRef} style={{ position: "relative" }}>
             <button
               type="button"
@@ -6636,7 +6671,7 @@ export function App() {
         </div>
       </header>
       <div className="a11-body" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        {isCompactLayout && sidebarOpen ? (
+        {isCompactLayout && conversationPanelVisible ? (
           <button
             type="button"
             aria-label="Fermer le panneau de navigation"
@@ -6651,7 +6686,7 @@ export function App() {
           />
         ) : null}
 
-        {(!isCompactLayout || sidebarOpen) ? (
+        {conversationPanelVisible ? (
         <aside
           className="sidebar"
           style={{
