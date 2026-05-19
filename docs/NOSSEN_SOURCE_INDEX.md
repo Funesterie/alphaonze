@@ -64,6 +64,30 @@ Afficher le resume local de l'index:
 npm run nossen:stats
 ```
 
+Cartographier les endpoints local/prod et les runtimes disponibles:
+
+```powershell
+npm run nossen:lan:dry
+```
+
+Lancer le radar NOSSEN sur les routes autorisees `.me`:
+
+```powershell
+npm run nossen:radar
+```
+
+Ajouter un endpoint ponctuel a la carte LAN:
+
+```powershell
+npm run nossen:lan -- --endpoint https://mcp.funesterie.me/health
+```
+
+Synchroniser la carte LAN vers Aura et le miroir local:
+
+```powershell
+npm run nossen:lan -- --config scripts\nossen\nossen-lan.example.json --sync --target both
+```
+
 ## Sorties
 
 Les fichiers sont ecrits dans `runtime/nossen/source-index/`:
@@ -74,6 +98,18 @@ Les fichiers sont ecrits dans `runtime/nossen/source-index/`:
 
 Le script `nossen:search` lit seulement `nossen-source-index.json`. Il ne rouvre pas les fichiers source, ne copie aucun contenu et n'interroge pas Neo4j. Par defaut il affiche les chemins relatifs; ajoute `--show-path` seulement quand un humain ou un agent autorise a besoin du chemin absolu.
 
+La carte LAN/radar est ecrite dans `runtime/nossen/lan/`:
+
+- `nossen-lan-map.json` : endpoints, DNS, TCP, HTTP, TLS, statuts et runtimes locaux disponibles;
+- `nossen-lan-map.cypher` : requetes Cypher utilisees par le script;
+- `nossen-lan-map.params.json` : parametres d'import pour audit.
+
+Elle stocke uniquement des metadonnees: statut DNS/TCP/HTTP/TLS, latence, machine locale, IP privees et disponibilite Docker/Podman/Node/NPM. Elle ne stocke aucun bearer, mot de passe, header d'autorisation ni corps de reponse.
+
+Par defaut, un endpoint injoignable est un signal de carte et ne fait pas echouer la commande. Ajoute `--fail-on-unreachable` pour transformer ces signaux en erreur bloquante pendant un audit strict.
+
+Le radar ne scanne pas Internet ni le reseau local au hasard. Il teste seulement les URLs explicitement listees dans `scripts/nossen/nossen-lan.example.json` ou passees a `--endpoint`.
+
 ## Labels Neo4j
 
 Le script ajoute une couche lisible par les agents:
@@ -82,11 +118,19 @@ Le script ajoute une couche lisible par les agents:
 - `NossenSourceRoot`
 - `NossenSourceEntry`
 - `FunesterieEcosystemNode`
+- `NossenLanMap`
+- `NossenLanHost`
+- `NossenLanEndpoint`
+- `NossenLanRuntime`
 
 Les liens utilisent `FUNESTERIE_ECOSYSTEM_LINK` avec:
 
 - `indexes-source-root`
 - `contains-source-entry`
+- `observes-lan-host`
+- `tracks-lan-endpoint`
+- `can-reach-endpoint`
+- `observes-local-runtime`
 
 ## Reprendre par sujet
 
