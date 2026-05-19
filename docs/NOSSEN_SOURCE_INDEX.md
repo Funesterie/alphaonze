@@ -46,6 +46,24 @@ Synchroniser vers Aura et le miroir local:
 npm run nossen:index -- --config scripts\nossen\nossen-sources.example.json --sync --target both
 ```
 
+Consulter le manifeste local sans requete Neo4j:
+
+```powershell
+npm run nossen:search -- vivy
+```
+
+Voir les fichiers images les plus recents dans l'index:
+
+```powershell
+npm run nossen:search -- --category image --recent --limit 20
+```
+
+Afficher le resume local de l'index:
+
+```powershell
+npm run nossen:stats
+```
+
 ## Sorties
 
 Les fichiers sont ecrits dans `runtime/nossen/source-index/`:
@@ -53,6 +71,8 @@ Les fichiers sont ecrits dans `runtime/nossen/source-index/`:
 - `nossen-source-index.json` : manifeste complet;
 - `nossen-source-index.cypher` : requetes Cypher utilisees par le script;
 - `nossen-source-index.params.json` : parametres d'import pour audit.
+
+Le script `nossen:search` lit seulement `nossen-source-index.json`. Il ne rouvre pas les fichiers source, ne copie aucun contenu et n'interroge pas Neo4j. Par defaut il affiche les chemins relatifs; ajoute `--show-path` seulement quand un humain ou un agent autorise a besoin du chemin absolu.
 
 ## Labels Neo4j
 
