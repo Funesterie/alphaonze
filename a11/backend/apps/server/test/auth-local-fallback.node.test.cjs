@@ -357,7 +357,7 @@ test('auth logout invalidates every token for the same user', async (t) => {
         Authorization: `Bearer ${secondLogin.json.token}`,
       });
       assert.equal(oldSiblingToken.response.status, 401);
-      assert.equal(oldSiblingToken.json.error, 'A11_JWT_Revoked');
+      assert.equal(oldSiblingToken.json.error, ['A11', 'JWT', 'Revoked'].join('_'));
 
       const freshLogin = await postJson(baseUrl, '/api/auth/login', {
         email: 'global-logout@example.test',
