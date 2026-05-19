@@ -17,7 +17,9 @@
     "forge": "node scripts/funesterie-forge.cjs",
     "forge:status": "node scripts/funesterie-forge.cjs status",
     "forge:repo-map": "node scripts/funesterie-forge.cjs repo-map",
-    "forge:doctor": "node scripts/funesterie-forge.cjs doctor"
+    "forge:doctor": "node scripts/funesterie-forge.cjs doctor",
+    "nossen:index": "node scripts/nossen/nossen-source-index.cjs",
+    "nossen:index:dry": "node scripts/nossen/nossen-source-index.cjs --config scripts/nossen/nossen-sources.example.json --max-entries 200"
   },
   "version": "0.0.1",
   "funding": {
