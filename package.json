@@ -24,6 +24,8 @@
     "nossen:lan:dry": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json",
     "nossen:radar": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json",
     "nossen:radar:sync": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json --sync --target aura",
+    "nossen:bloop": "node scripts/nossen/nossen-bloop.cjs",
+    "nossen:bloop:dry": "node scripts/nossen/nossen-bloop.cjs --dry-run",
     "nossen:search": "node scripts/nossen/nossen-source-search.cjs",
     "nossen:stats": "node scripts/nossen/nossen-source-search.cjs --stats"
   },

@@ -88,6 +88,24 @@ Synchroniser la carte LAN vers Aura et le miroir local:
 npm run nossen:lan -- --config scripts\nossen\nossen-lan.example.json --sync --target both
 ```
 
+Lancer BLOOP, le sonar de memoire des empreintes deja connues dans Neo4j:
+
+```powershell
+npm run nossen:bloop:dry
+```
+
+Verifier Aura avec une fenetre plus large, toujours sans mutation:
+
+```powershell
+npm run nossen:bloop -- --target aura --limit 5000
+```
+
+Ecrire aussi un noeud de rapport dans Neo4j uniquement quand le rapport local est valide:
+
+```powershell
+npm run nossen:bloop -- --write-report-node
+```
+
 ## Sorties
 
 Les fichiers sont ecrits dans `runtime/nossen/source-index/`:
@@ -110,6 +128,21 @@ Par defaut, un endpoint injoignable est un signal de carte et ne fait pas echoue
 
 Le radar ne scanne pas Internet ni le reseau local au hasard. Il teste seulement les URLs explicitement listees dans `scripts/nossen/nossen-lan.example.json` ou passees a `--endpoint`.
 
+Le sonar BLOOP est ecrit dans `runtime/nossen/bloop/`:
+
+- `bloop-report.json` : rapport complet, statuts, doublons, chemins, URLs allowlistees et indices semantiques;
+- `bloop-report.md` : synthese lisible pour reprendre vite;
+- `bloop-report.cypher` : requete optionnelle pour publier un noeud `NossenBloopReport`.
+
+BLOOP ne genere jamais de SHA et ne devine aucun chemin. Il lit seulement les noeuds Neo4j qui ont deja `sha256`, `checksum`, `contentHash` ou `fileHash`, puis verifie ce qui est autorise:
+
+- fichier local existant, non sensible, taille raisonnable;
+- URL `funesterie.me`, sous-domaine `.funesterie.me` ou localhost;
+- doublons de hash dans la fenetre lue;
+- noeuds sans chemin ni URL exploitable.
+
+Les chemins qui ressemblent a des secrets, tokens, mots de passe, cles privees ou codes de recuperation sont marques comme ignores. Le contenu n'est pas ouvert. La passe suivante pourra utiliser `semanticGroup` et `semanticKey` pour relier les SHA par valeur semantique apres revue humaine.
+
 ## Labels Neo4j
 
 Le script ajoute une couche lisible par les agents:
@@ -122,6 +155,7 @@ Le script ajoute une couche lisible par les agents:
 - `NossenLanHost`
 - `NossenLanEndpoint`
 - `NossenLanRuntime`
+- `NossenBloopReport`
 
 Les liens utilisent `FUNESTERIE_ECOSYSTEM_LINK` avec:
 
