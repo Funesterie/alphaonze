@@ -18,6 +18,8 @@
     "forge:status": "node scripts/funesterie-forge.cjs status",
     "forge:repo-map": "node scripts/funesterie-forge.cjs repo-map",
     "forge:doctor": "node scripts/funesterie-forge.cjs doctor",
+    "forge:pr": "node scripts/funesterie-forge.cjs pr-status",
+    "forge:ci": "node scripts/funesterie-forge.cjs ci",
     "nossen:index": "node scripts/nossen/nossen-source-index.cjs",
     "nossen:index:dry": "node scripts/nossen/nossen-source-index.cjs --config scripts/nossen/nossen-sources.example.json --max-entries 200",
     "nossen:lan": "node scripts/nossen/nossen-lan-map.cjs",
