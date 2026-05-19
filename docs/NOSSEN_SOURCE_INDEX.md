@@ -106,6 +106,18 @@ Ecrire aussi un noeud de rapport dans Neo4j uniquement quand le rapport local es
 npm run nossen:bloop -- --write-report-node
 ```
 
+Construire la passe Cortex semantique a partir du rapport BLOOP, sans ecrire dans Neo4j:
+
+```powershell
+npm run nossen:semantic:dry
+```
+
+Publier la carte semantique des SHA dans Aura, en append-only:
+
+```powershell
+npm run nossen:semantic -- --sync --target aura
+```
+
 ## Sorties
 
 Les fichiers sont ecrits dans `runtime/nossen/source-index/`:
@@ -141,7 +153,16 @@ BLOOP ne genere jamais de SHA et ne devine aucun chemin. Il lit seulement les no
 - doublons de hash dans la fenetre lue;
 - noeuds sans chemin ni URL exploitable.
 
-Les chemins qui ressemblent a des secrets, tokens, mots de passe, cles privees ou codes de recuperation sont marques comme ignores. Le contenu n'est pas ouvert. La passe suivante pourra utiliser `semanticGroup` et `semanticKey` pour relier les SHA par valeur semantique apres revue humaine.
+Les chemins qui ressemblent a des secrets, tokens, mots de passe, cles privees ou codes de recuperation sont marques comme ignores. Le contenu n'est pas ouvert.
+
+La carte Cortex semantique est ecrite dans `runtime/nossen/semantic/`:
+
+- `nossen-semantic-map.json` : clusters semantiques, SHA, liens et observations;
+- `nossen-semantic-map.md` : synthese lisible;
+- `nossen-semantic-map.cypher` : apercu des contraintes et liens crees;
+- `cortex-packet.json` : paquet `CortexPacket` pour bus/outillage agent.
+
+Elle relie les SHA deja connus par `semanticGroup` et `semanticKey`, puis ajoute en Neo4j des noeuds `NossenSemanticMap`, `NossenSemanticCluster` et `NossenSha` si `--sync` est explicite. Aucune suppression, aucun brute-force, aucun secret lu.
 
 ## Labels Neo4j
 
@@ -156,6 +177,9 @@ Le script ajoute une couche lisible par les agents:
 - `NossenLanEndpoint`
 - `NossenLanRuntime`
 - `NossenBloopReport`
+- `NossenSemanticMap`
+- `NossenSemanticCluster`
+- `NossenSha`
 
 Les liens utilisent `FUNESTERIE_ECOSYSTEM_LINK` avec:
 
@@ -165,6 +189,9 @@ Les liens utilisent `FUNESTERIE_ECOSYSTEM_LINK` avec:
 - `tracks-lan-endpoint`
 - `can-reach-endpoint`
 - `observes-local-runtime`
+- `defines-semantic-cluster`
+- `groups-sha`
+- `observed-on-node`
 
 ## Reprendre par sujet
 

@@ -33,7 +33,7 @@ const SECRET_PATTERNS = [
   /(^|[\\/])id_rsa$/i,
   /(^|[\\/])id_ed25519$/i,
   /\.(pem|p12|pfx|key)$/i,
-  /(password|passwd|secret|token|credential|private[_-]?key|recovery|license)/i,
+  /(password|passwd|secret|token|credential|api[_ -]?key|private[_-]?key|recovery|license)/i,
 ];
 
 const HASH_QUERY = `
@@ -754,9 +754,27 @@ function classifySemanticGroup(entry) {
     entry.relativePath,
     entry.url,
   ].filter(Boolean).join(' ').toLowerCase();
-  const extension = path.extname(String(entry.path || entry.relativePath || '')).toLowerCase();
+  const fileName = path.basename(String(entry.path || entry.relativePath || '')).toLowerCase();
+  const extension = path.extname(fileName).toLowerCase();
+  const configNames = new Set([
+    '.dockerignore',
+    '.editorconfig',
+    '.gitattributes',
+    '.gitignore',
+    '.gitleaksignore',
+    '.npmignore',
+    'dockerfile',
+    'package-lock.json',
+    'package.json',
+    'pnpm-lock.yaml',
+    'tsconfig.json',
+    'vite.config.js',
+    'vite.config.ts',
+    'yarn.lock',
+  ]);
 
-  if (/\b(source|repo|module|package|contract)\b/.test(text) || ['.js', '.ts', '.tsx', '.cjs', '.ps1', '.md'].includes(extension)) return 'source';
+  if (isSecretLike(entry.path || entry.relativePath || '')) return 'private';
+  if (/\b(source|repo|module|package|contract|config)\b/.test(text) || configNames.has(fileName) || ['.js', '.ts', '.tsx', '.cjs', '.mjs', '.ps1', '.md', '.json', '.yml', '.yaml', '.toml'].includes(extension)) return 'source';
   if (/\b(image|avatar|visual)\b/.test(text) || ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'].includes(extension)) return 'image';
   if (/\b(runtime|hook|route|mcp|endpoint|service)\b/.test(text)) return 'runtime';
   if (/\b(vivy|song|voice|music|scene)\b/.test(text)) return 'music';

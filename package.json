@@ -26,6 +26,9 @@
     "nossen:radar:sync": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json --sync --target aura",
     "nossen:bloop": "node scripts/nossen/nossen-bloop.cjs",
     "nossen:bloop:dry": "node scripts/nossen/nossen-bloop.cjs --dry-run",
+    "nossen:semantic": "node scripts/nossen/nossen-cortex-semantic.cjs",
+    "nossen:semantic:dry": "node scripts/nossen/nossen-cortex-semantic.cjs --dry-run",
+    "nossen:cortex": "node scripts/nossen/nossen-cortex-semantic.cjs",
     "nossen:search": "node scripts/nossen/nossen-source-search.cjs",
     "nossen:stats": "node scripts/nossen/nossen-source-search.cjs --stats"
   },
