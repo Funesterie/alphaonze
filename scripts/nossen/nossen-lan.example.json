@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "scopeId": "nossen-lan-map",
+  "label": "NOSSEN LAN map",
+  "endpoints": [
+    {
+      "id": "local-a11-backend",
+      "label": "A11 backend local",
+      "url": "http://127.0.0.1:3000/api/health",
+      "kind": "http-health",
+      "zone": "local",
+      "agent": "A11",
+      "enabled": true
+    },
+    {
+      "id": "local-mcp-public",
+      "label": "MCP local public",
+      "url": "http://127.0.0.1:8788/mcp",
+      "kind": "mcp-http",
+      "zone": "local",
+      "agent": "MCP",
+      "enabled": true
+    },
+    {
+      "id": "prod-funesterie-home",
+      "label": "Funesterie home",
+      "url": "https://funesterie.me",
+      "kind": "web-home",
+      "zone": "prod",
+      "agent": "Funesterie",
+      "enabled": true
+    },
+    {
+      "id": "prod-funesterie-health",
+      "label": "Funesterie health",
+      "url": "https://funesterie.me/health",
+      "kind": "http-health",
+      "zone": "prod",
+      "agent": "Funesterie",
+      "enabled": true
+    },
+    {
+      "id": "prod-mcp-health",
+      "label": "MCP production health",
+      "url": "https://mcp.funesterie.me/health",
+      "kind": "http-health",
+      "zone": "prod",
+      "agent": "MCP",
+      "enabled": true
+    },
+    {
+      "id": "prod-a11",
+      "label": "A11 production",
+      "url": "https://a11.funesterie.me",
+      "kind": "web-app",
+      "zone": "prod",
+      "agent": "A11",
+      "enabled": true
+    },
+    {
+      "id": "prod-k44",
+      "label": "Kaen44 production",
+      "url": "https://k44.funesterie.me",
+      "kind": "web-app",
+      "zone": "prod",
+      "agent": "Kaen44",
+      "enabled": true
+    },
+    {
+      "id": "prod-cockpit",
+      "label": "Funesterie cockpit",
+      "url": "https://funesterie.me/cockpit",
+      "kind": "cockpit",
+      "zone": "prod",
+      "agent": "Funesterie",
+      "enabled": true
+    },
+    {
+      "id": "prod-agents",
+      "label": "Funesterie agents",
+      "url": "https://funesterie.me/agents",
+      "kind": "agent-directory",
+      "zone": "prod",
+      "agent": "NOSSEN",
+      "enabled": true
+    },
+    {
+      "id": "prod-vivy",
+      "label": "Vivy production",
+      "url": "https://vivy.funesterie.me",
+      "kind": "web-app",
+      "zone": "prod",
+      "agent": "Vivy",
+      "enabled": true
+    },
+    {
+      "id": "prod-qflush",
+      "label": "QFlush production",
+      "url": "https://qf.funesterie.me",
+      "kind": "tool-app",
+      "zone": "prod",
+      "agent": "QFlush",
+      "enabled": true
+    },
+    {
+      "id": "prod-chopper",
+      "label": "Chopper DR production",
+      "url": "https://dr.funesterie.me",
+      "kind": "diagnostic-app",
+      "zone": "prod",
+      "agent": "Chopper",
+      "enabled": true
+    },
+    {
+      "id": "future-copilot",
+      "label": "Copilot future route",
+      "url": "https://cp.funesterie.me",
+      "kind": "future-route",
+      "zone": "prod",
+      "agent": "Copilot",
+      "enabled": true
+    },
+    {
+      "id": "future-nossen-shortlink",
+      "label": "NOSSEN future shortlink",
+      "url": "https://ns.funesterie.me",
+      "kind": "future-route",
+      "zone": "prod",
+      "agent": "NOSSEN",
+      "enabled": true
+    }
+  ]
+}
