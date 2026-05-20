@@ -1377,10 +1377,13 @@ export async function chatWithVivy(
     files?: VivyChatFileAttachment[];
   }
 ): Promise<VivyStudioProductionResult> {
-  const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
+  const res = await fetch(getApiUrl('/api/vivy/studio/chat'), {
     method: 'POST',
-    headers: buildAuthHeaders('application/json'),
-    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    credentials: 'omit',
     body: JSON.stringify({
       ...input,
       shareToken: undefined,
