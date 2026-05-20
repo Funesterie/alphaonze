@@ -10,7 +10,7 @@
 
 **Ne pas ouvrir une issue publique pour une faille de sécurité.**
 
-Envoyer un email à : djeff@funesterie.pro
+Envoyer un email à : djeff@funesterie.me
 
 Inclure :
 

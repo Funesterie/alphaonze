@@ -14,7 +14,7 @@ A11 is a modular, local-first AI assistant built by Funesterie. It routes user r
 
 ## Target Users
 
-Internal/private deployment for Funesterie. The public frontend is at `a11.funesterie.pro`, backed by `api.funesterie.pro`.
+Internal/private deployment for Funesterie. The public frontend is at `a11.funesterie.me`, backed by `a11.funesterie.me`.
 
 ## Key Design Principles
 

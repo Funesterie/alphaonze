@@ -132,7 +132,7 @@ test('OAuth start keeps callbacks on the current .me host before legacy env over
   delete process.env.A11_GOOGLE_CALLBACK_URL;
   process.env.MICROSOFT_CLIENT_ID = 'test-microsoft-client-id';
   process.env.MICROSOFT_CLIENT_SECRET = 'test-microsoft-client-secret';
-  process.env.MICROSOFT_REDIRECT_URI = 'https://a11.funesterie.pro/api/auth/microsoft/callback';
+  process.env.MICROSOFT_REDIRECT_URI = 'https://a11.funesterie.me/api/auth/microsoft/callback';
   delete process.env.MICROSOFT_CALLBACK_URL;
   delete process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT;
   t.after(() => {
