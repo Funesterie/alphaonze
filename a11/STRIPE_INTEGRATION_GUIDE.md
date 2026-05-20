@@ -61,7 +61,7 @@ Pour que les webhooks fonctionnent en production:
 
 1. Allez sur https://dashboard.stripe.com/webhooks
 2. Cliquez sur "Add endpoint"
-3. URL du endpoint: `https://alphaonze.funesterie.pro/api/subscription/webhook`
+3. URL du endpoint: `https://a11.funesterie.me/api/subscription/webhook`
 4. Événements à écouter:
    - `checkout.session.completed`
    - `customer.subscription.created`
@@ -93,9 +93,9 @@ STRIPE_PRICE_ID=price_XXXXXXXXXXXXXXXXXX
 # STRIPE_WEBHOOK_SECRET is configured via the deployment secret store.
 
 # URLs de redirection (DÉJÀ CONFIGURÉES)
-STRIPE_SUCCESS_URL=https://alphaonze.funesterie.pro/subscription/success
-STRIPE_CANCEL_URL=https://alphaonze.funesterie.pro/subscription/cancel
-STRIPE_PORTAL_RETURN_URL=https://alphaonze.funesterie.pro/account
+STRIPE_SUCCESS_URL=https://a11.funesterie.me/subscription/success
+STRIPE_CANCEL_URL=https://a11.funesterie.me/subscription/cancel
+STRIPE_PORTAL_RETURN_URL=https://a11.funesterie.me/account
 ```
 
 ## 🧪 Tests

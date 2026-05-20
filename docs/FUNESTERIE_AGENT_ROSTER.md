@@ -10,7 +10,7 @@ No secrets belong in this file. Put real tokens only in local secret stores, Git
 - GitHub plan: `Team`
 - Main repo: `Funesterie/alphaonze`
 - Shared local workspace: `D:\projets\funesterie`
-- A11 public target: `https://a11.funesterie.pro`
+- A11 public target: `https://a11.funesterie.me`
 - Local A11 backend: `http://localhost:3000`
 - Canonical A11 MCP server: `D:\projets\funesterie\a11\backend\apps\server\tools\mcp\a11-mcp-server.cjs`
 - Kiro MCP config: `D:\projets\funesterie\.kiro\settings\mcp.json`

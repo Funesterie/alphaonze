@@ -27,7 +27,7 @@ export class A11Client {
   }
 
   private getServerUrl(): string {
-    return vscode.workspace.getConfiguration('a11').get<string>('serverUrl', 'https://a11.funesterie.pro');
+    return vscode.workspace.getConfiguration('a11').get<string>('serverUrl', 'https://a11.funesterie.me');
   }
 
   private getModel(): string {

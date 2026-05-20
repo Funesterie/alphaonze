@@ -83,7 +83,7 @@ Cette session a été guidée par les recommandations d'A11 lui-même, qui a ana
 - `JWT_SECRET` généré et configuré
 - Admin par défaut : `Djeff` / `1991`
 - Sécurité NEZ configurée (mode `off` local, mode `dev` online)
-- CORS mis à jour avec `alphaonze.funesterie.pro`
+- CORS mis à jour avec `a11.funesterie.me`
 
 **Impact** : Toutes les fonctionnalités session sont maintenant actives
 

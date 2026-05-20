@@ -37,7 +37,7 @@ if (-not $SkipAutostart) {
 }
 
 $checks = @(
-  @{ Label = "A11 public"; Url = "https://a11.funesterie.pro/api/health" },
+  @{ Label = "A11 public"; Url = "https://a11.funesterie.me/api/health" },
   @{ Label = "Kaen44 public"; Url = "https://funesterie.me/" },
   @{ Label = "Agent link"; Url = "https://mcp.funesterie.me/health" }
 )

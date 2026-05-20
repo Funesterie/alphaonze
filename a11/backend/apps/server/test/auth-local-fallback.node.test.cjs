@@ -31,10 +31,10 @@ async function withServer(registerRoutes, runAssertions) {
   }
 }
 
-async function postJson(baseUrl, route, body) {
+async function postJson(baseUrl, route, body, headers = {}) {
   const response = await fetch(baseUrl + route, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
   const text = await response.text();
@@ -110,6 +110,73 @@ test('K44 OAuth start pins the Google callback to https on public hosts', async 
         redirectUrl.searchParams.get('redirect_uri'),
         'https://k44.funesterie.me/api/auth/google/callback'
       );
+    }
+  );
+});
+
+test('OAuth start keeps callbacks on the current .me host before legacy env overrides', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
+    MICROSOFT_REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI,
+    MICROSOFT_CALLBACK_URL: process.env.MICROSOFT_CALLBACK_URL,
+    A11_ALLOW_OAUTH_CANONICAL_REDIRECT: process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT,
+  };
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  process.env.GOOGLE_CALLBACK_URL = 'https://k44.funesterie.me/api/auth/google/callback';
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  process.env.MICROSOFT_CLIENT_ID = 'test-microsoft-client-id';
+  process.env.MICROSOFT_CLIENT_SECRET = 'test-microsoft-client-secret';
+  process.env.MICROSOFT_REDIRECT_URI = 'https://a11.funesterie.pro/api/auth/microsoft/callback';
+  delete process.env.MICROSOFT_CALLBACK_URL;
+  delete process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      for (const provider of ['google', 'microsoft']) {
+        const response = await fetch(`${baseUrl}/api/auth/${provider}/start`, {
+          redirect: 'manual',
+          headers: {
+            'X-Forwarded-Host': 'vivy.funesterie.me',
+            'X-Forwarded-Proto': 'https',
+          },
+        });
+        assert.equal(response.status, 302);
+        const location = response.headers.get('location');
+        assert.ok(location);
+        const redirectUrl = new URL(location);
+        assert.equal(
+          redirectUrl.searchParams.get('redirect_uri'),
+          `https://vivy.funesterie.me/api/auth/${provider}/callback`
+        );
+      }
     }
   );
 });
@@ -222,6 +289,86 @@ test('auth/me accepts the a11_session cookie without cookie-parser state', async
       assert.equal(result.json.ok, true);
       assert.equal(result.json.authenticated, true);
       assert.equal(result.json.user.email, 'cookie@example.test');
+    }
+  );
+});
+
+test('auth logout invalidates every token for the same user', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-session-state-'));
+  const previousStateFile = process.env.A11_AUTH_SESSION_STATE_FILE;
+  process.env.A11_AUTH_SESSION_STATE_FILE = path.join(tmpDir, 'session-state.json');
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+  t.after(() => {
+    if (previousStateFile === undefined) {
+      delete process.env.A11_AUTH_SESSION_STATE_FILE;
+    } else {
+      process.env.A11_AUTH_SESSION_STATE_FILE = previousStateFile;
+    }
+  });
+
+  const localAuthStore = createLocalAuthStore({
+    filePath: path.join(tmpDir, 'local-users.json'),
+    logger: { warn() {} },
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore,
+        defaultAdminUsername: 'Djeff',
+        defaultAdminPassword: '1991',
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const registered = await postJson(baseUrl, '/api/auth/register', {
+        username: 'GlobalLogout',
+        email: 'global-logout@example.test',
+        password: 'secret123',
+      });
+      assert.equal(registered.response.status, 200);
+
+      const secondLogin = await postJson(baseUrl, '/api/auth/login', {
+        email: 'global-logout@example.test',
+        password: 'secret123',
+      });
+      assert.equal(secondLogin.response.status, 200);
+
+      const beforeLogout = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${secondLogin.json.token}`,
+      });
+      assert.equal(beforeLogout.response.status, 200);
+      assert.equal(beforeLogout.json.authenticated, true);
+
+      const logoutResponse = await postJson(baseUrl, '/api/auth/logout', {}, {
+        Authorization: `Bearer ${registered.json.token}`,
+      });
+      assert.equal(logoutResponse.response.status, 200);
+      assert.equal(logoutResponse.json.global, true);
+
+      const oldSiblingToken = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${secondLogin.json.token}`,
+      });
+      assert.equal(oldSiblingToken.response.status, 401);
+      assert.equal(oldSiblingToken.json.error, ['A11', 'JWT', 'Revoked'].join('_'));
+
+      const freshLogin = await postJson(baseUrl, '/api/auth/login', {
+        email: 'global-logout@example.test',
+        password: 'secret123',
+      });
+      assert.equal(freshLogin.response.status, 200);
+      const freshSession = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${freshLogin.json.token}`,
+      });
+      assert.equal(freshSession.response.status, 200);
+      assert.equal(freshSession.json.authenticated, true);
     }
   );
 });

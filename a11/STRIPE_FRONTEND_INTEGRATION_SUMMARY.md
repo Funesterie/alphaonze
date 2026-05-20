@@ -141,7 +141,7 @@ STRIPE_PRICE_ID=price_XXXXXXXXXX     # Price ID correct
 
 2. **Configurer le Webhook (Production):**
    - Aller sur https://dashboard.stripe.com/webhooks
-   - Ajouter un endpoint: `https://alphaonze.funesterie.pro/api/subscription/webhook`
+   - Ajouter un endpoint: `https://a11.funesterie.me/api/subscription/webhook`
    - Sélectionner les événements: `checkout.session.completed`, `customer.subscription.*`
    - Copier le signing secret
    - Ajouter `STRIPE_WEBHOOK_SECRET=whsec_...` dans `.env.local`

@@ -180,7 +180,7 @@ Le frontend A11 envoie automatiquement le JWT dans les requêtes.
 VITE_A11_API_BASE_URL=http://localhost:3000
 
 # URL du backend online (si exposé)
-VITE_A11_ONLINE_API_BASE_URL=https://alphaonze.funesterie.pro
+VITE_A11_ONLINE_API_BASE_URL=https://a11.funesterie.me
 ```
 
 ### Code Frontend (exemple)
@@ -286,7 +286,7 @@ curl -X POST http://localhost:3000/api/chat \
 
 ```bash
 # Depuis une autre machine ou via le tunnel
-curl -X POST https://alphaonze.funesterie.pro/api/chat \
+curl -X POST https://a11.funesterie.me/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello"}'
 ```
@@ -297,12 +297,12 @@ curl -X POST https://alphaonze.funesterie.pro/api/chat \
 
 ```bash
 # 1. Obtenir un token
-TOKEN=$(curl -X POST https://alphaonze.funesterie.pro/api/auth/login \
+TOKEN=$(curl -X POST https://a11.funesterie.me/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"Djeff","password":"1991"}' | jq -r '.token')
 
 # 2. Utiliser le token
-curl -X POST https://alphaonze.funesterie.pro/api/chat \
+curl -X POST https://a11.funesterie.me/api/chat \
   -H "X-NEZ-TOKEN: $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello"}'
@@ -353,7 +353,7 @@ Pour révoquer un token, il faut :
 
 ```bash
 # Dans .env.local
-CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:5173,https://alphaonze.funesterie.pro
+CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:5173,https://a11.funesterie.me
 ```
 
 ### Rate Limiting (à implémenter)

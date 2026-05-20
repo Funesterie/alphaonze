@@ -67,7 +67,7 @@ Pour la production, configurez le webhook Stripe:
 
 1. Allez sur https://dashboard.stripe.com/webhooks
 2. Cliquez sur "Add endpoint"
-3. URL: `https://alphaonze.funesterie.pro/api/subscription/webhook`
+3. URL: `https://a11.funesterie.me/api/subscription/webhook`
 4. Événements: `checkout.session.completed`, `customer.subscription.*`
 5. Copiez le signing secret
 6. Ajoutez dans `.env.local`:

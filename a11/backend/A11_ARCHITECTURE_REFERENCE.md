@@ -85,7 +85,7 @@ Role:
 - User interface and interaction.
 
 Key variable:
-- VITE_API_URL=https://api.funesterie.pro
+- VITE_API_URL=https://a11.funesterie.me
 
 Compatibility:
 - frontend also supports VITE_API_BASE_URL for backward compatibility.

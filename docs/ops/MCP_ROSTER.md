@@ -20,12 +20,12 @@ This is the secret-free control map for agents connected to Funesterie through M
 | Grok public | `https://mcp.funesterie.me/grok/mcp` | none | available | public-safe challenge/review lane |
 | Full private MCP | `https://mcp.funesterie.me/mcp` | bearer or OAuth | connected | bounded private agent lane |
 | Kiro local A11 | `node .../a11-mcp-server.cjs` | local process | configured | local A11 route map and diagnostics |
-| A11 backend | `https://a11.funesterie.pro` | app auth | healthy | product/backend surface |
+| A11 backend | `https://a11.funesterie.me` | app auth | healthy | product/backend surface |
 
 Health checked on 2026-05-16:
 
 - `https://mcp.funesterie.me/health` returned OK.
-- `https://a11.funesterie.pro/health` returned OK.
+- `https://a11.funesterie.me/health` returned OK.
 - Gemini CLI sees `funesterie` and `funesterie_full` connected.
 - Kiro config sees `a11` local and `a11mcp-shared`.
 

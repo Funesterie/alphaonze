@@ -6194,7 +6194,7 @@ function isLocalControlOrigin(req) {
   return candidates.some((value) =>
     value.includes('127.0.0.1') ||
     value.includes('localhost') ||
-    value.includes('api.funesterie.me')
+    value.includes('a11.funesterie.me')
   );
 }
 
@@ -7753,6 +7753,9 @@ function sendEmbeddedUiIndex(req, res) {
 
 function sendEmbeddedUiRoot(req, res) {
   const hostname = getRequestSurfaceHost(req);
+  if (hostname === 'funesterie.me' || hostname === 'www.funesterie.me') {
+    return sendEmbeddedUiIndex(req, res);
+  }
   if (hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
     return res.redirect(302, '/cockpit/');
@@ -12606,7 +12609,7 @@ async function proxyChatToOpenAI(req, res) {
 }
 
 // Canonical OpenAI-like route
-app.post('/v1/chat/completions', async (req, res) => {
+app.post('/v1/chat/completions', verifyJWT, async (req, res) => {
   const requestId = ensureRequestId(req, res);
   try {
     const latestUserMessage = getLatestUserMessage(req.body || {});

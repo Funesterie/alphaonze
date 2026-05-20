@@ -51,7 +51,7 @@
       "notes": "Kiro local MCP for A11 route map, identity, and local diagnostics."
     },
     "a11_backend": {
-      "url": "https://a11.funesterie.pro",
+      "url": "https://a11.funesterie.me",
       "transport": "https",
       "auth": "app-auth",
       "exposure": "public-app",

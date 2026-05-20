@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "scopeId": "nossen-source-index",
+  "label": "NOSSEN source index",
+  "defaultPrivacy": "private",
+  "roots": [
+    {
+      "id": "funesterie-workspace",
+      "label": "Funesterie workspace",
+      "path": "D:\\projets\\funesterie",
+      "kind": "workspace",
+      "privacy": "private",
+      "enabled": true
+    },
+    {
+      "id": "seagate-funesterie-backups",
+      "label": "Seagate Funesterie backups",
+      "path": "E:\\funesterie-backups",
+      "kind": "backup-root",
+      "privacy": "private",
+      "enabled": false
+    },
+    {
+      "id": "onedrive-corpus",
+      "label": "OneDrive Corpus",
+      "path": "%USERPROFILE%\\OneDrive\\Corpus",
+      "kind": "cloud-drive-root",
+      "privacy": "private",
+      "enabled": false
+    }
+  ],
+  "excludeDirectories": [
+    "runtime\\files\\uploads",
+    "Coffre-Fort-Systeme",
+    "Coffre-Fort-Syst",
+    "secrets"
+  ],
+  "excludePatterns": [
+    "(^|[\\\\/])client_secret.*\\.json$",
+    "(^|[\\\\/]).*token.*\\.txt$"
+  ]
+}

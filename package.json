@@ -20,7 +20,22 @@
     "forge:doctor": "node scripts/funesterie-forge.cjs doctor",
     "github:npmrc": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Write-GitHubNpmrc.ps1",
     "github:packages:dry": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -DryRun",
-    "github:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -Publish"
+    "github:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -Publish",
+    "forge:pr": "node scripts/funesterie-forge.cjs pr-status",
+    "forge:ci": "node scripts/funesterie-forge.cjs ci",
+    "nossen:index": "node scripts/nossen/nossen-source-index.cjs",
+    "nossen:index:dry": "node scripts/nossen/nossen-source-index.cjs --config scripts/nossen/nossen-sources.example.json --max-entries 200",
+    "nossen:lan": "node scripts/nossen/nossen-lan-map.cjs",
+    "nossen:lan:dry": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json",
+    "nossen:radar": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json",
+    "nossen:radar:sync": "node scripts/nossen/nossen-lan-map.cjs --config scripts/nossen/nossen-lan.example.json --sync --target aura",
+    "nossen:bloop": "node scripts/nossen/nossen-bloop.cjs",
+    "nossen:bloop:dry": "node scripts/nossen/nossen-bloop.cjs --dry-run",
+    "nossen:semantic": "node scripts/nossen/nossen-cortex-semantic.cjs",
+    "nossen:semantic:dry": "node scripts/nossen/nossen-cortex-semantic.cjs --dry-run",
+    "nossen:cortex": "node scripts/nossen/nossen-cortex-semantic.cjs",
+    "nossen:search": "node scripts/nossen/nossen-source-search.cjs",
+    "nossen:stats": "node scripts/nossen/nossen-source-search.cjs --stats"
   },
   "version": "0.0.1",
   "funding": {

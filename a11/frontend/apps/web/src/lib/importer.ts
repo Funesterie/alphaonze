@@ -1,5 +1,31 @@
 import { uploadLocalImage } from './api';
 
+const RECENT_IMAGE_IMPORT_TTL_MS = 10_000;
+const recentImageImports = new Map<string, number>();
+
+async function buildImageImportKey(file: File): Promise<string> {
+  const fallback = `${file.type}:${file.size}:${file.name}`;
+  if (!globalThis.crypto?.subtle) return fallback;
+
+  try {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    const hash = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+    return `${file.type}:${file.size}:${hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
+function pruneRecentImageImports(now: number) {
+  for (const [key, at] of recentImageImports) {
+    if (now - at > RECENT_IMAGE_IMPORT_TTL_MS) {
+      recentImageImports.delete(key);
+    }
+  }
+}
+
 export default async function handleImportFiles(
   list: FileList | null,
   onText: (t: string) => void,
@@ -18,6 +44,16 @@ export default async function handleImportFiles(
         // Upload vers le backend local — pas de fallback data-URL
         // (coller des mégaoctets de base64 dans le textarea casse tout)
         try {
+          const now = Date.now();
+          pruneRecentImageImports(now);
+          const importKey = await buildImageImportKey(f);
+          const previousImportAt = recentImageImports.get(importKey);
+          if (previousImportAt && now - previousImportAt < RECENT_IMAGE_IMPORT_TTL_MS) {
+            console.info(`[Importer] Duplicate image skipped: ${f.name}`);
+            continue;
+          }
+          recentImageImports.set(importKey, now);
+
           const data = await uploadLocalImage(f);
           const imageUrl = data?.url || null;
           if (imageUrl) {

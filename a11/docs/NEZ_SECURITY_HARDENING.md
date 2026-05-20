@@ -8,7 +8,7 @@ Objectif: garder le confort local, mais empecher qu'une route sensible soit acce
 
 - `NEZ_SECURITY_MODE=strict` dans le profil online.
 - `NEZ_ALLOW_LOCAL_BYPASS=false` dans le profil online.
-- `PUBLIC_API_URL=https://a11.funesterie.pro` dans le profil online.
+- `PUBLIC_API_URL=https://a11.funesterie.me` dans le profil online.
 - CORS online limite aux domaines HTTPS publics A11, Kaen44 et API.
 - Le middleware NEZ ne fait plus confiance a `x-forwarded-for` par defaut.
 - Les routes dangereuses sont bloquees au niveau Caddy avant d'arriver au backend.
@@ -30,7 +30,7 @@ Principe: meme avec un token valide, ces routes ne doivent pas etre exposees pub
 ## Fichiers Caddy
 
 ```txt
-D:\projets\funesterie\a11\deploy\caddy\a11.funesterie.pro.Caddyfile
+D:\projets\funesterie\a11\deploy\caddy\a11.funesterie.me.Caddyfile
 D:\projets\funesterie\a11\deploy\caddy\kaen44.funesterie.me.Caddyfile
 ```
 
@@ -48,7 +48,7 @@ NODE_ENV=production
 NEZ_SECURITY_MODE=strict
 NEZ_ALLOW_LOCAL_BYPASS=false
 NEZ_TRUST_FORWARD_LOCAL=false
-PUBLIC_API_URL=https://a11.funesterie.pro
+PUBLIC_API_URL=https://a11.funesterie.me
 ```
 
 Pour le developpement local uniquement:

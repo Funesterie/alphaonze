@@ -206,5 +206,5 @@ npm install @nossen/rome --userconfig .\.npmrc.jfrog
 - Never commit real JFrog tokens.
 - Keep `jfrog.env.ps1`, `.npmrc.jfrog`, and local credentials ignored.
 - Publish from the manifest, not by recursively scanning the whole repo.
-- Keep Qflush as a module/package, not as a public `qflush.funesterie.pro`
+- Keep Qflush as a module/package, not as a public `qflush.funesterie.me`
   endpoint.

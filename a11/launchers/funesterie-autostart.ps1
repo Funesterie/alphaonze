@@ -400,7 +400,7 @@ if (Test-HttpOk "https://mcp.funesterie.me/health" 10) {
   Write-Step "MCP public pas encore joignable."
 }
 
-$a11ProdHealth = Test-AnyHttpOk @("https://a11.funesterie.pro/health", "https://a11.funesterie.pro/api/health") 10
+$a11ProdHealth = Test-AnyHttpOk @("https://a11.funesterie.me/health", "https://a11.funesterie.me/api/health") 10
 if ($a11ProdHealth) {
   Write-Step "A11 prod OK: $a11ProdHealth"
 } else {

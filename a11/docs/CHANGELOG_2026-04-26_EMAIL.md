@@ -26,8 +26,8 @@ Configurer le système d'envoi d'emails d'A11 avec **Resend** pour permettre :
 ```bash
 # Email (Resend)
 # RESEND_API_KEY is configured via the deployment secret store.
-EMAIL_FROM=A11 <a11@funesterie.pro>
-APP_URL=https://alphaonze.funesterie.pro
+EMAIL_FROM=A11 <a11@funesterie.me>
+APP_URL=https://a11.funesterie.me
 ```
 
 **Variables** :
@@ -276,13 +276,13 @@ POST /api/mail/schedule
 
    ```bash
    # RESEND_API_KEY is configured via the deployment secret store.
-   EMAIL_FROM=A11 <a11@funesterie.pro>
-   APP_URL=https://alphaonze.funesterie.pro
+   EMAIL_FROM=A11 <a11@funesterie.me>
+   APP_URL=https://a11.funesterie.me
    ```
 
 2. **Vérifier le domaine sur Resend** :
    - Aller sur [resend.com/domains](https://resend.com/domains)
-   - Ajouter `funesterie.pro`
+   - Ajouter `funesterie.me`
    - Configurer les DNS (SPF, DKIM, DMARC)
    - Attendre la vérification
 
@@ -328,7 +328,7 @@ Pour un usage intensif, passer au plan Pro :
 ### Priorité A (immédiat)
 
 1. ⬜ Tester l'envoi d'email
-2. ⬜ Vérifier le domaine `funesterie.pro` sur Resend
+2. ⬜ Vérifier le domaine `funesterie.me` sur Resend
 3. ⬜ Commit et push
 
 ### Priorité B (court terme)

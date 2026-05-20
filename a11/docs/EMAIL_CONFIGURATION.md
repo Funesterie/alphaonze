@@ -23,8 +23,8 @@ A11 supporte l'envoi d'emails via **Resend** (prioritaire) ou **SMTP** (fallback
 ```bash
 # Email (Resend)
 # RESEND_API_KEY is configured via the deployment secret store.
-EMAIL_FROM=A11 <a11@funesterie.pro>
-APP_URL=https://alphaonze.funesterie.pro
+EMAIL_FROM=A11 <a11@funesterie.me>
+APP_URL=https://a11.funesterie.me
 ```
 
 **Variables** :
@@ -41,10 +41,10 @@ APP_URL=https://alphaonze.funesterie.pro
 
 ### Vérification du Domaine
 
-Pour utiliser une adresse email personnalisée (ex: `a11@funesterie.pro`), il faut :
+Pour utiliser une adresse email personnalisée (ex: `a11@funesterie.me`), il faut :
 
 1. Aller dans **Domains** sur Resend
-2. Ajouter votre domaine (`funesterie.pro`)
+2. Ajouter votre domaine (`funesterie.me`)
 3. Configurer les enregistrements DNS (SPF, DKIM, DMARC)
 4. Attendre la vérification (~5 minutes)
 

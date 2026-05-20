@@ -1,5 +1,5 @@
 param(
-  [string]$Url = "https://a11.funesterie.pro",
+  [string]$Url = "https://a11.funesterie.me",
   [string]$AppName = "A11 Client",
   [string]$InstallSlug = "A11Client",
   [string[]]$Aliases = @(),

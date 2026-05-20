@@ -25,7 +25,7 @@ npm run start:kaen44
 A11:
 
 - private/admin brain
-- production domain: `https://a11.funesterie.pro`
+- production domain: `https://a11.funesterie.me`
 - default port: `3000`
 - heavier tools, memories, connectors, generation and operations
 
@@ -63,7 +63,7 @@ The safe split should be done with `git filter-repo` or a clean fresh repository
 ## Suggested deployment shape
 
 ```txt
-a11.funesterie.pro      -> server-a11.cjs     -> port 3000
+a11.funesterie.me      -> server-a11.cjs     -> port 3000
 funesterie.me           -> server-kaen44.cjs  -> port 3001
 k44.funesterie.me       -> server-kaen44.cjs  -> port 3001
 kaen44.funesterie.me    -> server-kaen44.cjs  -> port 3001 (legacy alias)

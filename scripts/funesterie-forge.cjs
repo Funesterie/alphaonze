@@ -29,6 +29,8 @@ function usage() {
 Usage:
   npm run forge -- status [--json]
   npm run forge -- repo-map [--repo <path>] [--json]
+  npm run forge -- pr-status [--pr <number-or-url>] [--repo <path>] [--json]
+  npm run forge -- ci [--pr <number-or-url>] [--repo <path>] [--json]
   npm run forge -- task --title <title> --goal <goal> [--mode diagnostic] [--repo <path>] [--json]
   npm run forge -- doctor [--run-checks] [--json]
 
@@ -91,6 +93,10 @@ function run(command, args, options = {}) {
 
 function git(repo, args) {
   return run('git', args, { cwd: repo });
+}
+
+function gh(repo, args) {
+  return run('gh', args, { cwd: repo, maxBuffer: 4 * 1024 * 1024 });
 }
 
 function readJson(file) {
@@ -232,7 +238,7 @@ function forgeStatus() {
       head: shortSha(repo),
       status: gitStatus(repo)
     })),
-    commands: ['status', 'repo-map', 'task', 'doctor']
+    commands: ['status', 'repo-map', 'pr-status', 'ci', 'task', 'doctor']
   };
 }
 
@@ -336,6 +342,141 @@ function lastLines(text, count) {
   return redactText(String(text || '').split(/\r?\n/).filter(Boolean).slice(-count).join('\n'));
 }
 
+function parseJsonResult(result, fallback) {
+  if (!result.ok || !result.stdout) return fallback;
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return fallback;
+  }
+}
+
+function ghAuthStatus(repo) {
+  const result = gh(repo, ['auth', 'status']);
+  return {
+    ok: result.ok,
+    summary: result.ok ? 'authenticated' : lastLines(`${result.stdout}\n${result.stderr}`, 8)
+  };
+}
+
+function resolvePr(repo, requestedPr) {
+  const fields = 'number,url,headRefName,baseRefName,state,title,mergeStateStatus,isDraft,reviewDecision,updatedAt';
+  const args = requestedPr
+    ? ['pr', 'view', String(requestedPr), '--json', fields]
+    : ['pr', 'view', '--json', fields];
+  const result = gh(repo, args);
+  const pr = parseJsonResult(result, null);
+  if (!result.ok || !pr) {
+    return {
+      ok: false,
+      error: lastLines(`${result.stdout}\n${result.stderr}`, 12)
+    };
+  }
+  return { ok: true, pr };
+}
+
+function prChecks(repo, prNumber) {
+  const result = gh(repo, [
+    'pr',
+    'checks',
+    String(prNumber),
+    '--json',
+    'name,state,bucket,link,startedAt,completedAt,workflow'
+  ]);
+  const checks = parseJsonResult(result, []);
+  if (!result.ok) {
+    return {
+      ok: false,
+      checks: [],
+      error: lastLines(`${result.stdout}\n${result.stderr}`, 12)
+    };
+  }
+
+  const buckets = {};
+  for (const check of checks) {
+    const bucket = check.bucket || check.state || 'unknown';
+    buckets[bucket] = (buckets[bucket] || 0) + 1;
+  }
+  const failingBuckets = ['fail', 'failing', 'cancel', 'cancelled', 'timed_out'];
+  const pendingBuckets = ['pending', 'running', 'queued'];
+  const pendingStates = ['PENDING', 'QUEUED', 'IN_PROGRESS'];
+  const failing = checks.filter((check) => (
+    failingBuckets.includes(String(check.bucket || '').toLowerCase()) ||
+    String(check.state || '').toUpperCase() === 'FAILURE'
+  ));
+  const pending = checks.filter((check) => (
+    pendingBuckets.includes(String(check.bucket || '').toLowerCase()) ||
+    pendingStates.includes(String(check.state || '').toUpperCase())
+  ));
+
+  return {
+    ok: true,
+    total: checks.length,
+    buckets,
+    failing,
+    pending,
+    checks
+  };
+}
+
+function prStatus(flags) {
+  const repo = path.resolve(String(flags.repo || ROOT));
+  const auth = ghAuthStatus(repo);
+  if (!auth.ok) {
+    return {
+      schema: 'funesterie.forge.pr-status.v1',
+      checkedAt: new Date().toISOString(),
+      repo,
+      authenticated: false,
+      error: auth.summary
+    };
+  }
+
+  const resolved = resolvePr(repo, flags.pr);
+  if (!resolved.ok) {
+    return {
+      schema: 'funesterie.forge.pr-status.v1',
+      checkedAt: new Date().toISOString(),
+      repo,
+      authenticated: true,
+      pr: null,
+      error: resolved.error
+    };
+  }
+
+  const checks = prChecks(repo, resolved.pr.number);
+  return {
+    schema: 'funesterie.forge.pr-status.v1',
+    checkedAt: new Date().toISOString(),
+    repo,
+    authenticated: true,
+    branch: branch(repo),
+    head: shortSha(repo),
+    worktree: gitStatus(repo),
+    pr: resolved.pr,
+    checks: {
+      ok: checks.ok,
+      total: checks.total || 0,
+      buckets: checks.buckets || {},
+      failing: (checks.failing || []).map((check) => ({
+        name: check.name,
+        workflow: check.workflow,
+        state: check.state,
+        bucket: check.bucket,
+        link: check.link
+      })),
+      pending: (checks.pending || []).map((check) => ({
+        name: check.name,
+        workflow: check.workflow,
+        state: check.state,
+        bucket: check.bucket,
+        link: check.link
+      })),
+      error: checks.error || null
+    }
+  };
+}
+
 function doctor(flags) {
   const runChecks = Boolean(flags['run-checks']);
   const maps = [ROOT, path.join(ROOT, 'a11mcp')].filter((repo) => fs.existsSync(repo)).map(repoMap);
@@ -382,6 +523,10 @@ async function main() {
   }
   if (command === 'repo-map') {
     print(repoMap(flags.repo || ROOT), flags);
+    return;
+  }
+  if (command === 'pr-status' || command === 'ci') {
+    print(prStatus(flags), flags);
     return;
   }
   if (command === 'task') {

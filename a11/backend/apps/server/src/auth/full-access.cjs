@@ -10,9 +10,11 @@ const DEFAULT_FULL_ACCESS_EMAILS = [
   'cjcarme38@yahoo.fr',
   'valerie.atek@gmail.com',
   'jewitt.charlene@gmail.com',
+  'funeste38@gmail.com',
   'boostro38@gmail.com',
   'charlenejewitt@gmail.com',
   'cellaurojeffrey_38@hotmail.com',
+  'k.quinquinet@hseb-dresden.de',
   'cellaurojeffrey@hotmail.com',
   'cellaurojeffrey@funesterie.onmicrosoft.com',
 ];

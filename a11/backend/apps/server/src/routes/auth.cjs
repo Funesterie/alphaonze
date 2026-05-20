@@ -13,6 +13,11 @@ const {
   extractRequestAuthToken,
   parseCookieHeader,
 } = require('../middleware/jwt-auth.cjs');
+const {
+  bumpUserSessionGeneration,
+  getUserSessionGeneration,
+  validateSessionGeneration,
+} = require('../auth/session-state.cjs');
 
 const A11_SESSION_COOKIE = 'a11_session';
 const GOOGLE_OAUTH_STATE_COOKIE = 'a11_google_oauth_state';
@@ -49,6 +54,12 @@ function buildAuthClaims(user = {}, extra = {}) {
   if (extra.localAuth || user.localAuth) claims.localAuth = true;
   if (extra.provider || user.provider || user.auth_provider) {
     claims.provider = String(extra.provider || user.provider || user.auth_provider);
+  }
+  {
+    const sessionGeneration = Number(extra.sessionGeneration ?? extra.session_generation ?? user.sessionGeneration ?? user.session_generation ?? 0);
+    if (Number.isFinite(sessionGeneration) && sessionGeneration >= 0) {
+      claims.sessionGeneration = Math.floor(sessionGeneration);
+    }
   }
   if (hasFullAccess({ ...user, ...extra, email, role })) {
     claims.fullAccess = true;
@@ -162,10 +173,17 @@ function resolveRequestHostname(req) {
 
 function resolveHostPinnedOAuthCallback(req, provider) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
-  const origin = resolveRequestOrigin(req).replace(/\/+$/, '');
-  if (!origin) return '';
-  const publicOrigin = origin.replace(/^http:\/\//i, 'https://');
+  const mapped = {
+    'funesterie.me': 'https://funesterie.me',
+    'www.funesterie.me': 'https://funesterie.me',
+    'k44.funesterie.me': 'https://k44.funesterie.me',
+    'kaen44.funesterie.me': 'https://kaen44.funesterie.me',
+    'a11.funesterie.me': 'https://a11.funesterie.me',
+    'vivy.funesterie.me': 'https://vivy.funesterie.me',
+    'music.funesterie.me': 'https://music.funesterie.me',
+  };
+  const publicOrigin = mapped[hostname];
+  if (!publicOrigin) return '';
   return `${publicOrigin}/api/auth/${provider}/callback`;
 }
 
@@ -179,10 +197,10 @@ function resolveExplicitGoogleCallbackUrl() {
 }
 
 function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
-  const explicit = resolveExplicitGoogleCallbackUrl();
-  if (explicit) return explicit;
   const hostPinned = resolveHostPinnedOAuthCallback(req, 'google');
   if (hostPinned) return hostPinned;
+  const explicit = resolveExplicitGoogleCallbackUrl();
+  if (explicit) return explicit;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/google/callback`;
 }
 
@@ -200,14 +218,16 @@ function resolveExplicitMicrosoftCallbackUrl() {
 }
 
 function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
-  const explicit = resolveExplicitMicrosoftCallbackUrl();
-  if (explicit) return explicit;
   const hostPinned = resolveHostPinnedOAuthCallback(req, 'microsoft');
   if (hostPinned) return hostPinned;
+  const explicit = resolveExplicitMicrosoftCallbackUrl();
+  if (explicit) return explicit;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/microsoft/callback`;
 }
 
 function resolveCanonicalOAuthStartRedirect(req, provider) {
+  if (!isTruthy(process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT)) return '';
+
   const hostname = resolveRequestHostname(req);
   if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
 
@@ -524,7 +544,16 @@ function createAuthRouter({
   const router = express.Router();
 
   function issueSessionCookie(req, res, user, extra = {}) {
-    const token = signUserToken({ jwt, jwtSecret, jwtExpiry, user, extra });
+    const token = signUserToken({
+      jwt,
+      jwtSecret,
+      jwtExpiry,
+      user,
+      extra: {
+        ...extra,
+        sessionGeneration: getUserSessionGeneration(user),
+      },
+    });
     if (typeof registerIssuedToken === 'function') {
       registerIssuedToken(token);
     }
@@ -1190,6 +1219,16 @@ function createAuthRouter({
 
     try {
       const decoded = jwt.verify(token, jwtSecret);
+      const sessionValidation = validateSessionGeneration(decoded);
+      if (!sessionValidation.ok) {
+        clearSessionCookies(req, res);
+        return res.status(401).json({
+          ok: false,
+          authenticated: false,
+          error: 'A11_JWT_Revoked',
+          message: 'Session révoquée. Reconnecte-toi.',
+        });
+      }
       return res.json({
         ok: true,
         authenticated: true,
@@ -1206,8 +1245,20 @@ function createAuthRouter({
   });
 
   router.post('/api/auth/logout', (req, res) => {
+    const token = extractRequestAuthToken(req);
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, jwtSecret);
+        bumpUserSessionGeneration(decoded);
+      } catch (error) {
+        if (error?.name === 'TokenExpiredError' && typeof jwt.decode === 'function') {
+          const decoded = jwt.decode(token);
+          bumpUserSessionGeneration(decoded);
+        }
+      }
+    }
     clearSessionCookies(req, res);
-    return res.json({ ok: true, message: 'Deconnecte avec succes' });
+    return res.json({ ok: true, global: true, message: 'Déconnecté sur toutes les sessions' });
   });
 
   const forgotPasswordHandler = async (req, res) => {

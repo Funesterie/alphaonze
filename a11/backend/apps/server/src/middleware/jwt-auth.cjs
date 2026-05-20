@@ -61,6 +61,8 @@ function shouldBypassJwtForLocalDev(req) {
   return isLoopbackRequest(req) && securityMode === 'off';
 }
 
+const { validateSessionGeneration } = require('../auth/session-state.cjs');
+
 function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false } = {}) {
   if (!jwt || typeof jwt.verify !== 'function') {
     throw new Error('createVerifyJWT requires jwt.verify');
@@ -97,6 +99,14 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false 
 
     try {
       const decoded = jwt.verify(token, resolvedSecret);
+      const sessionValidation = validateSessionGeneration(decoded);
+      if (!sessionValidation.ok) {
+        logger?.warn?.('[JWT] Session generation revoked');
+        return res.status(401).json({
+          error: 'A11_JWT_Revoked',
+          message: 'Session révoquée. Reconnecte-toi.',
+        });
+      }
       req.user = decoded;
       if (logSuccess) {
         logger?.log?.('[JWT] ✅ Token vérifié');

@@ -26,7 +26,7 @@ Do not launch BB until these checks are known:
 - `git status --short` reviewed.
 - All active PR/check failures listed.
 - `https://mcp.funesterie.me/health` healthy.
-- `https://a11.funesterie.pro/health` healthy.
+- `https://a11.funesterie.me/health` healthy.
 - Gemini `funesterie_full` connected.
 - Kiro local `a11` and shared `a11mcp-shared` configured.
 - Worker supervisor status known.

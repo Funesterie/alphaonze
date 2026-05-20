@@ -2082,8 +2082,8 @@ $autoOpenUi = To-BoolValue (Get-ConfigValue $config 'A11_AUTO_OPEN_UI' '1') $tru
 $desktopBrowserPreference = Get-ConfigValue $config 'A11_DESKTOP_BROWSER' 'edge'
 $desktopWindowWidth = To-IntValue (Get-ConfigValue $config 'A11_DESKTOP_WIDTH' '1440') 1440
 $desktopWindowHeight = To-IntValue (Get-ConfigValue $config 'A11_DESKTOP_HEIGHT' '960') 960
-$publicApiUrl = Get-ConfigValue $config 'A11_PUBLIC_API_URL' 'https://api.funesterie.pro'
-$publicFrontendUrl = Get-ConfigValue $config 'A11_PUBLIC_FRONTEND_URL' 'https://a11.funesterie.pro'
+$publicApiUrl = Get-ConfigValue $config 'A11_PUBLIC_API_URL' 'https://a11.funesterie.me'
+$publicFrontendUrl = Get-ConfigValue $config 'A11_PUBLIC_FRONTEND_URL' 'https://a11.funesterie.me'
 $webDistDirectory = Resolve-LauncherRelativePath -Value (Get-ConfigValue $config 'A11_WEB_DIST_DIR' '..\frontend\apps\web\dist') -BaseDirectory $launcherDirectory
 
 $backendPort = To-IntValue (Get-ConfigValue $config 'A11_BACKEND_PORT' '3000') 3000

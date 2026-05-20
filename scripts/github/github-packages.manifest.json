@@ -12,6 +12,7 @@
       "npmTag": "latest",
       "distTags": ["stable"],
       "enabled": true,
+      "installCommand": ["npm", "install", "--ignore-scripts"],
       "buildCommand": ["npm", "run", "build"],
       "smokeCommand": ["node", "dist/cli.js", "--help"],
       "requiredFiles": [

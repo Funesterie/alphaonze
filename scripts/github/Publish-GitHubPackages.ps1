@@ -149,16 +149,21 @@ foreach ($pkg in $packages) {
     continue
   }
 
-  foreach ($relativeRequiredFile in @($pkg.requiredFiles)) {
-    $requiredFile = Join-Path $sourcePath ([string]$relativeRequiredFile)
-    if (-not (Test-Path -LiteralPath $requiredFile)) {
-      throw "Package $id is missing required file: $relativeRequiredFile"
-    }
+  if (-not $NoBuild -and $pkg.installCommand) {
+    Invoke-Tool -Command @($pkg.installCommand) -WorkingDirectory $sourcePath
   }
 
   if (-not $NoBuild -and $pkg.buildCommand) {
     Invoke-Tool -Command @($pkg.buildCommand) -WorkingDirectory $sourcePath
   }
+
+  foreach ($relativeRequiredFile in @($pkg.requiredFiles)) {
+    $requiredFile = Join-Path $sourcePath ([string]$relativeRequiredFile)
+    if (-not (Test-Path -LiteralPath $requiredFile)) {
+      throw "Package $id is missing required file after build: $relativeRequiredFile"
+    }
+  }
+
   if ($pkg.smokeCommand) {
     Invoke-Tool -Command @($pkg.smokeCommand) -WorkingDirectory $sourcePath
   }

@@ -5,7 +5,7 @@
 Historical handoff for the platform-level routing issue:
 
 - Hetzner origin is healthy.
-- A11 MCP and Cerbere stats are healthy locally and on `a11.funesterie.pro`.
+- A11 MCP and Cerbere stats are healthy locally and on `a11.funesterie.me`.
 - Kaen44 is now a separate backend on Hetzner.
 - Public Cloudflare traffic to `funesterie.me/api/*` returned `401` before it reached the Kaen44 origin path.
 - Resolved on 2026-05-13 by routing the affected hostnames through the dedicated `kaen44-hetzner` Cloudflare Tunnel.
@@ -31,8 +31,8 @@ Docker services:
 
 Confirmed good:
 
-- `https://a11.funesterie.pro/health` -> `200`
-- `https://a11.funesterie.pro/api/llm/stats` -> `200`, Cerbere router JSON
+- `https://a11.funesterie.me/health` -> `200`
+- `https://a11.funesterie.me/api/llm/stats` -> `200`, Cerbere router JSON
 - `https://k44.funesterie.me/health` -> `200`
 - `https://k44.funesterie.me/` -> `200`, title `Kaen44 - Assistante bureau Funesterie`
 - From Hetzner origin with `Host: k44.funesterie.me`, `http://127.0.0.1/api/llm/stats` -> `200`
@@ -182,4 +182,4 @@ Expected routing after fix:
 
 - `k44.funesterie.me/` -> Hetzner `kaen44-backend:3001`
 - `k44.funesterie.me/api/*` -> Hetzner `kaen44-backend:3001`, or Render `kaen44-api` if using fallback
-- `a11.funesterie.pro/*` -> Hetzner `a11-backend:3000`
+- `a11.funesterie.me/*` -> Hetzner `a11-backend:3000`

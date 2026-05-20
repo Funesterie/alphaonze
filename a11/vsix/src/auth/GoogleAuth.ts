@@ -4,7 +4,7 @@ import * as url from 'url';
 import * as crypto from 'crypto';
 import type { AuthManager, UserInfo } from './AuthManager';
 
-const DEFAULT_SERVER_URL = 'https://a11.funesterie.pro';
+const DEFAULT_SERVER_URL = 'https://a11.funesterie.me';
 const DEFAULT_GOOGLE_CLIENT_ID = '';
 const CALLBACK_HOST = 'localhost';
 const CALLBACK_PORT = 9876;

@@ -219,6 +219,38 @@ function createChatRouterForTests(overrides = {}) {
   });
 }
 
+test('POST /api/chat requires a logged-in user when auth is configured', async () => {
+  const verifyJWT = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer chat-test-token') {
+      req.user = { id: 'chat-auth-user', username: 'ChatUser' };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  await withServer(
+    (app) => {
+      app.use('/api', createChatRouterForTests({ verifyJWT }));
+    },
+    async (baseUrl) => {
+      const missingAuth = await postJson(baseUrl, '/api/chat', {
+        message: 'as-tu accès au MCP ?',
+      });
+      assert.equal(missingAuth.response.status, 401);
+      assert.equal(missingAuth.json.error, 'A11_JWT_Missing');
+
+      const authenticated = await postJson(baseUrl, '/api/chat', {
+        message: 'as-tu accès au MCP ?',
+      }, {
+        Authorization: 'Bearer chat-test-token',
+      });
+      assert.equal(authenticated.response.status, 200);
+      assert.equal(authenticated.json.ok, true);
+      assert.equal(authenticated.json.mode, 'mcp_status');
+    }
+  );
+});
+
 test('POST /api/mask/compile returns 200 for a valid mask', async () => {
   await withServer(
     (app) => {

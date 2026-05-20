@@ -26,7 +26,7 @@ export class AuthManager {
 
   async login(email: string, password: string): Promise<boolean> {
     try {
-      const serverUrl = vscode.workspace.getConfiguration('a11').get<string>('serverUrl', 'https://a11.funesterie.pro');
+      const serverUrl = vscode.workspace.getConfiguration('a11').get<string>('serverUrl', 'https://a11.funesterie.me');
       const response = await fetch(`${serverUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

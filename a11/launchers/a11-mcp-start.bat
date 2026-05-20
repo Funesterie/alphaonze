@@ -18,8 +18,8 @@ start "A11 Backend" /MIN cmd /c "cd /d D:\projets\funesterie\a11\backend\apps\se
 timeout /t 3 /nobreak >nul
 
 :: Ouvrir le frontend Netlify
-start "" "https://alphaonze.funesterie.pro"
+start "" "https://a11.funesterie.me"
 
 echo [A11] Backend local : http://localhost:3000
-echo [A11] Frontend      : https://alphaonze.funesterie.pro
+echo [A11] Frontend      : https://a11.funesterie.me
 timeout /t 2 /nobreak >nul

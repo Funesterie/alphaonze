@@ -61,7 +61,7 @@ We'll upgrade to httpOnly when adding HTTPS enforcement.
 ### 1. Get JWT Token
 
 ```bash
-curl -X POST https://api.funesterie.pro/api/auth/login \
+curl -X POST https://a11.funesterie.me/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"1234"}'
 
@@ -74,7 +74,7 @@ curl -X POST https://api.funesterie.pro/api/auth/login \
 ```bash
 TOKEN="<paste_token_here>"
 
-curl -X POST https://api.funesterie.pro/api/ai \
+curl -X POST https://a11.funesterie.me/api/ai \
   -H "Content-Type: application/json" \
   -H "X-NEZ-TOKEN: $TOKEN" \
   -d '{"messages":[{"role":"user","content":"test"}]}'

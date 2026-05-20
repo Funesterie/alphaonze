@@ -1,5 +1,5 @@
 param(
-  [string]$Url = "https://a11.funesterie.pro",
+  [string]$Url = "https://a11.funesterie.me",
   [string]$ProfileName = "A11Client"
 )
 

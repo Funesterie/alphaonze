@@ -29,7 +29,7 @@ async function createBlueprintPrice() {
         tier: 'enterprise',
         created_by: 'create-blueprint-price.cjs',
       },
-      images: ['https://alphaonze.funesterie.pro/og-image.png'], // Optionnel
+      images: ['https://a11.funesterie.me/og-image.png'], // Optionnel
     });
 
     console.log('✅ Produit créé:', product.id);
