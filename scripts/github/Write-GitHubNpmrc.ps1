@@ -33,8 +33,7 @@ if ($outputDir -and -not (Test-Path -LiteralPath $outputDir)) {
 
 $content = @(
   "${Scope}:registry=$Registry",
-  "//$authTarget/:_authToken=`${$TokenEnv}",
-  "always-auth=true"
+  "//$authTarget/:_authToken=`${$TokenEnv}"
 )
 
 Set-Content -LiteralPath $OutputPath -Value $content -Encoding utf8
