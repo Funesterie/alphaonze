@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Cockpit public Funesterie pour presenter A11, Kaen44 et la demo agents sans jargon interne.">
-  <title>Funesterie Demo</title>
+  <meta name="description" content="Cockpit MCP prive Funesterie reserve aux administrateurs.">
+  <title>Funesterie MCP</title>
   <style>
     :root {
       color-scheme: light;
@@ -426,11 +426,11 @@
     <div class="topbar-inner">
       <div class="brand">
         <span class="mark">F</span>
-        <span>Funesterie Demo</span>
+        <span>Funesterie MCP</span>
       </div>
       <div class="status-pill" aria-live="polite">
         <span id="topDot" class="dot"></span>
-        <span id="topStatus">Lecture du lien public...</span>
+        <span id="topStatus">Connexion privee...</span>
       </div>
     </div>
   </div>
@@ -439,18 +439,18 @@
     <section class="hero">
       <div class="wrap hero-grid">
         <div>
-          <h1>Trois rôles clairs, une demo partageable.</h1>
+          <h1>Cockpit MCP privé.</h1>
           <p class="lead">
             Kaen44 parle au client, A11 produit les images et les videos, Vivy porte l'audio.
-            Les agents voient le meme point de ralliement sans exposer la cuisine interne.
+            Acces reserve aux administrateurs Funesterie connectes avec Google.
           </p>
         </div>
 
-        <aside class="share-box" aria-label="Lien public de demo">
-          <div class="share-title">Lien pour Grok et les agents</div>
+        <aside class="share-box" aria-label="Lien prive du cockpit">
+          <div class="share-title">Acces prive</div>
           <div id="shareLink" class="share-link">Chargement...</div>
           <div class="actions">
-            <button class="button primary" type="button" id="copyLink">Copier le lien</button>
+            <button class="button primary" type="button" id="copyLink">Copier le lien prive</button>
             <a class="button" href="https://a11.funesterie.me/">Ouvrir A11</a>
             <a class="button" href="https://k44.funesterie.me/">Ouvrir Kaen44</a>
           </div>
@@ -466,7 +466,7 @@
             <h2>Le moteur de production image et video.</h2>
             <p>
               A11 centralise les generations couteuses pour que les surfaces gardent le meme resultat,
-              les memes liens publics et les memes journaux de controle.
+              les memes liens controles et les memes journaux de controle.
             </p>
             <div class="chips">
               <span class="chip">Images</span>
@@ -541,7 +541,7 @@
             <div class="kicker">Videos</div>
             <h2>A11 garde les rendus lourds.</h2>
             <p>
-              Les videos restent cote A11 pour limiter les divergences entre demo, backend et fichiers
+              Les videos restent cote A11 pour limiter les divergences entre cockpit, backend et fichiers
               publies.
             </p>
           </div>
@@ -559,8 +559,8 @@
           <div class="kicker">Agents visibles</div>
           <h2>L'equipe peut se raccrocher au meme lien.</h2>
           <p>
-            La page montre seulement la presence utile pour la demo. Les details internes restent
-            derriere le rideau.
+            La page montre seulement la presence utile aux admins. Les details sensibles restent
+            cote MCP et session privee.
           </p>
           <div class="live-row">
             <span>Agents actifs</span>
@@ -578,7 +578,7 @@
           <div class="kicker">Jeu local</div>
           <h2>RomStation uniquement.</h2>
           <p>
-            La demo jeu garde RomStation comme seule base. Les variantes non retenues sont ignorees.
+            La vue jeu garde RomStation comme seule base. Les variantes non retenues sont ignorees.
           </p>
           <div class="live-row">
             <span>Fenetre locale</span>
@@ -599,14 +599,14 @@
     <section class="section">
       <div class="wrap grid">
         <article class="card span-12">
-          <div class="kicker">Scenario Google - 2 minutes</div>
-          <h2>Le parcours de demo est pret.</h2>
+          <div class="kicker">Patrouille MCP - 2 minutes</div>
+          <h2>Le parcours admin est pret.</h2>
           <div class="steps">
             <div class="step">
               <div class="minute">0:00</div>
               <div>
-                <strong>Ouvrir le cockpit public</strong>
-                <span>Montrer le lien partageable, A11, Kaen44 et les agents actifs.</span>
+                <strong>Ouvrir le cockpit prive</strong>
+                <span>Verifier la session Google admin, A11, Kaen44 et les agents actifs.</span>
               </div>
             </div>
             <div class="step">
@@ -627,7 +627,7 @@
               <div class="minute">1:45</div>
               <div>
                 <strong>Clore avec les agents</strong>
-                <span>Revenir au cockpit, montrer que le lien public suffit pour coordonner la demo.</span>
+                <span>Revenir au cockpit et confirmer que la patrouille MCP reste lisible.</span>
               </div>
             </div>
           </div>
@@ -638,7 +638,7 @@
 
   <footer>
     <div class="wrap">
-      Funesterie - Demo publique. Derniere lecture : <span id="updatedAt">en attente</span>.
+      Funesterie - Cockpit MCP prive. Derniere lecture : <span id="updatedAt">en attente</span>.
     </div>
   </footer>
 
@@ -646,7 +646,7 @@
     (() => {
       const LIVE_STATUS_URL = "/.netlify/functions/live-status";
       const POLL_INTERVAL = 10000;
-      const publicLink = window.location.href.replace(/[?#].*$/, "");
+      const privateLink = "https://cp.funesterie.me/";
 
       const byId = (id) => document.getElementById(id);
       const setText = (id, value) => {
@@ -682,6 +682,10 @@
           headers: { "Accept": "application/json" },
           cache: "no-store"
         });
+        if (response.status === 401 || response.status === 403) {
+          window.location.assign("/");
+          throw new Error("auth_required");
+        }
         if (!response.ok) throw new Error("status_unavailable");
         return response.json();
       }
@@ -738,7 +742,7 @@
         setText("updatedAt", new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
 
         const topOk = a11Ok || kaenOk || activeAgents > 0 || gameReady;
-        setText("topStatus", topOk ? "Lien public lisible" : "Lien public pret, signaux en attente");
+        setText("topStatus", topOk ? "Session privee active" : "Session privee active, signaux en attente");
         const dot = byId("topDot");
         if (dot) dot.classList.toggle("ok", topOk);
         renderAgents(summary);
@@ -750,7 +754,7 @@
           const summary = await readStatus();
           render(summary);
         } catch (_error) {
-          setText("topStatus", "Lien public pret, lecture live en attente");
+          setText("topStatus", "Session privee active, lecture live en attente");
           setText("a11Live", "A verifier");
           setText("kaenLive", "A verifier");
           setText("agentCount", "A verifier");
@@ -760,17 +764,17 @@
         }
       }
 
-      setText("shareLink", publicLink);
+      setText("shareLink", privateLink);
       const copy = byId("copyLink");
       if (copy) {
         copy.addEventListener("click", async () => {
           try {
-            await navigator.clipboard.writeText(publicLink);
+            await navigator.clipboard.writeText(privateLink);
             copy.textContent = "Lien copie";
-            window.setTimeout(() => { copy.textContent = "Copier le lien"; }, 1600);
+            window.setTimeout(() => { copy.textContent = "Copier le lien prive"; }, 1600);
           } catch (_error) {
             copy.textContent = "Copie indisponible";
-            window.setTimeout(() => { copy.textContent = "Copier le lien"; }, 1600);
+            window.setTimeout(() => { copy.textContent = "Copier le lien prive"; }, 1600);
           }
         });
       }

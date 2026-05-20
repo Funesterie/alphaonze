@@ -123,6 +123,7 @@ function resolveRequestPinnedFrontendUrl(req) {
     'funesterie.me': 'https://funesterie.me',
     'www.funesterie.me': 'https://funesterie.me',
     'a11.funesterie.me': 'https://a11.funesterie.me',
+    'cp.funesterie.me': 'https://cp.funesterie.me',
     'vivy.funesterie.me': 'https://vivy.funesterie.me',
     'music.funesterie.me': 'https://music.funesterie.me',
   };
@@ -179,6 +180,7 @@ function resolveHostPinnedOAuthCallback(req, provider) {
     'k44.funesterie.me': 'https://k44.funesterie.me',
     'kaen44.funesterie.me': 'https://kaen44.funesterie.me',
     'a11.funesterie.me': 'https://a11.funesterie.me',
+    'cp.funesterie.me': 'https://cp.funesterie.me',
     'vivy.funesterie.me': 'https://vivy.funesterie.me',
     'music.funesterie.me': 'https://music.funesterie.me',
   };
@@ -327,6 +329,7 @@ function isAllowedOAuthFrontendOrigin(origin) {
   if (!normalized) return false;
   if ([
     'https://a11.funesterie.me',
+    'https://cp.funesterie.me',
     'https://funesterie.me',
     'https://www.funesterie.me',
     'https://k44.funesterie.me',
