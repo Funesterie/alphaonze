@@ -1900,8 +1900,7 @@ html.funesterie-cockpit-page-root body {
 .funesterie-ops-nav,
 .funesterie-ops-hero,
 .funesterie-ops-status-grid,
-.funesterie-ops-flow,
-.funesterie-ops-actions {
+.funesterie-ops-flow {
   width: min(1180px, 100%);
   margin-inline: auto;
 }
@@ -2005,8 +2004,7 @@ html.funesterie-cockpit-page-root body {
 .funesterie-ops-hero > div,
 .funesterie-ops-hero aside,
 .funesterie-ops-status-card,
-.funesterie-ops-flow,
-.funesterie-ops-actions {
+.funesterie-ops-flow {
   border: 1px solid var(--ops-line);
   border-radius: 8px;
   background: var(--ops-panel);
@@ -2205,55 +2203,10 @@ html.funesterie-cockpit-page-root body {
   text-transform: uppercase;
 }
 
-.funesterie-ops-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.35fr);
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-}
-
-.funesterie-ops-actions div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.funesterie-ops-actions a,
-.funesterie-ops-actions button {
-  min-height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 8px;
-  padding: 0 14px;
-  color: #f6f1fa;
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.funesterie-ops-actions a:first-child {
-  color: #08100f;
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--ops-ok), var(--ops-cyan));
-}
-
-.funesterie-ops-actions aside p {
-  margin: 0;
-  color: var(--ops-muted);
-  line-height: 1.45;
-}
-
 @media (max-width: 980px) {
   .funesterie-ops-nav,
   .funesterie-ops-hero,
-  .funesterie-ops-flow,
-  .funesterie-ops-actions {
+  .funesterie-ops-flow {
     grid-template-columns: 1fr;
   }
 

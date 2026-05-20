@@ -2854,8 +2854,6 @@ function FunesterieCockpitPage({
   displayName: string;
 }) {
   const surfaceLinks = getSurfaceLinks();
-  const [googleStarting, setGoogleStarting] = useState(false);
-  const [oauthMessage, setOauthMessage] = useState("");
   const cockpitServices = useMemo(() => {
     const sameOrigin = typeof window !== "undefined" ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL.replace(/\/+$/, "");
     return [
@@ -2912,31 +2910,6 @@ function FunesterieCockpitPage({
   useEffect(() => {
     document.documentElement.classList.add("funesterie-cockpit-page-root");
     document.body.classList.add("funesterie-cockpit-page-body");
-    try {
-      const params = new URLSearchParams(window.location.search || "");
-      const error = String(params.get("error") || "").trim().toLowerCase();
-      const provider = String(params.get("provider") || "").trim().toLowerCase();
-      if (error) {
-        const messages: Record<string, string> = {
-          oauth_failed: "La connexion externe a échoué. Relance depuis le bouton Google.",
-          oauth_state_invalid: "La tentative a expiré ou ne correspond plus. Relance une connexion propre.",
-          oauth_state_expired: "La tentative Google a expiré. Relance depuis ce cockpit.",
-          google_auth_not_configured: "Google n'est pas encore configuré sur le serveur A11.",
-          google_invalid_client: "Google refuse le client OAuth configuré. Vérifie l'ID client et le secret.",
-          google_invalid_grant: "Google a refusé le code de retour. Relance depuis ce cockpit.",
-          google_redirect_uri_mismatch: "La connexion externe est mal configurée. Réessaie plus tard ou contacte l'équipe.",
-          google_access_denied: "La connexion Google a été annulée.",
-          google_email_not_verified: "L'adresse Google doit être vérifiée avant d'entrer.",
-          session_verification_failed: "La connexion est revenue, mais la session n'a pas pu être confirmée.",
-        };
-        setOauthMessage(messages[error] || "La connexion Google n'a pas pu être finalisée.");
-        window.history.replaceState({}, "", window.location.pathname);
-      } else if (provider === "google" || authenticated) {
-        setOauthMessage("Connexion Google reçue. Le cockpit peut maintenant servir de retour stable.");
-      }
-    } catch {
-      // keep the cockpit usable when history/search are unavailable
-    }
 
     return () => {
       document.documentElement.classList.remove("funesterie-cockpit-page-root");
@@ -2977,20 +2950,6 @@ function FunesterieCockpitPage({
       cancelled = true;
     };
   }, [cockpitServices]);
-
-  function startCockpitGoogle() {
-    setGoogleStarting(true);
-    try {
-      const fallbackReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
-      const returnTo = typeof window !== "undefined"
-        ? new URL("/cockpit/auth/success", window.location.origin).toString()
-        : fallbackReturnTo;
-      startGoogleOAuth(returnTo, "funesterie-cockpit");
-    } catch {
-      setGoogleStarting(false);
-      setOauthMessage("Impossible de préparer l'URL Google depuis ce navigateur.");
-    }
-  }
 
   const statusMeta: Record<"checking" | "ok" | "down", { label: string; detail: string }> = {
     checking: { label: "vérification", detail: "Test en cours" },
@@ -3034,27 +2993,6 @@ function FunesterieCockpitPage({
             <b>{statusMeta[serviceStatus[service.id] || "checking"].detail}</b>
           </a>
         ))}
-      </section>
-
-      <section className="funesterie-ops-actions" aria-label="Actions cockpit">
-        <div>
-          <a href={surfaceLinks.kaen44}>Ouvrir K44</a>
-          <a href={surfaceLinks.a11Login}>Ouvrir A11</a>
-          <a href={surfaceLinks.vivy}>Ouvrir Vivy</a>
-          <button type="button" onClick={startCockpitGoogle} disabled={googleStarting}>
-            {googleStarting ? "Google..." : "Tester Google"}
-          </button>
-        </div>
-        <aside>
-          {oauthMessage ? (
-            <p>{oauthMessage}</p>
-          ) : (
-            <p>
-              Les détails admin restent hors de ce cockpit public.{" "}
-              <a href={surfaceLinks.privacy}>Règles de confidentialité</a>
-            </p>
-          )}
-        </aside>
       </section>
 
       <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
@@ -3522,7 +3460,7 @@ function FunesterieContactPage({ surfaceLinks }: { surfaceLinks: SurfaceLinks })
   const publicAccounts = [
     ["GitHub", "Organisation Funesterie", "https://github.com/Funesterie"],
     ["Packages", "GitHub Packages / GHCR", "https://github.com/orgs/Funesterie/packages"],
-    ["npm", "Organisation @funesterie", "https://www.npmjs.com/org/funesterie"],
+    ["npm", "Packages @nossen", "https://www.npmjs.com/search?q=%40nossen"],
   ] as const;
 
   return (
