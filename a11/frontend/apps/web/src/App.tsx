@@ -3330,8 +3330,6 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
 
-      <NossenCrewShowcase eager />
-
       <section id="agents" className="fun-agents-page-list" aria-label="Agents Funesterie">
         {agents.map((agent) => (
           <a key={agent.id} className={`fun-agents-page-card fun-agents-page-card--${agent.tone}`} href={agent.href}>
