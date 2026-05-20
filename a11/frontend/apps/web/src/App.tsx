@@ -2832,12 +2832,32 @@ function VivyPublicSurface({ authenticated }: { authenticated: boolean }) {
               />
             ))}
           </div>
-        </div>
-        <div className="vivy-public-mobile-slices" aria-hidden="true">
-          <img className="vivy-mobile-slice vivy-mobile-slice--portrait" src={VIVY_POSTER_SRC} alt="" />
-          <img className="vivy-mobile-slice vivy-mobile-slice--voice" src={VIVY_POSTER_SRC} alt="" />
-          <img className="vivy-mobile-slice vivy-mobile-slice--production" src={VIVY_POSTER_SRC} alt="" />
-          <img className="vivy-mobile-slice vivy-mobile-slice--scene" src={VIVY_POSTER_SRC} alt="" />
+          <div className="vivy-public-mobile-actions" aria-label="Accès directs mobiles Vivy">
+            <button
+              type="button"
+              className="vivy-public-mobile-action vivy-public-mobile-action--music"
+              onClick={() => openVivyStudioMode("song")}
+              aria-label="Ouvrir musique et composition dans le Studio Vivy"
+            >
+              Musique
+            </button>
+            <button
+              type="button"
+              className="vivy-public-mobile-action vivy-public-mobile-action--creation"
+              onClick={() => openVivyStudioMode("voice")}
+              aria-label="Ouvrir création voix dans le Studio Vivy"
+            >
+              Création
+            </button>
+            <button
+              type="button"
+              className="vivy-public-mobile-action vivy-public-mobile-action--share"
+              onClick={() => openVivyStudioMode("share")}
+              aria-label="Ouvrir scène et partage dans le Studio Vivy"
+            >
+              Partage
+            </button>
+          </div>
         </div>
       </section>
       <VivyPublicChat authenticated={authenticated} />
