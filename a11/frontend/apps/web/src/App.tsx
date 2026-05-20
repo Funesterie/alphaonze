@@ -3232,180 +3232,125 @@ function FunesterieConnectedHomePage({
   );
 }
 
-const FUNESTERIE_TOKEN_STORAGE_KEY = "funesterie:integration-token-canvas";
+function FunesterieIntegrationPanel({
+  surfaceLinks,
+  authenticated,
+  displayName,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated: boolean;
+  displayName: string;
+}) {
+  const [busy, setBusy] = useState<"" | "google" | "microsoft">("");
+  const accountReturnTo = surfaceLinks.account || "/compte/";
+  const accountLabel = String(displayName || "Compte connecté").trim();
 
-const FUNESTERIE_TOKEN_GROUPS = [
-  {
-    title: "Cloudflare / R2",
-    fields: [
-      ["CLOUDFLARE_ACCOUNT_ID", "Account ID Cloudflare", false],
-      ["CLOUDFLARE_API_TOKEN", "API token Cloudflare", true],
-      ["R2_BUCKET", "Bucket R2", false],
-      ["R2_PUBLIC_BASE_URL", "URL publique fichiers", false],
-    ],
-  },
-  {
-    title: "GitHub / GHCR / NPM",
-    fields: [
-      ["GITHUB_USER", "Utilisateur GitHub", false],
-      ["GITHUB_TOKEN", "Token GitHub Packages", true],
-      ["NPM_TOKEN", "Token npm", true],
-    ],
-  },
-  {
-    title: "JFrog / Artifactory",
-    fields: [
-      ["JFROG_URL", "URL JFrog", false],
-      ["JFROG_USER", "Utilisateur JFrog", false],
-      ["JFROG_ACCESS_TOKEN", "Token JFrog", true],
-    ],
-  },
-  {
-    title: "Neo4j Aura",
-    fields: [
-      ["NEO4J_URI", "URI Neo4j", false],
-      ["NEO4J_USERNAME", "Utilisateur Neo4j", false],
-      ["NEO4J_PASSWORD", "Mot de passe Neo4j", true],
-      ["NEO4J_DATABASE", "Base Neo4j", false],
-    ],
-  },
-] as const;
-
-type FunesterieTokenKey = typeof FUNESTERIE_TOKEN_GROUPS[number]["fields"][number][0];
-type FunesterieTokenValues = Partial<Record<FunesterieTokenKey, string>>;
-
-function readFunesterieTokenValues(): FunesterieTokenValues {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(FUNESTERIE_TOKEN_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const values: FunesterieTokenValues = {};
-    for (const group of FUNESTERIE_TOKEN_GROUPS) {
-      for (const [key] of group.fields) {
-        const value = parsed[key];
-        if (typeof value === "string") values[key] = value;
-      }
-    }
-    return values;
-  } catch {
-    return {};
+  function connectGoogle() {
+    setBusy("google");
+    startGoogleOAuth(accountReturnTo, "funesterie-account");
   }
-}
 
-function FunesterieTokenCanvas() {
-  const [values, setValues] = useState<FunesterieTokenValues>(() => readFunesterieTokenValues());
-  const [bulkText, setBulkText] = useState("");
-  const [showSecrets, setShowSecrets] = useState(false);
-  const allKeys = useMemo(() => new Set(FUNESTERIE_TOKEN_GROUPS.flatMap((group) => group.fields.map(([key]) => key))), []);
-  const filledCount = FUNESTERIE_TOKEN_GROUPS.reduce((count, group) => (
-    count + group.fields.filter(([key]) => String(values[key] || "").trim()).length
-  ), 0);
-  const totalCount = FUNESTERIE_TOKEN_GROUPS.reduce((count, group) => count + group.fields.length, 0);
+  function connectMicrosoft() {
+    setBusy("microsoft");
+    startMicrosoftOAuth(accountReturnTo, "funesterie-account");
+  }
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const cleaned = Object.fromEntries(
-      Object.entries(values).filter(([, value]) => String(value || "").trim())
+  if (!authenticated) {
+    return (
+      <section className="fun-token-panel fun-token-locked" aria-label="Connexions privées Funesterie verrouillées">
+        <header className="fun-token-head">
+          <div>
+            <span>Session requise</span>
+            <h2>Connexions privées</h2>
+            <p>
+              Les accès personnels ne sont pas affichés sur la page publique. Connecte-toi avec
+              Google ou Microsoft pour relier tes propres outils aux agents.
+            </p>
+          </div>
+          <aside>
+            <strong>Privé</strong>
+            <small>verrouillé</small>
+          </aside>
+        </header>
+        <div className="fun-integration-actions">
+          <button type="button" onClick={connectGoogle} disabled={busy === "google"}>
+            {busy === "google" ? "Connexion..." : "Google"}
+          </button>
+          <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft"}>
+            {busy === "microsoft" ? "Connexion..." : "Microsoft"}
+          </button>
+        </div>
+      </section>
     );
-    try {
-      if (Object.keys(cleaned).length) {
-        window.localStorage.setItem(FUNESTERIE_TOKEN_STORAGE_KEY, JSON.stringify(cleaned));
-      } else {
-        window.localStorage.removeItem(FUNESTERIE_TOKEN_STORAGE_KEY);
-      }
-    } catch {
-      // Local storage can be unavailable in strict browser contexts.
-    }
-  }, [values]);
-
-  function updateValue(key: FunesterieTokenKey, value: string) {
-    setValues((current) => ({ ...current, [key]: value }));
-  }
-
-  function importBulkValues() {
-    const next: FunesterieTokenValues = {};
-    for (const line of bulkText.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const match = /^([A-Z0-9_]+)\s*=\s*(.*)$/.exec(trimmed);
-      if (!match) continue;
-      const key = match[1] as FunesterieTokenKey;
-      if (!allKeys.has(key)) continue;
-      next[key] = match[2].replace(/^["']|["']$/g, "");
-    }
-    if (!Object.keys(next).length) return;
-    setValues((current) => ({ ...current, ...next }));
-    setBulkText("");
-  }
-
-  function clearValues() {
-    setValues({});
-    setBulkText("");
   }
 
   return (
-    <section className="fun-token-panel" aria-label="Intégrations tokens Funesterie">
+    <section className="fun-token-panel" aria-label="Connexions privées Funesterie">
       <header className="fun-token-head">
         <div>
-          <span>Local-first</span>
-          <h2>Intégrations tokens</h2>
+          <span>Compte connecté</span>
+          <h2>Connexions utilisateur</h2>
           <p>
-            Colle les accès ici au lieu de les mettre dans un chat. Les champs restent dans ce
-            navigateur et les exports restent locaux.
+            Les secrets techniques restent côté serveur. Ici on prépare seulement les accès liés à
+            ta session pour travailler avec les agents, le code local et les paquets NOSSEN.
           </p>
         </div>
         <aside>
-          <strong>{filledCount}/{totalCount}</strong>
-          <small>renseignés</small>
+          <strong>Privé</strong>
+          <small>{accountLabel}</small>
         </aside>
       </header>
 
-      <div className="fun-token-import">
-        <label htmlFor="fun-token-bulk">Coller un bloc KEY=value</label>
-        <textarea
-          id="fun-token-bulk"
-          value={bulkText}
-          onChange={(event) => setBulkText(event.target.value)}
-          placeholder={"CLOUDFLARE_ACCOUNT_ID=...\nGITHUB_TOKEN=...\nNEO4J_URI=..."}
-        />
-        <div>
-          <button type="button" onClick={importBulkValues}>Importer</button>
-          <button type="button" onClick={() => setShowSecrets((current) => !current)}>
-            {showSecrets ? "Masquer" : "Afficher"}
-          </button>
-          <button type="button" onClick={clearValues}>Effacer</button>
-        </div>
-      </div>
+      <div className="fun-integration-grid">
+        <article className="fun-token-card">
+          <header>
+            <h3>Google</h3>
+            <span>OAuth</span>
+          </header>
+          <p>Compte, Drive, fichiers et validations Google rattachés à ta session.</p>
+          <footer>
+            <button type="button" onClick={connectGoogle} disabled={busy === "google"}>
+              {busy === "google" ? "Connexion..." : "Connecter Google"}
+            </button>
+          </footer>
+        </article>
 
-      <div className="fun-token-grid">
-        {FUNESTERIE_TOKEN_GROUPS.map((group) => {
-          const groupFilled = group.fields.filter(([key]) => String(values[key] || "").trim()).length;
-          return (
-            <article key={group.title} className="fun-token-card">
-              <header>
-                <h3>{group.title}</h3>
-                <span>{groupFilled}/{group.fields.length}</span>
-              </header>
-              {group.fields.map(([key, label, secret]) => (
-                <label key={key}>
-                  <span>
-                    <b>{label}</b>
-                    <em>{key}</em>
-                  </span>
-                  <input
-                    value={values[key] || ""}
-                    type={secret && !showSecrets ? "password" : "text"}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder={secret ? "Valeur masquée" : key}
-                    onChange={(event) => updateValue(key, event.target.value)}
-                  />
-                </label>
-              ))}
-            </article>
-          );
-        })}
+        <article className="fun-token-card">
+          <header>
+            <h3>Microsoft</h3>
+            <span>OAuth</span>
+          </header>
+          <p>Compte Microsoft, OneDrive et outils de travail liés au profil connecté.</p>
+          <footer>
+            <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft"}>
+              {busy === "microsoft" ? "Connexion..." : "Connecter Microsoft"}
+            </button>
+          </footer>
+        </article>
+
+        <article className="fun-token-card">
+          <header>
+            <h3>GitHub / npm</h3>
+            <span>NOSSEN</span>
+          </header>
+          <p>Paquets et modules à consommer côté dev, sans afficher les tokens admin.</p>
+          <footer>
+            <a href="https://www.npmjs.com/search?q=%40nossen" target="_blank" rel="noreferrer">
+              Voir @nossen
+            </a>
+          </footer>
+        </article>
+
+        <article className="fun-token-card">
+          <header>
+            <h3>Agents locaux</h3>
+            <span>Coffre local</span>
+          </header>
+          <p>Usage local avec QFlush, CLI et stockage chiffré côté machine quand disponible.</p>
+          <footer>
+            <a href={surfaceLinks.cockpit}>Voir l'état</a>
+          </footer>
+        </article>
       </div>
     </section>
   );
@@ -3424,7 +3369,7 @@ function FunesterieAccountPage({
     ["Abonnement", "Offres, paiements et statut d'accès."],
     ["Sessions", "Inventaire et reprise des conversations."],
     ["Paramètres", "Préférences, voix, médias et sécurité."],
-    ["Intégrations", "Tokens locaux pour relier les outils."],
+    ["Intégrations", "Connexions privées liées au compte."],
   ] as const;
 
   return (
@@ -3449,7 +3394,11 @@ function FunesterieAccountPage({
         </div>
       </section>
 
-      <FunesterieTokenCanvas />
+      <FunesterieIntegrationPanel
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+      />
 
       <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
@@ -4303,7 +4252,6 @@ export function App() {
       Boolean(publicPolicyPage)
       || isGeneralHome
       || isGeneralAgents
-      || isGeneralAccount
       || isGeneralContact
       || (isKaen44 && isFunesterieHomeRoute(pathname) && !isCockpitRoute(pathname))
       || isVivyExperience();

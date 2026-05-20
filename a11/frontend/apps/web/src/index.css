@@ -7864,6 +7864,13 @@ body {
   padding: clamp(18px, 3vw, 28px);
 }
 
+.fun-token-locked {
+  border-color: rgba(233, 184, 108, 0.34);
+  background:
+    radial-gradient(circle at 18% 0, rgba(233, 184, 108, 0.13), transparent 32%),
+    rgba(9, 12, 18, 0.88);
+}
+
 .fun-token-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -7924,44 +7931,18 @@ body {
   text-transform: uppercase;
 }
 
-.fun-token-import {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.25fr) minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: stretch;
+.fun-integration-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   border-top: 1px solid var(--fun-line);
   padding-top: 16px;
 }
 
-.fun-token-import label {
-  color: #fff;
-  font-weight: 900;
-}
-
-.fun-token-import textarea,
-.fun-token-card input {
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  color: #f6f0fb;
-  background: rgba(4, 7, 14, 0.86);
-  font: 13px/1.45 Consolas, "SFMono-Regular", monospace;
-}
-
-.fun-token-import textarea {
-  min-height: 104px;
-  resize: vertical;
-  padding: 12px;
-}
-
-.fun-token-import div {
-  display: flex;
-  align-content: start;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.fun-token-import button {
+.fun-integration-actions button,
+.fun-token-card button,
+.fun-token-card a {
   min-height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
@@ -7972,18 +7953,29 @@ body {
   font-weight: 900;
   text-transform: uppercase;
   cursor: pointer;
+  text-decoration: none;
 }
 
-.fun-token-import button:first-child {
+.fun-integration-actions button:first-child,
+.fun-token-card button,
+.fun-token-card a {
   color: #081014;
   border-color: transparent;
   background: linear-gradient(135deg, var(--fun-teal), var(--fun-blue));
 }
 
-.fun-token-grid {
+.fun-token-card button:disabled,
+.fun-integration-actions button:disabled {
+  opacity: 0.68;
+  cursor: wait;
+}
+
+.fun-integration-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  border-top: 1px solid var(--fun-line);
+  padding-top: 16px;
 }
 
 .fun-token-card {
@@ -8014,32 +8006,19 @@ body {
   font-weight: 900;
 }
 
-.fun-token-card label {
-  display: grid;
-  gap: 7px;
+.fun-token-card p {
+  margin: 0;
+  color: var(--fun-muted);
+  font-size: 14px;
+  line-height: 1.52;
 }
 
-.fun-token-card label span {
+.fun-token-card footer {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-}
-
-.fun-token-card b {
-  color: #f6f0fb;
-  font-size: 13px;
-}
-
-.fun-token-card em {
-  color: var(--fun-teal);
-  font-size: 11px;
-  font-style: normal;
-}
-
-.fun-token-card input {
-  min-height: 42px;
-  padding: 0 12px;
+  margin-top: auto;
 }
 
 .fun-contact-shell {
@@ -8414,13 +8393,12 @@ body {
 
   .fun-home-connected,
   .a11-media-lower,
-  .fun-token-import,
   .fun-contact-panel {
     grid-template-columns: 1fr;
   }
 
   .a11-media-modules,
-  .fun-token-grid {
+  .fun-integration-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -8477,17 +8455,12 @@ body {
   }
 
   .fun-token-head,
-  .fun-token-grid {
+  .fun-integration-grid {
     grid-template-columns: 1fr;
   }
 
   .fun-token-head aside {
     justify-self: start;
-  }
-
-  .fun-token-card label span {
-    display: grid;
-    justify-content: start;
   }
 
   .fun-contact-actions a,
