@@ -3234,18 +3234,7 @@ function FunesterieConnectedHomePage({
       </nav>
 
       <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
-        <article className="fun-home-side fun-home-side--vivy">
-          <img src={NOSSEN_VIVY_BOOSTER_SRC} alt="" />
-          <div>
-            <h2>Vivy</h2>
-            <strong>Présence musicale Funesterie</strong>
-            <p>Une présence musicale pour poser des idées, des voix, des chansons et des scènes.</p>
-            <a href={surfaceLinks.vivy}><span aria-hidden="true">♪</span> Découvrir Vivy</a>
-          </div>
-        </article>
-
         <div className="fun-home-core">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
           <p>
             NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
             entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
@@ -3253,26 +3242,12 @@ function FunesterieConnectedHomePage({
           </p>
           <div className="fun-home-actions">
             <a href="#ride-crew">Ride crew</a>
-            {authenticated ? (
-              <a className="fun-home-session-link" href={surfaceLinks.cockpit}>Session ouverte</a>
-            ) : (
-              <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-                {accountBusy === "google" ? "Connexion..." : "Se connecter"}
-              </button>
-            )}
+            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+              {accountBusy === "google" ? "Connexion..." : "Se connecter"}
+            </button>
             <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
         </div>
-
-        <article className="fun-home-side fun-home-side--a11">
-          <img src={NOSSEN_A11_DERBI_SRC} alt="" />
-          <div>
-            <h2>A11</h2>
-            <strong>Agent média</strong>
-            <p>Un espace pour préparer les fichiers, les signaux et les notes utiles aux projets.</p>
-            <a href={surfaceLinks.a11}><span aria-hidden="true">≋</span> Découvrir A11</a>
-          </div>
-        </article>
       </section>
 
       <NossenCrewShowcase id="ride-crew" />
