@@ -3201,6 +3201,7 @@ function FunesterieConnectedHomePage({
   const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
   const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
   const [accountBusy, setAccountBusy] = useState<"" | "google">("");
+  const [activeHash, setActiveHash] = useState(() => (typeof window === "undefined" ? "" : window.location.hash));
   const navItems = [
     ["Accueil", surfaceLinks.home],
     ["Ride crew", "#ride-crew"],
@@ -3214,6 +3215,16 @@ function FunesterieConnectedHomePage({
     setAccountBusy("google");
     startGoogleOAuth(accountReturnTo, "funesterie-home");
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const syncHash = () => setActiveHash(window.location.hash);
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
+
+  const isRideCrewView = activeHash === "#ride-crew";
 
   return (
     <main id="top" className="fun-home-shell" aria-label="Accueil Funesterie connecté">
@@ -3233,22 +3244,25 @@ function FunesterieConnectedHomePage({
         </a>
       </nav>
 
-      <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
-        <div className="fun-home-core">
-          <p>
-            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
-            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
-            Les agents gardent chacun leur spécialité.
-          </p>
-          <div className="fun-home-actions">
-            <a href="#ride-crew">Ride crew</a>
-            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-              {accountBusy === "google" ? "Connexion..." : "Se connecter"}
-            </button>
-            <a href={surfaceLinks.cockpit}>État opérationnel</a>
+      {!isRideCrewView ? (
+        <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
+          <div className="fun-home-core">
+            <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+            <p>
+              NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+              entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+              Les agents gardent chacun leur spécialité.
+            </p>
+            <div className="fun-home-actions">
+              <a href="#ride-crew">Ride crew</a>
+              <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+                {accountBusy === "google" ? "Connexion..." : "Se connecter"}
+              </button>
+              <a href={surfaceLinks.cockpit}>État opérationnel</a>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <NossenCrewShowcase id="ride-crew" />
 
