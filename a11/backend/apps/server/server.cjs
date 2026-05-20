@@ -7753,12 +7753,11 @@ function sendEmbeddedUiIndex(req, res) {
 
 function sendEmbeddedUiRoot(req, res) {
   const hostname = getRequestSurfaceHost(req);
-  if (hostname === 'funesterie.me' || hostname === 'www.funesterie.me') {
-    return sendEmbeddedUiIndex(req, res);
-  }
-  if (hostname === 'k44.funesterie.me'
+  if (hostname === 'funesterie.me'
+    || hostname === 'www.funesterie.me'
+    || hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
-    return res.redirect(302, '/cockpit/');
+    return sendEmbeddedUiIndex(req, res);
   }
   return sendEmbeddedUiIndex(req, res);
 }
