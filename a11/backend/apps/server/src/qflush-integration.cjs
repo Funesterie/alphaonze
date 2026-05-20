@@ -580,6 +580,13 @@ function getRemoteFlowRetryCount() {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2;
 }
 
+function shouldStrictlyRequireRemoteFlow() {
+  const raw = String(process.env.A11_QFLUSH_REMOTE_STRICT || process.env.QFLUSH_REMOTE_STRICT || '')
+    .trim()
+    .toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 function isLoopbackUrl(value) {
   try {
     const parsed = new URL(String(value || '').trim());
@@ -617,6 +624,8 @@ function getQflushModuleCandidates() {
     if (fs.existsSync(rootEntry)) candidates.push(toFileImportSpecifier(rootEntry));
   }
 
+  candidates.push('@funesterie/qflush/dist/daemon/qflushd.js');
+  candidates.push('@funesterie/qflush');
   candidates.push('@nossen/qflush/dist/daemon/qflushd.js');
   candidates.push('@nossen/qflush');
 
@@ -767,7 +776,7 @@ async function runQflushFlow(flow, payload, options = {}) {
         message: e?.message || String(e),
         upstream: e?.upstream || null,
       }));
-      if (!isLoopbackUrl(remoteUrl)) {
+      if (!isLoopbackUrl(remoteUrl) && shouldStrictlyRequireRemoteFlow()) {
         throw e;
       }
       remoteFailure = e;
