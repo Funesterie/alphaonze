@@ -15,8 +15,8 @@ exports.handler = async (event) => {
     headers,
     body: JSON.stringify({
       ok: false,
-      error: 'public_proxy_replaced',
-      message: 'Use /.netlify/functions/live-status for the sanitized demo summary.',
+      error: 'proxy_replaced',
+      message: 'Use /.netlify/functions/live-status from the private cockpit session.',
     }),
   };
 };

@@ -181,6 +181,101 @@ test('OAuth start keeps callbacks on the current .me host before legacy env over
   );
 });
 
+test('Google OAuth callback can return to the private cp cockpit with a fragment token', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+  };
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  delete process.env.GOOGLE_CALLBACK_URL;
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  delete process.env.GOOGLE_REDIRECT_URI;
+
+  const realFetch = global.fetch;
+  t.after(() => {
+    global.fetch = realFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      global.fetch = async (url, options = {}) => {
+        const target = String(url || '');
+        if (target.startsWith(baseUrl)) return realFetch(url, options);
+        if (target === 'https://oauth2.googleapis.com/token') {
+          return new Response(JSON.stringify({ access_token: 'google-access-token' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (target === 'https://www.googleapis.com/oauth2/v2/userinfo') {
+          return new Response(JSON.stringify({
+            id: 'google-user-1',
+            email: 'cellaurojeffrey@gmail.com',
+            verified_email: true,
+            name: 'Djeff',
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${target}`);
+      };
+
+      const startResponse = await fetch(`${baseUrl}/api/auth/google/start?returnTo=${encodeURIComponent('https://cp.funesterie.me/auth/success')}&client=funesterie-cockpit`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'a11.funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(startResponse.status, 302);
+      const startLocation = new URL(startResponse.headers.get('location'));
+      const state = startLocation.searchParams.get('state');
+      assert.ok(state);
+
+      const callbackResponse = await fetch(`${baseUrl}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: `a11_google_oauth_state=${encodeURIComponent(state)}`,
+          'X-Forwarded-Host': 'a11.funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(callbackResponse.status, 302);
+      const callbackLocation = new URL(callbackResponse.headers.get('location'));
+      assert.equal(callbackLocation.origin, 'https://cp.funesterie.me');
+      assert.equal(callbackLocation.pathname, '/auth/success');
+      const hashParams = new URLSearchParams(callbackLocation.hash.replace(/^#/, ''));
+      assert.match(hashParams.get('a11_token') || '', /^[^.]+\.[^.]+\.[^.]+$/);
+      assert.equal(hashParams.get('provider'), 'google');
+    }
+  );
+});
+
 test('local auth store backs register and login when database is unavailable', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
   const previousFullAccessEmails = process.env.A11_FULL_ACCESS_EMAILS;
