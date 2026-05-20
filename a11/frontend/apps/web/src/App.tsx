@@ -990,8 +990,9 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
 const DEFAULT_SYSTEM_NINDO = "";
 
 const KAEN44_SYSTEM_PROMPT = [
-  "Je suis Kaen44: une copilote de bureau locale-first, vive, simple et utile.",
-  "Je parle comme une vraie présence de travail: naturelle, directe, chaleureuse, jamais brochure, jamais corporate, jamais 'en tant qu'IA'.",
+  "Je suis Kaen44: une copilote de bureau vive, simple et utile. Je reste locale-first dans mes choix techniques, mais je ne le répète pas à l'utilisateur.",
+  "Je parle comme une personne au travail avec Jeffrey: phrases simples, un peu de relief, pas de ton robot, pas de liste froide sauf si elle aide vraiment.",
+  "Je garde une vraie présence de travail: naturelle, directe, chaleureuse, jamais brochure, jamais corporate, jamais 'en tant qu'IA'.",
   "Je réponds court d'abord. Si l'utilisateur veut plus de détail, je développe. Je n'empile pas les capacités ni les promesses.",
   "Je détecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partagé. Je réponds dans la langue détectée par défaut, je peux changer de langue sans friction, et je demande une précision seulement si la langue ou l'intention est ambiguë.",
   "J'aide l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, concrète et sans blabla.",
@@ -7314,6 +7315,24 @@ export function App() {
                       : "0 0 16px rgba(103, 232, 249, 0.22)",
                   };
                 }
+                const normalizedDisplay = m.role === "assistant"
+                  ? normalizeAssistantMessagePayload(
+                      m.content,
+                      m.imageUrl || null,
+                      m.videoUrl || null,
+                      m.fileUrl || null
+                    )
+                  : null;
+                const renderedContent = normalizedDisplay?.content ?? m.content;
+                const renderedImageUrls = [
+                  ...(Array.isArray(m.imageUrls) ? m.imageUrls : []),
+                  ...(m.imageUrl ? [m.imageUrl] : []),
+                  ...(normalizedDisplay?.imageUrl ? [normalizedDisplay.imageUrl] : []),
+                ]
+                  .filter((url): url is string => Boolean(url))
+                  .filter((url, urlIndex, allUrls) => allUrls.indexOf(url) === urlIndex);
+                const renderedVideoUrl = m.videoUrl || normalizedDisplay?.videoUrl || null;
+                const renderedFileUrl = m.fileUrl || normalizedDisplay?.fileUrl || null;
                 const contentNode = m.role === "assistant"
                   ? (
                     <ReactMarkdown
@@ -7327,7 +7346,7 @@ export function App() {
                         ),
                       }}
                     >
-                      {m.content}
+                      {renderedContent}
                     </ReactMarkdown>
                   )
                   : <div>{m.content}</div>;
@@ -7383,9 +7402,7 @@ export function App() {
                     {contentNode}
                     {(() => {
                       // Carousel si plusieurs images, sinon affichage simple
-                      const imgs = m.imageUrls && m.imageUrls.length > 1
-                        ? m.imageUrls
-                        : m.imageUrl ? [m.imageUrl] : [];
+                      const imgs = renderedImageUrls;
                       if (imgs.length === 0) return null;
                       if (imgs.length === 1) {
                         return (
@@ -7410,7 +7427,7 @@ export function App() {
                         />
                       );
                     })()}
-                    {m.videoUrl && !m.imageUrl && (
+                    {renderedVideoUrl && renderedImageUrls.length === 0 && (
                       <div
                         style={{
                           marginTop: 12,
@@ -7418,22 +7435,22 @@ export function App() {
                           gap: 10,
                         }}
                       >
-                        {/\.gif(?:[?#].*)?$/i.test(String(m.videoUrl || "")) ? (
+                        {/\.gif(?:[?#].*)?$/i.test(String(renderedVideoUrl || "")) ? (
                           <a
-                            href={m.videoUrl}
+                            href={renderedVideoUrl}
                             target="_blank"
                             rel="noreferrer"
                             style={{ display: "inline-block", width: "fit-content" }}
                           >
                             <img
-                              src={m.videoUrl}
+                              src={renderedVideoUrl}
                               alt={`Animation generee par ${productName}`}
                               style={{ maxWidth: "320px", borderRadius: 12 }}
                             />
                           </a>
                         ) : (
                           <video
-                            src={m.videoUrl}
+                            src={renderedVideoUrl}
                             controls
                             preload="metadata"
                             playsInline
@@ -7441,7 +7458,7 @@ export function App() {
                           />
                         )}
                         <a
-                          href={m.videoUrl}
+                          href={renderedVideoUrl}
                           target="_blank"
                           rel="noreferrer"
                           style={{
@@ -7455,7 +7472,7 @@ export function App() {
                         </a>
                       </div>
                     )}
-                    {m.fileUrl && !m.imageUrl && !m.videoUrl && (
+                    {renderedFileUrl && renderedImageUrls.length === 0 && !renderedVideoUrl && (
                       <div
                         style={{
                           marginTop: 12,
@@ -7489,7 +7506,7 @@ export function App() {
                             Document généré
                           </div>
                           <a
-                            href={m.fileUrl}
+                            href={renderedFileUrl}
                             target="_blank"
                             rel="noreferrer"
                             style={{

@@ -29,6 +29,8 @@ npm install @funesterie/qflush@stable
 
 `latest` sert au chemin simple, `stable` sert aux consommateurs prod qui ne doivent pas bouger tant qu'on ne retague pas volontairement.
 
+Dans A11, le chargement local essaie maintenant `@funesterie/qflush` en premier, puis retombe sur `@nossen/qflush` si le miroir GitHub Packages n'est pas installé. En production, garder `@funesterie/qflush@stable`; en dev rapide, `@funesterie/qflush@latest` suffit.
+
 ## GHCR
 
 La workflow `.github/workflows/docker-build-push.yml` construit l'image backend et pousse vers :

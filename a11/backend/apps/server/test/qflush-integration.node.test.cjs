@@ -153,6 +153,8 @@ test('runQflushFlow surfaces an actionable upstream error payload', async () => 
     'A11_QFLUSH_USE_DRAGON',
     'A11_QFLUSH_REMOTE_TIMEOUT_MS',
     'A11_QFLUSH_REMOTE_RETRIES',
+    'A11_QFLUSH_REMOTE_STRICT',
+    'QFLUSH_REMOTE_STRICT',
   ]);
   const originalFetch = global.fetch;
 
@@ -160,6 +162,7 @@ test('runQflushFlow surfaces an actionable upstream error payload', async () => 
     process.env.QFLUSH_URL = 'https://qflush.example.com';
     process.env.A11_QFLUSH_REMOTE_TIMEOUT_MS = '50';
     process.env.A11_QFLUSH_REMOTE_RETRIES = '0';
+    process.env.A11_QFLUSH_REMOTE_STRICT = 'true';
     global.fetch = async () => new Response(JSON.stringify({
       ok: false,
       error: 'bad_gateway',
@@ -187,6 +190,47 @@ test('runQflushFlow surfaces an actionable upstream error payload', async () => 
   }
 });
 
+test('runQflushFlow falls back locally when a non-loopback remote is unavailable by default', async () => {
+  const envSnapshot = snapshotEnv([
+    'QFLUSH_URL',
+    'QFLUSH_REMOTE_URL',
+    'QFLUSH_BASE_URL',
+    'DRAGON_API_URL',
+    'A11_QFLUSH_USE_DRAGON',
+    'A11_QFLUSH_REMOTE_TIMEOUT_MS',
+    'A11_QFLUSH_REMOTE_RETRIES',
+    'A11_QFLUSH_REMOTE_STRICT',
+    'QFLUSH_REMOTE_STRICT',
+  ]);
+  const originalFetch = global.fetch;
+
+  try {
+    process.env.QFLUSH_URL = 'https://qflush.example.com';
+    delete process.env.QFLUSH_REMOTE_URL;
+    delete process.env.QFLUSH_BASE_URL;
+    delete process.env.DRAGON_API_URL;
+    delete process.env.A11_QFLUSH_USE_DRAGON;
+    delete process.env.A11_QFLUSH_REMOTE_STRICT;
+    delete process.env.QFLUSH_REMOTE_STRICT;
+    process.env.A11_QFLUSH_REMOTE_TIMEOUT_MS = '50';
+    process.env.A11_QFLUSH_REMOTE_RETRIES = '0';
+    global.fetch = async () => {
+      throw new Error('fetch failed');
+    };
+
+    const result = await runQflushFlow('a11.memory.summary.v1', {
+      messages: [{ role: 'user', content: 'bonjour' }],
+    }, { requestId: 'req-non-loopback-fallback' });
+
+    assert.equal(result.ok, true);
+    assert.equal(typeof result.output, 'string');
+    assert.match(result.output, /bonjour/);
+  } finally {
+    global.fetch = originalFetch;
+    restoreEnv(envSnapshot);
+  }
+});
+
 test('runQflushFlow falls back to the local qflush module when the loopback daemon is unavailable', async () => {
   const envSnapshot = snapshotEnv([
     'QFLUSH_URL',
@@ -196,6 +240,8 @@ test('runQflushFlow falls back to the local qflush module when the loopback daem
     'A11_QFLUSH_USE_DRAGON',
     'A11_QFLUSH_REMOTE_TIMEOUT_MS',
     'A11_QFLUSH_REMOTE_RETRIES',
+    'A11_QFLUSH_REMOTE_STRICT',
+    'QFLUSH_REMOTE_STRICT',
   ]);
 
   try {
