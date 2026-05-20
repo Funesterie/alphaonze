@@ -7809,6 +7809,8 @@ app.get([
   '/account/',
   '/compte',
   '/compte/',
+  '/contact',
+  '/contact/',
   '/subscription',
   '/subscription/success',
   '/subscription/cancel',

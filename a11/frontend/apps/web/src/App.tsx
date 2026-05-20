@@ -222,6 +222,7 @@ const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
 const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
 const NOSSEN_VIVY_BOOSTER_SRC = buildPublicAssetPath("assets/nossen-vivy-booster.png");
 const NOSSEN_A11_DERBI_SRC = buildPublicAssetPath("assets/nossen-a11-derbi.png");
+const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
@@ -284,6 +285,14 @@ function isGeneralAccountRoute() {
     return /^\/(?:account|compte)(?:\/|$)/.test(pathname);
   }
   return isLocalSurfaceHost(hostname) && /^\/(?:account|compte)(?:\/|$)/.test(pathname);
+}
+
+function isGeneralContactRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/contact(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/contact(?:\/|$)/.test(pathname);
 }
 
 function getCurrentSurfaceKind(): FunesterieSurface {
@@ -385,6 +394,7 @@ function getSurfaceLinks() {
       vivyStudio: "/vivy/#vivy-studio",
       agents: "/agents/",
       account: "/compte/",
+      contact: "/contact/",
       privacy: "/privacy/",
       terms: "/terms/",
       qflush: "/k44/cockpit#qflush",
@@ -409,6 +419,7 @@ function getSurfaceLinks() {
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     account: new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
@@ -2843,7 +2854,6 @@ function FunesterieCockpitPage({
   displayName: string;
 }) {
   const surfaceLinks = getSurfaceLinks();
-  const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [googleStarting, setGoogleStarting] = useState(false);
   const [oauthMessage, setOauthMessage] = useState("");
   const cockpitServices = useMemo(() => {
@@ -2992,29 +3002,8 @@ function FunesterieCockpitPage({
   const cockpitReady = operationalCount === totalCount;
 
   return (
-    <main className="funesterie-ops-shell">
-      <nav className="funesterie-ops-nav" aria-label="Navigation Funesterie">
-        <a className="funesterie-ops-brand" href={surfaceLinks.cockpit}>
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <span>
-            <strong>Funesterie</strong>
-            <small>Cockpit opérationnel</small>
-          </span>
-        </a>
-        <div>
-          <a href={surfaceLinks.home}>Accueil</a>
-          <a href="#etat">État</a>
-          <a href={surfaceLinks.agents}>Agents</a>
-          <span className="funesterie-ops-nav-agents" aria-label="Accès agents">
-            {agentShortcuts.map((agent) => (
-              <a key={agent.id} href={agent.href} title={agent.name}>
-                <img src={agent.image} alt="" />
-                <span>{agent.name}</span>
-              </a>
-            ))}
-          </span>
-        </div>
-      </nav>
+    <main className="funesterie-ops-shell fun-public-surface">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Cockpit" />
 
       <section className="funesterie-ops-hero" aria-label="État opérationnel Funesterie">
         <div>
@@ -3067,6 +3056,8 @@ function FunesterieCockpitPage({
           )}
         </aside>
       </section>
+
+      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
   );
 }
@@ -3113,9 +3104,17 @@ type SurfaceLinks = ReturnType<typeof getSurfaceLinks>;
 function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
   return [
     ["Accueil", surfaceLinks.home],
-    ["Ride crew", surfaceLinks.rideCrew],
     ["Agents", surfaceLinks.agents],
     ["Cockpit", surfaceLinks.cockpit],
+    ["Compte", surfaceLinks.account],
+    ["Contact", surfaceLinks.contact],
+  ] as const;
+}
+
+function getFunesterieFooterShortcutItems(surfaceLinks: SurfaceLinks) {
+  return [
+    ["Accueil", surfaceLinks.home],
+    ["Agents", surfaceLinks.agents],
     ["Compte", surfaceLinks.account],
   ] as const;
 }
@@ -3146,14 +3145,14 @@ function FunesteriePublicFooter({ surfaceLinks }: { surfaceLinks: SurfaceLinks }
   return (
     <footer id="contact" className="fun-home-footer fun-public-footer">
       <div className="fun-public-footer-links" aria-label="Raccourcis Funesterie">
-        {getFunesteriePublicNavItems(surfaceLinks).map(([label, href]) => (
+        {getFunesterieFooterShortcutItems(surfaceLinks).map(([label, href]) => (
           <a key={label} href={href}>{label}</a>
         ))}
       </div>
       <div className="fun-public-footer-legal" aria-label="Liens légaux Funesterie">
         <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href={surfaceLinks.terms}>Conditions</a>
-        <a href="mailto:funeste38@gmail.com">Contact</a>
+        <a href={surfaceLinks.contact}>Contact</a>
       </div>
     </footer>
   );
@@ -3260,7 +3259,6 @@ function FunesterieConnectedHomePage({
   displayName?: string;
 }) {
   const [accountBusy, setAccountBusy] = useState<"" | "google">("");
-  const [activeHash, setActiveHash] = useState(() => (typeof window === "undefined" ? "" : window.location.hash));
 
   const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
 
@@ -3269,44 +3267,209 @@ function FunesterieConnectedHomePage({
     startGoogleOAuth(accountReturnTo, "funesterie-home");
   }
 
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const syncHash = () => setActiveHash(window.location.hash);
-    syncHash();
-    window.addEventListener("hashchange", syncHash);
-    return () => window.removeEventListener("hashchange", syncHash);
-  }, []);
-
-  const isRideCrewView = activeHash === "#ride-crew";
-
   return (
     <main id="top" className="fun-home-shell fun-public-surface" aria-label="Accueil Funesterie connecté">
       <FunesteriePublicNav surfaceLinks={surfaceLinks} />
 
-      {!isRideCrewView ? (
-        <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
-          <div className="fun-home-core">
-            <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
-            <p>
-              NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
-              entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
-              Les agents gardent chacun leur spécialité.
-            </p>
-            <div className="fun-home-actions">
-              <a href={surfaceLinks.rideCrew}>Ride crew</a>
-              <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-                {accountBusy === "google" ? "Connexion..." : "Se connecter"}
-              </button>
-              <a href={surfaceLinks.cockpit}>État opérationnel</a>
-            </div>
+      <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
+        <div className="fun-home-core">
+          <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+          <p>
+            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+            Les agents gardent chacun leur spécialité.
+          </p>
+          <div className="fun-home-actions">
+            <a href={surfaceLinks.agents}>Agents</a>
+            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+              {accountBusy === "google" ? "Connexion..." : "Se connecter"}
+            </button>
+            <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
-        </section>
-      ) : null}
-
-      <NossenCrewShowcase id="ride-crew" />
+        </div>
+      </section>
 
       <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
+  );
+}
+
+const FUNESTERIE_TOKEN_STORAGE_KEY = "funesterie:integration-token-canvas";
+
+const FUNESTERIE_TOKEN_GROUPS = [
+  {
+    title: "Cloudflare / R2",
+    fields: [
+      ["CLOUDFLARE_ACCOUNT_ID", "Account ID Cloudflare", false],
+      ["CLOUDFLARE_API_TOKEN", "API token Cloudflare", true],
+      ["R2_BUCKET", "Bucket R2", false],
+      ["R2_PUBLIC_BASE_URL", "URL publique fichiers", false],
+    ],
+  },
+  {
+    title: "GitHub / GHCR / NPM",
+    fields: [
+      ["GITHUB_USER", "Utilisateur GitHub", false],
+      ["GITHUB_TOKEN", "Token GitHub Packages", true],
+      ["NPM_TOKEN", "Token npm", true],
+    ],
+  },
+  {
+    title: "JFrog / Artifactory",
+    fields: [
+      ["JFROG_URL", "URL JFrog", false],
+      ["JFROG_USER", "Utilisateur JFrog", false],
+      ["JFROG_ACCESS_TOKEN", "Token JFrog", true],
+    ],
+  },
+  {
+    title: "Neo4j Aura",
+    fields: [
+      ["NEO4J_URI", "URI Neo4j", false],
+      ["NEO4J_USERNAME", "Utilisateur Neo4j", false],
+      ["NEO4J_PASSWORD", "Mot de passe Neo4j", true],
+      ["NEO4J_DATABASE", "Base Neo4j", false],
+    ],
+  },
+] as const;
+
+type FunesterieTokenKey = typeof FUNESTERIE_TOKEN_GROUPS[number]["fields"][number][0];
+type FunesterieTokenValues = Partial<Record<FunesterieTokenKey, string>>;
+
+function readFunesterieTokenValues(): FunesterieTokenValues {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(FUNESTERIE_TOKEN_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const values: FunesterieTokenValues = {};
+    for (const group of FUNESTERIE_TOKEN_GROUPS) {
+      for (const [key] of group.fields) {
+        const value = parsed[key];
+        if (typeof value === "string") values[key] = value;
+      }
+    }
+    return values;
+  } catch {
+    return {};
+  }
+}
+
+function FunesterieTokenCanvas() {
+  const [values, setValues] = useState<FunesterieTokenValues>(() => readFunesterieTokenValues());
+  const [bulkText, setBulkText] = useState("");
+  const [showSecrets, setShowSecrets] = useState(false);
+  const allKeys = useMemo(() => new Set(FUNESTERIE_TOKEN_GROUPS.flatMap((group) => group.fields.map(([key]) => key))), []);
+  const filledCount = FUNESTERIE_TOKEN_GROUPS.reduce((count, group) => (
+    count + group.fields.filter(([key]) => String(values[key] || "").trim()).length
+  ), 0);
+  const totalCount = FUNESTERIE_TOKEN_GROUPS.reduce((count, group) => count + group.fields.length, 0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const cleaned = Object.fromEntries(
+      Object.entries(values).filter(([, value]) => String(value || "").trim())
+    );
+    try {
+      if (Object.keys(cleaned).length) {
+        window.localStorage.setItem(FUNESTERIE_TOKEN_STORAGE_KEY, JSON.stringify(cleaned));
+      } else {
+        window.localStorage.removeItem(FUNESTERIE_TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // Local storage can be unavailable in strict browser contexts.
+    }
+  }, [values]);
+
+  function updateValue(key: FunesterieTokenKey, value: string) {
+    setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function importBulkValues() {
+    const next: FunesterieTokenValues = {};
+    for (const line of bulkText.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const match = /^([A-Z0-9_]+)\s*=\s*(.*)$/.exec(trimmed);
+      if (!match) continue;
+      const key = match[1] as FunesterieTokenKey;
+      if (!allKeys.has(key)) continue;
+      next[key] = match[2].replace(/^["']|["']$/g, "");
+    }
+    if (!Object.keys(next).length) return;
+    setValues((current) => ({ ...current, ...next }));
+    setBulkText("");
+  }
+
+  function clearValues() {
+    setValues({});
+    setBulkText("");
+  }
+
+  return (
+    <section className="fun-token-panel" aria-label="Intégrations tokens Funesterie">
+      <header className="fun-token-head">
+        <div>
+          <span>Local-first</span>
+          <h2>Intégrations tokens</h2>
+          <p>
+            Colle les accès ici au lieu de les mettre dans un chat. Les champs restent dans ce
+            navigateur et les exports restent locaux.
+          </p>
+        </div>
+        <aside>
+          <strong>{filledCount}/{totalCount}</strong>
+          <small>renseignés</small>
+        </aside>
+      </header>
+
+      <div className="fun-token-import">
+        <label htmlFor="fun-token-bulk">Coller un bloc KEY=value</label>
+        <textarea
+          id="fun-token-bulk"
+          value={bulkText}
+          onChange={(event) => setBulkText(event.target.value)}
+          placeholder={"CLOUDFLARE_ACCOUNT_ID=...\nGITHUB_TOKEN=...\nNEO4J_URI=..."}
+        />
+        <div>
+          <button type="button" onClick={importBulkValues}>Importer</button>
+          <button type="button" onClick={() => setShowSecrets((current) => !current)}>
+            {showSecrets ? "Masquer" : "Afficher"}
+          </button>
+          <button type="button" onClick={clearValues}>Effacer</button>
+        </div>
+      </div>
+
+      <div className="fun-token-grid">
+        {FUNESTERIE_TOKEN_GROUPS.map((group) => {
+          const groupFilled = group.fields.filter(([key]) => String(values[key] || "").trim()).length;
+          return (
+            <article key={group.title} className="fun-token-card">
+              <header>
+                <h3>{group.title}</h3>
+                <span>{groupFilled}/{group.fields.length}</span>
+              </header>
+              {group.fields.map(([key, label, secret]) => (
+                <label key={key}>
+                  <span>
+                    <b>{label}</b>
+                    <em>{key}</em>
+                  </span>
+                  <input
+                    value={values[key] || ""}
+                    type={secret && !showSecrets ? "password" : "text"}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={secret ? "Valeur masquée" : key}
+                    onChange={(event) => updateValue(key, event.target.value)}
+                  />
+                </label>
+              ))}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -3323,6 +3486,7 @@ function FunesterieAccountPage({
     ["Abonnement", "Offres, paiements et statut d'accès."],
     ["Sessions", "Inventaire et reprise des conversations."],
     ["Paramètres", "Préférences, voix, médias et sécurité."],
+    ["Intégrations", "Tokens locaux pour relier les outils."],
   ] as const;
 
   return (
@@ -3345,9 +3509,49 @@ function FunesterieAccountPage({
             </article>
           ))}
         </div>
-        <div className="fun-home-actions">
-          <a href={surfaceLinks.cockpit}>Ouvrir le cockpit</a>
-          <a href={surfaceLinks.rideCrew}>Ride crew</a>
+      </section>
+
+      <FunesterieTokenCanvas />
+
+      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
+    </main>
+  );
+}
+
+function FunesterieContactPage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
+  const publicAccounts = [
+    ["GitHub", "Organisation Funesterie", "https://github.com/Funesterie"],
+    ["Packages", "GitHub Packages / GHCR", "https://github.com/orgs/Funesterie/packages"],
+    ["npm", "Organisation @funesterie", "https://www.npmjs.com/org/funesterie"],
+  ] as const;
+
+  return (
+    <main id="top" className="fun-home-shell fun-public-surface fun-contact-shell" aria-label="Contact Funesterie">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Contact" />
+
+      <section className="fun-contact-panel" aria-label="Contact Djeff">
+        <figure>
+          <img src={NOSSEN_DJEFF_BETA_SRC} alt="Djeff, Rider origine Funesterie." />
+        </figure>
+        <div className="fun-contact-copy">
+          <span>Rider origine</span>
+          <h1>Djeff</h1>
+          <p>
+            Contact officiel Funesterie pour le site, les accès, les vérifications Google/Microsoft
+            et les demandes liées au projet NOSSEN.
+          </p>
+          <div className="fun-contact-actions">
+            <a href="mailto:funeste38@gmail.com">funeste38@gmail.com</a>
+            <a href="tel:+33783463761">+33 7 83 46 37 61</a>
+          </div>
+          <div className="fun-contact-accounts" aria-label="Comptes publics Funesterie">
+            {publicAccounts.map(([label, text, href]) => (
+              <a key={label} href={href} target="_blank" rel="noreferrer">
+                <strong>{label}</strong>
+                <span>{text}</span>
+              </a>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -3964,6 +4168,7 @@ export function App() {
   const isGeneralHome = isGeneralHomeRoute();
   const isGeneralAgents = isGeneralAgentsRoute();
   const isGeneralAccount = isGeneralAccountRoute();
+  const isGeneralContact = isGeneralContactRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const publicPolicyPage = typeof window !== "undefined"
@@ -4004,17 +4209,19 @@ export function App() {
       ? "Funesterie - Agents"
       : isGeneralAccount
       ? "Funesterie - Compte"
+      : isGeneralContact
+      ? "Funesterie - Contact"
       : isVivy
       ? "Vivy - Présence musicale Funesterie"
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents || isGeneralAccount;
+    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact;
     document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicPage);
     document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicPage);
-  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
+  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -4159,6 +4366,7 @@ export function App() {
       || isGeneralHome
       || isGeneralAgents
       || isGeneralAccount
+      || isGeneralContact
       || (isKaen44 && isFunesterieHomeRoute(pathname) && !isCockpitRoute(pathname))
       || isVivyExperience();
     const shouldCheckCookieSession = !isPublicInformationRoute && (
@@ -4173,7 +4381,7 @@ export function App() {
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();
-  }, [isGeneralAccount, isGeneralAgents, isGeneralHome, isKaen44, publicPolicyPage]);
+  }, [isGeneralAccount, isGeneralAgents, isGeneralContact, isGeneralHome, isKaen44, publicPolicyPage]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -6301,6 +6509,10 @@ export function App() {
         displayName={displayName}
       />
     );
+  }
+
+  if (isGeneralContact) {
+    return <FunesterieContactPage surfaceLinks={surfaceLinks} />;
   }
 
   if (isVivy) {
