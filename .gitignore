@@ -103,6 +103,11 @@ Thumbs.db
 
 # A11 frontend generated public bundles
 /a11/frontend/apps/web/public/assets/
+!/a11/frontend/apps/web/public/assets/
+!/a11/frontend/apps/web/public/assets/nossen-a11-derbi.png
+!/a11/frontend/apps/web/public/assets/nossen-djeff-beta.png
+!/a11/frontend/apps/web/public/assets/nossen-k44-tzr.png
+!/a11/frontend/apps/web/public/assets/nossen-vivy-booster.png
 /a11/frontend/apps/web/public/legacy/
 /a11/frontend/apps/web/test-results/
 /a11/frontend/apps/web/*.log

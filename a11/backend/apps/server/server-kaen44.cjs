@@ -36,7 +36,7 @@ setDefault('PUBLIC_APP_URL', 'https://k44.funesterie.me');
 setDefault('API_URL', 'https://k44.funesterie.me');
 setDefault('PORT', '3001');
 setDefault('SERVE_STATIC', 'true');
-setDefault('A11_USAGE_GUARD_ADMIN_EMAIL', 'cellaurojeffrey@gmail.com');
+setDefault('A11_USAGE_GUARD_ADMIN_EMAIL', 'funeste38@gmail.com');
 setDefault('KAEN44_MODE', '1');
 setDefault('A11_ALLOW_DEV_ROUTES', 'false');
 setDefault('A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS', 'false');

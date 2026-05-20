@@ -15,11 +15,28 @@ function buildOptionsForIntents(first, second) {
   ];
 }
 
+function hasExplicitImageGenerationCue(scoring = {}) {
+  const text = String(scoring?.sourceText || scoring?.normalizedText || '').trim();
+  if (!text) return false;
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|fais moi|fais|make|generate|create|draw)\b/.test(normalized);
+  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|avatar|artwork)\b/.test(normalized);
+  const searchCue = /\b(cherche|chercher|recherche|trouve|trouver|web|internet|google|image existante|deja existante|source)\b/.test(normalized);
+  return creationCue && imageCue && !searchCue;
+}
+
 function buildQuestion(first, second) {
   const pair = [first.type, second.type].sort().join('::');
   switch (pair) {
     case 'image.generate::web.image.search':
-      return "Tu veux que je genere une image, ou que je cherche une image existante sur le web ?";
+      return "Tu veux que je cree l'image, ou tu veux une image deja existante ?";
     case 'code.python.generate::image.generate':
       return "Tu veux une image, ou tu veux que je produise du code/script ?";
     case 'chat.reply::web.search':
@@ -118,6 +135,7 @@ function decideClarification(scoring) {
     (scoring.summary?.shouldClarifySuggestion || shouldClarifyImageSearchPair || hasMultipleStrongIntents)
     && !isWebSearchPair  // jamais clarifier web.search vs web.image.search
     && !clearImplicitImageRequest
+    && !hasExplicitImageGenerationCue(scoring)
     && first
     && second
     && first.type !== 'chat.reply'

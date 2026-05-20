@@ -36,6 +36,6 @@ setDefault('PUBLIC_APP_URL', 'https://a11.funesterie.me');
 setDefault('API_URL', 'https://a11.funesterie.me');
 setDefault('PORT', '3000');
 setDefault('SERVE_STATIC', 'true');
-setDefault('A11_USAGE_GUARD_ADMIN_EMAIL', 'cellaurojeffrey@gmail.com');
+setDefault('A11_USAGE_GUARD_ADMIN_EMAIL', 'funeste38@gmail.com');
 
 require('./server.cjs');

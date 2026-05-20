@@ -5,7 +5,7 @@ interface AdBannerProps {
   style?: React.CSSProperties;
 }
 
-const SALES_CONTACT_EMAIL = 'cellaurojeffrey@gmail.com';
+const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
 
 function buildQualifiedSalesLink(subject: string, body: string) {
   return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;

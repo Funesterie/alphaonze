@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # A11 Backend - Dockerfile pour Podman/Docker
 # Piper official binaries require glibc. Alpine/musl can start the binary but
 # ONNX Runtime crashes during synthesis, so production uses Debian slim.
@@ -79,20 +80,17 @@ RUN mkdir -p /app/apps/tts/piper \
 COPY package*.json ./
 
 # Installer les dependances avec les outils de patch, puis retirer le dev-only.
-# Le postinstall applique les patches locaux via patch-package.
-ARG JFROG_NPM_AUTH_TOKEN
-ARG JFROG_NPM_REGISTRY=https://trialhnuk69.jfrog.io/artifactory/api/npm/funesterie-npm/
-RUN set -eu; \
-    if [ -n "${JFROG_NPM_AUTH_TOKEN:-}" ]; then \
-      npm config set @nossen:registry "${JFROG_NPM_REGISTRY}"; \
-      auth_target="$(node -e "const u=new URL(process.env.JFROG_NPM_REGISTRY); console.log((u.host + u.pathname).replace(/\/$/, ''))")"; \
-      npm config set "//$auth_target/:_authToken" "${JFROG_NPM_AUTH_TOKEN}"; \
+# Si un secret BuildKit npm_token est fourni, il sert uniquement pour GitHub Packages
+# et n'est pas persiste dans l'image.
+RUN --mount=type=secret,id=npm_token,required=false set -eu; \
+    if [ -s /run/secrets/npm_token ]; then \
+      npm config set @funesterie:registry "https://npm.pkg.github.com"; \
+      npm config set "//npm.pkg.github.com/:_authToken" "$(cat /run/secrets/npm_token)"; \
     fi; \
     npm ci --include=dev; \
     npm prune --omit=dev; \
-    npm config delete @nossen:registry || true; \
-    auth_target="$(node -e "const u=new URL(process.env.JFROG_NPM_REGISTRY); console.log((u.host + u.pathname).replace(/\/$/, ''))")"; \
-    npm config delete "//$auth_target/:_authToken" || true
+    npm config delete @funesterie:registry || true; \
+    npm config delete "//npm.pkg.github.com/:_authToken" || true
 
 # Copier le code source
 COPY . .

@@ -9,7 +9,10 @@ Write-Host ""
 
 # Configuration
 $IMAGE_NAME = "a11-backend"
-$DOCKER_HUB_USER = "nossen"
+$DOCKER_HUB_USER = $env:DOCKERHUB_USERNAME
+if ([string]::IsNullOrWhiteSpace($DOCKER_HUB_USER)) {
+    $DOCKER_HUB_USER = "funesterie"
+}
 $DOCKER_HUB_REPO = "$DOCKER_HUB_USER/$IMAGE_NAME"
 $VERSION = "v1.0.0"
 $DATE_TAG = Get-Date -Format "yyyy-MM-dd"

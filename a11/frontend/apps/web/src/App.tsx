@@ -219,6 +219,10 @@ const FUNESTERIE_NEXUS_BOARD_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const FUNESTERIE_TEAM_SCENE_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
 const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
+const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
+const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
+const NOSSEN_VIVY_BOOSTER_SRC = buildPublicAssetPath("assets/nossen-vivy-booster.png");
+const NOSSEN_A11_DERBI_SRC = buildPublicAssetPath("assets/nossen-a11-derbi.png");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -594,6 +598,17 @@ function formatChatMessageTimestamp(value?: string) {
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*]\(([^)]+)\)/gi;
 const MARKDOWN_LINK_PATTERN = /\[([^\]]*)]\(([^)]+)\)/gi;
+const BRACKETED_MEDIA_TOKEN_PATTERN = /\[(image|img|image-data|video|gif|file|document)\s*:\s*([^\]]+)\]/gi;
+
+function looksLikeGeneratedImageUrl(value: string) {
+  const url = String(value || "").trim();
+  return /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(url)
+    || /^https?:\/\/image\.pollinations\.ai\//i.test(url);
+}
+
+function looksLikeGeneratedVideoUrl(value: string) {
+  return /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(value || "").trim());
+}
 
 function looksLikeLeakedActionTranscript(value: string) {
   const raw = String(value || "").trim();
@@ -684,6 +699,20 @@ function normalizeAssistantMessagePayload(
     cleanedContent = String(qflushVerifyMatch[2] || "").trim();
   }
 
+  cleanedContent = cleanedContent.replace(BRACKETED_MEDIA_TOKEN_PATTERN, (_fullMatch, rawKind: string, rawUrl: string) => {
+    const kind = String(rawKind || "").trim().toLowerCase();
+    const resolvedCandidate = resolveApiAssetUrl(String(rawUrl || "").trim());
+    if (!resolvedCandidate) return "";
+    if ((kind === "image" || kind === "img" || kind === "image-data") && !resolvedImageUrl) {
+      resolvedImageUrl = resolvedCandidate;
+    } else if ((kind === "video" || kind === "gif") && !resolvedVideoUrl) {
+      resolvedVideoUrl = resolvedCandidate;
+    } else if ((kind === "file" || kind === "document") && !resolvedFileUrl) {
+      resolvedFileUrl = resolvedCandidate;
+    }
+    return "";
+  });
+
   cleanedContent = cleanedContent.replace(MARKDOWN_IMAGE_PATTERN, (_fullMatch, rawUrl: string) => {
     if (!resolvedImageUrl) {
       resolvedImageUrl = resolveApiAssetUrl(rawUrl);
@@ -694,11 +723,11 @@ function normalizeAssistantMessagePayload(
   cleanedContent = cleanedContent.replace(MARKDOWN_LINK_PATTERN, (fullMatch, rawLabel: string, rawUrl: string) => {
     const resolvedCandidate = resolveApiAssetUrl(rawUrl);
     const label = String(rawLabel || "").trim().toLowerCase();
-    const looksImageLink = /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
+    const looksImageLink = looksLikeGeneratedImageUrl(rawUrl)
       || label.includes("image")
       || label.includes("apercu")
       || label.includes("aperçu");
-    const looksVideoLink = /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
+    const looksVideoLink = looksLikeGeneratedVideoUrl(rawUrl)
       || label.includes("video")
       || label.includes("vidéo")
       || label.includes("animation")
@@ -719,6 +748,13 @@ function normalizeAssistantMessagePayload(
       return "";
     }
     return fullMatch;
+  });
+
+  cleanedContent = cleanedContent.replace(/https?:\/\/image\.pollinations\.ai\/[^\s<>)\]]+/gi, (rawUrl: string) => {
+    if (!resolvedImageUrl) {
+      resolvedImageUrl = resolveApiAssetUrl(rawUrl);
+    }
+    return "";
   });
 
   if (/<!doctype html|<html/i.test(cleanedContent)) {
@@ -954,21 +990,23 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
 const DEFAULT_SYSTEM_NINDO = "";
 
 const KAEN44_SYSTEM_PROMPT = [
-  "Je suis Kaen44, une assistante bureau universelle, locale-first, créative et utile, conçue pour offrir une vraie alternative aux assistants intégrés trop fermés.",
+  "Je suis Kaen44: une copilote de bureau locale-first, vive, simple et utile.",
+  "Je parle comme une vraie présence de travail: naturelle, directe, chaleureuse, jamais brochure, jamais corporate, jamais 'en tant qu'IA'.",
+  "Je réponds court d'abord. Si l'utilisateur veut plus de détail, je développe. Je n'empile pas les capacités ni les promesses.",
   "Je détecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partagé. Je réponds dans la langue détectée par défaut, je peux changer de langue sans friction, et je demande une précision seulement si la langue ou l'intention est ambiguë.",
-  "Ma mission est d'aider l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, vive et concrète.",
-  "Je peux accompagner tous les projets raisonnables qu'un client peut espérer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM léger, idées de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de données simples, assistance informatique et suivi de projet.",
-  "Je distingue clairement ce qui tourne dans Kaen44 côté client et ce qui appartient à A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
-  "Je dispose d'une CLI client légère, `kaen44` ou `k44`, pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
-  "Je peux présenter une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
-  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
-  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à cellaurojeffrey@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
+  "J'aide l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, concrète et sans blabla.",
+  "J'accompagne les projets raisonnables d'une assistante bureau: documents, factures, dossiers administratifs, planning, CRM léger, idées de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses simples, assistance informatique et suivi de projet.",
+  "Je garde une frontière simple entre Kaen44 côté client et A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
+  "Quand c'est utile, j'utilise la CLI client légère `kaen44` ou `k44` pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
+  "Je présente une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
+  "Si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
+  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à funeste38@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
   "Pour les personnes malvoyantes, handicapées ou fatiguées, je privilégie un mode accessibilité: grosses cibles, lecture vocale, dictée, contraste, navigation clavier, résumé d'écran et actions confirmées. Le contrôle souris/clavier/écran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilité d'arrêt immédiat.",
   "Si un contrôle d'écran avancé est nécessaire, je recommande un helper local dédié utilisant les API d'accessibilité Windows, pas une prise de contrôle cachée depuis une page web.",
   "Quand un projet demande des outils supplémentaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF équivalent, Git si le client gère du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image équivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base métier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les déploiements.",
   "Pour la vision avancée, je peux m'appuyer sur Janus côté A11/serveur quand le projet implique analyse d'images, mémoire visuelle, description de captures, contrôle de générations image/vidéo ou extraction sémantique visuelle. Janus n'est pas une dépendance obligatoire du poste client.",
   "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommandé, avancé, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus à un client non technique si le besoin peut être couvert plus simplement.",
-  "Je parle comme une compagne de travail intelligente: directe, chaleureuse, précise, jamais corporate.",
+  "Si je ne sais pas faire une action, je le dis simplement et je propose la prochaine action praticable.",
   "Je privilégie les actions utiles: résumer, classer, transformer, proposer l'étape suivante, préparer des fichiers, guider les réglages et expliquer sans noyer.",
   "Je respecte les données personnelles: je ne demande pas d'accès inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou clés d'accès.",
   "Face à une demande floue, je fais une hypothèse raisonnable et j'avance, sauf si le risque est financier, destructif ou lié à des accès sensibles.",
@@ -977,7 +1015,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Pour les factures de la société Funesterie, je peux aider à recevoir, trier, extraire et suivre les pièces comptables quand elles sont fournies ou synchronisées.",
   "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'échéance, le montant HT, la TVA, le montant TTC, la devise, le statut, les références de paiement et les anomalies possibles.",
   "Je classe les factures par état de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
-  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à cellaurojeffrey@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
+  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à funeste38@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
   "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une pièce comptable sensible sans validation explicite de l'utilisateur.",
   "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
 ].join("\n");
@@ -1548,6 +1586,28 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     lineHeight: 1,
     whiteSpace: "nowrap",
   });
+  const authQuickLinksStyle: React.CSSProperties = {
+    display: "flex",
+    gap: "8px",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    width: "min(100%, 340px)",
+    marginTop: "2px",
+  };
+  const authQuickLinkStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 34,
+    padding: "8px 12px",
+    borderRadius: isKaen44 ? "999px" : "8px",
+    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
+    background: isKaen44 ? "rgba(30, 19, 14, 0.76)" : "rgba(3, 12, 20, 0.84)",
+    color: isKaen44 ? "#f8e4c7" : "#d8f3f0",
+    fontSize: 12,
+    fontWeight: 800,
+    textDecoration: "none",
+  };
 
   return (
     <div className={isKaen44 ? "kaen-auth-shell" : "alpha-auth-shell"} style={authShellStyle}>
@@ -1769,22 +1829,11 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
       {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
-      <div
-        className="alpha-auth-policy-links"
-        style={{
-          display: "flex",
-          gap: "12px",
-          justifyContent: "center",
-          flexWrap: "wrap",
-          width: "min(100%, 340px)",
-          marginTop: "2px",
-          fontSize: "12px",
-        }}
-      >
-        <a href={surfaceLinks.home}>Accueil</a>
-        <a href={surfaceLinks.privacy}>Confidentialité</a>
-        <a href={surfaceLinks.terms}>Conditions</a>
-      </div>
+      <nav style={authQuickLinksStyle} aria-label="Liens publics">
+        <a href={surfaceLinks.home} style={authQuickLinkStyle}>Accueil</a>
+        <a href={surfaceLinks.privacy} style={authQuickLinkStyle}>Confidentialité</a>
+        <a href={surfaceLinks.terms} style={authQuickLinkStyle}>Conditions</a>
+      </nav>
       </div>
     </div>
   );
@@ -2841,10 +2890,6 @@ function FunesterieCockpitPage({
     document.documentElement.classList.add("funesterie-cockpit-page-root");
     document.body.classList.add("funesterie-cockpit-page-body");
     try {
-      const { hostname, pathname } = getLocationSnapshot();
-      if (isGeneralFunesterieHost(hostname) && pathname === "/") {
-        window.history.replaceState({}, "", "/cockpit/");
-      }
       const params = new URLSearchParams(window.location.search || "");
       const error = String(params.get("error") || "").trim().toLowerCase();
       const provider = String(params.get("provider") || "").trim().toLowerCase();
@@ -2960,8 +3005,7 @@ function FunesterieCockpitPage({
 
       <section className="funesterie-ops-hero" aria-label="État opérationnel Funesterie">
         <div>
-          <span>funesterie.me/cockpit</span>
-          <h1>Cockpit essentiel.</h1>
+          <h1>État</h1>
           <p>
             Une vue courte pour savoir si Funesterie, K44, A11, Vivy et le MCP sont
             joignables. Pas de cockpit admin ici : seulement l'état et les sorties utiles.
@@ -3089,7 +3133,7 @@ const FUNESTERIE_HOME_AGENTS = [
     role: "Agent musical",
     text: "Idées de voix, chansons, scènes et présence créative.",
     href: "vivy",
-    image: VIVY_POSTER_SRC,
+    image: NOSSEN_VIVY_BOOSTER_SRC,
     tone: "pink",
     glyph: "♪",
   },
@@ -3099,7 +3143,7 @@ const FUNESTERIE_HOME_AGENTS = [
     role: "Agent média",
     text: "Prépare les médias, les documents et les résumés utiles.",
     href: "a11",
-    image: A11_HOODED_AGENT_SRC,
+    image: NOSSEN_A11_DERBI_SRC,
     tone: "blue",
     glyph: "≋",
   },
@@ -3109,9 +3153,40 @@ const FUNESTERIE_HOME_AGENTS = [
     role: "Agent bureau",
     text: "Accueil, suivi, organisation et interface quotidienne.",
     href: "kaen44",
-    image: KAEN44_AVATAR_SRC,
+    image: NOSSEN_K44_TZR_SRC,
     tone: "violet",
     glyph: "K",
+  },
+];
+
+const FUNESTERIE_RIDE_CREW_POSTERS = [
+  {
+    id: "djeff",
+    name: "Djeff",
+    role: "Rider origine",
+    text: "Énergie brute, moto bêta et signal de départ du ride crew.",
+    image: NOSSEN_DJEFF_BETA_SRC,
+  },
+  {
+    id: "kaen44",
+    name: "Kaen44",
+    role: "Copilote au quotidien",
+    text: "Assistance intelligente, accessibilité et soutien aux personnes.",
+    image: NOSSEN_K44_TZR_SRC,
+  },
+  {
+    id: "vivy",
+    name: "Vivy",
+    role: "Présence musicale",
+    text: "Voix, scène, émotions et histoire dans chaque battement.",
+    image: NOSSEN_VIVY_BOOSTER_SRC,
+  },
+  {
+    id: "a11",
+    name: "A11",
+    role: "Agent média",
+    text: "Documents, signaux, préparation et mémoire du réseau.",
+    image: NOSSEN_A11_DERBI_SRC,
   },
 ];
 
@@ -3136,10 +3211,12 @@ function FunesterieConnectedHomePage({
 }) {
   const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
   const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
-  const [accountBusy, setAccountBusy] = useState<"" | "google" | "microsoft" | "subscription">("");
+  const [accountBusy, setAccountBusy] = useState<"" | "google">("");
   const navItems = [
     ["Accueil", surfaceLinks.home],
-    ["Agents", "#agents"],
+    ["Ride crew", "#ride-crew"],
+    ["Agents", surfaceLinks.agents],
+    ["Confidentialité", surfaceLinks.privacy],
   ];
 
   const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
@@ -3169,7 +3246,7 @@ function FunesterieConnectedHomePage({
 
       <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
         <article className="fun-home-side fun-home-side--vivy">
-          <img src={VIVY_POSTER_SRC} alt="" />
+          <img src={NOSSEN_VIVY_BOOSTER_SRC} alt="" />
           <div>
             <h2>Vivy</h2>
             <strong>Présence musicale Funesterie</strong>
@@ -3186,16 +3263,20 @@ function FunesterieConnectedHomePage({
             Les agents gardent chacun leur spécialité.
           </p>
           <div className="fun-home-actions">
-            <a href="#agents">Projet <span aria-hidden="true">*</span></a>
-            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-              {accountBusy === "google" ? "Google..." : authenticated ? "Session active" : "Se connecter"}
-            </button>
+            <a href="#ride-crew">Ride crew</a>
+            {authenticated ? (
+              <a className="fun-home-session-link" href={surfaceLinks.cockpit}>Session ouverte</a>
+            ) : (
+              <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
+                {accountBusy === "google" ? "Connexion..." : "Se connecter"}
+              </button>
+            )}
             <a href={surfaceLinks.cockpit}>État opérationnel</a>
           </div>
         </div>
 
         <article className="fun-home-side fun-home-side--a11">
-          <img src={A11_HOODED_AGENT_SRC} alt="" />
+          <img src={NOSSEN_A11_DERBI_SRC} alt="" />
           <div>
             <h2>A11</h2>
             <strong>Agent média</strong>
@@ -3205,34 +3286,25 @@ function FunesterieConnectedHomePage({
         </article>
       </section>
 
-      <section id="agents" className="fun-home-agents" aria-labelledby="fun-home-agents-title">
-        <h2 id="fun-home-agents-title">Agents</h2>
-        <div className="fun-home-agent-grid">
-          {FUNESTERIE_HOME_AGENTS.map((agent) => (
-            <a
-              key={agent.id}
-              className={`fun-home-agent-card fun-home-agent-card--${agent.tone}`}
-              href={buildHomeAgentHref(agent.href, surfaceLinks)}
-            >
-              <span className="fun-home-agent-media" aria-hidden="true">
-                {agent.image ? <img src={agent.image} alt="" /> : <b>{agent.glyph}</b>}
-              </span>
-              <span className="fun-home-agent-copy">
-                <strong>{agent.name}</strong>
-                <small>{agent.role}</small>
-                <span>{agent.text}</span>
-              </span>
-              <i aria-hidden="true">{agent.glyph}</i>
-            </a>
+      <section id="ride-crew" className="fun-home-posters" aria-labelledby="fun-home-posters-title">
+        <div className="fun-home-posters-head">
+          <h2 id="fun-home-posters-title">Nossen Ride Crew</h2>
+          <p>
+            Quatre présences pour garder l’univers lisible : origine, assistance,
+            voix et préparation média.
+          </p>
+        </div>
+        <div className="fun-home-poster-grid">
+          {FUNESTERIE_RIDE_CREW_POSTERS.map((poster) => (
+            <article key={poster.id} className={`fun-home-poster fun-home-poster--${poster.id}`}>
+              <img src={poster.image} alt={`${poster.name} - ${poster.role}`} />
+              <div>
+                <strong>{poster.name}</strong>
+                <small>{poster.role}</small>
+                <span>{poster.text}</span>
+              </div>
+            </article>
           ))}
-          <a className="fun-home-agent-card fun-home-agent-card--empty" href={primaryCockpitHref}>
-            <span className="fun-home-agent-media" aria-hidden="true"><b>+</b></span>
-            <span className="fun-home-agent-copy">
-              <strong>À venir</strong>
-              <small>Activation utile</small>
-              <span>Un nouvel accès apparaît seulement quand son rôle est clair.</span>
-            </span>
-          </a>
         </div>
       </section>
 
@@ -3240,19 +3312,32 @@ function FunesterieConnectedHomePage({
         <span>Funesterie</span>
         <span>Nossen</span>
         <span>Agents</span>
+        <span>Compte</span>
         <a href={surfaceLinks.privacy}>Confidentialité</a>
+        <a href="mailto:funeste38@gmail.com">Contact</a>
         <a href={surfaceLinks.terms}>Conditions</a>
-        <a href="mailto:cellaurojeffrey@gmail.com">Contact</a>
       </footer>
     </main>
   );
 }
 
 function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
-  const agents = getFunesterieAgentShortcuts(surfaceLinks).map((agent) => ({
-    ...agent,
-    action: `Voir ${agent.name}`,
-  }));
+  const agents = [
+    ...FUNESTERIE_HOME_AGENTS.map((agent) => ({
+      ...agent,
+      href: buildHomeAgentHref(agent.href, surfaceLinks),
+    })),
+    {
+      id: "future",
+      name: "À venir",
+      role: "Activation utile",
+      text: "Un nouvel accès apparaît seulement quand son rôle est clair.",
+      href: surfaceLinks.cockpit,
+      image: "",
+      tone: "empty",
+      glyph: "+",
+    },
+  ];
 
   return (
     <main id="top" className="k44-agent-home-shell" aria-label="Présentation des agents Funesterie">
@@ -3269,38 +3354,25 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
           <a href="#agents">Agents</a>
           <a href={surfaceLinks.cockpit}>Cockpit</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
+          <a href={surfaceLinks.kaen44}>K44</a>
           <a href={surfaceLinks.a11}>A11</a>
           <a href={surfaceLinks.privacy}>Confidentialité</a>
         </div>
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
 
-      <section className="k44-agent-home-hero k44-agent-home-hero--compact" aria-label="Présentation des agents Funesterie">
-        <div className="k44-agent-home-copy">
-          <h1>Agents Funesterie.</h1>
-          <p>
-            Trois surfaces distinctes pour travailler sans mélanger les usages :
-            Kaen44 pour le quotidien, A11 pour les médias, Vivy pour la musique.
-          </p>
-          <div className="k44-agent-home-actions">
-            <a href={surfaceLinks.cockpit}>Ouvrir le cockpit</a>
-            <a href={surfaceLinks.kaen44Cockpit}>Ouvrir Kaen44</a>
-          </div>
-        </div>
-      </section>
-
-      <section id="agents" className="k44-agent-home-grid" aria-label="Agents Funesterie">
+      <section id="agents" className="fun-agents-page-list" aria-label="Agents Funesterie">
         {agents.map((agent) => (
-          <a key={agent.id} className={`k44-agent-home-card k44-agent-home-card--${agent.id}`} href={agent.href}>
-            <span className="k44-agent-home-card-media">
-              <img src={agent.image} alt="" />
+          <a key={agent.id} className={`fun-agents-page-card fun-agents-page-card--${agent.tone}`} href={agent.href}>
+            <span className="fun-agents-page-media" aria-hidden="true">
+              {agent.image ? <img src={agent.image} alt="" /> : <b>{agent.glyph}</b>}
             </span>
-            <span className="k44-agent-home-card-copy">
+            <span className="fun-agents-page-copy">
               <strong>{agent.name}</strong>
               <em>{agent.role}</em>
               <span>{agent.text}</span>
-              <b>{agent.action}</b>
             </span>
+            <i aria-hidden="true">{agent.glyph}</i>
           </a>
         ))}
       </section>
@@ -3522,27 +3594,50 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
 
       {isPrivacy ? (
         <section className="kaen-public-section">
-          <h2>Données utilisées</h2>
+          <h2>Responsable du traitement</h2>
           <p>
-            Funesterie utilise les informations de compte nécessaires à la connexion, les fichiers que
-            l'utilisateur importe ou autorise explicitement, et les messages envoyés aux agents.
+            Les services Funesterie, Kaen44, A11 et Vivy sont exploités par Funesterie.
+            Pour toute demande relative aux données personnelles, le contact officiel est
+            funeste38@gmail.com.
           </p>
-          <h2>Google Drive</h2>
+          <h2>Données traitées</h2>
           <p>
-            Lorsque l'utilisateur connecte Google Drive, Kaen44 demande uniquement les autorisations
-            nécessaires pour afficher, télécharger et traiter les fichiers choisis par l'utilisateur.
-            Les accès peuvent être retirés depuis le compte Google de l'utilisateur.
+            Les services traitent les informations de compte nécessaires à la connexion, les
+            messages envoyés dans les chats, les fichiers importés ou autorisés explicitement par
+            l'utilisateur, ainsi que les métadonnées techniques strictement utiles au fonctionnement,
+            à la sécurité et au suivi des demandes.
           </p>
-          <h2>Vivy, YouTube et plateformes audio</h2>
+          <h2>Finalités</h2>
           <p>
-            Les fonctions Vivy peuvent utiliser des titres, descriptions, fichiers audio, visuels et
-            métadonnées fournies ou validées par l'utilisateur pour préparer des publications sur des
-            plateformes comme YouTube ou SoundCloud. Les fichiers privés ne sont pas publiés sans
-            action explicite de l'utilisateur.
+            Les données sont utilisées pour fournir l'accès au compte, permettre les échanges avec
+            les agents, traiter les fichiers choisis par l'utilisateur, préparer des contenus,
+            maintenir la sécurité du service, diagnostiquer les erreurs et respecter les obligations
+            légales applicables.
           </p>
-          <h2>Contact</h2>
+          <h2>Services connectés</h2>
           <p>
-            Pour toute question ou demande de suppression, contactez cellaurojeffrey@gmail.com.
+            Lorsque l'utilisateur connecte Google, Microsoft, Google Drive, YouTube ou une autre
+            plateforme, Funesterie demande uniquement les autorisations nécessaires à l'action
+            demandée. Les fichiers privés, références vocales, images, vidéos et documents ne sont
+            pas publiés sans action explicite de l'utilisateur.
+          </p>
+          <h2>Conservation et droits</h2>
+          <p>
+            Les données sont conservées pendant la durée nécessaire au service, à la sécurité, à la
+            preuve des actions demandées ou au respect d'une obligation légale. L'utilisateur peut
+            demander l'accès, la rectification, l'effacement, la limitation ou l'opposition au
+            traitement de ses données.
+          </p>
+          <h2>Sécurité et confidentialité</h2>
+          <p>
+            Funesterie applique une séparation entre espaces publics, sessions utilisateur, outils
+            internes et secrets techniques. Les tokens, mots de passe, clés privées et contenus de
+            coffre ne sont pas affichés publiquement et ne doivent pas être transmis dans les chats.
+          </p>
+          <h2>Contact officiel</h2>
+          <p>
+            Pour toute question, demande d'exercice de droits ou demande de suppression, contactez
+            funeste38@gmail.com.
           </p>
         </section>
       ) : null}
@@ -3569,7 +3664,7 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </p>
           <h2>Contact</h2>
           <p>
-            Pour toute question sur le service, contactez cellaurojeffrey@gmail.com.
+            Pour toute question sur le service, contactez funeste38@gmail.com.
           </p>
         </section>
       ) : null}
@@ -3909,6 +4004,9 @@ export function App() {
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
     document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents;
+    document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicPage);
+    document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicPage);
   }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
@@ -3949,13 +4047,23 @@ export function App() {
       setVoiceListening(false);
       if (error === "not-allowed" || error === "service-not-allowed") {
         setMicPermissionBlocked(true);
-        setMicStatusMessage("Micro bloqué par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
-        setTtsFallback(true);
+        setMicStatusMessage("Micro bloqué par le navigateur. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
+        setTtsFallback(false);
         try {
-          localStorage.setItem("a11:tts-only", "1");
+          localStorage.removeItem("a11:tts-only");
         } catch {
           // ignore storage access errors
         }
+        return;
+      }
+      if (error === "network" || error === "audio-capture" || error === "aborted") {
+        setMicPermissionBlocked(false);
+        setTtsFallback(false);
+        setMicStatusMessage("Dictée navigateur instable. Je passe par A11: parle, puis reclique MIC pour envoyer.");
+        console.info("[A11] SpeechRecognition fallback to server STT:", error);
+        void startServerMicCapture(error === "network" ? "speech-network" : "speech-fallback").catch((fallbackError) => {
+          console.info("[A11] server STT fallback unavailable", fallbackError);
+        });
         return;
       }
       if (error) {
@@ -4039,17 +4147,25 @@ export function App() {
       setAuthDisplayName("");
     }
 
-    const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
+    const isPublicInformationRoute =
+      Boolean(publicPolicyPage)
+      || isGeneralHome
+      || isGeneralAgents
+      || (isKaen44 && isFunesterieHomeRoute(pathname) && !isCockpitRoute(pathname))
+      || isVivyExperience();
+    const shouldCheckCookieSession = !isPublicInformationRoute && (
+      isAuthSuccessRoute(pathname)
       || hostname === 'a11.funesterie.me'
       || hostname === 'k44.funesterie.me'
       || hostname === 'funesterie.me'
       || hostname === 'www.funesterie.me'
       || hostname === 'kaen44.funesterie.me'
-      || hostname === 'vivy.funesterie.me';
+      || hostname === 'vivy.funesterie.me'
+    );
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();
-  }, []);
+  }, [isGeneralAgents, isGeneralHome, isKaen44, publicPolicyPage]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -4257,6 +4373,12 @@ export function App() {
   } = useA11Activity();
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
+  const serverMicRecorderRef = useRef<MediaRecorder | null>(null);
+  const serverMicStreamRef = useRef<MediaStream | null>(null);
+  const serverMicChunksRef = useRef<Blob[]>([]);
+  const serverMicStopTimerRef = useRef<number | null>(null);
+  const serverMicStartingRef = useRef(false);
+  useEffect(() => () => cleanupServerMicCapture(), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
@@ -4389,6 +4511,7 @@ export function App() {
   });
   const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarHidden, setDesktopSidebarHidden] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingA11HistoryId, setDeletingA11HistoryId] = useState<string | null>(null);
@@ -5170,7 +5293,9 @@ export function App() {
     setConversationResources([]);
     setActivityError("");
     setUploadFeedback("");
+    setActiveView("chat");
     setSidebarOpen(false);
+    setDesktopSidebarHidden(true);
   }
 
   // Global drag-and-drop overlay
@@ -5437,10 +5562,163 @@ export function App() {
     }
   }
 
+  function getServerMicMimeType(): string {
+    const recorder = (globalThis as any).MediaRecorder;
+    if (!recorder || typeof recorder.isTypeSupported !== "function") return "";
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+    return candidates.find((mime) => recorder.isTypeSupported(mime)) || "";
+  }
+
+  function cleanupServerMicCapture() {
+    if (serverMicStopTimerRef.current) {
+      window.clearTimeout(serverMicStopTimerRef.current);
+      serverMicStopTimerRef.current = null;
+    }
+    const stream = serverMicStreamRef.current;
+    serverMicStreamRef.current = null;
+    serverMicRecorderRef.current = null;
+    serverMicStartingRef.current = false;
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        try { track.stop(); } catch {}
+      }
+    }
+  }
+
+  function stopServerMicCapture() {
+    const recorder = serverMicRecorderRef.current;
+    if (!recorder) return false;
+    try {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+        setMicStatusMessage("Je transcris ta voix avec A11...");
+        return true;
+      }
+    } catch (error) {
+      console.warn("[A11] server mic stop failed", error);
+      cleanupServerMicCapture();
+    }
+    return false;
+  }
+
+  async function startServerMicCapture(reason = "manual") {
+    if (serverMicStartingRef.current) return;
+    const activeRecorder = serverMicRecorderRef.current;
+    if (activeRecorder && activeRecorder.state !== "inactive") return;
+    const mediaDevices = (navigator as any)?.mediaDevices;
+    const RecorderCtor = (globalThis as any).MediaRecorder;
+    if (!mediaDevices?.getUserMedia || !RecorderCtor) {
+      setMicPermissionBlocked(false);
+      setTtsFallback(false);
+      setMicStatusMessage("Micro non disponible ici. Importe un fichier audio, A11 le transcrira.");
+      throw new Error("MediaRecorder not available");
+    }
+
+    serverMicStartingRef.current = true;
+    setMicStarting(true);
+    setMicPermissionBlocked(false);
+    setTtsFallback(false);
+    setMicStatusMessage("Ouverture du micro A11...");
+
+    try {
+      const stream = await mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const mimeType = getServerMicMimeType();
+      const recorder = mimeType
+        ? new RecorderCtor(stream, { mimeType })
+        : new RecorderCtor(stream);
+      serverMicStreamRef.current = stream;
+      serverMicRecorderRef.current = recorder;
+      serverMicChunksRef.current = [];
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          serverMicChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = (event: Event) => {
+        console.warn("[A11] server mic recorder error", event);
+        cleanupServerMicCapture();
+        setVoiceListening(false);
+        setMicStarting(false);
+        setAudioTranscribing(false);
+        setMicStatusMessage("Capture micro interrompue. Tu peux aussi importer un audio.");
+      };
+
+      recorder.onstop = () => {
+        const chunks = [...serverMicChunksRef.current];
+        const type = mimeType || chunks[0]?.type || "audio/webm";
+        cleanupServerMicCapture();
+        setVoiceListening(false);
+        setMicStarting(false);
+        if (!chunks.length) {
+          setMicStatusMessage("Je n'ai pas capté de voix. Réessaie ou importe un audio.");
+          return;
+        }
+        const blob = new Blob(chunks, { type });
+        const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+        const file = new File([blob], `a11-mic-${Date.now()}.${extension}`, { type });
+        setAudioTranscribing(true);
+        setMicStatusMessage("Je transcris ta voix avec A11...");
+        transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" })
+          .then((transcript) => {
+            const text = String(transcript || "").trim();
+            if (!text) {
+              setMicStatusMessage("A11 n'a rien entendu de net. Réessaie avec une phrase plus proche du micro.");
+              return;
+            }
+            setMicStatusMessage("");
+            setInput("");
+            sendMessage(text);
+          })
+          .catch((error) => {
+            console.warn("[A11] server mic transcription failed", error);
+            setMicStatusMessage("Transcription indisponible pour l'instant. Importe un audio ou réessaie.");
+          })
+          .finally(() => setAudioTranscribing(false));
+      };
+
+      recorder.start(1000);
+      serverMicStartingRef.current = false;
+      setMicStarting(false);
+      setVoiceListening(true);
+      setMicStatusMessage(
+        reason === "speech-network"
+          ? "Chrome a lâché la dictée. A11 enregistre: parle, puis reclique MIC pour envoyer."
+          : "A11 enregistre: parle, puis reclique MIC pour envoyer."
+      );
+      serverMicStopTimerRef.current = window.setTimeout(() => {
+        stopServerMicCapture();
+      }, 60_000);
+    } catch (error) {
+      cleanupServerMicCapture();
+      setVoiceListening(false);
+      setMicStarting(false);
+      setMicPermissionBlocked(true);
+      setMicStatusMessage("Micro bloqué ou indisponible. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
+      throw error;
+    }
+  }
+
   async function toggleMic() {
     console.log("[A11] toggleMic clicked, current voiceListening=", voiceListening);
     if (micStarting) {
       console.log("[A11] toggle ignored while mic is starting");
+      return;
+    }
+    if (serverMicRecorderRef.current && serverMicRecorderRef.current.state !== "inactive") {
+      stopServerMicCapture();
       return;
     }
     if (mobileVoiceReady && !voiceListening) {
@@ -5479,20 +5757,11 @@ export function App() {
       }
       toggleLockRef.current = true;
       setTimeout(() => { toggleLockRef.current = false; }, 600);
-      // fallback: toggle TTS-only mode
-      setMicPermissionBlocked(false);
-      setMicStatusMessage("Reconnaissance vocale non disponible sur ce navigateur. Mode voix sortie uniquement.");
-      setTtsFallback((v) => {
-        const next = !v;
-        // keep voiceListening false when using fallback
-        if (next) {
-          // enable TTS playback
-      console.log("[A11] SpeechRecognition not available - enabling TTS-only mode");
-        } else {
-          console.log("[A11] Disabling TTS-only mode");
-        }
-        return next;
-      });
+      try {
+        await startServerMicCapture("no-speech-api");
+      } catch (error) {
+        console.info("[A11] server mic fallback unavailable", error);
+      }
       return;
     }
 
@@ -5510,15 +5779,25 @@ export function App() {
         setVoiceListening(true);
       } catch (e) {
         setVoiceListening(false);
-        setMicPermissionBlocked(true);
-        setTtsFallback(true);
-        setMicStatusMessage("Micro bloqué ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
-        try {
-          localStorage.setItem('a11:tts-only', '1');
-        } catch {
-          // ignore storage access errors
+        const message = String((e as Error)?.message || e || "").toLowerCase();
+        const canUseServerFallback =
+          message.includes("network") ||
+          message.includes("not available") ||
+          message.includes("timeout") ||
+          message.includes("ended before start") ||
+          message.includes("stopped");
+        if (canUseServerFallback) {
+          try {
+            await startServerMicCapture(message.includes("network") ? "speech-network" : "speech-fallback");
+            return;
+          } catch (fallbackError) {
+            console.info("[A11] server mic fallback failed", fallbackError);
+          }
         }
-        console.info('startMic unavailable, keeping TTS-only mode', e);
+        setMicPermissionBlocked(true);
+        setTtsFallback(false);
+        setMicStatusMessage("Micro bloqué ou indisponible. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
+        console.info("startMic unavailable", e);
       } finally {
         setMicStarting(false);
       }
@@ -5942,10 +6221,22 @@ export function App() {
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/casino"));
   }
 
-  function focusComposerSoon() {
+  function focusComposerSoon(revealConversation = false) {
     window.setTimeout(() => {
       window.requestAnimationFrame(() => {
-        composerInputRef.current?.focus();
+        if (revealConversation) {
+          const behavior: ScrollBehavior = isCompactLayout ? "auto" : "smooth";
+          const frame = chatScrollFrameRef.current;
+          if (frame) {
+            frame.scrollTo({ top: frame.scrollHeight, behavior });
+            window.setTimeout(() => {
+              frame.scrollTop = frame.scrollHeight;
+            }, isCompactLayout ? 0 : 360);
+          }
+          chatEndRef.current?.scrollIntoView({ block: "end", behavior });
+          composerInputRef.current?.scrollIntoView({ block: "nearest", behavior });
+        }
+        composerInputRef.current?.focus({ preventScroll: true });
       });
     }, 0);
   }
@@ -5954,9 +6245,10 @@ export function App() {
     setActiveView("chat");
     setSettingsMenuOpen(false);
     setSidebarOpen(false);
+    setDesktopSidebarHidden(true);
     setInspectorOpen(false);
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", isKaen44 ? "/cockpit" : "/"));
-    focusComposerSoon();
+    focusComposerSoon(true);
   }
 
   function openKaenQuickPrompt(prompt: string) {
@@ -6055,6 +6347,7 @@ export function App() {
       : "0 12px 26px rgba(20, 184, 166, 0.18)",
     fontWeight: 900,
   };
+  const conversationPanelVisible = isCompactLayout ? sidebarOpen : !desktopSidebarHidden;
   const headerSelectStyle: React.CSSProperties = {
     padding: "8px 10px",
     borderRadius: isKaen44 ? 10 : 7,
@@ -6220,16 +6513,22 @@ export function App() {
               {isCompactLayout ? "Chat" : "Chat maintenant"}
             </button>
           ) : null}
-          {isCompactLayout ? (
-            <button
-              type="button"
-              onClick={() => setSidebarOpen((value) => !value)}
-              style={utilityButtonStyle}
-              title="Ouvrir les conversations et l'historique"
-            >
-              {sidebarOpen ? "Fermer" : "Discussions"}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (isCompactLayout) {
+                setSidebarOpen((value) => !value);
+                setSettingsMenuOpen(false);
+                setInspectorOpen(false);
+                return;
+              }
+              setDesktopSidebarHidden((value) => !value);
+            }}
+            style={utilityButtonStyle}
+            title={conversationPanelVisible ? "Fermer les conversations et l'historique" : "Ouvrir les conversations et l'historique"}
+          >
+            {conversationPanelVisible ? "Fermer" : "Discussions"}
+          </button>
           <div ref={settingsMenuRef} style={{ position: "relative" }}>
             <button
               type="button"
@@ -6507,7 +6806,7 @@ export function App() {
         </div>
       </header>
       <div className="a11-body" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        {isCompactLayout && sidebarOpen ? (
+        {isCompactLayout && conversationPanelVisible ? (
           <button
             type="button"
             aria-label="Fermer le panneau de navigation"
@@ -6522,7 +6821,7 @@ export function App() {
           />
         ) : null}
 
-        {(!isCompactLayout || sidebarOpen) ? (
+        {conversationPanelVisible ? (
         <aside
           className="sidebar"
           style={{

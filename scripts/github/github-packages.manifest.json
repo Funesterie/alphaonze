@@ -1,0 +1,25 @@
+{
+  "owner": "Funesterie",
+  "scope": "@funesterie",
+  "registry": "https://npm.pkg.github.com",
+  "defaultTag": "latest",
+  "packages": [
+    {
+      "id": "qflush",
+      "source": "a11/backend/libs",
+      "publishedName": "@funesterie/qflush",
+      "publishedVersion": "1.0.2",
+      "npmTag": "latest",
+      "distTags": ["stable"],
+      "enabled": true,
+      "installCommand": ["npm", "install", "--ignore-scripts"],
+      "buildCommand": ["npm", "run", "build"],
+      "smokeCommand": ["node", "dist/cli.js", "--help"],
+      "requiredFiles": [
+        "dist/index.js",
+        "dist/index.d.ts",
+        "dist/cli.js"
+      ]
+    }
+  ]
+}

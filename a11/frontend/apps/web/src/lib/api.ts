@@ -1406,10 +1406,13 @@ export async function chatWithVivy(
     files?: VivyChatFileAttachment[];
   }
 ): Promise<VivyStudioProductionResult> {
-  const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
+  const res = await fetch(getApiUrl('/api/vivy/studio/chat'), {
     method: 'POST',
-    headers: buildAuthHeaders('application/json'),
-    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    credentials: 'omit',
     body: JSON.stringify({
       ...input,
       shareToken: undefined,
@@ -3749,7 +3752,10 @@ export type EkkoStatusResponse = {
  * pour homogénéité avec le reste de l'API.
  */
 export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
-  const res = await authFetch(getApiUrl('/api/ekko/status'), {
+  const statusUrl = isLocalDevSurface()
+    ? '/api/ekko/status'
+    : getApiUrl('/api/ekko/status');
+  const res = await authFetch(statusUrl, {
     headers: buildAuthHeaders(),
   });
 

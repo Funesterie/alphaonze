@@ -1,51 +1,64 @@
-name: Build & Push A11 to Docker Hub
+name: Build & Push A11 to GHCR
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - "a11/backend/apps/server/**"
+      - ".github/workflows/docker-build-push.yml"
   push:
     branches: [master]
     paths:
       - "a11/backend/apps/server/**"
       - ".github/workflows/docker-build-push.yml"
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME || 'nossen' }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      REGISTRY: ghcr.io
+      GHCR_IMAGE: ${{ vars.GHCR_IMAGE || 'a11-backend' }}
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DOCKER_BUILDKIT: "1"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Check Docker Hub credentials
-        id: dockerhub
+      - name: Resolve image name
+        id: image
         shell: bash
         run: |
-          if [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "push=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Docker Hub push skipped::Repository secret DOCKERHUB_TOKEN is not configured; validating the Docker build without pushing."
-          elif printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; then
-            echo "push=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "push=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Docker Hub push skipped::Docker Hub credentials were provided but login failed for user '$DOCKERHUB_USERNAME'. Validating the Docker build without pushing."
-          fi
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="$(printf '%s/%s/%s' "$REGISTRY" "$owner" "$GHCR_IMAGE" | tr '[:upper:]' '[:lower:]')"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          printf '%s' "$NODE_AUTH_TOKEN" | docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Build Docker image
         shell: bash
         run: |
           docker build \
+            --secret id=npm_token,env=NODE_AUTH_TOKEN \
             --file a11/backend/apps/server/Dockerfile \
-            --tag "$DOCKERHUB_USERNAME/a11:latest" \
-            --tag "$DOCKERHUB_USERNAME/a11:${GITHUB_SHA}" \
+            --tag "${{ steps.image.outputs.name }}:latest" \
+            --tag "${{ steps.image.outputs.name }}:${GITHUB_SHA}" \
             a11/backend/apps/server
 
       - name: Push Docker image
-        if: steps.dockerhub.outputs.push == 'true'
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          docker push "$DOCKERHUB_USERNAME/a11:latest"
-          docker push "$DOCKERHUB_USERNAME/a11:${GITHUB_SHA}"
+          docker push "${{ steps.image.outputs.name }}:latest"
+          docker push "${{ steps.image.outputs.name }}:${GITHUB_SHA}"

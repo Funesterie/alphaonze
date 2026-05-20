@@ -140,7 +140,7 @@ test('resolveUserRequest clarifies ambiguous image requests versus web image sea
   assert.equal(resolution.clarification.shouldClarify, true);
   assert.match(
     String(resolution.clarification.question || ''),
-    /genere une image|cherche une image existante sur le web/i
+    /cree l'image|image deja existante/i
   );
 });
 
@@ -161,6 +161,17 @@ test('resolveUserRequest emits a valid mask-1 image.generate mask and compiles i
   assert.equal(typeof resolution.compiled.value.prompt, 'string');
   assert.match(String(resolution.compiled.value.prompt || ''), /dragon blue/i);
   assert.match(String(resolution.compiled.value.prompt || ''), /single clearly visible main subject/i);
+});
+
+test('resolveUserRequest does not clarify explicit image generation requests', async () => {
+  const resolver = createTestIntentResolver();
+  const resolution = await resolver.resolveUserRequest({
+    userText: "essaie de genere une image d'un guerrier samourai avec une epee enflammee",
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.mask.intent, 'image.generate');
 });
 
 test('resolveUserRequest surfaces canonicalizer clarification before image runtime when the canonical english state is ambiguous', async () => {
