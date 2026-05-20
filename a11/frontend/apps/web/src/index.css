@@ -7473,11 +7473,11 @@ body {
 }
 
 .fun-home-hero {
-  min-height: clamp(520px, 55vw, 690px);
+  width: min(720px, 100%);
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 0.78fr) minmax(360px, 1.05fr) minmax(240px, 0.78fr);
-  gap: clamp(14px, 2vw, 26px);
-  align-items: stretch;
+  grid-template-columns: 1fr;
+  align-items: center;
   padding: 22px 0 18px;
 }
 
@@ -7495,9 +7495,9 @@ body {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 22px;
+  gap: 20px;
   text-align: center;
-  padding: clamp(26px, 4vw, 52px);
+  padding: clamp(28px, 5vw, 58px);
   border-color: rgba(233, 184, 108, 0.32);
   background:
     radial-gradient(circle at 50% 30%, rgba(233, 184, 108, 0.18), transparent 34%),
@@ -8069,7 +8069,7 @@ body {
 
   .fun-home-core {
     order: -1;
-    min-height: 380px;
+    min-height: 0;
   }
 
   .fun-home-side {
@@ -8118,7 +8118,7 @@ body {
   }
 
   .fun-home-core {
-    min-height: 320px;
+    min-height: 0;
     padding: 22px;
   }
 
