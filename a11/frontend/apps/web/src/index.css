@@ -6873,6 +6873,33 @@ body {
   background: linear-gradient(135deg, #f3b34e, #e7563d);
 }
 
+.nossen-crew-showcase {
+  width: min(1360px, 100%);
+  margin: 18px auto 22px;
+  overflow: hidden;
+  border: 1px solid rgba(63, 208, 209, 0.28);
+  border-radius: 8px;
+  background: #05050a;
+  box-shadow:
+    0 24px 82px rgba(0, 0, 0, 0.36),
+    0 0 0 1px rgba(239, 118, 207, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.k44-agent-home-shell .nossen-crew-showcase {
+  width: min(1240px, 100%);
+  border-color: rgba(243, 179, 78, 0.3);
+}
+
+.nossen-crew-showcase img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3000 / 1688;
+  object-fit: cover;
+  object-position: center center;
+}
+
 .k44-agent-home-hero {
   min-height: clamp(430px, 50vw, 620px);
   display: grid;
@@ -7298,6 +7325,10 @@ body {
     align-items: stretch;
   }
 
+  .nossen-crew-showcase {
+    margin: 14px auto 18px;
+  }
+
   .k44-agent-home-nav > div {
     justify-content: flex-start;
   }
@@ -7318,6 +7349,10 @@ body {
 
   .fun-agents-page-card {
     min-height: 0;
+  }
+
+  .nossen-crew-showcase img {
+    min-height: 220px;
   }
 
   .fun-agents-page-media,
@@ -7366,7 +7401,6 @@ body {
 
 .fun-home-nav,
 .fun-home-hero,
-.fun-home-posters,
 .fun-home-agents,
 .fun-home-footer {
   width: min(1360px, 100%);
@@ -7653,126 +7687,6 @@ body {
   font-weight: 900;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.fun-home-posters {
-  display: grid;
-  gap: 14px;
-  margin: 0 auto 20px;
-  border: 1px solid rgba(170, 132, 255, 0.22);
-  border-radius: 8px;
-  padding: clamp(16px, 2.5vw, 26px);
-  background:
-    radial-gradient(circle at 10% 0, rgba(170, 132, 255, 0.14), transparent 34%),
-    radial-gradient(circle at 92% 22%, rgba(54, 212, 196, 0.1), transparent 30%),
-    rgba(7, 9, 15, 0.78);
-}
-
-.fun-home-posters-head {
-  display: grid;
-  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
-  gap: 18px;
-  align-items: end;
-}
-
-.fun-home-posters-head h2 {
-  margin: 0;
-  color: #fff8ff;
-  font-size: clamp(28px, 4vw, 56px);
-  line-height: 0.96;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.fun-home-posters-head p {
-  max-width: 720px;
-  margin: 0;
-  color: var(--fun-muted);
-  font-size: clamp(15px, 1.35vw, 19px);
-  line-height: 1.58;
-}
-
-.fun-home-poster-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.fun-home-poster {
-  position: relative;
-  min-height: clamp(360px, 38vw, 520px);
-  overflow: hidden;
-  border: 1px solid rgba(203, 158, 255, 0.22);
-  border-radius: 8px;
-  background: #05050a;
-  box-shadow: 0 20px 62px rgba(0, 0, 0, 0.28);
-}
-
-.fun-home-poster img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  filter: saturate(1.05) contrast(1.04);
-}
-
-.fun-home-poster--djeff img {
-  object-position: 50% 54%;
-}
-
-.fun-home-poster--kaen44 img {
-  object-position: 52% 48%;
-}
-
-.fun-home-poster--vivy img {
-  object-position: 52% 48%;
-}
-
-.fun-home-poster--a11 img {
-  object-position: 52% 50%;
-}
-
-.fun-home-poster::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(3, 4, 8, 0.02), rgba(3, 4, 8, 0.12) 42%, rgba(3, 4, 8, 0.82));
-  pointer-events: none;
-}
-
-.fun-home-poster div {
-  position: absolute;
-  z-index: 1;
-  left: 14px;
-  right: 14px;
-  bottom: 14px;
-  display: grid;
-  gap: 5px;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(4, 6, 12, 0.72);
-  backdrop-filter: blur(12px);
-}
-
-.fun-home-poster strong {
-  color: #fff8ff;
-  font-size: clamp(21px, 2.2vw, 30px);
-  line-height: 1;
-  font-weight: 950;
-}
-
-.fun-home-poster small {
-  color: #d8befd;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.fun-home-poster span {
-  color: #dacfe0;
-  font-size: 13px;
-  line-height: 1.42;
 }
 
 .fun-home-agents {
@@ -8174,14 +8088,6 @@ body {
     justify-self: start;
   }
 
-  .fun-home-posters-head {
-    grid-template-columns: 1fr;
-  }
-
-  .fun-home-poster-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .fun-home-connected,
   .a11-media-lower {
     grid-template-columns: 1fr;
@@ -8225,7 +8131,6 @@ body {
   }
 
   .fun-home-agent-grid,
-  .fun-home-poster-grid,
   .a11-media-modules {
     grid-template-columns: 1fr;
   }

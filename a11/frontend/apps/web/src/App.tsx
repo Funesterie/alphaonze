@@ -219,10 +219,10 @@ const FUNESTERIE_NEXUS_BOARD_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const FUNESTERIE_TEAM_SCENE_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
 const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
-const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
 const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
 const NOSSEN_VIVY_BOOSTER_SRC = buildPublicAssetPath("assets/nossen-vivy-booster.png");
 const NOSSEN_A11_DERBI_SRC = buildPublicAssetPath("assets/nossen-a11-derbi.png");
+const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
@@ -3160,43 +3160,31 @@ const FUNESTERIE_HOME_AGENTS = [
   },
 ];
 
-const FUNESTERIE_RIDE_CREW_POSTERS = [
-  {
-    id: "djeff",
-    name: "Djeff",
-    role: "Rider origine",
-    text: "Énergie brute, moto bêta et signal de départ du ride crew.",
-    image: NOSSEN_DJEFF_BETA_SRC,
-  },
-  {
-    id: "kaen44",
-    name: "Kaen44",
-    role: "Copilote au quotidien",
-    text: "Assistance intelligente, accessibilité et soutien aux personnes.",
-    image: NOSSEN_K44_TZR_SRC,
-  },
-  {
-    id: "vivy",
-    name: "Vivy",
-    role: "Présence musicale",
-    text: "Voix, scène, émotions et histoire dans chaque battement.",
-    image: NOSSEN_VIVY_BOOSTER_SRC,
-  },
-  {
-    id: "a11",
-    name: "A11",
-    role: "Agent média",
-    text: "Documents, signaux, préparation et mémoire du réseau.",
-    image: NOSSEN_A11_DERBI_SRC,
-  },
-];
-
 function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
   if (agentHref === "vivy") return surfaceLinks.vivy;
   if (agentHref === "a11") return surfaceLinks.a11;
   if (agentHref === "kaen44") return surfaceLinks.kaen44;
   if (agentHref === "cockpit") return surfaceLinks.cockpit;
   return surfaceLinks.cockpit;
+}
+
+function NossenCrewShowcase({
+  id,
+  eager = false,
+}: {
+  id?: string;
+  eager?: boolean;
+}) {
+  return (
+    <section id={id} className="nossen-crew-showcase" aria-label="Nossen Ride Crew">
+      <img
+        src={NOSSEN_CREW_SRC}
+        alt="Nossen Ride Crew avec Vivy, Kaen44, A11 et Djeff."
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+      />
+    </section>
+  );
 }
 
 function FunesterieConnectedHomePage({
@@ -3287,27 +3275,7 @@ function FunesterieConnectedHomePage({
         </article>
       </section>
 
-      <section id="ride-crew" className="fun-home-posters" aria-labelledby="fun-home-posters-title">
-        <div className="fun-home-posters-head">
-          <h2 id="fun-home-posters-title">Nossen Ride Crew</h2>
-          <p>
-            Quatre présences pour garder l’univers lisible : origine, assistance,
-            voix et préparation média.
-          </p>
-        </div>
-        <div className="fun-home-poster-grid">
-          {FUNESTERIE_RIDE_CREW_POSTERS.map((poster) => (
-            <article key={poster.id} className={`fun-home-poster fun-home-poster--${poster.id}`}>
-              <img src={poster.image} alt={`${poster.name} - ${poster.role}`} />
-              <div>
-                <strong>{poster.name}</strong>
-                <small>{poster.role}</small>
-                <span>{poster.text}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <NossenCrewShowcase id="ride-crew" />
 
       <footer id="contact" className="fun-home-footer">
         <span>Funesterie</span>
@@ -3361,6 +3329,8 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         </div>
         <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
       </nav>
+
+      <NossenCrewShowcase eager />
 
       <section id="agents" className="fun-agents-page-list" aria-label="Agents Funesterie">
         {agents.map((agent) => (
