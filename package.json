@@ -17,7 +17,10 @@
     "forge": "node scripts/funesterie-forge.cjs",
     "forge:status": "node scripts/funesterie-forge.cjs status",
     "forge:repo-map": "node scripts/funesterie-forge.cjs repo-map",
-    "forge:doctor": "node scripts/funesterie-forge.cjs doctor"
+    "forge:doctor": "node scripts/funesterie-forge.cjs doctor",
+    "github:npmrc": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Write-GitHubNpmrc.ps1",
+    "github:packages:dry": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -DryRun",
+    "github:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -Publish"
   },
   "version": "0.0.1",
   "funding": {
