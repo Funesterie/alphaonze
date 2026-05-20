@@ -4250,6 +4250,10 @@ html.vivy-public-page-root .vivy-public-shell {
   display: none;
 }
 
+.vivy-public-mobile-actions {
+  display: none;
+}
+
 .vivy-chat {
   width: min(100% - clamp(24px, 4vw, 56px), 1500px);
   margin: 0 auto clamp(20px, 4vw, 42px);
@@ -4754,55 +4758,85 @@ html.vivy-public-page-root .vivy-public-shell {
 
   .vivy-public-stage {
     min-height: auto;
-    display: block !important;
+    display: flex !important;
     padding: 10px 12px 18px;
     overflow-x: hidden !important;
     overflow-y: visible !important;
   }
 
   .vivy-public-poster-frame {
-    width: 100%;
+    width: min(100%, 430px);
     min-width: 0;
-    max-width: none;
+    max-width: 430px;
+    aspect-ratio: 0.74;
+    overflow: hidden;
+    border: 1px solid rgba(240, 121, 216, 0.36);
+    border-radius: 8px;
+    background: #05030a;
+    box-shadow: 0 18px 56px rgba(0, 0, 0, 0.42);
   }
 
   .vivy-public-poster {
     width: 100%;
     max-width: 100%;
-    height: auto;
+    height: 100%;
+    object-fit: cover;
+    object-position: 48% 50%;
+  }
+
+  .vivy-public-hotspots {
+    display: none;
   }
 
   .vivy-public-mobile-slices {
-    display: grid;
-    gap: 12px;
-    margin-top: 12px;
+    display: none !important;
   }
 
-  .vivy-mobile-slice {
-    width: 100%;
-    height: min(64svh, 520px);
+  .vivy-public-mobile-actions {
     display: block;
-    object-fit: cover;
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+  }
+
+  .vivy-public-mobile-action {
+    position: absolute;
+    bottom: 2.1%;
+    height: 10.2%;
     border: 0;
-    background: #05030a;
-    box-shadow: none;
+    border-radius: 6px;
+    padding: 0;
+    background: transparent;
+    color: transparent;
+    cursor: pointer;
+    font-size: 0;
+    pointer-events: auto;
   }
 
-  .vivy-mobile-slice--portrait {
-    height: min(72svh, 580px);
-    object-position: 43% 50%;
+  .vivy-public-mobile-action--music {
+    left: 3.6%;
+    width: 30%;
   }
 
-  .vivy-mobile-slice--voice {
-    object-position: 100% 19%;
+  .vivy-public-mobile-action--creation {
+    left: 35.4%;
+    width: 30%;
   }
 
-  .vivy-mobile-slice--production {
-    object-position: 100% 48%;
+  .vivy-public-mobile-action--share {
+    left: 67.6%;
+    width: 28.8%;
   }
 
-  .vivy-mobile-slice--scene {
-    object-position: 100% 77%;
+  .vivy-public-mobile-action:hover {
+    background: rgba(240, 121, 216, 0.08);
+  }
+
+  .vivy-public-mobile-action:focus-visible {
+    outline: 2px solid rgba(255, 210, 244, 0.9);
+    outline-offset: -2px;
+    background: rgba(240, 121, 216, 0.12);
   }
 
   .vivy-studio {
