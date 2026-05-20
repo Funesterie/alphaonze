@@ -1449,9 +1449,9 @@
     overscroll-behavior-x: none;
   }
 
-  html:not(.a11-auth-page-root):not(.kaen-public-page-root),
-  html:not(.a11-auth-page-root):not(.kaen-public-page-root) body,
-  html:not(.a11-auth-page-root):not(.kaen-public-page-root) #root {
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root):not(.funesterie-public-page-root),
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root):not(.funesterie-public-page-root) body,
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root):not(.funesterie-public-page-root) #root {
     height: 100%;
     overflow-y: hidden;
   }
@@ -1461,7 +1461,10 @@
   html.a11-auth-page-root #root,
   html.kaen-public-page-root,
   html.kaen-public-page-root body,
-  html.kaen-public-page-root #root {
+  html.kaen-public-page-root #root,
+  html.funesterie-public-page-root,
+  html.funesterie-public-page-root body,
+  html.funesterie-public-page-root #root {
     height: auto !important;
     min-height: 100%;
     overflow-y: auto !important;
@@ -1821,6 +1824,9 @@ html.a11-auth-page-root #root,
 html.kaen-public-page-root,
 html.kaen-public-page-root body,
 html.kaen-public-page-root #root,
+html.funesterie-public-page-root,
+html.funesterie-public-page-root body,
+html.funesterie-public-page-root #root,
 html.vivy-public-page-root,
 html.vivy-public-page-root body,
 html.vivy-public-page-root #root,
@@ -5307,7 +5313,10 @@ body {
   html.a11-auth-page-root #root,
   html.kaen-public-page-root,
   html.kaen-public-page-root body,
-  html.kaen-public-page-root #root {
+  html.kaen-public-page-root #root,
+  html.funesterie-public-page-root,
+  html.funesterie-public-page-root body,
+  html.funesterie-public-page-root #root {
     height: auto !important;
     min-height: 100svh !important;
     overflow-x: hidden !important;
@@ -5320,7 +5329,9 @@ body {
   html.a11-auth-page-root .alpha-auth-shell,
   html.a11-auth-page-root .kaen-auth-shell,
   html.kaen-public-page-root .kaen-public-shell,
-  html.kaen-public-page-root .vivy-public-shell {
+  html.kaen-public-page-root .vivy-public-shell,
+  html.funesterie-public-page-root .fun-home-shell,
+  html.funesterie-public-page-root .k44-agent-home-shell {
     height: auto !important;
     min-height: 100svh !important;
     overflow-x: hidden !important;

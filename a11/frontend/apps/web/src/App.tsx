@@ -3937,6 +3937,9 @@ export function App() {
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
     document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents;
+    document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicPage);
+    document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicPage);
   }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
