@@ -7505,8 +7505,8 @@ body {
 }
 
 .fun-home-core img {
-  width: min(100%, 460px);
-  max-height: 220px;
+  width: min(100%, 340px);
+  max-height: 180px;
   object-fit: contain;
   filter: drop-shadow(0 0 28px rgba(233, 184, 108, 0.24));
 }
