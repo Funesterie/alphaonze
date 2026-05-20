@@ -278,6 +278,14 @@ function isGeneralAgentsRoute() {
   return isLocalSurfaceHost(hostname) && /^\/agents(?:\/|$)/.test(pathname);
 }
 
+function isGeneralAccountRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/(?:account|compte)(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/(?:account|compte)(?:\/|$)/.test(pathname);
+}
+
 function getCurrentSurfaceKind(): FunesterieSurface {
   const { hostname, pathname, port, search } = getLocationSnapshot();
   const params = new URLSearchParams(search);
@@ -364,7 +372,8 @@ function getSurfaceLinks() {
   const { hostname } = getLocationSnapshot();
   if (isLocalSurfaceHost(hostname)) {
     return {
-      home: FUNESTERIE_PUBLIC_APP_URL,
+      home: "/home/",
+      rideCrew: "/home/#ride-crew",
       cockpit: "/cockpit/",
       cockpitAuthSuccess: "/cockpit/auth/success",
       a11: "/",
@@ -375,6 +384,7 @@ function getSurfaceLinks() {
       vivy: "/vivy/",
       vivyStudio: "/vivy/#vivy-studio",
       agents: "/agents/",
+      account: "/compte/",
       privacy: "/privacy/",
       terms: "/terms/",
       qflush: "/k44/cockpit#qflush",
@@ -387,6 +397,7 @@ function getSurfaceLinks() {
 
   return {
     home: FUNESTERIE_PUBLIC_APP_URL,
+    rideCrew: new URL("/#ride-crew", FUNESTERIE_PUBLIC_APP_URL).toString(),
     cockpit: new URL("/cockpit/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     cockpitAuthSuccess: new URL("/cockpit/auth/success", FUNESTERIE_PUBLIC_APP_URL).toString(),
     a11: A11_PUBLIC_APP_URL,
@@ -397,6 +408,7 @@ function getSurfaceLinks() {
     vivy: VIVY_PUBLIC_APP_URL,
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    account: new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
@@ -3098,6 +3110,55 @@ function VivyPublicPage({ authenticated = false }: { authenticated?: boolean }) 
 
 type SurfaceLinks = ReturnType<typeof getSurfaceLinks>;
 
+function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
+  return [
+    ["Accueil", surfaceLinks.home],
+    ["Ride crew", surfaceLinks.rideCrew],
+    ["Agents", surfaceLinks.agents],
+    ["Cockpit", surfaceLinks.cockpit],
+    ["Compte", surfaceLinks.account],
+  ] as const;
+}
+
+function FunesteriePublicNav({
+  surfaceLinks,
+  brandLabel = "Funesterie",
+}: {
+  surfaceLinks: SurfaceLinks;
+  brandLabel?: string;
+}) {
+  return (
+    <nav className="fun-home-nav fun-public-nav" aria-label="Navigation Funesterie">
+      <a href={surfaceLinks.home} className="fun-home-brand" aria-label="Funesterie accueil">
+        <img src={FUNESTERIE_LOGO_SRC} alt="" />
+        <span>{brandLabel}</span>
+      </a>
+      <div className="fun-home-nav-links">
+        {getFunesteriePublicNavItems(surfaceLinks).map(([label, href]) => (
+          <a key={label} href={href}>{label}</a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function FunesteriePublicFooter({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
+  return (
+    <footer id="contact" className="fun-home-footer fun-public-footer">
+      <div className="fun-public-footer-links" aria-label="Raccourcis Funesterie">
+        {getFunesteriePublicNavItems(surfaceLinks).map(([label, href]) => (
+          <a key={label} href={href}>{label}</a>
+        ))}
+      </div>
+      <div className="fun-public-footer-legal" aria-label="Liens légaux Funesterie">
+        <a href={surfaceLinks.privacy}>Confidentialité</a>
+        <a href={surfaceLinks.terms}>Conditions</a>
+        <a href="mailto:funeste38@gmail.com">Contact</a>
+      </div>
+    </footer>
+  );
+}
+
 function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
   return [
     {
@@ -3198,16 +3259,8 @@ function FunesterieConnectedHomePage({
   authenticated?: boolean;
   displayName?: string;
 }) {
-  const primaryCockpitHref = primarySurface === "kaen44" ? surfaceLinks.kaen44Cockpit : surfaceLinks.cockpit;
-  const primaryCockpitLabel = primarySurface === "kaen44" ? "Entrer dans K44" : "Accéder au cockpit";
   const [accountBusy, setAccountBusy] = useState<"" | "google">("");
   const [activeHash, setActiveHash] = useState(() => (typeof window === "undefined" ? "" : window.location.hash));
-  const navItems = [
-    ["Accueil", surfaceLinks.home],
-    ["Ride crew", "#ride-crew"],
-    ["Agents", surfaceLinks.agents],
-    ["Confidentialité", surfaceLinks.privacy],
-  ];
 
   const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
 
@@ -3227,22 +3280,8 @@ function FunesterieConnectedHomePage({
   const isRideCrewView = activeHash === "#ride-crew";
 
   return (
-    <main id="top" className="fun-home-shell" aria-label="Accueil Funesterie connecté">
-      <nav className="fun-home-nav" aria-label="Navigation Funesterie">
-        <a href="#top" className="fun-home-brand" aria-label="Funesterie accueil">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <span>Funesterie</span>
-        </a>
-        <div className="fun-home-nav-links">
-          {navItems.map(([label, href]) => (
-            <a key={label} href={href}>{label}</a>
-          ))}
-        </div>
-        <a className="fun-home-cockpit" href={primaryCockpitHref}>
-          {primaryCockpitLabel}
-          <span aria-hidden="true">◇</span>
-        </a>
-      </nav>
+    <main id="top" className="fun-home-shell fun-public-surface" aria-label="Accueil Funesterie connecté">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} />
 
       {!isRideCrewView ? (
         <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
@@ -3254,7 +3293,7 @@ function FunesterieConnectedHomePage({
               Les agents gardent chacun leur spécialité.
             </p>
             <div className="fun-home-actions">
-              <a href="#ride-crew">Ride crew</a>
+              <a href={surfaceLinks.rideCrew}>Ride crew</a>
               <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
                 {accountBusy === "google" ? "Connexion..." : "Se connecter"}
               </button>
@@ -3266,15 +3305,53 @@ function FunesterieConnectedHomePage({
 
       <NossenCrewShowcase id="ride-crew" />
 
-      <footer id="contact" className="fun-home-footer">
-        <span>Funesterie</span>
-        <span>Nossen</span>
-        <span>Agents</span>
-        <span>Compte</span>
-        <a href={surfaceLinks.privacy}>Confidentialité</a>
-        <a href="mailto:funeste38@gmail.com">Contact</a>
-        <a href={surfaceLinks.terms}>Conditions</a>
-      </footer>
+      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
+    </main>
+  );
+}
+
+function FunesterieAccountPage({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated?: boolean;
+  displayName?: string;
+}) {
+  const accountBlocks = [
+    ["Abonnement", "Offres, paiements et statut d'accès."],
+    ["Sessions", "Inventaire et reprise des conversations."],
+    ["Paramètres", "Préférences, voix, médias et sécurité."],
+  ] as const;
+
+  return (
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Compte Funesterie">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Compte" />
+
+      <section className="fun-account-panel" aria-label="Espace compte Funesterie">
+        <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+        <div className="fun-account-copy">
+          <h1>Compte</h1>
+          <p>
+            {authenticated && displayName ? displayName : "Espace personnel Funesterie"}
+          </p>
+        </div>
+        <div className="fun-account-grid">
+          {accountBlocks.map(([title, text]) => (
+            <article key={title}>
+              <strong>{title}</strong>
+              <span>{text}</span>
+            </article>
+          ))}
+        </div>
+        <div className="fun-home-actions">
+          <a href={surfaceLinks.cockpit}>Ouvrir le cockpit</a>
+          <a href={surfaceLinks.rideCrew}>Ride crew</a>
+        </div>
+      </section>
+
+      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
   );
 }
@@ -3298,26 +3375,8 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
   ];
 
   return (
-    <main id="top" className="k44-agent-home-shell" aria-label="Présentation des agents Funesterie">
-      <nav className="k44-agent-home-nav" aria-label="Navigation agents Funesterie">
-        <a href={surfaceLinks.agents} className="k44-agent-home-brand">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <span>
-            <strong>Agents</strong>
-            <small>Funesterie</small>
-          </span>
-        </a>
-        <div>
-          <a href={surfaceLinks.home}>Accueil</a>
-          <a href="#agents">Agents</a>
-          <a href={surfaceLinks.cockpit}>Cockpit</a>
-          <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.kaen44}>K44</a>
-          <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.privacy}>Confidentialité</a>
-        </div>
-        <a className="k44-agent-home-login" href={surfaceLinks.kaen44Cockpit}>Entrer</a>
-      </nav>
+    <main id="top" className="k44-agent-home-shell fun-public-surface" aria-label="Présentation des agents Funesterie">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Agents" />
 
       <section id="agents" className="fun-agents-page-list" aria-label="Agents Funesterie">
         {agents.map((agent) => (
@@ -3334,6 +3393,8 @@ function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks
           </a>
         ))}
       </section>
+
+      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
   );
 }
@@ -3377,25 +3438,8 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
   }
 
   return (
-    <main className={`kaen-public-shell ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
-      <nav className="kaen-public-nav" aria-label="Navigation Kaen44">
-        <a href={surfaceLinks.home} className="kaen-public-brand">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <span>
-            <strong>Funesterie</strong>
-            <small>Créer - comprendre - connecter</small>
-          </span>
-        </a>
-        <div>
-          <a href={surfaceLinks.home}>Accueil</a>
-          <a href={surfaceLinks.kaen44}>Kaen44</a>
-          <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href={surfaceLinks.privacy}>Confidentialité</a>
-          <a href={surfaceLinks.terms}>Conditions</a>
-          <a href={surfaceLinks.kaen44Login} className="kaen-public-login">Connexion K44</a>
-        </div>
-      </nav>
+    <main className={`kaen-public-shell fun-public-surface ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} />
 
       {isVivy ? <VivyPublicSurface authenticated={false} /> : null}
 
@@ -3657,6 +3701,8 @@ function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy
           </p>
         </section>
       ) : null}
+
+      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
   );
 }
@@ -3917,6 +3963,7 @@ export function App() {
   const isGeneralCockpit = isGeneralCockpitRoute();
   const isGeneralHome = isGeneralHomeRoute();
   const isGeneralAgents = isGeneralAgentsRoute();
+  const isGeneralAccount = isGeneralAccountRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const publicPolicyPage = typeof window !== "undefined"
@@ -3955,17 +4002,19 @@ export function App() {
       ? "Funesterie - Accueil"
       : isGeneralAgents
       ? "Funesterie - Agents"
+      : isGeneralAccount
+      ? "Funesterie - Compte"
       : isVivy
       ? "Vivy - Présence musicale Funesterie"
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents;
+    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents || isGeneralAccount;
     document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicPage);
     document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicPage);
-  }, [isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
+  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -4109,6 +4158,7 @@ export function App() {
       Boolean(publicPolicyPage)
       || isGeneralHome
       || isGeneralAgents
+      || isGeneralAccount
       || (isKaen44 && isFunesterieHomeRoute(pathname) && !isCockpitRoute(pathname))
       || isVivyExperience();
     const shouldCheckCookieSession = !isPublicInformationRoute && (
@@ -4123,7 +4173,7 @@ export function App() {
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();
-  }, [isGeneralAgents, isGeneralHome, isKaen44, publicPolicyPage]);
+  }, [isGeneralAccount, isGeneralAgents, isGeneralHome, isKaen44, publicPolicyPage]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -6241,6 +6291,16 @@ export function App() {
 
   if (isGeneralAgents) {
     return <Kaen44PublicPage page="home" />;
+  }
+
+  if (isGeneralAccount) {
+    return (
+      <FunesterieAccountPage
+        surfaceLinks={surfaceLinks}
+        authenticated={isAuthenticated}
+        displayName={displayName}
+      />
+    );
   }
 
   if (isVivy) {
