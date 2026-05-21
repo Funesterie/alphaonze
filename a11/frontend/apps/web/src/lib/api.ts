@@ -950,11 +950,21 @@ function resolveCurrentPublicApiBase() {
   return '';
 }
 
+function isCentralFunesterieLoginPage() {
+  try {
+    const hostname = globalThis.location?.hostname;
+    const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
+    return isPublicGeneralCockpitHost(hostname) && /^\/login\/?$/.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
   const currentOrigin = globalThis.location?.origin || '';
   const currentHostname = globalThis.location?.hostname || '';
   const isKaen44Surface = isKaen44WebSurface();
-  const publicSurfaceBase = resolveCurrentPublicApiBase();
+  const publicSurfaceBase = isCentralFunesterieLoginPage() ? '' : resolveCurrentPublicApiBase();
   const fallbackBase = (isKaen44Surface || isPublicKaen44WebHost(currentHostname))
     ? DEFAULT_KAEN44_API_BASE
     : DEFAULT_PROD_API_BASE;
@@ -978,7 +988,7 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
 
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
   const isKaen44Surface = isKaen44WebSurface();
-  const publicSurfaceBase = resolveCurrentPublicApiBase();
+  const publicSurfaceBase = isCentralFunesterieLoginPage() ? '' : resolveCurrentPublicApiBase();
   const msBaseUrl = publicSurfaceBase || (isKaen44Surface
     ? normalizeApiBase(DEFAULT_KAEN44_API_BASE || 'https://k44.funesterie.me')
     : normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.me'));

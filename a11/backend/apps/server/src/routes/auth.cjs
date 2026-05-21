@@ -392,28 +392,21 @@ function redirectOAuthSuccess(res, frontendUrl, returnTo, token, provider) {
   return res.redirect(needsFragmentToken ? appendOAuthTokenFragment(target, token, provider) : target);
 }
 
-function redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode) {
-  const error = encodeURIComponent(errorCode || 'oauth_failed');
+function buildCentralLoginRedirect(frontendUrl, returnTo, errorCode) {
+  const target = new URL('/login', 'https://funesterie.me');
+  const error = String(errorCode || '').trim();
   const safeReturnTo = String(returnTo || '').trim();
-  if (!safeReturnTo) return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
-
-  try {
-    const target = new URL(resolveOAuthRedirectUrl(frontendUrl, safeReturnTo));
-    if (/^\/k44(?:\/|$)/i.test(target.pathname)) {
-      target.pathname = '/k44/login';
-    } else if (/^\/kaen44(?:\/|$)/i.test(target.pathname)) {
-      target.pathname = '/kaen44/login';
-    } else if (/^\/cockpit(?:\/|$)/i.test(target.pathname)) {
-      target.pathname = '/cockpit';
-    } else {
-      target.pathname = '/login';
-    }
-    target.search = `?error=${error}`;
-    target.hash = '';
-    return res.redirect(target.toString());
-  } catch {
-    return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
+  if (safeReturnTo) {
+    target.searchParams.set('returnTo', resolveOAuthRedirectUrl(frontendUrl, safeReturnTo));
   }
+  if (error) target.searchParams.set('error', error);
+  return target.toString();
+}
+
+function redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode) {
+  const safeReturnTo = String(returnTo || '').trim();
+  if (!safeReturnTo) return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, errorCode));
+  return res.redirect(buildCentralLoginRedirect(frontendUrl, safeReturnTo, errorCode));
 }
 
 function redirectOAuthErrorWithState(res, frontendUrl, statePayload, errorCode) {
@@ -921,7 +914,7 @@ function createAuthRouter({
     const frontendUrl = resolveFrontendUrl(req, normalizePublicAppUrl);
     const returnTo = String(req.query?.returnTo || '').trim();
     if (returnTo) return redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode);
-    return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(errorCode)}`));
+    return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, errorCode));
   }
 
   router.get('/api/auth/google/start', (req, res) => {
@@ -985,7 +978,7 @@ function createAuthRouter({
     const error = String(req.query?.error || '').trim();
     if (error) {
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(error)}`));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, error));
     }
 
     const code = String(req.query?.code || '').trim();
@@ -999,7 +992,7 @@ function createAuthRouter({
         stateMatchesCookie: Boolean(state && stateCookie && state === stateCookie),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_invalid'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_invalid'));
     }
 
     let statePayload;
@@ -1011,7 +1004,7 @@ function createAuthRouter({
         stateError: String(stateError?.message || stateError || 'unknown_state_error'),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_expired'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_expired'));
     }
 
     const { clientIds, clientId, clientSecret, callbackUrl } = getGoogleOAuthConfig(req);
@@ -1073,7 +1066,7 @@ function createAuthRouter({
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
         publicError,
       }, 'warn');
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(publicError)}`));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, publicError));
     }
   });
 
@@ -1140,7 +1133,7 @@ function createAuthRouter({
     const error = String(req.query?.error || '').trim();
     if (error) {
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(error)}`));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, error));
     }
 
     const code = String(req.query?.code || '').trim();
@@ -1154,7 +1147,7 @@ function createAuthRouter({
         stateMatchesCookie: Boolean(state && stateCookie && state === stateCookie),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_invalid'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_invalid'));
     }
 
     let statePayload;
@@ -1166,7 +1159,7 @@ function createAuthRouter({
         stateError: String(stateError?.message || stateError || 'unknown_state_error'),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_expired'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_expired'));
     }
 
     const { clientId, clientSecret, callbackUrl } = getMicrosoftOAuthConfig(req);
@@ -1177,7 +1170,7 @@ function createAuthRouter({
         hasCallbackUrl: Boolean(callbackUrl),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=microsoft_auth_not_configured'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'microsoft_auth_not_configured'));
     }
 
     try {
@@ -1186,7 +1179,7 @@ function createAuthRouter({
       const email = normalizeEmail(profile?.mail || profile?.userPrincipalName || profile?.email);
       if (!email) {
         clearSessionCookies(req, res);
-        return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=microsoft_email_missing'));
+        return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'microsoft_email_missing'));
       }
 
       const user = db
@@ -1210,7 +1203,7 @@ function createAuthRouter({
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
         publicError,
       }, 'warn');
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(publicError)}`));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, publicError));
     }
   });
 

@@ -295,6 +295,128 @@ function isGeneralContactRoute() {
   return isLocalSurfaceHost(hostname) && /^\/contact(?:\/|$)/.test(pathname);
 }
 
+function isGeneralLoginRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  return isLoginRoute(pathname)
+    && !/^\/(?:a11|alphaonze|k44|kaen44|vivy)(?:\/|$)/.test(pathname)
+    && (isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname));
+}
+
+function isAllowedFunesterieReturnOrigin(origin: string) {
+  const normalized = String(origin || "").trim().toLowerCase().replace(/\/+$/, "");
+  return [
+    "https://funesterie.me",
+    "https://www.funesterie.me",
+    "https://a11.funesterie.me",
+    "https://k44.funesterie.me",
+    "https://kaen44.funesterie.me",
+    "https://vivy.funesterie.me",
+    "https://music.funesterie.me",
+    "https://cp.funesterie.me",
+  ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized);
+}
+
+function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
+  if (surface === "kaen44") return new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
+  if (surface === "vivy") return VIVY_PUBLIC_APP_URL;
+  const { hostname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) return new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString();
+  return new URL("/cockpit", A11_PUBLIC_APP_URL).toString();
+}
+
+function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback = getDefaultPostLoginUrl()) {
+  const raw = String(rawValue || "").trim();
+  const base = typeof window !== "undefined" ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL;
+  try {
+    const target = new URL(raw || fallback, base);
+    if (!isAllowedFunesterieReturnOrigin(target.origin)) return fallback;
+    if (isLoginRoute(target.pathname)) return fallback;
+    return target.toString();
+  } catch {
+    return fallback;
+  }
+}
+
+function getRequestedLoginReturnTo() {
+  if (typeof window === "undefined") return getDefaultPostLoginUrl();
+  const params = new URLSearchParams(window.location.search || "");
+  const explicit = params.get("returnTo") || params.get("next");
+  if (explicit) return normalizeAllowedReturnTo(explicit);
+
+  const { pathname } = getLocationSnapshot();
+  if (isLoginRoute(pathname)) return getDefaultPostLoginUrl();
+  return normalizeAllowedReturnTo(window.location.href);
+}
+
+function buildCentralLoginUrl(returnTo = getRequestedLoginReturnTo()) {
+  const base = typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)
+    ? new URL("/login", window.location.origin)
+    : new URL("/login", FUNESTERIE_PUBLIC_APP_URL);
+  base.searchParams.set("returnTo", normalizeAllowedReturnTo(returnTo));
+  return base.toString();
+}
+
+function buildAuthSuccessReturnToForTarget(targetUrl: string) {
+  const target = new URL(normalizeAllowedReturnTo(targetUrl));
+  const authSuccess = new URL("/auth/success", target.origin);
+  const nextPath = `${target.pathname || "/"}${target.search || ""}${target.hash || ""}`;
+  if (!isAuthSuccessRoute(target.pathname) && nextPath !== "/") {
+    authSuccess.searchParams.set("next", nextPath);
+  }
+  return authSuccess.toString();
+}
+
+function appendAuthTokenFragment(targetUrl: string, token?: string | null, provider = "local") {
+  const cleanToken = String(token || "").trim();
+  if (!cleanToken) return targetUrl;
+  const target = new URL(targetUrl);
+  const hashParams = new URLSearchParams(String(target.hash || "").replace(/^#/, ""));
+  hashParams.set("a11_token", cleanToken);
+  hashParams.set("provider", provider);
+  target.hash = hashParams.toString();
+  return target.toString();
+}
+
+function getSafeAuthSuccessNext(surface: FunesterieSurface) {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search || "");
+  const next = String(params.get("next") || "").trim();
+  if (!next || next.startsWith("//")) return "";
+  try {
+    const target = new URL(next, window.location.origin);
+    if (target.origin !== window.location.origin) return "";
+    if (isLoginRoute(target.pathname) || isAuthSuccessRoute(target.pathname)) return "";
+    if (surface === "kaen44" && !isCockpitRoute(target.pathname)) return "";
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "";
+  }
+}
+
+function LoginRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    if (typeof window !== "undefined") window.location.replace(to);
+  }, [to]);
+
+  return (
+    <div className="alpha-auth-shell" style={{
+      minHeight: "100vh",
+      display: "grid",
+      placeItems: "center",
+      background: "linear-gradient(135deg, #020617 0%, #06131b 46%, #0b1214 100%)",
+      color: "#f8fafc",
+      padding: 24,
+      boxSizing: "border-box",
+    }}>
+      <div className="alpha-auth-card" style={{ textAlign: "center" }}>
+        <div className="alpha-auth-mark" aria-hidden="true"><span>F</span></div>
+        <h1>Connexion Funesterie</h1>
+        <p style={{ color: "#b9c8d8", margin: 0 }}>Redirection vers l'accès unique.</p>
+      </div>
+    </div>
+  );
+}
+
 function getCurrentSurfaceKind(): FunesterieSurface {
   const { hostname, pathname, port, search } = getLocationSnapshot();
   const params = new URLSearchParams(search);
@@ -386,7 +508,7 @@ function getSurfaceLinks() {
       cockpit: "/cockpit/",
       cockpitAuthSuccess: "/cockpit/auth/success",
       a11: "/",
-      a11Login: "/login",
+      a11Login: buildCentralLoginUrl("/cockpit"),
       a11Cockpit: "/admin",
       kaen44: "/k44/",
       kaen44Cockpit: "/k44/cockpit",
@@ -399,7 +521,7 @@ function getSurfaceLinks() {
       terms: "/terms/",
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
-      kaen44Login: "/k44/login",
+      kaen44Login: buildCentralLoginUrl("/k44/cockpit"),
       kaen44Privacy: "/privacy/",
       kaen44Terms: "/terms/",
     };
@@ -411,7 +533,7 @@ function getSurfaceLinks() {
     cockpit: new URL("/cockpit/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     cockpitAuthSuccess: new URL("/cockpit/auth/success", FUNESTERIE_PUBLIC_APP_URL).toString(),
     a11: A11_PUBLIC_APP_URL,
-    a11Login: new URL("/login", A11_PUBLIC_APP_URL).toString(),
+    a11Login: buildCentralLoginUrl(new URL("/cockpit", A11_PUBLIC_APP_URL).toString()),
     a11Cockpit: new URL("/cockpit", A11_PUBLIC_APP_URL).toString(),
     kaen44: KAEN44_PUBLIC_APP_URL,
     kaen44Cockpit: new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString(),
@@ -424,7 +546,7 @@ function getSurfaceLinks() {
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
-    kaen44Login: new URL("/login", KAEN44_PUBLIC_APP_URL).toString(),
+    kaen44Login: buildCentralLoginUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString()),
     kaen44Privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
   };
@@ -1342,7 +1464,8 @@ function loadGoogleIdentityScript() {
 }
 
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
-  const isKaen44 = isKaen44Experience();
+  const isCentralLogin = isGeneralLoginRoute();
+  const isKaen44 = !isCentralLogin && isKaen44Experience();
   const localDevSurface = isLocalDevSurface();
   const surfaceLinks = getSurfaceLinks();
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
@@ -1360,6 +1483,26 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [microsoftLoading, setMicrosoftLoading] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const requestedReturnTo = useMemo(() => getRequestedLoginReturnTo(), []);
+
+  const completeLogin = (token?: string | null, provider = "local") => {
+    const target = normalizeAllowedReturnTo(requestedReturnTo);
+    if (typeof window === "undefined") {
+      onLoginSuccess();
+      return;
+    }
+
+    const targetUrl = new URL(target);
+    if (targetUrl.origin !== window.location.origin) {
+      window.location.assign(appendAuthTokenFragment(buildAuthSuccessReturnToForTarget(target), token, provider));
+      return;
+    }
+
+    onLoginSuccess();
+    if (!isLoginRoute(targetUrl.pathname)) {
+      window.location.assign(targetUrl.toString());
+    }
+  };
 
   useEffect(() => {
     document.documentElement.classList.add("a11-auth-page-root");
@@ -1424,8 +1567,8 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
               setGoogleLoading(true);
               try {
                 if (!response?.credential) throw new Error("Reponse Google incomplete");
-                await loginWithGoogleCredential(response.credential);
-                onLoginSuccess();
+                const result = await loginWithGoogleCredential(response.credential);
+                completeLogin(result?.token, "google");
               } catch (err) {
                 setError((err as Error).message || "Connexion Google impossible");
               } finally {
@@ -1460,16 +1603,14 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setError("");
     setInfo("");
     setGoogleLoading(true);
-    const surface = isKaen44 ? "kaen44" : "a11";
-    startGoogleOAuth(buildAuthSuccessReturnTo(surface), isKaen44 ? "kaen44-web" : "web");
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
   };
 
   const handleMicrosoftOAuth = () => {
     setError("");
     setInfo("");
     setMicrosoftLoading(true);
-    const surface = isKaen44 ? "kaen44" : "a11";
-    startMicrosoftOAuth(buildAuthSuccessReturnTo(surface), isKaen44 ? "kaen44-web" : "web");
+    startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
   };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {
@@ -1486,8 +1627,8 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setLoading(true);
     try {
-      await login(username, password);
-      onLoginSuccess();
+      const result = await login(username, password);
+      completeLogin(result?.token, "local");
     } catch (err) {
       setError((err as Error).message || "Connexion impossible");
     } finally {
@@ -1511,7 +1652,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     try {
       const result = await register(username.trim(), registerEmail.trim(), password);
       if (result?.token) {
-        onLoginSuccess();
+        completeLogin(result.token, "local");
         return;
       }
       setInfo("Compte créé. Connecte-toi avec ton nouveau mot de passe.");
@@ -1636,10 +1777,19 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   return (
     <div className={isKaen44 ? "kaen-auth-shell" : "alpha-auth-shell"} style={authShellStyle}>
       <div
-        className={isKaen44 ? "kaen-auth-card" : "alpha-auth-card"}
+        className={isCentralLogin ? "alpha-auth-card funesterie-login-card" : isKaen44 ? "kaen-auth-card" : "alpha-auth-card"}
       >
-      <h1>{isKaen44 ? "Connexion Kaen44" : "Connexion A11"}</h1>
-      {isKaen44 ? (
+      <h1>{isCentralLogin ? "Connexion Funesterie" : isKaen44 ? "Connexion Kaen44" : "Connexion A11"}</h1>
+      {isCentralLogin ? (
+        <>
+          <div className="alpha-auth-mark" aria-hidden="true">
+            <span>F</span>
+          </div>
+          <div style={{ color: "#b9c8d8", fontSize: 13, margin: "-4px 0 2px", textAlign: "center" }}>
+            Un seul accès pour Funesterie, K44, A11 et Vivy.
+          </div>
+        </>
+      ) : isKaen44 ? (
         <>
           <div className="kaen-auth-portrait" aria-hidden="true">
             <img src={KAEN44_AVATAR_SRC} alt="" />
@@ -4211,14 +4361,26 @@ export function App() {
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
           if (isAuthSuccessRoute(pathname)) {
             const surface = getCurrentSurfaceKind();
-            window.history.replaceState({}, "", buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
+            window.history.replaceState({}, "", getSafeAuthSuccessNext(surface) || buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
           }
         })
         .catch(() => {
           if (isAuthSuccessRoute(pathname)) {
+            const surface = getCurrentSurfaceKind();
+            const loginUrl = new URL(buildCentralLoginUrl(getDefaultPostLoginUrl(surface)));
+            loginUrl.searchParams.set("error", "session_verification_failed");
             const failurePath = pathname.includes("/cockpit/")
               ? "/cockpit?error=session_verification_failed"
-              : `${buildSurfacePath(getCurrentSurfaceKind(), "/login")}?error=session_verification_failed`;
+              : loginUrl.toString();
+            try {
+              const failureUrl = new URL(failurePath, window.location.origin);
+              if (failureUrl.origin !== window.location.origin) {
+                window.location.replace(failureUrl.toString());
+                return;
+              }
+            } catch {
+              // Fall through to replaceState for same-origin relative paths.
+            }
             window.history.replaceState({}, "", failurePath);
           }
         });
@@ -4229,7 +4391,7 @@ export function App() {
         setIsAuthenticated(true);
         setDisplayName(getAuthDisplayName() || "Utilisateur");
         const surface = getCurrentSurfaceKind();
-        window.history.replaceState({}, "", buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
+        window.history.replaceState({}, "", getSafeAuthSuccessNext(surface) || buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
         return;
       }
       refreshCookieSession();
@@ -4239,6 +4401,10 @@ export function App() {
     const localParams = new URLSearchParams(window.location.search || "");
     const localPublicPreview = localParams.get("public") === "1";
     const localDevBypassRequested = localParams.get("local") === "1" || localParams.get("a11-local-dev") === "1";
+    if (isLoginRoute(pathname) && hasAuthToken()) {
+      clearAuthToken();
+      setAuthDisplayName("");
+    }
     if (isLocalDevSurface() && !localDevBypassRequested && !isLoginRoute(pathname)) {
       clearLocalDevSession();
     }
@@ -6440,6 +6606,12 @@ export function App() {
           : pathname.includes("/vivy") ? "vivy"
           : "home";
       return <Kaen44PublicPage page={publicPage} />;
+    }
+    if (!isGeneralLoginRoute() && !isAuthSuccessRoute(pathname)) {
+      const returnTo = isLoginRoute(pathname)
+        ? getDefaultPostLoginUrl(getCurrentSurfaceKind())
+        : (typeof window !== "undefined" ? window.location.href : getDefaultPostLoginUrl(getCurrentSurfaceKind()));
+      return <LoginRedirect to={buildCentralLoginUrl(returnTo)} />;
     }
     return <LoginPanel onLoginSuccess={() => setIsAuthenticated(true)} />;
   }

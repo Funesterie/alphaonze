@@ -261,6 +261,15 @@
   display: none;
 }
 
+.alpha-auth-card.funesterie-login-card > h1:first-of-type {
+  display: block;
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(28px, 5vw, 42px);
+  line-height: 1;
+  text-align: center;
+}
+
 .alpha-auth-mark {
   width: 84px;
   height: 70px;
