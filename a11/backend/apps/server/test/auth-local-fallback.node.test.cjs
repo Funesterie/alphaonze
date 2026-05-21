@@ -181,6 +181,68 @@ test('OAuth start keeps callbacks on the current .me host before legacy env over
   );
 });
 
+test('OAuth configuration errors return to the single Funesterie login page', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    A11_GOOGLE_CLIENT_ID: process.env.A11_GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    A11_GOOGLE_CLIENT_SECRET: process.env.A11_GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+  };
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.A11_GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_SECRET;
+  delete process.env.A11_GOOGLE_CLIENT_SECRET;
+  delete process.env.GOOGLE_CALLBACK_URL;
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  delete process.env.GOOGLE_REDIRECT_URI;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const returnTo = 'https://k44.funesterie.me/cockpit';
+      const response = await fetch(`${baseUrl}/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'a11.funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(response.status, 302);
+      const location = response.headers.get('location');
+      assert.ok(location);
+      const redirectUrl = new URL(location);
+      assert.equal(redirectUrl.origin, 'https://funesterie.me');
+      assert.equal(redirectUrl.pathname, '/login');
+      assert.equal(redirectUrl.searchParams.get('returnTo'), returnTo);
+      assert.equal(redirectUrl.searchParams.get('error'), 'google_auth_not_configured');
+    }
+  );
+});
+
 test('Google OAuth callback can return to the private cp cockpit with a fragment token', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
