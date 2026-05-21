@@ -6434,6 +6434,7 @@ const createKnowledgeConflictRouter = require('./src/routes/knowledge-conflict.c
 const createGitHubRouter = require('./src/routes/github.cjs');
 const createPublicMcpRouter = require('./src/routes/public-mcp.cjs');
 const createMcpClientRouter = require('./src/routes/mcp-client.cjs');
+const createMcpCockpitRouter = require('./src/routes/mcp-cockpit.cjs');
 const { createOAuthRouter } = require('./src/mcp-oauth/oauth-server.cjs');
 
 app.use('/api/checkpoints', verifyJWT);
@@ -6486,6 +6487,8 @@ app.use('/oauth', createOAuthRouter(express));
 console.log('[Server] MCP OAuth routes mounted under /oauth');
 app.use(createPublicMcpRouter());
 console.log('[Server] Public MCP routes mounted at /mcp, /.well-known/mcp and /api/mcp/status');
+app.use('/api/cockpit/mcp', createMcpCockpitRouter({ verifyJWT }));
+console.log('[Server] Private MCP cockpit routes mounted under /api/cockpit/mcp');
 app.use('/api/mcp', verifyJWT, requireFamilyAccess, createMcpClientRouter());
 console.log('[Server] MCP client routes mounted under /api/mcp');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));

@@ -737,6 +737,14 @@ export function getAuthIdentity() {
   };
 }
 
+export function getAuthEmail() {
+  if (hasLocalDevBypassSession()) return 'djeff-local@funesterie.local';
+
+  const payload = decodeJwtPayload(getAuthToken()) || {};
+  const storedUser = getStoredAuthUserProfile() || {};
+  return String(payload?.email || storedUser?.email || '').trim().toLowerCase();
+}
+
 export function getAuthStorageScope() {
   return getAuthIdentity().storageScope;
 }
@@ -909,6 +917,72 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   }
   setAuthUserProfile(data?.user);
   setAuthDisplayName(data?.user?.username || data?.user?.email || '');
+  return data;
+}
+
+export type McpCockpitSummary = {
+  ok: boolean;
+  updatedAt?: string;
+  a11?: { ok?: boolean };
+  kaen44?: { ok?: boolean };
+  agents?: {
+    active?: number;
+    total?: number;
+    names?: string[];
+  };
+  jobs?: {
+    total?: number;
+    ready?: number;
+    running?: number;
+  };
+  game?: {
+    source?: string;
+    ready?: boolean;
+    phase?: string;
+    japaneseIgnored?: boolean;
+  };
+  controller?: {
+    ready?: boolean;
+    recentCount?: number;
+    target?: string;
+  };
+  pitching?: {
+    total?: number;
+    ready?: number;
+    items?: Array<{
+      title?: string;
+      ready?: boolean;
+      requiredAnswered?: number;
+      requiredTotal?: number;
+      expectedAnswered?: number;
+      expectedTotal?: number;
+      deadlineSoftPassed?: boolean;
+    }>;
+  };
+  error?: string;
+  message?: string;
+};
+
+export async function fetchMcpCockpitStatus(): Promise<McpCockpitSummary> {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl('/api/cockpit/mcp/status'), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data: McpCockpitSummary = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    const error = new Error(data?.message || data?.error || `Cockpit MCP indisponible (${res.status})`) as Error & {
+      status?: number;
+      payload?: McpCockpitSummary;
+    };
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
   return data;
 }
 
