@@ -260,8 +260,8 @@ function resolveDefaultOnlineApiBase() {
   if (configured) return configured;
   try {
     const hostname = globalThis.location?.hostname;
-    if (isPublicA11WebHost(hostname) || isPublicGeneralCockpitHost(hostname)) return DEFAULT_PROD_API_BASE;
-    if (isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
+    if (isPublicA11WebHost(hostname)) return DEFAULT_PROD_API_BASE;
+    if (isPublicGeneralCockpitHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
   } catch {
     // ignore browser location issues
   }
@@ -348,7 +348,10 @@ function applyLaunchApiModeOverrides() {
     if (isPublicFunesterieWebHost(url.hostname)) {
       const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
       const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
-      if (currentOverride !== onlineBase) {
+      if (!onlineBase && currentOverride) {
+        globalThis.localStorage?.removeItem(API_BASE_STORAGE_KEY);
+        changed = true;
+      } else if (onlineBase && currentOverride !== onlineBase) {
         globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
         changed = true;
       }
@@ -1038,7 +1041,7 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   const currentOrigin = globalThis.location?.origin || '';
   const currentHostname = globalThis.location?.hostname || '';
   const isKaen44Surface = isKaen44WebSurface();
-  const publicSurfaceBase = isCentralFunesterieLoginPage() ? '' : resolveCurrentPublicApiBase();
+  const publicSurfaceBase = resolveCurrentPublicApiBase();
   const fallbackBase = (isKaen44Surface || isPublicKaen44WebHost(currentHostname))
     ? DEFAULT_KAEN44_API_BASE
     : DEFAULT_PROD_API_BASE;
@@ -1062,7 +1065,7 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
 
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
   const isKaen44Surface = isKaen44WebSurface();
-  const publicSurfaceBase = isCentralFunesterieLoginPage() ? '' : resolveCurrentPublicApiBase();
+  const publicSurfaceBase = resolveCurrentPublicApiBase();
   const msBaseUrl = publicSurfaceBase || (isKaen44Surface
     ? normalizeApiBase(DEFAULT_KAEN44_API_BASE || 'https://k44.funesterie.me')
     : normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.me'));
