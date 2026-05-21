@@ -8,7 +8,7 @@
       "id": "qflush",
       "source": "a11/backend/libs",
       "publishedName": "@funesterie/qflush",
-      "publishedVersion": "1.0.2",
+      "publishedVersion": "1.0.3",
       "npmTag": "latest",
       "distTags": ["stable"],
       "enabled": true,

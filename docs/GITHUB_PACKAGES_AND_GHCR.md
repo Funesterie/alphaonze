@@ -17,7 +17,7 @@ Le manifeste est dans `scripts/github/github-packages.manifest.json`.
 
 Aujourd'hui, seul le miroir suivant est prêt :
 
-- `a11/backend/libs` -> `@funesterie/qflush@1.0.2`, tags `latest` et `stable`
+- `a11/backend/libs` -> `@funesterie/qflush@1.0.3`, tags `latest` et `stable`
 
 Le script packe le paquet source, réécrit le `package.json` dans un dossier temporaire, puis publie le miroir. Le `package.json` source reste en `@nossen/qflush`.
 
