@@ -210,6 +210,26 @@ foreach ($pkg in $packages) {
       $packageJson.scripts.PSObject.Properties.Remove("prepublishOnly")
       $packageJson.scripts.PSObject.Properties.Remove("postpack")
     }
+    foreach ($dependencyName in @($pkg.removeDependencies)) {
+      $dependencyKey = [string]$dependencyName
+      if (-not [string]::IsNullOrWhiteSpace($dependencyKey) -and $packageJson.dependencies) {
+        $packageJson.dependencies.PSObject.Properties.Remove($dependencyKey)
+      }
+    }
+    if ($pkg.optionalPeerDependencies) {
+      if (-not $packageJson.peerDependencies) {
+        $packageJson | Add-Member -NotePropertyName peerDependencies -NotePropertyValue ([pscustomobject]@{})
+      }
+      if (-not $packageJson.peerDependenciesMeta) {
+        $packageJson | Add-Member -NotePropertyName peerDependenciesMeta -NotePropertyValue ([pscustomobject]@{})
+      }
+      foreach ($peer in $pkg.optionalPeerDependencies.PSObject.Properties) {
+        $packageJson.peerDependencies | Add-Member -Force -NotePropertyName $peer.Name -NotePropertyValue ([string]$peer.Value)
+        $packageJson.peerDependenciesMeta | Add-Member -Force -NotePropertyName $peer.Name -NotePropertyValue ([pscustomobject]@{
+          optional = $true
+        })
+      }
+    }
     $packageJson | Add-Member -Force -NotePropertyName funesterieMirror -NotePropertyValue ([pscustomobject]@{
       sourceName = (Read-JsonFile $sourcePackageJsonPath).name
       sourcePath = $source
