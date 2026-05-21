@@ -1,6 +1,8 @@
 # GitHub Packages et GHCR
 
-Ce chemin sort JFrog du chemin critique. JFrog peut rester une sandbox locale, mais les paquets et images distribuables passent par GitHub.
+Ce chemin sort JFrog du chemin critique. Google Artifact Registry devient le
+registre principal GCP-native, et GitHub Packages/GHCR restent le miroir simple
+et robuste cote GitHub.
 
 ## NPM GitHub Packages
 
@@ -61,3 +63,14 @@ La variable de repo `GHCR_IMAGE` peut remplacer `a11-backend`.
 GitHub Actions utilise `GITHUB_TOKEN` avec `packages: write`.
 
 En local, utiliser un PAT GitHub via `NODE_AUTH_TOKEN`. Ne jamais écrire le token dans `.npmrc.github`; le fichier garde seulement le placeholder.
+
+## Lien avec Google Artifact Registry
+
+Le chemin Google vit dans `docs/GOOGLE_ARTIFACT_REGISTRY.md`.
+
+Version alignee aujourd'hui :
+
+```text
+@funesterie/qflush@1.0.5
+tags: latest, stable, internal
+```
