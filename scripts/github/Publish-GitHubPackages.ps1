@@ -8,7 +8,9 @@ param(
   [string]$NpmrcPath = ".npmrc.github",
   [string]$Registry,
   [string]$Tag,
-  [string]$TokenEnv = "NODE_AUTH_TOKEN"
+  [string]$TokenEnv = "NODE_AUTH_TOKEN",
+  [switch]$UseExternalNpmAuth,
+  [string]$SummaryTitle = "GitHub Packages summary"
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,13 +108,15 @@ if (-not $Tag) {
   $Tag = if ($manifest.defaultTag) { [string]$manifest.defaultTag } else { "internal" }
 }
 
-if ($Publish) {
+if ($Publish -and -not $UseExternalNpmAuth) {
   $tokenValue = [Environment]::GetEnvironmentVariable($TokenEnv)
   if ([string]::IsNullOrWhiteSpace($tokenValue)) {
     throw "Publishing requires `$env:$TokenEnv. Run scripts/github/Write-GitHubNpmrc.ps1 first, then set $TokenEnv."
   }
+}
+if ($Publish) {
   if (-not (Test-Path -LiteralPath $NpmrcPath)) {
-    throw "Missing npm userconfig: $NpmrcPath. Run scripts/github/Write-GitHubNpmrc.ps1 first."
+    throw "Missing npm userconfig: $NpmrcPath."
   }
 }
 
@@ -298,5 +302,5 @@ foreach ($pkg in $packages) {
 }
 
 Write-Host ""
-Write-Host "GitHub Packages summary:"
+Write-Host "${SummaryTitle}:"
 $results | Format-Table -AutoSize

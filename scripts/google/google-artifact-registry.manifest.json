@@ -1,0 +1,36 @@
+{
+  "projectId": "alphaonze",
+  "location": "europe-west4",
+  "npmRepository": "funesterie-npm",
+  "dockerRepository": "funesterie-docker",
+  "genericRepository": "funesterie-generic",
+  "scope": "@funesterie",
+  "registry": "https://europe-west4-npm.pkg.dev/alphaonze/funesterie-npm/",
+  "defaultTag": "latest",
+  "packages": [
+    {
+      "id": "qflush",
+      "source": "a11/backend/libs",
+      "publishedName": "@funesterie/qflush",
+      "publishedVersion": "1.0.5",
+      "npmTag": "latest",
+      "distTags": ["stable", "internal"],
+      "enabled": true,
+      "removeDependencies": [
+        "@nossen/bat",
+        "@nossen/envaptex",
+        "@nossen/freeland",
+        "@nossen/nezlephant",
+        "@nossen/rome"
+      ],
+      "restoreCommand": ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"],
+      "buildCommand": ["npm", "run", "build"],
+      "smokeCommand": ["node", "dist/cli.js", "--help"],
+      "requiredFiles": [
+        "dist/index.js",
+        "dist/index.d.ts",
+        "dist/cli.js"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,13 @@
-# Publishing @nossen/qflush
+# Publishing QFlush
 
-Use this checklist when releasing QFlush to npmjs and the Funesterie JFrog npm
-registry.
+Use this checklist when releasing QFlush to the Funesterie registries.
+
+Current distributable mirror:
+
+```text
+@funesterie/qflush@1.0.5
+tags: latest, stable, internal
+```
 
 ## Preflight
 
@@ -40,29 +46,32 @@ npm publish --access public
 If the npm account enforces two-factor authentication, npm will ask for the OTP
 during publish.
 
-## JFrog
+## Google Artifact Registry
 
 ```powershell
 cd D:\projets\funesterie
-$env:JFROG_NPM_REGISTRY = "https://trialhnuk69.jfrog.io/artifactory/api/npm/funesterie-npm-local/"
-.\scripts\jfrog\Write-JFrogNpmrc.ps1 -Force
-.\scripts\jfrog\Publish-FunesteriePackages.ps1 -Publish
+npm run google:npmrc
+npm run google:npm-auth
+npm run google:packages:dry
+npm run google:packages:publish
 ```
 
-Use the virtual repository again for installs after publishing:
+## GitHub Packages
 
 ```powershell
-$env:JFROG_NPM_REGISTRY = "https://trialhnuk69.jfrog.io/artifactory/api/npm/funesterie-npm/"
-.\scripts\jfrog\Write-JFrogNpmrc.ps1 -Force
+npm run github:npmrc
+$env:NODE_AUTH_TOKEN = "<token GitHub avec write:packages>"
+npm run github:packages:dry
+npm run github:packages:publish
 ```
 
-## GitHub
+## Tags
 
 Tag the exact package version that was published:
 
 ```powershell
-git tag @nossen/qflush@<version>
-git push origin @nossen/qflush@<version>
+git tag @funesterie/qflush@<version>
+git push origin @funesterie/qflush@<version>
 ```
 
 Update `docs/ops/NOSSEN_RELEASE_ALIGNMENT_2026-05-18.md` if the package train
@@ -71,7 +80,7 @@ changes.
 ## Smoke Test
 
 ```powershell
-npm install -g @nossen/qflush
+npm install -g @funesterie/qflush@stable
 qflush --version
 qflush --help
 qflush doctor

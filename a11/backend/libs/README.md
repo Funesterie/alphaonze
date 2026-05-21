@@ -1,4 +1,4 @@
-# @nossen/qflush
+# QFlush
 
 QFlush is the NOSSEN command-line orchestrator for local automation, runtime
 modules, compose files, NPZ routing, Cortex packets, and supervised service
@@ -10,15 +10,25 @@ by hand.
 
 ## Install
 
+Distribution Funesterie actuelle :
+
+```text
+@funesterie/qflush@1.0.5
+tags: latest, stable, internal
+```
+
+Le package source historique reste `@nossen/qflush` dans ce dossier, mais le
+miroir recommande pour les nouveaux consommateurs est `@funesterie/qflush`.
+
 ```powershell
-npm install -g @nossen/qflush
+npm install -g @funesterie/qflush@stable
 qflush --help
 ```
 
 For project-local use:
 
 ```powershell
-npm install @nossen/qflush
+npm install @funesterie/qflush@stable
 npx qflush --help
 ```
 
@@ -63,7 +73,7 @@ qflush doctor
 ## Programmatic Use
 
 ```ts
-import { buildPipeline, executePipeline } from "@nossen/qflush";
+import { buildPipeline, executePipeline } from "@funesterie/qflush";
 
 const { pipeline, options } = buildPipeline(["start", "--service", "rome"]);
 await executePipeline(pipeline, options);
@@ -79,8 +89,8 @@ QFlush uses the public NOSSEN package set:
 - `@nossen/nezlephant`
 - `@nossen/rome`
 
-Installations should resolve from npmjs by default, or from the configured
-Funesterie JFrog mirror when an internal registry is required.
+Installations should resolve from Google Artifact Registry first, with GitHub
+Packages/GHCR as the GitHub-side mirror.
 
 ## Quality Gates
 
@@ -106,7 +116,12 @@ npm publish --access public
 ```
 
 For JFrog, generate `.npmrc.jfrog` with `scripts/jfrog/Write-JFrogNpmrc.ps1`
-and publish through the repository manifest.
+only when testing the old sandbox. The active path is Google Artifact Registry:
+
+```powershell
+npm run google:packages:dry
+npm run google:packages:publish
+```
 
 ## License
 
