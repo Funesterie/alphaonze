@@ -13,6 +13,8 @@ import {
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
   fetchAuthSession,
+  fetchMcpCockpitStatus,
+  getAuthEmail,
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
   chatWithVivy,
@@ -47,6 +49,7 @@ import {
   type TechnicalMemoSummaryResponse,
   type TtsVoiceReference,
   type VivyChatFileAttachment,
+  type McpCockpitSummary,
   type A11PortraitFrame,
   type A11PortraitFramebook,
 } from "./lib/api";
@@ -3019,63 +3022,16 @@ function VivyPublicSurface({ authenticated }: { authenticated: boolean }) {
 function FunesterieCockpitPage({
   authenticated,
   displayName,
+  authEmail,
 }: {
   authenticated: boolean;
   displayName: string;
+  authEmail: string;
 }) {
   const surfaceLinks = getSurfaceLinks();
-  const cockpitServices = useMemo(() => {
-    const sameOrigin = typeof window !== "undefined" ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL.replace(/\/+$/, "");
-    return [
-      {
-        id: "funesterie",
-        name: "Funesterie.me",
-        role: "Cockpit public",
-        url: surfaceLinks.cockpit,
-        healthUrl: `${sameOrigin}/`,
-        note: "Point d'entrée commun.",
-        image: FUNESTERIE_LOGO_SRC,
-      },
-      {
-        id: "k44",
-        name: "K44",
-        role: "Agent bureau",
-        url: surfaceLinks.kaen44,
-        healthUrl: new URL("/health", KAEN44_PUBLIC_APP_URL).toString(),
-        note: "Suivi quotidien et interface client.",
-        image: KAEN44_AVATAR_SRC,
-      },
-      {
-        id: "a11",
-        name: "A11",
-        role: "Agent média",
-        url: surfaceLinks.a11,
-        healthUrl: new URL("/health", A11_PUBLIC_APP_URL).toString(),
-        note: "Audio, vidéo, documents, analyse.",
-        image: A11_HOODED_AGENT_SRC,
-      },
-      {
-        id: "vivy",
-        name: "Vivy",
-        role: "Agent musical",
-        url: surfaceLinks.vivy,
-        healthUrl: new URL("/health", VIVY_PUBLIC_APP_URL).toString(),
-        note: "Voix, musique, scène, publication.",
-        image: VIVY_POSTER_SRC,
-      },
-      {
-        id: "mcp",
-        name: "MCP",
-        role: "Mémoire et outils",
-        url: "https://mcp.funesterie.me/mcp",
-        healthUrl: "https://mcp.funesterie.me/health",
-        note: "Canal d'outils et contexte partagé.",
-      },
-    ];
-  }, [surfaceLinks.a11, surfaceLinks.cockpit, surfaceLinks.kaen44, surfaceLinks.vivy]);
-  const [serviceStatus, setServiceStatus] = useState<Record<string, "checking" | "ok" | "down">>(() =>
-    Object.fromEntries(cockpitServices.map((service) => [service.id, "checking"]))
-  );
+  const [status, setStatus] = useState<McpCockpitSummary | null>(null);
+  const [statusState, setStatusState] = useState<"idle" | "loading" | "ready" | "denied" | "error">("idle");
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
     document.documentElement.classList.add("funesterie-cockpit-page-root");
@@ -3089,81 +3045,186 @@ function FunesterieCockpitPage({
 
   useEffect(() => {
     let cancelled = false;
-    setServiceStatus(Object.fromEntries(cockpitServices.map((service) => [service.id, "checking"])));
+    if (!authenticated) {
+      setStatus(null);
+      setStatusState("idle");
+      setStatusMessage("");
+      return () => {
+        cancelled = true;
+      };
+    }
 
-    async function probe(service: { id: string; healthUrl: string }) {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 4500);
+    async function refreshStatus() {
+      setStatusState((current) => current === "ready" ? "ready" : "loading");
       try {
-        const url = new URL(service.healthUrl, window.location.origin);
-        const sameOrigin = url.origin === window.location.origin;
-        const response = await fetch(url.toString(), {
-          cache: "no-store",
-          mode: sameOrigin ? "cors" : "no-cors",
-          signal: controller.signal,
-        });
-        const ok = response.type === "opaque" || response.ok;
-        if (!cancelled) {
-          setServiceStatus((current) => ({ ...current, [service.id]: ok ? "ok" : "down" }));
-        }
-      } catch {
-        if (!cancelled) {
-          setServiceStatus((current) => ({ ...current, [service.id]: "down" }));
-        }
-      } finally {
-        window.clearTimeout(timeout);
+        const next = await fetchMcpCockpitStatus();
+        if (cancelled) return;
+        setStatus(next);
+        setStatusState("ready");
+        setStatusMessage("");
+      } catch (error_: any) {
+        if (cancelled) return;
+        const statusCode = Number(error_?.status || 0);
+        setStatusState(statusCode === 403 ? "denied" : "error");
+        setStatusMessage(String(error_?.message || "Cockpit MCP indisponible."));
       }
     }
 
-    cockpitServices.forEach((service) => void probe(service));
+    void refreshStatus();
+    const interval = window.setInterval(refreshStatus, 10000);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
-  }, [cockpitServices]);
+  }, [authenticated]);
 
-  const statusMeta: Record<"checking" | "ok" | "down", { label: string; detail: string }> = {
-    checking: { label: "vérification", detail: "Test en cours" },
-    ok: { label: "opérationnel", detail: "Joignable" },
-    down: { label: "à vérifier", detail: "Non confirmé" },
-  };
-  const operationalCount = cockpitServices.filter((service) => serviceStatus[service.id] === "ok").length;
-  const totalCount = cockpitServices.length;
-  const cockpitReady = operationalCount === totalCount;
+  const accountLabel = String(authEmail || displayName || "Session Funesterie").trim();
+  const statusCards = [
+    {
+      id: "a11",
+      name: "A11",
+      role: "Moteur image, vidéo, documents",
+      ok: status?.a11?.ok === true,
+      detail: status?.a11?.ok ? "Joignable" : "À vérifier",
+    },
+    {
+      id: "kaen44",
+      name: "Kaen44",
+      role: "Interface client et bureau",
+      ok: status?.kaen44?.ok === true,
+      detail: status?.kaen44?.ok ? "Joignable" : "À vérifier",
+    },
+    {
+      id: "agents",
+      name: "Agents visibles",
+      role: `${Number(status?.agents?.active || 0)}/${Number(status?.agents?.total || 0)} actifs`,
+      ok: Number(status?.agents?.active || 0) > 0,
+      detail: (status?.agents?.names || []).join(", ") || "Aucun actif",
+    },
+    {
+      id: "jobs",
+      name: "Patrouille MCP",
+      role: `${Number(status?.jobs?.running || 0)} en cours, ${Number(status?.jobs?.ready || 0)} prêts`,
+      ok: statusState === "ready",
+      detail: `${Number(status?.jobs?.total || 0)} jobs suivis`,
+    },
+    {
+      id: "game",
+      name: "Jeu local",
+      role: status?.game?.source || "RomStation",
+      ok: status?.game?.ready === true,
+      detail: status?.game?.ready ? "Prêt" : String(status?.game?.phase || "En attente"),
+    },
+    {
+      id: "controller",
+      name: "QFlush",
+      role: "Entrées locales et manette",
+      ok: status?.controller?.ready === true,
+      detail: `${Number(status?.controller?.recentCount || 0)} signaux récents`,
+    },
+  ];
+  const readyCount = statusCards.filter((card) => card.ok).length;
+  const totalCount = statusCards.length;
+  const lastUpdated = status?.updatedAt
+    ? new Date(status.updatedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })
+    : "";
+  const loginHref = buildCentralLoginUrl(surfaceLinks.cockpit);
 
   return (
-    <main className="funesterie-ops-shell fun-public-surface">
+    <main className="funesterie-ops-shell fun-mcp-shell fun-public-surface">
       <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Cockpit" />
 
-      <section className="funesterie-ops-hero" aria-label="État opérationnel Funesterie">
+      <section className="fun-mcp-hero" aria-label="Cockpit MCP privé Funesterie">
         <div>
-          <h1>État</h1>
+          <span>{authenticated ? "Accès privé" : "Connexion requise"}</span>
+          <h1>Cockpit MCP</h1>
           <p>
-            Une vue courte pour savoir si Funesterie, K44, A11, Vivy et le MCP sont
-            joignables. Pas de cockpit admin ici : seulement l'état et les sorties utiles.
+            Patrouille privée des outils NOSSEN : agents visibles, QFlush, jeu local,
+            jobs actifs et pont A11/Kaen44. Rien ne sort sans session admin.
           </p>
+          <div className="fun-mcp-actions">
+            {authenticated ? (
+              <>
+                <a href={surfaceLinks.kaen44Cockpit}>Ouvrir K44</a>
+                <a href={surfaceLinks.a11Cockpit}>Ouvrir A11</a>
+                <a href={surfaceLinks.vivyStudio}>Ouvrir Vivy</a>
+              </>
+            ) : (
+              <a href={loginHref}>Se connecter</a>
+            )}
+          </div>
         </div>
-        <aside className={cockpitReady ? "is-ok" : "is-warn"}>
-          <strong>{operationalCount}/{totalCount}</strong>
-          <span>{cockpitReady ? "Tout répond" : "Vérification partielle"}</span>
-          <small>{authenticated ? `Session: ${String(displayName || "Utilisateur").trim() || "Utilisateur"}` : "Session publique"}</small>
+        <aside className={statusState === "ready" ? "is-ok" : statusState === "denied" || statusState === "error" ? "is-down" : "is-warn"}>
+          <strong>{authenticated ? `${readyCount}/${totalCount}` : "Privé"}</strong>
+          <span>
+            {!authenticated ? "Admin requis" : statusState === "ready" ? "Patrouille active" : statusState === "denied" ? "Accès refusé" : "Synchronisation"}
+          </span>
+          <small>{authenticated ? accountLabel : "Google ou Microsoft"}</small>
+          {lastUpdated ? <small>MAJ {lastUpdated}</small> : null}
         </aside>
       </section>
 
-      <section id="etat" className="funesterie-ops-status-grid" aria-label="État des services Funesterie">
-        {cockpitServices.map((service) => (
-          <a key={service.id} href={service.url} className={`funesterie-ops-status-card is-${serviceStatus[service.id] || "checking"}`}>
-            {"image" in service && service.image ? <img className="funesterie-ops-status-thumb" src={service.image} alt="" /> : null}
-            <span>
-              <i aria-hidden="true" />
-              {statusMeta[serviceStatus[service.id] || "checking"].label}
-            </span>
-            <strong>{service.name}</strong>
-            <em>{service.role}</em>
-            <small>{service.note}</small>
-            <b>{statusMeta[serviceStatus[service.id] || "checking"].detail}</b>
-          </a>
-        ))}
-      </section>
+      {!authenticated ? (
+        <section className="fun-mcp-locked" aria-label="Cockpit verrouillé">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <div>
+            <h2>Accès réservé</h2>
+            <p>Le cockpit MCP est ouvert uniquement aux comptes admin Funesterie validés.</p>
+          </div>
+          <a href={loginHref}>Connexion centrale</a>
+        </section>
+      ) : statusState === "denied" ? (
+        <section className="fun-mcp-locked is-denied" aria-label="Accès refusé">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+          <div>
+            <h2>Compte non autorisé</h2>
+            <p>{statusMessage || "Ce compte est connecté, mais il n'est pas dans la liste admin MCP."}</p>
+          </div>
+          <a href={surfaceLinks.account}>Compte</a>
+        </section>
+      ) : (
+        <>
+          {statusMessage ? <p className="fun-mcp-alert">{statusMessage}</p> : null}
+          <section id="etat" className="funesterie-ops-status-grid fun-mcp-grid" aria-label="État privé des outils MCP">
+            {statusCards.map((card) => (
+              <article key={card.id} className={`funesterie-ops-status-card is-${card.ok ? "ok" : statusState === "loading" ? "checking" : "down"}`}>
+                <span>
+                  <i aria-hidden="true" />
+                  {card.ok ? "opérationnel" : statusState === "loading" ? "lecture" : "à vérifier"}
+                </span>
+                <strong>{card.name}</strong>
+                <em>{card.role}</em>
+                <small>{card.detail}</small>
+                <b>{card.ok ? "Prêt" : "Non confirmé"}</b>
+              </article>
+            ))}
+          </section>
+
+          <section className="fun-mcp-flow" aria-label="Rendez-vous agents">
+            <div>
+              <span>Pitching</span>
+              <h2>{Number(status?.pitching?.ready || 0)}/{Number(status?.pitching?.total || 0)} prêts</h2>
+              <p>Les discussions de coordination restent visibles ici pour la patrouille, sans exposer les contenus sensibles.</p>
+            </div>
+            <ol>
+              {(status?.pitching?.items || []).slice(0, 4).map((item, index) => (
+                <li key={`${item.title || "pitch"}-${index}`} className={item.ready ? "is-ready" : ""}>
+                  <i>{item.ready ? "Prêt" : "À suivre"}</i>
+                  <strong>{item.title || "Rendez-vous agents"}</strong>
+                  <small>{Number(item.requiredAnswered || 0)}/{Number(item.requiredTotal || 0)} requis</small>
+                </li>
+              ))}
+              {!(status?.pitching?.items || []).length ? (
+                <li>
+                  <i>Calme</i>
+                  <strong>Aucun rendez-vous actif</strong>
+                  <small>La patrouille attend le prochain signal.</small>
+                </li>
+              ) : null}
+            </ol>
+          </section>
+        </>
+      )}
 
       <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
@@ -4226,6 +4287,7 @@ export function App() {
   const isGeneralAgents = isGeneralAgentsRoute();
   const isGeneralAccount = isGeneralAccountRoute();
   const isGeneralContact = isGeneralContactRoute();
+  const isGeneralLogin = isGeneralLoginRoute();
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const publicPolicyPage = typeof window !== "undefined"
@@ -4235,6 +4297,7 @@ export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
+  const [authEmail, setAuthEmail] = useState(() => getAuthEmail());
   const [showHistory, setShowHistory] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -4259,7 +4322,7 @@ export function App() {
       : publicPolicyPage === "terms"
       ? "Funesterie - Conditions"
       : isGeneralCockpit
-      ? "Funesterie - Cockpit général"
+      ? "Funesterie - Cockpit MCP"
       : isGeneralHome
       ? "Funesterie - Accueil"
       : isGeneralAgents
@@ -4268,17 +4331,19 @@ export function App() {
       ? "Funesterie - Compte"
       : isGeneralContact
       ? "Funesterie - Contact"
+      : isGeneralLogin
+      ? "Funesterie - Connexion"
       : isVivy
       ? "Vivy - Présence musicale Funesterie"
       : isKaen44
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
     const isFunesteriePublicPage = isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact;
     document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicPage);
     document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicPage);
-  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isKaen44, isVivy, publicPolicyPage]);
+  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isKaen44, isVivy, publicPolicyPage]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -4359,6 +4424,7 @@ export function App() {
           if (!session?.authenticated && !session?.user) return;
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
+          setAuthEmail(session?.user?.email || getAuthEmail());
           if (isAuthSuccessRoute(pathname)) {
             const surface = getCurrentSurfaceKind();
             window.history.replaceState({}, "", getSafeAuthSuccessNext(surface) || buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
@@ -4390,6 +4456,7 @@ export function App() {
       if (consumeOAuthTokenFromLocation()) {
         setIsAuthenticated(true);
         setDisplayName(getAuthDisplayName() || "Utilisateur");
+        setAuthEmail(getAuthEmail());
         const surface = getCurrentSurfaceKind();
         window.history.replaceState({}, "", getSafeAuthSuccessNext(surface) || buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
         return;
@@ -4404,6 +4471,10 @@ export function App() {
     if (isLoginRoute(pathname) && hasAuthToken()) {
       clearAuthToken();
       setAuthDisplayName("");
+      setAuthEmail("");
+    }
+    if (isLoginRoute(pathname)) {
+      return;
     }
     if (isLocalDevSurface() && !localDevBypassRequested && !isLoginRoute(pathname)) {
       clearLocalDevSession();
@@ -4419,6 +4490,7 @@ export function App() {
       activateLocalDevSession(() => {
         setIsAuthenticated(true);
         setDisplayName("Djeff local");
+        setAuthEmail(getAuthEmail());
       });
       return;
     }
@@ -4428,10 +4500,12 @@ export function App() {
       if (scope) {
         setIsAuthenticated(true);
         setDisplayName(getAuthDisplayName() || "Utilisateur");
+        setAuthEmail(getAuthEmail());
         return;
       }
       clearAuthToken();
       setAuthDisplayName("");
+      setAuthEmail("");
     }
 
     const isPublicInformationRoute =
@@ -4491,6 +4565,7 @@ export function App() {
       console.warn("[A11] auth invalidated", detail);
       cancelSpeech();
       setDisplayName("Utilisateur");
+      setAuthEmail("");
       setIsAuthenticated(false);
       setSending(false);
       sendLockRef.current = false;
@@ -4529,6 +4604,7 @@ export function App() {
       if (event.key !== "a11:global-logout-at" || !event.newValue) return;
       clearAuthToken();
       setAuthDisplayName("");
+      setAuthEmail("");
       globalThis.dispatchEvent(new CustomEvent("a11:auth-invalid", {
         detail: {
           reason: "A11_Logout",
@@ -4550,13 +4626,16 @@ export function App() {
           if (!session?.authenticated && !session?.user) {
             clearAuthToken();
             setAuthDisplayName("");
+            setAuthEmail("");
             globalThis.dispatchEvent(new CustomEvent("a11:auth-invalid", {
               detail: {
                 reason: "A11_Session_Missing",
                 message: "La session n'est plus active.",
               },
             }));
+            return;
           }
+          setAuthEmail(session?.user?.email || getAuthEmail());
         })
         .catch(() => {
           // fetchAuthSession déclenche déjà l'événement auth-invalid sur 401.
@@ -6566,7 +6645,7 @@ export function App() {
   }
 
   if (isGeneralCockpit) {
-    return <FunesterieCockpitPage authenticated={isAuthenticated} displayName={displayName} />;
+    return <FunesterieCockpitPage authenticated={isAuthenticated} displayName={displayName} authEmail={authEmail} />;
   }
 
   if (isGeneralAgents) {
