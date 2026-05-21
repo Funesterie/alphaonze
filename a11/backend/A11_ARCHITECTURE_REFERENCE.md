@@ -104,6 +104,30 @@ User
 -> optional TTS synthesis
 -> Audio playback
 
+## Autonomous Action System
+
+The canonical name for the goal-to-action runtime is documented in:
+
+```text
+a11/backend/apps/server/A11_AUTONOMOUS_ACTION_SYSTEM.md
+```
+
+Short form:
+
+```text
+User / Goal
+-> A11-Droid
+-> A11-Planner / World_Context
+-> Cerbere
+-> A11-Plan-Executor
+-> QFlush / Horn
+-> Tools / Skills / Agents
+-> Neo4j + Corpus + episodic memory
+```
+
+`World_Context` is the planning brain. QFlush, Spyder and Cortex are technical
+orchestration layers inside the larger A11 Autonomous Action System.
+
 ## Operating Rules
 
 Do not:
