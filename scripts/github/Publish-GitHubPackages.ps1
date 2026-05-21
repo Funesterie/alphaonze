@@ -149,6 +149,15 @@ foreach ($pkg in $packages) {
     continue
   }
 
+  if (-not $NoBuild) {
+    if ($pkg.restoreCommand) {
+      Invoke-Tool -Command @($pkg.restoreCommand) -WorkingDirectory $sourcePath
+    }
+    if ($pkg.buildCommand) {
+      Invoke-Tool -Command @($pkg.buildCommand) -WorkingDirectory $sourcePath
+    }
+  }
+
   foreach ($relativeRequiredFile in @($pkg.requiredFiles)) {
     $requiredFile = Join-Path $sourcePath ([string]$relativeRequiredFile)
     if (-not (Test-Path -LiteralPath $requiredFile)) {
@@ -156,9 +165,6 @@ foreach ($pkg in $packages) {
     }
   }
 
-  if (-not $NoBuild -and $pkg.buildCommand) {
-    Invoke-Tool -Command @($pkg.buildCommand) -WorkingDirectory $sourcePath
-  }
   if ($pkg.smokeCommand) {
     Invoke-Tool -Command @($pkg.smokeCommand) -WorkingDirectory $sourcePath
   }
