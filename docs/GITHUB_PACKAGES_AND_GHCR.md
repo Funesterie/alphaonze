@@ -17,15 +17,19 @@ Le manifeste est dans `scripts/github/github-packages.manifest.json`.
 
 Aujourd'hui, seul le miroir suivant est prêt :
 
-- `a11/backend/libs` -> `@funesterie/qflush@1.0.3`, tags `latest` et `stable`
+- `a11/backend/libs` -> `@funesterie/qflush@1.0.5`, tags `latest`, `stable` et `internal`
 
 Le script packe le paquet source, réécrit le `package.json` dans un dossier temporaire, puis publie le miroir. Le `package.json` source reste en `@nossen/qflush`.
+
+Le miroir GitHub retire les anciens modules `@nossen/*` des dépendances du paquet publié. Un `npm install @funesterie/qflush@stable` fonctionne donc même si les anciens paquets NPM ne sont plus accessibles.
 
 Pour connecter un module sans se prendre la tête :
 
 ```bash
 npm install @funesterie/qflush@stable
 ```
+
+Ne pas utiliser `--registry=https://npm.pkg.github.com` globalement pour cette installation : seul le scope `@funesterie` doit pointer vers GitHub Packages, sinon les dépendances publiques partiront au mauvais registre. `npm run github:npmrc` génère le bon fichier.
 
 `latest` sert au chemin simple, `stable` sert aux consommateurs prod qui ne doivent pas bouger tant qu'on ne retague pas volontairement.
 
