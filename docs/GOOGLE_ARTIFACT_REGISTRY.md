@@ -37,10 +37,10 @@ Aujourd'hui, les miroirs prets sont:
 
 | Source | Source package | Package distribue | Tags |
 | --- | --- | --- | --- |
-| `a11/backend/libs` | `@nossen/qflush@1.0.2` | `@funesterie/qflush@1.0.3` | `latest`, `stable` |
-| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@1.0.1` | `@funesterie/dragon-contracts@1.0.1` | `latest`, `stable` |
-| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@1.0.1` | `@funesterie/dragon-upstream@1.0.1` | `latest`, `stable` |
-| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@1.0.1` | `@funesterie/dragon@1.0.1` | `latest`, `stable` |
+| `a11/backend/libs` | `@nossen/qflush@1.0.2` | `@funesterie/qflush@1.0.4` | `latest`, `stable` |
+| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@1.0.1` | `@funesterie/dragon-contracts@1.0.2` | `latest`, `stable` |
+| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@1.0.1` | `@funesterie/dragon-upstream@1.0.2` | `latest`, `stable` |
+| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@1.0.1` | `@funesterie/dragon@1.0.2` | `latest`, `stable` |
 
 Pour installer:
 

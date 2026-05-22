@@ -39,6 +39,9 @@ const BLUEPRINT_OFFER = {
 };
 
 const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
+const STRIPE_SUPPORT_URL = String(
+  import.meta.env.VITE_A11_STRIPE_SUPPORT_URL || 'https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01'
+).trim();
 const WERO_PHONE = String(import.meta.env.VITE_A11_WERO_PHONE || '').trim();
 const RIB_DOCUMENT_URL = String(import.meta.env.VITE_A11_RIB_URL || '').trim();
 const PAYPAL_URL = String(import.meta.env.VITE_A11_PAYPAL_URL || '').trim();
@@ -420,6 +423,27 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                   Ouvrir Stripe
                 </button>
               </div>
+
+              {STRIPE_SUPPORT_URL && (
+                <div style={paymentTileStyle}>
+                  <div>
+                    <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Soutenir le projet</div>
+                    <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '5px', fontWeight: 800 }}>
+                      Don libre par paliers de 5 EUR
+                    </div>
+                    <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
+                      Lien Stripe public pour aider Funesterie/NOSSEN, sans creation de compte.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openExternal(STRIPE_SUPPORT_URL)}
+                    style={paymentTileButtonStyle}
+                  >
+                    Faire un don
+                  </button>
+                </div>
+              )}
 
               {WERO_PHONE && (
                 <div style={paymentTileStyle}>
