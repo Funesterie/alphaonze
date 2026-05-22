@@ -29,6 +29,15 @@ Inspect without revealing secrets:
 npm run rubixcube:vault -- status --manifest D:\agent-bus\rubixgate\vault\funesterie-core\funesterie-core.manifest.json
 ```
 
+## MCP rail
+
+The A11 MCP server exposes two RubixCube tools:
+
+- `a11_rubixcube_vault_status`: checks manifest, PNG shards, and hashes. It does not read the passphrase.
+- `a11_rubixcube_vault_consume`: decrypts the bundle in memory only after `confirm: CONSUME_SECRET_BUNDLE`; it returns a redacted inventory, never token values.
+
+`a11_rubixcube_vault_consume` is intentionally not a read-only auto-approval tool. Agents can verify that a named item exists and then use a future whitelisted consumer path, but they must not dump recovered values into MCP replies, logs, Neo4j, screenshots, or docs.
+
 Recover to a local file only when needed:
 
 ```powershell
