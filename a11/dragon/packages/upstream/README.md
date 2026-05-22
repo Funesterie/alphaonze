@@ -1,9 +1,13 @@
-# @funeste38/dragon-upstream
+# @nossen/dragon-upstream
 
-## Funding / Soutien
+Dragon upstream helpers for routing external services into the NOSSEN control plane.
 
-This package is part of NOSSEN, the Funesterie universe for specialized agents, semantic tools and cyber-futurist creative modules. NOSSEN mixes digital piracy, video-game energy, rider philosophy, machines, speed and evolving adventure.
+Use this package when a service needs a clean bridge into Dragon without duplicating protocol glue.
 
-If this module helps you, you can support the infrastructure and maintenance time here: https://paypal.me/funeste38
+## Support and Donations
+
+This package is part of the Funesterie/NOSSEN project. If it helps your workflow, support infrastructure and maintenance through:
+
+https://funesterie.me/contact/
 
 Support is voluntary; the package remains usable according to its license.

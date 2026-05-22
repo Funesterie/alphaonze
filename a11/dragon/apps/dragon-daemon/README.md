@@ -1,9 +1,11 @@
-# @funeste38/dragon
+# @nossen/dragon
 
-## Funding / Soutien
+Dragon is the NOSSEN control-plane daemon for local agents, semantic tools, and coordinated Funesterie services.
 
-This package is part of NOSSEN, the Funesterie universe for specialized agents, semantic tools and cyber-futurist creative modules. NOSSEN mixes digital piracy, video-game energy, rider philosophy, machines, speed and evolving adventure.
+## Support and Donations
 
-If this module helps you, you can support the infrastructure and maintenance time here: https://paypal.me/funeste38
+This package is part of the Funesterie/NOSSEN project. If it helps your workflow, support infrastructure and maintenance through:
+
+https://funesterie.me/contact/
 
 Support is voluntary; the package remains usable according to its license.

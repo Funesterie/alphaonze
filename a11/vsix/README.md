@@ -1,53 +1,30 @@
-# A11 — AI Coding Agent
+# A11 Coder
 
-**The best AI coding agent for VS Code. Powered by A11/funesterie.**
+A11 Coder is the NOSSEN coding assistant for VS Code-compatible editors, including Kiro.
 
-> Du chaos de l'information à la clarté du sens.
+It connects the editor to the A11 backend at `https://a11.funesterie.me` and keeps the day-to-day coding loop close to the workspace: chat, explain, fix, refactor, review, tests, docs, and security checks.
 
-## Features
+> Du chaos de l'information a la clarte du sens.
 
-- 🤖 **Chat AI** — Conversational AI assistant directly in VS Code
-- 🔍 **Explain Code** — Understand any code snippet instantly
-- 🐛 **Fix Errors** — Automatically diagnose and fix bugs
-- ♻️ **Refactor** — Clean and modernize your code
-- ✨ **Generate Code** — Create code from natural language descriptions
-- 🧪 **Generate Tests** — Auto-generate unit and integration tests
-- 👁️ **Code Review** — Get expert feedback on your code
-- 📝 **Commit Messages** — Generate meaningful git commit messages
-- 📚 **Documentation** — Auto-generate JSDoc/TSDoc/docstrings
-- ⚡ **Optimize** — Performance analysis and improvements
-- 🔒 **Security Audit** — Detect vulnerabilities and security issues
-- 💬 **Inline Chat** — Chat directly in the editor (Ctrl+I)
+## Install
 
-## Getting Started
+```sh
+npm i a11-coder
+```
 
-### Trial Mode
+For local VSIX development:
 
-Use A11 for free with **50 requests** — no account required.
+```sh
+npm install
+npm run compile
+npm run package
+```
 
-### Full Access
+## Kiro and VS Code
 
-Sign in with Google or create an account for unlimited access.
+A11 Coder is built for VS Code-compatible extension hosts. In Kiro, install or package the extension the same way you would a VS Code VSIX, then point the `a11.serverUrl` setting at the production backend or at a local A11 server while developing.
 
-- **Free**: 50 requests
-- **Premium**: 149 EUR/month — creation tokens
-
-## Commands
-
-| Command                   | Shortcut       | Description                |
-| ------------------------- | -------------- | -------------------------- |
-| A11: Chat                 | `Ctrl+Shift+A` | Open chat panel            |
-| A11: Expliquer le code    | `Ctrl+Shift+E` | Explain selected code      |
-| A11: Corriger les erreurs | `Ctrl+Shift+F` | Fix errors in current file |
-| A11: Chat inline          | `Ctrl+I`       | Inline chat in editor      |
-
-## Context Menu
-
-Right-click in the editor to access A11 commands:
-
-- Explain, Fix, Refactor, Generate, Test, Review, Docs, Optimize, Security
-
-## Configuration
+Recommended production setting:
 
 ```json
 {
@@ -58,15 +35,46 @@ Right-click in the editor to access A11 commands:
 }
 ```
 
-## Requirements
+## What It Does
 
-- VS Code 1.85.0 or higher
-- Internet connection (for cloud LLM)
+- Chat with A11 from the editor sidebar.
+- Explain selected code and unfamiliar files.
+- Fix errors, refactor, and generate code from natural language.
+- Generate tests, docs, and commit messages.
+- Review code for quality, performance, and security risks.
+- Use inline chat with `Ctrl+I` when the editor has focus.
 
-## Privacy
+## Commands
 
-Your code is sent to the A11 backend for processing. The chat web surface lives at [a11.funesterie.me](https://a11.funesterie.me); the production VSIX endpoint is [a11.funesterie.me](https://a11.funesterie.me).
+| Command | Shortcut | Description |
+| --- | --- | --- |
+| `A11: Chat` | `Ctrl+Shift+A` | Open the A11 chat panel |
+| `A11: Expliquer le code` | `Ctrl+Shift+E` | Explain selected code |
+| `A11: Corriger les erreurs` | `Ctrl+Shift+F` | Diagnose and fix the current file |
+| `A11: Chat inline` | `Ctrl+I` | Ask A11 in place from the editor |
 
----
+## NOSSEN Modules
 
-Made with ❤️ by [funesterie](https://funesterie.me)
+The maintained module namespace is `@nossen/*`.
+
+Use that scope for current packages, docs, examples, and future integrations. Older public names are not the canonical path anymore.
+
+## Access and Privacy
+
+Cloud features send the selected prompt, file context, and editor request to the configured A11 backend for processing. Do not send secrets, private keys, recovery codes, or production credentials through chat prompts.
+
+Private/admin capabilities are expected to sit behind account login and scoped access. Public docs should only reference public endpoints.
+
+## Support and Donations
+
+A11 Coder is part of the Funesterie/NOSSEN project. If it saves you time or helps your work, support the infrastructure and maintenance through:
+
+https://funesterie.me/contact/
+
+Support is voluntary; it helps keep the public modules, docs, and services alive.
+
+## Links
+
+- Site: https://funesterie.me
+- A11: https://a11.funesterie.me
+- Contact: https://funesterie.me/contact/

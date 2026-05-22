@@ -97,23 +97,21 @@ npm run google:packages:dry
 npm run google:packages:publish
 ```
 
-Etat actuel des versions:
+Etat actuel des versions publiques:
 
-- source locale: `@nossen/qflush@1.0.1`
-- miroir distribue: `@funesterie/qflush@1.0.2`
-- tags: `latest`, `stable`
+- package maintenu: `@nossen/qflush@1.0.1`
+- tag public: `latest`
 
-Pour installer depuis une machine admin, rafraichir d'abord un token Google
-court dans le shell courant:
+Pour installer depuis npm:
 
 ```powershell
-$env:GOOGLE_ARTIFACT_ACCESS_TOKEN = (gcloud auth print-access-token).Trim()
-npm install @funesterie/qflush@stable --userconfig .\.npmrc.google
-Remove-Item Env:\GOOGLE_ARTIFACT_ACCESS_TOKEN
+npm install @nossen/qflush@latest
 ```
 
-La procedure vit dans `docs/GOOGLE_ARTIFACT_REGISTRY.md`. Le fallback GitHub
-Packages/GHCR reste documente dans `docs/GITHUB_PACKAGES_AND_GHCR.md`.
+La procedure Google Artifact Registry reste dans
+`docs/GOOGLE_ARTIFACT_REGISTRY.md` pour les miroirs prives et les machines
+admin. Le fallback GitHub Packages/GHCR reste documente dans
+`docs/GITHUB_PACKAGES_AND_GHCR.md`.
 
 ### Actions disponibles
 
