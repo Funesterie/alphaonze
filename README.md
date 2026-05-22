@@ -97,10 +97,21 @@ npm run google:packages:dry
 npm run google:packages:publish
 ```
 
-Etat actuel des versions publiques:
+Etat actuel des versions npm publiques:
 
-- package maintenu: `@nossen/qflush@1.0.1`
+- `@nossen/qflush@1.0.1`
+- `@nossen/dragon-contracts@1.0.0`
+- `@nossen/dragon-upstream@1.0.0`
+- `@nossen/dragon@1.0.0`
 - tag public: `latest`
+
+Etat actuel du miroir Google Artifact Registry `@nossen`:
+
+- `@nossen/qflush@1.0.2`
+- `@nossen/dragon-contracts@1.0.1`
+- `@nossen/dragon-upstream@1.0.1`
+- `@nossen/dragon@1.0.1`
+- tags Google: `latest`, `stable`
 
 Pour installer depuis npm:
 
