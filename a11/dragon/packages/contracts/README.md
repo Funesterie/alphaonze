@@ -1,9 +1,13 @@
-# @funeste38/dragon-contracts
+# @nossen/dragon-contracts
 
-## Funding / Soutien
+Shared Dragon contracts for the NOSSEN control plane.
 
-This package is part of NOSSEN, the Funesterie universe for specialized agents, semantic tools and cyber-futurist creative modules. NOSSEN mixes digital piracy, video-game energy, rider philosophy, machines, speed and evolving adventure.
+Use this package for typed messages, events, and interfaces that need to stay stable between Dragon services.
 
-If this module helps you, you can support the infrastructure and maintenance time here: https://paypal.me/funeste38
+## Support and Donations
+
+This package is part of the Funesterie/NOSSEN project. If it helps your workflow, support infrastructure and maintenance through:
+
+https://funesterie.me/contact/
 
 Support is voluntary; the package remains usable according to its license.
