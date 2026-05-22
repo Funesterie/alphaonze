@@ -1,6 +1,6 @@
 {
   "name": "@nossen/dragon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "funding": {
     "type": "custom",
     "url": "https://funesterie.me/contact/"
@@ -9,6 +9,7 @@
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "description": "Dragon control-plane daemon for the Funesterie ecosystem.",
+  "author": "NOSSEN <contact@funesterie.me>",
   "files": [
     "dist"
   ],
@@ -35,8 +36,8 @@
   },
   "dependencies": {
     "express": "^5.2.1",
-    "@nossen/dragon-contracts": "^1.0.0",
-    "@nossen/dragon-upstream": "^1.0.0"
+    "@nossen/dragon-contracts": "^1.0.1",
+    "@nossen/dragon-upstream": "^1.0.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6"

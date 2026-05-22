@@ -113,6 +113,18 @@ La procedure Google Artifact Registry reste dans
 admin. Le fallback GitHub Packages/GHCR reste documente dans
 `docs/GITHUB_PACKAGES_AND_GHCR.md`.
 
+## Support / dons
+
+Funesterie/NOSSEN reste maintenu publiquement avec une infrastructure payante
+et du travail operateur continu. Pour soutenir le projet, proposer un don,
+une aide, un sponsorship ou une coordination directe:
+
+- page contact/support: https://funesterie.me/contact/
+- email: contact@funesterie.me
+
+Ne publie jamais de token, cle API, mot de passe, cle privee ou fichier
+credential dans une issue, un chat ou une capture.
+
 ### Actions disponibles
 
 - `status`

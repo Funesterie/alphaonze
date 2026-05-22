@@ -1,6 +1,6 @@
 {
   "name": "@nossen/dragon-upstream",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "funding": {
     "type": "custom",
     "url": "https://funesterie.me/contact/"
@@ -9,6 +9,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "description": "Dragon upstream probing, daemon policy and integration workflows.",
+  "author": "NOSSEN <contact@funesterie.me>",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -38,6 +39,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@nossen/dragon-contracts": "^1.0.0"
+    "@nossen/dragon-contracts": "^1.0.1"
   }
 }

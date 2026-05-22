@@ -82,6 +82,21 @@ QFlush uses the public NOSSEN package set:
 Installations should resolve from npmjs by default, or from the configured
 Funesterie JFrog mirror when an internal registry is required.
 
+## Support and Donations
+
+QFlush is maintained as part of Funesterie/NOSSEN. If it saves you time or
+helps keep your automation stack alive, support infrastructure and maintenance
+through:
+
+https://funesterie.me/contact/
+
+For direct coordination, grants, sponsorship, or urgent support:
+
+contact@funesterie.me
+
+Support is voluntary; it helps keep the public modules, docs, and services
+online.
+
 ## Quality Gates
 
 Run these checks before publishing or tagging a release:
