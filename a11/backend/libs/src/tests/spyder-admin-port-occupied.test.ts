@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as net from 'node:net';
 import os from 'node:os';
 
+vi.mock('../../src/services', () => ({ startService: async () => { return; } }));
+
 describe('spyder admin port occupied behavior', () => {
   let tmpDir: string;
   let origCwd: string;
@@ -38,9 +40,6 @@ describe('spyder admin port occupied behavior', () => {
     });
 
     process.env.QFLUSH_SPYDER_ADMIN_PORT = String(listenPort);
-
-    // mock startService to avoid side effects
-    vi.mock('../../src/services', () => ({ startService: async () => { return; } }));
 
     const { runStart } = await import('../../src/commands/start.js');
     await runStart({ services: ['spyder'] as any, flags: {} as any } as any);

@@ -1,51 +1,58 @@
-# NOSSEN release alignment - 2026-05-18
+# NOSSEN release alignment - 2026-05-23
 
-This file is the GitHub-side source of record for the NOSSEN package reset
-performed on 2026-05-18. The runtime package working copies live under
+This file is the GitHub-side source of record for the NOSSEN 2.0 stable package
+train published on 2026-05-23. The runtime package working copies live under
 `runtime/modules`, which is intentionally ignored by this repository; this
-manifest keeps GitHub aligned with the npmjs and JFrog publications.
+manifest keeps GitHub aligned with the npmjs and Google Artifact Registry
+publications.
 
 ## Registries
 
 - npmjs scope: `@nossen`
-- JFrog build name: `funesterie-dependency-sweep`
-- JFrog build numbers: `20260518-5`, `20260518-6`, `20260518-7`, `20260518-8`
+- npmjs tag: `latest`
+- Google Artifact Registry: `europe-west4-npm.pkg.dev/alphaonze/funesterie-npm`
+- Google tags: `latest`, `stable`
 
 ## Published package train
 
-| Package | npmjs/JFrog version | GitHub tag |
+| Package | Published version | Canonical tag name |
 | --- | ---: | --- |
-| `@nossen/allmight` | `1.0.0` | `@nossen/allmight@1.0.0` |
-| `@nossen/bat` | `1.0.0` | `@nossen/bat@1.0.0` |
-| `@nossen/bat-system` | `1.0.0` | `@nossen/bat-system@1.0.0` |
-| `@nossen/beam` | `1.0.0` | `@nossen/beam@1.0.0` |
-| `@nossen/envapt-superimg` | `1.0.0` | `@nossen/envapt-superimg@1.0.0` |
-| `@nossen/envaptex` | `1.0.0` | `@nossen/envaptex@1.0.0` |
-| `@nossen/freeland` | `1.0.0` | `@nossen/freeland@1.0.0` |
-| `@nossen/morphing` | `1.0.0` | `@nossen/morphing@1.0.0` |
-| `@nossen/nezlephant` | `1.0.0` | `@nossen/nezlephant@1.0.0` |
-| `@nossen/rome` | `1.0.0` | `@nossen/rome@1.0.0` |
-| `@nossen/scentgate` | `1.0.0` | `@nossen/scentgate@1.0.0` |
-| `@nossen/scream` | `1.0.0` | `@nossen/scream@1.0.0` |
-| `@nossen/spyder` | `1.0.0` | `@nossen/spyder@1.0.0` |
-| `@nossen/katana` | `1.0.0` | `@nossen/katana@1.0.0` |
-| `@nossen/freeland-bros` | `1.0.0` | `@nossen/freeland-bros@1.0.0` |
-| `@nossen/qflush-runner` | `1.0.0` | `@nossen/qflush-runner@1.0.0` |
-| `@nossen/dragon-contracts` | `1.0.0` | `@nossen/dragon-contracts@1.0.0` |
-| `@nossen/dragon-upstream` | `1.0.0` | `@nossen/dragon-upstream@1.0.0` |
-| `@nossen/dragon` | `1.0.0` | `@nossen/dragon@1.0.0` |
-| `@nossen/qflush` | `1.0.1` | `@nossen/qflush@1.0.1` |
+| `@nossen/allmight` | `2.0.0` | `@nossen/allmight@2.0.0` |
+| `@nossen/bat` | `2.0.0` | `@nossen/bat@2.0.0` |
+| `@nossen/bat-system` | `2.0.0` | `@nossen/bat-system@2.0.0` |
+| `@nossen/beam` | `2.0.0` | `@nossen/beam@2.0.0` |
+| `@nossen/envapt-superimg` | `2.0.0` | `@nossen/envapt-superimg@2.0.0` |
+| `@nossen/envaptex` | `2.0.0` | `@nossen/envaptex@2.0.0` |
+| `@nossen/freeland` | `2.0.0` | `@nossen/freeland@2.0.0` |
+| `@nossen/freeland-bros` | `2.0.0` | `@nossen/freeland-bros@2.0.0` |
+| `@nossen/katana` | `2.0.0` | `@nossen/katana@2.0.0` |
+| `@nossen/morphing` | `2.0.0` | `@nossen/morphing@2.0.0` |
+| `@nossen/nezlephant` | `2.0.0` | `@nossen/nezlephant@2.0.0` |
+| `@nossen/qflush` | `2.0.0` | `@nossen/qflush@2.0.0` |
+| `@nossen/qflush-runner` | `2.0.0` | `@nossen/qflush-runner@2.0.0` |
+| `@nossen/rome` | `2.0.0` | `@nossen/rome@2.0.0` |
+| `@nossen/scentgate` | `2.0.0` | `@nossen/scentgate@2.0.0` |
+| `@nossen/scream` | `2.0.0` | `@nossen/scream@2.0.0` |
+| `@nossen/spyder` | `2.0.0` | `@nossen/spyder@2.0.0` |
+| `@nossen/dragon-contracts` | `2.0.0` | `@nossen/dragon-contracts@2.0.0` |
+| `@nossen/dragon-upstream` | `2.0.0` | `@nossen/dragon-upstream@2.0.0` |
+| `@nossen/dragon` | `2.0.0` | `@nossen/dragon@2.0.0` |
 
 ## Patch notes
 
-- `@nossen/qflush@1.0.0` remains public but is deprecated on npmjs because it
-  referenced pre-reset runtime dependencies.
-- New consumers should use `@nossen/qflush@^1.0.1`.
+- The public train is now `2.0.0` across all packages.
+- New consumers should use `@nossen/*@^2.0.0`.
+- Legacy `1.0.x` packages remain immutable on npmjs but are not the current
+  supported train.
 
 ## Validation summary
 
-- Base module install/build/test passes completed before publication.
-- `@nossen/envaptex`: 16 test files, 283 tests passing.
-- `@nossen/qflush`: 24 test files, 39 tests passing.
-- Fresh install check: `@nossen/qflush-runner@1.0.0` resolves
-  `@nossen/qflush@1.0.1`.
+- Package-local build/test/pack passes completed before publication.
+- `@nossen/qflush`: 25 test files, 41 tests passing.
+- Dragon workspace: build, typecheck and audit pass with `0` vulnerabilities.
+- npmjs: `latest = 2.0.0` for all 20 packages.
+- npmjs fresh install: all 20 packages install together with audit `0`.
+- Google Artifact Registry: `latest = 2.0.0` and `stable = 2.0.0` for all 20
+  packages.
+- Google Artifact Registry fresh install: all 20 packages install together with
+  audit `0`.

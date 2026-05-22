@@ -234,6 +234,11 @@ const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
 const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.me/";
 const A11_PUBLIC_APP_URL = "https://a11.funesterie.me/";
 const VIVY_PUBLIC_APP_URL = "https://vivy.funesterie.me/";
+const FUNESTERIE_SUPPORT_EMAIL = "funeste38@gmail.com";
+const FUNESTERIE_WERO_DISPLAY = "+33 7 83 46 37 61";
+const FUNESTERIE_WERO_TEL = "+33783463761";
+const FUNESTERIE_PAYPAL_URL = "https://paypal.me/funeste38";
+const FUNESTERIE_STRIPE_SUPPORT_URL = "https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01";
 
 function getLocationSnapshot() {
   if (typeof window === "undefined") {
@@ -3642,6 +3647,12 @@ function FunesterieContactPage({ surfaceLinks }: { surfaceLinks: SurfaceLinks })
     ["Packages", "GitHub Packages / GHCR", "https://github.com/orgs/Funesterie/packages"],
     ["npm", "Packages @nossen", "https://www.npmjs.com/search?q=%40nossen"],
   ] as const;
+  const paymentMethods = [
+    ["Wero", FUNESTERIE_WERO_DISPLAY, `tel:${FUNESTERIE_WERO_TEL}`],
+    ["PayPal", "Montant libre", FUNESTERIE_PAYPAL_URL],
+    ["Carte", "Stripe support", FUNESTERIE_STRIPE_SUPPORT_URL],
+    ["Contact", "Don, facture ou sponsoring", surfaceLinks.contact],
+  ] as const;
 
   return (
     <main id="top" className="fun-home-shell fun-public-surface fun-contact-shell" aria-label="Contact Funesterie">
@@ -3659,8 +3670,27 @@ function FunesterieContactPage({ surfaceLinks }: { surfaceLinks: SurfaceLinks })
             et les demandes liées au projet NOSSEN.
           </p>
           <div className="fun-contact-actions">
-            <a href="mailto:funeste38@gmail.com">funeste38@gmail.com</a>
-            <a href="tel:+33783463761">+33 7 83 46 37 61</a>
+            <a href={`mailto:${FUNESTERIE_SUPPORT_EMAIL}`}>{FUNESTERIE_SUPPORT_EMAIL}</a>
+            <a href={`tel:${FUNESTERIE_WERO_TEL}`}>{FUNESTERIE_WERO_DISPLAY}</a>
+          </div>
+          <div className="fun-contact-donate" aria-label="Soutenir Funesterie">
+            <strong>Soutenir NOSSEN</strong>
+            <p>
+              Les packages restent publics. Le soutien est volontaire: choisis le montant qui te semble juste.
+            </p>
+            <div>
+              {paymentMethods.map(([label, text, href]) => (
+                <a
+                  key={label}
+                  href={href}
+                  target={href.startsWith("http") ? "_blank" : undefined}
+                  rel={href.startsWith("http") ? "noreferrer" : undefined}
+                >
+                  <strong>{label}</strong>
+                  <span>{text}</span>
+                </a>
+              ))}
+            </div>
           </div>
           <div className="fun-contact-accounts" aria-label="Comptes publics Funesterie">
             {publicAccounts.map(([label, text, href]) => (

@@ -40,10 +40,40 @@ Aujourd'hui, les packages prets sont:
 
 | Source | Source package | Package distribue | Tags |
 | --- | --- | --- | --- |
-| `a11/backend/libs` | `@nossen/qflush@1.0.2` | `@nossen/qflush@1.0.2` | `latest`, `stable` |
-| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@1.0.1` | `@nossen/dragon-contracts@1.0.1` | `latest`, `stable` |
-| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@1.0.1` | `@nossen/dragon-upstream@1.0.1` | `latest`, `stable` |
-| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@1.0.1` | `@nossen/dragon@1.0.1` | `latest`, `stable` |
+| `runtime/modules/allmight` | `@nossen/allmight@2.0.0` | `@nossen/allmight@2.0.0` | `latest`, `stable` |
+| `runtime/modules/bat/packages/bat` | `@nossen/bat@2.0.0` | `@nossen/bat@2.0.0` | `latest`, `stable` |
+| `runtime/modules/bat/packages/bat-system` | `@nossen/bat-system@2.0.0` | `@nossen/bat-system@2.0.0` | `latest`, `stable` |
+| `runtime/modules/beam` | `@nossen/beam@2.0.0` | `@nossen/beam@2.0.0` | `latest`, `stable` |
+| `runtime/modules/envaptex/envapt-superimg` | `@nossen/envapt-superimg@2.0.0` | `@nossen/envapt-superimg@2.0.0` | `latest`, `stable` |
+| `runtime/modules/envaptex` | `@nossen/envaptex@2.0.0` | `@nossen/envaptex@2.0.0` | `latest`, `stable` |
+| `runtime/modules/freeland` | `@nossen/freeland@2.0.0` | `@nossen/freeland@2.0.0` | `latest`, `stable` |
+| `runtime/modules/freeland-bros` | `@nossen/freeland-bros@2.0.0` | `@nossen/freeland-bros@2.0.0` | `latest`, `stable` |
+| `runtime/modules/katana` | `@nossen/katana@2.0.0` | `@nossen/katana@2.0.0` | `latest`, `stable` |
+| `runtime/modules/morphing` | `@nossen/morphing@2.0.0` | `@nossen/morphing@2.0.0` | `latest`, `stable` |
+| `runtime/modules/nezlephant/nezlephant/nezlephant` | `@nossen/nezlephant@2.0.0` | `@nossen/nezlephant@2.0.0` | `latest`, `stable` |
+| `a11/backend/libs` | `@nossen/qflush@2.0.0` | `@nossen/qflush@2.0.0` | `latest`, `stable` |
+| `runtime/modules/qflush/runner-package` | `@nossen/qflush-runner@2.0.0` | `@nossen/qflush-runner@2.0.0` | `latest`, `stable` |
+| `runtime/modules/rome` | `@nossen/rome@2.0.0` | `@nossen/rome@2.0.0` | `latest`, `stable` |
+| `runtime/modules/scentgate` | `@nossen/scentgate@2.0.0` | `@nossen/scentgate@2.0.0` | `latest`, `stable` |
+| `runtime/modules/scream` | `@nossen/scream@2.0.0` | `@nossen/scream@2.0.0` | `latest`, `stable` |
+| `runtime/modules/spyder/packages/spyder` | `@nossen/spyder@2.0.0` | `@nossen/spyder@2.0.0` | `latest`, `stable` |
+| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@2.0.0` | `@nossen/dragon-contracts@2.0.0` | `latest`, `stable` |
+| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@2.0.0` | `@nossen/dragon-upstream@2.0.0` | `latest`, `stable` |
+| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@2.0.0` | `@nossen/dragon@2.0.0` | `latest`, `stable` |
+
+Validation 2026-05-23:
+
+- `npm view` confirme `latest` et `stable` en `2.0.0` pour les 20 packages.
+- Une installation fraiche des 20 packages depuis Google Artifact Registry
+  passe avec `npm audit --audit-level=moderate` a `0` vulnerabilite.
+
+Si un dist-tag scoped doit etre repare directement avec `gcloud`, encoder le
+slash du package:
+
+```powershell
+gcloud artifacts tags create latest --package='@nossen%2Fenvaptex' --version=2.0.0
+gcloud artifacts tags create stable --package='@nossen%2Fenvaptex' --version=2.0.0
+```
 
 Pour installer:
 

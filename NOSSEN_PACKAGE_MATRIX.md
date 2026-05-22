@@ -1,32 +1,35 @@
 # NOSSEN Package Matrix
 
-Updated: 2026-05-18
+Updated: 2026-05-23
 
 This matrix is the public package map for the NOSSEN reset. It tracks the
 canonical npm scope, the source path used for packaging, and the release status
-that GitHub, npmjs, and JFrog should stay aligned to.
+that npmjs and Google Artifact Registry should stay aligned to.
 
 ## Packages
 
 | Package | Version | Source path | Status |
 | --- | ---: | --- | --- |
-| `@nossen/allmight` | `1.0.0` | `runtime/modules/allmight` | Published to npmjs and JFrog |
-| `@nossen/bat` | `1.0.0` | `runtime/modules/bat/packages/bat` | Published to npmjs and JFrog |
-| `@nossen/bat-system` | `1.0.0` | `runtime/modules/bat/packages/bat-system` | Published to npmjs and JFrog |
-| `@nossen/beam` | `1.0.0` | `runtime/modules/beam` | Published to npmjs and JFrog |
-| `@nossen/envapt-superimg` | `1.0.0` | `runtime/modules/envaptex/envapt-superimg` | Published to npmjs and JFrog |
-| `@nossen/envaptex` | `1.0.0` | `runtime/modules/envaptex` | Published to npmjs and JFrog |
-| `@nossen/freeland` | `1.0.0` | `runtime/modules/freeland` | Published to npmjs and JFrog |
-| `@nossen/freeland-bros` | `1.0.0` | `runtime/modules/freeland-bros` | Published to npmjs and JFrog |
-| `@nossen/katana` | `1.0.0` | `runtime/modules/katana` | Published to npmjs and JFrog |
-| `@nossen/morphing` | `1.0.0` | `runtime/modules/morphing` | Published to npmjs and JFrog |
-| `@nossen/nezlephant` | `1.0.0` | `runtime/modules/nezlephant/nezlephant/nezlephant` | Published to npmjs and JFrog |
-| `@nossen/qflush` | `1.0.1` | `a11/backend/libs` | Published to npmjs and JFrog |
-| `@nossen/qflush-runner` | `1.0.0` | `runtime/modules/qflush/runner-package` | Published to npmjs and JFrog |
-| `@nossen/rome` | `1.0.0` | `runtime/modules/rome` | Published to npmjs and JFrog |
-| `@nossen/scentgate` | `1.0.0` | `runtime/modules/scentgate` | Published to npmjs and JFrog |
-| `@nossen/scream` | `1.0.0` | `runtime/modules/scream` | Published to npmjs and JFrog |
-| `@nossen/spyder` | `1.0.0` | `runtime/modules/spyder/packages/spyder` | Published to npmjs and JFrog |
+| `@nossen/allmight` | `2.0.0` | `runtime/modules/allmight` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/bat` | `2.0.0` | `runtime/modules/bat/packages/bat` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/bat-system` | `2.0.0` | `runtime/modules/bat/packages/bat-system` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/beam` | `2.0.0` | `runtime/modules/beam` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/envapt-superimg` | `2.0.0` | `runtime/modules/envaptex/envapt-superimg` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/envaptex` | `2.0.0` | `runtime/modules/envaptex` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/freeland` | `2.0.0` | `runtime/modules/freeland` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/freeland-bros` | `2.0.0` | `runtime/modules/freeland-bros` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/katana` | `2.0.0` | `runtime/modules/katana` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/morphing` | `2.0.0` | `runtime/modules/morphing` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/nezlephant` | `2.0.0` | `runtime/modules/nezlephant/nezlephant/nezlephant` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/qflush` | `2.0.0` | `a11/backend/libs` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/qflush-runner` | `2.0.0` | `runtime/modules/qflush/runner-package` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/rome` | `2.0.0` | `runtime/modules/rome` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/scentgate` | `2.0.0` | `runtime/modules/scentgate` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/scream` | `2.0.0` | `runtime/modules/scream` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/spyder` | `2.0.0` | `runtime/modules/spyder/packages/spyder` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/dragon-contracts` | `2.0.0` | `a11/dragon/packages/contracts` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/dragon-upstream` | `2.0.0` | `a11/dragon/packages/upstream` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/dragon` | `2.0.0` | `a11/dragon/apps/dragon-daemon` | npmjs `latest`; Google `latest`, `stable` |
 
 ## Release Rules
 
@@ -41,6 +44,9 @@ that GitHub, npmjs, and JFrog should stay aligned to.
 
 - Run package-local build and test scripts before publishing.
 - Run `npm pack --dry-run` from each package source path.
-- Publish to npmjs first, then mirror the same tarball version to JFrog.
+- Publish to npmjs first, then mirror the same train to Google Artifact
+  Registry.
+- After publish, verify `latest` on npmjs, `latest` and `stable` on Google, then
+  run a fresh install check from each registry.
 - Update `docs/ops/NOSSEN_RELEASE_ALIGNMENT_2026-05-18.md` after every package
   train change.
