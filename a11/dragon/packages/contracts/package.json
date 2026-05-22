@@ -8,7 +8,7 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "description": "Shared Dragon contracts for the Funesterie control plane.",
+  "description": "Shared Dragon contracts for typed control-plane messages and events.",
   "author": "NOSSEN <contact@funesterie.me>",
   "exports": {
     ".": {
@@ -34,7 +34,7 @@
   "bugs": {
     "url": "https://github.com/Funesterie/funesterie/issues"
   },
-  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
   "engines": {
     "node": ">=20"
   }

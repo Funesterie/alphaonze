@@ -10,7 +10,7 @@ export async function runCompose(argv: string[]) {
   const sub = argv[0];
   const compose = readCompose();
   if (!compose) {
-    logger.error('No funesterie.yml or funesterie.fcl found');
+    logger.error('No qflush.yml, qflush.fcl, funesterie.yml, or funesterie.fcl found');
     return;
   }
   if (sub === 'up') {

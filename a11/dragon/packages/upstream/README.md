@@ -1,13 +1,14 @@
 # @nossen/dragon-upstream
 
-Dragon upstream helpers for routing external services into the NOSSEN control plane.
+Dragon upstream helpers for routing external services into a control plane.
 
-Use this package when a service needs a clean bridge into Dragon without duplicating protocol glue.
+Use this package when a service needs a clean bridge into Dragon without
+duplicating protocol glue.
 
 ## Support and Donations
 
-This package is part of the Funesterie/NOSSEN project. If it helps your
-workflow, support infrastructure and maintenance through:
+This package is maintained in public. If it helps your workflow, support
+infrastructure and maintenance through:
 
 https://funesterie.me/contact/
 

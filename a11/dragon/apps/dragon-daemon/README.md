@@ -1,11 +1,12 @@
 # @nossen/dragon
 
-Dragon is the NOSSEN control-plane daemon for local agents, semantic tools, and coordinated Funesterie services.
+Dragon is a control-plane daemon for local agents, semantic tools, and
+coordinated services.
 
 ## Support and Donations
 
-This package is part of the Funesterie/NOSSEN project. If it helps your
-workflow, support infrastructure and maintenance through:
+This package is maintained in public. If it helps your workflow, support
+infrastructure and maintenance through:
 
 https://funesterie.me/contact/
 
