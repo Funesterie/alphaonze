@@ -85,6 +85,27 @@ Ce flux:
 - bloque clairement les branches locales qui ont diverge de la branche de deploy
 - ignore les fichiers runtime locaux connus, comme les memos techniques
 
+## Paquets et registres
+
+Le registre principal pour sortir JFrog du chemin critique est Google Artifact
+Registry:
+
+```powershell
+npm run google:artifact:repos
+npm run google:npmrc
+npm run google:packages:dry
+npm run google:packages:publish
+```
+
+Etat actuel des versions:
+
+- source locale: `@nossen/qflush@1.0.1`
+- miroir distribue: `@funesterie/qflush@1.0.2`
+- tags: `latest`, `stable`
+
+La procedure vit dans `docs/GOOGLE_ARTIFACT_REGISTRY.md`. Le fallback GitHub
+Packages/GHCR reste documente dans `docs/GITHUB_PACKAGES_AND_GHCR.md`.
+
 ### Actions disponibles
 
 - `status`
