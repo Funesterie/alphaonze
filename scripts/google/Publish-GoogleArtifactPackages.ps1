@@ -7,8 +7,8 @@ param(
   [string]$ProjectId = $(if ($env:GOOGLE_CLOUD_PROJECT) { $env:GOOGLE_CLOUD_PROJECT } else { "alphaonze" }),
   [string]$Location = $(if ($env:GOOGLE_CLOUD_LOCATION) { $env:GOOGLE_CLOUD_LOCATION } else { "europe-west4" }),
   [string]$Repository = "funesterie-npm",
-  [string]$Scope = "@funesterie",
-  [string]$ManifestPath = "scripts/github/github-packages.manifest.json",
+  [string]$Scope = "@nossen",
+  [string]$ManifestPath = "scripts/google/google-artifact-packages.manifest.json",
   [string]$NpmrcPath = ".npmrc.google",
   [string]$TokenEnv = "GOOGLE_ARTIFACT_ACCESS_TOKEN"
 )
