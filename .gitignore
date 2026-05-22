@@ -176,6 +176,10 @@ Claude Setup.exe
 
 # Secrets supplémentaires
 /secrets/
+/rubixgate-vault/
+/scripts/rubixgate/**/*.manifest.json
+/scripts/rubixgate/**/*.vault.json
+/scripts/rubixgate/**/images/
 ApiKeyUsageReport.csv
 credentials.routes.js
 credentials.store.js
