@@ -42,8 +42,11 @@ Aujourd'hui, le miroir pret est:
 
 Pour installer:
 
-```bash
-npm install @funesterie/qflush@stable --registry https://europe-west4-npm.pkg.dev/alphaonze/funesterie-npm/
+```powershell
+npm run google:npmrc
+$env:GOOGLE_ARTIFACT_ACCESS_TOKEN = (gcloud auth print-access-token).Trim()
+npm install @funesterie/qflush@stable --userconfig .\.npmrc.google
+Remove-Item Env:\GOOGLE_ARTIFACT_ACCESS_TOKEN
 ```
 
 Quand le contenu du paquet change, augmenter la version publiee dans
