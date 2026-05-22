@@ -103,6 +103,15 @@ Etat actuel des versions:
 - miroir distribue: `@funesterie/qflush@1.0.2`
 - tags: `latest`, `stable`
 
+Pour installer depuis une machine admin, rafraichir d'abord un token Google
+court dans le shell courant:
+
+```powershell
+$env:GOOGLE_ARTIFACT_ACCESS_TOKEN = (gcloud auth print-access-token).Trim()
+npm install @funesterie/qflush@stable --userconfig .\.npmrc.google
+Remove-Item Env:\GOOGLE_ARTIFACT_ACCESS_TOKEN
+```
+
 La procedure vit dans `docs/GOOGLE_ARTIFACT_REGISTRY.md`. Le fallback GitHub
 Packages/GHCR reste documente dans `docs/GITHUB_PACKAGES_AND_GHCR.md`.
 
