@@ -154,6 +154,38 @@ function packagePathFromName(packageName = '') {
   return parts.length ? path.join(...parts) : '';
 }
 
+function nodePathRoots() {
+  return String(process.env.NODE_PATH || '')
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function findPackageRoot(packageName = '') {
+  const packagePath = packagePathFromName(packageName);
+  if (!packagePath) return '';
+
+  const directRoot = findFirstExisting([
+    path.join(SERVER_ROOT, 'node_modules', packagePath),
+    ...nodePathRoots().map((root) => path.join(root, packagePath)),
+  ]);
+  if (directRoot) return directRoot;
+
+  try {
+    let current = path.dirname(require.resolve(packageName, {
+      paths: [SERVER_ROOT, ...nodePathRoots()],
+    }));
+    while (current && current !== path.dirname(current)) {
+      if (pathExists(path.join(current, 'package.json'))) return current;
+      current = path.dirname(current);
+    }
+  } catch {
+    // Package is optional here: a runtime mirror can still satisfy the descriptor.
+  }
+
+  return '';
+}
+
 function pickWorkspaceRoot() {
   const configured = String(process.env.A11_WORKSPACE_ROOT || process.env.WORKSPACE_ROOT || '').trim();
   const candidates = uniquePaths([
@@ -213,12 +245,11 @@ function resolveFunesterieModuleDescriptor(moduleSpec = {}, context = {}) {
   const sourceRoot = findFirstExisting(
     (context.moduleSourceRoots || []).map((root) => path.join(root, moduleSpec.sourceDir || id))
   );
-  const packageRoot = packageName
-    ? path.join(SERVER_ROOT, 'node_modules', packagePathFromName(packageName))
-    : '';
+  const packageRoot = packageName ? findPackageRoot(packageName) : '';
   const packageJsonPath = packageRoot ? path.join(packageRoot, 'package.json') : '';
   const packageJson = readJsonOptional(packageJsonPath);
-  const sourcePackageJson = readJsonOptional(path.join(sourceRoot, 'package.json'));
+  const sourcePackageJsonPath = sourceRoot ? path.join(sourceRoot, 'package.json') : '';
+  const sourcePackageJson = readJsonOptional(sourcePackageJsonPath);
 
   return {
     id,
@@ -233,7 +264,7 @@ function resolveFunesterieModuleDescriptor(moduleSpec = {}, context = {}) {
     entrypoints: {
       packageRoot: packageJson ? packageRoot : null,
       sourceRoot: sourceRoot || null,
-      packageJson: packageJson ? packageJsonPath : (sourcePackageJson ? path.join(sourceRoot, 'package.json') : null),
+      packageJson: packageJson ? packageJsonPath : (sourcePackageJson ? sourcePackageJsonPath : null),
       main: packageJson?.main ? path.join(packageRoot, packageJson.main) : null,
       bin: packageJson?.bin || null,
     },
@@ -246,8 +277,8 @@ function resolveFunesterieModuleDescriptor(moduleSpec = {}, context = {}) {
 }
 
 function resolveRomeDescriptor(runtimeRoots) {
-  const packageRoot = path.join(SERVER_ROOT, 'node_modules', '@nossen', 'rome');
-  const packageJsonPath = path.join(packageRoot, 'package.json');
+  const packageRoot = findPackageRoot('@nossen/rome');
+  const packageJsonPath = packageRoot ? path.join(packageRoot, 'package.json') : '';
   const packageJson = readJsonOptional(packageJsonPath);
   const sourceMirror = findFirstExisting(runtimeRoots.map((root) => path.join(root, 'modules', 'rome')));
 
@@ -260,8 +291,8 @@ function resolveRomeDescriptor(runtimeRoots) {
     source: packageJson ? 'npm:@nossen/rome' : (sourceMirror ? 'runtime-module-mirror' : 'missing'),
     version: String(packageJson?.version || '').trim() || null,
     entrypoints: {
-      cli: pathExists(path.join(packageRoot, 'dist', 'cli.js')) ? path.join(packageRoot, 'dist', 'cli.js') : null,
-      index: pathExists(path.join(packageRoot, 'dist', 'index.js')) ? path.join(packageRoot, 'dist', 'index.js') : null,
+      cli: packageRoot && pathExists(path.join(packageRoot, 'dist', 'cli.js')) ? path.join(packageRoot, 'dist', 'cli.js') : null,
+      index: packageRoot && pathExists(path.join(packageRoot, 'dist', 'index.js')) ? path.join(packageRoot, 'dist', 'index.js') : null,
       mirror: sourceMirror || null,
     },
     capabilities: ['workspace-paths', 'route-links', 'runtime-navigation', 'agent-context'],
