@@ -47,3 +47,14 @@ npm run publish:dragon
 
 `D:\funesterie\a11\dragon` is the canonical source for the Dragon workspace.
 The GitHub repository for this workspace is `https://github.com/Funesterie/dragon`.
+
+<!-- funesterie-donations:start -->
+## Support Funesterie / NOSSEN
+
+Support is voluntary, but it keeps the public modules, registry, compute, and maintenance work alive.
+
+- Wero: `+33 7 83 46 37 61`
+- PayPal: https://paypal.me/funeste38
+- Stripe/card checkout: https://funesterie.me/subscription
+- Custom support/contact: https://funesterie.me/contact/
+<!-- funesterie-donations:end -->

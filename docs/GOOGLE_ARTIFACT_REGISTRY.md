@@ -66,6 +66,16 @@ Avant de pousser localement:
 gcloud auth configure-docker europe-west4-docker.pkg.dev
 ```
 
+Images poussees et verifiees le 2026-05-22:
+
+```text
+europe-west4-docker.pkg.dev/alphaonze/funesterie-docker/a11-backend:codex-20260522-secfix
+sha256:86524201d786d68382e0fd51f8395f2057ad8ca16881624268a5de89c48b518a
+
+europe-west4-docker.pkg.dev/alphaonze/funesterie-docker/a11-voice-module:secfix-20260522
+sha256:9d99d92e620c147c9319797540845f1c81cf4f8b811c778e01a0177bb73b82cc
+```
+
 ## CI future
 
 Le flux local est pret. Pour publier depuis GitHub Actions sans secret long, le

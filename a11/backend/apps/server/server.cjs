@@ -180,6 +180,7 @@ const fs = require('node:fs');
 const dotenv = require('dotenv');
 const { buildRuntimeConfig, getPublicRuntimeStatus } = require('./lib/runtime-config.cjs');
 const { getJanusVisionStatus } = require('./lib/janus-vision-runtime.cjs');
+const { ensureOAuthTokenTable } = require('./src/auth/oauth-token-store.cjs');
 
 // A11Host (VSIX + headless)
 const {
@@ -1470,6 +1471,7 @@ if (db) {
       try {
         await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT');
         await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMP');
+        await ensureOAuthTokenTable(db);
           await db.query(`
             CREATE TABLE IF NOT EXISTS messages (
               id SERIAL PRIMARY KEY,
@@ -1654,6 +1656,7 @@ if (db) {
           console.log('[AUTH] Admin bootstrap skipped (DEFAULT_ADMIN_PASSWORD not set)');
         }
         console.log('[DB] ✅ users.reset_token columns vérifiées');
+        console.log('[DB] ✅ oauth connection token vault vérifié');
         console.log('[DB] ✅ chat memory tables vérifiées');
         console.log('[DB] ✅ structured memory tables vérifiées');
       } catch (schemaErr) {

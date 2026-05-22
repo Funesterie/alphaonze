@@ -1,8 +1,16 @@
-# @nossen/dragon-contracts
+# @nossen/dragon-web
 
-Shared Dragon contracts for the NOSSEN control plane.
+Dragon web cockpit for runtime supervision and orchestration.
 
-Use this package for typed messages, events, and interfaces that need to stay stable between Dragon services.
+## Package Details
+
+| Field | Value |
+| --- | --- |
+| Package | `@nossen/dragon-web` |
+| Version | `0.0.1` |
+| Registry scope | `@nossen` |## License
+
+See the package license and repository license files for terms.
 
 <!-- funesterie-donations:start -->
 ## Support Funesterie / NOSSEN

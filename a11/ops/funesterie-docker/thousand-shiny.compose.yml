@@ -1,0 +1,90 @@
+name: thousand-shiny
+
+services:
+  a11-backend:
+    profiles: ["core"]
+    build:
+      context: ../../backend/apps/server
+    image: a11-backend:local
+    env_file:
+      - ../../backend/apps/server/.env.local
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      REDIS_URL: redis://redis:6379
+      SERVE_STATIC: "true"
+      A11_WEB_DIST_DIR: /web/dist
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+      - a11-voice
+      - pgvector
+    volumes:
+      - a11_runtime:/app/runtime
+      - a11_logs:/app/logs
+      - ../../frontend/apps/web/dist:/web/dist:ro
+
+  a11-voice:
+    profiles: ["core"]
+    build:
+      context: ../../backend/apps/voice-module
+    image: a11-voice-module:local
+    expose:
+      - "5002"
+    volumes:
+      - a11_voice_out:/app/out
+
+  redis:
+    profiles: ["optional"]
+    image: docker.io/library/redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  pgvector:
+    profiles: ["memory"]
+    image: docker.io/pgvector/pgvector:pg16-trixie
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-a11_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-a11}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+    ports:
+      - "127.0.0.1:5437:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      - ../../backend/apps/memory-base/sql:/docker-entrypoint-initdb.d:ro
+
+  neo4j-local-mirror:
+    profiles: ["memory"]
+    image: docker.io/library/neo4j:2026.04
+    environment:
+      NEO4J_AUTH: ${NEO4J_LOCAL_AUTH:-neo4j/change-me-local-only}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - "127.0.0.1:17474:7474"
+      - "127.0.0.1:17687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+  ollama:
+    profiles: ["llm"]
+    image: docker.io/ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  a11_runtime:
+  a11_logs:
+  a11_voice_out:
+  redis_data:
+  pgvector_data:
+  neo4j_data:
+  neo4j_logs:
+  ollama_data:

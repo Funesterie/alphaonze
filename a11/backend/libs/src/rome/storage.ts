@@ -30,7 +30,10 @@ try {
 } catch (e) {
   // fallback to JSON
   useSqlite = false;
-  console.warn('[storage] sqlite init failed', String(e));
+  const err = e as { code?: string };
+  if (err.code !== 'MODULE_NOT_FOUND' || process.env.QFLUSH_STORAGE_DEBUG === '1') {
+    console.warn('[storage] sqlite init failed', String(e));
+  }
 }
 
 function writeJsonFile(obj: any) {

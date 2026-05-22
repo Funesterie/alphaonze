@@ -1,8 +1,16 @@
-# @nossen/dragon-contracts
+# @nossen/dragon-api
 
-Shared Dragon contracts for the NOSSEN control plane.
+Dragon API gateway and live cockpit backend.
 
-Use this package for typed messages, events, and interfaces that need to stay stable between Dragon services.
+## Package Details
+
+| Field | Value |
+| --- | --- |
+| Package | `@nossen/dragon-api` |
+| Version | `0.0.1` |
+| Registry scope | `@nossen` |## License
+
+See the package license and repository license files for terms.
 
 <!-- funesterie-donations:start -->
 ## Support Funesterie / NOSSEN

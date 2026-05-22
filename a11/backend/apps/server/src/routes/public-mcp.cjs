@@ -64,6 +64,18 @@ const LOCAL_TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
   },
   {
+    name: 'a11_agent_context',
+    description: 'Retourne un contexte public utile aux agents: domaines, dons, MCP, limites et ressources sans secret.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+  },
+  {
+    name: 'a11_neo4j_public_contract',
+    description: 'Retourne le contrat Neo4j public/prive pour agents: labels, champs de visibilite et regles de sync.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+  },
+  {
     name: 'a11_runtime_hooks_status',
     description: 'Retourne le statut du hook Neo4j semantique A11 sans exposer de secret.',
     inputSchema: { type: 'object', properties: {}, required: [] },
@@ -292,6 +304,24 @@ function filterRelayTools(tools, relayConfig) {
   return filtered.map(annotatePublicMcpTool);
 }
 
+function isAnonymousMcpAuth(auth = {}) {
+  return !auth || auth.mode === 'anonymous' || !String(auth.mode || '').trim();
+}
+
+function isRelayToolAllowedForAuth(toolName, auth = {}, env = process.env) {
+  const normalized = String(toolName || '').trim();
+  if (!normalized) return false;
+  if (normalized === 'neo4j_read_query' && isAnonymousMcpAuth(auth)) {
+    return envBool('A11_PUBLIC_NEO4J_READ_QUERY_ANON', false, env);
+  }
+  return true;
+}
+
+function filterRelayToolsForAuth(tools, relayConfig, auth = {}) {
+  return filterRelayTools(tools, relayConfig)
+    .filter((tool) => isRelayToolAllowedForAuth(tool?.name, auth));
+}
+
 function inferPublicMcpAnnotations(name = '') {
   const normalized = String(name || '').trim().toLowerCase();
   const readOnlyPrefixes = [
@@ -299,6 +329,8 @@ function inferPublicMcpAnnotations(name = '') {
     'a11_llm_stats',
     'a11_mcp_public_status',
     'a11_mcp_relay_status',
+    'a11_agent_context',
+    'a11_neo4j_public_contract',
     'a11_runtime_hooks_status',
     'a11_media_roulette',
     'a11_status',
@@ -374,6 +406,7 @@ function annotatePublicMcpTool(tool = {}) {
 function buildManifest(req) {
   const baseUrl = getPublicBaseUrl(req);
   const relayConfig = getRelayConfig();
+  const auth = req.publicMcpAuth || {};
   return {
     ok: true,
     kind: 'a11_public_mcp',
@@ -399,8 +432,23 @@ function buildManifest(req) {
     relay: {
       enabled: !isSelfRelay(relayConfig.url, baseUrl),
       upstream: publicMcpConfig(relayConfig),
-      defaultAllowlist: relayConfig.allowAllTools ? ['*'] : [...relayConfig.allowedTools].sort(),
+      defaultAllowlist: relayConfig.allowAllTools
+        ? ['*']
+        : [...relayConfig.allowedTools].filter((toolName) => isRelayToolAllowedForAuth(toolName, auth)).sort(),
       excludedByDefault: ['neo4j_write_query', 'read_backend_logs', 'read_qflush_logs'],
+    },
+    neo4j: {
+      topology: {
+        privateLocal: 'bolt://127.0.0.1:7687 / local dev-backup-cache',
+        sharedAura: 'neo4j+s://aa4680d2.databases.neo4j.io / shared A11-K44-NOSSEN-Arena',
+        publicMcp: `${baseUrl}/mcp`,
+      },
+      publicReadQueryAnonymous: envBool('A11_PUBLIC_NEO4J_READ_QUERY_ANON', false),
+      publicReadQueryRule: envBool('A11_PUBLIC_NEO4J_READ_QUERY_ANON', false)
+        ? 'anonymous_read_enabled_for_public_graph_only'
+        : 'oauth_or_static_token_required_for_neo4j_read_query',
+      forbidden: ['neo4j_write_query', 'secrets', 'tokens', 'personal_files', 'private_config'],
+      requiredPublicFields: ['visibility', 'owner', 'source', 'canExpose', 'privacy', 'scope'],
     },
     auth: {
       mode: 'normal_a11_http_guards_plus_mcp_relay_allowlist',
@@ -429,7 +477,7 @@ async function fetchRelayTools(req) {
   }
   try {
     const result = await mcpJsonRpc('tools/list', {}, { config: relayConfig });
-    const tools = filterRelayTools(result?.result?.tools || [], relayConfig);
+    const tools = filterRelayToolsForAuth(result?.result?.tools || [], relayConfig, req.publicMcpAuth);
     return { ok: true, tools, upstream: publicMcpConfig(relayConfig) };
   } catch (error_) {
     return {
@@ -554,6 +602,90 @@ async function callLocalTool(req, toolName, args = {}) {
     };
   }
 
+  if (toolName === 'a11_agent_context') {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ok: true,
+          name: 'A11 / Funesterie public agent context',
+          domains: {
+            primary: 'https://a11.funesterie.me',
+            publicMcp: `${getPublicBaseUrl(req)}/mcp`,
+            upstreamSharedMcp: getRelayConfig().url,
+          },
+          donations: {
+            wero: '+33 7 83 46 37 61',
+            paypal: 'https://paypal.me/funeste38',
+            stripe: 'https://funesterie.me/subscription',
+          },
+          agentRules: [
+            'Never request or expose secrets, OAuth provider tokens, refresh tokens or private files.',
+            'Use MCP tools before guessing current A11/Funesterie topology.',
+            'Use Neo4j public contract fields before treating any graph node as public.',
+            'Prefer read-only/status tools unless the user explicitly asks for a write action.',
+          ],
+          usefulTools: [
+            'a11_mcp_public_status',
+            'a11_mcp_relay_status',
+            'a11_neo4j_public_contract',
+            'a11_runtime_hooks_status',
+            'neo4j_status',
+            'neo4j_read_query',
+          ],
+          secretsExposed: false,
+        }, null, 2),
+      }],
+    };
+  }
+
+  if (toolName === 'a11_neo4j_public_contract') {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ok: true,
+          topology: {
+            localPrivate: {
+              role: 'private_dev_backup_cache',
+              uriHint: 'bolt://127.0.0.1:7687',
+              access: 'local OAuth/admin only',
+            },
+            cloudShared: {
+              role: 'shared_public_candidate_graph',
+              uriHint: 'neo4j+s://aa4680d2.databases.neo4j.io',
+              access: 'MCP relay with scopes, no direct Aura credentials for public agents',
+            },
+            publicMcp: {
+              url: `${getPublicBaseUrl(req)}/mcp`,
+              auth: envBool('A11_PUBLIC_MCP_AUTH_REQUIRED', false) ? 'required' : 'optional',
+              anonymousNeo4jReadQuery: envBool('A11_PUBLIC_NEO4J_READ_QUERY_ANON', false),
+            },
+          },
+          publicNodeContract: {
+            requiredFields: {
+              visibility: ['public', 'shared', 'private'],
+              owner: 'human/team/agent/system id',
+              source: 'source system or import job',
+              canExpose: 'boolean true required for public publication',
+              privacy: ['public', 'internal', 'private', 'secret'],
+              scope: 'public-ai | a11-shared | local-private | personal',
+            },
+            publicPredicate: "visibility='public' AND canExpose=true AND privacy='public'",
+            neverStoreInNeo4j: ['OAuth access tokens', 'refresh tokens', 'client secrets', 'passwords', 'private files', 'raw personal config'],
+          },
+          currentGuard: {
+            neo4jWriteQuery: 'blocked from public relay allowlist',
+            neo4jReadQueryAnonymous: envBool('A11_PUBLIC_NEO4J_READ_QUERY_ANON', false)
+              ? 'enabled only because env opted in'
+              : 'blocked unless OAuth/static token is provided',
+          },
+          secretsExposed: false,
+        }, null, 2),
+      }],
+    };
+  }
+
   if (toolName === 'a11_runtime_hooks_status') {
     const manifest = readJsonSafe(RUNTIME_HOOKS_PATH);
     const moduleIndex = readJsonSafe(RUNTIME_MODULE_INDEX_PATH);
@@ -625,6 +757,11 @@ async function relayToolCall(req, toolName, args = {}) {
   if (!relayConfig.allowAllTools && !relayConfig.allowedTools.has(toolName)) {
     const error = new Error(`MCP relay tool "${toolName}" is not allowed by A11_PUBLIC_MCP_RELAY_ALLOWLIST.`);
     error.code = -32602;
+    throw error;
+  }
+  if (!isRelayToolAllowedForAuth(toolName, req.publicMcpAuth)) {
+    const error = new Error(`MCP relay tool "${toolName}" requires OAuth/static auth on this public endpoint.`);
+    error.code = -32001;
     throw error;
   }
   const result = await mcpJsonRpc('tools/call', {

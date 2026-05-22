@@ -18,6 +18,10 @@ const {
   getUserSessionGeneration,
   validateSessionGeneration,
 } = require('../auth/session-state.cjs');
+const {
+  listOAuthConnections,
+  upsertOAuthConnectionTokens,
+} = require('../auth/oauth-token-store.cjs');
 
 const A11_SESSION_COOKIE = 'a11_session';
 const GOOGLE_OAUTH_STATE_COOKIE = 'a11_google_oauth_state';
@@ -691,6 +695,19 @@ function createAuthRouter({
     throw new Error('microsoft_user_create_failed');
   }
 
+  async function storeProviderTokens(provider, user, profile, tokens) {
+    if (!db) return { ok: false, skipped: true, reason: 'db_unavailable' };
+    return upsertOAuthConnectionTokens({
+      db,
+      provider,
+      user,
+      profile,
+      tokens,
+      encryptionSecret: jwtSecret,
+      logger: console,
+    });
+  }
+
   router.post('/api/auth/register', express.json(), async (req, res) => {
     const { username, email, password } = req.body || {};
     const normalizedUsername = String(username || '').trim();
@@ -1054,6 +1071,7 @@ function createAuthRouter({
             provider: 'google',
           };
 
+      await storeProviderTokens('google', user, profile, tokens);
       const sessionToken = issueSessionCookie(req, res, user, { provider: 'google' });
       res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Google OAuth login:', email);
@@ -1191,6 +1209,7 @@ function createAuthRouter({
             provider: 'microsoft',
           };
 
+      await storeProviderTokens('microsoft', user, profile, tokens);
       issueSessionCookie(req, res, user, { provider: 'microsoft' });
       res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Microsoft OAuth login:', email);
@@ -1236,6 +1255,43 @@ function createAuthRouter({
         authenticated: false,
         error: 'A11_JWT_Invalid',
         message: error?.message || 'Session invalide',
+      });
+    }
+  });
+
+  router.get('/api/auth/connections', async (req, res) => {
+    const token = extractRequestAuthToken(req);
+    if (!token) {
+      return res.status(401).json({
+        ok: false,
+        error: 'A11_JWT_Missing',
+        connections: [],
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(token, jwtSecret);
+      const sessionValidation = validateSessionGeneration(decoded);
+      if (!sessionValidation.ok) {
+        clearSessionCookies(req, res);
+        return res.status(401).json({
+          ok: false,
+          error: 'A11_JWT_Revoked',
+          connections: [],
+        });
+      }
+
+      const connections = await listOAuthConnections(db, decoded.id);
+      return res.json({
+        ok: true,
+        connections,
+        secretsExposed: false,
+      });
+    } catch (error) {
+      return res.status(401).json({
+        ok: false,
+        error: 'A11_JWT_Invalid',
+        connections: [],
       });
     }
   });

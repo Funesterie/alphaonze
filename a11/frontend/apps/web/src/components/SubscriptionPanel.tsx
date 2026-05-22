@@ -39,9 +39,9 @@ const BLUEPRINT_OFFER = {
 };
 
 const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
-const WERO_PHONE = String(import.meta.env.VITE_A11_WERO_PHONE || '').trim();
+const WERO_PHONE = String(import.meta.env.VITE_A11_WERO_PHONE || '+33783463761').trim();
 const RIB_DOCUMENT_URL = String(import.meta.env.VITE_A11_RIB_URL || '').trim();
-const PAYPAL_URL = String(import.meta.env.VITE_A11_PAYPAL_URL || '').trim();
+const PAYPAL_URL = String(import.meta.env.VITE_A11_PAYPAL_URL || 'https://paypal.me/funeste38').trim();
 const PAYPAL_EMAIL = String(import.meta.env.VITE_A11_PAYPAL_EMAIL || '').trim();
 
 function buildBlueprintContactLink() {

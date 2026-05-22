@@ -2,38 +2,41 @@
 # A11 Backend - Dockerfile pour Podman/Docker
 # Piper official binaries require glibc. Alpine/musl can start the binary but
 # ONNX Runtime crashes during synthesis, so production uses Debian slim.
-FROM node:20-bookworm-slim
+FROM node:24-trixie-slim AS npm-deps
 
-# Métadonnées
-LABEL maintainer="NOSSEN <contact@funesterie.me>"
-LABEL description="A11 Backend - Assistant IA avec Stripe"
-LABEL version="1.0.0"
-
-# Variables d'environnement par défaut
 ENV NODE_ENV=production
-ENV PORT=3000
-ENV HOST_SERVER=0.0.0.0
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Installer les dépendances système nécessaires
+WORKDIR /app
+
+# Native npm modules may need a compiler during install. Keep build tools out
+# of the final runtime image.
 RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      g++ \
+      make \
+      python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+
+RUN npm ci --include=dev \
+    && npm prune --omit=dev \
+    && npm cache clean --force
+
+FROM node:24-trixie-slim AS piper-assets
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
-      espeak-ng \
-      ffmpeg \
-      git \
-      g++ \
-      make \
-      postgresql-client \
-      python3 \
-      python3-pip \
-      python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Créer le répertoire de l'application
-WORKDIR /app
-
-# Piper TTS local fallback.
 ARG PIPER_RELEASE=2023.11.14-2
 ARG PIPER_VOICE_VERSION=v1.0.0
 RUN mkdir -p /app/apps/tts/piper \
@@ -76,23 +79,41 @@ RUN mkdir -p /app/apps/tts/piper \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json" \
     && rm -rf /tmp/piper /tmp/piper_linux_x86_64.tar.gz
 
-# Copier les fichiers package
-COPY package*.json ./
+FROM node:24-trixie-slim
 
-# Installer les dependances avec les outils de patch, puis retirer le dev-only.
-# Si un secret BuildKit npm_token est fourni, il sert uniquement pour GitHub Packages
-# et n'est pas persiste dans l'image.
-RUN --mount=type=secret,id=npm_token,required=false set -eu; \
-    if [ -s /run/secrets/npm_token ]; then \
-      npm config set @funesterie:registry "https://npm.pkg.github.com"; \
-      npm config set "//npm.pkg.github.com/:_authToken" "$(cat /run/secrets/npm_token)"; \
-    fi; \
-    npm ci --include=dev; \
-    npm prune --omit=dev; \
-    npm config delete @funesterie:registry || true; \
-    npm config delete "//npm.pkg.github.com/:_authToken" || true
+# Métadonnées
+LABEL maintainer="NOSSEN <contact@funesterie.me>"
+LABEL description="A11 Backend - Assistant IA avec Stripe"
+LABEL version="1.0.0"
+
+# Variables d'environnement par défaut
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST_SERVER=0.0.0.0
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Installer les dépendances système nécessaires
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      espeak-ng \
+      ffmpeg \
+      libatomic1 \
+      postgresql-client \
+      python3 \
+      python3-venv \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Créer le répertoire de l'application
+WORKDIR /app
 
 # Copier le code source
+COPY package*.json ./
+COPY --from=npm-deps /app/node_modules ./node_modules
+COPY --from=piper-assets /app/apps/tts /app/apps/tts
 COPY . .
 
 # Optional Pink Ward / Janus runtime for GPU-enabled production images.
@@ -122,7 +143,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD node -e "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 # Démarrer l'application
 CMD ["node", "server.cjs"]

@@ -1,8 +1,4 @@
-# @nossen/dragon-contracts
-
-Shared Dragon contracts for the NOSSEN control plane.
-
-Use this package for typed messages, events, and interfaces that need to stay stable between Dragon services.
+# a11-server
 
 <!-- funesterie-donations:start -->
 ## Support Funesterie / NOSSEN

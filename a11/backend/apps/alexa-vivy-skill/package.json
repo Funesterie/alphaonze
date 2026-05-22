@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "funding": {
     "type": "custom",
-    "url": "https://funesterie.me/contact/"
+    "url": "https://paypal.me/funeste38"
   },
   "private": true,
   "description": "Alexa Skill bridge for Vivy singing through A11/Kaen44 audio services.",
@@ -15,5 +15,12 @@
   "dependencies": {
     "ask-sdk-core": "^2.14.0"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "donations": {
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
+  }
 }

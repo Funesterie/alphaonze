@@ -1,27 +1,24 @@
 {
   "name": "@nossen/dragon",
   "version": "1.0.0",
+  "description": "Dragon control-plane daemon for the Funesterie ecosystem.",
   "funding": {
     "type": "custom",
-    "url": "https://funesterie.me/contact/"
+    "url": "https://paypal.me/funeste38"
+  },
+  "donations": {
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
   },
   "type": "module",
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
-  "description": "Dragon control-plane daemon for the Funesterie ecosystem.",
   "files": [
     "dist"
   ],
-  "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Funesterie/funesterie.git"
@@ -33,6 +30,13 @@
   "engines": {
     "node": ">=20"
   },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
   "dependencies": {
     "express": "^5.2.1",
     "@nossen/dragon-contracts": "^1.0.0",
@@ -40,5 +44,8 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

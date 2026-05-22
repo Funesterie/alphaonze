@@ -3,20 +3,18 @@
   "version": "1.0.1",
   "private": false,
   "description": "QFlush – Funesterie Command Line & Logic System (ROME, SPYDER, CORTEX, NPZ, PICCOLO, SUPERVISOR).",
+  "author": "NOSSEN <contact@funesterie.me>",
   "license": "SEE LICENSE IN LICENSE",
   "funding": {
     "type": "custom",
-    "url": "https://funesterie.me/contact/"
+    "url": "https://paypal.me/funeste38"
   },
-  "author": "NOSSEN <contact@funesterie.me>",
-  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/backend/libs#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Funesterie/funesterie.git",
-    "directory": "a11/backend/libs"
-  },
-  "bugs": {
-    "url": "https://github.com/Funesterie/funesterie/issues"
+  "donations": {
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
   },
   "type": "commonjs",
   "main": "dist/index.js",
@@ -42,16 +40,15 @@
     "installers/**/*",
     "examples/**/*"
   ],
-  "scripts": {
-    "build": "tsc -p .",
-    "prestart": "node ../apps/tts/download-onnx.js",
-    "build:clean": "rimraf dist && tsc -p .",
-    "test": "vitest run --config vitest.config.js",
-    "test:watch": "vitest --config vitest.config.js",
-    "lint": "eslint src --ext .ts,.tsx",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm run build && npm test"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "a11/backend/libs"
   },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/backend/libs#readme",
   "keywords": [
     "qflush",
     "funesterie",
@@ -66,6 +63,16 @@
   ],
   "engines": {
     "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "prestart": "node ../apps/tts/download-onnx.js",
+    "build:clean": "rimraf dist && tsc -p .",
+    "test": "vitest run --config vitest.config.js",
+    "test:watch": "vitest --config vitest.config.js",
+    "lint": "eslint src --ext .ts,.tsx",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@nossen/bat": "^1.0.0",

@@ -198,3 +198,38 @@ test('public MCP accepts OAuth bearer JWT and rejects invalid tokens when auth i
     );
   });
 });
+
+test('public MCP keeps raw Neo4j read queries behind OAuth on anonymous endpoints', async () => {
+  await withEnv({
+    A11_PUBLIC_MCP_AUTH_REQUIRED: 'false',
+    A11_PUBLIC_NEO4J_READ_QUERY_ANON: undefined,
+    A11_PUBLIC_MCP_TOKEN: undefined,
+    A11_MCP_TOKEN: undefined,
+    MCP_AUTH_TOKEN: undefined,
+    OAUTH_JWT_SECRET: 'test-jwt-secret-64-chars-for-funesterie-oauth-contract',
+  }, async () => {
+    await withServer(
+      (app) => app.use(createPublicMcpRouter()),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/mcp`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 3,
+            method: 'tools/call',
+            params: {
+              name: 'neo4j_read_query',
+              arguments: { cypher: 'MATCH (n) RETURN n LIMIT 1' },
+            },
+          }),
+        });
+        const json = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(json.id, 3);
+        assert.equal(json.error.code, -32001);
+        assert.match(json.error.message, /requires OAuth\/static auth/);
+      }
+    );
+  });
+});

@@ -1,14 +1,21 @@
 {
   "name": "@nossen/dragon-contracts",
   "version": "1.0.0",
+  "description": "Shared Dragon contracts for the Funesterie control plane.",
   "funding": {
     "type": "custom",
-    "url": "https://funesterie.me/contact/"
+    "url": "https://paypal.me/funeste38"
+  },
+  "donations": {
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
   },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "description": "Shared Dragon contracts for the Funesterie control plane.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,14 +25,6 @@
   "files": [
     "dist"
   ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Funesterie/funesterie.git"
@@ -36,5 +35,13 @@
   "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

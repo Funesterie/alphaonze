@@ -5,7 +5,7 @@
   "version": "1.0.1",
   "funding": {
     "type": "custom",
-    "url": "https://funesterie.me/contact/"
+    "url": "https://paypal.me/funeste38"
   },
   "publisher": "funesterie",
   "engines": {
@@ -263,5 +263,12 @@
     "@vscode/vsce": "^3.9.1",
     "eslint": "^10.4.0",
     "typescript": "^6.0.3"
+  },
+  "donations": {
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://funesterie.me/subscription",
+    "contact": "https://funesterie.me/contact/"
   }
 }

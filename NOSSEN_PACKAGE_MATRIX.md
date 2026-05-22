@@ -33,6 +33,13 @@ that GitHub, npmjs, and JFrog should stay aligned to.
 - New public packages use the `@nossen` scope only.
 - Package names and CLI examples should use `qflush`; the early misspelling is
   retired.
+- Every published package README should include the `Support NOSSEN` block:
+  Wero `+33 7 83 46 37 61`, PayPal `https://paypal.me/funeste38`, Stripe/card
+  checkout `https://funesterie.me/subscription`, and custom support
+  `https://funesterie.me/contact/`.
+- Every published package manifest should keep `funding.url` on
+  `https://paypal.me/funeste38` for npm/JFrog compatibility, with the full
+  `donations` object for Wero, PayPal, Stripe, and contact links.
 - npmjs versions are immutable, so README-only fixes require a patch release if
   the npm package page must change.
 - GitHub tags should use the form `@nossen/<package>@<version>`.

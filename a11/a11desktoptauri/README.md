@@ -44,3 +44,14 @@ Wrapper Tauri Windows pour `A11 local`.
 - le mode `dev` utilise directement `..\launchers\a11-local.ps1`
 - le mode `build` prepare d'abord une copie `resources/a11-local` pour le bundle Tauri
 - le mode `installer-lite` retire le modele local du bundle, puis laisse le shell importer ou telecharger un GGUF externe au premier lancement
+
+<!-- funesterie-donations:start -->
+## Support Funesterie / NOSSEN
+
+Support is voluntary, but it keeps the public modules, registry, compute, and maintenance work alive.
+
+- Wero: `+33 7 83 46 37 61`
+- PayPal: https://paypal.me/funeste38
+- Stripe/card checkout: https://funesterie.me/subscription
+- Custom support/contact: https://funesterie.me/contact/
+<!-- funesterie-donations:end -->
