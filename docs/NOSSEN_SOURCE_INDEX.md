@@ -13,6 +13,7 @@ Cette premiere brique indexe uniquement des metadonnees:
 - statut de confidentialite.
 
 Les fichiers ne sont pas copies dans Neo4j. Les fichiers qui ressemblent a des secrets, tokens, mots de passe ou cles privees sont ignores.
+Les racines larges de type OneDrive, Google Drive ou handoff prive doivent rester en metadata-only et etre synchronisees seulement apres revue du manifeste local.
 
 ## Commandes
 
@@ -20,6 +21,14 @@ Dry-run prudent sur la config exemple:
 
 ```powershell
 npm run nossen:index:dry
+```
+
+La config exemple declare aussi les racines Drive/OneDrive/agent-bus connues,
+mais elles restent desactivees par defaut. Active une racine cloud seulement
+apres revue humaine, puis commence avec un plafond strict:
+
+```powershell
+npm run nossen:index -- --config scripts\nossen\nossen-sources.example.json --root "%USERPROFILE%\OneDrive\Corpus" --max-entries 200
 ```
 
 Scanner une racine precise:

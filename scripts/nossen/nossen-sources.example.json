@@ -27,16 +27,72 @@
       "kind": "cloud-drive-root",
       "privacy": "private",
       "enabled": false
+    },
+    {
+      "id": "onedrive-a11-memory",
+      "label": "OneDrive A11 memory",
+      "path": "%USERPROFILE%\\OneDrive\\a11_memory",
+      "kind": "cloud-drive-root",
+      "privacy": "private",
+      "enabled": false
+    },
+    {
+      "id": "onedrive-funesterie-a11-memory",
+      "label": "OneDrive Funesterie A11 memory",
+      "path": "%USERPROFILE%\\OneDrive - Funesterie\\a11_memory",
+      "kind": "cloud-drive-root",
+      "privacy": "private",
+      "enabled": false
+    },
+    {
+      "id": "onedrive-funesterie-modules-backup",
+      "label": "OneDrive Funesterie modules backup",
+      "path": "%USERPROFILE%\\OneDrive - Funesterie\\Funesterie-Backups\\dev-rescue\\_latest\\funesterie-modules",
+      "kind": "module-backup-root",
+      "privacy": "private",
+      "enabled": false
+    },
+    {
+      "id": "onedrive-funesterie-gemini-handoff",
+      "label": "OneDrive Funesterie Gemini handoff",
+      "path": "%USERPROFILE%\\OneDrive - Funesterie\\Gemini-Handoff",
+      "kind": "handoff-root",
+      "privacy": "private",
+      "enabled": false
+    },
+    {
+      "id": "google-drive-mon-drive",
+      "label": "Google Drive Mon Drive",
+      "path": "G:\\Mon Drive",
+      "kind": "cloud-drive-root",
+      "privacy": "private",
+      "enabled": false
+    },
+    {
+      "id": "agent-bus-canonical",
+      "label": "Canonical agent bus",
+      "path": "D:\\agent-bus",
+      "kind": "agent-bus-root",
+      "privacy": "private",
+      "enabled": false
     }
   ],
   "excludeDirectories": [
     "runtime\\files\\uploads",
     "Coffre-Fort-Systeme",
     "Coffre-Fort-Syst",
+    "Personal Vault",
+    "Vault",
+    "credentials",
     "secrets"
   ],
   "excludePatterns": [
     "(^|[\\\\/])client_secret.*\\.json$",
-    "(^|[\\\\/]).*token.*\\.txt$"
+    "(^|[\\\\/]).*token.*\\.txt$",
+    "(^|[\\\\/]).*bearer.*$",
+    "(^|[\\\\/]).*oauth.*secret.*$",
+    "(^|[\\\\/]).*refresh.*token.*$",
+    "(^|[\\\\/]).*recovery.*code.*$",
+    "(^|[\\\\/]).*credentials?.*$"
   ]
 }

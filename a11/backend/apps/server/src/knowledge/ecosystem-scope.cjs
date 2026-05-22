@@ -68,6 +68,29 @@ const PACKAGE_PATHS = [
   'alphaonze-afk/package.json',
 ];
 
+const NOSSEN_PUBLISHED_PACKAGES = [
+  ['@nossen/allmight', '1.0.0', '@nossen/allmight@1.0.0'],
+  ['@nossen/bat', '1.0.0', '@nossen/bat@1.0.0'],
+  ['@nossen/bat-system', '1.0.0', '@nossen/bat-system@1.0.0'],
+  ['@nossen/beam', '1.0.0', '@nossen/beam@1.0.0'],
+  ['@nossen/envapt-superimg', '1.0.0', '@nossen/envapt-superimg@1.0.0'],
+  ['@nossen/envaptex', '1.0.0', '@nossen/envaptex@1.0.0'],
+  ['@nossen/freeland', '1.0.0', '@nossen/freeland@1.0.0'],
+  ['@nossen/morphing', '1.0.0', '@nossen/morphing@1.0.0'],
+  ['@nossen/nezlephant', '1.0.0', '@nossen/nezlephant@1.0.0'],
+  ['@nossen/rome', '1.0.0', '@nossen/rome@1.0.0'],
+  ['@nossen/scentgate', '1.0.0', '@nossen/scentgate@1.0.0'],
+  ['@nossen/scream', '1.0.0', '@nossen/scream@1.0.0'],
+  ['@nossen/spyder', '1.0.0', '@nossen/spyder@1.0.0'],
+  ['@nossen/katana', '1.0.0', '@nossen/katana@1.0.0'],
+  ['@nossen/freeland-bros', '1.0.0', '@nossen/freeland-bros@1.0.0'],
+  ['@nossen/qflush-runner', '1.0.0', '@nossen/qflush-runner@1.0.0'],
+  ['@nossen/dragon-contracts', '1.0.0', '@nossen/dragon-contracts@1.0.0'],
+  ['@nossen/dragon-upstream', '1.0.0', '@nossen/dragon-upstream@1.0.0'],
+  ['@nossen/dragon', '1.0.0', '@nossen/dragon@1.0.0'],
+  ['@nossen/qflush', '1.0.1', '@nossen/qflush@1.0.1'],
+];
+
 const CONTRACTS = [
   ['a11-mcp-stdio', 'A11 MCP stdio contract', 'a11/backend/apps/server/tools/mcp/a11-mcp-server.cjs', 'mcp-contract', 'Local stdio MCP tool surface for Codex/Kiro/A11.'],
   ['a11mcp-http-jsonrpc', 'A11MCP HTTP JSON-RPC', 'a11mcp/README.md', 'mcp-contract', 'Shared HTTP MCP endpoint, public/private split, token policy and agent bus docs.'],
@@ -177,9 +200,10 @@ function buildEcosystemScope(options = {}) {
     relativePath: relPath,
     status: fileStatus(path.join(workspaceRoot, relPath)),
   }, id, { type: 'module' }));
-  const packages = PACKAGE_PATHS
+  const discoveredPackages = PACKAGE_PATHS
     .map((relPath) => readPackageInfo(workspaceRoot, relPath))
-    .filter(Boolean)
+    .filter(Boolean);
+  const packages = mergePublishedNossenPackages(workspaceRoot, discoveredPackages)
     .map((pkg) => withIdentity(pkg, pkg.id, { type: 'package', domains: pkg.funesterieDependencies || [] }));
   const contracts = CONTRACTS.map(([id, name, relPath, kind, summary]) => withIdentity({
     id,
@@ -353,6 +377,49 @@ function readPackageInfo(workspaceRoot, relPath) {
     funesterieDependencies,
     status: fileStatus(fullPath),
   };
+}
+
+function mergePublishedNossenPackages(workspaceRoot, packages) {
+  const releaseDocRelPath = 'docs/ops/NOSSEN_RELEASE_ALIGNMENT_2026-05-18.md';
+  const releaseDocPath = path.join(workspaceRoot, releaseDocRelPath);
+  const byName = new Map(packages.map((pkg) => [pkg.name, pkg]));
+
+  for (const [name, version, releaseTag] of NOSSEN_PUBLISHED_PACKAGES) {
+    const existing = byName.get(name);
+    if (existing) {
+      existing.publishedVersion = version;
+      existing.releaseTag = releaseTag;
+      existing.registrySources = uniqueStrings([...(existing.registrySources || []), 'npmjs', 'jfrog']);
+      existing.sourceDoc = releaseDocRelPath;
+      existing.packageSource = existing.packageSource || 'local-package-json';
+      continue;
+    }
+
+    packages.push({
+      id: `package:${normalizeId(name)}:published`,
+      name,
+      version,
+      publishedVersion: version,
+      releaseTag,
+      relativePath: releaseDocRelPath,
+      path: releaseDocPath,
+      private: false,
+      scripts: [],
+      dependencyCount: 0,
+      funesterieDependencies: [],
+      status: fileStatus(releaseDocPath),
+      registrySources: ['npmjs', 'jfrog'],
+      sourceDoc: releaseDocRelPath,
+      packageSource: 'nossen-release-alignment',
+      summary: `Published NOSSEN package ${name} recorded by the release alignment manifest.`,
+    });
+  }
+
+  return packages.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set((values || []).map(String).filter(Boolean))).sort();
 }
 
 function buildLinks({ githubRepos, localModules, packages, contracts, sharedRuntimes, semanticTools, accessProfiles, identityLayer }) {
