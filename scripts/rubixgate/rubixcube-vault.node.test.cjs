@@ -8,6 +8,7 @@ const test = require('node:test');
 
 const {
   createVault,
+  readVaultSecretItem,
   recoverVault,
   statusVault,
 } = require('./rubixcube-vault.cjs');
@@ -37,6 +38,9 @@ test('RubixCube vault stores an encrypted bundle as PNG shards without plaintext
 
   assert.equal(manifest.crypto.parts, 4);
   assert.equal(statusVault(manifestPath).ok, true);
+  const secretItem = readVaultSecretItem({ manifestPath, passphrase, itemName: 'mcp-private' });
+  assert.equal(secretItem.found, true);
+  assert.equal(secretItem.value, 'demo-token-value-not-real');
   assert.doesNotMatch(fs.readFileSync(manifestPath, 'utf8'), /demo-token-value-not-real/);
 
   for (const shard of manifest.shards) {
