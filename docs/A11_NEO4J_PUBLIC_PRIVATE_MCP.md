@@ -24,6 +24,7 @@ Deux plans separes:
 - Neo4j Aura: memoire commune et publique candidate, agents, capacites, NOSSEN shared, Arena.
 - Neo4j local: miroir riche, dev, backup, donnees privees ou non nettoyees.
 - Sync local vers Aura: seulement apres filtre sanitation.
+- Le MCP public expose maintenant `public_neo4j_projection_guard` pour valider un lot de noeuds candidats avant projection. Il refuse les labels/cles/valeurs prives ou secrets et ne renvoie pas les proprietes brutes.
 
 ## Contrat public Neo4j
 
@@ -50,6 +51,10 @@ n.visibility = 'public' AND n.canExpose = true AND n.privacy = 'public'
 - Deux outils locaux publics aident les agents sans secret:
   - `a11_agent_context`
   - `a11_neo4j_public_contract`
+- Cote `a11mcp`, les endpoints publics exposent aussi:
+  - `public_neo4j_status`
+  - `public_neo4j_read_query`
+  - `public_neo4j_projection_guard`
 
 ## OAuth Google/Entra
 
