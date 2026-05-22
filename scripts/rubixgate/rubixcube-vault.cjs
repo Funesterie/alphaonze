@@ -328,8 +328,7 @@ function statusVault(manifestPath) {
   };
 }
 
-function recoverVault(options) {
-  if (!options.outPath) throw new Error('Recover output path is required.');
+function readVaultPlain(options) {
   const { baseDir, manifest } = readManifest(options.manifestPath);
   const shares = manifest.shards
     .slice()
@@ -344,7 +343,93 @@ function recoverVault(options) {
   if (sha256Buffer(container) !== manifest.crypto.encryptedSha256) {
     throw new Error('Encrypted container hash mismatch.');
   }
-  const plain = decryptBundle(container, options.passphrase);
+  return decryptBundle(container, options.passphrase);
+}
+
+function secretFieldName(name) {
+  return /(token|secret|password|passphrase|credential|authorization|bearer|private|api[_-]?key|client[_-]?secret|value|key)/i
+    .test(String(name || ''));
+}
+
+function secretLookingText(value) {
+  return /(bearer\s+[a-z0-9._~+/=-]{16,}|hf_[a-z0-9]{16,}|sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9_]{20,}|api[_-]?key|token\s*[:=]|password\s*[:=]|mot de passe\s*[:=])/i
+    .test(String(value || ''));
+}
+
+function safePublicText(value, max = 120) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (secretLookingText(text)) return '[redacted]';
+  return text.slice(0, max);
+}
+
+function summarizeSecretBundle(plain, options = {}) {
+  const text = Buffer.isBuffer(plain) ? plain.toString('utf8') : String(plain || '');
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (_) {
+    return {
+      format: 'opaque',
+      bytes: Buffer.byteLength(text),
+      parseOk: false,
+      secretValuesReturned: false,
+    };
+  }
+
+  const items = Array.isArray(parsed?.items)
+    ? parsed.items
+    : (Array.isArray(parsed?.tokens) ? parsed.tokens : []);
+  const requestedItemName = safePublicText(options.itemName || '', 120);
+  const summarizedItems = items.slice(0, 100).map((item, index) => {
+    const record = item && typeof item === 'object' ? item : { value: item };
+    const fields = Object.keys(record);
+    const publicFields = fields.filter((field) => !secretFieldName(field)).sort();
+    const secretFields = fields.filter((field) => secretFieldName(field)).sort();
+    return {
+      index,
+      name: safePublicText(record.name || record.id || record.label || `item-${index + 1}`),
+      kind: safePublicText(record.kind || record.type || ''),
+      publicFields,
+      secretFieldsPresent: secretFields.length,
+      hasSecretMaterial: secretFields.length > 0,
+    };
+  });
+
+  return {
+    format: 'json',
+    parseOk: true,
+    schema: safePublicText(parsed?.schema || parsed?.type || ''),
+    itemCount: items.length,
+    returnedItemCount: summarizedItems.length,
+    itemFound: requestedItemName
+      ? summarizedItems.some((item) => item.name === requestedItemName)
+      : null,
+    items: summarizedItems,
+    secretValuesReturned: false,
+  };
+}
+
+function inspectVault(options) {
+  const status = statusVault(options.manifestPath);
+  const plain = readVaultPlain(options);
+  return {
+    ok: true,
+    vault: {
+      name: status.name,
+      mode: status.mode,
+      parts: status.parts,
+      threshold: status.threshold,
+      shardsOk: status.ok,
+    },
+    bundle: summarizeSecretBundle(plain, { itemName: options.itemName }),
+    secretExposure: 'none',
+  };
+}
+
+function recoverVault(options) {
+  if (!options.outPath) throw new Error('Recover output path is required.');
+  const plain = readVaultPlain(options);
   const outPath = path.resolve(options.outPath);
   ensureDir(path.dirname(outPath));
   fs.writeFileSync(outPath, plain, { flag: 'wx' });
@@ -405,11 +490,16 @@ if (require.main === module) {
 module.exports = {
   SCHEMA,
   defaultVaultDir,
+  passphraseFromEnv,
+  safeName,
   encryptBundle,
   decryptBundle,
   splitContainer,
   joinContainer,
   createVault,
+  readVaultPlain,
+  summarizeSecretBundle,
+  inspectVault,
   recoverVault,
   statusVault,
 };

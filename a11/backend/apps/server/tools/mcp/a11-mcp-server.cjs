@@ -57,12 +57,15 @@ const NEZ_TOKEN = resolveNezToken();
 const SERVER_NAME = 'a11';
 const SERVER_VERSION = '1.0.0';
 const SERVER_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', '..');
+const rubixcubeVault = require(path.join(REPO_ROOT, 'scripts', 'rubixgate', 'rubixcube-vault.cjs'));
 const DEFAULT_RUNTIME_ROOT = path.resolve(SERVER_ROOT, '..', '..', '..', 'runtime');
 const RUNTIME_ROOT = path.resolve(process.env.A11_RUNTIME_ROOT || DEFAULT_RUNTIME_ROOT);
 const KIRO_MCP_CONFIG_PATH = path.resolve(
   process.env.KIRO_MCP_CONFIG_PATH || 'D:\\projets\\funesterie\\.kiro\\settings\\mcp.json'
 );
 const DEFAULT_SHARED_MCP_URL = 'https://mcp.funesterie.me/mcp';
+const DEFAULT_RUBIXCUBE_VAULT_NAME = process.env.RUBIXCUBE_DEFAULT_VAULT_NAME || 'funesterie-core';
 const ROUTE_MAP_PATH = path.resolve(
   process.env.A11_ROUTE_MAP_PATH || path.join(RUNTIME_ROOT, 'knowledge-graph', 'a11-route-map.json')
 );
@@ -254,6 +257,96 @@ function publicSharedMcpConfig() {
     source: config.source,
     kiroConfig: KIRO_MCP_CONFIG_PATH,
   };
+}
+
+function resolveRubixcubeManifestPath(args = {}) {
+  const explicitPath = String(args.manifestPath || '').trim();
+  if (explicitPath) return path.resolve(explicitPath);
+  const name = rubixcubeVault.safeName(args.name || DEFAULT_RUBIXCUBE_VAULT_NAME);
+  return path.join(rubixcubeVault.defaultVaultDir(), name, `${name}.manifest.json`);
+}
+
+function rubixcubePassphraseFromEnv(args = {}) {
+  const passphraseEnv = String(args.passphraseEnv || 'RUBIXCUBE_VAULT_PASSPHRASE').trim();
+  return rubixcubeVault.passphraseFromEnv({ 'passphrase-env': passphraseEnv });
+}
+
+function rubixcubeSafeError(error) {
+  const message = String(error?.message || error || '');
+  if (/missing or too-short passphrase/i.test(message)) return message;
+  if (/authenticate|bad decrypt|Unsupported state/i.test(message)) {
+    return 'RubixCube authentication failed.';
+  }
+  if (/ENOENT|no such file or directory|Missing shard/i.test(message)) {
+    return 'RubixCube manifest or shard is missing.';
+  }
+  if (/hash mismatch/i.test(message)) return 'RubixCube shard or container hash mismatch.';
+  return 'RubixCube vault read failed.';
+}
+
+function buildRubixcubeVaultStatus(args = {}) {
+  const name = String(args.name || DEFAULT_RUBIXCUBE_VAULT_NAME).trim();
+  const manifestPath = resolveRubixcubeManifestPath(args);
+  try {
+    const status = rubixcubeVault.statusVault(manifestPath);
+    return {
+      ok: status.ok,
+      schema: status.schema,
+      name: status.name,
+      mode: status.mode,
+      parts: status.parts,
+      threshold: status.threshold,
+      encryptedLength: status.encryptedLength,
+      shards: status.shards,
+      source: args.manifestPath ? 'manifestPath' : 'vault-name',
+      requestedName: args.manifestPath ? null : rubixcubeVault.safeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
+      secretExposure: 'none',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: args.manifestPath ? 'manifestPath' : 'vault-name',
+      requestedName: args.manifestPath ? null : rubixcubeVault.safeName(name || DEFAULT_RUBIXCUBE_VAULT_NAME),
+      error: rubixcubeSafeError(error),
+      secretExposure: 'none',
+    };
+  }
+}
+
+function consumeRubixcubeVault(args = {}) {
+  if (args.confirm !== 'CONSUME_SECRET_BUNDLE') {
+    throw new Error('a11_rubixcube_vault_consume requires -- confirm CONSUME_SECRET_BUNDLE');
+  }
+  const purpose = String(args.purpose || '').trim();
+  if (!purpose) throw new Error('purpose is required for RubixCube consumption audit');
+  assertNoSecretText(purpose, 'purpose');
+  const itemName = String(args.itemName || '').trim();
+  if (itemName) assertNoSecretText(itemName, 'itemName');
+  const manifestPath = resolveRubixcubeManifestPath(args);
+  let result;
+  try {
+    result = rubixcubeVault.inspectVault({
+      manifestPath,
+      passphrase: rubixcubePassphraseFromEnv(args),
+      itemName,
+    });
+  } catch (error) {
+    throw new Error(rubixcubeSafeError(error));
+  }
+  const payload = {
+    ...result,
+    consumed: true,
+    purposeAccepted: true,
+    itemRequested: itemName ? { name: itemName, found: result.bundle.itemFound } : null,
+    policy: {
+      plaintextWritten: false,
+      plaintextReturned: false,
+      secretValuesReturned: false,
+      passphraseReturned: false,
+    },
+  };
+  assertNoSecretText(JSON.stringify(payload), 'rubixcube-consume-result');
+  return payload;
 }
 
 // ---------------------------------------------------------------------------
@@ -1059,6 +1152,63 @@ const TOOLS = [
     },
   },
   {
+    name: 'a11_rubixcube_vault_status',
+    description:
+      'Verifie un coffre RubixCube local: manifeste, shards PNG et hashes. Ne lit pas la passphrase et ne retourne aucun secret.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        manifestPath: {
+          type: 'string',
+          description: 'Chemin local explicite du manifeste RubixCube (optionnel).',
+        },
+        name: {
+          type: 'string',
+          description: 'Nom du coffre sous le dossier RubixCube par defaut (defaut: funesterie-core).',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_rubixcube_vault_consume',
+    description:
+      'Consomme un coffre RubixCube local avec passphrase env et confirmation explicite. Dechiffre en memoire, retourne seulement un resume redacted.',
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        manifestPath: {
+          type: 'string',
+          description: 'Chemin local explicite du manifeste RubixCube (optionnel).',
+        },
+        name: {
+          type: 'string',
+          description: 'Nom du coffre sous le dossier RubixCube par defaut (defaut: funesterie-core).',
+        },
+        itemName: {
+          type: 'string',
+          description: 'Nom public attendu dans le bundle, pour verifier sa presence sans retourner la valeur.',
+        },
+        purpose: {
+          type: 'string',
+          description: 'Raison courte d audit, sans secret.',
+        },
+        passphraseEnv: {
+          type: 'string',
+          description: 'Nom de variable env contenant la passphrase (defaut: RUBIXCUBE_VAULT_PASSPHRASE).',
+        },
+        confirm: {
+          type: 'string',
+          enum: ['CONSUME_SECRET_BUNDLE'],
+          description: 'Confirmation obligatoire: CONSUME_SECRET_BUNDLE.',
+        },
+      },
+      required: ['purpose', 'confirm'],
+    },
+  },
+  {
     name: 'a11_shared_mcp_status',
     description:
       'Retourne la configuration publique et la sante du MCP partage Funesterie utilise par Kiro, sans exposer le token.',
@@ -1490,6 +1640,14 @@ async function handleTool(name, args) {
       return formatObject(buildIdentityRoute());
     }
 
+    case 'a11_rubixcube_vault_status': {
+      return formatObject(buildRubixcubeVaultStatus(args));
+    }
+
+    case 'a11_rubixcube_vault_consume': {
+      return formatObject(consumeRubixcubeVault(args));
+    }
+
     case 'a11_shared_mcp_status': {
       return formatObject(await sharedMcpHealth());
     }
@@ -1551,6 +1709,8 @@ async function handleTool(name, args) {
         memoryScope: ['shared', 'mcp', 'kiro', 'a11', 'kaen44', 'vivy'],
         riskLevel: 'low',
         capabilities: [
+          'a11_rubixcube_vault_status',
+          'a11_rubixcube_vault_consume',
           'a11_kiro_inbox_check',
           'a11_kiro_discussion_read',
           'a11_kiro_discussion_post',
