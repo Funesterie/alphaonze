@@ -1,13 +1,14 @@
 # @nossen/dragon-contracts
 
-Shared Dragon contracts for the NOSSEN control plane.
+Shared Dragon contracts for typed control-plane messages and events.
 
-Use this package for typed messages, events, and interfaces that need to stay stable between Dragon services.
+Use this package for typed messages, events, and interfaces that need to stay
+stable between Dragon services.
 
 ## Support and Donations
 
-This package is part of the Funesterie/NOSSEN project. If it helps your
-workflow, support infrastructure and maintenance through:
+This package is maintained in public. If it helps your workflow, support
+infrastructure and maintenance through:
 
 https://funesterie.me/contact/
 

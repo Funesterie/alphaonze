@@ -13,21 +13,37 @@ export type ComposeFile = {
   modules: Record<string, ModuleDef>;
 };
 
-export function readCompose(file = 'funesterie.yml'): ComposeFile | null {
+const COMPOSE_CANDIDATES = [
+  'qflush.fcl',
+  'qflush.yml',
+  'qflush.yaml',
+  'funesterie.fcl',
+  'funesterie.yml',
+  'funesterie.yaml',
+];
+
+function findComposeFile(file?: string): string | null {
+  if (file) return fs.existsSync(file) ? file : null;
+  return COMPOSE_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function fclToCompose(file: string): ComposeFile | null {
+  const fcl = readFCL(file);
+  if (!fcl || !fcl.service) return null;
+  const modules: Record<string, ModuleDef> = {};
+  for (const k of Object.keys(fcl.service)) {
+    const s = fcl.service[k];
+    modules[k] = { path: s.path, port: s.port, token: s.token, env: s.env };
+  }
+  return { modules };
+}
+
+export function readCompose(file?: string): ComposeFile | null {
   try {
-    if (fs.existsSync('funesterie.fcl')) {
-      const fcl = readFCL('funesterie.fcl');
-      if (fcl && fcl.service) {
-        const modules: Record<string, ModuleDef> = {};
-        for (const k of Object.keys(fcl.service)) {
-          const s = fcl.service[k];
-          modules[k] = { path: s.path, port: s.port, token: s.token, env: s.env };
-        }
-        return { modules };
-      }
-    }
-    if (!fs.existsSync(file)) return null;
-    const raw = fs.readFileSync(file, 'utf8');
+    const composeFile = findComposeFile(file);
+    if (!composeFile) return null;
+    if (/\.fcl$/i.test(composeFile)) return fclToCompose(composeFile);
+    const raw = fs.readFileSync(composeFile, 'utf8');
     const doc = yaml.load(raw) as any;
     if (!doc || !doc.modules) return null;
     return { modules: doc.modules } as ComposeFile;

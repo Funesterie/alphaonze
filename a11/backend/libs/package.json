@@ -2,18 +2,17 @@
   "name": "@nossen/qflush",
   "version": "1.0.2",
   "private": false,
-  "description": "QFlush – Funesterie Command Line & Logic System (ROME, SPYDER, CORTEX, NPZ, PICCOLO, SUPERVISOR).",
+  "description": "QFlush - portable command-line orchestrator for local modules, workflows, and supervised services.",
   "license": "SEE LICENSE IN LICENSE",
   "funding": {
     "type": "custom",
     "url": "https://funesterie.me/contact/"
   },
   "author": "NOSSEN <contact@funesterie.me>",
-  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/backend/libs#readme",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Funesterie/funesterie.git",
-    "directory": "a11/backend/libs"
+    "url": "git+https://github.com/Funesterie/funesterie.git"
   },
   "bugs": {
     "url": "https://github.com/Funesterie/funesterie/issues"
@@ -36,8 +35,6 @@
     "LICENSE",
     "LICENSE-*",
     "README.md",
-    "README-FCL.md",
-    "PUBLISH.md",
     "TRADEMARK.md",
     "installers/**/*",
     "examples/**/*"
@@ -54,15 +51,14 @@
   },
   "keywords": [
     "qflush",
-    "funesterie",
     "cli",
-    "rome",
-    "spyder",
-    "cortex",
-    "npz",
+    "automation",
+    "workflow",
+    "modules",
+    "compose",
+    "routing",
     "supervisor",
-    "nossen",
-    "a11"
+    "nossen"
   ],
   "engines": {
     "node": ">=18.0.0"

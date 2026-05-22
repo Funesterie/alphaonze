@@ -8,7 +8,7 @@
   "type": "module",
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
-  "description": "Dragon control-plane daemon for the Funesterie ecosystem.",
+  "description": "Dragon control-plane daemon for local agents and coordinated services.",
   "author": "NOSSEN <contact@funesterie.me>",
   "files": [
     "dist"
@@ -30,7 +30,7 @@
   "bugs": {
     "url": "https://github.com/Funesterie/funesterie/issues"
   },
-  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
   "engines": {
     "node": ">=20"
   },

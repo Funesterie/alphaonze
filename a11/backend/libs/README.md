@@ -1,12 +1,11 @@
 # @nossen/qflush
 
-QFlush is the NOSSEN command-line orchestrator for local automation, runtime
-modules, compose files, NPZ routing, Cortex packets, and supervised service
+QFlush is a portable command-line orchestrator for local automation, runtime
+modules, compose files, routing lanes, workflow packets, and supervised service
 processes.
 
 It is designed for operators who need one small CLI that can inspect, prepare,
-start, stop, and clean an A11/Funesterie workspace without wiring every module
-by hand.
+start, stop, and clean a modular workspace without wiring every service by hand.
 
 ## Install
 
@@ -27,11 +26,11 @@ npx qflush --help
 - Detects runtime modules and starts selected services.
 - Generates missing environment and config files.
 - Supervises background processes and stores logs under `.qflush/logs`.
-- Reads `funesterie.yml` or `funesterie.fcl` compose definitions.
-- Routes NPZ lanes with fallback scoring and circuit-breaker state.
-- Applies Cortex packets from JSON or PNG carriers.
-- Exposes small automation helpers used by A11, Rome, Spyder, Nezlephant, and
-  Freeland flows.
+- Reads `qflush.yml` or `qflush.fcl` compose definitions.
+- Keeps legacy compose file names working for existing projects.
+- Routes lanes with fallback scoring and circuit-breaker state.
+- Applies workflow packets from JSON or PNG carriers.
+- Exposes small automation helpers for modular runtime flows.
 
 ## CLI
 
@@ -42,7 +41,7 @@ npx qflush --help
 | `qflush purge` | Clear caches, logs, sessions, and supervisor state. |
 | `qflush inspect` | Show active services and ports. |
 | `qflush config` | Generate missing configuration files. |
-| `qflush compose up` | Start modules from `funesterie.yml` or `funesterie.fcl`. |
+| `qflush compose up` | Start modules from `qflush.yml` or `qflush.fcl`. |
 | `qflush compose down` | Stop composed services and clear supervisor state. |
 | `qflush compose logs <name>` | Tail a supervised module log. |
 | `qflush doctor` | Run local health checks. |
@@ -71,7 +70,7 @@ await executePipeline(pipeline, options);
 
 ## Runtime Dependencies
 
-QFlush uses the public NOSSEN package set:
+QFlush can work with companion modules from the public package set:
 
 - `@nossen/bat`
 - `@nossen/envaptex`
@@ -79,14 +78,13 @@ QFlush uses the public NOSSEN package set:
 - `@nossen/nezlephant`
 - `@nossen/rome`
 
-Installations should resolve from npmjs by default, or from the configured
-Funesterie JFrog mirror when an internal registry is required.
+Installations should resolve from npmjs by default, or from a configured
+internal registry when a private mirror is required.
 
 ## Support and Donations
 
-QFlush is maintained as part of Funesterie/NOSSEN. If it saves you time or
-helps keep your automation stack alive, support infrastructure and maintenance
-through:
+QFlush is maintained in public. If it saves you time or helps keep your
+automation stack alive, support infrastructure and maintenance through:
 
 https://funesterie.me/contact/
 
@@ -98,8 +96,8 @@ For direct coordination, grants, sponsorship, or urgent support:
 
 contact@funesterie.me
 
-Support is voluntary; it helps keep the public modules, docs, and services
-online.
+Support is voluntary; it helps keep the public modules, docs, and maintenance
+work online.
 
 ## Quality Gates
 
