@@ -6,7 +6,10 @@ Date: 2026-05-22
 
 Deux plans separes:
 
-- Local prive: Neo4j local `bolt://127.0.0.1:7687`, miroir riche/dev/backup, acces humain/admin ou MCP local OAuth.
+- Local prive: Neo4j local, miroir riche/dev/backup, acces humain/admin ou MCP local OAuth.
+  - Sur le PC Funesterie actuel, le MCP en conteneur doit utiliser `bolt://a11-neo4j-sync:7687`, database `neo4j`.
+  - Depuis Windows, le meme Podman Neo4j est expose sur `bolt://127.0.0.1:17687`, database `neo4j`.
+  - `bolt://127.0.0.1:7687` correspond au Neo4j Desktop/Docker local et n'utilise pas forcement les memes credentials.
 - Cloud public: MCP public `https://a11.funesterie.me/mcp` ou domaine Railway courant, connecte au graphe cloud partage, avec garde-fous.
 
 ## Source de verite actuelle
