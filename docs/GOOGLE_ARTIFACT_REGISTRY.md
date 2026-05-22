@@ -33,12 +33,14 @@ npm run google:packages:publish
 print-access-token`, le garde seulement en variable d'environnement de
 processus, puis publie avec `npm`.
 
-Aujourd'hui, le miroir pret est:
+Aujourd'hui, les miroirs prets sont:
 
-- source: `a11/backend/libs`
-- source package: `@nossen/qflush@1.0.1`
-- package distribue: `@funesterie/qflush@1.0.2`
-- tags: `latest`, `stable`
+| Source | Source package | Package distribue | Tags |
+| --- | --- | --- | --- |
+| `a11/backend/libs` | `@nossen/qflush@1.0.2` | `@funesterie/qflush@1.0.3` | `latest`, `stable` |
+| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@1.0.1` | `@funesterie/dragon-contracts@1.0.1` | `latest`, `stable` |
+| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@1.0.1` | `@funesterie/dragon-upstream@1.0.1` | `latest`, `stable` |
+| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@1.0.1` | `@funesterie/dragon@1.0.1` | `latest`, `stable` |
 
 Pour installer:
 

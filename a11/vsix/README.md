@@ -71,6 +71,10 @@ A11 Coder is part of the Funesterie/NOSSEN project. If it saves you time or help
 
 https://funesterie.me/contact/
 
+For direct coordination, grants, sponsorship, or urgent support:
+
+contact@funesterie.me
+
 Support is voluntary; it helps keep the public modules, docs, and services alive.
 
 ## Links

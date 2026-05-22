@@ -8,17 +8,62 @@
       "id": "qflush",
       "source": "a11/backend/libs",
       "publishedName": "@funesterie/qflush",
-      "publishedVersion": "1.0.2",
+      "publishedVersion": "1.0.3",
       "npmTag": "latest",
       "distTags": ["stable"],
       "enabled": true,
-      "installCommand": ["npm", "install", "--ignore-scripts"],
+      "installCommand": ["npm", "install", "--ignore-scripts", "--no-package-lock"],
       "buildCommand": ["npm", "run", "build"],
       "smokeCommand": ["node", "dist/cli.js", "--help"],
       "requiredFiles": [
         "dist/index.js",
         "dist/index.d.ts",
         "dist/cli.js"
+      ]
+    },
+    {
+      "id": "dragon-contracts",
+      "source": "a11/dragon/packages/contracts",
+      "publishedName": "@funesterie/dragon-contracts",
+      "publishedVersion": "1.0.1",
+      "npmTag": "latest",
+      "distTags": ["stable"],
+      "enabled": true,
+      "installCommand": ["npm", "--prefix", "../..", "install", "--ignore-scripts", "--no-package-lock"],
+      "buildCommand": ["npm", "--prefix", "../..", "--workspace", "@nossen/dragon-contracts", "run", "build"],
+      "requiredFiles": [
+        "dist/index.js",
+        "dist/index.d.ts"
+      ]
+    },
+    {
+      "id": "dragon-upstream",
+      "source": "a11/dragon/packages/upstream",
+      "publishedName": "@funesterie/dragon-upstream",
+      "publishedVersion": "1.0.1",
+      "npmTag": "latest",
+      "distTags": ["stable"],
+      "enabled": true,
+      "installCommand": ["npm", "--prefix", "../..", "install", "--ignore-scripts", "--no-package-lock"],
+      "buildCommand": ["npm", "--prefix", "../..", "--workspace", "@nossen/dragon-upstream", "run", "build"],
+      "requiredFiles": [
+        "dist/index.js",
+        "dist/index.d.ts"
+      ]
+    },
+    {
+      "id": "dragon",
+      "source": "a11/dragon/apps/dragon-daemon",
+      "publishedName": "@funesterie/dragon",
+      "publishedVersion": "1.0.1",
+      "npmTag": "latest",
+      "distTags": ["stable"],
+      "enabled": true,
+      "installCommand": ["npm", "--prefix", "../..", "install", "--ignore-scripts", "--no-package-lock"],
+      "buildCommand": ["npm", "--prefix", "../..", "--workspace", "@nossen/dragon", "run", "build"],
+      "requiredFiles": [
+        "dist/server.js",
+        "dist/server.d.ts"
       ]
     }
   ]
