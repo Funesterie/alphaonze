@@ -33,26 +33,29 @@ npm run google:packages:publish
 print-access-token`, le garde seulement en variable d'environnement de
 processus, puis publie avec `npm`.
 
-Aujourd'hui, les miroirs prets sont:
+Le miroir Google publie les packages canoniques `@nossen/*`. Les anciens noms
+`@funesterie/*` ne sont plus la cible de ce flux.
+
+Aujourd'hui, les packages prets sont:
 
 | Source | Source package | Package distribue | Tags |
 | --- | --- | --- | --- |
-| `a11/backend/libs` | `@nossen/qflush@1.0.2` | `@funesterie/qflush@1.0.4` | `latest`, `stable` |
-| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@1.0.1` | `@funesterie/dragon-contracts@1.0.2` | `latest`, `stable` |
-| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@1.0.1` | `@funesterie/dragon-upstream@1.0.2` | `latest`, `stable` |
-| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@1.0.1` | `@funesterie/dragon@1.0.2` | `latest`, `stable` |
+| `a11/backend/libs` | `@nossen/qflush@1.0.2` | `@nossen/qflush@1.0.2` | `latest`, `stable` |
+| `a11/dragon/packages/contracts` | `@nossen/dragon-contracts@1.0.1` | `@nossen/dragon-contracts@1.0.1` | `latest`, `stable` |
+| `a11/dragon/packages/upstream` | `@nossen/dragon-upstream@1.0.1` | `@nossen/dragon-upstream@1.0.1` | `latest`, `stable` |
+| `a11/dragon/apps/dragon-daemon` | `@nossen/dragon@1.0.1` | `@nossen/dragon@1.0.1` | `latest`, `stable` |
 
 Pour installer:
 
 ```powershell
 npm run google:npmrc
 $env:GOOGLE_ARTIFACT_ACCESS_TOKEN = (gcloud auth print-access-token).Trim()
-npm install @funesterie/qflush@stable --userconfig .\.npmrc.google
+npm install @nossen/qflush@stable --userconfig .\.npmrc.google
 Remove-Item Env:\GOOGLE_ARTIFACT_ACCESS_TOKEN
 ```
 
 Quand le contenu du paquet change, augmenter la version publiee dans
-`scripts/github/github-packages.manifest.json`, puis republier.
+`scripts/google/google-artifact-packages.manifest.json`, puis republier.
 
 ## Docker / OCI
 
