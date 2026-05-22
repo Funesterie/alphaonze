@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const http = require('node:http');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -198,6 +199,89 @@ test('a11 MCP RubixCube status and consume do not leak secret bundle values', as
   }
 });
 
+test('a11 MCP RubixCube shared MCP token check uses the token without returning it', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-mcp-rubixcube-token-check-'));
+  const bundlePath = path.join(tmp, 'bundle.json');
+  const passphrase = 'mcp token check passphrase long enough';
+  const fakeToken = 'demo-shared-mcp-token-not-real-123456789';
+  let sawBearer = false;
+  let sawHeaderToken = false;
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk.toString('utf8');
+    });
+    req.on('end', () => {
+      sawBearer = req.headers.authorization === `Bearer ${fakeToken}`;
+      sawHeaderToken = req.headers['x-mcp-token'] === fakeToken;
+      const payload = JSON.parse(raw || '{}');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        jsonrpc: '2.0',
+        id: payload.id,
+        result: {
+          tools: [
+            { name: 'agent_inbox_check' },
+            { name: 'discussion_post' },
+          ],
+        },
+      }));
+    });
+  });
+
+  try {
+    fs.writeFileSync(bundlePath, JSON.stringify({
+      schema: 'funesterie.demo-bundle.v1',
+      items: [
+        { name: 'shared-mcp', kind: 'bearer', value: fakeToken },
+      ],
+    }, null, 2), 'utf8');
+    const { manifestPath } = createVault({
+      name: 'mcp-token-check',
+      inputPath: bundlePath,
+      outDir: tmp,
+      parts: 3,
+      passphrase,
+      createdAt: '2026-05-22T00:00:00.000Z',
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const [response] = await callMcpOnce({
+      jsonrpc: '2.0',
+      id: 15,
+      method: 'tools/call',
+      params: {
+        name: 'a11_rubixcube_shared_mcp_token_check',
+        arguments: {
+          manifestPath,
+          itemName: 'shared-mcp',
+          url: `http://127.0.0.1:${port}/mcp`,
+          purpose: 'unit test shared mcp token check',
+          confirm: 'CHECK_SHARED_MCP_TOKEN',
+        },
+      },
+    }, { RUBIXCUBE_VAULT_PASSPHRASE: passphrase });
+
+    assert.equal(response.id, 15);
+    const text = response.result.content[0].text;
+    const result = JSON.parse(text);
+    assert.equal(result.ok, true);
+    assert.equal(result.sharedMcp.authentication, 'accepted');
+    assert.equal(result.toolCount, 2);
+    assert.deepEqual(result.sampleTools, ['agent_inbox_check', 'discussion_post']);
+    assert.equal(result.policy.tokenReturned, false);
+    assert.equal(result.secretExposure, 'none');
+    assert.equal(sawBearer, true);
+    assert.equal(sawHeaderToken, true);
+    assert.equal(text.includes(fakeToken), false);
+    assert.equal(text.includes('Authorization'), false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   const [response] = await callMcpOnce({
     jsonrpc: '2.0',
@@ -232,6 +316,7 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   const jobsStatus = tools.find((tool) => tool.name === 'a11_agent_jobs_status');
   const rubixStatus = tools.find((tool) => tool.name === 'a11_rubixcube_vault_status');
   const rubixConsume = tools.find((tool) => tool.name === 'a11_rubixcube_vault_consume');
+  const rubixMcpCheck = tools.find((tool) => tool.name === 'a11_rubixcube_shared_mcp_token_check');
   const inbox = tools.find((tool) => tool.name === 'a11_kiro_inbox_check');
   const post = tools.find((tool) => tool.name === 'a11_kiro_discussion_post');
   assert.equal(health.annotations.readOnlyHint, true);
@@ -266,6 +351,9 @@ test('a11 MCP tools expose explicit ChatGPT Apps annotations', async () => {
   assert.equal(rubixStatus.annotations.destructiveHint, false);
   assert.equal(rubixConsume.annotations.readOnlyHint, false);
   assert.equal(rubixConsume.annotations.destructiveHint, false);
+  assert.equal(rubixMcpCheck.annotations.readOnlyHint, false);
+  assert.equal(rubixMcpCheck.annotations.openWorldHint, true);
+  assert.equal(rubixMcpCheck.annotations.destructiveHint, false);
   assert.equal(inbox.annotations.readOnlyHint, true);
   assert.equal(inbox.annotations.openWorldHint, true);
   assert.equal(post.annotations.readOnlyHint, false);

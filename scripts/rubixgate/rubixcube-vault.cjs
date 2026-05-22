@@ -410,6 +410,76 @@ function summarizeSecretBundle(plain, options = {}) {
   };
 }
 
+function parseBundleItems(plain) {
+  const text = Buffer.isBuffer(plain) ? plain.toString('utf8') : String(plain || '');
+  const parsed = JSON.parse(text);
+  return Array.isArray(parsed?.items)
+    ? parsed.items
+    : (Array.isArray(parsed?.tokens) ? parsed.tokens : []);
+}
+
+function recordPublicName(record, index = 0) {
+  return safePublicText(record?.name || record?.id || record?.label || `item-${index + 1}`);
+}
+
+function readSecretItem(plain, options = {}) {
+  const requestedName = safePublicText(options.itemName || '', 120);
+  if (!requestedName) throw new Error('Secret item name is required.');
+  const fields = [
+    options.valueField,
+    'value',
+    'token',
+    'secret',
+    'password',
+    'apiKey',
+    'api_key',
+    'accessToken',
+    'access_token',
+    'authorization',
+    'bearer',
+  ].filter(Boolean);
+  const items = parseBundleItems(plain);
+  for (let index = 0; index < items.length; index += 1) {
+    const record = items[index] && typeof items[index] === 'object' ? items[index] : { value: items[index] };
+    const publicName = recordPublicName(record, index);
+    if (publicName !== requestedName) continue;
+    for (const field of fields) {
+      if (!secretFieldName(field)) continue;
+      const value = String(record[field] || '').trim();
+      if (!value) continue;
+      return {
+        found: true,
+        name: publicName,
+        kind: safePublicText(record.kind || record.type || ''),
+        field,
+        value,
+      };
+    }
+    return {
+      found: true,
+      name: publicName,
+      kind: safePublicText(record.kind || record.type || ''),
+      field: null,
+      value: '',
+    };
+  }
+  return {
+    found: false,
+    name: requestedName,
+    kind: '',
+    field: null,
+    value: '',
+  };
+}
+
+function readVaultSecretItem(options) {
+  const plain = readVaultPlain(options);
+  return readSecretItem(plain, {
+    itemName: options.itemName,
+    valueField: options.valueField,
+  });
+}
+
 function inspectVault(options) {
   const status = statusVault(options.manifestPath);
   const plain = readVaultPlain(options);
@@ -498,6 +568,8 @@ module.exports = {
   joinContainer,
   createVault,
   readVaultPlain,
+  readSecretItem,
+  readVaultSecretItem,
   summarizeSecretBundle,
   inspectVault,
   recoverVault,

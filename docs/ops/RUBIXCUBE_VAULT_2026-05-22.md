@@ -35,8 +35,10 @@ The A11 MCP server exposes two RubixCube tools:
 
 - `a11_rubixcube_vault_status`: checks manifest, PNG shards, and hashes. It does not read the passphrase.
 - `a11_rubixcube_vault_consume`: decrypts the bundle in memory only after `confirm: CONSUME_SECRET_BUNDLE`; it returns a redacted inventory, never token values.
+- `a11_rubixcube_shared_mcp_token_check`: consumes a named MCP token item, calls `tools/list` on the shared MCP endpoint, and returns only status plus tool counts.
 
 `a11_rubixcube_vault_consume` is intentionally not a read-only auto-approval tool. Agents can verify that a named item exists and then use a future whitelisted consumer path, but they must not dump recovered values into MCP replies, logs, Neo4j, screenshots, or docs.
+The shared MCP token check is the first whitelisted consumer path: it proves that a token works by using it, not by showing it.
 
 Recover to a local file only when needed:
 

@@ -349,6 +349,134 @@ function consumeRubixcubeVault(args = {}) {
   return payload;
 }
 
+function sharedMcpSafeError(status, parsed = null) {
+  if (status === 401 || status === 403) return 'Shared MCP authentication failed.';
+  if (status >= 400) return `Shared MCP check failed with HTTP ${status}.`;
+  if (parsed?.error) return 'Shared MCP JSON-RPC check failed.';
+  return 'Shared MCP check failed.';
+}
+
+async function sharedMcpJsonRpcWithToken(url, token, method, params = {}, timeoutMs = 15_000) {
+  const targetUrl = String(url || resolveSharedMcpConfig().url || DEFAULT_SHARED_MCP_URL)
+    .trim()
+    .replace(/\/+$/, '');
+  if (!targetUrl) throw new Error('Shared MCP URL is required.');
+  const id = `a11-rubixcube-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const res = await httpRawRequest('POST', targetUrl, {
+    jsonrpc: '2.0',
+    id,
+    method,
+    params,
+  }, timeoutMs, {
+    Accept: 'application/json, text/event-stream',
+    Authorization: `Bearer ${token}`,
+    'X-MCP-Token': token,
+  });
+  const parsed = parseMcpResponse(res.raw, res.headers['content-type'] || '');
+  return { targetUrl, status: res.status, parsed };
+}
+
+async function checkRubixcubeSharedMcpToken(args = {}) {
+  if (args.confirm !== 'CHECK_SHARED_MCP_TOKEN') {
+    throw new Error('a11_rubixcube_shared_mcp_token_check requires -- confirm CHECK_SHARED_MCP_TOKEN');
+  }
+  const purpose = String(args.purpose || '').trim();
+  if (!purpose) throw new Error('purpose is required for RubixCube shared MCP token check');
+  assertNoSecretText(purpose, 'purpose');
+  const itemName = String(args.itemName || '').trim();
+  if (!itemName) throw new Error('itemName is required');
+  assertNoSecretText(itemName, 'itemName');
+  const manifestPath = resolveRubixcubeManifestPath(args);
+  let secretItem;
+  try {
+    secretItem = rubixcubeVault.readVaultSecretItem({
+      manifestPath,
+      passphrase: rubixcubePassphraseFromEnv(args),
+      itemName,
+      valueField: args.valueField,
+    });
+  } catch (error) {
+    throw new Error(rubixcubeSafeError(error));
+  }
+  const sharedMcpToken = stripBearer(secretItem.value);
+  if (!secretItem.found || !sharedMcpToken) {
+    return {
+      ok: false,
+      checked: false,
+      item: {
+        name: itemName,
+        found: Boolean(secretItem.found),
+        hasSecretValue: false,
+      },
+      error: 'RubixCube item not found or has no secret value.',
+      secretExposure: 'none',
+    };
+  }
+
+  let rpc;
+  try {
+    rpc = await sharedMcpJsonRpcWithToken(
+      args.url,
+      sharedMcpToken,
+      'tools/list',
+      {},
+      Number.isFinite(Number(args.timeoutMs)) ? Number(args.timeoutMs) : 15_000
+    );
+  } catch (_) {
+    return {
+      ok: false,
+      checked: true,
+      item: {
+        name: secretItem.name,
+        kind: secretItem.kind,
+        found: true,
+        hasSecretValue: true,
+      },
+      sharedMcp: {
+        url: String(args.url || resolveSharedMcpConfig().url || DEFAULT_SHARED_MCP_URL).trim().replace(/\/+$/, ''),
+        status: 0,
+        authentication: 'unknown',
+      },
+      error: 'Shared MCP request failed.',
+      secretExposure: 'none',
+    };
+  }
+
+  const parsed = rpc.parsed || null;
+  const tools = Array.isArray(parsed?.result?.tools) ? parsed.result.tools : [];
+  const ok = Boolean(parsed) && rpc.status >= 200 && rpc.status < 400 && !parsed?.error && tools.length >= 0;
+  const payload = {
+    ok,
+    checked: true,
+    item: {
+      name: secretItem.name,
+      kind: secretItem.kind,
+      found: true,
+      hasSecretValue: true,
+    },
+    sharedMcp: {
+      url: rpc.targetUrl,
+      status: rpc.status,
+      authentication: ok ? 'accepted' : 'rejected-or-unknown',
+    },
+    method: 'tools/list',
+    toolCount: tools.length,
+    sampleTools: tools
+      .slice(0, 12)
+      .map((tool) => String(tool?.name || '').trim())
+      .filter(Boolean),
+    error: ok ? null : sharedMcpSafeError(rpc.status, parsed),
+    policy: {
+      tokenReturned: false,
+      plaintextWritten: false,
+      rawResponseReturned: false,
+    },
+    secretExposure: 'none',
+  };
+  assertNoSecretText(JSON.stringify(payload), 'rubixcube-shared-mcp-token-check');
+  return payload;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helper (pas de dépendance externe, node:http natif)
 // ---------------------------------------------------------------------------
@@ -1209,6 +1337,55 @@ const TOOLS = [
     },
   },
   {
+    name: 'a11_rubixcube_shared_mcp_token_check',
+    description:
+      'Consomme un item RubixCube nomme comme token MCP, appelle tools/list sur le MCP partage, et retourne seulement un statut redacted.',
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        manifestPath: {
+          type: 'string',
+          description: 'Chemin local explicite du manifeste RubixCube (optionnel).',
+        },
+        name: {
+          type: 'string',
+          description: 'Nom du coffre sous le dossier RubixCube par defaut (defaut: funesterie-core).',
+        },
+        itemName: {
+          type: 'string',
+          description: 'Nom public de l item contenant le token MCP dans le bundle.',
+        },
+        valueField: {
+          type: 'string',
+          description: 'Champ secret a utiliser si different de value/token/secret.',
+        },
+        url: {
+          type: 'string',
+          description: 'URL MCP a verifier (defaut: configuration MCP partagee).',
+        },
+        purpose: {
+          type: 'string',
+          description: 'Raison courte d audit, sans secret.',
+        },
+        passphraseEnv: {
+          type: 'string',
+          description: 'Nom de variable env contenant la passphrase (defaut: RUBIXCUBE_VAULT_PASSPHRASE).',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Timeout reseau en ms (defaut: 15000).',
+        },
+        confirm: {
+          type: 'string',
+          enum: ['CHECK_SHARED_MCP_TOKEN'],
+          description: 'Confirmation obligatoire: CHECK_SHARED_MCP_TOKEN.',
+        },
+      },
+      required: ['itemName', 'purpose', 'confirm'],
+    },
+  },
+  {
     name: 'a11_shared_mcp_status',
     description:
       'Retourne la configuration publique et la sante du MCP partage Funesterie utilise par Kiro, sans exposer le token.',
@@ -1648,6 +1825,10 @@ async function handleTool(name, args) {
       return formatObject(consumeRubixcubeVault(args));
     }
 
+    case 'a11_rubixcube_shared_mcp_token_check': {
+      return formatObject(await checkRubixcubeSharedMcpToken(args));
+    }
+
     case 'a11_shared_mcp_status': {
       return formatObject(await sharedMcpHealth());
     }
@@ -1711,6 +1892,7 @@ async function handleTool(name, args) {
         capabilities: [
           'a11_rubixcube_vault_status',
           'a11_rubixcube_vault_consume',
+          'a11_rubixcube_shared_mcp_token_check',
           'a11_kiro_inbox_check',
           'a11_kiro_discussion_read',
           'a11_kiro_discussion_post',
