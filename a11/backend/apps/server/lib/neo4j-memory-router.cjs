@@ -8,8 +8,8 @@ const path = require('node:path');
 const neo4j = require('neo4j-driver');
 
 const DEFAULT_AURA_DATABASE = 'aa4680d2';
-const DEFAULT_LOCAL_DATABASE = 'a11-knowledge-graph';
-const DEFAULT_LOCAL_URI = 'neo4j://127.0.0.1:7687';
+const DEFAULT_LOCAL_DATABASE = 'neo4j';
+const DEFAULT_LOCAL_URI = 'bolt://127.0.0.1:17687';
 
 function hashText(value, length = 24) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, length);
@@ -27,43 +27,88 @@ function pick(...values) {
   return '';
 }
 
+function isNoAuth(value) {
+  return String(value || '').trim().toLowerCase() === 'none';
+}
+
+function endpointIdentity(endpoint) {
+  return [
+    endpoint?.uri || '',
+    endpoint?.database || '',
+    endpoint?.auth || 'basic',
+    endpoint?.username || '',
+  ].join('|');
+}
+
+function uniqueFallbacks(primary, fallbacks = []) {
+  const seen = new Set([endpointIdentity(primary)]);
+  const out = [];
+  for (const fallback of fallbacks) {
+    const key = endpointIdentity(fallback);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(fallback);
+  }
+  return out;
+}
+
 function resolveRouterConfig(env = process.env) {
+  const globalNeo4jUri = String(env.NEO4J_URI || '').trim();
+  const globalNeo4jIsLocal = isLocalNeo4jUri(globalNeo4jUri);
+  const envAuraUri = globalNeo4jUri && !globalNeo4jIsLocal ? globalNeo4jUri : '';
+  const envLocalUri = globalNeo4jIsLocal ? globalNeo4jUri : '';
+
   const aura = {
     name: 'aura',
-    uri: pick(env.KIRO_V2, env.NEO4J_AURA_URI, env.A11_AURA_NEO4J_URI),
-    username: pick(env.KIRO_V2_USER, env.NEO4J_AURA_USER, env.A11_AURA_NEO4J_USER),
-    password: pick(env.KIRO_V2_PASSWORD, env.NEO4J_AURA_PASSWORD, env.A11_AURA_NEO4J_PASSWORD),
-    database: pick(env.KIRO_V2_DATABASE, env.NEO4J_AURA_DATABASE, env.A11_AURA_NEO4J_DATABASE, DEFAULT_AURA_DATABASE),
+    uri: pick(env.KIRO_V2, env.KIRO_V2_URI, env.NEO4J_AURA_URI, env.A11_AURA_NEO4J_URI, envAuraUri),
+    username: pick(env.KIRO_V2_USER, env.NEO4J_AURA_USER, env.A11_AURA_NEO4J_USER, envAuraUri ? env.NEO4J_USERNAME : ''),
+    password: pick(env.KIRO_V2_PASSWORD, env.NEO4J_AURA_PASSWORD, env.A11_AURA_NEO4J_PASSWORD, envAuraUri ? env.NEO4J_PASSWORD : ''),
+    database: pick(env.KIRO_V2_DATABASE, env.NEO4J_AURA_DATABASE, env.A11_AURA_NEO4J_DATABASE, envAuraUri ? env.NEO4J_DATABASE : '', DEFAULT_AURA_DATABASE),
+    auth: 'basic',
   };
 
-  const envLocalUri = isLocalNeo4jUri(env.NEO4J_URI) ? env.NEO4J_URI : '';
   const local = {
     name: 'local',
     uri: pick(env.A11_LOCAL_NEO4J_URI, env.NEO4J_LOCAL_URI, envLocalUri, DEFAULT_LOCAL_URI),
-    username: pick(env.A11_LOCAL_NEO4J_USER, env.NEO4J_LOCAL_USER, env.NEO4J_USERNAME, 'neo4j'),
-    password: pick(env.A11_LOCAL_NEO4J_PASSWORD, env.NEO4J_LOCAL_PASSWORD, env.NEO4J_PASSWORD),
-    database: pick(env.A11_LOCAL_NEO4J_DATABASE, env.NEO4J_LOCAL_DATABASE, env.NEO4J_DATABASE, DEFAULT_LOCAL_DATABASE),
+    username: pick(env.A11_LOCAL_NEO4J_USER, env.NEO4J_LOCAL_USER, envLocalUri ? env.NEO4J_USERNAME : '', 'neo4j'),
+    password: pick(env.A11_LOCAL_NEO4J_PASSWORD, env.NEO4J_LOCAL_PASSWORD, envLocalUri ? env.NEO4J_PASSWORD : ''),
+    database: pick(env.A11_LOCAL_NEO4J_DATABASE, env.NEO4J_LOCAL_DATABASE, envLocalUri ? env.NEO4J_DATABASE : '', DEFAULT_LOCAL_DATABASE),
+    auth: isNoAuth(pick(env.A11_LOCAL_NEO4J_AUTH, env.NEO4J_LOCAL_AUTH, envLocalUri ? env.NEO4J_AUTH : ''))
+      ? 'none'
+      : 'basic',
   };
+  if (!local.password && isLocalNeo4jUri(local.uri)) local.auth = 'none';
+  local.fallbacks = uniqueFallbacks(local, [{
+    name: 'local',
+    uri: DEFAULT_LOCAL_URI,
+    username: 'neo4j',
+    password: '',
+    database: DEFAULT_LOCAL_DATABASE,
+    auth: 'none',
+  }]);
 
   return { aura, local };
 }
 
 function assertEndpoint(endpoint) {
   if (!endpoint?.uri) throw new Error(`Missing ${endpoint?.name || 'neo4j'} uri`);
-  if (!endpoint?.username) throw new Error(`Missing ${endpoint?.name || 'neo4j'} username`);
-  if (!endpoint?.password) throw new Error(`Missing ${endpoint?.name || 'neo4j'} password`);
+  if (endpoint.auth !== 'none' && !endpoint?.username) throw new Error(`Missing ${endpoint?.name || 'neo4j'} username`);
+  if (endpoint.auth !== 'none' && !endpoint?.password) throw new Error(`Missing ${endpoint?.name || 'neo4j'} password`);
   if (!endpoint?.database) throw new Error(`Missing ${endpoint?.name || 'neo4j'} database`);
 }
 
 function createDriver(endpoint) {
   assertEndpoint(endpoint);
-  return neo4j.driver(endpoint.uri, neo4j.auth.basic(endpoint.username, endpoint.password), {
+  const authToken = endpoint.auth === 'none'
+    ? neo4j.auth.none()
+    : neo4j.auth.basic(endpoint.username, endpoint.password);
+  return neo4j.driver(endpoint.uri, authToken, {
     connectionAcquisitionTimeout: 15000,
     maxConnectionPoolSize: 10,
   });
 }
 
-async function withSession(endpoint, mode, run) {
+async function withSingleEndpointSession(endpoint, mode, run) {
   const driver = createDriver(endpoint);
   const session = driver.session({
     database: endpoint.database,
@@ -76,6 +121,19 @@ async function withSession(endpoint, mode, run) {
     await session.close().catch(() => {});
     await driver.close().catch(() => {});
   }
+}
+
+async function withSession(endpoint, mode, run) {
+  const attempts = [endpoint, ...(endpoint.fallbacks || [])];
+  let firstError = null;
+  for (const candidate of attempts) {
+    try {
+      return await withSingleEndpointSession(candidate, mode, run);
+    } catch (error) {
+      if (!firstError) firstError = error;
+    }
+  }
+  throw firstError;
 }
 
 function toPlainValue(value) {
@@ -250,25 +308,46 @@ async function searchEndpoint(endpoint, query, limit) {
 }
 
 async function getEndpointStats(endpoint) {
-  return withSession(endpoint, 'read', async (session) => {
-    const result = await session.run('MATCH (n) OPTIONAL MATCH ()-[r]->() RETURN count(DISTINCT n) AS nodes, count(DISTINCT r) AS relationships');
-    const record = result.records[0];
-    return {
-      name: endpoint.name,
-      uri: endpoint.uri,
-      database: endpoint.database,
-      ok: true,
-      nodes: toPlainValue(record.get('nodes')),
-      relationships: toPlainValue(record.get('relationships')),
-    };
-  }).catch((error) => ({
+  const attempts = [endpoint, ...(endpoint.fallbacks || [])];
+  const errors = [];
+  for (const candidate of attempts) {
+    try {
+      return await withSingleEndpointSession(candidate, 'read', async (session) => {
+        const result = await session.run('MATCH (n) OPTIONAL MATCH ()-[r]->() RETURN count(DISTINCT n) AS nodes, count(DISTINCT r) AS relationships');
+        const record = result.records[0];
+        return {
+          name: endpoint.name,
+          uri: candidate.uri,
+          database: candidate.database,
+          ok: true,
+          nodes: toPlainValue(record.get('nodes')),
+          relationships: toPlainValue(record.get('relationships')),
+          fallbackFrom: candidate === endpoint ? null : {
+            uri: endpoint.uri,
+            database: endpoint.database,
+            error: errors[0]?.error || null,
+          },
+        };
+      });
+    } catch (error) {
+      errors.push({
+        uri: candidate.uri,
+        database: candidate.database,
+        error: error.code || error.name || 'Neo4jError',
+        message: String(error.message || error).slice(0, 240),
+      });
+    }
+  }
+
+  return {
     name: endpoint.name,
     uri: endpoint.uri,
     database: endpoint.database,
     ok: false,
-    error: error.code || error.name || 'Neo4jError',
-    message: String(error.message || error).slice(0, 240),
-  }));
+    error: errors[0]?.error || 'Neo4jError',
+    message: errors[0]?.message || 'Neo4j endpoint unavailable',
+    fallbackErrors: errors.slice(1),
+  };
 }
 
 async function exportEndpointGraph(endpoint) {
@@ -556,4 +635,5 @@ module.exports = {
   safeLabel,
   safeRelationshipType,
   sanitizePropertyMap,
+  withSession,
 };
