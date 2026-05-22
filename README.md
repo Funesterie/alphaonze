@@ -120,6 +120,7 @@ et du travail operateur continu. Pour soutenir le projet, proposer un don,
 une aide, un sponsorship ou une coordination directe:
 
 - page contact/support: https://funesterie.me/contact/
+- soutien Stripe: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
 - email: contact@funesterie.me
 
 Ne publie jamais de token, cle API, mot de passe, cle privee ou fichier
