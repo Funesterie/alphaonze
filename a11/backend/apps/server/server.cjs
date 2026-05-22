@@ -7417,15 +7417,15 @@ function resolveEmbeddedUiSurface(req) {
   }
 
   if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname)
-    || hostname === 'a11.funesterie.me') {
+    || hostname === 'a11.funesterie.me'
+    || hostname === 'funesterie.me'
+    || hostname === 'www.funesterie.me') {
     return 'a11';
   }
 
   if (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname)
     || product === 'kaen44'
     || product === 'k44'
-    || hostname === 'funesterie.me'
-    || hostname === 'www.funesterie.me'
     || hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
     return 'kaen44';
@@ -7435,7 +7435,43 @@ function resolveEmbeddedUiSurface(req) {
 }
 
 function rewriteEmbeddedUiIndexForSurface(html, surface) {
-  if (!html || surface !== 'kaen44') return html;
+  if (!html) return html;
+
+  if (surface === 'a11') {
+    return html
+      .replace(/<title>.*?<\/title>/i, '<title>Alphaonze - A11 Funesterie</title>')
+      .replace(
+        /<meta name="description" content="[^"]*"\s*\/?>/i,
+        '<meta name="description" content="Alphaonze, aussi appele A11, est l application Funesterie pour le chat, les fichiers Google Drive autorises, la voix, la memoire et les outils connectes." />'
+      )
+      .replace(
+        /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
+        '<meta name="apple-mobile-web-app-title" content="Alphaonze" />'
+      )
+      .replace(/Navigation Kaen44/g, 'Navigation Alphaonze')
+      .replace(/Kaen44 - Assistante bureau Funesterie/g, 'Alphaonze - A11 Funesterie')
+      .replace(/Ouvrir Kaen44/g, 'Ouvrir Alphaonze')
+      .replace(/Connexion Kaen44/g, 'Connexion Alphaonze')
+      .replace(/Relancer Kaen44/g, 'Relancer Alphaonze')
+      .replace(/Kaen44 par Funesterie/g, 'Alphaonze par Funesterie')
+      .replace(/>Kaen44</g, '>Alphaonze<')
+      .replace(/Avatar et logo Kaen44/g, 'Avatar et logo Alphaonze')
+      .replace(/Kaen44 aide/g, 'Alphaonze aide')
+      .replace(/Kaen44 peut/g, 'Alphaonze peut')
+      .replace(/Kaen44 propose/g, 'Alphaonze propose')
+      .replace(/<h1 style="margin:0 0 20px;font-size:clamp\(46px,7vw,92px\);line-height:\.92;letter-spacing:0;">Alphaonze<\/h1>/g,
+        '<h1 style="margin:0 0 20px;font-size:clamp(46px,7vw,92px);line-height:.92;letter-spacing:0;">Alphaonze</h1>')
+      .replace(
+        /Une assistante bureau claire, vocale et accessible pour organiser les documents,\s*traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien\./g,
+        'Alphaonze, aussi appele A11, est l application Funesterie qui connecte les utilisateurs a leur espace autorise pour le chat, les fichiers Google Drive, la voix, la memoire et les outils d agents.'
+      )
+      .replace(
+        /Une assistante bureau claire, vocale et accessible pour organiser les documents, traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien\./g,
+        'Alphaonze, aussi appele A11, est l application Funesterie qui connecte les utilisateurs a leur espace autorise pour le chat, les fichiers Google Drive, la voix, la memoire et les outils d agents.'
+      );
+  }
+
+  if (surface !== 'kaen44') return html;
 
   return html
     .replace(/<title>.*?<\/title>/i, '<title>Kaen44 - Assistante bureau Funesterie</title>')
