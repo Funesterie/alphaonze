@@ -36,6 +36,23 @@ test('memory router resolves Aura and local endpoints from separate env blocks',
   assert.equal(config.local.auth, 'basic');
 });
 
+test('memory router prefers explicit local NEO4J auth over inherited A11 local auth', () => {
+  const config = resolveRouterConfig({
+    KIRO_V2: 'neo4j+s://aa4680d2.databases.neo4j.io',
+    KIRO_V2_USER: 'aa4680d2',
+    KIRO_V2_PASSWORD: 'test-aura-pass',
+    NEO4J_URI: 'bolt://127.0.0.1:7687',
+    NEO4J_USERNAME: 'neo4j',
+    NEO4J_PASSWORD: 'fresh-local',
+    A11_LOCAL_NEO4J_URI: 'bolt://127.0.0.1:7687',
+    A11_LOCAL_NEO4J_USER: 'stale-user',
+    A11_LOCAL_NEO4J_PASSWORD: 'stale-password',
+  });
+
+  assert.equal(config.local.username, 'neo4j');
+  assert.equal(config.local.password, 'fresh-local');
+});
+
 test('memory router treats global NEO4J_URI as Aura when it points to cloud', () => {
   const config = resolveRouterConfig({
     NEO4J_URI: 'neo4j+s://aa4680d2.databases.neo4j.io',
