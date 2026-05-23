@@ -13,6 +13,11 @@ const runtimeRoot = path.resolve(
 );
 const graphDir = path.join(runtimeRoot, 'knowledge-graph');
 const generatedAt = new Date().toISOString();
+const publicBaseUrl = normalizePublicBaseUrl(process.env.A11_PUBLIC_BASE_URL || 'https://a11.funesterie.me');
+const publicHealthUrl = normalizePublicBaseUrl(
+  process.env.A11_PUBLIC_HEALTH_URL || new URL('/health', publicBaseUrl).toString()
+);
+const mcpBaseUrl = normalizePublicBaseUrl(process.env.A11_MCP_URL || 'https://mcp.funesterie.me/mcp');
 
 const routeMap = {
   id: 'a11-local-route-map',
@@ -20,8 +25,8 @@ const routeMap = {
   generatedAt,
   mode: 'json-fallback-first',
   publicTarget: {
-    url: 'http://178.105.86.89/',
-    health: 'http://178.105.86.89/health',
+    url: publicBaseUrl,
+    health: publicHealthUrl,
   },
   roots: {
     workspace: 'D:\\projets\\funesterie',
@@ -46,7 +51,7 @@ const routeMap = {
       protocol: 'json-rpc-2.0-stdio',
       canonicalPath: 'D:\\projets\\funesterie\\a11\\backend\\apps\\server\\tools\\mcp\\a11-mcp-server.cjs',
       legacyBridgePath: 'D:\\a11-mcp-server\\server.cjs',
-      configuredBaseUrl: 'http://178.105.86.89',
+      configuredBaseUrl: mcpBaseUrl,
       kiroConfig: 'D:\\projets\\funesterie\\.kiro\\settings\\mcp.json',
       dragonManifest: 'D:\\projets\\funesterie\\a11\\dragon\\DRAGON_MANIFEST.json',
       recoveryTools: ['a11_mcp_dimension_status', 'a11_route_map', 'a11_identity_route'],
@@ -98,7 +103,7 @@ const routeMap = {
     ['codex', 'Codex', 'operator-agent'],
     ['djeff', 'Djeff / Jeffrey Cellauro', 'creator'],
     ['funesterie', 'Funesterie', 'workspace'],
-    ['public_url', 'http://178.105.86.89/', 'public-entrypoint'],
+    ['public_url', publicBaseUrl, 'public-entrypoint'],
     ['frontend', 'A11 web frontend', 'service'],
     ['backend', 'A11 Express backend', 'service'],
     ['runtime', 'A11 runtime root', 'storage'],
@@ -248,6 +253,20 @@ function labelFor(id) {
 
 function cypherString(value) {
   return JSON.stringify(String(value || ''));
+}
+
+function normalizePublicBaseUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.pathname === '/' && !raw.endsWith('/')) {
+      return `${parsed.origin}/`;
+    }
+    return parsed.toString();
+  } catch {
+    return raw;
+  }
 }
 
 function toCypher(map) {
