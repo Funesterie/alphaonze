@@ -1,11 +1,36 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const {
   callMcpTool,
   getMcpConfig,
 } = require('../mcp-client.cjs');
 
+const SERVER_ROOT = path.resolve(__dirname, '..', '..');
+const DEFAULT_COCKPIT_HTML_PATHS = [
+  path.join(SERVER_ROOT, 'public', 'cockpit', 'mcp.html'),
+  path.resolve(SERVER_ROOT, '..', '..', '..', '..', 'scripts', 'cockpit', 'mcp.html'),
+];
+const DEFAULT_PRIVATE_MCP_URL = 'https://mcp.funesterie.me/mcp';
+const PUBLIC_MCP_ENDPOINTS = {
+  chatgpt: 'https://mcp.funesterie.me/chatgpt/mcp',
+  claude: 'https://mcp.funesterie.me/claude/mcp',
+  gemini: 'https://mcp.funesterie.me/gemini/mcp',
+  grok: 'https://mcp.funesterie.me/grok/mcp',
+};
+const ALLOWED_PROXY_METHODS = new Set([
+  'initialize',
+  'notifications/initialized',
+  'ping',
+  'tools/list',
+  'tools/call',
+  'resources/list',
+  'resources/read',
+  'prompts/list',
+  'prompts/get',
+]);
 const DEFAULT_COCKPIT_ADMIN_EMAILS = [
   'cellaurojeffrey@gmail.com',
   'funesterie38@gmail.com',
@@ -54,6 +79,170 @@ function jsonError(res, status, error, message) {
     error,
     message,
   });
+}
+
+function redactText(value) {
+  return String(value || '')
+    .replace(/-----BEGIN [^-]+PRIVATE KEY-----[\s\S]*?-----END [^-]+PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
+    .replace(/\b(npm_[A-Za-z0-9_=-]{16,})\b/g, 'npm_[REDACTED]')
+    .replace(/\b(ghp|github_pat|glpat|xox[baprs])_[A-Za-z0-9_=-]{16,}\b/g, '$1_[REDACTED]')
+    .replace(/\b(sk|pk)_(live|test)_[A-Za-z0-9]{12,}\b/g, '$1_$2_[REDACTED]')
+    .replace(/\b(whsec)_[A-Za-z0-9]{12,}\b/g, '$1_[REDACTED]')
+    .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}\b/gi, '$1 [REDACTED]');
+}
+
+function redactDeep(value) {
+  if (typeof value === 'string') return redactText(value);
+  if (Array.isArray(value)) return value.map(redactDeep);
+  if (!value || typeof value !== 'object') return value;
+  const output = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (/token|secret|password|private[_-]?key|authorization|bearer/i.test(key)) {
+      output[key] = '[REDACTED]';
+    } else {
+      output[key] = redactDeep(nested);
+    }
+  }
+  return output;
+}
+
+function tryParseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function parseSse(text) {
+  const events = [];
+  let eventName = 'message';
+  let dataLines = [];
+
+  function flush() {
+    if (!dataLines.length) return;
+    const data = dataLines.join('\n');
+    events.push({
+      event: eventName,
+      data: redactText(data),
+      parsed: redactDeep(tryParseJson(data)),
+    });
+    eventName = 'message';
+    dataLines = [];
+  }
+
+  for (const line of String(text || '').split(/\r?\n/)) {
+    if (line === '') {
+      flush();
+    } else if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim() || 'message';
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  flush();
+  return events;
+}
+
+function normalizeMcpRequest(payload) {
+  const request = payload?.request && typeof payload.request === 'object'
+    ? payload.request
+    : payload;
+  const method = String(request?.method || '').trim();
+  if (!ALLOWED_PROXY_METHODS.has(method)) {
+    const error = new Error('method_not_allowed');
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    jsonrpc: '2.0',
+    id: request?.id ?? `cockpit-${Date.now()}`,
+    method,
+    params: request?.params && typeof request.params === 'object' ? request.params : {},
+  };
+}
+
+function normalizeMcpUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '') || DEFAULT_PRIVATE_MCP_URL;
+}
+
+function getCockpitMcpConfig(env = process.env) {
+  const base = getMcpConfig(env);
+  const configuredUrl = env.A11_MCP_COCKPIT_URL
+    || env.A11_MCP_URL
+    || env.FUNESTERIE_MCP_URL
+    || env.MCP_URL
+    || DEFAULT_PRIVATE_MCP_URL;
+  return {
+    ...base,
+    url: normalizeMcpUrl(configuredUrl),
+  };
+}
+
+function resolveProxyEndpoint(endpointName, env = process.env) {
+  const key = String(endpointName || 'chatgpt').trim().toLowerCase();
+  if (key === 'private') {
+    const config = getCockpitMcpConfig(env);
+    return {
+      key,
+      url: config.url,
+      token: config.token,
+      timeoutMs: config.timeoutMs,
+      tokenPresent: config.tokenPresent,
+    };
+  }
+  const safeKey = PUBLIC_MCP_ENDPOINTS[key] ? key : 'chatgpt';
+  const config = getCockpitMcpConfig(env);
+  return {
+    key: safeKey,
+    url: PUBLIC_MCP_ENDPOINTS[safeKey],
+    token: '',
+    timeoutMs: config.timeoutMs,
+    tokenPresent: false,
+  };
+}
+
+function createAbortSignal(timeoutMs) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs).unref?.();
+  return controller.signal;
+}
+
+function safeInlineJson(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+}
+
+function resolveCockpitHtmlPath(configuredPath) {
+  const candidates = configuredPath
+    ? [configuredPath, ...DEFAULT_COCKPIT_HTML_PATHS]
+    : DEFAULT_COCKPIT_HTML_PATHS;
+  return candidates.find((candidate) => {
+    try {
+      return candidate && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  }) || null;
+}
+
+function renderHostedCockpitHtml(html, { cockpitConfig, user }) {
+  const bootstrap = [
+    '<script>',
+    `window.__FUNESTERIE_MCP_COCKPIT__=${safeInlineJson(cockpitConfig)};`,
+    `window.__FUNESTERIE_COCKPIT_USER__=${safeInlineJson(user)};`,
+    '</script>',
+  ].join('');
+
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${bootstrap}\n</head>`);
+  }
+  return `${bootstrap}\n${html}`;
 }
 
 function parseToolText(value) {
@@ -192,6 +381,7 @@ function createMcpCockpitRouter({
   verifyJWT,
   callTool = callMcpTool,
   env = process.env,
+  cockpitHtmlPath,
 } = {}) {
   if (typeof verifyJWT !== 'function') {
     throw new Error('createMcpCockpitRouter requires verifyJWT');
@@ -211,6 +401,36 @@ function createMcpCockpitRouter({
     });
   }
 
+  router.get(['/', '/index.html', '/mcp.html'], requireCockpitAdmin, (req, res) => {
+    const pagePath = resolveCockpitHtmlPath(cockpitHtmlPath);
+    if (!pagePath) {
+      return jsonError(
+        res,
+        500,
+        'cockpit_html_missing',
+        'Interface MCP introuvable dans le bundle A11.'
+      );
+    }
+
+    const config = getCockpitMcpConfig(env);
+    const hostname = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const html = fs.readFileSync(pagePath, 'utf8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(renderHostedCockpitHtml(html, {
+      cockpitConfig: {
+        mode: 'a11-hosted',
+        hostname: hostname || 'a11.funesterie.me',
+        proxyUrl: '/api/cockpit/mcp/proxy',
+        statusUrl: '/api/cockpit/mcp/status',
+        meUrl: '/api/cockpit/mcp/me',
+        serverSideBearer: config.tokenPresent,
+        publicEndpoints: Object.keys(PUBLIC_MCP_ENDPOINTS),
+      },
+      user: publicUser(req.user || {}),
+    }));
+  });
+
   router.get('/me', requireCockpitAdmin, (req, res) => {
     return res.json({
       ok: true,
@@ -220,7 +440,7 @@ function createMcpCockpitRouter({
   });
 
   router.get('/status', requireCockpitAdmin, async (_req, res) => {
-    const config = getMcpConfig(env);
+    const config = getCockpitMcpConfig(env);
     const [
       a11,
       kaen44,
@@ -250,11 +470,79 @@ function createMcpCockpitRouter({
     }));
   });
 
+  router.options('/proxy', (_req, res) => {
+    res.setHeader('Allow', 'POST, OPTIONS');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(204).end();
+  });
+
+  router.post('/proxy', requireCockpitAdmin, express.json({ limit: '512kb' }), async (req, res) => {
+    let rpc;
+    try {
+      rpc = normalizeMcpRequest(req.body || {});
+    } catch (error_) {
+      return jsonError(
+        res,
+        error_.statusCode || 400,
+        error_.message || 'invalid_request',
+        'Méthode MCP non autorisée pour le cockpit.'
+      );
+    }
+
+    const endpoint = resolveProxyEndpoint(req.body?.endpoint, env);
+    const upstreamHeaders = {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+    };
+
+    if (endpoint.key === 'private') {
+      const browserBearer = String(req.body?.privateBearer || '').trim();
+      const token = endpoint.token || browserBearer;
+      if (!token) {
+        return jsonError(
+          res,
+          400,
+          'private_bearer_required',
+          'Aucun jeton MCP serveur configuré pour le cockpit privé.'
+        );
+      }
+      upstreamHeaders.authorization = `Bearer ${token}`;
+      upstreamHeaders['x-mcp-token'] = token;
+    }
+
+    try {
+      const response = await fetch(endpoint.url, {
+        method: 'POST',
+        headers: upstreamHeaders,
+        body: JSON.stringify(rpc),
+        signal: createAbortSignal(endpoint.timeoutMs),
+      });
+      const bodyText = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      const isSse = /text\/event-stream/i.test(contentType) || /^event:|^data:/m.test(bodyText);
+      const parsed = isSse ? { events: parseSse(bodyText) } : tryParseJson(bodyText);
+
+      return res.status(response.ok ? 200 : response.status).json({
+        ok: response.ok,
+        endpoint: endpoint.key,
+        status: response.status,
+        contentType,
+        payload: redactDeep(parsed),
+        raw: redactText(bodyText).slice(0, 120000),
+      });
+    } catch {
+      return jsonError(res, 502, 'mcp_upstream_unavailable', 'Upstream MCP indisponible.');
+    }
+  });
+
   return router;
 }
 
 module.exports = createMcpCockpitRouter;
 module.exports.DEFAULT_COCKPIT_ADMIN_EMAILS = DEFAULT_COCKPIT_ADMIN_EMAILS;
 module.exports.buildCockpitSummary = buildCockpitSummary;
+module.exports.getCockpitMcpConfig = getCockpitMcpConfig;
 module.exports.getCockpitAdminEmails = getCockpitAdminEmails;
 module.exports.isAllowedCockpitAdmin = isAllowedCockpitAdmin;
+module.exports.normalizeMcpRequest = normalizeMcpRequest;
+module.exports.redactDeep = redactDeep;

@@ -34,6 +34,38 @@ async function getJson(baseUrl, path, headers = {}) {
   };
 }
 
+async function postJson(baseUrl, path, body, headers = {}) {
+  const response = await fetch(baseUrl + path, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json',
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  return {
+    response,
+    json: text ? JSON.parse(text) : null,
+  };
+}
+
+async function withRawServer(handler, runAssertions) {
+  const server = http.createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    await runAssertions(baseUrl);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error_) => (error_ ? reject(error_) : resolve()));
+    });
+  }
+}
+
 function createVerifyJwtForTests() {
   return (req, res, next) => {
     const email = String(req.headers['x-test-email'] || '').trim();
@@ -153,5 +185,84 @@ test('private MCP cockpit summarizes MCP state for allowed admin accounts withou
     assert.equal(json.game.ready, true);
     assert.equal(json.controller.ready, true);
     assert.equal(json.pitching.ready, 1);
+  });
+});
+
+test('hosted MCP cockpit serves the console page with same-origin A11 proxy config', async () => {
+  const tokenKey = ['A11', 'MCP', 'TOKEN'].join('_');
+  const fakeToken = 'unit-test-token-12345';
+
+  await withServer((app) => {
+    app.use('/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: {
+        NODE_ENV: 'production',
+        A11_MCP_URL: 'https://mcp.example.test/mcp',
+        [tokenKey]: fakeToken,
+      },
+    }));
+  }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/cockpit/mcp`, {
+      headers: { 'x-test-email': 'funesterie38@gmail.com' },
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') || '', /text\/html/);
+    assert.match(html, /__FUNESTERIE_MCP_COCKPIT__/);
+    assert.match(html, /\/api\/cockpit\/mcp\/proxy/);
+    assert.match(html, /a11-hosted/);
+    assert.doesNotMatch(html, new RegExp(fakeToken));
+  });
+});
+
+test('hosted MCP cockpit private proxy uses server-side bearer and redacts responses', async () => {
+  const tokenKey = ['A11', 'MCP', 'TOKEN'].join('_');
+  const fakeToken = 'unit-test-token-67890';
+  let upstreamAuthorization = '';
+
+  await withRawServer((req, res) => {
+    upstreamAuthorization = String(req.headers.authorization || '');
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'proxy-test',
+      result: {
+        ok: true,
+        authorization: upstreamAuthorization,
+      },
+    }));
+  }, async (upstreamBaseUrl) => {
+    await withServer((app) => {
+      app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+        verifyJWT: createVerifyJwtForTests(),
+        callTool: createCallToolStub(),
+        env: {
+          NODE_ENV: 'production',
+          A11_MCP_URL: `${upstreamBaseUrl}/mcp`,
+          [tokenKey]: fakeToken,
+        },
+      }));
+    }, async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/cockpit/mcp/proxy', {
+        endpoint: 'private',
+        request: {
+          jsonrpc: '2.0',
+          id: 'tools-test',
+          method: 'tools/list',
+          params: {},
+        },
+      }, {
+        'x-test-email': 'funesterie38@gmail.com',
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.match(upstreamAuthorization, /^Bearer /);
+      assert.ok(upstreamAuthorization.includes(fakeToken));
+      assert.equal(json.payload.result.authorization, '[REDACTED]');
+      assert.doesNotMatch(JSON.stringify(json), new RegExp(fakeToken));
+    });
   });
 });
