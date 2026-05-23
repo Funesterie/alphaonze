@@ -8,28 +8,30 @@
   <title>Funesterie MCP Console</title>
   <style>
     :root {
-      color-scheme: light;
-      --paper: #f7f4ee;
-      --ink: #17202a;
-      --muted: #5c6875;
-      --line: #d9d4ca;
-      --a11: #168b84;
-      --kaen: #b76428;
-      --vivy: #6f4cc3;
-      --ok: #247a45;
-      --wait: #9a6b19;
-      --danger: #a6382f;
-      --soft: #fffaf1;
-      --panel: #ffffff;
-      --code: #101820;
-      --code-line: #2c3946;
+      color-scheme: dark;
+      --paper: #020604;
+      --ink: #d9ffe5;
+      --muted: #82b996;
+      --line: #174b2c;
+      --a11: #37ff8b;
+      --kaen: #f4c15d;
+      --vivy: #62d8ff;
+      --ok: #34f087;
+      --wait: #e7bb48;
+      --danger: #ff6070;
+      --soft: #061209;
+      --panel: #07140b;
+      --code: #010302;
+      --code-line: #164426;
+      --glow: rgba(55, 255, 139, 0.18);
+      --shadow: rgba(0, 0, 0, 0.58);
     }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
       color: var(--ink);
       background: var(--paper);
       overflow-x: hidden;
@@ -49,7 +51,7 @@
       top: 0;
       z-index: 10;
       border-bottom: 1px solid var(--line);
-      background: rgba(247, 244, 238, 0.94);
+      background: rgba(2, 6, 4, 0.94);
       backdrop-filter: blur(14px);
     }
 
@@ -98,10 +100,12 @@
       border-radius: 8px;
       display: grid;
       place-items: center;
-      background: var(--ink);
-      color: var(--paper);
+      border: 1px solid var(--a11);
+      background: var(--code);
+      color: var(--a11);
       font-size: 13px;
       font-weight: 900;
+      box-shadow: 0 0 18px var(--glow);
     }
 
     .topbar-actions {
@@ -116,7 +120,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 0 10px;
-      background: var(--panel);
+      background: var(--soft);
       color: var(--muted);
       font-size: 13px;
       font-weight: 750;
@@ -139,7 +143,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 0 13px;
-      background: var(--panel);
+      background: #031008;
       color: var(--ink);
       text-decoration: none;
       font-weight: 850;
@@ -148,9 +152,19 @@
     }
 
     .button.primary {
-      border-color: transparent;
-      background: var(--ink);
-      color: var(--paper);
+      border-color: var(--a11);
+      background: var(--a11);
+      color: #021006;
+      box-shadow: 0 0 18px var(--glow);
+    }
+
+    .button:hover {
+      border-color: var(--a11);
+      color: var(--a11);
+    }
+
+    .button.primary:hover {
+      color: #021006;
     }
 
     .button:disabled {
@@ -168,6 +182,7 @@
       font-size: clamp(42px, 7vw, 78px);
       line-height: 0.96;
       letter-spacing: 0;
+      text-shadow: 0 0 26px rgba(55, 255, 139, 0.14);
     }
 
     .lead {
@@ -201,7 +216,7 @@
       border-radius: 8px;
       background: var(--panel);
       padding: clamp(16px, 2.4vw, 22px);
-      box-shadow: 0 14px 34px rgba(23, 32, 42, 0.06);
+      box-shadow: 0 18px 44px var(--shadow), inset 0 1px 0 rgba(55, 255, 139, 0.05);
     }
 
     .panel + .panel { margin-top: 14px; }
@@ -212,6 +227,7 @@
       font-size: 12px;
       text-transform: uppercase;
       font-weight: 900;
+      letter-spacing: 0.04em;
     }
 
     h2 {
@@ -274,7 +290,7 @@
     .tool-row:focus-visible,
     .button:focus-visible {
       border-color: var(--a11);
-      box-shadow: 0 0 0 3px rgba(22, 139, 132, 0.16);
+      box-shadow: 0 0 0 3px var(--glow);
     }
 
     .form-grid {
@@ -367,7 +383,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
-      box-shadow: 0 14px 34px rgba(23, 32, 42, 0.06);
+      box-shadow: 0 18px 44px var(--shadow);
       overflow: hidden;
     }
 
@@ -384,6 +400,7 @@
       font-size: 12px;
       font-weight: 900;
       text-transform: uppercase;
+      letter-spacing: 0.03em;
     }
 
     .classic-card header span {
@@ -422,7 +439,10 @@
     .classic-item.err { border-left-color: var(--danger); }
     .classic-item.info { border-left-color: var(--a11); }
     .classic-item.clickable { cursor: pointer; }
-    .classic-item.clickable:hover { border-color: var(--a11); }
+    .classic-item.clickable:hover {
+      border-color: var(--a11);
+      box-shadow: 0 0 18px var(--glow);
+    }
 
     .classic-line {
       display: flex;
@@ -430,7 +450,7 @@
       justify-content: space-between;
       gap: 12px;
       padding: 4px 0;
-      border-bottom: 1px dashed rgba(92, 104, 117, 0.2);
+      border-bottom: 1px dashed rgba(130, 185, 150, 0.25);
     }
 
     .classic-line:last-child {
@@ -481,7 +501,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
-      background: var(--panel);
+      background: var(--soft);
       color: var(--ink);
       cursor: pointer;
       text-align: left;
@@ -489,7 +509,8 @@
 
     .tool-row.selected {
       border-color: var(--a11);
-      background: #effaf7;
+      background: #082011;
+      box-shadow: 0 0 18px var(--glow);
     }
 
     .tool-row b {
@@ -525,7 +546,7 @@
     .response-panel {
       margin-top: 14px;
       background: var(--code);
-      color: #e7f2fb;
+      color: var(--ink);
       border-radius: 8px;
       border: 1px solid var(--code-line);
       overflow: hidden;
@@ -537,7 +558,7 @@
       gap: 12px;
       padding: 0 13px;
       border-bottom: 1px solid var(--code-line);
-      color: #9fb2c5;
+      color: var(--muted);
       font-size: 12px;
       font-weight: 800;
       text-transform: uppercase;
@@ -652,8 +673,8 @@
   <main>
     <section class="hero">
       <div class="wrap">
-        <h1>Interface MCP.</h1>
-        <p class="lead">Console privée pour lire les outils, appeler un tool, inspecter la réponse et basculer entre ChatGPT, Claude, Gemini, Grok ou le MCP privé.</p>
+          <h1>Interface MCP.</h1>
+          <p class="lead">Console sombre pour lire les outils, appeler un tool, inspecter la réponse et basculer entre ChatGPT, Claude, Gemini, Grok ou le MCP privé local.</p>
       </div>
     </section>
 
@@ -662,7 +683,7 @@
         <div>
           <div class="kicker">Cockpit classique</div>
           <h2>La vue agents, jobs, discussions et graphe que tu avais en local.</h2>
-          <p>En mode public, seuls les outils publics répondent. En mode privé, ajoute ton jeton local dans le champ endpoint pour retrouver la vue complète.</p>
+          <p>En mode public, seuls les outils publics répondent. En mode privé local, le serveur garde le jeton côté machine et la page retrouve la vue complète sans l’exposer au navigateur.</p>
         </div>
         <div class="topbar-actions">
           <button class="button primary" type="button" id="dashboardRefresh">Refresh now</button>
@@ -813,6 +834,7 @@
 
   <script>
     (() => {
+      const LOCAL_COCKPIT = window.__FUNESTERIE_LOCAL_COCKPIT__ || null;
       const PROXY_URL = "/.netlify/functions/mcp-proxy";
       const ENDPOINTS = {
         chatgpt: { label: "ChatGPT public", path: "/chatgpt/mcp" },
@@ -1212,9 +1234,11 @@
       function refreshEndpointUi() {
         const endpoint = ENDPOINTS[currentEndpoint()];
         setText("endpointLabel", endpoint.label);
-        setText("endpointPath", endpoint.path);
+        const serverToken = !!LOCAL_COCKPIT?.serverSideBearer;
+        const localHost = LOCAL_COCKPIT?.hostname ? " via " + LOCAL_COCKPIT.hostname : "";
+        setText("endpointPath", serverToken && currentEndpoint() === "private" ? endpoint.path + " serveur" + localHost : endpoint.path);
         const wrap = byId("privateTokenWrap");
-        if (wrap) wrap.classList.toggle("visible", currentEndpoint() === "private");
+        if (wrap) wrap.classList.toggle("visible", currentEndpoint() === "private" && !serverToken);
       }
 
       function bind() {
@@ -1256,6 +1280,11 @@
 
       const user = window.__FUNESTERIE_COCKPIT_USER__;
       if (user?.email) setText("sessionUser", user.email);
+      if (LOCAL_COCKPIT?.mode) {
+        document.documentElement.dataset.localCockpit = LOCAL_COCKPIT.mode;
+        if (endpointSelect && LOCAL_COCKPIT.serverSideBearer) endpointSelect.value = "private";
+        setText("sessionUser", LOCAL_COCKPIT.hostname ? "local tunnel " + LOCAL_COCKPIT.hostname : "local cockpit");
+      }
       refreshEndpointUi();
       bind();
       renderTools();
