@@ -2,6 +2,11 @@
 
 Date: 2026-04-06
 
+> Superseded for current routing decisions.
+> This file describes an older Railway/Netlify rewire state. For 2026-05-23 live routing, use
+> `docs/ops/FUNESTERIE_ROUTING_SOURCE_OF_TRUTH_2026-05-23.md` before changing production,
+> auth, Cloudflare, Netlify, or validation routes.
+
 ## Railway Backend
 
 - Project: `a11backend`
