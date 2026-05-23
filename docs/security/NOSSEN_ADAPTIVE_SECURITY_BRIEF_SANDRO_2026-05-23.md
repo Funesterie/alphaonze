@@ -1,159 +1,235 @@
-# Brief securite adaptative NOSSEN pour Sandro - 2026-05-23
+# Brief sécurité adaptative NOSSEN pour Sandro - 2026-05-23
 
-Audience : revue externe par un ingenieur cybersecurite francophone.
+Audience : revue externe par un ingénieur cybersécurité francophone.
 
-Objectif : expliquer le modele de securite adaptative NOSSEN sans exposer la
-topologie operateur specialisee, les secrets, les tokens, les mots de passe,
-les cles privees, les chemins locaux sensibles, les endpoints prives ou les
-runbooks privilegies.
+Objectif : expliquer le modèle de sécurité adaptative NOSSEN sans exposer la
+topologie opérateur spécialisée, les secrets, les jetons, les mots de passe,
+les clés privées, les chemins locaux sensibles, les points d'accès privés ni les
+runbooks privilégiés.
 
-Ce document n'est pas une certification SOC 2 et ne pretend pas l'etre. C'est
-un dossier de preparation : ce qui existe deja, ce qu'on peut montrer comme
-preuves, et ce qui doit etre durci avant un audit formel.
+Ce document n'est pas une certification SOC 2 et ne prétend pas l'être. C'est
+un dossier de préparation : ce qui existe déjà, ce qu'on peut montrer comme
+preuves, et ce qui doit encore être durci avant un audit formel.
 
-## Resume court
+## Résumé court
 
-NOSSEN separe les briques publiques reutilisables des adaptateurs prives. Le
-systeme repose sur trois habitudes :
+NOSSEN sépare les briques publiques réutilisables des adaptateurs privés. Le
+système repose sur quatre habitudes :
 
-- ne jamais afficher une valeur secrete quand un test d'usage peut prouver le
-  meme resultat ;
-- garder le code public generique et placer le contexte prive dans des
-  adaptateurs scopes ;
-- borner chaque operation sensible par un scope, une confirmation, des tests,
-  une preuve et une trace d'audit.
+- ne jamais afficher une valeur secrète quand un test d'usage peut prouver le
+  même résultat ;
+- garder le code public générique et placer le contexte privé dans des
+  adaptateurs bornés par périmètre ;
+- faire passer les opérations sensibles par une intention explicite, un
+  périmètre clair, une confirmation, des tests, une preuve et une trace d'audit ;
+- traiter NEZ comme une couche d'infrastructure réseau interne, pas comme un
+  simple nom d'en-tête HTTP ou une consigne de documentation.
 
-Le modele est adaptatif : le meme raisonnement doit fonctionner pour un
-package, un agent, un coffre, une capsule temporaire, un connecteur MCP, un
-flux OAuth, une memoire graphe, un paiement ou une integration cloud.
+Le modèle est adaptatif : le même raisonnement doit fonctionner pour un
+paquet npm, un agent, un coffre, une capsule temporaire, un connecteur MCP, un
+flux OAuth, une mémoire graphe, un paiement ou une intégration cloud.
 
 ## Ce que Sandro peut examiner
 
-- La separation entre modules publics et adaptateurs prives.
-- Le modele "preuve par usage" : on verifie qu'un secret fonctionne sans le
+- La séparation entre modules publics et adaptateurs privés.
+- Le modèle "preuve par usage" : on vérifie qu'un secret fonctionne sans le
   montrer.
-- Les regles NEZ de non-exposition des secrets.
-- Le modele RubixGate : capsules temporaires, scopes, TTL, kill-switch et audit.
-- Le modele RubixCube vault : stockage chiffre, shards, inventaire redige.
-- Le modele MCP : endpoints publics/prives, allowlist d'outils, job board,
-  discussions sans secrets, operations gatees.
-- Le modele OAuth : clients separes par usage, scopes minimaux, tokens stockes
-  hors interface, logs rediges.
-- La piste de preuves : PR, checks CI, scans secrets, tests, installs propres,
-  audits npm.
-- La cartographie SOC 2 readiness.
+- NEZ : réseau interne par flux de données chiffrés en RGBA, avec le canal `A`
+  comme checksum et signal de contrôle.
+- RubixGate : capsules temporaires, scopes, TTL, interrupteur d'urgence et audit.
+- RubixCube vault : coffre chiffré, shards, inventaire rédigé.
+- MCP : points d'accès publics/privés, liste d'autorisation d'outils, tableau de
+  tâches, discussions sans secrets, opérations soumises à validation.
+- OAuth : clients séparés par usage, scopes minimaux, jetons stockés hors
+  interface, journaux rédigés.
+- La piste de preuves : PR, vérifications CI, scans de secrets, tests, installations
+  propres, audits npm.
+- La cartographie de préparation SOC 2.
 
 ## Ce que ce brief ne partage pas
 
-- Aucun token, mot de passe, cle API, cle privee, code de recuperation, cookie,
+- Aucun jeton, mot de passe, clé API, clé privée, code de récupération, cookie,
   secret OAuth ou secret webhook.
-- Aucune capture qui revele un secret ou un code de recuperation.
-- Aucune topologie interne specialisee A11.
-- Aucun bearer MCP prive.
-- Aucun credential de provider : npm, GitHub, Cloudflare, Google, Neo4j,
+- Aucune capture qui révèle un secret ou un code de récupération.
+- Aucune topologie interne spécialisée.
+- Aucun bearer MCP privé.
+- Aucun identifiant de fournisseur : npm, GitHub, Cloudflare, Google, Neo4j,
   Docker, Stripe, PayPal ou autre service.
-- Aucun chemin local operateur exploitable.
+- Aucun chemin local opérateur exploitable.
 
-## Modele adaptatif
+## Lecture locale de NEZ
+
+Le corpus local décrit déjà trois briques qui se recoupent :
+
+- une couche NEZ de contrôle d'accès API, avec modes `off`, `dev` et `strict`,
+  et protection par JWT ou en-tête dédié ;
+- une famille Nezlephant/OC8 orientée stockage de blobs, charges utiles et
+  configurations dans des supports RGBA ;
+- un format d'archive RGBA/Brotli réversible et vérifiable, qui transforme une
+  information structurée en octets puis en PNG RGBA sans perte, avec manifestes
+  et empreintes d'intégrité.
+
+La définition cible à retenir pour NOSSEN est donc plus large que la première
+documentation historique : NEZ est une infrastructure réseau interne par flux
+de données chiffrés en RGBA. Les anciennes règles de non-exposition restent
+vraies, mais elles sont la politique de surface au-dessus de NEZ, pas NEZ à
+elles seules.
+
+## NEZ : réseau interne par flux RGBA chiffrés
+
+NEZ peut être présenté comme une couche de transport interne pour agents,
+outils et modules. Son rôle est de déplacer de l'état, des preuves, des
+fragments de secrets ou des charges utiles d'orchestration sans jamais exposer la
+valeur brute dans les interfaces humaines, les journaux ou les discussions agents.
+
+Modèle de trame logique :
+
+```txt
+trame NEZ
+  R : fragment chiffré ou canal de charge utile
+  G : fragment chiffré ou canal de charge utile
+  B : fragment chiffré ou canal de charge utile
+  A : checksum, séquence, validité ou signal de contrôle
+```
+
+Le canal `A` ne doit pas être vendu comme une preuve cryptographique complète à
+lui seul. Il sert au contrôle rapide d'intégrité, de séquence ou de cohérence
+du flux. La garantie forte doit rester portée par du chiffrement authentifié,
+des nonces corrects, des empreintes ou MAC cryptographiques, et des règles
+anti-rejeu.
+
+Pipeline conceptuel :
 
 ```mermaid
 flowchart TD
-  Intent["Intention humaine"] --> Reduce["Reduction logique: chemin direct + garde-fous"]
-  Reduce --> Lane["Choix de voie: coeur public ou adaptateur prive"]
-  Lane --> Auth["Acces: OAuth, capsule, vault, env ou dashboard provider"]
-  Auth --> Scope["Scope explicite et TTL si necessaire"]
-  Scope --> Work["Operation bornee"]
-  Work --> Verify["Verification ciblee"]
-  Verify --> Evidence["Preuves: tests, scans, PR, audit"]
+  Source["État interne, secret ou charge utile"] --> Canon["Forme canonique"]
+  Canon --> Encrypt["Chiffrement authentifié"]
+  Encrypt --> Split["Découpe en trames RGBA"]
+  Split --> Alpha["Canal A : checksum + contrôle"]
+  Alpha --> Transport["Flux NEZ interne"]
+  Transport --> Verify["Vérification intégrité + ordre + périmètre"]
+  Verify --> Use["Consommation bornée par l'outil autorisé"]
+  Use --> Report["Retour rédigé : statut, preuve, audit"]
+```
+
+Règles NEZ :
+
+- un flux peut transporter une capacité, mais l'interface ne doit jamais
+  afficher la capacité brute ;
+- la vérification doit retourner un statut, un périmètre, un identifiant non
+  sensible ou une preuve d'usage, pas le secret ;
+- le décodage doit être borné à un outil autorisé, un périmètre et une fenêtre
+  d'exécution ;
+- les trames doivent être vérifiables : checksum `A`, empreinte de charge utile,
+  manifeste, anti-rejeu et audit ;
+- une corruption, un ordre invalide ou un périmètre absent doit produire un refus
+  explicite et traçable ;
+- la compression éventuelle doit être pensée avant chiffrement, avec attention
+  aux attaques par oracle de compression si des secrets et données contrôlées
+  par l'utilisateur cohabitent.
+
+Questions techniques à faire relire par Sandro :
+
+- Le canal `A` doit-il contenir un checksum simple, un fragment de MAC, un
+  compteur, ou une combinaison des trois ?
+- Comment gérer les nonces pour éviter toute réutilisation de clé/nonce sur
+  plusieurs flux ?
+- Quelle stratégie anti-rejeu : compteur monotone, horodatage borné, fenêtre
+  glissante, signature de trame ou manifeste global ?
+- Les trames RGBA doivent-elles être sérialisées en PNG sans perte uniquement, ou
+  aussi en flux binaire direct pour les transports temps réel ?
+- Quels contrôles empêchent un agent de demander un décodage NEZ hors périmètre ?
+- Quelle partie peut être démontrée publiquement sans révéler le schéma interne
+  complet ?
+
+## Modèle adaptatif
+
+```mermaid
+flowchart TD
+  Intent["Intention humaine"] --> Reduce["Réduction logique : chemin direct + garde-fous"]
+  Reduce --> Lane["Choix de voie : coeur public ou adaptateur privé"]
+  Lane --> Auth["Accès : OAuth, capsule, coffre, variables d'environnement ou console fournisseur"]
+  Auth --> Scope["Scope explicite et TTL si nécessaire"]
+  Scope --> Work["Opération bornée"]
+  Work --> Verify["Vérification ciblée"]
+  Verify --> Evidence["Preuves : tests, scans, PR, audit"]
   Evidence --> Improve["Durcissement ou extraction suivante"]
 ```
 
-Chaque etape doit rester simple. La creativite est dans le produit et
-l'orchestration ; l'execution sensible doit rester repetable, verifiable et
-revocable.
+Chaque étape doit rester simple. La créativité est dans le produit et
+l'orchestration ; l'exécution sensible doit rester répétable, vérifiable et
+révocable.
 
-## Principe NEZ : ne pas exposer les secrets
+## Sécurité MCP au-dessus de NEZ
 
-NEZ est la discipline de non-exposition. Un agent, un outil, une doc ou une
-interface ne doit pas afficher de secret brut. Quand un token ou un credential
-doit etre verifie, on le consomme dans un chemin autorise et on retourne
-seulement :
-
-- succes ou echec ;
-- nom de compte ou de scope si ce n'est pas sensible ;
-- nombre d'outils, de packages ou d'endpoints accessibles ;
-- inventaire redige ;
-- timestamps et metadonnees non secretes.
-
-Cette regle s'applique aux chats, PR, logs, captures, messages MCP, noeuds de
-graphe, jobs agents et docs.
-
-## Securite MCP
-
-Le MCP est traite comme une surface d'orchestration, pas comme un shell libre.
-Le modele generique separe trois voies :
+Le MCP est traité comme une surface d'orchestration, pas comme un shell libre.
+Dans le modèle NOSSEN, MCP est l'interface d'outils ; NEZ est la couche interne
+qui transporte ou protège les flux sensibles ; RubixGate et RubixCube encadrent
+respectivement l'autorisation temporaire et le stockage.
 
 | Voie | Usage | Niveau de risque | Exemple de garde-fou |
 | --- | --- | --- | --- |
-| Public read-only | recherche, fetch, statut public, onboarding | faible | aucun secret, outils lecture seule |
-| Prive safe | discussions, jobs, statut, routage, lectures bornees | moyen | auth, scopes, no-secret, allowlist |
-| Operations gated | ecritures append-only, input borne, publication, graph safe write | eleve | confirmation, scope, audit, rollback |
+| Public lecture seule | recherche, récupération, statut public, accueil technique | faible | aucun secret, outils lecture seule |
+| Privé contrôlé | discussions, tâches, statut, routage, lectures bornées | moyen | authentification, scopes, sans secret, liste d'autorisation |
+| Opérations soumises à validation | écritures en ajout uniquement, entrée bornée, publication, écriture graph contrôlée | élevé | confirmation, périmètre, audit, retour arrière |
 
-Bloque par defaut :
+Bloqué par défaut :
 
 - shell libre ;
-- lecture de fichiers hors allowlist ;
+- lecture de fichiers hors liste d'autorisation ;
 - lecture de secrets ;
-- acces root ou `docker.sock` ;
-- redemarrage de workers par agents externes ;
-- ecriture directe non bornee dans Neo4j ;
-- mutation prod/deploy/billing sans validation explicite.
+- accès root ou `docker.sock` ;
+- redémarrage de workers par agents externes ;
+- écriture directe non bornée dans Neo4j ;
+- mutation production, déploiement ou facturation sans validation explicite.
 
 ### Auth MCP
 
-Le modele accepte plusieurs mecanismes, chacun avec un role clair :
+Le modèle accepte plusieurs mécanismes, chacun avec un rôle clair :
 
-- endpoint public sans secret pour documentation, recherche et statut ;
-- bearer ou OAuth pour la voie privee ;
-- process local pour les outils qui ne doivent pas etre exposes au reseau ;
-- capsule RubixGate pour un acces temporaire ;
-- variables d'environnement, coffre local ou dashboard provider pour les
-  secrets longs.
+- point d'accès public sans secret pour documentation, recherche et statut ;
+- jeton bearer ou OAuth pour la voie privée ;
+- processus local pour les outils qui ne doivent pas être exposés au réseau ;
+- capsule RubixGate pour un accès temporaire ;
+- variables d'environnement, coffre local ou console fournisseur pour les
+  secrets longs ;
+- flux NEZ pour transporter les preuves et capacités internes sans les exposer
+  dans l'interface MCP.
 
-Le bearer ou token OAuth ne doit jamais etre colle dans une discussion, un
-ticket, une PR ou une capture. Les agents doivent prouver l'acces par un appel
-borne, par exemple "tools/list OK, N outils visibles", pas par affichage du
-token.
+Le bearer ou jeton OAuth ne doit jamais être collé dans une discussion, un
+ticket, une PR ou une capture. Les agents doivent prouver l'accès par un appel
+borné, par exemple "tools/list OK, N outils visibles", pas par affichage du
+jeton.
 
 ### Outils MCP
 
-Les outils sont classes par politique :
+Les outils sont classés par politique :
 
-- lecture publique : recherche, fetch, statut ;
-- lecture privee safe : presence, heartbeat, job status, schema, statut graph,
-  statut service, inventaire redige ;
-- operations gatees : enqueue/lease/complete job, ecriture append-only, graph
-  safe write, publication d'artefact, input local borne ;
-- bloque par defaut : secrets, shell libre, prod deploy, paiement, suppression
-  large, rollback non scope.
+- lecture publique : recherche, récupération, statut ;
+- lecture privée contrôlée : présence, heartbeat, statut de tâche, schéma, statut graph,
+  statut service, inventaire rédigé ;
+- opérations soumises à validation : enqueue/lease/complete job, écriture en
+  ajout uniquement, écriture graph contrôlée, publication d'artefact, entrée locale bornée ;
+- bloqué par défaut : secrets, shell libre, déploiement production, paiement, suppression
+  large, retour arrière non borné.
 
-Chaque tache MCP doit avoir :
+Chaque tâche MCP doit avoir :
 
 ```txt
 id:
 owner:
-scope:
+périmètre:
 risque:
 reproduction:
 condition de fin:
-rollback:
+retour_arrière:
 ```
 
 ## OAuth
 
-Le principe OAuth est la separation par usage.
+Le principe OAuth est la séparation par usage.
 
-### Client identite
+### Client identité
 
 Le client de connexion doit rester minimal :
 
@@ -161,52 +237,52 @@ Le client de connexion doit rester minimal :
 - `email` ;
 - `profile`.
 
-Il sert a identifier l'utilisateur, ouvrir une session et afficher un profil de
-base. Il ne doit pas demander d'acces Drive, YouTube, Gmail ou Workspace si ces
-actions ne sont pas necessaires au login.
+Il sert à identifier l'utilisateur, ouvrir une session et afficher un profil de
+base. Il ne doit pas demander d'accès Drive, YouTube, Gmail ou Workspace si ces
+actions ne sont pas nécessaires à la connexion.
 
-### Clients sensibles separes
+### Clients sensibles séparés
 
-Les scopes sensibles doivent etre portes par un client separe et seulement pour
-un module qui en a besoin. Exemple generique :
+Les scopes sensibles doivent être portés par un client séparé et seulement pour
+un module qui en a besoin. Exemple générique :
 
-- un client media peut demander un scope de fichier choisi explicitement par
+- un client média peut demander un scope de fichier choisi explicitement par
   l'utilisateur ;
-- un client upload peut publier un contenu seulement apres action explicite ;
-- le client identite ne doit pas heriter de ces scopes.
+- un client de téléversement peut publier un contenu seulement après action explicite ;
+- le client identité ne doit pas hériter de ces scopes.
 
-### Regles OAuth
+### Règles OAuth
 
 - Scopes minimaux par client.
-- Redirect URIs allowlistes dans les dashboards providers.
-- Secrets OAuth stockes cote serveur, coffre local ou dashboard provider.
-- Tokens jamais affiches dans l'interface.
-- Logs qui redigent jetons, refresh tokens, secrets client et headers
+- Redirect URIs placées sur liste d'autorisation dans les consoles fournisseurs.
+- Secrets OAuth stockés côté serveur, coffre local ou console fournisseur.
+- Jetons jamais affichés dans l'interface.
+- Logs qui rédigent jetons, jetons de rafraîchissement, secrets client et en-têtes
   d'autorisation.
-- Comptes de test separes si l'application reste en mode test provider.
-- Validation humaine avant toute publication ou upload externe.
+- Comptes de test séparés si l'application reste en mode test fournisseur.
+- Validation humaine avant toute publication ou téléversement externe.
 
 ## Capsules RubixGate
 
-RubixGate est un modele d'acces temporaire. Une capsule n'est pas un mot de
-passe partage ; c'est un conteneur d'intention, de scope et de temps.
+RubixGate est un modèle d'accès temporaire. Une capsule n'est pas un mot de
+passe partagé ; c'est un conteneur d'intention, de périmètre et de temps.
 
-Cycle generique :
+Cycle générique :
 
 ```mermaid
 flowchart TD
-  A["Intent operateur"] --> B["Manifeste non secret"]
-  B --> C["Payload chiffre"]
-  C --> D["Fenetre d'activation"]
-  D --> E{"Fenetre valide ?"}
+  A["Intention opérateur"] --> B["Manifeste non secret"]
+  B --> C["Charge utile chiffrée"]
+  C --> D["Fenêtre d'activation"]
+  D --> E{"Fenêtre valide ?"}
   E -- "Non" --> X["Refus + audit"]
-  E -- "Oui" --> F["Challenge + audience + scope"]
+  E -- "Oui" --> F["Challenge + audience + périmètre"]
   F --> G{"Challenge valide ?"}
   G -- "Non" --> Y["Refus + audit"]
-  G -- "Oui" --> H["Dechiffrement en memoire worker"]
-  H --> I["Acces temporaire scope"]
+  G -- "Oui" --> H["Déchiffrement en mémoire worker"]
+  H --> I["Accès temporaire borné"]
   I --> J["TTL"]
-  J --> K["Revocation ou reroll"]
+  J --> K["Révocation ou reroll"]
   K --> L["Audit sans secret"]
 ```
 
@@ -215,148 +291,161 @@ Une capsule publique peut contenir :
 - identifiant ;
 - audience ;
 - scope ;
-- fenetre d'activation ;
+- fenêtre d'activation ;
 - TTL ;
-- hash du payload ;
+- empreinte de la charge utile ;
 - statut : planned, armed, active, expired, revoked.
 
-Elle ne doit pas contenir le secret decode. Le secret n'existe que dans le
-chemin worker autorise, pour une duree limitee, avec audit et kill-switch.
+Elle ne doit pas contenir le secret décodé. Le secret n'existe que dans le
+chemin worker autorisé, pour une durée limitée, avec audit et interrupteur
+d'urgence.
 
-## RubixCube vault
+## Coffre RubixCube
 
-RubixCube vault est le modele de coffre.
+RubixCube vault est le modèle de coffre.
 
-Architecture generique :
+Architecture générique :
 
-- bundle chiffre avant stockage ;
-- chiffrement authentifie ;
-- derivee de cle via passphrase operateur ;
+- paquet chiffré avant stockage ;
+- chiffrement authentifié ;
+- dérivée de clé via passphrase opérateur ;
 - shards ou conteneurs transportables ;
-- manifeste avec hashes et metadonnees non secretes ;
-- status check qui verifie l'integrite sans dechiffrer ;
-- consommation par chemins whitelistes uniquement.
+- manifeste avec empreintes et métadonnées non secrètes ;
+- vérification de statut qui confirme l'intégrité sans déchiffrer ;
+- consommation par chemins placés sur liste d'autorisation uniquement.
 
-Point important : l'image ou le shard n'est pas la securite principale.
-La securite vient du chiffrement, du controle de la passphrase, de la
-consommation bornee et de la regle no-output.
+Point important : l'image, le shard ou le support RGBA n'est pas la sécurité
+principale. La sécurité vient du chiffrement, du contrôle de la passphrase, de
+la consommation bornée et de la règle de non-sortie brute.
 
-## Packages publics et prives
+## Packages publics et privés
 
 Les packages publics sont sous `@nossen/*`.
 
-Regles :
+Règles :
 
-- rester generiques ;
-- aucune topologie privee ;
+- rester génériques ;
+- aucune topologie privée ;
 - aucun chemin machine personnel ;
-- aucun credential ;
+- aucun identifiant ou secret d'accès ;
 - liens de support volontaires seulement ;
-- API et CLI reutilisables.
+- API et CLI réutilisables.
 
-Les packages prives sont sous `@funeste/*`.
+Les packages privés sont sous `@funeste/*`.
 
-Regles :
+Règles :
 
-- adapter les modules publics au contexte operateur ;
-- lire les secrets au runtime depuis env, coffre ou provider dashboard ;
+- adapter les modules publics au contexte opérateur ;
+- lire les secrets à l'exécution depuis variables d'environnement, coffre ou
+  console fournisseur ;
 - ne jamais embarquer de secret dans le package ;
 - tester par install propre et audit.
 
 Preuves actuelles :
 
 - `@nossen/logic-reduce@2.0.0` public ;
-- `@funeste/logic-reduce-nossen@2.0.0` prive restricted ;
-- acces prive par equipe npm org ;
-- installation fraiche et audit reussis sur la paire testee.
+- `@funeste/logic-reduce-nossen@2.0.0` privé en accès restreint ;
+- accès privé par équipe npm org ;
+- installation fraîche et audit réussis sur la paire testée.
 
-## Memoire et graphe metadata-first
+## Mémoire et graphe avec priorité aux métadonnées
 
-La memoire ne doit pas devenir un depot de contenu prive. Les index et graphes
-doivent privilegier :
+La mémoire ne doit pas devenir un dépôt de contenu privé. Les index et graphes
+doivent privilégier :
 
 - labels de racines ;
 - chemins relatifs ;
 - type de fichier ;
 - taille ;
 - date de modification ;
-- hash pour fichiers raisonnables ;
-- statut de confidentialite ;
-- liens semantiques entre elements deja connus.
+- empreinte pour fichiers raisonnables ;
+- statut de confidentialité ;
+- liens sémantiques entre éléments déjà connus.
 
-Les chemins ressemblant a des secrets sont ignores. Les contenus larges, clouds
-ou personnels commencent en metadata-only, avec plafond strict et revue humaine.
+Les chemins ressemblant à des secrets sont ignorés. Les contenus larges, cloud
+ou personnels commencent en mode métadonnées uniquement, avec plafond strict et
+revue humaine.
 
 ## Gestion du changement
 
 Chemin direct :
 
-1. lire le preflight avant toute affirmation infra/auth/prod/MCP ;
-2. choisir le fichier ou package exact ;
+1. lire le preflight avant toute affirmation infra, auth, prod ou MCP ;
+2. choisir le fichier ou paquet exact ;
 3. patch minimal ;
-4. tests cibles ;
-5. dry pack ou install propre si package ;
+4. tests ciblés ;
+5. paquet d'essai ou installation propre si paquet npm ;
 6. PR ;
 7. scans et CI verts ;
-8. merge seulement apres verification.
+8. fusion seulement après vérification.
 
-La vitesse vient de la precision, pas du contournement des garde-fous.
+La vitesse vient de la précision, pas du contournement des garde-fous.
 
-## Cartographie SOC 2 readiness
+## Cartographie de préparation SOC 2
 
-SOC 2 couvre des criteres de confiance comme securite, disponibilite, integrite
-de traitement, confidentialite et vie privee. Un vrai rapport necessite un
-auditeur independant. Ici, on cartographie la readiness.
+SOC 2 couvre des critères de confiance comme sécurité, disponibilité, intégrité
+de traitement, confidentialité et vie privée. Un vrai rapport nécessite un
+auditeur indépendant. Ici, on cartographie le niveau de préparation.
 
-| Domaine | Deja present | A durcir |
+| Domaine | Déjà présent | À durcir |
 | --- | --- | --- |
-| Securite | no-secret, scopes, packages prives, scans CI, vault, capsules | revue d'acces periodique, matrice proprietaires |
-| Disponibilite | inventaire services, packages publies, notes autostart | RTO/RPO, tests de restore, evidence uptime |
-| Integrite | tests, dry-runs, fresh installs, PR checks | politique formelle de release et retention |
-| Confidentialite | lanes public/prive, metadata-first, exclusion vault | classification data et validation humaine |
-| Vie privee | pas de PII par defaut dans docs, corpus borne | inventaire privacy, procedure export/suppression |
+| Sécurité | règle sans secret, scopes, packages privés, scans CI, coffre, capsules, NEZ | revue d'accès périodique, matrice propriétaires, preuves d'anti-rejeu |
+| Disponibilité | inventaire services, packages publiés, notes de démarrage automatique | RTO/RPO, tests de restauration, preuve de disponibilité |
+| Intégrité | tests, essais à blanc, installations fraîches, vérifications de PR, sommes de contrôle RGBA | politique formelle de release et rétention |
+| Confidentialité | voies public/privé, priorité aux métadonnées, exclusion coffre | classification des données et validation humaine |
+| Vie privée | pas de données personnelles par défaut dans docs, corpus borné | inventaire vie privée, procédure export/suppression |
 
-## Pack de preuves a preparer
+## Pack de preuves à préparer
 
-- PRs avec checks verts et commits de merge.
+- PR avec vérifications vertes et commits de fusion.
 - Sorties Gitleaks et secret scan.
 - Sorties CodeQL et dependency audit.
-- Verifications npm public/prive.
-- Fresh installs avec audit.
-- Statut vault qui montre l'integrite sans valeur secrete.
-- Dry-run source index montrant les entrees secretes ignorees.
-- Roster d'acces avec roles, sans credentials.
-- Runbook incident : fuite token, package compromis, appareil perdu, webhook
-  provider compromis.
-- Exemple de capsule dry-run : creee, refusee hors fenetre, auditee sans secret.
+- Vérifications npm public/privé.
+- Installations propres avec audit.
+- Statut du coffre qui montre l'intégrité sans valeur secrète.
+- Essai à blanc d'index source montrant les entrées secrètes ignorées.
+- Registre d'accès avec rôles, sans identifiants ni secrets.
+- Procédure incident : fuite jeton, package compromis, appareil perdu, webhook
+  fournisseur compromis.
+- Exemple de capsule en essai à blanc : créée, refusée hors fenêtre, auditée sans
+  secret.
+- Démonstrateur NEZ : trame RGBA chiffrée, `A` checksum, corruption détectée,
+  refus hors périmètre, aucune valeur brute en sortie.
 
 ## Questions pour Sandro
 
-- Le modele "preuve par usage sans affichage de secret" est-il suffisant pour
+- Le modèle "preuve par usage sans affichage de secret" est-il suffisant pour
   travailler avec des agents externes ?
-- Quels controles doivent etre obligatoires avant d'ajouter un autre humain ?
+- Quels contrôles doivent être obligatoires avant d'ajouter un autre humain ?
 - Les capsules doivent-elles rester locales d'abord ou passer directement par
-  un secret manager gere ?
-- Quelles preuves sont les plus utiles pour une premiere revue SOC 2 readiness ?
-- Quelles parties peuvent etre montrees sous NDA, et lesquelles doivent rester
-  operateur-only ?
-- Comment modeliser les capacites agents sans reveler l'implementation
-  specialisee ?
-- Quels controles OAuth manquent pour rendre le systeme defendable devant un
-  reviewer externe ?
+  un gestionnaire de secrets géré ?
+- Quelles preuves sont les plus utiles pour une première revue de préparation
+  SOC 2 ?
+- Quelles parties peuvent être montrées sous NDA, et lesquelles doivent rester
+  opérateur-only ?
+- Comment modéliser les capacités agents sans révéler l'implémentation
+  spécialisée ?
+- Quels contrôles OAuth manquent pour rendre le système défendable devant un
+  relecteur externe ?
+- La couche NEZ doit-elle être spécifiée comme protocole, bibliothèque, format
+  d'archive, middleware réseau, ou les quatre avec des frontières claires ?
 
 ## Prochaine vague de durcissement
 
-1. Inventaire formel des actifs, proprietaires et classification data.
-2. Checklist trimestrielle de revue d'acces npm, GitHub, cloud providers,
-   payment dashboards et MCP.
-3. Lifecycle RubixGate en commandes dry-run testees.
-4. Runbook fuite secret avec ordre de rotation et preuves a capturer.
-5. Exercices de restore graph/config/package metadata.
-6. Diagramme d'architecture sanitise pour revue externe.
-7. Annexe specialisee gardee privee, separee de ce brief adaptatif.
+1. Spécification NEZ v0 : format de trame, rôle exact de `A`, nonces,
+   anti-rejeu, erreurs, manifestes et politique de décodage.
+2. Démonstrateur NEZ local sans secret : encode, transporte, altère une trame,
+   détecte la corruption et refuse la sortie brute.
+3. Inventaire formel des actifs, propriétaires et classification des données.
+4. Checklist trimestrielle de revue d'accès npm, GitHub, fournisseurs cloud,
+   consoles de paiement et MCP.
+5. Cycle de vie RubixGate en commandes d'essai à blanc testées.
+6. Procédure de fuite de secret avec ordre de rotation et preuves à capturer.
+7. Exercices de restauration graph/config/métadonnées packages.
+8. Diagramme d'architecture anonymisé pour revue externe.
+9. Annexe spécialisée gardée privée, séparée de ce brief adaptatif.
 
-## References externes
+## Références externes
 
 - npm private packages: https://docs.npmjs.com/about-private-packages/
 - npm organizations: https://docs.npmjs.com/organizations/
