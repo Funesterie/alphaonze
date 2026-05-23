@@ -267,6 +267,15 @@ test('runImageAtelier builds a coherent atelier mask from message text', async (
   const result = await runImageAtelier({
     req: { headers: {} },
     message: 'genere une image de pomme',
+    buildMaskFromText: async (text) => ({
+      rawMask: createMask({
+        subject: 'pomme',
+        raw: text,
+        environment: ['fond neutre simple'],
+        composition: ['objet unique isolé'],
+        subjectProfile: { type: 'simple_food_object' },
+      }),
+    }),
     generateFromMask: async ({ rawMask }) => createRoundResult({
       imageUrl: 'https://files.example.com/apple-message.png',
       verification: {
@@ -289,6 +298,15 @@ test('runImageAtelier builds character and creature masks from message text', as
   const gohanResult = await runImageAtelier({
     req: { headers: {} },
     message: 'genere une image de gohan',
+    buildMaskFromText: async (text) => ({
+      rawMask: createMask({
+        subject: 'gohan',
+        raw: text,
+        environment: ['fond simple cohérent avec le personnage'],
+        composition: ['un seul personnage complet'],
+        subjectProfile: { type: 'reference_character' },
+      }),
+    }),
     generateFromMask: async ({ rawMask }) => createRoundResult({
       imageUrl: 'https://files.example.com/gohan-message.png',
       verification: {
@@ -305,6 +323,15 @@ test('runImageAtelier builds character and creature masks from message text', as
   const dragonResult = await runImageAtelier({
     req: { headers: {} },
     message: 'genere une image de dragon bleu',
+    buildMaskFromText: async (text) => ({
+      rawMask: createMask({
+        subject: 'dragon bleu',
+        raw: text,
+        environment: ['décor simple cohérent avec le sujet'],
+        composition: ['créature unique complète'],
+        subjectProfile: { type: 'mythic_creature' },
+      }),
+    }),
     generateFromMask: async ({ rawMask }) => createRoundResult({
       imageUrl: 'https://files.example.com/dragon-message.png',
       verification: {
@@ -325,4 +352,37 @@ test('runImageAtelier builds character and creature masks from message text', as
   assert.equal(dragonResult.atelier.summary.profile_type, 'mythic_creature');
   assert.ok(dragonResult.atelier.trace.rounds[0].mask_snapshot.inputs.composition.includes('créature unique complète'));
   assert.ok(dragonResult.atelier.trace.rounds[0].mask_snapshot.inputs.environment.includes('décor simple cohérent avec le sujet'));
+});
+
+test('runImageAtelier propagates canonical mask builder failures instead of building a heuristic mask', async () => {
+  const canonicalizerError = new Error('image_request_canonicalizer_failed');
+  canonicalizerError.code = 'image_request_canonicalizer_failed';
+  canonicalizerError.payload = {
+    ok: false,
+    error: 'image_request_canonicalizer_failed',
+    details: {
+      policy: 'llm_only_no_heuristic_fallback',
+      reasons: ['default_structured_llm:structured_llm_unconfigured'],
+    },
+  };
+  let generated = false;
+
+  await assert.rejects(
+    () => runImageAtelier({
+      req: { headers: {} },
+      message: 'genere une image de pomme',
+      buildMaskFromText: async () => {
+        throw canonicalizerError;
+      },
+      generateFromMask: async () => {
+        generated = true;
+        return createRoundResult();
+      },
+    }),
+    (error) => {
+      assert.equal(error, canonicalizerError);
+      assert.equal(generated, false);
+      return true;
+    }
+  );
 });

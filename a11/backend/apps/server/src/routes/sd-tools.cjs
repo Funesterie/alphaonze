@@ -978,7 +978,6 @@ function createSdToolsRouter(overrides = {}) {
     if (!skipSemanticImagePrepass && !promptAlreadyCompiled && !inferredPromptAlreadyCompiled) {
       try {
         const maskResolution = await buildCanonicalImageMaskFromText(rawPrompt, {
-          allowCompatFallback: true,
           maskOptions: {
             width: Number(requestBody?.width || imageDimensionConfig.defaultWidth),
             height: Number(requestBody?.height || imageDimensionConfig.defaultHeight),

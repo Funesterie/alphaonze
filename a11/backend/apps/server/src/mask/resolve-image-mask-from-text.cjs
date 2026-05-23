@@ -68,45 +68,7 @@ async function buildCanonicalImageMaskFromText(text, opts = {}) {
       ).trim(),
     });
   } catch (error_) {
-    if (opts.allowCompatFallback !== true) throw error_;
-
-    let wazaa = null;
-    let rawMask = null;
-    try {
-      wazaa = await textToWazaa(rawUserInput, opts);
-      rawMask = wazaaToMask(wazaa, {
-        intentType: 'image.generate',
-        sourceText: rawUserInput,
-        semanticAnalysis: opts.analysis || null,
-      });
-    } catch (fallbackError) {
-      const error = new Error(String(error_?.message || fallbackError?.message || 'image_request_canonicalization_failed'));
-      error.code = error_?.code || 'image_request_canonicalization_failed';
-      error.statusCode = error_?.statusCode || 502;
-      error.payload = error_?.payload || {
-        ok: false,
-        error: error.code,
-        message: error.message,
-      };
-      throw error;
-    }
-
-    if (!rawMask || rawMask.intent !== 'image.generate') {
-      throw error_;
-    }
-
-    return {
-      rawMask: applyImageMaskOverrides(rawMask, opts.maskOptions || {}),
-      wazaa,
-      fallbackUsed: 'legacy-wazaa',
-      source: 'compat-wazaa',
-      requestTextSmootherResult: null,
-      canonicalizedRequest: null,
-      canonicalizerError: {
-        code: error_?.code || 'image_request_canonicalizer_failed',
-        message: String(error_?.message || error_),
-      },
-    };
+    throw error_;
   }
 
   if (canonicalizedRequest?.needsClarification === true) {
