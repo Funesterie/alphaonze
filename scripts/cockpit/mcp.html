@@ -1,0 +1,1268 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="Interface MCP privee Funesterie.">
+  <title>Funesterie MCP Console</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f4ee;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d9d4ca;
+      --a11: #168b84;
+      --kaen: #b76428;
+      --vivy: #6f4cc3;
+      --ok: #247a45;
+      --wait: #9a6b19;
+      --danger: #a6382f;
+      --soft: #fffaf1;
+      --panel: #ffffff;
+      --code: #101820;
+      --code-line: #2c3946;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 244, 238, 0.94);
+      backdrop-filter: blur(14px);
+    }
+
+    main {
+      max-width: 100vw;
+      overflow: hidden;
+    }
+
+    .topbar-inner,
+    .wrap {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding-inline: clamp(16px, 4vw, 32px);
+    }
+
+    .topbar-inner {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand,
+    .topbar-actions,
+    .status-pill,
+    .button,
+    .endpoint-row,
+    .tool-row,
+    .metric,
+    .quick-strip,
+    .response-meta {
+      display: flex;
+      align-items: center;
+    }
+
+    .brand {
+      gap: 10px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: var(--ink);
+      color: var(--paper);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .topbar-actions {
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .status-pill {
+      min-height: 32px;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: var(--wait);
+    }
+
+    .dot.ok { background: var(--ok); }
+    .dot.bad { background: var(--danger); }
+
+    .button {
+      min-height: 40px;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 13px;
+      background: var(--panel);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 850;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.56;
+    }
+
+    .hero {
+      padding: clamp(30px, 5vw, 54px) 0 18px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 960px;
+      font-size: clamp(42px, 7vw, 78px);
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 16px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: clamp(18px, 2vw, 23px);
+      line-height: 1.5;
+      font-weight: 620;
+      overflow-wrap: anywhere;
+    }
+
+    .section {
+      padding: 18px 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .grid > * {
+      min-width: 0;
+    }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: clamp(16px, 2.4vw, 22px);
+      box-shadow: 0 14px 34px rgba(23, 32, 42, 0.06);
+    }
+
+    .panel + .panel { margin-top: 14px; }
+
+    .kicker {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 900;
+    }
+
+    select,
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      color: var(--ink);
+      outline: none;
+    }
+
+    select,
+    input {
+      min-height: 42px;
+      padding: 0 12px;
+    }
+
+    textarea {
+      min-height: 190px;
+      resize: vertical;
+      padding: 12px;
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    select:focus,
+    input:focus,
+    textarea:focus,
+    .tool-row:focus-visible,
+    .button:focus-visible {
+      border-color: var(--a11);
+      box-shadow: 0 0 0 3px rgba(22, 139, 132, 0.16);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .private-token {
+      display: none;
+      grid-column: 1 / -1;
+    }
+
+    .private-token.visible {
+      display: grid;
+    }
+
+    .endpoint-row {
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+    }
+
+    .endpoint-row strong,
+    .metric strong {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
+    .endpoint-row span,
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .metric {
+      min-height: 70px;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px;
+      background: var(--soft);
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .section-head h2 {
+      max-width: 760px;
+      overflow-wrap: anywhere;
+    }
+
+    .section-head p {
+      max-width: 880px;
+      overflow-wrap: anywhere;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .classic-card {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 14px 34px rgba(23, 32, 42, 0.06);
+      overflow: hidden;
+    }
+
+    .classic-card header {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--soft);
+      padding: 0 13px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .classic-card header span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: none;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .classic-body {
+      min-height: 190px;
+      max-height: 350px;
+      overflow: auto;
+      padding: 10px;
+    }
+
+    .classic-empty {
+      color: var(--muted);
+      font-style: italic;
+      padding: 22px 0;
+      text-align: center;
+    }
+
+    .classic-item {
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 10px;
+      margin-bottom: 8px;
+      background: var(--soft);
+    }
+
+    .classic-item.ok { border-left-color: var(--ok); }
+    .classic-item.warn { border-left-color: var(--wait); }
+    .classic-item.err { border-left-color: var(--danger); }
+    .classic-item.info { border-left-color: var(--a11); }
+    .classic-item.clickable { cursor: pointer; }
+    .classic-item.clickable:hover { border-color: var(--a11); }
+
+    .classic-line {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 0;
+      border-bottom: 1px dashed rgba(92, 104, 117, 0.2);
+    }
+
+    .classic-line:last-child {
+      border-bottom: 0;
+    }
+
+    .classic-line span:first-child,
+    .classic-sub {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .classic-line b,
+    .classic-title {
+      color: var(--ink);
+      font-size: 13px;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .classic-line b {
+      text-align: right;
+    }
+
+    .classic-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 3px;
+    }
+
+    .tool-filter {
+      margin: 14px 0 10px;
+    }
+
+    .tool-list {
+      display: grid;
+      gap: 8px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .tool-row {
+      width: 100%;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .tool-row.selected {
+      border-color: var(--a11);
+      background: #effaf7;
+    }
+
+    .tool-row b {
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .tool-row small {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .quick-strip {
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+
+    .quick-strip .button {
+      min-height: 34px;
+      padding-inline: 10px;
+      font-size: 12px;
+    }
+
+    .composer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .response-panel {
+      margin-top: 14px;
+      background: var(--code);
+      color: #e7f2fb;
+      border-radius: 8px;
+      border: 1px solid var(--code-line);
+      overflow: hidden;
+    }
+
+    .response-meta {
+      min-height: 42px;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--code-line);
+      color: #9fb2c5;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    pre {
+      margin: 0;
+      min-height: 320px;
+      max-height: 62vh;
+      overflow: auto;
+      padding: 14px;
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    footer {
+      padding: 28px 0 38px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+        padding-block: 12px;
+      }
+
+      .grid,
+      .form-grid,
+      .metrics,
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      h1 {
+        font-size: 40px;
+        overflow-wrap: anywhere;
+      }
+
+      .lead {
+        font-size: 18px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .topbar-inner,
+      .wrap {
+        width: min(330px, calc(100vw - 40px));
+        max-width: min(330px, calc(100vw - 40px));
+        padding-inline: 0;
+      }
+
+      .lead,
+      .panel {
+        max-width: calc(100vw - 40px);
+      }
+
+      .endpoint-row .button {
+        width: 100%;
+      }
+
+      .classic-line {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2px;
+      }
+
+      .classic-line b {
+        text-align: left;
+        word-break: break-word;
+      }
+
+      .classic-card header {
+        align-items: flex-start;
+        flex-direction: column;
+        justify-content: center;
+        padding-block: 10px;
+      }
+
+      .classic-card header span {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="Retour cockpit">
+        <span class="mark">F</span>
+        <span>Funesterie MCP</span>
+      </a>
+      <div class="topbar-actions">
+        <a class="button" href="/">Cockpit</a>
+        <div class="status-pill" aria-live="polite">
+          <span id="topDot" class="dot"></span>
+          <span id="topStatus">MCP en attente</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <h1>Interface MCP.</h1>
+        <p class="lead">Console privée pour lire les outils, appeler un tool, inspecter la réponse et basculer entre ChatGPT, Claude, Gemini, Grok ou le MCP privé.</p>
+      </div>
+    </section>
+
+    <section class="section" aria-label="Cockpit classique">
+      <div class="wrap section-head">
+        <div>
+          <div class="kicker">Cockpit classique</div>
+          <h2>La vue agents, jobs, discussions et graphe que tu avais en local.</h2>
+          <p>En mode public, seuls les outils publics répondent. En mode privé, ajoute ton jeton local dans le champ endpoint pour retrouver la vue complète.</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="button primary" type="button" id="dashboardRefresh">Refresh now</button>
+          <button class="button" type="button" id="dashboardAuto">Auto: on</button>
+        </div>
+      </div>
+
+      <div class="wrap dashboard-grid">
+        <article class="classic-card">
+          <header>A11 backend <span id="classicA11Badge">--</span></header>
+          <div class="classic-body" id="classicA11Body"><div class="classic-empty">loading...</div></div>
+        </article>
+        <article class="classic-card">
+          <header>Neo4j graph <span id="classicNeoBadge">--</span></header>
+          <div class="classic-body" id="classicNeoBody"><div class="classic-empty">loading...</div></div>
+        </article>
+        <article class="classic-card">
+          <header>Agents actifs <span id="classicAgentsBadge">--</span></header>
+          <div class="classic-body" id="classicAgentsBody"><div class="classic-empty">mode privé requis</div></div>
+        </article>
+        <article class="classic-card">
+          <header>Workers <span id="classicWorkersBadge">--</span></header>
+          <div class="classic-body" id="classicWorkersBody"><div class="classic-empty">mode privé requis</div></div>
+        </article>
+        <article class="classic-card">
+          <header>Job board <span id="classicJobsBadge">--</span></header>
+          <div class="classic-body" id="classicJobsBody"><div class="classic-empty">mode privé requis</div></div>
+        </article>
+        <article class="classic-card">
+          <header>Discussions <span id="classicDiscussionsBadge">--</span></header>
+          <div class="classic-body" id="classicDiscussionsBody"><div class="classic-empty">mode privé requis</div></div>
+        </article>
+        <article class="classic-card">
+          <header>Events Neo4j <span id="classicEventsBadge">--</span></header>
+          <div class="classic-body" id="classicEventsBody"><div class="classic-empty">mode privé requis</div></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap grid">
+        <aside>
+          <section class="panel">
+            <div class="kicker">Connexion</div>
+            <h2>Endpoint</h2>
+            <div class="form-grid" style="margin-top:14px">
+              <label>
+                Profil
+                <select id="endpoint">
+                  <option value="chatgpt">ChatGPT public</option>
+                  <option value="claude">Claude public</option>
+                  <option value="gemini">Gemini public</option>
+                  <option value="grok">Grok public</option>
+                  <option value="private">Privé /mcp</option>
+                </select>
+              </label>
+              <label>
+                Méthode
+                <select id="method">
+                  <option value="tools/list">tools/list</option>
+                  <option value="tools/call">tools/call</option>
+                  <option value="resources/list">resources/list</option>
+                  <option value="prompts/list">prompts/list</option>
+                  <option value="initialize">initialize</option>
+                </select>
+              </label>
+              <label class="private-token" id="privateTokenWrap">
+                Jeton MCP local
+                <input id="privateBearer" type="password" autocomplete="off" spellcheck="false" placeholder="Bearer privé non stocké">
+              </label>
+            </div>
+
+            <div class="endpoint-row">
+              <div>
+                <strong id="endpointLabel">ChatGPT public</strong>
+                <span id="endpointPath">/chatgpt/mcp</span>
+              </div>
+              <button class="button" type="button" id="loadTools">Lister</button>
+            </div>
+
+            <div class="metrics">
+              <div class="metric"><span>Outils</span><strong id="toolCount">0</strong></div>
+              <div class="metric"><span>Dernier statut</span><strong id="lastStatus">-</strong></div>
+              <div class="metric"><span>Session</span><strong id="sessionUser">Admin</strong></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="kicker">Tools</div>
+            <h2>Liste</h2>
+            <input class="tool-filter" id="toolFilter" type="search" placeholder="Filtrer">
+            <div class="tool-list" id="toolList" aria-live="polite"></div>
+          </section>
+        </aside>
+
+        <section class="panel">
+          <div class="kicker">Console</div>
+          <h2>Appel</h2>
+
+          <div class="quick-strip" aria-label="Raccourcis MCP">
+            <button class="button" type="button" data-tool="a11_status">A11</button>
+            <button class="button" type="button" data-tool="kaen44_status">Kaen44</button>
+            <button class="button" type="button" data-tool="public_neo4j_status">Neo4j</button>
+            <button class="button" type="button" data-tool="generated_bucket_status">Bucket</button>
+            <button class="button" type="button" data-tool="ki_state">KI</button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              Tool
+              <select id="toolName"></select>
+            </label>
+            <label>
+              ID JSON-RPC
+              <input id="requestId" value="mcp-console-1">
+            </label>
+          </div>
+
+          <label style="margin-top:12px">
+            Arguments JSON
+            <textarea id="arguments">{
+}</textarea>
+          </label>
+
+          <div class="composer-actions">
+            <button class="button primary" type="button" id="sendCall">Appeler</button>
+            <button class="button" type="button" id="sendRaw">Envoyer méthode</button>
+            <button class="button" type="button" id="clearResponse">Effacer</button>
+          </div>
+
+          <div class="response-panel">
+            <div class="response-meta">
+              <span id="responseTitle">Réponse</span>
+              <span id="responseTime">-</span>
+            </div>
+            <pre id="responseOutput">En attente.</pre>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      Funesterie - Interface MCP privée. Dernière lecture : <span id="updatedAt">en attente</span>.
+    </div>
+  </footer>
+
+  <script>
+    (() => {
+      const PROXY_URL = "/.netlify/functions/mcp-proxy";
+      const ENDPOINTS = {
+        chatgpt: { label: "ChatGPT public", path: "/chatgpt/mcp" },
+        claude: { label: "Claude public", path: "/claude/mcp" },
+        gemini: { label: "Gemini public", path: "/gemini/mcp" },
+        grok: { label: "Grok public", path: "/grok/mcp" },
+        private: { label: "Privé /mcp", path: "/mcp" }
+      };
+      const DEFAULT_ARGS = "{\n}";
+
+      let tools = [];
+      let selectedTool = "";
+      let requestCounter = 1;
+      let dashboardAuto = true;
+      let dashboardTimer = null;
+      let cachedDashboardThreads = [];
+
+      const byId = (id) => document.getElementById(id);
+      const setText = (id, value) => {
+        const node = byId(id);
+        if (node) node.textContent = String(value);
+      };
+      const endpointSelect = byId("endpoint");
+      const methodSelect = byId("method");
+      const toolSelect = byId("toolName");
+      const argsInput = byId("arguments");
+      const output = byId("responseOutput");
+      const filter = byId("toolFilter");
+
+      function escapeHtml(value) {
+        return String(value || "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[c]));
+      }
+
+      function setStatus(label, tone = "wait") {
+        setText("topStatus", label);
+        const dot = byId("topDot");
+        if (dot) {
+          dot.classList.toggle("ok", tone === "ok");
+          dot.classList.toggle("bad", tone === "bad");
+        }
+      }
+
+      function currentEndpoint() {
+        const key = endpointSelect?.value || "chatgpt";
+        return ENDPOINTS[key] ? key : "chatgpt";
+      }
+
+      function readArgs() {
+        const raw = argsInput?.value || DEFAULT_ARGS;
+        try {
+          return JSON.parse(raw);
+        } catch (error) {
+          throw new Error("Arguments JSON invalides: " + error.message);
+        }
+      }
+
+      function renderResponse(title, value, tone = "ok") {
+        const now = new Date();
+        setText("responseTitle", title);
+        setText("responseTime", now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+        setText("updatedAt", now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+        if (output) output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+        setStatus(tone === "ok" ? "MCP prêt" : "MCP à vérifier", tone);
+      }
+
+      function mcpResultEnvelope(result) {
+        const payload = result?.payload;
+        const events = Array.isArray(payload?.events) ? payload.events : [];
+        const firstParsed = events.map((event) => event.parsed).find(Boolean);
+        return firstParsed || payload || result?.raw || result;
+      }
+
+      function parseLooseJson(text) {
+        const raw = String(text || "").trim();
+        if (!raw) return null;
+        try {
+          return JSON.parse(raw);
+        } catch (_error) {
+          const start = raw.indexOf("{");
+          const end = raw.lastIndexOf("}");
+          if (start >= 0 && end > start) {
+            try {
+              return JSON.parse(raw.slice(start, end + 1));
+            } catch (_innerError) {}
+          }
+        }
+        return null;
+      }
+
+      function unpackToolPayload(proxyPayload) {
+        const envelope = mcpResultEnvelope(proxyPayload);
+        if (envelope?.result?.structuredContent) return envelope.result.structuredContent;
+        const content = envelope?.result?.content;
+        if (Array.isArray(content) && content.length) {
+          const text = content.map((part) => part?.text || "").filter(Boolean).join("\n");
+          return parseLooseJson(text) || { _raw_text: text };
+        }
+        return envelope?.result || envelope;
+      }
+
+      async function callMcp(request) {
+        const privateBearer = byId("privateBearer")?.value || "";
+        const started = performance.now();
+        const response = await fetch(PROXY_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            endpoint: currentEndpoint(),
+            privateBearer,
+            request
+          })
+        });
+        const payload = await response.json().catch(() => ({}));
+        const ms = Math.max(1, Math.round(performance.now() - started));
+        setText("lastStatus", String(payload.status || response.status || "-"));
+        if (!response.ok || payload.ok === false) {
+          const error = payload.error || "mcp_error";
+          throw new Error(error + " (" + ms + " ms)");
+        }
+        return { payload, ms };
+      }
+
+      async function callTool(name, args = {}) {
+        const { payload } = await callMcp({
+          jsonrpc: "2.0",
+          id: "dashboard-" + requestCounter++,
+          method: "tools/call",
+          params: { name, arguments: args }
+        });
+        return unpackToolPayload(payload);
+      }
+
+      async function safeTool(name, args = {}) {
+        try {
+          return { ok: true, data: await callTool(name, args) };
+        } catch (error) {
+          return { ok: false, error: error.message || "unavailable" };
+        }
+      }
+
+      function setHtml(id, html) {
+        const node = byId(id);
+        if (node) node.innerHTML = html;
+      }
+
+      function empty(text, tone = "") {
+        return '<div class="classic-empty ' + tone + '">' + escapeHtml(text) + '</div>';
+      }
+
+      function age(value) {
+        const date = value ? new Date(value) : null;
+        if (!date || Number.isNaN(date.getTime())) return "";
+        const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+        if (seconds < 60) return seconds + "s";
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return minutes + "m";
+        const hours = Math.floor(minutes / 60);
+        if (hours < 48) return hours + "h";
+        return Math.floor(hours / 24) + "j";
+      }
+
+      function classicLine(label, value, tone = "") {
+        return '<div class="classic-line"><span>' + escapeHtml(label) + '</span><b class="' + tone + '">' + escapeHtml(value) + '</b></div>';
+      }
+
+      function classicItem(title, meta, sub, tone = "info", attrs = "") {
+        return '<div class="classic-item ' + tone + (attrs ? ' clickable" ' + attrs : '"') + '>' +
+          '<div class="classic-top"><b class="classic-title">' + escapeHtml(title) + '</b><span class="classic-sub">' + escapeHtml(meta) + '</span></div>' +
+          (sub ? '<div class="classic-sub">' + escapeHtml(sub) + '</div>' : '') +
+          '</div>';
+      }
+
+      function renderToolError(prefix, result, bodyId, badgeId) {
+        setText(badgeId, "indisponible");
+        setHtml(bodyId, empty(prefix + ": " + (result.error || "aucune donnée"), "err"));
+      }
+
+      function renderClassicA11(result) {
+        if (!result.ok) return renderToolError("A11", result, "classicA11Body", "classicA11Badge");
+        const data = result.data || {};
+        const status = data.status || data;
+        const ok = !!status.ok;
+        setText("classicA11Badge", ok ? "OK" : "DOWN");
+        setHtml("classicA11Body", [
+          classicLine("Status", ok ? "OK" : "DOWN", ok ? "ok" : "err"),
+          classicLine("HTTP", status.status || status.code || "?"),
+          classicLine("URL", status.url || status.endpoint || "a11")
+        ].join(""));
+      }
+
+      function renderClassicNeo(result) {
+        if (!result.ok) return renderToolError("Neo4j", result, "classicNeoBody", "classicNeoBadge");
+        const data = result.data || {};
+        const ok = data.ok !== false && !data.error && !data._mcp_error;
+        setText("classicNeoBadge", ok ? "OK" : "à vérifier");
+        setHtml("classicNeoBody", [
+          classicLine("OK", ok ? "YES" : "NO", ok ? "ok" : "err"),
+          classicLine("URI", data.uri || data.url || data.endpoint || "masqué"),
+          classicLine("Configured", data.configured === false ? "no" : "yes")
+        ].join(""));
+      }
+
+      function renderClassicAgents(result) {
+        if (!result.ok) return renderToolError("Agents", result, "classicAgentsBody", "classicAgentsBadge");
+        const presence = result.data?.presence || result.data || {};
+        const agents = Array.isArray(presence.agents) ? presence.agents : [];
+        const active = agents.filter((agent) => agent?.active !== false).slice(0, 12);
+        setText("classicAgentsBadge", active.length + " actifs / " + (presence.totalCount || agents.length || 0));
+        setHtml("classicAgentsBody", active.length
+          ? active.map((agent) => classicItem(agent.name || agent.id || "Agent", age(agent.lastSeen), [agent.role, agent.host].filter(Boolean).join(" - "), "info")).join("")
+          : empty("aucun agent actif"));
+      }
+
+      function renderClassicWorkers(result) {
+        if (!result.ok) return renderToolError("Workers", result, "classicWorkersBody", "classicWorkersBadge");
+        const workers = result.data?.status?.workers || result.data?.workers || [];
+        const running = workers.filter((worker) => worker.state === "running");
+        setText("classicWorkersBadge", running.length + " running / " + workers.length);
+        setHtml("classicWorkersBody", workers.length
+          ? workers.slice(0, 10).map((worker) => classicItem(
+              worker.id || worker.name || "worker",
+              [worker.state, worker.pid ? "pid=" + worker.pid : ""].filter(Boolean).join(" "),
+              worker.description || (worker.startedAt ? "since " + age(worker.startedAt) : ""),
+              worker.state === "running" ? "ok" : "warn"
+            )).join("")
+          : empty("no workers"));
+      }
+
+      function renderClassicJobs(result) {
+        if (!result.ok) return renderToolError("Jobs", result, "classicJobsBody", "classicJobsBadge");
+        const board = result.data?.jobs || result.data || {};
+        const counts = board.counts || {};
+        const jobs = Array.isArray(board.jobs) ? board.jobs : [];
+        setText("classicJobsBadge", "Q:" + (counts.queued || 0) + " R:" + (counts.running || 0) + " F:" + (counts.failed || 0));
+        const visible = jobs.filter((job) => ["queued", "running", "failed"].includes(job.status)).slice(0, 8);
+        setHtml("classicJobsBody", visible.length
+          ? visible.map((job) => classicItem(
+              job.title || job.id || "job",
+              age(job.createdAt),
+              [job.status, job.queue, job.createdBy].filter(Boolean).join(" / "),
+              job.status === "running" ? "ok" : (job.status === "failed" ? "err" : "warn")
+            )).join("")
+          : empty("queue vide"));
+      }
+
+      function renderClassicDiscussions(result) {
+        if (!result.ok) return renderToolError("Discussions", result, "classicDiscussionsBody", "classicDiscussionsBadge");
+        const discussions = result.data?.discussions || result.data?.threads || [];
+        cachedDashboardThreads = Array.isArray(discussions) ? discussions : [];
+        setText("classicDiscussionsBadge", cachedDashboardThreads.length + " open");
+        const sorted = [...cachedDashboardThreads].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 8);
+        setHtml("classicDiscussionsBody", sorted.length
+          ? sorted.map((thread) => classicItem(
+              thread.title || "Discussion",
+              age(thread.updatedAt),
+              (thread.messageCount || 0) + " messages - " + (thread.participants || []).slice(0, 4).join(", "),
+              "info",
+              'data-thread="' + escapeHtml(thread.id || "") + '"'
+            )).join("")
+          : empty("aucune discussion"));
+      }
+
+      function renderClassicEvents(result) {
+        if (!result.ok) return renderToolError("Events", result, "classicEventsBody", "classicEventsBadge");
+        const rows = result.data?.rows || result.data?.results || result.data?.records || result.data?.data || [];
+        const events = Array.isArray(rows) ? rows : [];
+        setText("classicEventsBadge", events.length ? events.length + " récents" : "--");
+        setHtml("classicEventsBody", events.length
+          ? events.slice(0, 8).map((event) => classicItem(
+              event.type || event.e?.type || "event",
+              event.status || event.e?.status || "",
+              [event.module || event.e?.module, event.ts || event.timestamp || event.createdAt].filter(Boolean).join(" - "),
+              (event.status || event.e?.status) === "error" ? "err" : "ok"
+            )).join("")
+          : empty("aucun event"));
+      }
+
+      async function refreshDashboard() {
+        setStatus("Lecture cockpit");
+        const privateMode = currentEndpoint() === "private";
+        const eventQuery = "MATCH (e:Event) RETURN e.id as id, e.type as type, e.module as module, e.status as status, coalesce(e.timestamp, e.createdAt) as ts ORDER BY coalesce(e.timestamp, e.createdAt) DESC LIMIT 8";
+        const [a11, neo, agents, workers, jobs, discussions, events] = await Promise.all([
+          safeTool("a11_status"),
+          safeTool(privateMode ? "neo4j_status" : "public_neo4j_status"),
+          privateMode ? safeTool("agent_presence", { includeIdle: false }) : Promise.resolve({ ok: false, error: "mode privé requis" }),
+          privateMode ? safeTool("a11_worker_status") : Promise.resolve({ ok: false, error: "mode privé requis" }),
+          privateMode ? safeTool("agent_jobs", { limit: 30 }) : Promise.resolve({ ok: false, error: "mode privé requis" }),
+          privateMode ? safeTool("discussion_list", { limit: 30, status: "open" }) : Promise.resolve({ ok: false, error: "mode privé requis" }),
+          safeTool(privateMode ? "neo4j_read_query" : "public_neo4j_read_query", { query: eventQuery, limit: 8 })
+        ]);
+        renderClassicA11(a11);
+        renderClassicNeo(neo);
+        renderClassicAgents(agents);
+        renderClassicWorkers(workers);
+        renderClassicJobs(jobs);
+        renderClassicDiscussions(discussions);
+        renderClassicEvents(events);
+        setStatus("MCP prêt", "ok");
+      }
+
+      function setDashboardAuto(enabled) {
+        dashboardAuto = enabled;
+        setText("dashboardAuto", "Auto: " + (dashboardAuto ? "on" : "off"));
+        if (dashboardTimer) window.clearInterval(dashboardTimer);
+        dashboardTimer = dashboardAuto
+          ? window.setInterval(() => refreshDashboard().catch((error) => renderResponse("Erreur cockpit", error.message, "bad")), 10000)
+          : null;
+      }
+
+      async function readDashboardThread(threadId) {
+        if (!threadId) return;
+        const result = await safeTool("discussion_read", { threadId, limit: 30 });
+        renderResponse(result.ok ? "discussion_read" : "Erreur discussion", result.ok ? result.data : result.error, result.ok ? "ok" : "bad");
+      }
+
+      function renderTools() {
+        const term = String(filter?.value || "").trim().toLowerCase();
+        const visible = tools.filter((tool) => {
+          const haystack = [tool.name, tool.title, tool.description].filter(Boolean).join(" ").toLowerCase();
+          return !term || haystack.includes(term);
+        });
+        const list = byId("toolList");
+        if (list) {
+          list.innerHTML = visible.length
+            ? visible.map((tool) => {
+                const selected = tool.name === selectedTool ? " selected" : "";
+                const detail = tool.title || tool.description || "MCP";
+                return '<button class="tool-row' + selected + '" type="button" data-name="' + escapeHtml(tool.name) + '">' +
+                  '<b>' + escapeHtml(tool.name) + '</b><small>' + escapeHtml(String(detail).slice(0, 42)) + '</small></button>';
+              }).join("")
+            : '<div class="endpoint-row"><strong>Aucun outil</strong><span>Recharge la liste</span></div>';
+        }
+        if (toolSelect) {
+          toolSelect.innerHTML = tools.map((tool) => (
+            '<option value="' + escapeHtml(tool.name) + '">' + escapeHtml(tool.name) + '</option>'
+          )).join("");
+          toolSelect.value = selectedTool || tools[0]?.name || "";
+        }
+        setText("toolCount", tools.length);
+      }
+
+      function selectTool(name) {
+        selectedTool = String(name || tools[0]?.name || "");
+        if (toolSelect) toolSelect.value = selectedTool;
+        if (methodSelect) methodSelect.value = "tools/call";
+        renderTools();
+      }
+
+      async function loadTools() {
+        setStatus("Lecture des outils MCP");
+        const request = {
+          jsonrpc: "2.0",
+          id: "tools-" + requestCounter++,
+          method: "tools/list",
+          params: {}
+        };
+        const { payload, ms } = await callMcp(request);
+        const envelope = mcpResultEnvelope(payload);
+        tools = Array.isArray(envelope?.result?.tools) ? envelope.result.tools : [];
+        selectTool(selectedTool || tools[0]?.name || "");
+        renderResponse("tools/list - " + ms + " ms", envelope);
+      }
+
+      async function callSelectedTool(toolName) {
+        const name = String(toolName || toolSelect?.value || selectedTool || "").trim();
+        if (!name) throw new Error("Aucun tool sélectionné");
+        const args = readArgs();
+        const id = byId("requestId")?.value || ("mcp-console-" + requestCounter++);
+        const request = {
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name, arguments: args }
+        };
+        setStatus("Appel " + name);
+        const { payload, ms } = await callMcp(request);
+        renderResponse(name + " - " + ms + " ms", mcpResultEnvelope(payload));
+      }
+
+      async function sendCurrentMethod() {
+        const method = methodSelect?.value || "tools/list";
+        const id = byId("requestId")?.value || ("mcp-console-" + requestCounter++);
+        const params = method === "tools/call"
+          ? { name: toolSelect?.value || selectedTool, arguments: readArgs() }
+          : readArgs();
+        setStatus("Envoi " + method);
+        const { payload, ms } = await callMcp({ jsonrpc: "2.0", id, method, params });
+        renderResponse(method + " - " + ms + " ms", mcpResultEnvelope(payload));
+      }
+
+      function refreshEndpointUi() {
+        const endpoint = ENDPOINTS[currentEndpoint()];
+        setText("endpointLabel", endpoint.label);
+        setText("endpointPath", endpoint.path);
+        const wrap = byId("privateTokenWrap");
+        if (wrap) wrap.classList.toggle("visible", currentEndpoint() === "private");
+      }
+
+      function bind() {
+        endpointSelect?.addEventListener("change", () => {
+          refreshEndpointUi();
+          tools = [];
+          selectedTool = "";
+          renderTools();
+          refreshDashboard().catch((error) => renderResponse("Erreur cockpit", error.message, "bad"));
+        });
+        methodSelect?.addEventListener("change", () => {
+          if (methodSelect.value === "tools/list") argsInput.value = "{\n}";
+        });
+        filter?.addEventListener("input", renderTools);
+        toolSelect?.addEventListener("change", () => selectTool(toolSelect.value));
+        byId("loadTools")?.addEventListener("click", () => loadTools().catch((error) => renderResponse("Erreur", error.message, "bad")));
+        byId("sendCall")?.addEventListener("click", () => callSelectedTool().catch((error) => renderResponse("Erreur", error.message, "bad")));
+        byId("sendRaw")?.addEventListener("click", () => sendCurrentMethod().catch((error) => renderResponse("Erreur", error.message, "bad")));
+        byId("clearResponse")?.addEventListener("click", () => renderResponse("Réponse", "En attente."));
+        byId("dashboardRefresh")?.addEventListener("click", () => refreshDashboard().catch((error) => renderResponse("Erreur cockpit", error.message, "bad")));
+        byId("dashboardAuto")?.addEventListener("click", () => setDashboardAuto(!dashboardAuto));
+        byId("classicDiscussionsBody")?.addEventListener("click", (event) => {
+          const item = event.target.closest("[data-thread]");
+          if (item) readDashboardThread(item.getAttribute("data-thread")).catch((error) => renderResponse("Erreur discussion", error.message, "bad"));
+        });
+        byId("toolList")?.addEventListener("click", (event) => {
+          const button = event.target.closest("[data-name]");
+          if (button) selectTool(button.getAttribute("data-name"));
+        });
+        document.querySelectorAll("[data-tool]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const name = button.getAttribute("data-tool");
+            selectTool(name);
+            argsInput.value = DEFAULT_ARGS;
+            callSelectedTool(name).catch((error) => renderResponse("Erreur", error.message, "bad"));
+          });
+        });
+      }
+
+      const user = window.__FUNESTERIE_COCKPIT_USER__;
+      if (user?.email) setText("sessionUser", user.email);
+      refreshEndpointUi();
+      bind();
+      renderTools();
+      setDashboardAuto(true);
+      refreshDashboard().catch((error) => renderResponse("Erreur cockpit", error.message, "bad"));
+      loadTools().catch((error) => renderResponse("Erreur", error.message, "bad"));
+    })();
+  </script>
+</body>
+</html>
