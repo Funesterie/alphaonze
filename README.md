@@ -97,21 +97,19 @@ npm run google:packages:dry
 npm run google:packages:publish
 ```
 
-Etat actuel des versions npm publiques:
+Etat actuel du train NOSSEN public:
 
-- `@nossen/qflush@1.0.1`
-- `@nossen/dragon-contracts@1.0.0`
-- `@nossen/dragon-upstream@1.0.0`
-- `@nossen/dragon@1.0.0`
-- tag public: `latest`
+- 21 packages `@nossen/*` publies sur npmjs en `2.0.0`
+- tag npm public: `latest`
+- inventaire complet: `NOSSEN_PACKAGE_MATRIX.md`
+- carte public/prive/dual: `npm run nossen:packages`
 
 Etat actuel du miroir Google Artifact Registry `@nossen`:
 
-- `@nossen/qflush@1.0.2`
-- `@nossen/dragon-contracts@1.0.1`
-- `@nossen/dragon-upstream@1.0.1`
-- `@nossen/dragon@1.0.1`
+- les memes 21 packages `@nossen/*` publies en `2.0.0`
 - tags Google: `latest`, `stable`
+- validation 2026-05-23: resolution `latest`/`stable`, installation fraiche
+  des 21 packages, audit npm a `0` vulnerabilite
 
 Pour installer depuis npm:
 
@@ -124,15 +122,26 @@ La procedure Google Artifact Registry reste dans
 admin. Le fallback GitHub Packages/GHCR reste documente dans
 `docs/GITHUB_PACKAGES_AND_GHCR.md`.
 
+Les modules prives Funesterie restent separes des modules publics:
+`@nossen/*` pour le public, `@funeste/*` pour les adaptateurs operateur,
+MCP, graph, paiements et demarrage local. La politique est documentee dans
+`docs/packages/NOSSEN_PUBLIC_PRIVATE_PACKAGE_POLICY.md`.
+
 ## Support / dons
 
 Funesterie/NOSSEN reste maintenu publiquement avec une infrastructure payante
 et du travail operateur continu. Pour soutenir le projet, proposer un don,
-une aide, un sponsorship ou une coordination directe:
+une aide, un sponsorship ou une coordination directe, choisis librement le
+montant qui te semble juste:
 
-- page contact/support: https://funesterie.me/contact/
-- soutien Stripe: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
-- email: contact@funesterie.me
+- contact/support: https://funesterie.me/contact/
+- email: funeste38@gmail.com
+- Wero: +33 7 83 46 37 61
+- PayPal: https://paypal.me/funeste38
+- Stripe/carte: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
+
+Le soutien est volontaire; aucun prix fixe n'est impose pour les packages
+publics NOSSEN.
 
 Ne publie jamais de token, cle API, mot de passe, cle privee ou fichier
 credential dans une issue, un chat ou une capture.

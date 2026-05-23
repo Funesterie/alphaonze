@@ -67,19 +67,15 @@ Private/admin capabilities are expected to sit behind account login and scoped a
 
 ## Support and Donations
 
-A11 Coder is part of the Funesterie/NOSSEN project. If it saves you time or helps your work, support the infrastructure and maintenance through:
+A11 Coder is part of the Funesterie/NOSSEN project. If it saves you time or helps your work, choose any support amount that fits your situation. Contributions support infrastructure, releases, and maintenance:
 
-https://funesterie.me/contact/
+- Contact, invoice, sponsorship or urgent support: https://funesterie.me/contact/
+- Email: funeste38@gmail.com
+- Wero: `+33 7 83 46 37 61`
+- PayPal: https://paypal.me/funeste38
+- Stripe/card support: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
 
-Stripe support link:
-
-https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
-
-For direct coordination, grants, sponsorship, or urgent support:
-
-contact@funesterie.me
-
-Support is voluntary; it helps keep the public modules, docs, and services alive.
+Support is voluntary; there is no fixed package price.
 
 ## Links
 
