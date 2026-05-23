@@ -510,10 +510,10 @@
     {
       "id": "logic-reduce",
       "lane": "dual",
-      "status": "source-ready",
+      "status": "published",
       "publicPackage": "@nossen/logic-reduce",
-      "privatePackage": "@funeste/logic-reduce-nossen",
-      "version": null,
+      "privatePackage": "@funesterieindustry/logic-reduce-nossen",
+      "version": "2.0.0",
       "source": "packages/nossen/logic-reduce",
       "privateSource": "packages/funeste/logic-reduce-nossen",
       "registries": [
@@ -526,8 +526,8 @@
         "decision-reduction"
       ],
       "privacy": "split-public-core-private-prompts",
-      "publishGate": "npm requires a valid OTP or bypass-2FA granular token; current local tokens do not pass whoami and token creation prompts for the account password.",
-      "nextAction": "Publish @nossen/logic-reduce after npm bypass-token/password validation, then publish the restricted private NOSSEN adapter."
+      "publishGate": "@funeste restricted publish is blocked until org private-package billing is enabled; use paid user scope @funesterieindustry for the private adapter.",
+      "nextAction": "Publish the restricted @funesterieindustry/logic-reduce-nossen adapter after validating the user-scope private package path."
     },
     {
       "id": "rubixgate",

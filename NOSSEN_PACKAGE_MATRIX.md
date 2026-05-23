@@ -23,6 +23,7 @@ that npmjs and Google Artifact Registry should stay aligned to.
 | `@nossen/nezlephant` | `2.0.0` | `runtime/modules/nezlephant/nezlephant/nezlephant` | npmjs `latest`; Google `latest`, `stable` |
 | `@nossen/qflush` | `2.0.0` | `a11/backend/libs` | npmjs `latest`; Google `latest`, `stable` |
 | `@nossen/qflush-runner` | `2.0.0` | `runtime/modules/qflush/runner-package` | npmjs `latest`; Google `latest`, `stable` |
+| `@nossen/logic-reduce` | `2.0.0` | `packages/nossen/logic-reduce` | npmjs `latest`; Google `latest`, `stable` |
 | `@nossen/rome` | `2.0.0` | `runtime/modules/rome` | npmjs `latest`; Google `latest`, `stable` |
 | `@nossen/scentgate` | `2.0.0` | `runtime/modules/scentgate` | npmjs `latest`; Google `latest`, `stable` |
 | `@nossen/scream` | `2.0.0` | `runtime/modules/scream` | npmjs `latest`; Google `latest`, `stable` |

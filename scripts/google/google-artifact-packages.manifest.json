@@ -161,6 +161,18 @@
       "requiredFiles": []
     },
     {
+      "id": "logic-reduce",
+      "source": "packages/nossen/logic-reduce",
+      "publishedName": "@nossen/logic-reduce",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
       "id": "rome",
       "source": "runtime/modules/rome",
       "publishedName": "@nossen/rome",

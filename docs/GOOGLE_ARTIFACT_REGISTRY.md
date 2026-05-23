@@ -53,6 +53,7 @@ Aujourd'hui, les packages prets sont:
 | `runtime/modules/nezlephant/nezlephant/nezlephant` | `@nossen/nezlephant@2.0.0` | `@nossen/nezlephant@2.0.0` | `latest`, `stable` |
 | `a11/backend/libs` | `@nossen/qflush@2.0.0` | `@nossen/qflush@2.0.0` | `latest`, `stable` |
 | `runtime/modules/qflush/runner-package` | `@nossen/qflush-runner@2.0.0` | `@nossen/qflush-runner@2.0.0` | `latest`, `stable` |
+| `packages/nossen/logic-reduce` | `@nossen/logic-reduce@2.0.0` | `@nossen/logic-reduce@2.0.0` | `latest`, `stable` |
 | `runtime/modules/rome` | `@nossen/rome@2.0.0` | `@nossen/rome@2.0.0` | `latest`, `stable` |
 | `runtime/modules/scentgate` | `@nossen/scentgate@2.0.0` | `@nossen/scentgate@2.0.0` | `latest`, `stable` |
 | `runtime/modules/scream` | `@nossen/scream@2.0.0` | `@nossen/scream@2.0.0` | `latest`, `stable` |
@@ -63,8 +64,8 @@ Aujourd'hui, les packages prets sont:
 
 Validation 2026-05-23:
 
-- `npm view` confirme `latest` et `stable` en `2.0.0` pour les 20 packages.
-- Une installation fraiche des 20 packages depuis Google Artifact Registry
+- `npm view` confirme `latest` et `stable` en `2.0.0` pour les 21 packages.
+- Une installation fraiche des 21 packages depuis Google Artifact Registry
   passe avec `npm audit --audit-level=moderate` a `0` vulnerabilite.
 
 Si un dist-tag scoped doit etre repare directement avec `gcloud`, encoder le

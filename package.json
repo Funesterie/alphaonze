@@ -25,6 +25,8 @@
     "google:npmrc": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Write-GoogleArtifactNpmrc.ps1",
     "google:packages:dry": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Publish-GoogleArtifactPackages.ps1 -DryRun",
     "google:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Publish-GoogleArtifactPackages.ps1 -Publish",
+    "npm:publish-token:import": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/npm/Import-NpmPublishToken.ps1",
+    "npm:with-publish-token": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/npm/Invoke-NpmWithPublishToken.ps1",
     "forge:pr": "node scripts/funesterie-forge.cjs pr-status",
     "forge:ci": "node scripts/funesterie-forge.cjs ci",
     "nossen:index": "node scripts/nossen/nossen-source-index.cjs",

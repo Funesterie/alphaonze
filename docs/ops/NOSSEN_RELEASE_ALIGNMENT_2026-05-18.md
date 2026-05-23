@@ -30,6 +30,7 @@ publications.
 | `@nossen/nezlephant` | `2.0.0` | `@nossen/nezlephant@2.0.0` |
 | `@nossen/qflush` | `2.0.0` | `@nossen/qflush@2.0.0` |
 | `@nossen/qflush-runner` | `2.0.0` | `@nossen/qflush-runner@2.0.0` |
+| `@nossen/logic-reduce` | `2.0.0` | `@nossen/logic-reduce@2.0.0` |
 | `@nossen/rome` | `2.0.0` | `@nossen/rome@2.0.0` |
 | `@nossen/scentgate` | `2.0.0` | `@nossen/scentgate@2.0.0` |
 | `@nossen/scream` | `2.0.0` | `@nossen/scream@2.0.0` |
@@ -50,9 +51,9 @@ publications.
 - Package-local build/test/pack passes completed before publication.
 - `@nossen/qflush`: 25 test files, 41 tests passing.
 - Dragon workspace: build, typecheck and audit pass with `0` vulnerabilities.
-- npmjs: `latest = 2.0.0` for all 20 packages.
-- npmjs fresh install: all 20 packages install together with audit `0`.
-- Google Artifact Registry: `latest = 2.0.0` and `stable = 2.0.0` for all 20
+- npmjs: `latest = 2.0.0` for all 21 packages.
+- npmjs fresh install: all 21 packages install together with audit `0`.
+- Google Artifact Registry: `latest = 2.0.0` and `stable = 2.0.0` for all 21
   packages.
-- Google Artifact Registry fresh install: all 20 packages install together with
+- Google Artifact Registry fresh install: all 21 packages install together with
   audit `0`.

@@ -63,9 +63,9 @@ npm run nossen:packages:json
 
 The first validated wave has:
 
-- 20 published public packages in `@nossen/*`
-- 1 source-ready dual package seed: `@nossen/logic-reduce` plus the private
-  `@funeste/logic-reduce-nossen` adapter
+- 21 published public packages in `@nossen/*`
+- 1 dual package seed: published public `@nossen/logic-reduce` plus the private
+  `@funesterieindustry/logic-reduce-nossen` adapter
 - 19 private or dual candidates for the next extraction waves
 - one support/donation helper planned as a dual package
 
@@ -73,10 +73,11 @@ The first validated wave has:
 
 1. `@funeste/qflush-funesterie`
    Private operator defaults for the already public `@nossen/qflush`.
-2. `@nossen/logic-reduce` + `@funeste/logic-reduce-nossen`
+2. `@nossen/logic-reduce` + `@funesterieindustry/logic-reduce-nossen`
    Public deterministic reducer, private NOSSEN prompt/profile adapter. The
    public source seed lives in `packages/nossen/logic-reduce`; the private
-   adapter lives in `packages/funeste/logic-reduce-nossen`.
+   adapter lives in `packages/funeste/logic-reduce-nossen`; it uses the paid
+   user scope until `@funeste` has private-package billing enabled.
 3. `@nossen/source-index` + `@funeste/nossen-source-index`
    Public local indexer, private corpus/Drive bindings.
 4. `@funeste/mcp-tools`
@@ -90,8 +91,7 @@ train is coherent.
 
 ## Publish Gate
 
-`@nossen/logic-reduce` and `@funeste/logic-reduce-nossen` are source-ready, but
-the registry publish step requires either a fresh OTP during `npm publish` or a
-granular access token with bypass 2FA enabled. Do not work around this by
-printing, committing, or copying tokens/recovery codes. Once the token gate is
-cleared, publish the public package first, then the private adapter.
+`@nossen/logic-reduce` is published publicly at `2.0.0`. The private
+`@funesterieindustry/logic-reduce-nossen` adapter remains restricted and should
+be published through the DPAPI-backed npm publish-token path. Do not work around
+auth by printing, committing, or copying tokens/recovery codes.

@@ -99,17 +99,17 @@ npm run google:packages:publish
 
 Etat actuel du train NOSSEN public:
 
-- 20 packages `@nossen/*` publies sur npmjs en `2.0.0`
+- 21 packages `@nossen/*` publies sur npmjs en `2.0.0`
 - tag npm public: `latest`
 - inventaire complet: `NOSSEN_PACKAGE_MATRIX.md`
 - carte public/prive/dual: `npm run nossen:packages`
 
 Etat actuel du miroir Google Artifact Registry `@nossen`:
 
-- les memes 20 packages `@nossen/*` publies en `2.0.0`
+- les memes 21 packages `@nossen/*` publies en `2.0.0`
 - tags Google: `latest`, `stable`
 - validation 2026-05-23: resolution `latest`/`stable`, installation fraiche
-  des 20 packages, audit npm a `0` vulnerabilite
+  des 21 packages, audit npm a `0` vulnerabilite
 
 Pour installer depuis npm:
 
