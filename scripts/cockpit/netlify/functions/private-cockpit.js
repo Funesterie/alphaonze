@@ -10,19 +10,20 @@ const {
   verifyAdminFromEvent,
 } = require('./auth-utils');
 
-function readIndexHtml() {
+function readPageHtml(fileName = 'index.html') {
+  const cleanFileName = fileName === 'mcp.html' ? 'mcp.html' : 'index.html';
   const candidates = [
-    path.join(process.cwd(), 'index.html'),
-    path.join(process.cwd(), 'scripts', 'cockpit', 'index.html'),
-    path.join(__dirname, '..', '..', 'index.html'),
-    path.join(__dirname, 'index.html'),
+    path.join(process.cwd(), cleanFileName),
+    path.join(process.cwd(), 'scripts', 'cockpit', cleanFileName),
+    path.join(__dirname, '..', '..', cleanFileName),
+    path.join(__dirname, cleanFileName),
   ];
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate)) return fs.readFileSync(candidate, 'utf8');
     } catch (_error) {}
   }
-  throw new Error('cockpit_index_missing');
+  throw new Error('cockpit_page_missing');
 }
 
 function injectUser(htmlSource, user) {
@@ -50,6 +51,7 @@ exports.handler = async (event) => {
     return redirect(buildGoogleLoginUrl('/auth/success'));
   }
 
-  const body = injectUser(readIndexHtml(), auth.user);
+  const page = /\/mcp(?:\.html)?\/?$/i.test(pathName) ? 'mcp.html' : 'index.html';
+  const body = injectUser(readPageHtml(page), auth.user);
   return html(200, body);
 };
