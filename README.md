@@ -102,6 +102,7 @@ Etat actuel du train NOSSEN public:
 - 20 packages `@nossen/*` publies sur npmjs en `2.0.0`
 - tag npm public: `latest`
 - inventaire complet: `NOSSEN_PACKAGE_MATRIX.md`
+- carte public/prive/dual: `npm run nossen:packages`
 
 Etat actuel du miroir Google Artifact Registry `@nossen`:
 
@@ -120,6 +121,11 @@ La procedure Google Artifact Registry reste dans
 `docs/GOOGLE_ARTIFACT_REGISTRY.md` pour les miroirs prives et les machines
 admin. Le fallback GitHub Packages/GHCR reste documente dans
 `docs/GITHUB_PACKAGES_AND_GHCR.md`.
+
+Les modules prives Funesterie restent separes des modules publics:
+`@nossen/*` pour le public, `@funeste/*` pour les adaptateurs operateur,
+MCP, graph, paiements et demarrage local. La politique est documentee dans
+`docs/packages/NOSSEN_PUBLIC_PRIVATE_PACKAGE_POLICY.md`.
 
 ## Support / dons
 

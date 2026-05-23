@@ -34,11 +34,29 @@ that npmjs and Google Artifact Registry should stay aligned to.
 ## Release Rules
 
 - New public packages use the `@nossen` scope only.
+- Private Funesterie operator packages use `@funeste/*` first, with
+  `@funesterieindustry/*` only as an npm-permission fallback.
+- Dual packages are split into a public reusable core plus a private
+  Funesterie adapter. Do not publish one package name as both public and
+  private.
 - Package names and CLI examples should use `qflush`; the early misspelling is
   retired.
 - npmjs versions are immutable, so README-only fixes require a patch release if
   the npm package page must change.
 - GitHub tags should use the form `@nossen/<package>@<version>`.
+
+## Private And Dual Lanes
+
+The package liaison map tracks the next private and dual extraction waves:
+
+```powershell
+npm run nossen:packages
+```
+
+Source of truth:
+
+- `scripts/nossen/nossen-package-liaisons.manifest.json`
+- `docs/packages/NOSSEN_PUBLIC_PRIVATE_PACKAGE_POLICY.md`
 
 ## Validation Baseline
 

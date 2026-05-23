@@ -1,0 +1,869 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-05-23",
+  "owner": "Funesterie",
+  "publicScope": "@nossen",
+  "privateScopes": [
+    "@funeste",
+    "@funesterieindustry"
+  ],
+  "support": {
+    "contactUrl": "https://funesterie.me/contact/",
+    "email": "funeste38@gmail.com",
+    "donationPolicy": "voluntary-amount",
+    "rails": [
+      "contact",
+      "paypal",
+      "stripe-card",
+      "wero-manual"
+    ]
+  },
+  "registries": {
+    "publicNpm": "https://registry.npmjs.org/",
+    "googleArtifactRegistry": "https://europe-west4-npm.pkg.dev/alphaonze/funesterie-npm/",
+    "privateNpm": "https://registry.npmjs.org/"
+  },
+  "rules": {
+    "publicPackages": [
+      "Use only @nossen/* names.",
+      "Keep metadata generic and reusable.",
+      "Do not mention private A11/Funesterie operator topology.",
+      "Do not include credentials, personal runtime paths, or webhook secrets."
+    ],
+    "privatePackages": [
+      "Use @funeste/* first, with @funesterieindustry/* as fallback.",
+      "Use private packages for funesterie.me, MCP, agent, graph, payment, and deployment adapters.",
+      "Keep secrets in the approved secret store or process environment only.",
+      "Do not reuse the same package name for public and private variants."
+    ],
+    "dualPackages": [
+      "Extract a public reusable core first.",
+      "Keep NOSSEN-specific adapters in a private twin.",
+      "Publish aligned trains only after local tests and install checks pass."
+    ]
+  },
+  "packages": [
+    {
+      "id": "allmight",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/allmight",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/allmight",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "bat",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/bat",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/bat/packages/bat",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "bat-system",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/bat-system",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/bat/packages/bat-system",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "beam",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/beam",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/beam",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "envapt-superimg",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/envapt-superimg",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/envaptex/envapt-superimg",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "envaptex",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/envaptex",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/envaptex",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "freeland",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/freeland",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/freeland",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "freeland-bros",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/freeland-bros",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/freeland-bros",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "katana",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/katana",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/katana",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "morphing",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/morphing",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/morphing",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "nezlephant",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/nezlephant",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/nezlephant/nezlephant/nezlephant",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "qflush",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/qflush",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "a11/backend/libs",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "automation",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep public CLI reusable; move operator assumptions to private twin packages."
+    },
+    {
+      "id": "qflush-runner",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/qflush-runner",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/qflush/runner-package",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "automation",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep public runner reusable; use private adapters for A11 desktop startup."
+    },
+    {
+      "id": "rome",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/rome",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/rome",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "scentgate",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/scentgate",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/scentgate",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "scream",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/scream",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/scream",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "spyder",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/spyder",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "runtime/modules/spyder/packages/spyder",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "runtime-module",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep in the aligned public 2.x train."
+    },
+    {
+      "id": "dragon-contracts",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/dragon-contracts",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "a11/dragon/packages/contracts",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "control-plane",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep contracts generic; private packages can bind them to funesterie.me."
+    },
+    {
+      "id": "dragon-upstream",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/dragon-upstream",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "a11/dragon/packages/upstream",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "control-plane",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep upstream helpers generic; private packages own endpoint profiles."
+    },
+    {
+      "id": "dragon",
+      "lane": "public",
+      "status": "published",
+      "publicPackage": "@nossen/dragon",
+      "privatePackage": null,
+      "version": "2.0.0",
+      "source": "a11/dragon/apps/dragon-daemon",
+      "registries": [
+        "publicNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "control-plane",
+        "agents",
+        "npm-public",
+        "gar-mirror"
+      ],
+      "privacy": "public-safe",
+      "nextAction": "Keep daemon reusable; private package owns local operator profiles."
+    },
+    {
+      "id": "qflush-funesterie",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/qflush-funesterie",
+      "version": null,
+      "source": "a11/backend/libs",
+      "registries": [
+        "privateNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "funesterie.me",
+        "a11-desktop",
+        "mcp",
+        "agents"
+      ],
+      "privacy": "private-operator-adapter",
+      "nextAction": "Create a private adapter package that wires QFlush defaults to the Funesterie workspace without embedding secrets."
+    },
+    {
+      "id": "dragon-funesterie",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/dragon-funesterie",
+      "version": null,
+      "source": "a11/dragon/apps/dragon-daemon",
+      "registries": [
+        "privateNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "funesterie.me",
+        "agents",
+        "control-plane",
+        "desktop-startup"
+      ],
+      "privacy": "private-operator-adapter",
+      "nextAction": "Package Funesterie profile presets for Dragon while importing public @nossen contracts."
+    },
+    {
+      "id": "forge",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/forge",
+      "privatePackage": "@funeste/forge-funesterie",
+      "version": null,
+      "source": "scripts/funesterie-forge.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "github",
+        "pr",
+        "ci",
+        "repo-map"
+      ],
+      "privacy": "split-public-core-private-orchestrator",
+      "nextAction": "Extract repo-map and doctor as public core; keep PR/MCP/project profiles private."
+    },
+    {
+      "id": "logic-reduce",
+      "lane": "dual",
+      "status": "source-ready",
+      "publicPackage": "@nossen/logic-reduce",
+      "privatePackage": "@funeste/logic-reduce-nossen",
+      "version": null,
+      "source": "packages/nossen/logic-reduce",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "mcp",
+        "kiro-method",
+        "decision-reduction"
+      ],
+      "privacy": "split-public-core-private-prompts",
+      "nextAction": "Publish @nossen/logic-reduce with the next aligned train, then create the private NOSSEN prompt/profile adapter."
+    },
+    {
+      "id": "rubixgate",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/rubix-vault",
+      "privatePackage": "@funeste/rubixgate",
+      "version": null,
+      "source": "scripts/rubixgate/rubixcube-vault.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "vault",
+        "mcp",
+        "secret-hygiene"
+      ],
+      "privacy": "split-public-core-private-secret-adapter",
+      "nextAction": "Publish only generic vault mechanics publicly; keep all credential adapters and paths private."
+    },
+    {
+      "id": "nossen-source-index",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/source-index",
+      "privatePackage": "@funeste/nossen-source-index",
+      "version": null,
+      "source": "scripts/nossen/nossen-source-index.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "docs",
+        "drive",
+        "local-corpus"
+      ],
+      "privacy": "split-public-core-private-corpus-config",
+      "nextAction": "Package generic indexing publicly and keep NOSSEN source lists private."
+    },
+    {
+      "id": "nossen-source-search",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/source-search",
+      "privatePackage": "@funeste/nossen-search",
+      "version": null,
+      "source": "scripts/nossen/nossen-source-search.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "docs",
+        "local-corpus",
+        "operator-search"
+      ],
+      "privacy": "split-public-core-private-corpus-config",
+      "nextAction": "Extract reusable search over generated indexes; keep private corpus paths out of npm metadata."
+    },
+    {
+      "id": "nossen-cortex",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/cortex",
+      "privatePackage": "@funeste/nossen-cortex",
+      "version": null,
+      "source": "scripts/nossen/nossen-cortex-semantic.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "semantic-index",
+        "neo4j",
+        "corpus"
+      ],
+      "privacy": "split-public-core-private-graph-config",
+      "nextAction": "Expose a generic semantic indexer; keep Neo4j endpoints and corpus bindings private."
+    },
+    {
+      "id": "nossen-lan",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/lan-map",
+      "privatePackage": "@funeste/nossen-lan",
+      "version": null,
+      "source": "scripts/nossen/nossen-lan-map.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "lan",
+        "radar",
+        "neo4j"
+      ],
+      "privacy": "split-public-core-private-network-config",
+      "nextAction": "Package generic LAN inventory logic; keep hostnames, targets, and graph sync profiles private."
+    },
+    {
+      "id": "nossen-bloop",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/bloop",
+      "privatePackage": "@funeste/nossen-bloop",
+      "version": null,
+      "source": "scripts/nossen/nossen-bloop.cjs",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "batch-runner",
+        "operator-workflow",
+        "docs"
+      ],
+      "privacy": "split-public-core-private-runbooks",
+      "nextAction": "Extract the generic batch runner and keep private runbook profiles in the Funesterie twin."
+    },
+    {
+      "id": "nossen-chatgpt-index",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/nossen-chatgpt-index",
+      "version": null,
+      "source": "scripts/nossen/nossen-chatgpt-index-sync.cjs",
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "chatgpt-history",
+        "local-corpus",
+        "operator-memory"
+      ],
+      "privacy": "private-personal-corpus",
+      "nextAction": "Keep this private until corpus rules and consent boundaries are documented."
+    },
+    {
+      "id": "mcp-tools",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/mcp-tools",
+      "version": null,
+      "source": "a11/backend/apps/server/tools/mcp/a11-mcp-server.cjs",
+      "registries": [
+        "privateNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "mcp",
+        "agents",
+        "shared-tools",
+        "a11-bus"
+      ],
+      "privacy": "private-orchestration",
+      "nextAction": "Extract stable MCP tool handlers into a private package consumed by a11mcp/server."
+    },
+    {
+      "id": "agent-roster",
+      "lane": "dual",
+      "status": "candidate",
+      "publicPackage": "@nossen/agent-roster",
+      "privatePackage": "@funeste/agent-roster",
+      "version": null,
+      "source": "docs/ops/mcp-roster.json",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "agents",
+        "mcp",
+        "roster"
+      ],
+      "privacy": "split-public-schema-private-roster",
+      "nextAction": "Publish a generic roster schema publicly; keep actual agent topology private."
+    },
+    {
+      "id": "preflight",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/session-preflight",
+      "version": null,
+      "source": "a11mcp/scripts/codex-session-preflight.cjs",
+      "sourceExternal": true,
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "codex",
+        "mcp",
+        "operator-rules"
+      ],
+      "privacy": "private-operator-safety",
+      "nextAction": "Package the preflight as a private operator safety dependency so every agent reads the same context."
+    },
+    {
+      "id": "neo4j-bridge",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/neo4j-bridge",
+      "version": null,
+      "source": "docs/ops/NOSSEN_DRIVE_CLOUD_INVENTORY_2026-05-22.md",
+      "registries": [
+        "privateNpm",
+        "googleArtifactRegistry"
+      ],
+      "links": [
+        "neo4j",
+        "aura",
+        "mcp",
+        "graph-memory"
+      ],
+      "privacy": "private-graph-config",
+      "nextAction": "Create code only after endpoints/config are represented as env vars and never committed."
+    },
+    {
+      "id": "drive-cloud-index",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/drive-cloud-index",
+      "version": null,
+      "source": "docs/ops/NOSSEN_DRIVE_CLOUD_INVENTORY_2026-05-22.md",
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "google-drive",
+        "cloud-corpus",
+        "docs"
+      ],
+      "privacy": "private-corpus-config",
+      "nextAction": "Keep provider bindings private; expose only generic indexing code through @nossen/source-index."
+    },
+    {
+      "id": "payments-support",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/payments-support",
+      "version": null,
+      "source": "a11/frontend/apps/web/src/App.tsx",
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "funesterie.me/contact",
+        "stripe",
+        "paypal",
+        "wero"
+      ],
+      "privacy": "private-provider-adapter",
+      "nextAction": "Package provider-agnostic support metadata; payment secrets remain in provider dashboards/env only."
+    },
+    {
+      "id": "web-contact",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/web-contact",
+      "version": null,
+      "source": "a11/frontend/apps/web/src/App.tsx",
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "funesterie.me",
+        "contact",
+        "support"
+      ],
+      "privacy": "private-site-adapter",
+      "nextAction": "Extract reusable contact/donate view config for funesterie.me and future apps."
+    },
+    {
+      "id": "windows-autostart",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/windows-autostart",
+      "version": null,
+      "source": "docs/ops/PR100_REBOOT_AUTOSTART_2026-05-22.md",
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "desktop-startup",
+        "docker",
+        "mcp",
+        "a11"
+      ],
+      "privacy": "private-machine-profile",
+      "nextAction": "Package startup checks and scripts after separating machine-specific paths from generic logic."
+    },
+    {
+      "id": "docker-profile",
+      "lane": "private",
+      "status": "candidate",
+      "publicPackage": null,
+      "privatePackage": "@funeste/docker-profile",
+      "version": null,
+      "source": "docs/ops/PR100_REBOOT_AUTOSTART_2026-05-22.md",
+      "registries": [
+        "privateNpm"
+      ],
+      "links": [
+        "docker-desktop",
+        "buildx",
+        "desktop-startup"
+      ],
+      "privacy": "private-machine-profile",
+      "nextAction": "Document and package Docker Desktop/Buildx health checks; do not hard-code account tokens."
+    },
+    {
+      "id": "support-donate",
+      "lane": "dual",
+      "status": "planned",
+      "publicPackage": "@nossen/support-links",
+      "privatePackage": "@funeste/support-donate",
+      "version": null,
+      "source": "README.md",
+      "registries": [
+        "publicNpm",
+        "privateNpm"
+      ],
+      "links": [
+        "support",
+        "donations",
+        "contact"
+      ],
+      "privacy": "split-public-links-private-provider-config",
+      "nextAction": "Publish only voluntary support link helpers publicly; private package owns provider dashboards and webhook names."
+    }
+  ]
+}
