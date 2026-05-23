@@ -9,6 +9,8 @@ Le choix du moteur est automatique :
 
 Les secrets ne sont jamais ecrits dans le repo. Le login Docker Hub lit `DOCKERHUB_TOKEN` ou le fichier local `C:\Users\Djeff\Desktop\docker.txt`.
 
+Le nom d'equipage pour cette couche est **Thousand Shiny** : le dock qui assemble A11, NOSSEN, MCP, Neo4j local, Ollama et les futures briques sans forcer Docker Business.
+
 ## Commandes
 
 ```powershell
@@ -16,6 +18,9 @@ npm --prefix D:\projets\funesterie\a11 run docker:health
 npm --prefix D:\projets\funesterie\a11 run docker:login
 npm --prefix D:\projets\funesterie\a11 run docker:build:a11
 npm --prefix D:\projets\funesterie\a11 run docker:push:a11
+npm --prefix D:\projets\funesterie\a11 run redhat:health
+npm --prefix D:\projets\funesterie\a11 run shiny:repair-dns
+npm --prefix D:\projets\funesterie\a11 run shiny:plan
 ```
 
 ## Images
@@ -35,3 +40,7 @@ Railway peut continuer a builder depuis le `Dockerfile` du backend. Quand on veu
 - Pas de suppression de volumes.
 - Pas de `wsl --unregister`.
 - `health.ps1` masque les secrets et ne donne que l'etat du moteur, de Docker Hub et de Railway.
+- `redhat-health.ps1` verifie SCA et le login `registry.redhat.io` sans afficher le token.
+- `repair-wsl-dns.ps1` corrige uniquement le DNS de la distro Podman WSL avec backup de `/etc/resolv.conf`.
+
+Voir aussi [THOUSAND_SHINY.md](./THOUSAND_SHINY.md).
