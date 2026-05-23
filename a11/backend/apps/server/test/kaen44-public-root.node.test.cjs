@@ -32,3 +32,14 @@ test('legal policy routes serve standalone HTML before the SPA fallback', () => 
   assert.match(serverSource, /sendEmbeddedUiStandalonePage\(req, res, 'privacy\/index\.html'\)/);
   assert.match(serverSource, /sendEmbeddedUiStandalonePage\(req, res, 'terms\/index\.html'\)/);
 });
+
+test('OAuth homepage exposes Alphaonze as the exact app name', () => {
+  const serverSource = fs.readFileSync(serverPath, 'utf8');
+  const match = serverSource.match(/if \(surface === 'a11'\) \{[\s\S]*?\n  \}/);
+
+  assert.ok(match, 'A11 homepage rewrite should stay explicit and reviewable');
+  assert.match(match[0], /<title>Alphaonze<\/title>/);
+  assert.match(match[0], /apple-mobile-web-app-title" content="Alphaonze"/);
+  assert.doesNotMatch(match[0], /<title>Alphaonze - A11 Funesterie<\/title>/);
+  assert.doesNotMatch(match[0], /'Alphaonze - A11 Funesterie'/);
+});
