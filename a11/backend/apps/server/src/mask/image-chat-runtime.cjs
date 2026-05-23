@@ -4777,9 +4777,7 @@ async function generateImageFromText({ req, text, generateSd, ...rest }) {
     throw error;
   }
 
-  const maskResolution = await buildCanonicalImageMaskFromText(message, {
-    allowCompatFallback: true,
-  });
+  const maskResolution = await buildCanonicalImageMaskFromText(message);
 
   return generateImageFromMask({
     req,

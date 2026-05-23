@@ -286,13 +286,7 @@ function buildClarificationPayload(clarification, semantic, traceId, pipeline) {
 
 function shouldSurfaceCanonicalizerDiagnostic(error_ = null) {
   if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
-  const reasons = Array.isArray(error_?.payload?.details?.reasons) ? error_.payload.details.reasons : [];
-  return reasons.some((entry) => (
-    /canonicalized_request_not_english_only/i.test(String(entry || ''))
-    || /canonicalized_request_cardinality_conflict/i.test(String(entry || ''))
-    || /canonicalized_request_missing_named_entity/i.test(String(entry || ''))
-    || /structured_llm_unconfigured|llm_unavailable|empty_payload|missing_canonical_english_input|missing_canonical_subject/i.test(String(entry || ''))
-  ));
+  return true;
 }
 
 function buildCanonicalizerDiagnosticSummary(error_ = null) {
@@ -474,27 +468,6 @@ function resolveIntentDependencies(overrides = {}) {
     classifyReferenceImages: overrides.classifyReferenceImages || defaultClassifyReferenceImages,
     detectIntentWithLlm: overrides.detectIntentWithLlm || defaultDetectIntentWithLlm,
   };
-}
-
-function isOptionalCanonicalizerUnavailable(error_ = null) {
-  if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
-  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
-    ? error_.payload.details
-    : {};
-  const reasons = Array.isArray(details.reasons) ? details.reasons.join(' ') : '';
-  const upstreamBody = String(details.upstream?.body || error_?.upstream?.body || '').trim();
-  return /structured_llm_unconfigured|llm_unavailable|not configured|missing authentication|unauthorized|llm_upstream_401|\b401\b/i.test(`${reasons} ${upstreamBody}`);
-}
-
-function shouldPropagateExplicitCanonicalizerFailure(error_ = null, deps = {}) {
-  if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
-  if (typeof deps.specialCompilerCallStructuredLlmJson !== 'function') return false;
-  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
-    ? error_.payload.details
-    : {};
-  const reasons = Array.isArray(details.reasons) ? details.reasons.join(' ') : '';
-  const statusCode = Number(error_?.statusCode || error_?.status || 0);
-  return statusCode >= 500 && /\bprovided_structured_llm:/i.test(reasons);
 }
 
 function createImageBrainRuntime(deps = {}) {
@@ -1011,7 +984,6 @@ function createIntentResolver(overrides = {}) {
           callStructuredLlmJson: deps.specialCompilerCallStructuredLlmJson,
           referenceImagePresent: Boolean(primaryReferenceUrl),
           referenceImageUrl: primaryReferenceUrl,
-          allowCompatFallback: true,
         });
       } catch (error_) {
         if (shouldSurfaceCanonicalizerDiagnostic(error_)) {
@@ -1028,15 +1000,7 @@ function createIntentResolver(overrides = {}) {
             },
           };
         }
-        if (shouldPropagateExplicitCanonicalizerFailure(error_, deps)) {
-          throw error_;
-        }
-        if (isOptionalCanonicalizerUnavailable(error_)) {
-          console.warn(`[A11][prompt-canon] traceId=${traceId} optional canonicalizer unavailable; continuing with heuristic mask`);
-          canonicalizedImageRequest = null;
-        } else {
-          throw error_;
-        }
+        throw error_;
       }
 
       if (canonicalizedImageRequest?.needsClarification === true) {
