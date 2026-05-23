@@ -1,6 +1,6 @@
 [functions]
   directory = "netlify/functions"
-  included_files = ["index.html"]
+  included_files = ["index.html", "mcp.html"]
 
 [[redirects]]
   from = "/"
@@ -10,6 +10,18 @@
 
 [[redirects]]
   from = "/index.html"
+  to = "/.netlify/functions/private-cockpit"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/private-cockpit"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/mcp.html"
   to = "/.netlify/functions/private-cockpit"
   status = 200
   force = true
