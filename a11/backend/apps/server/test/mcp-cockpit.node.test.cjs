@@ -99,14 +99,16 @@ function createCallToolStub() {
   return async (name) => {
     if (name === 'a11_status') return textResult({ status: { ok: true } });
     if (name === 'kaen44_status') return textResult({ status: { ok: true } });
+    if (name === 'qflush_vivy_audio_status') return textResult({ status: { ok: true, source: 'vivy-audio' } });
     if (name === 'agent_presence') {
       return textResult({
         presence: {
-          activeCount: 2,
-          totalCount: 3,
+          activeCount: 3,
+          totalCount: 4,
           agents: [
             { id: 'a11', name: 'A11', active: true },
             { id: 'kaen44', name: 'Kaen44', active: true },
+            { id: 'vivy', name: 'Vivy', active: true },
             { id: 'neo4j-secret-port', name: 'Neo4j token tunnel', active: true },
           ],
         },
@@ -178,8 +180,10 @@ test('private MCP cockpit summarizes MCP state for allowed admin accounts withou
     assert.equal(json.ok, true);
     assert.equal(json.a11.ok, true);
     assert.equal(json.kaen44.ok, true);
-    assert.equal(json.agents.active, 2);
-    assert.deepEqual(json.agents.names, ['A11', 'Kaen44', 'Agent 3']);
+    assert.equal(json.vivy.ok, true);
+    assert.equal(json.vivy.audio, true);
+    assert.equal(json.agents.active, 3);
+    assert.deepEqual(json.agents.names, ['A11', 'Kaen44', 'Vivy', 'Agent 4']);
     assert.equal(json.jobs.running, 1);
     assert.equal(json.jobs.ready, 1);
     assert.equal(json.game.ready, true);

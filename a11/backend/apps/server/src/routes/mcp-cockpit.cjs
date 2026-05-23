@@ -325,6 +325,7 @@ function summarizePitchingThreads(value) {
 function buildCockpitSummary({
   a11,
   kaen44,
+  vivyAudio,
   presence,
   jobs,
   romstation,
@@ -335,6 +336,14 @@ function buildCockpitSummary({
   const jobList = Array.isArray(jobs?.jobs?.jobs) ? jobs.jobs.jobs : [];
   const gameState = romstation?.state || null;
   const controllerStatus = controller?.status || null;
+  const vivyStatus = vivyAudio?.status || vivyAudio || null;
+  const vivyPresence = agents.find((agent) => /vivy/i.test([
+    agent?.id,
+    agent?.name,
+    agent?.role,
+  ].filter(Boolean).join(' ')));
+  const vivyToolOk = !!vivyStatus && vivyStatus.ok !== false && !vivyStatus.error && !vivyStatus._mcp_error;
+  const vivyPresenceOk = !!vivyPresence && vivyPresence.active !== false;
   const activeAgents = Number(presence?.presence?.activeCount || agents.filter((agent) => agent?.active).length || 0);
   const totalAgents = Number(presence?.presence?.totalCount || agents.length || 0);
 
@@ -346,6 +355,12 @@ function buildCockpitSummary({
     },
     kaen44: {
       ok: !!kaen44?.status?.ok,
+    },
+    vivy: {
+      ok: vivyToolOk || vivyPresenceOk,
+      audio: vivyToolOk,
+      present: vivyPresenceOk,
+      source: vivyToolOk ? 'qflush_vivy_audio_status' : (vivyPresenceOk ? 'agent_presence' : 'unknown'),
     },
     agents: {
       active: activeAgents,
@@ -446,6 +461,7 @@ function createMcpCockpitRouter({
     const [
       a11,
       kaen44,
+      vivyAudio,
       presence,
       jobs,
       romstation,
@@ -454,6 +470,7 @@ function createMcpCockpitRouter({
     ] = await Promise.all([
       safeToolCall(callTool, 'a11_status', {}, config),
       safeToolCall(callTool, 'kaen44_status', {}, config),
+      safeToolCall(callTool, 'qflush_vivy_audio_status', {}, config),
       safeToolCall(callTool, 'agent_presence', { includeIdle: true }, config),
       safeToolCall(callTool, 'agent_jobs', {}, config),
       safeToolCall(callTool, 'romstation_state', {}, config),
@@ -464,6 +481,7 @@ function createMcpCockpitRouter({
     return res.json(buildCockpitSummary({
       a11,
       kaen44,
+      vivyAudio,
       presence,
       jobs,
       romstation,

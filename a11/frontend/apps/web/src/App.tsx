@@ -3100,6 +3100,13 @@ function FunesterieCockpitPage({
       detail: status?.kaen44?.ok ? "Joignable" : "À vérifier",
     },
     {
+      id: "vivy",
+      name: "Vivy",
+      role: "Voix, audio et média",
+      ok: status?.vivy?.ok === true,
+      detail: status?.vivy?.audio ? "Audio MCP joignable" : status?.vivy?.present ? "Présente sur le MCP" : "À vérifier",
+    },
+    {
       id: "agents",
       name: "Agents visibles",
       role: `${Number(status?.agents?.active || 0)}/${Number(status?.agents?.total || 0)} actifs`,

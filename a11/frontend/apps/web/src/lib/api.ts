@@ -928,6 +928,12 @@ export type McpCockpitSummary = {
   updatedAt?: string;
   a11?: { ok?: boolean };
   kaen44?: { ok?: boolean };
+  vivy?: {
+    ok?: boolean;
+    audio?: boolean;
+    present?: boolean;
+    source?: string;
+  };
   agents?: {
     active?: number;
     total?: number;
