@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NOSSEN - Operational Graph Memory for Agent Fleets</title>
+    <meta name="description" content="A public, redacted field note on NOSSEN/Funesterie: graph memory, MCP, GraphRAG, semantic source indexing and operator security for multi-agent systems." />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #030707;
+        --panel: #071111;
+        --panel-2: #0b1716;
+        --ink: #f4fff9;
+        --muted: #a7bcb4;
+        --line: rgba(112, 255, 210, 0.22);
+        --green: #67f68e;
+        --cyan: #41f5e7;
+        --amber: #f5c76b;
+        --redacted: #14221e;
+        --shadow: 0 30px 100px rgba(0, 0, 0, 0.42);
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 80% 4%, rgba(65, 245, 231, 0.16), transparent 34rem),
+          radial-gradient(circle at 8% 18%, rgba(103, 246, 142, 0.12), transparent 30rem),
+          linear-gradient(145deg, #020505 0%, #061010 48%, #040806 100%);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        content: "";
+        background-image:
+          linear-gradient(rgba(103, 246, 142, 0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(65, 245, 231, 0.045) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), transparent 86%);
+      }
+
+      a { color: var(--cyan); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .shell {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 76px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--ink);
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--line);
+        background: linear-gradient(135deg, rgba(103, 246, 142, 0.16), rgba(65, 245, 231, 0.08));
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 16px;
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      nav a { color: #d8f9ee; }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+        gap: 28px;
+        align-items: stretch;
+        padding: 42px 0 28px;
+      }
+
+      .hero-copy {
+        min-height: 520px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: clamp(28px, 6vw, 64px);
+        border: 1px solid var(--line);
+        background: linear-gradient(145deg, rgba(7, 17, 17, 0.94), rgba(5, 10, 9, 0.82));
+        box-shadow: var(--shadow);
+      }
+
+      h1 {
+        max-width: 780px;
+        margin: 0;
+        font-size: clamp(42px, 7vw, 82px);
+        line-height: 0.96;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 720px;
+        margin: 24px 0 0;
+        color: #d8f7ef;
+        font-size: clamp(18px, 2.1vw, 24px);
+        line-height: 1.42;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 30px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 18px;
+        border: 1px solid rgba(103, 246, 142, 0.5);
+        background: #b4ff65;
+        color: #03100a;
+        font-size: 13px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .button.secondary {
+        background: transparent;
+        color: var(--ink);
+        border-color: var(--line);
+      }
+
+      .hero-visual {
+        position: relative;
+        overflow: hidden;
+        min-height: 520px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(6, 18, 17, 0.96), rgba(3, 7, 7, 0.95));
+      }
+
+      .hero-visual svg {
+        width: 100%;
+        height: 100%;
+        min-height: 520px;
+        display: block;
+      }
+
+      .visual-caption {
+        position: absolute;
+        left: 22px;
+        right: 22px;
+        bottom: 22px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      section {
+        padding: 48px 0;
+        border-top: 1px solid rgba(112, 255, 210, 0.12);
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: minmax(240px, 0.42fr) minmax(0, 0.58fr);
+        gap: 32px;
+        align-items: start;
+        margin-bottom: 24px;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 46px);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .section-head p,
+      .plain {
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .tile,
+      .note,
+      .timeline-item {
+        border: 1px solid var(--line);
+        background: rgba(7, 17, 17, 0.86);
+      }
+
+      .tile {
+        min-height: 188px;
+        padding: 22px;
+      }
+
+      .tile strong {
+        display: block;
+        color: var(--green);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+        text-transform: uppercase;
+        margin-bottom: 14px;
+      }
+
+      .tile h3,
+      .note h3 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        line-height: 1.12;
+      }
+
+      .tile p,
+      .note p,
+      .timeline-item p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .note {
+        padding: 26px;
+        background:
+          linear-gradient(135deg, rgba(103, 246, 142, 0.09), transparent 44%),
+          rgba(7, 17, 17, 0.88);
+      }
+
+      .timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 18px;
+        padding: 18px 20px;
+      }
+
+      .date {
+        color: var(--amber);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .timeline-item h3 {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
+
+      .proof {
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(260px, 0.48fr);
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      .code-panel {
+        padding: 24px;
+        border: 1px solid rgba(103, 246, 142, 0.28);
+        background: #010504;
+        color: #ccffe8;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 13px;
+        overflow: hidden;
+      }
+
+      .code-panel span { color: var(--green); }
+      .code-panel em { color: var(--amber); font-style: normal; }
+
+      .redacted {
+        display: inline-block;
+        width: 96px;
+        height: 0.85em;
+        background: var(--redacted);
+        border: 1px solid rgba(103, 246, 142, 0.18);
+        vertical-align: -0.08em;
+      }
+
+      footer {
+        padding: 36px 0 54px;
+        color: var(--muted);
+        border-top: 1px solid rgba(112, 255, 210, 0.12);
+      }
+
+      .footer-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      @media (max-width: 860px) {
+        .hero,
+        .section-head,
+        .proof {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-copy,
+        .hero-visual,
+        .hero-visual svg {
+          min-height: auto;
+        }
+
+        .hero-visual {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .hero-visual svg {
+          min-height: 360px;
+        }
+
+        .visual-caption {
+          position: static;
+          margin: 0 18px 18px;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .timeline-item {
+          grid-template-columns: 1fr;
+        }
+
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 18px 0;
+        }
+
+        nav {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="shell">
+      <a class="brand" href="/">
+        <span class="mark">N</span>
+        <span>NOSSEN / Funesterie</span>
+      </a>
+      <nav aria-label="Page navigation">
+        <a href="#architecture">Architecture</a>
+        <a href="#timeline">Timeline</a>
+        <a href="#evidence">Evidence</a>
+        <a href="/contact/">Contact</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="shell hero">
+        <div class="hero-copy">
+          <h1>Operational graph memory for agent fleets.</h1>
+          <p class="lead">
+            NOSSEN is a Funesterie field system combining graph memory, MCP,
+            GraphRAG, semantic source indexing and operator-grade security for
+            multi-agent work.
+          </p>
+          <div class="actions">
+            <a class="button" href="mailto:contact@funesterie.me">Contact Funesterie</a>
+            <a class="button secondary" href="#timeline">Read the dated trace</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-label="NOSSEN architecture graph">
+          <svg viewBox="0 0 520 560" role="img" aria-labelledby="graph-title graph-desc">
+            <title id="graph-title">NOSSEN graph memory map</title>
+            <desc id="graph-desc">A stylized graph connecting agents, MCP, Neo4j memory, source indexing and operator security.</desc>
+            <defs>
+              <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <rect width="520" height="560" fill="#061110" />
+            <g opacity="0.42" stroke="#41f5e7" stroke-width="1">
+              <path d="M80 110 L250 78 L424 122 L390 290 L260 260 L116 332 L80 110" fill="none" />
+              <path d="M250 78 L260 260 L420 430 L116 332 L250 78" fill="none" />
+              <path d="M116 332 L210 466 L420 430" fill="none" />
+              <path d="M390 290 L420 430" fill="none" />
+            </g>
+            <g filter="url(#glow)">
+              <circle cx="250" cy="78" r="34" fill="#0d241d" stroke="#67f68e" stroke-width="2" />
+              <circle cx="80" cy="110" r="22" fill="#071717" stroke="#41f5e7" stroke-width="2" />
+              <circle cx="424" cy="122" r="22" fill="#071717" stroke="#41f5e7" stroke-width="2" />
+              <circle cx="260" cy="260" r="46" fill="#10221c" stroke="#67f68e" stroke-width="2" />
+              <circle cx="116" cy="332" r="26" fill="#071717" stroke="#f5c76b" stroke-width="2" />
+              <circle cx="390" cy="290" r="26" fill="#071717" stroke="#f5c76b" stroke-width="2" />
+              <circle cx="210" cy="466" r="26" fill="#071717" stroke="#41f5e7" stroke-width="2" />
+              <circle cx="420" cy="430" r="30" fill="#071717" stroke="#67f68e" stroke-width="2" />
+            </g>
+            <g fill="#f4fff9" font-family="ui-monospace, Consolas, monospace" font-weight="800" font-size="13" text-anchor="middle">
+              <text x="250" y="75">GRAPH</text>
+              <text x="250" y="92">MEMORY</text>
+              <text x="80" y="115">MCP</text>
+              <text x="424" y="127">AGENTS</text>
+              <text x="260" y="257">NOSSEN</text>
+              <text x="260" y="274">BUS</text>
+              <text x="116" y="337">NEZ</text>
+              <text x="390" y="295">VAULT</text>
+              <text x="210" y="471">SOURCE</text>
+              <text x="420" y="427">PUBLIC</text>
+              <text x="420" y="444">PACKS</text>
+            </g>
+            <g fill="#a7bcb4" font-family="ui-monospace, Consolas, monospace" font-size="11">
+              <text x="48" y="522">redacted public map / no secrets / dated 2026-05-24</text>
+            </g>
+          </svg>
+          <div class="visual-caption">
+            This public page is intentionally redacted. It describes system shape,
+            dated traces and shareable evidence types, not credentials or private data.
+          </div>
+        </div>
+      </div>
+
+      <section id="architecture">
+        <div class="shell">
+          <div class="section-head">
+            <h2>Where it overlaps with current graph-agent research.</h2>
+            <p>
+              The Neo4j public discussion around agent memory, semantic layers,
+              GraphRAG and production agents matches a problem space NOSSEN has
+              been exploring from the operational side.
+            </p>
+          </div>
+          <div class="grid">
+            <article class="tile">
+              <strong>Memory</strong>
+              <h3>Graph-backed context</h3>
+              <p>Short-term dialogue, long-term entities, event traces and semantic links are routed through a Neo4j/Aura-aware memory layer.</p>
+            </article>
+            <article class="tile">
+              <strong>Operations</strong>
+              <h3>MCP and agent bus</h3>
+              <p>Agents, jobs, discussions and tool calls are coordinated through MCP surfaces instead of one-off manual relay.</p>
+            </article>
+            <article class="tile">
+              <strong>Retrieval</strong>
+              <h3>Metadata-first source index</h3>
+              <p>Source discovery uses hashes, labels and summaries before raw content, so sensitive corpora can remain governed.</p>
+            </article>
+            <article class="tile">
+              <strong>Security</strong>
+              <h3>Operator-safe verification</h3>
+              <p>Secrets are checked by use, scope and health, not by printing them into logs or chat transcripts.</p>
+            </article>
+            <article class="tile">
+              <strong>Packaging</strong>
+              <h3>Public modules, private adapters</h3>
+              <p>Reusable logic moves into installable `@nossen/*` packages while environment-specific adapters stay private.</p>
+            </article>
+            <article class="tile">
+              <strong>Governance</strong>
+              <h3>Audit before autonomy</h3>
+              <p>Agent actions are routed through explicit policies, diagnostics, rollback notes and human-visible checkpoints.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="timeline">
+        <div class="shell">
+          <div class="section-head">
+            <h2>A short dated trace.</h2>
+            <p>
+              This is a public digest of local Git, documentation and graph
+              traces. The private dossier keeps the longer evidence chain.
+            </p>
+          </div>
+          <div class="timeline">
+            <article class="timeline-item">
+              <div class="date">2026-04-26</div>
+              <div>
+                <h3>Long-term RAG memory and Neo4j knowledge graph</h3>
+                <p>Implementation traces show RAG vector memory, Neo4j support and episodic memory before the later public newsletter cycle.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="date">2026-04-26</div>
+              <div>
+                <h3>MCP server, Kiro steering and tool-calling layer</h3>
+                <p>The system began treating agent tooling as routed infrastructure rather than isolated prompts.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="date">2026-05-12</div>
+              <div>
+                <h3>Neo4j MCP orchestration</h3>
+                <p>Graph memory and MCP coordination were explicitly joined for agent workflows.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="date">2026-05-19</div>
+              <div>
+                <h3>Source index, BLOOP memory sonar and Cortex SHA map</h3>
+                <p>NOSSEN added source-level metadata, semantic clusters and hash mapping for safer retrieval and audit.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="date">2026-05-22</div>
+              <div>
+                <h3>RubixCube vault and secret-safe token checks</h3>
+                <p>Credential handling moved toward encrypted vaulting and verification without exposing raw secrets.</p>
+              </div>
+            </article>
+            <article class="timeline-item">
+              <div class="date">2026-05-23</div>
+              <div>
+                <h3>Public package train and hosted MCP cockpit</h3>
+                <p>Reusable NOSSEN modules were published and the agent-operation cockpit became visible through the backend surface.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="evidence">
+        <div class="shell proof">
+          <div class="note">
+            <h2>What can be shared safely.</h2>
+            <p>
+              The useful conversation is not "who copied whom". The useful
+              conversation is how graph memory behaves when several agents,
+              tools, jobs and security boundaries operate at the same time.
+            </p>
+            <p style="margin-top:16px;">
+              Shareable evidence includes dated commits, PR checks, CI scans,
+              package metadata, schema summaries and redacted architecture
+              notes. Private repositories, credentials and raw corpora stay
+              out of the public link.
+            </p>
+          </div>
+          <div class="code-panel" aria-label="Redacted evidence summary">
+            <div><span>nossen.trace</span> = {</div>
+            <div>&nbsp;&nbsp;graph_memory: <em>"neo4j/aura/local"</em>,</div>
+            <div>&nbsp;&nbsp;mcp_bus: <em>"agents + jobs + threads"</em>,</div>
+            <div>&nbsp;&nbsp;source_index: <em>"metadata-first"</em>,</div>
+            <div>&nbsp;&nbsp;secret_policy: <em>"verify-by-use"</em>,</div>
+            <div>&nbsp;&nbsp;private_data: <span class="redacted"></span>,</div>
+            <div>&nbsp;&nbsp;status: <em>"field system"</em></div>
+            <div>};</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="shell footer-row">
+        <span>Last updated: 2026-05-24. Public redacted brief.</span>
+        <span><a href="/contact/">Contact</a> · <a href="/">Funesterie</a> · <a href="mailto:contact@funesterie.me">contact@funesterie.me</a></span>
+      </div>
+    </footer>
+  </body>
+</html>
