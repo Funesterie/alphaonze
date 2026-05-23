@@ -64,8 +64,8 @@ npm run nossen:packages:json
 The first validated wave has:
 
 - 21 published public packages in `@nossen/*`
-- 1 dual package seed: published public `@nossen/logic-reduce` plus the private
-  `@funesterieindustry/logic-reduce-nossen` adapter
+- 1 published dual package seed: public `@nossen/logic-reduce` plus private
+  `@funesterieindustry/logic-reduce-nossen`
 - 19 private or dual candidates for the next extraction waves
 - one support/donation helper planned as a dual package
 
@@ -92,6 +92,8 @@ train is coherent.
 ## Publish Gate
 
 `@nossen/logic-reduce` is published publicly at `2.0.0`. The private
-`@funesterieindustry/logic-reduce-nossen` adapter remains restricted and should
-be published through the DPAPI-backed npm publish-token path. Do not work around
-auth by printing, committing, or copying tokens/recovery codes.
+`@funesterieindustry/logic-reduce-nossen` adapter is published restricted at
+`2.0.0` and installs with the public core. The `@funeste` private org scope
+still needs private-package billing before it can receive restricted packages.
+Do not work around auth by printing, committing, or copying tokens/recovery
+codes.

@@ -45,6 +45,11 @@ publications.
 - New consumers should use `@nossen/*@^2.0.0`.
 - Legacy `1.0.x` packages remain immutable on npmjs but are not the current
   supported train.
+- The first restricted private adapter is
+  `@funesterieindustry/logic-reduce-nossen@2.0.0`; it depends on the public
+  `@nossen/logic-reduce@2.0.0` core.
+- `@funeste` remains the preferred private org scope, but restricted package
+  publication there is blocked until org private-package billing is enabled.
 
 ## Validation summary
 
@@ -56,4 +61,7 @@ publications.
 - Google Artifact Registry: `latest = 2.0.0` and `stable = 2.0.0` for all 21
   packages.
 - Google Artifact Registry fresh install: all 21 packages install together with
+  audit `0`.
+- Private npmjs: `@funesterieindustry/logic-reduce-nossen@2.0.0` is restricted,
+  tagged `latest`, and fresh-installs with `@nossen/logic-reduce@2.0.0` with
   audit `0`.

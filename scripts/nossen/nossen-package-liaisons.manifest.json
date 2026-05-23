@@ -526,8 +526,8 @@
         "decision-reduction"
       ],
       "privacy": "split-public-core-private-prompts",
-      "publishGate": "@funeste restricted publish is blocked until org private-package billing is enabled; use paid user scope @funesterieindustry for the private adapter.",
-      "nextAction": "Publish the restricted @funesterieindustry/logic-reduce-nossen adapter after validating the user-scope private package path."
+      "publishGate": "Private adapter is published under @funesterieindustry; @funeste remains blocked until org private-package billing is enabled.",
+      "nextAction": "Keep user-scope private adapter on the aligned 2.x train; migrate to @funeste only after org billing is enabled and tested."
     },
     {
       "id": "rubixgate",
