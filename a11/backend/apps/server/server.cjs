@@ -7444,7 +7444,7 @@ function rewriteEmbeddedUiIndexForSurface(html, surface) {
 
   if (surface === 'a11') {
     return html
-      .replace(/<title>.*?<\/title>/i, '<title>Alphaonze - A11 Funesterie</title>')
+      .replace(/<title>.*?<\/title>/i, '<title>Alphaonze</title>')
       .replace(
         /<meta name="description" content="[^"]*"\s*\/?>/i,
         '<meta name="description" content="Alphaonze, aussi appele A11, est l application Funesterie pour le chat, les fichiers Google Drive autorises, la voix, la memoire et les outils connectes." />'
@@ -7454,7 +7454,7 @@ function rewriteEmbeddedUiIndexForSurface(html, surface) {
         '<meta name="apple-mobile-web-app-title" content="Alphaonze" />'
       )
       .replace(/Navigation Kaen44/g, 'Navigation Alphaonze')
-      .replace(/Kaen44 - Assistante bureau Funesterie/g, 'Alphaonze - A11 Funesterie')
+      .replace(/Kaen44 - Assistante bureau Funesterie/g, 'Alphaonze')
       .replace(/Ouvrir Kaen44/g, 'Ouvrir Alphaonze')
       .replace(/Connexion Kaen44/g, 'Connexion Alphaonze')
       .replace(/Relancer Kaen44/g, 'Relancer Alphaonze')
