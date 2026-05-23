@@ -96,7 +96,7 @@ function textResult(value) {
 }
 
 function createCallToolStub() {
-  return async (name) => {
+  return async (name, args = {}) => {
     if (name === 'a11_status') return textResult({ status: { ok: true } });
     if (name === 'kaen44_status') return textResult({ status: { ok: true } });
     if (name === 'qflush_vivy_audio_status') return textResult({ status: { ok: true, source: 'vivy-audio' } });
@@ -118,10 +118,57 @@ function createCallToolStub() {
     if (name === 'romstation_state') return textResult({ state: { available: true, phase: 'ready' } });
     if (name === 'qflush_gamepad_status') return textResult({ status: { ok: true, recent: [{ at: 1 }] } });
     if (name === 'discussion_list') {
+      if (args.status === 'working') {
+        return textResult({
+          discussions: [
+            {
+              id: 'thread-working-1',
+              title: 'Mission: rendre Funesterie fonctionnel',
+              status: 'working',
+              participants: ['codex-desktop', 'a11'],
+              tags: ['local', 'prod'],
+              messageCount: 7,
+              updatedAt: '2026-05-23T14:30:00.000Z',
+              lastMessage: {
+                from: 'codex',
+                kind: 'status',
+                text: 'Bearer unit-test-secret-value doit etre masque avant affichage.',
+              },
+            },
+          ],
+        });
+      }
+      if (args.status === 'open') {
+        return textResult({
+          discussions: [
+            {
+              id: 'thread-open-1',
+              title: 'Discord stream Qflush bridge',
+              status: 'open',
+              participants: ['kaen44'],
+              messageCount: 3,
+              lastMessage: {
+                from: 'kaen44',
+                kind: 'note',
+                text: 'Attendre la capture fraiche avant action locale.',
+              },
+            },
+          ],
+        });
+      }
       return textResult({
         discussions: [
           {
+            id: 'thread-pitching-1',
             title: 'Opération BB',
+            status: 'pitching',
+            participants: ['codex-desktop'],
+            messageCount: 2,
+            lastMessage: {
+              from: 'codex',
+              kind: 'pitch',
+              text: 'Appel general agents MCP.',
+            },
             pitching: {
               ready: true,
               requiredAnswered: 2,
@@ -189,6 +236,12 @@ test('private MCP cockpit summarizes MCP state for allowed admin accounts withou
     assert.equal(json.game.ready, true);
     assert.equal(json.controller.ready, true);
     assert.equal(json.pitching.ready, 1);
+    assert.equal(json.threads.working.total, 1);
+    assert.equal(json.threads.open.total, 1);
+    assert.equal(json.threads.pitching.total, 1);
+    assert.equal(json.threads.working.items[0].title, 'Mission: rendre Funesterie fonctionnel');
+    assert.match(json.threads.working.items[0].lastSnippet, /Bearer \[REDACTED\]/);
+    assert.doesNotMatch(JSON.stringify(json.threads), /unit-test-secret-value/);
   });
 });
 

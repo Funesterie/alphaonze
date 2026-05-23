@@ -50,6 +50,7 @@ import {
   type TtsVoiceReference,
   type VivyChatFileAttachment,
   type McpCockpitSummary,
+  type McpCockpitThread,
   type A11PortraitFrame,
   type A11PortraitFramebook,
 } from "./lib/api";
@@ -3141,6 +3142,50 @@ function FunesterieCockpitPage({
     ? new Date(status.updatedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })
     : "";
   const loginHref = buildCentralLoginUrl(surfaceLinks.cockpit);
+  const mcpConsoleHref = (() => {
+    if (!surfaceLinks.a11Cockpit.startsWith("http")) return "/cockpit/mcp";
+    return new URL("/cockpit/mcp", surfaceLinks.a11Cockpit).toString();
+  })();
+  const threadBuckets: Array<{ key: string; label: string; total?: number; items: McpCockpitThread[] }> = [
+    {
+      key: "working",
+      label: "En cours",
+      total: status?.threads?.working?.total,
+      items: status?.threads?.working?.items || [],
+    },
+    {
+      key: "open",
+      label: "Ouverts",
+      total: status?.threads?.open?.total,
+      items: status?.threads?.open?.items || [],
+    },
+    {
+      key: "pitching",
+      label: "Pitching",
+      total: status?.threads?.pitching?.total,
+      items: status?.threads?.pitching?.items || [],
+    },
+  ];
+  const seenThreadKeys = new Set<string>();
+  const visibleThreads = threadBuckets.flatMap((bucket) => bucket.items.map((thread, index) => ({
+    ...thread,
+    bucketKey: bucket.key,
+    bucketLabel: bucket.label,
+    sortIndex: index,
+  }))).filter((thread) => {
+    const key = `${thread.id || ""}|${thread.title || ""}|${thread.status || thread.bucketKey}`;
+    if (seenThreadKeys.has(key)) return false;
+    seenThreadKeys.add(key);
+    return true;
+  }).slice(0, 10);
+  const visibleThreadTotal = threadBuckets.reduce((sum, bucket) => sum + Number(bucket.total || 0), 0);
+  const formatThreadTime = (value?: string) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    return parsed.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  };
 
   return (
     <main className="funesterie-ops-shell fun-mcp-shell fun-public-surface">
@@ -3160,6 +3205,7 @@ function FunesterieCockpitPage({
                 <a href={surfaceLinks.kaen44Cockpit}>Ouvrir K44</a>
                 <a href={surfaceLinks.a11Cockpit}>Ouvrir A11</a>
                 <a href={surfaceLinks.vivyStudio}>Ouvrir Vivy</a>
+                <a href={mcpConsoleHref}>Console MCP</a>
               </>
             ) : (
               <a href={loginHref}>Se connecter</a>
@@ -3210,6 +3256,77 @@ function FunesterieCockpitPage({
                 <b>{card.ok ? "Prêt" : "Non confirmé"}</b>
               </article>
             ))}
+          </section>
+
+          <section className="fun-mcp-threads" aria-label="Fils et discussions MCP">
+            <div className="fun-mcp-threads-head">
+              <div>
+                <span>Threads MCP</span>
+                <h2>Fils, chats et coordination</h2>
+                <p>
+                  Vue courte des discussions actives. Les aperçus sont caviardés côté serveur;
+                  la lecture complète et les actions passent par la console admin A11.
+                </p>
+              </div>
+              <a href={mcpConsoleHref}>Ouvrir la console</a>
+            </div>
+            <div className="fun-mcp-thread-meters" aria-label="Compteurs threads">
+              {threadBuckets.map((bucket) => (
+                <span key={bucket.key}>
+                  <b>{Number(bucket.total || 0)}</b>
+                  {bucket.label}
+                </span>
+              ))}
+              <span>
+                <b>{visibleThreadTotal}</b>
+                Total suivi
+              </span>
+            </div>
+            <div className="fun-mcp-thread-list">
+              {visibleThreads.map((thread, index) => {
+                const participants = (thread.participants || []).join(", ");
+                const tags = thread.tags || [];
+                const updated = formatThreadTime(thread.updatedAt);
+                const messageCount = Number(thread.messageCount || 0);
+                return (
+                  <article key={`${thread.bucketKey}-${thread.id || thread.title || index}`} className="fun-mcp-thread-row">
+                    <div className="fun-mcp-thread-main">
+                      <span>{thread.bucketLabel}</span>
+                      <h3>{thread.title || "Fil MCP"}</h3>
+                      <small>
+                        {[participants || thread.topic || thread.status, messageCount ? `${messageCount} messages` : "", updated ? `MAJ ${updated}` : ""]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </small>
+                    </div>
+                    <p>
+                      {thread.lastSnippet ? (
+                        <>
+                          {thread.lastFrom ? <b>{thread.lastFrom}: </b> : null}
+                          {thread.lastSnippet}
+                        </>
+                      ) : (
+                        "Aucun aperçu affichable pour ce fil."
+                      )}
+                    </p>
+                    {tags.length ? (
+                      <div className="fun-mcp-thread-tags">
+                        {tags.slice(0, 5).map((tag) => <i key={tag}>{tag}</i>)}
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+              {!visibleThreads.length ? (
+                <article className="fun-mcp-thread-row is-empty">
+                  <div className="fun-mcp-thread-main">
+                    <span>Calme</span>
+                    <h3>Aucun fil MCP visible</h3>
+                    <small>La patrouille reste joignable; recharge ou ouvre la console si tu viens de créer un thread.</small>
+                  </div>
+                </article>
+              ) : null}
+            </div>
           </section>
 
           <section className="fun-mcp-flow" aria-label="Rendez-vous agents">

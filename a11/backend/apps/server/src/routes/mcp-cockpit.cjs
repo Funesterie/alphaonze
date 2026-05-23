@@ -287,6 +287,92 @@ function cleanAgentName(agent) {
   return raw.slice(0, 34);
 }
 
+function cleanDisplayText(value, fallback = '', maxLength = 120) {
+  const text = redactText(value).replace(/\s+/g, ' ').trim();
+  const safeFallback = redactText(fallback).replace(/\s+/g, ' ').trim();
+  const selected = text || safeFallback;
+  if (!selected) return '';
+  if (selected.length <= maxLength) return selected;
+  return `${selected.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
+}
+
+function cleanStringList(value, maxItems = 6, maxLength = 34) {
+  const list = Array.isArray(value)
+    ? value
+    : (typeof value === 'string' ? value.split(/[,\n;]/g) : []);
+  return list
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      return entry?.name || entry?.id || entry?.role || '';
+    })
+    .map((entry) => cleanDisplayText(entry, '', maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function getLastThreadMessage(thread) {
+  if (thread?.lastMessage && typeof thread.lastMessage === 'object') return thread.lastMessage;
+  if (thread?.last && typeof thread.last === 'object') return thread.last;
+  const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+  return messages.length ? messages[messages.length - 1] : null;
+}
+
+function getThreadMessageCount(thread) {
+  const candidates = [
+    thread?.messageCount,
+    thread?.message_count,
+    thread?.messagesCount,
+    thread?.counts?.messages,
+    Array.isArray(thread?.messages) ? thread.messages.length : undefined,
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+  return 0;
+}
+
+function summarizeMcpThreads(value, fallbackStatus, limit = 8) {
+  const discussions = Array.isArray(value?.discussions)
+    ? value.discussions
+    : (Array.isArray(value?.threads) ? value.threads : []);
+  const items = discussions.slice(0, limit).map((thread, index) => {
+    const pitching = thread?.pitching || thread?.pitch || {};
+    const lastMessage = getLastThreadMessage(thread);
+    const rawSnippet = lastMessage?.summary
+      || lastMessage?.text
+      || lastMessage?.body
+      || lastMessage?.content
+      || thread?.summary
+      || thread?.lastMessageText
+      || '';
+    return {
+      id: cleanDisplayText(thread?.id || thread?.threadId || thread?.discussionId || '', '', 80),
+      title: cleanDisplayText(thread?.title || thread?.name || `Fil MCP ${index + 1}`, 'Fil MCP', 90),
+      status: cleanDisplayText(thread?.status || fallbackStatus, fallbackStatus, 32),
+      topic: cleanDisplayText(thread?.topic || thread?.project || '', '', 70),
+      participants: cleanStringList(thread?.participants || thread?.agents || thread?.members),
+      tags: cleanStringList(thread?.tags || thread?.labels || thread?.topics),
+      messageCount: getThreadMessageCount(thread),
+      updatedAt: cleanDisplayText(
+        thread?.updatedAt || thread?.updated || thread?.lastAt || lastMessage?.at || lastMessage?.createdAt || '',
+        '',
+        48
+      ),
+      lastFrom: cleanDisplayText(lastMessage?.from || lastMessage?.author || lastMessage?.role || '', '', 42),
+      lastKind: cleanDisplayText(lastMessage?.kind || lastMessage?.type || '', '', 32),
+      lastSnippet: cleanDisplayText(rawSnippet, '', 180),
+      ready: !!pitching.ready,
+      requiredAnswered: Number(pitching.requiredAnswered || 0),
+      requiredTotal: Number(pitching.requiredTotal || 0),
+    };
+  });
+  return {
+    total: discussions.length,
+    items,
+  };
+}
+
 function isJapaneseVariant(state) {
   const raw = [
     state?.game,
@@ -331,6 +417,8 @@ function buildCockpitSummary({
   romstation,
   controller,
   pitchingThreads,
+  workingThreads,
+  openThreads,
 }) {
   const agents = Array.isArray(presence?.presence?.agents) ? presence.presence.agents : [];
   const jobList = Array.isArray(jobs?.jobs?.jobs) ? jobs.jobs.jobs : [];
@@ -389,6 +477,11 @@ function buildCockpitSummary({
       target: 'RomStation',
     },
     pitching: summarizePitchingThreads(pitchingThreads),
+    threads: {
+      working: summarizeMcpThreads(workingThreads, 'working', 8),
+      open: summarizeMcpThreads(openThreads, 'open', 8),
+      pitching: summarizeMcpThreads(pitchingThreads, 'pitching', 8),
+    },
   };
 }
 
@@ -467,6 +560,8 @@ function createMcpCockpitRouter({
       romstation,
       controller,
       pitchingThreads,
+      workingThreads,
+      openThreads,
     ] = await Promise.all([
       safeToolCall(callTool, 'a11_status', {}, config),
       safeToolCall(callTool, 'kaen44_status', {}, config),
@@ -476,6 +571,8 @@ function createMcpCockpitRouter({
       safeToolCall(callTool, 'romstation_state', {}, config),
       safeToolCall(callTool, 'qflush_gamepad_status', {}, config),
       safeToolCall(callTool, 'discussion_list', { status: 'pitching', limit: 10 }, config),
+      safeToolCall(callTool, 'discussion_list', { status: 'working', limit: 8 }, config),
+      safeToolCall(callTool, 'discussion_list', { status: 'open', limit: 8 }, config),
     ]);
 
     return res.json(buildCockpitSummary({
@@ -487,6 +584,8 @@ function createMcpCockpitRouter({
       romstation,
       controller,
       pitchingThreads,
+      workingThreads,
+      openThreads,
     }));
   });
 

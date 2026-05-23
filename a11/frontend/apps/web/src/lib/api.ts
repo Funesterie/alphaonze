@@ -968,8 +968,35 @@ export type McpCockpitSummary = {
       deadlineSoftPassed?: boolean;
     }>;
   };
+  threads?: {
+    working?: McpCockpitThreadList;
+    open?: McpCockpitThreadList;
+    pitching?: McpCockpitThreadList;
+  };
   error?: string;
   message?: string;
+};
+
+export type McpCockpitThreadList = {
+  total?: number;
+  items?: McpCockpitThread[];
+};
+
+export type McpCockpitThread = {
+  id?: string;
+  title?: string;
+  status?: string;
+  topic?: string;
+  participants?: string[];
+  tags?: string[];
+  messageCount?: number;
+  updatedAt?: string;
+  lastFrom?: string;
+  lastKind?: string;
+  lastSnippet?: string;
+  ready?: boolean;
+  requiredAnswered?: number;
+  requiredTotal?: number;
 };
 
 export async function fetchMcpCockpitStatus(): Promise<McpCockpitSummary> {
