@@ -96,8 +96,12 @@ function main() {
       }
     }
 
-    if (entry.source && !entry.sourceExternal && !relativeSourceExists(entry.source)) {
-      const message = `${label}: source not present in checkout: ${entry.source}`;
+    const sourceFields = ['source', 'publicSource', 'privateSource'];
+    for (const sourceField of sourceFields) {
+      const source = entry[sourceField];
+      if (!source || entry.sourceExternal) continue;
+      if (relativeSourceExists(source)) continue;
+      const message = `${label}: ${sourceField} not present in checkout: ${source}`;
       if (strictSources) {
         errors.push(message);
       } else {

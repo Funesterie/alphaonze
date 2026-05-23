@@ -64,7 +64,8 @@ npm run nossen:packages:json
 The first validated wave has:
 
 - 20 published public packages in `@nossen/*`
-- 1 source-ready public package seed: `@nossen/logic-reduce`
+- 1 source-ready dual package seed: `@nossen/logic-reduce` plus the private
+  `@funeste/logic-reduce-nossen` adapter
 - 19 private or dual candidates for the next extraction waves
 - one support/donation helper planned as a dual package
 
@@ -74,7 +75,8 @@ The first validated wave has:
    Private operator defaults for the already public `@nossen/qflush`.
 2. `@nossen/logic-reduce` + `@funeste/logic-reduce-nossen`
    Public deterministic reducer, private NOSSEN prompt/profile adapter. The
-   public source seed lives in `packages/nossen/logic-reduce`.
+   public source seed lives in `packages/nossen/logic-reduce`; the private
+   adapter lives in `packages/funeste/logic-reduce-nossen`.
 3. `@nossen/source-index` + `@funeste/nossen-source-index`
    Public local indexer, private corpus/Drive bindings.
 4. `@funeste/mcp-tools`
@@ -85,3 +87,11 @@ The first validated wave has:
 Each wave should patch the exact package source, run its targeted tests, run
 `npm pack --dry-run`, install in a fresh temp folder, then publish only when the
 train is coherent.
+
+## Publish Gate
+
+`@nossen/logic-reduce` and `@funeste/logic-reduce-nossen` are source-ready, but
+the registry publish step requires either a fresh OTP during `npm publish` or a
+granular access token with bypass 2FA enabled. Do not work around this by
+printing, committing, or copying tokens/recovery codes. Once the token gate is
+cleared, publish the public package first, then the private adapter.

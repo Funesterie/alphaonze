@@ -45,6 +45,8 @@
     "nossen:packages:json": "node scripts/nossen/nossen-package-liaisons.cjs --json",
     "nossen:logic-reduce:test": "npm --prefix packages/nossen/logic-reduce test",
     "nossen:logic-reduce:pack": "npm --prefix packages/nossen/logic-reduce run pack:dry",
+    "funeste:logic-reduce:test": "npm --prefix packages/funeste/logic-reduce-nossen test",
+    "funeste:logic-reduce:pack": "npm --prefix packages/funeste/logic-reduce-nossen run pack:dry",
     "rubixcube:vault": "node scripts/rubixgate/rubixcube-vault.cjs"
   },
   "version": "0.0.1",

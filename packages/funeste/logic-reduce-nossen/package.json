@@ -1,0 +1,46 @@
+{
+  "name": "@funeste/logic-reduce-nossen",
+  "version": "2.0.0",
+  "description": "Private NOSSEN presets for @nossen/logic-reduce operator handoffs.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "bin": {
+    "nossen-logic-reduce-private": "bin/nossen-logic-reduce-private.cjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "nossen",
+    "funesterie",
+    "agents",
+    "handoff",
+    "planning"
+  ],
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/funeste/logic-reduce-nossen"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@nossen/logic-reduce": "2.0.0"
+  }
+}

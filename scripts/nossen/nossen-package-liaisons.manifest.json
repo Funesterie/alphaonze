@@ -515,6 +515,7 @@
       "privatePackage": "@funeste/logic-reduce-nossen",
       "version": null,
       "source": "packages/nossen/logic-reduce",
+      "privateSource": "packages/funeste/logic-reduce-nossen",
       "registries": [
         "publicNpm",
         "privateNpm"
@@ -525,7 +526,8 @@
         "decision-reduction"
       ],
       "privacy": "split-public-core-private-prompts",
-      "nextAction": "Publish @nossen/logic-reduce with the next aligned train, then create the private NOSSEN prompt/profile adapter."
+      "publishGate": "npm requires a valid OTP or bypass-2FA granular token; current local tokens do not pass whoami and token creation prompts for the account password.",
+      "nextAction": "Publish @nossen/logic-reduce after npm bypass-token/password validation, then publish the restricted private NOSSEN adapter."
     },
     {
       "id": "rubixgate",
