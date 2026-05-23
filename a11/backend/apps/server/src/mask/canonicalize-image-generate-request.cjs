@@ -785,8 +785,95 @@ function buildCompatCanonicalEnglishInput(rawUserInput = '', options = {}) {
   return normalizeText(text);
 }
 
+function hasReferenceImageSubjectCue(rawUserInput = '') {
+  const lookup = normalizeLookup(rawUserInput);
+  return /\b(?:cette|ce|cet|this|that|the)\s+(?:personne|person|garcon|garçon|boy|fille|girl|homme|man|femme|woman|sujet|subject|character|personnage)\b/i.test(lookup)
+    || /\b(?:meme|same)\s+(?:personne|person|sujet|subject|character|personnage)\b/i.test(lookup);
+}
+
+function resolveReferenceImageStyleDirective(rawUserInput = '') {
+  const lookup = normalizeLookup(rawUserInput);
+  if (/\b(?:dragon\s*ball\s*z|dbz)\b/i.test(lookup)) {
+    return {
+      style: 'Dragon Ball Z-inspired anime style',
+      transformation: 'Dragon Ball Z-inspired anime character',
+      instruction: 'apply Dragon Ball Z-inspired anime styling without changing identity',
+    };
+  }
+  if (/\bjoker\b/i.test(lookup)) {
+    return {
+      style: 'Joker-inspired cinematic style',
+      transformation: 'Joker-inspired character',
+      instruction: 'apply Joker-inspired styling without changing identity',
+    };
+  }
+  return null;
+}
+
+function shouldUseReferenceImageCompatFallback(rawUserInput = '', options = {}, failureReasons = []) {
+  if (options.referenceImagePresent !== true) return false;
+  if (!resolveReferenceImageStyleDirective(rawUserInput)) return false;
+  const reasonText = Array.isArray(failureReasons)
+    ? failureReasons.join(' ')
+    : String(failureReasons || '');
+  return /canonicalized_request_not_english_only|missing_canonical_english_input|missing_canonical_subject/i.test(reasonText);
+}
+
+function buildReferenceImageCompatCanonicalizedImageGenerateRequest(rawUserInput = '', options = {}, failureReasons = []) {
+  const raw = normalizeText(rawUserInput);
+  const directive = resolveReferenceImageStyleDirective(raw);
+  const subject = hasReferenceImageSubjectCue(raw)
+    ? 'the same person from the reference image'
+    : 'the same subject from the reference image';
+  const canonicalEnglishInput = [
+    'Use the reference image as an identity, pose, and framing reference.',
+    `Transform ${subject} into a ${directive.transformation} while keeping the same face and identity.`,
+    'No readable text.',
+  ].join(' ');
+
+  return validateCanonicalizedImageGenerateRequest(
+    normalizeCanonicalizedImageGenerateRequest({
+      needsClarification: false,
+      clarificationQuestion: '',
+      canonicalEnglishInput,
+      structuredFields: {
+        subject: [subject],
+        environment: [],
+        style: [directive.style],
+        composition: ['identity-preserving transformation', 'reference pose and framing'],
+        lighting: [],
+        palette: [],
+        constraints: {
+          promptInstructions: [
+            'keep the same face and identity',
+            'preserve the pose and framing from the reference image',
+            directive.instruction,
+          ],
+          negativeHints: ['different face', 'different identity', 'readable text', 'watermark', 'logo'],
+          noText: true,
+          safeMode: true,
+        },
+      },
+      scenePolicy: {
+        subjectMode: 'single',
+        explicitSubjectCount: 1,
+      },
+      audit: {
+        rawUserInput: raw,
+        source: 'compat_reference_image_canonicalizer',
+        fallbackUsed: true,
+        reason: failureReasons.length ? failureReasons.join('|') : 'reference_image_canonicalizer_repair',
+      },
+    }, raw)
+  );
+}
+
 function buildCompatCanonicalizedImageGenerateRequest(rawUserInput = '', options = {}, failureReasons = []) {
   const raw = normalizeText(rawUserInput);
+  if (shouldUseReferenceImageCompatFallback(raw, options, failureReasons)) {
+    return buildReferenceImageCompatCanonicalizedImageGenerateRequest(raw, options, failureReasons);
+  }
+
   const canonicalEnglishInput = buildCompatCanonicalEnglishInput(raw, options);
   const subject = normalizeText(
     canonicalEnglishInput
@@ -911,7 +998,9 @@ function shouldRetryCanonicalizerFailure(error_ = null) {
   ].includes(code);
 }
 
-function shouldUseCompatCanonicalizerFallback(failureReasons = []) {
+function shouldUseCompatCanonicalizerFallback(failureReasons = [], rawUserInput = '', options = {}) {
+  if (shouldUseReferenceImageCompatFallback(rawUserInput, options, failureReasons)) return true;
+
   const reasonText = Array.isArray(failureReasons)
     ? failureReasons.join(' ')
     : String(failureReasons || '');
@@ -1050,7 +1139,7 @@ async function canonicalizeImageGenerateRequest(rawUserInput = '', options = {})
     || failureStatuses.find((status) => Number(status) >= 500)
     || 502;
 
-  if (options.allowCompatFallback === true && shouldUseCompatCanonicalizerFallback(failureReasons)) {
+  if (options.allowCompatFallback === true && shouldUseCompatCanonicalizerFallback(failureReasons, normalizedRawUserInput, options)) {
     try {
       const fallbackCanonicalizedRequest = buildCompatCanonicalizedImageGenerateRequest(
         normalizedRawUserInput,
