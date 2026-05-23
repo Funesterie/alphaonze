@@ -898,6 +898,23 @@
         }
       }
 
+      function getStoredAuthToken() {
+        const key = MCP_COCKPIT?.authLocalStorageKey || "a11_jwt_token";
+        try {
+          return window.localStorage?.getItem(key) || "";
+        } catch (_error) {
+          return "";
+        }
+      }
+
+      function buildProxyHeaders() {
+        const headers = { "Content-Type": "application/json", Accept: "application/json" };
+        const token = getStoredAuthToken();
+        const headerName = MCP_COCKPIT?.authHeaderName || "X-NEZ-TOKEN";
+        if (token && headerName) headers[headerName] = token;
+        return headers;
+      }
+
       function renderResponse(title, value, tone = "ok") {
         const now = new Date();
         setText("responseTitle", title);
@@ -948,7 +965,7 @@
         const response = await fetch(PROXY_URL, {
           method: "POST",
           credentials: "same-origin",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          headers: buildProxyHeaders(),
           body: JSON.stringify({
             endpoint: currentEndpoint(),
             privateBearer: MCP_COCKPIT?.serverSideBearer ? "" : privateBearer,
