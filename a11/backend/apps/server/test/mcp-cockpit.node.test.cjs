@@ -203,17 +203,39 @@ test('hosted MCP cockpit serves the console page with same-origin A11 proxy conf
       },
     }));
   }, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/cockpit/mcp`, {
-      headers: { 'x-test-email': 'funesterie38@gmail.com' },
-    });
+    const response = await fetch(`${baseUrl}/cockpit/mcp`);
     const html = await response.text();
 
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type') || '', /text\/html/);
     assert.match(html, /__FUNESTERIE_MCP_COCKPIT__/);
     assert.match(html, /\/api\/cockpit\/mcp\/proxy/);
+    assert.match(html, /a11_jwt_token/);
     assert.match(html, /a11-hosted/);
     assert.doesNotMatch(html, new RegExp(fakeToken));
+  });
+});
+
+test('hosted MCP cockpit proxy still rejects anonymous browser calls', async () => {
+  await withServer((app) => {
+    app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: { NODE_ENV: 'production' },
+    }));
+  }, async (baseUrl) => {
+    const { response, json } = await postJson(baseUrl, '/api/cockpit/mcp/proxy', {
+      endpoint: 'chatgpt',
+      request: {
+        jsonrpc: '2.0',
+        id: 'tools-test',
+        method: 'tools/list',
+        params: {},
+      },
+    });
+
+    assert.equal(response.status, 401);
+    assert.equal(json.ok, false);
   });
 });
 

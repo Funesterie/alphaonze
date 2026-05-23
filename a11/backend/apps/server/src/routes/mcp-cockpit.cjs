@@ -401,7 +401,7 @@ function createMcpCockpitRouter({
     });
   }
 
-  router.get(['/', '/index.html', '/mcp.html'], requireCockpitAdmin, (req, res) => {
+  router.get(['/', '/index.html', '/mcp.html'], (req, res) => {
     const pagePath = resolveCockpitHtmlPath(cockpitHtmlPath);
     if (!pagePath) {
       return jsonError(
@@ -424,10 +424,12 @@ function createMcpCockpitRouter({
         proxyUrl: '/api/cockpit/mcp/proxy',
         statusUrl: '/api/cockpit/mcp/status',
         meUrl: '/api/cockpit/mcp/me',
+        authHeaderName: 'X-NEZ-TOKEN',
+        authLocalStorageKey: 'a11_jwt_token',
         serverSideBearer: config.tokenPresent,
         publicEndpoints: Object.keys(PUBLIC_MCP_ENDPOINTS),
       },
-      user: publicUser(req.user || {}),
+      user: {},
     }));
   });
 
