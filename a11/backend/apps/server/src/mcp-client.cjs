@@ -6,6 +6,7 @@ const DEFAULT_ALLOWED_TOOLS = new Set([
   'a11_status',
   'kaen44_status',
   'qflush_status',
+  'qflush_vivy_audio_status',
   'agent_presence',
   'agent_heartbeat',
   'discussion_list',
