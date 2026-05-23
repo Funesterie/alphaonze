@@ -69,6 +69,7 @@ function publicStatus(status) {
       required: moduleInfo.required,
       version: moduleInfo.version,
       warnings: moduleInfo.warnings,
+      guardrails: moduleInfo.guardrails || [],
     })),
   };
 }
@@ -110,6 +111,9 @@ async function main() {
         warnings: status.modules
           .filter((moduleInfo) => moduleInfo.warnings.length)
           .map((moduleInfo) => ({ id: moduleInfo.id, warnings: moduleInfo.warnings })),
+        guardrails: status.modules
+          .filter((moduleInfo) => moduleInfo.guardrails?.length)
+          .map((moduleInfo) => ({ id: moduleInfo.id, guardrails: moduleInfo.guardrails })),
       }, null, 2));
       process.exitCode = status.ok ? 0 : 1;
       return;
