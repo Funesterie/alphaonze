@@ -55,6 +55,26 @@ test('canonicalizeImageGenerateRequest rejects non-canonical special-compiler pa
   );
 });
 
+test('canonicalizeImageGenerateRequest rejects empty LLM payloads instead of building a local heuristic prompt', async () => {
+  await assert.rejects(
+    () => canonicalizeImageGenerateRequest(
+      'genere une image de samourai avec une epee enflammee',
+      {
+        stage: 'canonicalize-image-generate-request-test',
+        allowCompatFallback: true,
+        callStructuredLlmJson: async () => null,
+      }
+    ),
+    (error) => {
+      assert.equal(error?.code, 'image_request_canonicalizer_failed');
+      assert.equal(error?.statusCode, 502);
+      assert.equal(error?.payload?.details?.policy, 'llm_only_no_heuristic_fallback');
+      assert.deepEqual(error?.payload?.details?.reasons, ['provided_structured_llm:empty_payload']);
+      return true;
+    }
+  );
+});
+
 test('canonicalizeImageGenerateRequest surfaces strict structured-llm configuration failures without collapsing them to empty_payload', async () => {
   const previous = {
     A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
@@ -580,53 +600,58 @@ test('canonicalizeImageGenerateRequest rejects mixed French leaks from a structu
   );
 });
 
-test('canonicalizeImageGenerateRequest repairs a reference-image Dragon Ball Z transform after French-only LLM leaks', async () => {
+test('canonicalizeImageGenerateRequest rejects reference-image style transforms after French-only LLM leaks', async () => {
   let callCount = 0;
-  const canonicalizedRequest = await canonicalizeImageGenerateRequest(
-    'utilise cette image pour genere une image de cette personne en dragon ball z',
-    {
-      stage: 'canonicalize-image-generate-request-test',
-      referenceImagePresent: true,
-      referenceImageUrl: 'https://example.test/reference.png',
-      allowCompatFallback: true,
-      callStructuredLlmJson: async () => {
-        callCount += 1;
-        return {
-          canonicalEnglishInput: 'la personne de l image de reference en style dragon ball z',
-          structuredFields: {
-            subject: ['la personne de l image de reference'],
-            environment: [],
-            style: ['style dragon ball z'],
-            composition: ['garder la pose et le cadrage'],
-            lighting: [],
-            palette: [],
-            constraints: {
-              promptInstructions: ['garder le meme visage et la meme identite'],
-              negativeHints: ['texte lisible'],
-              noText: true,
-              safeMode: true,
+
+  await assert.rejects(
+    () => canonicalizeImageGenerateRequest(
+      'utilise cette image pour genere une image de cette personne en dragon ball z',
+      {
+        stage: 'canonicalize-image-generate-request-test',
+        referenceImagePresent: true,
+        referenceImageUrl: 'https://example.test/reference.png',
+        allowCompatFallback: true,
+        callStructuredLlmJson: async () => {
+          callCount += 1;
+          return {
+            canonicalEnglishInput: 'la personne de l image de reference en style dragon ball z',
+            structuredFields: {
+              subject: ['la personne de l image de reference'],
+              environment: [],
+              style: ['style dragon ball z'],
+              composition: ['garder la pose et le cadrage'],
+              lighting: [],
+              palette: [],
+              constraints: {
+                promptInstructions: ['garder le meme visage et la meme identite'],
+                negativeHints: ['texte lisible'],
+                noText: true,
+                safeMode: true,
+              },
             },
-          },
-          scenePolicy: {
-            subjectMode: 'single',
-            explicitSubjectCount: 1,
-          },
-        };
-      },
+            scenePolicy: {
+              subjectMode: 'single',
+              explicitSubjectCount: 1,
+            },
+          };
+        },
+      }
+    ),
+    (error) => {
+      assert.equal(error?.code, 'image_request_canonicalizer_failed');
+      assert.equal(error?.statusCode, 502);
+      assert.equal(error?.payload?.details?.policy, 'llm_only_no_heuristic_fallback');
+      assert.deepEqual(
+        error?.payload?.details?.reasons,
+        [
+          'provided_structured_llm:canonicalized_request_not_english_only',
+          'provided_structured_llm_retry:canonicalized_request_not_english_only',
+        ]
+      );
+      assert.equal(callCount, 2);
+      return true;
     }
   );
-
-  assert.equal(callCount, 2);
-  assert.equal(canonicalizedRequest.audit.source, 'compat_reference_image_canonicalizer');
-  assert.equal(canonicalizedRequest.audit.fallbackUsed, true);
-  assert.match(canonicalizedRequest.audit.reason, /canonicalized_request_not_english_only/);
-  assert.equal(canonicalizedRequest.structuredFields.subject[0], 'the same person from the reference image');
-  assert.match(canonicalizedRequest.canonicalEnglishInput, /Dragon Ball Z-inspired anime character/i);
-  assert.doesNotMatch(
-    collectCanonicalizedTextForTest(canonicalizedRequest),
-    /\b(?:personne|image de reference|garder|meme|identite|texte lisible)\b/i
-  );
-  assert.doesNotThrow(() => validateCanonicalizedImageGenerateRequest(canonicalizedRequest));
 });
 
 test('resolveCanonicalizerTimeoutMs defaults to a safer structured-output budget when no explicit timeout is set', () => {

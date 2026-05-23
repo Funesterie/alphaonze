@@ -1,6 +1,5 @@
 const {
   detectPromptLanguageProfile,
-  translateImagePromptToEnglish,
 } = require('./build-sd-prompt-bundle.cjs');
 const {
   callStructuredLlmJson: defaultCallStructuredLlmJson,
@@ -744,177 +743,6 @@ function buildCanonicalizeImageGenerateRequestUserText(rawUserInput = '', option
   }, null, 2);
 }
 
-function buildCompatCanonicalEnglishInput(rawUserInput = '', options = {}) {
-  const raw = normalizeText(rawUserInput);
-  const translated = normalizeText(translateImagePromptToEnglish(raw) || raw);
-  let text = translated
-    .replace(/\bsalut\s+genere\s+moi\b/gi, '')
-    .replace(/\bessaie\s+de\s+genere\s+an\s+image\s+/gi, '')
-    .replace(/\bgenere\s+an\s+image\s+/gi, '')
-    .replace(/\bgenerate\s+an\s+image\s+(?:of\s+)?/gi, '')
-    .replace(/\bgenere\s+moi\b/gi, '')
-    .replace(/\bgenerate\s+me\b/gi, '')
-    .replace(/\butilise\s+l\s+image\s+de\s+reference\b/gi, 'use the reference image')
-    .replace(/\bimage\s+de\s+reference\b/gi, 'reference image')
-    .replace(/\btransforme\b/gi, 'transform')
-    .replace(/\bmaquillage\s+inquietant\b/gi, 'unsettling makeup')
-    .replace(/\bdecor\b/gi, 'environment')
-    .replace(/\bpersonne\b/gi, 'person')
-    .replace(/\bvisage\b/gi, 'face')
-    .replace(/\blumiere\b/gi, 'lighting')
-    .replace(/\ben joker\b/gi, 'as a Joker-style character')
-    .replace(/\bsamourai\b/gi, 'samurai')
-    .replace(/\bepee\b/gi, 'sword')
-    .replace(/\benflammee?\b/gi, 'flaming')
-    .replace(/\bwith an sword flaming\b/gi, 'with a flaming sword')
-    .replace(/\ban sword\b/gi, 'a sword')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (options.referenceImagePresent === true) {
-    text = [
-      'use the reference image as an identity, pose, and framing reference',
-      text,
-    ].filter(Boolean).join(', ');
-  }
-
-  if (!/\bno readable text\b/i.test(text)) {
-    text = [text, 'no readable text'].filter(Boolean).join(', ');
-  }
-
-  return normalizeText(text);
-}
-
-function hasReferenceImageSubjectCue(rawUserInput = '') {
-  const lookup = normalizeLookup(rawUserInput);
-  return /\b(?:cette|ce|cet|this|that|the)\s+(?:personne|person|garcon|garçon|boy|fille|girl|homme|man|femme|woman|sujet|subject|character|personnage)\b/i.test(lookup)
-    || /\b(?:meme|same)\s+(?:personne|person|sujet|subject|character|personnage)\b/i.test(lookup);
-}
-
-function resolveReferenceImageStyleDirective(rawUserInput = '') {
-  const lookup = normalizeLookup(rawUserInput);
-  if (/\b(?:dragon\s*ball\s*z|dbz)\b/i.test(lookup)) {
-    return {
-      style: 'Dragon Ball Z-inspired anime style',
-      transformation: 'Dragon Ball Z-inspired anime character',
-      instruction: 'apply Dragon Ball Z-inspired anime styling without changing identity',
-    };
-  }
-  if (/\bjoker\b/i.test(lookup)) {
-    return {
-      style: 'Joker-inspired cinematic style',
-      transformation: 'Joker-inspired character',
-      instruction: 'apply Joker-inspired styling without changing identity',
-    };
-  }
-  return null;
-}
-
-function shouldUseReferenceImageCompatFallback(rawUserInput = '', options = {}, failureReasons = []) {
-  if (options.referenceImagePresent !== true) return false;
-  if (!resolveReferenceImageStyleDirective(rawUserInput)) return false;
-  const reasonText = Array.isArray(failureReasons)
-    ? failureReasons.join(' ')
-    : String(failureReasons || '');
-  return /canonicalized_request_not_english_only|missing_canonical_english_input|missing_canonical_subject/i.test(reasonText);
-}
-
-function buildReferenceImageCompatCanonicalizedImageGenerateRequest(rawUserInput = '', options = {}, failureReasons = []) {
-  const raw = normalizeText(rawUserInput);
-  const directive = resolveReferenceImageStyleDirective(raw);
-  const subject = hasReferenceImageSubjectCue(raw)
-    ? 'the same person from the reference image'
-    : 'the same subject from the reference image';
-  const canonicalEnglishInput = [
-    'Use the reference image as an identity, pose, and framing reference.',
-    `Transform ${subject} into a ${directive.transformation} while keeping the same face and identity.`,
-    'No readable text.',
-  ].join(' ');
-
-  return validateCanonicalizedImageGenerateRequest(
-    normalizeCanonicalizedImageGenerateRequest({
-      needsClarification: false,
-      clarificationQuestion: '',
-      canonicalEnglishInput,
-      structuredFields: {
-        subject: [subject],
-        environment: [],
-        style: [directive.style],
-        composition: ['identity-preserving transformation', 'reference pose and framing'],
-        lighting: [],
-        palette: [],
-        constraints: {
-          promptInstructions: [
-            'keep the same face and identity',
-            'preserve the pose and framing from the reference image',
-            directive.instruction,
-          ],
-          negativeHints: ['different face', 'different identity', 'readable text', 'watermark', 'logo'],
-          noText: true,
-          safeMode: true,
-        },
-      },
-      scenePolicy: {
-        subjectMode: 'single',
-        explicitSubjectCount: 1,
-      },
-      audit: {
-        rawUserInput: raw,
-        source: 'compat_reference_image_canonicalizer',
-        fallbackUsed: true,
-        reason: failureReasons.length ? failureReasons.join('|') : 'reference_image_canonicalizer_repair',
-      },
-    }, raw)
-  );
-}
-
-function buildCompatCanonicalizedImageGenerateRequest(rawUserInput = '', options = {}, failureReasons = []) {
-  const raw = normalizeText(rawUserInput);
-  if (shouldUseReferenceImageCompatFallback(raw, options, failureReasons)) {
-    return buildReferenceImageCompatCanonicalizedImageGenerateRequest(raw, options, failureReasons);
-  }
-
-  const canonicalEnglishInput = buildCompatCanonicalEnglishInput(raw, options);
-  const subject = normalizeText(
-    canonicalEnglishInput
-      .replace(/\b^(?:generate|create|make|draw|render)\b/i, '')
-      .replace(/\bno readable text\b/gi, '')
-      .split(/\b(?:in|with|wearing|holding|against|inside|on)\b/i)[0]
-  ) || canonicalEnglishInput;
-
-  return validateCanonicalizedImageGenerateRequest(
-    normalizeCanonicalizedImageGenerateRequest({
-      needsClarification: !subject || /^no readable text$/i.test(subject),
-      clarificationQuestion: !subject ? 'What subject should I generate?' : '',
-      canonicalEnglishInput,
-      structuredFields: {
-        subject: subject ? [subject] : [],
-        environment: [],
-        style: ['clean detailed image'],
-        composition: ['single clearly visible main subject'],
-        lighting: [],
-        palette: [],
-        constraints: {
-          promptInstructions: ['preserve the user request literally'],
-          negativeHints: ['readable text', 'watermark', 'logo'],
-          noText: true,
-          safeMode: true,
-        },
-      },
-      scenePolicy: {
-        subjectMode: 'single',
-        explicitSubjectCount: 1,
-      },
-      audit: {
-        rawUserInput: raw,
-        source: 'compat_local_canonicalizer',
-        fallbackUsed: true,
-        reason: failureReasons.length ? failureReasons.join('|') : 'structured_llm_unavailable',
-      },
-    }, raw)
-  );
-}
-
 function buildCanonicalizeImageGenerateRequestRetryText(rawUserInput = '', options = {}, {
   previousPayload = null,
   rejectionCode = '',
@@ -996,16 +824,6 @@ function shouldRetryCanonicalizerFailure(error_ = null) {
     'missing_canonical_english_input',
     'missing_canonical_subject',
   ].includes(code);
-}
-
-function shouldUseCompatCanonicalizerFallback(failureReasons = [], rawUserInput = '', options = {}) {
-  if (shouldUseReferenceImageCompatFallback(rawUserInput, options, failureReasons)) return true;
-
-  const reasonText = Array.isArray(failureReasons)
-    ? failureReasons.join(' ')
-    : String(failureReasons || '');
-  if (!reasonText.trim()) return true;
-  return !/canonicalized_request_not_english_only|canonicalized_request_cardinality_conflict|canonicalized_request_missing_named_entity|missing_canonical_english_input|missing_canonical_subject/i.test(reasonText);
 }
 
 function buildCanonicalizerAttemptPlan(caller = null, rawUserInput = '', options = {}, requestPayload = {}) {
@@ -1138,20 +956,6 @@ async function canonicalizeImageGenerateRequest(rawUserInput = '', options = {})
   const statusCode = failureStatuses.find((status) => Number(status) === 503)
     || failureStatuses.find((status) => Number(status) >= 500)
     || 502;
-
-  if (options.allowCompatFallback === true && shouldUseCompatCanonicalizerFallback(failureReasons, normalizedRawUserInput, options)) {
-    try {
-      const fallbackCanonicalizedRequest = buildCompatCanonicalizedImageGenerateRequest(
-        normalizedRawUserInput,
-        options,
-        failureReasons
-      );
-      logCanonicalizedImageGenerateRequest(fallbackCanonicalizedRequest, stage);
-      return fallbackCanonicalizedRequest;
-    } catch (fallbackError) {
-      failureReasons.push(`compat_local_canonicalizer:${String(fallbackError?.code || fallbackError?.message || fallbackError).trim()}`);
-    }
-  }
 
   const error = new Error('image_request_canonicalizer_failed');
   error.code = 'image_request_canonicalizer_failed';
