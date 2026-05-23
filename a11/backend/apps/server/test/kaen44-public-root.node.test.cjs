@@ -21,11 +21,12 @@ test('legal policy routes serve standalone HTML before the SPA fallback', () => 
   const standaloneHelper = serverSource.indexOf('function sendEmbeddedUiStandalonePage');
   const privacyRoute = serverSource.indexOf("app.get(['/privacy', '/privacy/'");
   const termsRoute = serverSource.indexOf("app.get(['/terms', '/terms/'");
-  const spaRouteList = serverSource.indexOf("app.get([\n  '/auth/success'");
+  const spaRouteList = serverSource.indexOf("], sendEmbeddedUiIndex);");
 
   assert.notEqual(standaloneHelper, -1, 'standalone legal-page helper should exist');
   assert.notEqual(privacyRoute, -1, 'privacy route should be explicit');
   assert.notEqual(termsRoute, -1, 'terms route should be explicit');
+  assert.notEqual(spaRouteList, -1, 'SPA fallback route list should stay explicit');
   assert.ok(privacyRoute < spaRouteList, 'privacy route should be registered before SPA fallback');
   assert.ok(termsRoute < spaRouteList, 'terms route should be registered before SPA fallback');
   assert.match(serverSource, /sendEmbeddedUiStandalonePage\(req, res, 'privacy\/index\.html'\)/);
