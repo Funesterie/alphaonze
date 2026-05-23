@@ -142,6 +142,187 @@ Questions techniques à faire relire par Sandro :
 - Quelle partie peut être démontrée publiquement sans révéler le schéma interne
   complet ?
 
+## Application possible : Tromblon
+
+Tromblon est le nom de travail d'une preuve d'appareil locale. Son but est de
+remplacer les jetons longs copiés entre humains, agents et consoles par une
+preuve courte, signée, liée à une machine inscrite et à une action précise.
+
+Le principe :
+
+```txt
+preuve Tromblon = challenge signé par une machine inscrite
+                + continuité CPU/GPU masquée
+                + facteur humain quand le risque monte
+```
+
+La continuité CPU/GPU n'est pas un secret. Elle sert seulement de signal de
+cohérence : elle peut changer après remplacement matériel, mise à jour de
+pilote, déplacement en machine virtuelle ou tentative de clonage. La vraie
+preuve est la clé privée locale, idéalement gardée par TPM, Windows Hello,
+WebAuthn, carte à puce ou HSM. DPAPI est acceptable pour un premier client
+Windows, mais pas pour les commandes les plus critiques.
+
+### Ce qui existe déjà localement
+
+Le corpus contient un plan Tromblon daté du 21 mai 2026 et des primitives de
+preuve côté serveur :
+
+- `tromblon-device-auth` : challenge, inscription d'appareil, empreinte
+  matérielle masquée, vérification de preuve, classification RFID, décision
+  d'accès ;
+- `lmkey` : Local Machine Key, identité transparente de machine, preuve signée,
+  trace d'audit non secrète, ticket de révocation ;
+- `ppk` : Passe Partout Keys, jeton court et borné qui ouvre une seule porte
+  pour une seule action après preuve Tromblon/LMkey ;
+- `mk` : Master Keeper, clé d'approbation racine pour commande critique, avec
+  compteur monotone, nonce anti-rejeu et exigence de classe de stockage.
+
+Les tests existants couvrent les points importants :
+
+- une preuve Tromblon vérifie un challenge frais signé ;
+- une preuve clonée est rejetée si l'empreinte matérielle masquée dérive ;
+- une carte RFID qui ne donne qu'un UID est refusée comme facteur fort ;
+- LMkey signe et vérifie un challenge machine ;
+- LMkey détecte une trace d'action altérée ;
+- un ticket de révocation désactive une machine inscrite ;
+- PPK refuse signature invalide, scope manquant et expiration ;
+- MK refuse rejeu de compteur, nonce déjà vu, commande altérée, scope manquant
+  et classe de stockage insuffisante.
+
+Point d'état important : ces briques sont des primitives et des tests, pas
+encore une route d'authentification de production complète.
+
+### Flux d'inscription
+
+1. Le serveur émet un nonce d'inscription et un sel public.
+2. Le poste génère une paire de clés locale.
+3. La clé privée reste sur le poste, idéalement protégée par matériel ou
+   WebAuthn.
+4. Le poste lit des signaux CPU/GPU stables et n'envoie qu'une empreinte
+   masquée.
+5. Le serveur stocke l'identifiant appareil, la clé publique, l'empreinte
+   masquée, un résumé matériel sans numéros bruts et la politique de
+   récupération.
+
+Ce modèle évite l'empreinte silencieuse des postes : on inscrit une machine
+connue, on explique pourquoi, et on garde une piste de révocation.
+
+### Flux d'action sensible
+
+1. Un outil demande une action concrète : publication npm, déploiement, rotation
+   webhook, activation de capsule, écriture graphe, paiement ou accès admin.
+2. Le serveur renvoie un challenge court, avec audience, action, ressource,
+   nonce et expiration.
+3. Le poste recalcule son empreinte masquée et signe le challenge.
+4. Le serveur vérifie la signature, l'appareil, l'action, la fraîcheur et la
+   cohérence matérielle.
+5. Si le risque est élevé, un facteur humain est requis : passkey, WebAuthn,
+   carte à puce, réponse cryptographique à challenge, code téléphone ou code de
+   récupération en mode urgence.
+6. Après validation, le serveur émet un PPK très court, borné à l'audience,
+   l'action, la ressource et les scopes nécessaires.
+
+Le jeton court ne remplace pas l'identité de départ : il n'est que la preuve que
+la chaîne Tromblon/LMkey vient de réussir pour cette action.
+
+### Applications NOSSEN possibles
+
+Publication de packages :
+
+- avant `npm publish`, l'outil demande une preuve Tromblon locale ;
+- LMkey attribue l'action à une machine inscrite sans afficher de secret ;
+- PPK ouvre uniquement le scope `npm:publish` pour le paquet demandé ;
+- MK peut signer une politique qui autorise la création d'un PPK de publication
+  pour une fenêtre courte ;
+- les agents ne reçoivent jamais le jeton npm long.
+
+MCP et agents :
+
+- un agent demande une capacité, pas un secret ;
+- MCP retourne un challenge d'action ;
+- le poste de l'opérateur signe localement ;
+- le bus MCP ne transporte qu'un statut, une empreinte de preuve, une trace
+  d'audit ou un PPK borné ;
+- une action hors périmètre doit redemander une preuve différente.
+
+RubixGate :
+
+- une capsule peut exiger une preuve Tromblon avant activation ;
+- le challenge lie l'audience, la fenêtre, le scope et l'identifiant de capsule ;
+- l'audit garde l'empreinte de preuve, jamais le contenu secret déchiffré ;
+- hors fenêtre ou hors machine, la capsule reste fermée.
+
+NEZ :
+
+- NEZ peut transporter les preuves Tromblon sous forme de flux internes :
+  trames RGBA, canal `A` pour contrôle/checksum, charge utile chiffrée pour
+  l'enveloppe de preuve ;
+- l'interface ne montre que décision, scope, identifiant non sensible et trace ;
+- une corruption ou un rejeu de trame doit produire un refus net.
+
+OAuth et consoles fournisseurs :
+
+- Tromblon peut servir de validation locale renforcée avant d'utiliser un jeton
+  de rafraîchissement, un téléversement Drive, un changement de webhook, une
+  mutation de facturation ou un déploiement ;
+- il ne remplace pas les MFA fournisseurs, il ajoute une preuve locale côté
+  NOSSEN ;
+- le modèle évite qu'un agent transforme un accès OAuth disponible en action
+  sensible sans approbation locale.
+
+Récupération :
+
+- si le PC est perdu, le téléphone ou un code de récupération ne donne pas les
+  pleins droits ;
+- il ouvre seulement une voie limitée de réinscription ;
+- l'ancien LMkey est révoqué ;
+- le nouveau poste devient une nouvelle identité machine ;
+- les commandes critiques peuvent exiger MK avec stockage matériel.
+
+### Ce que Tromblon ne doit pas devenir
+
+- Pas un jeton maître clonable.
+- Pas un remplacement de WebAuthn, TPM, HSM ou MFA fournisseur.
+- Pas une confiance forte dans une machine virtuelle clonable.
+- Pas une authentification RFID par UID seul.
+- Pas un système de surveillance silencieuse des personnes.
+- Pas une raison de stocker des clés privées dans un dépôt, un journal, une capture
+  ou une conversation.
+- Pas une autorisation globale : chaque preuve doit rester liée à une audience,
+  une action, une ressource, des scopes et une durée.
+
+### Version produit possible
+
+La forme produit la plus saine serait une petite application locale Tromblon :
+
+- icône de zone de notification ou mini-console locale ;
+- coffre local pour clés machine, d'abord DPAPI puis TPM/WebAuthn ;
+- écran d'inscription d'appareil ;
+- file de demandes d'approbation avec action, ressource, audience, TTL et
+  risque ;
+- bouton refuser, signer, signer avec facteur humain, ou signaler comme suspect ;
+- export d'un rapport d'audit sans secret ;
+- commande de révocation d'appareil ;
+- connecteur MCP pour transformer une preuve validée en PPK court ;
+- module public `@nossen/tromblon` pour les primitives génériques ;
+- adaptateur privé pour les politiques propres à NOSSEN.
+
+### Questions à poser à Sandro sur Tromblon
+
+- Quelle classe de stockage minimale faut-il exiger pour publier des packages ou
+  modifier une configuration cloud ?
+- Faut-il imposer WebAuthn/passkey dès la première version ou accepter DPAPI pour
+  l'amorçage ?
+- Le signal CPU/GPU masqué est-il utile ou faut-il le remplacer par un signal
+  TPM/WebAuthn pur ?
+- Comment formaliser la révocation et la récupération sans créer un chemin de
+  contournement plus faible que le système normal ?
+- Le PPK doit-il être signé par HMAC serveur, par clé asymétrique, ou les deux
+  selon le niveau de risque ?
+- Quelles preuves de test faut-il ajouter avant de brancher Tromblon sur une
+  action réelle ?
+
 ## Modèle adaptatif
 
 ```mermaid
