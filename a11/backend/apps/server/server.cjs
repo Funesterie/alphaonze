@@ -7792,6 +7792,27 @@ function sendEmbeddedUiIndex(req, res) {
   return res.status(200).json({ ok: true, service: 'a11-api' });
 }
 
+function sendEmbeddedUiStandalonePage(req, res, relativeIndexPath) {
+  const uiStatus = getEmbeddedUiStatus();
+  if (uiStatus.ready) {
+    const pagePath = path.join(webPublic, ...relativeIndexPath.split('/').filter(Boolean));
+    if (fs.existsSync(pagePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+      return res.sendFile(pagePath);
+    }
+  }
+
+  return sendEmbeddedUiIndex(req, res);
+}
+
+function sendEmbeddedUiPrivacyPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'privacy/index.html');
+}
+
+function sendEmbeddedUiTermsPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'terms/index.html');
+}
+
 function sendEmbeddedUiRoot(req, res) {
   const hostname = getRequestSurfaceHost(req);
   if (hostname === 'funesterie.me'
@@ -7804,6 +7825,10 @@ function sendEmbeddedUiRoot(req, res) {
 }
 
 app.get('/', sendEmbeddedUiRoot);
+app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
+app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
+app.get(['/k44/privacy', '/k44/privacy/', '/kaen44/privacy', '/kaen44/privacy/'], sendEmbeddedUiPrivacyPage);
+app.get(['/k44/terms', '/k44/terms/', '/kaen44/terms', '/kaen44/terms/'], sendEmbeddedUiTermsPage);
 app.get([
   '/auth/success',
   '/login',
