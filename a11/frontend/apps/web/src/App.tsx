@@ -3143,8 +3143,8 @@ function FunesterieCockpitPage({
     : "";
   const loginHref = buildCentralLoginUrl(surfaceLinks.cockpit);
   const mcpConsoleHref = (() => {
-    if (!surfaceLinks.a11Cockpit.startsWith("http")) return "/cockpit/mcp";
-    return new URL("/cockpit/mcp", surfaceLinks.a11Cockpit).toString();
+    if (!surfaceLinks.cockpit.startsWith("http")) return "/cockpit/mcp";
+    return new URL("/cockpit/mcp", surfaceLinks.cockpit).toString();
   })();
   const threadBuckets: Array<{ key: string; label: string; total?: number; items: McpCockpitThread[] }> = [
     {
