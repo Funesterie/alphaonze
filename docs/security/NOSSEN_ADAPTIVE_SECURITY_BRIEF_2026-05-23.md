@@ -1,6 +1,7 @@
-# Brief sécurité adaptative NOSSEN pour Sandro - 2026-05-23
+# Brief sécurité adaptative NOSSEN - 2026-05-23
 
-Audience : revue externe par un ingénieur cybersécurité francophone.
+Audience : revue externe par un ingénieur cybersécurité, un partenaire
+technique ou une équipe appelée à réutiliser le modèle.
 
 Objectif : expliquer le modèle de sécurité adaptative NOSSEN sans exposer la
 topologie opérateur spécialisée, les secrets, les jetons, les mots de passe,
@@ -29,7 +30,7 @@ Le modèle est adaptatif : le même raisonnement doit fonctionner pour un
 paquet npm, un agent, un coffre, une capsule temporaire, un connecteur MCP, un
 flux OAuth, une mémoire graphe, un paiement ou une intégration cloud.
 
-## Ce que Sandro peut examiner
+## Ce qu'un relecteur peut examiner
 
 - La séparation entre modules publics et adaptateurs privés.
 - Le modèle "preuve par usage" : on vérifie qu'un secret fonctionne sans le
@@ -57,9 +58,9 @@ flux OAuth, une mémoire graphe, un paiement ou une intégration cloud.
   Docker, Stripe, PayPal ou autre service.
 - Aucun chemin local opérateur exploitable.
 
-## Lecture locale de NEZ
+## Lecture consolidée de NEZ
 
-Le corpus local décrit déjà trois briques qui se recoupent :
+Cette version principale consolide trois briques qui se recoupent :
 
 - une couche NEZ de contrôle d'accès API, avec modes `off`, `dev` et `strict`,
   et protection par JWT ou en-tête dédié ;
@@ -128,7 +129,7 @@ Règles NEZ :
   aux attaques par oracle de compression si des secrets et données contrôlées
   par l'utilisateur cohabitent.
 
-Questions techniques à faire relire par Sandro :
+Questions de revue technique :
 
 - Le canal `A` doit-il contenir un checksum simple, un fragment de MAC, un
   compteur, ou une combinaison des trois ?
@@ -163,10 +164,10 @@ preuve est la clé privée locale, idéalement gardée par TPM, Windows Hello,
 WebAuthn, carte à puce ou HSM. DPAPI est acceptable pour un premier client
 Windows, mais pas pour les commandes les plus critiques.
 
-### Ce qui existe déjà localement
+### État actuel du modèle
 
-Le corpus contient un plan Tromblon daté du 21 mai 2026 et des primitives de
-preuve côté serveur :
+Le modèle Tromblon dispose déjà de primitives de preuve côté serveur et d'une
+stratégie d'intégration NOSSEN :
 
 - `tromblon-device-auth` : challenge, inscription d'appareil, empreinte
   matérielle masquée, vérification de preuve, classification RFID, décision
@@ -308,7 +309,7 @@ La forme produit la plus saine serait une petite application locale Tromblon :
 - module public `@nossen/tromblon` pour les primitives génériques ;
 - adaptateur privé pour les politiques propres à NOSSEN.
 
-### Questions à poser à Sandro sur Tromblon
+### Questions de revue sur Tromblon
 
 - Quelle classe de stockage minimale faut-il exiger pour publier des packages ou
   modifier une configuration cloud ?
@@ -593,7 +594,7 @@ auditeur indépendant. Ici, on cartographie le niveau de préparation.
 - Démonstrateur NEZ : trame RGBA chiffrée, `A` checksum, corruption détectée,
   refus hors périmètre, aucune valeur brute en sortie.
 
-## Questions pour Sandro
+## Questions de revue externe
 
 - Le modèle "preuve par usage sans affichage de secret" est-il suffisant pour
   travailler avec des agents externes ?
