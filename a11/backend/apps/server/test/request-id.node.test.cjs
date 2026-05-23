@@ -330,7 +330,7 @@ test('protected chat proxy bypasses short cache for special compiler image reque
   }
 });
 
-test('protected chat proxy queues image jobs when the optional image canonicalizer is unavailable', async () => {
+test('protected chat proxy returns a diagnostic when the image canonicalizer is unavailable', async () => {
   await withServer(
     (app) => {
       app.use('/api', createProtectedChatProxyRouter({
@@ -369,10 +369,11 @@ test('protected chat proxy queues image jobs when the optional image canonicaliz
 
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('x-request-id'), 'req-proxy-canon-1');
-      assert.equal(json.mode, 'generate_image_async');
-      assert.equal(json.status, 'pending');
-      assert.match(String(json.jobId || ''), /^imgjob_/);
-      assert.equal(json.asyncJob?.kind, 'image.generate');
+      assert.equal(json.mode, 'image_canonicalizer_diagnostic');
+      assert.match(String(json.assistant || ''), /normalisation canonique LLM n'est pas disponible/i);
+      assert.deepEqual(json.diagnostic?.reasons, ['provided_structured_llm:structured_llm_unconfigured']);
+      assert.equal(json.diagnostic?.summary?.failedBecause, 'canonicalizer_unavailable');
+      assert.equal(json.jobId, undefined);
     }
   );
 });

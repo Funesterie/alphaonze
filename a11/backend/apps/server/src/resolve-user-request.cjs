@@ -291,6 +291,7 @@ function shouldSurfaceCanonicalizerDiagnostic(error_ = null) {
     /canonicalized_request_not_english_only/i.test(String(entry || ''))
     || /canonicalized_request_cardinality_conflict/i.test(String(entry || ''))
     || /canonicalized_request_missing_named_entity/i.test(String(entry || ''))
+    || /structured_llm_unconfigured|llm_unavailable|empty_payload|missing_canonical_english_input|missing_canonical_subject/i.test(String(entry || ''))
   ));
 }
 
@@ -302,11 +303,19 @@ function buildCanonicalizerDiagnosticSummary(error_ = null) {
   const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
   const lastRejected = rejectedPayloads.length ? rejectedPayloads[rejectedPayloads.length - 1] : null;
   const lastReason = String(lastRejected?.reason || '').trim();
-  const failedBecause = /canonicalized_request_cardinality_conflict/i.test(lastReason)
-    ? 'cardinality_validation_failed_after_retry'
-    : (/canonicalized_request_missing_named_entity/i.test(lastReason)
-        ? 'named_entity_validation_failed_after_retry'
-        : 'english_only_validation_failed_after_retry');
+  const reasonText = reasons.join(' ');
+  let failedBecause = 'english_only_validation_failed_after_retry';
+  if (/canonicalized_request_cardinality_conflict/i.test(lastReason)) {
+    failedBecause = 'cardinality_validation_failed_after_retry';
+  } else if (/canonicalized_request_missing_named_entity/i.test(lastReason)) {
+    failedBecause = 'named_entity_validation_failed_after_retry';
+  } else if (/structured_llm_unconfigured|llm_unavailable|missing authentication|unauthorized|llm_upstream_401|\b401\b/i.test(reasonText)) {
+    failedBecause = 'canonicalizer_unavailable';
+  } else if (/empty_payload|invalid_json/i.test(reasonText)) {
+    failedBecause = 'canonicalizer_empty_or_invalid_response';
+  } else if (/missing_canonical_english_input|missing_canonical_subject/i.test(reasonText)) {
+    failedBecause = 'canonicalizer_incomplete_response';
+  }
   return {
     failedBecause,
     retryCount: Math.max(0, rejectedPayloads.length - 1),
@@ -323,11 +332,18 @@ function buildCanonicalizerDiagnosticAssistant(error_ = null) {
     : {};
   const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
   const summary = buildCanonicalizerDiagnosticSummary(error_);
-  const reasonLine = summary.failedBecause === 'cardinality_validation_failed_after_retry'
-    ? "La requete image a ete comprise, mais la normalisation a essaye de reduire une scene a plusieurs sujets en sujet unique."
-    : (summary.failedBecause === 'named_entity_validation_failed_after_retry'
-        ? "La requete image a ete comprise, mais la normalisation a perdu ou remplace un nom explicite de ta demande."
-        : "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.");
+  let reasonLine = "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.";
+  if (summary.failedBecause === 'cardinality_validation_failed_after_retry') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation a essaye de reduire une scene a plusieurs sujets en sujet unique.";
+  } else if (summary.failedBecause === 'named_entity_validation_failed_after_retry') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation a perdu ou remplace un nom explicite de ta demande.";
+  } else if (summary.failedBecause === 'canonicalizer_unavailable') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation canonique LLM n'est pas disponible dans cet environnement.";
+  } else if (summary.failedBecause === 'canonicalizer_empty_or_invalid_response') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation canonique LLM a renvoye une reponse vide ou invalide.";
+  } else if (summary.failedBecause === 'canonicalizer_incomplete_response') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation canonique LLM n'a pas fourni un sujet ou un prompt anglais fiable.";
+  }
   const lines = [
     reasonLine,
     summary.retryCount > 0
