@@ -473,17 +473,21 @@ function buildModuleNode(moduleInfo = {}) {
   const installed = Boolean(moduleInfo.installed);
   const required = Boolean(moduleInfo.minimumRequired);
   const entrypoints = moduleInfo.entrypoints || {};
+  const sourceEntrypoint = entrypoints.sceneParser || entrypoints.semanticWeightEngine || entrypoints.index || entrypoints.cli;
   const checks = {
     installed,
     required,
     hasPackageJson: Boolean(packageInfo.path),
     hasRuntimeMirror: Boolean(entrypoints.mirror || entrypoints.sourceRoot || entrypoints.corpusRoot),
+    hasSourceEntrypoint: Boolean(sourceEntrypoint),
     hasCapabilities: Array.isArray(moduleInfo.capabilities) && moduleInfo.capabilities.length > 0,
   };
   const warnings = [];
   const guardrails = [];
   if (required && !installed) warnings.push('required module is missing');
-  if (!packageInfo.path && !checks.hasRuntimeMirror) warnings.push('no package.json or runtime mirror resolved');
+  if (!packageInfo.path && !checks.hasRuntimeMirror && !checks.hasSourceEntrypoint) {
+    warnings.push('no package.json or runtime mirror resolved');
+  }
   if (id === 'qflush') guardrails.push('qflush is treated as a controlled runner; do not import it at top level');
 
   return {
@@ -507,6 +511,7 @@ function buildModuleNode(moduleInfo = {}) {
       main: entrypoints.main || packageJson.main || null,
       bin: entrypoints.bin || packageJson.bin || null,
       mirror: entrypoints.mirror || entrypoints.sourceRoot || entrypoints.corpusRoot || null,
+      source: sourceEntrypoint || null,
     },
     checks,
     warnings,

@@ -118,6 +118,38 @@ test('WestSide Chopper builds a secure capability graph from the runtime index',
   assert.ok(status.mcpContract.allowedWorkerIds.includes('westside-chopper-assemble'));
 }));
 
+test('WestSide Chopper accepts bounded server source entrypoints as module resolution', () => withTempRuntime((runtimeRoot) => {
+  writeJson(path.join(runtimeRoot, 'knowledge-graph', 'a11-runtime-module-index.json'), {
+    ok: true,
+    schema: 'a11.runtime-modules.v1',
+    generatedAt: new Date().toISOString(),
+    runtimeRoot,
+    minimumRequired: ['linguistic-core'],
+    modules: [
+      {
+        id: 'linguistic-core',
+        name: 'A11 Linguistic Core',
+        installed: true,
+        minimumRequired: true,
+        source: 'server-src:src/linguistics',
+        entrypoints: {
+          sceneParser: path.join(__dirname, '..', 'src', 'linguistics', 'linguistic-scene-parser.cjs'),
+          semanticWeightEngine: path.join(__dirname, '..', 'src', 'linguistics', 'semantic-weight-engine.cjs'),
+        },
+        capabilities: ['language-detection'],
+      },
+    ],
+  });
+
+  const status = buildChopperStatus({ runtimeRoot });
+  const linguisticCore = status.modules.find((moduleInfo) => moduleInfo.id === 'linguistic-core');
+
+  assert.equal(status.summary.requiredMissing, 0);
+  assert.equal(linguisticCore.checks.hasSourceEntrypoint, true);
+  assert.equal(linguisticCore.entrypoints.source.endsWith('linguistic-scene-parser.cjs'), true);
+  assert.deepEqual(linguisticCore.warnings, []);
+}));
+
 test('WestSide Chopper assemble writes JSON and Markdown artifacts', async () => {
   await withTempRuntimeAsync(async (runtimeRoot) => {
     seedRuntimeIndex(runtimeRoot);
