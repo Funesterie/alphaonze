@@ -104,8 +104,12 @@ test('WestSide Chopper builds a secure capability graph from the runtime index',
   assert.equal(status.summary.rumbleReady, 7);
   assert.equal(status.recipes.length, 6);
   assert.equal(status.summary.rumbleRecipesReady, 6);
-  assert.equal(status.doctor.status, 'guarded');
+  assert.equal(status.doctor.status, 'ready');
+  assert.equal(status.doctor.summary.guarded, 0);
   assert.equal(status.doctor.summary.blocked, 0);
+  const qflush = status.modules.find((moduleInfo) => moduleInfo.id === 'qflush');
+  assert.deepEqual(qflush.warnings, []);
+  assert.ok(qflush.guardrails.some((guardrail) => /controlled runner/i.test(guardrail)));
   assert.ok(status.recipes.some((recipe) => recipe.id === 'operation-bb' && recipe.ready));
   assert.ok(status.rumbleCombinations.some((combo) => combo.name === 'Monster Point' && combo.level === 3));
   assert.ok(status.gates.policies.some((gate) => gate.id === 'no-shell-free-for-all'));

@@ -97,7 +97,7 @@ test('/api/chat recognizes runtime module access questions and answers as bounde
         installed: 20,
         rumbleRecipes: 6,
         rumbleRecipesReady: 6,
-        doctorStatus: 'guarded',
+        doctorStatus: 'ready',
         doctorScore: 94,
       },
     },
