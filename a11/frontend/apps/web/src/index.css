@@ -2219,6 +2219,7 @@ html.funesterie-cockpit-page-root body {
 
 .fun-mcp-hero,
 .fun-mcp-locked,
+.fun-mcp-threads,
 .fun-mcp-flow {
   width: min(1180px, 100%);
   margin-inline: auto;
@@ -2236,6 +2237,7 @@ html.funesterie-cockpit-page-root body {
 .fun-mcp-hero > div,
 .fun-mcp-hero aside,
 .fun-mcp-locked,
+.fun-mcp-threads,
 .fun-mcp-flow {
   border: 1px solid var(--ops-line);
   border-radius: 8px;
@@ -2393,6 +2395,157 @@ html.funesterie-cockpit-page-root body {
   padding: 18px;
 }
 
+.fun-mcp-threads {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 18px;
+}
+
+.fun-mcp-threads-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fun-mcp-threads-head > div {
+  display: grid;
+  gap: 8px;
+}
+
+.fun-mcp-threads-head span,
+.fun-mcp-thread-row span {
+  color: var(--ops-cyan);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.fun-mcp-threads-head h2 {
+  margin: 0;
+  color: #fff8ff;
+  font-size: clamp(26px, 4vw, 48px);
+  line-height: 1;
+}
+
+.fun-mcp-threads-head p {
+  max-width: 740px;
+  margin: 0;
+  color: var(--ops-muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.fun-mcp-threads-head a {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(55, 216, 219, 0.48);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #eaffff;
+  background: rgba(55, 216, 219, 0.1);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.fun-mcp-thread-meters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fun-mcp-thread-meters span {
+  min-height: 68px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ops-muted);
+  background: rgba(255, 255, 255, 0.026);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.fun-mcp-thread-meters b {
+  color: var(--ops-ok);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.fun-mcp-thread-list {
+  display: grid;
+  gap: 8px;
+}
+
+.fun-mcp-thread-row {
+  min-height: 116px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.35fr) minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.fun-mcp-thread-row.is-empty {
+  grid-template-columns: 1fr;
+}
+
+.fun-mcp-thread-main {
+  display: grid;
+  gap: 6px;
+}
+
+.fun-mcp-thread-main h3 {
+  margin: 0;
+  color: #fff8ff;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.fun-mcp-thread-main small,
+.fun-mcp-thread-row p {
+  color: var(--ops-muted);
+  line-height: 1.5;
+}
+
+.fun-mcp-thread-row p {
+  margin: 0;
+}
+
+.fun-mcp-thread-row p b {
+  color: #eaffff;
+}
+
+.fun-mcp-thread-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.fun-mcp-thread-tags i {
+  border: 1px solid rgba(55, 216, 219, 0.28);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #d8ffff;
+  background: rgba(55, 216, 219, 0.08);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .fun-mcp-flow > div {
   display: grid;
   align-content: center;
@@ -2453,6 +2606,7 @@ html.funesterie-cockpit-page-root body {
   .funesterie-ops-hero,
   .funesterie-ops-flow,
   .fun-mcp-hero,
+  .fun-mcp-thread-row,
   .fun-mcp-flow {
     grid-template-columns: 1fr;
   }
@@ -2470,8 +2624,18 @@ html.funesterie-cockpit-page-root body {
   .funesterie-ops-status-grid,
   .funesterie-ops-flow ol,
   .fun-mcp-grid,
+  .fun-mcp-thread-meters,
   .fun-mcp-flow ol {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fun-mcp-threads-head {
+    display: grid;
+  }
+
+  .fun-mcp-thread-tags {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .fun-mcp-locked {
@@ -2492,11 +2656,13 @@ html.funesterie-cockpit-page-root body {
   .funesterie-ops-status-grid,
   .funesterie-ops-flow ol,
   .fun-mcp-grid,
+  .fun-mcp-thread-meters,
   .fun-mcp-flow ol {
     grid-template-columns: 1fr;
   }
 
   .fun-mcp-hero,
+  .fun-mcp-threads,
   .fun-mcp-flow,
   .fun-mcp-locked {
     padding: 12px;
