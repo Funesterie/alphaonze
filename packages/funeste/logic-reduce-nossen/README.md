@@ -1,4 +1,4 @@
-# @funesterieindustry/logic-reduce-nossen
+# @funeste/logic-reduce-nossen
 
 Private NOSSEN presets for `@nossen/logic-reduce`.
 
@@ -13,7 +13,7 @@ using the same deterministic reducer.
 - patch exact files
 - run targeted tests
 - keep PR checks green before merge
-- separate public `@nossen/*` modules from private user-scope adapters
+- separate public `@nossen/*` modules from private org-scope adapters
 
 ## CLI
 

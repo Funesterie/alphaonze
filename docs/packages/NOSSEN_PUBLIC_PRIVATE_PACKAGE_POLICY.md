@@ -65,7 +65,7 @@ The first validated wave has:
 
 - 21 published public packages in `@nossen/*`
 - 1 published dual package seed: public `@nossen/logic-reduce` plus private
-  `@funesterieindustry/logic-reduce-nossen`
+  `@funeste/logic-reduce-nossen`
 - 19 private or dual candidates for the next extraction waves
 - one support/donation helper planned as a dual package
 
@@ -73,11 +73,10 @@ The first validated wave has:
 
 1. `@funeste/qflush-funesterie`
    Private operator defaults for the already public `@nossen/qflush`.
-2. `@nossen/logic-reduce` + `@funesterieindustry/logic-reduce-nossen`
+2. `@nossen/logic-reduce` + `@funeste/logic-reduce-nossen`
    Public deterministic reducer, private NOSSEN prompt/profile adapter. The
    public source seed lives in `packages/nossen/logic-reduce`; the private
-   adapter lives in `packages/funeste/logic-reduce-nossen`; it uses the paid
-   user scope until `@funeste` has private-package billing enabled.
+   adapter lives in `packages/funeste/logic-reduce-nossen`.
 3. `@nossen/source-index` + `@funeste/nossen-source-index`
    Public local indexer, private corpus/Drive bindings.
 4. `@funeste/mcp-tools`
@@ -92,8 +91,8 @@ train is coherent.
 ## Publish Gate
 
 `@nossen/logic-reduce` is published publicly at `2.0.0`. The private
-`@funesterieindustry/logic-reduce-nossen` adapter is published restricted at
-`2.0.0` and installs with the public core. The `@funeste` private org scope
-still needs private-package billing before it can receive restricted packages.
-Do not work around auth by printing, committing, or copying tokens/recovery
-codes.
+`@funeste/logic-reduce-nossen` adapter is published restricted at `2.0.0` and
+installs with the public core. The earlier
+`@funesterieindustry/logic-reduce-nossen@2.0.0` publication remains a
+user-scope compatibility fallback. Do not work around auth by printing,
+committing, or copying tokens/recovery codes.

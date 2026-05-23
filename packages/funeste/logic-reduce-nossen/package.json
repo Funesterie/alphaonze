@@ -1,5 +1,5 @@
 {
-  "name": "@funesterieindustry/logic-reduce-nossen",
+  "name": "@funeste/logic-reduce-nossen",
   "version": "2.0.0",
   "description": "Private NOSSEN presets for @nossen/logic-reduce operator handoffs.",
   "type": "commonjs",

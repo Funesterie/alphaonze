@@ -512,7 +512,7 @@
       "lane": "dual",
       "status": "published",
       "publicPackage": "@nossen/logic-reduce",
-      "privatePackage": "@funesterieindustry/logic-reduce-nossen",
+      "privatePackage": "@funeste/logic-reduce-nossen",
       "version": "2.0.0",
       "source": "packages/nossen/logic-reduce",
       "privateSource": "packages/funeste/logic-reduce-nossen",
@@ -526,8 +526,9 @@
         "decision-reduction"
       ],
       "privacy": "split-public-core-private-prompts",
-      "publishGate": "Private adapter is published under @funesterieindustry; @funeste remains blocked until org private-package billing is enabled.",
-      "nextAction": "Keep user-scope private adapter on the aligned 2.x train; migrate to @funeste only after org billing is enabled and tested."
+      "compatibilityPackage": "@funesterieindustry/logic-reduce-nossen",
+      "publishGate": "Private adapter is published under @funeste with funeste:developers read-write access; @funesterieindustry remains a user-scope fallback.",
+      "nextAction": "Keep org-scope private adapter on the aligned 2.x train."
     },
     {
       "id": "rubixgate",
