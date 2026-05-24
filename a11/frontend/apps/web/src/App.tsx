@@ -13,6 +13,7 @@ import {
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
   fetchAuthSession,
+  fetchAuthSessions,
   fetchMcpCockpitStatus,
   getAuthEmail,
   hasAdminApiAccess,
@@ -25,11 +26,13 @@ import {
   login,
   loginWithGoogleCredential,
   logout,
+  logoutAllSessions,
   getAuthToken,
   hasAuthToken,
   register,
   forgotPassword,
   resetPassword,
+  revokeAuthSession,
   runVivyStudioProduction,
   startGoogleOAuth,
   setAuthToken,
@@ -53,6 +56,7 @@ import {
   type McpCockpitThread,
   type A11PortraitFrame,
   type A11PortraitFramebook,
+  type AuthSessionDescriptor,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -4971,6 +4975,9 @@ export function App() {
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [model, setModel] = useState("openai:gpt-4o-mini");
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [authSessions, setAuthSessions] = useState<AuthSessionDescriptor[]>([]);
+  const [authSessionsLoading, setAuthSessionsLoading] = useState(false);
+  const [authSessionsError, setAuthSessionsError] = useState("");
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
   const [savingRemoteProvider, setSavingRemoteProvider] = useState(false);
@@ -5102,6 +5109,36 @@ export function App() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [settingsMenuOpen]);
+
+  useEffect(() => {
+    if (!settingsMenuOpen || !isAuthenticated) {
+      setAuthSessions([]);
+      setAuthSessionsError("");
+      setAuthSessionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setAuthSessionsLoading(true);
+    setAuthSessionsError("");
+    void fetchAuthSessions()
+      .then((result) => {
+        if (cancelled) return;
+        setAuthSessions(Array.isArray(result.sessions) ? result.sessions : []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setAuthSessions([]);
+        setAuthSessionsError(String(error?.message || "Sessions indisponibles"));
+      })
+      .finally(() => {
+        if (!cancelled) setAuthSessionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsMenuOpen, isAuthenticated]);
 
   useEffect(() => {
     if (!isCompactLayout) {
@@ -7303,12 +7340,72 @@ export function App() {
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Session</div>
+                  <div style={{
+                    border: "1px solid rgba(148, 163, 184, 0.22)",
+                    borderRadius: 8,
+                    padding: 10,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    background: "rgba(15, 23, 42, 0.58)",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: "#cbd5e1" }}>
+                      <span>Sessions actives</span>
+                      <span style={{ color: "#94a3b8" }}>
+                        {authSessionsLoading ? "..." : `${authSessions.filter((session) => !session.revokedAt).length}`}
+                      </span>
+                    </div>
+                    {authSessionsError ? (
+                      <div style={{ color: "#fca5a5", fontSize: 12 }}>{authSessionsError}</div>
+                    ) : null}
+                    {authSessions.slice(0, 4).map((session) => (
+                      <div
+                        key={session.id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 8,
+                          alignItems: "center",
+                          fontSize: 12,
+                          color: session.revokedAt ? "#64748b" : "#e2e8f0",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {session.current ? "Cette session" : (session.surface || "Funesterie")}
+                          </div>
+                          <div style={{ color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {session.provider || "local"} · {session.lastSeenAt ? new Date(session.lastSeenAt).toLocaleString() : "jamais"}
+                          </div>
+                        </div>
+                        {!session.current && !session.revokedAt ? (
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => {
+                              void revokeAuthSession(session.id)
+                                .then(() => fetchAuthSessions())
+                                .then((result) => setAuthSessions(Array.isArray(result.sessions) ? result.sessions : []))
+                                .catch((error) => setAuthSessionsError(String(error?.message || "Révocation impossible")));
+                            }}
+                            style={{ fontSize: 11, padding: "4px 8px" }}
+                          >
+                            Révoquer
+                          </button>
+                        ) : (
+                          <span style={{ color: session.revokedAt ? "#64748b" : "#86efac", fontWeight: 800 }}>
+                            {session.revokedAt ? "Off" : "OK"}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setSettingsMenuOpen(false);
                       setDisplayName("Utilisateur");
-                      logout();
+                      void logout();
                       const freshChat = buildFreshChat("Session actuelle");
                       setChats([freshChat]);
                       setSelectedChatId(freshChat.id);
@@ -7338,6 +7435,42 @@ export function App() {
                   >
                     <span>Se deconnecter</span>
                     <span style={{ fontWeight: 700 }}>Quitter</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setDisplayName("Utilisateur");
+                      void logoutAllSessions();
+                      const freshChat = buildFreshChat("Session actuelle");
+                      setChats([freshChat]);
+                      setSelectedChatId(freshChat.id);
+                      setMessages(freshChat.messages);
+                      setA11ConvId(null);
+                      setA11ConvMsgs([]);
+                      setA11History([]);
+                      setConversationActivity([]);
+                      setConversationResources([]);
+                      setActivityError("");
+                      setResourceError("");
+                      setUploadFeedback("");
+                      setPurgeHistory([]);
+                      setIsAuthenticated(false);
+                    }}
+                    className="btn ghost"
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      color: "#fda4af",
+                      borderColor: "#881337",
+                    }}
+                    title="Tout deconnecter"
+                  >
+                    <span>Tout deconnecter</span>
+                    <span style={{ fontWeight: 700 }}>Global</span>
                   </button>
                 </div>
                 </div>

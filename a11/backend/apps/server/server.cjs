@@ -519,6 +519,7 @@ const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
 const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
+const { createAuthSessionRegistry } = require('./src/auth/session-registry.cjs');
 const { hasFullAccess } = require('./src/auth/full-access.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
@@ -1461,6 +1462,12 @@ const localAuthStore = db
       filePath: path.join(PUBLIC_RUNTIME_ROOT, 'auth', 'local-users.json'),
       logger: console,
     });
+const authSessionRegistry = createAuthSessionRegistry({
+  db,
+  localAuthStore,
+  logger: console,
+  filePath: path.join(PUBLIC_RUNTIME_ROOT, 'auth', 'auth-sessions.json'),
+});
 
 if (db) {
   db.connect()
@@ -5422,6 +5429,7 @@ const verifyJWT = createVerifyJWT({
   jwt,
   jwtSecret: JWT_SECRET,
   logger: console,
+  authSessionRegistry,
 });
 
 function requireFamilyAccess(req, res, next) {
@@ -6396,6 +6404,7 @@ app.use(createAuthRouter({
   emailService,
   crypto,
   normalizePublicAppUrl,
+  authSessionRegistry,
 }));
 
 app.use(createA11HistoryRouter({
@@ -7405,6 +7414,17 @@ function readEmbeddedUiIndex(indexPath) {
   }
 }
 
+function getEmbeddedUiBuildId(indexPath) {
+  const configured = String(process.env.A11_WEB_BUILD_ID || process.env.BUILD_ID || '').trim();
+  if (configured) return configured.slice(0, 80);
+  try {
+    const stat = fs.statSync(indexPath);
+    return `web-${Math.floor(stat.mtimeMs)}`;
+  } catch (_) {
+    return 'web-unknown';
+  }
+}
+
 function getRequestSurfaceHost(req) {
   const raw = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
   return raw.replace(/:\d+$/, '').toLowerCase();
@@ -7497,6 +7517,7 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
     const vivyIndex = path.join(webPublic, 'vivy', 'index.html');
     if (fs.existsSync(vivyIndex)) {
       res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(vivyIndex));
       return res.sendFile(vivyIndex);
     }
   }
@@ -7505,6 +7526,7 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
   if (!html) return res.sendFile(uiStatus.indexPath);
 
   res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(uiStatus.indexPath));
   return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface));
 }
 
@@ -7584,6 +7606,9 @@ try {
           };
           if (mimeMap[ext]) {
             res.setHeader('Content-Type', mimeMap[ext]);
+          }
+          if (filePath.includes(`${path.sep}assets${path.sep}`) && !filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           }
           // Pas de cache sur index.html — toujours revalider
           if (filePath.endsWith('index.html')) {

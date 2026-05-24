@@ -66,7 +66,9 @@ const statements = [
     stripe_customer_id VARCHAR(255),
     subscription_active BOOLEAN DEFAULT false,
     subscription_end_date TIMESTAMP,
-    stripe_subscription_id VARCHAR(255)
+    stripe_subscription_id VARCHAR(255),
+    auth_session_version INTEGER DEFAULT 0,
+    last_global_logout_at TIMESTAMP
   )`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
@@ -80,8 +82,31 @@ const statements = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_active BOOLEAN DEFAULT false`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_session_version INTEGER DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_global_logout_at TIMESTAMP`,
   `CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON users(stripe_customer_id)`,
   `CREATE INDEX IF NOT EXISTS idx_users_subscription_active ON users(subscription_active)`,
+
+  `CREATE TABLE IF NOT EXISTS auth_sessions (
+    session_id TEXT PRIMARY KEY,
+    user_key TEXT NOT NULL,
+    user_id TEXT,
+    email TEXT,
+    username TEXT,
+    provider TEXT,
+    surface TEXT,
+    client TEXT,
+    session_generation INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_seen_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP,
+    revoked_at TIMESTAMP,
+    request_host TEXT,
+    user_agent_hash TEXT,
+    ip_hash TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_key ON auth_sessions(user_key, last_seen_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked_at ON auth_sessions(revoked_at)`,
 
   `CREATE TABLE IF NOT EXISTS files (
     id SERIAL PRIMARY KEY,
