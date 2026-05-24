@@ -91,10 +91,10 @@ OLLAMA_BASE=http://127.0.0.1:11434
 
 ```bash
 # PostgreSQL (optionnel, pour persistance long-terme)
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
+DATABASE_URL=<set-in-provider-secret-store>
 
 # Redis (optionnel, pour mémoire phantom distribuée)
-QFLUSH_REDIS_URL=redis://localhost:6379
+QFLUSH_REDIS_URL=<set-in-provider-secret-store>
 
 # Email (optionnel, pour password reset)
 # RESEND_API_KEY is configured via the deployment secret store.

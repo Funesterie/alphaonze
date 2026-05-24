@@ -14,7 +14,7 @@ docker compose up -d
 Default local database URL:
 
 ```env
-postgres://a11:a11_memory_local_change_me@127.0.0.1:5437/a11_memory
+postgres://127.0.0.1:5437/a11_memory
 ```
 
 ## Import local Codex sessions
