@@ -57,6 +57,8 @@ function createLocalAuthStore({ filePath, logger = console } = {}) {
       username: normalizeText(user.username),
       email: normalizeEmail(user.email),
       password_hash: normalizeText(user.password_hash),
+      auth_session_version: Number(user.auth_session_version || 0) || 0,
+      last_global_logout_at: user.last_global_logout_at || null,
       created_at: user.created_at || null,
       auth_provider: 'local-file',
     };
@@ -106,6 +108,7 @@ function createLocalAuthStore({ filePath, logger = console } = {}) {
       username: normalizedUsername,
       email: normalizedEmail,
       password_hash: normalizedPasswordHash,
+      auth_session_version: 0,
       created_at: new Date().toISOString(),
     };
     state.users.push(user);
@@ -113,10 +116,44 @@ function createLocalAuthStore({ filePath, logger = console } = {}) {
     return toPublicUser(user);
   }
 
+  function findUserIndex(user = {}) {
+    const identityId = normalizeText(user.id || user.sub || user.user_id || user.userId);
+    const identityEmail = normalizeEmail(user.email);
+    const identityUsername = normalizeText(user.username || user.preferred_username || user.name).toLowerCase();
+    const state = readState();
+    const index = state.users.findIndex((candidate) => {
+      const id = normalizeText(candidate?.id);
+      const username = normalizeText(candidate?.username).toLowerCase();
+      const email = normalizeEmail(candidate?.email);
+      return Boolean(identityId && id === identityId)
+        || Boolean(identityEmail && email === identityEmail)
+        || Boolean(identityUsername && username === identityUsername);
+    });
+    return { state, index };
+  }
+
+  function getSessionVersion(user = {}) {
+    const { state, index } = findUserIndex(user);
+    if (index < 0) return null;
+    return Number(state.users[index]?.auth_session_version || 0) || 0;
+  }
+
+  function bumpSessionVersion(user = {}) {
+    const { state, index } = findUserIndex(user);
+    if (index < 0) return null;
+    const nextVersion = (Number(state.users[index]?.auth_session_version || 0) || 0) + 1;
+    state.users[index].auth_session_version = nextVersion;
+    state.users[index].last_global_logout_at = new Date().toISOString();
+    writeState(state);
+    return nextVersion;
+  }
+
   return {
     filePath: resolvedFilePath,
     createUser,
     findUserByIdentifier,
+    getSessionVersion,
+    bumpSessionVersion,
   };
 }
 

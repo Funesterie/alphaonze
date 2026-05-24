@@ -227,6 +227,10 @@ const DEFAULT_KAEN44_API_BASE = normalizeApiBase(
   import.meta.env?.VITE_KAEN44_API_BASE_URL ||
   'https://k44.funesterie.me'
 );
+const DEFAULT_FUNESTERIE_AUTH_BASE = normalizeApiBase(
+  import.meta.env?.VITE_FUNESTERIE_AUTH_BASE_URL ||
+  'https://funesterie.me'
+);
 
 function isPublicKaen44WebHost(hostname: string | null | undefined) {
   const normalized = String(hostname || '').trim().toLowerCase();
@@ -886,8 +890,43 @@ export type AuthSessionResponse = {
     role?: string;
     fullAccess?: boolean;
     provider?: string;
+    surface?: string;
+    accessPacks?: string[];
+  };
+  session?: {
+    id?: string | null;
+    version?: number;
+    surface?: string;
+    provider?: string;
+    expiresAt?: string | null;
   };
   token?: string;
+  error?: string;
+  message?: string;
+};
+
+export type AuthSessionDescriptor = {
+  id: string;
+  current?: boolean;
+  provider?: string;
+  surface?: string;
+  client?: string;
+  email?: string;
+  username?: string;
+  createdAt?: string | null;
+  lastSeenAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  requestHost?: string;
+};
+
+export type AuthSessionsResponse = {
+  ok: boolean;
+  sessions?: AuthSessionDescriptor[];
+  global?: {
+    version?: number;
+    canLogoutAll?: boolean;
+  };
   error?: string;
   message?: string;
 };
@@ -903,7 +942,7 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   });
   const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
   if (!res.ok || data?.ok === false) {
-    if (res.status === 401 || data?.error === 'A11_JWT_Invalid') {
+    if (res.status === 401 || data?.error === 'A11_JWT_Invalid' || data?.error === 'A11_SESSION_REVOKED') {
       clearClientAuthSession({
         reason: data?.error || 'A11_JWT_Invalid',
         message: data?.message || `Session A11 invalide (${res.status})`,
@@ -920,6 +959,30 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   }
   setAuthUserProfile(data?.user);
   setAuthDisplayName(data?.user?.username || data?.user?.email || '');
+  return data;
+}
+
+export async function fetchAuthSessions(): Promise<AuthSessionsResponse> {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl('/api/auth/sessions'), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data: AuthSessionsResponse = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    if (res.status === 401 || data?.error === 'A11_SESSION_REVOKED') {
+      clearClientAuthSession({
+        reason: data?.error || 'A11_JWT_Invalid',
+        message: data?.message || `Session A11 invalide (${res.status})`,
+        status: res.status,
+      });
+    }
+    throw new Error(data?.message || data?.error || `Sessions indisponibles (${res.status})`);
+  }
   return data;
 }
 
@@ -1070,25 +1133,48 @@ function isCentralFunesterieLoginPage() {
   }
 }
 
+function resolveCurrentAuthSurface() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').trim().toLowerCase();
+    const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
+    const params = new URLSearchParams(String(globalThis.location?.search || ''));
+    const persona = String(params.get('persona') || '').trim().toLowerCase();
+    if (isPublicKaen44WebHost(hostname) || /^\/(?:k44|kaen44)(?:\/|$)/.test(pathname) || ['kaen44', 'kaen', 'k44'].includes(persona)) {
+      return 'k44';
+    }
+    if (isPublicVivyWebHost(hostname) || /^\/vivy(?:\/|$)/.test(pathname) || persona === 'vivy') {
+      return 'vivy';
+    }
+    if (isPublicA11WebHost(hostname) || /^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname) || ['a11', 'alphaonze'].includes(persona)) {
+      return 'a11';
+    }
+  } catch {
+    // ignore browser location issues
+  }
+  return 'funesterie';
+}
+
+function resolveCentralAuthBase() {
+  try {
+    const hostname = globalThis.location?.hostname;
+    if (isPublicFunesterieWebHost(hostname)) return DEFAULT_FUNESTERIE_AUTH_BASE;
+    if (isCentralFunesterieLoginPage()) return normalizeApiBase(globalThis.location?.origin || DEFAULT_FUNESTERIE_AUTH_BASE);
+  } catch {
+    // ignore browser location issues
+  }
+  return normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || DEFAULT_FUNESTERIE_AUTH_BASE);
+}
+
 export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
-  const currentOrigin = globalThis.location?.origin || '';
-  const currentHostname = globalThis.location?.hostname || '';
-  const isKaen44Surface = isKaen44WebSurface();
-  const publicSurfaceBase = resolveCurrentPublicApiBase();
-  const fallbackBase = (isKaen44Surface || isPublicKaen44WebHost(currentHostname))
-    ? DEFAULT_KAEN44_API_BASE
-    : DEFAULT_PROD_API_BASE;
-  const googleBaseUrl = publicSurfaceBase || (isKaen44Surface
-    ? normalizeApiBase(fallbackBase || DEFAULT_KAEN44_API_BASE)
-    : normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || fallbackBase));
+  const googleBaseUrl = resolveCentralAuthBase();
   const target = new URL(
     buildApiUrlFromBase(googleBaseUrl, '/api/auth/google/start'),
-    currentOrigin || fallbackBase || 'https://a11.funesterie.me'
+    globalThis.location?.origin || googleBaseUrl || DEFAULT_FUNESTERIE_AUTH_BASE
   );
-  target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
+  target.searchParams.set('returnTo', resolveOAuthReturnTo(returnTo));
   target.searchParams.set('client', client || 'web');
   target.searchParams.set('scopeProfile', 'basic');
-  if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
+  target.searchParams.set('surface', resolveCurrentAuthSurface());
   return target.toString();
 }
 
@@ -1097,15 +1183,11 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
 }
 
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
-  const isKaen44Surface = isKaen44WebSurface();
-  const publicSurfaceBase = resolveCurrentPublicApiBase();
-  const msBaseUrl = publicSurfaceBase || (isKaen44Surface
-    ? normalizeApiBase(DEFAULT_KAEN44_API_BASE || 'https://k44.funesterie.me')
-    : normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.me'));
+  const msBaseUrl = resolveCentralAuthBase();
   const target = new URL(buildApiUrlFromBase(msBaseUrl, '/api/auth/microsoft/start'), globalThis.location?.origin || msBaseUrl || 'https://a11.funesterie.me');
-  target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
+  target.searchParams.set('returnTo', resolveOAuthReturnTo(returnTo));
   target.searchParams.set('client', client || 'web');
-  if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
+  target.searchParams.set('surface', resolveCurrentAuthSurface());
   return target.toString();
 }
 
@@ -1189,12 +1271,12 @@ export async function resetPassword(token: string, password: string) {
   return data;
 }
 
-export function logout() {
+export async function logout(options: { allSessions?: boolean } = {}) {
   const token = getAuthToken();
   try {
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
-    void fetch(getApiUrl('/api/auth/logout'), {
+    await fetch(getApiUrl(options.allSessions ? '/api/auth/logout-all' : '/api/auth/logout'), {
       method: 'POST',
       headers,
       credentials: 'include',
@@ -1208,9 +1290,38 @@ export function logout() {
     // ignore storage issues
   }
   clearClientAuthSession({
-    reason: 'A11_Logout',
-    message: 'Déconnexion globale demandée.',
+    reason: options.allSessions ? 'A11_Logout_All' : 'A11_Logout',
+    message: options.allSessions ? 'Déconnexion globale demandée.' : 'Session courante déconnectée.',
   });
+}
+
+export async function logoutAllSessions() {
+  return logout({ allSessions: true });
+}
+
+export async function revokeAuthSession(sessionId: string) {
+  const sid = String(sessionId || '').trim();
+  if (!sid) throw new Error('Session manquante');
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl(`/api/auth/sessions/${encodeURIComponent(sid)}`), {
+    method: 'DELETE',
+    headers,
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    if (res.status === 401 || data?.error === 'A11_SESSION_REVOKED') {
+      clearClientAuthSession({
+        reason: data?.error || 'A11_JWT_Invalid',
+        message: data?.message || `Session A11 invalide (${res.status})`,
+        status: res.status,
+      });
+    }
+    throw new Error(data?.message || data?.error || `Révocation impossible (${res.status})`);
+  }
+  return data;
 }
 
 function appendJwtHeaders(headers: Record<string, string>) {

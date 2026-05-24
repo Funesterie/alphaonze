@@ -61,9 +61,7 @@ function shouldBypassJwtForLocalDev(req) {
   return isLoopbackRequest(req) && securityMode === 'off';
 }
 
-const { validateSessionGeneration } = require('../auth/session-state.cjs');
-
-function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false } = {}) {
+function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false, authSessionRegistry } = {}) {
   if (!jwt || typeof jwt.verify !== 'function') {
     throw new Error('createVerifyJWT requires jwt.verify');
   }
@@ -73,7 +71,7 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false 
     throw new Error('createVerifyJWT requires jwtSecret');
   }
 
-  return function verifyJWT(req, res, next) {
+  return async function verifyJWT(req, res, next) {
     if (shouldBypassJwtForLocalDev(req)) {
       req.user = {
         id: 'local-dev',
@@ -99,13 +97,8 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false 
 
     try {
       const decoded = jwt.verify(token, resolvedSecret);
-      const sessionValidation = validateSessionGeneration(decoded);
-      if (!sessionValidation.ok) {
-        logger?.warn?.('[JWT] Session generation revoked');
-        return res.status(401).json({
-          error: 'A11_JWT_Revoked',
-          message: 'Session révoquée. Reconnecte-toi.',
-        });
+      if (authSessionRegistry && typeof authSessionRegistry.assertTokenCurrent === 'function') {
+        await authSessionRegistry.assertTokenCurrent(decoded);
       }
       req.user = decoded;
       if (logSuccess) {
@@ -113,6 +106,13 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false 
       }
       return next();
     } catch (err) {
+      if (err?.code === 'A11_SESSION_REVOKED') {
+        logger?.warn?.('[JWT] Session revoked');
+        return res.status(401).json({
+          error: 'A11_SESSION_REVOKED',
+          message: 'Session révoquée. Reconnecte-toi.',
+        });
+      }
       logger?.warn?.('[JWT] Verification failed:', err?.message);
       return res.status(401).json({
         error: 'A11_JWT_Invalid',

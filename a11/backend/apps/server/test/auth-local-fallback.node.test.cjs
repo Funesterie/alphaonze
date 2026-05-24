@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const createAuthRouter = require('../src/routes/auth.cjs');
 const createA11HistoryRouter = require('../src/routes/a11-history.cjs');
 const { createLocalAuthStore } = require('../src/auth/local-auth-store.cjs');
+const { createAuthSessionRegistry } = require('../src/auth/session-registry.cjs');
 
 async function withServer(registerRoutes, runAssertions) {
   const app = express();
@@ -53,7 +54,7 @@ async function getJson(baseUrl, route, headers = {}) {
   };
 }
 
-test('K44 OAuth start pins the Google callback to https on public hosts', async (t) => {
+test('K44 OAuth start redirects to the central Funesterie OAuth host before state cookies', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     A11_GOOGLE_CLIENT_ID: process.env.A11_GOOGLE_CLIENT_ID,
@@ -105,16 +106,15 @@ test('K44 OAuth start pins the Google callback to https on public hosts', async 
       const location = response.headers.get('location');
       assert.ok(location);
       const redirectUrl = new URL(location);
-      assert.equal(redirectUrl.origin, 'https://accounts.google.com');
-      assert.equal(
-        redirectUrl.searchParams.get('redirect_uri'),
-        'https://k44.funesterie.me/api/auth/google/callback'
-      );
+      assert.equal(redirectUrl.origin, 'https://funesterie.me');
+      assert.equal(redirectUrl.pathname, '/api/auth/google/start');
+      assert.equal(redirectUrl.searchParams.get('surface'), 'k44');
+      assert.equal(response.headers.get('set-cookie'), null);
     }
   );
 });
 
-test('OAuth start keeps callbacks on the current .me host before legacy env overrides', async (t) => {
+test('central OAuth start pins Google and Microsoft callbacks to funesterie.me', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
@@ -164,17 +164,17 @@ test('OAuth start keeps callbacks on the current .me host before legacy env over
         const response = await fetch(`${baseUrl}/api/auth/${provider}/start`, {
           redirect: 'manual',
           headers: {
-            'X-Forwarded-Host': 'vivy.funesterie.me',
-            'X-Forwarded-Proto': 'https',
-          },
-        });
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
         assert.equal(response.status, 302);
         const location = response.headers.get('location');
         assert.ok(location);
         const redirectUrl = new URL(location);
         assert.equal(
           redirectUrl.searchParams.get('redirect_uri'),
-          `https://vivy.funesterie.me/api/auth/${provider}/callback`
+          `https://funesterie.me/api/auth/${provider}/callback`
         );
       }
     }
@@ -227,7 +227,7 @@ test('OAuth configuration errors return to the single Funesterie login page', as
       const response = await fetch(`${baseUrl}/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`, {
         redirect: 'manual',
         headers: {
-          'X-Forwarded-Host': 'a11.funesterie.me',
+          'X-Forwarded-Host': 'funesterie.me',
           'X-Forwarded-Proto': 'https',
         },
       });
@@ -405,7 +405,7 @@ test('Google OAuth callback can return to the private cp cockpit with a fragment
       const startResponse = await fetch(`${baseUrl}/api/auth/google/start?returnTo=${encodeURIComponent('https://cp.funesterie.me/auth/success')}&client=funesterie-cockpit`, {
         redirect: 'manual',
         headers: {
-          'X-Forwarded-Host': 'a11.funesterie.me',
+          'X-Forwarded-Host': 'funesterie.me',
           'X-Forwarded-Proto': 'https',
         },
       });
@@ -418,7 +418,7 @@ test('Google OAuth callback can return to the private cp cockpit with a fragment
         redirect: 'manual',
         headers: {
           Cookie: `a11_google_oauth_state=${encodeURIComponent(state)}`,
-          'X-Forwarded-Host': 'a11.funesterie.me',
+          'X-Forwarded-Host': 'funesterie.me',
           'X-Forwarded-Proto': 'https',
         },
       });
@@ -545,21 +545,17 @@ test('auth/me accepts the a11_session cookie without cookie-parser state', async
   );
 });
 
-test('auth logout invalidates every token for the same user', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-session-state-'));
-  const previousStateFile = process.env.A11_AUTH_SESSION_STATE_FILE;
-  process.env.A11_AUTH_SESSION_STATE_FILE = path.join(tmpDir, 'session-state.json');
+test('auth sessions list, current logout, targeted revoke, and logout-all are distinct', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-sessions-'));
   t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
-  t.after(() => {
-    if (previousStateFile === undefined) {
-      delete process.env.A11_AUTH_SESSION_STATE_FILE;
-    } else {
-      process.env.A11_AUTH_SESSION_STATE_FILE = previousStateFile;
-    }
-  });
 
   const localAuthStore = createLocalAuthStore({
     filePath: path.join(tmpDir, 'local-users.json'),
+    logger: { warn() {} },
+  });
+  const authSessionRegistry = createAuthSessionRegistry({
+    localAuthStore,
+    filePath: path.join(tmpDir, 'auth-sessions.json'),
     logger: { warn() {} },
   });
 
@@ -572,6 +568,7 @@ test('auth logout invalidates every token for the same user', async (t) => {
         jwtSecret: 'test-secret',
         jwtExpiry: '1h',
         localAuthStore,
+        authSessionRegistry,
         defaultAdminUsername: 'Djeff',
         defaultAdminPassword: '1991',
         emailService: { isConfigured: () => false, getStatus: () => ({}) },
@@ -581,38 +578,86 @@ test('auth logout invalidates every token for the same user', async (t) => {
     },
     async (baseUrl) => {
       const registered = await postJson(baseUrl, '/api/auth/register', {
-        username: 'GlobalLogout',
-        email: 'global-logout@example.test',
+        username: 'SessionRegistry',
+        email: 'session-registry@example.test',
         password: 'secret123',
       });
       assert.equal(registered.response.status, 200);
+      const firstToken = registered.json.token;
+      const firstSid = jwt.decode(firstToken).sid;
+      assert.ok(firstSid);
 
       const secondLogin = await postJson(baseUrl, '/api/auth/login', {
-        email: 'global-logout@example.test',
+        email: 'session-registry@example.test',
         password: 'secret123',
       });
       assert.equal(secondLogin.response.status, 200);
+      const secondToken = secondLogin.json.token;
+      const secondSid = jwt.decode(secondToken).sid;
+      assert.ok(secondSid);
+      assert.notEqual(firstSid, secondSid);
 
-      const beforeLogout = await getJson(baseUrl, '/api/auth/me', {
-        Authorization: `Bearer ${secondLogin.json.token}`,
+      const sessionsBefore = await getJson(baseUrl, '/api/auth/sessions', {
+        Authorization: `Bearer ${secondToken}`,
       });
-      assert.equal(beforeLogout.response.status, 200);
-      assert.equal(beforeLogout.json.authenticated, true);
+      assert.equal(sessionsBefore.response.status, 200);
+      assert.equal(sessionsBefore.json.ok, true);
+      assert.equal(sessionsBefore.json.sessions.filter((session) => !session.revokedAt).length, 2);
+      assert.equal(sessionsBefore.json.sessions.some((session) => session.id === secondSid && session.current === true), true);
 
-      const logoutResponse = await postJson(baseUrl, '/api/auth/logout', {}, {
-        Authorization: `Bearer ${registered.json.token}`,
+      const currentLogout = await postJson(baseUrl, '/api/auth/logout', {}, {
+        Authorization: `Bearer ${firstToken}`,
       });
-      assert.equal(logoutResponse.response.status, 200);
-      assert.equal(logoutResponse.json.global, true);
+      assert.equal(currentLogout.response.status, 200);
+      assert.equal(currentLogout.json.allSessions, false);
 
-      const oldSiblingToken = await getJson(baseUrl, '/api/auth/me', {
-        Authorization: `Bearer ${secondLogin.json.token}`,
+      const firstAfterLogout = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${firstToken}`,
       });
-      assert.equal(oldSiblingToken.response.status, 401);
-      assert.equal(oldSiblingToken.json.error, ['A11', 'JWT', 'Revoked'].join('_'));
+      assert.equal(firstAfterLogout.response.status, 401);
+      assert.equal(firstAfterLogout.json.error, 'A11_SESSION_REVOKED');
+
+      const secondStillValid = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${secondToken}`,
+      });
+      assert.equal(secondStillValid.response.status, 200);
+      assert.equal(secondStillValid.json.authenticated, true);
+
+      const thirdLogin = await postJson(baseUrl, '/api/auth/login', {
+        email: 'session-registry@example.test',
+        password: 'secret123',
+      });
+      assert.equal(thirdLogin.response.status, 200);
+      const thirdToken = thirdLogin.json.token;
+
+      const revokeSecond = await fetch(`${baseUrl}/api/auth/sessions/${encodeURIComponent(secondSid)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${thirdToken}` },
+      });
+      const revokeSecondJson = await revokeSecond.json();
+      assert.equal(revokeSecond.status, 200);
+      assert.equal(revokeSecondJson.ok, true);
+
+      const secondAfterRevoke = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${secondToken}`,
+      });
+      assert.equal(secondAfterRevoke.response.status, 401);
+      assert.equal(secondAfterRevoke.json.error, 'A11_SESSION_REVOKED');
+
+      const logoutAll = await postJson(baseUrl, '/api/auth/logout-all', {}, {
+        Authorization: `Bearer ${thirdToken}`,
+      });
+      assert.equal(logoutAll.response.status, 200);
+      assert.equal(logoutAll.json.allSessions, true);
+
+      const thirdAfterLogoutAll = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${thirdToken}`,
+      });
+      assert.equal(thirdAfterLogoutAll.response.status, 401);
+      assert.equal(thirdAfterLogoutAll.json.error, 'A11_SESSION_REVOKED');
 
       const freshLogin = await postJson(baseUrl, '/api/auth/login', {
-        email: 'global-logout@example.test',
+        email: 'session-registry@example.test',
         password: 'secret123',
       });
       assert.equal(freshLogin.response.status, 200);
