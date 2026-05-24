@@ -1527,7 +1527,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           oauth_state_expired: "La tentative de connexion a expiré. Relance-la depuis cette page.",
           session_verification_failed: "La connexion a réussi, mais la session n'a pas pu être vérifiée. Réessaie une fois.",
           google_auth_not_configured: "La connexion Google n'est pas encore activée sur ce serveur.",
-          google_invalid_client: "La connexion Google est mal configurée côté serveur. Utilise Microsoft pendant que nous remplaçons la clé Google.",
+          google_invalid_client: "Google refuse le client OAuth actif. Recharge la page et relance Google, ou utilise Microsoft le temps qu'on corrige.",
           google_invalid_grant: "Google a refusé le code de connexion. Réessaie en repartant du bouton Google.",
           google_redirect_uri_mismatch: "Google refuse l'URL de retour configurée pour cette application.",
           google_access_denied: "La connexion Google a été annulée.",
