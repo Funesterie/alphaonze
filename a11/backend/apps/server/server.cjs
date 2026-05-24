@@ -7842,6 +7842,10 @@ function sendEmbeddedUiNossenAgentMemoryPage(req, res) {
   return sendEmbeddedUiStandalonePage(req, res, 'nossen/agent-memory/index.html');
 }
 
+function sendEmbeddedUiNossenGrokPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'nossen/grok/index.html');
+}
+
 function sendEmbeddedUiRoot(req, res) {
   const hostname = getRequestSurfaceHost(req);
   if (hostname === 'funesterie.me'
@@ -7857,6 +7861,7 @@ app.get('/', sendEmbeddedUiRoot);
 app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
 app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
 app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
+app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
 app.get(['/k44/privacy', '/k44/privacy/', '/kaen44/privacy', '/kaen44/privacy/'], sendEmbeddedUiPrivacyPage);
 app.get(['/k44/terms', '/k44/terms/', '/kaen44/terms', '/kaen44/terms/'], sendEmbeddedUiTermsPage);
 app.get([
