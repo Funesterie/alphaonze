@@ -4,7 +4,7 @@
 const path = require('node:path');
 
 const SERVER_ROOT = path.resolve(__dirname, '..', '..', 'server');
-const DEFAULT_DATABASE_URL = 'postgres://a11:a11_memory_local_change_me@127.0.0.1:5437/a11_memory';
+const DEFAULT_DATABASE_URL = 'postgres://127.0.0.1:5437/a11_memory';
 const { Client } = require(path.join(SERVER_ROOT, 'node_modules', 'pg'));
 
 function parseArgs(argv) {

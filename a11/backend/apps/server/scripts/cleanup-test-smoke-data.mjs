@@ -2,7 +2,7 @@
 import process from 'process';
 import { runCleanupTestData } from './cleanup-test-smoke-data-lib.mjs';
 
-const connectionString = process.env.PGURL || process.env.DATABASE_URL || 'postgres://user:pass@localhost:5432/db';
+const connectionString = process.env.PGURL || process.env.DATABASE_URL || 'postgres://localhost:5432/db';
 const dryRun = !process.argv.includes('--apply');
 const verbose = true;
 
