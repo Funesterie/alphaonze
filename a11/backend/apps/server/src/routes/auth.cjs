@@ -282,12 +282,30 @@ function resolveCookieOptions(req, normalizePublicAppUrl, maxAge) {
   return options;
 }
 
+function sanitizeOAuthTracePath(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  const redact = (input) => input.replace(
+    /([?&](?:code|state|token|credential|id_token|access_token)=)[^&#\s]+/gi,
+    '$1[redacted]'
+  );
+  try {
+    const parsed = new URL(raw, 'https://trace.local');
+    for (const key of ['code', 'state', 'token', 'credential', 'id_token', 'access_token']) {
+      if (parsed.searchParams.has(key)) parsed.searchParams.set(key, '[redacted]');
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return redact(raw);
+  }
+}
+
 function buildOAuthTraceMeta(req, normalizePublicAppUrl, extra = {}) {
   const cookieOptions = resolveCookieOptions(req, normalizePublicAppUrl);
   const cookieHeader = String(req?.headers?.cookie || '');
   return {
     method: req?.method,
-    path: req?.originalUrl || req?.url,
+    path: sanitizeOAuthTracePath(req?.originalUrl || req?.url),
     host: String(req?.headers?.host || ''),
     forwardedHost: String(req?.headers?.['x-forwarded-host'] || ''),
     forwardedProto: String(req?.headers?.['x-forwarded-proto'] || ''),
@@ -427,7 +445,14 @@ function resolvePublicOAuthError(provider, error) {
   if (normalizedProvider === 'microsoft') {
     if (code.includes('aadsts7000215') || code.includes('invalid client secret')) return 'microsoft_invalid_client';
     if (code.includes('access_denied')) return 'microsoft_access_denied';
-    if (code.includes('invalid_grant')) return 'microsoft_invalid_grant';
+    if (
+      code.includes('invalid_grant')
+      || code.includes('aadsts70000')
+      || code.includes('authorization code')
+      || code.includes('code is invalid')
+      || code.includes('code is expired')
+      || code.includes('malformed')
+    ) return 'microsoft_invalid_grant';
   }
 
   return 'oauth_failed';
@@ -487,7 +512,11 @@ async function exchangeMicrosoftCodeForTokens({ code, callbackUrl, clientId, cli
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error_description || payload?.error || `microsoft_token_exchange_failed_${response.status}`);
+    const detail = [payload?.error, payload?.error_description]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(': ');
+    throw new Error(detail || `microsoft_token_exchange_failed_${response.status}`);
   }
   return payload;
 }
@@ -1066,7 +1095,7 @@ function createAuthRouter({
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
         publicError,
       }, 'warn');
-      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, publicError));
+      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, publicError);
     }
   });
 
@@ -1203,7 +1232,7 @@ function createAuthRouter({
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
         publicError,
       }, 'warn');
-      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, publicError));
+      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, publicError);
     }
   });
 
