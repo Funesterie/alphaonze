@@ -1,4 +1,4 @@
-const A11_CACHE = "a11-pwa-v4";
+const A11_CACHE = "a11-pwa-v5";
 const A11_PUBLIC_HOSTS_WITHOUT_SW = new Set([
   "178.105.86.89",
   "a11.funesterie.me",

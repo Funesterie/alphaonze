@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vivy - Funesterie</title>
     <meta name="description" content="Vivy, présence musicale Funesterie pour voix, chansons originales et projets audio Nossen." />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://funesterie.me/vivy/" />
     <meta property="og:title" content="Vivy - Présence musicale Funesterie" />
     <meta property="og:description" content="Voix, musique, composition, clips et publications audio liés aux projets créatifs Funesterie." />
     <meta property="og:image" content="/vivy-presence-musicale.png" />
@@ -383,7 +385,8 @@
         gap: 10px;
       }
 
-      .vivy-top a {
+      .vivy-top a,
+      .vivy-top button {
         min-height: 38px;
         display: inline-flex;
         align-items: center;
@@ -396,6 +399,17 @@
         font-size: 12px;
         font-weight: 850;
         text-transform: uppercase;
+      }
+
+      .vivy-top button {
+        background: rgba(240, 121, 216, 0.12);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .vivy-top button:disabled {
+        cursor: wait;
+        opacity: 0.68;
       }
 
       .vivy-poster-stage {
@@ -1079,7 +1093,8 @@
           gap: 8px;
         }
 
-        .vivy-top a {
+        .vivy-top a,
+        .vivy-top button {
           min-height: 34px;
           padding: 0 10px;
           font-size: 11px;
@@ -1101,6 +1116,7 @@
           <a href="https://funesterie.me/cockpit/">Cockpit</a>
           <a href="https://k44.funesterie.me/">Kaen44</a>
           <a href="https://a11.funesterie.me/login">A11</a>
+          <button type="button" data-vivy-google-login>Connexion</button>
         </div>
       </nav>
       <section class="vivy-poster-stage" aria-label="Vivy présence musicale" tabindex="0">
@@ -1244,8 +1260,7 @@
               <button type="submit" data-vivy-action>Préparer calibration</button>
               <button type="button" data-vivy-ask>Demander à Vivy</button>
               <button type="button" data-vivy-open="a11">Ouvrir A11</button>
-              <button type="button" data-vivy-open="k44">Ouvrir Kaen44</button>
-              <button type="button" data-vivy-open="cockpit">Cockpit général</button>
+              <button type="button" data-vivy-open="k44">Kaen44</button>
             </div>
           </form>
 
@@ -1263,6 +1278,77 @@
       </section>
     </main>
     <script>
+      (function () {
+        var loginButton = document.querySelector("[data-vivy-google-login]");
+        var tokenPattern = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+        var isAuthSuccess = /(?:^|\/)auth\/success\/?$/.test(String(window.location.pathname || "/").toLowerCase());
+
+        function isLocalHost() {
+          return /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(String(window.location.hostname || "").toLowerCase());
+        }
+
+        function vivyHomePath() {
+          return isLocalHost() ? "/vivy/" : "/";
+        }
+
+        function authSuccessReturnTo() {
+          if (isLocalHost()) {
+            return new URL("/vivy/auth/success", window.location.origin).toString();
+          }
+          return "https://vivy.funesterie.me/auth/success";
+        }
+
+        function consumeOAuthToken() {
+          try {
+            var hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+            var searchParams = new URLSearchParams(String(window.location.search || ""));
+            var token = String(hashParams.get("a11_token") || hashParams.get("token") || searchParams.get("a11_token") || "").trim();
+            if (!tokenPattern.test(token)) return false;
+            localStorage.setItem("a11-auth-token", token);
+            localStorage.setItem("a11_jwt_token", token);
+            window.history.replaceState({}, "", vivyHomePath());
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function setLoginState(label, disabled) {
+          if (!loginButton) return;
+          loginButton.textContent = label;
+          loginButton.disabled = Boolean(disabled);
+        }
+
+        if (isAuthSuccess && consumeOAuthToken()) {
+          setLoginState("Connecté", false);
+        }
+
+        if (loginButton) {
+          loginButton.addEventListener("click", function () {
+            setLoginState("Google...", true);
+            var startUrl = new URL("https://a11.funesterie.me/api/auth/google/start");
+            startUrl.searchParams.set("returnTo", authSuccessReturnTo());
+            startUrl.searchParams.set("client", "vivy-web");
+            startUrl.searchParams.set("scopeProfile", "basic");
+            window.location.assign(startUrl.toString());
+          });
+        }
+
+        fetch("/api/auth/me", { credentials: "include" })
+          .then(function (response) { return response.ok ? response.json() : null; })
+          .then(function (session) {
+            if (session && (session.authenticated || session.user)) {
+              setLoginState("Connecté", false);
+              if (isAuthSuccess) window.history.replaceState({}, "", vivyHomePath());
+            } else {
+              setLoginState("Connexion", false);
+            }
+          })
+          .catch(function () {
+            setLoginState("Connexion", false);
+          });
+      })();
+
       (function () {
         var root = document.querySelector("[data-vivy-chat]");
         if (!root) return;
@@ -1894,16 +1980,14 @@
             var target = button.getAttribute("data-vivy-open");
             var labels = {
               a11: "Brief copié. Ouverture A11...",
-              k44: "Brief copié. Ouverture Kaen44...",
-              cockpit: "Brief copié. Ouverture du cockpit général..."
+              k44: "Brief copié. Ouverture Kaen44..."
             };
             var urls = {
-              a11: "https://a11.funesterie.me/login",
-              k44: "https://k44.funesterie.me/cockpit",
-              cockpit: "https://funesterie.me/cockpit/"
+              a11: "https://a11.funesterie.me",
+              k44: "https://k44.funesterie.me/cockpit"
             };
             copyBrief(labels[target] || "Brief copié.");
-            window.open(urls[target] || urls.cockpit, "_blank", "noopener,noreferrer");
+            window.open(urls[target] || urls.a11, "_blank", "noopener,noreferrer");
           });
         });
 

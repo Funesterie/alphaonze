@@ -259,7 +259,8 @@ function resolveDefaultOnlineApiBase() {
   if (configured) return configured;
   try {
     const hostname = globalThis.location?.hostname;
-    if (isPublicA11WebHost(hostname) || isPublicGeneralCockpitHost(hostname)) return DEFAULT_PROD_API_BASE;
+    if (isPublicGeneralCockpitHost(hostname)) return '';
+    if (isPublicA11WebHost(hostname)) return DEFAULT_PROD_API_BASE;
     if (isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
   } catch {
     // ignore browser location issues
@@ -348,7 +349,11 @@ function applyLaunchApiModeOverrides() {
       const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
       const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
       if (currentOverride !== onlineBase) {
-        globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
+        if (onlineBase) {
+          globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
+        } else {
+          globalThis.localStorage?.removeItem(API_BASE_STORAGE_KEY);
+        }
         changed = true;
       }
     }
@@ -377,7 +382,7 @@ export function getCurrentApiBase() {
     return normalizeApiBase(A11_API_PROFILE_BASES.local) || DEFAULT_LOCAL_PROFILE_BASE;
   }
   if (isPublicOnlineModeLocked()) {
-    return normalizeApiBase(A11_API_PROFILE_BASES.online) || DEFAULT_ONLINE_API_BASE;
+    return normalizeApiBase(A11_API_PROFILE_BASES.online);
   }
   try {
     const override = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
@@ -883,18 +888,32 @@ export type AuthSessionResponse = {
 };
 
 export async function fetchAuthSession(): Promise<AuthSessionResponse> {
+  const tokenAtStart = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (tokenAtStart) {
+    headers.Authorization = `Bearer ${tokenAtStart}`;
+  }
   const res = await fetch(getApiUrl('/api/auth/me'), {
     method: 'GET',
     credentials: 'include',
+    headers,
   });
   const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
   if (!res.ok || data?.ok === false) {
     if (res.status === 401 || data?.error === 'A11_JWT_Invalid') {
-      clearClientAuthSession({
-        reason: data?.error || 'A11_JWT_Invalid',
-        message: data?.message || `Session A11 invalide (${res.status})`,
-        status: res.status,
-      });
+      const currentToken = getAuthToken();
+      if (!currentToken || currentToken === tokenAtStart) {
+        clearClientAuthSession({
+          reason: data?.error || 'A11_JWT_Invalid',
+          message: data?.message || `Session A11 invalide (${res.status})`,
+          status: res.status,
+        });
+      } else {
+        console.warn('[A11] stale auth/me failure ignored after token rotation', {
+          reason: data?.error || 'A11_JWT_Invalid',
+          status: res.status,
+        });
+      }
     }
     throw new Error(data?.message || data?.error || `Session A11 invalide (${res.status})`);
   }
@@ -940,12 +959,24 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   const currentOrigin = globalThis.location?.origin || '';
   const currentHostname = globalThis.location?.hostname || '';
   const isKaen44Surface = isKaen44WebSurface();
+  const isGeneralSurface = isPublicGeneralCockpitHost(currentHostname);
   const fallbackBase = (isKaen44Surface || isPublicKaen44WebHost(currentHostname))
     ? DEFAULT_KAEN44_API_BASE
-    : DEFAULT_PROD_API_BASE;
-  const googleBaseUrl = isKaen44Surface
+    : (isGeneralSurface ? '' : DEFAULT_PROD_API_BASE);
+  const currentApiBase = normalizeApiBase(getCurrentApiBase());
+  const shouldUsePublicA11OAuthStart = !isKaen44Surface
+    && !isGeneralSurface
+    && isLocalWebHost(currentHostname)
+    && isLocalApiBaseCandidate(currentApiBase);
+  const googleBaseUrl = isGeneralSurface
+    ? ''
+    : isKaen44Surface
     ? normalizeApiBase(fallbackBase || DEFAULT_KAEN44_API_BASE)
-    : normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || fallbackBase);
+    : normalizeApiBase(
+        shouldUsePublicA11OAuthStart
+          ? (A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || fallbackBase)
+          : (currentApiBase || A11_API_PROFILE_BASES.online || fallbackBase)
+      );
   const target = new URL(
     buildApiUrlFromBase(googleBaseUrl, '/api/auth/google/start'),
     currentOrigin || fallbackBase || 'https://a11.funesterie.me'
@@ -953,6 +984,9 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
   target.searchParams.set('client', client || 'web');
   target.searchParams.set('scopeProfile', 'basic');
+  if (isLocalWebHost(currentHostname)) {
+    target.searchParams.set('prompt', 'consent');
+  }
   if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
   return target.toString();
 }
@@ -961,20 +995,29 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
   globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client));
 }
 
-export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
+type OAuthStartOptions = {
+  scopeProfile?: string;
+};
+
+export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
+  const currentHostname = globalThis.location?.hostname || '';
   const isKaen44Surface = isKaen44WebSurface();
-  const msBaseUrl = isKaen44Surface
+  const isGeneralSurface = isPublicGeneralCockpitHost(currentHostname);
+  const msBaseUrl = isGeneralSurface
+    ? ''
+    : isKaen44Surface
     ? normalizeApiBase(DEFAULT_KAEN44_API_BASE || 'https://k44.funesterie.me')
     : normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.me');
   const target = new URL(buildApiUrlFromBase(msBaseUrl, '/api/auth/microsoft/start'), globalThis.location?.origin || msBaseUrl || 'https://a11.funesterie.me');
   target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
   target.searchParams.set('client', client || 'web');
+  if (options.scopeProfile) target.searchParams.set('scopeProfile', options.scopeProfile);
   if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
   return target.toString();
 }
 
-export function startMicrosoftOAuth(returnTo = '/auth/success', client = 'web') {
-  globalThis.location.assign(getMicrosoftOAuthStartUrl(returnTo, client));
+export function startMicrosoftOAuth(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
+  globalThis.location.assign(getMicrosoftOAuthStartUrl(returnTo, client, options));
 }
 
 export async function register(username: string, email: string, password: string) {
@@ -1053,17 +1096,38 @@ export async function resetPassword(token: string, password: string) {
   return data;
 }
 
-export function logout() {
+export async function logout(options: { allSessions?: boolean } = {}) {
+  const allSessions = options.allSessions === true;
   try {
-    void fetch(getApiUrl('/api/auth/logout'), {
+    const headers = buildAuthHeaders('application/json');
+    await fetch(getApiUrl(allSessions ? '/api/auth/logout-all' : '/api/auth/logout'), {
       method: 'POST',
       credentials: 'include',
+      headers,
+      body: JSON.stringify(allSessions ? { allSessions: true } : {}),
     });
   } catch {
     // ignore logout transport issues
   }
   clearAuthToken();
   setAuthDisplayName('');
+}
+
+export function logoutAllSessions() {
+  return logout({ allSessions: true });
+}
+
+export function isAuthInvalidError(error: unknown) {
+  const code = String((error as { code?: string } | null | undefined)?.code || "").trim();
+  const status = Number((error as { status?: number } | null | undefined)?.status);
+  const message = String((error as { message?: string } | null | undefined)?.message || "").trim().toLowerCase();
+  return code === "A11_JWT_Invalid"
+    || code === "A11_JWT_Missing"
+    || status === 401
+    || message.includes("session a11 invalide")
+    || message.includes("session révoquée")
+    || message.includes("session revoquee")
+    || message.includes("reconnecte-toi");
 }
 
 function appendJwtHeaders(headers: Record<string, string>) {
@@ -1105,7 +1169,7 @@ async function readResponsePayloadSafe(res: Response) {
   }
 }
 
-async function throwIfAuthInvalidResponse(res: Response) {
+async function throwIfAuthInvalidResponse(res: Response, tokenAtStart = '') {
   if (res.ok) return;
 
   const { text, data } = await readResponsePayloadSafe(res.clone());
@@ -1115,11 +1179,19 @@ async function throwIfAuthInvalidResponse(res: Response) {
     || (!isLikelyHtmlDocument(text) ? text.trim() : '');
 
   if (res.status === 401 || errorCode === 'A11_JWT_Invalid' || errorCode === 'A11_JWT_Missing') {
-    clearClientAuthSession({
-      reason: errorCode || 'A11_JWT_Invalid',
-      message: message || `Session A11 invalide (${res.status})`,
-      status: res.status,
-    });
+    const currentToken = getAuthToken();
+    if (!currentToken || currentToken === tokenAtStart) {
+      clearClientAuthSession({
+        reason: errorCode || 'A11_JWT_Invalid',
+        message: message || `Session A11 invalide (${res.status})`,
+        status: res.status,
+      });
+    } else {
+      console.warn('[A11] stale authenticated request failure ignored after token rotation', {
+        reason: errorCode || 'A11_JWT_Invalid',
+        status: res.status,
+      });
+    }
 
     const authError = new Error(message || errorCode || `Session A11 invalide (${res.status})`) as Error & {
       code?: string;
@@ -1132,11 +1204,12 @@ async function throwIfAuthInvalidResponse(res: Response) {
 }
 
 async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const tokenAtStart = getAuthToken();
   const res = await fetch(input, {
     credentials: 'include',
     ...init,
   });
-  await throwIfAuthInvalidResponse(res);
+  await throwIfAuthInvalidResponse(res, tokenAtStart);
   return res;
 }
 
