@@ -4493,7 +4493,12 @@ export function App() {
     const refreshCookieSession = () => {
       void fetchAuthSession()
         .then((session) => {
-          if (!session?.authenticated && !session?.user) return;
+          if (!session?.authenticated && !session?.user) {
+            setIsAuthenticated(false);
+            setDisplayName("Utilisateur");
+            setIsFunesterieAdmin(false);
+            return;
+          }
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
           setIsFunesterieAdmin(Boolean(session?.user?.fullAccess || String(session?.user?.role || "").toLowerCase() === "admin" || hasAuthenticatedAdminApiAccess()));
@@ -4503,6 +4508,9 @@ export function App() {
           }
         })
         .catch(() => {
+          setIsAuthenticated(false);
+          setDisplayName("Utilisateur");
+          setIsFunesterieAdmin(false);
           if (isAuthSuccessRoute(pathname)) {
             const failurePath = resolveAuthFailureRedirectPath(pathname);
             window.history.replaceState({}, "", failurePath);
@@ -4544,9 +4552,7 @@ export function App() {
     if (hasAuthToken()) {
       const scope = getAuthStorageScope();
       if (scope) {
-        setIsAuthenticated(true);
-        setDisplayName(getAuthDisplayName() || "Utilisateur");
-        setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+        refreshCookieSession();
         return;
       }
       clearAuthToken();
@@ -4603,7 +4609,9 @@ export function App() {
       if (authInvalidatedRef.current) return;
       const detail = (event as CustomEvent<{ reason?: string; message?: string; status?: number }>).detail || {};
       authInvalidatedRef.current = true;
-      console.warn("[A11] auth invalidated", detail);
+      if (!(isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin)) {
+        console.warn("[A11] auth invalidated", detail);
+      }
       cancelSpeech();
       setDisplayName("Utilisateur");
       setIsAuthenticated(false);
@@ -4638,7 +4646,7 @@ export function App() {
 
     globalThis.addEventListener("a11:auth-invalid", onAuthInvalid);
     return () => globalThis.removeEventListener("a11:auth-invalid", onAuthInvalid);
-  }, []);
+  }, [isGeneralAccount, isGeneralAgents, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms]);
 
   useEffect(() => {
     if (isAuthenticated) {
