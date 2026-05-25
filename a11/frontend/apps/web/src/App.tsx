@@ -6140,29 +6140,29 @@ export function App() {
 
   // Chargement de l'historique backend au montage
   useEffect(() => {
-    if (!hasPrivateSession || isResetRoute) return;
+    if (isFunesteriePublicShell || !hasPrivateSession || isResetRoute) return;
     refreshA11History();
-  }, [hasPrivateSession, isResetRoute]);
+  }, [hasPrivateSession, isResetRoute, isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (!hasPrivateSession || isResetRoute || isKaen44) return;
+    if (isFunesteriePublicShell || !hasPrivateSession || isResetRoute || isKaen44) return;
     if (!hasAuthenticatedAdminApiAccess()) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
     }
     refreshRemoteAiProfiles();
-  }, [hasPrivateSession, isResetRoute, isKaen44]);
+  }, [hasPrivateSession, isResetRoute, isKaen44, isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (!hasPrivateSession) return;
+    if (isFunesteriePublicShell || !hasPrivateSession) return;
     if (activeView !== 'chat') return;
     refreshConversationActivity(currentConversationId);
     refreshConversationResources(currentConversationId);
-  }, [hasPrivateSession, activeView, currentConversationId]);
+  }, [hasPrivateSession, activeView, currentConversationId, isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (!hasPrivateSession) return;
+    if (isFunesteriePublicShell || !hasPrivateSession) return;
     if (activeView !== 'admin' || adminSection !== 'memory') return;
     if (!hasAdminApiAccess()) {
       setTechnicalMemoSummary(null);
@@ -6170,7 +6170,7 @@ export function App() {
       return;
     }
     refreshTechnicalMemoSummary();
-  }, [hasPrivateSession, activeView, adminSection]);
+  }, [hasPrivateSession, activeView, adminSection, isFunesteriePublicShell]);
 
   useEffect(() => {
     if (!uploadFeedback) return;
@@ -6220,7 +6220,7 @@ export function App() {
 
   // Handler pour rafraîchir la liste de l'historique
   async function refreshA11History() {
-    if (!hasPrivateSession) {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setA11History([]);
       setLoadingHistory(false);
       return;
@@ -6242,7 +6242,7 @@ export function App() {
   }
 
   async function refreshTechnicalMemoSummary() {
-    if (!hasPrivateSession || !hasAdminApiAccess()) {
+    if (isFunesteriePublicShell || !hasPrivateSession || !hasAdminApiAccess()) {
       setTechnicalMemoSummary(null);
       setTechnicalMemoError("");
       return;
