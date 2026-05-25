@@ -3166,8 +3166,12 @@ function FunesteriePublicFooter({
         <a href={surfaceLinks.terms}>Conditions</a>
       </div>
       <div className="fun-public-footer-session" aria-label="Session Funesterie">
-        <span>{authenticated ? (displayName || "Connecté") : "Session"}</span>
-        <button type="button" onClick={onLogout}>Se déconnecter</button>
+        <span>{authenticated ? (displayName || "Connecté") : "Public"}</span>
+        {authenticated ? (
+          <button type="button" onClick={onLogout}>Se déconnecter</button>
+        ) : (
+          <a href={buildCentralLoginUrl(surfaceLinks.account)}>Se connecter</a>
+        )}
       </div>
     </footer>
   );
@@ -4375,10 +4379,19 @@ export function App() {
   const isGeneralPrivacy = isGeneralPrivacyRoute();
   const isGeneralTerms = isGeneralTermsRoute();
   const isGeneralLogin = isGeneralLoginRoute();
+  const isFunesteriePublicShell = isGeneralCockpit
+    || isGeneralHome
+    || isGeneralAgents
+    || isGeneralAccount
+    || isGeneralContact
+    || isGeneralPrivacy
+    || isGeneralTerms
+    || isGeneralLogin;
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authSessionReady, setAuthSessionReady] = useState(false);
   const [isFunesterieAdmin, setIsFunesterieAdmin] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
@@ -4400,6 +4413,7 @@ export function App() {
   const [micStatusMessage, setMicStatusMessage] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const authInvalidatedRef = useRef(false);
+  const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
 
   useEffect(() => {
     document.title = isGeneralCockpit
@@ -4491,17 +4505,20 @@ export function App() {
     const hostname = window.location.hostname.toLowerCase();
 
     const refreshCookieSession = () => {
+      setAuthSessionReady(false);
       void fetchAuthSession()
         .then((session) => {
           if (!session?.authenticated && !session?.user) {
             setIsAuthenticated(false);
             setDisplayName("Utilisateur");
             setIsFunesterieAdmin(false);
+            setAuthSessionReady(true);
             return;
           }
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
           setIsFunesterieAdmin(Boolean(session?.user?.fullAccess || String(session?.user?.role || "").toLowerCase() === "admin" || hasAuthenticatedAdminApiAccess()));
+          setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {
             const surface = getCurrentSurfaceKind();
             window.history.replaceState({}, "", resolveAuthSuccessRedirectPath(pathname, surface));
@@ -4511,6 +4528,7 @@ export function App() {
           setIsAuthenticated(false);
           setDisplayName("Utilisateur");
           setIsFunesterieAdmin(false);
+          setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {
             const failurePath = resolveAuthFailureRedirectPath(pathname);
             window.history.replaceState({}, "", failurePath);
@@ -4523,6 +4541,7 @@ export function App() {
       setIsAuthenticated(true);
       setDisplayName(getAuthDisplayName() || "Utilisateur");
       setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+      setAuthSessionReady(true);
       if (isAuthSuccessRoute(pathname)) {
         const surface = getCurrentSurfaceKind();
         window.history.replaceState({}, "", resolveAuthSuccessRedirectPath(pathname, surface));
@@ -4545,11 +4564,13 @@ export function App() {
         setIsAuthenticated(true);
         setDisplayName("Djeff local");
         setIsFunesterieAdmin(true);
+        setAuthSessionReady(true);
       });
       return;
     }
 
-    if (hasAuthToken()) {
+    const clientHasAuthToken = hasAuthToken();
+    if (clientHasAuthToken) {
       const scope = getAuthStorageScope();
       if (scope) {
         refreshCookieSession();
@@ -4569,19 +4590,28 @@ export function App() {
         || hostname === 'kaen44.funesterie.me'
         || hostname === 'vivy.funesterie.me'
       );
-    if (!shouldCheckCookieSession) return;
+    if (!shouldCheckCookieSession) {
+      setAuthSessionReady(true);
+      return;
+    }
+
+    const isGeneralPublicHost = hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
+    if (isGeneralPublicHost && !isAuthSuccessRoute(pathname)) {
+      setAuthSessionReady(true);
+      return;
+    }
 
     refreshCookieSession();
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setVoiceReferences([]);
       setVoiceReferenceStatus("");
       return;
     }
     void refreshVoiceReferences();
-  }, [isAuthenticated]);
+  }, [hasPrivateSession, isFunesteriePublicShell]);
 
   useEffect(() => {
     const onDiagnostics = (event: Event) => {
@@ -4609,13 +4639,14 @@ export function App() {
       if (authInvalidatedRef.current) return;
       const detail = (event as CustomEvent<{ reason?: string; message?: string; status?: number }>).detail || {};
       authInvalidatedRef.current = true;
-      if (!(isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin)) {
+      if (!isFunesteriePublicShell) {
         console.warn("[A11] auth invalidated", detail);
       }
       cancelSpeech();
       setDisplayName("Utilisateur");
       setIsAuthenticated(false);
       setIsFunesterieAdmin(false);
+      setAuthSessionReady(true);
       setSending(false);
       sendLockRef.current = false;
       pendingMessageKeyRef.current = "";
@@ -4646,13 +4677,13 @@ export function App() {
 
     globalThis.addEventListener("a11:auth-invalid", onAuthInvalid);
     return () => globalThis.removeEventListener("a11:auth-invalid", onAuthInvalid);
-  }, [isGeneralAccount, isGeneralAgents, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms]);
+  }, [isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (hasPrivateSession) {
       authInvalidatedRef.current = false;
     }
-  }, [isAuthenticated]);
+  }, [hasPrivateSession]);
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -4663,7 +4694,7 @@ export function App() {
   const queueProcessingRef = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
       return;
     }
@@ -4685,7 +4716,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [hasPrivateSession, isFunesteriePublicShell]);
 
   const portraitFramesById = useMemo(() => {
     const map = new Map<string, A11PortraitFrame>();
@@ -4804,8 +4835,8 @@ export function App() {
   const pendingSubmitAtRef = useRef(0);
   const lastCompletedMessageRef = useRef({ key: "", at: 0 });
   const authStorageScope = useMemo(
-    () => (isAuthenticated ? getAuthStorageScope() : ""),
-    [isAuthenticated]
+    () => (hasPrivateSession ? getAuthStorageScope() : ""),
+    [hasPrivateSession]
   );
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
@@ -5225,7 +5256,7 @@ export function App() {
 
   async function refreshConversationActivity(conversationId?: string | null) {
     const targetConversationId = String(conversationId || "").trim();
-    if (!targetConversationId || hasLocalDevSession() || !isAuthenticated || authInvalidatedRef.current) {
+    if (isFunesteriePublicShell || !targetConversationId || hasLocalDevSession() || !hasPrivateSession) {
       setConversationActivity([]);
       setActivityError("");
       return;
@@ -5252,7 +5283,7 @@ export function App() {
 
   async function refreshConversationResources(conversationId?: string | null) {
     const targetConversationId = String(conversationId || "").trim();
-    if (!targetConversationId || hasLocalDevSession() || !isAuthenticated || authInvalidatedRef.current) {
+    if (isFunesteriePublicShell || !targetConversationId || hasLocalDevSession() || !hasPrivateSession) {
       setConversationResources([]);
       setResourceError("");
       return;
@@ -5278,7 +5309,7 @@ export function App() {
   }
 
   async function refreshRemoteAiProfiles() {
-    if (!isAuthenticated || authInvalidatedRef.current || !hasAuthenticatedAdminApiAccess()) {
+    if (isFunesteriePublicShell || !hasPrivateSession || !hasAuthenticatedAdminApiAccess()) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
@@ -5471,7 +5502,7 @@ export function App() {
   }
 
   async function refreshVoiceReferences() {
-    if (!isAuthenticated || authInvalidatedRef.current) {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setVoiceReferences([]);
       setVoiceReferenceStatus("");
       return;
@@ -6109,29 +6140,29 @@ export function App() {
 
   // Chargement de l'historique backend au montage
   useEffect(() => {
-    if (!isAuthenticated || isResetRoute) return;
+    if (!hasPrivateSession || isResetRoute) return;
     refreshA11History();
-  }, [isAuthenticated, isResetRoute]);
+  }, [hasPrivateSession, isResetRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isResetRoute || isKaen44) return;
+    if (!hasPrivateSession || isResetRoute || isKaen44) return;
     if (!hasAuthenticatedAdminApiAccess()) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
     }
     refreshRemoteAiProfiles();
-  }, [isAuthenticated, isResetRoute, isKaen44]);
+  }, [hasPrivateSession, isResetRoute, isKaen44]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!hasPrivateSession) return;
     if (activeView !== 'chat') return;
     refreshConversationActivity(currentConversationId);
     refreshConversationResources(currentConversationId);
-  }, [isAuthenticated, activeView, currentConversationId]);
+  }, [hasPrivateSession, activeView, currentConversationId]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!hasPrivateSession) return;
     if (activeView !== 'admin' || adminSection !== 'memory') return;
     if (!hasAdminApiAccess()) {
       setTechnicalMemoSummary(null);
@@ -6139,7 +6170,7 @@ export function App() {
       return;
     }
     refreshTechnicalMemoSummary();
-  }, [isAuthenticated, activeView, adminSection]);
+  }, [hasPrivateSession, activeView, adminSection]);
 
   useEffect(() => {
     if (!uploadFeedback) return;
@@ -6189,7 +6220,7 @@ export function App() {
 
   // Handler pour rafraîchir la liste de l'historique
   async function refreshA11History() {
-    if (!isAuthenticated || authInvalidatedRef.current) {
+    if (!hasPrivateSession) {
       setA11History([]);
       setLoadingHistory(false);
       return;
@@ -6211,7 +6242,7 @@ export function App() {
   }
 
   async function refreshTechnicalMemoSummary() {
-    if (!isAuthenticated || authInvalidatedRef.current || !hasAdminApiAccess()) {
+    if (!hasPrivateSession || !hasAdminApiAccess()) {
       setTechnicalMemoSummary(null);
       setTechnicalMemoError("");
       return;
