@@ -887,10 +887,22 @@ export type AuthSessionResponse = {
   message?: string;
 };
 
+function shouldUseCookieOnlyAuthSessionProbe() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').toLowerCase();
+    if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
+    const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
+    return pathname === '/'
+      || /^\/(?:home|accueil|agents|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   const tokenAtStart = getAuthToken();
   const headers: Record<string, string> = {};
-  if (tokenAtStart) {
+  if (tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe()) {
     headers.Authorization = `Bearer ${tokenAtStart}`;
   }
   const res = await fetch(getApiUrl('/api/auth/me'), {
@@ -921,6 +933,10 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
     setAuthToken(data.token);
   }
   if (!data?.authenticated && !data?.user) {
+    if (tokenAtStart) {
+      clearAuthToken();
+      setAuthDisplayName('');
+    }
     return data;
   }
   setAuthUserProfile(data?.user);
