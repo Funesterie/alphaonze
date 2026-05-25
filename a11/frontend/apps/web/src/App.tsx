@@ -3978,7 +3978,9 @@ function FunesterieAccountPage({
             </header>
             <p>Voix, langue et réglages restent dans le navigateur quand ils ne nécessitent pas serveur.</p>
             <footer>
-              <a href={surfaceLinks.kaen44Cockpit}>Ouvrir K44</a>
+              <a href={authenticated ? surfaceLinks.account : surfaceLinks.login}>
+                {authenticated ? "Voir le compte" : "Connexion Funesterie"}
+              </a>
             </footer>
           </article>
         </div>
