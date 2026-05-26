@@ -554,6 +554,23 @@ function buildAuthSuccessReturnToForTarget(targetUrl: string) {
   return authSuccess.toString();
 }
 
+function buildSessionBridgeUrl(targetUrl: string) {
+  const target = normalizeAllowedReturnTo(targetUrl);
+  if (typeof window === "undefined") return target;
+
+  const token = getAuthToken();
+  if (!token) return buildCentralLoginUrl(target);
+
+  try {
+    const parsedTarget = new URL(target);
+    if (parsedTarget.origin === window.location.origin) return parsedTarget.toString();
+  } catch {
+    return buildCentralLoginUrl(target);
+  }
+
+  return appendAuthTokenFragment(buildAuthSuccessReturnToForTarget(target), token, "funesterie");
+}
+
 function appendAuthTokenFragment(targetUrl: string, token?: string | null, provider = "local") {
   const cleanToken = String(token || "").trim();
   if (!cleanToken) return targetUrl;
@@ -3944,6 +3961,11 @@ function FunesterieAccountPage({
   onLogout?: () => void;
 }) {
   const overview = useMemo(() => readFunesterieAccountOverview(), [authenticated, displayName]);
+  const openWithSession = (event: React.MouseEvent<HTMLButtonElement>, targetUrl: string) => {
+    event.preventDefault();
+    if (typeof window === "undefined") return;
+    window.location.assign(buildSessionBridgeUrl(targetUrl));
+  };
 
   return (
     <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Compte Funesterie">
@@ -4008,7 +4030,7 @@ function FunesterieAccountPage({
             </header>
             <p>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} détectée{overview.conversations > 1 ? "s" : ""} côté navigateur.</p>
             <footer>
-              <a href={surfaceLinks.a11Cockpit}>Ouvrir A11</a>
+              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.a11Cockpit)}>Ouvrir A11</button>
             </footer>
           </article>
           <article className="fun-token-card">
@@ -4018,7 +4040,7 @@ function FunesterieAccountPage({
             </header>
             <p>{overview.files} ressource{overview.files > 1 ? "s" : ""} locale{overview.files > 1 ? "s" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}.</p>
             <footer>
-              <a href={surfaceLinks.vivy}>Ouvrir Vivy</a>
+              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.vivy)}>Ouvrir Vivy</button>
             </footer>
           </article>
           <article className="fun-token-card">
@@ -4028,9 +4050,7 @@ function FunesterieAccountPage({
             </header>
             <p>Voix, langue et réglages restent dans le navigateur quand ils ne nécessitent pas serveur.</p>
             <footer>
-              <a href={authenticated ? surfaceLinks.account : surfaceLinks.login}>
-                {authenticated ? "Voir le compte" : "Connexion Funesterie"}
-              </a>
+              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.kaen44Cockpit)}>Ouvrir K44</button>
             </footer>
           </article>
         </div>
@@ -6664,6 +6684,11 @@ export function App() {
   }
 
   if (isGeneralLogin) {
+    if (isAuthenticated && typeof window !== "undefined") {
+      window.location.replace(buildSessionBridgeUrl(getRequestedLoginReturnTo()));
+      return null;
+    }
+
     return <LoginPanel onLoginSuccess={() => {
       setIsAuthenticated(true);
       setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
