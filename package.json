@@ -27,7 +27,9 @@
     "google:npmrc": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Write-GoogleArtifactNpmrc.ps1",
     "google:npm-auth": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Refresh-GoogleArtifactNpmAuth.ps1",
     "google:packages:dry": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Publish-GoogleArtifactRegistry.ps1 -DryRun",
-    "google:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Publish-GoogleArtifactRegistry.ps1 -Publish"
+    "google:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Publish-GoogleArtifactRegistry.ps1 -Publish",
+    "nossen:all-in-one:inventory": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/npm/Get-NossenAllInOneInventory.ps1",
+    "nossen:all-in-one:inventory:json": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/npm/Get-NossenAllInOneInventory.ps1 -Json"
   },
   "version": "0.0.1",
   "funding": {

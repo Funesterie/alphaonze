@@ -1,0 +1,50 @@
+'use strict';
+
+const privatePackages = Object.freeze([
+  '@funeste/allmight-nossen',
+  '@funeste/bat-nossen',
+  '@funeste/bat-system-nossen',
+  '@funeste/beam-nossen',
+  '@funeste/dragon-contracts-nossen',
+  '@funeste/dragon-nossen',
+  '@funeste/dragon-upstream-nossen',
+  '@funeste/envapt-superimg-nossen',
+  '@funeste/envaptex-nossen',
+  '@funeste/freeland-bros-nossen',
+  '@funeste/freeland-nossen',
+  '@funeste/graph-router-nossen',
+  '@funeste/katana-nossen',
+  '@funeste/logic-reduce-nossen',
+  '@funeste/mcp-agent-bus-nossen',
+  '@funeste/mcp-chopper-mixer-nossen',
+  '@funeste/mcp-cloud-assets-nossen',
+  '@funeste/mcp-job-queue-nossen',
+  '@funeste/mcp-media-bridge-nossen',
+  '@funeste/mcp-memory-graph-nossen',
+  '@funeste/mcp-public-endpoints-nossen',
+  '@funeste/mcp-qflush-control-nossen',
+  '@funeste/mcp-retro-session-nossen',
+  '@funeste/mcp-security-preflight-nossen',
+  '@funeste/mcp-tool-manifest-nossen',
+  '@funeste/mcp-toolkit-nossen',
+  '@funeste/mcp-web-drafts-nossen',
+  '@funeste/mcp-worker-supervisor-nossen',
+  '@funeste/morphing-nossen',
+  '@funeste/nezlephant-nossen',
+  '@funeste/qflush-nossen',
+  '@funeste/qflush-runner-nossen',
+  '@funeste/rome-nossen',
+  '@funeste/scentgate-nossen',
+  '@funeste/scream-nossen',
+  '@funeste/spyder-graph-nossen',
+  '@funeste/spyder-nossen'
+]);
+
+module.exports = Object.freeze({
+  name: '@funeste/all-in-one-nossen',
+  scope: 'private',
+  generatedAt: '2026-05-25',
+  publicMetaPackage: '@nossen/all-in-one',
+  privatePackageCount: privatePackages.length,
+  privatePackages
+});

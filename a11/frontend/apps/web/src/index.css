@@ -1482,9 +1482,9 @@
     overscroll-behavior-x: none;
   }
 
-  html:not(.a11-auth-page-root):not(.kaen-public-page-root),
-  html:not(.a11-auth-page-root):not(.kaen-public-page-root) body,
-  html:not(.a11-auth-page-root):not(.kaen-public-page-root) #root {
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root):not(.funesterie-public-page-root),
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root):not(.funesterie-public-page-root) body,
+  html:not(.a11-auth-page-root):not(.kaen-public-page-root):not(.funesterie-public-page-root) #root {
     height: 100%;
     overflow-y: hidden;
   }
@@ -1494,7 +1494,10 @@
   html.a11-auth-page-root #root,
   html.kaen-public-page-root,
   html.kaen-public-page-root body,
-  html.kaen-public-page-root #root {
+  html.kaen-public-page-root #root,
+  html.funesterie-public-page-root,
+  html.funesterie-public-page-root body,
+  html.funesterie-public-page-root #root {
     height: auto !important;
     min-height: 100%;
     overflow-y: auto !important;
@@ -1856,7 +1859,10 @@ html.kaen-public-page-root body,
 html.kaen-public-page-root #root,
 html.vivy-public-page-root,
 html.vivy-public-page-root body,
-html.vivy-public-page-root #root {
+html.vivy-public-page-root #root,
+html.funesterie-public-page-root,
+html.funesterie-public-page-root body,
+html.funesterie-public-page-root #root {
   height: auto !important;
   min-height: 100%;
   overflow-y: auto !important;
@@ -4416,7 +4422,10 @@ body {
   html.a11-auth-page-root #root,
   html.kaen-public-page-root,
   html.kaen-public-page-root body,
-  html.kaen-public-page-root #root {
+  html.kaen-public-page-root #root,
+  html.funesterie-public-page-root,
+  html.funesterie-public-page-root body,
+  html.funesterie-public-page-root #root {
     height: auto !important;
     min-height: 100svh !important;
     overflow-x: hidden !important;
@@ -4429,7 +4438,8 @@ body {
   html.a11-auth-page-root .alpha-auth-shell,
   html.a11-auth-page-root .kaen-auth-shell,
   html.kaen-public-page-root .kaen-public-shell,
-  html.kaen-public-page-root .vivy-public-shell {
+  html.kaen-public-page-root .vivy-public-shell,
+  html.funesterie-public-page-root .fun-home-shell {
     height: auto !important;
     min-height: 100svh !important;
     overflow-x: hidden !important;
@@ -5892,7 +5902,7 @@ body {
 }
 
 .fun-home-agents {
-  width: min(1260px, 100%);
+  width: min(1360px, 100%);
   margin-inline: auto;
 }
 
@@ -5988,13 +5998,13 @@ body {
 
 .fun-home-agent-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(300px, 1fr));
+  grid-template-columns: repeat(3, minmax(340px, 1fr));
   gap: 16px;
 }
 
 .fun-home-agent-card {
   position: relative;
-  min-height: clamp(520px, 46vw, 680px);
+  min-height: clamp(620px, 50vw, 780px);
   display: grid;
   align-content: end;
   overflow: hidden;
@@ -6354,6 +6364,61 @@ body {
   color: var(--fun-muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.fun-package-panel {
+  width: min(1180px, 100%);
+  margin: 22px auto 0;
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--fun-line);
+  border-radius: 8px;
+  padding: clamp(18px, 3vw, 28px);
+  background: rgba(7, 9, 15, 0.72);
+}
+
+.fun-package-panel header {
+  display: grid;
+  gap: 4px;
+}
+
+.fun-package-panel header span {
+  color: #64fff0;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fun-package-panel header h2 {
+  margin: 0;
+  color: #fff8ff;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1;
+}
+
+.fun-package-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fun-package-grid a {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(183, 92, 255, 0.26);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #f5e7ff;
+  background: rgba(75, 42, 126, 0.18);
+  font-size: 13px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.fun-package-grid a:hover {
+  border-color: rgba(54, 212, 196, 0.48);
+  background: rgba(54, 212, 196, 0.08);
 }
 
 .fun-token-panel {
@@ -6772,7 +6837,7 @@ body {
   }
 
   .fun-home-agent-card {
-    min-height: 520px;
+    min-height: 600px;
   }
 
   .a11-media-modules {
@@ -6789,6 +6854,12 @@ body {
     padding: 10px;
   }
 
+  .fun-home-nav-links {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .fun-home-brand span {
     font-size: 18px;
   }
@@ -6797,6 +6868,8 @@ body {
   .fun-home-cockpit {
     flex: 1 1 auto;
     min-height: 40px;
+    padding-inline: 8px;
+    font-size: 11px;
   }
 
   .fun-home-actions a,
@@ -6809,7 +6882,7 @@ body {
   }
 
   .fun-home-agent-card {
-    min-height: min(620px, 136vw);
+    min-height: min(680px, 150vw);
   }
 
   .fun-account-grid,
@@ -6843,6 +6916,10 @@ body {
   .fun-contact-hero > img {
     width: 100%;
     max-height: none;
+  }
+
+  .fun-package-grid {
+    grid-template-columns: 1fr;
   }
 
   .fun-home-footer a {

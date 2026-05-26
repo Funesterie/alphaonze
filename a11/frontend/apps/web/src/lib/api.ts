@@ -971,7 +971,11 @@ function resolveOAuthReturnTo(returnTo: string) {
   }
 }
 
-export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
+type OAuthStartOptions = {
+  scopeProfile?: string;
+};
+
+export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
   const currentOrigin = globalThis.location?.origin || '';
   const currentHostname = globalThis.location?.hostname || '';
   const isKaen44Surface = isKaen44WebSurface();
@@ -999,7 +1003,7 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   );
   target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
   target.searchParams.set('client', client || 'web');
-  target.searchParams.set('scopeProfile', 'basic');
+  target.searchParams.set('scopeProfile', options.scopeProfile || 'basic');
   if (isLocalWebHost(currentHostname)) {
     target.searchParams.set('prompt', 'consent');
   }
@@ -1007,13 +1011,9 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   return target.toString();
 }
 
-export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
-  globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client));
+export function startGoogleOAuth(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
+  globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client, options));
 }
-
-type OAuthStartOptions = {
-  scopeProfile?: string;
-};
 
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
   const currentHostname = globalThis.location?.hostname || '';

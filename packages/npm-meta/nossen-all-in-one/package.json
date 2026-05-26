@@ -1,0 +1,68 @@
+{
+  "name": "@nossen/all-in-one",
+  "version": "0.1.0",
+  "description": "Public all-in-one NOSSEN package that installs every public NOSSEN module.",
+  "type": "commonjs",
+  "main": "index.cjs",
+  "files": [
+    "README.md",
+    "index.cjs",
+    "package.json"
+  ],
+  "keywords": [
+    "nossen",
+    "funesterie",
+    "knowledge-graph",
+    "mcp",
+    "automation",
+    "all-in-one"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/Funesterie/funesterie/tree/master/packages/npm-meta/nossen-all-in-one#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/npm-meta/nossen-all-in-one"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@nossen/allmight": "2.0.1",
+    "@nossen/bat": "2.0.1",
+    "@nossen/bat-system": "2.0.1",
+    "@nossen/beam": "2.0.1",
+    "@nossen/dragon": "2.0.1",
+    "@nossen/dragon-contracts": "2.0.1",
+    "@nossen/dragon-upstream": "2.0.1",
+    "@nossen/envapt-superimg": "2.0.0",
+    "@nossen/envaptex": "2.0.1",
+    "@nossen/freeland": "2.0.1",
+    "@nossen/freeland-bros": "2.0.1",
+    "@nossen/katana": "2.0.0",
+    "@nossen/logic-reduce": "2.0.0",
+    "@nossen/mcp-agent-bus": "0.1.1",
+    "@nossen/mcp-chopper-mixer": "0.1.1",
+    "@nossen/mcp-cloud-assets": "0.1.1",
+    "@nossen/mcp-job-queue": "0.1.1",
+    "@nossen/mcp-media-bridge": "0.1.1",
+    "@nossen/mcp-memory-graph": "0.1.1",
+    "@nossen/mcp-public-endpoints": "0.1.1",
+    "@nossen/mcp-qflush-control": "0.1.1",
+    "@nossen/mcp-retro-session": "0.1.1",
+    "@nossen/mcp-security-preflight": "0.1.1",
+    "@nossen/mcp-tool-manifest": "0.1.1",
+    "@nossen/mcp-toolkit": "0.1.1",
+    "@nossen/mcp-web-drafts": "0.1.1",
+    "@nossen/mcp-worker-supervisor": "0.1.1",
+    "@nossen/morphing": "2.0.1",
+    "@nossen/nezlephant": "2.0.1",
+    "@nossen/qflush": "2.0.1",
+    "@nossen/qflush-runner": "2.0.1",
+    "@nossen/rome": "2.0.1",
+    "@nossen/scentgate": "2.0.0",
+    "@nossen/scream": "2.0.1",
+    "@nossen/spyder": "2.0.1",
+    "a11-coder": "1.0.1"
+  }
+}

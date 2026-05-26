@@ -1,0 +1,69 @@
+{
+  "name": "@funeste/all-in-one-nossen",
+  "version": "0.1.0",
+  "description": "Private all-in-one Funesterie/NOSSEN package for authenticated operator machines.",
+  "type": "commonjs",
+  "main": "index.cjs",
+  "files": [
+    "README.md",
+    "index.cjs",
+    "package.json"
+  ],
+  "keywords": [
+    "funesterie",
+    "nossen",
+    "private",
+    "operator",
+    "all-in-one"
+  ],
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Funesterie/funesterie/tree/master/packages/npm-meta/funeste-all-in-one-nossen#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/npm-meta/funeste-all-in-one-nossen"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "dependencies": {
+    "@funeste/allmight-nossen": "2.0.0",
+    "@funeste/bat-nossen": "2.0.0",
+    "@funeste/bat-system-nossen": "2.0.0",
+    "@funeste/beam-nossen": "2.0.0",
+    "@funeste/dragon-contracts-nossen": "2.0.0",
+    "@funeste/dragon-nossen": "2.0.0",
+    "@funeste/dragon-upstream-nossen": "2.0.0",
+    "@funeste/envapt-superimg-nossen": "2.0.0",
+    "@funeste/envaptex-nossen": "2.0.0",
+    "@funeste/freeland-bros-nossen": "2.0.0",
+    "@funeste/freeland-nossen": "2.0.0",
+    "@funeste/graph-router-nossen": "2.0.0",
+    "@funeste/katana-nossen": "2.0.0",
+    "@funeste/logic-reduce-nossen": "2.0.1",
+    "@funeste/mcp-agent-bus-nossen": "0.1.1",
+    "@funeste/mcp-chopper-mixer-nossen": "0.1.1",
+    "@funeste/mcp-cloud-assets-nossen": "0.1.1",
+    "@funeste/mcp-job-queue-nossen": "0.1.1",
+    "@funeste/mcp-media-bridge-nossen": "0.1.1",
+    "@funeste/mcp-memory-graph-nossen": "0.1.1",
+    "@funeste/mcp-public-endpoints-nossen": "0.1.1",
+    "@funeste/mcp-qflush-control-nossen": "0.1.1",
+    "@funeste/mcp-retro-session-nossen": "0.1.1",
+    "@funeste/mcp-security-preflight-nossen": "0.1.1",
+    "@funeste/mcp-tool-manifest-nossen": "0.1.1",
+    "@funeste/mcp-toolkit-nossen": "0.1.1",
+    "@funeste/mcp-web-drafts-nossen": "0.1.1",
+    "@funeste/mcp-worker-supervisor-nossen": "0.1.1",
+    "@funeste/morphing-nossen": "2.0.0",
+    "@funeste/nezlephant-nossen": "2.0.0",
+    "@funeste/qflush-nossen": "2.0.0",
+    "@funeste/qflush-runner-nossen": "2.0.0",
+    "@funeste/rome-nossen": "2.0.0",
+    "@funeste/scentgate-nossen": "2.0.0",
+    "@funeste/scream-nossen": "2.0.0",
+    "@funeste/spyder-graph-nossen": "2.0.0",
+    "@funeste/spyder-nossen": "2.0.1",
+    "@nossen/all-in-one": "0.1.0"
+  }
+}

@@ -187,7 +187,25 @@ function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
 }
 
 function getMicrosoftTenantId(env = process.env) {
-  return String(env.MICROSOFT_TENANT_ID || env.AZURE_TENANT_ID || env.MS_TENANT_ID || 'organizations').trim() || 'organizations';
+  const forceTenantAuthority = ['1', 'true', 'yes', 'on'].includes(
+    String(env.MICROSOFT_FORCE_TENANT_AUTHORITY || env.AZURE_FORCE_TENANT_AUTHORITY || '').trim().toLowerCase()
+  );
+  if (!forceTenantAuthority) {
+    return String(
+      env.MICROSOFT_PUBLIC_TENANT_ID
+      || env.AZURE_PUBLIC_TENANT_ID
+      || env.MICROSOFT_AUTHORITY_TENANT
+      || 'common'
+    ).trim() || 'common';
+  }
+
+  return String(
+    env.MICROSOFT_TENANT_ID
+    || env.AZURE_TENANT_ID
+    || env.MS_TENANT_ID
+    || env.MICROSOFT_AUTHORITY_TENANT
+    || 'common'
+  ).trim() || 'common';
 }
 
 function resolveExplicitMicrosoftCallbackUrl() {
@@ -207,17 +225,16 @@ function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/microsoft/callback`;
 }
 
-function resolveCanonicalOAuthStartRedirect(req, provider) {
+function resolveCanonicalOAuthStartRedirect(req, provider, normalizePublicAppUrl) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
-
-  const explicitCallback = provider === 'microsoft'
-    ? resolveExplicitMicrosoftCallbackUrl()
-    : resolveExplicitGoogleCallbackUrl();
-  if (!explicitCallback) return '';
+  if (!hostname) return '';
 
   try {
-    const callbackUrl = new URL(explicitCallback);
+    const callbackUrl = new URL(
+      provider === 'microsoft'
+        ? resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl)
+        : resolveGoogleCallbackUrl(req, normalizePublicAppUrl)
+    );
     const callbackHost = callbackUrl.hostname.toLowerCase();
     if (!callbackHost || callbackHost === hostname) return '';
 
@@ -875,13 +892,48 @@ function createAuthRouter({
     if (['drive', 'files', 'google-drive'].includes(profile)) {
       return resolveOAuthScope(
         ['GOOGLE_OAUTH_DRIVE_SCOPES', 'A11_GOOGLE_OAUTH_DRIVE_SCOPES', 'GOOGLE_OAUTH_SCOPES', 'A11_GOOGLE_OAUTH_SCOPES'],
-        'openid email profile https://www.googleapis.com/auth/drive.readonly'
+        'openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly'
       );
     }
 
     return resolveOAuthScope(
       ['GOOGLE_OAUTH_LOGIN_SCOPES', 'A11_GOOGLE_OAUTH_LOGIN_SCOPES'],
       'openid email profile'
+    );
+  }
+
+  function resolveMicrosoftOAuthScope(req) {
+    const requestedProfile = String(
+      req.query?.scopeProfile
+      || req.query?.scope_profile
+      || req.query?.intent
+      || req.query?.scopeMode
+      || ''
+    ).trim().toLowerCase();
+    const defaultProfile = String(
+      process.env.MICROSOFT_OAUTH_DEFAULT_PROFILE
+      || process.env.A11_MICROSOFT_OAUTH_DEFAULT_PROFILE
+      || 'basic'
+    ).trim().toLowerCase();
+    const profile = requestedProfile || defaultProfile;
+
+    if (['drive', 'files', 'onedrive', 'microsoft-drive'].includes(profile)) {
+      return resolveOAuthScope(
+        [
+          'MICROSOFT_OAUTH_DRIVE_SCOPES',
+          'AZURE_OAUTH_DRIVE_SCOPES',
+          'A11_MICROSOFT_OAUTH_DRIVE_SCOPES',
+          'MICROSOFT_OAUTH_SCOPES',
+          'AZURE_OAUTH_SCOPES',
+          'A11_MICROSOFT_OAUTH_SCOPES',
+        ],
+        'openid profile email offline_access User.Read Files.ReadWrite'
+      );
+    }
+
+    return resolveOAuthScope(
+      ['MICROSOFT_OAUTH_LOGIN_SCOPES', 'AZURE_OAUTH_LOGIN_SCOPES', 'A11_MICROSOFT_OAUTH_LOGIN_SCOPES'],
+      'openid profile email offline_access User.Read'
     );
   }
 
@@ -893,7 +945,7 @@ function createAuthRouter({
   }
 
   router.get('/api/auth/google/start', (req, res) => {
-    const canonicalStart = resolveCanonicalOAuthStartRedirect(req, 'google');
+    const canonicalStart = resolveCanonicalOAuthStartRedirect(req, 'google', normalizePublicAppUrl);
     if (canonicalStart) {
       logOAuthTrace('google', 'start_canonical_redirect', req, normalizePublicAppUrl, {
         canonicalStart,
@@ -1046,7 +1098,7 @@ function createAuthRouter({
   });
 
   router.get('/api/auth/microsoft/start', (req, res) => {
-    const canonicalStart = resolveCanonicalOAuthStartRedirect(req, 'microsoft');
+    const canonicalStart = resolveCanonicalOAuthStartRedirect(req, 'microsoft', normalizePublicAppUrl);
     if (canonicalStart) {
       logOAuthTrace('microsoft', 'start_canonical_redirect', req, normalizePublicAppUrl, {
         canonicalStart,
@@ -1092,10 +1144,7 @@ function createAuthRouter({
       redirect_uri: callbackUrl,
       response_type: 'code',
       response_mode: 'query',
-      scope: resolveOAuthScope(
-        ['MICROSOFT_OAUTH_SCOPES', 'AZURE_OAUTH_SCOPES', 'A11_MICROSOFT_OAUTH_SCOPES'],
-        'openid profile email offline_access User.Read'
-      ),
+      scope: resolveMicrosoftOAuthScope(req),
       prompt: String(req.query?.prompt || 'select_account').trim() || 'select_account',
       state,
     });
@@ -1166,10 +1215,10 @@ function createAuthRouter({
             provider: 'microsoft',
           };
 
-      issueSessionCookie(req, res, user, { provider: 'microsoft' });
+      const sessionToken = issueSessionCookie(req, res, user, { provider: 'microsoft' });
       res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Microsoft OAuth login:', email);
-      return res.redirect(safeFrontendRedirect(frontendUrl, statePayload?.returnTo || '/auth/success'));
+      return redirectOAuthSuccess(res, frontendUrl, statePayload?.returnTo || '/auth/success', sessionToken, 'microsoft');
     } catch (callbackError) {
       clearSessionCookies(req, res);
       const publicError = resolvePublicOAuthError('microsoft', callbackError);

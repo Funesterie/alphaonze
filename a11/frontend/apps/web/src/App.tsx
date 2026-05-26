@@ -425,6 +425,7 @@ function getSurfaceLinks() {
       vivyStudio: "/vivy/#vivy-studio",
       agents: "/agents/",
       account: "/compte/",
+      login: "/login",
       contact: "/contact/",
       privacy: "/privacy/",
       terms: "/terms/",
@@ -450,6 +451,7 @@ function getSurfaceLinks() {
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     account: new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    login: new URL("/login", FUNESTERIE_PUBLIC_APP_URL).toString(),
     contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
@@ -1620,7 +1622,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     if (isCentralLogin) {
-      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
+      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -1632,7 +1634,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setMicrosoftLoading(true);
     if (isCentralLogin) {
-      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
+      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -3088,6 +3090,50 @@ const FUNESTERIE_HOME_AGENTS = [
   },
 ];
 
+const NOSSEN_PUBLIC_PACKAGES = [
+  "@nossen/all-in-one",
+  "@nossen/allmight",
+  "@nossen/bat",
+  "@nossen/bat-system",
+  "@nossen/beam",
+  "@nossen/dragon",
+  "@nossen/dragon-contracts",
+  "@nossen/dragon-upstream",
+  "@nossen/envapt-superimg",
+  "@nossen/envaptex",
+  "@nossen/freeland",
+  "@nossen/freeland-bros",
+  "@nossen/katana",
+  "@nossen/logic-reduce",
+  "@nossen/mcp-agent-bus",
+  "@nossen/mcp-chopper-mixer",
+  "@nossen/mcp-cloud-assets",
+  "@nossen/mcp-job-queue",
+  "@nossen/mcp-media-bridge",
+  "@nossen/mcp-memory-graph",
+  "@nossen/mcp-public-endpoints",
+  "@nossen/mcp-qflush-control",
+  "@nossen/mcp-retro-session",
+  "@nossen/mcp-security-preflight",
+  "@nossen/mcp-tool-manifest",
+  "@nossen/mcp-toolkit",
+  "@nossen/mcp-web-drafts",
+  "@nossen/mcp-worker-supervisor",
+  "@nossen/morphing",
+  "@nossen/nezlephant",
+  "@nossen/qflush",
+  "@nossen/qflush-runner",
+  "@nossen/rome",
+  "@nossen/scentgate",
+  "@nossen/scream",
+  "@nossen/spyder",
+  "a11-coder",
+] as const;
+
+function buildNpmPackageUrl(packageName: string) {
+  return `https://www.npmjs.com/package/${packageName}`;
+}
+
 function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
   if (agentHref === "home") return surfaceLinks.home;
   if (agentHref === "vivy") return surfaceLinks.vivy;
@@ -3452,7 +3498,7 @@ function FunesterieMcpAdminPanel({
 
   function connectGoogle() {
     setBusy("google");
-    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account");
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
   }
 
   function connectMicrosoft() {
@@ -3645,7 +3691,7 @@ function FunesterieConnectedHomePage({
       return;
     }
     setAccountBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-home");
+    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "drive" });
   }
 
   if (!isAgentsRoute && !isStatusRoute) {
@@ -3729,7 +3775,7 @@ function FunesterieIntegrationPanel({
 
   function connectGoogle() {
     setBusy("google");
-    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account");
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
   }
 
   function connectMicrosoft() {
@@ -4037,6 +4083,20 @@ function FunesterieContactPage({
               </a>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="fun-package-panel" aria-label="Modules NOSSEN">
+        <header>
+          <span>Modules</span>
+          <h2>NOSSEN</h2>
+        </header>
+        <div className="fun-package-grid">
+          {NOSSEN_PUBLIC_PACKAGES.map((packageName) => (
+            <a key={packageName} href={buildNpmPackageUrl(packageName)} target="_blank" rel="noreferrer">
+              {packageName}
+            </a>
+          ))}
         </div>
       </section>
 
@@ -4439,7 +4499,14 @@ export function App() {
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
     document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
+    document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicShell);
+    document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicShell);
+
+    return () => {
+      document.documentElement.classList.remove("funesterie-public-page-root");
+      document.body.classList.remove("funesterie-public-page-body");
+    };
+  }, [isFunesteriePublicShell, isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
