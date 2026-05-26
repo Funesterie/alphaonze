@@ -1,4 +1,12 @@
 User-agent: *
 Allow: /
+Disallow: /api/
+Disallow: /oauth/
+Disallow: /mcp
+Disallow: /.well-known/mcp
+Disallow: /auth/success
+Disallow: /a11/auth/success
+Disallow: /k44/auth/success
+Disallow: /kaen44/auth/success
 
 Sitemap: https://funesterie.me/sitemap.xml
