@@ -2,7 +2,10 @@
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
-const { installCrawlerVisibilityHeaders } = require('./lib/crawler-visibility.cjs');
+const {
+  installCrawlerVisibilityHeaders,
+  setCrawlerControlAssetCacheHeaders,
+} = require('./lib/crawler-visibility.cjs');
 installCrawlerVisibilityHeaders(app);
 const { execFile } = require('node:child_process');
 const { createFileStorage } = require('./lib/file-storage.cjs');
@@ -7612,10 +7615,7 @@ try {
           if (filePath.includes(`${path.sep}assets${path.sep}`) && !filePath.endsWith('index.html')) {
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           }
-          // Pas de cache sur index.html — toujours revalider
-          if (filePath.endsWith('index.html')) {
-            res.setHeader('Cache-Control', 'no-cache');
-          }
+          setCrawlerControlAssetCacheHeaders(res, filePath);
         },
       }));
       console.log('[A11] Serving frontend static from', webPublic);

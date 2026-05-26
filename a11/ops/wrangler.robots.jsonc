@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "funesterie-robots",
+  "main": "./cloudflare-robots-worker.js",
+  "compatibility_date": "2026-05-26",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "funesterie.me/robots.txt", "zone_name": "funesterie.me" },
+    { "pattern": "www.funesterie.me/robots.txt", "zone_name": "funesterie.me" },
+    { "pattern": "a11.funesterie.me/robots.txt", "zone_name": "funesterie.me" },
+    { "pattern": "k44.funesterie.me/robots.txt", "zone_name": "funesterie.me" },
+    { "pattern": "kaen44.funesterie.me/robots.txt", "zone_name": "funesterie.me" },
+    { "pattern": "vivy.funesterie.me/robots.txt", "zone_name": "funesterie.me" },
+    { "pattern": "mcp.funesterie.me/robots.txt", "zone_name": "funesterie.me" }
+  ]
+}
