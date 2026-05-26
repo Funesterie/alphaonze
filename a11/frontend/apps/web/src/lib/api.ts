@@ -931,10 +931,28 @@ export type AuthSessionsResponse = {
   message?: string;
 };
 
+function shouldUseCookieOnlyAuthSessionProbe() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').toLowerCase();
+    if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
+    const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
+    return pathname === '/'
+      || /^\/(?:home|accueil|agents|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+type OAuthStartOptions = {
+  scopeProfile?: string;
+};
+
 export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   const headers: Record<string, string> = {};
-  const token = getAuthToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const tokenAtStart = getAuthToken();
+  if (tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe()) {
+    headers.Authorization = `Bearer ${tokenAtStart}`;
+  }
   const res = await fetch(getApiUrl('/api/auth/me'), {
     method: 'GET',
     headers,
@@ -943,11 +961,14 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
   if (!res.ok || data?.ok === false) {
     if (res.status === 401 || data?.error === 'A11_JWT_Invalid' || data?.error === 'A11_SESSION_REVOKED') {
-      clearClientAuthSession({
-        reason: data?.error || 'A11_JWT_Invalid',
-        message: data?.message || `Session A11 invalide (${res.status})`,
-        status: res.status,
-      });
+      const currentToken = getAuthToken();
+      if (!currentToken || currentToken === tokenAtStart) {
+        clearClientAuthSession({
+          reason: data?.error || 'A11_JWT_Invalid',
+          message: data?.message || `Session A11 invalide (${res.status})`,
+          status: res.status,
+        });
+      }
     }
     throw new Error(data?.message || data?.error || `Session A11 invalide (${res.status})`);
   }
@@ -955,6 +976,14 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
     setAuthToken(data.token);
   }
   if (!data?.authenticated && !data?.user) {
+    const currentToken = getAuthToken();
+    if (tokenAtStart && (!currentToken || currentToken === tokenAtStart)) {
+      clearClientAuthSession({
+        reason: 'A11_SESSION_INACTIVE',
+        message: 'Session Funesterie inactive.',
+        status: res.status,
+      });
+    }
     return data;
   }
   setAuthUserProfile(data?.user);
@@ -1165,7 +1194,7 @@ function resolveCentralAuthBase() {
   return normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || DEFAULT_FUNESTERIE_AUTH_BASE);
 }
 
-export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
+export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
   const googleBaseUrl = resolveCentralAuthBase();
   const target = new URL(
     buildApiUrlFromBase(googleBaseUrl, '/api/auth/google/start'),
@@ -1173,26 +1202,29 @@ export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web
   );
   target.searchParams.set('returnTo', resolveOAuthReturnTo(returnTo));
   target.searchParams.set('client', client || 'web');
-  target.searchParams.set('scopeProfile', 'basic');
+  target.searchParams.set('scopeProfile', options.scopeProfile || 'basic');
   target.searchParams.set('surface', resolveCurrentAuthSurface());
   return target.toString();
 }
 
-export function startGoogleOAuth(returnTo = '/auth/success', client = 'web') {
-  globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client));
+export function startGoogleOAuth(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
+  globalThis.location.assign(getGoogleOAuthStartUrl(returnTo, client, options));
 }
 
-export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web') {
+export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
   const msBaseUrl = resolveCentralAuthBase();
   const target = new URL(buildApiUrlFromBase(msBaseUrl, '/api/auth/microsoft/start'), globalThis.location?.origin || msBaseUrl || 'https://a11.funesterie.me');
   target.searchParams.set('returnTo', resolveOAuthReturnTo(returnTo));
   target.searchParams.set('client', client || 'web');
+  if (options.scopeProfile) {
+    target.searchParams.set('scopeProfile', options.scopeProfile);
+  }
   target.searchParams.set('surface', resolveCurrentAuthSurface());
   return target.toString();
 }
 
-export function startMicrosoftOAuth(returnTo = '/auth/success', client = 'web') {
-  globalThis.location.assign(getMicrosoftOAuthStartUrl(returnTo, client));
+export function startMicrosoftOAuth(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
+  globalThis.location.assign(getMicrosoftOAuthStartUrl(returnTo, client, options));
 }
 
 export async function register(username: string, email: string, password: string) {
@@ -1299,6 +1331,21 @@ export async function logoutAllSessions() {
   return logout({ allSessions: true });
 }
 
+export function isAuthInvalidError(error: unknown) {
+  const code = String((error as { code?: string } | null | undefined)?.code || '').trim();
+  const status = Number((error as { status?: number } | null | undefined)?.status);
+  const message = String((error as { message?: string } | null | undefined)?.message || '').trim().toLowerCase();
+  return code === 'A11_JWT_Invalid'
+    || code === 'A11_JWT_Missing'
+    || code === 'A11_JWT_Revoked'
+    || code === 'A11_SESSION_REVOKED'
+    || status === 401
+    || message.includes('session a11 invalide')
+    || message.includes('session funesterie inactive')
+    || message.includes('session révoquée')
+    || message.includes('session revoquee');
+}
+
 export async function revokeAuthSession(sessionId: string) {
   const sid = String(sessionId || '').trim();
   if (!sid) throw new Error('Session manquante');
@@ -1363,7 +1410,7 @@ async function readResponsePayloadSafe(res: Response) {
   }
 }
 
-async function throwIfAuthInvalidResponse(res: Response) {
+async function throwIfAuthInvalidResponse(res: Response, tokenAtStart = '') {
   if (res.ok) return;
 
   const { text, data } = await readResponsePayloadSafe(res.clone());
@@ -1372,12 +1419,21 @@ async function throwIfAuthInvalidResponse(res: Response) {
     || errorCode
     || (!isLikelyHtmlDocument(text) ? text.trim() : '');
 
-  if (res.status === 401 || errorCode === 'A11_JWT_Invalid' || errorCode === 'A11_JWT_Missing' || errorCode === 'A11_JWT_Revoked') {
-    clearClientAuthSession({
-      reason: errorCode || 'A11_JWT_Invalid',
-      message: message || `Session A11 invalide (${res.status})`,
-      status: res.status,
-    });
+  if (
+    res.status === 401
+    || errorCode === 'A11_JWT_Invalid'
+    || errorCode === 'A11_JWT_Missing'
+    || errorCode === 'A11_JWT_Revoked'
+    || errorCode === 'A11_SESSION_REVOKED'
+  ) {
+    const currentToken = getAuthToken();
+    if (!currentToken || currentToken === tokenAtStart) {
+      clearClientAuthSession({
+        reason: errorCode || 'A11_JWT_Invalid',
+        message: message || `Session A11 invalide (${res.status})`,
+        status: res.status,
+      });
+    }
 
     const authError = new Error(message || errorCode || `Session A11 invalide (${res.status})`) as Error & {
       code?: string;
@@ -1390,11 +1446,12 @@ async function throwIfAuthInvalidResponse(res: Response) {
 }
 
 async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const tokenAtStart = getAuthToken();
   const res = await fetch(input, {
     credentials: 'include',
     ...init,
   });
-  await throwIfAuthInvalidResponse(res);
+  await throwIfAuthInvalidResponse(res, tokenAtStart);
   return res;
 }
 

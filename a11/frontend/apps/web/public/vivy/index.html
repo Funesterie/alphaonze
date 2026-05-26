@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vivy - Funesterie</title>
     <meta name="description" content="Vivy, présence musicale Funesterie pour voix, chansons originales et projets audio Nossen." />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://funesterie.me/vivy/" />
     <meta property="og:title" content="Vivy - Présence musicale Funesterie" />
     <meta property="og:description" content="Voix, musique, composition, clips et publications audio liés aux projets créatifs Funesterie." />
     <meta property="og:image" content="/vivy-presence-musicale.png" />
@@ -383,7 +385,8 @@
         gap: 10px;
       }
 
-      .vivy-top a {
+      .vivy-top a,
+      .vivy-top button {
         min-height: 38px;
         display: inline-flex;
         align-items: center;
@@ -396,6 +399,17 @@
         font-size: 12px;
         font-weight: 850;
         text-transform: uppercase;
+      }
+
+      .vivy-top button {
+        background: rgba(240, 121, 216, 0.12);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .vivy-top button:disabled {
+        cursor: wait;
+        opacity: 0.68;
       }
 
       .vivy-poster-stage {
@@ -536,40 +550,6 @@
       .vivy-chat button:disabled {
         cursor: not-allowed;
         opacity: 0.5;
-      }
-
-      .vivy-chat textarea:disabled {
-        cursor: not-allowed;
-        opacity: 0.6;
-      }
-
-      .vivy-chat-locked {
-        display: grid;
-        gap: 8px;
-        margin: 0 0 12px;
-        padding: 12px 14px;
-        border: 1px solid rgba(240, 121, 216, 0.34);
-        border-radius: 8px;
-        background: rgba(240, 121, 216, 0.1);
-        color: #fbe4f5;
-        font-size: 14px;
-        line-height: 1.45;
-      }
-
-      .vivy-chat-locked strong {
-        color: #ff7de1;
-        text-transform: uppercase;
-        letter-spacing: 0;
-      }
-
-      .vivy-chat-locked a {
-        width: fit-content;
-        color: #ffd2f4;
-        font-weight: 850;
-      }
-
-      .vivy-chat-locked[hidden] {
-        display: none;
       }
 
       .vivy-chat-log {
@@ -977,62 +957,59 @@
 
         .vivy-poster-stage {
           min-height: auto;
-          display: flex;
+          display: block;
           padding: 10px 12px 18px;
           overflow-x: hidden;
           overflow-y: visible;
         }
 
         .vivy-poster-frame {
-          width: min(100%, 430px);
+          width: 100%;
           min-width: 0;
-          max-width: 430px;
-          aspect-ratio: 0.74;
-          overflow: hidden;
-          border: 1px solid rgba(240, 121, 216, 0.36);
-          border-radius: 8px;
-          background: #05030a;
-          box-shadow: 0 18px 56px rgba(0, 0, 0, 0.42);
+          max-width: none;
         }
 
         .vivy-poster-frame img {
           width: 100%;
           max-width: 100%;
-          height: 100%;
-          object-fit: cover;
-          object-position: 48% 50%;
+          height: auto;
         }
 
         .vivy-poster-hotspots {
-          display: block;
+          display: none;
         }
 
         .vivy-mobile-slices {
-          display: none !important;
+          display: grid;
+          gap: 12px;
+          margin-top: 12px;
         }
 
-        .vivy-poster-hotspots button {
-          top: auto;
-          right: auto;
-          bottom: 2.1%;
-          height: 10.2%;
-          border-radius: 6px;
-          font-size: 0;
+        .vivy-mobile-slice {
+          width: 100%;
+          height: min(64svh, 520px);
+          display: block;
+          object-fit: cover;
+          border: 1px solid rgba(240, 121, 216, 0.3);
+          background: #05030a;
+          box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
         }
 
-        .vivy-poster-hotspots button[data-vivy-jump="song"] {
-          left: 3.6%;
-          width: 30%;
+        .vivy-mobile-slice--portrait {
+          height: min(72svh, 580px);
+          object-position: 43% 50%;
         }
 
-        .vivy-poster-hotspots button[data-vivy-jump="voice"] {
-          left: 35.4%;
-          width: 30%;
+        .vivy-mobile-slice--voice {
+          object-position: 100% 19%;
         }
 
-        .vivy-poster-hotspots button[data-vivy-jump="share"] {
-          left: 67.6%;
-          width: 28.8%;
+        .vivy-mobile-slice--production {
+          object-position: 100% 48%;
+        }
+
+        .vivy-mobile-slice--scene {
+          object-position: 100% 77%;
         }
 
         .vivy-studio {
@@ -1116,7 +1093,8 @@
           gap: 8px;
         }
 
-        .vivy-top a {
+        .vivy-top a,
+        .vivy-top button {
           min-height: 34px;
           padding: 0 10px;
           font-size: 11px;
@@ -1124,7 +1102,6 @@
 
         .vivy-poster-frame img {
           width: 100%;
-          height: 100%;
         }
       }
     </style>
@@ -1139,7 +1116,7 @@
           <a href="https://funesterie.me/cockpit/">Cockpit</a>
           <a href="https://k44.funesterie.me/">Kaen44</a>
           <a href="https://a11.funesterie.me/login">A11</a>
-          <a href="https://funesterie.me/privacy/">Confidentialité</a>
+          <button type="button" data-vivy-google-login>Connexion</button>
         </div>
       </nav>
       <section class="vivy-poster-stage" aria-label="Vivy présence musicale" tabindex="0">
@@ -1151,6 +1128,12 @@
             <button type="button" data-vivy-jump="share" aria-label="Ouvrir scène partage"></button>
           </div>
         </div>
+        <div class="vivy-mobile-slices" aria-hidden="true">
+          <img class="vivy-mobile-slice vivy-mobile-slice--portrait" src="/vivy-presence-musicale.png" alt="" />
+          <img class="vivy-mobile-slice vivy-mobile-slice--voice" src="/vivy-presence-musicale.png" alt="" />
+          <img class="vivy-mobile-slice vivy-mobile-slice--production" src="/vivy-presence-musicale.png" alt="" />
+          <img class="vivy-mobile-slice vivy-mobile-slice--scene" src="/vivy-presence-musicale.png" alt="" />
+        </div>
       </section>
       <section class="vivy-chat" aria-label="Chat Vivy" data-vivy-chat>
         <div class="vivy-chat-head">
@@ -1159,12 +1142,6 @@
             <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
           </div>
           <button type="button" data-vivy-chat-reset>Reset</button>
-        </div>
-        <div class="vivy-chat-locked" data-vivy-chat-locked>
-          <strong>Session requise</strong>
-          <span>Connecte-toi pour parler à Vivy, envoyer des fichiers ou garder une référence vocale privée.</span>
-          <a href="https://k44.funesterie.me/login">Se connecter</a>
-          <a href="https://funesterie.me/privacy/">Confidentialité</a>
         </div>
         <div class="vivy-chat-log" aria-live="polite" data-vivy-chat-log></div>
         <form class="vivy-chat-compose" data-vivy-chat-form>
@@ -1283,8 +1260,7 @@
               <button type="submit" data-vivy-action>Préparer calibration</button>
               <button type="button" data-vivy-ask>Demander à Vivy</button>
               <button type="button" data-vivy-open="a11">Ouvrir A11</button>
-              <button type="button" data-vivy-open="k44">Ouvrir Kaen44</button>
-              <button type="button" data-vivy-open="cockpit">Cockpit général</button>
+              <button type="button" data-vivy-open="k44">Kaen44</button>
             </div>
           </form>
 
@@ -1303,6 +1279,77 @@
     </main>
     <script>
       (function () {
+        var loginButton = document.querySelector("[data-vivy-google-login]");
+        var tokenPattern = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+        var isAuthSuccess = /(?:^|\/)auth\/success\/?$/.test(String(window.location.pathname || "/").toLowerCase());
+
+        function isLocalHost() {
+          return /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(String(window.location.hostname || "").toLowerCase());
+        }
+
+        function vivyHomePath() {
+          return isLocalHost() ? "/vivy/" : "/";
+        }
+
+        function authSuccessReturnTo() {
+          if (isLocalHost()) {
+            return new URL("/vivy/auth/success", window.location.origin).toString();
+          }
+          return "https://vivy.funesterie.me/auth/success";
+        }
+
+        function consumeOAuthToken() {
+          try {
+            var hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+            var searchParams = new URLSearchParams(String(window.location.search || ""));
+            var token = String(hashParams.get("a11_token") || hashParams.get("token") || searchParams.get("a11_token") || "").trim();
+            if (!tokenPattern.test(token)) return false;
+            localStorage.setItem("a11-auth-token", token);
+            localStorage.setItem("a11_jwt_token", token);
+            window.history.replaceState({}, "", vivyHomePath());
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function setLoginState(label, disabled) {
+          if (!loginButton) return;
+          loginButton.textContent = label;
+          loginButton.disabled = Boolean(disabled);
+        }
+
+        if (isAuthSuccess && consumeOAuthToken()) {
+          setLoginState("Connecté", false);
+        }
+
+        if (loginButton) {
+          loginButton.addEventListener("click", function () {
+            setLoginState("Google...", true);
+            var startUrl = new URL("https://a11.funesterie.me/api/auth/google/start");
+            startUrl.searchParams.set("returnTo", authSuccessReturnTo());
+            startUrl.searchParams.set("client", "vivy-web");
+            startUrl.searchParams.set("scopeProfile", "basic");
+            window.location.assign(startUrl.toString());
+          });
+        }
+
+        fetch("/api/auth/me", { credentials: "include" })
+          .then(function (response) { return response.ok ? response.json() : null; })
+          .then(function (session) {
+            if (session && (session.authenticated || session.user)) {
+              setLoginState("Connecté", false);
+              if (isAuthSuccess) window.history.replaceState({}, "", vivyHomePath());
+            } else {
+              setLoginState("Connexion", false);
+            }
+          })
+          .catch(function () {
+            setLoginState("Connexion", false);
+          });
+      })();
+
+      (function () {
         var root = document.querySelector("[data-vivy-chat]");
         if (!root) return;
         var log = root.querySelector("[data-vivy-chat-log]");
@@ -1317,7 +1364,6 @@
         var attachmentsRoot = root.querySelector("[data-vivy-chat-attachments]");
         var fileButton = root.querySelector("[data-vivy-chat-file-button]");
         var fileInput = root.querySelector("[data-vivy-chat-file]");
-        var lockedBox = root.querySelector("[data-vivy-chat-locked]");
         var storageKey = "vivy:public-chat:v2";
         var conversationKey = "vivy:conversation-id:static";
         var referenceKey = "vivy:voice-reference:static";
@@ -1326,10 +1372,6 @@
         var attachedFiles = [];
         var sending = false;
         var awaitingReference = false;
-        var authenticated = false;
-        var chatControls = Array.prototype.slice.call(root.querySelectorAll(
-          "textarea, button[data-vivy-chat-prompt], button[data-vivy-chat-file-button], button[data-vivy-chat-reference-button], button[type='submit']"
-        ));
 
         function unicodeText(value, maxLength) {
           var text = String(value || "")
@@ -1383,52 +1425,6 @@
 
         function setStatus(text) {
           if (status) status.textContent = text || "";
-        }
-
-        function readAuthToken() {
-          try {
-            return String(localStorage.getItem("a11-auth-token") || localStorage.getItem("a11_jwt_token") || "").trim();
-          } catch (_) {
-            return "";
-          }
-        }
-
-        function setLocked(locked) {
-          authenticated = !locked;
-          root.classList.toggle("is-locked", locked);
-          if (lockedBox) lockedBox.hidden = !locked;
-          chatControls.forEach(function (control) {
-            control.disabled = locked;
-          });
-        }
-
-        function requireSession() {
-          if (authenticated) return true;
-          setLocked(true);
-          setStatus("Connecte-toi pour parler à Vivy.");
-          return false;
-        }
-
-        function refreshSession() {
-          var headers = {};
-          var token = readAuthToken();
-          if (token) headers.Authorization = "Bearer " + token;
-          return fetch("/api/auth/me", {
-            method: "GET",
-            credentials: "include",
-            headers: headers
-          }).then(function (response) {
-            return response.json().catch(function () { return {}; }).then(function (payload) {
-              var ok = response.ok && (payload.authenticated || payload.user);
-              setLocked(!ok);
-              setStatus(ok ? "" : "Connecte-toi pour parler à Vivy.");
-              return ok;
-            });
-          }).catch(function () {
-            setLocked(true);
-            setStatus("Connecte-toi pour parler à Vivy.");
-            return false;
-          });
         }
 
         function getConversationId() {
@@ -1489,7 +1485,6 @@
         }
 
         function addConversationFiles(fileList) {
-          if (!requireSession()) return;
           var selected = Array.prototype.slice.call(fileList || []).slice(0, 4);
           if (!selected.length) return;
           setStatus("Vivy ajoute les fichiers au contexte...");
@@ -1580,7 +1575,6 @@
         }
 
         function send(text) {
-          if (!requireSession()) return;
           text = unicodeText(text);
           var filesForMessage = attachedFiles.slice(0, 6);
           if ((!text && !filesForMessage.length) || sending) return;
@@ -1634,7 +1628,6 @@
         }
 
         function uploadReference(file) {
-          if (!requireSession()) return;
           if (!file) return;
           var label = "Vivy - " + unicodeLine(String(file.name || "référence voix").replace(/\.[^.]+$/, ""), "référence voix", 54);
           var body = new FormData();
@@ -1702,8 +1695,6 @@
         }
 
         render();
-        setLocked(true);
-        refreshSession();
       })();
 
       (function () {
@@ -1989,16 +1980,14 @@
             var target = button.getAttribute("data-vivy-open");
             var labels = {
               a11: "Brief copié. Ouverture A11...",
-              k44: "Brief copié. Ouverture Kaen44...",
-              cockpit: "Brief copié. Ouverture du cockpit général..."
+              k44: "Brief copié. Ouverture Kaen44..."
             };
             var urls = {
-              a11: "https://a11.funesterie.me/login",
-              k44: "https://k44.funesterie.me/cockpit",
-              cockpit: "https://funesterie.me/cockpit/"
+              a11: "https://a11.funesterie.me",
+              k44: "https://k44.funesterie.me/cockpit"
             };
             copyBrief(labels[target] || "Brief copié.");
-            window.open(urls[target] || urls.cockpit, "_blank", "noopener,noreferrer");
+            window.open(urls[target] || urls.a11, "_blank", "noopener,noreferrer");
           });
         });
 

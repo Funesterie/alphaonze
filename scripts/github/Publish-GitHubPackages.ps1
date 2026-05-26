@@ -8,7 +8,9 @@ param(
   [string]$NpmrcPath = ".npmrc.github",
   [string]$Registry,
   [string]$Tag,
-  [string]$TokenEnv = "NODE_AUTH_TOKEN"
+  [string]$TokenEnv = "NODE_AUTH_TOKEN",
+  [switch]$UseExternalNpmAuth,
+  [string]$SummaryTitle = "GitHub Packages summary"
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,13 +108,15 @@ if (-not $Tag) {
   $Tag = if ($manifest.defaultTag) { [string]$manifest.defaultTag } else { "internal" }
 }
 
-if ($Publish) {
+if ($Publish -and -not $UseExternalNpmAuth) {
   $tokenValue = [Environment]::GetEnvironmentVariable($TokenEnv)
   if ([string]::IsNullOrWhiteSpace($tokenValue)) {
     throw "Publishing requires `$env:$TokenEnv. Run scripts/github/Write-GitHubNpmrc.ps1 first, then set $TokenEnv."
   }
+}
+if ($Publish) {
   if (-not (Test-Path -LiteralPath $NpmrcPath)) {
-    throw "Missing npm userconfig: $NpmrcPath. Run scripts/github/Write-GitHubNpmrc.ps1 first."
+    throw "Missing npm userconfig: $NpmrcPath."
   }
 }
 
@@ -149,18 +153,20 @@ foreach ($pkg in $packages) {
     continue
   }
 
-  if (-not $NoBuild -and $pkg.installCommand) {
-    Invoke-Tool -Command @($pkg.installCommand) -WorkingDirectory $sourcePath
-  }
-
-  if (-not $NoBuild -and $pkg.buildCommand) {
-    Invoke-Tool -Command @($pkg.buildCommand) -WorkingDirectory $sourcePath
+  if (-not $NoBuild) {
+    $restoreCommand = if ($pkg.restoreCommand) { $pkg.restoreCommand } else { $pkg.installCommand }
+    if ($restoreCommand) {
+      Invoke-Tool -Command @($restoreCommand) -WorkingDirectory $sourcePath
+    }
+    if ($pkg.buildCommand) {
+      Invoke-Tool -Command @($pkg.buildCommand) -WorkingDirectory $sourcePath
+    }
   }
 
   foreach ($relativeRequiredFile in @($pkg.requiredFiles)) {
     $requiredFile = Join-Path $sourcePath ([string]$relativeRequiredFile)
     if (-not (Test-Path -LiteralPath $requiredFile)) {
-      throw "Package $id is missing required file after build: $relativeRequiredFile"
+      throw "Package $id is missing required file: $relativeRequiredFile"
     }
   }
 
@@ -208,6 +214,26 @@ foreach ($pkg in $packages) {
       $packageJson.scripts.PSObject.Properties.Remove("prepare")
       $packageJson.scripts.PSObject.Properties.Remove("prepublishOnly")
       $packageJson.scripts.PSObject.Properties.Remove("postpack")
+    }
+    foreach ($dependencyName in @($pkg.removeDependencies)) {
+      $dependencyKey = [string]$dependencyName
+      if (-not [string]::IsNullOrWhiteSpace($dependencyKey) -and $packageJson.dependencies) {
+        $packageJson.dependencies.PSObject.Properties.Remove($dependencyKey)
+      }
+    }
+    if ($pkg.optionalPeerDependencies) {
+      if (-not $packageJson.peerDependencies) {
+        $packageJson | Add-Member -NotePropertyName peerDependencies -NotePropertyValue ([pscustomobject]@{})
+      }
+      if (-not $packageJson.peerDependenciesMeta) {
+        $packageJson | Add-Member -NotePropertyName peerDependenciesMeta -NotePropertyValue ([pscustomobject]@{})
+      }
+      foreach ($peer in $pkg.optionalPeerDependencies.PSObject.Properties) {
+        $packageJson.peerDependencies | Add-Member -Force -NotePropertyName $peer.Name -NotePropertyValue ([string]$peer.Value)
+        $packageJson.peerDependenciesMeta | Add-Member -Force -NotePropertyName $peer.Name -NotePropertyValue ([pscustomobject]@{
+          optional = $true
+        })
+      }
     }
     $packageJson | Add-Member -Force -NotePropertyName funesterieMirror -NotePropertyValue ([pscustomobject]@{
       sourceName = (Read-JsonFile $sourcePackageJsonPath).name
@@ -277,5 +303,5 @@ foreach ($pkg in $packages) {
 }
 
 Write-Host ""
-Write-Host "GitHub Packages summary:"
+Write-Host "${SummaryTitle}:"
 $results | Format-Table -AutoSize

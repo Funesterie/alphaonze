@@ -8,11 +8,18 @@
       "id": "qflush",
       "source": "a11/backend/libs",
       "publishedName": "@funesterie/qflush",
-      "publishedVersion": "1.0.4",
+      "publishedVersion": "1.0.5",
       "npmTag": "latest",
-      "distTags": ["stable"],
+      "distTags": ["stable", "internal"],
       "enabled": true,
-      "installCommand": ["npm", "install", "--ignore-scripts", "--no-package-lock"],
+      "removeDependencies": [
+        "@nossen/bat",
+        "@nossen/envaptex",
+        "@nossen/freeland",
+        "@nossen/nezlephant",
+        "@nossen/rome"
+      ],
+      "restoreCommand": ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"],
       "buildCommand": ["npm", "run", "build"],
       "smokeCommand": ["node", "dist/cli.js", "--help"],
       "requiredFiles": [

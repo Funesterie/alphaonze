@@ -2,14 +2,14 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <title>A11 - Alpha Onze Funesterie</title>
+    <title>Funesterie - Accueil</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A11 est l'assistant Alpha Onze de Funesterie pour le chat, les fichiers, la voix, la mémoire et les outils connectés." />
+    <meta name="description" content="Funesterie rassemble NOSSEN, A11, Kaen44 et Vivy dans un espace commun de création, mémoire et coordination." />
     <meta name="theme-color" content="#0c1020" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="A11" />
+    <meta name="apple-mobile-web-app-title" content="Funesterie" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
@@ -36,7 +36,66 @@
           || (isLocalHost && port === "3000" && !isK44Path && !isVivyPath);
         var isVivyHost = hostname === "vivy.funesterie.me"
           || isVivyPath;
+        var isFunesterieHost = hostname === "funesterie.me"
+          || hostname === "www.funesterie.me";
         var isPublicHost = !!publicHosts[hostname];
+
+        function setHeadLink(rel, href) {
+          var link = document.querySelector('link[rel="' + rel + '"]');
+          if (!link) {
+            link = document.createElement("link");
+            link.setAttribute("rel", rel);
+            document.head.appendChild(link);
+          }
+          link.setAttribute("href", href);
+        }
+
+        function setRobots(content) {
+          var meta = document.querySelector('meta[name="robots"]');
+          if (!meta) {
+            meta = document.createElement("meta");
+            meta.setAttribute("name", "robots");
+            document.head.appendChild(meta);
+          }
+          meta.setAttribute("content", content);
+        }
+
+        function canonicalFunesteriePath(path) {
+          var normalized = String(path || "/").toLowerCase().replace(/\/+$/, "") || "/";
+          if (normalized === "/home" || normalized === "/accueil") return "/";
+          if (normalized === "/") return "/";
+          if (/^\/agents(?:\/|$)/.test(normalized)) return "/agents/";
+          if (/^\/contact(?:\/|$)/.test(normalized)) return "/contact/";
+          if (/^\/privacy(?:\/|$)/.test(normalized)) return "/privacy/";
+          if (/^\/terms(?:\/|$)/.test(normalized)) return "/terms/";
+          if (/^\/vivy(?:\/|$)/.test(normalized)) return "/vivy/";
+          return "";
+        }
+
+        function isPrivateOrUtilityPath(path) {
+          return /^\/(?:login|cockpit|app|workspace|auth|reset|reset-password|compte|account)(?:\/|$)/.test(String(path || "/").toLowerCase());
+        }
+
+        function applySeoHints() {
+          var canonical = "";
+          if (isFunesterieHost) {
+            var publicPath = canonicalFunesteriePath(pathname);
+            canonical = "https://funesterie.me" + (publicPath || "/");
+            setRobots(publicPath && !isPrivateOrUtilityPath(pathname) ? "index,follow" : "noindex,follow");
+          } else if (hostname === "k44.funesterie.me" || hostname === "kaen44.funesterie.me" || isK44Path) {
+            canonical = "https://k44.funesterie.me/";
+            setRobots(isPrivateOrUtilityPath(pathname) ? "noindex,follow" : "index,follow");
+          } else if (hostname === "vivy.funesterie.me" || isVivyPath) {
+            canonical = "https://vivy.funesterie.me/";
+            setRobots("index,follow");
+          } else if (hostname === "a11.funesterie.me") {
+            canonical = "https://a11.funesterie.me/";
+            setRobots(isPrivateOrUtilityPath(pathname) ? "noindex,follow" : "index,follow");
+          }
+          if (canonical) setHeadLink("canonical", canonical);
+        }
+
+        applySeoHints();
 
         if (isVivyHost) {
           document.title = "Vivy - Présence musicale Funesterie";
@@ -57,6 +116,16 @@
           var k44AppleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
           if (k44AppleTitle) {
             k44AppleTitle.setAttribute("content", "Kaen44");
+          }
+        } else if (isFunesterieHost) {
+          document.title = "Funesterie - Accueil";
+          var funesterieDescription = document.querySelector('meta[name="description"]');
+          if (funesterieDescription) {
+            funesterieDescription.setAttribute("content", "Funesterie rassemble NOSSEN, A11, Kaen44 et Vivy dans un espace commun de création, mémoire et coordination.");
+          }
+          var funesterieAppleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (funesterieAppleTitle) {
+            funesterieAppleTitle.setAttribute("content", "Funesterie");
           }
         } else if (isA11Host) {
           document.title = "A11 - Alpha Onze Funesterie";
@@ -100,28 +169,18 @@
                 .filter(function (key) {
                   return /^a11:chats(?::|$)/.test(key)
                     || /^a11:memory-purge-history(?::|$)/.test(key)
-                    || key === "a11:tts-only";
+                    || key === "a11:tts-only"
+                    || key === "a11-auth-token"
+                    || key === "a11_jwt_token"
+                    || key === "a11-auth-user"
+                    || key === "a11:display-name"
+                    || key === "a11:api-base-override";
                 })
                 .forEach(function (key) { localStorage.removeItem(key); });
             } catch (error) {
               console.warn("[A11][boot] storage reset failed", error);
             }
           }
-        }
-
-        function shouldRenderStaticKaen44Page() {
-          var hostname = String(location.hostname || "").toLowerCase();
-          var pathname = String(location.pathname || "/").toLowerCase();
-          return (hostname === "k44.funesterie.me" || hostname === "kaen44.funesterie.me")
-            && (
-              pathname === "/"
-              || pathname === "/privacy"
-              || pathname === "/privacy/"
-              || pathname === "/terms"
-              || pathname === "/terms/"
-              || pathname === "/vivy"
-              || pathname === "/vivy/"
-            );
         }
 
         function shouldRenderStaticLoginFallback() {
@@ -185,50 +244,12 @@
           var root = document.getElementById("root");
           if (!root) return;
 
-          if (shouldRenderStaticKaen44Page()) {
-            root.innerHTML = [
-              '<main style="min-height:100vh;background:#080b14;color:#f8fafc;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;">',
-              '<header style="border-bottom:1px solid rgba(196,181,253,.16);background:#0b1020;">',
-              '<nav aria-label="Navigation Kaen44" style="max-width:1120px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">',
-              '<a href="/" style="color:#fff;text-decoration:none;font-size:24px;font-weight:900;letter-spacing:0;">Kaen44</a>',
-              '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;">',
-              '<a href="/privacy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Confidentialite</a>',
-              '<a href="/terms/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Conditions</a>',
-              '<a href="/login?show=1" style="color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:900;padding:10px 16px;border-radius:999px;">Ouvrir Kaen44</a>',
-              '</div>',
-              '</nav>',
-              '</header>',
-              '<section style="max-width:1120px;margin:0 auto;padding:64px 24px 44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:52px;align-items:center;">',
-              '<div>',
-              '<h1 style="margin:0 0 20px;font-size:clamp(46px,7vw,92px);line-height:.92;letter-spacing:0;">Kaen44</h1>',
-              '<p style="margin:0;max-width:720px;color:#e9d5ff;font-size:clamp(19px,2vw,24px);line-height:1.52;font-weight:650;">Une assistante bureau claire, vocale et accessible pour organiser les documents, traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien.</p>',
-              '<div style="margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;">',
-              '<a href="/login?show=1" style="min-height:46px;display:inline-flex;align-items:center;color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:950;padding:0 20px;border-radius:999px;">Connexion Kaen44</a>',
-              '<a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialité</a>',
-              '</div>',
-              '</div>',
-              '<figure style="margin:0;justify-self:center;width:min(100%,360px);">',
-              '<img src="/assets/kaen44-avatar.png" alt="Avatar et logo Kaen44" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;border:1px solid rgba(196,181,253,.5);box-shadow:0 24px 80px rgba(0,0,0,.45);" />',
-              '</figure>',
-              '</section>',
-              '<section style="border-top:1px solid rgba(196,181,253,.12);background:#0c1222;">',
-              '<div style="max-width:1120px;margin:0 auto;padding:44px 24px 54px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:22px;">',
-              '<article style="border-left:3px solid #a78bfa;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Documents et Drive</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 aide a lire, classer, resumer et transformer les fichiers que l&#39;utilisateur importe ou autorise explicitement.</p></article>',
-              '<article style="border-left:3px solid #67e8f9;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et préparer un suivi clair pour validation humaine.</p></article>',
-              '<article style="border-left:3px solid #f0abfc;padding-left:18px;"><h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilité</h2><p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des réponses lisibles et une aide adaptée aux personnes fatiguées ou en difficulté.</p></article>',
-              '</div>',
-              '</section>',
-              '<footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;"><div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;"><span>Kaen44 par Funesterie</span><span><a href="/privacy/" style="color:#c4b5fd;">Règles de confidentialité</a> - <a href="/terms/" style="color:#c4b5fd;">Conditions d&#39;utilisation</a></span></div></footer>',
-              '</main>'
-            ].join("");
-            return;
-          }
-
           if (shouldRenderStaticLoginFallback()) {
             var host = String(location.hostname || "").toLowerCase();
             var isA11Host = host === "a11.funesterie.me";
-            var title = isA11Host ? "Connexion A11" : "Connexion Kaen44";
-            var accent = isA11Host ? "#3b82f6" : "#8b5cf6";
+            var isFunesterieLoginHost = host === "funesterie.me" || host === "www.funesterie.me";
+            var title = isA11Host ? "Connexion A11" : "Connexion Funesterie";
+            var accent = isFunesterieLoginHost ? "#36d4c4" : (isA11Host ? "#3b82f6" : "#8b5cf6");
             var errorMessage = resolveStaticLoginErrorMessage();
             root.innerHTML = [
               '<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#071021;color:#e5e7eb;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;padding:24px;">',
@@ -249,12 +270,13 @@
         window.setTimeout(function () {
           var root = document.getElementById("root");
           if (!root || root.childElementCount > 0) return;
+          var bootTitle = isFunesterieHost ? "Funesterie" : (isA11Host ? "A11" : "Kaen44");
           root.innerHTML = [
             '<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#071021;color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:24px;">',
             '<section style="width:min(100%,420px);display:flex;flex-direction:column;gap:14px;">',
-            '<h1 style="margin:0;font-size:28px;">Kaen44</h1>',
+            '<h1 style="margin:0;font-size:28px;">' + bootTitle + '</h1>',
             '<p style="margin:0;color:#bfdbfe;line-height:1.5;">Démarrage bloqué côté navigateur. Je peux nettoyer le cache local et relancer proprement.</p>',
-            '<button id="a11-boot-reset" style="min-height:44px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:800;">Relancer Kaen44</button>',
+            '<button id="a11-boot-reset" style="min-height:44px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:800;">Relancer ' + bootTitle + '</button>',
             '<button id="a11-boot-hard-reset" style="min-height:44px;border:1px solid #334155;border-radius:10px;background:#0f172a;color:#e5e7eb;font-weight:700;">Reset cache conversations local</button>',
             '<pre style="white-space:pre-wrap;color:#94a3b8;font-size:12px;">' + String(window.__A11_BOOT_ERROR__ || "").replace(/[<>&]/g, function (c) { return ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]; }) + '</pre>',
             '</section>',
@@ -270,56 +292,35 @@
   </head>
   <body>
     <div id="root">
-      <main style="min-height:100vh;background:#080b14;color:#f8fafc;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;">
-        <header style="border-bottom:1px solid rgba(196,181,253,.16);background:#0b1020;">
-          <nav aria-label="Navigation Kaen44" style="max-width:1120px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;">
-            <a href="/" style="color:#fff;text-decoration:none;font-size:24px;font-weight:900;letter-spacing:0;">Kaen44</a>
-            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;">
-              <a href="https://a11.funesterie.me/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">A11</a>
-              <a href="/vivy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Vivy</a>
-              <a href="/privacy/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Confidentialite</a>
-              <a href="/terms/" style="color:#d8b4fe;text-decoration:none;font-weight:800;">Conditions</a>
-              <a href="/login" style="color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:900;padding:10px 16px;border-radius:999px;">Ouvrir Kaen44</a>
-            </div>
-          </nav>
-        </header>
-        <section style="max-width:1120px;margin:0 auto;padding:64px 24px 44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:52px;align-items:center;">
-          <div>
-            <h1 style="margin:0 0 20px;font-size:clamp(46px,7vw,92px);line-height:.92;letter-spacing:0;">Kaen44</h1>
-            <p style="margin:0;max-width:720px;color:#e9d5ff;font-size:clamp(19px,2vw,24px);line-height:1.52;font-weight:650;">
-              Une assistante bureau claire, vocale et accessible pour organiser les documents,
-              traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien.
-            </p>
-            <div style="margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;">
-              <a href="/login" style="min-height:46px;display:inline-flex;align-items:center;color:#061018;background:linear-gradient(135deg,#a78bfa,#67e8f9);text-decoration:none;font-weight:950;padding:0 20px;border-radius:999px;">Connexion Kaen44</a>
-              <a href="/privacy/" style="min-height:46px;display:inline-flex;align-items:center;color:#f8fafc;border:1px solid rgba(196,181,253,.28);text-decoration:none;font-weight:850;padding:0 20px;border-radius:999px;">Lire la confidentialité</a>
-            </div>
+      <main style="min-height:100vh;padding:18px clamp(14px,3vw,34px) 28px;background:radial-gradient(circle at 14% 8%,rgba(54,212,196,.2),transparent 24%),radial-gradient(circle at 82% 18%,rgba(239,118,207,.16),transparent 26%),linear-gradient(135deg,rgba(11,16,24,.98),#030408 62%);color:#f6f0fb;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;">
+        <nav aria-label="Navigation Funesterie" style="width:min(1360px,100%);min-height:62px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid rgba(170,190,210,.18);border-radius:8px;padding:8px 10px;background:rgba(7,9,15,.72);box-shadow:0 18px 54px rgba(0,0,0,.28);">
+          <a href="/" style="display:inline-flex;align-items:center;gap:12px;color:#f6f0fb;text-decoration:none;font-weight:900;text-transform:uppercase;">
+            <img src="/assets/funesterie-logo.png" alt="" style="width:56px;height:44px;object-fit:contain;" />
+            <span style="font-size:20px;">Funesterie</span>
+          </a>
+          <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px;">
+            <a href="/" style="min-height:38px;display:inline-flex;align-items:center;color:#e7ddec;text-decoration:none;font-size:12px;font-weight:850;text-transform:uppercase;padding:0 12px;">Accueil</a>
+            <a href="/agents/" style="min-height:38px;display:inline-flex;align-items:center;color:#e7ddec;text-decoration:none;font-size:12px;font-weight:850;text-transform:uppercase;padding:0 12px;">Agents</a>
+            <a href="/cockpit/" style="min-height:38px;display:inline-flex;align-items:center;color:#e7ddec;text-decoration:none;font-size:12px;font-weight:850;text-transform:uppercase;padding:0 12px;">État</a>
+            <a href="/compte/" style="min-height:38px;display:inline-flex;align-items:center;color:#e7ddec;text-decoration:none;font-size:12px;font-weight:850;text-transform:uppercase;padding:0 12px;">Compte</a>
+            <a href="/contact/" style="min-height:38px;display:inline-flex;align-items:center;color:#e7ddec;text-decoration:none;font-size:12px;font-weight:850;text-transform:uppercase;padding:0 12px;">Contact</a>
           </div>
-          <figure style="margin:0;justify-self:center;width:min(100%,360px);">
-            <img src="/assets/kaen44-avatar.png" alt="Avatar et logo Kaen44" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:50%;border:1px solid rgba(196,181,253,.5);box-shadow:0 24px 80px rgba(0,0,0,.45);" />
-          </figure>
-        </section>
-        <section style="border-top:1px solid rgba(196,181,253,.12);background:#0c1222;">
-          <div style="max-width:1120px;margin:0 auto;padding:44px 24px 54px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:22px;">
-            <article style="border-left:3px solid #a78bfa;padding-left:18px;">
-              <h2 style="font-size:20px;margin:0 0 10px;">Documents et Drive</h2>
-              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 aide a lire, classer, resumer et transformer les fichiers que l'utilisateur importe ou autorise explicitement.</p>
-            </article>
-            <article style="border-left:3px solid #67e8f9;padding-left:18px;">
-              <h2 style="font-size:20px;margin:0 0 10px;">Factures et suivi</h2>
-              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 peut extraire les montants, dates, fournisseurs, anomalies et préparer un suivi clair pour validation humaine.</p>
-            </article>
-            <article style="border-left:3px solid #f0abfc;padding-left:18px;">
-              <h2 style="font-size:20px;margin:0 0 10px;">Voix et accessibilité</h2>
-              <p style="margin:0;color:#cbd5e1;line-height:1.65;">Kaen44 propose une interaction vocale, des réponses lisibles et une aide adaptée aux personnes fatiguées ou en difficulté.</p>
-            </article>
+        </nav>
+        <section style="width:min(980px,100%);margin:22px auto 18px;border:1px solid rgba(233,184,108,.32);border-radius:8px;padding:clamp(28px,5vw,58px);display:grid;justify-items:center;gap:20px;text-align:center;background:radial-gradient(circle at 50% 30%,rgba(233,184,108,.18),transparent 34%),linear-gradient(180deg,rgba(12,12,18,.92),rgba(5,5,10,.96));box-shadow:0 22px 68px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.05);">
+          <img src="/assets/funesterie-logo.png" alt="" style="width:min(100%,340px);max-height:180px;object-fit:contain;filter:drop-shadow(0 0 28px rgba(233,184,108,.24));" />
+          <p style="max-width:620px;margin:0;color:#c7bccd;font-size:clamp(17px,1.5vw,21px);line-height:1.62;">
+            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+            Les agents gardent chacun leur spécialité.
+          </p>
+          <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;">
+            <a href="/agents/" style="min-height:46px;display:inline-flex;align-items:center;border:1px solid rgba(54,212,196,.62);border-radius:8px;padding:0 16px;color:#f6f0fb;background:linear-gradient(135deg,rgba(54,212,196,.28),rgba(66,183,238,.18));text-decoration:none;font-size:12px;font-weight:900;text-transform:uppercase;">Agents</a>
+            <a href="/login" style="min-height:46px;display:inline-flex;align-items:center;border:1px solid rgba(54,212,196,.62);border-radius:8px;padding:0 16px;color:#f6f0fb;background:linear-gradient(135deg,rgba(54,212,196,.28),rgba(66,183,238,.18));text-decoration:none;font-size:12px;font-weight:900;text-transform:uppercase;">Se connecter</a>
+            <a href="/cockpit/" style="min-height:46px;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:0 16px;color:#f6f0fb;background:rgba(255,255,255,.04);text-decoration:none;font-size:12px;font-weight:900;text-transform:uppercase;">État opérationnel</a>
           </div>
         </section>
-        <footer style="border-top:1px solid rgba(196,181,253,.12);background:#080b14;">
-          <div style="max-width:1120px;margin:0 auto;padding:22px 24px;display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;color:#94a3b8;">
-            <span>Kaen44 par Funesterie</span>
-            <span><a href="/privacy/" style="color:#c4b5fd;">Règles de confidentialité</a> · <a href="/terms/" style="color:#c4b5fd;">Conditions d'utilisation</a></span>
-          </div>
+        <footer style="width:min(1360px,100%);min-height:58px;margin:14px auto 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;border-top:1px solid rgba(170,190,210,.18);color:#cfc4d7;font-size:12px;font-weight:850;text-transform:uppercase;">
+          <span><a href="/privacy/" style="color:#e9fffb;text-decoration:none;">Confidentialité</a> <a href="/terms/" style="margin-left:14px;color:#e9fffb;text-decoration:none;">Conditions</a></span>
         </footer>
       </main>
     </div>

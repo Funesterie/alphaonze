@@ -62,6 +62,39 @@ bootstrap.bat local start -NoPause
 bootstrap.bat online --check-only --no-pause
 ```
 
+## Distribution interne
+
+Le registre principal remplace JFrog par Google Artifact Registry :
+
+- npm prive : `funesterie-npm` dans `alphaonze/europe-west4`
+- Docker / OCI : `funesterie-docker`
+- generique : `funesterie-generic`
+
+Paquet pret :
+
+```text
+@funesterie/qflush@1.0.5
+tags: latest, stable, internal
+```
+
+Commandes utiles :
+
+```powershell
+npm run google:artifacts:list
+npm run google:npmrc
+npm run google:npm-auth
+npm run google:packages:dry
+```
+
+Le miroir GitHub Packages reste disponible avec les memes tags :
+
+```powershell
+npm run github:npmrc
+npm run github:packages:dry
+```
+
+Voir `docs/GOOGLE_ARTIFACT_REGISTRY.md` et `docs/GITHUB_PACKAGES_AND_GHCR.md`.
+
 ## Deploy prod A11
 
 Pour la prod A11, le plus simple est maintenant d'utiliser le flux dedie:

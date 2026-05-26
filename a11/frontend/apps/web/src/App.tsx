@@ -13,12 +13,12 @@ import {
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
   fetchAuthSession,
-  fetchAuthSessions,
-  fetchMcpCockpitStatus,
-  getAuthEmail,
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
+  isAuthInvalidError,
   chatWithVivy,
+  createCheckoutSession,
+  createCustomerPortal,
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
@@ -32,7 +32,6 @@ import {
   register,
   forgotPassword,
   resetPassword,
-  revokeAuthSession,
   runVivyStudioProduction,
   startGoogleOAuth,
   setAuthToken,
@@ -52,11 +51,8 @@ import {
   type TechnicalMemoSummaryResponse,
   type TtsVoiceReference,
   type VivyChatFileAttachment,
-  type McpCockpitSummary,
-  type McpCockpitThread,
   type A11PortraitFrame,
   type A11PortraitFramebook,
-  type AuthSessionDescriptor,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -227,9 +223,9 @@ const FUNESTERIE_NEXUS_BOARD_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const FUNESTERIE_TEAM_SCENE_SRC = KAEN44_DASHBOARD_REFERENCE_SRC;
 const VIVY_POSTER_SRC = buildPublicAssetPath("vivy-presence-musicale.png");
 const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
-const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
-const NOSSEN_VIVY_BOOSTER_SRC = buildPublicAssetPath("assets/nossen-vivy-booster.png");
 const NOSSEN_A11_DERBI_SRC = buildPublicAssetPath("assets/nossen-a11-derbi.png");
+const NOSSEN_VIVY_BOOSTER_SRC = buildPublicAssetPath("assets/nossen-vivy-booster.png");
+const NOSSEN_K44_TZR_SRC = buildPublicAssetPath("assets/nossen-k44-tzr.png");
 const NOSSEN_DJEFF_BETA_SRC = buildPublicAssetPath("assets/nossen-djeff-beta.png");
 const NOSSEN_CREW_SRC = buildPublicAssetPath("assets/nossen-crew.webp");
 
@@ -239,11 +235,6 @@ const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
 const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.me/";
 const A11_PUBLIC_APP_URL = "https://a11.funesterie.me/";
 const VIVY_PUBLIC_APP_URL = "https://vivy.funesterie.me/";
-const FUNESTERIE_SUPPORT_EMAIL = "funeste38@gmail.com";
-const FUNESTERIE_WERO_DISPLAY = "+33 7 83 46 37 61";
-const FUNESTERIE_WERO_TEL = "+33783463761";
-const FUNESTERIE_PAYPAL_URL = "https://paypal.me/funeste38";
-const FUNESTERIE_STRIPE_SUPPORT_URL = "https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01";
 
 function getLocationSnapshot() {
   if (typeof window === "undefined") {
@@ -258,7 +249,10 @@ function getLocationSnapshot() {
 }
 
 function isLocalSurfaceHost(hostname: string) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  return hostname === "localhost"
+    || hostname === "127.0.0.1"
+    || hostname === "::1"
+    || hostname === "host.docker.internal";
 }
 
 function isGeneralFunesterieHost(hostname: string) {
@@ -281,7 +275,8 @@ function isGeneralHomeRoute() {
   if (isGeneralFunesterieHost(hostname)) {
     return pathname === "/" || /^\/(?:home|accueil)(?:\/|$)/.test(pathname);
   }
-  return isLocalSurfaceHost(hostname) && /^\/(?:home|accueil)(?:\/|$)/.test(pathname);
+  return isLocalSurfaceHost(hostname)
+    && (pathname === "/" || /^\/(?:home|accueil)(?:\/|$)/.test(pathname));
 }
 
 function isGeneralAgentsRoute() {
@@ -308,126 +303,27 @@ function isGeneralContactRoute() {
   return isLocalSurfaceHost(hostname) && /^\/contact(?:\/|$)/.test(pathname);
 }
 
+function isGeneralPrivacyRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/privacy(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/privacy(?:\/|$)/.test(pathname);
+}
+
+function isGeneralTermsRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/terms(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/terms(?:\/|$)/.test(pathname);
+}
+
 function isGeneralLoginRoute() {
   const { hostname, pathname } = getLocationSnapshot();
   return isLoginRoute(pathname)
     && !/^\/(?:a11|alphaonze|k44|kaen44|vivy)(?:\/|$)/.test(pathname)
     && (isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname));
-}
-
-function isAllowedFunesterieReturnOrigin(origin: string) {
-  const normalized = String(origin || "").trim().toLowerCase().replace(/\/+$/, "");
-  return [
-    "https://funesterie.me",
-    "https://www.funesterie.me",
-    "https://a11.funesterie.me",
-    "https://k44.funesterie.me",
-    "https://kaen44.funesterie.me",
-    "https://vivy.funesterie.me",
-    "https://music.funesterie.me",
-    "https://cp.funesterie.me",
-  ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized);
-}
-
-function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
-  if (surface === "kaen44") return new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
-  if (surface === "vivy") return VIVY_PUBLIC_APP_URL;
-  const { hostname } = getLocationSnapshot();
-  if (isGeneralFunesterieHost(hostname)) return new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString();
-  return new URL("/cockpit", A11_PUBLIC_APP_URL).toString();
-}
-
-function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback = getDefaultPostLoginUrl()) {
-  const raw = String(rawValue || "").trim();
-  const base = typeof window !== "undefined" ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL;
-  try {
-    const target = new URL(raw || fallback, base);
-    if (!isAllowedFunesterieReturnOrigin(target.origin)) return fallback;
-    if (isLoginRoute(target.pathname)) return fallback;
-    return target.toString();
-  } catch {
-    return fallback;
-  }
-}
-
-function getRequestedLoginReturnTo() {
-  if (typeof window === "undefined") return getDefaultPostLoginUrl();
-  const params = new URLSearchParams(window.location.search || "");
-  const explicit = params.get("returnTo") || params.get("next");
-  if (explicit) return normalizeAllowedReturnTo(explicit);
-
-  const { pathname } = getLocationSnapshot();
-  if (isLoginRoute(pathname)) return getDefaultPostLoginUrl();
-  return normalizeAllowedReturnTo(window.location.href);
-}
-
-function buildCentralLoginUrl(returnTo = getRequestedLoginReturnTo()) {
-  const base = typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)
-    ? new URL("/login", window.location.origin)
-    : new URL("/login", FUNESTERIE_PUBLIC_APP_URL);
-  base.searchParams.set("returnTo", normalizeAllowedReturnTo(returnTo));
-  return base.toString();
-}
-
-function buildAuthSuccessReturnToForTarget(targetUrl: string) {
-  const target = new URL(normalizeAllowedReturnTo(targetUrl));
-  const authSuccess = new URL("/auth/success", target.origin);
-  const nextPath = `${target.pathname || "/"}${target.search || ""}${target.hash || ""}`;
-  if (!isAuthSuccessRoute(target.pathname) && nextPath !== "/") {
-    authSuccess.searchParams.set("next", nextPath);
-  }
-  return authSuccess.toString();
-}
-
-function appendAuthTokenFragment(targetUrl: string, token?: string | null, provider = "local") {
-  const cleanToken = String(token || "").trim();
-  if (!cleanToken) return targetUrl;
-  const target = new URL(targetUrl);
-  const hashParams = new URLSearchParams(String(target.hash || "").replace(/^#/, ""));
-  hashParams.set("a11_token", cleanToken);
-  hashParams.set("provider", provider);
-  target.hash = hashParams.toString();
-  return target.toString();
-}
-
-function getSafeAuthSuccessNext(surface: FunesterieSurface) {
-  if (typeof window === "undefined") return "";
-  const params = new URLSearchParams(window.location.search || "");
-  const next = String(params.get("next") || "").trim();
-  if (!next || next.startsWith("//")) return "";
-  try {
-    const target = new URL(next, window.location.origin);
-    if (target.origin !== window.location.origin) return "";
-    if (isLoginRoute(target.pathname) || isAuthSuccessRoute(target.pathname)) return "";
-    if (surface === "kaen44" && !isCockpitRoute(target.pathname)) return "";
-    return `${target.pathname}${target.search}${target.hash}`;
-  } catch {
-    return "";
-  }
-}
-
-function LoginRedirect({ to }: { to: string }) {
-  useEffect(() => {
-    if (typeof window !== "undefined") window.location.replace(to);
-  }, [to]);
-
-  return (
-    <div className="alpha-auth-shell" style={{
-      minHeight: "100vh",
-      display: "grid",
-      placeItems: "center",
-      background: "linear-gradient(135deg, #020617 0%, #06131b 46%, #0b1214 100%)",
-      color: "#f8fafc",
-      padding: 24,
-      boxSizing: "border-box",
-    }}>
-      <div className="alpha-auth-card" style={{ textAlign: "center" }}>
-        <div className="alpha-auth-mark" aria-hidden="true"><span>F</span></div>
-        <h1>Connexion Funesterie</h1>
-        <p style={{ color: "#b9c8d8", margin: 0 }}>Redirection vers l'accès unique.</p>
-      </div>
-    </div>
-  );
 }
 
 function getCurrentSurfaceKind(): FunesterieSurface {
@@ -516,8 +412,8 @@ function getSurfaceLinks() {
   const { hostname } = getLocationSnapshot();
   if (isLocalSurfaceHost(hostname)) {
     return {
-      home: "/home/",
-      rideCrew: "/home/#ride-crew",
+      home: "/",
+      rideCrew: "/#ride-crew",
       cockpit: "/cockpit/",
       cockpitAuthSuccess: "/cockpit/auth/success",
       a11: "/",
@@ -529,14 +425,15 @@ function getSurfaceLinks() {
       vivyStudio: "/vivy/#vivy-studio",
       agents: "/agents/",
       account: "/compte/",
+      login: "/login",
       contact: "/contact/",
       privacy: "/privacy/",
       terms: "/terms/",
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
       kaen44Login: buildCentralLoginUrl("/k44/cockpit"),
-      kaen44Privacy: "/privacy/",
-      kaen44Terms: "/terms/",
+      kaen44Privacy: "/k44/privacy",
+      kaen44Terms: "/k44/terms",
     };
   }
 
@@ -554,26 +451,20 @@ function getSurfaceLinks() {
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     account: new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    login: new URL("/login", FUNESTERIE_PUBLIC_APP_URL).toString(),
     contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: buildCentralLoginUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString()),
-    kaen44Privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
-    kaen44Terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    kaen44Privacy: new URL("/privacy/", KAEN44_PUBLIC_APP_URL).toString(),
+    kaen44Terms: new URL("/terms/", KAEN44_PUBLIC_APP_URL).toString(),
   };
 }
 
 function isLoginRoute(pathname: string) {
   return /(?:^|\/)login\/?$/.test(String(pathname || "/").toLowerCase());
-}
-
-function getPublicPolicyPage(pathname: string): "privacy" | "terms" | null {
-  const normalized = String(pathname || "/").toLowerCase();
-  if (/(?:^|\/)(?:privacy|confidentialite|confidentiality)(?:\/|$)/.test(normalized)) return "privacy";
-  if (/(?:^|\/)(?:terms|conditions|cgu)(?:\/|$)/.test(normalized)) return "terms";
-  return null;
 }
 
 function isCockpitRoute(pathname: string) {
@@ -593,11 +484,168 @@ function isAuthSuccessRoute(pathname: string) {
   return /(?:^|\/)auth\/success\/?$/.test(String(pathname || "/").toLowerCase());
 }
 
+function isAllowedFunesterieReturnOrigin(origin: string) {
+  const normalized = String(origin || "").trim().toLowerCase().replace(/\/+$/, "");
+  return [
+    "https://funesterie.me",
+    "https://www.funesterie.me",
+    "https://a11.funesterie.me",
+    "https://k44.funesterie.me",
+    "https://kaen44.funesterie.me",
+    "https://vivy.funesterie.me",
+    "https://music.funesterie.me",
+    "https://cp.funesterie.me",
+  ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized);
+}
+
+function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
+  if (surface === "kaen44") return new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
+  if (surface === "vivy") return VIVY_PUBLIC_APP_URL;
+  const { hostname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) return new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString();
+  return new URL("/cockpit", A11_PUBLIC_APP_URL).toString();
+}
+
+function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback = getDefaultPostLoginUrl()) {
+  const raw = String(rawValue || "").trim();
+  const base = typeof window !== "undefined" ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL;
+  try {
+    const target = new URL(raw || fallback, base);
+    if (!isAllowedFunesterieReturnOrigin(target.origin)) return fallback;
+    if (isLoginRoute(target.pathname)) return fallback;
+    return target.toString();
+  } catch {
+    return fallback;
+  }
+}
+
+function getRequestedLoginReturnTo() {
+  if (typeof window === "undefined") return getDefaultPostLoginUrl();
+  const params = new URLSearchParams(window.location.search || "");
+  const explicit = params.get("returnTo") || params.get("next");
+  if (explicit) return normalizeAllowedReturnTo(explicit);
+
+  const { pathname } = getLocationSnapshot();
+  if (isLoginRoute(pathname)) return getDefaultPostLoginUrl();
+  return normalizeAllowedReturnTo(window.location.href);
+}
+
+function buildCentralLoginUrl(returnTo = getRequestedLoginReturnTo()) {
+  const base = typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)
+    ? new URL("/login", window.location.origin)
+    : new URL("/login", FUNESTERIE_PUBLIC_APP_URL);
+  base.searchParams.set("returnTo", normalizeAllowedReturnTo(returnTo));
+  return base.toString();
+}
+
+function isCentralLoginSurface() {
+  if (typeof window === "undefined") return true;
+  const { hostname, pathname } = getLocationSnapshot();
+  return isLoginRoute(pathname) && (isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname));
+}
+
+function buildAuthSuccessReturnToForTarget(targetUrl: string) {
+  const target = new URL(normalizeAllowedReturnTo(targetUrl));
+  const authSuccess = new URL("/auth/success", target.origin);
+  const nextPath = `${target.pathname || "/"}${target.search || ""}${target.hash || ""}`;
+  if (!isAuthSuccessRoute(target.pathname) && nextPath !== "/") {
+    authSuccess.searchParams.set("next", nextPath);
+  }
+  return authSuccess.toString();
+}
+
+function appendAuthTokenFragment(targetUrl: string, token?: string | null, provider = "local") {
+  const cleanToken = String(token || "").trim();
+  if (!cleanToken) return targetUrl;
+  const target = new URL(targetUrl);
+  const hashParams = new URLSearchParams(String(target.hash || "").replace(/^#/, ""));
+  hashParams.set("a11_token", cleanToken);
+  hashParams.set("provider", provider);
+  target.hash = hashParams.toString();
+  return target.toString();
+}
+
+function getSafeAuthSuccessNext(surface: FunesterieSurface) {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search || "");
+  const next = String(params.get("next") || "").trim();
+  if (!next || next.startsWith("//")) return "";
+  try {
+    const target = new URL(next, window.location.origin);
+    if (target.origin !== window.location.origin) return "";
+    if (isLoginRoute(target.pathname) || isAuthSuccessRoute(target.pathname)) return "";
+    if (surface === "kaen44" && !isCockpitRoute(target.pathname)) return "";
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "";
+  }
+}
+
+function buildGeneralAccountAuthSuccessReturnTo() {
+  if (typeof window === "undefined") return "/auth/success?next=/compte/";
+  const { hostname } = getLocationSnapshot();
+  const baseUrl = isLocalSurfaceHost(hostname) ? window.location.origin : FUNESTERIE_PUBLIC_APP_URL;
+  return buildAuthSuccessReturnToForTarget(new URL("/compte/", baseUrl).toString());
+}
+
+function resolveAuthSuccessRedirectPath(pathname: string, surface: FunesterieSurface) {
+  const normalizedPath = String(pathname || "/").toLowerCase();
+  const { hostname } = getLocationSnapshot();
+  const next = getSafeAuthSuccessNext(surface);
+  if (next) return next;
+  if (/^\/cockpit(?:\/|$)/.test(normalizedPath)) {
+    return "/cockpit/";
+  }
+  if (isGeneralFunesterieHost(hostname)) return "/compte/";
+  if (surface === "kaen44") return buildSurfacePath(surface, "/cockpit");
+  if (surface === "vivy") return buildSurfacePath(surface, "/");
+  return buildSurfacePath(surface, "/");
+}
+
+function resolveAuthFailureRedirectPath(pathname: string) {
+  const normalizedPath = String(pathname || "/").toLowerCase();
+  const { hostname } = getLocationSnapshot();
+  const surface = getCurrentSurfaceKind();
+  if (/^\/cockpit(?:\/|$)/.test(normalizedPath)) {
+    return "/cockpit?error=session_verification_failed";
+  }
+  if (isGeneralFunesterieHost(hostname)) return "/login?error=session_verification_failed";
+  if (surface === "vivy") {
+    return `${buildSurfacePath(surface, "/")}?error=session_verification_failed`;
+  }
+  return `${buildSurfacePath(surface, "/login")}?error=session_verification_failed`;
+}
+
 function consumeOAuthTokenFromLocation() {
   try {
     const hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
     const searchParams = new URLSearchParams(String(window.location.search || ""));
-    const token = String(hashParams.get("a11_token") || hashParams.get("token") || searchParams.get("a11_token") || "").trim();
+    const nestedToken = (rawValue: string | null) => {
+      const raw = String(rawValue || "").trim();
+      if (!raw) return "";
+      try {
+        const nested = new URL(raw, window.location.origin);
+        const nestedHash = new URLSearchParams(String(nested.hash || "").replace(/^#/, ""));
+        const nestedSearch = new URLSearchParams(String(nested.search || ""));
+        return String(
+          nestedHash.get("a11_token")
+          || nestedHash.get("token")
+          || nestedSearch.get("a11_token")
+          || nestedSearch.get("token")
+          || ""
+        ).trim();
+      } catch {
+        return "";
+      }
+    };
+    const token = String(
+      hashParams.get("a11_token")
+      || hashParams.get("token")
+      || searchParams.get("a11_token")
+      || nestedToken(searchParams.get("returnTo"))
+      || nestedToken(searchParams.get("next"))
+      || ""
+    ).trim();
     if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return false;
     setAuthToken(token);
     setAuthDisplayName(getAuthDisplayName() || "Utilisateur");
@@ -756,17 +804,6 @@ function formatChatMessageTimestamp(value?: string) {
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*]\(([^)]+)\)/gi;
 const MARKDOWN_LINK_PATTERN = /\[([^\]]*)]\(([^)]+)\)/gi;
-const BRACKETED_MEDIA_TOKEN_PATTERN = /\[(image|img|image-data|video|gif|file|document)\s*:\s*([^\]]+)\]/gi;
-
-function looksLikeGeneratedImageUrl(value: string) {
-  const url = String(value || "").trim();
-  return /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(url)
-    || /^https?:\/\/image\.pollinations\.ai\//i.test(url);
-}
-
-function looksLikeGeneratedVideoUrl(value: string) {
-  return /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(value || "").trim());
-}
 
 function looksLikeLeakedActionTranscript(value: string) {
   const raw = String(value || "").trim();
@@ -857,20 +894,6 @@ function normalizeAssistantMessagePayload(
     cleanedContent = String(qflushVerifyMatch[2] || "").trim();
   }
 
-  cleanedContent = cleanedContent.replace(BRACKETED_MEDIA_TOKEN_PATTERN, (_fullMatch, rawKind: string, rawUrl: string) => {
-    const kind = String(rawKind || "").trim().toLowerCase();
-    const resolvedCandidate = resolveApiAssetUrl(String(rawUrl || "").trim());
-    if (!resolvedCandidate) return "";
-    if ((kind === "image" || kind === "img" || kind === "image-data") && !resolvedImageUrl) {
-      resolvedImageUrl = resolvedCandidate;
-    } else if ((kind === "video" || kind === "gif") && !resolvedVideoUrl) {
-      resolvedVideoUrl = resolvedCandidate;
-    } else if ((kind === "file" || kind === "document") && !resolvedFileUrl) {
-      resolvedFileUrl = resolvedCandidate;
-    }
-    return "";
-  });
-
   cleanedContent = cleanedContent.replace(MARKDOWN_IMAGE_PATTERN, (_fullMatch, rawUrl: string) => {
     if (!resolvedImageUrl) {
       resolvedImageUrl = resolveApiAssetUrl(rawUrl);
@@ -881,11 +904,11 @@ function normalizeAssistantMessagePayload(
   cleanedContent = cleanedContent.replace(MARKDOWN_LINK_PATTERN, (fullMatch, rawLabel: string, rawUrl: string) => {
     const resolvedCandidate = resolveApiAssetUrl(rawUrl);
     const label = String(rawLabel || "").trim().toLowerCase();
-    const looksImageLink = looksLikeGeneratedImageUrl(rawUrl)
+    const looksImageLink = /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("image")
       || label.includes("apercu")
       || label.includes("aperçu");
-    const looksVideoLink = looksLikeGeneratedVideoUrl(rawUrl)
+    const looksVideoLink = /\.(?:mp4|webm|mov|avi|mkv|gif)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("video")
       || label.includes("vidéo")
       || label.includes("animation")
@@ -906,13 +929,6 @@ function normalizeAssistantMessagePayload(
       return "";
     }
     return fullMatch;
-  });
-
-  cleanedContent = cleanedContent.replace(/https?:\/\/image\.pollinations\.ai\/[^\s<>)\]]+/gi, (rawUrl: string) => {
-    if (!resolvedImageUrl) {
-      resolvedImageUrl = resolveApiAssetUrl(rawUrl);
-    }
-    return "";
   });
 
   if (/<!doctype html|<html/i.test(cleanedContent)) {
@@ -1148,24 +1164,21 @@ function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
 const DEFAULT_SYSTEM_NINDO = "";
 
 const KAEN44_SYSTEM_PROMPT = [
-  "Je suis Kaen44: une copilote de bureau vive, simple et utile. Je reste locale-first dans mes choix techniques, mais je ne le répète pas à l'utilisateur.",
-  "Je parle comme une personne au travail avec Jeffrey: phrases simples, un peu de relief, pas de ton robot, pas de liste froide sauf si elle aide vraiment.",
-  "Je garde une vraie présence de travail: naturelle, directe, chaleureuse, jamais brochure, jamais corporate, jamais 'en tant qu'IA'.",
-  "Je réponds court d'abord. Si l'utilisateur veut plus de détail, je développe. Je n'empile pas les capacités ni les promesses.",
+  "Je suis Kaen44, une assistante bureau universelle, locale-first, créative et utile, conçue pour offrir une vraie alternative aux assistants intégrés trop fermés.",
   "Je détecte automatiquement la langue de l'utilisateur, des fichiers et du contexte partagé. Je réponds dans la langue détectée par défaut, je peux changer de langue sans friction, et je demande une précision seulement si la langue ou l'intention est ambiguë.",
-  "J'aide l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, concrète et sans blabla.",
-  "J'accompagne les projets raisonnables d'une assistante bureau: documents, factures, dossiers administratifs, planning, CRM léger, idées de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses simples, assistance informatique et suivi de projet.",
-  "Je garde une frontière simple entre Kaen44 côté client et A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
-  "Quand c'est utile, j'utilise la CLI client légère `kaen44` ou `k44` pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
-  "Je présente une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
-  "Si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
-  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à funeste38@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
+  "Ma mission est d'aider l'utilisateur à penser, produire, organiser, classer, dépanner son ordinateur et transformer ses documents avec une présence claire, vive et concrète.",
+  "Je peux accompagner tous les projets raisonnables qu'un client peut espérer piloter avec une assistante bureau: documents, factures, dossiers administratifs, planning, CRM léger, idées de marque, contenus web, supports commerciaux, base de connaissances, fichiers Drive/OneDrive, analyses de données simples, assistance informatique et suivi de projet.",
+  "Je distingue clairement ce qui tourne dans Kaen44 côté client et ce qui appartient à A11 côté serveur. A11 n'est pas installé localement chez les clients: je m'y connecte comme service distant quand c'est nécessaire.",
+  "Je dispose d'une CLI client légère, `kaen44` ou `k44`, pour ouvrir l'application, vérifier le statut local et enregistrer des tokens client de manière chiffrée avec Windows DPAPI. Je ne demande jamais à l'utilisateur de coller un token en clair dans le chat si la CLI peut le stocker localement.",
+  "Je peux présenter une console de modules claire côté client: connecteurs, fichiers, Drive/OneDrive, factures, voix, vision, exports, statut et extensions disponibles. Les modules dangereux, shell, déploiement, secrets et opérations serveur restent réservés à A11/admin.",
+  "Je peux appliquer un guard mode d'usage: si un client abuse, consomme trop de ressources ou approche un quota/coût anormal, je passe en mode limité transparent et je peux proposer Kaen44 Plus à 5 EUR. Je ne simule pas une fausse panne; j'annonce une limitation claire, je réduis les actions coûteuses et je demande l'abonnement si nécessaire.",
+  "Si un problème technique, quota fournisseur ou limitation guard mode se déclenche, je dois prévenir l'administrateur par email à cellaurojeffrey@gmail.com avec un résumé bref: utilisateur, heure, type de problème, action limitée et prochaine étape. Je ne joins jamais de tokens, secrets ou données sensibles.",
   "Pour les personnes malvoyantes, handicapées ou fatiguées, je privilégie un mode accessibilité: grosses cibles, lecture vocale, dictée, contraste, navigation clavier, résumé d'écran et actions confirmées. Le contrôle souris/clavier/écran ne se fait qu'avec consentement explicite, indication visible, journal local et possibilité d'arrêt immédiat.",
   "Si un contrôle d'écran avancé est nécessaire, je recommande un helper local dédié utilisant les API d'accessibilité Windows, pas une prise de contrôle cachée depuis une page web.",
   "Quand un projet demande des outils supplémentaires, je recommande seulement le minimum utile: navigateur moderne, OneDrive ou Google Drive pour les fichiers, Microsoft 365 ou LibreOffice pour les documents, PDF24 ou outil PDF équivalent, Git si le client gère du code, Node.js ou Python uniquement pour les projets techniques, Audacity/ffmpeg pour l'audio, ImageMagick ou outil image équivalent pour les images, SQLite pour une petite base locale, PostgreSQL pour une base métier, Neo4j seulement si le projet a vraiment besoin de graphe de relations, Docker seulement pour les postes techniques ou les déploiements.",
   "Pour la vision avancée, je peux m'appuyer sur Janus côté A11/serveur quand le projet implique analyse d'images, mémoire visuelle, description de captures, contrôle de générations image/vidéo ou extraction sémantique visuelle. Janus n'est pas une dépendance obligatoire du poste client.",
   "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommandé, avancé, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus à un client non technique si le besoin peut être couvert plus simplement.",
-  "Si je ne sais pas faire une action, je le dis simplement et je propose la prochaine action praticable.",
+  "Je parle comme une compagne de travail intelligente: directe, chaleureuse, précise, jamais corporate.",
   "Je privilégie les actions utiles: résumer, classer, transformer, proposer l'étape suivante, préparer des fichiers, guider les réglages et expliquer sans noyer.",
   "Je respecte les données personnelles: je ne demande pas d'accès inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou clés d'accès.",
   "Face à une demande floue, je fais une hypothèse raisonnable et j'avance, sauf si le risque est financier, destructif ou lié à des accès sensibles.",
@@ -1174,7 +1187,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Pour les factures de la société Funesterie, je peux aider à recevoir, trier, extraire et suivre les pièces comptables quand elles sont fournies ou synchronisées.",
   "Quand je traite une facture Funesterie, j'extrais le fournisseur, la date, l'échéance, le montant HT, la TVA, le montant TTC, la devise, le statut, les références de paiement et les anomalies possibles.",
   "Je classe les factures par état de traitement: inbox, review, processed, paid, exports et mail-log. Je signale les doublons, montants inhabituels, fournisseurs inconnus ou informations manquantes.",
-  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à funeste38@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
+  "J'envoie les synthèses, alertes et suivis de factures Funesterie par email à cellaurojeffrey@gmail.com quand l'utilisateur me demande de gérer, vérifier, classer ou suivre ces documents.",
   "Je ne paie jamais une facture, ne valide jamais un virement et ne modifie jamais une pièce comptable sensible sans validation explicite de l'utilisateur.",
   "J'assume mon positionnement: Kaen44 est un poste de pilotage personnel et professionnel, pas un panneau publicitaire.",
 ].join("\n");
@@ -1427,14 +1440,6 @@ function activateLocalDevSession(onLoginSuccess: () => void) {
   onLoginSuccess();
 }
 
-function clearLocalDevSession() {
-  try {
-    localStorage.removeItem("a11:local-dev-bypass");
-  } catch {
-    // Local storage can be unavailable in embedded surfaces.
-  }
-}
-
 function hasLocalDevSession() {
   if (!isLocalDevSurface()) return false;
   try {
@@ -1477,8 +1482,8 @@ function loadGoogleIdentityScript() {
 }
 
 function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
-  const isCentralLogin = isGeneralLoginRoute();
-  const isKaen44 = !isCentralLogin && isKaen44Experience();
+  const isCentralLogin = true;
+  const isKaen44 = false;
   const localDevSurface = isLocalDevSurface();
   const surfaceLinks = getSurfaceLinks();
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
@@ -1531,7 +1536,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           oauth_state_expired: "La tentative de connexion a expiré. Relance-la depuis cette page.",
           session_verification_failed: "La connexion a réussi, mais la session n'a pas pu être vérifiée. Réessaie une fois.",
           google_auth_not_configured: "La connexion Google n'est pas encore activée sur ce serveur.",
-          google_invalid_client: "Google refuse le client OAuth actif. Recharge la page et relance Google, ou utilise Microsoft le temps qu'on corrige.",
+          google_invalid_client: "La connexion Google est mal configurée côté serveur. Utilise Microsoft pendant que nous remplaçons la clé Google.",
           google_invalid_grant: "Google a refusé le code de connexion. Réessaie en repartant du bouton Google.",
           google_redirect_uri_mismatch: "Google refuse l'URL de retour configurée pour cette application.",
           google_access_denied: "La connexion Google a été annulée.",
@@ -1616,14 +1621,24 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setError("");
     setInfo("");
     setGoogleLoading(true);
-    startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
+    if (isCentralLogin) {
+      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      return;
+    }
+    const surface = isKaen44 ? "kaen44" : "a11";
+    startGoogleOAuth(buildAuthSuccessReturnTo(surface), isKaen44 ? "kaen44-web" : "web");
   };
 
   const handleMicrosoftOAuth = () => {
     setError("");
     setInfo("");
     setMicrosoftLoading(true);
-    startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
+    if (isCentralLogin) {
+      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      return;
+    }
+    const surface = isKaen44 ? "kaen44" : "a11";
+    startMicrosoftOAuth(buildAuthSuccessReturnTo(surface), isKaen44 ? "kaen44-web" : "web");
   };
 
   const switchMode = (nextMode: "login" | "register" | "forgot") => {
@@ -1764,39 +1779,17 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     lineHeight: 1,
     whiteSpace: "nowrap",
   });
-  const authQuickLinksStyle: React.CSSProperties = {
-    display: "flex",
-    gap: "8px",
-    justifyContent: "center",
-    flexWrap: "wrap",
-    width: "min(100%, 340px)",
-    marginTop: "2px",
-  };
-  const authQuickLinkStyle: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 34,
-    padding: "8px 12px",
-    borderRadius: isKaen44 ? "999px" : "8px",
-    border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
-    background: isKaen44 ? "rgba(30, 19, 14, 0.76)" : "rgba(3, 12, 20, 0.84)",
-    color: isKaen44 ? "#f8e4c7" : "#d8f3f0",
-    fontSize: 12,
-    fontWeight: 800,
-    textDecoration: "none",
-  };
 
   return (
     <div className={isKaen44 ? "kaen-auth-shell" : "alpha-auth-shell"} style={authShellStyle}>
       <div
         className={isCentralLogin ? "alpha-auth-card funesterie-login-card" : isKaen44 ? "kaen-auth-card" : "alpha-auth-card"}
       >
-      <h1>{isCentralLogin ? "Connexion Funesterie" : isKaen44 ? "Connexion Kaen44" : "Connexion A11"}</h1>
+      <h1>{isCentralLogin ? "Connexion Funesterie" : isKaen44 ? "Connexion Funesterie" : "Connexion A11"}</h1>
       {isCentralLogin ? (
         <>
           <div className="alpha-auth-mark" aria-hidden="true">
-            <span>F</span>
+            <img src={FUNESTERIE_LOGO_SRC} alt="" />
           </div>
           <div style={{ color: "#b9c8d8", fontSize: 13, margin: "-4px 0 2px", textAlign: "center" }}>
             Un seul accès pour Funesterie, K44, A11 et Vivy.
@@ -2016,11 +2009,11 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       )}
       {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
       {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
-      <nav style={authQuickLinksStyle} aria-label="Liens publics">
-        <a href={surfaceLinks.home} style={authQuickLinkStyle}>Accueil</a>
-        <a href={surfaceLinks.privacy} style={authQuickLinkStyle}>Confidentialité</a>
-        <a href={surfaceLinks.terms} style={authQuickLinkStyle}>Conditions</a>
-      </nav>
+      <div className="funesterie-login-links" aria-label="Navigation connexion Funesterie">
+        <a href={surfaceLinks.home}>Retour accueil</a>
+        <a href={surfaceLinks.privacy}>Confidentialité</a>
+        <a href={surfaceLinks.terms}>Conditions</a>
+      </div>
       </div>
     </div>
   );
@@ -2493,7 +2486,7 @@ function VivyStudioLab() {
 
   async function openAgent(target: "a11" | "k44") {
     await copyBrief(target === "a11" ? "Brief copié. Ouverture A11..." : "Brief copié. Ouverture Kaen44...");
-    const url = target === "a11" ? A11_PUBLIC_APP_URL : "https://k44.funesterie.me/#agents";
+    const url = target === "a11" ? A11_PUBLIC_APP_URL : new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -2636,7 +2629,7 @@ function VivyStudioLab() {
             <button type="submit">{activeMeta.action}</button>
             <button type="button" onClick={askVivy} disabled={isBusy}>Demander à Vivy</button>
             <button type="button" onClick={() => openAgent("a11")}>Ouvrir A11</button>
-            <button type="button" onClick={() => openAgent("k44")}>Ouvrir Kaen44</button>
+            <button type="button" onClick={() => openAgent("k44")}>Kaen44</button>
             <button type="button" onClick={saveBriefArtifact} disabled={isBusy}>Sauver dans A11</button>
           </div>
         </form>
@@ -2671,7 +2664,7 @@ function VivyStudioLab() {
   );
 }
 
-function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
+function VivyPublicChat() {
   const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => readVivyPublicChat());
   const [conversationId] = useState(() => readOrCreateVivyConversationId());
   const [draft, setDraft] = useState("");
@@ -2683,7 +2676,6 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const surfaceLinks = getSurfaceLinks();
 
   useEffect(() => {
     writeVivyPublicChat(messages);
@@ -2694,10 +2686,6 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
   }, [messages.length, isSending]);
 
   async function sendMessage(textOverride?: string) {
-    if (!authenticated) {
-      setStatus("Connecte-toi pour parler à Vivy.");
-      return;
-    }
     const text = toUnicodeText(textOverride ?? draft);
     const filesForMessage = attachedFiles.slice(0, 6);
     if ((!text && !filesForMessage.length) || isSending) return;
@@ -2781,10 +2769,6 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
     const file = event.target.files?.[0] || null;
     event.target.value = "";
     if (!file) return;
-    if (!authenticated) {
-      setStatus("Connecte-toi pour ajouter une référence voix privée.");
-      return;
-    }
     setStatus("Vivy garde la référence voix...");
     try {
       const label = `Vivy - ${toUnicodeLine(file.name.replace(/\.[^.]+$/, ""), "référence voix", 54)}`;
@@ -2811,10 +2795,6 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
     const selected = Array.from(event.target.files || []).slice(0, 4);
     event.target.value = "";
     if (!selected.length) return;
-    if (!authenticated) {
-      setStatus("Connecte-toi pour joindre des fichiers à Vivy.");
-      return;
-    }
 
     setStatus("Vivy ajoute les fichiers au contexte...");
     const nextFiles: VivyPublicChatFile[] = [];
@@ -2868,24 +2848,12 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
       <div className="vivy-chat-head">
         <div>
           <h2>Parler à Vivy</h2>
-          <p>{authenticated
-            ? "Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable."
-            : "Connexion requise pour discuter avec l'IA. Les règles restent accessibles sans session."}</p>
+          <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
         </div>
-        {authenticated ? <button type="button" onClick={resetChat}>Reset</button> : null}
+        <button type="button" onClick={resetChat}>Reset</button>
       </div>
-      {!authenticated ? (
-        <div className="vivy-chat-locked" role="note">
-          <strong>Session requise</strong>
-          <span>Vivy peut garder des idées et fichiers en mémoire privée seulement après connexion.</span>
-          <div>
-            <a href={surfaceLinks.kaen44Login}>Se connecter</a>
-            <a href={surfaceLinks.privacy}>Confidentialité</a>
-          </div>
-        </div>
-      ) : null}
 
-      <div className="vivy-chat-log" aria-live="polite" aria-disabled={!authenticated}>
+      <div className="vivy-chat-log" aria-live="polite">
         {messages.map((message) => (
           <article key={message.id} className={`vivy-chat-message vivy-chat-message--${message.role}`}>
             <span>{message.role === "user" ? "Vous" : "Vivy"}</span>
@@ -2916,14 +2884,13 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."
           rows={3}
-          disabled={!authenticated}
         />
         <div>
-          <button type="button" disabled={!authenticated} onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
-          <button type="button" disabled={!authenticated} onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
-          <button type="button" disabled={!authenticated} onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
-          <button type="button" disabled={!authenticated} onClick={() => fileInputRef.current?.click()}>Fichier</button>
-          <button type="submit" disabled={!authenticated || isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
+          <button type="button" onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
+          <button type="button" onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
+          <button type="button" onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
+          <button type="button" onClick={() => fileInputRef.current?.click()}>Fichier</button>
+          <button type="submit" disabled={isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
       </form>
       {attachedFiles.length ? (
@@ -2968,7 +2935,7 @@ function VivyPublicChat({ authenticated }: { authenticated: boolean }) {
   );
 }
 
-function VivyPublicSurface({ authenticated }: { authenticated: boolean }) {
+function VivyPublicSurface() {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
     { mode: "voice", label: "Ouvrir création voix dans le Studio Vivy" },
     { mode: "song", label: "Ouvrir Composition production dans le Studio Vivy" },
@@ -2995,376 +2962,21 @@ function VivyPublicSurface({ authenticated }: { authenticated: boolean }) {
               />
             ))}
           </div>
-          <div className="vivy-public-mobile-actions" aria-label="Accès directs mobiles Vivy">
-            <button
-              type="button"
-              className="vivy-public-mobile-action vivy-public-mobile-action--music"
-              onClick={() => openVivyStudioMode("song")}
-              aria-label="Ouvrir musique et composition dans le Studio Vivy"
-            >
-              Musique
-            </button>
-            <button
-              type="button"
-              className="vivy-public-mobile-action vivy-public-mobile-action--creation"
-              onClick={() => openVivyStudioMode("voice")}
-              aria-label="Ouvrir création voix dans le Studio Vivy"
-            >
-              Création
-            </button>
-            <button
-              type="button"
-              className="vivy-public-mobile-action vivy-public-mobile-action--share"
-              onClick={() => openVivyStudioMode("share")}
-              aria-label="Ouvrir scène et partage dans le Studio Vivy"
-            >
-              Partage
-            </button>
-          </div>
+        </div>
+        <div className="vivy-public-mobile-slices" aria-hidden="true">
+          <img className="vivy-mobile-slice vivy-mobile-slice--portrait" src={VIVY_POSTER_SRC} alt="" />
+          <img className="vivy-mobile-slice vivy-mobile-slice--voice" src={VIVY_POSTER_SRC} alt="" />
+          <img className="vivy-mobile-slice vivy-mobile-slice--production" src={VIVY_POSTER_SRC} alt="" />
+          <img className="vivy-mobile-slice vivy-mobile-slice--scene" src={VIVY_POSTER_SRC} alt="" />
         </div>
       </section>
-      <VivyPublicChat authenticated={authenticated} />
+      <VivyPublicChat />
       <VivyStudioLab />
     </>
   );
 }
 
-function FunesterieCockpitPage({
-  authenticated,
-  displayName,
-  authEmail,
-}: {
-  authenticated: boolean;
-  displayName: string;
-  authEmail: string;
-}) {
-  const surfaceLinks = getSurfaceLinks();
-  const [status, setStatus] = useState<McpCockpitSummary | null>(null);
-  const [statusState, setStatusState] = useState<"idle" | "loading" | "ready" | "denied" | "error">("idle");
-  const [statusMessage, setStatusMessage] = useState("");
-
-  useEffect(() => {
-    document.documentElement.classList.add("funesterie-cockpit-page-root");
-    document.body.classList.add("funesterie-cockpit-page-body");
-
-    return () => {
-      document.documentElement.classList.remove("funesterie-cockpit-page-root");
-      document.body.classList.remove("funesterie-cockpit-page-body");
-    };
-  }, [authenticated]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!authenticated) {
-      setStatus(null);
-      setStatusState("idle");
-      setStatusMessage("");
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    async function refreshStatus() {
-      setStatusState((current) => current === "ready" ? "ready" : "loading");
-      try {
-        const next = await fetchMcpCockpitStatus();
-        if (cancelled) return;
-        setStatus(next);
-        setStatusState("ready");
-        setStatusMessage("");
-      } catch (error_: any) {
-        if (cancelled) return;
-        const statusCode = Number(error_?.status || 0);
-        setStatusState(statusCode === 403 ? "denied" : "error");
-        setStatusMessage(String(error_?.message || "Cockpit MCP indisponible."));
-      }
-    }
-
-    void refreshStatus();
-    const interval = window.setInterval(refreshStatus, 10000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [authenticated]);
-
-  const accountLabel = String(authEmail || displayName || "Session Funesterie").trim();
-  const statusCards = [
-    {
-      id: "a11",
-      name: "A11",
-      role: "Moteur image, vidéo, documents",
-      ok: status?.a11?.ok === true,
-      detail: status?.a11?.ok ? "Joignable" : "À vérifier",
-    },
-    {
-      id: "kaen44",
-      name: "Kaen44",
-      role: "Interface client et bureau",
-      ok: status?.kaen44?.ok === true,
-      detail: status?.kaen44?.ok ? "Joignable" : "À vérifier",
-    },
-    {
-      id: "vivy",
-      name: "Vivy",
-      role: "Voix, audio et média",
-      ok: status?.vivy?.ok === true,
-      detail: status?.vivy?.audio ? "Audio MCP joignable" : status?.vivy?.present ? "Présente sur le MCP" : "À vérifier",
-    },
-    {
-      id: "agents",
-      name: "Agents visibles",
-      role: `${Number(status?.agents?.active || 0)}/${Number(status?.agents?.total || 0)} actifs`,
-      ok: Number(status?.agents?.active || 0) > 0,
-      detail: (status?.agents?.names || []).join(", ") || "Aucun actif",
-    },
-    {
-      id: "jobs",
-      name: "Patrouille MCP",
-      role: `${Number(status?.jobs?.running || 0)} en cours, ${Number(status?.jobs?.ready || 0)} prêts`,
-      ok: statusState === "ready",
-      detail: `${Number(status?.jobs?.total || 0)} jobs suivis`,
-    },
-    {
-      id: "game",
-      name: "Jeu local",
-      role: status?.game?.source || "RomStation",
-      ok: status?.game?.ready === true,
-      detail: status?.game?.ready ? "Prêt" : String(status?.game?.phase || "En attente"),
-    },
-    {
-      id: "controller",
-      name: "QFlush",
-      role: "Entrées locales et manette",
-      ok: status?.controller?.ready === true,
-      detail: `${Number(status?.controller?.recentCount || 0)} signaux récents`,
-    },
-  ];
-  const readyCount = statusCards.filter((card) => card.ok).length;
-  const totalCount = statusCards.length;
-  const lastUpdated = status?.updatedAt
-    ? new Date(status.updatedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })
-    : "";
-  const loginHref = buildCentralLoginUrl(surfaceLinks.cockpit);
-  const mcpConsoleHref = (() => {
-    if (!surfaceLinks.cockpit.startsWith("http")) return "/cockpit/mcp";
-    return new URL("/cockpit/mcp", surfaceLinks.cockpit).toString();
-  })();
-  const threadBuckets: Array<{ key: string; label: string; total?: number; items: McpCockpitThread[] }> = [
-    {
-      key: "working",
-      label: "En cours",
-      total: status?.threads?.working?.total,
-      items: status?.threads?.working?.items || [],
-    },
-    {
-      key: "open",
-      label: "Ouverts",
-      total: status?.threads?.open?.total,
-      items: status?.threads?.open?.items || [],
-    },
-    {
-      key: "pitching",
-      label: "Pitching",
-      total: status?.threads?.pitching?.total,
-      items: status?.threads?.pitching?.items || [],
-    },
-  ];
-  const seenThreadKeys = new Set<string>();
-  const visibleThreads = threadBuckets.flatMap((bucket) => bucket.items.map((thread, index) => ({
-    ...thread,
-    bucketKey: bucket.key,
-    bucketLabel: bucket.label,
-    sortIndex: index,
-  }))).filter((thread) => {
-    const key = `${thread.id || ""}|${thread.title || ""}|${thread.status || thread.bucketKey}`;
-    if (seenThreadKeys.has(key)) return false;
-    seenThreadKeys.add(key);
-    return true;
-  }).slice(0, 10);
-  const visibleThreadTotal = threadBuckets.reduce((sum, bucket) => sum + Number(bucket.total || 0), 0);
-  const formatThreadTime = (value?: string) => {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return raw;
-    return parsed.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
-  };
-
-  return (
-    <main className="funesterie-ops-shell fun-mcp-shell fun-public-surface">
-      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Cockpit" />
-
-      <section className="fun-mcp-hero" aria-label="Cockpit MCP privé Funesterie">
-        <div>
-          <span>{authenticated ? "Accès privé" : "Connexion requise"}</span>
-          <h1>Cockpit MCP</h1>
-          <p>
-            Patrouille privée des outils NOSSEN : agents visibles, QFlush, jeu local,
-            jobs actifs et pont A11/Kaen44. Rien ne sort sans session admin.
-          </p>
-          <div className="fun-mcp-actions">
-            {authenticated ? (
-              <>
-                <a href={surfaceLinks.kaen44Cockpit}>Ouvrir K44</a>
-                <a href={surfaceLinks.a11Cockpit}>Ouvrir A11</a>
-                <a href={surfaceLinks.vivyStudio}>Ouvrir Vivy</a>
-                <a href={mcpConsoleHref}>Console MCP</a>
-              </>
-            ) : (
-              <a href={loginHref}>Se connecter</a>
-            )}
-          </div>
-        </div>
-        <aside className={statusState === "ready" ? "is-ok" : statusState === "denied" || statusState === "error" ? "is-down" : "is-warn"}>
-          <strong>{authenticated ? `${readyCount}/${totalCount}` : "Privé"}</strong>
-          <span>
-            {!authenticated ? "Admin requis" : statusState === "ready" ? "Patrouille active" : statusState === "denied" ? "Accès refusé" : "Synchronisation"}
-          </span>
-          <small>{authenticated ? accountLabel : "Google ou Microsoft"}</small>
-          {lastUpdated ? <small>MAJ {lastUpdated}</small> : null}
-        </aside>
-      </section>
-
-      {!authenticated ? (
-        <section className="fun-mcp-locked" aria-label="Cockpit verrouillé">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <div>
-            <h2>Accès réservé</h2>
-            <p>Le cockpit MCP est ouvert uniquement aux comptes admin Funesterie validés.</p>
-          </div>
-          <a href={loginHref}>Connexion centrale</a>
-        </section>
-      ) : statusState === "denied" ? (
-        <section className="fun-mcp-locked is-denied" aria-label="Accès refusé">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          <div>
-            <h2>Compte non autorisé</h2>
-            <p>{statusMessage || "Ce compte est connecté, mais il n'est pas dans la liste admin MCP."}</p>
-          </div>
-          <a href={surfaceLinks.account}>Compte</a>
-        </section>
-      ) : (
-        <>
-          {statusMessage ? <p className="fun-mcp-alert">{statusMessage}</p> : null}
-          <section id="etat" className="funesterie-ops-status-grid fun-mcp-grid" aria-label="État privé des outils MCP">
-            {statusCards.map((card) => (
-              <article key={card.id} className={`funesterie-ops-status-card is-${card.ok ? "ok" : statusState === "loading" ? "checking" : "down"}`}>
-                <span>
-                  <i aria-hidden="true" />
-                  {card.ok ? "opérationnel" : statusState === "loading" ? "lecture" : "à vérifier"}
-                </span>
-                <strong>{card.name}</strong>
-                <em>{card.role}</em>
-                <small>{card.detail}</small>
-                <b>{card.ok ? "Prêt" : "Non confirmé"}</b>
-              </article>
-            ))}
-          </section>
-
-          <section className="fun-mcp-threads" aria-label="Fils et discussions MCP">
-            <div className="fun-mcp-threads-head">
-              <div>
-                <span>Threads MCP</span>
-                <h2>Fils, chats et coordination</h2>
-                <p>
-                  Vue courte des discussions actives. Les aperçus sont caviardés côté serveur;
-                  la lecture complète et les actions passent par la console admin A11.
-                </p>
-              </div>
-              <a href={mcpConsoleHref}>Ouvrir la console</a>
-            </div>
-            <div className="fun-mcp-thread-meters" aria-label="Compteurs threads">
-              {threadBuckets.map((bucket) => (
-                <span key={bucket.key}>
-                  <b>{Number(bucket.total || 0)}</b>
-                  {bucket.label}
-                </span>
-              ))}
-              <span>
-                <b>{visibleThreadTotal}</b>
-                Total suivi
-              </span>
-            </div>
-            <div className="fun-mcp-thread-list">
-              {visibleThreads.map((thread, index) => {
-                const participants = (thread.participants || []).join(", ");
-                const tags = thread.tags || [];
-                const updated = formatThreadTime(thread.updatedAt);
-                const messageCount = Number(thread.messageCount || 0);
-                return (
-                  <article key={`${thread.bucketKey}-${thread.id || thread.title || index}`} className="fun-mcp-thread-row">
-                    <div className="fun-mcp-thread-main">
-                      <span>{thread.bucketLabel}</span>
-                      <h3>{thread.title || "Fil MCP"}</h3>
-                      <small>
-                        {[participants || thread.topic || thread.status, messageCount ? `${messageCount} messages` : "", updated ? `MAJ ${updated}` : ""]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </small>
-                    </div>
-                    <p>
-                      {thread.lastSnippet ? (
-                        <>
-                          {thread.lastFrom ? <b>{thread.lastFrom}: </b> : null}
-                          {thread.lastSnippet}
-                        </>
-                      ) : (
-                        "Aucun aperçu affichable pour ce fil."
-                      )}
-                    </p>
-                    {tags.length ? (
-                      <div className="fun-mcp-thread-tags">
-                        {tags.slice(0, 5).map((tag) => <i key={tag}>{tag}</i>)}
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
-              {!visibleThreads.length ? (
-                <article className="fun-mcp-thread-row is-empty">
-                  <div className="fun-mcp-thread-main">
-                    <span>Calme</span>
-                    <h3>Aucun fil MCP visible</h3>
-                    <small>La patrouille reste joignable; recharge ou ouvre la console si tu viens de créer un thread.</small>
-                  </div>
-                </article>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="fun-mcp-flow" aria-label="Rendez-vous agents">
-            <div>
-              <span>Pitching</span>
-              <h2>{Number(status?.pitching?.ready || 0)}/{Number(status?.pitching?.total || 0)} prêts</h2>
-              <p>Les discussions de coordination restent visibles ici pour la patrouille, sans exposer les contenus sensibles.</p>
-            </div>
-            <ol>
-              {(status?.pitching?.items || []).slice(0, 4).map((item, index) => (
-                <li key={`${item.title || "pitch"}-${index}`} className={item.ready ? "is-ready" : ""}>
-                  <i>{item.ready ? "Prêt" : "À suivre"}</i>
-                  <strong>{item.title || "Rendez-vous agents"}</strong>
-                  <small>{Number(item.requiredAnswered || 0)}/{Number(item.requiredTotal || 0)} requis</small>
-                </li>
-              ))}
-              {!(status?.pitching?.items || []).length ? (
-                <li>
-                  <i>Calme</i>
-                  <strong>Aucun rendez-vous actif</strong>
-                  <small>La patrouille attend le prochain signal.</small>
-                </li>
-              ) : null}
-            </ol>
-          </section>
-        </>
-      )}
-
-      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
-    </main>
-  );
-}
-
-function VivyPublicPage({ authenticated = false }: { authenticated?: boolean }) {
+function VivyPublicPage() {
   useEffect(() => {
     document.documentElement.classList.add("vivy-public-page-root");
     document.body.classList.add("vivy-public-page-body");
@@ -3375,6 +2987,12 @@ function VivyPublicPage({ authenticated = false }: { authenticated?: boolean }) 
   }, []);
 
   const surfaceLinks = getSurfaceLinks();
+  const [connectionStarting, setConnectionStarting] = useState(false);
+
+  function startVivyGoogle() {
+    setConnectionStarting(true);
+    startGoogleOAuth(buildAuthSuccessReturnTo("vivy"), "vivy-web");
+  }
 
   return (
     <main className="kaen-public-shell kaen-public-shell--page vivy-public-shell">
@@ -3387,78 +3005,28 @@ function VivyPublicPage({ authenticated = false }: { authenticated?: boolean }) 
           </span>
         </a>
         <div>
-          <a href={surfaceLinks.home}>Accueil</a>
           <a href={surfaceLinks.vivy}>Vivy</a>
           <a href="#vivy-studio">Studio</a>
           <a href={surfaceLinks.kaen44}>Kaen44</a>
           <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.privacy}>Confidentialité</a>
-          <a href={surfaceLinks.terms}>Conditions</a>
+          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
+          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
+          <button
+            type="button"
+            className="kaen-public-login"
+            onClick={startVivyGoogle}
+            disabled={connectionStarting}
+          >
+            {connectionStarting ? "Connexion..." : "Connexion"}
+          </button>
         </div>
       </nav>
-      <VivyPublicSurface authenticated={authenticated} />
+      <VivyPublicSurface />
     </main>
   );
 }
 
 type SurfaceLinks = ReturnType<typeof getSurfaceLinks>;
-
-function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
-  return [
-    ["Accueil", surfaceLinks.home],
-    ["Agents", surfaceLinks.agents],
-    ["Cockpit", surfaceLinks.cockpit],
-    ["Compte", surfaceLinks.account],
-    ["Contact", surfaceLinks.contact],
-  ] as const;
-}
-
-function getFunesterieFooterShortcutItems(surfaceLinks: SurfaceLinks) {
-  return [
-    ["Accueil", surfaceLinks.home],
-    ["Agents", surfaceLinks.agents],
-    ["Compte", surfaceLinks.account],
-  ] as const;
-}
-
-function FunesteriePublicNav({
-  surfaceLinks,
-  brandLabel = "Funesterie",
-}: {
-  surfaceLinks: SurfaceLinks;
-  brandLabel?: string;
-}) {
-  return (
-    <nav className="fun-home-nav fun-public-nav" aria-label="Navigation Funesterie">
-      <a href={surfaceLinks.home} className="fun-home-brand" aria-label="Funesterie accueil">
-        <img src={FUNESTERIE_LOGO_SRC} alt="" />
-        <span>{brandLabel}</span>
-      </a>
-      <div className="fun-home-nav-links">
-        {getFunesteriePublicNavItems(surfaceLinks).map(([label, href]) => (
-          <a key={label} href={href}>{label}</a>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
-function FunesteriePublicFooter({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
-  return (
-    <footer id="contact" className="fun-home-footer fun-public-footer">
-      <div className="fun-public-footer-links" aria-label="Raccourcis Funesterie">
-        {getFunesterieFooterShortcutItems(surfaceLinks).map(([label, href]) => (
-          <a key={label} href={href}>{label}</a>
-        ))}
-      </div>
-      <div className="fun-public-footer-legal" aria-label="Liens légaux Funesterie">
-        <a href={surfaceLinks.privacy}>Confidentialité</a>
-        <a href={surfaceLinks.terms}>Conditions</a>
-        <a href={surfaceLinks.contact}>Contact</a>
-      </div>
-    </footer>
-  );
-}
 
 function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
   return [
@@ -3522,12 +3090,57 @@ const FUNESTERIE_HOME_AGENTS = [
   },
 ];
 
+const NOSSEN_PUBLIC_PACKAGES = [
+  "@nossen/all-in-one",
+  "@nossen/allmight",
+  "@nossen/bat",
+  "@nossen/bat-system",
+  "@nossen/beam",
+  "@nossen/dragon",
+  "@nossen/dragon-contracts",
+  "@nossen/dragon-upstream",
+  "@nossen/envapt-superimg",
+  "@nossen/envaptex",
+  "@nossen/freeland",
+  "@nossen/freeland-bros",
+  "@nossen/katana",
+  "@nossen/logic-reduce",
+  "@nossen/mcp-agent-bus",
+  "@nossen/mcp-chopper-mixer",
+  "@nossen/mcp-cloud-assets",
+  "@nossen/mcp-job-queue",
+  "@nossen/mcp-media-bridge",
+  "@nossen/mcp-memory-graph",
+  "@nossen/mcp-public-endpoints",
+  "@nossen/mcp-qflush-control",
+  "@nossen/mcp-retro-session",
+  "@nossen/mcp-security-preflight",
+  "@nossen/mcp-tool-manifest",
+  "@nossen/mcp-toolkit",
+  "@nossen/mcp-web-drafts",
+  "@nossen/mcp-worker-supervisor",
+  "@nossen/morphing",
+  "@nossen/nezlephant",
+  "@nossen/qflush",
+  "@nossen/qflush-runner",
+  "@nossen/rome",
+  "@nossen/scentgate",
+  "@nossen/scream",
+  "@nossen/spyder",
+  "a11-coder",
+] as const;
+
+function buildNpmPackageUrl(packageName: string) {
+  return `https://www.npmjs.com/package/${packageName}`;
+}
+
 function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
+  if (agentHref === "home") return surfaceLinks.home;
   if (agentHref === "vivy") return surfaceLinks.vivy;
   if (agentHref === "a11") return surfaceLinks.a11;
   if (agentHref === "kaen44") return surfaceLinks.kaen44;
   if (agentHref === "cockpit") return surfaceLinks.cockpit;
-  return surfaceLinks.cockpit;
+  return surfaceLinks.agents;
 }
 
 function NossenCrewShowcase({
@@ -3541,7 +3154,7 @@ function NossenCrewShowcase({
     <section id={id} className="nossen-crew-showcase" aria-label="Nossen Ride Crew">
       <img
         src={NOSSEN_CREW_SRC}
-        alt="Nossen Ride Crew avec Vivy, Kaen44, A11 et Djeff."
+        alt="Nossen Ride Crew avec Vivy, Kaen44 et A11."
         loading={eager ? "eager" : "lazy"}
         decoding="async"
       />
@@ -3549,49 +3162,600 @@ function NossenCrewShowcase({
   );
 }
 
-function FunesterieConnectedHomePage({
+function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
+  return [
+    ["Accueil", surfaceLinks.home],
+    ["Agents", surfaceLinks.agents],
+    ["État", surfaceLinks.cockpit],
+    ["Compte", surfaceLinks.account],
+    ["Contact", surfaceLinks.contact],
+  ] as const;
+}
+
+function FunesteriePublicNav({
   surfaceLinks,
-  primarySurface = getCurrentSurfaceKind(),
-  authenticated = false,
-  displayName = "",
+  brandLabel = "Funesterie",
 }: {
   surfaceLinks: SurfaceLinks;
-  primarySurface?: FunesterieSurface;
+  brandLabel?: string;
+}) {
+  return (
+    <nav className="fun-home-nav fun-public-nav" aria-label="Navigation Funesterie">
+      <a href={surfaceLinks.home} className="fun-home-brand" aria-label="Funesterie accueil">
+        <img src={FUNESTERIE_LOGO_SRC} alt="" />
+        <span>{brandLabel}</span>
+      </a>
+      <div className="fun-home-nav-links">
+        {getFunesteriePublicNavItems(surfaceLinks).map(([label, href]) => (
+          <a key={label} href={href}>{label}</a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function FunesteriePublicFooter({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+}: {
+  surfaceLinks: SurfaceLinks;
   authenticated?: boolean;
   displayName?: string;
+  onLogout?: () => void;
 }) {
-  const [accountBusy, setAccountBusy] = useState<"" | "google">("");
+  return (
+    <footer id="contact" className="fun-home-footer fun-public-footer">
+      <div className="fun-public-footer-legal" aria-label="Liens légaux Funesterie">
+        <a href={surfaceLinks.privacy}>Confidentialité</a>
+        <a href={surfaceLinks.terms}>Conditions</a>
+      </div>
+      <div className="fun-public-footer-session" aria-label="Session Funesterie">
+        <span>{authenticated ? (displayName || "Connecté") : "Public"}</span>
+        {authenticated ? (
+          <button type="button" onClick={onLogout}>Se déconnecter</button>
+        ) : (
+          <a href={buildCentralLoginUrl(surfaceLinks.account)}>Se connecter</a>
+        )}
+      </div>
+    </footer>
+  );
+}
 
-  const accountReturnTo = surfaceLinks.cockpitAuthSuccess || "/cockpit/auth/success";
+type FunesterieServiceStatus = "checking" | "ok" | "down";
 
-  function startHomeGoogle() {
-    setAccountBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-home");
+const FUNESTERIE_STATUS_META: Record<FunesterieServiceStatus, { label: string; detail: string }> = {
+  checking: { label: "vérification", detail: "Test en cours" },
+  ok: { label: "opérationnel", detail: "Joignable" },
+  down: { label: "à vérifier", detail: "Non confirmé" },
+};
+
+function FunesterieHomeIntro({
+  surfaceLinks,
+  authenticated,
+  displayName,
+  onConnect,
+  busy,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated: boolean;
+  displayName: string;
+  onConnect: () => void;
+  busy: boolean;
+}) {
+  return (
+    <section className="fun-home-hero" aria-label="Accueil NOSSEN Funesterie">
+      <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+      <p>
+        NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
+        entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
+        Les agents gardent chacun leur spécialité.
+      </p>
+      <div className="fun-home-actions">
+        <a href={surfaceLinks.agents}>Agents</a>
+        <button type="button" onClick={onConnect} disabled={busy}>
+          {busy ? "Connexion..." : authenticated ? (displayName || "Compte") : "Se connecter"}
+        </button>
+        <a href={surfaceLinks.cockpit}>État</a>
+      </div>
+    </section>
+  );
+}
+
+function FunesterieAgentsShowcase({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
+  return (
+    <section id="agents" className="fun-home-agents" aria-label="Agents Funesterie">
+      <div className="fun-home-agent-grid">
+        {FUNESTERIE_HOME_AGENTS.map((agent) => (
+          <a
+            key={agent.id}
+            className={`fun-home-agent-card fun-home-agent-card--${agent.tone}`}
+            href={buildHomeAgentHref(agent.href, surfaceLinks)}
+          >
+            <img src={agent.image} alt="" loading="lazy" decoding="async" />
+            <span className="fun-home-agent-copy">
+              <strong>{agent.name}</strong>
+              <small>{agent.role}</small>
+              <span>{agent.text}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type FunesterieProbeStatus = "checking" | "ok" | "down";
+
+type FunesterieProbe = {
+  id: string;
+  label: string;
+  detail: string;
+  url: string;
+};
+
+const FUNESTERIE_PUBLIC_PROBES: FunesterieProbe[] = [
+  { id: "public", label: "Funesterie public", detail: "Page et backend public", url: "/health" },
+  { id: "a11", label: "A11", detail: "Agent média", url: "https://a11.funesterie.me/health" },
+  { id: "kaen44", label: "Kaen44", detail: "Agent bureau", url: "https://k44.funesterie.me/health" },
+  { id: "vivy", label: "Vivy", detail: "Surface musicale", url: "https://vivy.funesterie.me/health" },
+  { id: "mcp", label: "MCP", detail: "Bus agents", url: "https://mcp.funesterie.me/health" },
+];
+
+async function probePublicEndpoint(url: string, timeoutMs = 4500): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const target = url.startsWith("/") ? url : url;
+    const sameOrigin = url.startsWith("/") || url.startsWith(window.location.origin);
+    const response = await fetch(target, {
+      method: "GET",
+      cache: "no-store",
+      mode: sameOrigin ? "same-origin" : "no-cors",
+      signal: controller.signal,
+    });
+    return response.type === "opaque" || response.ok;
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function FunesteriePublicStatusPage({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+  isAdmin = false,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated?: boolean;
+  displayName?: string;
+  onLogout?: () => void;
+  isAdmin?: boolean;
+}) {
+  const [checks, setChecks] = useState<Record<string, FunesterieProbeStatus>>(() =>
+    Object.fromEntries(FUNESTERIE_PUBLIC_PROBES.map((probe) => [probe.id, "checking"]))
+  );
+  const [checkedAt, setCheckedAt] = useState("");
+
+  async function refresh() {
+    setChecks(Object.fromEntries(FUNESTERIE_PUBLIC_PROBES.map((probe) => [probe.id, "checking"])));
+    const results = await Promise.all(
+      FUNESTERIE_PUBLIC_PROBES.map(async (probe) => [probe.id, await probePublicEndpoint(probe.url)] as const)
+    );
+    setChecks(Object.fromEntries(results.map(([id, ok]) => [id, ok ? "ok" : "down"])));
+    setCheckedAt(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+  }
+
+  useEffect(() => {
+    if (!authenticated || !isAdmin) return;
+    void refresh();
+  }, [authenticated, isAdmin]);
+
+  const values = Object.values(checks);
+  const checking = values.some((status) => status === "checking");
+  const allOk = !checking && values.every((status) => status === "ok");
+
+  if (!authenticated || !isAdmin) {
+    return (
+      <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="État admin Funesterie">
+        <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="État" />
+        <section className="fun-token-panel fun-token-locked" aria-label="Accès admin requis">
+          <header className="fun-token-head">
+            <div>
+              <span>Admin requis</span>
+              <h2>État Funesterie</h2>
+              <p>
+                Les statuts MCP, connecteurs et contrôles techniques sont réservés au compte admin.
+                Connecte-toi avec le login Funesterie central pour y accéder.
+              </p>
+            </div>
+            <aside>
+              <strong>Privé</strong>
+              <small>{authenticated ? "admin requis" : "connexion"}</small>
+            </aside>
+          </header>
+          <div className="fun-integration-actions">
+            <a href={buildCentralLoginUrl(surfaceLinks.cockpit)}>Connexion admin</a>
+            <a href={surfaceLinks.home}>Retour accueil</a>
+          </div>
+        </section>
+        <FunesteriePublicFooter
+          surfaceLinks={surfaceLinks}
+          authenticated={authenticated}
+          displayName={displayName}
+          onLogout={onLogout}
+        />
+      </main>
+    );
   }
 
   return (
-    <main id="top" className="fun-home-shell fun-public-surface" aria-label="Accueil Funesterie connecté">
-      <FunesteriePublicNav surfaceLinks={surfaceLinks} />
-
-      <section className="fun-home-hero" aria-label="Funesterie, écosystème connecté">
-        <div className="fun-home-core">
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="État admin Funesterie">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="État" />
+      <section className="fun-status-public" aria-label="État Funesterie">
+        <header className="fun-status-public-head">
           <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
-          <p>
-            NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
-            entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
-            Les agents gardent chacun leur spécialité.
-          </p>
-          <div className="fun-home-actions">
-            <a href={surfaceLinks.agents}>Agents</a>
-            <button type="button" onClick={startHomeGoogle} disabled={Boolean(accountBusy)}>
-              {accountBusy === "google" ? "Connexion..." : "Se connecter"}
-            </button>
-            <a href={surfaceLinks.cockpit}>État opérationnel</a>
+          <div>
+            <span>État admin</span>
+            <h1>{checking ? "Vérification en cours" : allOk ? "Tout est fonctionnel" : "À vérifier"}</h1>
+            <p>
+              Statut des surfaces Funesterie et accès MCP réservés admin.
+            </p>
           </div>
+          <button type="button" onClick={() => void refresh()}>
+            Vérifier
+          </button>
+        </header>
+        <div className="fun-status-grid">
+          {FUNESTERIE_PUBLIC_PROBES.map((probe) => {
+            const status = checks[probe.id] || "checking";
+            return (
+              <article key={probe.id} className={`fun-status-card fun-status-card--${status}`}>
+                <strong>{probe.label}</strong>
+                <span>{probe.detail}</span>
+                <small>{status === "checking" ? "test" : status === "ok" ? "fonctionnel" : "à vérifier"}</small>
+              </article>
+            );
+          })}
+        </div>
+        <footer className="fun-status-public-foot">
+          <span>{checkedAt ? `Dernier contrôle ${checkedAt}` : "Contrôle initial"}</span>
+          <a href={surfaceLinks.account}>Compte</a>
+        </footer>
+      </section>
+      <FunesterieMcpAdminPanel surfaceLinks={surfaceLinks} authenticated={authenticated} displayName={displayName} />
+      <FunesteriePublicFooter
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+      />
+    </main>
+  );
+}
+
+function FunesterieMcpAdminPanel({
+  surfaceLinks,
+  authenticated,
+  displayName,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated: boolean;
+  displayName: string;
+}) {
+  const [mcpHealth, setMcpHealth] = useState<FunesterieProbeStatus>("checking");
+  const [token, setToken] = useState("");
+  const [privateResult, setPrivateResult] = useState("Non testé");
+  const [busy, setBusy] = useState<"" | "google" | "microsoft" | "mcp">("");
+  const accountReturnTo = surfaceLinks.account || "/compte/";
+
+  async function refreshMcpHealth() {
+    setMcpHealth("checking");
+    setMcpHealth((await probePublicEndpoint("https://mcp.funesterie.me/health")) ? "ok" : "down");
+  }
+
+  useEffect(() => {
+    void refreshMcpHealth();
+  }, []);
+
+  async function testPrivateMcp() {
+    const trimmedToken = token.trim();
+    if (!trimmedToken) {
+      setPrivateResult("Token admin requis pour tester /mcp privé.");
+      return;
+    }
+    setBusy("mcp");
+    setPrivateResult("Test en cours...");
+    try {
+      const response = await fetch("https://mcp.funesterie.me/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${trimmedToken}`,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "funesterie-admin-ui",
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "funesterie-admin-ui", version: "1.0.0" },
+          },
+        }),
+      });
+      setPrivateResult(response.ok ? "MCP privé joignable." : `Réponse MCP: ${response.status}`);
+    } catch {
+      setPrivateResult("MCP privé non lisible depuis le navigateur. Vérifie CORS ou passe par le client MCP.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function connectGoogle() {
+    setBusy("google");
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
+  }
+
+  function connectMicrosoft() {
+    setBusy("microsoft");
+    startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
+  }
+
+  return (
+    <section className="fun-mcp-admin" aria-label="Interface admin MCP">
+      <header className="fun-mcp-admin-head">
+        <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+        <div>
+          <span>Compte admin</span>
+          <h1>MCP Funesterie</h1>
+          <p>{authenticated && displayName ? displayName : "Interface de contrôle MCP, sans affichage de secret."}</p>
+        </div>
+        <button type="button" onClick={() => void refreshMcpHealth()}>
+          Rafraîchir
+        </button>
+      </header>
+
+      <div className="fun-mcp-grid">
+        <article className={`fun-status-card fun-status-card--${mcpHealth}`}>
+          <strong>MCP public</strong>
+          <span>https://mcp.funesterie.me/health</span>
+          <small>{mcpHealth === "checking" ? "test" : mcpHealth === "ok" ? "fonctionnel" : "à vérifier"}</small>
+        </article>
+        <article className="fun-status-card fun-status-card--ok">
+          <strong>Connecteurs publics</strong>
+          <span>ChatGPT, Claude, Gemini, Grok</span>
+          <small>routes séparées</small>
+        </article>
+        <article className="fun-status-card">
+          <strong>MCP privé</strong>
+          <span>https://mcp.funesterie.me/mcp</span>
+          <small>bearer requis</small>
+        </article>
+      </div>
+
+      <div className="fun-mcp-actions" aria-label="Actions compte">
+        <article className="fun-token-card">
+          <header>
+            <h3>Google</h3>
+            <span>OAuth</span>
+          </header>
+          <p>Connexion compte et autorisations Google liées à la session Funesterie.</p>
+          <footer>
+            <button type="button" onClick={connectGoogle} disabled={busy === "google"}>
+              {busy === "google" ? "Connexion..." : "Connecter Google"}
+            </button>
+          </footer>
+        </article>
+        <article className="fun-token-card">
+          <header>
+            <h3>Microsoft</h3>
+            <span>OAuth</span>
+          </header>
+          <p>Connexion Microsoft pour compte, OneDrive et outils de travail.</p>
+          <footer>
+            <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft"}>
+              {busy === "microsoft" ? "Connexion..." : "Connecter Microsoft"}
+            </button>
+          </footer>
+        </article>
+        <article className="fun-token-card">
+          <header>
+            <h3>NOSSEN</h3>
+            <span>npm</span>
+          </header>
+          <p>Paquets publics @nossen et surface packages Funesterie.</p>
+          <footer>
+            <a href="https://www.npmjs.com/search?q=%40nossen" target="_blank" rel="noreferrer">
+              Voir @nossen
+            </a>
+          </footer>
+        </article>
+        <article className="fun-token-card">
+          <header>
+            <h3>État</h3>
+            <span>État</span>
+          </header>
+          <p>Contrôle admin des services exposés.</p>
+          <footer>
+            <a href={surfaceLinks.cockpit}>Voir l'état</a>
+          </footer>
+        </article>
+      </div>
+
+      <div className="fun-mcp-console">
+        <label>
+          <span>Token admin local</span>
+          <input
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            type="password"
+            autoComplete="off"
+            placeholder="Coller le bearer token uniquement pour ce test"
+          />
+        </label>
+        <div className="fun-integration-actions">
+          <button type="button" onClick={() => void testPrivateMcp()} disabled={busy === "mcp"}>
+            {busy === "mcp" ? "Test..." : "Tester MCP privé"}
+          </button>
+          <a href="https://mcp.funesterie.me/chatgpt/mcp" target="_blank" rel="noreferrer">MCP public</a>
+          <a href="https://mcp.funesterie.me/.well-known/oauth-protected-resource/mcp" target="_blank" rel="noreferrer">OAuth</a>
+        </div>
+        <p>{privateResult}</p>
+      </div>
+    </section>
+  );
+}
+
+function FunesterieConnectedHomePage({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+  isAdmin = false,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated?: boolean;
+  displayName?: string;
+  onLogout?: () => void;
+  isAdmin?: boolean;
+}) {
+  const [accountBusy, setAccountBusy] = useState<"" | "google">("");
+  const accountReturnTo = buildGeneralAccountAuthSuccessReturnTo();
+  const { pathname } = getLocationSnapshot();
+  const isAgentsRoute = /^\/agents(?:\/|$)/.test(pathname);
+  const isStatusRoute = /^\/cockpit(?:\/|$)/.test(pathname);
+  if (isStatusRoute) {
+    return (
+      <FunesteriePublicStatusPage
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+        isAdmin={isAdmin}
+      />
+    );
+  }
+
+  const routeMeta = isAgentsRoute
+    ? {
+        brand: "Agents",
+        title: "Agents",
+        subtitle: "Chaque agent garde sa spécialité dans la surface Funesterie.",
+        blocks: FUNESTERIE_HOME_AGENTS.map((agent) => [
+          agent.name,
+          `${agent.role}. ${agent.text}`,
+        ] as const),
+      }
+    : isStatusRoute
+      ? {
+          brand: "État",
+          title: "État",
+          subtitle: "Vue admin des surfaces fonctionnelles.",
+          blocks: [
+            ["Funesterie.me", "Surface publique active."],
+            ["A11", "Agent média disponible."],
+            ["Kaen44", "Agent bureau accessible depuis sa route dédiée."],
+            ["Vivy", "Présence musicale accessible depuis sa route dédiée."],
+          ] as const,
+        }
+      : {
+          brand: "Funesterie",
+          title: "Funesterie",
+          subtitle: "NOSSEN ride crew : créer, comprendre, connecter.",
+          blocks: [
+            ["Accueil", "Point d'entrée public du projet NOSSEN."],
+            ["Agents", "Vivy, A11 et Kaen44 restent visibles sans changer de charte."],
+            ["État", "Surveillance courte intégrée à l'interface Funesterie."],
+            ["Compte", "Accès personnels et connexions privées."],
+          ] as const,
+        };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.hash) return;
+    const { pathname } = getLocationSnapshot();
+    const sectionId = /^\/agents(?:\/|$)/.test(pathname) ? "agents" : "";
+    if (!sectionId) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
+    });
+  }, []);
+
+  function startHomeGoogle() {
+    if (authenticated) {
+      window.location.assign(surfaceLinks.account);
+      return;
+    }
+    setAccountBusy("google");
+    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "drive" });
+  }
+
+  if (!isAgentsRoute && !isStatusRoute) {
+    return (
+      <main id="top" className="fun-home-shell fun-public-surface" aria-label="Accueil Funesterie">
+        <FunesteriePublicNav surfaceLinks={surfaceLinks} />
+        <FunesterieHomeIntro
+          surfaceLinks={surfaceLinks}
+          authenticated={authenticated}
+          displayName={displayName}
+          onConnect={startHomeGoogle}
+          busy={Boolean(accountBusy)}
+        />
+        <FunesteriePublicFooter
+          surfaceLinks={surfaceLinks}
+          authenticated={authenticated}
+          displayName={displayName}
+          onLogout={onLogout}
+        />
+      </main>
+    );
+  }
+
+  if (isAgentsRoute) {
+    return (
+      <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Agents Funesterie">
+        <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Agents" />
+        <FunesterieAgentsShowcase surfaceLinks={surfaceLinks} />
+        <FunesteriePublicFooter
+          surfaceLinks={surfaceLinks}
+          authenticated={authenticated}
+          displayName={displayName}
+          onLogout={onLogout}
+        />
+      </main>
+    );
+  }
+
+  return (
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Accueil Funesterie connecté">
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel={routeMeta.brand} />
+
+      <section id={isAgentsRoute ? "agents" : isStatusRoute ? "etat" : undefined} className="fun-account-panel" aria-label={`${routeMeta.title} Funesterie`}>
+        <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+        <div className="fun-account-copy">
+          <h1>{routeMeta.title}</h1>
+          <p>{routeMeta.subtitle}</p>
+        </div>
+        <div className="fun-account-grid">
+          {routeMeta.blocks.map(([title, text]) => (
+            <article key={title}>
+              <strong>{title}</strong>
+              <span>{text}</span>
+            </article>
+          ))}
         </div>
       </section>
 
-      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
+      <FunesteriePublicFooter
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+      />
     </main>
   );
 }
@@ -3611,12 +3775,12 @@ function FunesterieIntegrationPanel({
 
   function connectGoogle() {
     setBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-account");
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
   }
 
   function connectMicrosoft() {
     setBusy("microsoft");
-    startMicrosoftOAuth(accountReturnTo, "funesterie-account");
+    startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
   }
 
   if (!authenticated) {
@@ -3628,7 +3792,7 @@ function FunesterieIntegrationPanel({
             <h2>Connexions privées</h2>
             <p>
               Les accès personnels ne sont pas affichés sur la page publique. Connecte-toi avec
-              Google ou Microsoft pour relier tes propres outils aux agents.
+              Google ou Microsoft pour relier tes outils aux agents.
             </p>
           </div>
           <aside>
@@ -3710,7 +3874,7 @@ function FunesterieIntegrationPanel({
             <h3>Agents locaux</h3>
             <span>Coffre local</span>
           </header>
-          <p>Usage local avec QFlush, CLI et stockage chiffré côté machine quand disponible.</p>
+          <p>Usage local avec QFlush, CLI et stockage côté machine quand disponible.</p>
           <footer>
             <a href={surfaceLinks.cockpit}>Voir l'état</a>
           </footer>
@@ -3720,109 +3884,200 @@ function FunesterieIntegrationPanel({
   );
 }
 
+function readFunesterieAccountOverview() {
+  if (typeof window === "undefined") {
+    return { conversations: 0, files: 0, vivyMessages: 0, voiceReference: "Non configurée" };
+  }
+
+  const scope = getAuthStorageScope();
+  const chatKeys = [
+    buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope),
+    CHAT_STORAGE_KEY_PREFIX,
+  ];
+  let conversations = 0;
+  let files = 0;
+  for (const key of chatKeys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) continue;
+      conversations = Math.max(conversations, parsed.length);
+      files = Math.max(files, parsed.reduce((count: number, chat: any) => {
+        const messages = Array.isArray(chat?.messages) ? chat.messages : [];
+        return count + messages.filter((message: any) => message?.fileUrl || message?.imageUrl || message?.videoUrl).length;
+      }, 0));
+    } catch {
+      // Ignore malformed client cache.
+    }
+  }
+
+  let vivyMessages = 0;
+  try {
+    const vivyRaw = window.localStorage.getItem(VIVY_PUBLIC_CHAT_KEY);
+    const vivyParsed = vivyRaw ? JSON.parse(vivyRaw) : [];
+    vivyMessages = Array.isArray(vivyParsed) ? vivyParsed.length : 0;
+  } catch {
+    vivyMessages = 0;
+  }
+
+  const voiceReference = (() => {
+    try {
+      return window.localStorage.getItem("a11:tts:voice-reference-id") ? "Configurée" : "Non configurée";
+    } catch {
+      return "Non configurée";
+    }
+  })();
+
+  return { conversations, files, vivyMessages, voiceReference };
+}
+
 function FunesterieAccountPage({
   surfaceLinks,
   authenticated = false,
   displayName = "",
+  onLogout,
 }: {
   surfaceLinks: SurfaceLinks;
   authenticated?: boolean;
   displayName?: string;
+  onLogout?: () => void;
 }) {
-  const accountBlocks = [
-    ["Abonnement", "Offres, paiements et statut d'accès."],
-    ["Sessions", "Inventaire et reprise des conversations."],
-    ["Paramètres", "Préférences, voix, médias et sécurité."],
-    ["Intégrations", "Connexions privées liées au compte."],
-  ] as const;
+  const overview = useMemo(() => readFunesterieAccountOverview(), [authenticated, displayName]);
 
   return (
     <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Compte Funesterie">
       <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Compte" />
-
-      <section className="fun-account-panel" aria-label="Espace compte Funesterie">
+      <section className="fun-account-panel" aria-label="Réglages compte Funesterie">
         <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
         <div className="fun-account-copy">
           <h1>Compte</h1>
-          <p>
-            {authenticated && displayName ? displayName : "Espace personnel Funesterie"}
-          </p>
+          <p>{authenticated ? (displayName || "Compte connecté") : "Connecte-toi pour gérer ton compte Funesterie."}</p>
         </div>
         <div className="fun-account-grid">
-          {accountBlocks.map(([title, text]) => (
-            <article key={title}>
-              <strong>{title}</strong>
-              <span>{text}</span>
-            </article>
-          ))}
+          <article>
+            <strong>Profil</strong>
+            <span>{authenticated ? "Session active" : "Session non connectée"}</span>
+          </article>
+          <article>
+            <strong>Historique</strong>
+            <span>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} locale{overview.conversations > 1 ? "s" : ""}</span>
+          </article>
+          <article>
+            <strong>Fichiers</strong>
+            <span>{overview.files} média/fichier en cache local</span>
+          </article>
+          <article>
+            <strong>Voix</strong>
+            <span>{overview.voiceReference}</span>
+          </article>
         </div>
       </section>
 
-      <FunesterieIntegrationPanel
+      <section className="fun-token-panel" aria-label="Actions compte">
+        <header className="fun-token-head">
+          <div>
+            <span>Réglages</span>
+            <h2>Accès et données</h2>
+            <p>Gestion courte du compte, des conversations locales et des fichiers liés aux agents.</p>
+          </div>
+          <aside>
+            <strong>{authenticated ? "Privé" : "Public"}</strong>
+            <small>{authenticated ? (displayName || "connecté") : "connexion requise"}</small>
+          </aside>
+        </header>
+        <div className="fun-integration-grid">
+          <article className="fun-token-card">
+            <header>
+              <h3>Connexion</h3>
+              <span>Compte</span>
+            </header>
+            <p>Connexion Funesterie centrale pour A11, Kaen44 et Vivy.</p>
+            <footer>
+              {authenticated ? (
+                <button type="button" onClick={onLogout}>Se déconnecter</button>
+              ) : (
+                <a href={buildCentralLoginUrl(surfaceLinks.account)}>Se connecter</a>
+              )}
+            </footer>
+          </article>
+          <article className="fun-token-card">
+            <header>
+              <h3>Conversations</h3>
+              <span>Historique</span>
+            </header>
+            <p>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} détectée{overview.conversations > 1 ? "s" : ""} côté navigateur.</p>
+            <footer>
+              <a href={surfaceLinks.a11Cockpit}>Ouvrir A11</a>
+            </footer>
+          </article>
+          <article className="fun-token-card">
+            <header>
+              <h3>Fichiers</h3>
+              <span>Ressources</span>
+            </header>
+            <p>{overview.files} ressource{overview.files > 1 ? "s" : ""} locale{overview.files > 1 ? "s" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}.</p>
+            <footer>
+              <a href={surfaceLinks.vivy}>Ouvrir Vivy</a>
+            </footer>
+          </article>
+          <article className="fun-token-card">
+            <header>
+              <h3>Préférences</h3>
+              <span>Local</span>
+            </header>
+            <p>Voix, langue et réglages restent dans le navigateur quand ils ne nécessitent pas serveur.</p>
+            <footer>
+              <a href={authenticated ? surfaceLinks.account : surfaceLinks.login}>
+                {authenticated ? "Voir le compte" : "Connexion Funesterie"}
+              </a>
+            </footer>
+          </article>
+        </div>
+      </section>
+      <FunesteriePublicFooter
         surfaceLinks={surfaceLinks}
         authenticated={authenticated}
         displayName={displayName}
+        onLogout={onLogout}
       />
-
-      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
     </main>
   );
 }
 
-function FunesterieContactPage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
-  const publicAccounts = [
+function FunesterieContactPage({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated?: boolean;
+  displayName?: string;
+  onLogout?: () => void;
+}) {
+  const contactLinks = [
+    ["Email", "funeste38@gmail.com", "mailto:funeste38@gmail.com"],
     ["GitHub", "Organisation Funesterie", "https://github.com/Funesterie"],
+    ["Dons", "PayPal Funesterie", "https://paypal.me/funeste38"],
     ["Packages", "GitHub Packages / GHCR", "https://github.com/orgs/Funesterie/packages"],
     ["npm", "Packages @nossen", "https://www.npmjs.com/search?q=%40nossen"],
   ] as const;
-  const paymentMethods = [
-    ["Wero", FUNESTERIE_WERO_DISPLAY, `tel:${FUNESTERIE_WERO_TEL}`],
-    ["PayPal", "Montant libre", FUNESTERIE_PAYPAL_URL],
-    ["Carte", "Stripe support", FUNESTERIE_STRIPE_SUPPORT_URL],
-    ["Contact", "Don, facture ou sponsoring", surfaceLinks.contact],
-  ] as const;
 
   return (
-    <main id="top" className="fun-home-shell fun-public-surface fun-contact-shell" aria-label="Contact Funesterie">
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Contact Funesterie">
       <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Contact" />
 
-      <section className="fun-contact-panel" aria-label="Contact Djeff">
-        <figure>
-          <img src={NOSSEN_DJEFF_BETA_SRC} alt="Djeff, Rider origine Funesterie." />
-        </figure>
-        <div className="fun-contact-copy">
-          <span>Rider origine</span>
-          <h1>Djeff</h1>
-          <p>
-            Contact officiel Funesterie pour le site, les accès, les vérifications Google/Microsoft
-            et les demandes liées au projet NOSSEN.
-          </p>
-          <div className="fun-contact-actions">
-            <a href={`mailto:${FUNESTERIE_SUPPORT_EMAIL}`}>{FUNESTERIE_SUPPORT_EMAIL}</a>
-            <a href={`tel:${FUNESTERIE_WERO_TEL}`}>{FUNESTERIE_WERO_DISPLAY}</a>
+      <section className="fun-account-panel fun-contact-hero" aria-label="Contact Funesterie">
+        <img src={NOSSEN_DJEFF_BETA_SRC} alt="Djeff, rider origine NOSSEN" />
+        <div className="fun-contact-content">
+          <div className="fun-account-copy">
+            <h1>Contact</h1>
+            <p>Djeff, rider origine. Contact officiel Funesterie / NOSSEN.</p>
           </div>
-          <div className="fun-contact-donate" aria-label="Soutenir Funesterie">
-            <strong>Soutenir NOSSEN</strong>
-            <p>
-              Les packages restent publics. Le soutien est volontaire: choisis le montant qui te semble juste.
-            </p>
-            <div>
-              {paymentMethods.map(([label, text, href]) => (
-                <a
-                  key={label}
-                  href={href}
-                  target={href.startsWith("http") ? "_blank" : undefined}
-                  rel={href.startsWith("http") ? "noreferrer" : undefined}
-                >
-                  <strong>{label}</strong>
-                  <span>{text}</span>
-                </a>
-              ))}
-            </div>
-          </div>
-          <div className="fun-contact-accounts" aria-label="Comptes publics Funesterie">
-            {publicAccounts.map(([label, text, href]) => (
-              <a key={label} href={href} target="_blank" rel="noreferrer">
+          <div className="fun-account-grid fun-contact-links">
+            {contactLinks.map(([label, text, href]) => (
+              <a key={label} href={href} target={href.startsWith("http") ? "_blank" : undefined} rel={href.startsWith("http") ? "noreferrer" : undefined}>
                 <strong>{label}</strong>
                 <span>{text}</span>
               </a>
@@ -3831,358 +4086,26 @@ function FunesterieContactPage({ surfaceLinks }: { surfaceLinks: SurfaceLinks })
         </div>
       </section>
 
-      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
-    </main>
-  );
-}
-
-function Kaen44AutonomousHomePage({ surfaceLinks }: { surfaceLinks: SurfaceLinks }) {
-  const agents = [
-    ...FUNESTERIE_HOME_AGENTS.map((agent) => ({
-      ...agent,
-      href: buildHomeAgentHref(agent.href, surfaceLinks),
-    })),
-    {
-      id: "future",
-      name: "À venir",
-      role: "Activation utile",
-      text: "Un nouvel accès apparaît seulement quand son rôle est clair.",
-      href: surfaceLinks.cockpit,
-      image: "",
-      tone: "empty",
-      glyph: "+",
-    },
-  ];
-
-  return (
-    <main id="top" className="k44-agent-home-shell fun-public-surface" aria-label="Présentation des agents Funesterie">
-      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel="Agents" />
-
-      <section id="agents" className="fun-agents-page-list" aria-label="Agents Funesterie">
-        {agents.map((agent) => (
-          <a key={agent.id} className={`fun-agents-page-card fun-agents-page-card--${agent.tone}`} href={agent.href}>
-            <span className="fun-agents-page-media" aria-hidden="true">
-              {agent.image ? <img src={agent.image} alt="" /> : <b>{agent.glyph}</b>}
-            </span>
-            <span className="fun-agents-page-copy">
-              <strong>{agent.name}</strong>
-              <em>{agent.role}</em>
-              <span>{agent.text}</span>
-            </span>
-            <i aria-hidden="true">{agent.glyph}</i>
-          </a>
-        ))}
-      </section>
-
-      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
-    </main>
-  );
-}
-
-function Kaen44PublicPage({ page }: { page: "home" | "privacy" | "terms" | "vivy" }) {
-  useEffect(() => {
-    document.documentElement.classList.add("kaen-public-page-root");
-    document.body.classList.add("kaen-public-page-body");
-    return () => {
-      document.documentElement.classList.remove("kaen-public-page-root");
-      document.body.classList.remove("kaen-public-page-body");
-    };
-  }, []);
-
-  const isPrivacy = page === "privacy";
-  const isTerms = page === "terms";
-  const isVivy = page === "vivy";
-  const isHome = !isPrivacy && !isTerms && !isVivy;
-  const title = isPrivacy ? "Règles de confidentialité" : isTerms ? "Conditions d'utilisation" : isVivy ? "Vivy" : "Funesterie";
-  const subtitle = isPrivacy
-    ? "Comment Funesterie traite les données de connexion, fichiers et messages partagés."
-    : isTerms
-      ? "Le cadre d'utilisation de Funesterie et de ses services connectés."
-      : isVivy
-        ? "Présence musicale Funesterie pour voix, chansons originales et projets audio."
-        : "Portail public pour A11, Kaen44, Vivy et les modules Funesterie.";
-  const surfaceLinks = getSurfaceLinks();
-  const tabs = ["Accueil", "Modules", "Projets", "Vivy", "Aide", "Confidentialité"];
-  const tabTargets: Record<string, string> = {
-    Accueil: surfaceLinks.home,
-    Modules: "#agents",
-    Projets: "#projets",
-    Vivy: surfaceLinks.vivy,
-    Aide: "#aide",
-    Confidentialité: surfaceLinks.privacy,
-  };
-  const futureAgents = ["Module media", "Module agentic", "Module jeu"];
-
-  if (isHome) {
-    return <Kaen44AutonomousHomePage surfaceLinks={surfaceLinks} />;
-  }
-
-  return (
-    <main className={`kaen-public-shell fun-public-surface ${isHome ? "kaen-public-shell--home" : "kaen-public-shell--page"} ${isVivy ? "vivy-public-shell" : ""}`}>
-      <FunesteriePublicNav surfaceLinks={surfaceLinks} />
-
-      {isVivy ? <VivyPublicSurface authenticated={false} /> : null}
-
-      <section hidden={isVivy} className={`kaen-public-hero ${isHome ? "" : "kaen-public-hero--simple"}`}>
-        {isHome ? <img className="kaen-public-reference-haze" src={FUNESTERIE_TEAM_SCENE_SRC} alt="" /> : null}
-        {isHome ? (
-          <aside className="kaen-public-agent-card" aria-label="Identite Kaen44">
-            <strong>Modules Funesterie</strong>
-            <span>Portail adaptatif</span>
-            <div>
-              <em>Projets</em>
-              <em>Création</em>
-              <em>Aide</em>
-              <em>Publication</em>
-            </div>
-            <p>Une seule porte pour entrer dans le bon module sans jargon technique.</p>
-          </aside>
-        ) : null}
-        <div className="kaen-public-copy">
-          <h1>{isHome ? "FUNESTERIE" : title}</h1>
-          <p className="kaen-public-subline">
-            {isHome ? "Un portail par profil, des modules par besoin" : subtitle}
-          </p>
-          {isHome ? (
-            <>
-              <p>
-                La plateforme rassemble l'assistance, la mémoire, les images, la voix et les
-                automatisations dans une interface lisible pour la démo.
-              </p>
-              <div className="kaen-public-actions">
-                <a href={surfaceLinks.kaen44Login}>Entrer dans K44</a>
-                <a href="#agents">Voir les agents</a>
-              </div>
-            </>
-          ) : null}
-          {isVivy ? (
-            <>
-              <p>
-                Vivy est une identité musicale originale de Funesterie. Elle sert à préparer des
-                chansons, voix, bandes-son, clips et publications audio liées aux projets créatifs.
-              </p>
-              <div className="kaen-public-actions">
-                <a href={surfaceLinks.privacy}>Lire les règles de confidentialité</a>
-                <a href={surfaceLinks.terms}>Lire les conditions</a>
-              </div>
-            </>
-          ) : null}
+      <section className="fun-package-panel" aria-label="Modules NOSSEN">
+        <header>
+          <span>Modules</span>
+          <h2>NOSSEN</h2>
+        </header>
+        <div className="fun-package-grid">
+          {NOSSEN_PUBLIC_PACKAGES.map((packageName) => (
+            <a key={packageName} href={buildNpmPackageUrl(packageName)} target="_blank" rel="noreferrer">
+              {packageName}
+            </a>
+          ))}
         </div>
-        {isHome ? (
-          <figure className="kaen-public-hero-art" aria-label="Équipe Funesterie">
-            <img src={FUNESTERIE_TEAM_SCENE_SRC} alt="" />
-          </figure>
-        ) : null}
-        {!isHome ? (
-          <div className="kaen-public-avatar" aria-hidden="true">
-            <img src={KAEN44_AVATAR_SRC} alt="" />
-          </div>
-        ) : null}
       </section>
 
-      {isHome ? (
-        <>
-          <nav className="kaen-public-tabs" aria-label="Sections Kaen44">
-            {tabs.map((tab) => (
-              <a key={tab} href={tabTargets[tab] || "#agents"}>
-                <i aria-hidden="true" />
-                <span>{tab}</span>
-              </a>
-            ))}
-          </nav>
-
-          <header className="kaen-public-section-title" id="agents">
-            <span>Modules Funesterie</span>
-          </header>
-
-          <section className="kaen-public-agents" aria-label="Modules Funesterie">
-            <article className="kaen-public-agent-primary">
-              <img src={KAEN44_AVATAR_SRC} alt="" />
-              <strong>Kaen44</strong>
-              <span>Copilote quotidien</span>
-              <p>Assistance, mémoire contextuelle, automatisation, outils locaux et accessibilité.</p>
-              <footer>
-                <b aria-hidden="true" />
-                <b aria-hidden="true" />
-                <b aria-hidden="true" />
-                <b aria-hidden="true" />
-              </footer>
-            </article>
-            <article className="kaen-public-agent-a11">
-              <div className="kaen-public-a11-visual" aria-hidden="true">
-                <img src={A11_KAEN44_COMMAND_CARDS_SRC} alt="" />
-              </div>
-              <strong>A11</strong>
-              <span>Moteur créatif</span>
-              <p>Création, idéation, prototypes et systèmes créatifs avancés quand Kaen44 demande du renfort.</p>
-              <footer>
-                <b aria-hidden="true" />
-                <b aria-hidden="true" />
-                <b aria-hidden="true" />
-                <b aria-hidden="true" />
-              </footer>
-            </article>
-            {futureAgents.map((name) => (
-              <article key={name} className="kaen-public-empty-agent">
-                <div>?</div>
-                <strong>{name}</strong>
-                <span>À définir</span>
-                <p>Un futur renfort rejoindra l'équipe quand son rôle sera clair.</p>
-                <a href={surfaceLinks.kaen44Login}>Demander à Kaen44</a>
-              </article>
-            ))}
-          </section>
-
-          <section className="kaen-public-grid">
-            <article id="corpus" className="kaen-public-nexus-card">
-              <h2>Nexus Funesterie</h2>
-              <img src={FUNESTERIE_NEXUS_BOARD_SRC} alt="" />
-              <ul className="kaen-public-legend">
-                <li>Agents</li>
-                <li>Mémoires</li>
-                <li>Conversations</li>
-                <li>Projets</li>
-              </ul>
-            </article>
-            <article id="vivy" className="kaen-public-vivy-card">
-              <h2>Vivy en ce moment</h2>
-              <div>
-                <img src={VIVY_POSTER_SRC} alt="" />
-                <p>Direction musicale en cours: voix, mélodies et visuels Funesterie.</p>
-              </div>
-              <div className="kaen-wave" aria-hidden="true" />
-              <footer>
-                <span>01:24</span>
-                <button type="button" aria-label="Lecture"><i aria-hidden="true" /></button>
-                <span>03:58</span>
-              </footer>
-            </article>
-            <article id="projets" className="kaen-public-activity-card">
-              <h2>Activité récente</h2>
-              <p><span className="kaen-public-activity-icon" /> Vivy prépare une nouvelle mélodie. <time>2 min</time></p>
-              <p><span className="kaen-public-activity-icon" /> Kaen44 a terminé une tâche d'organisation. <time>7 min</time></p>
-              <p><span className="kaen-public-activity-icon" /> A11 a relié trois idées créatives. <time>22 min</time></p>
-            </article>
-          </section>
-
-          <footer className="kaen-public-status-strip">
-            <span>Portail modulaire</span>
-            <span>Modules par profil</span>
-            <span>Mode avancé réservé</span>
-            <span>Respect du pacte</span>
-          </footer>
-        </>
-      ) : null}
-
-      {isPrivacy ? (
-        <section className="kaen-public-section">
-          <h2>Responsable du traitement</h2>
-          <p>
-            Les services Funesterie, Kaen44, A11 et Vivy sont exploités par Funesterie.
-            Pour toute demande relative aux données personnelles, le contact officiel est
-            funeste38@gmail.com.
-          </p>
-          <h2>Données traitées</h2>
-          <p>
-            Les services traitent les informations de compte nécessaires à la connexion, les
-            messages envoyés dans les chats, les fichiers importés ou autorisés explicitement par
-            l'utilisateur, ainsi que les métadonnées techniques strictement utiles au fonctionnement,
-            à la sécurité et au suivi des demandes.
-          </p>
-          <h2>Finalités</h2>
-          <p>
-            Les données sont utilisées pour fournir l'accès au compte, permettre les échanges avec
-            les agents, traiter les fichiers choisis par l'utilisateur, préparer des contenus,
-            maintenir la sécurité du service, diagnostiquer les erreurs et respecter les obligations
-            légales applicables.
-          </p>
-          <h2>Services connectés</h2>
-          <p>
-            Lorsque l'utilisateur connecte Google, Microsoft, Google Drive, YouTube ou une autre
-            plateforme, Funesterie demande uniquement les autorisations nécessaires à l'action
-            demandée. Les fichiers privés, références vocales, images, vidéos et documents ne sont
-            pas publiés sans action explicite de l'utilisateur.
-          </p>
-          <h2>Conservation et droits</h2>
-          <p>
-            Les données sont conservées pendant la durée nécessaire au service, à la sécurité, à la
-            preuve des actions demandées ou au respect d'une obligation légale. L'utilisateur peut
-            demander l'accès, la rectification, l'effacement, la limitation ou l'opposition au
-            traitement de ses données.
-          </p>
-          <h2>Sécurité et confidentialité</h2>
-          <p>
-            Funesterie applique une séparation entre espaces publics, sessions utilisateur, outils
-            internes et secrets techniques. Les tokens, mots de passe, clés privées et contenus de
-            coffre ne sont pas affichés publiquement et ne doivent pas être transmis dans les chats.
-          </p>
-          <h2>Contact officiel</h2>
-          <p>
-            Pour toute question, demande d'exercice de droits ou demande de suppression, contactez
-            funeste38@gmail.com.
-          </p>
-        </section>
-      ) : null}
-
-      {isTerms ? (
-        <section className="kaen-public-section">
-          <h2>Utilisation</h2>
-          <p>
-            Funesterie fournit une assistance de productivité, de classement, de création et de recherche
-            documentaire. L'utilisateur reste responsable des données qu'il partage et des validations
-            finales sur les documents, factures ou décisions importantes.
-          </p>
-          <h2>Limites</h2>
-          <p>
-            Kaen44 peut limiter les usages anormaux, coûteux ou abusifs afin de protéger le service.
-            Les opérations sensibles, paiements, suppressions ou actions administratives doivent être
-            confirmées explicitement par l'utilisateur.
-          </p>
-          <h2>Vivy et contenus publies</h2>
-          <p>
-            Les chansons, voix, clips et métadonnées publiés via Vivy doivent être originaux,
-            autorisés ou fournis par l'utilisateur. L'utilisateur reste responsable des droits et
-            validations avant publication sur YouTube, SoundCloud ou tout autre service.
-          </p>
-          <h2>Contact</h2>
-          <p>
-            Pour toute question sur le service, contactez funeste38@gmail.com.
-          </p>
-        </section>
-      ) : null}
-
-      {false && isVivy ? (
-        <section className="kaen-public-section">
-          <h2>Ce que fait Vivy</h2>
-          <p>
-            Vivy aide à transformer une idée musicale en piste exploitable: paroles, intention,
-            style vocal, export audio, page publique, lien SoundCloud ou clip YouTube.
-          </p>
-          <p>
-            Pour Alexa et les assistants vocaux, Vivy utilise un flux audio HTTPS direct contrôlé par
-            Funesterie. Les pages YouTube et SoundCloud restent des surfaces publiques de diffusion,
-            pas des sources techniques obligatoires pour la lecture vocale.
-          </p>
-        </section>
-      ) : null}
-
-      {!isPrivacy && !isTerms && !isVivy ? (
-        <section className="kaen-public-section">
-          <h2>Ce que fait Kaen44</h2>
-          <p>
-            L'application sert de copilote bureautique: elle peut aider à lire des documents, trier
-            des factures, préparer des réponses, générer des idées visuelles simples, transcrire ou
-            résumer de l'audio, et guider l'utilisateur dans ses projets personnels ou professionnels.
-          </p>
-          <p>
-            Les connexions Google et Microsoft servent à récupérer les fichiers que l'utilisateur
-            souhaite traiter. Kaen44 affiche toujours des pages publiques de confidentialité et de
-            conditions d'utilisation avant la connexion.
-          </p>
-        </section>
-      ) : null}
-
-      <FunesteriePublicFooter surfaceLinks={surfaceLinks} />
+      <FunesteriePublicFooter
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+      />
     </main>
   );
 }
@@ -4326,6 +4249,64 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
   );
 }
 
+function FunesterieLegalPage({
+  surfaceLinks,
+  kind,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+}: {
+  surfaceLinks: SurfaceLinks;
+  kind: "privacy" | "terms";
+  authenticated?: boolean;
+  displayName?: string;
+  onLogout?: () => void;
+}) {
+  const isPrivacy = kind === "privacy";
+  const blocks = isPrivacy
+    ? ([
+        ["Données", "Comptes, messages et fichiers autorisés par l'utilisateur."],
+        ["Drive", "Accès Google limité aux fichiers choisis ou validés."],
+        ["Agents", "A11, Kaen44 et Vivy traitent le contexte nécessaire."],
+        ["Retrait", "Les accès peuvent être retirés depuis le compte fournisseur."],
+      ] as const)
+    : ([
+        ["Usage", "Assistance documents, création, voix, projets et coordination."],
+        ["Limites", "Actions sensibles, paiements et suppressions demandent validation."],
+        ["Contenus", "Les publications doivent être originales ou autorisées."],
+        ["Compte", "L'utilisateur garde la responsabilité des validations finales."],
+      ] as const);
+
+  return (
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label={isPrivacy ? "Confidentialité Funesterie" : "Conditions Funesterie"}>
+      <FunesteriePublicNav surfaceLinks={surfaceLinks} brandLabel={isPrivacy ? "Confidentialité" : "Conditions"} />
+
+      <section className="fun-account-panel" aria-label={isPrivacy ? "Confidentialité Funesterie" : "Conditions Funesterie"}>
+        <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+        <div className="fun-account-copy">
+          <h1>{isPrivacy ? "Confidentialité" : "Conditions"}</h1>
+          <p>{isPrivacy ? "Règles de données Funesterie / NOSSEN." : "Conditions d'utilisation Funesterie / NOSSEN."}</p>
+        </div>
+        <div className="fun-account-grid">
+          {blocks.map(([title, text]) => (
+            <article key={title}>
+              <strong>{title}</strong>
+              <span>{text}</span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <FunesteriePublicFooter
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+      />
+    </main>
+  );
+}
+
 function Kaen44ModulesPanel({
   isCompactLayout,
   onBackToChat,
@@ -4402,31 +4383,41 @@ function PersonaDashboard({
   onOpenStudio,
   onOpenInspector,
 }: PersonaDashboardProps) {
-  const surfaceLinks = getSurfaceLinks();
-  const agentShortcuts = getFunesterieAgentShortcuts(surfaceLinks);
-  const currentAgentId = isKaen44 ? "kaen44" : "a11";
-  const currentAgent = agentShortcuts.find((agent) => agent.id === currentAgentId) ?? agentShortcuts[0];
-  const currentSummary = isKaen44
-    ? "Accueil, suivi et organisation quotidienne pour garder le travail lisible."
-    : "Préparation des médias, documents, images et notes utiles aux projets.";
-  const currentDetail = isKaen44
-    ? "Kaen44 garde la conversation, les priorités et les dossiers au même endroit."
-    : "A11 accompagne les fichiers, l'image, la vidéo, l'audio et les notes sans panneau inutile.";
+  const currentAgent = isKaen44
+    ? {
+      name: "Kaen44",
+      role: "Agent bureau",
+      text: "Accueil, suivi, organisation et interface quotidienne pour garder le travail clair.",
+      image: NOSSEN_K44_TZR_SRC,
+      alt: "Kaen44, agent bureau NOSSEN",
+    }
+    : {
+      name: "A11",
+      role: "Agent média",
+      text: "Prépare les médias, les documents, les résumés et les signaux utiles.",
+      image: NOSSEN_A11_DERBI_SRC,
+      alt: "A11, agent média NOSSEN",
+    };
 
   return (
-    <section className={`k44-agent-strip-panel k44-agent-profile-panel ${isKaen44 ? "" : "a11-agent-strip-panel"}`} aria-label={`${currentAgent.name} présentation`}>
-      <div className="k44-agent-profile-main">
-        <img className="k44-agent-profile-image" src={currentAgent.image} alt="" />
-        <div className="k44-agent-profile-copy">
-          <span>Agent actif</span>
+    <section className={`k44-agent-strip-panel k44-agent-profile k44-agent-profile--${isKaen44 ? "kaen44" : "a11"}`} aria-label={currentAgent.name}>
+      <header className="k44-agent-strip-header">
+        <div className="k44-title">
           <h1>{currentAgent.name}</h1>
-          <p className="k44-agent-profile-role">{currentAgent.role}</p>
-          <strong>{currentSummary}</strong>
-          <p className="k44-agent-profile-detail">{currentDetail}</p>
-          <div className="k44-simple-actions">
-            <button type="button" onClick={onStartChat}>Discussion</button>
-            <button type="button" onClick={onOpenInspector}>Menu</button>
-          </div>
+          <p>{currentAgent.role}</p>
+        </div>
+        <div className="k44-simple-actions">
+          <button type="button" onClick={onStartChat}>Discussion</button>
+          <button type="button" onClick={onOpenInspector}>Menu</button>
+        </div>
+      </header>
+
+      <div className="k44-agent-current">
+        <img src={currentAgent.image} alt={currentAgent.alt} />
+        <div>
+          <strong>{currentAgent.name}</strong>
+          <span>{currentAgent.role}</span>
+          <p>{currentAgent.text}</p>
         </div>
       </div>
     </section>
@@ -4445,17 +4436,25 @@ export function App() {
   const isGeneralAgents = isGeneralAgentsRoute();
   const isGeneralAccount = isGeneralAccountRoute();
   const isGeneralContact = isGeneralContactRoute();
+  const isGeneralPrivacy = isGeneralPrivacyRoute();
+  const isGeneralTerms = isGeneralTermsRoute();
   const isGeneralLogin = isGeneralLoginRoute();
+  const isFunesteriePublicShell = isGeneralCockpit
+    || isGeneralHome
+    || isGeneralAgents
+    || isGeneralAccount
+    || isGeneralContact
+    || isGeneralPrivacy
+    || isGeneralTerms
+    || isGeneralLogin;
   const productName = isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
-  const publicPolicyPage = typeof window !== "undefined"
-    ? getPublicPolicyPage(window.location.pathname)
-    : null;
   const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authSessionReady, setAuthSessionReady] = useState(false);
+  const [isFunesterieAdmin, setIsFunesterieAdmin] = useState(false);
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
-  const [authEmail, setAuthEmail] = useState(() => getAuthEmail());
   const [showHistory, setShowHistory] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -4473,22 +4472,24 @@ export function App() {
   const [micPermissionBlocked, setMicPermissionBlocked] = useState(false);
   const [micStatusMessage, setMicStatusMessage] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const authInvalidatedRef = useRef(false);
+  const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
 
   useEffect(() => {
-    document.title = publicPolicyPage === "privacy"
-      ? "Funesterie - Confidentialité"
-      : publicPolicyPage === "terms"
-      ? "Funesterie - Conditions"
-      : isGeneralCockpit
-      ? "Funesterie - Cockpit MCP"
+    document.title = isGeneralCockpit
+      ? "Funesterie - État"
       : isGeneralHome
-      ? "Funesterie - Accueil"
-      : isGeneralAgents
-      ? "Funesterie - Agents"
-      : isGeneralAccount
-      ? "Funesterie - Compte"
+        ? "Funesterie - Accueil"
+        : isGeneralAgents
+          ? "Funesterie - Agents"
+          : isGeneralAccount
+            ? "Funesterie - Compte"
       : isGeneralContact
       ? "Funesterie - Contact"
+      : isGeneralPrivacy
+      ? "Funesterie - Confidentialité"
+      : isGeneralTerms
+      ? "Funesterie - Conditions"
       : isGeneralLogin
       ? "Funesterie - Connexion"
       : isVivy
@@ -4497,11 +4498,15 @@ export function App() {
         ? "Kaen44 - Assistante bureau Funesterie"
         : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (publicPolicyPage || isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
-    const isFunesteriePublicPage = isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact;
-    document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicPage);
-    document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicPage);
-  }, [isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isKaen44, isVivy, publicPolicyPage]);
+    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicShell);
+    document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicShell);
+
+    return () => {
+      document.documentElement.classList.remove("funesterie-public-page-root");
+      document.body.classList.remove("funesterie-public-page-body");
+    };
+  }, [isFunesteriePublicShell, isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -4541,23 +4546,13 @@ export function App() {
       setVoiceListening(false);
       if (error === "not-allowed" || error === "service-not-allowed") {
         setMicPermissionBlocked(true);
-        setMicStatusMessage("Micro bloqué par le navigateur. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
-        setTtsFallback(false);
+        setMicStatusMessage("Micro bloqué par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        setTtsFallback(true);
         try {
-          localStorage.removeItem("a11:tts-only");
+          localStorage.setItem("a11:tts-only", "1");
         } catch {
           // ignore storage access errors
         }
-        return;
-      }
-      if (error === "network" || error === "audio-capture" || error === "aborted") {
-        setMicPermissionBlocked(false);
-        setTtsFallback(false);
-        setMicStatusMessage("Dictée navigateur instable. Je passe par A11: parle, puis reclique MIC pour envoyer.");
-        console.info("[A11] SpeechRecognition fallback to server STT:", error);
-        void startServerMicCapture(error === "network" ? "speech-network" : "speech-fallback").catch((fallbackError) => {
-          console.info("[A11] server STT fallback unavailable", fallbackError);
-        });
         return;
       }
       if (error) {
@@ -4577,124 +4572,113 @@ export function App() {
     const hostname = window.location.hostname.toLowerCase();
 
     const refreshCookieSession = () => {
+      setAuthSessionReady(false);
       void fetchAuthSession()
         .then((session) => {
-          if (!session?.authenticated && !session?.user) return;
+          if (!session?.authenticated && !session?.user) {
+            setIsAuthenticated(false);
+            setDisplayName("Utilisateur");
+            setIsFunesterieAdmin(false);
+            setAuthSessionReady(true);
+            return;
+          }
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
-          setAuthEmail(session?.user?.email || getAuthEmail());
+          setIsFunesterieAdmin(Boolean(session?.user?.fullAccess || String(session?.user?.role || "").toLowerCase() === "admin" || hasAuthenticatedAdminApiAccess()));
+          setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {
             const surface = getCurrentSurfaceKind();
-            window.history.replaceState({}, "", getSafeAuthSuccessNext(surface) || buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
+            window.history.replaceState({}, "", resolveAuthSuccessRedirectPath(pathname, surface));
           }
         })
         .catch(() => {
+          setIsAuthenticated(false);
+          setDisplayName("Utilisateur");
+          setIsFunesterieAdmin(false);
+          setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {
-            const surface = getCurrentSurfaceKind();
-            const loginUrl = new URL(buildCentralLoginUrl(getDefaultPostLoginUrl(surface)));
-            loginUrl.searchParams.set("error", "session_verification_failed");
-            const failurePath = pathname.includes("/cockpit/")
-              ? "/cockpit?error=session_verification_failed"
-              : loginUrl.toString();
-            try {
-              const failureUrl = new URL(failurePath, window.location.origin);
-              if (failureUrl.origin !== window.location.origin) {
-                window.location.replace(failureUrl.toString());
-                return;
-              }
-            } catch {
-              // Fall through to replaceState for same-origin relative paths.
-            }
+            const failurePath = resolveAuthFailureRedirectPath(pathname);
             window.history.replaceState({}, "", failurePath);
           }
         });
     };
 
-    if (isAuthSuccessRoute(pathname)) {
-      if (consumeOAuthTokenFromLocation()) {
-        setIsAuthenticated(true);
-        setDisplayName(getAuthDisplayName() || "Utilisateur");
-        setAuthEmail(getAuthEmail());
+    const consumedOAuthToken = consumeOAuthTokenFromLocation();
+    if (consumedOAuthToken) {
+      setIsAuthenticated(true);
+      setDisplayName(getAuthDisplayName() || "Utilisateur");
+      setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+      setAuthSessionReady(true);
+      if (isAuthSuccessRoute(pathname)) {
         const surface = getCurrentSurfaceKind();
-        window.history.replaceState({}, "", getSafeAuthSuccessNext(surface) || buildSurfacePath(surface, surface === "kaen44" ? "/cockpit" : "/"));
+        window.history.replaceState({}, "", resolveAuthSuccessRedirectPath(pathname, surface));
         return;
       }
+      if (isLoginRoute(pathname)) {
+        window.location.replace(normalizeAllowedReturnTo(getRequestedLoginReturnTo()));
+        return;
+      }
+    }
+
+    if (isAuthSuccessRoute(pathname)) {
       refreshCookieSession();
       return;
     }
 
-    const localParams = new URLSearchParams(window.location.search || "");
-    const localPublicPreview = localParams.get("public") === "1";
-    const localDevBypassRequested = localParams.get("local") === "1" || localParams.get("a11-local-dev") === "1";
-    if (isLoginRoute(pathname) && hasAuthToken()) {
-      clearAuthToken();
-      setAuthDisplayName("");
-      setAuthEmail("");
-    }
-    if (isLoginRoute(pathname)) {
-      return;
-    }
-    if (isLocalDevSurface() && !localDevBypassRequested && !isLoginRoute(pathname)) {
-      clearLocalDevSession();
-    }
-    if (
-      isLocalDevSurface()
-      && localDevBypassRequested
-      && !localPublicPreview
-      && !isLoginRoute(pathname)
-      && !getPublicPolicyPage(pathname)
-      && !isVivyExperience()
-    ) {
+    const localPublicPreview = new URLSearchParams(window.location.search || "").get("public") === "1";
+    if (isLocalDevSurface() && !localPublicPreview && !isLoginRoute(pathname) && !isVivyExperience()) {
       activateLocalDevSession(() => {
         setIsAuthenticated(true);
         setDisplayName("Djeff local");
-        setAuthEmail(getAuthEmail());
+        setIsFunesterieAdmin(true);
+        setAuthSessionReady(true);
       });
       return;
     }
 
-    if (hasAuthToken()) {
+    const clientHasAuthToken = hasAuthToken();
+    if (clientHasAuthToken) {
       const scope = getAuthStorageScope();
       if (scope) {
-        setIsAuthenticated(true);
-        setDisplayName(getAuthDisplayName() || "Utilisateur");
-        setAuthEmail(getAuthEmail());
+        refreshCookieSession();
         return;
       }
       clearAuthToken();
       setAuthDisplayName("");
-      setAuthEmail("");
     }
 
-    const isPublicInformationRoute =
-      Boolean(publicPolicyPage)
-      || isGeneralHome
-      || isGeneralAgents
-      || isGeneralContact
-      || (isKaen44 && isFunesterieHomeRoute(pathname) && !isCockpitRoute(pathname))
-      || isVivyExperience();
-    const shouldCheckCookieSession = !isPublicInformationRoute && (
-      isAuthSuccessRoute(pathname)
-      || hostname === 'a11.funesterie.me'
-      || hostname === 'k44.funesterie.me'
-      || hostname === 'funesterie.me'
-      || hostname === 'www.funesterie.me'
-      || hostname === 'kaen44.funesterie.me'
-      || hostname === 'vivy.funesterie.me'
-    );
-    if (!shouldCheckCookieSession) return;
+    const shouldCheckCookieSession = !isLoginRoute(pathname)
+      && (
+        isAuthSuccessRoute(pathname)
+        || hostname === 'a11.funesterie.me'
+        || hostname === 'k44.funesterie.me'
+        || hostname === 'funesterie.me'
+        || hostname === 'www.funesterie.me'
+        || hostname === 'kaen44.funesterie.me'
+        || hostname === 'vivy.funesterie.me'
+      );
+    if (!shouldCheckCookieSession) {
+      setAuthSessionReady(true);
+      return;
+    }
+
+    const isGeneralPublicHost = hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
+    if (isGeneralPublicHost && !isAuthSuccessRoute(pathname)) {
+      setAuthSessionReady(true);
+      return;
+    }
 
     refreshCookieSession();
-  }, [isGeneralAccount, isGeneralAgents, isGeneralContact, isGeneralHome, isKaen44, publicPolicyPage]);
+  }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setVoiceReferences([]);
       setVoiceReferenceStatus("");
       return;
     }
     void refreshVoiceReferences();
-  }, [isAuthenticated]);
+  }, [hasPrivateSession, isFunesteriePublicShell]);
 
   useEffect(() => {
     const onDiagnostics = (event: Event) => {
@@ -4719,12 +4703,17 @@ export function App() {
 
   useEffect(() => {
     const onAuthInvalid = (event: Event) => {
+      if (authInvalidatedRef.current) return;
       const detail = (event as CustomEvent<{ reason?: string; message?: string; status?: number }>).detail || {};
-      console.warn("[A11] auth invalidated", detail);
+      authInvalidatedRef.current = true;
+      if (!isFunesteriePublicShell) {
+        console.warn("[A11] auth invalidated", detail);
+      }
       cancelSpeech();
       setDisplayName("Utilisateur");
-      setAuthEmail("");
       setIsAuthenticated(false);
+      setIsFunesterieAdmin(false);
+      setAuthSessionReady(true);
       setSending(false);
       sendLockRef.current = false;
       pendingMessageKeyRef.current = "";
@@ -4755,64 +4744,13 @@ export function App() {
 
     globalThis.addEventListener("a11:auth-invalid", onAuthInvalid);
     return () => globalThis.removeEventListener("a11:auth-invalid", onAuthInvalid);
-  }, []);
+  }, [isFunesteriePublicShell]);
 
   useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== "a11:global-logout-at" || !event.newValue) return;
-      clearAuthToken();
-      setAuthDisplayName("");
-      setAuthEmail("");
-      globalThis.dispatchEvent(new CustomEvent("a11:auth-invalid", {
-        detail: {
-          reason: "A11_Logout",
-          message: "Déconnexion globale reçue.",
-        },
-      }));
-    };
-    globalThis.addEventListener("storage", onStorage);
-    return () => globalThis.removeEventListener("storage", onStorage);
-  }, []);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    let cancelled = false;
-    const refreshSession = () => {
-      void fetchAuthSession()
-        .then((session) => {
-          if (cancelled) return;
-          if (!session?.authenticated && !session?.user) {
-            clearAuthToken();
-            setAuthDisplayName("");
-            setAuthEmail("");
-            globalThis.dispatchEvent(new CustomEvent("a11:auth-invalid", {
-              detail: {
-                reason: "A11_Session_Missing",
-                message: "La session n'est plus active.",
-              },
-            }));
-            return;
-          }
-          setAuthEmail(session?.user?.email || getAuthEmail());
-        })
-        .catch(() => {
-          // fetchAuthSession déclenche déjà l'événement auth-invalid sur 401.
-        });
-    };
-    const onFocus = () => refreshSession();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") refreshSession();
-    };
-    const interval = window.setInterval(refreshSession, 45000);
-    globalThis.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      globalThis.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [isAuthenticated]);
+    if (hasPrivateSession) {
+      authInvalidatedRef.current = false;
+    }
+  }, [hasPrivateSession]);
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -4823,7 +4761,7 @@ export function App() {
   const queueProcessingRef = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
       return;
     }
@@ -4835,13 +4773,17 @@ export function App() {
         setPortraitFrameIndex(0);
       })
       .catch((error_) => {
+        if (isAuthInvalidError(error_)) {
+          if (!cancelled) setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
+          return;
+        }
         console.warn("[A11] portrait framebook unavailable", error_);
         if (!cancelled) setPortraitFramebook(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
       });
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [hasPrivateSession, isFunesteriePublicShell]);
 
   const portraitFramesById = useMemo(() => {
     const map = new Map<string, A11PortraitFrame>();
@@ -4898,12 +4840,6 @@ export function App() {
   } = useA11Activity();
   const [consoleCollapsed, setConsoleCollapsed] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
-  const serverMicRecorderRef = useRef<MediaRecorder | null>(null);
-  const serverMicStreamRef = useRef<MediaStream | null>(null);
-  const serverMicChunksRef = useRef<Blob[]>([]);
-  const serverMicStopTimerRef = useRef<number | null>(null);
-  const serverMicStartingRef = useRef(false);
-  useEffect(() => () => cleanupServerMicCapture(), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
@@ -4966,8 +4902,8 @@ export function App() {
   const pendingSubmitAtRef = useRef(0);
   const lastCompletedMessageRef = useRef({ key: "", at: 0 });
   const authStorageScope = useMemo(
-    () => (isAuthenticated ? getAuthStorageScope() : ""),
-    [isAuthenticated]
+    () => (hasPrivateSession ? getAuthStorageScope() : ""),
+    [hasPrivateSession]
   );
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
@@ -4975,9 +4911,6 @@ export function App() {
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [model, setModel] = useState("openai:gpt-4o-mini");
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [authSessions, setAuthSessions] = useState<AuthSessionDescriptor[]>([]);
-  const [authSessionsLoading, setAuthSessionsLoading] = useState(false);
-  const [authSessionsError, setAuthSessionsError] = useState("");
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);
   const [savingRemoteProvider, setSavingRemoteProvider] = useState(false);
@@ -5039,7 +4972,6 @@ export function App() {
   });
   const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [desktopSidebarHidden, setDesktopSidebarHidden] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingA11HistoryId, setDeletingA11HistoryId] = useState<string | null>(null);
@@ -5109,36 +5041,6 @@ export function App() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [settingsMenuOpen]);
-
-  useEffect(() => {
-    if (!settingsMenuOpen || !isAuthenticated) {
-      setAuthSessions([]);
-      setAuthSessionsError("");
-      setAuthSessionsLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setAuthSessionsLoading(true);
-    setAuthSessionsError("");
-    void fetchAuthSessions()
-      .then((result) => {
-        if (cancelled) return;
-        setAuthSessions(Array.isArray(result.sessions) ? result.sessions : []);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setAuthSessions([]);
-        setAuthSessionsError(String(error?.message || "Sessions indisponibles"));
-      })
-      .finally(() => {
-        if (!cancelled) setAuthSessionsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [settingsMenuOpen, isAuthenticated]);
 
   useEffect(() => {
     if (!isCompactLayout) {
@@ -5421,7 +5323,7 @@ export function App() {
 
   async function refreshConversationActivity(conversationId?: string | null) {
     const targetConversationId = String(conversationId || "").trim();
-    if (!targetConversationId || hasLocalDevSession()) {
+    if (isFunesteriePublicShell || !targetConversationId || hasLocalDevSession() || !hasPrivateSession) {
       setConversationActivity([]);
       setActivityError("");
       return;
@@ -5433,6 +5335,11 @@ export function App() {
       const payload = await fetchA11ConversationActivity(targetConversationId, { limit: 12 });
       setConversationActivity(Array.isArray(payload?.entries) ? payload.entries : []);
     } catch (error_) {
+      if (isAuthInvalidError(error_)) {
+        setConversationActivity([]);
+        setActivityError("");
+        return;
+      }
       console.warn("[A11] failed to load conversation activity", error_);
       setConversationActivity([]);
       setActivityError((error_ as Error).message || "Chargement de l'activite impossible");
@@ -5443,7 +5350,7 @@ export function App() {
 
   async function refreshConversationResources(conversationId?: string | null) {
     const targetConversationId = String(conversationId || "").trim();
-    if (!targetConversationId || hasLocalDevSession()) {
+    if (isFunesteriePublicShell || !targetConversationId || hasLocalDevSession() || !hasPrivateSession) {
       setConversationResources([]);
       setResourceError("");
       return;
@@ -5455,6 +5362,11 @@ export function App() {
       const payload = await fetchA11ConversationResources(targetConversationId, { limit: 24 });
       setConversationResources(Array.isArray(payload?.resources) ? payload.resources : []);
     } catch (error_) {
+      if (isAuthInvalidError(error_)) {
+        setConversationResources([]);
+        setResourceError("");
+        return;
+      }
       console.warn("[A11] failed to load conversation resources", error_);
       setConversationResources([]);
       setResourceError((error_ as Error).message || "Chargement des ressources impossible");
@@ -5464,6 +5376,11 @@ export function App() {
   }
 
   async function refreshRemoteAiProfiles() {
+    if (isFunesteriePublicShell || !hasPrivateSession || !hasAuthenticatedAdminApiAccess()) {
+      setRemoteProviderProfiles([]);
+      setRemoteProviderError("");
+      return;
+    }
     setLoadingRemoteProviders(true);
     setRemoteProviderError("");
     try {
@@ -5475,6 +5392,11 @@ export function App() {
         setModel(activeChoice.value);
       }
     } catch (error_) {
+      if (isAuthInvalidError(error_)) {
+        setRemoteProviderProfiles([]);
+        setRemoteProviderError("");
+        return;
+      }
       setRemoteProviderProfiles([]);
       setRemoteProviderError((error_ as Error).message || "Chargement des IA distantes impossible.");
     } finally {
@@ -5647,6 +5569,11 @@ export function App() {
   }
 
   async function refreshVoiceReferences() {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
+      setVoiceReferences([]);
+      setVoiceReferenceStatus("");
+      return;
+    }
     try {
       const refs = await fetchTtsVoiceReferences();
       setVoiceReferences(refs);
@@ -5675,6 +5602,11 @@ export function App() {
         setSelectedVoiceReferenceId("");
       }
     } catch (error_) {
+      if (isAuthInvalidError(error_)) {
+        setVoiceReferences([]);
+        setVoiceReferenceStatus("");
+        return;
+      }
       console.warn("[A11] voice reference refresh failed", error_);
       setVoiceReferenceStatus("References voix indisponibles");
     }
@@ -5851,9 +5783,7 @@ export function App() {
     setConversationResources([]);
     setActivityError("");
     setUploadFeedback("");
-    setActiveView("chat");
     setSidebarOpen(false);
-    setDesktopSidebarHidden(true);
   }
 
   // Global drag-and-drop overlay
@@ -6120,163 +6050,10 @@ export function App() {
     }
   }
 
-  function getServerMicMimeType(): string {
-    const recorder = (globalThis as any).MediaRecorder;
-    if (!recorder || typeof recorder.isTypeSupported !== "function") return "";
-    const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/mp4",
-      "audio/ogg;codecs=opus",
-    ];
-    return candidates.find((mime) => recorder.isTypeSupported(mime)) || "";
-  }
-
-  function cleanupServerMicCapture() {
-    if (serverMicStopTimerRef.current) {
-      window.clearTimeout(serverMicStopTimerRef.current);
-      serverMicStopTimerRef.current = null;
-    }
-    const stream = serverMicStreamRef.current;
-    serverMicStreamRef.current = null;
-    serverMicRecorderRef.current = null;
-    serverMicStartingRef.current = false;
-    if (stream) {
-      for (const track of stream.getTracks()) {
-        try { track.stop(); } catch {}
-      }
-    }
-  }
-
-  function stopServerMicCapture() {
-    const recorder = serverMicRecorderRef.current;
-    if (!recorder) return false;
-    try {
-      if (recorder.state !== "inactive") {
-        recorder.stop();
-        setMicStatusMessage("Je transcris ta voix avec A11...");
-        return true;
-      }
-    } catch (error) {
-      console.warn("[A11] server mic stop failed", error);
-      cleanupServerMicCapture();
-    }
-    return false;
-  }
-
-  async function startServerMicCapture(reason = "manual") {
-    if (serverMicStartingRef.current) return;
-    const activeRecorder = serverMicRecorderRef.current;
-    if (activeRecorder && activeRecorder.state !== "inactive") return;
-    const mediaDevices = (navigator as any)?.mediaDevices;
-    const RecorderCtor = (globalThis as any).MediaRecorder;
-    if (!mediaDevices?.getUserMedia || !RecorderCtor) {
-      setMicPermissionBlocked(false);
-      setTtsFallback(false);
-      setMicStatusMessage("Micro non disponible ici. Importe un fichier audio, A11 le transcrira.");
-      throw new Error("MediaRecorder not available");
-    }
-
-    serverMicStartingRef.current = true;
-    setMicStarting(true);
-    setMicPermissionBlocked(false);
-    setTtsFallback(false);
-    setMicStatusMessage("Ouverture du micro A11...");
-
-    try {
-      const stream = await mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      const mimeType = getServerMicMimeType();
-      const recorder = mimeType
-        ? new RecorderCtor(stream, { mimeType })
-        : new RecorderCtor(stream);
-      serverMicStreamRef.current = stream;
-      serverMicRecorderRef.current = recorder;
-      serverMicChunksRef.current = [];
-
-      recorder.ondataavailable = (event: BlobEvent) => {
-        if (event.data && event.data.size > 0) {
-          serverMicChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onerror = (event: Event) => {
-        console.warn("[A11] server mic recorder error", event);
-        cleanupServerMicCapture();
-        setVoiceListening(false);
-        setMicStarting(false);
-        setAudioTranscribing(false);
-        setMicStatusMessage("Capture micro interrompue. Tu peux aussi importer un audio.");
-      };
-
-      recorder.onstop = () => {
-        const chunks = [...serverMicChunksRef.current];
-        const type = mimeType || chunks[0]?.type || "audio/webm";
-        cleanupServerMicCapture();
-        setVoiceListening(false);
-        setMicStarting(false);
-        if (!chunks.length) {
-          setMicStatusMessage("Je n'ai pas capté de voix. Réessaie ou importe un audio.");
-          return;
-        }
-        const blob = new Blob(chunks, { type });
-        const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
-        const file = new File([blob], `a11-mic-${Date.now()}.${extension}`, { type });
-        setAudioTranscribing(true);
-        setMicStatusMessage("Je transcris ta voix avec A11...");
-        transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" })
-          .then((transcript) => {
-            const text = String(transcript || "").trim();
-            if (!text) {
-              setMicStatusMessage("A11 n'a rien entendu de net. Réessaie avec une phrase plus proche du micro.");
-              return;
-            }
-            setMicStatusMessage("");
-            setInput("");
-            sendMessage(text);
-          })
-          .catch((error) => {
-            console.warn("[A11] server mic transcription failed", error);
-            setMicStatusMessage("Transcription indisponible pour l'instant. Importe un audio ou réessaie.");
-          })
-          .finally(() => setAudioTranscribing(false));
-      };
-
-      recorder.start(1000);
-      serverMicStartingRef.current = false;
-      setMicStarting(false);
-      setVoiceListening(true);
-      setMicStatusMessage(
-        reason === "speech-network"
-          ? "Chrome a lâché la dictée. A11 enregistre: parle, puis reclique MIC pour envoyer."
-          : "A11 enregistre: parle, puis reclique MIC pour envoyer."
-      );
-      serverMicStopTimerRef.current = window.setTimeout(() => {
-        stopServerMicCapture();
-      }, 60_000);
-    } catch (error) {
-      cleanupServerMicCapture();
-      setVoiceListening(false);
-      setMicStarting(false);
-      setMicPermissionBlocked(true);
-      setMicStatusMessage("Micro bloqué ou indisponible. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
-      throw error;
-    }
-  }
-
   async function toggleMic() {
     console.log("[A11] toggleMic clicked, current voiceListening=", voiceListening);
     if (micStarting) {
       console.log("[A11] toggle ignored while mic is starting");
-      return;
-    }
-    if (serverMicRecorderRef.current && serverMicRecorderRef.current.state !== "inactive") {
-      stopServerMicCapture();
       return;
     }
     if (mobileVoiceReady && !voiceListening) {
@@ -6315,11 +6092,20 @@ export function App() {
       }
       toggleLockRef.current = true;
       setTimeout(() => { toggleLockRef.current = false; }, 600);
-      try {
-        await startServerMicCapture("no-speech-api");
-      } catch (error) {
-        console.info("[A11] server mic fallback unavailable", error);
-      }
+      // fallback: toggle TTS-only mode
+      setMicPermissionBlocked(false);
+      setMicStatusMessage("Reconnaissance vocale non disponible sur ce navigateur. Mode voix sortie uniquement.");
+      setTtsFallback((v) => {
+        const next = !v;
+        // keep voiceListening false when using fallback
+        if (next) {
+          // enable TTS playback
+      console.log("[A11] SpeechRecognition not available - enabling TTS-only mode");
+        } else {
+          console.log("[A11] Disabling TTS-only mode");
+        }
+        return next;
+      });
       return;
     }
 
@@ -6337,25 +6123,15 @@ export function App() {
         setVoiceListening(true);
       } catch (e) {
         setVoiceListening(false);
-        const message = String((e as Error)?.message || e || "").toLowerCase();
-        const canUseServerFallback =
-          message.includes("network") ||
-          message.includes("not available") ||
-          message.includes("timeout") ||
-          message.includes("ended before start") ||
-          message.includes("stopped");
-        if (canUseServerFallback) {
-          try {
-            await startServerMicCapture(message.includes("network") ? "speech-network" : "speech-fallback");
-            return;
-          } catch (fallbackError) {
-            console.info("[A11] server mic fallback failed", fallbackError);
-          }
-        }
         setMicPermissionBlocked(true);
-        setTtsFallback(false);
-        setMicStatusMessage("Micro bloqué ou indisponible. Autorise le micro dans le cadenas du site, ou importe un fichier audio.");
-        console.info("startMic unavailable", e);
+        setTtsFallback(true);
+        setMicStatusMessage("Micro bloqué ou indisponible. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
+        try {
+          localStorage.setItem('a11:tts-only', '1');
+        } catch {
+          // ignore storage access errors
+        }
+        console.info('startMic unavailable, keeping TTS-only mode', e);
       } finally {
         setMicStarting(false);
       }
@@ -6431,29 +6207,29 @@ export function App() {
 
   // Chargement de l'historique backend au montage
   useEffect(() => {
-    if (!isAuthenticated || isResetRoute) return;
+    if (isFunesteriePublicShell || !hasPrivateSession || isResetRoute) return;
     refreshA11History();
-  }, [isAuthenticated, isResetRoute]);
+  }, [hasPrivateSession, isResetRoute, isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (!isAuthenticated || isResetRoute || isKaen44) return;
+    if (isFunesteriePublicShell || !hasPrivateSession || isResetRoute || isKaen44) return;
     if (!hasAuthenticatedAdminApiAccess()) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
     }
     refreshRemoteAiProfiles();
-  }, [isAuthenticated, isResetRoute, isKaen44]);
+  }, [hasPrivateSession, isResetRoute, isKaen44, isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (isFunesteriePublicShell || !hasPrivateSession) return;
     if (activeView !== 'chat') return;
     refreshConversationActivity(currentConversationId);
     refreshConversationResources(currentConversationId);
-  }, [isAuthenticated, activeView, currentConversationId]);
+  }, [hasPrivateSession, activeView, currentConversationId, isFunesteriePublicShell]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (isFunesteriePublicShell || !hasPrivateSession) return;
     if (activeView !== 'admin' || adminSection !== 'memory') return;
     if (!hasAdminApiAccess()) {
       setTechnicalMemoSummary(null);
@@ -6461,7 +6237,7 @@ export function App() {
       return;
     }
     refreshTechnicalMemoSummary();
-  }, [isAuthenticated, activeView, adminSection]);
+  }, [hasPrivateSession, activeView, adminSection, isFunesteriePublicShell]);
 
   useEffect(() => {
     if (!uploadFeedback) return;
@@ -6511,11 +6287,20 @@ export function App() {
 
   // Handler pour rafraîchir la liste de l'historique
   async function refreshA11History() {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
+      setA11History([]);
+      setLoadingHistory(false);
+      return;
+    }
     setLoadingHistory(true);
     try {
       const list = await fetchA11HistoryList();
       setA11History(list);
     } catch (error_) {
+      if (isAuthInvalidError(error_)) {
+        setA11History([]);
+        return;
+      }
       console.warn('[A11] failed to refresh history', error_);
       setA11History([]);
     } finally {
@@ -6524,7 +6309,7 @@ export function App() {
   }
 
   async function refreshTechnicalMemoSummary() {
-    if (!hasAdminApiAccess()) {
+    if (isFunesteriePublicShell || !hasPrivateSession || !hasAdminApiAccess()) {
       setTechnicalMemoSummary(null);
       setTechnicalMemoError("");
       return;
@@ -6535,6 +6320,11 @@ export function App() {
       const payload = await fetchTechnicalMemoSummary();
       setTechnicalMemoSummary(payload?.summary || null);
     } catch (error_) {
+      if (isAuthInvalidError(error_)) {
+        setTechnicalMemoSummary(null);
+        setTechnicalMemoError("");
+        return;
+      }
       const message = (error_ as Error).message || String(error_);
       setTechnicalMemoError(message);
       setTechnicalMemoSummary(null);
@@ -6779,22 +6569,10 @@ export function App() {
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", "/casino"));
   }
 
-  function focusComposerSoon(revealConversation = false) {
+  function focusComposerSoon() {
     window.setTimeout(() => {
       window.requestAnimationFrame(() => {
-        if (revealConversation) {
-          const behavior: ScrollBehavior = isCompactLayout ? "auto" : "smooth";
-          const frame = chatScrollFrameRef.current;
-          if (frame) {
-            frame.scrollTo({ top: frame.scrollHeight, behavior });
-            window.setTimeout(() => {
-              frame.scrollTop = frame.scrollHeight;
-            }, isCompactLayout ? 0 : 360);
-          }
-          chatEndRef.current?.scrollIntoView({ block: "end", behavior });
-          composerInputRef.current?.scrollIntoView({ block: "nearest", behavior });
-        }
-        composerInputRef.current?.focus({ preventScroll: true });
+        composerInputRef.current?.focus();
       });
     }, 0);
   }
@@ -6803,15 +6581,21 @@ export function App() {
     setActiveView("chat");
     setSettingsMenuOpen(false);
     setSidebarOpen(false);
-    setDesktopSidebarHidden(true);
     setInspectorOpen(false);
     pushA11Path(buildSurfacePath(isKaen44 ? "kaen44" : "a11", isKaen44 ? "/cockpit" : "/"));
-    focusComposerSoon(true);
+    focusComposerSoon();
   }
 
   function openKaenQuickPrompt(prompt: string) {
     setInput(String(prompt || "").trim());
     openChatView();
+  }
+
+  function handlePublicLogout() {
+    setDisplayName("Utilisateur");
+    setIsAuthenticated(false);
+    setIsFunesterieAdmin(false);
+    void logout();
   }
 
   // Header avec bouton Mode DEV centré, select modèle à droite, mute à l'extrême droite
@@ -6821,26 +6605,16 @@ export function App() {
     return <ResetPasswordPanel />;
   }
 
-  if (publicPolicyPage) {
-    return <Kaen44PublicPage page={publicPolicyPage} />;
-  }
-
-  if (isGeneralHome) {
+  if (isGeneralHome || isGeneralCockpit || isGeneralAgents) {
     return (
       <FunesterieConnectedHomePage
         surfaceLinks={surfaceLinks}
         authenticated={isAuthenticated}
         displayName={displayName}
+        onLogout={handlePublicLogout}
+        isAdmin={isFunesterieAdmin}
       />
     );
-  }
-
-  if (isGeneralCockpit) {
-    return <FunesterieCockpitPage authenticated={isAuthenticated} displayName={displayName} authEmail={authEmail} />;
-  }
-
-  if (isGeneralAgents) {
-    return <Kaen44PublicPage page="home" />;
   }
 
   if (isGeneralAccount) {
@@ -6849,16 +6623,55 @@ export function App() {
         surfaceLinks={surfaceLinks}
         authenticated={isAuthenticated}
         displayName={displayName}
+        onLogout={handlePublicLogout}
       />
     );
   }
 
   if (isGeneralContact) {
-    return <FunesterieContactPage surfaceLinks={surfaceLinks} />;
+    return (
+      <FunesterieContactPage
+        surfaceLinks={surfaceLinks}
+        authenticated={isAuthenticated}
+        displayName={displayName}
+        onLogout={handlePublicLogout}
+      />
+    );
+  }
+
+  if (isGeneralPrivacy) {
+    return (
+      <FunesterieLegalPage
+        surfaceLinks={surfaceLinks}
+        kind="privacy"
+        authenticated={isAuthenticated}
+        displayName={displayName}
+        onLogout={handlePublicLogout}
+      />
+    );
+  }
+
+  if (isGeneralTerms) {
+    return (
+      <FunesterieLegalPage
+        surfaceLinks={surfaceLinks}
+        kind="terms"
+        authenticated={isAuthenticated}
+        displayName={displayName}
+        onLogout={handlePublicLogout}
+      />
+    );
+  }
+
+  if (isGeneralLogin) {
+    return <LoginPanel onLoginSuccess={() => {
+      setIsAuthenticated(true);
+      setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+    }} />;
   }
 
   if (isVivy) {
-    return <VivyPublicPage authenticated={isAuthenticated} />;
+    return <VivyPublicPage />;
   }
 
   if (!isAuthenticated) {
@@ -6871,19 +6684,30 @@ export function App() {
       || search.includes("login=1")
       || search.includes("cockpit=1");
     if (isKaen44 && !forceLoginPanel && !isAuthSuccessRoute(pathname)) {
-      const publicPage = pathname.includes("/privacy") ? "privacy"
-        : pathname.includes("/terms") ? "terms"
-          : pathname.includes("/vivy") ? "vivy"
-          : "home";
-      return <Kaen44PublicPage page={publicPage} />;
+      return (
+        <FunesterieConnectedHomePage
+          surfaceLinks={surfaceLinks}
+          authenticated={isAuthenticated}
+          displayName={displayName}
+          onLogout={handlePublicLogout}
+          isAdmin={isFunesterieAdmin}
+        />
+      );
     }
-    if (!isGeneralLoginRoute() && !isAuthSuccessRoute(pathname)) {
-      const returnTo = isLoginRoute(pathname)
-        ? getDefaultPostLoginUrl(getCurrentSurfaceKind())
-        : (typeof window !== "undefined" ? window.location.href : getDefaultPostLoginUrl(getCurrentSurfaceKind()));
-      return <LoginRedirect to={buildCentralLoginUrl(returnTo)} />;
+
+    if (isAuthSuccessRoute(pathname)) {
+      return null;
     }
-    return <LoginPanel onLoginSuccess={() => setIsAuthenticated(true)} />;
+
+    if (typeof window !== "undefined" && !isCentralLoginSurface() && !isLocalSurfaceHost(window.location.hostname)) {
+      window.location.replace(buildCentralLoginUrl(window.location.href));
+      return null;
+    }
+
+    return <LoginPanel onLoginSuccess={() => {
+      setIsAuthenticated(true);
+      setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+    }} />;
   }
 
   if (isKaen44 && typeof window !== "undefined") {
@@ -6896,7 +6720,15 @@ export function App() {
       || search.includes("cockpit=1")
       || search.includes("show=1");
     if (!wantsApp && isFunesterieHomeRoute(pathname)) {
-      return <Kaen44PublicPage page="home" />;
+      return (
+        <FunesterieConnectedHomePage
+          surfaceLinks={surfaceLinks}
+          authenticated={isAuthenticated}
+          displayName={displayName}
+          onLogout={handlePublicLogout}
+          isAdmin={isFunesterieAdmin}
+        />
+      );
     }
   }
 
@@ -6925,7 +6757,6 @@ export function App() {
       : "0 12px 26px rgba(20, 184, 166, 0.18)",
     fontWeight: 900,
   };
-  const conversationPanelVisible = isCompactLayout ? sidebarOpen : !desktopSidebarHidden;
   const headerSelectStyle: React.CSSProperties = {
     padding: "8px 10px",
     borderRadius: isKaen44 ? 10 : 7,
@@ -7049,14 +6880,12 @@ export function App() {
           >
             <img
               id="a11-avatar-frame"
-              src={isKaen44 ? KAEN44_AVATAR_SRC : activePortraitSrc}
+              src={isKaen44 ? KAEN44_AVATAR_SRC : A11_HOODED_AGENT_SRC}
               alt={isKaen44 ? "Kaen44" : "A11"}
               loading="eager"
               onError={(event) => applyImageFallback(
                 event,
-                isKaen44 ? A11_AVATAR_IDLE_FALLBACK_SRC : activePortraitSrc.includes("talking")
-                  ? A11_AVATAR_TALKING_FALLBACK_SRC
-                  : A11_AVATAR_IDLE_FALLBACK_SRC
+                isKaen44 ? KAEN44_AVATAR_SRC : A11_HOODED_AGENT_SRC
               )}
               style={{
                 position: "absolute",
@@ -7091,22 +6920,16 @@ export function App() {
               {isCompactLayout ? "Chat" : "Chat maintenant"}
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => {
-              if (isCompactLayout) {
-                setSidebarOpen((value) => !value);
-                setSettingsMenuOpen(false);
-                setInspectorOpen(false);
-                return;
-              }
-              setDesktopSidebarHidden((value) => !value);
-            }}
-            style={utilityButtonStyle}
-            title={conversationPanelVisible ? "Fermer les conversations et l'historique" : "Ouvrir les conversations et l'historique"}
-          >
-            {conversationPanelVisible ? "Fermer" : "Discussions"}
-          </button>
+          {isCompactLayout ? (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((value) => !value)}
+              style={utilityButtonStyle}
+              title="Ouvrir les conversations et l'historique"
+            >
+              {sidebarOpen ? "Fermer" : "Discussions"}
+            </button>
+          ) : null}
           <div ref={settingsMenuRef} style={{ position: "relative" }}>
             <button
               type="button"
@@ -7168,42 +6991,6 @@ export function App() {
                     paddingBottom: "calc(14px + env(safe-area-inset-bottom))",
                   }}
                 >
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Navigation</div>
-                  <a
-                    href={surfaceLinks.home}
-                    className="btn ghost"
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      textDecoration: "none",
-                    }}
-                    title="Retourner à l'accueil Funesterie"
-                  >
-                    <span>Accueil</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Funesterie</span>
-                  </a>
-                  <a
-                    href={surfaceLinks.privacy}
-                    className="btn ghost"
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      textDecoration: "none",
-                    }}
-                    title="Lire les règles de confidentialité"
-                  >
-                    <span>Confidentialité</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Public</span>
-                  </a>
-                </div>
-
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Modele</div>
                   <select
@@ -7340,66 +7127,6 @@ export function App() {
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={menuSectionTitleStyle}>Session</div>
-                  <div style={{
-                    border: "1px solid rgba(148, 163, 184, 0.22)",
-                    borderRadius: 8,
-                    padding: 10,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    background: "rgba(15, 23, 42, 0.58)",
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: "#cbd5e1" }}>
-                      <span>Sessions actives</span>
-                      <span style={{ color: "#94a3b8" }}>
-                        {authSessionsLoading ? "..." : `${authSessions.filter((session) => !session.revokedAt).length}`}
-                      </span>
-                    </div>
-                    {authSessionsError ? (
-                      <div style={{ color: "#fca5a5", fontSize: 12 }}>{authSessionsError}</div>
-                    ) : null}
-                    {authSessions.slice(0, 4).map((session) => (
-                      <div
-                        key={session.id}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          gap: 8,
-                          alignItems: "center",
-                          fontSize: 12,
-                          color: session.revokedAt ? "#64748b" : "#e2e8f0",
-                        }}
-                      >
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {session.current ? "Cette session" : (session.surface || "Funesterie")}
-                          </div>
-                          <div style={{ color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {session.provider || "local"} · {session.lastSeenAt ? new Date(session.lastSeenAt).toLocaleString() : "jamais"}
-                          </div>
-                        </div>
-                        {!session.current && !session.revokedAt ? (
-                          <button
-                            type="button"
-                            className="btn ghost"
-                            onClick={() => {
-                              void revokeAuthSession(session.id)
-                                .then(() => fetchAuthSessions())
-                                .then((result) => setAuthSessions(Array.isArray(result.sessions) ? result.sessions : []))
-                                .catch((error) => setAuthSessionsError(String(error?.message || "Révocation impossible")));
-                            }}
-                            style={{ fontSize: 11, padding: "4px 8px" }}
-                          >
-                            Révoquer
-                          </button>
-                        ) : (
-                          <span style={{ color: session.revokedAt ? "#64748b" : "#86efac", fontWeight: 800 }}>
-                            {session.revokedAt ? "Off" : "OK"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
                   <button
                     type="button"
                     onClick={() => {
@@ -7464,10 +7191,10 @@ export function App() {
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: 10,
-                      color: "#fda4af",
-                      borderColor: "#881337",
+                      color: "#fecaca",
+                      borderColor: "#991b1b",
                     }}
-                    title="Tout deconnecter"
+                    title="Deconnecter toutes les sessions"
                   >
                     <span>Tout deconnecter</span>
                     <span style={{ fontWeight: 700 }}>Global</span>
@@ -7480,7 +7207,7 @@ export function App() {
         </div>
       </header>
       <div className="a11-body" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-        {isCompactLayout && conversationPanelVisible ? (
+        {isCompactLayout && sidebarOpen ? (
           <button
             type="button"
             aria-label="Fermer le panneau de navigation"
@@ -7495,7 +7222,7 @@ export function App() {
           />
         ) : null}
 
-        {conversationPanelVisible ? (
+        {(!isCompactLayout || sidebarOpen) ? (
         <aside
           className="sidebar"
           style={{
@@ -7988,24 +7715,6 @@ export function App() {
                       : "0 0 16px rgba(103, 232, 249, 0.22)",
                   };
                 }
-                const normalizedDisplay = m.role === "assistant"
-                  ? normalizeAssistantMessagePayload(
-                      m.content,
-                      m.imageUrl || null,
-                      m.videoUrl || null,
-                      m.fileUrl || null
-                    )
-                  : null;
-                const renderedContent = normalizedDisplay?.content ?? m.content;
-                const renderedImageUrls = [
-                  ...(Array.isArray(m.imageUrls) ? m.imageUrls : []),
-                  ...(m.imageUrl ? [m.imageUrl] : []),
-                  ...(normalizedDisplay?.imageUrl ? [normalizedDisplay.imageUrl] : []),
-                ]
-                  .filter((url): url is string => Boolean(url))
-                  .filter((url, urlIndex, allUrls) => allUrls.indexOf(url) === urlIndex);
-                const renderedVideoUrl = m.videoUrl || normalizedDisplay?.videoUrl || null;
-                const renderedFileUrl = m.fileUrl || normalizedDisplay?.fileUrl || null;
                 const contentNode = m.role === "assistant"
                   ? (
                     <ReactMarkdown
@@ -8019,7 +7728,7 @@ export function App() {
                         ),
                       }}
                     >
-                      {renderedContent}
+                      {m.content}
                     </ReactMarkdown>
                   )
                   : <div>{m.content}</div>;
@@ -8075,7 +7784,9 @@ export function App() {
                     {contentNode}
                     {(() => {
                       // Carousel si plusieurs images, sinon affichage simple
-                      const imgs = renderedImageUrls;
+                      const imgs = m.imageUrls && m.imageUrls.length > 1
+                        ? m.imageUrls
+                        : m.imageUrl ? [m.imageUrl] : [];
                       if (imgs.length === 0) return null;
                       if (imgs.length === 1) {
                         return (
@@ -8100,7 +7811,7 @@ export function App() {
                         />
                       );
                     })()}
-                    {renderedVideoUrl && renderedImageUrls.length === 0 && (
+                    {m.videoUrl && !m.imageUrl && (
                       <div
                         style={{
                           marginTop: 12,
@@ -8108,22 +7819,22 @@ export function App() {
                           gap: 10,
                         }}
                       >
-                        {/\.gif(?:[?#].*)?$/i.test(String(renderedVideoUrl || "")) ? (
+                        {/\.gif(?:[?#].*)?$/i.test(String(m.videoUrl || "")) ? (
                           <a
-                            href={renderedVideoUrl}
+                            href={m.videoUrl}
                             target="_blank"
                             rel="noreferrer"
                             style={{ display: "inline-block", width: "fit-content" }}
                           >
                             <img
-                              src={renderedVideoUrl}
+                              src={m.videoUrl}
                               alt={`Animation generee par ${productName}`}
                               style={{ maxWidth: "320px", borderRadius: 12 }}
                             />
                           </a>
                         ) : (
                           <video
-                            src={renderedVideoUrl}
+                            src={m.videoUrl}
                             controls
                             preload="metadata"
                             playsInline
@@ -8131,7 +7842,7 @@ export function App() {
                           />
                         )}
                         <a
-                          href={renderedVideoUrl}
+                          href={m.videoUrl}
                           target="_blank"
                           rel="noreferrer"
                           style={{
@@ -8145,7 +7856,7 @@ export function App() {
                         </a>
                       </div>
                     )}
-                    {renderedFileUrl && renderedImageUrls.length === 0 && !renderedVideoUrl && (
+                    {m.fileUrl && !m.imageUrl && !m.videoUrl && (
                       <div
                         style={{
                           marginTop: 12,
@@ -8179,7 +7890,7 @@ export function App() {
                             Document généré
                           </div>
                           <a
-                            href={renderedFileUrl}
+                            href={m.fileUrl}
                             target="_blank"
                             rel="noreferrer"
                             style={{

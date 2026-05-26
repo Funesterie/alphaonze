@@ -1,0 +1,48 @@
+'use strict';
+
+const packages = Object.freeze([
+  '@nossen/allmight',
+  '@nossen/bat',
+  '@nossen/bat-system',
+  '@nossen/beam',
+  '@nossen/dragon',
+  '@nossen/dragon-contracts',
+  '@nossen/dragon-upstream',
+  '@nossen/envapt-superimg',
+  '@nossen/envaptex',
+  '@nossen/freeland',
+  '@nossen/freeland-bros',
+  '@nossen/katana',
+  '@nossen/logic-reduce',
+  '@nossen/mcp-agent-bus',
+  '@nossen/mcp-chopper-mixer',
+  '@nossen/mcp-cloud-assets',
+  '@nossen/mcp-job-queue',
+  '@nossen/mcp-media-bridge',
+  '@nossen/mcp-memory-graph',
+  '@nossen/mcp-public-endpoints',
+  '@nossen/mcp-qflush-control',
+  '@nossen/mcp-retro-session',
+  '@nossen/mcp-security-preflight',
+  '@nossen/mcp-tool-manifest',
+  '@nossen/mcp-toolkit',
+  '@nossen/mcp-web-drafts',
+  '@nossen/mcp-worker-supervisor',
+  '@nossen/morphing',
+  '@nossen/nezlephant',
+  '@nossen/qflush',
+  '@nossen/qflush-runner',
+  '@nossen/rome',
+  '@nossen/scentgate',
+  '@nossen/scream',
+  '@nossen/spyder',
+  'a11-coder'
+]);
+
+module.exports = Object.freeze({
+  name: '@nossen/all-in-one',
+  scope: 'public',
+  generatedAt: '2026-05-25',
+  packageCount: packages.length,
+  packages
+});

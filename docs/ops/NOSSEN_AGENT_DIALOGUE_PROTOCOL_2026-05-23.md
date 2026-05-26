@@ -88,4 +88,3 @@ Handoff:
 - Discord bridge only when it is already configured and appropriate for live discussion.
 
 The human can still decide priorities. The agents must carry their own conversations.
-
