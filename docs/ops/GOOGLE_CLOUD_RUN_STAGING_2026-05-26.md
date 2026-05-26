@@ -8,6 +8,14 @@ Secret-safe operational note for the Funesterie/NOSSEN Google Cloud staging lane
 - Region: `europe-west4`
 - Runtime target: Cloud Run
 - Artifact target: Artifact Registry
+- Budget guard: `alphaonze monthly guard`, `100 EUR` monthly for project `alphaonze`
+
+Enabled APIs checked during this pass:
+
+- `artifactregistry.googleapis.com`
+- `billingbudgets.googleapis.com`
+- `containerscanning.googleapis.com`
+- `run.googleapis.com`
 
 ## Artifact Registry
 
@@ -62,3 +70,4 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Test-CloudRunStagin
 - This does not replace Hetzner production.
 - No production secrets were copied to Google Cloud during this first staging pass.
 - Keep staging private until OAuth, Drive access, secrets, and domain mapping are intentionally wired.
+- The budget guard alerts; it does not hard-stop resources.
