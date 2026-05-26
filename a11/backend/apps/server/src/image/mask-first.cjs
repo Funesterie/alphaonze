@@ -73,7 +73,6 @@ async function buildMaskFromCanonicalImageIntentCompat(intent = {}, opts = {}) {
   }
 
   const resolution = await buildCanonicalImageMaskFromText(sourceText, {
-    allowCompatFallback: true,
     maskOptions: {
       width: intent?.execution?.width ?? opts.width,
       height: intent?.execution?.height ?? opts.height,

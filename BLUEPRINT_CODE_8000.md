@@ -2,9 +2,9 @@
 
 ## Code Source Complet pour Développeurs
 
-**Prix** : 8000€ (paiement unique)  
-**Contact** : djeff@funesterie.me  
-**Stripe Product ID** : `prod_UPpcecJMl4z3Fg`  
+**Prix** : 8000€ (paiement unique)
+**Contact** : djeff@funesterie.me
+**Stripe Product ID** : `prod_UPpcecJMl4z3Fg`
 **Stripe Price ID** : `price_1TQzwyHkqLcMgv5475W4hU2c`
 
 ---
@@ -263,7 +263,7 @@ git push origin master
 
 ## 📞 Contact & Achat
 
-**Email** : djeff@funesterie.me  
+**Email** : djeff@funesterie.me
 **Sujet** : "Achat Blueprint Code A11 - 8000€"
 
 **Informations à fournir :**
@@ -369,7 +369,7 @@ Si le Blueprint ne correspond pas à vos attentes :
 
 ---
 
-**Prêt à lancer votre SaaS IA ?**  
-📧 djeff@funesterie.me  
-💰 8000€ - Paiement unique  
+**Prêt à lancer votre SaaS IA ?**
+📧 djeff@funesterie.me
+💰 8000€ - Paiement unique
 🚀 Livraison sous 24h

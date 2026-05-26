@@ -53,6 +53,15 @@ shared desk:
 3. Check queued jobs before starting new work.
 4. Announce the task being handled when it changes shared state.
 
+## Dialogue Protocol
+
+Agents must not use Jeffrey as a relay between tools or teammates. If an agent
+needs Kiro, Claude, A11, Kaen44, Vivy, Gemini, Discord, GitHub, or another
+coordination surface, the agent opens or joins the dialogue itself and stays in
+that thread until it is resolved, blocked with evidence, or handed off clearly.
+
+Current rulebook: `docs/ops/NOSSEN_AGENT_DIALOGUE_PROTOCOL_2026-05-23.md`.
+
 ## Semantic Resonance Protocol
 
 Agents handling creative, media, narrative, identity, humor or reference-heavy

@@ -1,5 +1,10 @@
 # A11 Deployment Topology
 
+> Superseded for current routing decisions.
+> This file contains older Railway/Netlify topology notes. For 2026-05-23 live routing, use
+> `docs/ops/FUNESTERIE_ROUTING_SOURCE_OF_TRUTH_2026-05-23.md` before changing production,
+> auth, Cloudflare, Netlify, or validation routes.
+
 ## Domain Ownership
 
 - `funesterie.me` is managed on Cloudflare.

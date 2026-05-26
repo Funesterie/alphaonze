@@ -14,6 +14,14 @@ const DEFAULT_SEEDS_PATH = path.resolve(
   'knowledge-graph',
   'semantic-resonance-seeds.json'
 );
+const PACKAGED_SEEDS_PATH = path.resolve(__dirname, 'semantic-resonance-seeds.json');
+
+function resolveSemanticResonanceSeedsPath(options = {}) {
+  const explicitPath = options.seedsPath || process.env.A11_SEMANTIC_RESONANCE_SEEDS;
+  if (explicitPath) return path.resolve(String(explicitPath));
+  if (fs.existsSync(DEFAULT_SEEDS_PATH)) return DEFAULT_SEEDS_PATH;
+  return PACKAGED_SEEDS_PATH;
+}
 
 function normalizeText(value = '') {
   return String(value || '')
@@ -45,9 +53,7 @@ function asArray(value) {
 }
 
 function loadSemanticResonanceSeeds(options = {}) {
-  const seedsPath = path.resolve(
-    String(options.seedsPath || process.env.A11_SEMANTIC_RESONANCE_SEEDS || DEFAULT_SEEDS_PATH)
-  );
+  const seedsPath = resolveSemanticResonanceSeedsPath(options);
   const raw = fs.readFileSync(seedsPath, 'utf8');
   const parsed = JSON.parse(raw);
   const entries = uniqueBy(asArray(parsed.entries), (entry) => normalizeText(entry?.id || entry?.label));
@@ -257,10 +263,12 @@ function buildSemanticResonanceGraphTriplets(seeds = loadSemanticResonanceSeeds(
 
 module.exports = {
   DEFAULT_SEEDS_PATH,
+  PACKAGED_SEEDS_PATH,
   buildSemanticResonanceGraphTriplets,
   explainResonance,
   findResonanceEntry,
   loadSemanticResonanceSeeds,
   normalizeText,
+  resolveSemanticResonanceSeedsPath,
   scoreResonanceEntry,
 };

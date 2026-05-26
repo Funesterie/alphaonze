@@ -255,8 +255,8 @@ function isExplicitImageGenerationRequest(text = '') {
   const normalized = normalizeLookup(text);
   if (!normalized) return false;
 
-  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw|render)\b/.test(normalized);
-  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork|render)\b/.test(normalized);
+  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw)\b/.test(normalized);
+  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork)\b/.test(normalized);
   const troubleshootingCue = /\b(pourquoi|comment|probleme|bug|erreur|marche pas|fonctionne pas|peux tu|peux pas|capable|capacite)\b/.test(normalized);
 
   if (!creationCue || !imageCue) return false;
@@ -286,12 +286,7 @@ function buildClarificationPayload(clarification, semantic, traceId, pipeline) {
 
 function shouldSurfaceCanonicalizerDiagnostic(error_ = null) {
   if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
-  const reasons = Array.isArray(error_?.payload?.details?.reasons) ? error_.payload.details.reasons : [];
-  return reasons.some((entry) => (
-    /canonicalized_request_not_english_only/i.test(String(entry || ''))
-    || /canonicalized_request_cardinality_conflict/i.test(String(entry || ''))
-    || /canonicalized_request_missing_named_entity/i.test(String(entry || ''))
-  ));
+  return true;
 }
 
 function buildCanonicalizerDiagnosticSummary(error_ = null) {
@@ -302,11 +297,19 @@ function buildCanonicalizerDiagnosticSummary(error_ = null) {
   const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
   const lastRejected = rejectedPayloads.length ? rejectedPayloads[rejectedPayloads.length - 1] : null;
   const lastReason = String(lastRejected?.reason || '').trim();
-  const failedBecause = /canonicalized_request_cardinality_conflict/i.test(lastReason)
-    ? 'cardinality_validation_failed_after_retry'
-    : (/canonicalized_request_missing_named_entity/i.test(lastReason)
-        ? 'named_entity_validation_failed_after_retry'
-        : 'english_only_validation_failed_after_retry');
+  const reasonText = reasons.join(' ');
+  let failedBecause = 'english_only_validation_failed_after_retry';
+  if (/canonicalized_request_cardinality_conflict/i.test(lastReason)) {
+    failedBecause = 'cardinality_validation_failed_after_retry';
+  } else if (/canonicalized_request_missing_named_entity/i.test(lastReason)) {
+    failedBecause = 'named_entity_validation_failed_after_retry';
+  } else if (/structured_llm_unconfigured|llm_unavailable|missing authentication|unauthorized|llm_upstream_401|\b401\b/i.test(reasonText)) {
+    failedBecause = 'canonicalizer_unavailable';
+  } else if (/empty_payload|invalid_json/i.test(reasonText)) {
+    failedBecause = 'canonicalizer_empty_or_invalid_response';
+  } else if (/missing_canonical_english_input|missing_canonical_subject/i.test(reasonText)) {
+    failedBecause = 'canonicalizer_incomplete_response';
+  }
   return {
     failedBecause,
     retryCount: Math.max(0, rejectedPayloads.length - 1),
@@ -323,11 +326,18 @@ function buildCanonicalizerDiagnosticAssistant(error_ = null) {
     : {};
   const rejectedPayloads = Array.isArray(details.rejectedPayloads) ? details.rejectedPayloads : [];
   const summary = buildCanonicalizerDiagnosticSummary(error_);
-  const reasonLine = summary.failedBecause === 'cardinality_validation_failed_after_retry'
-    ? "La requete image a ete comprise, mais la normalisation a essaye de reduire une scene a plusieurs sujets en sujet unique."
-    : (summary.failedBecause === 'named_entity_validation_failed_after_retry'
-        ? "La requete image a ete comprise, mais la normalisation a perdu ou remplace un nom explicite de ta demande."
-        : "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.");
+  let reasonLine = "La requete image a ete comprise, mais la normalisation canonique a encore laisse du francais dans la sortie.";
+  if (summary.failedBecause === 'cardinality_validation_failed_after_retry') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation a essaye de reduire une scene a plusieurs sujets en sujet unique.";
+  } else if (summary.failedBecause === 'named_entity_validation_failed_after_retry') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation a perdu ou remplace un nom explicite de ta demande.";
+  } else if (summary.failedBecause === 'canonicalizer_unavailable') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation canonique LLM n'est pas disponible dans cet environnement.";
+  } else if (summary.failedBecause === 'canonicalizer_empty_or_invalid_response') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation canonique LLM a renvoye une reponse vide ou invalide.";
+  } else if (summary.failedBecause === 'canonicalizer_incomplete_response') {
+    reasonLine = "La requete image a ete comprise, mais la normalisation canonique LLM n'a pas fourni un sujet ou un prompt anglais fiable.";
+  }
   const lines = [
     reasonLine,
     summary.retryCount > 0
@@ -458,27 +468,6 @@ function resolveIntentDependencies(overrides = {}) {
     classifyReferenceImages: overrides.classifyReferenceImages || defaultClassifyReferenceImages,
     detectIntentWithLlm: overrides.detectIntentWithLlm || defaultDetectIntentWithLlm,
   };
-}
-
-function isOptionalCanonicalizerUnavailable(error_ = null) {
-  if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
-  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
-    ? error_.payload.details
-    : {};
-  const reasons = Array.isArray(details.reasons) ? details.reasons.join(' ') : '';
-  const upstreamBody = String(details.upstream?.body || error_?.upstream?.body || '').trim();
-  return /structured_llm_unconfigured|llm_unavailable|not configured/i.test(`${reasons} ${upstreamBody}`);
-}
-
-function shouldPropagateExplicitCanonicalizerFailure(error_ = null, deps = {}) {
-  if (String(error_?.code || '').trim() !== 'image_request_canonicalizer_failed') return false;
-  if (typeof deps.specialCompilerCallStructuredLlmJson !== 'function') return false;
-  const details = error_?.payload?.details && typeof error_.payload.details === 'object'
-    ? error_.payload.details
-    : {};
-  const reasons = Array.isArray(details.reasons) ? details.reasons.join(' ') : '';
-  const statusCode = Number(error_?.statusCode || error_?.status || 0);
-  return statusCode >= 500 && /\bprovided_structured_llm:/i.test(reasons);
 }
 
 function createImageBrainRuntime(deps = {}) {
@@ -726,8 +715,7 @@ function createIntentResolver(overrides = {}) {
     const forcedReferenceImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
       && hasReferenceImageForRequest
       && isImageTransformRequest(userText);
-    const forcedExplicitImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
-      && isExplicitImageGenerationRequest(userText);
+    const forcedExplicitImageIntent = isExplicitImageGenerationRequest(userText);
     const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
       ? 'image.generate'
       : (shouldAcceptLlmIntent(llmIntentResult) ? llmIntentResult.intent : null);
@@ -746,7 +734,7 @@ function createIntentResolver(overrides = {}) {
       );
     }
 
-    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType) {
+    if (allowSemanticIntentFallback && clarification?.shouldClarify && !llmIntentType && !forcedExplicitImageIntent) {
       return {
         traceId,
         pipeline,
@@ -1012,15 +1000,7 @@ function createIntentResolver(overrides = {}) {
             },
           };
         }
-        if (shouldPropagateExplicitCanonicalizerFailure(error_, deps)) {
-          throw error_;
-        }
-        if (isOptionalCanonicalizerUnavailable(error_)) {
-          console.warn(`[A11][prompt-canon] traceId=${traceId} optional canonicalizer unavailable; continuing with heuristic mask`);
-          canonicalizedImageRequest = null;
-        } else {
-          throw error_;
-        }
+        throw error_;
       }
 
       if (canonicalizedImageRequest?.needsClarification === true) {

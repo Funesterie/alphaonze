@@ -1,0 +1,260 @@
+{
+  "owner": "Funesterie",
+  "scope": "@nossen",
+  "registry": "https://europe-west4-npm.pkg.dev/alphaonze/funesterie-npm/",
+  "defaultTag": "latest",
+  "packages": [
+    {
+      "id": "allmight",
+      "source": "runtime/modules/allmight",
+      "publishedName": "@nossen/allmight",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "bat",
+      "source": "runtime/modules/bat/packages/bat",
+      "publishedName": "@nossen/bat",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "bat-system",
+      "source": "runtime/modules/bat/packages/bat-system",
+      "publishedName": "@nossen/bat-system",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "beam",
+      "source": "runtime/modules/beam",
+      "publishedName": "@nossen/beam",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "envapt-superimg",
+      "source": "runtime/modules/envaptex/envapt-superimg",
+      "publishedName": "@nossen/envapt-superimg",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "envaptex",
+      "source": "runtime/modules/envaptex",
+      "publishedName": "@nossen/envaptex",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "freeland",
+      "source": "runtime/modules/freeland",
+      "publishedName": "@nossen/freeland",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "freeland-bros",
+      "source": "runtime/modules/freeland-bros",
+      "publishedName": "@nossen/freeland-bros",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "katana",
+      "source": "runtime/modules/katana",
+      "publishedName": "@nossen/katana",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "morphing",
+      "source": "runtime/modules/morphing",
+      "publishedName": "@nossen/morphing",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "nezlephant",
+      "source": "runtime/modules/nezlephant/nezlephant/nezlephant",
+      "publishedName": "@nossen/nezlephant",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "qflush",
+      "source": "a11/backend/libs",
+      "publishedName": "@nossen/qflush",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "qflush-runner",
+      "source": "runtime/modules/qflush/runner-package",
+      "publishedName": "@nossen/qflush-runner",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "logic-reduce",
+      "source": "packages/nossen/logic-reduce",
+      "publishedName": "@nossen/logic-reduce",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "rome",
+      "source": "runtime/modules/rome",
+      "publishedName": "@nossen/rome",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "scentgate",
+      "source": "runtime/modules/scentgate",
+      "publishedName": "@nossen/scentgate",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "scream",
+      "source": "runtime/modules/scream",
+      "publishedName": "@nossen/scream",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "spyder",
+      "source": "runtime/modules/spyder/packages/spyder",
+      "publishedName": "@nossen/spyder",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "dragon-contracts",
+      "source": "a11/dragon/packages/contracts",
+      "publishedName": "@nossen/dragon-contracts",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "dragon-upstream",
+      "source": "a11/dragon/packages/upstream",
+      "publishedName": "@nossen/dragon-upstream",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    },
+    {
+      "id": "dragon",
+      "source": "a11/dragon/apps/dragon-daemon",
+      "publishedName": "@nossen/dragon",
+      "publishedVersion": "2.0.0",
+      "npmTag": "latest",
+      "distTags": [
+        "stable"
+      ],
+      "enabled": true,
+      "requiredFiles": []
+    }
+  ]
+}

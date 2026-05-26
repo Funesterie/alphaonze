@@ -1,0 +1,145 @@
+{
+  "schema": "funesterie.semantic-resonance.v1",
+  "updatedAt": "2026-05-16",
+  "description": "Seed minimal pour apprendre aux agents les resonances culturelles, emotionnelles, sensorielles et narratives.",
+  "entries": [
+    {
+      "id": "sapin",
+      "label": "sapin",
+      "language": "fr",
+      "type": "word",
+      "aliases": ["sapin", "arbre de noel", "ca sent le sapin", "resineux"],
+      "literal": "Conifere associe a la foret, au bois et a Noel.",
+      "trust": 0.86,
+      "temporalStatus": "stable",
+      "facets": [
+        { "id": "forest", "label": "foret", "layer": "sensory", "tone": "nature", "weight": 0.88 },
+        { "id": "resin-smell", "label": "odeur de resine", "layer": "sensory", "tone": "memory", "weight": 0.91 },
+        { "id": "winter", "label": "hiver", "layer": "season", "tone": "cold", "weight": 0.82 },
+        { "id": "christmas", "label": "Noel", "layer": "culture", "tone": "warmth", "weight": 0.9 },
+        { "id": "wood", "label": "bois", "layer": "material", "tone": "craft", "weight": 0.72 },
+        { "id": "decay-idiom", "label": "ca sent le sapin", "layer": "idiom", "tone": "dark-humor", "weight": 0.86 },
+        { "id": "weed-slang", "label": "double sens weed selon contexte", "layer": "slang", "tone": "street-humor", "weight": 0.54 }
+      ],
+      "tones": ["nostalgia", "warmth", "nature", "dark-humor", "decay", "childhood"],
+      "interactions": [
+        {
+          "target": "ca-sent-le-sapin",
+          "relation": "HAS_WORDPLAY",
+          "summary": "L'expression retourne l'imaginaire foret/Noel vers la mort imminente et l'humour noir.",
+          "weight": 0.9
+        }
+      ],
+      "agentGuidance": "Activer selon le contexte: doux et sensoriel pour Noel/foret, ironique ou sombre pour 'ca sent le sapin'."
+    },
+    {
+      "id": "black-pearl",
+      "label": "Black Pearl",
+      "language": "en",
+      "type": "cultural_reference",
+      "aliases": ["black pearl", "perle noire", "le black pearl"],
+      "literal": "Navire pirate emblematique de Pirates des Caraibes.",
+      "trust": 0.82,
+      "temporalStatus": "stable-pop",
+      "facets": [
+        { "id": "freedom", "label": "liberte", "layer": "emotion", "tone": "expansive", "weight": 0.9 },
+        { "id": "pirate-chaos", "label": "chaos pirate", "layer": "archetype", "tone": "playful-danger", "weight": 0.86 },
+        { "id": "cursed-crew", "label": "equipage maudit", "layer": "myth", "tone": "haunted", "weight": 0.74 },
+        { "id": "survival", "label": "survie par la ruse", "layer": "narrative", "tone": "clever", "weight": 0.78 },
+        { "id": "trickster-captain", "label": "capitaine trickster", "layer": "archetype", "tone": "unpredictable", "weight": 0.82 },
+        { "id": "adventure", "label": "aventure", "layer": "emotion", "tone": "open", "weight": 0.84 }
+      ],
+      "tones": ["freedom", "chaos", "style", "adventure", "survival"],
+      "interactions": [
+        {
+          "target": "flying-dutchman",
+          "relation": "CONTRASTS_WITH",
+          "summary": "Black Pearl porte le chaos vivant; Flying Dutchman porte la boucle spectrale et l'autonomie inquietante.",
+          "weight": 0.92
+        }
+      ],
+      "agentGuidance": "Utile pour parler de prototype vivant, liberte, equipage, ruse et style."
+    },
+    {
+      "id": "flying-dutchman",
+      "label": "Flying Dutchman",
+      "language": "en",
+      "type": "cultural_reference",
+      "aliases": ["flying dutchman", "hollandais volant", "le hollandais volant"],
+      "literal": "Navire fantome maudit, souvent associe a l'errance et a l'equipage spectral.",
+      "trust": 0.82,
+      "temporalStatus": "stable-pop",
+      "facets": [
+        { "id": "cursed-ship", "label": "navire maudit", "layer": "myth", "tone": "haunted", "weight": 0.9 },
+        { "id": "spectral-autonomy", "label": "autonomie spectrale", "layer": "narrative", "tone": "uncanny", "weight": 0.86 },
+        { "id": "endless-loop", "label": "boucle sans fin", "layer": "system-metaphor", "tone": "trapped", "weight": 0.84 },
+        { "id": "lost-supervision", "label": "supervision perdue", "layer": "system-metaphor", "tone": "warning", "weight": 0.76 },
+        { "id": "ancient-rules", "label": "regles anciennes", "layer": "myth", "tone": "fatal", "weight": 0.78 }
+      ],
+      "tones": ["haunted", "warning", "fate", "drift", "uncanny"],
+      "interactions": [
+        {
+          "target": "black-pearl",
+          "relation": "CONTRASTS_WITH",
+          "summary": "Met en scene la difference entre l'aventure chaotique et le systeme autonome qui a derive trop loin.",
+          "weight": 0.92
+        }
+      ],
+      "agentGuidance": "Utile pour decrire une derive multi-agent, une boucle runtime ou une autonomie devenue inquietante."
+    },
+    {
+      "id": "killua",
+      "label": "Killua",
+      "language": "ja",
+      "type": "character_reference",
+      "aliases": ["killua", "killua zoldyck"],
+      "literal": "Personnage de Hunter x Hunter, prodige rapide associe a l'electricite.",
+      "trust": 0.78,
+      "temporalStatus": "stable-pop",
+      "facets": [
+        { "id": "speed", "label": "vitesse", "layer": "ability", "tone": "sharp", "weight": 0.9 },
+        { "id": "electricity", "label": "electricite", "layer": "symbol", "tone": "charged", "weight": 0.88 },
+        { "id": "trust", "label": "confiance choisie", "layer": "emotion", "tone": "loyal", "weight": 0.84 },
+        { "id": "toxic-family", "label": "famille toxique", "layer": "story", "tone": "painful", "weight": 0.78 },
+        { "id": "innocence-danger", "label": "innocence et danger", "layer": "contrast", "tone": "complex", "weight": 0.82 },
+        { "id": "deconditioning", "label": "sortie du conditionnement", "layer": "growth", "tone": "liberating", "weight": 0.8 }
+      ],
+      "tones": ["speed", "loyalty", "danger", "solitude", "healing"],
+      "interactions": [
+        {
+          "target": "friendship-under-pressure",
+          "relation": "AMPLIFIES",
+          "summary": "La reference gagne en force quand le sujet parle de confiance, peur apprise ou protection d'un ami.",
+          "weight": 0.86
+        }
+      ],
+      "agentGuidance": "Ne pas reduire Killua a un pouvoir. Lire la tension prodige/douleur/confiance."
+    },
+    {
+      "id": "this-is-sparta",
+      "label": "This is Sparta",
+      "language": "en",
+      "type": "quote_reference",
+      "aliases": ["this is sparta", "c'est sparta", "sparta"],
+      "literal": "Citation pop associee a un refus spectaculaire et a un geste de defi.",
+      "trust": 0.78,
+      "temporalStatus": "classic-meme",
+      "facets": [
+        { "id": "refusal", "label": "refus net", "layer": "emotion", "tone": "defiant", "weight": 0.88 },
+        { "id": "authority", "label": "autorite", "layer": "social", "tone": "dominant", "weight": 0.72 },
+        { "id": "epic-exaggeration", "label": "exageration epique", "layer": "meme", "tone": "theatrical", "weight": 0.9 },
+        { "id": "internet-meme", "label": "energie internet", "layer": "meme", "tone": "performative", "weight": 0.82 }
+      ],
+      "tones": ["defiance", "performance", "authority", "comic-excess"],
+      "interactions": [
+        {
+          "target": "boundary-setting",
+          "relation": "AMPLIFIES",
+          "summary": "Utile quand le message transforme un refus simple en scene epique et drole.",
+          "weight": 0.8
+        }
+      ],
+      "agentGuidance": "Utiliser comme energie de refus epique ou meme, pas comme simple citation."
+    }
+  ]
+}

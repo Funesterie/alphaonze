@@ -1,0 +1,64 @@
+name: thousand-shiny
+
+services:
+  a11-backend:
+    profiles: ["core"]
+    build:
+      context: ../../backend/apps/server
+    image: funesterie/a11-backend:local
+    env_file:
+      - ../../backend/apps/server/.env.local
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8787:8787"
+    depends_on:
+      - redis
+    volumes:
+      - a11_runtime:/app/runtime
+
+  redis:
+    profiles: ["core"]
+    image: docker.io/library/redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  neo4j-local-mirror:
+    profiles: ["memory"]
+    image: docker.io/library/neo4j:5-community
+    environment:
+      NEO4J_AUTH: ${NEO4J_LOCAL_AUTH:?set NEO4J_LOCAL_AUTH in local environment}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+  ollama:
+    profiles: ["llm"]
+    image: docker.io/ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  mcp-router:
+    profiles: ["mcp"]
+    image: docker.io/library/node:22-alpine
+    working_dir: /workspace
+    command: ["node", "-e", "console.log('Thousand Shiny MCP router placeholder')"]
+    volumes:
+      - ../../..:/workspace:ro
+
+volumes:
+  a11_runtime:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+  ollama_data:

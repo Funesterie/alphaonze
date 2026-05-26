@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "funding": {
     "type": "custom",
-    "url": "https://paypal.me/funeste38"
+    "url": "https://funesterie.me/contact/"
   },
   "private": true,
   "description": "Canonical local and production entrypoint for A11",
@@ -18,6 +18,15 @@
     "test:all": "npm run test:backend",
     "check:llm-assets": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./llm/scripts/check-local-assets.ps1",
     "doctor:git": "git -C .. status --short",
-    "doctor:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"$status = (Invoke-WebRequest -UseBasicParsing 'https://a11.funesterie.me/api/status' | Select-Object -ExpandProperty Content | ConvertFrom-Json); $status | ConvertTo-Json -Depth 10; Write-Host ''; $remoteUrl = [string]$status.integrations.qflush.remoteUrl; if ([string]::IsNullOrWhiteSpace($remoteUrl)) { throw 'Missing qflush remoteUrl in backend status payload.' }; (Invoke-WebRequest -UseBasicParsing (($remoteUrl.TrimEnd('/')) + '/health')).Content\""
+    "doctor:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"$status = (Invoke-WebRequest -UseBasicParsing 'https://a11.funesterie.me/api/status' | Select-Object -ExpandProperty Content | ConvertFrom-Json); $status | ConvertTo-Json -Depth 10; Write-Host ''; $remoteUrl = [string]$status.integrations.qflush.remoteUrl; if ([string]::IsNullOrWhiteSpace($remoteUrl)) { throw 'Missing qflush remoteUrl in backend status payload.' }; (Invoke-WebRequest -UseBasicParsing (($remoteUrl.TrimEnd('/')) + '/health')).Content\"",
+    "docker:health": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/health.ps1",
+    "docker:login": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/login.ps1",
+    "docker:build:a11": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/build-a11.ps1 -Latest",
+    "docker:push:a11": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/build-a11.ps1 -Latest -Push",
+    "redhat:health": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/redhat-health.ps1",
+    "shiny:repair-dns": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/repair-wsl-dns.ps1",
+    "shiny:plan": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/thousand-shiny.ps1 -Action plan",
+    "shiny:health": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/thousand-shiny.ps1 -Action health",
+    "shiny:compose-path": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./ops/funesterie-docker/thousand-shiny.ps1 -Action compose-path"
   }
 }

@@ -193,8 +193,17 @@ const BACKENDS = {
 const OLLAMA_BASE = BACKENDS.ollama;
 const LLM_PROVIDER = deriveDefaultLlmProvider();
 const LLM_FALLBACK_PROVIDER = normalizeLlmProvider(process.env.A11_LLM_FALLBACK_PROVIDER, "none");
-const OLLAMA_PRIMARY_MODEL = String(process.env.A11_OLLAMA_PRIMARY_MODEL || "gemma4:e4b").trim() || "gemma4:e4b";
+const DEFAULT_OLLAMA_MODEL = String(
+  process.env.LOCAL_DEFAULT_MODEL
+  || process.env.A11_REASONING_MODEL
+  || process.env.DEFAULT_MODEL
+  || "llama3.2:latest"
+).trim() || "llama3.2:latest";
+const OLLAMA_PRIMARY_MODEL = String(process.env.A11_OLLAMA_PRIMARY_MODEL || DEFAULT_OLLAMA_MODEL).trim() || DEFAULT_OLLAMA_MODEL;
 const OLLAMA_FALLBACK_MODEL = String(process.env.A11_OLLAMA_FALLBACK_MODEL || "").trim();
+const OLLAMA_AUTO_SELECT_INSTALLED_MODEL = !["0", "false", "off", "no"].includes(
+  String(process.env.A11_OLLAMA_AUTO_SELECT_INSTALLED_MODEL || "1").trim().toLowerCase()
+);
 const DEFAULT_LOCAL_MODEL = String(
   process.env.LOCAL_DEFAULT_MODEL
   || process.env.DEFAULT_MODEL
@@ -454,6 +463,29 @@ function getConfiguredOllamaCandidates(requestedModel = "") {
   return candidates;
 }
 
+function pickInstalledOllamaModel(models = []) {
+  const installed = (Array.isArray(models) ? models : [])
+    .map((model) => String(model || "").trim())
+    .filter(Boolean);
+  if (!installed.length) return "";
+  const preferredFamilies = [
+    "llama3.2",
+    "llama3.1",
+    "qwen2.5",
+    "qwen3",
+    "mistral",
+    "gemma3",
+    "gemma2",
+  ];
+  for (const family of preferredFamilies) {
+    const exactLatest = installed.find((model) => model.toLowerCase() === `${family}:latest`);
+    if (exactLatest) return exactLatest;
+    const familyMatch = installed.find((model) => model.toLowerCase().startsWith(`${family}:`));
+    if (familyMatch) return familyMatch;
+  }
+  return installed[0];
+}
+
 async function getOllamaTags({ force = false } = {}) {
   if (!BACKENDS.ollama) {
     return { ok: false, error: "ollama_base_missing", models: [] };
@@ -652,6 +684,24 @@ async function resolveOllamaTarget(requestedModel = "", { emitLogs = true } = {}
         tags,
       };
     }
+  }
+
+  const installedFallback = OLLAMA_AUTO_SELECT_INSTALLED_MODEL ? pickInstalledOllamaModel(tags.models) : "";
+  if (installedFallback) {
+    if (emitLogs) {
+      logWarn(`[LLM] ollama model auto-selected=${installedFallback} reason=configured_models_missing configured=${candidates.join(",")}`);
+    }
+    return {
+      ok: true,
+      target: {
+        provider: "ollama",
+        model: installedFallback,
+        baseUrl: BACKENDS.ollama,
+        url: buildOllamaChatUrl(BACKENDS.ollama),
+        reason: "auto_installed_model",
+      },
+      tags,
+    };
   }
 
   return {

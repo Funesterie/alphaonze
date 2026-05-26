@@ -15,7 +15,6 @@ async function executeGenerateImagePlan({ req, canonicalIntent, generateSd }) {
     || ''
   ).trim();
   const maskResolution = await buildCanonicalImageMaskFromText(sourceText, {
-    allowCompatFallback: true,
     maskOptions: {
       width: canonicalIntent?.execution?.width,
       height: canonicalIntent?.execution?.height,

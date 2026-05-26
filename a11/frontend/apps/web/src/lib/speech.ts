@@ -123,6 +123,14 @@ function canUseBrowserSpeech() {
     && typeof (globalThis as any)?.SpeechSynthesisUtterance !== 'undefined';
 }
 
+function shouldUseBrowserSpeechFallback(options: any = {}) {
+  if (options.allowBrowserSpeechFallback === true || options.allowRobotVoice === true) return true;
+  const configured = String(import.meta.env?.VITE_A11_ALLOW_BROWSER_SPEECH_FALLBACK || '')
+    .trim()
+    .toLowerCase();
+  return configured === '1' || configured === 'true' || configured === 'yes' || configured === 'on';
+}
+
 function playWithBrowserSpeech(
   text: string,
   options: any = {},
@@ -304,7 +312,11 @@ export function queueLength(): number {
 
 async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () => void): Promise<void> {
   try {
-    if (Date.now() < serverTtsDisabledUntil && playWithBrowserSpeech(text, options, onEnd, 'server_tts_cooldown')) {
+    if (
+      Date.now() < serverTtsDisabledUntil &&
+      shouldUseBrowserSpeechFallback(options) &&
+      playWithBrowserSpeech(text, options, onEnd, 'server_tts_cooldown')
+    ) {
       return;
     }
 
@@ -322,7 +334,7 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
       const retryable = [404, 502, 503, 504].includes(res.status);
       if (retryable) {
         serverTtsDisabledUntil = Date.now() + 60_000;
-        if (playWithBrowserSpeech(text, options, onEnd, `server_tts_${res.status}`)) {
+        if (shouldUseBrowserSpeechFallback(options) && playWithBrowserSpeech(text, options, onEnd, `server_tts_${res.status}`)) {
           return;
         }
       }
@@ -368,10 +380,8 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
       }
       if (isRobotVoiceFallbackPayload(data) && options.allowRobotVoice !== true) {
         serverTtsDisabledUntil = Date.now() + 30_000;
-        if (playWithBrowserSpeech(text, options, onEnd, 'robot_voice_fallback')) {
-          return;
-        }
-        throw new Error('Robot voice fallback skipped');
+        emitCustomEvent('a11:audioBlocked', { reason: 'robot_voice_disabled' });
+        throw new Error('Robot voice fallback disabled');
       }
       resolvedSource = resolveAudioUrl(String(audioUrl));
     }
@@ -424,7 +434,7 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
       }
     });
   } catch (err: any) {
-    if (playWithBrowserSpeech(text, options, onEnd, 'server_tts_failed')) {
+    if (shouldUseBrowserSpeechFallback(options) && playWithBrowserSpeech(text, options, onEnd, 'server_tts_failed')) {
       return;
     }
     emitEvent('a11:speechend');

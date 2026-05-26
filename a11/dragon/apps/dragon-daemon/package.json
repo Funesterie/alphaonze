@@ -1,6 +1,6 @@
 {
   "name": "@nossen/dragon",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "funding": {
     "type": "custom",
     "url": "https://paypal.me/funeste38"
@@ -8,7 +8,8 @@
   "type": "module",
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
-  "description": "Dragon control-plane daemon for the Funesterie ecosystem.",
+  "description": "Dragon control-plane daemon for local agents and coordinated services.",
+  "author": "NOSSEN <contact@funesterie.me>",
   "files": [
     "dist"
   ],
@@ -29,16 +30,27 @@
   "bugs": {
     "url": "https://github.com/Funesterie/funesterie/issues"
   },
-  "homepage": "https://github.com/Funesterie/funesterie/tree/master/a11/dragon#readme",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "express": "^5.2.1",
-    "@nossen/dragon-contracts": "^1.0.0",
-    "@nossen/dragon-upstream": "^1.0.0"
+    "@nossen/dragon-contracts": "^2.0.0",
+    "@nossen/dragon-upstream": "^2.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6"
+  },
+  "donations": {
+    "policy": "voluntary",
+    "amount": "user-choice",
+    "email": "funeste38@gmail.com",
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01",
+    "cardOrInvoice": "https://funesterie.me/contact/",
+    "contact": "https://funesterie.me/contact/"
   }
 }

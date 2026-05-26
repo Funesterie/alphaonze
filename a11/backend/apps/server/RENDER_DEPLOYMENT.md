@@ -94,8 +94,9 @@ EMAIL_FROM=A11 <a11@funesterie.me>
 **Option A : Utiliser les databases Railway existantes**
 
 ```bash
-DATABASE_URL=postgresql://postgres:KTQeQfOkaNNwMKDYXXfKvmedvMAXqQsh@shuttle.proxy.rlwy.net:35544/railway
-REDIS_URL=redis://default:IQYcttEyxVnnhpSYUwxPRFOFxgliNzgh@shuttle.proxy.rlwy.net:27694
+# Use provider secret-store values only. Never commit real URLs.
+DATABASE_URL=<set-in-provider-secret-store>
+REDIS_URL=<set-in-provider-secret-store>
 ```
 
 **Option B : Créer des databases Render (recommandé)**

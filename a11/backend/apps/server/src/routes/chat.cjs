@@ -471,6 +471,7 @@ function streamOllama(userMessageOrMessages, res, systemPrompt = SYSTEM_PROMPT) 
 
 function resolveChatDependencies(overrides = {}) {
   return {
+    verifyJWT: overrides.verifyJWT,
     openaiClient: Object.prototype.hasOwnProperty.call(overrides, 'openaiClient')
       ? overrides.openaiClient
       : null,
@@ -524,8 +525,12 @@ function createChatRouter(overrides = {}) {
     if (typeof verifyJWT !== 'function' || !extractRequestAuthToken(req)) return next();
     return verifyJWT(req, res, next);
   };
+  const requireAuth = (req, res, next) => {
+    if (typeof verifyJWT !== 'function') return next();
+    return verifyJWT(req, res, next);
+  };
 
-  router.post('/chat', optionalAuth, express.json({ limit: '2mb' }), async (req, res) => {
+  router.post('/chat', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
     try {
       const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
       if (!userMessage) {
@@ -928,7 +933,7 @@ function createChatRouter(overrides = {}) {
   // Envoie les tokens Ollama au fur et à mesure (Server-Sent Events).
   // Format : data: {"delta":"..."}\n\n  ...  data: [DONE]\n\n
   // Le client peut aussi passer ?stream=1 sur /chat pour activer le streaming.
-  router.post('/chat/stream', optionalAuth, express.json({ limit: '2mb' }), async (req, res) => {
+  router.post('/chat/stream', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
     const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
     if (!userMessage) {
       res.status(400).json({ ok: false, error: 'missing_message' });

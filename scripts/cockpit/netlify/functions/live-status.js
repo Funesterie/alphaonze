@@ -1,11 +1,13 @@
+const { verifyAdminFromEvent } = require('./auth-utils');
+
 const UPSTREAM_URL = 'https://mcp.funesterie.me/mcp';
 
 const headers = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Accept',
+  'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Cache-Control': 'no-store',
   'Content-Type': 'application/json; charset=utf-8',
+  'Vary': 'Cookie, Authorization',
 };
 
 let requestId = 1;
@@ -43,7 +45,7 @@ function parseResponseText(text) {
 async function callTool(name, args = {}) {
   const body = JSON.stringify({
     jsonrpc: '2.0',
-    id: `demo-${requestId++}`,
+    id: `cockpit-${requestId++}`,
     method: 'tools/call',
     params: { name, arguments: args },
   });
@@ -112,6 +114,15 @@ exports.handler = async (event) => {
       statusCode: 405,
       headers,
       body: JSON.stringify({ ok: false, error: 'method_not_allowed' }),
+    };
+  }
+
+  const auth = await verifyAdminFromEvent(event);
+  if (!auth.ok) {
+    return {
+      statusCode: auth.statusCode || 401,
+      headers,
+      body: JSON.stringify({ ok: false, error: auth.reason || 'auth_required' }),
     };
   }
 

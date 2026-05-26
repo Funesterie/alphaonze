@@ -473,17 +473,22 @@ function buildModuleNode(moduleInfo = {}) {
   const installed = Boolean(moduleInfo.installed);
   const required = Boolean(moduleInfo.minimumRequired);
   const entrypoints = moduleInfo.entrypoints || {};
+  const sourceEntrypoint = entrypoints.sceneParser || entrypoints.semanticWeightEngine || entrypoints.index || entrypoints.cli;
   const checks = {
     installed,
     required,
     hasPackageJson: Boolean(packageInfo.path),
     hasRuntimeMirror: Boolean(entrypoints.mirror || entrypoints.sourceRoot || entrypoints.corpusRoot),
+    hasSourceEntrypoint: Boolean(sourceEntrypoint),
     hasCapabilities: Array.isArray(moduleInfo.capabilities) && moduleInfo.capabilities.length > 0,
   };
   const warnings = [];
+  const guardrails = [];
   if (required && !installed) warnings.push('required module is missing');
-  if (!packageInfo.path && !checks.hasRuntimeMirror) warnings.push('no package.json or runtime mirror resolved');
-  if (id === 'qflush') warnings.push('qflush is treated as a controlled runner; do not import it at top level');
+  if (!packageInfo.path && !checks.hasRuntimeMirror && !checks.hasSourceEntrypoint) {
+    warnings.push('no package.json or runtime mirror resolved');
+  }
+  if (id === 'qflush') guardrails.push('qflush is treated as a controlled runner; do not import it at top level');
 
   return {
     id,
@@ -506,9 +511,11 @@ function buildModuleNode(moduleInfo = {}) {
       main: entrypoints.main || packageJson.main || null,
       bin: entrypoints.bin || packageJson.bin || null,
       mirror: entrypoints.mirror || entrypoints.sourceRoot || entrypoints.corpusRoot || null,
+      source: sourceEntrypoint || null,
     },
     checks,
     warnings,
+    guardrails,
   };
 }
 
@@ -696,6 +703,7 @@ function moduleDoctorScore(node = {}, links = [], allIds = new Set()) {
   const linked = links.some((link) => link.from === node.id || link.to === node.id);
   const missingDependencies = (node.dependencies || []).filter((id) => !allIds.has(id));
   const warnings = node.warnings || [];
+  const guardrails = node.guardrails || [];
   const blockingWarnings = warnings.filter((warning) => !/controlled runner/i.test(warning));
   const checks = [
     {
@@ -772,6 +780,7 @@ function moduleDoctorScore(node = {}, links = [], allIds = new Set()) {
     score,
     required: Boolean(node.required),
     warnings,
+    guardrails,
     missingDependencies,
     checks,
     suggestions,
@@ -838,12 +847,14 @@ function buildLanes(nodes = []) {
         modules: [],
         installed: 0,
         warnings: 0,
+        guardrails: 0,
       });
     }
     const entry = lanes.get(lane);
     entry.modules.push(node.id);
     if (node.installed) entry.installed += 1;
     entry.warnings += node.warnings.length;
+    entry.guardrails += (node.guardrails || []).length;
   }
   return Array.from(lanes.values()).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -899,6 +910,7 @@ function buildChopperStatus(options = {}) {
     doctorScore: doctor.score,
     doctorStatus: doctor.status,
     warnings: nodes.reduce((sum, node) => sum + node.warnings.length, 0),
+    guardrails: nodes.reduce((sum, node) => sum + (node.guardrails || []).length, 0),
   };
 
   return {
@@ -988,7 +1000,8 @@ function buildMarkdown(status) {
   lines.push('', '## Modules', '');
   for (const node of status.modules) {
     const warnings = node.warnings.length ? ` warnings=${node.warnings.join('; ')}` : '';
-    lines.push(`- ${node.id}: ${node.installed ? 'installed' : 'missing'} | ${node.lane} | ${node.role}${warnings}`);
+    const guardrails = node.guardrails?.length ? ` guardrails=${node.guardrails.join('; ')}` : '';
+    lines.push(`- ${node.id}: ${node.installed ? 'installed' : 'missing'} | ${node.lane} | ${node.role}${warnings}${guardrails}`);
   }
 
   lines.push('', '## Action Plan', '');

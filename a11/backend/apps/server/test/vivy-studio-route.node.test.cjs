@@ -34,10 +34,10 @@ async function withServer(registerRoutes, runAssertions) {
   }
 }
 
-async function postJson(baseUrl, path, body) {
+async function postJson(baseUrl, path, body, headers = {}) {
   const response = await fetch(baseUrl + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
   const json = await response.json();
@@ -124,5 +124,65 @@ test('POST /api/vivy/studio/chat stores semantic context and accepts file metada
     assert.match(json.assistant, /Vivy|idée/i);
     assert.doesNotMatch(JSON.stringify(json), /secret-token-value/);
     assert.doesNotMatch(JSON.stringify(json), /Ã|Â|â€|�/);
+  });
+});
+
+test('POST /api/vivy/studio/chat requires a logged-in user when auth is configured', async () => {
+  const verifyJWT = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-test-token') {
+      req.user = { id: 'vivy-auth-user', username: 'VivyUser' };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+  }, async (baseUrl) => {
+    const missingAuth = await postJson(baseUrl, '/api/vivy/studio/chat', {
+      message: 'Garde cette idée privée.',
+    });
+    assert.equal(missingAuth.response.status, 401);
+    assert.equal(missingAuth.json.error, 'A11_JWT_Missing');
+
+    const authenticated = await postJson(baseUrl, '/api/vivy/studio/chat', {
+      message: 'Garde cette idée privée.',
+    }, {
+      Authorization: 'Bearer vivy-test-token',
+    });
+    assert.equal(authenticated.response.status, 200);
+    assert.equal(authenticated.json.ok, true);
+    assert.equal(authenticated.json.memoryStored, true);
+  });
+});
+
+test('POST /api/vivy/studio/produce requires a logged-in user when auth is configured', async () => {
+  const verifyJWT = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-test-token') {
+      req.user = { id: 'vivy-auth-user', username: 'VivyUser' };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
+  }, async (baseUrl) => {
+    const missingAuth = await postJson(baseUrl, '/api/vivy/studio/produce', {
+      mode: 'song',
+      theme: 'Nossen sous la pluie',
+    });
+    assert.equal(missingAuth.response.status, 401);
+    assert.equal(missingAuth.json.error, 'A11_JWT_Missing');
+
+    const authenticated = await postJson(baseUrl, '/api/vivy/studio/produce', {
+      mode: 'song',
+      theme: 'Nossen sous la pluie',
+    }, {
+      Authorization: 'Bearer vivy-test-token',
+    });
+    assert.equal(authenticated.response.status, 200);
+    assert.equal(authenticated.json.ok, true);
+    assert.equal(authenticated.json.mode, 'song');
   });
 });

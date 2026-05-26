@@ -1,8 +1,6 @@
 # GitHub Packages et GHCR
 
-Ce chemin sort JFrog du chemin critique. Google Artifact Registry devient le
-registre principal GCP-native, et GitHub Packages/GHCR restent le miroir simple
-et robuste cote GitHub.
+Ce chemin sort JFrog du chemin critique. JFrog peut rester une sandbox locale, mais les paquets et images distribuables passent par GitHub.
 
 ## NPM GitHub Packages
 
@@ -19,11 +17,9 @@ Le manifeste est dans `scripts/github/github-packages.manifest.json`.
 
 Aujourd'hui, seul le miroir suivant est prêt :
 
-- `a11/backend/libs` -> `@funesterie/qflush@1.0.5`, tags `latest`, `stable` et `internal`
+- `a11/backend/libs` -> `@funesterie/qflush@1.0.2`, tags `latest` et `stable`
 
 Le script packe le paquet source, réécrit le `package.json` dans un dossier temporaire, puis publie le miroir. Le `package.json` source reste en `@nossen/qflush`.
-
-Le miroir GitHub retire les anciens modules `@nossen/*` des dépendances du paquet publié. Un `npm install @funesterie/qflush@stable` fonctionne donc même si les anciens paquets NPM ne sont plus accessibles.
 
 Pour connecter un module sans se prendre la tête :
 
@@ -31,9 +27,9 @@ Pour connecter un module sans se prendre la tête :
 npm install @funesterie/qflush@stable
 ```
 
-Ne pas utiliser `--registry=https://npm.pkg.github.com` globalement pour cette installation : seul le scope `@funesterie` doit pointer vers GitHub Packages, sinon les dépendances publiques partiront au mauvais registre. `npm run github:npmrc` génère le bon fichier.
-
 `latest` sert au chemin simple, `stable` sert aux consommateurs prod qui ne doivent pas bouger tant qu'on ne retague pas volontairement.
+
+Dans A11, le chargement local essaie maintenant `@funesterie/qflush` en premier, puis retombe sur `@nossen/qflush` si le miroir GitHub Packages n'est pas installé. En production, garder `@funesterie/qflush@stable`; en dev rapide, `@funesterie/qflush@latest` suffit.
 
 ## GHCR
 
@@ -63,14 +59,3 @@ La variable de repo `GHCR_IMAGE` peut remplacer `a11-backend`.
 GitHub Actions utilise `GITHUB_TOKEN` avec `packages: write`.
 
 En local, utiliser un PAT GitHub via `NODE_AUTH_TOKEN`. Ne jamais écrire le token dans `.npmrc.github`; le fichier garde seulement le placeholder.
-
-## Lien avec Google Artifact Registry
-
-Le chemin Google vit dans `docs/GOOGLE_ARTIFACT_REGISTRY.md`.
-
-Version alignee aujourd'hui :
-
-```text
-@funesterie/qflush@1.0.5
-tags: latest, stable, internal
-```

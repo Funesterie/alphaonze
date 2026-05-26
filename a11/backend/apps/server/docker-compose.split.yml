@@ -37,8 +37,8 @@ services:
       - APP_URL=https://k44.funesterie.me
       - API_URL=https://k44.funesterie.me
       - PUBLIC_API_URL=https://k44.funesterie.me
-      - GOOGLE_CALLBACK_URL=https://k44.funesterie.me/api/auth/google/callback
-      - A11_GOOGLE_CALLBACK_URL=https://k44.funesterie.me/api/auth/google/callback
+      - GOOGLE_CALLBACK_URL=https://funesterie.me/api/auth/google/callback
+      - A11_GOOGLE_CALLBACK_URL=https://funesterie.me/api/auth/google/callback
       - A11_PUBLIC_HOST=k44.funesterie.me
       - JWT_SECRET=${JWT_SECRET}
       - DATABASE_URL=${DATABASE_URL}

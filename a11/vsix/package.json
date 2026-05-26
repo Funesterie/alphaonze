@@ -1,11 +1,11 @@
 {
   "name": "a11-coder",
-  "displayName": "A11 — AI Coding Agent",
-  "description": "The best AI coding agent. Powered by A11/funesterie.",
-  "version": "1.0.0",
+  "displayName": "A11 Coder",
+  "description": "NOSSEN coding assistant for VS Code-compatible editors, including Kiro.",
+  "version": "1.0.1",
   "funding": {
     "type": "custom",
-    "url": "https://paypal.me/funeste38"
+    "url": "https://funesterie.me/contact/"
   },
   "publisher": "funesterie",
   "engines": {

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "funding": {
     "type": "custom",
-    "url": "https://paypal.me/funeste38"
+    "url": "https://funesterie.me/contact/"
   },
   "private": true,
   "type": "module",
@@ -43,5 +43,8 @@
     "concurrently": "^9.2.1",
     "tsx": "^4.22.1",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "qs": "^6.15.2"
   }
 }

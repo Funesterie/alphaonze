@@ -1,7 +1,12 @@
+param(
+  [string]$RepoRoot = "D:\projets\funesterie",
+  [switch]$ReuseRemoteSecrets
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = "D:\projets\funesterie"
+$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $A11Root = Join-Path $RepoRoot "a11"
 $ServerRoot = Join-Path $A11Root "backend\apps\server"
 $VoiceRoot = Join-Path $A11Root "backend\apps\voice-module"
@@ -118,7 +123,11 @@ Require-Path $ServerRoot "Backend A11"
 Require-Path $VoiceRoot "Module voix"
 Require-Path $EkkoRoot "Module Ekko"
 Require-Path $WebDist "Frontend dist"
-Require-Path $EnvSource "Env prod source"
+if (-not $ReuseRemoteSecrets) {
+  Require-Path $EnvSource "Env prod source"
+} else {
+  Write-Host "Mode release sans copie de secrets: reutilisation de $RemoteRoot/secrets/compose.env." -ForegroundColor DarkCyan
+}
 Require-Path $SshKey "Cle SSH"
 
 $sshBase = @("-i", $SshKey, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new")
@@ -350,8 +359,8 @@ services:
       APP_URL: https://k44.funesterie.me
       API_URL: https://k44.funesterie.me
       PUBLIC_API_URL: https://k44.funesterie.me
-      GOOGLE_CALLBACK_URL: https://k44.funesterie.me/api/auth/google/callback
-      A11_GOOGLE_CALLBACK_URL: https://k44.funesterie.me/api/auth/google/callback
+      GOOGLE_CALLBACK_URL: https://funesterie.me/api/auth/google/callback
+      A11_GOOGLE_CALLBACK_URL: https://funesterie.me/api/auth/google/callback
       SERVE_STATIC: "true"
       KAEN44_MODE: "1"
       A11_ALLOW_DEV_ROUTES: "false"
@@ -436,14 +445,19 @@ https://a11.funesterie.me {
 '@
 Set-Content -LiteralPath (Join-Path $StageRoot "Caddyfile") -Value $caddy -Encoding UTF8
 
+if ($ReuseRemoteSecrets) {
+  $SecretStage = $null
+  $BuildEnvStage = $null
+} else {
 $envMap = Read-EnvMap $EnvSource
 $mcpEnvMap = if (Test-Path -LiteralPath $McpEnvSource) { Read-EnvMap $McpEnvSource } else { [ordered]@{} }
 $removeKeys = @(
   "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "DATABASE_URL", "REDIS_URL",
   "QFLUSH_REDIS_URL", "QFLUSH_URL", "QFLUSH_REMOTE_URL", "QFLUSH_BASE_URL",
   "QFLUSH_ENDPOINT", "QFLUSH_PUBLIC_URL", "PUBLIC_QFLUSH_URL", "QFLUSH_HEALTH_URL",
-  "PUBLIC_APP_URL", "FRONT_URL", "APP_URL", "API_URL", "PUBLIC_API_URL",
+  "PUBLIC_APP_URL", "FRONTEND_URL", "PUBLIC_FRONTEND_URL", "FRONT_URL", "APP_URL", "API_URL", "PUBLIC_API_URL",
   "A11_SERVER_URL", "A11_PUBLIC_HOST", "GOOGLE_CALLBACK_URL", "A11_GOOGLE_CALLBACK_URL",
+  "MICROSOFT_REDIRECT_URI", "MICROSOFT_CALLBACK_URL", "AZURE_REDIRECT_URI",
   "A11_SESSION_COOKIE_SAMESITE", "A11_SESSION_COOKIE_DOMAIN", "NEZ_SECURITY_MODE", "A11_ENABLE_QFLUSH",
   "QFLUSH_CHAT_FLOW", "A11_QFLUSH_CHAT_FLOW", "A11_QFLUSH_USE_DRAGON",
   "A11_RUNTIME_PROFILE", "A11_PRODUCT", "A11_INSTANCE_NAME", "SERVE_STATIC",
@@ -501,7 +515,7 @@ $overrides = [ordered]@{
   POSTGRES_DB = "a11"
   POSTGRES_USER = "a11"
   POSTGRES_PASSWORD = $pgPass
-  DATABASE_URL = "postgresql://a11:$pgPassEncoded@a11-postgres:5432/a11"
+  DATABASE_URL = "postgresql://a11:" + $pgPass + "@a11-postgres:5432/a11"
   REDIS_URL = "redis://a11-redis:6379"
   QFLUSH_REDIS_URL = "redis://a11-redis:6379"
   QFLUSH_URL = ""
@@ -512,6 +526,8 @@ $overrides = [ordered]@{
   PUBLIC_QFLUSH_URL = ""
   QFLUSH_HEALTH_URL = ""
   PUBLIC_APP_URL = "https://a11.funesterie.me"
+  FRONTEND_URL = "https://a11.funesterie.me"
+  PUBLIC_FRONTEND_URL = "https://a11.funesterie.me"
   FRONT_URL = "https://a11.funesterie.me"
   APP_URL = "https://a11.funesterie.me"
   API_URL = "https://a11.funesterie.me"
@@ -521,8 +537,11 @@ $overrides = [ordered]@{
   A11_MCP_URL = "https://mcp.funesterie.me/mcp"
   FUNESTERIE_MCP_URL = "https://mcp.funesterie.me/mcp"
   A11_PUBLIC_MCP_UPSTREAM_URL = "https://mcp.funesterie.me/mcp"
-  GOOGLE_CALLBACK_URL = "https://a11.funesterie.me/api/auth/google/callback"
-  A11_GOOGLE_CALLBACK_URL = "https://a11.funesterie.me/api/auth/google/callback"
+  GOOGLE_CALLBACK_URL = "https://funesterie.me/api/auth/google/callback"
+  A11_GOOGLE_CALLBACK_URL = "https://funesterie.me/api/auth/google/callback"
+  MICROSOFT_REDIRECT_URI = "https://funesterie.me/api/auth/microsoft/callback"
+  MICROSOFT_CALLBACK_URL = "https://funesterie.me/api/auth/microsoft/callback"
+  AZURE_REDIRECT_URI = "https://funesterie.me/api/auth/microsoft/callback"
   A11_SESSION_COOKIE_SAMESITE = "lax"
   A11_SESSION_COOKIE_DOMAIN = ".funesterie.me"
   NEZ_SECURITY_MODE = "strict"
@@ -572,7 +591,7 @@ $overrides = [ordered]@{
   A11_VIDEO_REALITY_CHECK_FRAME_COUNT = "3"
   EKKO_TOKEN = $ekkoToken
   A11_EKKO_CONTROL_URL = "http://a11-ekko:5012"
-  A11_USAGE_GUARD_ADMIN_EMAIL = "cellaurojeffrey@gmail.com"
+  A11_USAGE_GUARD_ADMIN_EMAIL = "funeste38@gmail.com"
   DEFAULT_ADMIN_USERNAME = "Djeff"
   DEFAULT_ADMIN_PASSWORD = $adminPass
   A11_PROFILE_ENV = "/app/profiles/a11.prod.env.disabled"
@@ -596,6 +615,7 @@ $buildEnvMap = [ordered]@{
   A11_JANUS_TORCH_PACKAGES = $(if ($env:A11_JANUS_TORCH_PACKAGES) { $env:A11_JANUS_TORCH_PACKAGES } else { "" })
 }
 Write-EnvFile $buildEnvMap $BuildEnvStage
+}
 
 if (Test-Path -LiteralPath $Archive) {
   Remove-Item -LiteralPath $Archive -Force
@@ -611,10 +631,15 @@ if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 
 & scp @sshBase $Archive "${Remote}:$RemoteArchive"
 if ($LASTEXITCODE -ne 0) { throw "Copie archive echouee" }
-& scp @sshBase $SecretStage "${Remote}:$RemoteRoot/secrets/a11.env"
-if ($LASTEXITCODE -ne 0) { throw "Copie env echouee" }
-& scp @sshBase $BuildEnvStage "${Remote}:$RemoteRoot/secrets/build.env"
-if ($LASTEXITCODE -ne 0) { throw "Copie env build echouee" }
+if (-not $ReuseRemoteSecrets) {
+  & scp @sshBase $SecretStage "${Remote}:$RemoteRoot/secrets/a11.env"
+  if ($LASTEXITCODE -ne 0) { throw "Copie env echouee" }
+  & scp @sshBase $BuildEnvStage "${Remote}:$RemoteRoot/secrets/build.env"
+  if ($LASTEXITCODE -ne 0) { throw "Copie env build echouee" }
+} else {
+  & ssh @sshBase $Remote "test -s $RemoteRoot/secrets/compose.env"
+  if ($LASTEXITCODE -ne 0) { throw "compose.env distant introuvable; relancer sans -ReuseRemoteSecrets depuis un magasin de secrets local valide." }
+}
 
 if (Test-Path -LiteralPath $VivyVoiceReference) {
   & scp @sshBase $VivyVoiceReference "${Remote}:$RemoteDataRoot/runtime/voice-library/vivy-adaptive.wav"
@@ -623,16 +648,24 @@ if (Test-Path -LiteralPath $VivyVoiceReference) {
   if ($LASTEXITCODE -ne 0) { throw "Copie reference voix Vivy K44 echouee" }
 }
 
+$remoteSecretStep = if ($ReuseRemoteSecrets) {
+  "test -s $RemoteRoot/secrets/compose.env"
+} else {
+  @"
+chmod 600 $RemoteRoot/secrets/a11.env
+chmod 600 $RemoteRoot/secrets/build.env
+cat $RemoteRoot/secrets/a11.env $RemoteRoot/secrets/build.env > $RemoteRoot/secrets/compose.env
+chmod 600 $RemoteRoot/secrets/compose.env
+"@
+}
+
 $remoteDeploy = @"
 set -euo pipefail
 release=$RemoteRoot/releases/$Stamp
 mkdir -p "`$release"
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
-chmod 600 $RemoteRoot/secrets/a11.env
-chmod 600 $RemoteRoot/secrets/build.env
-cat $RemoteRoot/secrets/a11.env $RemoteRoot/secrets/build.env > $RemoteRoot/secrets/compose.env
-chmod 600 $RemoteRoot/secrets/compose.env
+$remoteSecretStep
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env ps
 echo "__A11_HEALTH__"

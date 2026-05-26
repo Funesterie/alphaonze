@@ -1,0 +1,58 @@
+{
+  "name": "@nossen/logic-reduce",
+  "version": "2.0.0",
+  "description": "Deterministic direct-path reducer for plans, runbooks, and agent handoffs.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "bin": {
+    "nossen-logic-reduce": "bin/nossen-logic-reduce.cjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "planning",
+    "agents",
+    "automation",
+    "decision",
+    "runbooks"
+  ],
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/nossen/logic-reduce"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "funding": {
+    "type": "custom",
+    "url": "https://funesterie.me/contact/"
+  },
+  "donations": {
+    "policy": "voluntary",
+    "amount": "user-choice",
+    "email": "funeste38@gmail.com",
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "paypal": "https://paypal.me/funeste38",
+    "stripe": "https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01",
+    "cardOrInvoice": "https://funesterie.me/contact/",
+    "contact": "https://funesterie.me/contact/"
+  }
+}

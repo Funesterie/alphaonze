@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "funding": {
     "type": "custom",
-    "url": "https://paypal.me/funeste38"
+    "url": "https://funesterie.me/contact/"
   },
   "scripts": {
     "start": "node server.cjs"

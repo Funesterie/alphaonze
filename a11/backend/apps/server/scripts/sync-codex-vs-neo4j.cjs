@@ -5,6 +5,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const neo4j = require('neo4j-driver');
+const { resolveRouterConfig } = require('../lib/neo4j-memory-router.cjs');
+const { loadRouterEnv } = require('./a11-env-loader.cjs');
 
 const DEFAULTS = {
   workspaceRoot: 'D:\\projets\\funesterie',
@@ -372,11 +374,13 @@ async function sync(session, data) {
 }
 
 async function main() {
-  const uri = process.env.NEO4J_URI || DEFAULTS.uri;
-  const database = process.env.NEO4J_DATABASE || DEFAULTS.database;
-  const username = process.env.NEO4J_USERNAME || '';
-  const password = process.env.NEO4J_PASSWORD || '';
-  const auth = username || password ? neo4j.auth.basic(username || 'neo4j', password) : neo4j.auth.none();
+  loadRouterEnv();
+  const local = resolveRouterConfig().local;
+  const uri = process.env.CODEX_SYNC_NEO4J_URI || local.uri || DEFAULTS.uri;
+  const database = process.env.CODEX_SYNC_NEO4J_DATABASE || local.database || DEFAULTS.database;
+  const auth = local.auth === 'none'
+    ? neo4j.auth.none()
+    : neo4j.auth.basic(local.username || 'neo4j', local.password || '');
   const data = collectData();
 
   const driver = neo4j.driver(uri, auth, { disableLosslessIntegers: true });

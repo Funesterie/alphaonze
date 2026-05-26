@@ -15,6 +15,22 @@ const {
 
 const setEnv = (name, value) => { process.env[name] = value; };
 
+function collectCanonicalizedTextForTest(canonicalizedRequest = {}) {
+  const fields = canonicalizedRequest.structuredFields || {};
+  const constraints = fields.constraints || {};
+  return [
+    canonicalizedRequest.canonicalEnglishInput,
+    ...(Array.isArray(fields.subject) ? fields.subject : []),
+    ...(Array.isArray(fields.environment) ? fields.environment : []),
+    ...(Array.isArray(fields.style) ? fields.style : []),
+    ...(Array.isArray(fields.composition) ? fields.composition : []),
+    ...(Array.isArray(fields.lighting) ? fields.lighting : []),
+    ...(Array.isArray(fields.palette) ? fields.palette : []),
+    ...(Array.isArray(constraints.promptInstructions) ? constraints.promptInstructions : []),
+    ...(Array.isArray(constraints.negativeHints) ? constraints.negativeHints : []),
+  ].filter(Boolean).join(' ');
+}
+
 test('canonicalizeImageGenerateRequest rejects non-canonical special-compiler payloads instead of falling back locally', async () => {
   await assert.rejects(
     () => canonicalizeImageGenerateRequest(
@@ -34,6 +50,26 @@ test('canonicalizeImageGenerateRequest rejects non-canonical special-compiler pa
       assert.equal(error?.statusCode, 502);
       assert.equal(error?.payload?.details?.policy, 'llm_only_no_heuristic_fallback');
       assert.match(String(error?.payload?.details?.reasons?.[0] || ''), /missing_canonical_subject/i);
+      return true;
+    }
+  );
+});
+
+test('canonicalizeImageGenerateRequest rejects empty LLM payloads instead of building a local heuristic prompt', async () => {
+  await assert.rejects(
+    () => canonicalizeImageGenerateRequest(
+      'genere une image de samourai avec une epee enflammee',
+      {
+        stage: 'canonicalize-image-generate-request-test',
+        allowCompatFallback: true,
+        callStructuredLlmJson: async () => null,
+      }
+    ),
+    (error) => {
+      assert.equal(error?.code, 'image_request_canonicalizer_failed');
+      assert.equal(error?.statusCode, 502);
+      assert.equal(error?.payload?.details?.policy, 'llm_only_no_heuristic_fallback');
+      assert.deepEqual(error?.payload?.details?.reasons, ['provided_structured_llm:empty_payload']);
       return true;
     }
   );
@@ -559,6 +595,60 @@ test('canonicalizeImageGenerateRequest rejects mixed French leaks from a structu
           'provided_structured_llm_retry:canonicalized_request_not_english_only',
         ]
       );
+      return true;
+    }
+  );
+});
+
+test('canonicalizeImageGenerateRequest rejects reference-image style transforms after French-only LLM leaks', async () => {
+  let callCount = 0;
+
+  await assert.rejects(
+    () => canonicalizeImageGenerateRequest(
+      'utilise cette image pour genere une image de cette personne en dragon ball z',
+      {
+        stage: 'canonicalize-image-generate-request-test',
+        referenceImagePresent: true,
+        referenceImageUrl: 'https://example.test/reference.png',
+        allowCompatFallback: true,
+        callStructuredLlmJson: async () => {
+          callCount += 1;
+          return {
+            canonicalEnglishInput: 'la personne de l image de reference en style dragon ball z',
+            structuredFields: {
+              subject: ['la personne de l image de reference'],
+              environment: [],
+              style: ['style dragon ball z'],
+              composition: ['garder la pose et le cadrage'],
+              lighting: [],
+              palette: [],
+              constraints: {
+                promptInstructions: ['garder le meme visage et la meme identite'],
+                negativeHints: ['texte lisible'],
+                noText: true,
+                safeMode: true,
+              },
+            },
+            scenePolicy: {
+              subjectMode: 'single',
+              explicitSubjectCount: 1,
+            },
+          };
+        },
+      }
+    ),
+    (error) => {
+      assert.equal(error?.code, 'image_request_canonicalizer_failed');
+      assert.equal(error?.statusCode, 502);
+      assert.equal(error?.payload?.details?.policy, 'llm_only_no_heuristic_fallback');
+      assert.deepEqual(
+        error?.payload?.details?.reasons,
+        [
+          'provided_structured_llm:canonicalized_request_not_english_only',
+          'provided_structured_llm_retry:canonicalized_request_not_english_only',
+        ]
+      );
+      assert.equal(callCount, 2);
       return true;
     }
   );

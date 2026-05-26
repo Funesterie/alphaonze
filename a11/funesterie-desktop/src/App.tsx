@@ -44,6 +44,7 @@ import {
   Wrench,
   type LucideIcon
 } from "lucide-react";
+import { AgentsView, MediaView, MemoryView, SettingsView, TerminalView } from "./views";
 
 type FunesterieApi = NonNullable<Window["funesterie"]>;
 
@@ -842,6 +843,7 @@ export default function App() {
           </div>
         </header>
 
+        {activeSection === "cockpit" ? (
         <div className="cockpit-grid">
           <section className="panel hero-command">
             <img src={selectedArtwork} alt={selectedAgent?.name || "Funesterie"} />
@@ -1048,6 +1050,65 @@ export default function App() {
             </div>
           </section>
         </div>
+        ) : (
+          <div className="focus-view">
+            {activeSection === "agents" && (
+              <AgentsView
+                agents={liveAgents}
+                discussions={liveDiscussions}
+                selectedAgent={selectedAgent}
+                selectedAgentId={selectedAgentId}
+                onSelectAgent={setSelectedAgentId}
+                mcpPanelError={mcpPanelError}
+              />
+            )}
+            {activeSection === "memory" && (
+              <MemoryView
+                modules={liveModules}
+                statusRows={statusRows}
+                toolDiff={toolDiff}
+              />
+            )}
+            {activeSection === "media" && (
+              <MediaView
+                selectedAgent={selectedAgent}
+                selectedArtwork={selectedArtwork}
+                semanticWheel={semanticWheel}
+                onPrompt={sendMessage}
+                onSelectAgent={setSelectedAgentId}
+              />
+            )}
+            {activeSection === "terminal" && (
+              <TerminalView
+                terminalLines={terminalLines}
+                commandInput={commandInput}
+                setCommandInput={setCommandInput}
+                submitCommand={submitCommand}
+                messages={messages}
+                chatInput={chatInput}
+                setChatInput={setChatInput}
+                sendMessage={sendMessage}
+                busy={busy}
+                profileShortName={profile?.shortName || "Djeff"}
+                assistantName={profile?.assistantName || "Apply FUNESTERIE"}
+              />
+            )}
+            {activeSection === "settings" && (
+              <SettingsView
+                snapshot={snapshot}
+                syncStatusLabel={syncLabel(syncStatus)}
+                llmProvider={llmProvider}
+                endpoints={mcpEndpoints}
+                toolDiff={toolDiff}
+                lastSyncAt={lastSyncAt}
+                busy={busy}
+                onRefresh={() => runAutoSync().catch(() => {})}
+                onCheckUpdates={() => api.checkUpdates().then(() => appendTerminal("update manifest checked"))}
+                onSwitchProfile={(profileId) => switchProfile(profileId).catch(() => {})}
+              />
+            )}
+          </div>
+        )}
       </section>
     </main>
   );

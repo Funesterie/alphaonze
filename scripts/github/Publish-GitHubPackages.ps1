@@ -154,8 +154,9 @@ foreach ($pkg in $packages) {
   }
 
   if (-not $NoBuild) {
-    if ($pkg.restoreCommand) {
-      Invoke-Tool -Command @($pkg.restoreCommand) -WorkingDirectory $sourcePath
+    $restoreCommand = if ($pkg.restoreCommand) { $pkg.restoreCommand } else { $pkg.installCommand }
+    if ($restoreCommand) {
+      Invoke-Tool -Command @($restoreCommand) -WorkingDirectory $sourcePath
     }
     if ($pkg.buildCommand) {
       Invoke-Tool -Command @($pkg.buildCommand) -WorkingDirectory $sourcePath

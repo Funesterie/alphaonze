@@ -14,6 +14,7 @@ $action = New-ScheduledTaskAction `
   -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Launcher`""
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$trigger.Delay = "PT45S"
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
@@ -42,4 +43,4 @@ Register-ScheduledTask `
   -Force | Out-Null
 
 Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath |
-  Select-Object TaskPath, TaskName, State
+  Select-Object TaskPath, TaskName, State, @{ Name = "Delay"; Expression = { $_.Triggers[0].Delay } }

@@ -13,6 +13,10 @@ const {
   extractRequestAuthToken,
   parseCookieHeader,
 } = require('../middleware/jwt-auth.cjs');
+const {
+  createAuthSessionRegistry,
+  normalizeSurface,
+} = require('../auth/session-registry.cjs');
 
 const A11_SESSION_COOKIE = 'a11_session';
 const GOOGLE_OAUTH_STATE_COOKIE = 'a11_google_oauth_state';
@@ -36,6 +40,31 @@ function stableHash(value, length = 12) {
   return nodeCrypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, length);
 }
 
+function normalizeAccessPacks(user = {}, extra = {}) {
+  const rawValues = [
+    extra.accessPacks,
+    extra.access_packs,
+    user.accessPacks,
+    user.access_packs,
+    user.entitlements,
+  ].flatMap((value) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') return value.split(/[,\s]+/);
+    return [];
+  });
+  const packs = new Set(
+    rawValues
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (hasFullAccess({ ...user, ...extra })) {
+    ['a11', 'k44', 'vivy', 'a11+vivy'].forEach((pack) => packs.add(pack));
+  } else if (user.subscription_active === true || extra.subscription_active === true) {
+    ['a11', 'k44', 'vivy'].forEach((pack) => packs.add(pack));
+  }
+  return Array.from(packs).sort();
+}
+
 function buildAuthClaims(user = {}, extra = {}) {
   const email = normalizeEmail(extra.email || user.email);
   const role = String(extra.role || user.role || '').trim();
@@ -49,6 +78,33 @@ function buildAuthClaims(user = {}, extra = {}) {
   if (extra.localAuth || user.localAuth) claims.localAuth = true;
   if (extra.provider || user.provider || user.auth_provider) {
     claims.provider = String(extra.provider || user.provider || user.auth_provider);
+  }
+  if (extra.sid || extra.sessionId || extra.session_id || user.sid || user.sessionId || user.session_id) {
+    claims.sid = String(extra.sid || extra.sessionId || extra.session_id || user.sid || user.sessionId || user.session_id);
+  }
+  if (extra.surface || user.surface) {
+    claims.surface = normalizeSurface(extra.surface || user.surface);
+  }
+  {
+    const sessionGeneration = Number(
+      extra.sessionGeneration
+      ?? extra.sessionVersion
+      ?? extra.sv
+      ?? extra.session_generation
+      ?? user.sessionGeneration
+      ?? user.sessionVersion
+      ?? user.sv
+      ?? user.session_generation
+      ?? 0
+    );
+    if (Number.isFinite(sessionGeneration) && sessionGeneration >= 0) {
+      claims.sessionGeneration = Math.floor(sessionGeneration);
+      claims.sv = Math.floor(sessionGeneration);
+    }
+  }
+  const accessPacks = normalizeAccessPacks(user, extra);
+  if (accessPacks.length) {
+    claims.accessPacks = accessPacks;
   }
   if (hasFullAccess({ ...user, ...extra, email, role })) {
     claims.fullAccess = true;
@@ -66,6 +122,8 @@ function buildPublicAuthUser(user = {}, extra = {}) {
     role: claims.role || undefined,
     fullAccess: claims.fullAccess === true,
     provider: claims.provider || undefined,
+    surface: claims.surface || undefined,
+    accessPacks: Array.isArray(claims.accessPacks) ? claims.accessPacks : [],
   };
 }
 
@@ -112,6 +170,7 @@ function resolveRequestPinnedFrontendUrl(req) {
     'funesterie.me': 'https://funesterie.me',
     'www.funesterie.me': 'https://funesterie.me',
     'a11.funesterie.me': 'https://a11.funesterie.me',
+    'cp.funesterie.me': 'https://cp.funesterie.me',
     'vivy.funesterie.me': 'https://vivy.funesterie.me',
     'music.funesterie.me': 'https://music.funesterie.me',
   };
@@ -160,13 +219,37 @@ function resolveRequestHostname(req) {
   return host.replace(/:\d+$/, '').toLowerCase();
 }
 
+function isPublicFunesterieOAuthHost(hostname) {
+  return [
+    'funesterie.me',
+    'www.funesterie.me',
+    'a11.funesterie.me',
+    'cp.funesterie.me',
+    'k44.funesterie.me',
+    'kaen44.funesterie.me',
+    'vivy.funesterie.me',
+    'music.funesterie.me',
+  ].includes(String(hostname || '').toLowerCase());
+}
+
+function isCentralFunesterieOAuthHost(hostname) {
+  return ['funesterie.me', 'www.funesterie.me'].includes(String(hostname || '').toLowerCase());
+}
+
+function resolveOAuthSurfaceFromRequest(req) {
+  const explicit = String(req?.query?.surface || req?.query?.persona || req?.headers?.['x-a11-surface'] || '').trim();
+  if (explicit) return normalizeSurface(explicit);
+  const hostname = resolveRequestHostname(req);
+  if (['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return 'k44';
+  if (['vivy.funesterie.me', 'music.funesterie.me'].includes(hostname)) return 'vivy';
+  if (['a11.funesterie.me', 'cp.funesterie.me'].includes(hostname)) return 'a11';
+  return 'funesterie';
+}
+
 function resolveHostPinnedOAuthCallback(req, provider) {
   const hostname = resolveRequestHostname(req);
-  if (!['k44.funesterie.me', 'kaen44.funesterie.me'].includes(hostname)) return '';
-  const origin = resolveRequestOrigin(req).replace(/\/+$/, '');
-  if (!origin) return '';
-  const publicOrigin = origin.replace(/^http:\/\//i, 'https://');
-  return `${publicOrigin}/api/auth/${provider}/callback`;
+  if (!isPublicFunesterieOAuthHost(hostname)) return '';
+  return `https://funesterie.me/api/auth/${provider}/callback`;
 }
 
 function resolveExplicitGoogleCallbackUrl() {
@@ -179,10 +262,10 @@ function resolveExplicitGoogleCallbackUrl() {
 }
 
 function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
-  const explicit = resolveExplicitGoogleCallbackUrl();
-  if (explicit) return explicit;
   const hostPinned = resolveHostPinnedOAuthCallback(req, 'google');
   if (hostPinned) return hostPinned;
+  const explicit = resolveExplicitGoogleCallbackUrl();
+  if (explicit) return explicit;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/google/callback`;
 }
 
@@ -218,15 +301,30 @@ function resolveExplicitMicrosoftCallbackUrl() {
 }
 
 function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
-  const explicit = resolveExplicitMicrosoftCallbackUrl();
-  if (explicit) return explicit;
   const hostPinned = resolveHostPinnedOAuthCallback(req, 'microsoft');
   if (hostPinned) return hostPinned;
+  const explicit = resolveExplicitMicrosoftCallbackUrl();
+  if (explicit) return explicit;
   return `${resolvePublicApiOrigin(req, normalizePublicAppUrl).replace(/\/+$/, '')}/api/auth/microsoft/callback`;
 }
 
 function resolveCanonicalOAuthStartRedirect(req, provider, normalizePublicAppUrl) {
   const hostname = resolveRequestHostname(req);
+  if (isPublicFunesterieOAuthHost(hostname) && !isCentralFunesterieOAuthHost(hostname)) {
+    const target = new URL(`/api/auth/${provider}/start`, 'https://funesterie.me');
+    for (const [key, value] of Object.entries(req?.query || {})) {
+      if (Array.isArray(value)) {
+        value.forEach((entry) => target.searchParams.append(key, String(entry)));
+      } else if (value !== undefined && value !== null) {
+        target.searchParams.set(key, String(value));
+      }
+    }
+    if (!target.searchParams.get('surface')) {
+      target.searchParams.set('surface', resolveOAuthSurfaceFromRequest(req));
+    }
+    return target.toString();
+  }
+
   if (!hostname) return '';
 
   try {
@@ -237,6 +335,7 @@ function resolveCanonicalOAuthStartRedirect(req, provider, normalizePublicAppUrl
     );
     const callbackHost = callbackUrl.hostname.toLowerCase();
     if (!callbackHost || callbackHost === hostname) return '';
+    if (!['localhost', '127.0.0.1', '::1'].includes(hostname)) return '';
 
     const target = new URL(`/api/auth/${provider}/start`, `${callbackUrl.protocol}//${callbackUrl.host}`);
     for (const [key, value] of Object.entries(req?.query || {})) {
@@ -245,6 +344,9 @@ function resolveCanonicalOAuthStartRedirect(req, provider, normalizePublicAppUrl
       } else if (value !== undefined && value !== null) {
         target.searchParams.set(key, String(value));
       }
+    }
+    if (!target.searchParams.get('surface')) {
+      target.searchParams.set('surface', resolveOAuthSurfaceFromRequest(req));
     }
     return target.toString();
   } catch {
@@ -277,12 +379,30 @@ function resolveCookieOptions(req, normalizePublicAppUrl, maxAge) {
   return options;
 }
 
+function sanitizeOAuthTracePath(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  const redact = (input) => input.replace(
+    /([?&](?:code|state|token|credential|id_token|access_token)=)[^&#\s]+/gi,
+    '$1[redacted]'
+  );
+  try {
+    const parsed = new URL(raw, 'https://trace.local');
+    for (const key of ['code', 'state', 'token', 'credential', 'id_token', 'access_token']) {
+      if (parsed.searchParams.has(key)) parsed.searchParams.set(key, '[redacted]');
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return redact(raw);
+  }
+}
+
 function buildOAuthTraceMeta(req, normalizePublicAppUrl, extra = {}) {
   const cookieOptions = resolveCookieOptions(req, normalizePublicAppUrl);
   const cookieHeader = String(req?.headers?.cookie || '');
   return {
     method: req?.method,
-    path: req?.originalUrl || req?.url,
+    path: sanitizeOAuthTracePath(req?.originalUrl || req?.url),
     host: String(req?.headers?.host || ''),
     forwardedHost: String(req?.headers?.['x-forwarded-host'] || ''),
     forwardedProto: String(req?.headers?.['x-forwarded-proto'] || ''),
@@ -324,6 +444,7 @@ function isAllowedOAuthFrontendOrigin(origin) {
   if (!normalized) return false;
   if ([
     'https://a11.funesterie.me',
+    'https://cp.funesterie.me',
     'https://funesterie.me',
     'https://www.funesterie.me',
     'https://k44.funesterie.me',
@@ -386,28 +507,21 @@ function redirectOAuthSuccess(res, frontendUrl, returnTo, token, provider) {
   return res.redirect(needsFragmentToken ? appendOAuthTokenFragment(target, token, provider) : target);
 }
 
-function redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode) {
-  const error = encodeURIComponent(errorCode || 'oauth_failed');
+function buildCentralLoginRedirect(frontendUrl, returnTo, errorCode) {
+  const target = new URL('/login', 'https://funesterie.me');
+  const error = String(errorCode || '').trim();
   const safeReturnTo = String(returnTo || '').trim();
-  if (!safeReturnTo) return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
-
-  try {
-    const target = new URL(resolveOAuthRedirectUrl(frontendUrl, safeReturnTo));
-    if (/^\/k44(?:\/|$)/i.test(target.pathname)) {
-      target.pathname = '/k44/login';
-    } else if (/^\/kaen44(?:\/|$)/i.test(target.pathname)) {
-      target.pathname = '/kaen44/login';
-    } else if (/^\/cockpit(?:\/|$)/i.test(target.pathname)) {
-      target.pathname = '/cockpit';
-    } else {
-      target.pathname = '/login';
-    }
-    target.search = `?error=${error}`;
-    target.hash = '';
-    return res.redirect(target.toString());
-  } catch {
-    return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${error}`));
+  if (safeReturnTo) {
+    target.searchParams.set('returnTo', resolveOAuthRedirectUrl(frontendUrl, safeReturnTo));
   }
+  if (error) target.searchParams.set('error', error);
+  return target.toString();
+}
+
+function redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode) {
+  const safeReturnTo = String(returnTo || '').trim();
+  if (!safeReturnTo) return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, errorCode));
+  return res.redirect(buildCentralLoginRedirect(frontendUrl, safeReturnTo, errorCode));
 }
 
 function redirectOAuthErrorWithState(res, frontendUrl, statePayload, errorCode) {
@@ -428,7 +542,14 @@ function resolvePublicOAuthError(provider, error) {
   if (normalizedProvider === 'microsoft') {
     if (code.includes('aadsts7000215') || code.includes('invalid client secret')) return 'microsoft_invalid_client';
     if (code.includes('access_denied')) return 'microsoft_access_denied';
-    if (code.includes('invalid_grant')) return 'microsoft_invalid_grant';
+    if (
+      code.includes('invalid_grant')
+      || code.includes('aadsts70000')
+      || code.includes('authorization code')
+      || code.includes('code is invalid')
+      || code.includes('code is expired')
+      || code.includes('malformed')
+    ) return 'microsoft_invalid_grant';
   }
 
   return 'oauth_failed';
@@ -488,7 +609,11 @@ async function exchangeMicrosoftCodeForTokens({ code, callbackUrl, clientId, cli
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error_description || payload?.error || `microsoft_token_exchange_failed_${response.status}`);
+    const detail = [payload?.error, payload?.error_description]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(': ');
+    throw new Error(detail || `microsoft_token_exchange_failed_${response.status}`);
   }
   return payload;
 }
@@ -537,11 +662,40 @@ function createAuthRouter({
   emailService,
   crypto,
   normalizePublicAppUrl,
+  authSessionRegistry,
 } = {}) {
   const router = express.Router();
+  const sessionRegistry = authSessionRegistry || createAuthSessionRegistry({
+    db,
+    localAuthStore,
+    logger: console,
+  });
 
-  function issueSessionCookie(req, res, user, extra = {}) {
-    const token = signUserToken({ jwt, jwtSecret, jwtExpiry, user, extra });
+  async function issueSessionCookie(req, res, user, extra = {}) {
+    const surface = normalizeSurface(extra.surface || req?.query?.surface || resolveOAuthSurfaceFromRequest(req));
+    const client = String(extra.client || req?.query?.client || 'web').trim().slice(0, 64) || 'web';
+    const sessionInfo = await sessionRegistry.createSession({
+      req,
+      user: { ...user, ...extra },
+      provider: extra.provider || user.provider || user.auth_provider || (extra.localAuth ? 'local' : ''),
+      surface,
+      client,
+    });
+    const sessionGeneration = Number(sessionInfo?.sessionGeneration ?? 0);
+    const token = signUserToken({
+      jwt,
+      jwtSecret,
+      jwtExpiry,
+      user,
+      extra: {
+        ...extra,
+        sid: sessionInfo?.sessionId || extra.sid,
+        sessionGeneration,
+        sv: sessionGeneration,
+        surface,
+        client,
+      },
+    });
     if (typeof registerIssuedToken === 'function') {
       registerIssuedToken(token);
     }
@@ -553,14 +707,21 @@ function createAuthRouter({
     return token;
   }
 
-  function issueAuthResponse(req, res, user, extra = {}) {
-    const token = issueSessionCookie(req, res, user, extra);
+  async function issueAuthResponse(req, res, user, extra = {}) {
+    const token = await issueSessionCookie(req, res, user, extra);
+    const decoded = jwt.decode(token) || {};
     return res.json({
       ok: true,
       success: true,
       token,
       expiresIn: jwtExpiry,
-      user: buildPublicAuthUser(user, extra),
+      user: buildPublicAuthUser(user, decoded),
+      session: {
+        id: decoded.sid || null,
+        version: decoded.sv ?? decoded.sessionGeneration ?? 0,
+        surface: decoded.surface || undefined,
+        provider: decoded.provider || undefined,
+      },
     });
   }
 
@@ -569,6 +730,21 @@ function createAuthRouter({
     res.clearCookie(A11_SESSION_COOKIE, options);
     res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, options);
     res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, options);
+    if (options.domain) {
+      const hostOnly = { ...options };
+      delete hostOnly.domain;
+      res.clearCookie(A11_SESSION_COOKIE, hostOnly);
+      res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, hostOnly);
+      res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, hostOnly);
+    }
+  }
+
+  async function decodeRequestAuthClaims(req) {
+    const token = extractRequestAuthToken(req);
+    if (!token) return null;
+    const decoded = jwt.verify(token, jwtSecret);
+    await sessionRegistry.assertTokenCurrent(decoded);
+    return decoded;
   }
 
   async function findOrCreateGoogleUser(profile) {
@@ -704,7 +880,7 @@ function createAuthRouter({
           passwordHash: hash,
         });
         console.log('[AUTH] Local register:', normalizedUsername);
-        return issueAuthResponse(req, res, user, { localAuth: true });
+        return await issueAuthResponse(req, res, user, { localAuth: true });
       } catch (e) {
         console.warn('[AUTH] Local register failed:', e?.message);
         const code = String(e?.code || e?.message || '').trim();
@@ -724,7 +900,7 @@ function createAuthRouter({
       );
       const user = rows[0];
       console.log('[AUTH] Register:', normalizedUsername);
-      return issueAuthResponse(req, res, user);
+      return await issueAuthResponse(req, res, user);
     } catch (e) {
       console.warn('[AUTH] Register failed:', e?.message);
       const message = String(e?.message || '');
@@ -754,7 +930,7 @@ function createAuthRouter({
           if (localUser?.password_hash) {
             const ok = await bcrypt.compare(password, localUser.password_hash);
             if (ok) {
-              return issueAuthResponse(req, res, localUser, { localAuth: true });
+              return await issueAuthResponse(req, res, localUser, { localAuth: true });
             }
           }
         } catch (e) {
@@ -769,7 +945,7 @@ function createAuthRouter({
       const isDefaultAdmin = normalizedFallbackUser === fallbackDefaultAdmin && fallbackPassword === defaultAdminPassword;
       if (isLegacyAdmin || isDefaultAdmin) {
         const resolvedUsername = isLegacyAdmin ? 'admin' : defaultAdminUsername;
-        return issueAuthResponse(
+        return await issueAuthResponse(
           req,
           res,
           { id: resolvedUsername.toLowerCase(), username: resolvedUsername, role: 'admin' },
@@ -790,7 +966,7 @@ function createAuthRouter({
       if (!ok) return res.status(401).json({ success: false, error: 'Invalid credentials' });
       const activatedUser = await activateFullAccessUser(db, user);
       console.log('[AUTH] Login ok');
-      return issueAuthResponse(req, res, activatedUser);
+      return await issueAuthResponse(req, res, activatedUser);
     } catch (e) {
       console.error('[AUTH] Login error:', e?.message);
       return res.status(500).json({ error: 'Server error' });
@@ -827,12 +1003,12 @@ function createAuthRouter({
           provider: 'google',
         };
         console.log('[AUTH] Google local login:', email);
-        return issueAuthResponse(req, res, googleUser, { provider: 'google' });
+        return await issueAuthResponse(req, res, googleUser, { provider: 'google' });
       }
 
       const user = await findOrCreateGoogleUser({ ...profile, email });
       console.log('[AUTH] Google login:', email);
-      return issueAuthResponse(req, res, user, { provider: 'google' });
+      return await issueAuthResponse(req, res, user, { provider: 'google' });
     } catch (error) {
       const code = String(error?.message || 'google_auth_failed');
       const status = code === 'google_auth_not_configured' ? 503 : 401;
@@ -941,7 +1117,7 @@ function createAuthRouter({
     const frontendUrl = resolveFrontendUrl(req, normalizePublicAppUrl);
     const returnTo = String(req.query?.returnTo || '').trim();
     if (returnTo) return redirectOAuthErrorToReturnTo(res, frontendUrl, returnTo, errorCode);
-    return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(errorCode)}`));
+    return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, errorCode));
   }
 
   router.get('/api/auth/google/start', (req, res) => {
@@ -966,12 +1142,14 @@ function createAuthRouter({
     const nonce = nodeCrypto.randomBytes(24).toString('base64url');
     const client = String(req.query?.client || 'web').trim().slice(0, 32) || 'web';
     const returnTo = String(req.query?.returnTo || '/auth/success').trim() || '/auth/success';
+    const surface = resolveOAuthSurfaceFromRequest(req);
     const state = jwt.sign(
       {
         typ: 'google_oauth_state',
         nonce,
         client,
         returnTo,
+        surface,
       },
       jwtSecret,
       { expiresIn: '10m' }
@@ -1005,7 +1183,7 @@ function createAuthRouter({
     const error = String(req.query?.error || '').trim();
     if (error) {
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(error)}`));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, error));
     }
 
     const code = String(req.query?.code || '').trim();
@@ -1019,7 +1197,7 @@ function createAuthRouter({
         stateMatchesCookie: Boolean(state && stateCookie && state === stateCookie),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_invalid'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_invalid'));
     }
 
     let statePayload;
@@ -1031,7 +1209,7 @@ function createAuthRouter({
         stateError: String(stateError?.message || stateError || 'unknown_state_error'),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_expired'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_expired'));
     }
 
     const { clientIds, clientId, clientSecret, callbackUrl } = getGoogleOAuthConfig(req);
@@ -1081,7 +1259,11 @@ function createAuthRouter({
             provider: 'google',
           };
 
-      const sessionToken = issueSessionCookie(req, res, user, { provider: 'google' });
+      const sessionToken = await issueSessionCookie(req, res, user, {
+        provider: 'google',
+        surface: statePayload?.surface,
+        client: statePayload?.client,
+      });
       res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Google OAuth login:', email);
       return redirectOAuthSuccess(res, frontendUrl, statePayload?.returnTo || '/auth/success', sessionToken, 'google');
@@ -1093,7 +1275,7 @@ function createAuthRouter({
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
         publicError,
       }, 'warn');
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(publicError)}`));
+      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, publicError);
     }
   });
 
@@ -1119,12 +1301,14 @@ function createAuthRouter({
     const nonce = nodeCrypto.randomBytes(24).toString('base64url');
     const client = String(req.query?.client || 'web').trim().slice(0, 32) || 'web';
     const returnTo = String(req.query?.returnTo || '/auth/success').trim() || '/auth/success';
+    const surface = resolveOAuthSurfaceFromRequest(req);
     const state = jwt.sign(
       {
         typ: 'microsoft_oauth_state',
         nonce,
         client,
         returnTo,
+        surface,
       },
       jwtSecret,
       { expiresIn: '10m' }
@@ -1157,7 +1341,7 @@ function createAuthRouter({
     const error = String(req.query?.error || '').trim();
     if (error) {
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(error)}`));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, error));
     }
 
     const code = String(req.query?.code || '').trim();
@@ -1171,7 +1355,7 @@ function createAuthRouter({
         stateMatchesCookie: Boolean(state && stateCookie && state === stateCookie),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_invalid'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_invalid'));
     }
 
     let statePayload;
@@ -1183,7 +1367,7 @@ function createAuthRouter({
         stateError: String(stateError?.message || stateError || 'unknown_state_error'),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=oauth_state_expired'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'oauth_state_expired'));
     }
 
     const { clientId, clientSecret, callbackUrl } = getMicrosoftOAuthConfig(req);
@@ -1194,7 +1378,7 @@ function createAuthRouter({
         hasCallbackUrl: Boolean(callbackUrl),
       }, 'warn');
       clearSessionCookies(req, res);
-      return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=microsoft_auth_not_configured'));
+      return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'microsoft_auth_not_configured'));
     }
 
     try {
@@ -1203,7 +1387,7 @@ function createAuthRouter({
       const email = normalizeEmail(profile?.mail || profile?.userPrincipalName || profile?.email);
       if (!email) {
         clearSessionCookies(req, res);
-        return res.redirect(safeFrontendRedirect(frontendUrl, '/login?error=microsoft_email_missing'));
+        return res.redirect(buildCentralLoginRedirect(frontendUrl, frontendUrl, 'microsoft_email_missing'));
       }
 
       const user = db
@@ -1215,7 +1399,11 @@ function createAuthRouter({
             provider: 'microsoft',
           };
 
-      const sessionToken = issueSessionCookie(req, res, user, { provider: 'microsoft' });
+      const sessionToken = await issueSessionCookie(req, res, user, {
+        provider: 'microsoft',
+        surface: statePayload?.surface,
+        client: statePayload?.client,
+      });
       res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Microsoft OAuth login:', email);
       return redirectOAuthSuccess(res, frontendUrl, statePayload?.returnTo || '/auth/success', sessionToken, 'microsoft');
@@ -1227,24 +1415,39 @@ function createAuthRouter({
         error: String(callbackError?.message || callbackError || 'oauth_failed'),
         publicError,
       }, 'warn');
-      return res.redirect(safeFrontendRedirect(frontendUrl, `/login?error=${encodeURIComponent(publicError)}`));
+      return redirectOAuthErrorWithState(res, frontendUrl, statePayload, publicError);
     }
   });
 
-  router.get('/api/auth/me', (req, res) => {
-    const token = extractRequestAuthToken(req);
-    if (!token) {
+  router.get('/api/auth/me', async (req, res) => {
+    if (!extractRequestAuthToken(req)) {
       return res.json({ ok: true, authenticated: false, user: null });
     }
 
     try {
-      const decoded = jwt.verify(token, jwtSecret);
+      const decoded = await decodeRequestAuthClaims(req);
       return res.json({
         ok: true,
         authenticated: true,
         user: buildPublicAuthUser(decoded, decoded),
+        session: {
+          id: decoded.sid || null,
+          version: decoded.sv ?? decoded.sessionGeneration ?? 0,
+          surface: decoded.surface || undefined,
+          provider: decoded.provider || undefined,
+          expiresAt: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : null,
+        },
       });
     } catch (error) {
+      if (error?.code === 'A11_SESSION_REVOKED') {
+        clearSessionCookies(req, res);
+        return res.status(401).json({
+          ok: false,
+          authenticated: false,
+          error: 'A11_SESSION_REVOKED',
+          message: 'Session révoquée. Reconnecte-toi.',
+        });
+      }
       return res.status(401).json({
         ok: false,
         authenticated: false,
@@ -1254,9 +1457,90 @@ function createAuthRouter({
     }
   });
 
-  router.post('/api/auth/logout', (req, res) => {
+  router.get('/api/auth/sessions', async (req, res) => {
+    try {
+      const decoded = await decodeRequestAuthClaims(req);
+      if (!decoded) return res.status(401).json({ ok: false, error: 'A11_JWT_Missing' });
+      const sessions = await sessionRegistry.listSessions(decoded);
+      const currentVersion = await sessionRegistry.getSessionVersion(decoded);
+      return res.json({
+        ok: true,
+        sessions,
+        global: {
+          version: currentVersion,
+          canLogoutAll: true,
+        },
+      });
+    } catch (error) {
+      const code = error?.code === 'A11_SESSION_REVOKED' ? 'A11_SESSION_REVOKED' : 'A11_JWT_Invalid';
+      if (code === 'A11_SESSION_REVOKED') clearSessionCookies(req, res);
+      return res.status(401).json({
+        ok: false,
+        error: code,
+        message: code === 'A11_SESSION_REVOKED' ? 'Session révoquée. Reconnecte-toi.' : 'Session invalide',
+      });
+    }
+  });
+
+  router.post('/api/auth/logout', async (req, res) => {
+    try {
+      const decoded = await decodeRequestAuthClaims(req);
+      if (decoded) await sessionRegistry.revokeCurrentSession(decoded);
+    } catch {
+      // Logout stays best effort: clear the browser even if the token is stale.
+    }
     clearSessionCookies(req, res);
-    return res.json({ ok: true, message: 'Deconnecte avec succes' });
+    return res.json({ ok: true, allSessions: false, message: 'Session courante déconnectée.' });
+  });
+
+  router.delete('/api/auth/sessions/:sid', async (req, res) => {
+    try {
+      const decoded = await decodeRequestAuthClaims(req);
+      if (!decoded) return res.status(401).json({ ok: false, error: 'A11_JWT_Missing' });
+      const result = await sessionRegistry.revokeSession(decoded, req.params.sid);
+      if (!result?.ok) {
+        return res.status(404).json({ ok: false, error: result?.error || 'session_not_found' });
+      }
+      const currentSid = String(decoded.sid || decoded.sessionId || '').trim();
+      if (currentSid && currentSid === String(req.params.sid || '').trim()) clearSessionCookies(req, res);
+      return res.json({ ok: true, sessionId: result.sessionId, revokedAt: result.revokedAt });
+    } catch (error) {
+      const code = error?.code === 'A11_SESSION_REVOKED' ? 'A11_SESSION_REVOKED' : 'A11_JWT_Invalid';
+      if (code === 'A11_SESSION_REVOKED') clearSessionCookies(req, res);
+      return res.status(401).json({ ok: false, error: code });
+    }
+  });
+
+  router.post('/api/auth/logout-all', express.json({ limit: '16kb' }), async (req, res) => {
+    try {
+      const decoded = await decodeRequestAuthClaims(req);
+      if (!decoded) return res.status(401).json({ ok: false, error: 'A11_JWT_Missing' });
+      const result = await sessionRegistry.revokeAllForUser(decoded);
+      clearSessionCookies(req, res);
+      return res.json({
+        ok: result?.ok !== false,
+        allSessions: true,
+        version: result?.version ?? null,
+        message: 'Toutes les sessions du compte sont déconnectées.',
+      });
+    } catch (error) {
+      clearSessionCookies(req, res);
+      const decoded = extractRequestAuthToken(req) && typeof jwt.decode === 'function'
+        ? jwt.decode(extractRequestAuthToken(req))
+        : null;
+      if (decoded) {
+        const result = await sessionRegistry.revokeAllForUser(decoded).catch(() => null);
+        if (result?.ok) {
+          return res.json({
+            ok: true,
+            allSessions: true,
+            version: result.version ?? null,
+            message: 'Toutes les sessions du compte sont déconnectées.',
+          });
+        }
+      }
+      return res.status(401).json({ ok: false, error: 'A11_JWT_Invalid' });
+    }
   });
 
   const forgotPasswordHandler = async (req, res) => {

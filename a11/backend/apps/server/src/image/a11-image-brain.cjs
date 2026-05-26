@@ -50,13 +50,14 @@ function createClarificationPayload(decision = {}) {
 
 function buildClarificationMessage(decision = {}) {
   const optionLines = Array.isArray(decision?.options)
-    ? decision.options.map((entry) => String(entry?.promptLine || entry?.label || '').trim()).filter(Boolean)
+    ? decision.options
+      .map((entry) => String(entry?.label || entry?.promptLine || '').replace(/^\s*(?:\d+[\).\s-]+|option\s+\d+\s*[:.-]?\s*)/i, '').trim())
+      .filter(Boolean)
     : [];
   return [
     String(decision?.question || '').trim(),
     String(decision?.recommendationLine || '').trim(),
-    ...optionLines,
-    optionLines.length ? 'Tu peux repondre juste par 1, 2, dire "vas-y", ou reformuler clairement.' : '',
+    optionLines.length ? `Je peux partir sur ${optionLines.join(' ou ')}. Dis-moi juste ce que tu veux.` : '',
   ].filter(Boolean).join('\n');
 }
 

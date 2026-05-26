@@ -203,6 +203,7 @@ const AUTH_USER_STORAGE_KEY = 'a11-auth-user';
 const AUTH_TOKEN_STORAGE_KEY = 'a11-auth-token';
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = 'a11_jwt_token';
 const AUTH_INVALID_EVENT_NAME = 'a11:auth-invalid';
+const AUTH_GLOBAL_LOGOUT_STORAGE_KEY = 'a11:global-logout-at';
 const DEFAULT_A11_SYSTEM_PROMPT = [
   "Je suis A11, creee par Jeffrey, dans l'ecosysteme Funesterie.",
   "NOSSEN est mon identite locale A11/Funesterie: dev, code, QFlush, Cerbere, VSIX et projets audio/Vivy.",
@@ -225,6 +226,10 @@ const DEFAULT_PROD_API_BASE = normalizeApiBase(
 const DEFAULT_KAEN44_API_BASE = normalizeApiBase(
   import.meta.env?.VITE_KAEN44_API_BASE_URL ||
   'https://k44.funesterie.me'
+);
+const DEFAULT_FUNESTERIE_AUTH_BASE = normalizeApiBase(
+  import.meta.env?.VITE_FUNESTERIE_AUTH_BASE_URL ||
+  'https://funesterie.me'
 );
 
 function isPublicKaen44WebHost(hostname: string | null | undefined) {
@@ -259,9 +264,8 @@ function resolveDefaultOnlineApiBase() {
   if (configured) return configured;
   try {
     const hostname = globalThis.location?.hostname;
-    if (isPublicGeneralCockpitHost(hostname)) return '';
     if (isPublicA11WebHost(hostname)) return DEFAULT_PROD_API_BASE;
-    if (isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
+    if (isPublicGeneralCockpitHost(hostname) || isPublicKaen44WebHost(hostname) || isPublicVivyWebHost(hostname)) return '';
   } catch {
     // ignore browser location issues
   }
@@ -348,12 +352,11 @@ function applyLaunchApiModeOverrides() {
     if (isPublicFunesterieWebHost(url.hostname)) {
       const onlineBase = normalizeApiBase(A11_API_PROFILE_BASES.online);
       const currentOverride = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
-      if (currentOverride !== onlineBase) {
-        if (onlineBase) {
-          globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
-        } else {
-          globalThis.localStorage?.removeItem(API_BASE_STORAGE_KEY);
-        }
+      if (!onlineBase && currentOverride) {
+        globalThis.localStorage?.removeItem(API_BASE_STORAGE_KEY);
+        changed = true;
+      } else if (onlineBase && currentOverride !== onlineBase) {
+        globalThis.localStorage?.setItem(API_BASE_STORAGE_KEY, onlineBase);
         changed = true;
       }
     }
@@ -382,7 +385,7 @@ export function getCurrentApiBase() {
     return normalizeApiBase(A11_API_PROFILE_BASES.local) || DEFAULT_LOCAL_PROFILE_BASE;
   }
   if (isPublicOnlineModeLocked()) {
-    return normalizeApiBase(A11_API_PROFILE_BASES.online);
+    return normalizeApiBase(A11_API_PROFILE_BASES.online) || DEFAULT_ONLINE_API_BASE;
   }
   try {
     const override = normalizeApiBase(globalThis.localStorage?.getItem(API_BASE_STORAGE_KEY));
@@ -741,6 +744,14 @@ export function getAuthIdentity() {
   };
 }
 
+export function getAuthEmail() {
+  if (hasLocalDevBypassSession()) return 'djeff-local@funesterie.local';
+
+  const payload = decodeJwtPayload(getAuthToken()) || {};
+  const storedUser = getStoredAuthUserProfile() || {};
+  return String(payload?.email || storedUser?.email || '').trim().toLowerCase();
+}
+
 export function getAuthStorageScope() {
   return getAuthIdentity().storageScope;
 }
@@ -756,8 +767,6 @@ function hasAdminIdentityClaims() {
   const storedUsername = normalizeStorageScopePart(storedUser?.username || '');
   const storedRole = normalizeStorageScopePart(storedUser?.role || '');
   return payload?.isAdmin === true
-    || payload?.fullAccess === true
-    || storedUser?.fullAccess === true
     || id === 'admin'
     || username === 'admin'
     || role === 'admin'
@@ -881,8 +890,43 @@ export type AuthSessionResponse = {
     role?: string;
     fullAccess?: boolean;
     provider?: string;
+    surface?: string;
+    accessPacks?: string[];
+  };
+  session?: {
+    id?: string | null;
+    version?: number;
+    surface?: string;
+    provider?: string;
+    expiresAt?: string | null;
   };
   token?: string;
+  error?: string;
+  message?: string;
+};
+
+export type AuthSessionDescriptor = {
+  id: string;
+  current?: boolean;
+  provider?: string;
+  surface?: string;
+  client?: string;
+  email?: string;
+  username?: string;
+  createdAt?: string | null;
+  lastSeenAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  requestHost?: string;
+};
+
+export type AuthSessionsResponse = {
+  ok: boolean;
+  sessions?: AuthSessionDescriptor[];
+  global?: {
+    version?: number;
+    canLogoutAll?: boolean;
+  };
   error?: string;
   message?: string;
 };
@@ -893,36 +937,35 @@ function shouldUseCookieOnlyAuthSessionProbe() {
     if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
     const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
     return pathname === '/'
-      || /^\/(?:home|accueil|agents|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+      || /^\/(?:home|accueil|agents|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
   } catch {
     return false;
   }
 }
 
+type OAuthStartOptions = {
+  scopeProfile?: string;
+};
+
 export async function fetchAuthSession(): Promise<AuthSessionResponse> {
-  const tokenAtStart = getAuthToken();
   const headers: Record<string, string> = {};
+  const tokenAtStart = getAuthToken();
   if (tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe()) {
     headers.Authorization = `Bearer ${tokenAtStart}`;
   }
   const res = await fetch(getApiUrl('/api/auth/me'), {
     method: 'GET',
-    credentials: 'include',
     headers,
+    credentials: 'include',
   });
   const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
   if (!res.ok || data?.ok === false) {
-    if (res.status === 401 || data?.error === 'A11_JWT_Invalid') {
+    if (res.status === 401 || data?.error === 'A11_JWT_Invalid' || data?.error === 'A11_SESSION_REVOKED') {
       const currentToken = getAuthToken();
       if (!currentToken || currentToken === tokenAtStart) {
         clearClientAuthSession({
           reason: data?.error || 'A11_JWT_Invalid',
           message: data?.message || `Session A11 invalide (${res.status})`,
-          status: res.status,
-        });
-      } else {
-        console.warn('[A11] stale auth/me failure ignored after token rotation', {
-          reason: data?.error || 'A11_JWT_Invalid',
           status: res.status,
         });
       }
@@ -933,14 +976,141 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
     setAuthToken(data.token);
   }
   if (!data?.authenticated && !data?.user) {
-    if (tokenAtStart) {
-      clearAuthToken();
-      setAuthDisplayName('');
+    const currentToken = getAuthToken();
+    if (tokenAtStart && (!currentToken || currentToken === tokenAtStart)) {
+      clearClientAuthSession({
+        reason: 'A11_SESSION_INACTIVE',
+        message: 'Session Funesterie inactive.',
+        status: res.status,
+      });
     }
     return data;
   }
   setAuthUserProfile(data?.user);
   setAuthDisplayName(data?.user?.username || data?.user?.email || '');
+  return data;
+}
+
+export async function fetchAuthSessions(): Promise<AuthSessionsResponse> {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl('/api/auth/sessions'), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data: AuthSessionsResponse = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    if (res.status === 401 || data?.error === 'A11_SESSION_REVOKED') {
+      clearClientAuthSession({
+        reason: data?.error || 'A11_JWT_Invalid',
+        message: data?.message || `Session A11 invalide (${res.status})`,
+        status: res.status,
+      });
+    }
+    throw new Error(data?.message || data?.error || `Sessions indisponibles (${res.status})`);
+  }
+  return data;
+}
+
+export type McpCockpitSummary = {
+  ok: boolean;
+  updatedAt?: string;
+  a11?: { ok?: boolean };
+  kaen44?: { ok?: boolean };
+  vivy?: {
+    ok?: boolean;
+    audio?: boolean;
+    present?: boolean;
+    source?: string;
+  };
+  agents?: {
+    active?: number;
+    total?: number;
+    names?: string[];
+  };
+  jobs?: {
+    total?: number;
+    ready?: number;
+    running?: number;
+  };
+  game?: {
+    source?: string;
+    ready?: boolean;
+    phase?: string;
+    japaneseIgnored?: boolean;
+  };
+  controller?: {
+    ready?: boolean;
+    recentCount?: number;
+    target?: string;
+  };
+  pitching?: {
+    total?: number;
+    ready?: number;
+    items?: Array<{
+      title?: string;
+      ready?: boolean;
+      requiredAnswered?: number;
+      requiredTotal?: number;
+      expectedAnswered?: number;
+      expectedTotal?: number;
+      deadlineSoftPassed?: boolean;
+    }>;
+  };
+  threads?: {
+    working?: McpCockpitThreadList;
+    open?: McpCockpitThreadList;
+    pitching?: McpCockpitThreadList;
+  };
+  error?: string;
+  message?: string;
+};
+
+export type McpCockpitThreadList = {
+  total?: number;
+  items?: McpCockpitThread[];
+};
+
+export type McpCockpitThread = {
+  id?: string;
+  title?: string;
+  status?: string;
+  topic?: string;
+  participants?: string[];
+  tags?: string[];
+  messageCount?: number;
+  updatedAt?: string;
+  lastFrom?: string;
+  lastKind?: string;
+  lastSnippet?: string;
+  ready?: boolean;
+  requiredAnswered?: number;
+  requiredTotal?: number;
+};
+
+export async function fetchMcpCockpitStatus(): Promise<McpCockpitSummary> {
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl('/api/cockpit/mcp/status'), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data: McpCockpitSummary = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    const error = new Error(data?.message || data?.error || `Cockpit MCP indisponible (${res.status})`) as Error & {
+      status?: number;
+      payload?: McpCockpitSummary;
+    };
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
   return data;
 }
 
@@ -971,43 +1141,69 @@ function resolveOAuthReturnTo(returnTo: string) {
   }
 }
 
-type OAuthStartOptions = {
-  scopeProfile?: string;
-};
+function resolveCurrentPublicApiBase() {
+  try {
+    const hostname = globalThis.location?.hostname;
+    const origin = normalizeApiBase(globalThis.location?.origin || '');
+    if (origin && isPublicFunesterieWebHost(hostname)) return origin;
+  } catch {
+    // ignore browser location issues
+  }
+  return '';
+}
+
+function isCentralFunesterieLoginPage() {
+  try {
+    const hostname = globalThis.location?.hostname;
+    const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
+    return isPublicGeneralCockpitHost(hostname) && /^\/login\/?$/.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+function resolveCurrentAuthSurface() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').trim().toLowerCase();
+    const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
+    const params = new URLSearchParams(String(globalThis.location?.search || ''));
+    const persona = String(params.get('persona') || '').trim().toLowerCase();
+    if (isPublicKaen44WebHost(hostname) || /^\/(?:k44|kaen44)(?:\/|$)/.test(pathname) || ['kaen44', 'kaen', 'k44'].includes(persona)) {
+      return 'k44';
+    }
+    if (isPublicVivyWebHost(hostname) || /^\/vivy(?:\/|$)/.test(pathname) || persona === 'vivy') {
+      return 'vivy';
+    }
+    if (isPublicA11WebHost(hostname) || /^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname) || ['a11', 'alphaonze'].includes(persona)) {
+      return 'a11';
+    }
+  } catch {
+    // ignore browser location issues
+  }
+  return 'funesterie';
+}
+
+function resolveCentralAuthBase() {
+  try {
+    const hostname = globalThis.location?.hostname;
+    if (isPublicFunesterieWebHost(hostname)) return DEFAULT_FUNESTERIE_AUTH_BASE;
+    if (isCentralFunesterieLoginPage()) return normalizeApiBase(globalThis.location?.origin || DEFAULT_FUNESTERIE_AUTH_BASE);
+  } catch {
+    // ignore browser location issues
+  }
+  return normalizeApiBase(getCurrentApiBase() || A11_API_PROFILE_BASES.online || DEFAULT_FUNESTERIE_AUTH_BASE);
+}
 
 export function getGoogleOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
-  const currentOrigin = globalThis.location?.origin || '';
-  const currentHostname = globalThis.location?.hostname || '';
-  const isKaen44Surface = isKaen44WebSurface();
-  const isGeneralSurface = isPublicGeneralCockpitHost(currentHostname);
-  const fallbackBase = (isKaen44Surface || isPublicKaen44WebHost(currentHostname))
-    ? DEFAULT_KAEN44_API_BASE
-    : (isGeneralSurface ? '' : DEFAULT_PROD_API_BASE);
-  const currentApiBase = normalizeApiBase(getCurrentApiBase());
-  const shouldUsePublicA11OAuthStart = !isKaen44Surface
-    && !isGeneralSurface
-    && isLocalWebHost(currentHostname)
-    && isLocalApiBaseCandidate(currentApiBase);
-  const googleBaseUrl = isGeneralSurface
-    ? ''
-    : isKaen44Surface
-    ? normalizeApiBase(fallbackBase || DEFAULT_KAEN44_API_BASE)
-    : normalizeApiBase(
-        shouldUsePublicA11OAuthStart
-          ? (A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || fallbackBase)
-          : (currentApiBase || A11_API_PROFILE_BASES.online || fallbackBase)
-      );
+  const googleBaseUrl = resolveCentralAuthBase();
   const target = new URL(
     buildApiUrlFromBase(googleBaseUrl, '/api/auth/google/start'),
-    currentOrigin || fallbackBase || 'https://a11.funesterie.me'
+    globalThis.location?.origin || googleBaseUrl || DEFAULT_FUNESTERIE_AUTH_BASE
   );
-  target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
+  target.searchParams.set('returnTo', resolveOAuthReturnTo(returnTo));
   target.searchParams.set('client', client || 'web');
   target.searchParams.set('scopeProfile', options.scopeProfile || 'basic');
-  if (isLocalWebHost(currentHostname)) {
-    target.searchParams.set('prompt', 'consent');
-  }
-  if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
+  target.searchParams.set('surface', resolveCurrentAuthSurface());
   return target.toString();
 }
 
@@ -1016,19 +1212,14 @@ export function startGoogleOAuth(returnTo = '/auth/success', client = 'web', opt
 }
 
 export function getMicrosoftOAuthStartUrl(returnTo = '/auth/success', client = 'web', options: OAuthStartOptions = {}) {
-  const currentHostname = globalThis.location?.hostname || '';
-  const isKaen44Surface = isKaen44WebSurface();
-  const isGeneralSurface = isPublicGeneralCockpitHost(currentHostname);
-  const msBaseUrl = isGeneralSurface
-    ? ''
-    : isKaen44Surface
-    ? normalizeApiBase(DEFAULT_KAEN44_API_BASE || 'https://k44.funesterie.me')
-    : normalizeApiBase(A11_API_PROFILE_BASES.online || DEFAULT_PROD_API_BASE || 'https://a11.funesterie.me');
+  const msBaseUrl = resolveCentralAuthBase();
   const target = new URL(buildApiUrlFromBase(msBaseUrl, '/api/auth/microsoft/start'), globalThis.location?.origin || msBaseUrl || 'https://a11.funesterie.me');
-  target.searchParams.set('returnTo', isKaen44Surface ? resolveOAuthReturnTo(returnTo) : (returnTo || '/auth/success'));
+  target.searchParams.set('returnTo', resolveOAuthReturnTo(returnTo));
   target.searchParams.set('client', client || 'web');
-  if (options.scopeProfile) target.searchParams.set('scopeProfile', options.scopeProfile);
-  if (isKaen44Surface) target.searchParams.set('surface', 'kaen44');
+  if (options.scopeProfile) {
+    target.searchParams.set('scopeProfile', options.scopeProfile);
+  }
+  target.searchParams.set('surface', resolveCurrentAuthSurface());
   return target.toString();
 }
 
@@ -1113,37 +1304,71 @@ export async function resetPassword(token: string, password: string) {
 }
 
 export async function logout(options: { allSessions?: boolean } = {}) {
-  const allSessions = options.allSessions === true;
+  const token = getAuthToken();
   try {
-    const headers = buildAuthHeaders('application/json');
-    await fetch(getApiUrl(allSessions ? '/api/auth/logout-all' : '/api/auth/logout'), {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    await fetch(getApiUrl(options.allSessions ? '/api/auth/logout-all' : '/api/auth/logout'), {
       method: 'POST',
-      credentials: 'include',
       headers,
-      body: JSON.stringify(allSessions ? { allSessions: true } : {}),
+      credentials: 'include',
     });
   } catch {
     // ignore logout transport issues
   }
-  clearAuthToken();
-  setAuthDisplayName('');
+  try {
+    localStorage.setItem(AUTH_GLOBAL_LOGOUT_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // ignore storage issues
+  }
+  clearClientAuthSession({
+    reason: options.allSessions ? 'A11_Logout_All' : 'A11_Logout',
+    message: options.allSessions ? 'Déconnexion globale demandée.' : 'Session courante déconnectée.',
+  });
 }
 
-export function logoutAllSessions() {
+export async function logoutAllSessions() {
   return logout({ allSessions: true });
 }
 
 export function isAuthInvalidError(error: unknown) {
-  const code = String((error as { code?: string } | null | undefined)?.code || "").trim();
+  const code = String((error as { code?: string } | null | undefined)?.code || '').trim();
   const status = Number((error as { status?: number } | null | undefined)?.status);
-  const message = String((error as { message?: string } | null | undefined)?.message || "").trim().toLowerCase();
-  return code === "A11_JWT_Invalid"
-    || code === "A11_JWT_Missing"
+  const message = String((error as { message?: string } | null | undefined)?.message || '').trim().toLowerCase();
+  return code === 'A11_JWT_Invalid'
+    || code === 'A11_JWT_Missing'
+    || code === 'A11_JWT_Revoked'
+    || code === 'A11_SESSION_REVOKED'
     || status === 401
-    || message.includes("session a11 invalide")
-    || message.includes("session révoquée")
-    || message.includes("session revoquee")
-    || message.includes("reconnecte-toi");
+    || message.includes('session a11 invalide')
+    || message.includes('session funesterie inactive')
+    || message.includes('session révoquée')
+    || message.includes('session revoquee');
+}
+
+export async function revokeAuthSession(sessionId: string) {
+  const sid = String(sessionId || '').trim();
+  if (!sid) throw new Error('Session manquante');
+  const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl(`/api/auth/sessions/${encodeURIComponent(sid)}`), {
+    method: 'DELETE',
+    headers,
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    if (res.status === 401 || data?.error === 'A11_SESSION_REVOKED') {
+      clearClientAuthSession({
+        reason: data?.error || 'A11_JWT_Invalid',
+        message: data?.message || `Session A11 invalide (${res.status})`,
+        status: res.status,
+      });
+    }
+    throw new Error(data?.message || data?.error || `Révocation impossible (${res.status})`);
+  }
+  return data;
 }
 
 function appendJwtHeaders(headers: Record<string, string>) {
@@ -1194,17 +1419,18 @@ async function throwIfAuthInvalidResponse(res: Response, tokenAtStart = '') {
     || errorCode
     || (!isLikelyHtmlDocument(text) ? text.trim() : '');
 
-  if (res.status === 401 || errorCode === 'A11_JWT_Invalid' || errorCode === 'A11_JWT_Missing') {
+  if (
+    res.status === 401
+    || errorCode === 'A11_JWT_Invalid'
+    || errorCode === 'A11_JWT_Missing'
+    || errorCode === 'A11_JWT_Revoked'
+    || errorCode === 'A11_SESSION_REVOKED'
+  ) {
     const currentToken = getAuthToken();
     if (!currentToken || currentToken === tokenAtStart) {
       clearClientAuthSession({
         reason: errorCode || 'A11_JWT_Invalid',
         message: message || `Session A11 invalide (${res.status})`,
-        status: res.status,
-      });
-    } else {
-      console.warn('[A11] stale authenticated request failure ignored after token rotation', {
-        reason: errorCode || 'A11_JWT_Invalid',
         status: res.status,
       });
     }
@@ -1468,10 +1694,13 @@ export async function chatWithVivy(
     files?: VivyChatFileAttachment[];
   }
 ): Promise<VivyStudioProductionResult> {
-  const res = await authFetch(getApiUrl('/api/vivy/studio/chat'), {
+  const res = await fetch(getApiUrl('/api/vivy/studio/chat'), {
     method: 'POST',
-    headers: buildAuthHeaders('application/json'),
-    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    credentials: 'omit',
     body: JSON.stringify({
       ...input,
       shareToken: undefined,
@@ -2412,7 +2641,7 @@ export async function chat(message: string, history: Msg[] = [], provider: Provi
     } catch (error) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       appendJwtHeaders(headers);
-      const res = await fetch(getApiUrl('/api/chat'), {
+      const res = await authFetch(getApiUrl('/api/chat'), {
         method: 'POST',
         headers,
         credentials: 'include',
@@ -3811,7 +4040,10 @@ export type EkkoStatusResponse = {
  * pour homogénéité avec le reste de l'API.
  */
 export async function fetchEkkoStatus(): Promise<EkkoStatusResponse> {
-  const res = await authFetch(getApiUrl('/api/ekko/status'), {
+  const statusUrl = isLocalDevSurface()
+    ? '/api/ekko/status'
+    : getApiUrl('/api/ekko/status');
+  const res = await authFetch(statusUrl, {
     headers: buildAuthHeaders(),
   });
 

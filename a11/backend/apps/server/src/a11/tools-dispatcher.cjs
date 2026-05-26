@@ -2542,7 +2542,6 @@ async function t_generate_png(args = {}) {
   let compiledState = null;
   if (!promptAlreadyCompiled) {
     const maskResolution = await buildCanonicalImageMaskFromText(title, {
-      allowCompatFallback: true,
       maskOptions: {
         ...(hasExplicitCanvas ? { width, height } : {}),
         steps: numInferenceSteps,

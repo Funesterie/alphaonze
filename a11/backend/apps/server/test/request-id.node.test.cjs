@@ -330,7 +330,7 @@ test('protected chat proxy bypasses short cache for special compiler image reque
   }
 });
 
-test('protected chat proxy honors statusCode from structured image canonicalization failures', async () => {
+test('protected chat proxy returns a diagnostic when the image canonicalizer is unavailable', async () => {
   await withServer(
     (app) => {
       app.use('/api', createProtectedChatProxyRouter({
@@ -361,17 +361,19 @@ test('protected chat proxy honors statusCode from structured image canonicalizat
     },
     async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        acceptAsyncImageJob: true,
         messages: [{ role: 'user', content: 'genere une image de pomme' }],
       }, {
         'X-Request-Id': 'req-proxy-canon-1',
       });
 
-      assert.equal(response.status, 503);
+      assert.equal(response.status, 200);
       assert.equal(response.headers.get('x-request-id'), 'req-proxy-canon-1');
-      assert.equal(json.requestId, 'req-proxy-canon-1');
-      assert.equal(json.error, 'image_request_canonicalizer_failed');
-      assert.deepEqual(json.details?.reasons, ['provided_structured_llm:structured_llm_unconfigured']);
-      assert.equal(json.details?.upstream?.status, null);
+      assert.equal(json.mode, 'image_canonicalizer_diagnostic');
+      assert.match(String(json.assistant || ''), /normalisation canonique LLM n'est pas disponible/i);
+      assert.deepEqual(json.diagnostic?.reasons, ['provided_structured_llm:structured_llm_unconfigured']);
+      assert.equal(json.diagnostic?.summary?.failedBecause, 'canonicalizer_unavailable');
+      assert.equal(json.jobId, undefined);
     }
   );
 });

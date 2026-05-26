@@ -66,6 +66,11 @@ function Test-AnyHttpOk {
 }
 
 function Start-PodmanMachineIfNeeded {
+  if ($env:A11_START_PODMAN -ne "1") {
+    Write-Step "Podman startup ignore: Docker/Node fallback actif (A11_START_PODMAN=1 pour legacy)."
+    return
+  }
+
   if (-not (Get-Command podman -ErrorAction SilentlyContinue)) {
     Write-Step "Podman introuvable dans le PATH."
     return
@@ -261,17 +266,30 @@ function Sync-A11MemoryRouter {
 
 function Start-A11Mcp {
   $script = Join-Path $A11McpRoot "scripts\Start-A11Mcp.ps1"
-  if (-not (Test-Path -LiteralPath $script)) {
-    Write-Step "Start-A11Mcp introuvable: $script"
-    return
-  }
 
   if (Test-HttpOk "http://127.0.0.1:8787/health") {
     Write-Step "A11 MCP local deja OK sur 8787."
   } else {
-    Write-Step "Demarrage A11 MCP + tunnel Cloudflare..."
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -WithTunnel 2>&1 |
-      ForEach-Object { Write-Step "a11mcp: $_" }
+    if ($env:A11_MCP_USE_PODMAN -eq "1" -and (Test-Path -LiteralPath $script)) {
+      Write-Step "Demarrage A11 MCP + tunnel Cloudflare..."
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -WithTunnel 2>&1 |
+        ForEach-Object { Write-Step "a11mcp: $_" }
+    } elseif ($env:A11_MCP_USE_PODMAN -eq "1") {
+      Write-Step "Start-A11Mcp introuvable: $script"
+    } else {
+      Write-Step "A11 MCP Podman ignore; fallback Node local privilegie."
+    }
+  }
+
+  if (-not (Test-HttpOk "http://127.0.0.1:8787/health")) {
+    $fallbackScript = Join-Path $A11McpRoot "scripts\Start-A11McpPublicFallback.ps1"
+    if (Test-Path -LiteralPath $fallbackScript) {
+      Write-Step "A11 MCP Podman indisponible; fallback Node local sur 8787..."
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $fallbackScript 2>&1 |
+        ForEach-Object { Write-Step "a11mcp-fallback: $_" }
+    } else {
+      Write-Step "Fallback A11 MCP introuvable: $fallbackScript"
+    }
   }
 
   if (Test-HttpOk "http://127.0.0.1:8787/health") {
@@ -299,8 +317,26 @@ function Start-EkkoIfNeeded {
 
   Write-Step "Demarrage Ekko..."
   try {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ekkoScript 2>&1 |
-      ForEach-Object { Write-Step "ekko: $_" }
+    $stdout = Join-Path $LogRoot "ekko-launch.stdout.log"
+    $stderr = Join-Path $LogRoot "ekko-launch.stderr.log"
+    $proc = Start-Process -FilePath "powershell.exe" `
+      -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$ekkoScript`"" `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $stdout `
+      -RedirectStandardError $stderr `
+      -PassThru
+    Start-Sleep -Seconds 4
+
+    $running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and $_.CommandLine -match "ekko\.config" } |
+      Select-Object -First 1
+    if ($running) {
+      Write-Step "Ekko OK pid=$($running.ProcessId), launcher pid=$($proc.Id)."
+    } elseif ($proc.HasExited) {
+      Write-Step "Ekko launcher termine code=$($proc.ExitCode), logs: $stdout / $stderr"
+    } else {
+      Write-Step "Ekko launcher encore actif pid=$($proc.Id), logs: $stdout / $stderr"
+    }
   } catch {
     Write-Step "Ekko start error: $($_.Exception.Message)"
   }
@@ -360,7 +396,11 @@ function Test-McpToolList {
 Write-Step "=== Funesterie autostart ==="
 Invoke-SourceUpdate
 Start-PodmanMachineIfNeeded
-Start-ContainerIfPresent "a11-neo4j-sync"
+if ($env:A11_START_LEGACY_NEO4J_SYNC -eq "1") {
+  Start-ContainerIfPresent "a11-neo4j-sync"
+} else {
+  Write-Step "Neo4j local dedie utilise; ancien conteneur a11-neo4j-sync ignore."
+}
 Start-A11Mcp
 Start-A11BackendIfNeeded
 Start-Kaen44BackendIfNeeded

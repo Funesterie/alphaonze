@@ -519,6 +519,7 @@ const { resolveBindHost } = require('./src/network/bind-config.cjs');
 const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
 const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
+const { createAuthSessionRegistry } = require('./src/auth/session-registry.cjs');
 const { hasFullAccess } = require('./src/auth/full-access.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
@@ -1461,6 +1462,12 @@ const localAuthStore = db
       filePath: path.join(PUBLIC_RUNTIME_ROOT, 'auth', 'local-users.json'),
       logger: console,
     });
+const authSessionRegistry = createAuthSessionRegistry({
+  db,
+  localAuthStore,
+  logger: console,
+  filePath: path.join(PUBLIC_RUNTIME_ROOT, 'auth', 'auth-sessions.json'),
+});
 
 if (db) {
   db.connect()
@@ -1715,6 +1722,23 @@ function normalizeTextForIntentMatching(value) {
     .toLowerCase();
 }
 
+function isExplicitImageGenerationUserText(value = '') {
+  const normalized = normalizeTextForIntentMatching(value);
+  if (!normalized) return false;
+
+  const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|fais moi|fais|make|generate|create|draw)\b/.test(normalized);
+  const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|avatar|artwork)\b/.test(normalized);
+  const searchCue = /\b(cherche|chercher|recherche|trouve|trouver|web|internet|google|image existante|deja existante|source)\b/.test(normalized);
+
+  return creationCue && imageCue && !searchCue;
+}
+
+function stripClarificationChoicePrefix(value = '') {
+  return String(value || '')
+    .replace(/^\s*(?:\d+[\).\s-]+|option\s+\d+\s*[:.-]?\s*)/i, '')
+    .trim();
+}
+
 function stripImageGenerationCommandPrefix(value = '') {
   return String(value || '')
     .replace(/^(?:peux[- ]?tu\s+)?(?:s(?:tp|il te plait|’il te plait|il te plaît)\s+)?/i, '')
@@ -1751,7 +1775,7 @@ function detectImagePromptAmbiguity(rawPrompt = '') {
 
   const colorPrompt = `${subject} de couleur ${color}${suffix ? ` ${suffix}` : ''}`.trim();
   const floralPrompt = `${subject}${suffix ? ` ${suffix}` : ''} entoure de ${color === 'orange' ? 'fruits oranges' : `${color}s`}`.trim();
-  const question = `Quand tu dis "${subject} ${color}", tu veux dire 1. ${subject} de couleur ${color} ou 2. ${subject} avec ${color === 'orange' ? 'des oranges' : `des ${color}s / fleurs`} ?`;
+  const question = `Quand tu dis "${subject} ${color}", tu veux la couleur ${color}, ou un decor avec ${color === 'orange' ? 'des oranges' : `des ${color}s / fleurs`} ?`;
 
   return {
     kind: 'image_generation',
@@ -1937,17 +1961,16 @@ function buildClarificationReply(question, options = [], meta = null) {
     ? options
       .map((entry) => {
         if (entry && typeof entry === 'object') {
-          return String(entry.promptLine || entry.label || '').trim();
+          return stripClarificationChoicePrefix(entry.label || entry.promptLine || '');
         }
-        return String(entry || '').trim();
+        return stripClarificationChoicePrefix(entry || '');
       })
       .filter(Boolean)
     : [];
   return [
     normalizedQuestion,
     normalizedRecommendation,
-    optionLines.length ? optionLines.join('\n') : '',
-    "Tu peux repondre juste par 1, 2, dire \"vas-y\", ou reformuler clairement ce que tu veux.",
+    optionLines.length ? `Je peux partir sur ${optionLines.join(' ou ')}. Dis-moi juste ce que tu veux.` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -5406,6 +5429,7 @@ const verifyJWT = createVerifyJWT({
   jwt,
   jwtSecret: JWT_SECRET,
   logger: console,
+  authSessionRegistry,
 });
 
 function requireFamilyAccess(req, res, next) {
@@ -6380,6 +6404,7 @@ app.use(createAuthRouter({
   emailService,
   crypto,
   normalizePublicAppUrl,
+  authSessionRegistry,
 }));
 
 app.use(createA11HistoryRouter({
@@ -6418,6 +6443,7 @@ const createKnowledgeConflictRouter = require('./src/routes/knowledge-conflict.c
 const createGitHubRouter = require('./src/routes/github.cjs');
 const createPublicMcpRouter = require('./src/routes/public-mcp.cjs');
 const createMcpClientRouter = require('./src/routes/mcp-client.cjs');
+const createMcpCockpitRouter = require('./src/routes/mcp-cockpit.cjs');
 const { createOAuthRouter } = require('./src/mcp-oauth/oauth-server.cjs');
 
 app.use('/api/checkpoints', verifyJWT);
@@ -6470,6 +6496,10 @@ app.use('/oauth', createOAuthRouter(express));
 console.log('[Server] MCP OAuth routes mounted under /oauth');
 app.use(createPublicMcpRouter());
 console.log('[Server] Public MCP routes mounted at /mcp, /.well-known/mcp and /api/mcp/status');
+const mcpCockpitRouter = createMcpCockpitRouter({ verifyJWT });
+app.use('/api/cockpit/mcp', mcpCockpitRouter);
+app.use('/cockpit/mcp', mcpCockpitRouter);
+console.log('[Server] Private MCP cockpit routes mounted under /api/cockpit/mcp and /cockpit/mcp');
 app.use('/api/mcp', verifyJWT, requireFamilyAccess, createMcpClientRouter());
 console.log('[Server] MCP client routes mounted under /api/mcp');
 app.use('/api', createSelfRewriteRouter({ verifyJWT }));
@@ -7239,7 +7269,7 @@ const _usageGuardAlerts = new Map();
 const USAGE_GUARD_ADMIN_EMAIL = String(
   process.env.A11_USAGE_GUARD_ADMIN_EMAIL
   || process.env.KAEN44_ADMIN_EMAIL
-  || 'cellaurojeffrey@gmail.com'
+  || 'funeste38@gmail.com'
 ).trim();
 const USAGE_GUARD_ALERT_COOLDOWN_MS = Number(process.env.A11_USAGE_GUARD_ALERT_COOLDOWN_MS || 5 * 60_000);
 
@@ -7384,6 +7414,17 @@ function readEmbeddedUiIndex(indexPath) {
   }
 }
 
+function getEmbeddedUiBuildId(indexPath) {
+  const configured = String(process.env.A11_WEB_BUILD_ID || process.env.BUILD_ID || '').trim();
+  if (configured) return configured.slice(0, 80);
+  try {
+    const stat = fs.statSync(indexPath);
+    return `web-${Math.floor(stat.mtimeMs)}`;
+  } catch (_) {
+    return 'web-unknown';
+  }
+}
+
 function getRequestSurfaceHost(req) {
   const raw = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
   return raw.replace(/:\d+$/, '').toLowerCase();
@@ -7401,15 +7442,15 @@ function resolveEmbeddedUiSurface(req) {
   }
 
   if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname)
-    || hostname === 'a11.funesterie.me') {
+    || hostname === 'a11.funesterie.me'
+    || hostname === 'funesterie.me'
+    || hostname === 'www.funesterie.me') {
     return 'a11';
   }
 
   if (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname)
     || product === 'kaen44'
     || product === 'k44'
-    || hostname === 'funesterie.me'
-    || hostname === 'www.funesterie.me'
     || hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
     return 'kaen44';
@@ -7419,7 +7460,43 @@ function resolveEmbeddedUiSurface(req) {
 }
 
 function rewriteEmbeddedUiIndexForSurface(html, surface) {
-  if (!html || surface !== 'kaen44') return html;
+  if (!html) return html;
+
+  if (surface === 'a11') {
+    return html
+      .replace(/<title>.*?<\/title>/i, '<title>Alphaonze</title>')
+      .replace(
+        /<meta name="description" content="[^"]*"\s*\/?>/i,
+        '<meta name="description" content="Alphaonze, aussi appele A11, est l application Funesterie pour le chat, les fichiers Google Drive autorises, la voix, la memoire et les outils connectes." />'
+      )
+      .replace(
+        /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
+        '<meta name="apple-mobile-web-app-title" content="Alphaonze" />'
+      )
+      .replace(/Navigation Kaen44/g, 'Navigation Alphaonze')
+      .replace(/Kaen44 - Assistante bureau Funesterie/g, 'Alphaonze')
+      .replace(/Ouvrir Kaen44/g, 'Ouvrir Alphaonze')
+      .replace(/Connexion Kaen44/g, 'Connexion Alphaonze')
+      .replace(/Relancer Kaen44/g, 'Relancer Alphaonze')
+      .replace(/Kaen44 par Funesterie/g, 'Alphaonze par Funesterie')
+      .replace(/>Kaen44</g, '>Alphaonze<')
+      .replace(/Avatar et logo Kaen44/g, 'Avatar et logo Alphaonze')
+      .replace(/Kaen44 aide/g, 'Alphaonze aide')
+      .replace(/Kaen44 peut/g, 'Alphaonze peut')
+      .replace(/Kaen44 propose/g, 'Alphaonze propose')
+      .replace(/<h1 style="margin:0 0 20px;font-size:clamp\(46px,7vw,92px\);line-height:\.92;letter-spacing:0;">Alphaonze<\/h1>/g,
+        '<h1 style="margin:0 0 20px;font-size:clamp(46px,7vw,92px);line-height:.92;letter-spacing:0;">Alphaonze</h1>')
+      .replace(
+        /Une assistante bureau claire, vocale et accessible pour organiser les documents,\s*traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien\./g,
+        'Alphaonze, aussi appele A11, est l application Funesterie qui connecte les utilisateurs a leur espace autorise pour le chat, les fichiers Google Drive, la voix, la memoire et les outils d agents.'
+      )
+      .replace(
+        /Une assistante bureau claire, vocale et accessible pour organiser les documents, traiter les fichiers Google Drive partages, suivre les factures et accompagner les projets du quotidien\./g,
+        'Alphaonze, aussi appele A11, est l application Funesterie qui connecte les utilisateurs a leur espace autorise pour le chat, les fichiers Google Drive, la voix, la memoire et les outils d agents.'
+      );
+  }
+
+  if (surface !== 'kaen44') return html;
 
   return html
     .replace(/<title>.*?<\/title>/i, '<title>Kaen44 - Assistante bureau Funesterie</title>')
@@ -7440,6 +7517,7 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
     const vivyIndex = path.join(webPublic, 'vivy', 'index.html');
     if (fs.existsSync(vivyIndex)) {
       res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(vivyIndex));
       return res.sendFile(vivyIndex);
     }
   }
@@ -7448,6 +7526,7 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
   if (!html) return res.sendFile(uiStatus.indexPath);
 
   res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(uiStatus.indexPath));
   return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface));
 }
 
@@ -7527,6 +7606,9 @@ try {
           };
           if (mimeMap[ext]) {
             res.setHeader('Content-Type', mimeMap[ext]);
+          }
+          if (filePath.includes(`${path.sep}assets${path.sep}`) && !filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           }
           // Pas de cache sur index.html — toujours revalider
           if (filePath.endsWith('index.html')) {
@@ -7735,23 +7817,60 @@ function sendEmbeddedUiIndex(req, res) {
   return res.status(200).json({ ok: true, service: 'a11-api' });
 }
 
+function sendEmbeddedUiStandalonePage(req, res, relativeIndexPath) {
+  const uiStatus = getEmbeddedUiStatus();
+  if (uiStatus.ready) {
+    const pagePath = path.join(webPublic, ...relativeIndexPath.split('/').filter(Boolean));
+    if (fs.existsSync(pagePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+      return res.sendFile(pagePath);
+    }
+  }
+
+  return sendEmbeddedUiIndex(req, res);
+}
+
+function sendEmbeddedUiPrivacyPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'privacy/index.html');
+}
+
+function sendEmbeddedUiTermsPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'terms/index.html');
+}
+
+function sendEmbeddedUiNossenAgentMemoryPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'nossen/agent-memory/index.html');
+}
+
+function sendEmbeddedUiNossenGrokPage(req, res) {
+  return sendEmbeddedUiStandalonePage(req, res, 'nossen/grok/index.html');
+}
+
 function sendEmbeddedUiRoot(req, res) {
   const hostname = getRequestSurfaceHost(req);
-  if (hostname === 'funesterie.me' || hostname === 'www.funesterie.me') {
-    return res.redirect(302, '/cockpit/');
-  }
-  if (hostname === 'k44.funesterie.me'
+  if (hostname === 'funesterie.me'
+    || hostname === 'www.funesterie.me'
+    || hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
-    return res.redirect(302, '/cockpit/');
+    return sendEmbeddedUiIndex(req, res);
   }
   return sendEmbeddedUiIndex(req, res);
 }
 
 app.get('/', sendEmbeddedUiRoot);
+app.get(['/privacy', '/privacy/', '/confidentialite', '/confidentialite/'], sendEmbeddedUiPrivacyPage);
+app.get(['/terms', '/terms/', '/conditions', '/conditions/', '/cgu', '/cgu/'], sendEmbeddedUiTermsPage);
+app.get(['/nossen/agent-memory', '/nossen/agent-memory/', '/nossen/prior-art', '/nossen/prior-art/'], sendEmbeddedUiNossenAgentMemoryPage);
+app.get(['/nossen/grok', '/nossen/grok/', '/nossen/world-brief', '/nossen/world-brief/', '/nossen/frontier-ai', '/nossen/frontier-ai/'], sendEmbeddedUiNossenGrokPage);
+app.get(['/k44/privacy', '/k44/privacy/', '/kaen44/privacy', '/kaen44/privacy/'], sendEmbeddedUiPrivacyPage);
+app.get(['/k44/terms', '/k44/terms/', '/kaen44/terms', '/kaen44/terms/'], sendEmbeddedUiTermsPage);
 app.get([
   '/auth/success',
   '/login',
   '/cockpit',
+  '/cockpit/',
+  '/cockpit/etat',
+  '/cockpit/auth/success',
   '/agents',
   '/agents/',
   '/app',
@@ -7788,11 +7907,20 @@ app.get([
   '/kaen44/reset-password',
   '/access/auth',
   '/account',
+  '/account/',
+  '/compte',
+  '/compte/',
+  '/contact',
+  '/contact/',
   '/subscription',
   '/subscription/success',
   '/subscription/cancel',
   '/privacy',
   '/privacy/',
+  '/conditions',
+  '/conditions/',
+  '/cgu',
+  '/cgu/',
   '/terms',
   '/terms/',
   '/vivy',
@@ -10152,6 +10280,99 @@ function buildMiniCerbereDegradedReply() {
   ].join(' ');
 }
 
+function isQflushUnavailableError(error_) {
+  const pieces = [
+    error_?.error,
+    error_?.code,
+    error_?.message,
+    error_?.upstream?.body,
+    error_?.response?.data,
+  ];
+  const text = pieces
+    .map((piece) => {
+      if (!piece) return '';
+      if (typeof piece === 'string') return piece;
+      try {
+        return JSON.stringify(piece);
+      } catch {
+        return String(piece);
+      }
+    })
+    .join(' ')
+    .toLowerCase();
+
+  return /no qflush executable|no qflush module|qflush module candidate|qflush_unreachable|local module flow adapter unavailable|package subpath .*qflush|no "exports" main defined|no exports main defined|compatible module found/.test(text);
+}
+
+async function runApiChatFallbackForQflush(req, requestId) {
+  const body = req.body || {};
+  const requestMessages = buildRequestMessagesFromBody(body);
+  const latestUserMessage = getLatestUserMessage(body)
+    || String(body.message || body.prompt || '').trim()
+    || buildPromptFromMessages(requestMessages);
+
+  if (!String(latestUserMessage || '').trim()) {
+    throw new Error('missing_fallback_message');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Request-Id': requestId,
+  };
+  const authToken = getAuthTokenFromRequest(req);
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+
+  const fallbackBody = {
+    message: latestUserMessage,
+    prompt: latestUserMessage,
+    messages: requestMessages,
+    conversationId: body.conversationId || body.convId || body.sessionId || null,
+    userId: req.user?.id || body._user || body.userId || null,
+    sourceImageUrl: body.sourceImageUrl || body.source_image_url || body.imageUrl || null,
+  };
+
+  const response = await fetch(`http://127.0.0.1:${PORT}/api/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(fallbackBody),
+    signal: AbortSignal.timeout(Number(process.env.A11_QFLUSH_CHAT_FALLBACK_TIMEOUT_MS || 90000) || 90000),
+  });
+
+  const raw = await response.text();
+  let data = null;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { raw };
+  }
+
+  if (!response.ok) {
+    const error_ = new Error(String(data?.message || data?.error || `fallback_chat_${response.status}`));
+    error_.status = response.status;
+    error_.payload = data;
+    throw error_;
+  }
+
+  const assistant = normalizeAssistantOutput(
+    data?.assistant
+    || extractAssistantText(data)
+    || data?.message
+    || data?.content
+    || ''
+  );
+
+  if (!assistant) {
+    throw new Error('empty_fallback_chat_reply');
+  }
+
+  return {
+    data,
+    assistant,
+  };
+}
+
 async function loadUserMemoryContext(userId, latestUserMessage, conversationId) {
   const normalizedUserId = String(userId || '').trim();
   const normalizedLatestMessage = String(latestUserMessage || '').trim();
@@ -11329,15 +11550,24 @@ async function tryRunDirectSafeUserIntent({ body, userId, conversationId, reques
     })
     : null;
   const semanticDecision = semanticAnalysis?.decision || null;
-  const semanticSelectedIntentType = String(
+  const explicitImageGenerationRequest = isExplicitImageGenerationUserText(latestUserMessage);
+  let semanticSelectedIntentType = String(
     forcedSemanticIntentType
     || semanticDecision?.selectedIntentType
     || semanticAnalysis?.summary?.selectedIntentType
     || semanticAnalysis?.topIntents?.[0]?.type
     || ''
   ).trim();
+  if (!forcedSemanticIntentType && explicitImageGenerationRequest) {
+    semanticSelectedIntentType = 'image.generate';
+  }
 
-  if (allowLegacyWordAutomation && !forcedSemanticIntentType && semanticDecision?.shouldClarify) {
+  if (
+    allowLegacyWordAutomation
+    && !forcedSemanticIntentType
+    && semanticDecision?.shouldClarify
+    && !explicitImageGenerationRequest
+  ) {
     const pending = normalizedUserId
       ? await upsertPendingClarification({
         userId: normalizedUserId,
@@ -11891,6 +12121,33 @@ async function proxyQflushChat(req, res) {
     return res.status(200).json(data);
   } catch (err) {
     console.error('[A11] Error proxying chat via QFLUSH:', requestId, err && (err.message || err.toString()));
+    if (isQflushUnavailableError(err)) {
+      try {
+        const fallback = await runApiChatFallbackForQflush(req, requestId);
+        const userId = String(req.user?.id || req.body?._user || '').trim();
+        const conversationId = normalizeConversationId(req.body?.conversationId || req.body?.convId || req.body?.sessionId);
+        const content = fallback.assistant;
+        const data = toSimpleAssistantCompletion(content, 'a11-chat-fallback');
+        data.qflushFallback = {
+          ok: true,
+          mode: fallback.data?.mode || null,
+          reason: truncateText(String(err?.message || err || 'qflush_unavailable'), 300),
+        };
+        if (fallback.data?.taskId) {
+          data.taskId = fallback.data.taskId;
+        }
+        if (fallback.data?.a11Agent) {
+          data.a11Agent = fallback.data.a11Agent;
+        }
+        if (userId && content) {
+          await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
+        }
+        appendChatTurnLogSafe(req.body, data, 'a11-chat-fallback', userId);
+        return res.status(200).json(data);
+      } catch (fallbackError) {
+        console.warn('[A11] QFLUSH chat fallback failed:', fallbackError?.message || fallbackError);
+      }
+    }
     const localProviderFallbackBody = {
       ...(req.body || {}),
       a11SkipQflush: true,
@@ -12461,7 +12718,7 @@ async function proxyChatToOpenAI(req, res) {
 }
 
 // Canonical OpenAI-like route
-app.post('/v1/chat/completions', async (req, res) => {
+app.post('/v1/chat/completions', verifyJWT, async (req, res) => {
   const requestId = ensureRequestId(req, res);
   try {
     const latestUserMessage = getLatestUserMessage(req.body || {});

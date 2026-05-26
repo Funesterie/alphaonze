@@ -50,6 +50,10 @@ test('ecosystem scope maps repos modules contracts and access profiles', () => {
   assert.equal(scope.summary.curatedRepoProfiles >= 2, true);
   assert.ok(scope.localModules.some((item) => item.id === 'a11mcp-bridge'));
   assert.ok(scope.contracts.some((item) => item.id === 'ecosystem-scope-json'));
+  assert.ok(scope.packages.some((item) => item.name === '@nossen/allmight'));
+  assert.ok(scope.packages.some((item) => item.name === '@nossen/qflush-runner'));
+  assert.ok(scope.packages.some((item) => item.name === '@nossen/scentgate'));
+  assert.equal(scope.packages.find((item) => item.name === '@nossen/qflush')?.publishedVersion, '1.0.1');
   assert.ok(scope.semanticTools.some((item) => item.id === 'ecosystem-scope'));
   assert.ok(scope.accessProfiles.some((item) => item.id === 'a11mcp-chatgpt-public'));
   assert.ok(scope.identityLayer.profiles.some((item) => item.id === 'identity:a11'));
