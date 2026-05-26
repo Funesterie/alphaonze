@@ -2,6 +2,8 @@
 // --- Express setup: always at the very top ---
 const express = require('express');
 const app = express();
+const { installCrawlerVisibilityHeaders } = require('./lib/crawler-visibility.cjs');
+installCrawlerVisibilityHeaders(app);
 const { execFile } = require('node:child_process');
 const { createFileStorage } = require('./lib/file-storage.cjs');
 let fileStorage = null;
