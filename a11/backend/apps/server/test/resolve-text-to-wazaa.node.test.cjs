@@ -101,6 +101,8 @@ test('resolveTranslationConfig auto-wires the declared production OpenAI-compati
     OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
     A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENROUTER_API_KEY: process.env.A11_OPENROUTER_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     A11_OPENAI_MODEL: process.env.A11_OPENAI_MODEL,
     OPENAI_MODEL: process.env.OPENAI_MODEL,
   };
@@ -115,7 +117,9 @@ test('resolveTranslationConfig auto-wires the declared production OpenAI-compati
   process.env.A11_OPENAI_BASE_URL = '';
   process.env.OPENAI_BASE_URL = 'https://openrouter.ai/api/v1';
   process.env.A11_OPENAI_API_KEY = '';
-  process.env.OPENAI_API_KEY = 'prod-openrouter-test-key';
+  process.env.OPENAI_API_KEY = 'generic-openai-test-key';
+  process.env.A11_OPENROUTER_API_KEY = '';
+  process.env.OPENROUTER_API_KEY = 'prod-openrouter-test-key';
   process.env.A11_OPENAI_MODEL = '';
   process.env.OPENAI_MODEL = 'meta-llama/llama-3.3-70b-instruct';
 
@@ -125,6 +129,7 @@ test('resolveTranslationConfig auto-wires the declared production OpenAI-compati
     assert.equal(config.baseUrl, 'https://openrouter.ai/api/v1');
     assert.equal(config.apiKey, 'prod-openrouter-test-key');
     assert.equal(config.model, 'meta-llama/llama-3.3-70b-instruct');
+    assert.equal(config.attachNezToken, false);
     assert.equal(config.isConfigured, true);
   } finally {
     process.env.A11_WAZAA_LLM_ENRICH = previous.A11_WAZAA_LLM_ENRICH;
@@ -138,8 +143,55 @@ test('resolveTranslationConfig auto-wires the declared production OpenAI-compati
     process.env.OPENAI_BASE_URL = previous.OPENAI_BASE_URL;
     process.env.A11_OPENAI_API_KEY = previous.A11_OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
+    process.env.A11_OPENROUTER_API_KEY = previous.A11_OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = previous.OPENROUTER_API_KEY;
     process.env.A11_OPENAI_MODEL = previous.A11_OPENAI_MODEL;
     process.env.OPENAI_MODEL = previous.OPENAI_MODEL;
+  }
+});
+
+test('resolveTranslationConfig supports OpenRouter provider with only the scoped OpenRouter key', () => {
+  const previous = {
+    A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    OLLAMA_BASE: process.env.OLLAMA_BASE,
+    A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
+    A11_TRANSLATION_ALLOW_GENERIC_OPENAI: process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI,
+    A11_LLM_PROVIDER: process.env.A11_LLM_PROVIDER,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    A11_OPENROUTER_API_KEY: process.env.A11_OPENROUTER_API_KEY,
+  };
+
+  process.env.A11_TRANSLATION_BASE_URL = '';
+  process.env.LLM_ROUTER_URL = '';
+  process.env.OLLAMA_BASE = '';
+  setEnv('A11_TRANSLATION_API_KEY', '');
+  process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = '';
+  process.env.A11_LLM_PROVIDER = 'openrouter';
+  process.env.OPENAI_BASE_URL = 'https://openrouter.ai/api/v1';
+  process.env.OPENAI_API_KEY = '';
+  process.env.OPENROUTER_API_KEY = 'openrouter-only-test-key';
+  process.env.A11_OPENROUTER_API_KEY = '';
+
+  try {
+    assert.equal(isLlmEnrichmentEnabled(), true);
+    const config = resolveTranslationConfig();
+    assert.equal(config.url, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(config.apiKey, 'openrouter-only-test-key');
+    assert.equal(config.isConfigured, true);
+  } finally {
+    process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
+    process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.OLLAMA_BASE = previous.OLLAMA_BASE;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
+    process.env.A11_TRANSLATION_ALLOW_GENERIC_OPENAI = previous.A11_TRANSLATION_ALLOW_GENERIC_OPENAI;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
+    process.env.OPENAI_BASE_URL = previous.OPENAI_BASE_URL;
+    process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
+    process.env.OPENROUTER_API_KEY = previous.OPENROUTER_API_KEY;
+    process.env.A11_OPENROUTER_API_KEY = previous.A11_OPENROUTER_API_KEY;
   }
 });
 
@@ -220,6 +272,52 @@ test('resolveTranslationConfig prefers Cerbere router and does not require Autho
     process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
     setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
     process.env.A11_OLLAMA_PRIMARY_MODEL = previous.A11_OLLAMA_PRIMARY_MODEL;
+  }
+});
+
+test('resolveTranslationConfig attaches server NEZ token only to configured structured-llm routers', () => {
+  const previous = {
+    A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
+    NEZ_SERVICE_TOKEN: process.env.NEZ_SERVICE_TOKEN,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    A11_LLM_PROVIDER: process.env.A11_LLM_PROVIDER,
+  };
+
+  process.env.A11_TRANSLATION_BASE_URL = '';
+  process.env.LLM_ROUTER_URL = 'https://cerbere.funesterie.me';
+  setEnv('A11_TRANSLATION_API_KEY', '');
+  process.env.NEZ_SERVICE_TOKEN = 'server-nez-test-token';
+  process.env.OPENAI_BASE_URL = '';
+  process.env.OPENAI_API_KEY = '';
+  process.env.OPENROUTER_API_KEY = '';
+  process.env.A11_LLM_PROVIDER = '';
+
+  try {
+    const routerConfig = resolveTranslationConfig();
+    assert.equal(routerConfig.nezToken, 'server-nez-test-token');
+    assert.equal(routerConfig.attachNezToken, true);
+
+    process.env.LLM_ROUTER_URL = '';
+    process.env.A11_LLM_PROVIDER = 'openrouter';
+    process.env.OPENAI_BASE_URL = 'https://openrouter.ai/api/v1';
+    process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+
+    const openRouterConfig = resolveTranslationConfig();
+    assert.equal(openRouterConfig.nezToken, 'server-nez-test-token');
+    assert.equal(openRouterConfig.attachNezToken, false);
+  } finally {
+    process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
+    process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
+    process.env.NEZ_SERVICE_TOKEN = previous.NEZ_SERVICE_TOKEN;
+    process.env.OPENAI_BASE_URL = previous.OPENAI_BASE_URL;
+    process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
+    process.env.OPENROUTER_API_KEY = previous.OPENROUTER_API_KEY;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
   }
 });
 
