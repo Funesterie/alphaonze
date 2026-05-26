@@ -937,10 +937,35 @@ function shouldUseCookieOnlyAuthSessionProbe() {
     if (hostname !== 'funesterie.me' && hostname !== 'www.funesterie.me') return false;
     const pathname = String(globalThis.location?.pathname || '/').toLowerCase();
     return pathname === '/'
-      || /^\/(?:home|accueil|agents|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
+      || /^\/(?:home|accueil|agents|architecture|carte|graph|etat|cockpit|compte|contact|privacy|terms|login)(?:\/|$)/.test(pathname);
   } catch {
     return false;
   }
+}
+
+function isFunesterieSessionHost() {
+  try {
+    const hostname = String(globalThis.location?.hostname || '').trim().toLowerCase();
+    return hostname === 'funesterie.me' || hostname.endsWith('.funesterie.me');
+  } catch {
+    return false;
+  }
+}
+
+function hasAuthorizationHeader(headers?: HeadersInit) {
+  if (!headers) return false;
+  try {
+    return new Headers(headers).has('authorization');
+  } catch {
+    return false;
+  }
+}
+
+function stripAuthorizationHeader(headers?: HeadersInit) {
+  const next = new Headers(headers || undefined);
+  next.delete('authorization');
+  next.delete('Authorization');
+  return next;
 }
 
 type OAuthStartOptions = {
@@ -950,15 +975,47 @@ type OAuthStartOptions = {
 export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   const headers: Record<string, string> = {};
   const tokenAtStart = getAuthToken();
-  if (tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe()) {
+  const usedBearer = !!tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe();
+  if (usedBearer) {
     headers.Authorization = `Bearer ${tokenAtStart}`;
   }
-  const res = await fetch(getApiUrl('/api/auth/me'), {
+  let res = await fetch(getApiUrl('/api/auth/me'), {
     method: 'GET',
     headers,
     credentials: 'include',
   });
-  const data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
+  let data: AuthSessionResponse = await res.json().catch(() => ({ ok: false }));
+  if (
+    (!res.ok || data?.ok === false)
+    && usedBearer
+    && isFunesterieSessionHost()
+    && (
+      res.status === 401
+      || data?.error === 'A11_JWT_Invalid'
+      || data?.error === 'A11_SESSION_REVOKED'
+    )
+  ) {
+    const retryRes = await fetch(getApiUrl('/api/auth/me'), {
+      method: 'GET',
+      headers: {},
+      credentials: 'include',
+    });
+    const retryData: AuthSessionResponse = await retryRes.json().catch(() => ({ ok: false }));
+    if (retryRes.ok && retryData?.ok !== false) {
+      if (retryData.token) {
+        setAuthToken(retryData.token);
+      } else {
+        clearAuthToken();
+      }
+      if (retryData?.authenticated || retryData?.user) {
+        setAuthUserProfile(retryData?.user);
+        setAuthDisplayName(retryData?.user?.username || retryData?.user?.email || '');
+      }
+      return retryData;
+    }
+    res = retryRes;
+    data = retryData;
+  }
   if (!res.ok || data?.ok === false) {
     if (res.status === 401 || data?.error === 'A11_JWT_Invalid' || data?.error === 'A11_SESSION_REVOKED') {
       const currentToken = getAuthToken();
@@ -1451,6 +1508,24 @@ async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     credentials: 'include',
     ...init,
   });
+  if (
+    res.status === 401
+    && tokenAtStart
+    && isFunesterieSessionHost()
+    && hasAuthorizationHeader(init?.headers)
+  ) {
+    const retry = await fetch(input, {
+      ...init,
+      credentials: 'include',
+      headers: stripAuthorizationHeader(init?.headers),
+    });
+    if (retry.ok) {
+      clearAuthToken();
+      return retry;
+    }
+    await throwIfAuthInvalidResponse(retry, tokenAtStart);
+    return retry;
+  }
   await throwIfAuthInvalidResponse(res, tokenAtStart);
   return res;
 }

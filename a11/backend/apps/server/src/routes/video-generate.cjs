@@ -14,6 +14,34 @@ function normalizeProxyUrl(rawValue = '') {
   return value ? value.replace(/\/+$/, '') : '';
 }
 
+function firstConfiguredToken(...values) {
+  for (const value of values) {
+    const token = String(value || '').split(/[\s,]+/).map((item) => item.trim()).find(Boolean);
+    if (token) return token;
+  }
+  return '';
+}
+
+function buildAiServiceAuthHeaders() {
+  const adminToken = firstConfiguredToken(
+    process.env.NEZ_ADMIN_TOKEN,
+    process.env.A11_NEZ_ADMIN_TOKEN,
+    process.env.NEZ_SERVICE_TOKEN,
+    process.env.A11_NEZ_SERVICE_TOKEN
+  );
+  const serviceToken = adminToken || firstConfiguredToken(
+    process.env.NEZ_ALLOWED_TOKEN,
+    process.env.NEZ_ALLOWED_TOKENS,
+    process.env.NEZ_TOKENS,
+    process.env.NEZ_TOKEN,
+    process.env.A11_NEZ_TOKEN
+  );
+  const headers = {};
+  if (serviceToken) headers['x-nez-token'] = serviceToken;
+  if (adminToken) headers['x-nez-admin-token'] = adminToken;
+  return headers;
+}
+
 function resolveVideoProxyUrl() {
   return normalizeProxyUrl(
     process.env.A11_VIDEO_PROXY_URL
@@ -69,16 +97,18 @@ function shouldUseEmergencyVideoFirst(body = {}) {
   if (body?.disableEmergencyVideo === true || isTruthy(body?.disableEmergencyVideo)) return false;
   if (body?.emergencyVideo === true || isTruthy(body?.emergencyVideo)) return true;
   const configured = process.env.A11_VIDEO_EMERGENCY_MODE || process.env.A11_EMERGENCY_MEDIA_MODE;
+  if (configured === undefined || String(configured || '').trim() === '') return false;
   if (isFalsey(configured)) return false;
   if (isTruthy(configured)) return true;
-  return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+  return false;
 }
 
 function shouldFallbackToEmergencyVideo(body = {}) {
   if (body?.disableEmergencyVideo === true || isTruthy(body?.disableEmergencyVideo)) return false;
   const configured = process.env.A11_VIDEO_EMERGENCY_FALLBACK;
+  if (configured === undefined || String(configured || '').trim() === '') return false;
   if (isFalsey(configured)) return false;
-  return true;
+  return isTruthy(configured);
 }
 
 function isAsyncVideoJobRequested(body = {}) {
@@ -504,6 +534,7 @@ function createVideoGenerateRouter(overrides = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...buildAiServiceAuthHeaders(),
       },
       body: JSON.stringify(proxyBody),
       signal: AbortSignal.timeout(resolveVideoProxyTimeoutMs()),

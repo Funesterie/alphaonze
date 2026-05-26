@@ -51,6 +51,22 @@ test('generateSdInternal preserves prebuilt prompts without re-enriching them', 
 });
 
 test('generateSdInternal forwards only strong admin headers to the SD proxy', async () => {
+  const previousEnv = {
+    NEZ_ADMIN_TOKEN: process.env.NEZ_ADMIN_TOKEN,
+    A11_NEZ_ADMIN_TOKEN: process.env.A11_NEZ_ADMIN_TOKEN,
+    NEZ_SERVICE_TOKEN: process.env.NEZ_SERVICE_TOKEN,
+    A11_NEZ_SERVICE_TOKEN: process.env.A11_NEZ_SERVICE_TOKEN,
+    NEZ_ALLOWED_TOKEN: process.env.NEZ_ALLOWED_TOKEN,
+    NEZ_ALLOWED_TOKENS: process.env.NEZ_ALLOWED_TOKENS,
+    NEZ_TOKENS: process.env.NEZ_TOKENS,
+    NEZ_TOKEN: process.env.NEZ_TOKEN,
+    A11_NEZ_TOKEN: process.env.A11_NEZ_TOKEN,
+  };
+  process.env.NEZ_ADMIN_TOKEN = 'server-admin-token';
+  for (const key of Object.keys(previousEnv)) {
+    if (key !== 'NEZ_ADMIN_TOKEN') delete process.env[key];
+  }
+
   let capturedHeaders = null;
   const { generateSdInternal } = createSdToolsRouter({
     fetch: async (_url, options = {}) => {
@@ -70,27 +86,34 @@ test('generateSdInternal forwards only strong admin headers to the SD proxy', as
     resolveSdScriptPath: () => '',
   });
 
-  const response = await generateSdInternal({
-    req: {
-      headers: {
-        authorization: 'Bearer jwt-token',
-        'x-nez-admin': 'true',
-        'x-nez-token': 'legacy-token',
-        'x-nez-admin-token': 'shared-admin-token',
+  try {
+    const response = await generateSdInternal({
+      req: {
+        headers: {
+          authorization: 'Bearer user-jwt-token',
+          'x-nez-admin': 'true',
+          'x-nez-token': 'legacy-client-token',
+          'x-nez-admin-token': 'client-admin-token',
+        },
       },
-    },
-    prompt: 'cinematic knight frame',
-    body: {
       prompt: 'cinematic knight frame',
-      prompt_prebuilt: true,
-    },
-  });
+      body: {
+        prompt: 'cinematic knight frame',
+        prompt_prebuilt: true,
+      },
+    });
 
-  assert.equal(response.ok, true);
-  assert.equal(capturedHeaders.authorization, 'Bearer jwt-token');
-  assert.equal(capturedHeaders['x-nez-admin-token'], 'shared-admin-token');
-  assert.equal(Object.hasOwn(capturedHeaders, 'x-nez-admin'), false);
-  assert.equal(Object.hasOwn(capturedHeaders, 'x-nez-token'), false);
+    assert.equal(response.ok, true);
+    assert.equal(Object.hasOwn(capturedHeaders, 'authorization'), false);
+    assert.equal(capturedHeaders['x-nez-admin-token'], 'server-admin-token');
+    assert.equal(capturedHeaders['x-nez-token'], 'server-admin-token');
+    assert.equal(Object.hasOwn(capturedHeaders, 'x-nez-admin'), false);
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('generateSdInternal preserves SD3 multi-prompt payload layers', async () => {

@@ -40,6 +40,8 @@ function shouldUseConfiguredOpenAiCompatibleRuntime(env = process.env) {
   return Boolean(
     normalizeEnvValue(env.A11_OPENAI_API_KEY)
     || normalizeEnvValue(env.OPENAI_API_KEY)
+    || normalizeEnvValue(env.A11_OPENROUTER_API_KEY)
+    || normalizeEnvValue(env.OPENROUTER_API_KEY)
   );
 }
 
@@ -107,6 +109,18 @@ function isLocalStructuredLlmBaseUrl(value = '', env = process.env) {
   );
 }
 
+function shouldAttachNezTokenToStructuredLlm(baseUrl = '') {
+  const normalized = normalizeBaseUrl(baseUrl).toLowerCase();
+  if (!normalized) return false;
+  if (isRouterLikeBaseUrl(normalized) || isLocalStructuredLlmBaseUrl(normalized)) return true;
+  return (
+    normalized.includes('.funesterie.me')
+    || normalized.includes('funesterie.local')
+    || normalized.includes('/nez')
+    || normalized.includes('cerbere')
+  );
+}
+
 const WAZAA_TRANSLATE_SYSTEM_PROMPT = `Je suis un analyseur d'intention structuré pour A11.
 Je reçois un message utilisateur en français.
 Je dois :
@@ -168,14 +182,19 @@ function resolveTranslationConfig() {
     : '';
   const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || localStructuredLlmBaseUrl || genericOpenAiBaseUrl || '';
   const url = buildChatCompletionsUrl(baseUrl);
+  const isOpenRouterBaseUrl = /openrouter\.ai/i.test(baseUrl);
+  const openRouterApiKey = isOpenRouterBaseUrl
+    ? normalizeEnvValue(process.env.A11_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || '')
+    : '';
 
   const apiKey = (
-    process.env.A11_TRANSLATION_API_KEY
+    normalizeEnvValue(process.env.A11_TRANSLATION_API_KEY)
+    || openRouterApiKey
     || (allowGenericOpenAiFallback
       ? (
-        process.env.A11_OPENAI_API_KEY
-        || process.env.OPENAI_API_KEY
-        || (/groq\.com/i.test(baseUrl) ? process.env.GROQ_API_KEY : '')
+        normalizeEnvValue(process.env.A11_OPENAI_API_KEY)
+        || normalizeEnvValue(process.env.OPENAI_API_KEY)
+        || (/groq\.com/i.test(baseUrl) ? normalizeEnvValue(process.env.GROQ_API_KEY) : '')
       )
       : '')
     || ''
@@ -203,12 +222,20 @@ function resolveTranslationConfig() {
     || 'gemma4:e4b'
   );
 
-  const nezToken = (
+  const rawNezToken = normalizeEnvValue(
     process.env.A11_TRANSLATION_NEZ_TOKEN
+    || process.env.NEZ_ADMIN_TOKEN
+    || process.env.A11_NEZ_ADMIN_TOKEN
+    || process.env.NEZ_SERVICE_TOKEN
+    || process.env.A11_NEZ_SERVICE_TOKEN
     || process.env.NEZ_ALLOWED_TOKEN
+    || process.env.NEZ_ALLOWED_TOKENS
     || process.env.NEZ_TOKENS
+    || process.env.NEZ_TOKEN
+    || process.env.A11_NEZ_TOKEN
     || ''
   );
+  const attachNezToken = Boolean(rawNezToken && shouldAttachNezTokenToStructuredLlm(baseUrl));
 
   return {
     url,
@@ -217,7 +244,8 @@ function resolveTranslationConfig() {
     model,
     allowAnonymous,
     usesRouterLikeBaseUrl,
-    nezToken,
+    nezToken: rawNezToken,
+    attachNezToken,
     isConfigured: Boolean(url && (allowAnonymous || apiKey)),
   };
 }
@@ -255,9 +283,9 @@ function logStructuredLlmDispatch(traceMeta = {}) {
 }
 
 function isLlmEnrichmentEnabled() {
-  const explicit = process.env.A11_WAZAA_LLM_ENRICH;
-  if (explicit !== undefined && explicit !== '') {
-    return ['1', 'true', 'yes', 'on'].includes(String(explicit).trim().toLowerCase());
+  const explicit = normalizeEnvValue(process.env.A11_WAZAA_LLM_ENRICH);
+  if (explicit) {
+    return isTruthyEnv(explicit);
   }
   const config = resolveTranslationConfig();
   return config.isConfigured;
@@ -346,7 +374,7 @@ async function callStructuredLlmJson({
     headers['X-A11-Structured-Route'] = traceMeta.route;
     headers['X-A11-Structured-Origin'] = 'resolve-text-to-wazaa';
   }
-  if (config.nezToken) {
+  if (config.nezToken && config.attachNezToken !== false) {
     headers['X-NEZ-TOKEN'] = config.nezToken;
   }
 

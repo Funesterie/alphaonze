@@ -71,6 +71,61 @@ function defaultFetch(...args) {
   return import('node-fetch').then((mod) => mod.default(...args));
 }
 
+function firstConfiguredToken(...values) {
+  for (const value of values) {
+    const token = String(value || '').split(/[\s,]+/).map((item) => item.trim()).find(Boolean);
+    if (token) return token;
+  }
+  return '';
+}
+
+function buildAiServiceAuthHeaders() {
+  const adminToken = firstConfiguredToken(
+    process.env.NEZ_ADMIN_TOKEN,
+    process.env.A11_NEZ_ADMIN_TOKEN,
+    process.env.NEZ_SERVICE_TOKEN,
+    process.env.A11_NEZ_SERVICE_TOKEN
+  );
+  const serviceToken = adminToken || firstConfiguredToken(
+    process.env.NEZ_ALLOWED_TOKEN,
+    process.env.NEZ_ALLOWED_TOKENS,
+    process.env.NEZ_TOKENS,
+    process.env.NEZ_TOKEN,
+    process.env.A11_NEZ_TOKEN
+  );
+  const headers = {};
+  if (serviceToken) headers['x-nez-token'] = serviceToken;
+  if (adminToken) headers['x-nez-admin-token'] = adminToken;
+  return headers;
+}
+
+function redactHeadersForLog(headers = {}) {
+  const output = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    const normalizedKey = String(key || '').toLowerCase();
+    if (/authorization|cookie|token|secret|api[-_]?key|session/.test(normalizedKey)) {
+      output[key] = '[redacted]';
+      continue;
+    }
+    const text = Array.isArray(value) ? value.join(', ') : String(value ?? '');
+    output[key] = text.length > 240 ? `${text.slice(0, 240)}...` : text;
+  }
+  return output;
+}
+
+function summarizeGenerateSdBodyForLog(body = {}) {
+  const payload = body && typeof body === 'object' ? body : {};
+  const prompt = String(payload.prompt || payload.message || '').trim();
+  return {
+    keys: Object.keys(payload).slice(0, 40),
+    promptChars: prompt.length,
+    width: payload.width || payload.w || null,
+    height: payload.height || payload.h || null,
+    hasInitImage: Boolean(payload.initImage || payload.init_image || payload.image || payload.imageBase64),
+    mode: payload.mode || payload.pipelineMode || payload.pipeline_mode || null,
+  };
+}
+
 function normalizeLookup(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -1250,10 +1305,7 @@ function createSdToolsRouter(overrides = {}) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(typeof req?.headers?.authorization === 'string' ? { authorization: req.headers.authorization } : {}),
-            ...(typeof req?.headers?.['x-nez-admin-token'] === 'string' ? { 'x-nez-admin-token': req.headers['x-nez-admin-token'] } : {}),
-            ...(typeof req?.headers?.['x-qflush-token'] === 'string' ? { 'x-qflush-token': req.headers['x-qflush-token'] } : {}),
-            ...(typeof req?.headers?.['x-dragon-token'] === 'string' ? { 'x-dragon-token': req.headers['x-dragon-token'] } : {}),
+            ...buildAiServiceAuthHeaders(),
           },
           body: JSON.stringify({
             prompt: finalPrompt,
@@ -1980,8 +2032,8 @@ function createSdToolsRouter(overrides = {}) {
   router.post('/tools/generate_sd', express.json({ limit: '2mb' }), async (req, res) => {
     console.log('[DEBUG] Entrée dans /api/tools/generate_sd', {
       ip: req.ip,
-      headers: req.headers,
-      body: req.body,
+      headers: redactHeadersForLog(req.headers),
+      body: summarizeGenerateSdBodyForLog(req.body),
     });
 
     try {
