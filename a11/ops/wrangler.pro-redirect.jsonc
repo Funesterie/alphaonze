@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "funesterie-pro-redirect",
+  "main": "./cloudflare-pro-redirect-worker.js",
+  "compatibility_date": "2026-05-26",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "funesterie.pro/*", "zone_name": "funesterie.pro" },
+    { "pattern": "www.funesterie.pro/*", "zone_name": "funesterie.pro" }
+  ]
+}
