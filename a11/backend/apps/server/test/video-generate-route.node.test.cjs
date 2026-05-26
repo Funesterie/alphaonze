@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+const fsp = require('node:fs/promises');
 
 const express = require('express');
 
@@ -95,6 +98,101 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
   } finally {
     await new Promise((resolve) => appServer.close(resolve));
     await new Promise((resolve) => proxyServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router uses Hugging Face video when enabled', async () => {
+  const previousEnv = {
+    A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,
+    A11_HF_VIDEO_PROVIDER: process.env.A11_HF_VIDEO_PROVIDER,
+    A11_HF_VIDEO_MODEL: process.env.A11_HF_VIDEO_MODEL,
+    A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
+    A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+  };
+  const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-hf-video-'));
+  const calls = [];
+  const fakeFetch = async (url, options = {}) => {
+    calls.push({
+      url: String(url),
+      headers: options.headers || {},
+      body: options.body ? JSON.parse(String(options.body)) : null,
+    });
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({
+        video: { url: 'https://cdn.example.com/hf-video.mp4' },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(Buffer.from('fake-mp4'), {
+      status: 200,
+      headers: { 'Content-Type': 'video/mp4' },
+    });
+  };
+
+  process.env.A11_ENABLE_HF_VIDEO = 'true';
+  process.env.A11_HF_VIDEO_PROVIDER = 'fal-ai';
+  process.env.A11_HF_VIDEO_MODEL = 'Wan-AI/Wan2.2-TI2V-5B';
+  process.env.A11_HF_VIDEO_TOKEN = 'hf_test_video_token';
+  process.env.A11_HF_VIDEO_FRAMES = '8';
+  process.env.A11_HF_VIDEO_STEPS = '2';
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    uploadBufferToR2: async () => {
+      throw new Error('r2 unavailable in test');
+    },
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when Hugging Face video is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        host: 'a11.funesterie.me',
+        'x-forwarded-host': 'a11.funesterie.me',
+        'x-forwarded-proto': 'https',
+      },
+      body: JSON.stringify({
+        prompt: 'genere une video neon de moto',
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.backend, 'huggingface-video');
+    assert.equal(payload.provider, 'fal-ai');
+    assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].body.prompt, 'genere une video neon de moto');
+    assert.equal(calls[0].body.num_frames, 8);
+    assert.equal(calls[0].body.num_inference_steps, 2);
+    assert.equal(calls[0].headers.Authorization, 'Bearer hf_test_video_token');
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await fsp.rm(runtimeRoot, { recursive: true, force: true });
     for (const [key, value] of Object.entries(previousEnv)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
