@@ -125,6 +125,36 @@ function normalizeSurface(value) {
   return raw || 'funesterie';
 }
 
+const TRUSTED_OAUTH_BRIDGE_ORIGINS = new Set([
+  'https://a11.funesterie.me',
+  'https://cp.funesterie.me',
+  'https://funesterie.me',
+  'https://www.funesterie.me',
+  'https://k44.funesterie.me',
+  'https://kaen44.funesterie.me',
+  'https://vivy.funesterie.me',
+  'https://music.funesterie.me',
+]);
+
+function normalizeOrigin(value) {
+  const raw = normalizeText(value).replace(/\/+$/, '');
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin.toLowerCase();
+  } catch {
+    return raw.toLowerCase();
+  }
+}
+
+function isTrustedOAuthBridgeToken(claims = {}) {
+  if (claims?.oauthBridge !== true) return false;
+  const provider = normalizeText(claims.provider).toLowerCase();
+  if (!['google', 'microsoft'].includes(provider)) return false;
+  const surface = normalizeSurface(claims.surface);
+  if (!['a11', 'k44', 'vivy', 'funesterie', 'a11+vivy'].includes(surface)) return false;
+  return TRUSTED_OAUTH_BRIDGE_ORIGINS.has(normalizeOrigin(claims.bridgeOrigin));
+}
+
 function buildSessionSummary(record = {}, currentSessionId = '') {
   const sessionId = normalizeText(record.session_id || record.sessionId || record.sid);
   return {
@@ -392,6 +422,8 @@ function createAuthSessionRegistry({ db, localAuthStore, logger = console, fileP
 
     const session = await readSession(sessionId);
     if (!session || normalizeText(session.user_key) !== key) {
+      // Central OAuth can mint a signed cross-origin token before the target surface sees the session row/file.
+      if (isTrustedOAuthBridgeToken(claims)) return true;
       throw createRevokedError();
     }
     if (session.revoked_at || session.revokedAt) {

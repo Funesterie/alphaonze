@@ -433,6 +433,175 @@ test('Google OAuth callback can return to the private cp cockpit with a fragment
   );
 });
 
+test('A11 accepts central Google OAuth bridge tokens when session registries differ', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-oauth-bridge-'));
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+  };
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  delete process.env.GOOGLE_CALLBACK_URL;
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  delete process.env.GOOGLE_REDIRECT_URI;
+
+  const realFetch = global.fetch;
+  t.after(() => {
+    global.fetch = realFetch;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  const centralLocalAuthStore = createLocalAuthStore({
+    filePath: path.join(tmpDir, 'central-local-users.json'),
+    logger: { warn() {} },
+  });
+  const centralAuthSessionRegistry = createAuthSessionRegistry({
+    localAuthStore: centralLocalAuthStore,
+    filePath: path.join(tmpDir, 'central-auth-sessions.json'),
+    logger: { warn() {} },
+  });
+  const a11LocalAuthStore = createLocalAuthStore({
+    filePath: path.join(tmpDir, 'a11-local-users.json'),
+    logger: { warn() {} },
+  });
+  const a11AuthSessionRegistry = createAuthSessionRegistry({
+    localAuthStore: a11LocalAuthStore,
+    filePath: path.join(tmpDir, 'a11-auth-sessions.json'),
+    logger: { warn() {} },
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: centralLocalAuthStore,
+        authSessionRegistry: centralAuthSessionRegistry,
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (centralBaseUrl) => {
+      global.fetch = async (url, options = {}) => {
+        const target = String(url || '');
+        if (target.startsWith('http://127.0.0.1:')) return realFetch(url, options);
+        if (target === 'https://oauth2.googleapis.com/token') {
+          return new Response(JSON.stringify({ access_token: 'google-access-token' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (target === 'https://www.googleapis.com/oauth2/v2/userinfo') {
+          return new Response(JSON.stringify({
+            id: 'google-user-bridge',
+            email: 'cellaurojeffrey@gmail.com',
+            verified_email: true,
+            name: 'Djeff',
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${target}`);
+      };
+
+      const returnTo = 'https://a11.funesterie.me/auth/success?next=%2Fcockpit';
+      const startResponse = await fetch(`${centralBaseUrl}/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}&client=funesterie-cockpit`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(startResponse.status, 302);
+      const startLocation = new URL(startResponse.headers.get('location'));
+      const state = startLocation.searchParams.get('state');
+      assert.ok(state);
+
+      const callbackResponse = await fetch(`${centralBaseUrl}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: `a11_google_oauth_state=${encodeURIComponent(state)}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(callbackResponse.status, 302);
+      const callbackLocation = new URL(callbackResponse.headers.get('location'));
+      assert.equal(callbackLocation.origin, 'https://a11.funesterie.me');
+      assert.equal(callbackLocation.pathname, '/auth/success');
+      assert.equal(callbackLocation.searchParams.get('next'), '/cockpit');
+      const hashParams = new URLSearchParams(callbackLocation.hash.replace(/^#/, ''));
+      const bridgeToken = hashParams.get('a11_token') || '';
+      assert.match(bridgeToken, /^[^.]+\.[^.]+\.[^.]+$/);
+
+      const bridgeClaims = jwt.decode(bridgeToken) || {};
+      assert.equal(bridgeClaims.oauthBridge, true);
+      assert.equal(bridgeClaims.bridgeOrigin, 'https://a11.funesterie.me');
+      assert.equal(bridgeClaims.provider, 'google');
+
+      await withServer(
+        (app) => {
+          app.use(createAuthRouter({
+            db: null,
+            bcrypt,
+            jwt,
+            jwtSecret: 'test-secret',
+            jwtExpiry: '1h',
+            localAuthStore: a11LocalAuthStore,
+            authSessionRegistry: a11AuthSessionRegistry,
+            emailService: { isConfigured: () => false, getStatus: () => ({}) },
+            crypto,
+            normalizePublicAppUrl: (value) => value,
+          }));
+        },
+        async (a11BaseUrl) => {
+          const accepted = await getJson(a11BaseUrl, '/api/auth/me', {
+            Authorization: `Bearer ${bridgeToken}`,
+            'X-Forwarded-Host': 'a11.funesterie.me',
+            'X-Forwarded-Proto': 'https',
+          });
+          assert.equal(accepted.response.status, 200);
+          assert.equal(accepted.json.authenticated, true);
+          assert.equal(accepted.json.user.email, 'cellaurojeffrey@gmail.com');
+
+          const plainMissingSessionToken = jwt.sign(
+            {
+              id: bridgeClaims.id,
+              username: bridgeClaims.username,
+              email: bridgeClaims.email,
+              provider: 'google',
+              surface: 'a11',
+              sid: 'sid_missing_from_a11_runtime',
+              sv: 0,
+            },
+            'test-secret',
+            { expiresIn: '1h' }
+          );
+          const rejected = await getJson(a11BaseUrl, '/api/auth/me', {
+            Authorization: `Bearer ${plainMissingSessionToken}`,
+          });
+          assert.equal(rejected.response.status, 401);
+        }
+      );
+    }
+  );
+});
+
 test('local auth store backs register and login when database is unavailable', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-auth-'));
   const previousFullAccessEmails = process.env.A11_FULL_ACCESS_EMAILS;

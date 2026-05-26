@@ -79,6 +79,13 @@ function buildAuthClaims(user = {}, extra = {}) {
   if (extra.provider || user.provider || user.auth_provider) {
     claims.provider = String(extra.provider || user.provider || user.auth_provider);
   }
+  if (extra.oauthBridge === true || user.oauthBridge === true) {
+    claims.oauthBridge = true;
+  }
+  if (extra.bridgeOrigin || user.bridgeOrigin) {
+    const bridgeOrigin = String(extra.bridgeOrigin || user.bridgeOrigin || '').trim();
+    if (bridgeOrigin) claims.bridgeOrigin = bridgeOrigin.slice(0, 128);
+  }
   if (extra.sid || extra.sessionId || extra.session_id || user.sid || user.sessionId || user.session_id) {
     claims.sid = String(extra.sid || extra.sessionId || extra.session_id || user.sid || user.sessionId || user.session_id);
   }
@@ -505,6 +512,18 @@ function redirectOAuthSuccess(res, frontendUrl, returnTo, token, provider) {
     needsFragmentToken = false;
   }
   return res.redirect(needsFragmentToken ? appendOAuthTokenFragment(target, token, provider) : target);
+}
+
+function resolveOAuthBridgeOrigin(frontendUrl, returnTo) {
+  const target = resolveOAuthRedirectUrl(frontendUrl, returnTo || '/auth/success');
+  try {
+    const targetOrigin = new URL(target).origin;
+    const frontendOrigin = new URL(String(frontendUrl || 'https://a11.funesterie.me')).origin;
+    if (targetOrigin === frontendOrigin) return '';
+    return isAllowedOAuthFrontendOrigin(targetOrigin) ? targetOrigin : '';
+  } catch {
+    return '';
+  }
 }
 
 function buildCentralLoginRedirect(frontendUrl, returnTo, errorCode) {
@@ -1259,10 +1278,12 @@ function createAuthRouter({
             provider: 'google',
           };
 
+      const bridgeOrigin = resolveOAuthBridgeOrigin(frontendUrl, statePayload?.returnTo || '/auth/success');
       const sessionToken = await issueSessionCookie(req, res, user, {
         provider: 'google',
         surface: statePayload?.surface,
         client: statePayload?.client,
+        ...(bridgeOrigin ? { oauthBridge: true, bridgeOrigin } : {}),
       });
       res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Google OAuth login:', email);
@@ -1399,10 +1420,12 @@ function createAuthRouter({
             provider: 'microsoft',
           };
 
+      const bridgeOrigin = resolveOAuthBridgeOrigin(frontendUrl, statePayload?.returnTo || '/auth/success');
       const sessionToken = await issueSessionCookie(req, res, user, {
         provider: 'microsoft',
         surface: statePayload?.surface,
         client: statePayload?.client,
+        ...(bridgeOrigin ? { oauthBridge: true, bridgeOrigin } : {}),
       });
       res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
       console.log('[AUTH] Microsoft OAuth login:', email);
