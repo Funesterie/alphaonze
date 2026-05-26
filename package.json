@@ -22,6 +22,8 @@
     "github:packages:dry": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -DryRun",
     "github:packages:publish": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/github/Publish-GitHubPackages.ps1 -Publish",
     "google:artifacts:list": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/List-GoogleArtifacts.ps1",
+    "google:cloudrun:deploy": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Deploy-CloudRunStaging.ps1",
+    "google:cloudrun:test": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Test-CloudRunStaging.ps1",
     "google:npmrc": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Write-GoogleArtifactNpmrc.ps1",
     "google:npm-auth": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Refresh-GoogleArtifactNpmAuth.ps1",
     "google:packages:dry": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/google/Publish-GoogleArtifactRegistry.ps1 -DryRun",
