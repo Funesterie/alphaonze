@@ -1639,7 +1639,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     if (isCentralLogin) {
-      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "basic" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -1651,7 +1651,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setMicrosoftLoading(true);
     if (isCentralLogin) {
-      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "basic" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -3708,7 +3708,7 @@ function FunesterieConnectedHomePage({
       return;
     }
     setAccountBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "drive" });
+    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "basic" });
   }
 
   if (!isAgentsRoute && !isStatusRoute) {
@@ -4678,12 +4678,6 @@ export function App() {
         || hostname === 'vivy.funesterie.me'
       );
     if (!shouldCheckCookieSession) {
-      setAuthSessionReady(true);
-      return;
-    }
-
-    const isGeneralPublicHost = hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
-    if (isGeneralPublicHost && !isAuthSuccessRoute(pathname)) {
       setAuthSessionReady(true);
       return;
     }
@@ -6696,6 +6690,17 @@ export function App() {
   }
 
   if (isVivy) {
+    if (!authSessionReady) return null;
+    if (!isAuthenticated) {
+      if (typeof window !== "undefined" && !isCentralLoginSurface() && !isLocalSurfaceHost(window.location.hostname)) {
+        window.location.replace(buildCentralLoginUrl(window.location.href));
+        return null;
+      }
+      return <LoginPanel onLoginSuccess={() => {
+        setIsAuthenticated(true);
+        setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+      }} />;
+    }
     return <VivyPublicPage />;
   }
 
