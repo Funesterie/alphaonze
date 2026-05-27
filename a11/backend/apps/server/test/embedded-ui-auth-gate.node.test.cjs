@@ -15,12 +15,14 @@ function createRequest({
   originalUrl = path,
   accept = 'text/html',
   cookie = '',
+  xForwardedProto = '',
 } = {}) {
   const headers = {
     accept,
     host,
   };
   if (cookie) headers.cookie = cookie;
+  if (xForwardedProto) headers['x-forwarded-proto'] = xForwardedProto;
 
   return {
     method,
@@ -161,6 +163,7 @@ test('central login redirect keeps public hosts on https behind proxies', () => 
   const req = createRequest({
     host: 'vivy.funesterie.me',
     protocol: 'http',
+    xForwardedProto: 'http',
     originalUrl: '/studio?tab=voice',
   });
   const redirect = new URL(buildCentralLoginRedirectUrl(req));

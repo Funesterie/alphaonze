@@ -23,14 +23,13 @@ function isLocalRequestHost(host) {
 }
 
 function getRequestProtocol(req) {
+  const host = getRequestHost(req);
   const forwardedProto = String(getHeader(req, 'x-forwarded-proto') || '')
     .split(',')[0]
     .trim()
     .replace(/:$/, '');
-  if (forwardedProto) return forwardedProto;
-
-  const host = getRequestHost(req);
   if (host && !isLocalRequestHost(host)) return 'https';
+  if (forwardedProto) return forwardedProto;
 
   return String(req?.protocol || 'https')
     .split(',')[0]
