@@ -124,6 +124,12 @@ test('central OAuth start pins Google and Microsoft callbacks to funesterie.me',
     MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
     MICROSOFT_REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI,
     MICROSOFT_CALLBACK_URL: process.env.MICROSOFT_CALLBACK_URL,
+    GOOGLE_OAUTH_DEFAULT_PROFILE: process.env.GOOGLE_OAUTH_DEFAULT_PROFILE,
+    GOOGLE_OAUTH_LOGIN_SCOPES: process.env.GOOGLE_OAUTH_LOGIN_SCOPES,
+    GOOGLE_OAUTH_DRIVE_SCOPES: process.env.GOOGLE_OAUTH_DRIVE_SCOPES,
+    MICROSOFT_OAUTH_DEFAULT_PROFILE: process.env.MICROSOFT_OAUTH_DEFAULT_PROFILE,
+    MICROSOFT_OAUTH_LOGIN_SCOPES: process.env.MICROSOFT_OAUTH_LOGIN_SCOPES,
+    MICROSOFT_OAUTH_DRIVE_SCOPES: process.env.MICROSOFT_OAUTH_DRIVE_SCOPES,
     A11_ALLOW_OAUTH_CANONICAL_REDIRECT: process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT,
   };
   process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
@@ -134,6 +140,12 @@ test('central OAuth start pins Google and Microsoft callbacks to funesterie.me',
   process.env.MICROSOFT_CLIENT_SECRET = 'test-microsoft-client-secret';
   process.env.MICROSOFT_REDIRECT_URI = 'https://a11.funesterie.me/api/auth/microsoft/callback';
   delete process.env.MICROSOFT_CALLBACK_URL;
+  process.env.GOOGLE_OAUTH_DEFAULT_PROFILE = 'basic';
+  process.env.GOOGLE_OAUTH_LOGIN_SCOPES = 'openid email profile';
+  process.env.GOOGLE_OAUTH_DRIVE_SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly';
+  process.env.MICROSOFT_OAUTH_DEFAULT_PROFILE = 'basic';
+  process.env.MICROSOFT_OAUTH_LOGIN_SCOPES = 'openid profile email offline_access User.Read';
+  process.env.MICROSOFT_OAUTH_DRIVE_SCOPES = 'openid profile email offline_access User.Read Files.ReadWrite';
   delete process.env.A11_ALLOW_OAUTH_CANONICAL_REDIRECT;
   t.after(() => {
     for (const [key, value] of Object.entries(previous)) {
@@ -176,7 +188,29 @@ test('central OAuth start pins Google and Microsoft callbacks to funesterie.me',
           redirectUrl.searchParams.get('redirect_uri'),
           `https://funesterie.me/api/auth/${provider}/callback`
         );
+        const scope = redirectUrl.searchParams.get('scope') || '';
+        if (provider === 'google') {
+          assert.equal(scope, 'openid email profile');
+          assert.equal(scope.includes('drive.'), false);
+        } else {
+          assert.equal(scope, 'openid profile email offline_access User.Read');
+          assert.equal(scope.includes('Files.ReadWrite'), false);
+        }
       }
+
+      const driveResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?scopeProfile=drive`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(driveResponse.status, 302);
+      const driveLocation = new URL(driveResponse.headers.get('location'));
+      assert.equal(
+        driveLocation.searchParams.get('scope'),
+        'openid profile email offline_access User.Read Files.ReadWrite'
+      );
     }
   );
 });
@@ -252,6 +286,9 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
     AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID,
     AZURE_CLIENT_SECRET: process.env.AZURE_CLIENT_SECRET,
     AZURE_REDIRECT_URI: process.env.AZURE_REDIRECT_URI,
+    MICROSOFT_OAUTH_DEFAULT_PROFILE: process.env.MICROSOFT_OAUTH_DEFAULT_PROFILE,
+    MICROSOFT_OAUTH_LOGIN_SCOPES: process.env.MICROSOFT_OAUTH_LOGIN_SCOPES,
+    MICROSOFT_OAUTH_DRIVE_SCOPES: process.env.MICROSOFT_OAUTH_DRIVE_SCOPES,
   };
   process.env.MICROSOFT_CLIENT_ID = 'test-microsoft-client-id';
   process.env.MICROSOFT_CLIENT_SECRET = 'test-microsoft-client-secret';
@@ -260,8 +297,12 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
   delete process.env.AZURE_CLIENT_ID;
   delete process.env.AZURE_CLIENT_SECRET;
   delete process.env.AZURE_REDIRECT_URI;
+  process.env.MICROSOFT_OAUTH_DEFAULT_PROFILE = 'basic';
+  process.env.MICROSOFT_OAUTH_LOGIN_SCOPES = 'openid profile email offline_access User.Read';
+  process.env.MICROSOFT_OAUTH_DRIVE_SCOPES = 'openid profile email offline_access User.Read Files.ReadWrite';
 
   const realFetch = global.fetch;
+  let tokenExchangeScope = '';
   t.after(() => {
     global.fetch = realFetch;
     for (const [key, value] of Object.entries(previous)) {
@@ -292,6 +333,7 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
         const target = String(url || '');
         if (target.startsWith(baseUrl)) return realFetch(url, options);
         if (target.includes('login.microsoftonline.com') && target.endsWith('/token')) {
+          tokenExchangeScope = new URLSearchParams(String(options.body || '')).get('scope') || '';
           return new Response(JSON.stringify({
             error: 'invalid_grant',
             error_description: 'AADSTS70000: The provided authorization code is expired or invalid.',
@@ -304,7 +346,7 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       };
 
       const returnTo = 'https://k44.funesterie.me/cockpit';
-      const startResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}`, {
+      const startResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}&scopeProfile=drive`, {
         redirect: 'manual',
         headers: {
           'X-Forwarded-Host': 'funesterie.me',
@@ -318,6 +360,10 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       assert.equal(
         startLocation.searchParams.get('redirect_uri'),
         'https://funesterie.me/api/auth/microsoft/callback'
+      );
+      assert.equal(
+        startLocation.searchParams.get('scope'),
+        'openid profile email offline_access User.Read Files.ReadWrite'
       );
 
       const callbackResponse = await fetch(`${baseUrl}/api/auth/microsoft/callback?code=test-code&state=${encodeURIComponent(state)}`, {
@@ -334,6 +380,7 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       assert.equal(callbackLocation.pathname, '/login');
       assert.equal(callbackLocation.searchParams.get('returnTo'), returnTo);
       assert.equal(callbackLocation.searchParams.get('error'), 'microsoft_invalid_grant');
+      assert.equal(tokenExchangeScope, 'openid profile email offline_access User.Read Files.ReadWrite');
     }
   );
 });
