@@ -525,6 +525,7 @@ const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
 const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
 const { createAuthSessionRegistry } = require('./src/auth/session-registry.cjs');
+const { createEmbeddedUiAuthGate } = require('./src/auth/embedded-ui-auth-gate.cjs');
 const { hasFullAccess } = require('./src/auth/full-access.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
@@ -7534,6 +7535,15 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
   res.setHeader('X-A11-Build-Id', getEmbeddedUiBuildId(uiStatus.indexPath));
   return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface));
 }
+
+app.use(createEmbeddedUiAuthGate({
+  jwt,
+  jwtSecret: JWT_SECRET,
+  authSessionRegistry,
+  resolveSurface: resolveEmbeddedUiSurface,
+  centralLoginUrl: process.env.A11_CENTRAL_LOGIN_URL || 'https://funesterie.me/login',
+  logger: console,
+}));
 
 function isLocalHostName(hostname) {
   return ['localhost', '127.0.0.1', '::1'].includes(String(hostname || '').trim().toLowerCase());
