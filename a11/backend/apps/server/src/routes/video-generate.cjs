@@ -8,6 +8,10 @@ const {
 const {
   createEmergencyVideoAsset,
 } = require('../media/emergency-media.cjs');
+const {
+  tryGenerateVideoWithHuggingFace,
+  resolveHuggingFaceVideoConfig,
+} = require('../../lib/hf-video.cjs');
 
 function normalizeProxyUrl(rawValue = '') {
   const value = String(rawValue || '').trim();
@@ -576,6 +580,29 @@ function createVideoGenerateRouter(overrides = {}) {
       });
     }
 
+    const hfVideoConfig = resolveHuggingFaceVideoConfig();
+    if (hfVideoConfig.enabled) {
+      const hfResult = await tryGenerateVideoWithHuggingFace({
+        req: options.req || null,
+        body,
+        prompt,
+        fetchImpl,
+        uploadBufferToR2Impl: overrides.uploadBufferToR2,
+      });
+      if (hfResult?.ok) return rewriteVideoProxyPayload(hfResult, options.req || null);
+      if (hfVideoConfig.strict) {
+        const error = new Error(hfResult?.message || hfResult?.error || 'hf_video_failed');
+        error.statusCode = hfResult?.statusCode || 502;
+        error.payload = hfResult || {
+          ok: false,
+          error: 'hf_video_failed',
+          message: 'hf_video_failed',
+        };
+        throw error;
+      }
+      console.warn('[A11][video-route] Hugging Face video unavailable, falling back:', String(hfResult?.message || hfResult?.error || 'unknown'));
+    }
+
     const proxied = await generateViaProxy({
       req: options.req || null,
       body,
@@ -703,6 +730,9 @@ function createVideoGenerateRouter(overrides = {}) {
       ok: true,
       service: 'a11-video',
       proxyConfigured: Boolean(resolveVideoProxyUrl()),
+      huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
+      huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
+      huggingFaceModel: resolveHuggingFaceVideoConfig().model,
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       emergencyFallback: shouldFallbackToEmergencyVideo({}),
       asyncJobs: asyncVideoJobs.size,
@@ -714,6 +744,9 @@ function createVideoGenerateRouter(overrides = {}) {
       service: 'a11-video',
       modes: ['generate', 'async-job', 'emergency-video'],
       proxyConfigured: Boolean(resolveVideoProxyUrl()),
+      huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
+      huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
+      huggingFaceModel: resolveHuggingFaceVideoConfig().model,
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       asyncJobs: asyncVideoJobs.size,
     });
