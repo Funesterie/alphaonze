@@ -559,7 +559,20 @@ function resolvePublicOAuthError(provider, error) {
   }
 
   if (normalizedProvider === 'microsoft') {
-    if (code.includes('aadsts7000215') || code.includes('invalid client secret')) return 'microsoft_invalid_client';
+    if (
+      code.includes('aadsts7000215')
+      || code.includes('aadsts700016')
+      || code.includes('invalid client secret')
+      || code.includes('unauthorized_client')
+      || code.includes('client does not exist')
+      || code.includes('not enabled for consumers')
+    ) return 'microsoft_invalid_client';
+    if (
+      code.includes('aadsts50020')
+      || code.includes('does not exist in tenant')
+      || code.includes('needs to be added as an external user')
+    ) return 'microsoft_tenant_mismatch';
+    if (code.includes('aadsts65001') || code.includes('consent_required')) return 'microsoft_consent_required';
     if (code.includes('access_denied')) return 'microsoft_access_denied';
     if (
       code.includes('invalid_grant')

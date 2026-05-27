@@ -1561,6 +1561,8 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activée sur ce serveur.",
           microsoft_invalid_client: "La connexion Microsoft est mal configurée côté serveur.",
           microsoft_invalid_grant: "Microsoft a refusé le code de connexion. Réessaie en repartant du bouton Microsoft.",
+          microsoft_tenant_mismatch: "Ce compte Microsoft n'est pas autorisé dans le tenant Funesterie.",
+          microsoft_consent_required: "Microsoft demande un nouveau consentement pour ce compte.",
           microsoft_access_denied: "La connexion Microsoft a été annulée.",
           microsoft_email_missing: "Microsoft n'a pas renvoyé d'adresse email exploitable pour la session.",
         };

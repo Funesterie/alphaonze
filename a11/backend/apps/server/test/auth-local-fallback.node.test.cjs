@@ -385,6 +385,97 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
   );
 });
 
+test('Microsoft tenant mismatch failures return a specific login error', async (t) => {
+  const previous = {
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
+    MICROSOFT_REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI,
+    MICROSOFT_CALLBACK_URL: process.env.MICROSOFT_CALLBACK_URL,
+    AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID,
+    AZURE_CLIENT_SECRET: process.env.AZURE_CLIENT_SECRET,
+    AZURE_REDIRECT_URI: process.env.AZURE_REDIRECT_URI,
+  };
+  process.env.MICROSOFT_CLIENT_ID = 'test-microsoft-client-id';
+  process.env.MICROSOFT_CLIENT_SECRET = 'test-microsoft-client-secret';
+  delete process.env.MICROSOFT_REDIRECT_URI;
+  delete process.env.MICROSOFT_CALLBACK_URL;
+  delete process.env.AZURE_CLIENT_ID;
+  delete process.env.AZURE_CLIENT_SECRET;
+  delete process.env.AZURE_REDIRECT_URI;
+
+  const realFetch = global.fetch;
+  t.after(() => {
+    global.fetch = realFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      global.fetch = async (url, options = {}) => {
+        const target = String(url || '');
+        if (target.startsWith(baseUrl)) return realFetch(url, options);
+        if (target.includes('login.microsoftonline.com') && target.endsWith('/token')) {
+          return new Response(JSON.stringify({
+            error: 'invalid_request',
+            error_description: 'AADSTS50020: User account from identity provider live.com does not exist in tenant Funesterie and cannot access the application.',
+          }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${target}`);
+      };
+
+      const returnTo = 'https://a11.funesterie.me/cockpit';
+      const startResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(startResponse.status, 302);
+      const startLocation = new URL(startResponse.headers.get('location'));
+      const state = startLocation.searchParams.get('state');
+      assert.ok(state);
+
+      const callbackResponse = await fetch(`${baseUrl}/api/auth/microsoft/callback?code=test-code&state=${encodeURIComponent(state)}`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: `a11_microsoft_oauth_state=${encodeURIComponent(state)}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(callbackResponse.status, 302);
+      const callbackLocation = new URL(callbackResponse.headers.get('location'));
+      assert.equal(callbackLocation.origin, 'https://funesterie.me');
+      assert.equal(callbackLocation.pathname, '/login');
+      assert.equal(callbackLocation.searchParams.get('returnTo'), returnTo);
+      assert.equal(callbackLocation.searchParams.get('error'), 'microsoft_tenant_mismatch');
+    }
+  );
+});
+
 test('Google OAuth callback can return to the private cp cockpit with a fragment token', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
