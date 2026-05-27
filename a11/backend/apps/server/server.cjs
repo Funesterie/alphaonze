@@ -7456,16 +7456,16 @@ function resolveEmbeddedUiSurface(req) {
     return 'a11';
   }
 
+  if (isGeneralFunesterieSurfaceHost(hostname)) {
+    return 'funesterie';
+  }
+
   if (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname)
     || product === 'kaen44'
     || product === 'k44'
     || hostname === 'k44.funesterie.me'
     || hostname === 'kaen44.funesterie.me') {
     return 'kaen44';
-  }
-
-  if (isGeneralFunesterieSurfaceHost(hostname)) {
-    return 'funesterie';
   }
 
   return 'a11';
@@ -7537,6 +7537,7 @@ function rewriteEmbeddedUiIndexForSurface(html, surface) {
 
 function sendEmbeddedUiHtml(req, res, uiStatus) {
   const surface = resolveEmbeddedUiSurface(req);
+  res.setHeader('X-A11-Ui-Surface', surface);
 
   if (surface === 'vivy') {
     const vivyIndex = path.join(webPublic, 'vivy', 'index.html');
