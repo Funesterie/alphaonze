@@ -356,6 +356,39 @@ function syncStoredSurface(surface: FunesterieSurface) {
   }
 }
 
+function getVoiceReferenceStorageKey(surface: FunesterieSurface) {
+  return `a11:tts:voice-reference-id:${surface}`;
+}
+
+function readStoredVoiceReferenceId(surface: FunesterieSurface) {
+  try {
+    return localStorage.getItem(getVoiceReferenceStorageKey(surface))
+      || (surface === "a11" ? localStorage.getItem("a11:tts:voice-reference-id") : "")
+      || "";
+  } catch {
+    return "";
+  }
+}
+
+function voiceReferenceMatchesSurface(ref: TtsVoiceReference, surface: FunesterieSurface) {
+  const name = String(ref.label || ref.originalName || "").toLowerCase();
+  if (surface === "vivy") return name.includes("vivy") || name.includes("vivi");
+  if (surface === "kaen44") return name.includes("donna") || name.includes("kaen44");
+  return name.includes("terminator") || name.includes("a11");
+}
+
+function getDefaultVoiceReferenceLabel(surface: FunesterieSurface) {
+  if (surface === "vivy") return "Vivy";
+  if (surface === "kaen44") return "Donna";
+  return "Terminator";
+}
+
+function getDefaultVoiceReferenceStatus(surface: FunesterieSurface) {
+  if (surface === "vivy") return "Voix Vivy active";
+  if (surface === "kaen44") return "Voix Kaen44 Donna active";
+  return "Voix A11 Terminator active";
+}
+
 function isVivyExperience() {
   return getCurrentSurfaceKind() === "vivy";
 }
@@ -4863,13 +4896,7 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
-  const [selectedVoiceReferenceId, setSelectedVoiceReferenceId] = useState(() => {
-    try {
-      return localStorage.getItem("a11:tts:voice-reference-id") || "";
-    } catch {
-      return "";
-    }
-  });
+  const [selectedVoiceReferenceId, setSelectedVoiceReferenceId] = useState(() => readStoredVoiceReferenceId(surfaceKind));
   const [voiceReferenceStatus, setVoiceReferenceStatus] = useState("");
   const [ttsVocalMode, setTtsVocalMode] = useState<"speech" | "adaptive" | "sing">(() => {
     try {
@@ -4898,15 +4925,31 @@ export function App() {
     () => A11_LANGUAGE_CHOICES.find((choice) => choice.code === a11Language) || A11_LANGUAGE_CHOICES[0],
     [a11Language]
   );
+  const defaultVoiceReferenceLabel = useMemo(
+    () => getDefaultVoiceReferenceLabel(surfaceKind),
+    [surfaceKind]
+  );
+  const selectedVoiceReference = useMemo(
+    () => voiceReferences.find((ref) => ref.id === selectedVoiceReferenceId) || null,
+    [selectedVoiceReferenceId, voiceReferences]
+  );
+  const activeVoiceReferenceLabel = selectedVoiceReference
+    ? (selectedVoiceReference.label || selectedVoiceReference.originalName || "Référence privée")
+    : defaultVoiceReferenceLabel;
+  const voiceReferenceControlsDisabled = isFunesteriePublicShell || !hasPrivateSession;
+  const voiceReferenceStorageKey = useMemo(() => getVoiceReferenceStorageKey(surfaceKind), [surfaceKind]);
+  useEffect(() => {
+    setSelectedVoiceReferenceId(readStoredVoiceReferenceId(surfaceKind));
+  }, [surfaceKind]);
   useEffect(() => {
     try {
-      localStorage.setItem("a11:tts:voice-reference-id", selectedVoiceReferenceId || "");
+      localStorage.setItem(voiceReferenceStorageKey, selectedVoiceReferenceId || "");
       localStorage.setItem("a11:tts:vocal-mode", ttsVocalMode);
       localStorage.setItem("a11:tts:provider-mode", ttsProviderMode);
     } catch {
       // ignore storage access errors
     }
-  }, [selectedVoiceReferenceId, ttsProviderMode, ttsVocalMode]);
+  }, [selectedVoiceReferenceId, ttsProviderMode, ttsVocalMode, voiceReferenceStorageKey]);
   useEffect(() => {
     try {
       localStorage.setItem("a11:language", selectedA11Language.code);
@@ -5597,28 +5640,18 @@ export function App() {
     try {
       const refs = await fetchTtsVoiceReferences();
       setVoiceReferences(refs);
-      if (isKaen44 && !selectedVoiceReferenceId) {
-        const kaenVoice = refs.find((ref) =>
-          String(ref.label || ref.originalName || "").toLowerCase().includes("kaen44 donna")
-        );
-        if (kaenVoice?.id) {
-          setSelectedVoiceReferenceId(kaenVoice.id);
-          setVoiceReferenceStatus("Voix Kaen44 Donna active");
+      const selectedStillExists = selectedVoiceReferenceId
+        ? refs.some((ref) => ref.id === selectedVoiceReferenceId)
+        : false;
+      if (!selectedStillExists) {
+        const defaultVoice = refs.find((ref) => voiceReferenceMatchesSurface(ref, surfaceKind));
+        if (defaultVoice?.id) {
+          setSelectedVoiceReferenceId(defaultVoice.id);
+          setVoiceReferenceStatus(getDefaultVoiceReferenceStatus(surfaceKind));
           return;
         }
       }
-      if (isVivy && !selectedVoiceReferenceId) {
-        const vivyVoice = refs.find((ref) => {
-          const name = String(ref.label || ref.originalName || "").toLowerCase();
-          return name.includes("vivy") || name.includes("vivi");
-        });
-        if (vivyVoice?.id) {
-          setSelectedVoiceReferenceId(vivyVoice.id);
-          setVoiceReferenceStatus("Voix Vivy active");
-          return;
-        }
-      }
-      if (selectedVoiceReferenceId && !refs.some((ref) => ref.id === selectedVoiceReferenceId)) {
+      if (selectedVoiceReferenceId && !selectedStillExists) {
         setSelectedVoiceReferenceId("");
       }
     } catch (error_) {
@@ -5634,6 +5667,17 @@ export function App() {
 
   function onVoiceReferenceClick() {
     voiceReferenceInputRef.current?.click();
+  }
+
+  function onDefaultVoiceReferenceClick() {
+    const defaultVoice = voiceReferences.find((ref) => voiceReferenceMatchesSurface(ref, surfaceKind));
+    if (defaultVoice?.id) {
+      setSelectedVoiceReferenceId(defaultVoice.id);
+    } else {
+      setSelectedVoiceReferenceId("");
+      if (!voiceReferenceControlsDisabled) void refreshVoiceReferences();
+    }
+    setVoiceReferenceStatus(getDefaultVoiceReferenceStatus(surfaceKind));
   }
 
   async function onVoiceReferenceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -7048,6 +7092,40 @@ export function App() {
                   <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
                     Chat, micro, transcription audio et voix {productName} utilisent cette langue.
                   </div>
+                  <div className="a11-menu-voice-tools" aria-label="Réglages voix">
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={onVoiceReferenceClick}
+                      disabled={voiceReferenceControlsDisabled}
+                      title="Ajouter une référence vocale WAV/MP3/WEBM"
+                    >
+                      Ref
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={onDefaultVoiceReferenceClick}
+                      disabled={voiceReferenceControlsDisabled}
+                      title={`Revenir à la voix ${defaultVoiceReferenceLabel} par défaut`}
+                    >
+                      Défaut ref
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
+                      onClick={() => setTtsVocalMode((mode) => mode === "sing" ? "adaptive" : "sing")}
+                      title={ttsVocalMode === "sing" ? "Mode chant actif" : "Activer le mode chant"}
+                    >
+                      {ttsVocalMode === "sing" ? "Chant actif" : "Chant"}
+                    </button>
+                  </div>
+                  <div className="a11-menu-voice-current">
+                    Réf active: {voiceReferenceControlsDisabled ? "connexion requise" : activeVoiceReferenceLabel}
+                  </div>
+                  {voiceReferenceStatus ? (
+                    <div className="a11-menu-voice-status">{voiceReferenceStatus}</div>
+                  ) : null}
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -7994,36 +8072,6 @@ export function App() {
               >
                 {isCompactLayout ? "Import" : "Importer"}
               </button>
-
-              <div
-                className="a11-voice-tools"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginRight: 8,
-                  flexShrink: 0,
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={onVoiceReferenceClick}
-                  title="Ajouter une référence vocale WAV/MP3/WEBM"
-                  style={{ minWidth: 44, minHeight: 44, padding: isCompactLayout ? "0 9px" : "0 10px" }}
-                >
-                  Ref
-                </button>
-                <button
-                  type="button"
-                  className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
-                  onClick={() => setTtsVocalMode((mode) => mode === "sing" ? "adaptive" : "sing")}
-                  title={ttsVocalMode === "sing" ? "Mode chant actif" : "Activer le mode chant"}
-                  style={{ minHeight: 44, width: 44, padding: 0, fontWeight: 800 }}
-                >
-                  {ttsVocalMode === "sing" ? "S" : "A"}
-                </button>
-              </div>
 
               <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                 <textarea

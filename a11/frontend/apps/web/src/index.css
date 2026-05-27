@@ -4689,6 +4689,43 @@ body {
   text-transform: uppercase;
 }
 
+.a11-menu-voice-tools {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.a11-menu-voice-tools .btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
+.a11-menu-voice-tools .btn.active {
+  border-color: rgba(163, 230, 53, 0.58);
+  background: linear-gradient(135deg, rgba(94, 234, 212, 0.2), rgba(163, 230, 53, 0.18));
+  color: #eaffc8;
+  box-shadow: 0 0 18px rgba(163, 230, 53, 0.12);
+}
+
+.a11-menu-voice-current,
+.a11-menu-voice-status {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.45);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.a11-menu-voice-status {
+  color: #93c5fd;
+}
+
 .k44-cockpit-dashboard {
   width: min(1240px, 100%);
   max-width: 100%;
