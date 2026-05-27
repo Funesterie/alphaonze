@@ -13,8 +13,26 @@ function getRequestHost(req) {
     .trim();
 }
 
+function isLocalRequestHost(host) {
+  const hostname = String(host || '')
+    .split(',')[0]
+    .trim()
+    .replace(/:\d+$/, '')
+    .toLowerCase();
+  return ['localhost', '127.0.0.1', '::1'].includes(hostname);
+}
+
 function getRequestProtocol(req) {
-  return String(getHeader(req, 'x-forwarded-proto') || req?.protocol || 'https')
+  const forwardedProto = String(getHeader(req, 'x-forwarded-proto') || '')
+    .split(',')[0]
+    .trim()
+    .replace(/:$/, '');
+  if (forwardedProto) return forwardedProto;
+
+  const host = getRequestHost(req);
+  if (host && !isLocalRequestHost(host)) return 'https';
+
+  return String(req?.protocol || 'https')
     .split(',')[0]
     .trim()
     .replace(/:$/, '') || 'https';

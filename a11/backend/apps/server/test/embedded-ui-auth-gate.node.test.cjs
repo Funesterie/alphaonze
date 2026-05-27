@@ -10,6 +10,7 @@ const {
 function createRequest({
   method = 'GET',
   host = 'vivy.funesterie.me',
+  protocol = 'https',
   path = '/',
   originalUrl = path,
   accept = 'text/html',
@@ -26,7 +27,7 @@ function createRequest({
     path,
     originalUrl,
     url: originalUrl,
-    protocol: 'https',
+    protocol,
     headers,
     get(name) {
       return headers[String(name || '').toLowerCase()] || '';
@@ -154,4 +155,14 @@ test('central login redirect preserves the original request URL', () => {
   });
   const redirect = new URL(buildCentralLoginRedirectUrl(req));
   assert.equal(redirect.searchParams.get('returnTo'), 'https://vivy.funesterie.me/?mode=studio');
+});
+
+test('central login redirect keeps public hosts on https behind proxies', () => {
+  const req = createRequest({
+    host: 'vivy.funesterie.me',
+    protocol: 'http',
+    originalUrl: '/studio?tab=voice',
+  });
+  const redirect = new URL(buildCentralLoginRedirectUrl(req));
+  assert.equal(redirect.searchParams.get('returnTo'), 'https://vivy.funesterie.me/studio?tab=voice');
 });

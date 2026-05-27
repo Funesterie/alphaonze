@@ -7436,6 +7436,10 @@ function getRequestSurfaceHost(req) {
   return raw.replace(/:\d+$/, '').toLowerCase();
 }
 
+function isGeneralFunesterieSurfaceHost(hostname) {
+  return hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
+}
+
 function resolveEmbeddedUiSurface(req) {
   const hostname = getRequestSurfaceHost(req);
   const pathname = String(req.path || req.originalUrl || '/').split('?')[0].toLowerCase();
@@ -7448,9 +7452,7 @@ function resolveEmbeddedUiSurface(req) {
   }
 
   if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname)
-    || hostname === 'a11.funesterie.me'
-    || hostname === 'funesterie.me'
-    || hostname === 'www.funesterie.me') {
+    || hostname === 'a11.funesterie.me') {
     return 'a11';
   }
 
@@ -7462,11 +7464,28 @@ function resolveEmbeddedUiSurface(req) {
     return 'kaen44';
   }
 
+  if (isGeneralFunesterieSurfaceHost(hostname)) {
+    return 'funesterie';
+  }
+
   return 'a11';
 }
 
 function rewriteEmbeddedUiIndexForSurface(html, surface) {
   if (!html) return html;
+
+  if (surface === 'funesterie') {
+    return html
+      .replace(/<title>.*?<\/title>/i, '<title>Funesterie - NOSSEN</title>')
+      .replace(
+        /<meta name="description" content="[^"]*"\s*\/?>/i,
+        '<meta name="description" content="Funesterie / NOSSEN regroupe les agents A11, Kaen44 et Vivy avec une entree publique unique, un compte central et des routes specialisees." />'
+      )
+      .replace(
+        /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
+        '<meta name="apple-mobile-web-app-title" content="Funesterie" />'
+      );
+  }
 
   if (surface === 'a11') {
     return html
@@ -7555,6 +7574,7 @@ function resolveMissingEmbeddedUiRedirect(req) {
   if (String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production') return '';
 
   const surface = resolveEmbeddedUiSurface(req);
+  if (surface === 'funesterie') return 'https://funesterie.me/';
   if (surface === 'vivy') return 'https://funesterie.me/vivy/';
   if (surface === 'kaen44') return 'https://k44.funesterie.me/';
   return 'https://a11.funesterie.me/';
