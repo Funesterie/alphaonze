@@ -17,6 +17,17 @@ const {
   createAuthSessionRegistry,
   normalizeSurface,
 } = require('../auth/session-registry.cjs');
+const {
+  GOOGLE_CALLBACK_NAMES,
+  GOOGLE_CLIENT_ID_NAMES,
+  GOOGLE_CLIENT_SECRET_NAMES,
+  MICROSOFT_CALLBACK_NAMES,
+  MICROSOFT_CLIENT_ID_NAMES,
+  MICROSOFT_CLIENT_SECRET_NAMES,
+  buildAccountConnectorState,
+  firstEnv,
+  normalizeOAuthScopeList,
+} = require('../auth/account-connectors.cjs');
 
 const A11_SESSION_COOKIE = 'a11_session';
 const GOOGLE_OAUTH_STATE_COOKIE = 'a11_google_oauth_state';
@@ -78,6 +89,27 @@ function buildAuthClaims(user = {}, extra = {}) {
   if (extra.localAuth || user.localAuth) claims.localAuth = true;
   if (extra.provider || user.provider || user.auth_provider) {
     claims.provider = String(extra.provider || user.provider || user.auth_provider);
+  }
+  {
+    const oauthScopes = normalizeOAuthScopeList(
+      extra.oauthScopes
+      || extra.oauth_scopes
+      || user.oauthScopes
+      || user.oauth_scopes
+      || user.scope
+      || user.scopes
+    );
+    if (oauthScopes.length) claims.oauthScopes = oauthScopes;
+  }
+  {
+    const oauthScopeProfile = String(
+      extra.oauthScopeProfile
+      || extra.oauth_scope_profile
+      || user.oauthScopeProfile
+      || user.oauth_scope_profile
+      || ''
+    ).trim().toLowerCase();
+    if (oauthScopeProfile) claims.oauthScopeProfile = oauthScopeProfile.slice(0, 48);
   }
   if (extra.oauthBridge === true || user.oauthBridge === true) {
     claims.oauthBridge = true;
@@ -260,12 +292,7 @@ function resolveHostPinnedOAuthCallback(req, provider) {
 }
 
 function resolveExplicitGoogleCallbackUrl() {
-  return String(
-    process.env.GOOGLE_CALLBACK_URL
-    || process.env.A11_GOOGLE_CALLBACK_URL
-    || process.env.GOOGLE_REDIRECT_URI
-    || ''
-  ).trim();
+  return firstEnv(process.env, GOOGLE_CALLBACK_NAMES);
 }
 
 function resolveGoogleCallbackUrl(req, normalizePublicAppUrl) {
@@ -299,12 +326,7 @@ function getMicrosoftTenantId(env = process.env) {
 }
 
 function resolveExplicitMicrosoftCallbackUrl() {
-  return String(
-    process.env.MICROSOFT_REDIRECT_URI
-    || process.env.MICROSOFT_CALLBACK_URL
-    || process.env.AZURE_REDIRECT_URI
-    || ''
-  ).trim();
+  return firstEnv(process.env, MICROSOFT_CALLBACK_NAMES);
 }
 
 function resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl) {
@@ -365,6 +387,17 @@ function getMicrosoftOAuthBaseUrl(env = process.env) {
   return `https://login.microsoftonline.com/${encodeURIComponent(getMicrosoftTenantId(env))}/oauth2/v2.0`;
 }
 
+function resolveSessionCookieDomain(req) {
+  const explicit = String(process.env.A11_SESSION_COOKIE_DOMAIN || '').trim();
+  if (explicit) return explicit;
+
+  const hostname = resolveRequestHostname(req);
+  if (hostname === 'funesterie.me' || hostname.endsWith('.funesterie.me')) {
+    return '.funesterie.me';
+  }
+  return '';
+}
+
 function resolveCookieOptions(req, normalizePublicAppUrl, maxAge) {
   const secure = isSecureRequest(req);
   const explicitSameSite = normalizeSameSite(process.env.A11_SESSION_COOKIE_SAMESITE);
@@ -381,7 +414,7 @@ function resolveCookieOptions(req, normalizePublicAppUrl, maxAge) {
     options.maxAge = maxAge;
   }
 
-  const domain = String(process.env.A11_SESSION_COOKIE_DOMAIN || '').trim();
+  const domain = resolveSessionCookieDomain(req);
   if (domain) options.domain = domain;
   return options;
 }
@@ -626,22 +659,18 @@ async function fetchGoogleUserInfo(accessToken) {
 }
 
 async function exchangeMicrosoftCodeForTokens({ code, callbackUrl, clientId, clientSecret, scope }) {
-  const body = new URLSearchParams({
-    code,
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: callbackUrl,
-    grant_type: 'authorization_code',
-  });
-  const normalizedScope = String(scope || '').trim();
-  if (normalizedScope) {
-    body.set('scope', normalizedScope);
-  }
-
+  const tokenScope = normalizeOAuthScopeList(scope).join(' ') || 'openid profile email offline_access User.Read';
   const response = await fetch(`${getMicrosoftOAuthBaseUrl()}/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body,
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: callbackUrl,
+      grant_type: 'authorization_code',
+      scope: tokenScope,
+    }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -1060,15 +1089,15 @@ function createAuthRouter({
 
   function getGoogleOAuthConfig(req) {
     const clientIds = getGoogleClientIds(process.env);
-    const clientId = String(process.env.GOOGLE_CLIENT_ID || process.env.A11_GOOGLE_CLIENT_ID || clientIds[0] || '').trim();
-    const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || process.env.A11_GOOGLE_CLIENT_SECRET || '').trim();
+    const clientId = firstEnv(process.env, GOOGLE_CLIENT_ID_NAMES) || clientIds[0] || '';
+    const clientSecret = firstEnv(process.env, GOOGLE_CLIENT_SECRET_NAMES);
     const callbackUrl = resolveGoogleCallbackUrl(req, normalizePublicAppUrl);
     return { clientIds: clientIds.length ? clientIds : [clientId].filter(Boolean), clientId, clientSecret, callbackUrl };
   }
 
   function getMicrosoftOAuthConfig(req) {
-    const clientId = String(process.env.MICROSOFT_CLIENT_ID || process.env.AZURE_CLIENT_ID || '').trim();
-    const clientSecret = String(process.env.MICROSOFT_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || '').trim();
+    const clientId = firstEnv(process.env, MICROSOFT_CLIENT_ID_NAMES);
+    const clientSecret = firstEnv(process.env, MICROSOFT_CLIENT_SECRET_NAMES);
     const callbackUrl = resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl);
     return { clientId, clientSecret, callbackUrl };
   }
@@ -1087,7 +1116,7 @@ function createAuthRouter({
     return fallbackScope;
   }
 
-  function resolveGoogleOAuthScope(req) {
+  function resolveRequestedOAuthScopeProfile(req, envNames, fallbackProfile = 'basic') {
     const requestedProfile = String(
       req.query?.scopeProfile
       || req.query?.scope_profile
@@ -1095,14 +1124,42 @@ function createAuthRouter({
       || req.query?.scopeMode
       || ''
     ).trim().toLowerCase();
-    const defaultProfile = String(
-      process.env.GOOGLE_OAUTH_DEFAULT_PROFILE
-      || process.env.A11_GOOGLE_OAUTH_DEFAULT_PROFILE
-      || 'basic'
-    ).trim().toLowerCase();
-    const profile = requestedProfile || defaultProfile;
+    const defaultProfile = envNames
+      .map((name) => String(process.env[name] || '').trim().toLowerCase())
+      .find(Boolean) || fallbackProfile;
+    return requestedProfile || defaultProfile || fallbackProfile;
+  }
+
+  function resolveGoogleOAuthScopeProfile(req) {
+    return resolveRequestedOAuthScopeProfile(
+      req,
+      ['GOOGLE_OAUTH_DEFAULT_PROFILE', 'A11_GOOGLE_OAUTH_DEFAULT_PROFILE'],
+      'basic'
+    );
+  }
+
+  function resolveMicrosoftOAuthScopeProfile(req) {
+    return resolveRequestedOAuthScopeProfile(
+      req,
+      ['MICROSOFT_OAUTH_DEFAULT_PROFILE', 'A11_MICROSOFT_OAUTH_DEFAULT_PROFILE'],
+      'basic'
+    );
+  }
+
+  function resolveGoogleOAuthScope(req) {
+    const profile = resolveGoogleOAuthScopeProfile(req);
 
     if (['drive', 'files', 'google-drive'].includes(profile)) {
+      const allowDriveProfile = isTruthy(
+        process.env.GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE
+        || process.env.A11_GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE
+      );
+      if (!allowDriveProfile) {
+        return resolveOAuthScope(
+          ['GOOGLE_OAUTH_LOGIN_SCOPES', 'A11_GOOGLE_OAUTH_LOGIN_SCOPES'],
+          'openid email profile'
+        );
+      }
       return resolveOAuthScope(
         ['GOOGLE_OAUTH_DRIVE_SCOPES', 'A11_GOOGLE_OAUTH_DRIVE_SCOPES', 'GOOGLE_OAUTH_SCOPES', 'A11_GOOGLE_OAUTH_SCOPES'],
         'openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly'
@@ -1116,19 +1173,7 @@ function createAuthRouter({
   }
 
   function resolveMicrosoftOAuthScope(req) {
-    const requestedProfile = String(
-      req.query?.scopeProfile
-      || req.query?.scope_profile
-      || req.query?.intent
-      || req.query?.scopeMode
-      || ''
-    ).trim().toLowerCase();
-    const defaultProfile = String(
-      process.env.MICROSOFT_OAUTH_DEFAULT_PROFILE
-      || process.env.A11_MICROSOFT_OAUTH_DEFAULT_PROFILE
-      || 'basic'
-    ).trim().toLowerCase();
-    const profile = requestedProfile || defaultProfile;
+    const profile = resolveMicrosoftOAuthScopeProfile(req);
 
     if (['drive', 'files', 'onedrive', 'microsoft-drive'].includes(profile)) {
       return resolveOAuthScope(
@@ -1180,6 +1225,8 @@ function createAuthRouter({
     const client = String(req.query?.client || 'web').trim().slice(0, 32) || 'web';
     const returnTo = String(req.query?.returnTo || '/auth/success').trim() || '/auth/success';
     const surface = resolveOAuthSurfaceFromRequest(req);
+    const oauthScopeProfile = resolveGoogleOAuthScopeProfile(req);
+    const oauthScope = resolveGoogleOAuthScope(req);
     const state = jwt.sign(
       {
         typ: 'google_oauth_state',
@@ -1187,6 +1234,8 @@ function createAuthRouter({
         client,
         returnTo,
         surface,
+        oauthScopeProfile,
+        oauthScopes: normalizeOAuthScopeList(oauthScope),
       },
       jwtSecret,
       { expiresIn: '10m' }
@@ -1205,7 +1254,7 @@ function createAuthRouter({
       client_id: clientId,
       redirect_uri: callbackUrl,
       response_type: 'code',
-      scope: resolveGoogleOAuthScope(req),
+      scope: oauthScope,
       access_type: 'offline',
       include_granted_scopes: 'true',
       prompt: String(req.query?.prompt || 'select_account').trim() || 'select_account',
@@ -1301,6 +1350,8 @@ function createAuthRouter({
         provider: 'google',
         surface: statePayload?.surface,
         client: statePayload?.client,
+        oauthScopeProfile: statePayload?.oauthScopeProfile,
+        oauthScopes: tokens?.scope || statePayload?.oauthScopes,
         ...(bridgeOrigin ? { oauthBridge: true, bridgeOrigin } : {}),
       });
       res.clearCookie(GOOGLE_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
@@ -1341,6 +1392,7 @@ function createAuthRouter({
     const client = String(req.query?.client || 'web').trim().slice(0, 32) || 'web';
     const returnTo = String(req.query?.returnTo || '/auth/success').trim() || '/auth/success';
     const surface = resolveOAuthSurfaceFromRequest(req);
+    const oauthScopeProfile = resolveMicrosoftOAuthScopeProfile(req);
     const oauthScope = resolveMicrosoftOAuthScope(req);
     const state = jwt.sign(
       {
@@ -1349,7 +1401,8 @@ function createAuthRouter({
         client,
         returnTo,
         surface,
-        scope: oauthScope,
+        oauthScopeProfile,
+        oauthScopes: normalizeOAuthScopeList(oauthScope),
       },
       jwtSecret,
       { expiresIn: '10m' }
@@ -1428,7 +1481,7 @@ function createAuthRouter({
         callbackUrl,
         clientId,
         clientSecret,
-        scope: statePayload?.scope,
+        scope: statePayload?.oauthScopes,
       });
       const profile = await fetchMicrosoftUserInfo(tokens.access_token);
       const email = normalizeEmail(profile?.mail || profile?.userPrincipalName || profile?.email);
@@ -1451,6 +1504,8 @@ function createAuthRouter({
         provider: 'microsoft',
         surface: statePayload?.surface,
         client: statePayload?.client,
+        oauthScopeProfile: statePayload?.oauthScopeProfile,
+        oauthScopes: tokens?.scope || statePayload?.oauthScopes,
         ...(bridgeOrigin ? { oauthBridge: true, bridgeOrigin } : {}),
       });
       res.clearCookie(MICROSOFT_OAUTH_STATE_COOKIE, resolveCookieOptions(req, normalizePublicAppUrl));
@@ -1469,7 +1524,8 @@ function createAuthRouter({
   });
 
   router.get('/api/auth/me', async (req, res) => {
-    if (!extractRequestAuthToken(req)) {
+    const token = extractRequestAuthToken(req);
+    if (!token) {
       return res.json({ ok: true, authenticated: false, user: null });
     }
 
@@ -1478,6 +1534,7 @@ function createAuthRouter({
       return res.json({
         ok: true,
         authenticated: true,
+        token,
         user: buildPublicAuthUser(decoded, decoded),
         session: {
           id: decoded.sid || null,
@@ -1504,6 +1561,45 @@ function createAuthRouter({
         message: error?.message || 'Session invalide',
       });
     }
+  });
+
+  router.get('/api/auth/connectors', async (req, res) => {
+    const token = extractRequestAuthToken(req);
+    let decoded = null;
+    if (token) {
+      try {
+        decoded = await decodeRequestAuthClaims(req);
+      } catch (error) {
+        if (error?.code === 'A11_SESSION_REVOKED') {
+          clearSessionCookies(req, res);
+          return res.status(401).json({
+            ok: false,
+            authenticated: false,
+            error: 'A11_SESSION_REVOKED',
+            message: 'Session révoquée. Reconnecte-toi.',
+          });
+        }
+        return res.status(401).json({
+          ok: false,
+          authenticated: false,
+          error: 'A11_JWT_Invalid',
+          message: error?.message || 'Session invalide',
+        });
+      }
+    }
+
+    const state = buildAccountConnectorState({
+      user: decoded || {},
+      req,
+      env: process.env,
+      googleCallbackUrl: resolveGoogleCallbackUrl(req, normalizePublicAppUrl),
+      microsoftCallbackUrl: resolveMicrosoftCallbackUrl(req, normalizePublicAppUrl),
+    });
+    return res.json({
+      ...state,
+      authenticated: Boolean(decoded),
+      user: decoded ? buildPublicAuthUser(decoded, decoded) : null,
+    });
   });
 
   router.get('/api/auth/sessions', async (req, res) => {
