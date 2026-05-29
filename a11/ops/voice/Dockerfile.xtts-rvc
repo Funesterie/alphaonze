@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV A11_XTTS_RVC_ROOT=/app
@@ -22,7 +22,7 @@ RUN apt-get update \
 
 COPY requirements.xtts-rvc.txt /app/requirements.xtts-rvc.txt
 RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
-    && pip install --no-cache-dir torch==2.1.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r /app/requirements.xtts-rvc.txt
 
 COPY funesterie_xtts_rvc_api.py /app/funesterie_xtts_rvc_api.py

@@ -54,7 +54,7 @@ For stronger voice identity, run the local Funesterie XTTS/RVC bridge and let th
 powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\Start-XttsRvcUi.ps1 -InstallOnly
 ```
 
-The installer uses Python 3.10 because `fairseq`/RVC does not start reliably on Python 3.11. If Python 3.10 is missing and `uv` is available, the script installs an isolated Python 3.10 runtime automatically.
+The installer uses Python 3.11 so `TTS` can run with modern `numpy` instead of the old Python 3.10 `numpy==1.22` path. If Python 3.11 is missing and `uv` is available, the script installs an isolated Python 3.11 runtime automatically.
 
 Then place RVC models in:
 
