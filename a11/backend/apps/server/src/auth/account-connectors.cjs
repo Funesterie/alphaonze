@@ -115,6 +115,12 @@ function getAccessPacks(user = {}) {
     user?.accessPacks,
     user?.access_packs,
     user?.entitlements,
+    user?.plan,
+    user?.tier,
+    user?.accountTier,
+    user?.account_tier,
+    user?.subscriptionPlan,
+    user?.subscription_plan,
   ].flatMap((value) => {
     if (Array.isArray(value)) return value;
     if (typeof value === 'string') return value.split(/[,\s;]+/g);
@@ -126,15 +132,25 @@ function getAccessPacks(user = {}) {
 function resolveAccountTier(user = {}, env = process.env) {
   if (hasFullAccess(user, env)) return 'admin';
   const packs = getAccessPacks(user);
+  if (packs.some((pack) => ['founder', 'fondateur', 'founder_30', 'fondateur_30', 'godlike', 'god_like'].includes(pack))) {
+    return 'founder';
+  }
   if (packs.some((pack) => ['family', 'famille', 'premium', 'a11', 'k44', 'vivy', 'a11+vivy'].includes(pack))) {
     return 'family';
   }
+  const email = normalizeText(user?.email);
+  const configuredFounders = String(env?.A11_MCP_FOUNDER_EMAILS || env?.A11_FOUNDER_EMAILS || env?.FUNESTERIE_FOUNDER_EMAILS || '')
+    .split(/[,\s;]+/g)
+    .map(normalizeText)
+    .filter(Boolean);
+  if (email && configuredFounders.includes(email)) return 'founder';
   if (user?.subscription_active === true || user?.subscriptionActive === true) return 'family';
   return 'basic';
 }
 
 function resolveQuotaLabel(tier = 'basic') {
   if (tier === 'admin') return 'illimite';
+  if (tier === 'founder') return '30 Go';
   if (tier === 'family') return '10 Go';
   return '1 Go';
 }
@@ -213,10 +229,102 @@ function providerFilesState(provider = '', user = {}) {
   return 'unknown';
 }
 
+function normalizeOAuthConnector(provider = '', value = {}) {
+  const normalizedProvider = cleanText(provider).toLowerCase();
+  if (!['google', 'microsoft'].includes(normalizedProvider)) return null;
+  if (!value || typeof value !== 'object') return null;
+
+  const scopes = normalizeOAuthScopeList(
+    value.oauthScopes
+    || value.oauth_scopes
+    || value.scope
+    || value.scopes
+  );
+  const account = cleanText(value.account || value.email || value.username);
+  const profile = cleanText(value.oauthScopeProfile || value.oauth_scope_profile || value.scopeProfile)
+    .toLowerCase()
+    .slice(0, 48);
+  const filesAccess = cleanText(value.filesAccess || value.files_access).toLowerCase();
+  const linked = value.linked === true
+    || value.connected === true
+    || Boolean(account)
+    || scopes.length > 0;
+
+  if (!linked) return null;
+
+  const connector = {
+    linked: true,
+  };
+  if (account) connector.account = account.slice(0, 160);
+  if (scopes.length) connector.oauthScopes = scopes;
+  if (profile) connector.oauthScopeProfile = profile;
+  if (['authorized', 'not_authorized', 'unknown'].includes(filesAccess)) {
+    connector.filesAccess = filesAccess;
+  }
+  const connectedAt = cleanText(value.connectedAt || value.connected_at);
+  if (connectedAt) connector.connectedAt = connectedAt.slice(0, 40);
+  return connector;
+}
+
+function normalizeOAuthConnectors(value = {}) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const connectors = {};
+  for (const provider of ['google', 'microsoft']) {
+    const connector = normalizeOAuthConnector(provider, raw[provider]);
+    if (connector) connectors[provider] = connector;
+  }
+  return connectors;
+}
+
+function buildOAuthConnector(provider = '', options = {}) {
+  return normalizeOAuthConnector(provider, {
+    linked: true,
+    account: options.account || options.email || options.username,
+    oauthScopes: options.oauthScopes || options.oauth_scopes || options.scope || options.scopes,
+    oauthScopeProfile: options.oauthScopeProfile || options.oauth_scope_profile,
+    filesAccess: options.filesAccess || options.files_access,
+    connectedAt: options.connectedAt || new Date().toISOString(),
+  });
+}
+
+function mergeOAuthConnectorState(existing = {}, provider = '', options = {}) {
+  const connectors = normalizeOAuthConnectors(existing);
+  const connector = buildOAuthConnector(provider, options);
+  if (connector) connectors[cleanText(provider).toLowerCase()] = connector;
+  return connectors;
+}
+
+function getUserOAuthConnectors(user = {}) {
+  const connectors = normalizeOAuthConnectors(user?.oauthConnectors || user?.oauth_connectors);
+  const legacyProvider = inferProviderFromUser(user);
+  if (['google', 'microsoft'].includes(legacyProvider) && !connectors[legacyProvider]) {
+    const legacyConnector = buildOAuthConnector(legacyProvider, {
+      account: user.email || user.username,
+      oauthScopes: user.oauthScopes || user.oauth_scopes || user.scope || user.scopes,
+      oauthScopeProfile: user.oauthScopeProfile || user.oauth_scope_profile,
+      connectedAt: user.iat ? new Date(Number(user.iat) * 1000).toISOString() : undefined,
+    });
+    if (legacyConnector) connectors[legacyProvider] = legacyConnector;
+  }
+  return connectors;
+}
+
+function connectorFilesState(provider = '', connector = {}, fallbackUser = {}) {
+  if (['authorized', 'not_authorized', 'unknown'].includes(connector.filesAccess)) {
+    return connector.filesAccess;
+  }
+  const scopedConnector = {
+    oauthScopes: connector.oauthScopes || connector.oauth_scopes || connector.scope || connector.scopes,
+  };
+  if (normalizeOAuthScopeList(scopedConnector.oauthScopes).length) {
+    return providerFilesState(provider, scopedConnector);
+  }
+  return providerFilesState(provider, fallbackUser);
+}
+
 function buildAccountConnectorState(options = {}) {
   const env = options.env || process.env;
   const user = options.user || {};
-  const provider = inferProviderFromUser(user);
   const tier = resolveAccountTier(user, env);
   const derivedCallbackAvailable = Boolean(options.req?.headers?.host || options.req?.hostname);
   const googleConfig = resolveOAuthProviderConfig('google', {
@@ -230,8 +338,11 @@ function buildAccountConnectorState(options = {}) {
     derivedCallbackAvailable,
   });
 
-  const googleLinked = provider === 'google';
-  const microsoftLinked = provider === 'microsoft';
+  const oauthConnectors = getUserOAuthConnectors(user);
+  const googleConnector = oauthConnectors.google || {};
+  const microsoftConnector = oauthConnectors.microsoft || {};
+  const googleLinked = googleConnector.linked === true;
+  const microsoftLinked = microsoftConnector.linked === true;
 
   return {
     ok: true,
@@ -241,7 +352,9 @@ function buildAccountConnectorState(options = {}) {
       label: resolveQuotaLabel(tier),
       bytes: tier === 'admin'
         ? null
-        : (tier === 'family' ? 10 * 1024 * 1024 * 1024 : 1024 * 1024 * 1024),
+        : (tier === 'founder'
+            ? 30 * 1024 * 1024 * 1024
+            : (tier === 'family' ? 10 * 1024 * 1024 * 1024 : 1024 * 1024 * 1024)),
     },
     publicBoundary: {
       basic: [
@@ -250,6 +363,18 @@ function buildAccountConnectorState(options = {}) {
         'MCP public',
         'OAuth personnel Google/Microsoft',
         'fichiers du compte',
+      ],
+      premium: [
+        'MCP public avance',
+        'statut cockpit',
+        'RomStation lecture',
+        'Discord communaute',
+      ],
+      founder: [
+        'MCP prive de session',
+        'RomStation controlee',
+        'GitHub/YouTube/Discord personnels',
+        'installation locale A11',
       ],
       familyAdmin: [
         'MCP prive',
@@ -263,21 +388,39 @@ function buildAccountConnectorState(options = {}) {
       google: {
         configured: googleConfig.configured,
         linked: googleLinked,
-        account: googleLinked ? (user.email || user.username || null) : null,
-        filesAccess: googleLinked ? providerFilesState('google', user) : 'not_linked',
+        account: googleLinked ? (googleConnector.account || user.email || user.username || null) : null,
+        filesAccess: googleLinked ? connectorFilesState('google', googleConnector, user) : 'not_linked',
         missing: googleConfig.missing,
       },
       microsoft: {
         configured: microsoftConfig.configured,
         linked: microsoftLinked,
-        account: microsoftLinked ? (user.email || user.username || null) : null,
-        filesAccess: microsoftLinked ? providerFilesState('microsoft', user) : 'not_linked',
+        account: microsoftLinked ? (microsoftConnector.account || user.email || user.username || null) : null,
+        filesAccess: microsoftLinked ? connectorFilesState('microsoft', microsoftConnector, user) : 'not_linked',
         missing: microsoftConfig.missing,
       },
       accountFiles: {
         configured: true,
         linked: Boolean(user && (user.id || user.email || user.username)),
         scopedToAccount: true,
+      },
+      github: {
+        configured: false,
+        linked: false,
+        minimumTier: 'founder',
+        note: 'prevu pour les sessions Fondateur sans acces global',
+      },
+      youtube: {
+        configured: false,
+        linked: false,
+        minimumTier: 'founder',
+        note: 'prevu pour les sessions Fondateur avec OAuth propre au compte',
+      },
+      discord321gaming: {
+        configured: true,
+        linked: false,
+        minimumTier: 'premium',
+        note: 'acces communautaire 321gaming; roles Discord a synchroniser cote Discord',
       },
     },
     serverConfig: {
@@ -308,19 +451,27 @@ function humanFilesState(value = '') {
 
 function buildConnectorStateContext(state = {}) {
   const tier = state.tier || 'basic';
-  const isPrivileged = tier === 'family' || tier === 'admin';
+  const isPrivileged = tier === 'family' || tier === 'founder' || tier === 'admin';
   const google = state.connectors?.google || {};
   const microsoft = state.connectors?.microsoft || {};
   const quota = state.quota?.label || resolveQuotaLabel(tier);
   const publicTools = Array.isArray(state.publicBoundary?.basic)
     ? state.publicBoundary.basic.join(', ')
     : 'chat K44, recherche web, MCP public, OAuth personnel Google/Microsoft, fichiers du compte';
+  const premiumTools = Array.isArray(state.publicBoundary?.premium)
+    ? state.publicBoundary.premium.join(', ')
+    : 'MCP public avance, statut cockpit, RomStation lecture, Discord communaute';
+  const founderTools = Array.isArray(state.publicBoundary?.founder)
+    ? state.publicBoundary.founder.join(', ')
+    : 'MCP prive de session, RomStation controlee, GitHub/YouTube/Discord personnels, installation locale A11';
   const privateTools = Array.isArray(state.publicBoundary?.familyAdmin)
     ? state.publicBoundary.familyAdmin.join(', ')
     : 'MCP prive, debug, prompts internes, infra, outils sensibles';
   const lines = [
     `Plan: ${tier}${isPrivileged ? ' (acces etendu)' : ' (frontiere publique)'}; quota fichiers: ${quota}.`,
     `Surface publique: ${publicTools}.`,
+    `Premium: ${premiumTools}.`,
+    `Fondateur: ${founderTools}; uniquement dans la session du compte, sans suppression ni acces cross-compte par defaut.`,
     `Reserve famille/admin: ${privateTools}.`,
     `Google: ${google.linked ? 'lie a la session' : 'non lie dans cette session'}; ${humanFilesState(google.filesAccess)}; ${humanConfigStatus(state.serverConfig?.google || {})}.`,
     `Microsoft: ${microsoft.linked ? 'lie a la session' : 'non lie dans cette session'}; ${humanFilesState(microsoft.filesAccess)}; ${humanConfigStatus(state.serverConfig?.microsoft || {})}.`,
@@ -355,7 +506,7 @@ function buildConnectorAwareSystemPrompt(systemPrompt = '', state = {}) {
 function isConnectorCapabilitiesQuestion(text = '') {
   const normalized = normalizeText(text);
   if (!normalized) return false;
-  const mentions = /\b(outils?|tools?|capacites?|capabilities|connecteurs?|connectors?|oauth|google|drive|microsoft|onedrive|fichiers?|files?|permissions?|droits?|plan|basic|famille|admin)\b/.test(normalized);
+  const mentions = /\b(outils?|tools?|capacites?|capabilities|connecteurs?|connectors?|oauth|google|drive|microsoft|onedrive|github|youtube|discord|romstation|local|installation|fichiers?|files?|permissions?|droits?|plan|basic|premium|fondateur|founder|famille|admin)\b/.test(normalized);
   const asks = /\b(quels?|quoi|liste|dispo|disponibles?|etat|statut|status|connecte|connectes|lie|lies|autorise|autorises|tu as|as tu|t as|peux tu|peux-tu|acces|access|montre|affiche|donne)\b/.test(normalized)
     || /\?/.test(normalized);
   return mentions && asks;
@@ -376,7 +527,9 @@ module.exports = {
   humanConfigStatus,
   inferProviderFromUser,
   isConnectorCapabilitiesQuestion,
+  mergeOAuthConnectorState,
   normalizeOAuthScopeList,
+  normalizeOAuthConnectors,
   resolveOAuthProviderConfig,
   scopeListIncludes,
 };

@@ -526,7 +526,17 @@ const createAuthRouter = require('./src/routes/auth.cjs');
 const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
 const { createAuthSessionRegistry } = require('./src/auth/session-registry.cjs');
 const { createEmbeddedUiAuthGate } = require('./src/auth/embedded-ui-auth-gate.cjs');
+const { createOAuthTokenVault } = require('./src/auth/oauth-token-vault.cjs');
 const { hasFullAccess } = require('./src/auth/full-access.cjs');
+const {
+  buildSessionDriveStatusPayload,
+  normalizeSessionStoragePreference,
+  resolveSessionDriveStorageState: resolveSessionDriveStorageStateForRequest,
+} = require('./src/storage/session-drive-storage.cjs');
+const {
+  createSessionDriveUploadWriter,
+  selectSessionDriveProvider,
+} = require('./src/storage/session-drive-writer.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
@@ -5400,6 +5410,14 @@ function resolveFileUploadWriter() {
   };
 }
 
+function normalizeStoragePreference(value = '') {
+  return normalizeSessionStoragePreference(value);
+}
+
+function resolveSessionDriveStorageState(req) {
+  return resolveSessionDriveStorageStateForRequest({ user: req?.user || {}, req, env: process.env });
+}
+
 let r2ClientSingleton = null;
 // Removed duplicate fileStorage initialization
 
@@ -5414,6 +5432,10 @@ const normalizePublicAppUrl = fileStorage.normalizePublicAppUrl;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRY = '24h';
+const oauthTokenVault = createOAuthTokenVault({
+  secret: JWT_SECRET,
+  logger: console,
+});
 const PUBLIC_RESOURCE_LINK_AUDIENCE = 'a11_resource_download';
 const EXPLICIT_PUBLIC_API_BASE_URL = String(
   process.env.PUBLIC_API_URL
@@ -6411,6 +6433,7 @@ app.use(createAuthRouter({
   crypto,
   normalizePublicAppUrl,
   authSessionRegistry,
+  oauthTokenVault,
 }));
 
 app.use(createA11HistoryRouter({
@@ -6628,6 +6651,20 @@ app.post('/api/upload/image-local', express.json({ limit: '20mb' }), async (req,
   }
 });
 
+app.get('/api/storage/session-drive/status', verifyJWT, async (req, res) => {
+  try {
+    const sessionDrive = resolveSessionDriveStorageState(req);
+    return res.json(buildSessionDriveStatusPayload(sessionDrive));
+  } catch (error_) {
+    console.error('[A11][session-drive-status] error:', error_);
+    return res.status(500).json({
+      ok: false,
+      error: 'session_drive_status_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
 app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) => {
   try {
     let userId = String(req.user?.id || '').trim();
@@ -6652,11 +6689,43 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
       attachToEmail,
       expiresAt,
       ttlSeconds,
+      storagePreference,
+      storageBackend,
+      storageTarget,
+      preferExternalStorage,
     } = req.body || {};
+    const rawStoragePreference = storageTarget || storageBackend || storagePreference;
+    const requestedStoragePreference = normalizeStoragePreference(rawStoragePreference);
+    const wantsSessionDriveStorage = requestedStoragePreference === 'session-drive' || preferExternalStorage === true;
+    let sessionDrivePayload = null;
+    let uploadWriter = null;
+    let effectiveStoragePreference = requestedStoragePreference || 'server-local';
+    if (wantsSessionDriveStorage) {
+      const sessionDrive = resolveSessionDriveStorageState(req);
+      sessionDrivePayload = buildSessionDriveStatusPayload(sessionDrive);
+      if (!sessionDrive.providers.length) {
+        return res.status(409).json({
+          ...sessionDrivePayload,
+          ok: false,
+          error: sessionDrive.reason,
+          message: 'Connecte Google Drive ou Microsoft OneDrive a cette session avant de stocker ce fichier hors serveur.',
+        });
+      }
+      const sessionDriveProvider = selectSessionDriveProvider(rawStoragePreference, sessionDrive.providers);
+      uploadWriter = createSessionDriveUploadWriter({
+        req,
+        provider: sessionDriveProvider,
+        sessionDrive,
+        tokenVault: oauthTokenVault,
+        env: process.env,
+      });
+      effectiveStoragePreference = 'session-drive';
+    } else {
+      uploadWriter = resolveFileUploadWriter();
+    }
     const normalizedConversationId = normalizeConversationId(conversationId || convId || sessionId);
     const resolvedExpiresAt = normalizeOptionalTimestamp(expiresAt)
       || buildTemporaryFileExpiryDate(Number(ttlSeconds || 0) > 0 ? Number(ttlSeconds) * 1000 : TEMP_SHARED_FILE_TTL_MS);
-    const uploadWriter = resolveFileUploadWriter();
     const ingestion = await ingestUploadedFile({
       userId,
       filename,
@@ -6668,6 +6737,8 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
       resourceKind: 'file',
       resourceMetadata: {
         source: 'api.files.upload',
+        storagePreference: effectiveStoragePreference,
+        ...(sessionDrivePayload ? { sessionDriveProvider: uploadWriter.provider || null } : {}),
       },
       linkConversationResource,
       analyzeResourceContent: analyzeUploadedResource,
@@ -6685,7 +6756,7 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
       || ingestion.file.url
       || '';
 
-    if (!publicConversationResource?.downloadUrl) {
+    if (!publicConversationResource?.downloadUrl && !(wantsSessionDriveStorage && ingestion.file.url)) {
       notifySlackError('FILES public download URL missing', 'public_download_url_missing', {
         route: '/api/files/upload',
         conversationId: normalizedConversationId,
@@ -6749,6 +6820,8 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
         : null,
       mail,
       storageBackend: uploadWriter.backend,
+      storagePreference: effectiveStoragePreference,
+      sessionDrive: sessionDrivePayload,
     });
   } catch (e) {
     if (e?.code === 'missing_content_base64' || e?.code === 'invalid_base64_content') {
@@ -6756,6 +6829,15 @@ app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) 
     }
     if (e?.code === 'file_too_large') {
       return res.status(413).json({ ok: false, error: e.code, maxBytes: e.maxBytes || FILE_UPLOAD_MAX_BYTES });
+    }
+    if (String(e?.code || '').startsWith('session_drive_')) {
+      return res.status(Number(e.status || 502)).json({
+        ok: false,
+        error: e.code,
+        message: String(e?.message || e.code),
+        providerStatus: e.providerStatus || undefined,
+        provider: e.provider || undefined,
+      });
     }
     console.error('[FILES] upload failed:', e?.message);
     notifySlackError('FILES upload failed', e?.message, {

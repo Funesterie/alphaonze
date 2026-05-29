@@ -64,6 +64,61 @@ test('construit un etat Basic avec Google Drive autorise par scopes', () => {
   assert.equal(state.connectors.microsoft.linked, false);
 });
 
+test('construit un etat avec Google et Microsoft lies en meme temps', () => {
+  const state = buildAccountConnectorState({
+    env: {
+      GOOGLE_CLIENT_ID: 'google-id',
+      GOOGLE_CLIENT_SECRET: 'google-secret',
+      GOOGLE_CALLBACK_URL: 'https://funesterie.me/api/auth/google/callback',
+      MICROSOFT_CLIENT_ID: 'ms-id',
+      MICROSOFT_CLIENT_SECRET: 'ms-secret',
+      MICROSOFT_REDIRECT_URI: 'https://funesterie.me/api/auth/microsoft/callback',
+    },
+    user: {
+      id: 'u1',
+      username: 'Jeffrey',
+      email: 'jeffrey@example.test',
+      provider: 'microsoft',
+      oauthConnectors: {
+        google: {
+          linked: true,
+          account: 'jeffrey@gmail.example',
+          oauthScopes: ['openid', 'https://www.googleapis.com/auth/drive.file'],
+        },
+        microsoft: {
+          linked: true,
+          account: 'jeffrey@funesterie.example',
+          oauthScopes: ['openid', 'Files.Read'],
+        },
+      },
+    },
+  });
+
+  assert.equal(state.connectors.google.linked, true);
+  assert.equal(state.connectors.google.account, 'jeffrey@gmail.example');
+  assert.equal(state.connectors.google.filesAccess, 'authorized');
+  assert.equal(state.connectors.microsoft.linked, true);
+  assert.equal(state.connectors.microsoft.account, 'jeffrey@funesterie.example');
+  assert.equal(state.connectors.microsoft.filesAccess, 'authorized');
+});
+
+test('construit un etat Fondateur avec connecteurs avances annonces mais bornes a la session', () => {
+  const state = buildAccountConnectorState({
+    env: {},
+    user: {
+      id: 'founder-1',
+      email: 'founder@example.test',
+      accountTier: 'fondateur',
+    },
+  });
+
+  assert.equal(state.tier, 'founder');
+  assert.equal(state.quota.label, '30 Go');
+  assert.equal(state.connectors.github.minimumTier, 'founder');
+  assert.equal(state.connectors.youtube.minimumTier, 'founder');
+  assert.match(buildConnectorStateContext(state), /sans suppression ni acces cross-compte/);
+});
+
 test('injecte le bloc connecteurs une seule fois dans le prompt systeme', () => {
   const state = buildAccountConnectorState({ user: { id: 'u1' }, env: {} });
   const prompt = buildConnectorAwareSystemPrompt('Je suis Kaen44.', state);
