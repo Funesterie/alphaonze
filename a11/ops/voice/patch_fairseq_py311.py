@@ -1,4 +1,4 @@
-"""Patch fairseq 0.12.2 dataclass defaults for Python 3.11.
+"""Patch fairseq/Hydra dataclass defaults for Python 3.11.
 
 fairseq 0.12.2 is still the RVC HuBERT loader used by this bridge, but its
 FairseqConfig dataclass predates Python 3.11's stricter mutable-default checks.
@@ -10,8 +10,12 @@ from pathlib import Path
 import sysconfig
 
 
-CONFIGS = Path(sysconfig.get_paths()["purelib"]) / "fairseq" / "dataclass" / "configs.py"
-INITIALIZE = Path(sysconfig.get_paths()["purelib"]) / "fairseq" / "dataclass" / "initialize.py"
+PURELIB = Path(sysconfig.get_paths()["purelib"])
+CONFIGS = PURELIB / "fairseq" / "dataclass" / "configs.py"
+INITIALIZE = PURELIB / "fairseq" / "dataclass" / "initialize.py"
+TRANSFORMER_CONFIG = PURELIB / "fairseq" / "models" / "transformer" / "transformer_config.py"
+HYDRA_INIT = PURELIB / "hydra" / "__init__.py"
+HYDRA_CONF = PURELIB / "hydra" / "conf" / "__init__.py"
 
 CONFIG_REPLACEMENTS = {
     "    common: CommonConfig = CommonConfig()": "    common: CommonConfig = field(default_factory=CommonConfig)",
@@ -40,6 +44,29 @@ INITIALIZE_REPLACEMENTS = {
             cs.store(name=k, node=v)""",
 }
 
+TRANSFORMER_REPLACEMENTS = {
+    "    encoder: EncDecBaseConfig = EncDecBaseConfig()": "    encoder: EncDecBaseConfig = field(default_factory=EncDecBaseConfig)",
+    "    decoder: DecoderConfig = DecoderConfig()": "    decoder: DecoderConfig = field(default_factory=DecoderConfig)",
+    "    quant_noise: QuantNoiseConfig = field(default=QuantNoiseConfig())": "    quant_noise: QuantNoiseConfig = field(default_factory=QuantNoiseConfig)",
+}
+
+HYDRA_INIT_REPLACEMENTS = {
+    "from hydra import utils\n": "",
+    '__all__ = ["__version__", "MissingConfigException", "main", "utils", "TaskFunction"]': '__all__ = ["__version__", "MissingConfigException", "main", "TaskFunction"]',
+}
+
+HYDRA_CONF_REPLACEMENTS = {
+    "        override_dirname: OverrideDirname = OverrideDirname()": "        override_dirname: OverrideDirname = field(default_factory=OverrideDirname)",
+    "    config: JobConfig = JobConfig()": "    config: JobConfig = field(default_factory=JobConfig)",
+    "    run: RunDir = RunDir()": "    run: RunDir = field(default_factory=RunDir)",
+    "    sweep: SweepDir = SweepDir()": "    sweep: SweepDir = field(default_factory=SweepDir)",
+    "    help: HelpConf = HelpConf()": "    help: HelpConf = field(default_factory=HelpConf)",
+    "    hydra_help: HydraHelpConf = HydraHelpConf()": "    hydra_help: HydraHelpConf = field(default_factory=HydraHelpConf)",
+    "    overrides: OverridesConf = OverridesConf()": "    overrides: OverridesConf = field(default_factory=OverridesConf)",
+    "    job: JobConf = JobConf()": "    job: JobConf = field(default_factory=JobConf)",
+    "    runtime: RuntimeConf = RuntimeConf()": "    runtime: RuntimeConf = field(default_factory=RuntimeConf)",
+}
+
 
 def patch_file(path: Path, replacements: dict[str, str], label: str) -> bool:
     if not path.exists():
@@ -60,11 +87,16 @@ def patch_file(path: Path, replacements: dict[str, str], label: str) -> bool:
 
 
 def main() -> None:
-    patched_configs = patch_file(CONFIGS, CONFIG_REPLACEMENTS, "fairseq dataclass defaults")
-    patched_initialize = patch_file(INITIALIZE, INITIALIZE_REPLACEMENTS, "fairseq Hydra defaults")
+    patched = [
+        patch_file(CONFIGS, CONFIG_REPLACEMENTS, "fairseq dataclass defaults"),
+        patch_file(INITIALIZE, INITIALIZE_REPLACEMENTS, "fairseq Hydra defaults"),
+        patch_file(TRANSFORMER_CONFIG, TRANSFORMER_REPLACEMENTS, "fairseq transformer defaults"),
+        patch_file(HYDRA_INIT, HYDRA_INIT_REPLACEMENTS, "Hydra import cycle"),
+        patch_file(HYDRA_CONF, HYDRA_CONF_REPLACEMENTS, "Hydra dataclass defaults"),
+    ]
 
-    if not patched_configs and not patched_initialize:
-        print("fairseq Python 3.11 compatibility patches already applied")
+    if not any(patched):
+        print("fairseq/Hydra Python 3.11 compatibility patches already applied")
 
 
 if __name__ == "__main__":
