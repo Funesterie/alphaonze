@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$venvPython = Join-Path $InstallDir ".venv310\Scripts\python.exe"
+$venvPython = Join-Path $InstallDir ".venv311\Scripts\python.exe"
 $bridgeFile = Join-Path $InstallDir "funesterie_xtts_rvc_api.py"
 $healthUrl = "http://127.0.0.1:$Port/health"
 $logDir = Join-Path $InstallDir "logs"

@@ -6,7 +6,7 @@ param(
   [string]$DatasetRoot = "D:\agent-bus\voice\personas",
   [string]$RvcRoot = "D:\agent-bus\voice\RVC-WebUI",
   [string]$OutputDir = "D:\agent-bus\voice\XTTS-RVC-UI\rvcs",
-  [string]$Python = "D:\agent-bus\voice\XTTS-RVC-UI\.venv310\Scripts\python.exe",
+  [string]$Python = "D:\agent-bus\voice\XTTS-RVC-UI\.venv311\Scripts\python.exe",
   [int]$Epochs = 5,
   [int]$BatchSize = 4,
   [string]$Gpu = "cpu",
