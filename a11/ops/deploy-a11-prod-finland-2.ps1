@@ -10,6 +10,7 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $A11Root = Join-Path $RepoRoot "a11"
 $ServerRoot = Join-Path $A11Root "backend\apps\server"
 $VoiceRoot = Join-Path $A11Root "backend\apps\voice-module"
+$VoiceBridgeRoot = Join-Path $A11Root "ops\voice"
 $EkkoRoot = Join-Path $A11Root "backend\apps\ekko"
 $WebDist = Join-Path $A11Root "frontend\apps\web\dist"
 $EnvSource = Join-Path $ServerRoot "profiles\a11.env"
@@ -121,6 +122,7 @@ Require-Path $RepoRoot "Repo"
 Invoke-SourceUpdate $RepoRoot
 Require-Path $ServerRoot "Backend A11"
 Require-Path $VoiceRoot "Module voix"
+Require-Path $VoiceBridgeRoot "Pont voix XTTS/RVC"
 Require-Path $EkkoRoot "Module Ekko"
 Require-Path $WebDist "Frontend dist"
 if (-not $ReuseRemoteSecrets) {
@@ -159,6 +161,7 @@ New-Item -ItemType Directory -Force -Path $StageRoot | Out-Null
 
 $ServerStage = Join-Path $StageRoot "server"
 $VoiceStage = Join-Path $StageRoot "voice-module"
+$VoiceBridgeStage = Join-Path $StageRoot "xtts-rvc-bridge"
 $EkkoStage = Join-Path $StageRoot "ekko"
 $WebStage = Join-Path $StageRoot "web\dist"
 
@@ -202,10 +205,16 @@ $voiceCopyArgs = @("/MIR", "/XD") + $voiceExDirs + @("/XF") + $voiceExFiles
 $ekkoCopyArgs = @("/MIR", "/XD") + $ekkoExDirs + @("/XF") + $ekkoExFiles
 Invoke-RobocopyChecked $ServerRoot $ServerStage $serverCopyArgs
 Invoke-RobocopyChecked $VoiceRoot $VoiceStage $voiceCopyArgs
+Invoke-RobocopyChecked $VoiceBridgeRoot $VoiceBridgeStage @(
+  "/MIR",
+  "/XD", ".git", ".venv", "venv", "__pycache__", "models", "model", "rvcs", "voices", "outputs", "logs", "tmp",
+  "/XF", ".env", ".env.*", "*.env", "*.env.*", "*.wav", "*.mp3", "*.flac", "*.ogg", "*.pth", "*.pt", "*.onnx", "*.index", "*.log"
+)
 Invoke-RobocopyChecked $EkkoRoot $EkkoStage $ekkoCopyArgs
 Invoke-RobocopyChecked $WebDist $WebStage @("/MIR")
 Remove-StagedSensitiveFiles $ServerStage
 Remove-StagedSensitiveFiles $VoiceStage
+Remove-StagedSensitiveFiles $VoiceBridgeStage
 Remove-StagedSensitiveFiles $EkkoStage
 Remove-StagedSensitiveFiles $WebStage
 
@@ -240,6 +249,33 @@ services:
       timeout: 5s
       retries: 10
 
+  a11-xtts-rvc:
+    build:
+      context: ../xtts-rvc-bridge
+      dockerfile: Dockerfile.xtts-rvc
+    container_name: a11-xtts-rvc
+    restart: unless-stopped
+    environment:
+      A11_XTTS_RVC_ROOT: /app
+      A11_XTTS_RVC_HOST: 0.0.0.0
+      A11_XTTS_RVC_PORT: "5000"
+      A11_XTTS_RVC_DEVICE: ${A11_XTTS_RVC_DEVICE:-cpu}
+      A11_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
+      A11_XTTS_RVC_TORCH_THREADS: ${A11_XTTS_RVC_TORCH_THREADS:-4}
+    volumes:
+      - /srv/a11-data/a11/xtts-rvc/models:/app/models
+      - /srv/a11-data/a11/xtts-rvc/rvcs:/app/rvcs
+      - /srv/a11-data/a11/runtime/voice-library:/app/voices:ro
+      - /srv/a11-data/a11/xtts-rvc/outputs:/app/outputs
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
   a11-voice:
     build:
       context: ../voice-module
@@ -248,8 +284,17 @@ services:
     environment:
       PORT: 5002
       A11_VOICE_OUT_DIR: /app/out
+      A11_VOICE_CONVERTER_PROVIDER: ${A11_VOICE_CONVERTER_PROVIDER:-xtts-rvc,ffmpeg-morph}
+      A11_VOICE_XTTS_RVC_URL: ${A11_VOICE_XTTS_RVC_URL:-http://a11-xtts-rvc:5000}
+      A11_VOICE_XTTS_RVC_PROTOCOL: ${A11_VOICE_XTTS_RVC_PROTOCOL:-a11}
+      A11_VOICE_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
+      A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS: ${A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS:-240}
+      A11_VOICE_XTTS_RVC_FALLBACK: ${A11_VOICE_XTTS_RVC_FALLBACK:-true}
     volumes:
       - /srv/a11-data/a11/voice-out:/app/out
+    depends_on:
+      a11-xtts-rvc:
+        condition: service_healthy
     expose:
       - "5002"
 
@@ -582,6 +627,12 @@ $overrides = [ordered]@{
   TTS_URL = "http://a11-voice:5002"
   VOICE_MODULE_URL = "http://a11-voice:5002"
   A11_VOICE_MODULE_URL = "http://a11-voice:5002"
+  A11_VOICE_CONVERTER_PROVIDER = "xtts-rvc,ffmpeg-morph"
+  A11_VOICE_XTTS_RVC_URL = "http://a11-xtts-rvc:5000"
+  A11_VOICE_XTTS_RVC_PROTOCOL = "a11"
+  A11_VOICE_XTTS_RVC_LANGUAGE = "fr"
+  A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS = "240"
+  A11_VOICE_XTTS_RVC_FALLBACK = "true"
   VIVY_ALEXA_TRACK_URL = "https://files.funesterie.me/public/vivy/2026-05-14/6e66f829-2c46-4254-95c8-4757a75ca07d-vivy-reference-short.mp3"
   VIVY_ALEXA_TRACK_TITLE = "Vivy Reference"
   VIVY_ALEXA_TRACK_ARTIST = "Funesterie"
@@ -628,12 +679,12 @@ Write-EnvFile $buildEnvMap $BuildEnvStage
 if (Test-Path -LiteralPath $Archive) {
   Remove-Item -LiteralPath $Archive -Force
 }
-& tar.exe -czf $Archive -C $StageRoot server voice-module ekko web Caddyfile
+& tar.exe -czf $Archive -C $StageRoot server voice-module xtts-rvc-bridge ekko web Caddyfile
 if ($LASTEXITCODE -ne 0) { throw "Creation archive echouee" }
 $archiveSizeMb = [Math]::Round((Get-Item -LiteralPath $Archive).Length / 1MB, 2)
 Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCyan
 
-$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
+$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 
