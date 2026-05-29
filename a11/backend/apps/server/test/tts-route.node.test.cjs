@@ -272,6 +272,637 @@ test('tts piper route leaves voice free unless language voice is explicitly forc
   }
 });
 
+test('tts speak route uses XTTS/RVC bridge before Piper for official persona voice', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const bridgeCalls = [];
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      assert.equal(options.method, 'POST');
+      assert.equal(options.body?.get?.('text'), 'bonjour');
+      assert.equal(options.body?.get?.('persona'), 'a11');
+      assert.equal(options.body?.get?.('voiceStyle'), 'terminator');
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const key = String(name || '').toLowerCase();
+            if (key === 'content-type') return 'audio/wav';
+            if (key === 'x-a11-voice-engine') return 'xtts-reference';
+            if (key === 'x-a11-voice-style') return 'terminator';
+            return null;
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_be_called_for_official_voice');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour',
+          persona: 'a11',
+          voicePersona: 'a11',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.via, 'xtts-rvc-direct');
+        assert.equal(result.json.voiceConversion.ok, true);
+        assert.equal(result.json.voiceConversion.engine, 'xtts-reference');
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.wav$/);
+        assert.equal(bridgeCalls.length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route treats official persona alone as identity voice request', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const bridgeCalls = [];
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      assert.equal(options.method, 'POST');
+      assert.equal(options.body?.get?.('text'), 'bonjour kaen');
+      assert.equal(options.body?.get?.('persona'), 'kaen44');
+      assert.equal(options.body?.get?.('voiceStyle'), 'donna');
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const key = String(name || '').toLowerCase();
+            if (key === 'content-type') return 'audio/wav';
+            if (key === 'x-a11-voice-engine') return 'xtts-reference';
+            if (key === 'x-a11-voice-style') return 'donna';
+            return null;
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_be_called_for_official_persona_default');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour kaen',
+          persona: 'kaen44',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.via, 'xtts-rvc-direct');
+        assert.equal(result.json.voiceConversion.ok, true);
+        assert.equal(result.json.voiceConversion.voiceStyle, 'donna');
+        assert.equal(bridgeCalls.length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route ignores stale Piper preference for official reference voices', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const bridgeCalls = [];
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const key = String(name || '').toLowerCase();
+            if (key === 'content-type') return 'audio/wav';
+            if (key === 'x-a11-voice-engine') return 'xtts-reference';
+            if (key === 'x-a11-voice-style') return 'terminator';
+            return null;
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_be_called_for_stale_official_voice_preference');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour',
+          persona: 'a11',
+          voicePersona: 'a11',
+          vocalMode: 'adaptive',
+          provider: 'piper',
+          ttsProvider: 'piper',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.via, 'xtts-rvc-direct');
+        assert.equal(result.json.voiceConversion.ok, true);
+        assert.equal(bridgeCalls.length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC bridge fails', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-identity-fallback-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    OPENAI_TTS_BASE_URL: process.env.OPENAI_TTS_BASE_URL,
+    A11_OPENAI_TTS_FIRST: process.env.A11_OPENAI_TTS_FIRST,
+    OPENAI_TTS_FIRST: process.env.OPENAI_TTS_FIRST,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const openAiBodies = [];
+  const bridgeCalls = [];
+  const remoteTtsCalls = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'), createPcm16Wav({ frequency: 330 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'false';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+  process.env.OPENAI_TTS_BASE_URL = 'https://api.openai.test/v1';
+  delete process.env.A11_OPENAI_TTS_FIRST;
+  delete process.env.OPENAI_TTS_FIRST;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push(value);
+      return {
+        ok: false,
+        status: 503,
+        headers: { get: () => 'application/json' },
+        async text() {
+          return JSON.stringify({ ok: false, error: 'bridge_down' });
+        },
+      };
+    }
+    if (value === 'https://api.openai.test/v1/audio/speech') {
+      openAiBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      remoteTtsCalls.push(value);
+      throw new Error('piper_http_should_not_be_called_for_official_openai_fallback');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour Jeffrey',
+          persona: 'kaen44',
+          voicePersona: 'kaen44',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'openai');
+        assert.equal(result.json.providerCapabilities.referenceVoice, true);
+        assert.match(result.json.voiceReference.label, /Kaen44 Donna/i);
+        assert.equal(bridgeCalls.length, 1);
+        assert.equal(openAiBodies.length, 1);
+        assert.match(openAiBodies[0].instructions, /Voix Kaen44/i);
+        assert.equal(remoteTtsCalls.length, 0);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts speak route uses low-latency OpenAI MP3 and skips slow XTTS/RVC bridge for interactive playback', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-interactive-mp3-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    OPENAI_TTS_BASE_URL: process.env.OPENAI_TTS_BASE_URL,
+    OPENAI_TTS_RESPONSE_FORMAT: process.env.OPENAI_TTS_RESPONSE_FORMAT,
+    A11_TTS_RESPONSE_FORMAT: process.env.A11_TTS_RESPONSE_FORMAT,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const openAiBodies = [];
+  const bridgeCalls = [];
+
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+  process.env.OPENAI_TTS_BASE_URL = 'https://api.openai.test/v1';
+  delete process.env.OPENAI_TTS_RESPONSE_FORMAT;
+  delete process.env.A11_TTS_RESPONSE_FORMAT;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push(value);
+      throw new Error('interactive_tts_should_skip_bridge');
+    }
+    if (value === 'https://api.openai.test/v1/audio/speech') {
+      openAiBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('mp3-audio');
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'test interactif A11',
+          persona: 'a11',
+          voicePersona: 'a11',
+          vocalMode: 'adaptive',
+          latencyMode: 'interactive',
+          audioFormat: 'mp3',
+          voiceConversion: false,
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'openai');
+        assert.equal(result.json.audioFormat, 'mp3');
+        assert.match(result.json.audio_url, /\.mp3$/);
+        assert.equal(result.json.providerCapabilities.referenceVoice, true);
+        assert.equal(result.json.referenceVoiceFallback, true);
+        assert.equal(result.json.voiceReference.scope, 'interactive-style');
+        assert.equal(result.json.voiceConversion, undefined);
+        assert.equal(bridgeCalls.length, 0);
+        assert.equal(openAiBodies.length, 1);
+        assert.equal(openAiBodies[0].response_format, 'mp3');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts speak route keeps trying voice module when OpenAI identity fallback is rate-limited', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-rate-limited-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    OPENAI_TTS_BASE_URL: process.env.OPENAI_TTS_BASE_URL,
+    A11_OPENAI_TTS_FIRST: process.env.A11_OPENAI_TTS_FIRST,
+    OPENAI_TTS_FIRST: process.env.OPENAI_TTS_FIRST,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const calls = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'), createPcm16Wav({ frequency: 330 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
+  process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+  process.env.OPENAI_TTS_BASE_URL = 'https://api.openai.test/v1';
+  delete process.env.A11_OPENAI_TTS_FIRST;
+  delete process.env.OPENAI_TTS_FIRST;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    calls.push(value);
+    if (value === 'https://api.openai.test/v1/audio/speech') {
+      return {
+        ok: false,
+        status: 429,
+        async arrayBuffer() {
+          return new ArrayBuffer(0);
+        },
+        async text() {
+          return JSON.stringify({ error: { message: 'rate limited' } });
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            audio_url: '/out/source.wav',
+            audioUrl: '/out/source.wav',
+            via: 'piper',
+          });
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/voice/convert') {
+      assert.equal(options.method, 'POST');
+      assert.equal(options.body?.get?.('persona'), 'kaen44');
+      assert.equal(options.body?.get?.('voiceStyle'), 'donna');
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            audio_url: '/out/converted.wav',
+            provider: 'xtts-rvc',
+            engine: 'xtts-rvc-api',
+            voiceStyle: 'donna',
+            attemptedEngines: ['xtts-rvc'],
+            module: 'a11-voice-module',
+          });
+        },
+      };
+    }
+    if (value.startsWith('http://a11-voice:5002/out/source.wav') || value.startsWith('http://a11-voice:5002/out/converted.wav')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour Jeffrey',
+          persona: 'kaen44',
+          voicePersona: 'kaen44',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.voiceConversion.ok, true);
+        assert.equal(result.json.voiceConversion.voiceStyle, 'donna');
+        assert.ok(calls.filter((call) => call === 'https://api.openai.test/v1/audio/speech').length >= 1);
+        assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/convert').length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts piper route respects OpenAI-first voice persona before HTTP module', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-first-'));
   const previousEnv = {
@@ -280,6 +911,9 @@ test('tts piper route respects OpenAI-first voice persona before HTTP module', a
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
     A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
@@ -302,8 +936,11 @@ test('tts piper route respects OpenAI-first voice persona before HTTP module', a
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
   process.env.A11_VOICE_CONVERSION_ENABLED = 'false';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
   process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
   delete process.env.A11_OPENAI_TTS_API_KEY;
   delete process.env.OPENAI_API_KEY;
@@ -346,6 +983,7 @@ test('tts piper route respects OpenAI-first voice persona before HTTP module', a
           text: 'Vivy chante une ligne douce',
           vocalMode: 'sing',
           persona: 'vivy',
+          provider: 'openai',
         });
 
         assert.equal(result.response.status, 200);
@@ -355,6 +993,102 @@ test('tts piper route respects OpenAI-first voice persona before HTTP module', a
         assert.equal(openAiBodies.length, 1);
         assert.match(openAiBodies[0].instructions, /Voix Vivy/i);
         assert.equal(remoteTtsCalls.length, 0);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts piper route blocks raw OpenAI audio when a reference voice is required', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-reference-required-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    OPENAI_TTS_BASE_URL: process.env.OPENAI_TTS_BASE_URL,
+    A11_OPENAI_TTS_FIRST: process.env.A11_OPENAI_TTS_FIRST,
+    OPENAI_TTS_FIRST: process.env.OPENAI_TTS_FIRST,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'false';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
+  process.env.OPENAI_TTS_API_KEY = 'test-openai-tts-key';
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+  process.env.OPENAI_TTS_BASE_URL = 'https://api.openai.test/v1';
+  delete process.env.A11_OPENAI_TTS_FIRST;
+  delete process.env.OPENAI_TTS_FIRST;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.openai.test/v1/audio/speech') {
+      assert.ok(JSON.parse(String(options.body || '{}')).input);
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/piper', {
+          text: 'hasta la vista baby',
+          persona: 'a11',
+          voicePersona: 'a11',
+          provider: 'openai',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 424);
+        assert.equal(result.json.error, 'voice_reference_tts_unavailable');
+        assert.equal(result.json.provider, 'openai');
+        assert.equal(result.json.voiceConversion, null);
       }
     );
   } finally {
@@ -506,6 +1240,9 @@ test('tts route can run generated audio through the voice conversion module', as
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
     A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     TTS_URL: process.env.TTS_URL,
     TTS_HOST: process.env.TTS_HOST,
@@ -524,6 +1261,9 @@ test('tts route can run generated audio through the voice conversion module', as
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
   delete process.env.TTS_URL;
   delete process.env.TTS_HOST;
   delete process.env.TTS_BASE_URL;
@@ -546,6 +1286,9 @@ test('tts route can run generated audio through the voice conversion module', as
     }
     if (String(url) === 'http://a11-voice:5002/api/voice/convert') {
       assert.equal(options.method, 'POST');
+      assert.equal(options.body?.get?.('text'), 'bonjour');
+      assert.equal(options.body?.get?.('mode'), 'adaptive');
+      assert.equal(options.body?.get?.('voiceStyle'), 'terminator');
       return {
         ok: true,
         status: 200,
@@ -553,7 +1296,10 @@ test('tts route can run generated audio through the voice conversion module', as
           return JSON.stringify({
             ok: true,
             audio_url: '/out/converted.wav',
-            provider: 'ffmpeg-morph',
+            provider: 'xtts-rvc',
+            engine: 'xtts-rvc-api',
+            voiceStyle: 'terminator',
+            attemptedEngines: ['xtts-rvc'],
             module: 'a11-voice-module',
             duration_ms: 120,
           });
@@ -583,13 +1329,17 @@ test('tts route can run generated audio through the voice conversion module', as
         const result = await postJson(baseUrl, '/api/tts/piper', {
           text: 'bonjour',
           vocalMode: 'adaptive',
+          provider: 'piper',
         });
 
         assert.equal(result.response.status, 200);
         assert.equal(result.json.audio_url, '/api/tts/out/converted.wav');
         assert.equal(result.json.originalAudioUrl, '/api/tts/out/source.wav');
         assert.equal(result.json.voiceConversion.ok, true);
-        assert.equal(result.json.voiceConversion.provider, 'ffmpeg-morph');
+        assert.equal(result.json.voiceConversion.provider, 'xtts-rvc');
+        assert.equal(result.json.voiceConversion.engine, 'xtts-rvc-api');
+        assert.equal(result.json.voiceConversion.voiceStyle, 'terminator');
+        assert.deepEqual(result.json.voiceConversion.attemptedEngines, ['xtts-rvc']);
         assert.equal(result.json.audioModule.reference.label, 'Terminator');
         assert.equal(
           backendCalls.filter((call) => call.url === 'http://a11-voice:5002/api/voice/convert').length,

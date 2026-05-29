@@ -6,6 +6,13 @@ const multer = require('multer');
 const router = express.Router();
 const buildTtsReadableText = require('../src/tts/build-tts-readable-text.cjs');
 const { extractRequestAuthToken } = require('../src/middleware/jwt-auth.cjs');
+const { buildStorageQuotaPayload } = require('../src/storage/account-storage-quota.cjs');
+const {
+  buildVoicePersonaInstruction,
+  OFFICIAL_PERSONAS,
+  PROVIDERS,
+  resolveVoiceProvider,
+} = require('../src/tts/voice-provider-manifest.cjs');
 const {
   AUDIO_EXTENSIONS,
   AUDIO_MIME_TYPES,
@@ -158,6 +165,87 @@ function getRemoteTtsBaseUrls(ttsConfig = getLocalTtsConfig()) {
   return Array.from(new Set(candidates));
 }
 
+function uniqueBaseUrls(values = []) {
+  return Array.from(new Set(
+    values
+      .map((value) => String(value || '').trim().replace(/\/$/, ''))
+      .filter(Boolean)
+  ));
+}
+
+function isAllowedTtsCorsOrigin(origin) {
+  const value = String(origin || '').trim();
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    const hostname = String(parsed.hostname || '').toLowerCase();
+    if (hostname === 'localhost' || hostname === '::1' || /^127(?:\.\d{1,3}){3}$/.test(hostname)) {
+      return true;
+    }
+    return [
+      'a11.funesterie.me',
+      'funesterie.me',
+      'www.funesterie.me',
+      'k44.funesterie.me',
+      'kaen44.funesterie.me',
+      'vivy.funesterie.me',
+      'music.funesterie.me',
+    ].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function setTtsCorsHeaders(req, res) {
+  const origin = String(req?.headers?.origin || '').trim();
+  if (isAllowedTtsCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+}
+
+function getDirectXttsRvcBaseUrls(options = {}) {
+  const explicitBridgeCandidates = [
+    process.env.A11_VOICE_XTTS_RVC_URL,
+    process.env.A11_XTTS_RVC_URL,
+    process.env.A11_VOICE_CONVERSION_URL,
+  ];
+  const fallbackModuleCandidates = [
+    process.env.A11_VOICE_MODULE_URL,
+  ];
+  const autodetect = String(process.env.A11_LOCAL_XTTS_RVC_AUTODETECT || '1').trim().toLowerCase();
+  const allowAutodetect = options.autodetect !== false;
+  const candidates = [...explicitBridgeCandidates];
+  if (allowAutodetect && !['0', 'false', 'no', 'off'].includes(autodetect)) {
+    candidates.push('http://a11-xtts-rvc:5000');
+    if (process.platform === 'win32') {
+      candidates.push('http://127.0.0.1:5000');
+    }
+    candidates.push('http://a11-voice:5002');
+    if (process.platform === 'win32') candidates.push('http://127.0.0.1:5002');
+  }
+  candidates.push(...fallbackModuleCandidates);
+  return uniqueBaseUrls(candidates);
+}
+
+function hasExplicitXttsRvcBridgeConfig() {
+  return uniqueBaseUrls([
+    process.env.A11_VOICE_XTTS_RVC_URL,
+    process.env.A11_XTTS_RVC_URL,
+  ]).length > 0;
+}
+
+function getVoiceConversionBaseUrls(ttsConfig = getLocalTtsConfig()) {
+  return uniqueBaseUrls([
+    ...getDirectXttsRvcBaseUrls({ autodetect: false }),
+    process.env.A11_VOICE_CONVERSION_URL,
+    ...getRemoteTtsBaseUrls(ttsConfig),
+  ]);
+}
+
 function getRequestedVoiceReferenceId(req = {}) {
   return String(
     req?.body?.voiceReferenceId
@@ -175,6 +263,55 @@ function parseOptionalBoolean(value, fallback = null) {
   return fallback;
 }
 
+function wantsDefaultVoiceReference(req = {}) {
+  const body = req?.body || req || {};
+  return parseOptionalBoolean(
+    body.useDefaultVoiceReference
+    ?? body.defaultVoiceReference
+    ?? body.usePersonaVoiceReference,
+    false
+  ) === true;
+}
+
+function requiresReferenceVoice(req = {}) {
+  const body = req?.body || req || {};
+  return parseOptionalBoolean(
+    body.voiceReferenceRequired
+    ?? body.requireVoiceReference
+    ?? body.referenceVoiceRequired,
+    false
+  ) === true;
+}
+
+function isInteractiveTtsRequest(req = {}) {
+  const body = req?.body || req || {};
+  const raw = String(
+    body.latencyMode
+    || body.ttsLatencyMode
+    || body.playbackMode
+    || body.modeHint
+    || ''
+  ).trim().toLowerCase();
+  return ['interactive', 'realtime', 'real-time', 'live', 'fast'].includes(raw);
+}
+
+function normalizeTtsAudioFormat(body = {}, fallback = '') {
+  const raw = String(
+    body?.audioFormat
+    || body?.responseFormat
+    || body?.response_format
+    || body?.ttsFormat
+    || fallback
+    || process.env.A11_TTS_RESPONSE_FORMAT
+    || process.env.OPENAI_TTS_RESPONSE_FORMAT
+    || 'mp3'
+  ).trim().toLowerCase();
+  if (raw === 'mpeg' || raw === 'audio/mpeg') return 'mp3';
+  if (raw === 'wave' || raw === 'audio/wav' || raw === 'x-wav') return 'wav';
+  if (raw === 'mp3' || raw === 'wav') return raw;
+  return 'mp3';
+}
+
 function shouldTryVoiceConversion(req = {}, vocalMode = 'speech') {
   const body = req?.body || {};
   const explicitBody = parseOptionalBoolean(
@@ -189,15 +326,22 @@ function shouldTryVoiceConversion(req = {}, vocalMode = 'speech') {
   const hasVoiceModule = Boolean(String(
     process.env.A11_VOICE_MODULE_URL
     || process.env.A11_VOICE_CONVERSION_URL
+    || process.env.A11_VOICE_XTTS_RVC_URL
+    || process.env.A11_XTTS_RVC_URL
     || process.env.TTS_URL
     || process.env.TTS_BASE_URL
     || ''
-  ).trim());
+  ).trim()) || getVoiceConversionBaseUrls().length > 0;
   if (!hasVoiceModule) return false;
   if (explicitBody === true || explicitEnv === true) return true;
+  if (isInteractiveTtsRequest(req)) return false;
 
   const requestedId = getRequestedVoiceReferenceId(req);
-  return vocalMode === 'adaptive' || vocalMode === 'sing' || Boolean(requestedId);
+  return vocalMode === 'adaptive'
+    || vocalMode === 'sing'
+    || Boolean(requestedId)
+    || wantsDefaultVoiceReference(req)
+    || requiresReferenceVoice(req);
 }
 
 function ensurePublicTtsDir() {
@@ -636,6 +780,10 @@ async function enrichTtsPayloadWithAudioModule(payload, req, vocalMode) {
 }
 
 async function requestVoiceConversionWithModule(payload, req, vocalMode) {
+  if (payload?.provider === PROVIDERS.XTTS_RVC && payload?.voiceConversion?.ok === true) {
+    return payload;
+  }
+
   if (!shouldTryVoiceConversion(req, vocalMode)) return payload;
 
   const user = req?.user || null;
@@ -680,6 +828,9 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
       form.append('reference', referenceBlob, reference.originalName || 'reference.wav');
       form.append('mode', vocalMode || 'adaptive');
       form.append('engine', String(req?.body?.voiceConversionEngine || req?.body?.conversionEngine || 'auto').trim() || 'auto');
+      form.append('text', String(req?.body?.text || req?.body?.prompt || '').slice(0, 4096));
+      form.append('persona', String(req?.body?.voicePersona || req?.body?.ttsPersona || req?.body?.persona || req?.body?.surface || '').slice(0, 120));
+      form.append('voiceStyle', String(getPreferredVoiceReferenceLabel(req) || '').slice(0, 120));
       if (req?.body?.voiceConversionStrength !== undefined) {
         form.append('strength', String(req.body.voiceConversionStrength));
       }
@@ -690,7 +841,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
     };
 
     const ttsConfig = getLocalTtsConfig();
-    const conversionBaseUrls = getRemoteTtsBaseUrls(ttsConfig);
+    const conversionBaseUrls = getVoiceConversionBaseUrls(ttsConfig);
     let lastError = null;
     for (const baseUrl of conversionBaseUrls) {
       try {
@@ -699,6 +850,45 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
           body: buildConversionForm(),
           signal: AbortSignal.timeout(Number(process.env.A11_VOICE_CONVERSION_TIMEOUT_MS || 90000) || 90000),
         });
+
+        const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+        if (response.ok && (contentType.startsWith('audio/') || contentType === 'application/octet-stream')) {
+          const convertedUrl = saveProviderAudioBuffer(
+            Buffer.from(await response.arrayBuffer()),
+            'xtts-rvc'
+          );
+          if (!convertedUrl) throw new Error('voice_conversion_empty_audio');
+          await loadTtsAudioBuffer(audioUrl, { consume: true }).catch(() => null);
+          return {
+            ...payload,
+            originalAudioUrl: audioUrl,
+            original_audio_url: audioUrl,
+            audioUrl: convertedUrl,
+            audio_url: convertedUrl,
+            provider: PROVIDERS.XTTS_RVC,
+            via: `${payload?.via || payload?.provider || 'tts'}+xtts-rvc`,
+            providerCapabilities: {
+              ...(payload?.providerCapabilities || {}),
+              referenceVoice: true,
+            },
+            voiceConversion: {
+              ok: true,
+              module: 'funesterie-xtts-rvc-bridge',
+              provider: PROVIDERS.XTTS_RVC,
+              engine: response.headers?.get?.('x-a11-voice-engine') || 'xtts-rvc',
+              strength: null,
+              durationMs: null,
+              voiceStyle: response.headers?.get?.('x-a11-voice-style') || getPreferredVoiceReferenceLabel(req) || null,
+              attemptedEngines: [PROVIDERS.XTTS_RVC],
+              reference: {
+                id: reference.id,
+                label: reference.label,
+                scope: reference.scope,
+              },
+            },
+          };
+        }
+
         const textBody = await response.text();
         const parsed = parseJsonMaybe(textBody);
         if (!response.ok || parsed?.ok === false) {
@@ -713,7 +903,12 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
           original_audio_url: audioUrl,
           audioUrl: convertedUrl,
           audio_url: convertedUrl,
+          provider: parsed?.provider || parsed?.engine || PROVIDERS.XTTS_RVC,
           via: `${payload?.via || payload?.provider || 'tts'}+voice-convert`,
+          providerCapabilities: {
+            ...(payload?.providerCapabilities || {}),
+            referenceVoice: true,
+          },
           voiceConversion: {
             ok: true,
             module: parsed?.module || 'a11-voice-module',
@@ -721,6 +916,8 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
             engine: parsed?.engine || null,
             strength: parsed?.strength ?? null,
             durationMs: parsed?.duration_ms ?? parsed?.durationMs ?? null,
+            voiceStyle: parsed?.voiceStyle || null,
+            attemptedEngines: Array.isArray(parsed?.attemptedEngines) ? parsed.attemptedEngines : [],
             reference: {
               id: reference.id,
               label: reference.label,
@@ -749,6 +946,26 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
 async function finalizeTtsPayload(payload, req, vocalMode) {
   const converted = await requestVoiceConversionWithModule(payload, req, vocalMode);
   return enrichTtsPayloadWithAudioModule(converted, req, vocalMode);
+}
+
+function isReferenceAwareTtsPayload(payload = {}) {
+  if (payload?.voiceConversion?.ok === true) return true;
+  if (payload?.referenceVoice?.ok === true) return true;
+  if (payload?.providerCapabilities?.referenceVoice === true) return true;
+  if (payload?.provider === 'openai' && payload?.voiceReference?.id) return true;
+  return false;
+}
+
+function buildReferenceVoiceUnavailablePayload(payload = {}) {
+  return {
+    ok: false,
+    error: 'voice_reference_tts_unavailable',
+    message: 'La voix de référence est requise, mais le runtime voix n’a pas pu la produire. Lecture brute bloquée.',
+    provider: payload?.provider || null,
+    via: payload?.via || null,
+    audioModule: payload?.audioModule || null,
+    voiceConversion: payload?.voiceConversion || null,
+  };
 }
 
 function shouldProxyTtsAsset(baseUrl = '', value = '') {
@@ -864,6 +1081,107 @@ function getRequestedTtsProvider(body = {}) {
   return String(body?.ttsProvider || body?.provider || '').trim().toLowerCase();
 }
 
+function isNeutralTtsProvider(provider = '') {
+  return ['piper', 'local', 'spawn', 'espeak', 'espeak-ng'].includes(String(provider || '').trim().toLowerCase());
+}
+
+function isExplicitOpenAiProvider(provider = '') {
+  return String(provider || '').trim().toLowerCase() === 'openai';
+}
+
+function wantsOfficialIdentityVoice(body = {}) {
+  const requestedProvider = getRequestedTtsProvider(body);
+  const vocalMode = normalizeVocalMode(body);
+  const explicitPersona = getExplicitTtsPersonaFromBody(body);
+  const explicitlyNeutral = body?.identityVoice === false
+    || body?.useIdentityVoice === false
+    || body?.neutralVoice === true;
+  if (OFFICIAL_PERSONAS.has(explicitPersona) && !explicitlyNeutral) return true;
+  return requestedProvider === PROVIDERS.XTTS_RVC
+    || requiresReferenceVoice(body)
+    || wantsDefaultVoiceReference(body)
+    || vocalMode === 'adaptive'
+    || vocalMode === 'sing';
+}
+
+function shouldBlockNeutralVoiceFallback(body = {}) {
+  const explicitPersona = getExplicitTtsPersonaFromBody(body);
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (!OFFICIAL_PERSONAS.has(explicitPersona)) return false;
+  if (isNeutralTtsProvider(requestedProvider)) return wantsOfficialIdentityVoice(body);
+  if (requiresReferenceVoice(body) || wantsDefaultVoiceReference(body)) return true;
+  return wantsOfficialIdentityVoice(body) && !isExplicitOpenAiProvider(requestedProvider);
+}
+
+function resolveTtsProviderForRequest(body = {}) {
+  const persona = getTtsPersonaFromBody(body);
+  const explicitPersona = getExplicitTtsPersonaFromBody(body);
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (isExplicitOpenAiProvider(requestedProvider)) {
+    return {
+      provider: 'openai',
+      configured: shouldTryOpenAiTts(body),
+      note: 'Explicit OpenAI TTS request.',
+      diagnostic: shouldTryOpenAiTts(body) ? null : 'openai_tts_unavailable',
+    };
+  }
+
+  if (!explicitPersona) {
+    if (requestedProvider === PROVIDERS.XTTS_RVC) {
+      return resolveVoiceProvider(persona, {
+        explicitProvider: requestedProvider,
+        allowRvc: true,
+      });
+    }
+    if (isNeutralTtsProvider(requestedProvider)) {
+      return resolveVoiceProvider(persona, {
+        explicitProvider: requestedProvider,
+        allowRvc: false,
+      });
+    }
+    return {
+      provider: PROVIDERS.PIPER,
+      configured: true,
+      note: 'Neutral TTS for generic speech request.',
+    };
+  }
+
+  if (OFFICIAL_PERSONAS.has(explicitPersona) && wantsOfficialIdentityVoice(body)) {
+    const bridgeAvailable = getDirectXttsRvcBaseUrls().length > 0;
+    return {
+      provider: bridgeAvailable ? PROVIDERS.XTTS_RVC : 'unavailable',
+      configured: bridgeAvailable,
+      note: bridgeAvailable
+        ? 'Official persona uses XTTS/RVC bridge before any neutral fallback.'
+        : 'Official persona voice bridge unavailable.',
+      diagnostic: bridgeAvailable ? null : 'identity_voice_unavailable',
+    };
+  }
+
+  if (isNeutralTtsProvider(requestedProvider)) {
+    return resolveVoiceProvider(persona, {
+      explicitProvider: requestedProvider,
+      allowRvc: false,
+    });
+  }
+
+  if (OFFICIAL_PERSONAS.has(explicitPersona) && !wantsOfficialIdentityVoice(body)) {
+    return {
+      provider: PROVIDERS.PIPER,
+      configured: true,
+      note: 'Neutral TTS for non-identity speech request.',
+    };
+  }
+
+  const explicitProvider = requestedProvider && requestedProvider !== 'auto'
+    ? requestedProvider
+    : undefined;
+  return resolveVoiceProvider(persona, {
+    explicitProvider,
+    allowRvc: explicitProvider === PROVIDERS.XTTS_RVC,
+  });
+}
+
 function shouldTryOpenAiTts(body = {}) {
   const disabled = String(process.env.A11_OPENAI_TTS_ENABLED || process.env.OPENAI_TTS_ENABLED || '').trim().toLowerCase();
   if (disabled === '0' || disabled === 'false' || disabled === 'off') return false;
@@ -885,7 +1203,9 @@ function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
     return false;
   }
 
-  const hasReference = Boolean(String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim());
+  const hasReference = Boolean(String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim())
+    || wantsDefaultVoiceReference(body)
+    || requiresReferenceVoice(body);
   return shouldTryOpenAiTts(body) && (vocalMode === 'adaptive' || vocalMode === 'sing' || hasReference);
 }
 
@@ -925,29 +1245,242 @@ function getTtsPersonaFromBody(body = {}, fallback = '') {
   );
 }
 
+function getExplicitTtsPersonaFromBody(body = {}) {
+  const raw = String(
+    body?.voicePersona
+    || body?.ttsPersona
+    || body?.persona
+    || body?.surface
+    || ''
+  ).trim();
+  return raw ? normalizeTtsPersona(raw) : '';
+}
+
+function getPreferredVoiceReferenceLabelForPersona(persona = 'a11') {
+  const normalized = normalizeTtsPersona(persona);
+  if (normalized === 'vivy') return 'vivy';
+  if (normalized === 'kaen44') return 'donna';
+  return 'terminator';
+}
+
 function getPreferredVoiceReferenceLabel(req = {}) {
   const persona = getTtsPersonaFromBody(req?.body || {});
-  if (persona === 'vivy') return 'vivy';
-  if (persona === 'kaen44') return 'kaen44';
-  return '';
+  return getPreferredVoiceReferenceLabelForPersona(persona);
+}
+
+function saveProviderAudioBuffer(buffer, provider = 'tts', extension = 'wav') {
+  if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
+  const safeProvider = String(provider || 'tts').toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'tts';
+  const safeExtension = String(extension || 'wav').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'wav';
+  const ttsDir = ensurePublicTtsDir();
+  const outFileName = `tts-out-${Date.now()}-${safeProvider}.${safeExtension}`;
+  fs.writeFileSync(path.join(ttsDir, outFileName), buffer);
+  return buildBackendTtsOutPath(`/out/${outFileName}`);
+}
+
+function audioExtensionFromContentType(contentType = '', fallback = 'wav') {
+  const raw = String(contentType || '').trim().toLowerCase();
+  if (raw.includes('mpeg') || raw.includes('mp3')) return 'mp3';
+  if (raw.includes('ogg')) return 'ogg';
+  if (raw.includes('wav') || raw.includes('wave')) return 'wav';
+  return fallback;
+}
+
+async function requestDirectXttsRvc(text, body = {}, options = {}) {
+  const baseUrls = getDirectXttsRvcBaseUrls();
+  if (!baseUrls.length) throw new Error('xtts_rvc_url_missing');
+  const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
+  const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
+  const voiceStyle = getPreferredVoiceReferenceLabelForPersona(persona);
+  const audioFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : 'wav');
+  const timeoutMs = Number(
+    isInteractiveTtsRequest(body)
+      ? (process.env.A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS || 22000)
+      : (process.env.A11_VOICE_XTTS_RVC_TIMEOUT_MS || 240000)
+  ) || (isInteractiveTtsRequest(body) ? 22000 : 240000);
+  let lastError = null;
+
+  for (const baseUrl of baseUrls) {
+    try {
+      const synthesizeResponse = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/synthesize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          text: String(text || '').slice(0, 4096),
+          persona,
+          surface: body?.surface || options?.surface || persona,
+          voicePersona: body?.voicePersona || persona,
+          voiceStyle,
+          vocalMode: vocalMode || 'adaptive',
+          engine: body?.engine || body?.voiceEngine || 'auto',
+          audioFormat,
+          f0Shift: body?.f0Shift ?? body?.voiceF0Shift,
+          useDefaultVoiceReference: true,
+          defaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const synthesizeText = await synthesizeResponse.text();
+      const synthesizePayload = parseJsonMaybe(synthesizeText);
+      if (synthesizeResponse.ok && synthesizePayload?.ok !== false) {
+        const remoteAudioUrl = normalizeRemoteAssetUrl(
+          baseUrl,
+          synthesizePayload?.audio_url || synthesizePayload?.audioUrl || synthesizePayload?.url || ''
+        );
+        const referenceAware = synthesizePayload?.voiceConversion?.ok === true
+          || synthesizePayload?.providerCapabilities?.referenceVoice === true
+          || synthesizePayload?.voiceReference?.id;
+        if (remoteAudioUrl && referenceAware) {
+          return {
+            ...(synthesizePayload && typeof synthesizePayload === 'object' ? synthesizePayload : {}),
+            success: true,
+            provider: PROVIDERS.XTTS_RVC,
+            via: synthesizePayload?.via || 'a11-voice-module-persona',
+            text,
+            vocalMode,
+            audio_url: remoteAudioUrl,
+            audioUrl: remoteAudioUrl,
+            providerCapabilities: {
+              ...(synthesizePayload?.providerCapabilities || {}),
+              referenceVoice: true,
+            },
+            voiceConversion: {
+              ok: true,
+              module: synthesizePayload?.module || 'a11-voice-module',
+              provider: synthesizePayload?.voiceConversion?.provider || synthesizePayload?.provider || PROVIDERS.XTTS_RVC,
+              engine: synthesizePayload?.voiceConversion?.engine || synthesizePayload?.engine || 'persona-voice',
+              voiceStyle: synthesizePayload?.voiceConversion?.voiceStyle || synthesizePayload?.voiceStyle || voiceStyle || null,
+              rvcModel: synthesizePayload?.voiceConversion?.rvcModel || synthesizePayload?.providerCapabilities?.rvcModel || null,
+              rvcIndex: synthesizePayload?.voiceConversion?.rvcIndex || synthesizePayload?.providerCapabilities?.rvcIndex || null,
+              direction: buildVoicePersonaInstruction(persona),
+              attemptedEngines: Array.isArray(synthesizePayload?.voiceConversion?.attemptedEngines)
+                ? synthesizePayload.voiceConversion.attemptedEngines
+                : [synthesizePayload?.engine || 'persona-voice'],
+              reference: synthesizePayload?.voiceConversion?.reference || synthesizePayload?.voiceReference || {
+                id: voiceStyle,
+                label: voiceStyle,
+                scope: 'voice-library',
+              },
+            },
+          };
+        }
+      } else if (synthesizePayload?.detail || synthesizePayload?.error || synthesizePayload?.message) {
+        lastError = new Error(
+          synthesizePayload?.detail?.message
+          || synthesizePayload?.detail?.error
+          || synthesizePayload?.error
+          || synthesizePayload?.message
+          || `voice_synthesize_http_${synthesizeResponse.status}`
+        );
+      }
+    } catch (error_) {
+      lastError = error_;
+    }
+
+    try {
+      const form = new FormData();
+      form.append('text', String(text || '').slice(0, 4096));
+      form.append('persona', persona);
+      form.append('voiceStyle', voiceStyle);
+      form.append('styleInstruction', buildVoicePersonaInstruction(persona));
+      form.append('mode', vocalMode || 'adaptive');
+      form.append('audioFormat', audioFormat);
+      if (body?.f0Shift !== undefined || body?.voiceF0Shift !== undefined) {
+        form.append('f0Shift', String(body?.f0Shift ?? body?.voiceF0Shift));
+      }
+
+      const response = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/convert`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+      if (response.ok && (contentType.startsWith('audio/') || contentType === 'application/octet-stream')) {
+        const extension = audioExtensionFromContentType(contentType, audioFormat || 'wav');
+        const audioUrl = saveProviderAudioBuffer(Buffer.from(await response.arrayBuffer()), 'xtts-rvc', extension);
+        if (!audioUrl) throw new Error('xtts_rvc_empty_audio');
+        const rvcModel = response.headers?.get?.('x-a11-rvc-model') || '';
+        const rvcIndex = response.headers?.get?.('x-a11-rvc-index') || '';
+        return {
+          success: true,
+          provider: PROVIDERS.XTTS_RVC,
+          via: 'xtts-rvc-direct',
+          text,
+          vocalMode,
+          audioFormat: extension,
+          audio_url: audioUrl,
+          audioUrl,
+          providerCapabilities: { referenceVoice: true },
+          voiceConversion: {
+            ok: true,
+            module: 'funesterie-xtts-rvc-bridge',
+            provider: PROVIDERS.XTTS_RVC,
+            engine: response.headers?.get?.('x-a11-voice-engine') || 'xtts-rvc',
+            voiceStyle: response.headers?.get?.('x-a11-voice-style') || voiceStyle || null,
+            rvcModel: rvcModel || null,
+            rvcIndex: rvcIndex || null,
+            direction: buildVoicePersonaInstruction(persona),
+            attemptedEngines: [PROVIDERS.XTTS_RVC],
+            reference: {
+              id: voiceStyle,
+              label: voiceStyle,
+              scope: 'bridge',
+            },
+          },
+        };
+      }
+
+      const textBody = await response.text();
+      const parsed = parseJsonMaybe(textBody);
+      if (!response.ok || parsed?.ok === false) {
+        throw new Error(parsed?.detail || parsed?.message || parsed?.error || `xtts_rvc_http_${response.status}`);
+      }
+      const remoteAudioUrl = normalizeRemoteAssetUrl(baseUrl, parsed?.audio_url || parsed?.audioUrl || parsed?.url || '');
+      if (!remoteAudioUrl) throw new Error('xtts_rvc_missing_audio_url');
+      return {
+        ...(parsed && typeof parsed === 'object' ? parsed : {}),
+        success: true,
+        provider: PROVIDERS.XTTS_RVC,
+        via: parsed?.via || 'xtts-rvc-direct',
+        text,
+        vocalMode,
+        audio_url: remoteAudioUrl,
+        audioUrl: remoteAudioUrl,
+        providerCapabilities: {
+          ...(parsed?.providerCapabilities || {}),
+          referenceVoice: true,
+        },
+        voiceConversion: {
+          ok: true,
+          module: parsed?.module || 'funesterie-xtts-rvc-bridge',
+          provider: PROVIDERS.XTTS_RVC,
+          engine: parsed?.voiceConversion?.engine || parsed?.engine || 'xtts-rvc',
+          voiceStyle: parsed?.voiceConversion?.voiceStyle || parsed?.voiceStyle || voiceStyle || null,
+          rvcModel: parsed?.voiceConversion?.rvcModel || parsed?.providerCapabilities?.rvcModel || null,
+          rvcIndex: parsed?.voiceConversion?.rvcIndex || parsed?.providerCapabilities?.rvcIndex || null,
+          direction: buildVoicePersonaInstruction(persona),
+          attemptedEngines: Array.isArray(parsed?.attemptedEngines) ? parsed.attemptedEngines : [PROVIDERS.XTTS_RVC],
+          reference: {
+            id: voiceStyle,
+            label: voiceStyle,
+            scope: 'bridge',
+          },
+        },
+      };
+    } catch (error_) {
+      lastError = error_;
+    }
+  }
+
+  throw lastError || new Error('xtts_rvc_unreachable');
 }
 
 function buildOpenAiTtsInstructions({ vocalMode = 'speech', reference = null, persona = 'a11' } = {}) {
   const normalizedPersona = normalizeTtsPersona(persona);
-  const base = normalizedPersona === 'vivy'
-    ? [
-        'Voix Vivy en francais naturel, musicale, douce, claire et proche, sans effet robotique.',
-        'Garde une couleur originale Funesterie et ne cherche pas a imiter une personne reelle.',
-      ]
-    : normalizedPersona === 'kaen44'
-      ? [
-          'Voix Kaen44 en francais naturel, calme, claire, proche, sans effet robotique.',
-          'Indique par le style vocal que la voix est synthetique et ne cherche pas a imiter une personne reelle.',
-        ]
-      : [
-          'Voix A11 en francais naturel, chaleureuse, claire, proche, sans effet robotique.',
-          'Indique par le style vocal que la voix est synthetique et ne cherche pas a imiter une personne reelle.',
-        ];
+  const base = [buildVoicePersonaInstruction(normalizedPersona)];
   if (vocalMode === 'sing') {
     base.push('Donne une prosodie melodique et chantonnee, avec rythme doux, sans surjouer.');
   } else if (vocalMode === 'adaptive') {
@@ -968,8 +1501,11 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
   const reference = resolveVoiceReferenceForRequest({
     user: options.user || null,
     requestedId: String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim(),
-    preferredLabel: persona === 'vivy' ? 'vivy' : persona === 'kaen44' ? 'kaen44' : '',
+    preferredLabel: getPreferredVoiceReferenceLabelForPersona(persona),
   });
+  const officialPersonaStyleFallback = !reference
+    && isInteractiveTtsRequest(body)
+    && OFFICIAL_PERSONAS.has(persona);
   const model = String(
     body?.ttsModel
     || process.env.OPENAI_TTS_MODEL
@@ -981,6 +1517,7 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
     'tts-1',
   ].filter(Boolean)));
   const voice = normalizeOpenAiTtsVoice(body?.openAiVoice || body?.ttsVoice || body?.voice, vocalMode);
+  const responseFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : '');
   let response = null;
   let resolvedModel = modelFallbacks[0];
   let lastStatus = null;
@@ -996,9 +1533,9 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
         voice,
         input: String(text || '').slice(0, 4096),
         instructions: buildOpenAiTtsInstructions({ vocalMode, reference, persona }),
-        response_format: 'wav',
+        response_format: responseFormat,
       }),
-      signal: AbortSignal.timeout(Number(process.env.OPENAI_TTS_TIMEOUT_MS || 30000) || 30000),
+      signal: AbortSignal.timeout(Number(process.env.OPENAI_TTS_TIMEOUT_MS || 18000) || 18000),
     });
     if (response.ok) {
       resolvedModel = candidateModel;
@@ -1015,16 +1552,33 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
   if (!audioBuffer.length) throw new Error('openai_tts_empty_audio');
-  const ttsDir = ensurePublicTtsDir();
-  const outFileName = `tts-out-${Date.now()}-openai.wav`;
-  fs.writeFileSync(path.join(ttsDir, outFileName), audioBuffer);
-  const audioUrl = buildBackendTtsOutPath(`/out/${outFileName}`);
+  const audioUrl = saveProviderAudioBuffer(audioBuffer, 'openai', responseFormat);
   return {
     success: true,
     provider: 'openai',
     model: resolvedModel,
     voice,
+    audioFormat: responseFormat,
+    content_type: responseFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
     persona,
+    voiceReference: reference
+      ? {
+          id: reference.id,
+          label: reference.label,
+          scope: reference.scope,
+        }
+      : officialPersonaStyleFallback
+        ? {
+            id: `${persona}-interactive-style`,
+            label: getPreferredVoiceReferenceLabelForPersona(persona),
+            scope: 'interactive-style',
+          }
+        : null,
+    referenceVoiceFallback: officialPersonaStyleFallback,
+    providerCapabilities: {
+      referenceVoice: Boolean(reference) || officialPersonaStyleFallback,
+      styleVoice: true,
+    },
     audioUrl,
     audio_url: audioUrl,
   };
@@ -1546,6 +2100,9 @@ router.post('/tts/references', requireJwt, voiceReferenceUpload.any(), (req, res
     });
   } catch (error_) {
     const message = String(error_?.message || error_);
+    if (error_?.code === 'account_storage_quota_exceeded') {
+      return res.status(error_?.status || 413).json(buildStorageQuotaPayload(error_));
+    }
     const status = message.startsWith('unsupported_audio_type') ? 415 : 500;
     return res.status(status).json({
       ok: false,
@@ -1747,7 +2304,13 @@ async function sendTtsPayloadResponse(req, res, payload) {
   }
 }
 
+router.options(['/tts/piper', '/tts/speak', '/tts/out/:filename'], (req, res) => {
+  setTtsCorsHeaders(req, res);
+  return res.status(204).end();
+});
+
 router.get('/tts/out/:filename', async (req, res) => {
+  setTtsCorsHeaders(req, res);
   pruneOldTtsAssets();
   const filename = path.basename(String(req.params?.filename || '').trim());
   if (!filename || filename === '.' || filename === '..') {
@@ -1755,24 +2318,29 @@ router.get('/tts/out/:filename', async (req, res) => {
   }
 
   const ttsConfig = getLocalTtsConfig();
-  const remoteUrl = `${String(ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '')}/out/${encodeURIComponent(filename)}?consume=1`;
+  const remoteBaseUrls = uniqueBaseUrls([
+    ...getDirectXttsRvcBaseUrls(),
+    String(ttsConfig.requestBaseUrl || ttsConfig.baseUrl || ''),
+  ]);
 
-  try {
-    const response = await fetch(remoteUrl, {
-      method: 'GET',
-      signal: AbortSignal.timeout(10000),
-    });
-    if (response.ok) {
-      const contentType = String(response.headers?.get?.('content-type') || contentTypeForTtsAsset(filename)).trim();
-      const buffer = Buffer.from(await response.arrayBuffer());
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Length', String(buffer.length));
-      res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.send(buffer);
+  for (const remoteBaseUrl of remoteBaseUrls) {
+    const remoteUrl = `${remoteBaseUrl}/out/${encodeURIComponent(filename)}?consume=1`;
+    try {
+      const response = await fetch(remoteUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        const contentType = String(response.headers?.get?.('content-type') || contentTypeForTtsAsset(filename)).trim();
+        const buffer = Buffer.from(await response.arrayBuffer());
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', String(buffer.length));
+        res.setHeader('Cache-Control', 'no-store');
+        return res.send(buffer);
+      }
+    } catch {
+      // Try the next configured voice service, then fall back to local files.
     }
-  } catch {
-    // Fall back to the local canonical TTS output directory below.
   }
 
   const localPath = [
@@ -1785,14 +2353,14 @@ router.get('/tts/out/:filename', async (req, res) => {
 
   res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.on('finish', () => {
     deleteGeneratedTtsAsset(localPath);
   });
   return res.sendFile(localPath);
 });
 
-router.post('/tts/piper', runOptionalJwt, async (req, res) => {
+router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
+  setTtsCorsHeaders(req, res);
   try {
     const text = String(req.body?.text || '').trim();
     const vocalMode = normalizeVocalMode(req.body || {});
@@ -1813,9 +2381,27 @@ router.post('/tts/piper', runOptionalJwt, async (req, res) => {
       vocalMode,
     };
     let openAiTtsErrorMessage = null;
-    const preferOpenAiTtsFirst = shouldPreferOpenAiTtsFirst(preparedBody, vocalMode);
+    const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
+    const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
+    const canUseOpenAiIdentityFallback = shouldTryOpenAiTts(preparedBody);
+    const interactiveTts = isInteractiveTtsRequest(preparedBody);
+    const hasDirectIdentityBridge = resolvedProvider.provider === PROVIDERS.XTTS_RVC
+      && resolvedProvider.configured !== false;
+    const hasExplicitDirectIdentityBridge = hasExplicitXttsRvcBridgeConfig();
+    const preferOpenAiTtsFirst = shouldPreferOpenAiTtsFirst(preparedBody, vocalMode)
+      || (interactiveTts && canUseOpenAiIdentityFallback)
+      || (strictOfficialVoice && canUseOpenAiIdentityFallback && !hasDirectIdentityBridge);
+    const preferOpenAiBeforeDirectBridge = preferOpenAiTtsFirst
+      && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
+    const sendFinalizedPayload = async (basePayload) => {
+      const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
+      if (requiresReferenceVoice(req) && !isReferenceAwareTtsPayload(payload)) {
+        return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
+      }
+      return sendTtsPayloadResponse(req, res, payload);
+    };
 
-    if (preferOpenAiTtsFirst) {
+    if (preferOpenAiBeforeDirectBridge) {
       try {
         const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
           vocalMode,
@@ -1823,45 +2409,132 @@ router.post('/tts/piper', runOptionalJwt, async (req, res) => {
           user: req.user || null,
         });
         const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
-        const payload = await finalizeTtsPayload({
+        return sendFinalizedPayload({
           ...openAiTts,
           via: 'openai-tts',
           text: readableText,
           vocalMode,
           audio_url: absoluteAudioUrl || null,
           audioUrl: absoluteAudioUrl || null,
-        }, req, vocalMode);
-        return sendTtsPayloadResponse(req, res, payload);
+        });
       } catch (openAiTtsError) {
         openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
-        console.warn('[TTS][OpenAI] preferred voice failed, trying local piper:', openAiTtsErrorMessage);
+        console.warn('[TTS][OpenAI] preferred voice failed:', openAiTtsErrorMessage);
+        if (strictOfficialVoice && isExplicitOpenAiProvider(getRequestedTtsProvider(preparedBody))) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: OpenAI TTS n’a pas produit la voix demandee. Piper est bloque pour cette voix.',
+            provider: 'openai',
+            diagnostic: 'openai_tts_failed',
+          });
+        }
+      }
+    }
+
+    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC) {
+      try {
+        const directVoice = await requestDirectXttsRvc(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        return sendFinalizedPayload(directVoice);
+      } catch (xttsRvcError) {
+        const message = String(xttsRvcError?.message || xttsRvcError);
+        console.warn('[TTS][XTTS/RVC] official voice failed:', message);
+        if (strictOfficialVoice && !canUseOpenAiIdentityFallback) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: le runtime XTTS/RVC n’a pas produit la voix demandee. Piper est bloque pour cette voix.',
+            provider: PROVIDERS.XTTS_RVC,
+            diagnostic: 'xtts_rvc_failed',
+          });
+        }
+      }
+    } else if (strictOfficialVoice && resolvedProvider.configured === false && !canUseOpenAiIdentityFallback) {
+      return res.status(424).json({
+        ok: false,
+        error: 'voice_reference_tts_unavailable',
+        message: 'Voix officielle indisponible: aucun provider de voix identitaire n’est configure. Piper est bloque pour cette voix.',
+        provider: resolvedProvider.provider || null,
+        diagnostic: resolvedProvider.diagnostic || 'identity_voice_unavailable',
+      });
+    }
+
+    if (preferOpenAiTtsFirst && !openAiTtsErrorMessage) {
+      try {
+        const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
+        return sendFinalizedPayload({
+          ...openAiTts,
+          via: 'openai-tts',
+          text: readableText,
+          vocalMode,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        });
+      } catch (openAiTtsError) {
+        openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
+        console.warn('[TTS][OpenAI] preferred voice failed:', openAiTtsErrorMessage);
+        if (strictOfficialVoice && isExplicitOpenAiProvider(getRequestedTtsProvider(preparedBody))) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: OpenAI TTS n’a pas produit la voix demandee. Piper est bloque pour cette voix.',
+            provider: 'openai',
+            diagnostic: 'openai_tts_failed',
+          });
+        }
       }
     }
 
     if (preferHttpTts) {
       try {
         const remote = await requestRemoteTts(preparedBody);
-        const payload = await finalizeTtsPayload({ ...remote, text: readableText, vocalMode }, req, vocalMode);
-        return sendTtsPayloadResponse(req, res, payload);
+        return sendFinalizedPayload({ ...remote, text: readableText, vocalMode });
       } catch (error_) {
         remoteError = String(error_?.message || error_);
-        console.warn('[TTS][Piper] HTTP backend unavailable, trying local spawn:', remoteError);
+        console.warn('[TTS] HTTP backend unavailable:', remoteError);
+        if (strictOfficialVoice) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: le module voix n’a pas repondu avec une voix identitaire. Piper est bloque pour cette voix.',
+            provider: resolvedProvider.provider || null,
+            diagnostic: 'voice_module_failed',
+          });
+        }
       }
     }
 
     let spawnErrorMessage = null;
+    if (strictOfficialVoice) {
+      return res.status(424).json({
+        ok: false,
+        error: 'voice_reference_tts_unavailable',
+        message: 'Voix officielle indisponible: aucun provider identitaire n’a produit d’audio. Piper est bloque pour cette voix.',
+        provider: resolvedProvider.provider || null,
+        diagnostic: 'neutral_fallback_blocked',
+      });
+    }
+
     try {
       const local = await spawnPiperLocal(readableText, voice || null);
       const absoluteAudioUrl = String(local.audioUrl || local.audio_url || '').trim();
-      const payload = await finalizeTtsPayload({
+      return sendFinalizedPayload({
         ...local,
         via: 'spawn',
         text: readableText,
         vocalMode,
         audio_url: absoluteAudioUrl || null,
         audioUrl: absoluteAudioUrl || null,
-      }, req, vocalMode);
-      return sendTtsPayloadResponse(req, res, payload);
+      });
     } catch (spawnError) {
       spawnErrorMessage = String(spawnError?.message || spawnError);
     }
@@ -1874,7 +2547,7 @@ router.post('/tts/piper', runOptionalJwt, async (req, res) => {
           user: req.user || null,
         });
         const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
-        const payload = await finalizeTtsPayload({
+        return sendFinalizedPayload({
           ...openAiTts,
           via: 'openai-tts',
           text: readableText,
@@ -1882,8 +2555,7 @@ router.post('/tts/piper', runOptionalJwt, async (req, res) => {
           piperError: spawnErrorMessage,
           audio_url: absoluteAudioUrl || null,
           audioUrl: absoluteAudioUrl || null,
-        }, req, vocalMode);
-        return sendTtsPayloadResponse(req, res, payload);
+        });
       } catch (openAiTtsError) {
         openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
         console.warn('[TTS][OpenAI] speech fallback failed, trying espeak:', openAiTtsErrorMessage);
@@ -1893,7 +2565,7 @@ router.post('/tts/piper', runOptionalJwt, async (req, res) => {
     try {
       const fallback = await spawnEspeakLocal(readableText, voice || null, { vocalMode });
       const absoluteAudioUrl = String(fallback.audioUrl || fallback.audio_url || '').trim();
-      const payload = await finalizeTtsPayload({
+      return sendFinalizedPayload({
         ...fallback,
         via: 'espeak',
         text: readableText,
@@ -1902,8 +2574,7 @@ router.post('/tts/piper', runOptionalJwt, async (req, res) => {
         openAiTtsError: openAiTtsErrorMessage,
         audio_url: absoluteAudioUrl || null,
         audioUrl: absoluteAudioUrl || null,
-      }, req, vocalMode);
-      return sendTtsPayloadResponse(req, res, payload);
+      });
     } catch (espeakError) {
       return res.status(503).json({
         error: 'tts_unavailable',

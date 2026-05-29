@@ -1,15 +1,23 @@
 import os
+import json
 import re
 import shutil
 import subprocess
 import time
 import wave
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
+from urllib.parse import quote, urljoin
 
+import requests
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+try:
+    from . import prime_spiral_morph
+except ImportError:
+    import prime_spiral_morph
 
 
 ROOT = Path("/app")
@@ -21,10 +29,100 @@ ESPEAK_DATA = Path(os.environ.get("A11_ESPEAK_DATA", ROOT / "piper" / "espeak-ng
 CONVERSION_PROVIDER = os.environ.get("A11_VOICE_CONVERTER_PROVIDER", "ffmpeg").strip().lower() or "ffmpeg"
 DEFAULT_CONVERSION_STRENGTH = float(os.environ.get("A11_VOICE_CONVERSION_STRENGTH", "0.45") or "0.45")
 DEFAULT_F0_SHIFT = float(os.environ.get("A11_VOICE_DEFAULT_F0_SHIFT", "-1.5") or "-1.5")
+XTTS_RVC_URL = (
+    os.environ.get("A11_VOICE_XTTS_RVC_URL")
+    or os.environ.get("A11_XTTS_RVC_URL")
+    or ""
+).strip()
+XTTS_RVC_PROTOCOL = os.environ.get("A11_VOICE_XTTS_RVC_PROTOCOL", "a11").strip().lower() or "a11"
+XTTS_RVC_TIMEOUT = float(os.environ.get("A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS", "240") or "240")
+XTTS_RVC_LANGUAGE = os.environ.get("A11_VOICE_XTTS_RVC_LANGUAGE", "fr").strip() or "fr"
+XTTS_RVC_INDEX_RATE = float(os.environ.get("A11_VOICE_XTTS_RVC_INDEX_RATE", "0.75") or "0.75")
+XTTS_RVC_PITCH = float(os.environ.get("A11_VOICE_XTTS_RVC_PITCH", "0") or "0")
+XTTS_RVC_FALLBACK_TO_FFMPEG = os.environ.get("A11_VOICE_XTTS_RVC_FALLBACK", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="A11 Voice Module", version="0.1.0")
+
+OFFICIAL_PERSONAS = {"a11", "kaen44", "k44", "vivy"}
+
+
+def split_path_env(value: str) -> list[Path]:
+    return [Path(item.strip()) for item in re.split(r"[;|]+", value or "") if item.strip()]
+
+
+def voice_library_dirs() -> list[Path]:
+    configured = (
+        os.environ.get("A11_VOICE_REFERENCE_LIBRARY_DIRS")
+        or os.environ.get("A11_VOICE_REFERENCE_LIBRARY_DIR")
+        or os.environ.get("A11_VOICE_LIBRARY_DIRS")
+        or os.environ.get("A11_VOICE_LIBRARY_DIR")
+        or ""
+    )
+    here = Path(__file__).resolve()
+    dirs = split_path_env(configured)
+    repo_runtime = here.parents[3] / "runtime" / "voice-library" if len(here.parents) > 3 else None
+    dirs.extend([
+        Path(os.environ.get("A11_RUNTIME_ROOT", ROOT / "runtime")) / "voice-library",
+        ROOT / "runtime" / "voice-library",
+        Path.cwd() / "runtime" / "voice-library",
+    ])
+    if repo_runtime is not None:
+        dirs.append(repo_runtime)
+    seen = set()
+    unique = []
+    for item in dirs:
+        key = str(item)
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
+def normalize_persona(value: Optional[str]) -> str:
+    raw = re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+    if raw in {"kaen44", "k44", "kaen"}:
+        return "kaen44"
+    if raw in {"vivy", "vivi"}:
+        return "vivy"
+    if raw in {"a11", "alpha11", "alphaonze", "aonze"}:
+        return "a11"
+    return raw
+
+
+def preferred_reference_names(persona: str, mode: str) -> list[str]:
+    if persona == "a11":
+        return ["a11-terminator.wav", "a11-terminator-context.wav"]
+    if persona == "kaen44":
+        return ["kaen44-donna.wav", "kaen44-donna-extra.wav", "kaen44-donna-context.wav"]
+    if persona == "vivy":
+        if mode == "sing":
+            return ["vivy.wav", "vivy-song-context.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
+        return ["vivy-adaptive.wav", "vivy.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
+    return []
+
+
+def find_persona_reference(persona: str, mode: str) -> Optional[Path]:
+    for directory in voice_library_dirs():
+        for name in preferred_reference_names(persona, mode):
+            candidate = directory / name
+            if candidate.exists() and candidate.is_file() and candidate.stat().st_size > 0:
+                return candidate
+    return None
+
+
+def wants_persona_voice(req: "SynthesizeRequest", persona: str) -> bool:
+    if persona not in {"a11", "kaen44", "vivy"}:
+        return False
+    return bool(
+        req.voiceReferenceRequired
+        or req.referenceVoiceRequired
+        or req.useDefaultVoiceReference
+        or req.defaultVoiceReference
+        or req.voiceStyle
+        or req.voicePersona
+    )
 
 
 def is_generated_audio(path: Path) -> bool:
@@ -61,10 +159,45 @@ def prune_old_audio(max_age_seconds: int = 600) -> None:
 class SynthesizeRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4096)
     voice: Optional[str] = None
+    persona: Optional[str] = None
+    voicePersona: Optional[str] = None
+    voiceStyle: Optional[str] = None
+    surface: Optional[str] = None
     vocalMode: Literal["speech", "adaptive", "sing"] = "speech"
     lengthScale: Optional[float] = Field(default=None, ge=0.6, le=2.2)
     noiseScale: Optional[float] = Field(default=None, ge=0.1, le=1.4)
     noiseW: Optional[float] = Field(default=None, ge=0.1, le=1.4)
+    engine: Optional[str] = None
+    strength: Optional[float] = Field(default=None, ge=0.05, le=1.0)
+    f0Shift: Optional[float] = Field(default=None, ge=-12.0, le=12.0)
+    voiceReferenceRequired: bool = False
+    referenceVoiceRequired: bool = False
+    useDefaultVoiceReference: bool = False
+    defaultVoiceReference: bool = False
+
+
+class PrimeSpiralControlRequest(BaseModel):
+    length: int = Field(default=512, ge=1, le=4096)
+    bins: int = Field(default=128, ge=1, le=4096)
+    mode: Literal[
+        "phi_j_spiral",
+        "riemann_chirp",
+        "modular_grid",
+        "gap_law",
+        "resonance",
+        "op_symmetry",
+        "op_closure",
+        "op_algebra",
+        "prime_dimensions",
+        "hybrid",
+    ] = "hybrid"
+    phi: float = Field(default=prime_spiral_morph.PHI, gt=0, le=16)
+    j: float = Field(default=1.0, gt=0, le=16)
+    orientation: Literal["right", "left", "mirror", "mirror_inverted"] = "right"
+    maxDb: float = Field(default=3.0, ge=0.0, le=12.0)
+    primeBoostDb: float = Field(default=1.0, ge=0.0, le=6.0)
+    weightStrength: float = Field(default=0.25, ge=0.0, le=1.0)
+    includeFeatures: bool = False
 
 
 def clean_text(value: str) -> str:
@@ -188,12 +321,251 @@ def atempo_chain(speed: float) -> str:
     return ",".join(parts)
 
 
-def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], generated_profile: dict, reference_profile: dict) -> str:
+def infer_reference_style(reference_file: Optional[Path]) -> str:
+    key = str(reference_file.name if reference_file else "").lower()
+    if "terminator" in key or "a11" in key:
+        return "terminator"
+    if "donna" in key or "kaen44" in key or "k44" in key:
+        return "donna"
+    if "vivy" in key:
+        return "vivy"
+    return ""
+
+
+def parse_mapping_env(name: str) -> dict:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return {str(key).lower(): str(value) for key, value in parsed.items() if value}
+    except Exception:
+        pass
+    return {}
+
+
+def provider_chain(engine: str) -> list[str]:
+    raw = CONVERSION_PROVIDER if engine in {"", "auto", "default"} else engine
+    values = [item.strip().lower() for item in re.split(r"[,;|]+", raw or "") if item.strip()]
+    if not values:
+        values = ["ffmpeg-morph"]
+    if engine in {"", "auto", "default"} and XTTS_RVC_FALLBACK_TO_FFMPEG and not any(item in {"ffmpeg", "ffmpeg-morph", "morph"} for item in values):
+        values.append("ffmpeg-morph")
+    return values
+
+
+def is_xtts_rvc_provider(provider: str) -> bool:
+    return provider in {"xtts", "xtts-rvc", "xtts-rvc-ui", "rvc", "rvc-bridge", "external", "external-rvc"}
+
+
+def xtts_rvc_env_name(reference_style: str, kind: Literal["voice", "rvc"]) -> str:
+    style = (reference_style or "default").upper().replace("-", "_")
+    if kind == "voice":
+        candidates = [
+            f"A11_VOICE_XTTS_RVC_{style}_VOICE",
+            f"A11_XTTS_RVC_{style}_VOICE",
+            "A11_VOICE_XTTS_RVC_DEFAULT_VOICE",
+        ]
+    else:
+        candidates = [
+            f"A11_VOICE_XTTS_RVC_{style}_RVC",
+            f"A11_XTTS_RVC_{style}_RVC",
+            "A11_VOICE_XTTS_RVC_DEFAULT_RVC",
+        ]
+    for name in candidates:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    default_voice = {
+        "terminator": "a11-terminator.wav",
+        "donna": "kaen44-donna.wav",
+        "vivy": "vivy.wav",
+    }
+    default_rvc = {
+        "terminator": "a11-terminator.pth",
+        "donna": "kaen44-donna.pth",
+        "vivy": "vivy.pth",
+    }
+    return (default_voice if kind == "voice" else default_rvc).get(reference_style or "", "")
+
+
+def find_audio_url(value: Any, base_url: str) -> Optional[str]:
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if re.search(r"\.(wav|mp3|ogg|flac|m4a|webm)(\?|$)", candidate, re.I) or candidate.startswith(("/file=", "file=")):
+            if candidate.startswith("http://") or candidate.startswith("https://"):
+                return candidate
+            if candidate.startswith("/"):
+                return urljoin(base_url.rstrip("/") + "/", candidate.lstrip("/"))
+            return urljoin(base_url.rstrip("/") + "/", f"file={quote(candidate)}")
+        return None
+    if isinstance(value, dict):
+        for key in ("url", "audio_url", "audioUrl", "path", "name", "file"):
+            found = find_audio_url(value.get(key), base_url)
+            if found:
+                return found
+        for item in value.values():
+            found = find_audio_url(item, base_url)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in reversed(value):
+            found = find_audio_url(item, base_url)
+            if found:
+                return found
+    return None
+
+
+def download_audio(url: str, out_file: Path) -> None:
+    response = requests.get(url, timeout=XTTS_RVC_TIMEOUT, stream=True)
+    response.raise_for_status()
+    with out_file.open("wb") as handle:
+        for chunk in response.iter_content(chunk_size=1024 * 256):
+            if chunk:
+                handle.write(chunk)
+    if not out_file.exists() or out_file.stat().st_size <= 0:
+        raise RuntimeError("xtts_rvc_empty_download")
+
+
+def run_xtts_rvc_a11_api(
+    generated_file: Path,
+    reference_file: Optional[Path],
+    out_file: Path,
+    mode: str,
+    text: str,
+    strength: float,
+    f0_shift: Optional[float],
+    reference_style: str,
+) -> dict:
+    endpoint = os.environ.get("A11_VOICE_XTTS_RVC_ENDPOINT", "/api/voice/convert").strip() or "/api/voice/convert"
+    url = urljoin(XTTS_RVC_URL.rstrip("/") + "/", endpoint.lstrip("/"))
+    files = {"generated": ("generated.wav", generated_file.open("rb"), "audio/wav")}
+    try:
+        if reference_file:
+            files["reference"] = (reference_file.name, reference_file.open("rb"), "audio/wav")
+        data = {
+            "text": text,
+            "mode": mode,
+            "engine": "xtts-rvc",
+            "strength": str(strength),
+            "voiceStyle": reference_style,
+        }
+        if f0_shift is not None:
+            data["f0Shift"] = str(f0_shift)
+        response = requests.post(url, files=files, data=data, timeout=XTTS_RVC_TIMEOUT)
+        content_type = response.headers.get("content-type", "")
+        response.raise_for_status()
+        if content_type.startswith("audio/"):
+            out_file.write_bytes(response.content)
+            rvc_model = response.headers.get("x-a11-rvc-model", "")
+            rvc_index = response.headers.get("x-a11-rvc-index", "")
+            voice_engine = response.headers.get("x-a11-voice-engine", "")
+        else:
+            parsed = response.json()
+            remote_audio = find_audio_url(parsed, XTTS_RVC_URL)
+            if not remote_audio:
+                raise RuntimeError("xtts_rvc_missing_audio_url")
+            download_audio(remote_audio, out_file)
+            voice_conversion = parsed.get("voiceConversion") if isinstance(parsed, dict) else {}
+            capabilities = parsed.get("providerCapabilities") if isinstance(parsed, dict) else {}
+            rvc_model = (voice_conversion or {}).get("rvcModel") or (capabilities or {}).get("rvcModel") or ""
+            rvc_index = (voice_conversion or {}).get("rvcIndex") or (capabilities or {}).get("rvcIndex") or ""
+            voice_engine = (voice_conversion or {}).get("engine") or parsed.get("engine") or ""
+    finally:
+        for handle in files.values():
+            try:
+                handle[1].close()
+            except Exception:
+                pass
+
+    return {
+        "provider": "xtts-rvc",
+        "engine": voice_engine or "xtts-rvc-api",
+        "voiceStyle": reference_style or None,
+        "rvcModel": rvc_model or None,
+        "rvcIndex": rvc_index or None,
+        "externalUrlConfigured": True,
+    }
+
+
+def run_xtts_rvc_gradio(
+    out_file: Path,
+    mode: str,
+    text: str,
+    f0_shift: Optional[float],
+    reference_style: str,
+) -> dict:
+    if not text:
+        raise RuntimeError("xtts_rvc_text_required")
+    endpoint = os.environ.get("A11_VOICE_XTTS_RVC_GRADIO_ENDPOINT", "/run/predict").strip() or "/run/predict"
+    url = urljoin(XTTS_RVC_URL.rstrip("/") + "/", endpoint.lstrip("/"))
+    voice_name = xtts_rvc_env_name(reference_style, "voice")
+    rvc_name = xtts_rvc_env_name(reference_style, "rvc")
+    if not voice_name:
+        raise RuntimeError("xtts_rvc_voice_name_missing")
+    if not rvc_name:
+        raise RuntimeError("xtts_rvc_model_name_missing")
+    pitch = f0_shift if f0_shift is not None else XTTS_RVC_PITCH
+    payload = {
+        "data": [
+            rvc_name,
+            voice_name,
+            text,
+            pitch,
+            XTTS_RVC_INDEX_RATE,
+            XTTS_RVC_LANGUAGE,
+        ]
+    }
+    response = requests.post(url, json=payload, timeout=XTTS_RVC_TIMEOUT)
+    response.raise_for_status()
+    parsed = response.json()
+    remote_audio = find_audio_url(parsed, XTTS_RVC_URL)
+    if not remote_audio:
+        raise RuntimeError("xtts_rvc_gradio_missing_audio_url")
+    download_audio(remote_audio, out_file)
+    return {
+        "provider": "xtts-rvc",
+        "engine": "xtts-rvc-ui-gradio",
+        "voiceStyle": reference_style or None,
+        "voiceSample": voice_name,
+        "rvcModel": rvc_name,
+        "language": XTTS_RVC_LANGUAGE,
+        "indexRate": XTTS_RVC_INDEX_RATE,
+    }
+
+
+def run_xtts_rvc(
+    generated_file: Path,
+    reference_file: Optional[Path],
+    out_file: Path,
+    mode: str,
+    text: str,
+    strength: float,
+    f0_shift: Optional[float],
+) -> dict:
+    if not XTTS_RVC_URL:
+        raise RuntimeError("xtts_rvc_url_missing")
+    reference_style = infer_reference_style(reference_file)
+    protocol = XTTS_RVC_PROTOCOL
+    if protocol in {"gradio", "xtts-rvc-ui"}:
+        return run_xtts_rvc_gradio(out_file, mode, text, f0_shift, reference_style)
+    return run_xtts_rvc_a11_api(generated_file, reference_file, out_file, mode, text, strength, f0_shift, reference_style)
+
+
+def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], generated_profile: dict, reference_profile: dict, reference_style: str = "") -> str:
     sample_rate = int(generated_profile.get("sampleRate") or 22050)
     mode_shift = -0.6 if mode == "adaptive" else 0.0
     if mode == "sing":
         mode_shift = 0.8
-    shift = clamp_float(f0_shift, DEFAULT_F0_SHIFT + mode_shift, -12.0, 12.0) * strength
+    if reference_style == "terminator":
+        strength = max(strength, 0.84)
+        default_shift = -5.8 if mode != "sing" else -3.2
+    else:
+        default_shift = DEFAULT_F0_SHIFT + mode_shift
+    shift = clamp_float(f0_shift, default_shift, -12.0, 12.0) * strength
     pitch_ratio = 2 ** (shift / 12)
     filters = []
     if abs(pitch_ratio - 1.0) > 0.01:
@@ -207,6 +579,16 @@ def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], g
         volume = max(0.55, min(1.8, (reference_rms / generated_rms) ** min(1.0, strength)))
         filters.append(f"volume={volume:.4f}")
 
+    if reference_style == "terminator":
+        filters.extend([
+            "highpass=f=90",
+            "lowpass=f=4200",
+            "acrusher=bits=10:mode=log:aa=1",
+            "aecho=0.72:0.82:42|86:0.16|0.08",
+            "chorus=0.55:0.8:45|58:0.20|0.16:0.25|0.18:2|2.6",
+            "aphaser=in_gain=0.65:out_gain=0.74:delay=2:decay=0.35:speed=0.35:type=t",
+        ])
+
     filters.extend([
         "acompressor=threshold=-18dB:ratio=2.4:attack=8:release=140",
         "loudnorm=I=-16:LRA=10:TP=-1.5",
@@ -217,7 +599,8 @@ def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], g
 def run_ffmpeg_morph(generated_file: Path, reference_file: Optional[Path], out_file: Path, mode: str, strength: float, f0_shift: Optional[float]) -> dict:
     generated_profile = wav_profile(generated_file)
     reference_profile = wav_profile(reference_file) if reference_file else {}
-    filter_graph = ffmpeg_morph_filter(mode, strength, f0_shift, generated_profile, reference_profile)
+    reference_style = infer_reference_style(reference_file)
+    filter_graph = ffmpeg_morph_filter(mode, strength, f0_shift, generated_profile, reference_profile, reference_style)
     proc = subprocess.run(
         [
             "ffmpeg",
@@ -245,6 +628,7 @@ def run_ffmpeg_morph(generated_file: Path, reference_file: Optional[Path], out_f
     return {
         "provider": "ffmpeg-morph",
         "filter": filter_graph,
+        "voiceStyle": reference_style or None,
         "generatedProfile": generated_profile,
         "referenceProfile": reference_profile or None,
     }
@@ -320,6 +704,72 @@ def run_espeak(text: str, out_file: Path, req: SynthesizeRequest) -> dict:
     return {"via": "espeak-ng", "params": {"speed": speed, "pitch": pitch, "amplitude": amplitude}}
 
 
+def reference_sketch_duration(text: str, mode: str) -> float:
+    base = 7.0 if mode == "sing" else 4.5
+    per_char = 0.035 if mode == "sing" else 0.018
+    return max(base, min(28.0, base + len(clean_text(text)) * per_char))
+
+
+def run_reference_voice_sketch(reference_file: Path, out_file: Path, req: SynthesizeRequest, text: str) -> dict:
+    if not reference_file.exists():
+        raise RuntimeError("reference_voice_missing")
+
+    duration = reference_sketch_duration(text, req.vocalMode)
+    if req.vocalMode == "sing":
+        filter_graph = (
+            "highpass=f=70,lowpass=f=9800,"
+            "asetrate=44100*1.015,aresample=44100,"
+            "aphaser=in_gain=0.72:out_gain=0.82:delay=2.1:decay=0.35,"
+            "acompressor=threshold=-19dB:ratio=2.4:attack=12:release=160,"
+            "loudnorm=I=-17:TP=-1.5:LRA=10,"
+            "afade=t=in:st=0:d=0.18,"
+            f"afade=t=out:st={max(0.1, duration - 0.45):.3f}:d=0.45"
+        )
+    else:
+        filter_graph = (
+            "highpass=f=75,lowpass=f=9000,"
+            "acompressor=threshold=-18dB:ratio=2.0:attack=10:release=120,"
+            "loudnorm=I=-18:TP=-1.5:LRA=9,"
+            "afade=t=in:st=0:d=0.12,"
+            f"afade=t=out:st={max(0.1, duration - 0.35):.3f}:d=0.35"
+        )
+
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(reference_file),
+            "-t",
+            f"{duration:.3f}",
+            "-af",
+            filter_graph,
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
+            str(out_file),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    if proc.returncode != 0 or not out_file.exists():
+        details = (proc.stderr or proc.stdout or "").strip()[:800]
+        raise RuntimeError(f"reference_voice_sketch_failed:{details}")
+    return {
+        "provider": "voice-reference-sketch",
+        "engine": "ffmpeg-reference-sketch",
+        "voiceStyle": reference_file.stem,
+        "durationTargetSeconds": duration,
+        "promptRenderedAsSpeech": False,
+        "promptCarriedInMetadata": True,
+        "filter": filter_graph,
+    }
+
+
 def synthesize(req: SynthesizeRequest) -> dict:
     prune_old_audio()
     text = shape_for_mode(clean_text(req.text), req.vocalMode)
@@ -329,11 +779,185 @@ def synthesize(req: SynthesizeRequest) -> dict:
     out_name = f"a11-voice-{int(time.time() * 1000)}.wav"
     out_file = OUT_DIR / out_name
     piper_error = None
+    generator_error = None
+    meta = None
     try:
         meta = run_piper(text, out_file, req)
     except Exception as exc:
         piper_error = str(exc)
-        meta = run_espeak(text, out_file, req)
+        try:
+            meta = run_espeak(text, out_file, req)
+        except Exception as espeak_exc:
+            generator_error = f"{piper_error}; {espeak_exc}"
+
+    persona = normalize_persona(req.voicePersona or req.persona or req.surface)
+    reference_file = find_persona_reference(persona, req.vocalMode) if wants_persona_voice(req, persona) else None
+    if wants_persona_voice(req, persona):
+        if not reference_file:
+            delete_generated_audio(out_file)
+            raise HTTPException(
+                status_code=424,
+                detail={
+                    "error": "persona_reference_missing",
+                    "persona": persona,
+                    "searched": [str(item) for item in voice_library_dirs()],
+                },
+            )
+
+        converted_name = f"a11-voice-persona-{int(time.time() * 1000)}.wav"
+        converted_file = OUT_DIR / converted_name
+        if not out_file.exists():
+            try:
+                voice_meta = run_reference_voice_sketch(reference_file, converted_file, req, text)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=424,
+                    detail={
+                        "error": "persona_voice_generation_failed",
+                        "persona": persona,
+                        "message": str(exc)[:900],
+                        "baseGeneratorError": generator_error,
+                    },
+                ) from exc
+
+            return {
+                "ok": True,
+                "text": text,
+                "audio_url": f"/out/{converted_name}",
+                "audioUrl": f"/out/{converted_name}",
+                "duration_ms": wav_duration_ms(converted_file),
+                "module": "a11-voice-module",
+                "provider": voice_meta.get("provider") or "voice-reference-sketch",
+                "via": "a11-voice-module-reference-sketch",
+                "vocalMode": req.vocalMode,
+                "persona": persona,
+                "piperError": piper_error,
+                "baseGeneratorError": generator_error,
+                "baseVoice": None,
+                "providerCapabilities": {
+                    "referenceVoice": True,
+                    "styleVoice": True,
+                    "promptToAudioSketch": True,
+                },
+                "voiceReference": {
+                    "id": f"{persona}:{reference_file.stem}",
+                    "label": reference_file.name,
+                    "scope": "voice-library",
+                },
+                "voiceConversion": {
+                    "ok": True,
+                    "module": "a11-voice-module",
+                    "provider": voice_meta.get("provider") or "voice-reference-sketch",
+                    "engine": voice_meta.get("engine") or "ffmpeg-reference-sketch",
+                    "voiceStyle": voice_meta.get("voiceStyle") or req.voiceStyle or reference_file.stem,
+                    "attemptedEngines": ["reference-sketch"],
+                    "reference": {
+                        "id": f"{persona}:{reference_file.stem}",
+                        "label": reference_file.name,
+                        "scope": "voice-library",
+                    },
+                },
+                **voice_meta,
+            }
+
+        selected_engine = (req.engine or "auto").strip().lower()
+        morph_strength = clamp_float(req.strength, DEFAULT_CONVERSION_STRENGTH, 0.05, 1.0)
+        attempted = []
+        last_error = None
+
+        try:
+            for provider in provider_chain(selected_engine):
+                attempted.append(provider)
+                try:
+                    if is_xtts_rvc_provider(provider):
+                        voice_meta = run_xtts_rvc(
+                            out_file,
+                            reference_file,
+                            converted_file,
+                            req.vocalMode,
+                            text,
+                            morph_strength,
+                            req.f0Shift,
+                        )
+                        break
+                    if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
+                        voice_meta = run_ffmpeg_morph(
+                            out_file,
+                            reference_file,
+                            converted_file,
+                            req.vocalMode,
+                            morph_strength,
+                            req.f0Shift,
+                        )
+                        break
+                    raise RuntimeError(f"unknown_voice_converter:{provider}")
+                except Exception as exc:
+                    last_error = exc
+                    if selected_engine not in {"", "auto", "default"} or not XTTS_RVC_FALLBACK_TO_FFMPEG:
+                        raise
+            else:
+                raise last_error or RuntimeError("voice_conversion_provider_unavailable")
+        except Exception as exc:
+            delete_generated_audio(out_file)
+            raise HTTPException(
+                status_code=424,
+                detail={
+                    "error": "persona_voice_conversion_failed",
+                    "persona": persona,
+                    "message": str(exc)[:900],
+                    "attempted": attempted,
+                },
+            ) from exc
+
+        delete_generated_audio(out_file)
+        engine = voice_meta.get("engine") or voice_meta.get("provider") or (attempted[-1] if attempted else "persona-voice")
+        return {
+            "ok": True,
+            "text": text,
+            "audio_url": f"/out/{converted_name}",
+            "audioUrl": f"/out/{converted_name}",
+            "duration_ms": wav_duration_ms(converted_file),
+            "module": "a11-voice-module",
+            "provider": voice_meta.get("provider") or "persona-voice",
+            "via": "a11-voice-module-persona",
+            "vocalMode": req.vocalMode,
+            "persona": persona,
+            "piperError": piper_error,
+            "baseVoice": meta,
+            "providerCapabilities": {
+                "referenceVoice": True,
+                "styleVoice": True,
+            },
+            "voiceReference": {
+                "id": f"{persona}:{reference_file.stem}",
+                "label": reference_file.name,
+                "scope": "voice-library",
+            },
+            "voiceConversion": {
+                "ok": True,
+                "module": "a11-voice-module",
+                "provider": voice_meta.get("provider") or "persona-voice",
+                "engine": engine,
+                "voiceStyle": voice_meta.get("voiceStyle") or req.voiceStyle or reference_file.stem,
+                "attemptedEngines": attempted,
+                "reference": {
+                    "id": f"{persona}:{reference_file.stem}",
+                    "label": reference_file.name,
+                    "scope": "voice-library",
+                },
+            },
+            **voice_meta,
+        }
+
+    if not out_file.exists():
+        raise HTTPException(
+            status_code=424,
+            detail={
+                "error": "voice_generator_unavailable",
+                "message": "No local voice generator produced audio.",
+                "baseGeneratorError": generator_error,
+            },
+        )
 
     return {
         "ok": True,
@@ -354,6 +978,9 @@ async def convert_voice(
     reference: Optional[UploadFile] = File(default=None),
     mode: Literal["speech", "adaptive", "sing"] = Form(default="adaptive"),
     engine: str = Form(default="auto"),
+    text: str = Form(default=""),
+    persona: str = Form(default=""),
+    voiceStyle: str = Form(default=""),
     strength: Optional[float] = Form(default=None),
     f0Shift: Optional[float] = Form(default=None),
 ):
@@ -363,14 +990,34 @@ async def convert_voice(
     out_name = f"a11-converted-{int(time.time() * 1000)}.wav"
     out_file = OUT_DIR / out_name
     selected_engine = (engine or "auto").strip().lower()
-    selected_provider = CONVERSION_PROVIDER if selected_engine == "auto" else selected_engine
     morph_strength = clamp_float(strength, DEFAULT_CONVERSION_STRENGTH, 0.05, 1.0)
+    last_error = None
+    attempted = []
 
     try:
-        # RVC/XTTS can be attached here later; ffmpeg-morph is the always-on local bridge.
-        meta = run_ffmpeg_morph(generated_file, reference_file, out_file, mode, morph_strength, f0Shift)
+        for provider in provider_chain(selected_engine):
+            attempted.append(provider)
+            try:
+                if is_xtts_rvc_provider(provider):
+                    meta = run_xtts_rvc(generated_file, reference_file, out_file, mode, clean_text(text), morph_strength, f0Shift)
+                    break
+                if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
+                    meta = run_ffmpeg_morph(generated_file, reference_file, out_file, mode, morph_strength, f0Shift)
+                    break
+                raise RuntimeError(f"unknown_voice_converter:{provider}")
+            except Exception as exc:
+                last_error = exc
+                if selected_engine not in {"", "auto", "default"} or not XTTS_RVC_FALLBACK_TO_FFMPEG:
+                    raise
+        else:
+            raise last_error or RuntimeError("voice_conversion_provider_unavailable")
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)[:900]) from exc
+        detail = {
+            "error": "voice_conversion_failed",
+            "message": str(exc)[:900],
+            "attempted": attempted,
+        }
+        raise HTTPException(status_code=500, detail=detail) from exc
     finally:
         delete_generated_audio(generated_file)
         if reference_file:
@@ -383,9 +1030,12 @@ async def convert_voice(
         "duration_ms": wav_duration_ms(out_file),
         "module": "a11-voice-module",
         "mode": mode,
-        "engine": selected_provider,
+        "engine": meta.get("engine") or meta.get("provider") or attempted[-1],
         "strength": morph_strength,
         "referenceUsed": bool(reference_file),
+        "attemptedEngines": attempted,
+        "persona": persona or None,
+        "requestedVoiceStyle": voiceStyle or None,
         **meta,
     }
 
@@ -403,9 +1053,72 @@ def health():
             "ok": True,
             "provider": CONVERSION_PROVIDER,
             "endpoint": "/api/voice/convert",
-            "engines": ["ffmpeg-morph", "rvc-bridge", "xtts-bridge"],
+            "engines": ["xtts-rvc", "xtts-rvc-api", "xtts-rvc-ui-gradio", "ffmpeg-morph"],
+            "xttsRvc": {
+                "configured": bool(XTTS_RVC_URL),
+                "protocol": XTTS_RVC_PROTOCOL,
+                "fallbackToFfmpeg": XTTS_RVC_FALLBACK_TO_FFMPEG,
+            },
+        },
+        "research": {
+            "primeSpiral": {
+                "ok": True,
+                "endpoint": "/research/prime-spiral/control",
+                "spectralBaseHz": prime_spiral_morph.SPECTRAL_BASE_HZ,
+            },
         },
     }
+
+
+@app.post("/research/prime-spiral/control")
+def prime_spiral_control(req: PrimeSpiralControlRequest):
+    try:
+        curve = prime_spiral_morph.control_curve(
+            req.length,
+            phi=req.phi,
+            j_value=req.j,
+            orientation=req.orientation,
+            max_db=req.maxDb,
+            prime_boost_db=req.primeBoostDb,
+            mode=req.mode,
+        )
+        weights = prime_spiral_morph.spectral_weights(
+            req.bins,
+            phi=req.phi,
+            j_value=req.j,
+            orientation=req.orientation,
+            strength=req.weightStrength,
+            mode=req.mode,
+        )
+        payload = {
+            "ok": True,
+            "schema": "funesterie.prime-spiral-audio-control.v1",
+            "module": "a11-voice-module",
+            "researchOnly": True,
+            "spectralBaseHz": prime_spiral_morph.SPECTRAL_BASE_HZ,
+            "params": req.model_dump(),
+            "curve": curve,
+            "weights": weights,
+            "guardrails": {
+                "notProductionVoiceRoute": True,
+                "notRiemannProof": True,
+                "boundedModulation": True,
+            },
+        }
+        if req.includeFeatures:
+            payload["features"] = [
+                item.__dict__
+                for item in prime_spiral_morph.spiral_features(
+                    min(req.length, 512),
+                    phi=req.phi,
+                    j_value=req.j,
+                    orientation=req.orientation,
+                    max_db=req.maxDb,
+                )
+            ]
+        return payload
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/voice/synthesize")
