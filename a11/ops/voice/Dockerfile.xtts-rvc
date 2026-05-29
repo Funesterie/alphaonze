@@ -25,6 +25,9 @@ RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
     && pip install --no-cache-dir torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r /app/requirements.xtts-rvc.txt
 
+COPY patch_fairseq_py311.py /app/patch_fairseq_py311.py
+RUN python /app/patch_fairseq_py311.py
+
 COPY funesterie_xtts_rvc_api.py /app/funesterie_xtts_rvc_api.py
 COPY rvc.py /app/rvc.py
 COPY rmvpe.py /app/rmvpe.py
