@@ -200,12 +200,29 @@ def resolve_persona_binding(style: str) -> dict:
     }
 
 
+def load_trusted_xtts_model():
+    original_torch_load = torch.load
+
+    def torch_load_xtts_checkpoint(*args, **kwargs):
+        # Coqui XTTS v2 checkpoints store trusted config classes that PyTorch
+        # 2.6+ blocks with weights_only=True. Limit the compatibility shim to
+        # the local XTTS model load, then restore torch.load immediately.
+        kwargs.setdefault("weights_only", False)
+        return original_torch_load(*args, **kwargs)
+
+    torch.load = torch_load_xtts_checkpoint
+    try:
+        return TTS(model_path=str(XTTS_DIR), config_path=str(XTTS_DIR / "config.json")).to(DEVICE)
+    finally:
+        torch.load = original_torch_load
+
+
 def get_tts():
     global _tts
     if _tts is None:
         ensure_models()
         torch.set_num_threads(max(1, int(os.environ.get("A11_XTTS_RVC_TORCH_THREADS", "4") or "4")))
-        _tts = TTS(model_path=str(XTTS_DIR), config_path=str(XTTS_DIR / "config.json")).to(DEVICE)
+        _tts = load_trusted_xtts_model()
     return _tts
 
 
