@@ -525,6 +525,7 @@ const createAdminRunRouter = require('./src/routes/admin-run.cjs');
 const createAuthRouter = require('./src/routes/auth.cjs');
 const { createLocalAuthStore } = require('./src/auth/local-auth-store.cjs');
 const { createAuthSessionRegistry } = require('./src/auth/session-registry.cjs');
+const { createEmbeddedUiAuthGate } = require('./src/auth/embedded-ui-auth-gate.cjs');
 const { hasFullAccess } = require('./src/auth/full-access.cjs');
 const { createIsAdminRequest } = require('./src/security/admin-access.cjs');
 const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
@@ -7435,6 +7436,10 @@ function getRequestSurfaceHost(req) {
   return raw.replace(/:\d+$/, '').toLowerCase();
 }
 
+function isGeneralFunesterieSurfaceHost(hostname) {
+  return hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
+}
+
 function resolveEmbeddedUiSurface(req) {
   const hostname = getRequestSurfaceHost(req);
   const pathname = String(req.path || req.originalUrl || '/').split('?')[0].toLowerCase();
@@ -7447,10 +7452,12 @@ function resolveEmbeddedUiSurface(req) {
   }
 
   if (/^\/(?:a11|alphaonze)(?:\/|$)/.test(pathname)
-    || hostname === 'a11.funesterie.me'
-    || hostname === 'funesterie.me'
-    || hostname === 'www.funesterie.me') {
+    || hostname === 'a11.funesterie.me') {
     return 'a11';
+  }
+
+  if (isGeneralFunesterieSurfaceHost(hostname)) {
+    return 'funesterie';
   }
 
   if (/^\/(?:k44|kaen44)(?:\/|$)/.test(pathname)
@@ -7466,6 +7473,19 @@ function resolveEmbeddedUiSurface(req) {
 
 function rewriteEmbeddedUiIndexForSurface(html, surface) {
   if (!html) return html;
+
+  if (surface === 'funesterie') {
+    return html
+      .replace(/<title>.*?<\/title>/i, '<title>Funesterie - NOSSEN</title>')
+      .replace(
+        /<meta name="description" content="[^"]*"\s*\/?>/i,
+        '<meta name="description" content="Funesterie / NOSSEN regroupe les agents A11, Kaen44 et Vivy avec une entree publique unique, un compte central et des routes specialisees." />'
+      )
+      .replace(
+        /<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/?>/i,
+        '<meta name="apple-mobile-web-app-title" content="Funesterie" />'
+      );
+  }
 
   if (surface === 'a11') {
     return html
@@ -7517,6 +7537,7 @@ function rewriteEmbeddedUiIndexForSurface(html, surface) {
 
 function sendEmbeddedUiHtml(req, res, uiStatus) {
   const surface = resolveEmbeddedUiSurface(req);
+  res.setHeader('X-A11-Ui-Surface', surface);
 
   if (surface === 'vivy') {
     const vivyIndex = path.join(webPublic, 'vivy', 'index.html');
@@ -7535,6 +7556,15 @@ function sendEmbeddedUiHtml(req, res, uiStatus) {
   return res.type('html').send(rewriteEmbeddedUiIndexForSurface(html, surface));
 }
 
+app.use(createEmbeddedUiAuthGate({
+  jwt,
+  jwtSecret: JWT_SECRET,
+  authSessionRegistry,
+  resolveSurface: resolveEmbeddedUiSurface,
+  centralLoginUrl: process.env.A11_CENTRAL_LOGIN_URL || 'https://funesterie.me/login',
+  logger: console,
+}));
+
 function isLocalHostName(hostname) {
   return ['localhost', '127.0.0.1', '::1'].includes(String(hostname || '').trim().toLowerCase());
 }
@@ -7545,6 +7575,7 @@ function resolveMissingEmbeddedUiRedirect(req) {
   if (String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production') return '';
 
   const surface = resolveEmbeddedUiSurface(req);
+  if (surface === 'funesterie') return 'https://funesterie.me/';
   if (surface === 'vivy') return 'https://funesterie.me/vivy/';
   if (surface === 'kaen44') return 'https://k44.funesterie.me/';
   return 'https://a11.funesterie.me/';

@@ -1561,6 +1561,8 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activée sur ce serveur.",
           microsoft_invalid_client: "La connexion Microsoft est mal configurée côté serveur.",
           microsoft_invalid_grant: "Microsoft a refusé le code de connexion. Réessaie en repartant du bouton Microsoft.",
+          microsoft_tenant_mismatch: "Ce compte Microsoft n'est pas autorisé dans le tenant Funesterie.",
+          microsoft_consent_required: "Microsoft demande un nouveau consentement pour ce compte.",
           microsoft_access_denied: "La connexion Microsoft a été annulée.",
           microsoft_email_missing: "Microsoft n'a pas renvoyé d'adresse email exploitable pour la session.",
         };
@@ -1639,7 +1641,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     if (isCentralLogin) {
-      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "basic" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -1651,7 +1653,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setMicrosoftLoading(true);
     if (isCentralLogin) {
-      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "basic" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -3708,7 +3710,7 @@ function FunesterieConnectedHomePage({
       return;
     }
     setAccountBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "drive" });
+    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "basic" });
   }
 
   if (!isAgentsRoute && !isStatusRoute) {
@@ -4678,12 +4680,6 @@ export function App() {
         || hostname === 'vivy.funesterie.me'
       );
     if (!shouldCheckCookieSession) {
-      setAuthSessionReady(true);
-      return;
-    }
-
-    const isGeneralPublicHost = hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
-    if (isGeneralPublicHost && !isAuthSuccessRoute(pathname)) {
       setAuthSessionReady(true);
       return;
     }
@@ -6696,6 +6692,17 @@ export function App() {
   }
 
   if (isVivy) {
+    if (!authSessionReady) return null;
+    if (!isAuthenticated) {
+      if (typeof window !== "undefined" && !isCentralLoginSurface() && !isLocalSurfaceHost(window.location.hostname)) {
+        window.location.replace(buildCentralLoginUrl(window.location.href));
+        return null;
+      }
+      return <LoginPanel onLoginSuccess={() => {
+        setIsAuthenticated(true);
+        setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+      }} />;
+    }
     return <VivyPublicPage />;
   }
 
