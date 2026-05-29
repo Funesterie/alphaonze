@@ -9,6 +9,7 @@ scipy==1.17.1
 torchcrepe==0.0.24
 torch==2.11.0
 torchaudio==2.11.0
+torchcodec==0.13.0
 TTS==0.22.0
 transformers==4.38.2
 tokenizers==0.15.2
