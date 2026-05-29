@@ -166,8 +166,8 @@ function findPackageRoot(packageName = '') {
   if (!packagePath) return '';
 
   const directRoot = findFirstExisting([
-    path.join(SERVER_ROOT, 'node_modules', packagePath),
     ...nodePathRoots().map((root) => path.join(root, packagePath)),
+    path.join(SERVER_ROOT, 'node_modules', packagePath),
   ]);
   if (directRoot) return directRoot;
 
