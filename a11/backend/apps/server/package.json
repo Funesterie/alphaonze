@@ -118,7 +118,7 @@
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.8",
     "open": "^11.0.0",
-    "openai": "^6.39.0",
+    "openai": "^6.39.1",
     "patch-package": "^8.0.1",
     "pdfkit": "^0.18.0",
     "pg": "^8.21.0",
