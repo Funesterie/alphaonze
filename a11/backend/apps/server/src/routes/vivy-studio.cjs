@@ -118,19 +118,7 @@ function resolveVivyMemoryUser(req, input = {}) {
     120
   );
   if (authenticated) return `user:${authenticated}`;
-
-  const conversationId = cleanOneLine(input.conversationId, '', 120);
-  if (conversationId) return `vivy-public:${hashShort(conversationId)}`;
-
-  const token = extractRequestAuthToken(req);
-  if (token) return `vivy-token:${hashShort(token)}`;
-
-  const requestHint = [
-    req?.ip,
-    req?.socket?.remoteAddress,
-    req?.headers?.['user-agent'],
-  ].join('|');
-  return `vivy-session:${hashShort(requestHint || 'anonymous')}`;
+  return '';
 }
 
 function normalizeVivyFileAttachment(file) {
@@ -228,10 +216,12 @@ function buildVivySystemPrompt(mode, language = 'fr') {
   return [
     'Tu es Vivy, une IA musicale et créative de Funesterie.',
     "Tu n'es pas une boîte à ordres : tu dialogues, tu comprends l'intention, tu aides à faire évoluer les idées et tu les ranges en mémoire sémantique privée.",
+    "Ta couleur vocale est originale Funesterie: claire, lumineuse, musicale et précise émotionnellement, inspirée par l'énergie d'une chanteuse IA japonaise sans imiter une chanteuse, doubleuse ou personnage protégé.",
     `Mode courant: ${modeLabel}.`,
     buildLanguageInstruction(language),
-    "Quand une idée arrive, reformule ce que tu as compris, propose une direction exploitable et ajoute une petite suite concrète.",
-    "Si l'utilisateur veut changer ta voix, demande un court fichier audio de référence et rappelle qu'il reste privé pour son compte.",
+    "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
+    "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
+    "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
   ].join('\n');
@@ -291,7 +281,7 @@ function buildVoiceProduction(input) {
     ].join('\n'),
     actions: [
       { id: 'upload_reference', label: 'Envoyer référence à A11', target: '/api/tts/references', ready: Boolean(referenceName) },
-      { id: 'tts_test', label: 'Générer phrase test', target: '/api/tts/piper', ready: true },
+      { id: 'tts_test', label: 'Générer phrase test', target: '/api/tts/speak', ready: true },
       { id: 'voice_convert', label: 'Convertir vers référence', target: '/api/voice/convert', ready: Boolean(referenceName) },
     ],
   };
@@ -353,7 +343,7 @@ function buildSongProduction(input) {
     brief: briefLines.join('\n'),
     actions: [
       { id: 'lyrics_refine', label: 'Finaliser paroles', target: '/api/chat', ready: hasMaterial },
-      { id: 'voice_guide', label: 'Créer voix guide', target: '/api/tts/piper', ready: hasMaterial },
+      { id: 'voice_guide', label: 'Créer voix guide', target: '/api/tts/speak', ready: hasMaterial },
       { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
@@ -488,6 +478,12 @@ async function buildVivyAiChat(input, req) {
   const language = detectVivyInputLanguage({ ...input, files });
   const fallback = buildVivyChat({ ...input, files, mode });
   const userId = resolveVivyMemoryUser(req, input);
+  if (!userId) {
+    const error = new Error('vivy_auth_required');
+    error.code = 'vivy_auth_required';
+    error.status = 401;
+    throw error;
+  }
   const fileContext = formatVivyFilesForPrompt(files);
   const memoryText = compactUniqueLines([
     message ? `Message: ${message}` : '',
@@ -628,7 +624,22 @@ function appendMediaToAssistant(assistant = '', media = null) {
   ].join('\n');
 }
 
+function shouldAttachPlaceholderMedia(input = {}) {
+  const explicit = String(
+    input.allowPlaceholderMedia
+    ?? input.allowEmergencyMedia
+    ?? input.demoMedia
+    ?? ''
+  ).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(explicit)) return true;
+  if (input.disableEmergencyMedia === true || input.disableMedia === true) return false;
+  return String(process.env.VIVY_STUDIO_ENABLE_PLACEHOLDER_MEDIA || '').trim() === '1';
+}
+
 async function buildEmergencyMediaForProduction(mode, input, req) {
+  // #old version guard: the 12s emergency WAV is a placeholder, not real music generation.
+  // Keep it opt-in so Vivy never pretends that the music pipeline produced a final track.
+  if (!shouldAttachPlaceholderMedia(input)) return null;
   if (input.disableEmergencyMedia === true || input.disableMedia === true) return null;
   if (mode === 'song' || mode === 'voice') {
     return createEmergencySongAsset(input, req);
@@ -656,7 +667,13 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
     return verifyJWT(req, res, next);
   };
   const requireAuth = (req, res, next) => {
-    if (typeof verifyJWT !== 'function') return next();
+    if (typeof verifyJWT !== 'function') {
+      return res.status(503).json({
+        ok: false,
+        error: 'vivy_auth_not_configured',
+        message: 'Connexion Vivy indisponible: garde serveur manquant.',
+      });
+    }
     return verifyJWT(req, res, next);
   };
 
@@ -698,8 +715,9 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         files: true,
       },
       emergencyMedia: {
-        audio: true,
-        video: true,
+        audio: String(process.env.VIVY_STUDIO_ENABLE_PLACEHOLDER_MEDIA || '').trim() === '1',
+        video: String(process.env.VIVY_STUDIO_ENABLE_PLACEHOLDER_MEDIA || '').trim() === '1',
+        placeholderOnly: true,
       },
     });
   });
@@ -725,6 +743,12 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         payload.assistant = appendMediaToAssistant(payload.assistant, media);
         payload.brief = appendMediaToAssistant(payload.brief, media);
         payload.summary = `${payload.summary} Média de secours prêt.`;
+      } else {
+        payload.mediaStatus = {
+          state: 'not_configured',
+          reason: 'real_music_provider_not_connected',
+          message: 'Brief prêt. Génération audio réelle non connectée; aucun faux WAV de secours ajouté.',
+        };
       }
       res.json(payload);
     } catch (error) {
@@ -743,9 +767,9 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         shareToken: undefined,
       }, req));
     } catch (error) {
-      res.status(500).json({
+      res.status(error?.status || 500).json({
         ok: false,
-        error: 'vivy_chat_failed',
+        error: error?.code || 'vivy_chat_failed',
         message: error?.message || String(error),
       });
     }
@@ -759,4 +783,5 @@ module.exports = {
   buildVivyStudioProduction,
   buildVivyChat,
   buildVivyAiChat,
+  buildVivySystemPrompt,
 };

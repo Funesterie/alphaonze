@@ -46,7 +46,71 @@ curl.exe -sS http://127.0.0.1:5002/api/voice/convert `
   -F "strength=0.45"
 ```
 
-The built-in engine is `ffmpeg-morph`: pitch/tempo, dynamics and loudness shaping after generation. RVC or XTTS-v2 can be connected behind the same endpoint later without changing the A11 frontend/backend contract.
+The built-in fallback engine is `ffmpeg-morph`: pitch/tempo, dynamics and loudness shaping after generation.
+
+For stronger voice identity, run the local Funesterie XTTS/RVC bridge and let this module call it first:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\Start-XttsRvcUi.ps1 -InstallOnly
+```
+
+The installer uses Python 3.10 because `fairseq`/RVC does not start reliably on Python 3.11. If Python 3.10 is missing and `uv` is available, the script installs an isolated Python 3.10 runtime automatically.
+
+Then place RVC models in:
+
+```text
+D:\agent-bus\voice\XTTS-RVC-UI\rvcs\a11-terminator.pth
+D:\agent-bus\voice\XTTS-RVC-UI\rvcs\kaen44-donna.pth
+D:\agent-bus\voice\XTTS-RVC-UI\rvcs\vivy.pth
+```
+
+Matching `.index` files can be placed next to the `.pth` files. The bridge also reads
+`D:\agent-bus\voice\XTTS-RVC-UI\rvcs\funesterie-personas.json`, so the official A11/K44/Vivy
+filenames can be changed without editing Python. XTTS can use WAV samples in `voices`; when a
+matching RVC `.pth` is missing, the bridge returns XTTS reference output instead of falling back
+to the base Piper voice. Add trained `.pth` models for the full RVC pass.
+
+To fabricate the persona models instead of pretending they exist, first build approved datasets
+from local voice references:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
+  -Persona a11 `
+  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\a11-terminator.wav
+
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
+  -Persona kaen44 `
+  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\kaen44-donna.wav,D:\projets\funesterie\a11\backend\runtime\voice-library\kaen44-donna-extra.wav
+
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
+  -Persona vivy `
+  -Source D:\projets\funesterie\a11\backend\runtime\voice-library\vivy.wav,D:\projets\funesterie\a11\backend\runtime\voice-library\vivy-song-context.wav
+```
+
+Then check the state:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\Test-RvcPersonaAssets.ps1
+```
+
+The expected final artifacts remain the persona `.pth` and `.index` files in `rvcs`. The helper
+`Invoke-RvcPersonaTraining.ps1` writes a training request and can run the official RVC WebUI trainer.
+It does not mark a persona as RVC-ready until real model files exist.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\Invoke-RvcPersonaTraining.ps1 `
+  -Persona vivy `
+  -Epochs 5 `
+  -BatchSize 4
+```
+
+Start the bridge service:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\Start-XttsRvcUi.ps1
+```
+
+The script starts the Funesterie bridge on `http://127.0.0.1:5000` / `http://host.docker.internal:5000` for Docker.
 
 ## A11 Integration
 
@@ -57,7 +121,9 @@ ENABLE_PIPER_HTTP=1
 A11_VOICE_MODULE_URL=http://a11-voice:5002
 TTS_URL=http://a11-voice:5002
 A11_VOICE_CONVERSION_ENABLED=1
-A11_VOICE_CONVERTER_PROVIDER=ffmpeg-morph
+A11_VOICE_CONVERTER_PROVIDER=xtts-rvc,ffmpeg-morph
+A11_VOICE_XTTS_RVC_URL=http://host.docker.internal:5000
+A11_VOICE_XTTS_RVC_PROTOCOL=a11
 ```
 
 Generated files are exposed to the web UI through the backend proxy `/api/tts/out/<file>.wav`, so browser clients do not receive the internal container URL.
