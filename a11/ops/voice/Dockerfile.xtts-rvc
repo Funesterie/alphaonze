@@ -1,0 +1,41 @@
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV A11_XTTS_RVC_ROOT=/app
+ENV A11_XTTS_RVC_HOST=0.0.0.0
+ENV A11_XTTS_RVC_PORT=5000
+ENV A11_XTTS_RVC_DEVICE=cpu
+ENV A11_XTTS_RVC_LANGUAGE=fr
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      curl \
+      ffmpeg \
+      git \
+      libsndfile1 \
+      espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.xtts-rvc.txt /app/requirements.xtts-rvc.txt
+RUN pip install --no-cache-dir "pip<24.1" "setuptools<70" wheel \
+    && pip install --no-cache-dir torch==2.1.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r /app/requirements.xtts-rvc.txt
+
+COPY funesterie_xtts_rvc_api.py /app/funesterie_xtts_rvc_api.py
+COPY rvc.py /app/rvc.py
+COPY rmvpe.py /app/rmvpe.py
+COPY vc_infer_pipeline.py /app/vc_infer_pipeline.py
+COPY infer_pack /app/infer_pack
+
+RUN mkdir -p /app/models/xtts /app/rvcs /app/voices /app/outputs
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()" || exit 1
+
+CMD ["python", "/app/funesterie_xtts_rvc_api.py"]

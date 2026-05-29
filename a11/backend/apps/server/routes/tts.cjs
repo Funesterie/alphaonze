@@ -1352,6 +1352,8 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
               provider: synthesizePayload?.voiceConversion?.provider || synthesizePayload?.provider || PROVIDERS.XTTS_RVC,
               engine: synthesizePayload?.voiceConversion?.engine || synthesizePayload?.engine || 'persona-voice',
               voiceStyle: synthesizePayload?.voiceConversion?.voiceStyle || synthesizePayload?.voiceStyle || voiceStyle || null,
+              rvcModel: synthesizePayload?.voiceConversion?.rvcModel || synthesizePayload?.providerCapabilities?.rvcModel || null,
+              rvcIndex: synthesizePayload?.voiceConversion?.rvcIndex || synthesizePayload?.providerCapabilities?.rvcIndex || null,
               direction: buildVoicePersonaInstruction(persona),
               attemptedEngines: Array.isArray(synthesizePayload?.voiceConversion?.attemptedEngines)
                 ? synthesizePayload.voiceConversion.attemptedEngines
@@ -1400,6 +1402,8 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
         const extension = audioExtensionFromContentType(contentType, audioFormat || 'wav');
         const audioUrl = saveProviderAudioBuffer(Buffer.from(await response.arrayBuffer()), 'xtts-rvc', extension);
         if (!audioUrl) throw new Error('xtts_rvc_empty_audio');
+        const rvcModel = response.headers?.get?.('x-a11-rvc-model') || '';
+        const rvcIndex = response.headers?.get?.('x-a11-rvc-index') || '';
         return {
           success: true,
           provider: PROVIDERS.XTTS_RVC,
@@ -1416,6 +1420,8 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
             provider: PROVIDERS.XTTS_RVC,
             engine: response.headers?.get?.('x-a11-voice-engine') || 'xtts-rvc',
             voiceStyle: response.headers?.get?.('x-a11-voice-style') || voiceStyle || null,
+            rvcModel: rvcModel || null,
+            rvcIndex: rvcIndex || null,
             direction: buildVoicePersonaInstruction(persona),
             attemptedEngines: [PROVIDERS.XTTS_RVC],
             reference: {
@@ -1451,8 +1457,10 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
           ok: true,
           module: parsed?.module || 'funesterie-xtts-rvc-bridge',
           provider: PROVIDERS.XTTS_RVC,
-          engine: parsed?.engine || 'xtts-rvc',
-          voiceStyle: parsed?.voiceStyle || voiceStyle || null,
+          engine: parsed?.voiceConversion?.engine || parsed?.engine || 'xtts-rvc',
+          voiceStyle: parsed?.voiceConversion?.voiceStyle || parsed?.voiceStyle || voiceStyle || null,
+          rvcModel: parsed?.voiceConversion?.rvcModel || parsed?.providerCapabilities?.rvcModel || null,
+          rvcIndex: parsed?.voiceConversion?.rvcIndex || parsed?.providerCapabilities?.rvcIndex || null,
           direction: buildVoicePersonaInstruction(persona),
           attemptedEngines: Array.isArray(parsed?.attemptedEngines) ? parsed.attemptedEngines : [PROVIDERS.XTTS_RVC],
           reference: {

@@ -62,12 +62,14 @@ def voice_library_dirs() -> list[Path]:
     )
     here = Path(__file__).resolve()
     dirs = split_path_env(configured)
+    repo_runtime = here.parents[3] / "runtime" / "voice-library" if len(here.parents) > 3 else None
     dirs.extend([
         Path(os.environ.get("A11_RUNTIME_ROOT", ROOT / "runtime")) / "voice-library",
         ROOT / "runtime" / "voice-library",
-        here.parents[3] / "runtime" / "voice-library",
         Path.cwd() / "runtime" / "voice-library",
     ])
+    if repo_runtime is not None:
+        dirs.append(repo_runtime)
     seen = set()
     unique = []
     for item in dirs:
@@ -458,12 +460,20 @@ def run_xtts_rvc_a11_api(
         response.raise_for_status()
         if content_type.startswith("audio/"):
             out_file.write_bytes(response.content)
+            rvc_model = response.headers.get("x-a11-rvc-model", "")
+            rvc_index = response.headers.get("x-a11-rvc-index", "")
+            voice_engine = response.headers.get("x-a11-voice-engine", "")
         else:
             parsed = response.json()
             remote_audio = find_audio_url(parsed, XTTS_RVC_URL)
             if not remote_audio:
                 raise RuntimeError("xtts_rvc_missing_audio_url")
             download_audio(remote_audio, out_file)
+            voice_conversion = parsed.get("voiceConversion") if isinstance(parsed, dict) else {}
+            capabilities = parsed.get("providerCapabilities") if isinstance(parsed, dict) else {}
+            rvc_model = (voice_conversion or {}).get("rvcModel") or (capabilities or {}).get("rvcModel") or ""
+            rvc_index = (voice_conversion or {}).get("rvcIndex") or (capabilities or {}).get("rvcIndex") or ""
+            voice_engine = (voice_conversion or {}).get("engine") or parsed.get("engine") or ""
     finally:
         for handle in files.values():
             try:
@@ -473,8 +483,10 @@ def run_xtts_rvc_a11_api(
 
     return {
         "provider": "xtts-rvc",
-        "engine": "xtts-rvc-api",
+        "engine": voice_engine or "xtts-rvc-api",
         "voiceStyle": reference_style or None,
+        "rvcModel": rvc_model or None,
+        "rvcIndex": rvc_index or None,
         "externalUrlConfigured": True,
     }
 
