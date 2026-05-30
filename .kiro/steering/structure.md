@@ -1,6 +1,6 @@
 # Project Structure
 
-This is a monorepo at `D:\funesterie` (Git root: `Funesterie/funesterie`, branch `master`). The VS Code workspace file `funesterie.code-workspace` splits it into named roots.
+This is a monorepo at `D:\projets\funesterie` (Git root: `Funesterie/funesterie`, branch `master`). The VS Code workspace file `funesterie.code-workspace` splits it into named roots.
 
 ## Top-Level Layout
 
