@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "funesterie-architecture-route",
+  "main": "src/index.js",
+  "compatibility_date": "2026-05-26",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "funesterie.me/architecture*", "zone_name": "funesterie.me" },
+    { "pattern": "www.funesterie.me/architecture*", "zone_name": "funesterie.me" },
+    { "pattern": "funesterie.me/graph*", "zone_name": "funesterie.me" },
+    { "pattern": "www.funesterie.me/graph*", "zone_name": "funesterie.me" },
+    { "pattern": "funesterie.me/carte*", "zone_name": "funesterie.me" },
+    { "pattern": "www.funesterie.me/carte*", "zone_name": "funesterie.me" }
+  ]
+}
