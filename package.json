@@ -49,6 +49,8 @@
     "nossen:chatgpt-index": "node scripts/nossen/nossen-chatgpt-index-sync.cjs",
     "nossen:packages": "node scripts/nossen/nossen-package-liaisons.cjs",
     "nossen:packages:json": "node scripts/nossen/nossen-package-liaisons.cjs --json",
+    "nossen:cerbere-plan": "node scripts/nossen/cerbere-plan.cjs",
+    "nossen:cerbere-plan:json": "node scripts/nossen/cerbere-plan.cjs --json --stdout",
     "nossen:all-in-one:inventory": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/npm/Get-NossenAllInOneInventory.ps1",
     "nossen:all-in-one:inventory:json": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/npm/Get-NossenAllInOneInventory.ps1 -Json",
     "nossen:logic-reduce:test": "npm --prefix packages/nossen/logic-reduce test",
