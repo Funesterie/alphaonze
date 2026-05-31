@@ -37,41 +37,41 @@ WORKDIR /app
 ARG PIPER_RELEASE=2023.11.14-2
 ARG PIPER_VOICE_VERSION=v1.0.0
 RUN mkdir -p /app/apps/tts/piper \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /tmp/piper_linux_x86_64.tar.gz \
       "https://github.com/rhasspy/piper/releases/download/${PIPER_RELEASE}/piper_linux_x86_64.tar.gz" \
     && tar -xzf /tmp/piper_linux_x86_64.tar.gz -C /tmp \
     && cp -R /tmp/piper/. /app/apps/tts/piper/ \
     && chmod +x /app/apps/tts/piper/piper \
     && ln -sf /app/apps/tts/piper/piper /app/apps/tts/piper.exe \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/fr_FR-siwis-medium.onnx \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/fr_FR-siwis-medium.onnx.json \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/en_US-lessac-medium.onnx \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/en/en_US/lessac/medium/en_US-lessac-medium.onnx" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/en_US-lessac-medium.onnx.json \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/it_IT-paola-medium.onnx \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/it/it_IT/paola/medium/it_IT-paola-medium.onnx" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/it_IT-paola-medium.onnx.json \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/it/it_IT/paola/medium/it_IT-paola-medium.onnx.json" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/es_ES-sharvard-medium.onnx \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/es_ES-sharvard-medium.onnx.json \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/de_DE-thorsten-medium.onnx \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx" \
-    && curl -L --fail --retry 3 \
+    && curl -L --fail --retry 8 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
       -o /app/apps/tts/de_DE-thorsten-medium.onnx.json \
       "https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICE_VERSION}/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json" \
     && rm -rf /tmp/piper /tmp/piper_linux_x86_64.tar.gz
