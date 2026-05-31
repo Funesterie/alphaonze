@@ -219,10 +219,10 @@ const A11_HOODED_AGENT_SRC = buildPublicAssetPath("a11-hooded.png");
 
 type FunesterieSurface = "a11" | "kaen44" | "vivy";
 
-const A11_PUBLIC_APP_URL = "https://a11.funesterie.pro/";
+const A11_PUBLIC_APP_URL = "https://a11.funesterie.me/";
 const KAEN44_PUBLIC_APP_URL = "https://k44.funesterie.me/";
-const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.pro/";
-const VIVY_PUBLIC_APP_URL = "https://funesterie.pro/vivy/";
+const FUNESTERIE_PUBLIC_APP_URL = "https://funesterie.me/";
+const VIVY_PUBLIC_APP_URL = "https://vivy.funesterie.me/";
 
 function getLocationSnapshot() {
   if (typeof window === "undefined") {
@@ -268,6 +268,8 @@ function getCurrentSurfaceKind(): FunesterieSurface {
   const isA11Host = hostname === "a11.funesterie.pro"
     || hostname === "alphaonze.funesterie.pro"
     || hostname === "api.funesterie.pro"
+    || hostname === "a11.funesterie.me"
+    || hostname === "alphaonze.funesterie.me"
     || (isLocalHost && port === "3000");
   const isKaenHost = hostname === "funesterie.me"
     || hostname === "www.funesterie.me"
@@ -2017,7 +2019,7 @@ function VivyStudioLab() {
 
   async function openAgent(target: "a11" | "k44") {
     await copyBrief(target === "a11" ? "Brief copie. Ouverture A11..." : "Brief copie. Ouverture Kaen44...");
-    const url = target === "a11" ? "https://a11.funesterie.pro/" : "https://k44.funesterie.me/#agents";
+    const url = target === "a11" ? "https://a11.funesterie.me/" : "https://k44.funesterie.me/#agents";
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -2279,14 +2281,14 @@ function FunesterieCockpitPage({
   }
 
   const oauthOrigins = [
-    "https://funesterie.pro",
-    "https://www.funesterie.pro",
-    "https://a11.funesterie.pro",
+    "https://funesterie.me",
+    "https://www.funesterie.me",
+    "https://a11.funesterie.me",
     "https://k44.funesterie.me",
-    "https://vivy.funesterie.pro",
+    "https://vivy.funesterie.me",
   ];
   const oauthCallbacks = [
-    "https://a11.funesterie.pro/api/auth/google/callback",
+    "https://a11.funesterie.me/api/auth/google/callback",
     "https://k44.funesterie.me/api/auth/google/callback",
   ];
 
@@ -3738,17 +3740,15 @@ export function App() {
     }
 
     const shouldCheckCookieSession = isAuthSuccessRoute(pathname)
+      || hostname === 'a11.funesterie.me'
+      || hostname === 'alphaonze.funesterie.me'
       || hostname === 'a11.funesterie.pro'
       || hostname === 'alphaonze.funesterie.pro'
-      || hostname === 'funesterie.pro'
-      || hostname === 'www.funesterie.pro'
-      || hostname === 'cockpit.funesterie.pro'
-      || hostname === 'k44.funesterie.me'
       || hostname === 'funesterie.me'
       || hostname === 'www.funesterie.me'
+      || hostname === 'k44.funesterie.me'
       || hostname === 'kaen44.funesterie.me'
-      || hostname === 'vivy.funesterie.me'
-      || hostname === 'vivy.funesterie.pro';
+      || hostname === 'vivy.funesterie.me';
     if (!shouldCheckCookieSession) return;
 
     refreshCookieSession();
