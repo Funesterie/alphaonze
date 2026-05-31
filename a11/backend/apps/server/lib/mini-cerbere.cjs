@@ -416,6 +416,7 @@ function buildChatTargets({
         ? sanitizeBodyForLocal(upstreamBody, primaryModel)
         : sanitizeBodyForRemote(upstreamBody, primaryModel),
       apiKey: String(remoteProviderConfig?.apiKey || '').trim(),
+      authToken: String(remoteProviderConfig?.apiKey || '').trim(),
       model: primaryModel,
     };
     primary.id = makeTargetId(primary);
