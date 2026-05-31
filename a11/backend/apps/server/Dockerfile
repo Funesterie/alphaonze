@@ -80,17 +80,11 @@ RUN mkdir -p /app/apps/tts/piper \
 COPY package*.json ./
 
 # Installer les dependances avec les outils de patch, puis retirer le dev-only.
-# Si un secret BuildKit npm_token est fourni, il sert uniquement pour GitHub Packages
-# et n'est pas persiste dans l'image.
-RUN --mount=type=secret,id=npm_token,required=false set -eu; \
-    if [ -s /run/secrets/npm_token ]; then \
-      npm config set @funesterie:registry "https://npm.pkg.github.com"; \
-      npm config set "//npm.pkg.github.com/:_authToken" "$(cat /run/secrets/npm_token)"; \
-    fi; \
+# Railway V2 ne supporte pas les montages BuildKit `type=secret`; les dependances
+# actuelles du backend se resolvent depuis le registre npm public.
+RUN set -eu; \
     npm ci --include=dev; \
-    npm prune --omit=dev; \
-    npm config delete @funesterie:registry || true; \
-    npm config delete "//npm.pkg.github.com/:_authToken" || true
+    npm prune --omit=dev
 
 # Copier le code source
 COPY . .
