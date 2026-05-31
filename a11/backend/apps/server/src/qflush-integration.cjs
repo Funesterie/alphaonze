@@ -692,8 +692,192 @@ function normalizeQflushSkillResult(result) {
   return result;
 }
 
+function getBuiltInMemoryStorePath() {
+  const runtimeRoot = String(process.env.A11_RUNTIME_ROOT || path.join(__dirname, '..', 'runtime')).trim();
+  return path.join(runtimeRoot, 'qflush-ephemeral-memory.json');
+}
+
+function readBuiltInMemoryStore() {
+  const storePath = getBuiltInMemoryStorePath();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(storePath, 'utf8'));
+    if (parsed && typeof parsed === 'object' && parsed.items && typeof parsed.items === 'object') {
+      return { items: parsed.items };
+    }
+  } catch {}
+  return { items: {} };
+}
+
+function writeBuiltInMemoryStore(store) {
+  const storePath = getBuiltInMemoryStorePath();
+  fs.mkdirSync(path.dirname(storePath), { recursive: true });
+  fs.writeFileSync(storePath, JSON.stringify({ items: store.items || {} }, null, 2));
+}
+
+function buildBuiltInMemoryId(namespace = 'default', scope = 'global', key = '') {
+  return [
+    String(namespace || 'default').trim() || 'default',
+    String(scope || 'global').trim() || 'global',
+    String(key || '').trim(),
+  ].join('\u001f');
+}
+
+function normalizeBuiltInMemoryItem(raw, now = new Date()) {
+  if (!raw || typeof raw !== 'object') return null;
+  const expiresAt = String(raw.expiresAt || '').trim();
+  const expiresTime = expiresAt ? Date.parse(expiresAt) : NaN;
+  if (Number.isFinite(expiresTime) && expiresTime <= now.getTime()) return null;
+  return {
+    namespace: String(raw.namespace || 'default'),
+    scope: String(raw.scope || 'global'),
+    key: String(raw.key || ''),
+    value: raw.value,
+    metadata: raw.metadata || null,
+    createdAt: String(raw.createdAt || ''),
+    expiresAt: expiresAt || null,
+    ttlRemainingSec: Number.isFinite(expiresTime)
+      ? Math.max(0, Math.ceil((expiresTime - now.getTime()) / 1000))
+      : null,
+  };
+}
+
+function runBuiltInEphemeralMemoryFlow(payload = {}) {
+  const op = String(payload.op || payload.action || 'status').trim().toLowerCase();
+  const namespace = String(payload.namespace || 'default').trim() || 'default';
+  const scope = String(payload.scope || 'global').trim() || 'global';
+  const key = String(payload.key || '').trim();
+  const now = new Date();
+  const store = readBuiltInMemoryStore();
+  let changed = false;
+
+  for (const [id, item] of Object.entries(store.items || {})) {
+    if (!normalizeBuiltInMemoryItem(item, now)) {
+      delete store.items[id];
+      changed = true;
+    }
+  }
+
+  const saveIfChanged = () => {
+    if (changed) writeBuiltInMemoryStore(store);
+  };
+
+  if (op === 'status') {
+    saveIfChanged();
+    return {
+      ok: true,
+      flow: 'a11.memory.ephemeral.v1',
+      provider: 'local-qflush-fallback',
+      backend: 'file',
+      items: Object.keys(store.items || {}).length,
+    };
+  }
+
+  if (op === 'set' || op === 'put') {
+    if (!key) return { ok: false, error: 'missing_key' };
+    const ttlSec = Math.max(0, Number(payload.ttlSec || payload.ttl || 0) || 0);
+    const createdAt = now.toISOString();
+    const expiresAt = ttlSec > 0 ? new Date(now.getTime() + ttlSec * 1000).toISOString() : null;
+    const item = {
+      namespace,
+      scope,
+      key,
+      value: payload.value,
+      metadata: payload.metadata || null,
+      createdAt,
+      expiresAt,
+    };
+    store.items[buildBuiltInMemoryId(namespace, scope, key)] = item;
+    writeBuiltInMemoryStore(store);
+    return {
+      ok: true,
+      flow: 'a11.memory.ephemeral.v1',
+      provider: 'local-qflush-fallback',
+      item: normalizeBuiltInMemoryItem(item, now),
+    };
+  }
+
+  if (op === 'get') {
+    if (!key) return { ok: false, error: 'missing_key' };
+    const item = normalizeBuiltInMemoryItem(store.items[buildBuiltInMemoryId(namespace, scope, key)], now);
+    saveIfChanged();
+    return {
+      ok: true,
+      flow: 'a11.memory.ephemeral.v1',
+      provider: 'local-qflush-fallback',
+      item,
+      value: item ? item.value : null,
+    };
+  }
+
+  if (op === 'list') {
+    const prefix = String(payload.prefix || '').trim();
+    const limit = Math.max(1, Math.min(500, Number(payload.limit || 100) || 100));
+    const items = Object.values(store.items || {})
+      .map((item) => normalizeBuiltInMemoryItem(item, now))
+      .filter(Boolean)
+      .filter((item) => item.namespace === namespace && item.scope === scope)
+      .filter((item) => !prefix || item.key.startsWith(prefix))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, limit);
+    saveIfChanged();
+    return {
+      ok: true,
+      flow: 'a11.memory.ephemeral.v1',
+      provider: 'local-qflush-fallback',
+      items,
+    };
+  }
+
+  if (op === 'delete' || op === 'del') {
+    if (!key) return { ok: false, error: 'missing_key' };
+    const id = buildBuiltInMemoryId(namespace, scope, key);
+    const deleted = Object.prototype.hasOwnProperty.call(store.items, id);
+    if (deleted) {
+      delete store.items[id];
+      writeBuiltInMemoryStore(store);
+    } else {
+      saveIfChanged();
+    }
+    return {
+      ok: true,
+      flow: 'a11.memory.ephemeral.v1',
+      provider: 'local-qflush-fallback',
+      deleted,
+    };
+  }
+
+  if (op === 'clear') {
+    let deleted = 0;
+    for (const [id, item] of Object.entries(store.items || {})) {
+      if (String(item?.namespace || 'default') === namespace && String(item?.scope || 'global') === scope) {
+        delete store.items[id];
+        deleted += 1;
+      }
+    }
+    if (deleted || changed) writeBuiltInMemoryStore(store);
+    return {
+      ok: true,
+      flow: 'a11.memory.ephemeral.v1',
+      provider: 'local-qflush-fallback',
+      deleted,
+    };
+  }
+
+  saveIfChanged();
+  return {
+    ok: false,
+    flow: 'a11.memory.ephemeral.v1',
+    provider: 'local-qflush-fallback',
+    error: 'unsupported_op',
+    op,
+  };
+}
+
 function runBuiltInLocalFlow(flow, payload = {}) {
   const normalizedFlow = String(flow || '').trim().toLowerCase();
+  if (normalizedFlow === 'a11.memory.ephemeral.v1') {
+    return runBuiltInEphemeralMemoryFlow(payload || {});
+  }
   if (normalizedFlow === 'a11.memory.summary.v1') {
     const messages = Array.isArray(payload.messages) ? payload.messages : [];
     const output = messages
@@ -784,15 +968,16 @@ async function runQflushFlow(flow, payload, options = {}) {
     }
   }
 
+  const builtInResult = runBuiltInLocalFlow(flow, payload || {});
+  if (builtInResult) {
+    return builtInResult;
+  }
+
   // Try canonical Node module entrypoints before falling back to an executable.
   try {
     const { candidate } = await importQflushModule(createQflushFlowAdapter);
     return await candidate(flow, payload || {});
   } catch (error_) {
-    const builtInResult = runBuiltInLocalFlow(flow, payload || {});
-    if (builtInResult) {
-      return builtInResult;
-    }
     if (remoteFailure) {
       throw remoteFailure;
     }

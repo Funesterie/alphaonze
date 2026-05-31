@@ -4,8 +4,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const neo4j = require('neo4j-driver');
-
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_INPUT = path.join(
   REPO_ROOT,
@@ -25,6 +23,26 @@ const {
   sanitizePropertyMap,
   withSession,
 } = require(path.join(REPO_ROOT, 'a11', 'backend', 'apps', 'server', 'lib', 'neo4j-memory-router.cjs'));
+
+let neo4jDriver = null;
+
+function getNeo4jDriver() {
+  if (neo4jDriver) return neo4jDriver;
+  try {
+    neo4jDriver = require('neo4j-driver');
+  } catch {
+    neo4jDriver = require(path.join(
+      REPO_ROOT,
+      'a11',
+      'backend',
+      'apps',
+      'server',
+      'node_modules',
+      'neo4j-driver',
+    ));
+  }
+  return neo4jDriver;
+}
 
 function usage() {
   console.log([
@@ -196,7 +214,7 @@ async function writeRecords(endpoint, records, opts, existingIds) {
       batchId: opts.batchId,
       account: opts.account,
       source: SOURCE,
-      localIndexCount: neo4j.int(records.length),
+      localIndexCount: getNeo4jDriver().int(records.length),
       now,
     });
 

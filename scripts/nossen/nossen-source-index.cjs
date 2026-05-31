@@ -340,6 +340,8 @@ function scanSources(config, args) {
       scannedRoots: 0,
       skippedRoots: 0,
       skippedEntries: 0,
+      skippedLinks: 0,
+      skippedCycles: 0,
       skippedSecrets: 0,
       skippedTooDeep: 0,
       hashedFiles: 0,
@@ -394,6 +396,7 @@ function scanSources(config, args) {
 }
 
 function scanRoot(context) {
+  const visitedDirectories = new Set([normalizePath(context.rootPath).toLowerCase()]);
   const stack = [{ dir: context.rootPath, depth: 0 }];
   while (stack.length > 0 && context.manifest.entries.length < context.args.maxEntries) {
     const current = stack.pop();
@@ -413,6 +416,7 @@ function scanRoot(context) {
     for (const dirent of children) {
       if (context.manifest.entries.length >= context.args.maxEntries) break;
       if (dirent.isSymbolicLink()) {
+        context.manifest.stats.skippedLinks += 1;
         context.manifest.stats.skippedEntries += 1;
         continue;
       }
@@ -433,10 +437,33 @@ function scanRoot(context) {
         continue;
       }
 
+      if (stats.isSymbolicLink()) {
+        context.manifest.stats.skippedLinks += 1;
+        context.manifest.stats.skippedEntries += 1;
+        continue;
+      }
+
       const isDirectory = stats.isDirectory();
       if (isDirectory && isExcludedDirectory(dirent.name, relativePath, context.excludeDirectoryNames)) {
         context.manifest.stats.skippedEntries += 1;
         continue;
+      }
+
+      let realDirectory = '';
+      if (isDirectory) {
+        try {
+          realDirectory = fs.realpathSync.native(absolutePath);
+        } catch {
+          context.manifest.stats.skippedEntries += 1;
+          continue;
+        }
+
+        const normalizedRealDirectory = normalizePath(realDirectory).toLowerCase();
+        if (visitedDirectories.has(normalizedRealDirectory)) {
+          context.manifest.stats.skippedCycles += 1;
+          context.manifest.stats.skippedEntries += 1;
+          continue;
+        }
       }
 
       const entry = buildEntry({
@@ -457,6 +484,7 @@ function scanRoot(context) {
         if (current.depth + 1 >= context.args.maxDepth) {
           context.manifest.stats.skippedTooDeep += 1;
         } else {
+          visitedDirectories.add(normalizePath(realDirectory || absolutePath).toLowerCase());
           stack.push({ dir: absolutePath, depth: current.depth + 1 });
         }
       }

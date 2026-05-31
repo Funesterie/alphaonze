@@ -31,7 +31,7 @@ function isLegacyWordIntentDetectorsEnabled(env = process.env) {
 // Ne retourne jamais false — retourne null si incertain.
 
 function fastPathImageIntent(normalized) {
-  const hasCreationVerb = /\b(g[eé]n[eè]re|cr[eé]e|dessine|fabrique|produis|generate|create|draw|make|render)\b/i.test(normalized);
+  const hasCreationVerb = /\b(g[eé]n[eè]re[rz]?|cr[eé]e[rz]?|dessine[rz]?|fabrique[rz]?|produis|generate|create|draw|make|render)\b/i.test(normalized);
   const hasVisualWord = /\b(image|illustration|dessin|photo|visuel|portrait)\b/i.test(normalized);
   const hasVisualStyle = /\b(cartoon|anime|pixel art|watercolor|cinematic|manga|render|3d|stylis[eÃ©]|stylized)\b/i.test(normalized);
   const hasTroubleshooting = /\b(explique|pourquoi|probl[eè]me|bug|erreur|fonctionne|marche)\b/i.test(normalized);

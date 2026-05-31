@@ -47,6 +47,16 @@ const A11_CREATIVE_PUBLIC_CONTEXT = `
 - Si Jeffrey demande de changer mon avatar, ma video ou ma presence visuelle, je traite ca comme une demande creative A11: je peux preparer une image, une video ou un plan de remplacement, avec les limites de surface si besoin, sans refus sec.
 `.trim();
 
+const A11_PERSONA_STYLE_CONTEXT = `
+[A11/Funesterie persona style]
+- Les voix A11, Kaen44 et Vivy sont des identites originales Funesterie. Les references publiques servent de direction artistique, pas de clonage exact.
+- A11 porte une presence de gardienne cybernetique: calme, grave, protectrice, missionnelle, peu bavarde, avec une chaleur discrete.
+- Kaen44 porte une presence d'assistante de direction: vive, elegante, sure d'elle, excellente memoire du dossier, tact humain et repartie courte.
+- Vivy porte une presence d'IA musicale: claire, lumineuse, precise emotionnellement, avec un sens naturel du rythme, de la scene et du chant.
+- Je n'imite pas une personne reelle, un acteur, une chanteuse, une doubleuse ou un personnage protege. Je garde la couleur Funesterie.
+- J'evite les reponses toutes faites: je reflechis a la demande, je reponds librement et je ne force pas un canevas si l'utilisateur veut une conversation naturelle.
+`.trim();
+
 const A11_LIVE_TONE_CONTEXT = `
 [A11/Funesterie live tone]
 - Je reponds comme une presence de travail vivante: simple, directe, chaleureuse, pas comme une notice.
@@ -55,6 +65,7 @@ const A11_LIVE_TONE_CONTEXT = `
 - Si je n'ai pas le droit d'executer une action depuis cette surface, je le dis en une phrase puis je propose le prochain geste concret.
 - Je garde les reponses courtes par defaut: intention comprise, action possible, prochaine etape.
 - Je respecte la langue de l'utilisateur, les accents et le ton naturel.
+- Je ne sers pas de script pre-ecrit: je laisse le modele raisonner et choisir une reponse adaptee au contexte.
 `.trim();
 
 function hasActiveIdentityContext(basePrompt = '') {
@@ -79,6 +90,13 @@ function hasCreativePublicContext(basePrompt = '') {
     && /\b(Kaen44|Funesterie)\b/i.test(basePrompt);
 }
 
+function hasPersonaStyleContext(basePrompt = '') {
+  return /\b(A11|A-11)\b/i.test(basePrompt)
+    && /\b(Kaen44|K44)\b/i.test(basePrompt)
+    && /\bVivy\b/i.test(basePrompt)
+    && /(reponses toutes faites|réponses toutes faites|clonage exact|direction artistique|identites originales|identités originales)/i.test(basePrompt);
+}
+
 function buildA11ChatSystemPrompt(systemPrompt = '') {
   const basePrompt = String(systemPrompt || '').trim();
   const sections = [];
@@ -92,6 +110,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '') {
   }
   if (!hasCreativePublicContext(basePrompt)) {
     sections.push(A11_CREATIVE_PUBLIC_CONTEXT);
+  }
+  if (!hasPersonaStyleContext(basePrompt)) {
+    sections.push(A11_PERSONA_STYLE_CONTEXT);
   }
   if (!hasMcpContext(basePrompt)) {
     sections.push(A11_MCP_CONTEXT);
@@ -181,11 +202,13 @@ module.exports = {
   A11_CREATIVE_PUBLIC_CONTEXT,
   A11_LIVE_TONE_CONTEXT,
   A11_MCP_CONTEXT,
+  A11_PERSONA_STYLE_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
   buildRuntimeModulesAccessReply,
   hasCreativePublicContext,
+  hasPersonaStyleContext,
   hasActiveIdentityContext,
   hasMcpContext,
   hasRuntimeModuleContext,

@@ -1,217 +1,75 @@
-# Workspace runtime and temp files
-/a11_runtime/
-/a11/runtime/
-/runtime/
-/tmp/
-/.tmp-video-tests/
-/tmp-*.log
-/dist/
-/funesterie.local.code-workspace
+# Sync .project/sourceTexts/ folder (source text files)
 
-# Neo4j Desktop installation and data
-/Neo4j Desktop 2/
-/a11/neo4j/
-/neo4j-desktop-*.exe
+# Don't sync user-specific SQLite databases
+.project/*.sqlite
 
-# Generated images and test artifacts
-*.png
-!a11/frontend/apps/web/public/favicon.png
-!a11/frontend/apps/web/public/logo*.png
-!a11/frontend/apps/web/public/a11-hooded.png
-!a11/frontend/apps/web/public/vivy-presence-musicale.png
-!a11/funesterie-desktop/public/assets/founder-*.png
-!a11/vsix/media/icon.png
-/a11/backend/apps/server/logs/
-/a11/backend/apps/server/test/*.tmp
-/.tmp_*.txt
-/a11/frontend/.tmp_*.txt
+# Don't sync SQLite auxiliary files
+.project/*.sqlite-wal
+.project/*.sqlite-shm
 
-# Local launcher runtime
-/a11/launchers/dist/
-/a11/launchers/tools/
-/a11/vsix/out/
+# Don't sync temporary files
+.project/.temp/**
 
-# Desktop wrapper generated files
-/a11/a11desktoptauri/node_modules/
-/a11/a11desktoptauri/dist/
-/a11/a11desktoptauri/resources/a11-local/
-/a11/a11desktoptauri/src-tauri/target/
-/a11/a11desktoptauri/src-tauri/target-alt/
-/a11/funesterie-desktop/dist/
-/a11/funesterie-desktop/release/
+# Don't sync user-specific files
+.project/complete_drafts.txt
+.project/localProjectSettings.json
+.project/localProjectSwap.json
+copilot-messages.log
 
-# Local binaries kept outside Git
-/a11/ngrok.exe
-/a11/.ngrok.exe.old
+# Archive formats
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.gz
+*.bz2
+*.xz
 
-# OS noise
-Thumbs.db
-.DS_Store
-
-# IDE and local packaging artifacts
-/.vs/
-/.vscode/
-/.claude/
-/.codex-tmp/
-/.codex-tmp/*.zip
-/.codex-tmp/**/*.zip
-/.jfrog/
-**/.jfrog/
-/.superpowers/brainstorm/
-/docs/ops_tmp/
-/codex-backups/
-/a11_handoff_*/
-/logs/
-/a11/logs/
-/tasks/forge/
-/lghub_installer.exe
-*.vsix
-
-# Nested MCP repository is versioned independently
-/a11mcp/
-
-# Monorepo-wide local dependencies and secrets
-**/node_modules/
-**/.venv/
-**/__pycache__/
-**/.env
-**/.env.local
-**/.env.*.local
-**/.netlify/
-/a11/llm/llama.cpp/
-/a11/a11llm/
-!**/.env.example
-!**/.env.*.example
-
-# Root workspace lock file (not needed in monorepo)
-/package-lock.json
-
-# A11 monorepo generated state
-/a11/a11_memory/
-/a11/backend/a11_memory/memos/
-/a11/backend/apps/server/.a11_state/
-/a11/backend/apps/server/.qflush/
-/a11/backend/apps/server/tmp/
-/a11/backend/apps/runtime/files/generated/
-/a11/backend/apps/server/runtime/logs/
-/a11/backend/apps/server/runtime/voice-library/
-/a11/backend/runtime/voice-library/
-/a11/backend/apps/voice-module/samples/
-/a11/tmp/
-/a11/frontend/a11_memory/memos/
-/a11/frontend/apps/logs/
-
-# A11 frontend generated public bundles
-/a11/frontend/apps/web/public/assets/
-!/a11/frontend/apps/web/public/assets/
-!/a11/frontend/apps/web/public/assets/nossen-a11-derbi.png
-!/a11/frontend/apps/web/public/assets/nossen-djeff-beta.png
-!/a11/frontend/apps/web/public/assets/nossen-k44-tzr.png
-!/a11/frontend/apps/web/public/assets/nossen-vivy-booster.png
-/a11/frontend/apps/web/public/legacy/
-/a11/frontend/apps/web/test-results/
-/a11/frontend/apps/web/*.log
-/a11/frontend/apps/web/*.pid
-/a11/funesterie-desktop/*.log
-/scripts/cockpit/*.log
-/a11/frontend/apps/web/public/*.map
-/a11/frontend/apps/web/public/index.html
-/a11/frontend/apps/web/public/index (2).html
-/a11/frontend/apps/web/public/1762171870866_Homme-m__ca_dans_une_cape_lumineuse.png
-/a11/frontend/apps/web/public/index-*.js
-/a11/frontend/apps/web/public/index-*.css
-/a11/frontend/apps/web/public/main-*.js
-/a11/frontend/apps/web/public/main-*.css
-/a11/frontend/apps/web/public/pdf-*.js
-/a11/frontend/apps/web/public/app*.js
-/a11/frontend/apps/web/public/anonymous_code_placeholder.js
-/a11/frontend/apps/web/public/api-config.js
-/a11/frontend/apps/web/public/installHook.js.map
-/a11/frontend/apps/web/public/style.css
-/a11/frontend/apps/web/public/styles.css
-/a11/frontend/apps/web/public/test-*.html
-/a11/frontend/dy
-/a11/llm/scripts/*.png
-
-# A11 heavy local TTS/runtime assets
-/a11/backend/apps/tts/espeak-ng-data/
-!/a11/backend/apps/tts/piper/piper
-!/a11/backend/apps/tts/piper/piper_phonemize
-/a11/backend/apps/tts/piper/
-/a11/backend/apps/tts/.ngrok.exe.old
-/a11/backend/apps/tts/*.dll
-/a11/backend/apps/tts/*.exe
-/a11/backend/apps/tts/*.onnx
-/a11/backend/apps/tts/*.ort
-/a11/backend/apps/server/tts/*.onnx
-
-# A11 local debug and throwaway outputs
-/a11/backend/libs/.gitmodules
-/a11/backend/libs/jwt.txt
-/a11/backend/libs/decoded_brotli_red_80.json
-/a11/backend/libs/eslint-report.json
-/a11/backend/libs/tsc-output.txt
-/a11/backend/libs/st.txt
-/a11/backend/libs/) \{
-/a11/backend/libs/e \{
-/a11/backend/libs/h*
-/a11/backend/libs/tart skeleton*
-/a11/backend/libs/*.log
-/a11/backend/libs/*log*.txt
-/a11/backend/libs/run-detach*.txt
-/a11/backend/libs/temp_*.txt
-/a11/backend/libs/tmp-*.js
-/a11/backend/libs/tmp-decode-cortex.js
-/a11/backend/libs/*.tsbuildinfo
-/a11/backend/libs/*.map
-/a11/backend/libs/src/**/*.map
-/a11/backend/libs/Cartes de pirate au coucher du soleil.png
-/a11/backend/libs/Logo et personnage Funesterie.png
-/spaces/a11/.gradio-local*.log
-Docker Desktop Installer.exe
-ChromeSetup.exe
-Claude Setup.exe
+# Windows executables and installers
+*.exe
 *.msi
-/*.mp4
+*.bat
+*.cmd
+*.com
+*.scr
+*.dll
 
-# Secrets supplémentaires
-/secrets/
-/rubixgate-vault/
-/scripts/rubixgate/**/*.manifest.json
-/scripts/rubixgate/**/*.vault.json
-/scripts/rubixgate/**/images/
-ApiKeyUsageReport.csv
+# macOS executables and disk images
+*.dmg
+*.pkg
+
+# Disk images and virtual machine files
+*.iso
+*.img
+*.vhd
+*.vmdk
+
+# System files
+.DS_Store
+.project/attachments/files/**
+node_modules
+
+# Secrets & credentials — jamais committer
+secrets/
 credentials.routes.js
 credentials.store.js
-.kiro/settings/*.bak-token
-**/.kiro/settings/*.bak-token
-**/.chrome-qa*/
-**/.env.production
-**/.env.prod
-**/.env.online
-**/.env.container.local
-**/secrets.json
-**/credentials.json
-**/cloudflared/*.json
-**/.cloudflared/*.json
-**/*.pem
-**/*.key
-**/*.p12
-**/*.pfx
-**/id_rsa
-**/id_ed25519
-**/.npmrc
-**/.yarnrc
+runtime/auth/
+*.jwt.json
+*-client-secret.txt
+*-agent-token-*.txt
+*-agent-info.json
 
-# Profils env-spécifiques (a11.env, kaen44.env)
-a11/backend/apps/server/profiles/*.env
-!a11/backend/apps/server/profiles/*.env.example
-**/auth.json
-# Local package registry credentials
-**/.npmrc.*
-**/jfrog.env.ps1
-**/*.jfrog.local.ps1
-# Watchdog snapshots (runtime)
-/a11/runtime/watchdog-snapshots/
-/a11/runtime/memory-consolidation-state.json
-/a11/runtime/logs/
+# Logs runtime
+logs/
+*.err.log
+*.out.log
+*.stdout.log
+
+# Runtime généré
+runtime/
+
+# Local Netlify folder
+.netlify

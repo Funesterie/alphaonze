@@ -1,7 +1,7 @@
 {
-  "name": "Kaen44",
-  "short_name": "Kaen44",
-  "description": "Assistante bureau Funesterie pour documents, Drive, factures, voix et projets du quotidien.",
+  "name": "Funesterie",
+  "short_name": "Funesterie",
+  "description": "Surface publique Funesterie pour NOSSEN, A11, Kaen44, Vivy, mémoire et coordination.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

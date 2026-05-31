@@ -10,7 +10,11 @@ const vivyMemoryDir = path.join(os.tmpdir(), `vivy-studio-test-memory-${process.
 process.env.A11_EPISODIC_MEMORY_DIR = vivyMemoryDir;
 process.env.VIVY_CHAT_DISABLE_LLM = 'true';
 
-const { createVivyStudioRouter, buildVivyStudioProduction } = require('../src/routes/vivy-studio.cjs');
+const {
+  createVivyStudioRouter,
+  buildVivyStudioProduction,
+  buildVivySystemPrompt,
+} = require('../src/routes/vivy-studio.cjs');
 
 after(() => {
   fs.rmSync(vivyMemoryDir, { recursive: true, force: true });
@@ -44,6 +48,16 @@ async function postJson(baseUrl, path, body, headers = {}) {
   return { response, json };
 }
 
+function acceptVivyTestAuth(req, res, next) {
+  if (req.headers.authorization === 'Bearer vivy-test-token') {
+    req.user = { id: 'vivy-auth-user', username: 'VivyUser' };
+    return next();
+  }
+  return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+}
+
+const VIVY_TEST_AUTH_HEADERS = { Authorization: 'Bearer vivy-test-token' };
+
 test('Vivy Studio produces a song handoff without storing tokens', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
@@ -63,7 +77,7 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
 
 test('POST /api/vivy/studio/produce accepts share mode and never echoes secret token', async () => {
   await withServer((app) => {
-    app.use('/api/vivy/studio', createVivyStudioRouter());
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: acceptVivyTestAuth }));
   }, async (baseUrl) => {
     const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
       mode: 'share',
@@ -72,7 +86,7 @@ test('POST /api/vivy/studio/produce accepts share mode and never echoes secret t
       shareInstruction: 'clip vertical 30s',
       shareToken: 'secret-token-value',
       shareTokenPresent: true,
-    });
+    }, VIVY_TEST_AUTH_HEADERS);
 
     assert.equal(response.status, 200);
     assert.equal(json.ok, true);
@@ -81,6 +95,25 @@ test('POST /api/vivy/studio/produce accepts share mode and never echoes secret t
     assert.match(json.brief, /VIVY_SCENE_SHARE/);
     assert.match(json.brief, /Token fourni dans UI: oui, non envoyé au serveur/);
     assert.doesNotMatch(JSON.stringify(json), /secret-token-value/);
+  });
+});
+
+test('POST /api/vivy/studio/produce does not attach placeholder audio unless requested', async () => {
+  await withServer((app) => {
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: acceptVivyTestAuth }));
+  }, async (baseUrl) => {
+    const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
+      mode: 'song',
+      songText: 'Vivy cherche une vraie piste, pas une maquette de secours.',
+    }, VIVY_TEST_AUTH_HEADERS);
+
+    assert.equal(response.status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.mode, 'song');
+    assert.equal(json.audioUrl, undefined);
+    assert.equal(json.media, undefined);
+    assert.equal(json.mediaStatus.reason, 'real_music_provider_not_connected');
+    assert.match(json.mediaStatus.message, /aucun faux WAV/i);
   });
 });
 
@@ -100,9 +133,19 @@ test('song mode accepts natural aliases from client prompts', () => {
   assert.match(result.brief, /refrain lumineux/);
 });
 
+test('Vivy chat prompt keeps original musical direction and avoids canned replies', () => {
+  const prompt = buildVivySystemPrompt('song', 'fr');
+
+  assert.match(prompt, /IA musicale/i);
+  assert.match(prompt, /originale Funesterie/i);
+  assert.match(prompt, /pas de réponse toute faite/i);
+  assert.match(prompt, /autorisé\/licencié\/consenti/i);
+  assert.doesNotMatch(prompt, /clone Kairi/i);
+});
+
 test('POST /api/vivy/studio/chat stores semantic context and accepts file metadata', async () => {
   await withServer((app) => {
-    app.use('/api/vivy/studio', createVivyStudioRouter());
+    app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: acceptVivyTestAuth }));
   }, async (baseUrl) => {
     const { response, json } = await postJson(baseUrl, '/api/vivy/studio/chat', {
       conversationId: 'vivy-test-conversation',
@@ -113,7 +156,7 @@ test('POST /api/vivy/studio/chat stores semantic context and accepts file metada
         sizeBytes: 54,
         textPreview: 'Nossen sous la pluie, voix proche, refrain doux.',
       }],
-    });
+    }, VIVY_TEST_AUTH_HEADERS);
 
     assert.equal(response.status, 200);
     assert.equal(json.ok, true);

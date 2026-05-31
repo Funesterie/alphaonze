@@ -2541,33 +2541,43 @@ async function t_generate_png(args = {}) {
 
   let compiledState = null;
   if (!promptAlreadyCompiled) {
-    const maskResolution = await buildCanonicalImageMaskFromText(title, {
-      maskOptions: {
-        ...(hasExplicitCanvas ? { width, height } : {}),
-        steps: numInferenceSteps,
-        guidance_scale: guidanceScale,
-        ...(seed ? { seed: Number(seed) } : {}),
-      },
-    });
-    if (maskResolution?.rawMask && !hasExplicitCanvas) {
-      const inferredCanvas = inferAutoImageCanvas(title, maskResolution.rawMask);
-      const inferredFittedCanvas = fitDispatcherCanvasToLimits(
-        Number(inferredCanvas.width || width || imageConfig.defaultWidth || imageConfig.maxRenderSide || 2048),
-        Number(inferredCanvas.height || height || imageConfig.defaultHeight || imageConfig.maxRenderSide || 2048),
-        imageConfig,
-      );
-      width = inferredFittedCanvas.width;
-      height = inferredFittedCanvas.height;
-      maskResolution.rawMask.options = maskResolution.rawMask.options && typeof maskResolution.rawMask.options === 'object'
-        ? maskResolution.rawMask.options
-        : {};
-      maskResolution.rawMask.options.width = width;
-      maskResolution.rawMask.options.height = height;
-    }
-    if (maskResolution?.rawMask) {
-      compiledState = await compileMaskImageGenerateRuntime(maskResolution.rawMask, {
-        callStructuredLlmJson,
+    try {
+      const maskResolution = await buildCanonicalImageMaskFromText(title, {
+        maskOptions: {
+          ...(hasExplicitCanvas ? { width, height } : {}),
+          steps: numInferenceSteps,
+          guidance_scale: guidanceScale,
+          ...(seed ? { seed: Number(seed) } : {}),
+        },
       });
+      if (maskResolution?.rawMask && !hasExplicitCanvas) {
+        const inferredCanvas = inferAutoImageCanvas(title, maskResolution.rawMask);
+        const inferredFittedCanvas = fitDispatcherCanvasToLimits(
+          Number(inferredCanvas.width || width || imageConfig.defaultWidth || imageConfig.maxRenderSide || 2048),
+          Number(inferredCanvas.height || height || imageConfig.defaultHeight || imageConfig.maxRenderSide || 2048),
+          imageConfig,
+        );
+        width = inferredFittedCanvas.width;
+        height = inferredFittedCanvas.height;
+        maskResolution.rawMask.options = maskResolution.rawMask.options && typeof maskResolution.rawMask.options === 'object'
+          ? maskResolution.rawMask.options
+          : {};
+        maskResolution.rawMask.options.width = width;
+        maskResolution.rawMask.options.height = height;
+      }
+      if (maskResolution?.rawMask) {
+        compiledState = await compileMaskImageGenerateRuntime(maskResolution.rawMask, {
+          callStructuredLlmJson,
+        });
+      }
+    } catch (error) {
+      lastFailure = {
+        ok: false,
+        error: String(error?.payload?.error || error?.code || 'image_generation_unavailable'),
+        message: String(error?.message || error),
+        prompt: title,
+        outputPath,
+      };
     }
   }
 

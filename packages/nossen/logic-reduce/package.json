@@ -1,6 +1,6 @@
 {
   "name": "@nossen/logic-reduce",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Deterministic direct-path reducer for plans, runbooks, and agent handoffs.",
   "type": "commonjs",
   "main": "src/index.cjs",

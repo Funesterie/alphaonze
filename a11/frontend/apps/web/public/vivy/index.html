@@ -1,13 +1,15 @@
 <!doctype html>
-<html lang="fr">
+<!-- CANONICAL static Vivy production page.
+     #old version guard: logged-out session actions stay hidden, and placeholder media is never shown as real music. -->
+<html lang="fr" class="vivy-auth-pending">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vivy - Funesterie</title>
-    <meta name="description" content="Vivy, présence musicale Funesterie pour voix, chansons originales et projets audio Nossen." />
+    <meta name="description" content="Vivy pour voix, chansons originales et projets audio Nossen." />
     <meta name="robots" content="index,follow" />
     <link rel="canonical" href="https://funesterie.me/vivy/" />
-    <meta property="og:title" content="Vivy - Présence musicale Funesterie" />
+    <meta property="og:title" content="Vivy - Funesterie" />
     <meta property="og:description" content="Voix, musique, composition, clips et publications audio liés aux projets créatifs Funesterie." />
     <meta property="og:image" content="/vivy-presence-musicale.png" />
     <style>
@@ -18,6 +20,7 @@
         --muted: #e8bfdc;
         --pink: #f079d8;
         --line: rgba(240, 121, 216, 0.36);
+        --vivy-keyboard-inset: 0px;
       }
 
       * {
@@ -29,12 +32,55 @@
         min-height: 100%;
       }
 
+      html {
+        scroll-padding-bottom: calc(var(--vivy-keyboard-inset, 0px) + 180px);
+      }
+
       body {
         margin: 0;
         background: var(--bg);
         color: var(--ink);
         font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
         overflow-x: hidden;
+      }
+
+      html.vivy-auth-pending .vivy-poster-page {
+        display: none;
+      }
+
+      html.vivy-auth-ready .vivy-auth-blocker {
+        display: none;
+      }
+
+      .vivy-auth-blocker {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        background:
+          radial-gradient(circle at 50% 18%, rgba(240, 121, 216, 0.18), transparent 34%),
+          linear-gradient(180deg, #08020d 0%, #020104 100%);
+        color: var(--ink);
+      }
+
+      .vivy-auth-blocker-card {
+        width: min(520px, 100%);
+        padding: 28px;
+        border: 1px solid rgba(240, 121, 216, 0.38);
+        background: rgba(20, 4, 22, 0.78);
+        box-shadow: 0 24px 90px rgba(240, 121, 216, 0.14);
+      }
+
+      .vivy-auth-blocker-card strong {
+        display: block;
+        margin-bottom: 8px;
+        color: #ffd8f6;
+        font-size: 24px;
+      }
+
+      .vivy-auth-blocker-card span {
+        color: var(--muted);
+        line-height: 1.55;
       }
 
       a {
@@ -358,58 +404,281 @@
         position: sticky;
         top: 0;
         z-index: 10;
-        min-height: 68px;
-        display: flex;
+        min-height: 78px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
-        justify-content: space-between;
-        gap: 18px;
-        padding: 12px clamp(14px, 3vw, 36px);
+        gap: 16px;
+        margin: 0;
+        padding: 8px clamp(14px, 3vw, 36px);
         border-bottom: 1px solid rgba(240, 121, 216, 0.22);
-        background: rgba(5, 3, 10, 0.84);
+        background:
+          linear-gradient(90deg, rgba(28, 7, 31, 0.94), rgba(8, 4, 16, 0.88)),
+          rgba(5, 3, 10, 0.84);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
       }
 
-      .vivy-top strong {
-        color: var(--pink);
-        font-family: "Segoe Script", "Brush Script MT", Georgia, serif;
-        font-size: 32px;
-        line-height: 1;
-      }
-
-      .vivy-top div {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: 10px;
-      }
-
-      .vivy-top a,
-      .vivy-top button {
-        min-height: 38px;
+      .vivy-top-brand {
+        min-width: 0;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        border: 1px solid rgba(240, 121, 216, 0.28);
-        border-radius: 999px;
-        padding: 0 14px;
-        color: #f8d4ef;
+        gap: 12px;
+        color: inherit;
         text-decoration: none;
-        font-size: 12px;
-        font-weight: 850;
         text-transform: uppercase;
       }
 
-      .vivy-top button {
+      .vivy-top-brand img {
+        width: 58px;
+        height: 58px;
+        display: block;
+        border: 1px solid rgba(240, 121, 216, 0.42);
+        border-radius: 14px;
+        object-fit: cover;
+        object-position: 53% 16%;
+        filter: saturate(1.08) contrast(1.04) drop-shadow(0 0 18px rgba(240, 121, 216, 0.26));
+      }
+
+      .vivy-top-brand span {
+        min-width: 0;
+        display: grid;
+        gap: 2px;
+      }
+
+      .vivy-top-brand strong {
+        color: var(--pink);
+        font-size: clamp(22px, 2.6vw, 28px);
+        font-weight: 950;
+        line-height: 1;
+      }
+
+      .vivy-top-brand small {
+        color: #f6a8e9;
+        font-size: 12px;
+        font-weight: 780;
+        line-height: 1.2;
+        text-transform: none;
+      }
+
+      .vivy-top-menu,
+      .vivy-top-session-menu {
+        position: relative;
+        justify-self: end;
+      }
+
+      .vivy-top-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .vivy-top-home,
+      .vivy-top-session-menu summary,
+      .vivy-top-menu summary {
+        min-width: 76px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(240, 121, 216, 0.36);
+        border-radius: 8px;
+        padding: 0 16px;
+        color: #fff0fc;
+        background: rgba(15, 5, 22, 0.84);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .vivy-top-home {
+        text-decoration: none;
+        text-transform: none;
+      }
+
+      .vivy-top-home:hover,
+      .vivy-top-session-menu summary:hover,
+      .vivy-top-menu summary:hover {
+        border-color: rgba(240, 121, 216, 0.55);
         background: rgba(240, 121, 216, 0.12);
+      }
+
+      .vivy-top-session-menu summary::-webkit-details-marker,
+      .vivy-top-menu summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .vivy-top-session-panel,
+      .vivy-top-menu-panel {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 80;
+        width: min(330px, calc(100vw - 28px));
+        max-height: min(76vh, 680px);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        border: 1px solid rgba(240, 121, 216, 0.28);
+        border-radius: 10px;
+        padding: 12px;
+        background:
+          linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(8, 13, 25, 0.98)),
+          rgba(7, 4, 12, 0.98);
+        box-shadow: 0 20px 54px rgba(0, 0, 0, 0.46);
+        backdrop-filter: blur(18px);
+      }
+
+      .vivy-top-session-panel {
+        width: min(280px, calc(100vw - 28px));
+      }
+
+      .vivy-top-menu-panel::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .vivy-top-menu-panel::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(240, 121, 216, 0.28);
+      }
+
+      .vivy-top-session-menu:not([open]) .vivy-top-session-panel,
+      .vivy-top-menu:not([open]) .vivy-top-menu-panel {
+        display: none;
+      }
+
+      .vivy-top-menu-section {
+        display: grid;
+        gap: 8px;
+      }
+
+      .vivy-top-menu-section--session {
+        margin-top: auto;
+        padding-top: 10px;
+        border-top: 1px solid rgba(240, 121, 216, 0.2);
+      }
+
+      .vivy-top-menu-title {
+        margin: 0;
+        color: #92a0b7;
+        font-size: 10px;
+        font-weight: 950;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .vivy-top-menu-select,
+      .vivy-top-menu-row,
+      .vivy-top-menu-card,
+      .vivy-top-menu-session-button {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        border: 1px solid rgba(146, 160, 183, 0.2);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #e8eefb;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 780;
+      }
+
+      .vivy-top-menu-select {
+        min-height: 40px;
+        padding: 0 10px;
+        color: #ffffff;
+        outline: none;
+      }
+
+      .vivy-top-menu-row,
+      .vivy-top-menu-session-button {
+        min-height: 38px;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+
+      .vivy-top-menu-row span:last-child,
+      .vivy-top-menu-session-button span:first-child {
+        color: #aebad0;
+      }
+
+      .vivy-top-menu-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .vivy-top-menu-card {
+        min-height: 58px;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 8px;
+      }
+
+      .vivy-top-menu-card.is-current {
+        border-color: rgba(240, 121, 216, 0.5);
+        background: rgba(240, 121, 216, 0.13);
+      }
+
+      .vivy-top-menu-card img {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 auto;
+        border: 1px solid rgba(240, 121, 216, 0.3);
+        border-radius: 10px;
+        object-fit: cover;
+        object-position: center;
+      }
+
+      .vivy-top-menu-card strong {
+        display: block;
+        color: #f8d4ef;
+        font-size: 13px;
+        font-weight: 950;
+        line-height: 1.1;
+      }
+
+      .vivy-top-menu-card small {
+        display: block;
+        color: #cdb9ff;
+        font-size: 10px;
+        font-weight: 950;
+        letter-spacing: 0.02em;
+        line-height: 1.2;
+        text-transform: uppercase;
+      }
+
+      .vivy-top-menu-session-button {
         font: inherit;
         cursor: pointer;
       }
 
-      .vivy-top button:disabled {
+      .vivy-top-menu-session-button--danger {
+        border-color: rgba(248, 113, 113, 0.42);
+        color: #fecaca;
+        background: rgba(75, 12, 24, 0.38);
+      }
+
+      .vivy-top-menu-session-button--danger strong {
+        color: #fecaca;
+      }
+
+      .vivy-top-menu-row:hover,
+      .vivy-top-menu-card:hover,
+      .vivy-top-menu-session-button:hover:not(:disabled) {
+        border-color: rgba(240, 121, 216, 0.46);
+        background: rgba(240, 121, 216, 0.12);
+      }
+
+      .vivy-top-menu-session-button:disabled {
         cursor: wait;
         opacity: 0.68;
+      }
+
+      .vivy-top-menu-session-button[hidden] {
+        display: none;
       }
 
       .vivy-poster-stage {
@@ -494,6 +763,7 @@
         width: min(100% - clamp(24px, 4vw, 56px), 1500px);
         margin: 0 auto clamp(20px, 4vw, 42px);
         padding: clamp(16px, 2.6vw, 28px);
+        scroll-margin-bottom: calc(var(--vivy-keyboard-inset, 0px) + 42px);
         border: 1px solid rgba(240, 121, 216, 0.28);
         background: linear-gradient(135deg, rgba(240, 121, 216, 0.14), transparent 42%), rgba(5, 3, 10, 0.82);
         box-shadow: 0 20px 64px rgba(0, 0, 0, 0.32);
@@ -946,13 +1216,9 @@
 
       @media (max-width: 900px) {
         .vivy-top {
-          align-items: flex-start;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .vivy-top div {
-          justify-content: flex-start;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 12px;
         }
 
         .vivy-poster-stage {
@@ -967,12 +1233,16 @@
           width: 100%;
           min-width: 0;
           max-width: none;
+          height: min(72svh, 620px);
+          overflow: hidden;
         }
 
         .vivy-poster-frame img {
           width: 100%;
           max-width: 100%;
-          height: auto;
+          height: 100%;
+          object-fit: cover;
+          object-position: 43% 50%;
         }
 
         .vivy-poster-hotspots {
@@ -980,36 +1250,7 @@
         }
 
         .vivy-mobile-slices {
-          display: grid;
-          gap: 12px;
-          margin-top: 12px;
-        }
-
-        .vivy-mobile-slice {
-          width: 100%;
-          height: min(64svh, 520px);
-          display: block;
-          object-fit: cover;
-          border: 1px solid rgba(240, 121, 216, 0.3);
-          background: #05030a;
-          box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
-        }
-
-        .vivy-mobile-slice--portrait {
-          height: min(72svh, 580px);
-          object-position: 43% 50%;
-        }
-
-        .vivy-mobile-slice--voice {
-          object-position: 100% 19%;
-        }
-
-        .vivy-mobile-slice--production {
-          object-position: 100% 48%;
-        }
-
-        .vivy-mobile-slice--scene {
-          object-position: 100% 77%;
+          display: none;
         }
 
         .vivy-studio {
@@ -1021,6 +1262,8 @@
         .vivy-chat {
           width: calc(100% - 24px);
           padding: 14px;
+          scroll-margin-top: 82px;
+          scroll-margin-bottom: calc(var(--vivy-keyboard-inset, 0px) + 210px);
         }
 
         .vivy-chat-head {
@@ -1033,7 +1276,9 @@
         }
 
         .vivy-chat-log {
-          max-height: 58svh;
+          max-height: min(52svh, 420px);
+          min-height: 172px;
+          scroll-padding-bottom: 18px;
         }
 
         .vivy-chat-message {
@@ -1042,11 +1287,49 @@
 
         .vivy-chat-compose {
           grid-template-columns: 1fr;
+          position: relative;
+          bottom: auto;
+          z-index: 1;
+          margin: 12px -6px 0;
+          padding: 10px;
+          border: 1px solid rgba(240, 121, 216, 0.36);
+          border-radius: 12px;
+          background:
+            linear-gradient(135deg, rgba(240, 121, 216, 0.18), rgba(6, 3, 11, 0.94) 42%),
+            rgba(6, 3, 11, 0.94);
+          box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.34), 0 0 28px rgba(240, 121, 216, 0.12);
+          backdrop-filter: blur(16px);
+        }
+
+        .vivy-chat-compose textarea {
+          min-height: 108px;
+          max-height: 30svh;
+          resize: none;
         }
 
         .vivy-chat-compose div {
           grid-template-columns: repeat(2, minmax(0, 1fr));
           min-width: 0;
+        }
+
+        body.vivy-keyboard-open .vivy-chat {
+          padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+        }
+
+        body.vivy-keyboard-open .vivy-chat-head p {
+          display: block;
+        }
+
+        body.vivy-keyboard-open .vivy-chat-log {
+          max-height: min(52svh, 420px);
+        }
+
+        body.vivy-keyboard-open .vivy-chat-compose div {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        body.vivy-keyboard-open .vivy-chat-compose div button:not([type="submit"]) {
+          display: inline-flex;
         }
 
         .vivy-studio-head {
@@ -1086,18 +1369,58 @@
 
       @media (max-width: 480px) {
         .vivy-top {
-          padding: 10px 12px;
+          grid-template-columns: auto minmax(0, 1fr);
+          gap: 7px;
+          min-height: 60px;
+          padding: 7px 8px;
         }
 
-        .vivy-top div {
-          gap: 8px;
+        .vivy-top-brand {
+          gap: 7px;
         }
 
-        .vivy-top a,
-        .vivy-top button {
-          min-height: 34px;
-          padding: 0 10px;
-          font-size: 11px;
+        .vivy-top-brand img {
+          width: 42px;
+          height: 42px;
+          border-radius: 11px;
+        }
+
+        .vivy-top-brand strong {
+          font-size: 19px;
+        }
+
+        .vivy-top-actions {
+          min-width: 0;
+          width: 100%;
+          justify-content: stretch;
+          flex-wrap: nowrap;
+          gap: 4px;
+        }
+
+        .vivy-top-menu,
+        .vivy-top-session-menu {
+          min-width: 0;
+          flex: 1 1 0;
+        }
+
+        .vivy-top-home,
+        .vivy-top-session-menu summary,
+        .vivy-top-menu summary {
+          width: 100%;
+          min-height: 38px;
+          min-width: 0;
+          flex: 1 1 0;
+          padding-inline: 5px;
+          white-space: nowrap;
+          font-size: 10.5px;
+          line-height: 1;
+        }
+
+        .vivy-top-session-panel,
+        .vivy-top-menu-panel {
+          right: -4px;
+          width: min(320px, calc(100vw - 16px));
+          max-height: 72vh;
         }
 
         .vivy-poster-frame img {
@@ -1107,35 +1430,126 @@
     </style>
   </head>
   <body>
+    <div class="vivy-auth-blocker" role="status" aria-live="polite">
+      <div class="vivy-auth-blocker-card">
+        <strong>Vivy</strong>
+        <span>Verification de la session Funesterie...</span>
+      </div>
+    </div>
     <main class="vivy-poster-page">
       <nav class="vivy-top" aria-label="Navigation Vivy">
-        <strong>Vivy</strong>
-        <div>
-          <a href="/vivy/">Vivy</a>
-          <a href="#vivy-studio">Studio</a>
-          <a href="https://funesterie.me/cockpit/">Cockpit</a>
-          <a href="https://k44.funesterie.me/">Kaen44</a>
-          <a href="https://a11.funesterie.me/login">A11</a>
-          <button type="button" data-vivy-google-login>Connexion</button>
+        <a class="vivy-top-brand" href="/vivy/" aria-label="Vivy accueil">
+          <img src="/assets/nossen-vivy-booster.png" alt="" />
+          <span>
+            <strong>Vivy</strong>
+          </span>
+        </a>
+        <div class="vivy-top-actions">
+          <a class="vivy-top-home" href="https://funesterie.me/">Accueil</a>
+          <details class="vivy-top-session-menu">
+            <summary>Session</summary>
+            <div class="vivy-top-session-panel">
+              <a class="vivy-top-menu-row" href="#vivy-chat">
+                <span>Session actuelle</span>
+                <span>Ouvrir</span>
+              </a>
+              <a class="vivy-top-menu-row" href="#vivy-studio">
+                <span>Studio</span>
+                <span>Vivy</span>
+              </a>
+              <button class="vivy-top-menu-session-button" type="button" data-vivy-google-login>
+                <span>Compte</span>
+                <strong data-vivy-login-label>Connexion</strong>
+              </button>
+            </div>
+          </details>
+          <details class="vivy-top-menu">
+            <summary>Menu</summary>
+            <div class="vivy-top-menu-panel">
+              <section class="vivy-top-menu-section" aria-label="Langue">
+                <p class="vivy-top-menu-title">Langue</p>
+                <select class="vivy-top-menu-select" aria-label="Langue Vivy">
+                  <option>Français</option>
+                </select>
+              </section>
+              <section class="vivy-top-menu-section" aria-label="Options">
+                <p class="vivy-top-menu-title">Options</p>
+                <a class="vivy-top-menu-row" href="#vivy-studio">
+                  <span>Panneau studio</span>
+                  <span>Ouvrir</span>
+                </a>
+              </section>
+              <section class="vivy-top-menu-section" aria-label="Agents">
+                <p class="vivy-top-menu-title">Agents</p>
+                <div class="vivy-top-menu-grid">
+                  <a class="vivy-top-menu-card" href="https://funesterie.me/login?returnTo=https%3A%2F%2Fk44.funesterie.me%2Fcockpit">
+                    <img src="/assets/kaen44-avatar.png" alt="" />
+                    <span>
+                      <strong>Kaen44</strong>
+                      <small>Agent bureau</small>
+                    </span>
+                  </a>
+                  <a class="vivy-top-menu-card" href="https://funesterie.me/login?returnTo=https%3A%2F%2Fa11.funesterie.me%2Fcockpit">
+                    <img src="/a11-hooded.png" alt="" />
+                    <span>
+                      <strong>A11</strong>
+                      <small>Agent média</small>
+                    </span>
+                  </a>
+                  <a class="vivy-top-menu-card is-current" href="/vivy/" aria-current="page">
+                    <img src="/assets/nossen-vivy-booster.png" alt="" />
+                    <span>
+                      <strong>Vivy</strong>
+                      <small>Agent musical</small>
+                    </span>
+                  </a>
+                </div>
+              </section>
+              <section class="vivy-top-menu-section" aria-label="Services">
+                <p class="vivy-top-menu-title">Services</p>
+                <a class="vivy-top-menu-row" href="https://funesterie.me/">
+                  <span>Accueil</span>
+                  <span>Public</span>
+                </a>
+                <a class="vivy-top-menu-row" href="#vivy-studio">
+                  <span>Studio</span>
+                  <span>Vivy</span>
+                </a>
+                <a class="vivy-top-menu-row" href="https://funesterie.me/cockpit/">
+                  <span>Cockpit</span>
+                  <span>État</span>
+                </a>
+              </section>
+              <section class="vivy-top-menu-section vivy-top-menu-section--session" aria-label="Session">
+                <p class="vivy-top-menu-title">Session</p>
+                <button class="vivy-top-menu-session-button" type="button" data-vivy-google-login>
+                  <span>Compte</span>
+                  <strong data-vivy-login-label>Connexion</strong>
+                </button>
+                <button class="vivy-top-menu-session-button vivy-top-menu-session-button--danger" type="button" data-vivy-logout hidden disabled>
+                  <span>Session</span>
+                  <strong>Se déconnecter</strong>
+                </button>
+                <button class="vivy-top-menu-session-button vivy-top-menu-session-button--danger" type="button" data-vivy-logout-all hidden disabled>
+                  <span>Compte</span>
+                  <strong>Tout déconnecter</strong>
+                </button>
+              </section>
+            </div>
+          </details>
         </div>
       </nav>
       <section class="vivy-poster-stage" aria-label="Vivy présence musicale" tabindex="0">
         <div class="vivy-poster-frame">
-          <img src="/vivy-presence-musicale.png" alt="Vivy, présence musicale Funesterie: voix, musique, création et partage." />
+          <img src="/vivy-presence-musicale.png" alt="Vivy: voix, musique, création et partage." />
           <div class="vivy-poster-hotspots" aria-label="Accès rapides Vivy">
             <button type="button" data-vivy-jump="voice" aria-label="Ouvrir création voix"></button>
             <button type="button" data-vivy-jump="song" aria-label="Ouvrir Composition production"></button>
             <button type="button" data-vivy-jump="share" aria-label="Ouvrir scène partage"></button>
           </div>
         </div>
-        <div class="vivy-mobile-slices" aria-hidden="true">
-          <img class="vivy-mobile-slice vivy-mobile-slice--portrait" src="/vivy-presence-musicale.png" alt="" />
-          <img class="vivy-mobile-slice vivy-mobile-slice--voice" src="/vivy-presence-musicale.png" alt="" />
-          <img class="vivy-mobile-slice vivy-mobile-slice--production" src="/vivy-presence-musicale.png" alt="" />
-          <img class="vivy-mobile-slice vivy-mobile-slice--scene" src="/vivy-presence-musicale.png" alt="" />
-        </div>
       </section>
-      <section class="vivy-chat" aria-label="Chat Vivy" data-vivy-chat>
+      <section class="vivy-chat" id="vivy-chat" aria-label="Chat Vivy" data-vivy-chat>
         <div class="vivy-chat-head">
           <div>
             <h2>Parler à Vivy</h2>
@@ -1156,7 +1570,7 @@
         </form>
         <div class="vivy-chat-attachments" data-vivy-chat-attachments></div>
         <div class="vivy-chat-reference" data-vivy-chat-reference>
-          <span data-vivy-chat-reference-label>Réf voix privée attendue</span>
+          <span data-vivy-chat-reference-label>Voix: Vivy par défaut</span>
           <button type="button" data-vivy-chat-reference-button>Audio</button>
         </div>
         <input type="file" accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg" hidden data-vivy-chat-reference-file />
@@ -1279,12 +1693,18 @@
     </main>
     <script>
       (function () {
-        var loginButton = document.querySelector("[data-vivy-google-login]");
+        var loginButtons = Array.prototype.slice.call(document.querySelectorAll("[data-vivy-google-login]"));
+        var logoutButtons = Array.prototype.slice.call(document.querySelectorAll("[data-vivy-logout]"));
+        var logoutAllButtons = Array.prototype.slice.call(document.querySelectorAll("[data-vivy-logout-all]"));
         var tokenPattern = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
         var isAuthSuccess = /(?:^|\/)auth\/success\/?$/.test(String(window.location.pathname || "/").toLowerCase());
 
         function isLocalHost() {
-          return /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(String(window.location.hostname || "").toLowerCase());
+          var hostname = String(window.location.hostname || "").toLowerCase();
+          return hostname === "localhost"
+            || hostname === "127.0.0.1"
+            || hostname === "host.docker.internal"
+            || hostname === "::1";
         }
 
         function vivyHomePath() {
@@ -1296,6 +1716,181 @@
             return new URL("/vivy/auth/success", window.location.origin).toString();
           }
           return "https://vivy.funesterie.me/auth/success";
+        }
+
+        function readAuthToken() {
+          try {
+            return String(localStorage.getItem("a11-auth-token") || localStorage.getItem("a11_jwt_token") || "").trim();
+          } catch (_) {
+            return "";
+          }
+        }
+
+        function authHeaders(extra) {
+          var headers = Object.assign({}, extra || {});
+          var token = readAuthToken();
+          if (tokenPattern.test(token)) headers.Authorization = "Bearer " + token;
+          return headers;
+        }
+
+        function safeScopePart(value) {
+          return String(value || "")
+            .trim()
+            .toLowerCase()
+            .normalize("NFKD")
+            .replace(/[^\w.-]+/g, "_")
+            .replace(/^_+|_+$/g, "")
+            .slice(0, 64);
+        }
+
+        function decodeJwtPayload(token) {
+          try {
+            var payload = String(token || "").split(".")[1] || "";
+            if (!payload) return null;
+            var normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+            var padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+            return JSON.parse(atob(padded));
+          } catch (_) {
+            return null;
+          }
+        }
+
+        function sessionScope(user) {
+          var tokenPayload = decodeJwtPayload(readAuthToken()) || {};
+          var source = user || {};
+          var provider = safeScopePart(source.provider || tokenPayload.provider || "funesterie");
+          var primary = safeScopePart(
+            source.id
+            || tokenPayload.id
+            || tokenPayload.sub
+            || source.email
+            || tokenPayload.email
+            || source.username
+            || tokenPayload.username
+          );
+          return [provider, primary || "session"].filter(Boolean).join("__");
+        }
+
+        function isAllowedTarget(rawTarget) {
+          try {
+            var target = new URL(String(rawTarget || ""), window.location.origin);
+            var hostname = target.hostname.toLowerCase();
+            return hostname === "localhost"
+              || hostname === "127.0.0.1"
+              || hostname === "host.docker.internal"
+              || hostname === "::1"
+              || hostname === "funesterie.me"
+              || hostname.endsWith(".funesterie.me");
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function buildCentralLoginUrl(returnTo) {
+          var target = isAllowedTarget(returnTo) ? String(returnTo) : window.location.href;
+          var base = isLocalHost()
+            ? new URL("/login", window.location.origin)
+            : new URL("/login", "https://funesterie.me");
+          base.searchParams.set("returnTo", target);
+          return base.toString();
+        }
+
+        function buildAuthSuccessForTarget(rawTarget) {
+          var target = new URL(isAllowedTarget(rawTarget) ? String(rawTarget) : window.location.href, window.location.origin);
+          var authSuccess = new URL("/auth/success", target.origin);
+          var nextPath = (target.pathname || "/") + (target.search || "") + (target.hash || "");
+          if (!/\/auth\/success\/?$/i.test(target.pathname) && nextPath !== "/") {
+            authSuccess.searchParams.set("next", nextPath);
+          }
+          return authSuccess.toString();
+        }
+
+        function appendTokenFragment(rawTarget, token) {
+          var target = new URL(rawTarget);
+          var hashParams = new URLSearchParams(String(target.hash || "").replace(/^#/, ""));
+          hashParams.set("a11_token", token);
+          hashParams.set("provider", "funesterie");
+          target.hash = hashParams.toString();
+          return target.toString();
+        }
+
+        function buildSessionBridgeUrl(rawTarget) {
+          var target = isAllowedTarget(rawTarget) ? new URL(String(rawTarget), window.location.origin).toString() : window.location.href;
+          var token = readAuthToken();
+          if (!tokenPattern.test(token)) return buildCentralLoginUrl(target);
+          try {
+            var parsedTarget = new URL(target);
+            if (parsedTarget.origin === window.location.origin) return parsedTarget.toString();
+          } catch (_) {
+            return buildCentralLoginUrl(target);
+          }
+          return appendTokenFragment(buildAuthSuccessForTarget(target), token);
+        }
+
+        function requestLogin(returnTo) {
+          setLoginState("Connexion...", true);
+          window.location.assign(buildCentralLoginUrl(isAllowedTarget(returnTo) ? String(returnTo) : vivyHomePath()));
+        }
+
+        function clearLocalAuth() {
+          try {
+            localStorage.removeItem("a11-auth-token");
+            localStorage.removeItem("a11_jwt_token");
+          } catch (_) {}
+        }
+
+        function setLogoutState(enabled) {
+          logoutButtons.concat(logoutAllButtons).forEach(function (button) {
+            button.disabled = !enabled;
+            button.hidden = !enabled;
+          });
+        }
+
+        function revealVivyPage() {
+          document.documentElement.classList.remove("vivy-auth-pending");
+          document.documentElement.classList.add("vivy-auth-ready");
+        }
+
+        function redirectAuthFailure(errorCode) {
+          try {
+            var login = new URL(buildCentralLoginUrl(vivyHomePath()));
+            if (errorCode) login.searchParams.set("error", errorCode);
+            window.location.assign(login.toString());
+          } catch (_) {
+            window.location.assign(buildCentralLoginUrl(vivyHomePath()));
+          }
+        }
+
+        function logout(allSessions) {
+          setLoginState("Déconnexion...", true);
+          setLogoutState(false);
+          fetch(allSessions ? "/api/auth/logout-all" : "/api/auth/logout", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: "{}"
+          }).catch(function () {
+            return null;
+          }).then(function () {
+            clearLocalAuth();
+            setLoginState("Se connecter", false);
+            publishSession(null);
+            window.location.assign(buildCentralLoginUrl(vivyHomePath()));
+          });
+        }
+
+        function publishSession(session) {
+          var authenticated = Boolean(session && (session.authenticated || session.user));
+          var user = session && (session.user || session) || null;
+          var publicSession = authenticated
+            ? { authenticated: true, user: user, storageScope: sessionScope(user) }
+            : { authenticated: false, user: null, storageScope: "" };
+          window.__vivySession = publicSession;
+          setLogoutState(authenticated);
+          if (authenticated) revealVivyPage();
+          try {
+            window.dispatchEvent(new CustomEvent("vivy:session", { detail: publicSession }));
+          } catch (_) {}
         }
 
         function consumeOAuthToken() {
@@ -1314,38 +1909,76 @@
         }
 
         function setLoginState(label, disabled) {
-          if (!loginButton) return;
-          loginButton.textContent = label;
-          loginButton.disabled = Boolean(disabled);
+          loginButtons.forEach(function (button) {
+            var loginLabel = button.querySelector("[data-vivy-login-label]");
+            if (loginLabel) {
+              loginLabel.textContent = label;
+            } else {
+              button.textContent = label;
+            }
+            button.disabled = Boolean(disabled);
+          });
         }
+
+        window.__vivyAuth = {
+          authHeaders: authHeaders,
+          buildCentralLoginUrl: buildCentralLoginUrl,
+          buildSessionBridgeUrl: buildSessionBridgeUrl,
+          getAuthToken: readAuthToken,
+          requestLogin: requestLogin,
+          sessionScope: sessionScope
+        };
 
         if (isAuthSuccess && consumeOAuthToken()) {
           setLoginState("Connecté", false);
         }
 
-        if (loginButton) {
+        loginButtons.forEach(function (loginButton) {
           loginButton.addEventListener("click", function () {
-            setLoginState("Google...", true);
-            var startUrl = new URL("https://a11.funesterie.me/api/auth/google/start");
-            startUrl.searchParams.set("returnTo", authSuccessReturnTo());
-            startUrl.searchParams.set("client", "vivy-web");
-            startUrl.searchParams.set("scopeProfile", "basic");
-            window.location.assign(startUrl.toString());
+            requestLogin(vivyHomePath());
           });
-        }
+        });
 
-        fetch("/api/auth/me", { credentials: "include" })
+        logoutButtons.forEach(function (logoutButton) {
+          logoutButton.addEventListener("click", function () {
+            logout(false);
+          });
+        });
+
+        logoutAllButtons.forEach(function (logoutButton) {
+          logoutButton.addEventListener("click", function () {
+            logout(true);
+          });
+        });
+
+        document.addEventListener("click", function (event) {
+          var link = event.target && event.target.closest ? event.target.closest("[data-vivy-agent-link]") : null;
+          if (!link) return;
+          var href = link.getAttribute("href") || "";
+          if (!href) return;
+          event.preventDefault();
+          window.location.assign(buildSessionBridgeUrl(href));
+        });
+
+        publishSession(null);
+
+        fetch("/api/auth/me", { credentials: "include", headers: authHeaders() })
           .then(function (response) { return response.ok ? response.json() : null; })
           .then(function (session) {
             if (session && (session.authenticated || session.user)) {
               setLoginState("Connecté", false);
+              publishSession(session);
               if (isAuthSuccess) window.history.replaceState({}, "", vivyHomePath());
             } else {
-              setLoginState("Connexion", false);
+              redirectAuthFailure(isAuthSuccess ? "session_verification_failed" : "login_required");
+              setLoginState("Se connecter", false);
+              publishSession(null);
             }
           })
           .catch(function () {
-            setLoginState("Connexion", false);
+            redirectAuthFailure(isAuthSuccess ? "session_verification_failed" : "session_check_failed");
+            setLoginState("Se connecter", false);
+            publishSession(null);
           });
       })();
 
@@ -1364,14 +1997,151 @@
         var attachmentsRoot = root.querySelector("[data-vivy-chat-attachments]");
         var fileButton = root.querySelector("[data-vivy-chat-file-button]");
         var fileInput = root.querySelector("[data-vivy-chat-file]");
-        var storageKey = "vivy:public-chat:v2";
-        var conversationKey = "vivy:conversation-id:static";
-        var referenceKey = "vivy:voice-reference:static";
-        var conversationId = getConversationId();
-        var messages = readMessages();
+        var storageKey = "";
+        var conversationKey = "";
+        var referenceKey = "";
+        var conversationId = "";
+        var messages = [lockedGreeting()];
         var attachedFiles = [];
+        var hasSession = false;
+        var activeSession = null;
         var sending = false;
         var awaitingReference = false;
+        var visualViewport = window.visualViewport || null;
+        var keyboardTimer = 0;
+        var keyboardFrame = 0;
+
+        function vivyAuth() {
+          return window.__vivyAuth || {};
+        }
+
+        function readAuthToken() {
+          try {
+            return String(localStorage.getItem("a11-auth-token") || localStorage.getItem("a11_jwt_token") || "").trim();
+          } catch (_) {
+            return "";
+          }
+        }
+
+        function authHeaders(extra) {
+          if (typeof vivyAuth().authHeaders === "function") return vivyAuth().authHeaders(extra);
+          var headers = Object.assign({}, extra || {});
+          var token = readAuthToken();
+          if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
+            headers.Authorization = "Bearer " + token;
+          }
+          return headers;
+        }
+
+        function requestLogin() {
+          if (typeof vivyAuth().requestLogin === "function") {
+            vivyAuth().requestLogin(window.location.href);
+            return;
+          }
+          window.location.assign("/login?returnTo=" + encodeURIComponent(window.location.href));
+        }
+
+        function sessionDisplayName(session) {
+          var user = session && session.user || {};
+          return String(user.username || user.name || user.email || "compte Funesterie").trim();
+        }
+
+        function lockedGreeting() {
+          return {
+            role: "assistant",
+            content: "Connexion requise. Connecte-toi à Funesterie pour parler à Vivy et garder les données liées à ton compte."
+          };
+        }
+
+        function setChatLocked(locked) {
+          root.classList.toggle("is-locked", Boolean(locked));
+          if (input) {
+            input.disabled = Boolean(locked);
+            input.placeholder = locked
+              ? "Connecte-toi pour écrire à Vivy..."
+              : "Ex: fais-moi une chanson sombre mais douce sur Nossen.";
+          }
+          if (form) {
+            Array.prototype.forEach.call(form.querySelectorAll("button, input, textarea"), function (control) {
+              control.disabled = Boolean(locked);
+            });
+          }
+          Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-chat-prompt]"), function (button) {
+            button.disabled = Boolean(locked);
+          });
+          if (reset) reset.disabled = Boolean(locked);
+          if (refButton) refButton.disabled = Boolean(locked);
+          if (fileButton) fileButton.disabled = Boolean(locked);
+        }
+
+        function configureSession(session) {
+          activeSession = session && session.authenticated ? session : null;
+          hasSession = Boolean(activeSession);
+          if (hasSession) {
+            var scope = String(activeSession.storageScope || (typeof vivyAuth().sessionScope === "function" ? vivyAuth().sessionScope(activeSession.user) : "session")).trim() || "session";
+            storageKey = "vivy:chat:" + scope + ":v3";
+            conversationKey = "vivy:conversation-id:" + scope;
+            referenceKey = "vivy:voice-reference:" + scope;
+            conversationId = getConversationId();
+            messages = readMessages();
+            setChatLocked(false);
+            setStatus("Session Vivy liée à " + sessionDisplayName(activeSession));
+          } else {
+            storageKey = "";
+            conversationKey = "";
+            referenceKey = "";
+            conversationId = "";
+            attachedFiles = [];
+            messages = [lockedGreeting()];
+            setChatLocked(true);
+            setStatus("Connexion requise pour utiliser Vivy.");
+          }
+          render();
+        }
+
+        function ensureSession() {
+          if (hasSession) return true;
+          messages = [lockedGreeting()];
+          setChatLocked(true);
+          setStatus("Connecte-toi à Funesterie avant d'envoyer un message.");
+          render();
+          return false;
+        }
+
+        function setKeyboardInset() {
+          var inset = 0;
+          if (visualViewport && visualViewport.height) {
+            inset = Math.max(0, window.innerHeight - visualViewport.height - visualViewport.offsetTop);
+          }
+          document.documentElement.style.setProperty("--vivy-keyboard-inset", Math.round(inset) + "px");
+          return inset;
+        }
+
+        function keepComposerVisible(behavior) {
+          setKeyboardInset();
+          window.clearTimeout(keyboardTimer);
+          keyboardTimer = window.setTimeout(function () {
+            if (log) log.scrollTop = log.scrollHeight;
+          }, 80);
+        }
+
+        function onKeyboardFocus() {
+          document.body.classList.add("vivy-keyboard-open");
+          keepComposerVisible("smooth");
+        }
+
+        function onKeyboardBlur() {
+          window.setTimeout(function () {
+            if (root.contains(document.activeElement)) return;
+            document.body.classList.remove("vivy-keyboard-open");
+            document.documentElement.style.setProperty("--vivy-keyboard-inset", "0px");
+          }, 180);
+        }
+
+        function onViewportChange() {
+          if (!document.body.classList.contains("vivy-keyboard-open")) return;
+          setKeyboardInset();
+        }
 
         function unicodeText(value, maxLength) {
           var text = String(value || "")
@@ -1406,6 +2176,7 @@
         }
 
         function readMessages() {
+          if (!hasSession || !storageKey) return [lockedGreeting()];
           try {
             var parsed = JSON.parse(localStorage.getItem(storageKey) || "null");
             if (Array.isArray(parsed) && parsed.length) {
@@ -1418,6 +2189,7 @@
         }
 
         function saveMessages() {
+          if (!hasSession || !storageKey) return;
           try {
             localStorage.setItem(storageKey, JSON.stringify(messages.slice(-24)));
           } catch (_) {}
@@ -1428,6 +2200,7 @@
         }
 
         function getConversationId() {
+          if (!hasSession || !conversationKey) return "";
           try {
             var existing = localStorage.getItem(conversationKey) || "";
             if (existing) return existing;
@@ -1485,6 +2258,7 @@
         }
 
         function addConversationFiles(fileList) {
+          if (!ensureSession()) return;
           var selected = Array.prototype.slice.call(fileList || []).slice(0, 4);
           if (!selected.length) return;
           setStatus("Vivy ajoute les fichiers au contexte...");
@@ -1512,14 +2286,16 @@
         }
 
         function getReferenceName() {
+          if (!hasSession || !referenceKey) return "Vivy par défaut";
           try {
-            return localStorage.getItem(referenceKey) || "";
+            return localStorage.getItem(referenceKey) || "Vivy par défaut";
           } catch (_) {
-            return "";
+            return "Vivy par défaut";
           }
         }
 
         function setReferenceName(name) {
+          if (!hasSession || !referenceKey) return;
           try {
             localStorage.setItem(referenceKey, name || "");
           } catch (_) {}
@@ -1529,7 +2305,7 @@
           var name = getReferenceName();
           if (!refBox || !refLabel) return;
           refBox.classList.toggle("is-visible", Boolean(visible || name));
-          refLabel.textContent = name ? "Réf voix: " + name : "Réf voix privée attendue";
+          refLabel.textContent = "Voix: " + name;
         }
 
         function render() {
@@ -1557,6 +2333,7 @@
             log.appendChild(article);
           });
           log.scrollTop = log.scrollHeight;
+          if (document.activeElement === input) keepComposerVisible("auto");
           renderReference(awaitingReference);
           renderAttachments();
         }
@@ -1575,6 +2352,7 @@
         }
 
         function send(text) {
+          if (!ensureSession()) return;
           text = unicodeText(text);
           var filesForMessage = attachedFiles.slice(0, 6);
           if ((!text && !filesForMessage.length) || sending) return;
@@ -1585,12 +2363,12 @@
           renderAttachments();
           if (input) input.value = "";
           sending = true;
-          setStatus(voiceRequest ? "Vivy attend un audio de référence" : "Vivy écoute et range l'idée...");
+          setStatus(voiceRequest ? "Voix Vivy par défaut active" : "Vivy écoute et range l'idée...");
           renderReference(voiceRequest);
           fetch("/api/vivy/studio/chat", {
             method: "POST",
             credentials: "include",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({
               message: text || "J'ajoute ces fichiers pour Vivy.",
               conversationId: conversationId,
@@ -1600,6 +2378,9 @@
           }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (payload) {
               if (!response.ok || payload.ok === false) {
+                if (response.status === 401) {
+                  throw new Error("Connexion requise");
+                }
                 throw new Error(payload.message || payload.error || ("Vivy indisponible (" + response.status + ")"));
               }
               return payload;
@@ -1608,7 +2389,7 @@
             var assistant = String(payload.assistant || payload.content || payload.summary || "").trim()
               || "Je suis là. Donne-moi une ambiance, une phrase ou une direction.";
             if (voiceRequest) {
-              assistant += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte.";
+              assistant += "\n\nLa voix Vivy par défaut est déjà active. Envoie un audio seulement si tu veux la remplacer.";
             }
             addMessage("assistant", assistant);
             var memoryText = payload.semanticMemory && payload.semanticMemory.stored || payload.memoryStored
@@ -1618,7 +2399,7 @@
           }).catch(function (error) {
             var message = "Je n'arrive pas à joindre le studio Vivy pour l'instant: " + (error && error.message ? error.message : error);
             if (voiceRequest) {
-              message += "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte.";
+              message += "\n\nLa voix Vivy par défaut est déjà prête côté serveur.";
             }
             addMessage("assistant", message);
             setStatus("Connexion Vivy à vérifier");
@@ -1628,6 +2409,7 @@
         }
 
         function uploadReference(file) {
+          if (!ensureSession()) return;
           if (!file) return;
           var label = "Vivy - " + unicodeLine(String(file.name || "référence voix").replace(/\.[^.]+$/, ""), "référence voix", 54);
           var body = new FormData();
@@ -1638,10 +2420,14 @@
           fetch("/api/tts/references", {
             method: "POST",
             credentials: "include",
+            headers: authHeaders(),
             body: body
           }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (payload) {
               if (!response.ok || payload.ok === false) {
+                if (response.status === 401) {
+                  throw new Error("Connexion requise");
+                }
                 throw new Error(payload.message || payload.error || ("upload impossible (" + response.status + ")"));
               }
               return payload;
@@ -1665,13 +2451,29 @@
             send(input ? input.value : "");
           });
         }
+        if (input) {
+          input.addEventListener("focus", onKeyboardFocus);
+          input.addEventListener("input", function () {
+            if (document.body.classList.contains("vivy-keyboard-open")) {
+              keepComposerVisible("auto");
+            }
+          });
+          input.addEventListener("blur", onKeyboardBlur);
+        }
+        if (visualViewport) {
+          visualViewport.addEventListener("resize", onViewportChange);
+          visualViewport.addEventListener("scroll", onViewportChange);
+        }
+        window.addEventListener("orientationchange", onViewportChange);
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-chat-prompt]"), function (button) {
           button.addEventListener("click", function () {
+            if (!ensureSession()) return;
             send(button.getAttribute("data-vivy-chat-prompt") || "");
           });
         });
         if (reset) {
           reset.addEventListener("click", function () {
+            if (!ensureSession()) return;
             messages = [greeting()];
             saveMessages();
             setStatus("Conversation remise à zéro");
@@ -1679,7 +2481,10 @@
           });
         }
         if (refButton && refFile) {
-          refButton.addEventListener("click", function () { refFile.click(); });
+          refButton.addEventListener("click", function () {
+            if (!ensureSession()) return;
+            refFile.click();
+          });
           refFile.addEventListener("change", function () {
             var file = refFile.files && refFile.files[0] ? refFile.files[0] : null;
             refFile.value = "";
@@ -1687,14 +2492,20 @@
           });
         }
         if (fileButton && fileInput) {
-          fileButton.addEventListener("click", function () { fileInput.click(); });
+          fileButton.addEventListener("click", function () {
+            if (!ensureSession()) return;
+            fileInput.click();
+          });
           fileInput.addEventListener("change", function () {
             addConversationFiles(fileInput.files);
             fileInput.value = "";
           });
         }
 
-        render();
+        window.addEventListener("vivy:session", function (event) {
+          configureSession(event && event.detail || null);
+        });
+        configureSession(window.__vivySession || null);
       })();
 
       (function () {
@@ -1726,6 +2537,115 @@
         var briefNode = root.querySelector("[data-vivy-brief]");
         var statusNode = root.querySelector("[data-vivy-status]");
         var mediaNode = root.querySelector("[data-vivy-media]");
+        var hasSession = Boolean(window.__vivySession && window.__vivySession.authenticated);
+
+        function vivyAuth() {
+          return window.__vivyAuth || {};
+        }
+
+        function isLocalHost() {
+          var hostname = String(window.location.hostname || "").toLowerCase();
+          return hostname === "localhost"
+            || hostname === "127.0.0.1"
+            || hostname === "host.docker.internal"
+            || hostname === "::1";
+        }
+
+        function readAuthToken() {
+          try {
+            return String(localStorage.getItem("a11-auth-token") || localStorage.getItem("a11_jwt_token") || "").trim();
+          } catch (_) {
+            return "";
+          }
+        }
+
+        function authHeaders(extra) {
+          if (typeof vivyAuth().authHeaders === "function") return vivyAuth().authHeaders(extra);
+          var headers = Object.assign({}, extra || {});
+          var token = readAuthToken();
+          if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
+            headers.Authorization = "Bearer " + token;
+          }
+          return headers;
+        }
+
+        function isAllowedTarget(rawTarget) {
+          try {
+            var target = new URL(String(rawTarget || ""), window.location.origin);
+            var hostname = target.hostname.toLowerCase();
+            return hostname === "localhost"
+              || hostname === "127.0.0.1"
+              || hostname === "::1"
+              || hostname === "funesterie.me"
+              || hostname.endsWith(".funesterie.me");
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function buildCentralLoginUrl(returnTo) {
+          var target = isAllowedTarget(returnTo) ? String(returnTo) : window.location.href;
+          var base = isLocalHost()
+            ? new URL("/login", window.location.origin)
+            : new URL("/login", "https://funesterie.me");
+          base.searchParams.set("returnTo", target);
+          return base.toString();
+        }
+
+        function buildAuthSuccessForTarget(rawTarget) {
+          var target = new URL(isAllowedTarget(rawTarget) ? String(rawTarget) : window.location.href, window.location.origin);
+          var authSuccess = new URL("/auth/success", target.origin);
+          var nextPath = (target.pathname || "/") + (target.search || "") + (target.hash || "");
+          if (!/\/auth\/success\/?$/i.test(target.pathname) && nextPath !== "/") {
+            authSuccess.searchParams.set("next", nextPath);
+          }
+          return authSuccess.toString();
+        }
+
+        function appendTokenFragment(rawTarget, token) {
+          var target = new URL(rawTarget);
+          var hashParams = new URLSearchParams(String(target.hash || "").replace(/^#/, ""));
+          hashParams.set("a11_token", token);
+          hashParams.set("provider", "funesterie");
+          target.hash = hashParams.toString();
+          return target.toString();
+        }
+
+        function buildSessionBridgeUrl(rawTarget) {
+          if (typeof vivyAuth().buildSessionBridgeUrl === "function") return vivyAuth().buildSessionBridgeUrl(rawTarget);
+          var target = isAllowedTarget(rawTarget) ? new URL(String(rawTarget), window.location.origin).toString() : window.location.href;
+          var token = readAuthToken();
+          if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return buildCentralLoginUrl(target);
+          try {
+            var parsedTarget = new URL(target);
+            if (parsedTarget.origin === window.location.origin) return parsedTarget.toString();
+          } catch (_) {
+            return buildCentralLoginUrl(target);
+          }
+          return appendTokenFragment(buildAuthSuccessForTarget(target), token);
+        }
+
+        function setStudioLocked(locked) {
+          root.classList.toggle("is-locked", Boolean(locked));
+          Array.prototype.forEach.call(root.querySelectorAll("input, textarea, select, [data-vivy-action], [data-vivy-ask]"), function (control) {
+            control.disabled = Boolean(locked);
+          });
+          if (locked) setStatus("Connexion requise pour produire avec Vivy.");
+        }
+
+        function configureSession(session) {
+          hasSession = Boolean(session && session.authenticated);
+          setStudioLocked(!hasSession);
+          if (hasSession) setStatus("");
+          render();
+        }
+
+        function ensureSession() {
+          if (hasSession) return true;
+          setStudioLocked(true);
+          setStatus("Connecte-toi à Funesterie avant de demander une production Vivy.");
+          return false;
+        }
 
         function field(name) {
           return form.elements[name];
@@ -1772,7 +2692,9 @@
 
           var isVideo = Boolean(videoUrl || (media.kind === "video") || /\.mp4(?:[?#].*)?$/i.test(url));
           var title = document.createElement("strong");
-          title.textContent = isVideo ? "Clip Vivy prêt" : "Audio Vivy prêt";
+          title.textContent = media.emergencyFallback
+            ? (isVideo ? "Maquette vidéo locale" : "Maquette audio locale")
+            : (isVideo ? "Clip Vivy prêt" : "Audio Vivy prêt");
           mediaNode.appendChild(title);
 
           var player = document.createElement(isVideo ? "video" : "audio");
@@ -1809,21 +2731,26 @@
             shareTarget: value("shareTarget"),
             shareUrl: value("shareUrl"),
             shareTokenPresent: Boolean(value("shareToken")),
-            shareInstruction: value("shareInstruction")
+            shareInstruction: value("shareInstruction"),
+            allowPlaceholderMedia: false
           };
         }
 
         function runProduction(button) {
+          if (!ensureSession()) return Promise.resolve(null);
           if (button) button.disabled = true;
-          setStatus("Vivy produit un fichier exploitable...");
+          setStatus("Vivy prépare le brief de production...");
           return fetch("/api/vivy/studio/produce", {
             method: "POST",
             credentials: "include",
-            headers: { "Content-Type": "application/json" },
+            headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(buildProductionPayload())
           }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (payload) {
               if (!response.ok || payload.ok === false) {
+                if (response.status === 401) {
+                  throw new Error("Connexion requise");
+                }
                 throw new Error(payload.message || payload.error || ("Vivy indisponible (" + response.status + ")"));
               }
               return payload;
@@ -1832,13 +2759,17 @@
             vivyOutput = String(payload.assistant || payload.brief || payload.summary || "").trim();
             if (!vivyOutput) throw new Error("reponse_vide");
             setMediaPreview(payload);
-            setStatus("Production Vivy prête. Le lecteur est disponible dans le brief.");
+            var mediaStatus = payload && payload.mediaStatus ? payload.mediaStatus : {};
+            var hasMedia = Boolean(payload && (payload.audioUrl || payload.audio_url || payload.videoUrl || payload.video_url || (payload.media && payload.media.url)));
+            setStatus(hasMedia
+              ? "Production Vivy prête. Le lecteur est disponible dans le brief."
+              : (mediaStatus.message || "Brief Vivy prêt. La génération audio réelle n'est pas encore connectée."));
             render();
           }).catch(function (error) {
             setMediaPreview(null);
             setStatus("Production Vivy indisponible: " + (error && error.message ? error.message : error));
           }).finally(function () {
-            if (button) button.disabled = false;
+            if (button) button.disabled = !hasSession;
           });
         }
 
@@ -1983,11 +2914,13 @@
               k44: "Brief copié. Ouverture Kaen44..."
             };
             var urls = {
-              a11: "https://a11.funesterie.me",
+              a11: "https://a11.funesterie.me/cockpit",
               k44: "https://k44.funesterie.me/cockpit"
             };
             copyBrief(labels[target] || "Brief copié.");
-            window.open(urls[target] || urls.a11, "_blank", "noopener,noreferrer");
+            var rawUrl = urls[target] || urls.a11;
+            var bridgedUrl = buildSessionBridgeUrl(rawUrl);
+            window.open(bridgedUrl, "_blank", "noopener,noreferrer");
           });
         });
 
@@ -1997,7 +2930,10 @@
           });
         });
 
-        render();
+        window.addEventListener("vivy:session", function (event) {
+          configureSession(event && event.detail || null);
+        });
+        configureSession(window.__vivySession || null);
       })();
     </script>
   </body>

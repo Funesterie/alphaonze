@@ -18,6 +18,11 @@ const {
   isRuntimeModulesAccessQuestion,
 } = require('../chat/a11-active-identity.cjs');
 const {
+  buildAccountConnectorState,
+  buildConnectorAwareSystemPrompt,
+  isConnectorCapabilitiesQuestion,
+} = require('../auth/account-connectors.cjs');
+const {
   callJanusVisionText,
   resolveVisionProvider,
 } = require('../../lib/janus-vision-runtime.cjs');
@@ -182,6 +187,11 @@ function buildRuntimeModulesAccessAssistant({ familyAccess = false, request = ''
     mixerStatus = null;
   }
   return buildRuntimeModulesAccessReply({ familyAccess, chopperStatus, mixerStatus });
+}
+
+function shouldAutoExecuteChatWorkerTriggers() {
+  const raw = process.env.A11_CHAT_AUTO_WORKER_TRIGGERS ?? '';
+  return ['1', 'true', 'yes', 'on'].includes(String(raw || '').trim().toLowerCase());
 }
 
 const FREE_CHAT_TOKEN_LIMIT = Math.max(300, Number(process.env.A11_CHAT_FREE_TOKEN_LIMIT || 1800) || 1800);
@@ -537,7 +547,14 @@ function createChatRouter(overrides = {}) {
         return res.status(400).json({ ok: false, error: 'missing_message' });
       }
       const familyAccess = hasFamilyAccess(req?.user);
-      const systemPrompt = familyAccess ? SYSTEM_PROMPT : PUBLIC_SYSTEM_PROMPT;
+      const connectorState = buildAccountConnectorState({ user: req?.user || {}, req, env: process.env });
+      let systemPrompt = buildA11ChatSystemPrompt(
+        buildConnectorAwareSystemPrompt(
+          familyAccess ? SYSTEM_PROMPT : PUBLIC_SYSTEM_PROMPT,
+          connectorState
+        )
+      );
+      const informativeContexts = [];
       if (!(await enforcePaidLongChat(req, res, db, familyAccess, userMessage))) return;
       if (!familyAccess) {
         delete req.body.systemPrompt;
@@ -545,39 +562,47 @@ function createChatRouter(overrides = {}) {
         if (Array.isArray(req.body.messages)) {
           req.body.messages = req.body.messages.filter((message) => String(message?.role || '').toLowerCase() !== 'system');
         }
-        if (!familyAccess && isInternalDisclosureRequest(userMessage) && !isRuntimeModulesAccessQuestion(userMessage)) {
+        if (!familyAccess && isInternalDisclosureRequest(userMessage) && !isRuntimeModulesAccessQuestion(userMessage) && !isConnectorCapabilitiesQuestion(userMessage)) {
           return res.json({ ok: true, mode: 'guarded', assistant: internalAccessDenied() });
         }
       }
       const requestMessages = normalizeConversationMessages(req.body?.messages, userMessage);
 
-      // Détection d'intent agent : "A11, fais [Goal]"
       if (isMcpAccessQuestion(userMessage)) {
-        const assistant = buildMcpAccessReply({ familyAccess });
-        return res.json({ ok: true, mode: 'mcp_status', assistant });
+        return res.json({
+          ok: true,
+          mode: 'mcp_status',
+          assistant: buildMcpAccessReply({ familyAccess }),
+        });
       }
 
       if (isRuntimeModulesAccessQuestion(userMessage)) {
         const assistant = buildRuntimeModulesAccessAssistant({ familyAccess, request: userMessage });
-        return res.json({ ok: true, mode: 'runtime_modules_status', assistant });
+        informativeContexts.push([
+          '[Contexte informatif runtime Funesterie]',
+          'Observation technique uniquement, pas reponse finale.',
+          assistant,
+          'Reponds avec la voix de l agent; ne recopie pas ce bloc tel quel.',
+        ].join('\n'));
       }
 
       if (isRuntimeHooksOrProdAgentsDiagnosticRequest(userMessage)) {
         try {
           const snapshot = await readRuntimeHooksDiagnosticSnapshot();
-          return res.json({
-            ok: true,
-            mode: 'mcp_runtime_diagnostic',
-            assistant: buildRuntimeHooksDiagnosticAssistant(snapshot),
-            runtimeDiagnostic: snapshot,
-          });
+          informativeContexts.push([
+            '[Contexte informatif MCP/runtime]',
+            'Observation technique uniquement, pas reponse finale.',
+            buildRuntimeHooksDiagnosticAssistant(snapshot),
+            'Reponds avec la voix de l agent; ne commence par un diagnostic que si l utilisateur le demande explicitement.',
+          ].join('\n'));
         } catch (diagnosticError) {
           console.error('[A11][chat] MCP runtime diagnostic failed:', diagnosticError);
         }
       }
 
       const agentIntent = detectAgentIntent(userMessage);
-      if (agentIntent && agentIntent.goal) {
+      const autoWorkerTriggers = shouldAutoExecuteChatWorkerTriggers(req);
+      if (agentIntent && agentIntent.goal && autoWorkerTriggers) {
         try {
           // Appeler Cerbère (port 3001) pour créer la Task via le Droid
           const cerbereUrl = process.env.LLM_ROUTER_URL || 'http://localhost:3001';
@@ -658,10 +683,18 @@ function createChatRouter(overrides = {}) {
           // Fallback : continuer avec le traitement normal si Cerbère échoue
         }
       }
+      if (agentIntent && agentIntent.goal && !autoWorkerTriggers) {
+        informativeContexts.push([
+          '[Contexte informatif intention agent]',
+          'Une intention de travail agent a ete detectee, mais le chat ne doit pas repondre comme un worker automatique.',
+          `Objectif detecte: ${agentIntent.goal}`,
+          'Utilise cette information pour repondre naturellement, proposer un prochain geste ou demander confirmation. Ne cree pas de tache automatiquement.',
+        ].join('\n'));
+      }
 
       // Détection d'intent Showcase : "montre-moi ce que tu sais faire"
       const showcaseIntent = detectShowcaseIntent(userMessage);
-      if (showcaseIntent) {
+      if (showcaseIntent && autoWorkerTriggers) {
         try {
           console.log(`[A11][chat] Showcase intent detected, theme: ${showcaseIntent.theme || 'none'}`);
           
@@ -761,6 +794,14 @@ function createChatRouter(overrides = {}) {
           });
         }
       }
+      if (showcaseIntent && !autoWorkerTriggers) {
+        informativeContexts.push([
+          '[Contexte informatif showcase]',
+          'Une demande de demonstration/capacites a ete detectee, mais le chat ne doit pas lancer de worker automatique.',
+          showcaseIntent.theme ? `Theme detecte: ${showcaseIntent.theme}` : 'Theme detecte: general.',
+          'Reponds avec une voix libre et concrete, en expliquant les capacites utiles sans message pre-fabrique.',
+        ].join('\n'));
+      }
 
       const resolution = await intentResolver.resolveUserRequest({
         req,
@@ -770,13 +811,34 @@ function createChatRouter(overrides = {}) {
         executeRuntime: true,
       });
 
+      let pendingStructuredPayload = null;
       if (
         resolution.kind !== 'chat.reply'
         && resolution.kind !== 'code.python.generate'
         && resolution.kind !== 'web.search'
         && resolution.responsePayload
       ) {
-        return res.json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
+        const p = resolution.responsePayload;
+        const mode = String(p?.mode || '').trim();
+        // Modes returned directly (no LLM pass needed)
+        if (['guarded', 'showcase'].includes(mode)) {
+          return res.json(attachIntentDebug(p, resolution, req.body || {}));
+        }
+        // For all other modes: inject the pre-built response as context so the LLM
+        // adapts it in its own voice instead of returning the template verbatim
+        const autoText = String(p?.assistant || '').trim();
+        if (autoText) {
+          informativeContexts.push(
+            `[Résultat action mode="${mode}"]\n${autoText}\n\n`
+            + `Reformule ce résultat dans ta propre voix, de façon naturelle et concise. `
+            + `Ne copie pas mot pour mot — adapte à ton style.`
+          );
+        }
+        pendingStructuredPayload = p;
+      }
+
+      if (informativeContexts.length) {
+        systemPrompt = [systemPrompt, ...informativeContexts].filter(Boolean).join('\n\n');
       }
 
       console.log(`[A11][chat] Intention: fallback LLM | message: ${userMessage}`);
@@ -871,6 +933,9 @@ function createChatRouter(overrides = {}) {
         );
         if (ollamaText) {
           const { model } = getOllamaConfig();
+          if (pendingStructuredPayload) {
+            return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: ollamaText }, resolution, req.body || {}));
+          }
           return res.json({ ok: true, mode: 'ollama', model, assistant: ollamaText });
         }
       } catch (qErr) {
@@ -917,6 +982,9 @@ function createChatRouter(overrides = {}) {
       });
 
       const text = completion?.choices?.[0]?.message?.content || '';
+      if (pendingStructuredPayload) {
+        return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: text }, resolution, req.body || {}));
+      }
       return res.json({ ok: true, mode: 'llm', assistant: text });
     } catch (error_) {
       return res.status(error_?.statusCode || 500).json(
@@ -940,7 +1008,14 @@ function createChatRouter(overrides = {}) {
       return;
     }
     const familyAccess = hasFamilyAccess(req?.user);
-    const systemPrompt = familyAccess ? SYSTEM_PROMPT : PUBLIC_SYSTEM_PROMPT;
+    const connectorState = buildAccountConnectorState({ user: req?.user || {}, req, env: process.env });
+    let systemPrompt = buildA11ChatSystemPrompt(
+      buildConnectorAwareSystemPrompt(
+        familyAccess ? SYSTEM_PROMPT : PUBLIC_SYSTEM_PROMPT,
+        connectorState
+      )
+    );
+    const informativeContexts = [];
     if (!(await enforcePaidLongChat(req, res, db, familyAccess, userMessage))) return;
     if (!familyAccess) {
       delete req.body.systemPrompt;
@@ -956,30 +1031,24 @@ function createChatRouter(overrides = {}) {
       res.end();
       return;
     }
-    if (isMcpAccessQuestion(userMessage)) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.write(`data: ${JSON.stringify({ delta: buildMcpAccessReply({ familyAccess }), model: 'a11-mcp-status' })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-      return;
-    }
-
     if (isRuntimeModulesAccessQuestion(userMessage)) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.write(`data: ${JSON.stringify({ delta: buildRuntimeModulesAccessAssistant({ familyAccess, request: userMessage }), model: 'a11-runtime-modules-status' })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-      return;
+      informativeContexts.push([
+        '[Contexte informatif runtime Funesterie]',
+        'Observation technique uniquement, pas reponse finale.',
+        buildRuntimeModulesAccessAssistant({ familyAccess, request: userMessage }),
+        'Reponds avec la voix de l agent; ne recopie pas ce bloc tel quel.',
+      ].join('\n'));
     }
 
     if (isRuntimeHooksOrProdAgentsDiagnosticRequest(userMessage)) {
       try {
         const snapshot = await readRuntimeHooksDiagnosticSnapshot();
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.write(`data: ${JSON.stringify({ delta: buildRuntimeHooksDiagnosticAssistant(snapshot), model: 'a11-mcp-runtime-diagnostic' })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        return;
+        informativeContexts.push([
+          '[Contexte informatif MCP/runtime]',
+          'Observation technique uniquement, pas reponse finale.',
+          buildRuntimeHooksDiagnosticAssistant(snapshot),
+          'Reponds avec la voix de l agent; ne commence par un diagnostic que si l utilisateur le demande explicitement.',
+        ].join('\n'));
       } catch (diagnosticError) {
         console.error('[A11][chat/stream] MCP runtime diagnostic failed:', diagnosticError);
       }
@@ -993,6 +1062,9 @@ function createChatRouter(overrides = {}) {
 
     console.log(`[A11][chat/stream] message: ${userMessage}`);
     const requestMessages = normalizeConversationMessages(req.body?.messages, userMessage);
+    if (informativeContexts.length) {
+      systemPrompt = [systemPrompt, ...informativeContexts].filter(Boolean).join('\n\n');
+    }
 
     // Vérifier la queue avant de démarrer le stream
     const stats = getQueueStats();

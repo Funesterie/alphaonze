@@ -23,6 +23,14 @@ manquants. Elle ne manipule aucun secret.
 Le fichier local `.npmrc.google` est ignore par Git. Il ne contient pas de
 token; il garde seulement le placeholder `${GOOGLE_ARTIFACT_ACCESS_TOKEN}`.
 
+> Update 2026-05-28: le registre npmjs public est le canon le plus recent pour
+> les packages NOSSEN. Derniers patchs publies: `@nossen/all-in-one@0.1.3`,
+> `@nossen/morphing@2.0.3`, `@nossen/envapt-superimg@2.0.2`,
+> `@nossen/freeland-bros@2.0.3`, `@nossen/rome@2.0.3`, et
+> `@funeste/all-in-one-nossen@0.1.1`. Avant un prochain miroir Google Artifact
+> Registry, aligner `scripts/google/google-artifact-packages.manifest.json`
+> pour ne pas republier les anciennes versions 2.0.0 par erreur.
+
 ```powershell
 npm run google:npmrc
 npm run google:packages:dry

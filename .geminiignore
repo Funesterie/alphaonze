@@ -1,0 +1,32 @@
+# Répertoires générés / runtime — ne pas indexer
+runtime/
+a11_memory/
+a11/backend/apps/server/tmp-restart-*.log
+a11/backend/apps/server/codex-*.log
+
+# VHD / disques virtuels
+*.vhd
+*.vmdk
+*.iso
+*.img
+
+# Dépendances
+node_modules/
+dist/
+out/
+build/
+.venv/
+
+# Binaires / médias lourds
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.mp3
+*.wav
+*.onnx
+*.bin
+*.pt
+*.pth
+*.safetensors

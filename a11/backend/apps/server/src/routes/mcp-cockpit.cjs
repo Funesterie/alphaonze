@@ -7,6 +7,11 @@ const {
   callMcpTool,
   getMcpConfig,
 } = require('../mcp-client.cjs');
+const {
+  buildMcpPermissionDenied,
+  canUseMcpPermission,
+  resolveMcpAccountProfile,
+} = require('../auth/mcp-account-tier.cjs');
 
 const SERVER_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_COCKPIT_HTML_PATHS = [
@@ -34,6 +39,7 @@ const ALLOWED_PROXY_METHODS = new Set([
 const DEFAULT_COCKPIT_ADMIN_EMAILS = [
   'cellaurojeffrey@gmail.com',
   'funesterie38@gmail.com',
+  'cellaurojeffrey@funesterie.onmicrosoft.com',
 ];
 
 function normalizeEmail(value) {
@@ -409,6 +415,7 @@ function summarizePitchingThreads(value) {
 }
 
 function buildCockpitSummary({
+  account,
   a11,
   kaen44,
   vivyAudio,
@@ -438,6 +445,7 @@ function buildCockpitSummary({
   return {
     ok: true,
     updatedAt: new Date().toISOString(),
+    account,
     a11: {
       ok: !!a11?.status?.ok,
     },
@@ -489,6 +497,7 @@ function createMcpCockpitRouter({
   verifyJWT,
   callTool = callMcpTool,
   env = process.env,
+  db = null,
   cockpitHtmlPath,
 } = {}) {
   if (typeof verifyJWT !== 'function') {
@@ -497,15 +506,28 @@ function createMcpCockpitRouter({
 
   const router = express.Router();
 
-  function requireCockpitAdmin(req, res, next) {
+  function verifyCockpitAccount(req, res, next) {
     return verifyJWT(req, res, () => {
-      if (isAllowedCockpitAdmin(req.user || {}, env)) return next();
-      return jsonError(
+      resolveMcpAccountProfile(req, {
+        db,
+        env,
+        adminEmails: getCockpitAdminEmails(env),
+      }).then((profile) => {
+        req.mcpAccount = profile;
+        return next();
+      }).catch(() => jsonError(
         res,
-        403,
-        'admin_required',
-        'Cockpit MCP reserve aux comptes admin Funesterie.'
-      );
+        500,
+        'mcp_account_profile_failed',
+        'Impossible de verifier les permissions MCP du compte.'
+      ));
+    });
+  }
+
+  function requireCockpitPermission(permission, message) {
+    return (req, res, next) => verifyCockpitAccount(req, res, () => {
+      if (canUseMcpPermission(req.mcpAccount, permission)) return next();
+      return res.status(403).json(buildMcpPermissionDenied(permission, req.mcpAccount, message));
     });
   }
 
@@ -541,15 +563,19 @@ function createMcpCockpitRouter({
     }));
   });
 
-  router.get('/me', requireCockpitAdmin, (req, res) => {
+  router.get('/me', verifyCockpitAccount, (req, res) => {
     return res.json({
       ok: true,
-      admin: true,
+      admin: req.mcpAccount?.tier === 'admin_family',
+      account: req.mcpAccount,
       user: publicUser(req.user || {}),
     });
   });
 
-  router.get('/status', requireCockpitAdmin, async (_req, res) => {
+  router.get('/status', requireCockpitPermission(
+    'cockpitStatus',
+    'Le statut cockpit MCP est reserve aux comptes Premium, Fondateur et Admin famille.'
+  ), async (req, res) => {
     const config = getCockpitMcpConfig(env);
     const [
       a11,
@@ -576,6 +602,7 @@ function createMcpCockpitRouter({
     ]);
 
     return res.json(buildCockpitSummary({
+      account: req.mcpAccount,
       a11,
       kaen44,
       vivyAudio,
@@ -595,7 +622,7 @@ function createMcpCockpitRouter({
     return res.status(204).end();
   });
 
-  router.post('/proxy', requireCockpitAdmin, express.json({ limit: '512kb' }), async (req, res) => {
+  router.post('/proxy', verifyCockpitAccount, express.json({ limit: '512kb' }), async (req, res) => {
     let rpc;
     try {
       rpc = normalizeMcpRequest(req.body || {});
@@ -609,6 +636,18 @@ function createMcpCockpitRouter({
     }
 
     const endpoint = resolveProxyEndpoint(req.body?.endpoint, env);
+    const requiredPermission = endpoint.key === 'private'
+      ? 'privateMcpProxy'
+      : (rpc.method === 'tools/call' ? 'publicProxyCall' : 'publicProxyRead');
+    if (!canUseMcpPermission(req.mcpAccount, requiredPermission)) {
+      return res.status(403).json(buildMcpPermissionDenied(
+        requiredPermission,
+        req.mcpAccount,
+        endpoint.key === 'private'
+          ? 'Le proxy MCP prive est reserve aux comptes Fondateur et Admin famille.'
+          : 'Cet appel MCP public demande un compte Premium, Fondateur ou Admin famille.'
+      ));
+    }
     const upstreamHeaders = {
       accept: 'application/json, text/event-stream',
       'content-type': 'application/json',

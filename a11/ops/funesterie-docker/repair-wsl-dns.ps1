@@ -44,14 +44,8 @@ if ($DryRun) {
   exit 0
 }
 
-$shell = @"
-set -eu
-backup="/etc/resolv.conf.bak-`$(date +%Y%m%d-%H%M%S)"
-cp /etc/resolv.conf "`$backup"
-printf 'nameserver $Nameserver\noptions timeout:2 attempts:2\n' > /etc/resolv.conf
-printf '%s\n' "`$backup"
-"@
-
+$backupTarget = "/etc/resolv.conf.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$shell = "set -eu; cp /etc/resolv.conf '$backupTarget'; printf 'nameserver $Nameserver\noptions timeout:2 attempts:2\n' > /etc/resolv.conf; printf '%s\n' '$backupTarget'"
 $backupPath = (& wsl.exe -d $Distro -u root -- sh -lc $shell) -join "`n"
 $after = (& wsl.exe -d $Distro -- sh -lc "cat /etc/resolv.conf 2>/dev/null || true") -join "`n"
 $registryDnsOk = $false

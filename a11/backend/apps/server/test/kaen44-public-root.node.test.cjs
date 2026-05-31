@@ -43,3 +43,18 @@ test('OAuth homepage exposes Alphaonze as the exact app name', () => {
   assert.doesNotMatch(match[0], /<title>Alphaonze - A11 Funesterie<\/title>/);
   assert.doesNotMatch(match[0], /'Alphaonze - A11 Funesterie'/);
 });
+
+test('Funesterie public host keeps the Funesterie landing metadata', () => {
+  const serverSource = fs.readFileSync(serverPath, 'utf8');
+  const start = serverSource.indexOf('function resolveEmbeddedUiSurface(req)');
+  const end = serverSource.indexOf('function rewriteEmbeddedUiIndexForSurface', start);
+  const resolver = start >= 0 && end > start ? serverSource.slice(start, end) : '';
+
+  assert.ok(resolver, 'surface resolver should stay explicit and reviewable');
+  assert.match(resolver, /hostname === 'funesterie\.me'/);
+  assert.match(resolver, /return 'funesterie'/);
+  const a11Start = resolver.indexOf("return 'funesterie'");
+  const a11Clause = resolver.slice(a11Start);
+  assert.doesNotMatch(a11Clause, /\|\|\s*hostname === 'funesterie\.me'/);
+  assert.doesNotMatch(a11Clause, /\|\|\s*hostname === 'www\.funesterie\.me'/);
+});

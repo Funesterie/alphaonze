@@ -46,24 +46,38 @@ class CasqueEtoile:
         self.relations.append(Relation(from_node, to_node, weight, rel_type))
 
     def to_mask(self, raw):
-        # Example: group attributes/environments by subject
+        # Group all known axes, then add subject-centric relation views.
+        axis_slots = {
+            axis: [
+                {
+                    "value": n.value,
+                    "id": n.id
+                }
+                for n in self.nodes
+                if n.axis == axis
+            ]
+            for axis in AXES.keys()
+        }
         subjects = [n for n in self.nodes if n.axis == "subject"]
         mask_subjects = []
         for subj in subjects:
-            attributes = [r.to_node.value for r in self.relations if r.from_node == subj and r.to_node.axis == "attribute" and r.weight > 0.7]
-            environments = [r.to_node.value for r in self.relations if r.from_node == subj and r.to_node.axis == "environment" and r.weight > 0.5]
-            mask_subjects.append({
+            grouped = defaultdict(list)
+            for r in self.relations:
+                if r.from_node == subj and r.weight > 0.5:
+                    grouped[r.to_node.axis].append(r.to_node.value)
+            subject_slot = {
                 "value": subj.value,
-                "attributes": attributes,
-                "environment": environments,
+                "id": subj.id,
                 "importance": "high"
-            })
+            }
+            for axis, values in grouped.items():
+                subject_slot[axis] = values
+            mask_subjects.append(subject_slot)
+        axis_slots["subject"] = mask_subjects
         mask = {
             "version": "mask-1",
             "intent": "image.generate",
-            "slots": {
-                "subject": mask_subjects
-            },
+            "slots": axis_slots,
             "relations": [
                 {
                     "from": r.from_node.value,

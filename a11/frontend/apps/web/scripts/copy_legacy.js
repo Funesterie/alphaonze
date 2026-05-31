@@ -49,8 +49,19 @@ function ensurePlaceholderAssets(dest) {
   }
 }
 
+function ensureSpaRouteIndexes(dest, routes) {
+  const indexPath = path.join(dest, 'index.html');
+  if (!fs.existsSync(indexPath)) return;
+  for (const route of routes) {
+    const routeDir = path.join(dest, route);
+    fs.mkdirSync(routeDir, { recursive: true });
+    fs.copyFileSync(indexPath, path.join(routeDir, 'index.html'));
+  }
+}
+
 try {
   ensurePlaceholderAssets(distRoot);
+  ensureSpaRouteIndexes(distRoot, ['architecture', 'carte', 'graph']);
   ensurePlaceholderAssets(distLegacy);
   if (fs.existsSync(distLegacy)) {
     console.log('Copying dist/legacy -> public/legacy');

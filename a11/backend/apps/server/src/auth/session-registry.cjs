@@ -187,7 +187,8 @@ function createAuthSessionRegistry({ db, localAuthStore, logger = console, fileP
   let dbSchemaFailed = false;
 
   async function ensureDbSchema() {
-    if (!db || dbSchemaReady || dbSchemaFailed) return false;
+    if (!db || dbSchemaFailed) return false;
+    if (dbSchemaReady) return true;
     try {
       await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_session_version INTEGER DEFAULT 0');
       await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_global_logout_at TIMESTAMP');

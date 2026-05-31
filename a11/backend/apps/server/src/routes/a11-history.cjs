@@ -15,10 +15,42 @@ function createA11HistoryRouter({
 } = {}) {
   const router = express.Router();
 
+  function normalizeHistorySurface(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'k44' || normalized === 'kaen44') return 'kaen44';
+    if (normalized === 'vivy') return 'vivy';
+    if (normalized === 'a11' || normalized === 'a-11') return 'a11';
+    return '';
+  }
+
+  function getRequestSurface(req) {
+    return normalizeHistorySurface(req?.query?.surface || req?.headers?.['x-a11-surface'] || req?.headers?.['x-funesterie-surface']);
+  }
+
+  function scopeConversationIdForSurface(conversationId, surface = '') {
+    const normalizedConversationId = normalizeConversationId(conversationId || 'default');
+    const normalizedSurface = normalizeHistorySurface(surface);
+    if (!normalizedSurface) return normalizedConversationId;
+    if (/^(a11|kaen44|vivy):/i.test(normalizedConversationId)) return normalizedConversationId;
+    return `${normalizedSurface}:${normalizedConversationId}`;
+  }
+
+  function stripSurfaceConversationId(conversationId) {
+    return String(conversationId || '').trim().replace(/^(a11|kaen44|vivy):/i, '');
+  }
+
+  function conversationNameFromId(conversationId) {
+    const stripped = stripSurfaceConversationId(conversationId) || 'default';
+    return stripped === 'default' ? 'Session par défaut' : stripped;
+  }
+
   router.get('/api/a11/history', verifyJWT, async (req, res) => {
     try {
       const userId = String(req.user?.id || '').trim();
       if (!db || !userId) return res.json([]);
+      const surface = getRequestSurface(req);
+      const surfaceFilter = surface ? "AND COALESCE(conversation_id, 'default') LIKE $2" : '';
+      const queryParams = surface ? [userId, `${surface}:%`] : [userId];
 
       const summary = await db.query(
         `WITH message_conversations AS (
@@ -27,6 +59,7 @@ function createA11HistoryRouter({
                   MAX(created_at) AS updated_at
            FROM messages
            WHERE user_id=$1
+             ${surfaceFilter}
            GROUP BY COALESCE(conversation_id, 'default')
          ),
          resource_conversations AS (
@@ -36,6 +69,7 @@ function createA11HistoryRouter({
            FROM conversation_resources
            WHERE user_id=$1
              AND (expires_at IS NULL OR expires_at > NOW())
+             ${surfaceFilter}
            GROUP BY conversation_id
          ),
          merged AS (
@@ -52,14 +86,12 @@ function createA11HistoryRouter({
          SELECT conversation_id, message_count, updated_at
          FROM merged
          ORDER BY updated_at DESC, conversation_id ASC`,
-        [userId]
+        queryParams
       );
 
       const conversations = summary.rows.map((row) => ({
         id: String(row.conversation_id || 'default'),
-        name: String(row.conversation_id || 'default') === 'default'
-          ? 'Session par defaut'
-          : String(row.conversation_id || 'default'),
+        name: conversationNameFromId(row.conversation_id || 'default'),
         updated: row.updated_at || new Date().toISOString(),
         messageCount: Number(row.message_count || 0),
       }));
@@ -78,11 +110,12 @@ function createA11HistoryRouter({
         return res.json({ id: req.params.id, messages: [] });
       }
 
+      const surface = getRequestSurface(req);
       const requestedId = String(req.params.id || '').trim();
       const legacyHistoryId = `user-${userId}`;
       const requestedConversationId = requestedId === legacyHistoryId
         ? ''
-        : normalizeConversationId(requestedId);
+        : scopeConversationIdForSurface(requestedId, surface);
 
       let result;
       if (requestedConversationId) {
@@ -121,11 +154,15 @@ function createA11HistoryRouter({
 
     let transactionStarted = false;
     try {
+      const surface = getRequestSurface(req);
+      const surfaceFilter = surface ? "AND COALESCE(conversation_id, 'default') LIKE $2" : '';
+      const queryParams = surface ? [userId, `${surface}:%`] : [userId];
       let conversationIds = [];
       let removedConversations = 0;
       let removedMessages = 0;
       let removedResources = 0;
       let removedPhantomEntries = 0;
+      let removedActivityEntries = 0;
 
       if (db) {
         const conversationResult = await db.query(
@@ -134,12 +171,14 @@ function createA11HistoryRouter({
              SELECT conversation_id
              FROM messages
              WHERE user_id = $1
+               ${surfaceFilter}
              UNION ALL
              SELECT conversation_id
              FROM conversation_resources
              WHERE user_id = $1
+               ${surfaceFilter}
            ) conversations`,
-          [userId]
+          queryParams
         );
         conversationIds = conversationResult.rows
           .map((row) => normalizeConversationId(row?.conversation_id || 'default'))
@@ -149,8 +188,14 @@ function createA11HistoryRouter({
         await db.query('BEGIN');
         transactionStarted = true;
 
-        const deletedMessages = await db.query('DELETE FROM messages WHERE user_id=$1', [userId]);
-        const deletedResources = await db.query('DELETE FROM conversation_resources WHERE user_id=$1', [userId]);
+        const deletedMessages = await db.query(
+          `DELETE FROM messages WHERE user_id=$1 ${surfaceFilter}`,
+          queryParams
+        );
+        const deletedResources = await db.query(
+          `DELETE FROM conversation_resources WHERE user_id=$1 ${surfaceFilter}`,
+          queryParams
+        );
 
         removedMessages = Number(deletedMessages.rowCount || 0);
         removedResources = Number(deletedResources.rowCount || 0);
@@ -159,7 +204,15 @@ function createA11HistoryRouter({
         transactionStarted = false;
       }
 
-      const activityPurge = purgeConversationLogEntries({ userId });
+      if (surface) {
+        for (const conversationId of conversationIds) {
+          const activityPurge = purgeConversationLogEntries({ userId, conversationId });
+          removedActivityEntries += Number(activityPurge.removedEntries || 0);
+        }
+      } else {
+        const activityPurge = purgeConversationLogEntries({ userId });
+        removedActivityEntries += Number(activityPurge.removedEntries || 0);
+      }
 
       for (const conversationId of conversationIds) {
         try {
@@ -176,7 +229,7 @@ function createA11HistoryRouter({
         removedMessages,
         removedResources,
         removedPhantomEntries,
-        removedActivityEntries: Number(activityPurge.removedEntries || 0),
+        removedActivityEntries,
       });
     } catch (e) {
       if (db && transactionStarted) {
@@ -202,10 +255,11 @@ function createA11HistoryRouter({
       return res.status(400).json({ ok: false, error: 'missing_conversation_id' });
     }
 
+    const surface = getRequestSurface(req);
     const legacyHistoryId = `user-${userId}`;
     const targetConversationId = requestedId === legacyHistoryId
       ? 'default'
-      : normalizeConversationId(requestedId);
+      : scopeConversationIdForSurface(requestedId, surface);
 
     let transactionStarted = false;
     try {
@@ -279,12 +333,13 @@ function createA11HistoryRouter({
       const userId = String(req.user?.id || '').trim();
       if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
 
+      const surface = getRequestSurface(req);
       const requestedId = String(req.params.id || '').trim();
       const legacyHistoryId = `user-${userId}`;
       const queryConversationId = String(req.query.conversationId || '').trim();
       const requestedConversationId = requestedId && requestedId !== legacyHistoryId
-        ? normalizeConversationId(requestedId)
-        : (queryConversationId ? normalizeConversationId(queryConversationId) : '');
+        ? scopeConversationIdForSurface(requestedId, surface)
+        : (queryConversationId ? scopeConversationIdForSurface(queryConversationId, surface) : '');
       const requestedKind = String(req.query.kind || '').trim();
       const limit = Math.max(1, Math.min(100, Number(req.query.limit || 20)));
       const resources = db && typeof listConversationResources === 'function'
@@ -313,12 +368,13 @@ function createA11HistoryRouter({
       const userId = String(req.user?.id || '').trim();
       if (!userId) return res.status(401).json({ ok: false, error: 'missing_user' });
 
+      const surface = getRequestSurface(req);
       const requestedId = String(req.params.id || '').trim();
       const legacyHistoryId = `user-${userId}`;
       const queryConversationId = String(req.query.conversationId || '').trim();
       const requestedConversationId = requestedId && requestedId !== legacyHistoryId
-        ? normalizeConversationId(requestedId)
-        : (queryConversationId ? normalizeConversationId(queryConversationId) : '');
+        ? scopeConversationIdForSurface(requestedId, surface)
+        : (queryConversationId ? scopeConversationIdForSurface(queryConversationId, surface) : '');
       const limit = Math.max(1, Math.min(50, Number(req.query.limit || 12)));
 
       if (!requestedConversationId) {

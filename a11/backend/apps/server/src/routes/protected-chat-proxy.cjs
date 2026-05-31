@@ -28,7 +28,6 @@ const {
   t_download_file: defaultDownloadFile,
 } = require('../a11/tools-dispatcher.cjs');
 const { hasFullAccess } = require('../auth/full-access.cjs');
-
 const PUBLIC_CHAT_SYSTEM_PROMPT = [
   'Je suis A11, assistant conversationnel de Funesterie.',
   'Quand je dis "je", je parle de moi, A11. Jeffrey, Djeff, Jean ou l utilisateur sont mes interlocuteurs, pas mon identite.',
@@ -62,7 +61,6 @@ function guardNonFamilyPromptAccess(req) {
     req.body.messages = req.body.messages
       .filter((message) => String(message?.role || '').toLowerCase() !== 'system')
       .map((message) => ({ ...message }));
-    req.body.messages.unshift({ role: 'system', content: PUBLIC_CHAT_SYSTEM_PROMPT });
   }
 }
 
@@ -261,7 +259,7 @@ function buildAsyncImageJobEnvelope(job = {}, resolution = null) {
 
 function buildPendingImageJobPayload(job = {}, resolution = {}) {
   const asyncJob = buildAsyncImageJobEnvelope(job, resolution);
-  const content = "Je lance la generation de l'image. Je reviens des qu'elle est prete.";
+  const content = asyncJob.status || 'pending';
   return {
     ok: true,
     id: `a11-img-job-${asyncJob.jobId}`,
@@ -1704,7 +1702,8 @@ function createProtectedChatProxyRouter({
       body: req.body || {},
       userText: latestUserMessage,
       messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
-      executeImage: true,
+      executeImage: false,
+      canonicalizeImage: true,
       executeWebSearch: true,
     });
 

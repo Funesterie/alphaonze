@@ -506,6 +506,25 @@ test('resolveUserRequest injects sourceImageUrl into image masks for direct img2
   assert.deepEqual(resolution.mask.inputs.subject, ['reference subject']);
 });
 
+test('resolveUserRequest treats visual feedback on a source image as an image edit request', async () => {
+  const resolver = createTestIntentResolver();
+  const resolution = await resolver.resolveUserRequest({
+    userText: "c'est pas mal, mais elle a les yeux bleus",
+    body: {
+      sourceImages: [
+        { imageId: 'latest-generated', url: 'https://images.example.com/latest-portrait.png' },
+      ],
+    },
+    executeRuntime: false,
+  });
+
+  assert.equal(resolution.kind, 'image.generate');
+  assert.equal(resolution.mask.intent, 'image.generate');
+  assert.equal(resolution.mask.meta.init_image_url, 'https://images.example.com/latest-portrait.png');
+  assert.equal(resolution.mask.meta.reference_image_url, 'https://images.example.com/latest-portrait.png');
+  assert.equal(resolution.mask.meta.imageReferenceDecision.primaryImageId, 'latest-generated');
+});
+
 test('resolveUserRequest lets A11 promote the Janus-selected primary image instead of blindly keeping the first reference', async () => {
   const resolver = createTestIntentResolver({
     canonicalizeImageGenerateRequest: async () => ({
