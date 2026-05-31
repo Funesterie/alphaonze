@@ -811,13 +811,30 @@ function createChatRouter(overrides = {}) {
         executeRuntime: true,
       });
 
+      let pendingStructuredPayload = null;
       if (
         resolution.kind !== 'chat.reply'
         && resolution.kind !== 'code.python.generate'
         && resolution.kind !== 'web.search'
         && resolution.responsePayload
       ) {
-        return res.json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
+        const p = resolution.responsePayload;
+        const mode = String(p?.mode || '').trim();
+        // Modes returned directly (no LLM pass needed)
+        if (['guarded', 'showcase'].includes(mode)) {
+          return res.json(attachIntentDebug(p, resolution, req.body || {}));
+        }
+        // For all other modes: inject the pre-built response as context so the LLM
+        // adapts it in its own voice instead of returning the template verbatim
+        const autoText = String(p?.assistant || '').trim();
+        if (autoText) {
+          informativeContexts.push(
+            `[Résultat action mode="${mode}"]\n${autoText}\n\n`
+            + `Reformule ce résultat dans ta propre voix, de façon naturelle et concise. `
+            + `Ne copie pas mot pour mot — adapte à ton style.`
+          );
+        }
+        pendingStructuredPayload = p;
       }
 
       if (informativeContexts.length) {
@@ -916,6 +933,9 @@ function createChatRouter(overrides = {}) {
         );
         if (ollamaText) {
           const { model } = getOllamaConfig();
+          if (pendingStructuredPayload) {
+            return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: ollamaText }, resolution, req.body || {}));
+          }
           return res.json({ ok: true, mode: 'ollama', model, assistant: ollamaText });
         }
       } catch (qErr) {
@@ -962,6 +982,9 @@ function createChatRouter(overrides = {}) {
       });
 
       const text = completion?.choices?.[0]?.message?.content || '';
+      if (pendingStructuredPayload) {
+        return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: text }, resolution, req.body || {}));
+      }
       return res.json({ ok: true, mode: 'llm', assistant: text });
     } catch (error_) {
       return res.status(error_?.statusCode || 500).json(
