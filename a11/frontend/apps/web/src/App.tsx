@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+﻿import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -1812,7 +1812,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     if (isCentralLogin) {
-      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
+      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "basic" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -1824,7 +1824,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setMicrosoftLoading(true);
     if (isCentralLogin) {
-      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
+      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "basic" });
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -4921,7 +4921,7 @@ function FunesterieConnectedHomePage({
       return;
     }
     setAccountBusy("google");
-    window.location.assign(buildCentralLoginUrl(surfaceLinks.account));
+    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "basic" });
   }
 
   if (!isAgentsRoute && !isStatusRoute) {
@@ -8220,6 +8220,17 @@ export function App() {
   }
 
   if (isVivy) {
+    if (!authSessionReady) return null;
+    if (!isAuthenticated) {
+      if (typeof window !== "undefined" && !isCentralLoginSurface() && !isLocalSurfaceHost(window.location.hostname)) {
+        window.location.replace(buildCentralLoginUrl(window.location.href));
+        return null;
+      }
+      return <LoginPanel onLoginSuccess={() => {
+        setIsAuthenticated(true);
+        setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+      }} />;
+    }
     return <VivyPublicPage authenticated={hasPrivateSession} displayName={displayName} />;
   }
 

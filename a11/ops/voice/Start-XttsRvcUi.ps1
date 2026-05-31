@@ -8,8 +8,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoUrl = "https://github.com/Vali-98/XTTS-RVC-UI.git"
-$pythonVersion = "3.10"
-$venvDir = Join-Path $InstallDir ".venv310"
+$pythonVersion = "3.11"
+$venvDir = Join-Path $InstallDir ".venv311"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 function Invoke-Checked {
@@ -29,7 +29,7 @@ function Write-Step {
   Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
-function Resolve-Python310 {
+function Resolve-Python311 {
   $uv = Get-Command uv -ErrorAction SilentlyContinue
   if ($uv) {
     Invoke-Checked uv python install $pythonVersion
@@ -43,7 +43,7 @@ function Resolve-Python310 {
   if ($py) {
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $candidate = & py -3.10 -c "import sys; print(sys.executable)" 2>$null
+    $candidate = & py -3.11 -c "import sys; print(sys.executable)" 2>$null
     $code = $LASTEXITCODE
     $ErrorActionPreference = $oldPreference
     if ($code -eq 0 -and $candidate -and (Test-Path -LiteralPath $candidate)) {
@@ -51,7 +51,7 @@ function Resolve-Python310 {
     }
   }
 
-  throw "Python 3.10 is required for fairseq/RVC. Install it or install uv."
+  throw "Python 3.11 is required for the modern XTTS/RVC dependency stack. Install it or install uv."
 }
 
 function Copy-VoiceIfPresent {
@@ -90,13 +90,13 @@ function Repair-XttsRvcUiApp {
   }
 
   $oldRunTts = @'
-def runtts(rvc, voice, text, pitch_change, index_rate, language): 
+def runtts(rvc, voice, text, pitch_change, index_rate, language):
     audio = tts.tts_to_file(text=text, speaker_wav="./voices/" + voice, language=language, file_path="./output.wav")
     voice_change(rvc, pitch_change, index_rate)
     return ["./output.wav" , "./outputrvc.wav"]
 '@
   $newRunTts = @'
-def runtts(rvc, voice, text, pitch_change, index_rate, language): 
+def runtts(rvc, voice, text, pitch_change, index_rate, language):
     audio = tts.tts_to_file(text=text, speaker_wav="./voices/" + voice, language=language, file_path="./output.wav")
     rvc_path = "./rvcs/" + rvc if rvc else ""
     if rvc_path and os.path.isfile(rvc_path):
@@ -161,24 +161,26 @@ if (-not (Test-Path -LiteralPath $personaManifest)) {
 }
 
 if (-not $SkipInstall) {
-  Write-Step "Creating Python 3.10 virtual environment"
-  $pythonExe = Resolve-Python310
+  Write-Step "Creating Python 3.11 virtual environment"
+  $pythonExe = Resolve-Python311
   if (-not (Test-Path -LiteralPath $venvPython)) {
     Invoke-Checked $pythonExe -m venv $venvDir
   }
 
   Write-Step "Installing Python dependencies"
   Invoke-Checked $venvPython -m pip install "pip<24.1" "setuptools<70" wheel
-  Invoke-Checked $venvPython -m pip install torch==2.1.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+  Invoke-Checked $venvPython -m pip install torch==2.11.0 torchaudio==2.11.0
 
-  $requirements = Join-Path $InstallDir "requirements.txt"
+  $requirements = Join-Path $PSScriptRoot "requirements.xtts-rvc.txt"
+  if (-not (Test-Path -LiteralPath $requirements)) {
+    $requirements = Join-Path $InstallDir "requirements.txt"
+  }
   $patchedRequirements = Join-Path $InstallDir "requirements.funesterie.txt"
-  # Keep upstream pins under Python 3.10. TTS 0.21.x requires numpy 1.22 on py310.
+  # Python 3.11 lets TTS 0.22.x use modern numpy. Prefer the Funesterie
+  # requirements file so upstream Python 3.10 pins cannot fail before overrides.
   Get-Content -LiteralPath $requirements |
     Set-Content -LiteralPath $patchedRequirements -Encoding ASCII
   Invoke-Checked $venvPython -m pip install -r $patchedRequirements
-  Invoke-Checked $venvPython -m pip install "transformers==4.38.2" "tokenizers==0.15.2" "huggingface-hub<1.0"
-  Invoke-Checked $venvPython -m pip install "fastapi==0.104.1" "starlette==0.27.0" "anyio==3.7.1" "pydantic==2.5.3" "pydantic-core==2.14.6" "uvicorn==0.24.0.post1"
 }
 
 Repair-XttsRvcUiApp

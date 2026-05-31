@@ -64,11 +64,11 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@nossen/bat": "^2.0.0",
-    "@nossen/envaptex": "^2.0.0",
-    "@nossen/freeland": "^2.0.0",
-    "@nossen/nezlephant": "^2.0.0",
-    "@nossen/rome": "^2.0.0",
+    "@nossen/bat": "^2.0.2",
+    "@nossen/envaptex": "^2.0.1",
+    "@nossen/freeland": "^2.0.2",
+    "@nossen/nezlephant": "^2.0.2",
+    "@nossen/rome": "^2.0.3",
     "csv-stringify": "^6.7.0",
     "js-yaml": "^4.1.1",
     "node-fetch": "^3.3.2",
@@ -79,12 +79,12 @@
   },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
-    "@types/node": "^25.9.0",
-    "eslint": "^10.4.0",
+    "@types/node": "^25.9.1",
+    "eslint": "^10.4.1",
     "rimraf": "^6.1.3",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   },
   "publishConfig": {
     "access": "public"

@@ -37,7 +37,7 @@ class Config:
             ):
                 print("16 series/10 series P40 forced single precision")
                 self.is_half = False
-                
+
             else:
                 self.gpu_name = None
             self.gpu_mem = int(
@@ -84,7 +84,18 @@ class Config:
 
 
 def load_hubert(device, is_half, model_path):
-    models, saved_cfg, task = checkpoint_utils.load_model_ensemble_and_task([model_path], suffix='', )
+    original_torch_load = torch.load
+
+    def torch_load_trusted_checkpoint(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return original_torch_load(*args, **kwargs)
+
+    torch.load = torch_load_trusted_checkpoint
+    try:
+        models, saved_cfg, task = checkpoint_utils.load_model_ensemble_and_task([model_path], suffix='', )
+    finally:
+        torch.load = original_torch_load
+
     hubert = models[0]
     hubert = hubert.to(device)
 
@@ -98,7 +109,7 @@ def load_hubert(device, is_half, model_path):
 
 
 def get_vc(device, is_half, config, model_path):
-    cpt = torch.load(model_path, map_location='cpu')
+    cpt = torch.load(model_path, map_location='cpu', weights_only=False)
     if "config" not in cpt or "weight" not in cpt:
         raise ValueError(f'Incorrect format for {model_path}. Use a voice model trained using RVC v2 instead.')
 
@@ -138,4 +149,3 @@ def rvc_infer(index_path, index_rate, input_path, output_path, pitch_change, f0_
 
     audio_opt = vc.pipeline(hubert_model, net_g, 0, audio, input_path, times, pitch_change, f0_method, index_path, index_rate, if_f0, filter_radius, tgt_sr, 0, rms_mix_rate, version, protect, crepe_hop_length)
     wavfile.write(output_path, tgt_sr, audio_opt)
-

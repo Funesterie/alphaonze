@@ -1,6 +1,6 @@
 {
   "name": "@funeste/logic-reduce-nossen",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Private NOSSEN presets for @nossen/logic-reduce operator handoffs.",
   "type": "commonjs",
   "main": "src/index.cjs",
@@ -41,6 +41,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@nossen/logic-reduce": "2.0.0"
+    "@nossen/logic-reduce": "2.0.1"
   }
 }

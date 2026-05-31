@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$RepoRoot = "D:\projets\funesterie",
   [switch]$ReuseRemoteSecrets,
   [switch]$BlueGreen,
@@ -329,11 +329,16 @@ $voiceCopyArgs = @("/MIR", "/XD") + $voiceExDirs + @("/XF") + $voiceExFiles
 $ekkoCopyArgs = @("/MIR", "/XD") + $ekkoExDirs + @("/XF") + $ekkoExFiles
 Invoke-RobocopyChecked $ServerRoot $ServerStage $serverCopyArgs
 Invoke-RobocopyChecked $VoiceRoot $VoiceStage $voiceCopyArgs
-Invoke-RobocopyChecked $VoiceBridgeRoot $VoiceBridgeStage @("/MIR", "/XD", ".git", ".venv", "venv", "__pycache__", "models", "rvcs", "voices", "outputs", "logs", "/XF", "*.wav", "*.mp3", "*.flac", "*.ogg", "*.pth", "*.pt", "*.onnx", "*.index", "*.log")
+Invoke-RobocopyChecked $VoiceBridgeRoot $VoiceBridgeStage @(
+  "/MIR",
+  "/XD", ".git", ".venv", "venv", "__pycache__", "models", "model", "rvcs", "voices", "outputs", "logs", "tmp",
+  "/XF", ".env", ".env.*", "*.env", "*.env.*", "*.wav", "*.mp3", "*.flac", "*.ogg", "*.pth", "*.pt", "*.onnx", "*.index", "*.log"
+)
 Invoke-RobocopyChecked $EkkoRoot $EkkoStage $ekkoCopyArgs
 Invoke-RobocopyChecked $WebDist $WebStage @("/MIR")
 Remove-StagedSensitiveFiles $ServerStage
 Remove-StagedSensitiveFiles $VoiceStage
+Remove-StagedSensitiveFiles $VoiceBridgeStage
 Remove-StagedSensitiveFiles $EkkoStage
 Remove-StagedSensitiveFiles $WebStage
 Assert-FunesterieWebBundle $WebStage "Stage web"
@@ -389,6 +394,12 @@ services:
       - /srv/a11-data/a11/xtts-rvc/outputs:/app/outputs
     expose:
       - "5000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
 
   a11-voice:
     build:
@@ -407,7 +418,8 @@ services:
     volumes:
       - /srv/a11-data/a11/voice-out:/app/out
     depends_on:
-      - a11-xtts-rvc
+      a11-xtts-rvc:
+        condition: service_healthy
     expose:
       - "5002"
 

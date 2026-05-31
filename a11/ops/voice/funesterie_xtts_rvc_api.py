@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -70,6 +71,7 @@ _tts = None
 _hubert_model = None
 _rvc_config = None
 _rvc_data = None
+_rvc_runtime_lock = threading.Lock()
 
 
 def download_file(url: str, target: Path) -> None:
@@ -200,12 +202,29 @@ def resolve_persona_binding(style: str) -> dict:
     }
 
 
+def load_trusted_xtts_model():
+    original_torch_load = torch.load
+
+    def torch_load_xtts_checkpoint(*args, **kwargs):
+        # Coqui XTTS v2 checkpoints store trusted config classes that PyTorch
+        # 2.6+ blocks with weights_only=True. Limit the compatibility shim to
+        # the local XTTS model load, then restore torch.load immediately.
+        kwargs.setdefault("weights_only", False)
+        return original_torch_load(*args, **kwargs)
+
+    torch.load = torch_load_xtts_checkpoint
+    try:
+        return TTS(model_path=str(XTTS_DIR), config_path=str(XTTS_DIR / "config.json")).to(DEVICE)
+    finally:
+        torch.load = original_torch_load
+
+
 def get_tts():
     global _tts
     if _tts is None:
         ensure_models()
         torch.set_num_threads(max(1, int(os.environ.get("A11_XTTS_RVC_TORCH_THREADS", "4") or "4")))
-        _tts = TTS(model_path=str(XTTS_DIR), config_path=str(XTTS_DIR / "config.json")).to(DEVICE)
+        _tts = load_trusted_xtts_model()
     return _tts
 
 
@@ -234,13 +253,23 @@ class RvcData:
 
 def ensure_rvc_runtime():
     global _hubert_model, _rvc_config, _rvc_data
-    if _rvc_config is None:
+    if _rvc_config is not None and _hubert_model is not None and _rvc_data is not None:
+        return
+
+    with _rvc_runtime_lock:
+        if _rvc_config is not None and _hubert_model is not None and _rvc_data is not None:
+            return
+
         from rvc import Config, load_hubert
 
         ensure_models()
-        _rvc_config = Config(DEVICE, DEVICE != "cpu")
-        _hubert_model = load_hubert(DEVICE, _rvc_config.is_half, str(MODELS_DIR / "hubert_base.pt"))
-        _rvc_data = RvcData()
+        config = Config(DEVICE, DEVICE != "cpu")
+        hubert_model = load_hubert(DEVICE, config.is_half, str(MODELS_DIR / "hubert_base.pt"))
+        rvc_data = RvcData()
+
+        _rvc_config = config
+        _hubert_model = hubert_model
+        _rvc_data = rvc_data
 
 
 def run_rvc(
@@ -251,9 +280,12 @@ def run_rvc(
     index_rate: float,
     index_path: Optional[Path] = None,
 ) -> None:
+    ensure_rvc_runtime()
+    if _rvc_data is None:
+        raise RuntimeError("rvc_runtime_unavailable")
+
     from rvc import rvc_infer
 
-    ensure_rvc_runtime()
     _rvc_data.load(rvc_path)
     model_name = rvc_path.stem
     index_path = index_path or RVCS_DIR / f"{model_name}.index"
