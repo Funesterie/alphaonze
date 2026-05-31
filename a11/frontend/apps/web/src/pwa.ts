@@ -1,6 +1,8 @@
 function shouldDisableServiceWorker() {
+  const protocol = String(globalThis.location?.protocol || '').trim().toLowerCase();
   const host = String(globalThis.location?.hostname || '').trim().toLowerCase();
   const isLocalHost = host === '127.0.0.1' || host === 'localhost';
+  const isVscodeWebviewHost = host.endsWith('.vscode-webview.net') || protocol === 'vscode-webview:';
   const isPublicA11Host = [
     '178.105.86.89',
     'a11.funesterie.me',
@@ -10,10 +12,31 @@ function shouldDisableServiceWorker() {
     'kaen44.funesterie.me',
     'vivy.funesterie.me',
   ].includes(host);
+  const w = globalThis as typeof globalThis & {
+    acquireVsCodeApi?: unknown;
+    chrome?: { webview?: unknown };
+  };
   const hasTauriBridge = typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
   const userAgent = String(globalThis.navigator?.userAgent || '').toLowerCase();
   const isTauriUserAgent = userAgent.includes('tauri');
-  return isLocalHost || isPublicA11Host || hasTauriBridge || isTauriUserAgent;
+  const hasVscodeBridge = typeof w.acquireVsCodeApi === 'function';
+  const hasWebView2Bridge = typeof w.chrome?.webview !== 'undefined';
+  const isElectronShell = userAgent.includes(' electron/') || userAgent.includes(' vscode/');
+  return isLocalHost
+    || isPublicA11Host
+    || isVscodeWebviewHost
+    || hasVscodeBridge
+    || hasWebView2Bridge
+    || hasTauriBridge
+    || isTauriUserAgent
+    || isElectronShell;
+}
+
+function canRegisterServiceWorker() {
+  if (!('serviceWorker' in navigator)) return false;
+  if (!globalThis.isSecureContext) return false;
+  if (document.prerendering || document.visibilityState === 'prerender') return false;
+  return document.defaultView === globalThis;
 }
 
 async function disableExistingServiceWorkers() {
@@ -39,7 +62,7 @@ async function disableExistingServiceWorkers() {
 }
 
 export function registerA11ServiceWorker() {
-  if (!("serviceWorker" in navigator)) return;
+  if (!canRegisterServiceWorker()) return;
   if (import.meta.env.DEV) return;
   if (shouldDisableServiceWorker()) {
     void disableExistingServiceWorkers();
