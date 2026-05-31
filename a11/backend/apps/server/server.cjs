@@ -1335,6 +1335,7 @@ app.get('/avatar.gif', (req, res) => {
 // CORS configuration: allow local dev origins and production origin
 const defaultCorsOrigins = [
   'http://178.105.86.89',
+  'http://62.238.43.32',
   'https://a11.funesterie.me',
   'http://a11.funesterie.me',
   'https://funesterie.me',

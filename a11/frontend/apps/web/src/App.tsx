@@ -2262,7 +2262,7 @@ type VivyStudioMediaPreview = {
   contentType?: string;
 };
 
-const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
+const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft:v2";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";

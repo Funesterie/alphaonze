@@ -448,21 +448,29 @@ async function callStructuredLlmJson({
   const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
   try {
     return JSON.parse(cleaned);
-  } catch (error_) {
-    if (!strict) throw error_;
-    throw buildStructuredLlmError(
-      'structured_llm_invalid_json',
-      `Structured LLM returned invalid JSON during ${stage}.`,
-      {
-        statusCode: 502,
-        upstream: {
-          url: config.url || null,
-          status: Number(result?.status || 200) || 200,
-          body: cleaned.slice(0, 2000) || null,
-          requestId: result?.requestId || null,
-        },
-      }
-    );
+  } catch (_firstError) {
+    // Try to repair common LLM JSON issues: unquoted property names
+    try {
+      const repaired = cleaned
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3')
+        .replace(/:\s*'([^']*)'/g, ': "$1"');
+      return JSON.parse(repaired);
+    } catch (error_) {
+      if (!strict) throw error_;
+      throw buildStructuredLlmError(
+        'structured_llm_invalid_json',
+        `Structured LLM returned invalid JSON during ${stage}.`,
+        {
+          statusCode: 502,
+          upstream: {
+            url: config.url || null,
+            status: Number(result?.status || 200) || 200,
+            body: cleaned.slice(0, 2000) || null,
+            requestId: result?.requestId || null,
+          },
+        }
+      );
+    }
   }
 }
 
