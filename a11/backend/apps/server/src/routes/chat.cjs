@@ -987,6 +987,10 @@ function createChatRouter(overrides = {}) {
       }
       return res.json({ ok: true, mode: 'llm', assistant: text });
     } catch (error_) {
+      // If LLM failed but we have a structured payload, return it with pre-built text as fallback
+      if (pendingStructuredPayload) {
+        return res.json(attachIntentDebug(pendingStructuredPayload, resolution, req.body || {}));
+      }
       return res.status(error_?.statusCode || 500).json(
         error_?.payload || {
           ok: false,

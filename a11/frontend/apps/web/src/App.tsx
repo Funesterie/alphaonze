@@ -4921,7 +4921,7 @@ function FunesterieConnectedHomePage({
       return;
     }
     setAccountBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "basic" });
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(surfaceLinks.cockpit), "funesterie-home", { scopeProfile: "basic" });
   }
 
   if (!isAgentsRoute && !isStatusRoute) {
