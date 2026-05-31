@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { runQflushFlow } = require('../src/qflush-integration.cjs');
 
@@ -228,6 +231,53 @@ test('runQflushFlow falls back locally when a non-loopback remote is unavailable
   } finally {
     global.fetch = originalFetch;
     restoreEnv(envSnapshot);
+  }
+});
+
+test('runQflushFlow provides a built-in ephemeral memory fallback without importing qflush', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-qflush-ephemeral-'));
+  const envSnapshot = snapshotEnv([
+    'A11_RUNTIME_ROOT',
+    'QFLUSH_URL',
+    'QFLUSH_REMOTE_URL',
+    'QFLUSH_BASE_URL',
+    'DRAGON_API_URL',
+    'A11_QFLUSH_USE_DRAGON',
+  ]);
+
+  try {
+    process.env.A11_RUNTIME_ROOT = runtimeRoot;
+    delete process.env.QFLUSH_URL;
+    delete process.env.QFLUSH_REMOTE_URL;
+    delete process.env.QFLUSH_BASE_URL;
+    delete process.env.DRAGON_API_URL;
+    delete process.env.A11_QFLUSH_USE_DRAGON;
+
+    const setResult = await runQflushFlow('a11.memory.ephemeral.v1', {
+      op: 'set',
+      namespace: 'a11',
+      scope: 'conversation:test',
+      key: 'mem:one',
+      ttlSec: 60,
+      value: { summary: 'bonjour' },
+      metadata: { kind: 'test' },
+    }, { requestId: 'req-ephemeral-set' });
+    assert.equal(setResult.ok, true);
+    assert.equal(setResult.provider, 'local-qflush-fallback');
+
+    const listResult = await runQflushFlow('a11.memory.ephemeral.v1', {
+      op: 'list',
+      namespace: 'a11',
+      scope: 'conversation:test',
+      prefix: 'mem:',
+    }, { requestId: 'req-ephemeral-list' });
+    assert.equal(listResult.ok, true);
+    assert.equal(listResult.items.length, 1);
+    assert.equal(listResult.items[0].key, 'mem:one');
+    assert.deepEqual(listResult.items[0].value, { summary: 'bonjour' });
+  } finally {
+    restoreEnv(envSnapshot);
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
 

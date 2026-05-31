@@ -26,6 +26,30 @@ if ($wslNames -notcontains $Distro) {
   throw "Distribution WSL introuvable: $Distro"
 }
 
+$a11Root = Split-Path -Parent $PSScriptRoot
+$dnsRepairScript = Join-Path $a11Root "ops\funesterie-docker\repair-wsl-dns.ps1"
+if (Test-Path -LiteralPath $dnsRepairScript) {
+  Write-Step "Verification DNS de $Distro"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dnsRepairScript -Distro $Distro -Json *> $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Verification DNS Podman WSL echouee pour $Distro"
+  }
+}
+
+Write-Step "Preparation runtime Podman rootless"
+try {
+  $uid = (& wsl -d $Distro -- sh -lc "id -u").Trim()
+  $gid = (& wsl -d $Distro -- sh -lc "id -g").Trim()
+  if ($uid -match '^\d+$' -and $gid -match '^\d+$') {
+    $runtimeRootCommand = "set -eu; install -d -m 700 -o $uid -g $gid /run/user/$uid; install -d -m 700 -o $uid -g $gid /run/user/$uid/containers; install -d -m 700 -o $uid -g $gid /run/user/$uid/containers/networks"
+    & wsl -d $Distro -u root -- bash -lc $runtimeRootCommand
+  }
+} catch {
+  Write-Step "Preparation runtime root: $($_.Exception.Message)"
+}
+$runtimeCommand = 'runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"; mkdir -p "$runtime_dir/containers/networks" 2>/dev/null || true'
+& wsl -d $Distro -- bash -lc $runtimeCommand
+
 Write-Step "Activation du service Podman dans $Distro sur localhost:$Port"
 $wslCommand = "if ! ss -ltn 2>/dev/null | grep -q ':$Port '; then nohup podman system service --time=0 tcp:0.0.0.0:$Port >/tmp/a11-podman-service.log 2>&1 & fi; sleep 1; podman info >/dev/null"
 & wsl -d $Distro -- bash -lc $wslCommand

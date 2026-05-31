@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getBackendRoot } = require('../../lib/tts-paths.cjs');
 const { hasFullAccess, normalizeEmail } = require('../auth/full-access.cjs');
+const { assertAccountStorageQuota } = require('../storage/account-storage-quota.cjs');
 
 const AUDIO_EXTENSIONS = new Set(['.wav', '.wave', '.mp3', '.ogg', '.webm', '.m4a', '.mp4', '.flac']);
 const AUDIO_MIME_TYPES = new Set([
@@ -97,6 +98,9 @@ function getVoiceReferenceLibraryCandidates() {
     defaults.push(
       path.join(runtimeRoot, 'sfx', 'terminator'),
       path.join(runtimeRoot, 'sfx', 'terminator.wav'),
+      path.join(runtimeRoot, 'voice-library', 'a11-terminator.wav'),
+      path.join(runtimeRoot, 'voice-library', 'vivy.wav'),
+      path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'),
       path.join(runtimeRoot, 'voice-library'),
       path.join(runtimeRoot, 'voice-references', 'library')
     );
@@ -343,6 +347,14 @@ function canAccessReference(user, ref) {
   return false;
 }
 
+function getVoiceReferenceStorageUsageBytes(user) {
+  if (!user) return 0;
+  const ownerKey = getUserKey(user);
+  return readIndex()
+    .filter((ref) => ref && ref.scope !== 'library' && ref.source !== 'library' && ref.ownerKey === ownerKey)
+    .reduce((total, ref) => total + Math.max(0, Number(ref.bytes || 0)), 0);
+}
+
 function inferMimeTypeFromPath(filePath = '') {
   const ext = path.extname(String(filePath || '')).toLowerCase();
   if (ext === '.wav' || ext === '.wave') return 'audio/wav';
@@ -438,9 +450,26 @@ function listLibraryVoiceReferences({ includePath = false } = {}) {
   for (const candidate of getVoiceReferenceLibraryCandidates()) {
     files.push(...listAudioFilesFromPath(candidate));
   }
-  return uniqueValues(files)
+  const refs = uniqueValues(files)
     .map((filePath) => buildLibraryReference(filePath))
     .filter(Boolean)
+    .sort((a, b) => {
+      const affinityDelta = getRuntimeAffinityScore(b) - getRuntimeAffinityScore(a);
+      if (affinityDelta) return affinityDelta;
+      return String(a.filePath || '').localeCompare(String(b.filePath || ''));
+    });
+  const seen = new Set();
+  return refs
+    .filter((ref) => {
+      const key = [
+        String(ref.originalName || '').toLowerCase(),
+        Number(ref.bytes || 0),
+        Number(ref.analysis?.durationMs || 0),
+      ].join(':');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')))
     .map((ref) => serializeReference(ref, { includePath }));
 }
@@ -453,6 +482,12 @@ function saveVoiceReference({ user, file, label, scope = 'private' } = {}) {
   const familyScope = String(scope || '').trim().toLowerCase() === 'family';
   const resolvedScope = familyScope && hasFullAccess(user) ? 'family' : 'private';
   const ownerKey = getUserKey(user);
+  assertAccountStorageQuota({
+    user,
+    currentBytes: getVoiceReferenceStorageUsageBytes(user),
+    incomingBytes: file.buffer.length,
+    subject: 'voice_reference',
+  });
   const root = ensureVoiceReferenceRoot();
   const userDir = path.join(root, ownerKey);
   fs.mkdirSync(userDir, { recursive: true });
@@ -506,9 +541,100 @@ function referenceMatchesPreference(ref, preferredLabel = '') {
   return haystack.some((value) => value.includes(needle));
 }
 
+function referenceMatchesPreferenceExactly(ref, preferredLabel = '') {
+  const needle = String(preferredLabel || '').trim().toLowerCase();
+  if (!needle || !ref) return false;
+  const originalName = String(ref.originalName || '');
+  const baseName = originalName
+    ? path.basename(originalName, path.extname(originalName))
+    : '';
+  const haystack = [
+    ref.label,
+    baseName,
+    ref.id,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  return haystack.some((value) => value === needle);
+}
+
+function getRuntimeAffinityScore(ref) {
+  const filePath = String(ref?.filePath || '').trim();
+  if (!filePath) return 0;
+  let resolvedFile = '';
+  try {
+    resolvedFile = path.resolve(filePath).toLowerCase();
+  } catch {
+    return 0;
+  }
+
+  const configuredRoots = [
+    process.env.A11_RUNTIME_ROOT,
+    ...parseLibraryPathList(process.env.A11_VOICE_REFERENCE_LIBRARY_DIRS),
+    ...parseLibraryPathList(process.env.A11_VOICE_REFERENCE_LIBRARY_DIR),
+    ...parseLibraryPathList(process.env.A11_VOICE_REFERENCE_LIBRARY_PATHS),
+  ];
+
+  for (const root of configuredRoots) {
+    if (!root) continue;
+    try {
+      const resolvedRoot = path.resolve(root).toLowerCase();
+      if (resolvedFile === resolvedRoot || resolvedFile.startsWith(`${resolvedRoot}${path.sep}`)) {
+        return 1000;
+      }
+    } catch {
+      // Keep scoring best-effort; bad env paths should not block voice fallback.
+    }
+  }
+  return 0;
+}
+
+function getReferencePreferenceScore(ref, preferredLabel = '') {
+  const needle = String(preferredLabel || '').trim().toLowerCase();
+  if (!needle || !ref) return 0;
+  const originalName = String(ref.originalName || '');
+  const baseName = originalName
+    ? path.basename(originalName, path.extname(originalName))
+    : '';
+  const label = String(ref.label || '').trim().toLowerCase();
+  const base = String(baseName || '').trim().toLowerCase();
+  const id = String(ref.id || '').trim().toLowerCase();
+  const searchable = [label, base, id].filter(Boolean);
+  const tokens = new Set(
+    searchable
+      .flatMap((value) => value.split(/[-_.\s]+/g))
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+
+  let score = 0;
+  if (searchable.some((value) => value === needle)) score = Math.max(score, 100);
+  if (tokens.has(needle)) score = Math.max(score, 90);
+  if (referenceMatchesPreference(ref, preferredLabel)) score = Math.max(score, 50);
+
+  const agentVoiceAliases = {
+    terminator: ['a11', 'alpha', 'alphaonze'],
+    donna: ['kaen44', 'k44', 'kaen'],
+    vivy: ['vivy'],
+  };
+  const agentAliases = agentVoiceAliases[needle] || [];
+  if (score > 0 && agentAliases.some((alias) => tokens.has(alias) || base.includes(alias))) {
+    score += 30;
+  }
+
+  return score > 0 ? score + getRuntimeAffinityScore(ref) : 0;
+}
+
 function pickPreferredReference(refs = [], preferredLabel = '') {
   if (!preferredLabel) return refs[0] || null;
-  return refs.find((ref) => referenceMatchesPreference(ref, preferredLabel)) || refs[0] || null;
+  let best = null;
+  let bestScore = 0;
+  for (const ref of refs) {
+    const score = getReferencePreferenceScore(ref, preferredLabel);
+    if (score > bestScore) {
+      best = ref;
+      bestScore = score;
+    }
+  }
+  return best || null;
 }
 
 function findVoiceReference({ user, id, includePath = false } = {}) {
@@ -523,7 +649,10 @@ function findVoiceReference({ user, id, includePath = false } = {}) {
 
 function resolveVoiceReferenceForRequest({ user, requestedId, preferredLabel = '' } = {}) {
   if (requestedId) {
-    return findVoiceReference({ user, id: requestedId, includePath: true });
+    const requested = findVoiceReference({ user, id: requestedId, includePath: true });
+    if (!preferredLabel || referenceMatchesPreference(requested, preferredLabel)) {
+      return requested;
+    }
   }
   const accessible = user
     ? readIndex()
@@ -535,7 +664,10 @@ function resolveVoiceReferenceForRequest({ user, requestedId, preferredLabel = '
 
   const library = listLibraryVoiceReferences({ includePath: true })
     .filter((ref) => canAccessReference(user, ref));
-  return serializeReference(pickPreferredReference(library, preferredLabel), { includePath: true });
+  const preferredLibrary = pickPreferredReference(library, preferredLabel);
+  if (preferredLibrary) return serializeReference(preferredLibrary, { includePath: true });
+  if (preferredLabel) return null;
+  return serializeReference(accessible[0] || library[0] || null, { includePath: true });
 }
 
 function deleteVoiceReference({ user, id } = {}) {
@@ -573,6 +705,7 @@ module.exports = {
   deleteVoiceReference,
   findVoiceReference,
   getUserKey,
+  getVoiceReferenceStorageUsageBytes,
   getVoiceReferenceLibraryCandidates,
   isAllowedAudioUpload,
   listLibraryVoiceReferences,

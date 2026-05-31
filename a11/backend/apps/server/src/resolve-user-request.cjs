@@ -247,8 +247,9 @@ function isImageTransformRequest(text = '') {
   const referenceCue = /\b(cette|cet|ce|ces|ca|cela|celle ci|celui ci|l image|les images|la photo|les photos|le portrait|les portraits|image jointe|images jointes|photo jointe|photos jointes|reference|references|ref|refs|dessus|this|these)\b/.test(normalized);
   const transformCue = /\b(retravaille|retravailler|retouche|retoucher|modifie|modifier|change|changer|transforme|transformer|transformation|adapte|adapter|remix|recompose|recomposer|corrige|corriger|ameliore|ameliorer|refais|refaire|remake|rework|edit|modify|transform|transformation|enhance|upscale|stylise|styliser)\b/.test(normalized);
   const imageCue = /\b(images?|photos?|portraits?|visuels?|dessins?|illustrations?|fichiers?|pictures?|refs?|references?)\b/.test(normalized);
+  const visualFeedbackCue = /\b(mais|par contre|sauf que|pas bon|pas bonne|pas correct|pas correcte|mauvais|mauvaise|trop|pas assez|devrait|devrais|doit|doivent|elle a|il a|ils ont|elles ont|yeux|oeil|iris|regard|cheveux|peau|visage|robe|tenue|couleur|bleu|bleue|bleus|bleues|vert|verte|verts|vertes|marron|noir|noire|roux|rousse|blond|blonde)\b/.test(normalized);
 
-  return transformCue && (referenceCue || imageCue);
+  return (transformCue && (referenceCue || imageCue)) || (visualFeedbackCue && (referenceCue || imageCue));
 }
 
 function isExplicitImageGenerationRequest(text = '') {
@@ -465,6 +466,7 @@ function resolveIntentDependencies(overrides = {}) {
     readPreferredImageHintMemory: overrides.readPreferredImageHintMemory || defaultReadPreferredImageHintMemory,
     smoothRequestText: overrides.smoothRequestText || defaultSmoothRequestText,
     canonicalizeImageGenerateRequest: overrides.canonicalizeImageGenerateRequest || defaultCanonicalizeImageGenerateRequest,
+    hasCustomImageCanonicalizer: typeof overrides.canonicalizeImageGenerateRequest === 'function',
     classifyReferenceImages: overrides.classifyReferenceImages || defaultClassifyReferenceImages,
     detectIntentWithLlm: overrides.detectIntentWithLlm || defaultDetectIntentWithLlm,
   };
@@ -715,7 +717,8 @@ function createIntentResolver(overrides = {}) {
     const forcedReferenceImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
       && hasReferenceImageForRequest
       && isImageTransformRequest(userText);
-    const forcedExplicitImageIntent = isExplicitImageGenerationRequest(userText);
+    const forcedExplicitImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
+      && isExplicitImageGenerationRequest(userText);
     const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
       ? 'image.generate'
       : (shouldAcceptLlmIntent(llmIntentResult) ? llmIntentResult.intent : null);
@@ -976,7 +979,16 @@ function createIntentResolver(overrides = {}) {
     let canonicalizedImageRequest = null;
     let imageRequestTextSmootherResult = null;
 
-    if (String(mask?.intent || '').trim() === 'image.generate') {
+    const imageCanonalizerDisabled = String(process.env.A11_IMAGE_CANONICALIZER_DISABLED || '').trim().toLowerCase();
+    const shouldCanonicalizeImageRequest = !['1', 'true', 'yes', 'on'].includes(imageCanonalizerDisabled)
+      && (
+        deps.hasCustomImageCanonicalizer === true
+        || input.canonicalizeImage === true
+        || input.executeRuntime === true
+        || input.executeImage === true
+      );
+
+    if (String(mask?.intent || '').trim() === 'image.generate' && shouldCanonicalizeImageRequest) {
       const primaryReferenceUrl = String(imageReferences[0]?.locator || '').trim();
       try {
         canonicalizedImageRequest = await deps.canonicalizeImageGenerateRequest(userText, {

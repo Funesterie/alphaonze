@@ -217,6 +217,36 @@ function Sync-CodexNeo4j {
     return
   }
 
+  $directSyncScript = Join-Path $ServerRoot "scripts\sync-codex-vs-neo4j.cjs"
+  $localBolt = $false
+  try {
+    $probe = Test-NetConnection 127.0.0.1 -Port 17687 -WarningAction SilentlyContinue
+    $localBolt = [bool]$probe.TcpTestSucceeded
+  } catch {
+    $localBolt = $false
+  }
+
+  if ($localBolt -and (Test-Path -LiteralPath $directSyncScript)) {
+    Write-Step "Neo4j local deja disponible; synchronisation Codex directe..."
+    $env:NEO4J_URI = "bolt://127.0.0.1:17687"
+    $env:NEO4J_DATABASE = "neo4j"
+    if (-not $env:CODEX_SYNC_RUN_ID) {
+      $env:CODEX_SYNC_RUN_ID = "codex-vs-sync-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    }
+    if (-not $env:CODEX_SYNC_UPDATED_AT) {
+      $env:CODEX_SYNC_UPDATED_AT = (Get-Date).ToString("o")
+    }
+
+    & node $directSyncScript 2>&1 | ForEach-Object { Write-Step "neo4j-sync: $_" }
+
+    $agentMcpScript = Join-Path $ServerRoot "scripts\sync-agent-mcp-links.cjs"
+    if (Test-Path -LiteralPath $agentMcpScript) {
+      Write-Step "Liens agents/MCP..."
+      & node $agentMcpScript 2>&1 | ForEach-Object { Write-Step "neo4j-sync: $_" }
+    }
+    return
+  }
+
   Write-Step "Synchronisation Codex/Neo4j via Podman..."
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script 2>&1 |
     ForEach-Object { Write-Step "neo4j-sync: $_" }

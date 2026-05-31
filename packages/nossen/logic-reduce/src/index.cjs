@@ -26,9 +26,8 @@ const DEFAULT_GUARD_PATTERNS = [
   /\baudit\b/i,
   /\breview\b/i,
   /\bauth\b/i,
-  /\bsecret\b/i,
-  /\bcredential\b/i,
-  /\btoken\b/i,
+  /\b(?:check|verify|audit|redact|rotate|load|store|protect|scrub)\b.{0,48}\b(?:secret|credential|token)s?\b/i,
+  /\b(?:secret|credential|token)s?\b.{0,48}\b(?:check|verify|audit|redact|rotate|load|store|protect|scrub)\b/i,
   /\bbackup\b/i,
   /\brollback\b/i,
   /\bconsent\b/i,
@@ -40,6 +39,19 @@ function normalizeStepText(value) {
     .replace(/^\s*(?:[-*]|\d+[.)])\s*/, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizePatterns(patterns) {
+  if (!patterns) return [];
+  return (Array.isArray(patterns) ? patterns : [patterns])
+    .filter((pattern) => pattern instanceof RegExp || String(pattern || '').trim());
+}
+
+function buildPatterns(defaultPatterns, overridePatterns, extraPatterns) {
+  const base = overridePatterns
+    ? normalizePatterns(overridePatterns)
+    : defaultPatterns;
+  return [...base, ...normalizePatterns(extraPatterns)];
 }
 
 function parseSteps(input) {
@@ -73,8 +85,16 @@ function matchesAny(text, patterns) {
 }
 
 function classifyStep(step, options = {}) {
-  const noisePatterns = options.noisePatterns || DEFAULT_NOISE_PATTERNS;
-  const guardPatterns = options.guardPatterns || DEFAULT_GUARD_PATTERNS;
+  const noisePatterns = buildPatterns(
+    DEFAULT_NOISE_PATTERNS,
+    options.noisePatterns,
+    options.extraNoisePatterns
+  );
+  const guardPatterns = buildPatterns(
+    DEFAULT_GUARD_PATTERNS,
+    options.guardPatterns,
+    options.extraGuardPatterns
+  );
   const isGuard = matchesAny(step.text, guardPatterns);
   const isNoise = matchesAny(step.text, noisePatterns);
 
@@ -149,5 +169,6 @@ module.exports = {
   classifyStep,
   formatReducedPlan,
   logicReduce,
+  normalizePatterns,
   parseSteps
 };

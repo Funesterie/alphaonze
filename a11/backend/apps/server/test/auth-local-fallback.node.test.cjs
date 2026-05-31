@@ -54,6 +54,17 @@ async function getJson(baseUrl, route, headers = {}) {
   };
 }
 
+function getSetCookies(response) {
+  return typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : String(response.headers.get('set-cookie') || '').split(/,\s*(?=[^;,]+=)/).filter(Boolean);
+}
+
+function getCookieValue(setCookies, name) {
+  const cookie = setCookies.find((entry) => entry.startsWith(`${name}=`));
+  return decodeURIComponent((cookie?.match(new RegExp(`^${name}=([^;]+)`)) || [])[1] || '');
+}
+
 test('K44 OAuth start redirects to the central Funesterie OAuth host before state cookies', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -181,6 +192,75 @@ test('central OAuth start pins Google and Microsoft callbacks to funesterie.me',
   );
 });
 
+test('Google OAuth start ignores Drive profile unless explicitly enabled', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    A11_GOOGLE_CALLBACK_URL: process.env.A11_GOOGLE_CALLBACK_URL,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+    GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE: process.env.GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE,
+    A11_GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE: process.env.A11_GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE,
+    GOOGLE_OAUTH_SCOPES: process.env.GOOGLE_OAUTH_SCOPES,
+    A11_GOOGLE_OAUTH_SCOPES: process.env.A11_GOOGLE_OAUTH_SCOPES,
+    GOOGLE_OAUTH_DRIVE_SCOPES: process.env.GOOGLE_OAUTH_DRIVE_SCOPES,
+    A11_GOOGLE_OAUTH_DRIVE_SCOPES: process.env.A11_GOOGLE_OAUTH_DRIVE_SCOPES,
+    GOOGLE_OAUTH_LOGIN_SCOPES: process.env.GOOGLE_OAUTH_LOGIN_SCOPES,
+    A11_GOOGLE_OAUTH_LOGIN_SCOPES: process.env.A11_GOOGLE_OAUTH_LOGIN_SCOPES,
+  };
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  delete process.env.GOOGLE_CALLBACK_URL;
+  delete process.env.A11_GOOGLE_CALLBACK_URL;
+  delete process.env.GOOGLE_REDIRECT_URI;
+  delete process.env.GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE;
+  delete process.env.A11_GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE;
+  delete process.env.GOOGLE_OAUTH_SCOPES;
+  delete process.env.A11_GOOGLE_OAUTH_SCOPES;
+  delete process.env.GOOGLE_OAUTH_DRIVE_SCOPES;
+  delete process.env.A11_GOOGLE_OAUTH_DRIVE_SCOPES;
+  delete process.env.GOOGLE_OAUTH_LOGIN_SCOPES;
+  delete process.env.A11_GOOGLE_OAUTH_LOGIN_SCOPES;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/auth/google/start?scopeProfile=drive`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(response.status, 302);
+      const redirectUrl = new URL(response.headers.get('location'));
+      assert.equal(redirectUrl.searchParams.get('scope'), 'openid email profile');
+      assert.doesNotMatch(redirectUrl.searchParams.get('scope') || '', /drive/i);
+    }
+  );
+});
+
 test('OAuth configuration errors return to the single Funesterie login page', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -288,10 +368,13 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       }));
     },
     async (baseUrl) => {
+      let tokenExchangeScope = '';
       global.fetch = async (url, options = {}) => {
         const target = String(url || '');
         if (target.startsWith(baseUrl)) return realFetch(url, options);
         if (target.includes('login.microsoftonline.com') && target.endsWith('/token')) {
+          const body = new URLSearchParams(String(options.body || ''));
+          tokenExchangeScope = body.get('scope') || '';
           return new Response(JSON.stringify({
             error: 'invalid_grant',
             error_description: 'AADSTS70000: The provided authorization code is expired or invalid.',
@@ -304,7 +387,7 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       };
 
       const returnTo = 'https://k44.funesterie.me/cockpit';
-      const startResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}`, {
+      const startResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}&scopeProfile=drive`, {
         redirect: 'manual',
         headers: {
           'X-Forwarded-Host': 'funesterie.me',
@@ -315,15 +398,25 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       const startLocation = new URL(startResponse.headers.get('location'));
       const state = startLocation.searchParams.get('state');
       assert.ok(state);
+      const setCookies = typeof startResponse.headers.getSetCookie === 'function'
+        ? startResponse.headers.getSetCookie()
+        : String(startResponse.headers.get('set-cookie') || '').split(/,\s*(?=[^;,]+=)/);
+      const pkceCookie = setCookies.find((cookie) => cookie.startsWith('a11_microsoft_oauth_pkce='));
+      assert.ok(pkceCookie);
+      const pkceCookieValue = decodeURIComponent((pkceCookie.match(/^a11_microsoft_oauth_pkce=([^;]+)/) || [])[1] || '');
+      assert.ok(pkceCookieValue);
+      assert.equal(startLocation.searchParams.get('code_challenge_method'), 'S256');
+      assert.ok(startLocation.searchParams.get('code_challenge'));
       assert.equal(
         startLocation.searchParams.get('redirect_uri'),
         'https://funesterie.me/api/auth/microsoft/callback'
       );
+      assert.match(startLocation.searchParams.get('scope') || '', /\bFiles\.ReadWrite\b/);
 
       const callbackResponse = await fetch(`${baseUrl}/api/auth/microsoft/callback?code=test-code&state=${encodeURIComponent(state)}`, {
         redirect: 'manual',
         headers: {
-          Cookie: `a11_microsoft_oauth_state=${encodeURIComponent(state)}`,
+          Cookie: `a11_microsoft_oauth_state=${encodeURIComponent(state)}; a11_microsoft_oauth_pkce=${encodeURIComponent(pkceCookieValue)}`,
           'X-Forwarded-Host': 'funesterie.me',
           'X-Forwarded-Proto': 'https',
         },
@@ -334,6 +427,340 @@ test('Microsoft OAuth token failures keep returnTo and expose a precise login er
       assert.equal(callbackLocation.pathname, '/login');
       assert.equal(callbackLocation.searchParams.get('returnTo'), returnTo);
       assert.equal(callbackLocation.searchParams.get('error'), 'microsoft_invalid_grant');
+      assert.match(tokenExchangeScope, /\bFiles\.ReadWrite\b/);
+    }
+  );
+});
+
+test('Microsoft OAuth retries with PKCE public-client fallback on invalid client secret', async (t) => {
+  const previous = {
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
+    MICROSOFT_REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI,
+    MICROSOFT_CALLBACK_URL: process.env.MICROSOFT_CALLBACK_URL,
+    MICROSOFT_OAUTH_PUBLIC_CLIENT_FALLBACK: process.env.MICROSOFT_OAUTH_PUBLIC_CLIENT_FALLBACK,
+  };
+  process.env.MICROSOFT_CLIENT_ID = 'test-microsoft-client-id';
+  process.env.MICROSOFT_CLIENT_SECRET = 'expired-secret';
+  process.env.MICROSOFT_OAUTH_PUBLIC_CLIENT_FALLBACK = 'true';
+  delete process.env.MICROSOFT_REDIRECT_URI;
+  delete process.env.MICROSOFT_CALLBACK_URL;
+
+  const realFetch = global.fetch;
+  t.after(() => {
+    global.fetch = realFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      let tokenAttempts = 0;
+      let sawPublicFallback = false;
+      global.fetch = async (url, options = {}) => {
+        const target = String(url || '');
+        if (target.startsWith(baseUrl)) return realFetch(url, options);
+        if (target.includes('login.microsoftonline.com') && target.endsWith('/token')) {
+          tokenAttempts += 1;
+          const body = new URLSearchParams(String(options.body || ''));
+          assert.ok(body.get('code_verifier'));
+          if (body.get('client_secret')) {
+            return new Response(JSON.stringify({
+              error: 'invalid_client',
+              error_description: 'AADSTS7000215: Invalid client secret provided.',
+            }), {
+              status: 401,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          sawPublicFallback = true;
+          return new Response(JSON.stringify({
+            access_token: 'test-access-token',
+            scope: body.get('scope') || '',
+            token_type: 'Bearer',
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (target === 'https://graph.microsoft.com/v1.0/me') {
+          return new Response(JSON.stringify({
+            id: 'ms-user-1',
+            displayName: 'Microsoft User',
+            userPrincipalName: 'ms@example.test',
+            mail: 'ms@example.test',
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${target}`);
+      };
+
+      const returnTo = 'https://funesterie.me/cockpit/';
+      const startResponse = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      const startLocation = new URL(startResponse.headers.get('location'));
+      const state = startLocation.searchParams.get('state');
+      const setCookies = typeof startResponse.headers.getSetCookie === 'function'
+        ? startResponse.headers.getSetCookie()
+        : String(startResponse.headers.get('set-cookie') || '').split(/,\s*(?=[^;,]+=)/);
+      const pkceCookie = setCookies.find((cookie) => cookie.startsWith('a11_microsoft_oauth_pkce='));
+      const pkceCookieValue = decodeURIComponent((pkceCookie.match(/^a11_microsoft_oauth_pkce=([^;]+)/) || [])[1] || '');
+
+      const callbackResponse = await fetch(`${baseUrl}/api/auth/microsoft/callback?code=test-code&state=${encodeURIComponent(state)}`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: `a11_microsoft_oauth_state=${encodeURIComponent(state)}; a11_microsoft_oauth_pkce=${encodeURIComponent(pkceCookieValue)}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(callbackResponse.status, 302);
+      assert.equal(tokenAttempts, 2);
+      assert.equal(sawPublicFallback, true);
+      const callbackLocation = new URL(callbackResponse.headers.get('location'));
+      assert.equal(callbackLocation.pathname, '/cockpit/');
+    }
+  );
+});
+
+test('OAuth connector state keeps Google and Microsoft linked in one session', async (t) => {
+  const previous = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL,
+    GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE: process.env.GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE,
+    MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
+    MICROSOFT_REDIRECT_URI: process.env.MICROSOFT_REDIRECT_URI,
+    MICROSOFT_OAUTH_PUBLIC_CLIENT_FALLBACK: process.env.MICROSOFT_OAUTH_PUBLIC_CLIENT_FALLBACK,
+  };
+  const originalFetch = global.fetch;
+  process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+  process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+  process.env.GOOGLE_CALLBACK_URL = 'https://funesterie.me/api/auth/google/callback';
+  process.env.GOOGLE_OAUTH_ALLOW_DRIVE_PROFILE = '1';
+  process.env.MICROSOFT_CLIENT_ID = 'test-microsoft-client-id';
+  process.env.MICROSOFT_CLIENT_SECRET = 'test-microsoft-client-secret';
+  process.env.MICROSOFT_REDIRECT_URI = 'https://funesterie.me/api/auth/microsoft/callback';
+  process.env.MICROSOFT_OAUTH_PUBLIC_CLIENT_FALLBACK = 'false';
+  t.after(() => {
+    global.fetch = originalFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  global.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.startsWith('http://127.0.0.1:')) {
+      return originalFetch(url, options);
+    }
+    if (target === 'https://oauth2.googleapis.com/token') {
+      const body = new URLSearchParams(String(options.body || ''));
+      assert.equal(body.get('code'), 'google-code');
+      return new Response(JSON.stringify({
+        access_token: 'google-access-token',
+        scope: 'openid email profile https://www.googleapis.com/auth/drive.file',
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target === 'https://www.googleapis.com/oauth2/v2/userinfo') {
+      return new Response(JSON.stringify({
+        id: 'google-profile-id',
+        email: 'jeffrey.google@example.test',
+        verified_email: true,
+        name: 'Jeffrey Google',
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target.includes('login.microsoftonline.com') && target.endsWith('/token')) {
+      const body = new URLSearchParams(String(options.body || ''));
+      assert.equal(body.get('code'), 'microsoft-code');
+      return new Response(JSON.stringify({
+        access_token: 'microsoft-access-token',
+        scope: 'openid profile email offline_access User.Read Files.Read',
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target === 'https://graph.microsoft.com/v1.0/me') {
+      return new Response(JSON.stringify({
+        id: 'microsoft-profile-id',
+        displayName: 'Jeffrey Microsoft',
+        userPrincipalName: 'jeffrey.microsoft@example.test',
+        mail: 'jeffrey.microsoft@example.test',
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${target}`);
+  };
+
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const returnTo = 'https://funesterie.me/cockpit/';
+      const googleStart = await fetch(`${baseUrl}/api/auth/google/start?returnTo=${encodeURIComponent(returnTo)}&client=funesterie-cockpit&scopeProfile=drive`, {
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      const googleState = new URL(googleStart.headers.get('location')).searchParams.get('state');
+      const googleCallback = await fetch(`${baseUrl}/api/auth/google/callback?code=google-code&state=${encodeURIComponent(googleState)}`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: `a11_google_oauth_state=${encodeURIComponent(googleState)}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(googleCallback.status, 302);
+      const googleSession = getCookieValue(getSetCookies(googleCallback), 'a11_session');
+      assert.ok(googleSession);
+
+      const googleConnectors = await getJson(baseUrl, '/api/auth/connectors', {
+        Cookie: `a11_session=${googleSession}`,
+        'X-Forwarded-Host': 'funesterie.me',
+        'X-Forwarded-Proto': 'https',
+      });
+      assert.equal(googleConnectors.json.connectors.google.linked, true);
+      assert.equal(googleConnectors.json.connectors.microsoft.linked, false);
+
+      const microsoftStart = await fetch(`${baseUrl}/api/auth/microsoft/start?returnTo=${encodeURIComponent(returnTo)}&client=funesterie-cockpit&scopeProfile=drive`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: `a11_session=${googleSession}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      const microsoftStartLocation = new URL(microsoftStart.headers.get('location'));
+      const microsoftState = microsoftStartLocation.searchParams.get('state');
+      const pkceCookie = getCookieValue(getSetCookies(microsoftStart), 'a11_microsoft_oauth_pkce');
+      assert.ok(microsoftState);
+      assert.ok(pkceCookie);
+      const microsoftCallback = await fetch(`${baseUrl}/api/auth/microsoft/callback?code=microsoft-code&state=${encodeURIComponent(microsoftState)}`, {
+        redirect: 'manual',
+        headers: {
+          Cookie: [
+            `a11_session=${googleSession}`,
+            `a11_microsoft_oauth_state=${encodeURIComponent(microsoftState)}`,
+            `a11_microsoft_oauth_pkce=${encodeURIComponent(pkceCookie)}`,
+          ].join('; '),
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(microsoftCallback.status, 302);
+      const mergedSession = getCookieValue(getSetCookies(microsoftCallback), 'a11_session');
+      assert.ok(mergedSession);
+
+      const mergedConnectors = await getJson(baseUrl, '/api/auth/connectors', {
+        Cookie: `a11_session=${mergedSession}`,
+        'X-Forwarded-Host': 'funesterie.me',
+        'X-Forwarded-Proto': 'https',
+      });
+      assert.equal(mergedConnectors.json.connectors.google.linked, true);
+      assert.equal(mergedConnectors.json.connectors.google.account, 'jeffrey.google@example.test');
+      assert.equal(mergedConnectors.json.connectors.google.filesAccess, 'authorized');
+      assert.equal(mergedConnectors.json.connectors.microsoft.linked, true);
+      assert.equal(mergedConnectors.json.connectors.microsoft.account, 'jeffrey.microsoft@example.test');
+      assert.equal(mergedConnectors.json.connectors.microsoft.filesAccess, 'authorized');
+
+      const disconnectGoogle = await fetch(`${baseUrl}/api/auth/connectors/google/disconnect`, {
+        method: 'POST',
+        headers: {
+          Cookie: `a11_session=${mergedSession}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(disconnectGoogle.status, 200);
+      const disconnectGoogleBody = await disconnectGoogle.json();
+      assert.equal(disconnectGoogleBody.ok, true);
+      assert.equal(disconnectGoogleBody.alreadyUnlinked, undefined);
+      const microsoftOnlySession = getCookieValue(getSetCookies(disconnectGoogle), 'a11_session');
+      assert.ok(microsoftOnlySession);
+
+      const microsoftOnlyConnectors = await getJson(baseUrl, '/api/auth/connectors', {
+        Cookie: `a11_session=${microsoftOnlySession}`,
+        'X-Forwarded-Host': 'funesterie.me',
+        'X-Forwarded-Proto': 'https',
+      });
+      assert.equal(microsoftOnlyConnectors.json.connectors.google.linked, false);
+      assert.equal(microsoftOnlyConnectors.json.connectors.microsoft.linked, true);
+      assert.equal(microsoftOnlyConnectors.json.connectors.microsoft.account, 'jeffrey.microsoft@example.test');
+
+      const disconnectMicrosoft = await fetch(`${baseUrl}/api/auth/connectors/microsoft/disconnect`, {
+        method: 'POST',
+        headers: {
+          Cookie: `a11_session=${microsoftOnlySession}`,
+          'X-Forwarded-Host': 'funesterie.me',
+          'X-Forwarded-Proto': 'https',
+        },
+      });
+      assert.equal(disconnectMicrosoft.status, 200);
+      const disconnectMicrosoftBody = await disconnectMicrosoft.json();
+      assert.equal(disconnectMicrosoftBody.ok, true);
+      const noConnectorSession = getCookieValue(getSetCookies(disconnectMicrosoft), 'a11_session');
+      assert.ok(noConnectorSession);
+
+      const noConnectors = await getJson(baseUrl, '/api/auth/connectors', {
+        Cookie: `a11_session=${noConnectorSession}`,
+        'X-Forwarded-Host': 'funesterie.me',
+        'X-Forwarded-Proto': 'https',
+      });
+      assert.equal(noConnectors.json.connectors.google.linked, false);
+      assert.equal(noConnectors.json.connectors.microsoft.linked, false);
     }
   );
 });

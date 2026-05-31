@@ -1,6 +1,8 @@
 param(
   [string]$RepoRoot = "D:\projets\funesterie",
-  [switch]$ReuseRemoteSecrets
+  [switch]$ReuseRemoteSecrets,
+  [switch]$BlueGreen,
+  [switch]$CleanOldBlueGreen
 )
 
 Set-StrictMode -Version Latest
@@ -10,14 +12,24 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $A11Root = Join-Path $RepoRoot "a11"
 $ServerRoot = Join-Path $A11Root "backend\apps\server"
 $VoiceRoot = Join-Path $A11Root "backend\apps\voice-module"
+$VoiceBridgeRoot = Join-Path $A11Root "ops\voice"
 $EkkoRoot = Join-Path $A11Root "backend\apps\ekko"
 $WebDist = Join-Path $A11Root "frontend\apps\web\dist"
 $EnvSource = Join-Path $ServerRoot "profiles\a11.env"
 $McpEnvSource = Join-Path $RepoRoot "a11mcp\.env"
-$VivyVoiceReference = Join-Path $VoiceRoot "samples\vivy-adaptive.wav"
+$RuntimeVoiceLibrary = Join-Path $RepoRoot "runtime\voice-library"
+$A11VoiceReference = Join-Path $RuntimeVoiceLibrary "a11-terminator.wav"
+if (-not (Test-Path -LiteralPath $A11VoiceReference)) {
+  $A11VoiceReference = Join-Path $RepoRoot "runtime\sfx\terminator.wav"
+}
+$VivyVoiceReference = Join-Path $RuntimeVoiceLibrary "vivy.wav"
+if (-not (Test-Path -LiteralPath $VivyVoiceReference)) {
+  $VivyVoiceReference = Join-Path $VoiceRoot "samples\vivy-adaptive.wav"
+}
 if (-not (Test-Path -LiteralPath $VivyVoiceReference)) {
   $VivyVoiceReference = Join-Path $VoiceRoot "samples\a11-voice-adaptive.wav"
 }
+$Kaen44VoiceReference = Join-Path $RuntimeVoiceLibrary "kaen44-donna.wav"
 $Remote = "deploy@62.238.43.32"
 $SshKey = "C:\Users\Djeff\.ssh\codex_a11_hetzner_20260511"
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -104,6 +116,40 @@ function Write-EnvFile([System.Collections.IDictionary]$Map, [string]$Path) {
   [System.IO.File]::WriteAllText($Path, $content, $utf8NoBom)
 }
 
+function Import-OptionalEnvValue(
+  [System.Collections.IDictionary]$Target,
+  [System.Collections.IDictionary]$Source,
+  [string]$Key
+) {
+  if (
+    $Source.Contains($Key) `
+    -and -not [string]::IsNullOrWhiteSpace($Source[$Key]) `
+    -and (-not $Target.Contains($Key) -or [string]::IsNullOrWhiteSpace($Target[$Key]))
+  ) {
+    $Target[$Key] = $Source[$Key]
+    Write-Host "Env prod: $Key importe depuis le magasin local." -ForegroundColor DarkCyan
+  }
+}
+
+function Import-OptionalSecretFile(
+  [System.Collections.IDictionary]$Target,
+  [string]$Key,
+  [string[]]$CandidateFiles
+) {
+  if ($Target.Contains($Key) -and -not [string]::IsNullOrWhiteSpace($Target[$Key])) {
+    return
+  }
+  foreach ($candidate in $CandidateFiles) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    if (-not (Test-Path -LiteralPath $candidate)) { continue }
+    $value = (Get-Content -LiteralPath $candidate -Raw).Trim()
+    if ([string]::IsNullOrWhiteSpace($value)) { continue }
+    $Target[$Key] = $value
+    Write-Host "Env prod: secret $Key charge depuis le magasin local." -ForegroundColor DarkCyan
+    return
+  }
+}
+
 function Invoke-SourceUpdate([string]$RepoRoot) {
   $updateScript = Join-Path $RepoRoot "scripts\Update-FunesterieSource.ps1"
   if (-not (Test-Path -LiteralPath $updateScript)) {
@@ -117,12 +163,55 @@ function Invoke-SourceUpdate([string]$RepoRoot) {
   }
 }
 
+function Invoke-FrontendBuild([string]$A11Root) {
+  $webApp = Join-Path $A11Root "frontend\apps\web"
+  Require-Path (Join-Path $webApp "package.json") "Package frontend"
+
+  Write-Host "Build frontend web avant packaging..." -ForegroundColor Cyan
+  & npm --prefix $webApp run build | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    throw "Build frontend web echoue avec le code $LASTEXITCODE"
+  }
+}
+
+function Assert-FunesterieWebBundle([string]$DistRoot, [string]$Label) {
+  Require-Path $DistRoot $Label
+  $assetsRoot = Join-Path $DistRoot "assets"
+  Require-Path $assetsRoot "$Label assets"
+
+  $bundle = Get-ChildItem -LiteralPath $assetsRoot -Filter "index-*.js" -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+  if (-not $bundle) {
+    throw "$Label invalide: aucun bundle index-*.js dans $assetsRoot"
+  }
+
+  $content = Get-Content -LiteralPath $bundle.FullName -Raw
+  $requiredMarkers = @(
+    "a11-menu-voice-tools",
+    "Défaut ref"
+  )
+  foreach ($marker in $requiredMarkers) {
+    if ($content -notlike "*$marker*") {
+      throw "ancienne UI detectee dans $($bundle.Name): marqueur requis absent '$marker'"
+    }
+  }
+  if ($content -like "*a11-voice-tools*") {
+    throw "ancienne UI detectee dans $($bundle.Name): vieux composer Ref/A encore present"
+  }
+
+  Write-Host "Bundle web valide: $($bundle.Name) (garde anti ancienne UI OK)." -ForegroundColor Green
+}
+
 Require-Path $RepoRoot "Repo"
 Invoke-SourceUpdate $RepoRoot
 Require-Path $ServerRoot "Backend A11"
 Require-Path $VoiceRoot "Module voix"
+Require-Path $VoiceBridgeRoot "Pont voix XTTS/RVC"
 Require-Path $EkkoRoot "Module Ekko"
+Invoke-FrontendBuild $A11Root
 Require-Path $WebDist "Frontend dist"
+Assert-FunesterieWebBundle $WebDist "Frontend dist"
 if (-not $ReuseRemoteSecrets) {
   Require-Path $EnvSource "Env prod source"
 } else {
@@ -131,6 +220,40 @@ if (-not $ReuseRemoteSecrets) {
 Require-Path $SshKey "Cle SSH"
 
 $sshBase = @("-i", $SshKey, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new")
+
+$ActiveBlueGreenColor = "none"
+$DeployBlueGreenColor = "blue"
+if ($BlueGreen) {
+  $remoteColorProbe = @"
+set -e
+if [ -s $RemoteRoot/bluegreen/active-color ]; then
+  cat $RemoteRoot/bluegreen/active-color
+elif docker ps -a --format '{{.Names}}' | grep -qx 'a11-backend-blue'; then
+  echo blue
+elif docker ps -a --format '{{.Names}}' | grep -qx 'a11-backend-green'; then
+  echo green
+else
+  echo none
+fi
+"@
+  $remoteColorProbeEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteColorProbe.Replace("`r`n", "`n").Replace("`r", "`n")))
+  $remoteColor = & ssh @sshBase $Remote "printf '%s' '$remoteColorProbeEncoded' | base64 -d | bash" 2>$null
+  $probeCode = $LASTEXITCODE
+  $global:LASTEXITCODE = 0
+  if ($probeCode -ne 0) {
+    throw "Lecture couleur blue/green distante echouee"
+  }
+  $ActiveBlueGreenColor = (($remoteColor | Select-Object -First 1).ToString().Trim().ToLowerInvariant())
+  if ($ActiveBlueGreenColor -eq "blue") {
+    $DeployBlueGreenColor = "green"
+  } elseif ($ActiveBlueGreenColor -eq "green") {
+    $DeployBlueGreenColor = "blue"
+  } else {
+    $ActiveBlueGreenColor = "none"
+    $DeployBlueGreenColor = "blue"
+  }
+  Write-Host "Mode blue/green: actif=$ActiveBlueGreenColor, prochain=$DeployBlueGreenColor." -ForegroundColor Cyan
+}
 
 function Read-RemoteEnvValue([string]$Key) {
   $remoteCmd = "if [ ! -f $RemoteRoot/secrets/a11.env ]; then exit 44; fi; grep -m1 '^$Key=' $RemoteRoot/secrets/a11.env | sed 's/^[^=]*=//' || true"
@@ -159,8 +282,12 @@ New-Item -ItemType Directory -Force -Path $StageRoot | Out-Null
 
 $ServerStage = Join-Path $StageRoot "server"
 $VoiceStage = Join-Path $StageRoot "voice-module"
+$VoiceBridgeStage = Join-Path $StageRoot "xtts-rvc-bridge"
 $EkkoStage = Join-Path $StageRoot "ekko"
 $WebStage = Join-Path $StageRoot "web\dist"
+$BlueGreenSuffix = if ($BlueGreen) { "-$DeployBlueGreenColor" } else { "" }
+$A11BackendService = "a11-backend$BlueGreenSuffix"
+$Kaen44BackendService = "kaen44-backend$BlueGreenSuffix"
 
 $serverExDirs = @(
   "node_modules", ".git", "logs", "runtime", "tmp", ".qflush", "test-results",
@@ -202,12 +329,14 @@ $voiceCopyArgs = @("/MIR", "/XD") + $voiceExDirs + @("/XF") + $voiceExFiles
 $ekkoCopyArgs = @("/MIR", "/XD") + $ekkoExDirs + @("/XF") + $ekkoExFiles
 Invoke-RobocopyChecked $ServerRoot $ServerStage $serverCopyArgs
 Invoke-RobocopyChecked $VoiceRoot $VoiceStage $voiceCopyArgs
+Invoke-RobocopyChecked $VoiceBridgeRoot $VoiceBridgeStage @("/MIR", "/XD", ".git", ".venv", "venv", "__pycache__", "models", "rvcs", "voices", "outputs", "logs", "/XF", "*.wav", "*.mp3", "*.flac", "*.ogg", "*.pth", "*.pt", "*.onnx", "*.index", "*.log")
 Invoke-RobocopyChecked $EkkoRoot $EkkoStage $ekkoCopyArgs
 Invoke-RobocopyChecked $WebDist $WebStage @("/MIR")
 Remove-StagedSensitiveFiles $ServerStage
 Remove-StagedSensitiveFiles $VoiceStage
 Remove-StagedSensitiveFiles $EkkoStage
 Remove-StagedSensitiveFiles $WebStage
+Assert-FunesterieWebBundle $WebStage "Stage web"
 
 $compose = @'
 services:
@@ -240,6 +369,27 @@ services:
       timeout: 5s
       retries: 10
 
+  a11-xtts-rvc:
+    build:
+      context: ../xtts-rvc-bridge
+      dockerfile: Dockerfile.xtts-rvc
+    container_name: a11-xtts-rvc
+    restart: unless-stopped
+    environment:
+      A11_XTTS_RVC_ROOT: /app
+      A11_XTTS_RVC_HOST: 0.0.0.0
+      A11_XTTS_RVC_PORT: "5000"
+      A11_XTTS_RVC_DEVICE: ${A11_XTTS_RVC_DEVICE:-cpu}
+      A11_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
+      A11_XTTS_RVC_TORCH_THREADS: ${A11_XTTS_RVC_TORCH_THREADS:-4}
+    volumes:
+      - /srv/a11-data/a11/xtts-rvc/models:/app/models
+      - /srv/a11-data/a11/xtts-rvc/rvcs:/app/rvcs
+      - /srv/a11-data/a11/runtime/voice-library:/app/voices:ro
+      - /srv/a11-data/a11/xtts-rvc/outputs:/app/outputs
+    expose:
+      - "5000"
+
   a11-voice:
     build:
       context: ../voice-module
@@ -248,8 +398,16 @@ services:
     environment:
       PORT: 5002
       A11_VOICE_OUT_DIR: /app/out
+      A11_VOICE_CONVERTER_PROVIDER: ${A11_VOICE_CONVERTER_PROVIDER:-xtts-rvc,ffmpeg-morph}
+      A11_VOICE_XTTS_RVC_URL: ${A11_VOICE_XTTS_RVC_URL:-http://a11-xtts-rvc:5000}
+      A11_VOICE_XTTS_RVC_PROTOCOL: ${A11_VOICE_XTTS_RVC_PROTOCOL:-a11}
+      A11_VOICE_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
+      A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS: ${A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS:-240}
+      A11_VOICE_XTTS_RVC_FALLBACK: ${A11_VOICE_XTTS_RVC_FALLBACK:-true}
     volumes:
       - /srv/a11-data/a11/voice-out:/app/out
+    depends_on:
+      - a11-xtts-rvc
     expose:
       - "5002"
 
@@ -300,6 +458,19 @@ services:
       A11_JANUS_TORCH_DTYPE: ${A11_JANUS_TORCH_DTYPE:-auto}
       A11_JANUS_PREFER_LATEST: ${A11_JANUS_PREFER_LATEST:-false}
       A11_JANUS_TIMEOUT_MS: ${A11_JANUS_TIMEOUT_MS:-180000}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      OAUTH_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_BUCKET_ID: ${R2_BUCKET_ID:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      A11_R2_PUBLIC_BASE_URL: ${A11_R2_PUBLIC_BASE_URL:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
     depends_on:
       a11-postgres:
         condition: service_healthy
@@ -348,6 +519,19 @@ services:
       A11_JANUS_TORCH_DTYPE: ${A11_JANUS_TORCH_DTYPE:-auto}
       A11_JANUS_PREFER_LATEST: ${A11_JANUS_PREFER_LATEST:-false}
       A11_JANUS_TIMEOUT_MS: ${A11_JANUS_TIMEOUT_MS:-180000}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      OAUTH_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_BUCKET_ID: ${R2_BUCKET_ID:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      A11_R2_PUBLIC_BASE_URL: ${A11_R2_PUBLIC_BASE_URL:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       A11_PRODUCT: kaen44
       A11_INSTANCE_NAME: Kaen44
       A11_RUNTIME_PROFILE: kaen44
@@ -402,47 +586,88 @@ services:
       - /srv/a11-data/a11/caddy-data:/data
       - /srv/a11-data/a11/caddy-config:/config
 '@
+if ($BlueGreen) {
+  $compose = $compose.Replace("  a11-backend:`r`n", "  ${A11BackendService}:`r`n")
+  $compose = $compose.Replace("  a11-backend:`n", "  ${A11BackendService}:`n")
+  $compose = $compose.Replace("  kaen44-backend:`r`n", "  ${Kaen44BackendService}:`r`n")
+  $compose = $compose.Replace("  kaen44-backend:`n", "  ${Kaen44BackendService}:`n")
+  $compose = $compose.Replace("container_name: a11-backend", "container_name: $A11BackendService")
+  $compose = $compose.Replace("container_name: kaen44-backend", "container_name: $Kaen44BackendService")
+  $compose = $compose.Replace("http://a11-backend:3000", "http://${A11BackendService}:3000")
+  $compose = $compose.Replace("http://kaen44-backend:3001", "http://${Kaen44BackendService}:3001")
+  $compose = $compose.Replace("      - a11-backend", "      - $A11BackendService")
+  $compose = $compose.Replace("      - kaen44-backend", "      - $Kaen44BackendService")
+}
 $compose = $compose.Replace("/srv/a11-data/a11", $RemoteDataRoot)
 $compose = $compose.Replace("/srv/a11", $RemoteRoot)
 Set-Content -LiteralPath (Join-Path $ServerStage "docker-compose.prod.yml") -Value $compose -Encoding UTF8
 
-$caddy = @'
-http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://vivy.funesterie.me {
-  encode zstd gzip
-  @a11Path path /a11 /a11/*
-  handle @a11Path {
-    reverse_proxy a11-backend:3000
-  }
-  handle {
-    reverse_proxy kaen44-backend:3001
+$caddyA11BackendService = $A11BackendService
+$caddyKaen44BackendService = $Kaen44BackendService
+$caddy = @"
+(a11_backend) {
+  reverse_proxy ${caddyA11BackendService}:3000 {
+    lb_try_duration 45s
+    lb_try_interval 250ms
   }
 }
 
-https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, https://kaen44.funesterie.me, https://vivy.funesterie.me {
+(kaen44_backend) {
+  reverse_proxy ${caddyKaen44BackendService}:3001 {
+    lb_try_duration 45s
+    lb_try_interval 250ms
+  }
+}
+
+(microsoft_identity_association) {
+  @microsoftIdentity path /.well-known/microsoft-identity-association.json
+  handle @microsoftIdentity {
+    header Content-Type application/json
+    respond "{\"associatedApplications\":[{\"applicationId\":\"fe326a74-f7bd-46c4-95bb-d0f448eb6c42\"}]}" 200
+  }
+}
+
+http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://vivy.funesterie.me {
   encode zstd gzip
+  import microsoft_identity_association
   @a11Path path /a11 /a11/*
   handle @a11Path {
-    reverse_proxy a11-backend:3000
+    import a11_backend
   }
   handle {
-    reverse_proxy kaen44-backend:3001
+    import kaen44_backend
+  }
+}
+
+https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, https://vivy.funesterie.me {
+  encode zstd gzip
+  import microsoft_identity_association
+  @a11Path path /a11 /a11/*
+  handle @a11Path {
+    import a11_backend
+  }
+  handle {
+    import kaen44_backend
   }
 }
 
 http://a11.funesterie.me {
   encode zstd gzip
-  reverse_proxy a11-backend:3000
+  import microsoft_identity_association
+  import a11_backend
 }
 
 https://a11.funesterie.me {
   encode zstd gzip
-  reverse_proxy a11-backend:3000
+  import microsoft_identity_association
+  import a11_backend
 }
 
 :80 {
-  reverse_proxy a11-backend:3000
+  import microsoft_identity_association
+  import a11_backend
 }
-'@
+"@
 Set-Content -LiteralPath (Join-Path $StageRoot "Caddyfile") -Value $caddy -Encoding UTF8
 
 if ($ReuseRemoteSecrets) {
@@ -451,6 +676,64 @@ if ($ReuseRemoteSecrets) {
 } else {
 $envMap = Read-EnvMap $EnvSource
 $mcpEnvMap = if (Test-Path -LiteralPath $McpEnvSource) { Read-EnvMap $McpEnvSource } else { [ordered]@{} }
+$localEnvSource = Join-Path $ServerRoot ".env.local"
+$localEnvMap = if (Test-Path -LiteralPath $localEnvSource) { Read-EnvMap $localEnvSource } else { [ordered]@{} }
+$localSecretRoot = Join-Path $env:USERPROFILE ".funesterie\secrets"
+$optionalFinanceEnvKeys = @(
+  "QONTO_API_BASE_URL",
+  "QONTO_API_LOGIN",
+  "QONTO_EXCLUDED_BANK_ACCOUNT_IDS",
+  "MOLLIE_API_BASE_URL",
+  "MOLLIE_PUBLIC_BASE_URL",
+  "MOLLIE_WEBHOOK_URL",
+  "MOLLIE_ALLOW_PAYMENT_CREATE"
+)
+foreach ($key in $optionalFinanceEnvKeys) {
+  Import-OptionalEnvValue $envMap $localEnvMap $key
+}
+Import-OptionalSecretFile $envMap "QONTO_SECRET_KEY" @(
+  $localEnvMap["QONTO_SECRET_KEY_FILE"],
+  $localEnvMap["QONTO_API_SECRET_KEY_FILE"],
+  $localEnvMap["QONTO_API_KEY_FILE"],
+  (Join-Path $localSecretRoot "qonto-secret-key.txt")
+)
+Import-OptionalSecretFile $envMap "MOLLIE_API_KEY" @(
+  $localEnvMap["MOLLIE_API_KEY_FILE"],
+  $localEnvMap["MOLLIE_SECRET_KEY_FILE"],
+  (Join-Path $localSecretRoot "mollie-api-key.txt")
+)
+$localOnlySecretFileKeys = @(
+  "QONTO_SECRET_KEY_FILE",
+  "QONTO_API_SECRET_KEY_FILE",
+  "QONTO_API_KEY_FILE",
+  "MOLLIE_API_KEY_FILE",
+  "MOLLIE_SECRET_KEY_FILE"
+)
+foreach ($key in $localOnlySecretFileKeys) {
+  if ($envMap.Contains($key)) { $envMap.Remove($key) }
+}
+$mcpBridgeEnvKeys = @(
+  "R2_ENDPOINT",
+  "R2_BUCKET",
+  "R2_BUCKET_NAME",
+  "R2_BUCKET_ID",
+  "R2_PUBLIC_BASE_URL",
+  "A11_R2_PUBLIC_BASE_URL",
+  "R2_PUBLIC_URL",
+  "R2_ACCESS_KEY",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_KEY",
+  "R2_SECRET_ACCESS_KEY"
+)
+foreach ($key in $mcpBridgeEnvKeys) {
+  if (
+    $mcpEnvMap.Contains($key) `
+    -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap[$key]) `
+    -and (-not $envMap.Contains($key) -or [string]::IsNullOrWhiteSpace($envMap[$key]))
+  ) {
+    $envMap[$key] = $mcpEnvMap[$key]
+  }
+}
 $removeKeys = @(
   "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "DATABASE_URL", "REDIS_URL",
   "QFLUSH_REDIS_URL", "QFLUSH_URL", "QFLUSH_REMOTE_URL", "QFLUSH_BASE_URL",
@@ -475,8 +758,20 @@ $existingPgPass = Read-RemoteEnvValue "POSTGRES_PASSWORD"
 $existingAdminPass = Read-RemoteEnvValue "DEFAULT_ADMIN_PASSWORD"
 $existingMcpToken = Read-RemoteEnvValue "A11_MCP_TOKEN"
 $existingEkkoToken = Read-RemoteEnvValue "EKKO_TOKEN"
+$existingJwtSecret = Read-RemoteEnvValue "JWT_SECRET"
 $pgPass = if ([string]::IsNullOrWhiteSpace($existingPgPass)) { New-HexSecret 32 } else { $existingPgPass }
 $adminPass = if ([string]::IsNullOrWhiteSpace($existingAdminPass)) { New-HexSecret 24 } else { $existingAdminPass }
+$jwtSecret = if (-not [string]::IsNullOrWhiteSpace($env:JWT_SECRET)) {
+  $env:JWT_SECRET
+} elseif ($envMap.Contains("JWT_SECRET") -and -not [string]::IsNullOrWhiteSpace($envMap["JWT_SECRET"])) {
+  $envMap["JWT_SECRET"]
+} elseif ($mcpEnvMap.Contains("OAUTH_JWT_SECRET") -and -not [string]::IsNullOrWhiteSpace($mcpEnvMap["OAUTH_JWT_SECRET"])) {
+  $mcpEnvMap["OAUTH_JWT_SECRET"]
+} elseif (-not [string]::IsNullOrWhiteSpace($existingJwtSecret)) {
+  $existingJwtSecret
+} else {
+  New-HexSecret 32
+}
 $mcpToken = if (-not [string]::IsNullOrWhiteSpace($env:A11_MCP_TOKEN)) {
   $env:A11_MCP_TOKEN
 } elseif (-not [string]::IsNullOrWhiteSpace($env:MCP_AUTH_TOKEN)) {
@@ -508,6 +803,7 @@ if (-not [string]::IsNullOrWhiteSpace($mcpToken)) {
 if (-not [string]::IsNullOrWhiteSpace($existingEkkoToken)) {
   Write-Host "Secret Ekko distant reutilise." -ForegroundColor DarkCyan
 }
+$envMap["JWT_SECRET"] = $jwtSecret
 $overrides = [ordered]@{
   NODE_ENV = "production"
   PORT = "3000"
@@ -571,6 +867,7 @@ $overrides = [ordered]@{
   OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
   OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
   A11_OPENAI_MODEL = "meta-llama/llama-3.3-70b-instruct"
+  A11_TRANSLATION_BASE_URL = "https://openrouter.ai/api/v1"
   A11_CERBERE_PREFER_NON_GROQ = "false"
   A11_LLM_FALLBACK_PROVIDER = "openrouter"
   A11_LLM_RUNTIME_FALLBACK_ORDER = "openrouter,groq,openai,together,xai,huggingface,ollama,deepseek"
@@ -582,6 +879,12 @@ $overrides = [ordered]@{
   TTS_URL = "http://a11-voice:5002"
   VOICE_MODULE_URL = "http://a11-voice:5002"
   A11_VOICE_MODULE_URL = "http://a11-voice:5002"
+  A11_VOICE_CONVERTER_PROVIDER = $(if ($env:A11_VOICE_CONVERTER_PROVIDER) { $env:A11_VOICE_CONVERTER_PROVIDER } else { "xtts-rvc,ffmpeg-morph" })
+  A11_VOICE_XTTS_RVC_URL = $(if ($env:A11_VOICE_XTTS_RVC_URL) { $env:A11_VOICE_XTTS_RVC_URL } else { "http://a11-xtts-rvc:5000" })
+  A11_VOICE_XTTS_RVC_PROTOCOL = $(if ($env:A11_VOICE_XTTS_RVC_PROTOCOL) { $env:A11_VOICE_XTTS_RVC_PROTOCOL } else { "a11" })
+  A11_VOICE_XTTS_RVC_LANGUAGE = $(if ($env:A11_VOICE_XTTS_RVC_LANGUAGE) { $env:A11_VOICE_XTTS_RVC_LANGUAGE } else { "fr" })
+  A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS = $(if ($env:A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS) { $env:A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS } else { "240" })
+  A11_VOICE_XTTS_RVC_FALLBACK = $(if ($env:A11_VOICE_XTTS_RVC_FALLBACK) { $env:A11_VOICE_XTTS_RVC_FALLBACK } else { "true" })
   VIVY_ALEXA_TRACK_URL = "https://files.funesterie.me/public/vivy/2026-05-14/6e66f829-2c46-4254-95c8-4757a75ca07d-vivy-reference-short.mp3"
   VIVY_ALEXA_TRACK_TITLE = "Vivy Reference"
   VIVY_ALEXA_TRACK_ARTIST = "Funesterie"
@@ -628,12 +931,12 @@ Write-EnvFile $buildEnvMap $BuildEnvStage
 if (Test-Path -LiteralPath $Archive) {
   Remove-Item -LiteralPath $Archive -Force
 }
-& tar.exe -czf $Archive -C $StageRoot server voice-module ekko web Caddyfile
+& tar.exe -czf $Archive -C $StageRoot server voice-module xtts-rvc-bridge ekko web Caddyfile
 if ($LASTEXITCODE -ne 0) { throw "Creation archive echouee" }
 $archiveSizeMb = [Math]::Round((Get-Item -LiteralPath $Archive).Length / 1MB, 2)
 Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCyan
 
-$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
+$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 
@@ -649,11 +952,40 @@ if (-not $ReuseRemoteSecrets) {
   if ($LASTEXITCODE -ne 0) { throw "compose.env distant introuvable; relancer sans -ReuseRemoteSecrets depuis un magasin de secrets local valide." }
 }
 
-if (Test-Path -LiteralPath $VivyVoiceReference) {
-  & scp @sshBase $VivyVoiceReference "${Remote}:$RemoteDataRoot/runtime/voice-library/vivy-adaptive.wav"
-  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix Vivy A11 echouee" }
-  & scp @sshBase $VivyVoiceReference "${Remote}:$RemoteDataRoot/kaen44-runtime/voice-library/vivy-adaptive.wav"
-  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix Vivy K44 echouee" }
+$voiceReferenceCopies = @(
+  @{ Path = $A11VoiceReference; Name = "a11-terminator.wav"; Label = "A11 Terminator" },
+  @{ Path = $VivyVoiceReference; Name = "vivy.wav"; Label = "Vivy" },
+  @{ Path = $Kaen44VoiceReference; Name = "kaen44-donna.wav"; Label = "Kaen44 Donna" }
+)
+$voiceReferenceCopiesByName = @{}
+foreach ($voiceReference in $voiceReferenceCopies) {
+  if (-not $voiceReferenceCopiesByName.ContainsKey($voiceReference.Name)) {
+    $voiceReferenceCopiesByName[$voiceReference.Name] = $voiceReference
+  }
+}
+if (Test-Path -LiteralPath $RuntimeVoiceLibrary) {
+  Get-ChildItem -LiteralPath $RuntimeVoiceLibrary -File |
+    Where-Object { $_.Extension -match '^\.(wav|wave|mp3|ogg|webm|m4a|flac)$' } |
+    ForEach-Object {
+      if (-not $voiceReferenceCopiesByName.ContainsKey($_.Name)) {
+        $voiceReferenceCopiesByName[$_.Name] = @{
+          Path = $_.FullName
+          Name = $_.Name
+          Label = "Voice library $($_.Name)"
+        }
+      }
+    }
+}
+$voiceReferenceCopies = $voiceReferenceCopiesByName.Values | Sort-Object Name
+foreach ($voiceReference in $voiceReferenceCopies) {
+  if (-not (Test-Path -LiteralPath $voiceReference.Path)) {
+    Write-Warning "Reference voix absente: $($voiceReference.Label) ($($voiceReference.Path))"
+    continue
+  }
+  & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/runtime/voice-library/$($voiceReference.Name)"
+  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) A11 echouee" }
+  & scp @sshBase $voiceReference.Path "${Remote}:$RemoteDataRoot/kaen44-runtime/voice-library/$($voiceReference.Name)"
+  if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) K44 echouee" }
 }
 
 $remoteSecretStep = if ($ReuseRemoteSecrets) {
@@ -667,7 +999,54 @@ chmod 600 $RemoteRoot/secrets/compose.env
 "@
 }
 
-$remoteDeploy = @"
+if ($BlueGreen) {
+  $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
+  $remoteDeploy = @"
+set -euo pipefail
+release=$RemoteRoot/releases/$Stamp
+compose_file=$RemoteRoot/current/server/docker-compose.prod.yml
+a11_service=$A11BackendService
+k44_service=$Kaen44BackendService
+next_color=$DeployBlueGreenColor
+old_color=$ActiveBlueGreenColor
+clean_old=$cleanOldFlag
+mkdir -p "`$release" $RemoteRoot/bluegreen
+tar -xzf $RemoteArchive -C "`$release"
+ln -sfn "`$release" $RemoteRoot/current
+$remoteSecretStep
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build a11-postgres a11-redis a11-xtts-rvc a11-voice
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko "`$a11_service" "`$k44_service"
+echo "__BLUEGREEN_HEALTH__"
+for i in `$(seq 1 45); do
+  if docker exec "`$a11_service" curl -fsS http://127.0.0.1:3000/health >/tmp/a11-bg-health-a11 2>/dev/null \
+    && docker exec "`$k44_service" curl -fsS http://127.0.0.1:3001/health >/tmp/a11-bg-health-k44 2>/dev/null; then
+    cat /tmp/a11-bg-health-a11
+    cat /tmp/a11-bg-health-k44
+    break
+  fi
+  if [ "`$i" = "45" ]; then
+    echo "Blue/green healthcheck failed for `$a11_service / `$k44_service" >&2
+    docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env ps
+    exit 42
+  fi
+  sleep 2
+done
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --no-deps --force-recreate a11-caddy
+echo "`$next_color" > $RemoteRoot/bluegreen/active-color
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env ps
+if [ "`$clean_old" = "1" ] && [ "`$old_color" != "none" ] && [ "`$old_color" != "`$next_color" ]; then
+  docker rm -f "a11-backend-`$old_color" "kaen44-backend-`$old_color" 2>/dev/null || true
+fi
+echo "__A11_HEALTH__"
+for i in `$(seq 1 30); do
+  if curl -fsS http://127.0.0.1/health 2>/dev/null; then
+    break
+  fi
+  sleep 2
+done
+"@
+} else {
+  $remoteDeploy = @"
 set -euo pipefail
 release=$RemoteRoot/releases/$Stamp
 mkdir -p "`$release"
@@ -678,14 +1057,24 @@ docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file 
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env ps
 echo "__A11_HEALTH__"
 for i in `$(seq 1 30); do
-  if curl -fsS http://127.0.0.1/health; then
+  if curl -fsS http://127.0.0.1/health 2>/dev/null; then
     break
   fi
   sleep 2
 done
+echo "__A11_PRUNE__"
+docker builder prune --all --force --filter until=24h 2>/dev/null || true
+ls -1d $RemoteRoot/releases/20[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9]* 2>/dev/null | sort | head -n -3 | xargs -r rm -rf || true
+rm -f $RemoteRoot/releases/*.tar.gz $RemoteRoot/releases/*.tgz || true
+echo "__A11_PRUNE_DONE__"
 "@
+}
 $remoteDeployEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remoteDeploy.Replace("`r`n", "`n").Replace("`r", "`n")))
 & ssh @sshBase $Remote "printf '%s' '$remoteDeployEncoded' | base64 -d | bash"
 if ($LASTEXITCODE -ne 0) { throw "Deploiement distant echoue" }
 
-Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp" -ForegroundColor Green
+if ($BlueGreen) {
+  Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp / blue-green=$DeployBlueGreenColor" -ForegroundColor Green
+} else {
+  Write-Host "Deploy A11 prod Finlande termine: $Remote / release $Stamp" -ForegroundColor Green
+}

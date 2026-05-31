@@ -14,7 +14,7 @@ function buildApiUrl(path: string): string {
 }
 
 function getTtsEndpoint() {
-  return (import.meta as any)?.env?.VITE_TTS_API || buildApiUrl('/api/tts/piper');
+  return (import.meta as any)?.env?.VITE_TTS_API || buildApiUrl('/api/tts/speak');
 }
 
 // Mode: true = queue TTS (mode vocal/mic), false = pas de queue (mode normal)
@@ -310,6 +310,7 @@ export function queueLength(): number {
   return speechQueue.length;
 }
 
+// CANONICAL: server TTS entrypoint. Legacy name kept for compatibility; endpoint is /api/tts/speak, not Piper-only.
 async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () => void): Promise<void> {
   try {
     if (
@@ -324,21 +325,33 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
     const token = getAuthToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
+    const requestBody = {
+      audioFormat: 'mp3',
+      latencyMode: 'interactive',
+      voiceConversion: false,
+      ...options,
+      text,
+      stream: true,
+    };
+    const timeoutMs = Math.max(4000, Math.min(60_000, Number(options.ttsTimeoutMs || options.timeoutMs || 35_000) || 35_000));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(getTtsEndpoint(), {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ text, stream: true, ...options })
-    });
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
     if (!res.ok) {
-      const retryable = [404, 502, 503, 504].includes(res.status);
+      const retryable = [404, 502, 503, 504, 524].includes(res.status);
       if (retryable) {
-        serverTtsDisabledUntil = Date.now() + 60_000;
+        serverTtsDisabledUntil = Date.now() + (res.status === 524 ? 20_000 : 60_000);
         if (shouldUseBrowserSpeechFallback(options) && playWithBrowserSpeech(text, options, onEnd, `server_tts_${res.status}`)) {
           return;
         }
       }
-      throw new Error(`Piper TTS server error (${res.status})`);
+      throw new Error(`TTS server error (${res.status})`);
     }
 
     const contentType = String(res.headers.get('content-type') || '').toLowerCase();
@@ -370,7 +383,7 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
         ((typeof data?.body === 'string' && data.body) ? data.body : null) ??
         null;
 
-      if (!audioUrl) throw new Error('No audio_url in Piper response');
+      if (!audioUrl) throw new Error('No audio_url in TTS response');
       if (data?.audioModule) {
         emitCustomEvent('a11:ttsDiagnostics', {
           ...data.audioModule,

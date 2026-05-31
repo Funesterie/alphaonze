@@ -41,6 +41,7 @@ async function ingestUploadedFile({
   uploadBufferToR2,
   saveFileRecord,
   saveUserFileMemory,
+  enforceAccountStorageQuota,
   sanitizeFileName,
   expiresAt,
 }) {
@@ -60,6 +61,17 @@ async function ingestUploadedFile({
     error.code = 'file_too_large';
     error.maxBytes = Number(maxBytes || 0);
     throw error;
+  }
+
+  if (typeof enforceAccountStorageQuota === 'function') {
+    await enforceAccountStorageQuota({
+      userId: normalizedUserId,
+      filename: safeFilename,
+      contentType: normalizedContentType,
+      incomingBytes: buffer.length,
+      origin,
+      resourceKind,
+    });
   }
 
   let effectiveResourceMetadata = resourceMetadata;

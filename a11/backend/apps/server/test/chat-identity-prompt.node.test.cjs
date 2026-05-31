@@ -21,6 +21,8 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /WestSide Chopper/i);
   assert.match(prompt, /Funesterie Mixer/i);
   assert.match(prompt, /runtime Funesterie/i);
+  assert.match(prompt, /gardienne cybernetique/i);
+  assert.match(prompt, /reponses toutes faites/i);
 });
 
 test('/api/llm/chat empty system prompt still receives active identity context', () => {
@@ -34,6 +36,8 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /A11 MCP/i);
   assert.match(prompt, /Chopper assemble les modules/i);
   assert.match(prompt, /Mixer route une demande/i);
+  assert.match(prompt, /identites originales Funesterie/i);
+  assert.match(prompt, /clonage exact/i);
 });
 
 test('/api/chat Ollama fallback injects the active identity before the user message', () => {

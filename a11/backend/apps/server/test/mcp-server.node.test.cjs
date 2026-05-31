@@ -394,7 +394,7 @@ test('a11 MCP worker supervisor starts only as a whitelisted dry-run plan', asyn
 test('Kiro MCP config avoids high-risk auto-approval', () => {
   const config = JSON.parse(fs.readFileSync(KIRO_MCP_PATH, 'utf8'));
   const fetchAutoApprove = config.mcpServers.fetch.autoApprove || [];
-  const a11AutoApprove = config.mcpServers.a11.autoApprove || [];
+  const a11AutoApprove = config.mcpServers.a11?.autoApprove || [];
   const sharedAutoApprove = config.mcpServers['a11mcp-shared'].autoApprove || [];
 
   assert.equal(fetchAutoApprove.includes('*'), false);

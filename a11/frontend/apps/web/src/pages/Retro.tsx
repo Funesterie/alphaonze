@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+// #old version: prototype room page. Canonical retro control should use the MCP/qflush RomStation bridge.
 export default function Retro() {
   const [room, setRoom] = useState('');
 

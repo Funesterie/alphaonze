@@ -31,6 +31,7 @@ Rules:
 
 Clarification rules:
 - needsClarification must be TRUE only when the request is so vague that image generation is impossible without more information (e.g. "genere une image" with no subject at all).
+- If the user's input is in French, write clarificationQuestion in French. If in English, write it in English.
 - A descriptive scene request like "a sapphire dragon with spines breathing fire" is NOT ambiguous — set needsClarification=false and generate the canonical fields.
 - A request with a clear subject, action, and setting is NEVER ambiguous, even if it is complex or fantastical.
 - Do NOT ask for clarification just because the scene is complex, has multiple elements, or involves fantasy/action.

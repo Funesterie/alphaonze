@@ -1,6 +1,7 @@
 /**
  * TTS API Routes - Text-to-Speech Service
  * Endpoints pour service TTS supervisé (Piper)
+ * #old version: legacy Piper-only helper. Canonical interactive voice route is routes/tts.cjs (/api/tts/speak).
  */
 
 const express = require('express');

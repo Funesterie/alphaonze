@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { ONE_GIB } = require('../src/storage/account-storage-quota.cjs');
 
 function createPcm16Wav({ frequency = 440, durationSec = 0.25, sampleRate = 16000, amplitude = 0.25 } = {}) {
   const sampleCount = Math.max(1, Math.floor(durationSec * sampleRate));
@@ -80,6 +81,48 @@ test('voice references can be saved, listed and compared without exposing privat
   }
 });
 
+test('voice reference uploads enforce per-account storage quota', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-refs-quota-'));
+  const previousRoot = process.env.A11_VOICE_REFERENCE_DIR;
+  const previousLibraryDisabled = process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_REFERENCE_DIR = root;
+  process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
+  const store = require('../src/tts/voice-reference-store.cjs');
+
+  try {
+    fs.mkdirSync(root, { recursive: true });
+    const user = { id: 'quota-user', email: 'quota@example.com' };
+    fs.writeFileSync(path.join(root, 'index.json'), JSON.stringify({ references: [{
+      id: 'quota-existing-reference',
+      label: 'Existing quota block',
+      scope: 'private',
+      source: 'upload',
+      ownerKey: store.getUserKey(user),
+      bytes: ONE_GIB - 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }] }));
+
+    assert.throws(() => store.saveVoiceReference({
+      user,
+      file: { buffer: createPcm16Wav({ durationSec: 0.05 }), mimetype: 'audio/wav', originalname: 'too-much.wav' },
+      label: 'Too much',
+    }), (error) => error?.code === 'account_storage_quota_exceeded');
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.A11_VOICE_REFERENCE_DIR;
+    } else {
+      process.env.A11_VOICE_REFERENCE_DIR = previousRoot;
+    }
+    if (previousLibraryDisabled === undefined) {
+      delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+    } else {
+      process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = previousLibraryDisabled;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('voice reference library exposes WAV files as audio references without transcription', () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-library-'));
   const previousRuntimeRoot = process.env.A11_RUNTIME_ROOT;
@@ -112,7 +155,7 @@ test('voice reference library exposes WAV files as audio references without tran
     assert.equal(libraryRef.analysis.kind, 'wav');
     assert.equal(Object.hasOwn(libraryRef, 'filePath'), false);
 
-    const resolved = store.resolveVoiceReferenceForRequest({ user });
+    const resolved = store.findVoiceReference({ user, id: libraryRef.id, includePath: true });
     assert.equal(resolved.id, libraryRef.id);
     assert.ok(resolved.filePath.endsWith('terminator.wav'));
   } finally {
@@ -146,7 +189,9 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
     const libraryDir = path.join(runtimeRoot, 'voice-library');
     fs.mkdirSync(libraryDir, { recursive: true });
     fs.writeFileSync(path.join(libraryDir, 'neutral-reference.wav'), createPcm16Wav({ frequency: 220 }));
-    fs.writeFileSync(path.join(libraryDir, 'vivy-adaptive.wav'), createPcm16Wav({ frequency: 440 }));
+    fs.writeFileSync(path.join(libraryDir, 'vivy.wav'), createPcm16Wav({ frequency: 440 }));
+    fs.writeFileSync(path.join(libraryDir, 'kaen44-donna.wav'), createPcm16Wav({ frequency: 520 }));
+    fs.writeFileSync(path.join(libraryDir, 'a11-terminator.wav'), createPcm16Wav({ frequency: 110 }));
 
     process.env.A11_RUNTIME_ROOT = runtimeRoot;
     process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
@@ -157,11 +202,17 @@ test('voice reference resolver prefers Vivy library samples when requested', () 
 
     const user = { id: 'u1', email: 'u1@example.com' };
     const resolved = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'vivy' });
+    const kaen44 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'donna' });
+    const a11 = store.resolveVoiceReferenceForRequest({ user, preferredLabel: 'terminator' });
 
     assert.ok(resolved);
     assert.equal(resolved.source, 'library');
-    assert.equal(resolved.originalName, 'vivy-adaptive.wav');
-    assert.ok(resolved.filePath.endsWith('vivy-adaptive.wav'));
+    assert.equal(resolved.originalName, 'vivy.wav');
+    assert.ok(resolved.filePath.endsWith('vivy.wav'));
+    assert.equal(kaen44.originalName, 'kaen44-donna.wav');
+    assert.ok(kaen44.filePath.endsWith('kaen44-donna.wav'));
+    assert.equal(a11.originalName, 'a11-terminator.wav');
+    assert.ok(a11.filePath.endsWith('a11-terminator.wav'));
   } finally {
     if (previousRuntimeRoot === undefined) delete process.env.A11_RUNTIME_ROOT;
     else process.env.A11_RUNTIME_ROOT = previousRuntimeRoot;

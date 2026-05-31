@@ -70,3 +70,6 @@ logs/
 
 # Runtime généré
 runtime/
+
+# Local Netlify folder
+.netlify

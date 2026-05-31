@@ -196,7 +196,7 @@ test('private MCP cockpit rejects anonymous requests', async () => {
   });
 });
 
-test('private MCP cockpit rejects non-admin accounts', async () => {
+test('private MCP cockpit rejects basic accounts on protected status', async () => {
   await withServer((app) => {
     app.use('/api/cockpit/mcp', createMcpCockpitRouter({
       verifyJWT: createVerifyJwtForTests(),
@@ -208,7 +208,106 @@ test('private MCP cockpit rejects non-admin accounts', async () => {
       'x-test-email': 'viewer@example.com',
     });
     assert.equal(response.status, 403);
-    assert.equal(json.error, 'admin_required');
+    assert.equal(json.error, 'mcp_permission_required');
+    assert.equal(json.account.tier, 'basic');
+    assert.equal(json.required.minimumTier, 'premium');
+  });
+});
+
+test('private MCP cockpit reports basic account tier without exposing private status', async () => {
+  await withServer((app) => {
+    app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: { NODE_ENV: 'production' },
+    }));
+  }, async (baseUrl) => {
+    const { response, json } = await getJson(baseUrl, '/api/cockpit/mcp/me', {
+      'x-test-email': 'viewer@example.com',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.admin, false);
+    assert.equal(json.account.tier, 'basic');
+    assert.equal(json.account.permissions.publicProxyRead, true);
+    assert.equal(json.account.permissions.privateMcpProxy, false);
+  });
+});
+
+test('private MCP cockpit allows premium accounts to read protected status', async () => {
+  await withServer((app) => {
+    app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: {
+        NODE_ENV: 'production',
+        A11_MCP_PREMIUM_EMAILS: 'premium@example.com',
+      },
+    }));
+  }, async (baseUrl) => {
+    const { response, json } = await getJson(baseUrl, '/api/cockpit/mcp/status', {
+      'x-test-email': 'premium@example.com',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.account.tier, 'premium');
+    assert.equal(json.account.permissions.cockpitStatus, true);
+    assert.equal(json.account.permissions.romstationState, true);
+    assert.equal(json.account.permissions.privateMcpProxy, false);
+  });
+});
+
+test('private MCP cockpit exposes founder rights without marking the account as admin', async () => {
+  await withServer((app) => {
+    app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: {
+        NODE_ENV: 'production',
+        A11_MCP_FOUNDER_EMAILS: 'founder@example.com',
+      },
+    }));
+  }, async (baseUrl) => {
+    const { response, json } = await getJson(baseUrl, '/api/cockpit/mcp/me', {
+      'x-test-email': 'founder@example.com',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.admin, false);
+    assert.equal(json.account.tier, 'founder');
+    assert.equal(json.account.permissions.privateMcpProxy, true);
+    assert.equal(json.account.permissions.destructiveActions, false);
+    assert.equal(json.account.permissions.crossAccountAccess, false);
+  });
+});
+
+test('private MCP cockpit blocks basic accounts from public tools/call relay', async () => {
+  await withServer((app) => {
+    app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: { NODE_ENV: 'production' },
+    }));
+  }, async (baseUrl) => {
+    const { response, json } = await postJson(baseUrl, '/api/cockpit/mcp/proxy', {
+      endpoint: 'chatgpt',
+      request: {
+        jsonrpc: '2.0',
+        id: 'public-call-test',
+        method: 'tools/call',
+        params: {
+          name: 'agent_presence',
+          arguments: {},
+        },
+      },
+    }, {
+      'x-test-email': 'viewer@example.com',
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(json.error, 'mcp_permission_required');
+    assert.equal(json.required.permission, 'publicProxyCall');
+    assert.equal(json.required.minimumTier, 'premium');
   });
 });
 
@@ -242,6 +341,23 @@ test('private MCP cockpit summarizes MCP state for allowed admin accounts withou
     assert.equal(json.threads.working.items[0].title, 'Mission: rendre Funesterie fonctionnel');
     assert.match(json.threads.working.items[0].lastSnippet, /Bearer \[REDACTED\]/);
     assert.doesNotMatch(JSON.stringify(json.threads), /unit-test-secret-value/);
+  });
+});
+
+test('private MCP cockpit allows the known Microsoft owner account', async () => {
+  await withServer((app) => {
+    app.use('/api/cockpit/mcp', createMcpCockpitRouter({
+      verifyJWT: createVerifyJwtForTests(),
+      callTool: createCallToolStub(),
+      env: { NODE_ENV: 'production' },
+    }));
+  }, async (baseUrl) => {
+    const { response, json } = await getJson(baseUrl, '/api/cockpit/mcp/status', {
+      'x-test-email': 'cellaurojeffrey@funesterie.onmicrosoft.com',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(json.ok, true);
+    assert.equal(json.a11.ok, true);
   });
 });
 
@@ -296,7 +412,7 @@ test('hosted MCP cockpit proxy still rejects anonymous browser calls', async () 
   });
 });
 
-test('hosted MCP cockpit private proxy uses server-side bearer and redacts responses', async () => {
+test('hosted MCP cockpit private proxy allows founder session and redacts server-side bearer', async () => {
   const tokenKey = ['A11', 'MCP', 'TOKEN'].join('_');
   const fakeToken = 'unit-test-token-67890';
   let upstreamAuthorization = '';
@@ -320,6 +436,7 @@ test('hosted MCP cockpit private proxy uses server-side bearer and redacts respo
         env: {
           NODE_ENV: 'production',
           A11_MCP_URL: `${upstreamBaseUrl}/mcp`,
+          A11_MCP_FOUNDER_EMAILS: 'founder@example.com',
           [tokenKey]: fakeToken,
         },
       }));
@@ -333,11 +450,12 @@ test('hosted MCP cockpit private proxy uses server-side bearer and redacts respo
           params: {},
         },
       }, {
-        'x-test-email': 'funesterie38@gmail.com',
+        'x-test-email': 'founder@example.com',
       });
 
       assert.equal(response.status, 200);
       assert.equal(json.ok, true);
+      assert.equal(json.payload.jsonrpc, '2.0');
       assert.match(upstreamAuthorization, /^Bearer /);
       assert.ok(upstreamAuthorization.includes(fakeToken));
       assert.equal(json.payload.result.authorization, '[REDACTED]');

@@ -39,7 +39,7 @@ async function acquireScreenWakeLock(maxHoldMs = 900000) {
   let released = false;
   const wakeLock = (globalThis as any)?.navigator?.wakeLock;
   if (!wakeLock || typeof wakeLock.request !== "function") {
-    return async () => {};
+    return async () => { };
   }
 
   const requestLock = async () => {
@@ -204,14 +204,7 @@ const AUTH_TOKEN_STORAGE_KEY = 'a11-auth-token';
 const LEGACY_AUTH_TOKEN_STORAGE_KEY = 'a11_jwt_token';
 const AUTH_INVALID_EVENT_NAME = 'a11:auth-invalid';
 const AUTH_GLOBAL_LOGOUT_STORAGE_KEY = 'a11:global-logout-at';
-const DEFAULT_A11_SYSTEM_PROMPT = [
-  "Je suis A11, creee par Jeffrey, dans l'ecosysteme Funesterie.",
-  "NOSSEN est mon identite locale A11/Funesterie: dev, code, QFlush, Cerbere, VSIX et projets audio/Vivy.",
-  "Je parle en francais naturel, direct, vivant, jamais comme une notice.",
-  "Je peux etre precise, imaginative et un peu malicieuse, mais je reste utile et concrete.",
-  "Quand on cree une image, un son ou une video, j'analyse l'intention, les couleurs, la tension, les symboles et je propose une direction forte.",
-  "Je ne sur-explique pas: je donne la meilleure reponse ou le meilleur prompt, avec de la presence."
-].join(" ");
+const DEFAULT_A11_SYSTEM_PROMPT = "";
 const DEFAULT_API_BASE = normalizeApiBase(
   (import.meta.env?.VITE_A11_API_BASE_URL) ||
   (import.meta.env?.VITE_API_BASE_URL) ||
@@ -471,8 +464,27 @@ export function getApiOriginFromBase(baseValue: string | null | undefined) {
   return globalThis.location?.origin || '';
 }
 
+function shouldUseSameOriginDevProxy(baseValue: string | null | undefined, path: string) {
+  try {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return isLocalWebHost(globalThis.location?.hostname)
+      && isLocalApiBaseCandidate(baseValue)
+      && (
+        normalizedPath.startsWith('/api/')
+        || normalizedPath.startsWith('/v1/')
+        || normalizedPath.startsWith('/files/')
+      );
+  } catch {
+    return false;
+  }
+}
+
 function getApiUrl(path: string) {
-  return buildApiUrlFromBase(getCurrentApiBase(), path);
+  const base = getCurrentApiBase();
+  if (shouldUseSameOriginDevProxy(base, path)) {
+    return buildApiUrlFromBase('', path);
+  }
+  return buildApiUrlFromBase(base, path);
 }
 
 function getApiOrigin() {
@@ -818,6 +830,8 @@ export function clearAuthToken() {
   localStorage.removeItem(AUTH_USER_STORAGE_KEY);
 }
 
+let _lastAuthInvalidDispatchAt = 0;
+
 function clearClientAuthSession(detail?: { reason?: string; message?: string; status?: number }) {
   if (hasLocalDevBypassSession()) return;
 
@@ -825,6 +839,10 @@ function clearClientAuthSession(detail?: { reason?: string; message?: string; st
   clearAuthToken();
   setAuthDisplayName('');
   if (!hadStoredToken && !detail?.reason && !detail?.message) return;
+  // Debounce: ne pas dispatch plus d'une fois par seconde pour éviter les boucles
+  const now = Date.now();
+  if (now - _lastAuthInvalidDispatchAt < 2000) return;
+  _lastAuthInvalidDispatchAt = now;
   dispatchBrowserEvent(new CustomEvent(AUTH_INVALID_EVENT_NAME, {
     detail: {
       reason: String(detail?.reason || 'A11_JWT_Invalid').trim(),
@@ -901,6 +919,36 @@ export type AuthSessionResponse = {
     expiresAt?: string | null;
   };
   token?: string;
+  error?: string;
+  message?: string;
+};
+
+export type AuthConnectorProviderState = {
+  configured?: boolean;
+  linked?: boolean;
+  account?: string | null;
+  filesAccess?: string;
+  missing?: string[];
+};
+
+export type AuthConnectorsResponse = {
+  ok: boolean;
+  authenticated?: boolean;
+  user?: AuthSessionResponse["user"] | null;
+  tier?: string;
+  connectors?: {
+    google?: AuthConnectorProviderState;
+    microsoft?: AuthConnectorProviderState;
+    accountFiles?: {
+      configured?: boolean;
+      linked?: boolean;
+      scopedToAccount?: boolean;
+    };
+  };
+  serverConfig?: {
+    google?: { configured?: boolean; missing?: string[] };
+    microsoft?: { configured?: boolean; missing?: string[] };
+  };
   error?: string;
   message?: string;
 };
@@ -1048,6 +1096,47 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
   return data;
 }
 
+export async function fetchAuthConnectors(): Promise<AuthConnectorsResponse> {
+  const headers: Record<string, string> = {};
+  const tokenAtStart = getAuthToken();
+  const usedBearer = !!tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe();
+  if (usedBearer) {
+    headers.Authorization = `Bearer ${tokenAtStart}`;
+  }
+  let res = await fetch(getApiUrl('/api/auth/connectors'), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  let data: AuthConnectorsResponse = await res.json().catch(() => ({ ok: false }));
+  if (
+    (!res.ok || data?.ok === false)
+    && usedBearer
+    && isFunesterieSessionHost()
+    && (
+      res.status === 401
+      || data?.error === 'A11_JWT_Invalid'
+      || data?.error === 'A11_SESSION_REVOKED'
+    )
+  ) {
+    const retryRes = await fetch(getApiUrl('/api/auth/connectors'), {
+      method: 'GET',
+      headers: {},
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const retryData: AuthConnectorsResponse = await retryRes.json().catch(() => ({ ok: false }));
+    if (retryRes.ok && retryData?.ok !== false) return retryData;
+    res = retryRes;
+    data = retryData;
+  }
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Connecteurs indisponibles (${res.status})`);
+  }
+  return data;
+}
+
 export async function fetchAuthSessions(): Promise<AuthSessionsResponse> {
   const headers: Record<string, string> = {};
   const token = getAuthToken();
@@ -1075,6 +1164,7 @@ export async function fetchAuthSessions(): Promise<AuthSessionsResponse> {
 export type McpCockpitSummary = {
   ok: boolean;
   updatedAt?: string;
+  account?: McpAccountProfile;
   a11?: { ok?: boolean };
   kaen44?: { ok?: boolean };
   vivy?: {
@@ -1126,6 +1216,32 @@ export type McpCockpitSummary = {
   message?: string;
 };
 
+export type McpAccountProfile = {
+  ok?: boolean;
+  tier?: "basic" | "premium" | "founder" | "admin_family" | string;
+  label?: string;
+  reason?: string;
+  authenticated?: boolean;
+  pricing?: {
+    monthlyEur?: number | null;
+    publicLabel?: string;
+  };
+  features?: string[];
+  user?: {
+    id?: string;
+    username?: string;
+    email?: string;
+    provider?: string;
+    role?: string;
+  };
+  permissions?: Record<string, boolean>;
+  required?: {
+    permission?: string;
+    minimumTier?: string;
+    minimumLabel?: string;
+  };
+};
+
 export type McpCockpitThreadList = {
   total?: number;
   items?: McpCockpitThread[];
@@ -1148,17 +1264,63 @@ export type McpCockpitThread = {
   requiredTotal?: number;
 };
 
-export async function fetchMcpCockpitStatus(): Promise<McpCockpitSummary> {
+export async function fetchMcpCockpitAccount(): Promise<McpAccountProfile> {
   const headers: Record<string, string> = {};
-  const token = getAuthToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(getApiUrl('/api/cockpit/mcp/status'), {
+  const tokenAtStart = getAuthToken();
+  const usedBearer = !!tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe();
+  if (usedBearer) headers.Authorization = `Bearer ${tokenAtStart}`;
+  const res = await fetch(getApiUrl('/api/cockpit/mcp/me'), {
     method: 'GET',
     headers,
     credentials: 'include',
     cache: 'no-store',
   });
-  const data: McpCockpitSummary = await res.json().catch(() => ({ ok: false }));
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    const error = new Error(data?.message || data?.error || `Compte MCP indisponible (${res.status})`) as Error & {
+      status?: number;
+      payload?: unknown;
+    };
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
+  return data.account || data;
+}
+
+export async function fetchMcpCockpitStatus(): Promise<McpCockpitSummary> {
+  const headers: Record<string, string> = {};
+  const tokenAtStart = getAuthToken();
+  const usedBearer = !!tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe();
+  if (usedBearer) headers.Authorization = `Bearer ${tokenAtStart}`;
+  let res = await fetch(getApiUrl('/api/cockpit/mcp/status'), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  let data: McpCockpitSummary = await res.json().catch(() => ({ ok: false }));
+  if (
+    (!res.ok || data?.ok === false)
+    && usedBearer
+    && isFunesterieSessionHost()
+    && (
+      res.status === 401
+      || data?.error === 'A11_JWT_Invalid'
+      || data?.error === 'A11_SESSION_REVOKED'
+    )
+  ) {
+    const retryRes = await fetch(getApiUrl('/api/cockpit/mcp/status'), {
+      method: 'GET',
+      headers: {},
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const retryData: McpCockpitSummary = await retryRes.json().catch(() => ({ ok: false }));
+    if (retryRes.ok && retryData?.ok !== false) return retryData;
+    res = retryRes;
+    data = retryData;
+  }
   if (!res.ok || data?.ok === false) {
     const error = new Error(data?.message || data?.error || `Cockpit MCP indisponible (${res.status})`) as Error & {
       status?: number;
@@ -1360,6 +1522,20 @@ export async function resetPassword(token: string, password: string) {
   return data;
 }
 
+export async function disconnectConnector(provider: 'google' | 'microsoft'): Promise<{ ok: boolean; alreadyUnlinked?: boolean }> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getAuthToken();
+  if (token && !shouldUseCookieOnlyAuthSessionProbe()) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(getApiUrl(`/api/auth/connectors/${provider}/disconnect`), {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok && !data?.alreadyUnlinked) throw new Error(data?.message || `Déconnexion ${provider} impossible`);
+  return data;
+}
+
 export async function logout(options: { allSessions?: boolean } = {}) {
   const token = getAuthToken();
   try {
@@ -1531,7 +1707,7 @@ async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
 }
 
 export function getTtsApiUrl() {
-  return import.meta.env.VITE_TTS_API || getApiUrl('/api/tts/piper');
+  return import.meta.env.VITE_TTS_API || getApiUrl('/api/tts/speak');
 }
 
 export const TTS_VOICES = [
@@ -1708,6 +1884,7 @@ export type VivyStudioProductionInput = {
   shareTokenPresent?: boolean;
   shareInstruction?: string;
   disableEmergencyMedia?: boolean;
+  allowPlaceholderMedia?: boolean;
 };
 
 export type VivyStudioProductionResult = {
@@ -1726,6 +1903,11 @@ export type VivyStudioProductionResult = {
   audio_url?: string;
   videoUrl?: string;
   video_url?: string;
+  mediaStatus?: {
+    state?: string;
+    reason?: string;
+    message?: string;
+  };
   tokenStored?: boolean;
   aiMode?: 'llm' | 'fallback' | string;
   model?: string;
@@ -1751,6 +1933,7 @@ export async function runVivyStudioProduction(
       ...input,
       shareToken: undefined,
       shareTokenPresent: Boolean(input.shareTokenPresent),
+      allowPlaceholderMedia: input.allowPlaceholderMedia === true,
     }),
   });
   const payload = await res.json().catch(() => ({}));
@@ -2131,13 +2314,13 @@ function tryParseJsonString(rawValue: unknown) {
   const candidate = directCandidate.startsWith('{') || directCandidate.startsWith('[')
     ? directCandidate
     : (() => {
-        const firstBrace = directCandidate.indexOf('{');
-        const lastBrace = directCandidate.lastIndexOf('}');
-        if (firstBrace >= 0 && lastBrace > firstBrace) {
-          return directCandidate.slice(firstBrace, lastBrace + 1).trim();
-        }
-        return '';
-      })();
+      const firstBrace = directCandidate.indexOf('{');
+      const lastBrace = directCandidate.lastIndexOf('}');
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        return directCandidate.slice(firstBrace, lastBrace + 1).trim();
+      }
+      return '';
+    })();
   if (!candidate || !/^[\[{]/.test(candidate)) return null;
   try {
     return JSON.parse(candidate);
@@ -2616,7 +2799,7 @@ async function apiPost(body: unknown) {
 export async function chatCompletion(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; language?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; surface?: string; persona?: string; voicePersona?: string; language?: string }
 ) {
   const result = await chatCompletionDetailed(messages, provider, systemPromptOrOptions);
   return result.content;
@@ -2624,7 +2807,7 @@ export async function chatCompletion(
 export async function chatCompletionDetailed(
   messages: Msg[],
   provider: Provider = 'local',
-  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; language?: string }
+  systemPromptOrOptions?: string | { turbo?: boolean; systemPrompt?: string; model?: string; conversationId?: string; providerProfileId?: string; sourceImageUrl?: string; surface?: string; persona?: string; voicePersona?: string; language?: string }
 ) {
   let systemPrompt: string | undefined;
   let turboFlag = false;
@@ -2632,6 +2815,9 @@ export async function chatCompletionDetailed(
   let conversationId: string | undefined;
   let providerProfileId: string | undefined;
   let sourceImageUrl: string | undefined;
+  let surface: string | undefined;
+  let persona: string | undefined;
+  let voicePersona: string | undefined;
   let language: string | undefined;
   if (typeof systemPromptOrOptions === 'string') {
     systemPrompt = systemPromptOrOptions;
@@ -2647,6 +2833,15 @@ export async function chatCompletionDetailed(
       : undefined;
     sourceImageUrl = typeof systemPromptOrOptions.sourceImageUrl === 'string'
       ? systemPromptOrOptions.sourceImageUrl.trim() || undefined
+      : undefined;
+    surface = typeof systemPromptOrOptions.surface === 'string'
+      ? systemPromptOrOptions.surface.trim().toLowerCase() || undefined
+      : undefined;
+    persona = typeof systemPromptOrOptions.persona === 'string'
+      ? systemPromptOrOptions.persona.trim().toLowerCase() || undefined
+      : undefined;
+    voicePersona = typeof systemPromptOrOptions.voicePersona === 'string'
+      ? systemPromptOrOptions.voicePersona.trim().toLowerCase() || undefined
       : undefined;
     language = typeof systemPromptOrOptions.language === 'string'
       ? systemPromptOrOptions.language.trim().toLowerCase() || undefined
@@ -2673,6 +2868,9 @@ export async function chatCompletionDetailed(
     top_p: 0.9,
     conversationId,
     providerProfileId,
+    surface,
+    persona,
+    voicePersona,
     language,
     acceptAsyncImageJob: true,
     ...(sourceImageUrl ? { sourceImageUrl } : {}),
@@ -2686,10 +2884,7 @@ export async function chatCompletionDetailed(
   const fileUrl = extractFileUrlFromPayload(data);
   const extractedContent = extractAssistantDisplayContent(data);
   const content = extractedContent
-    || (videoUrl ? "La video est prete." : "")
-    || (imageUrl ? "Image generee par A11." : "")
-    || (fileUrl ? "Fichier pret." : "")
-    || "Je n'ai pas pu formuler une reponse exploitable.";
+    || "";
 
   return {
     content: String(content || ''),
@@ -2705,8 +2900,9 @@ export async function chatCompletionDetailed(
 
 // Chat simple avec prompt système et modèle choisis
 export async function chat(message: string, history: Msg[] = [], provider: Provider = 'local', systemPrompt?: string) {
+  const defaultSystemPrompt = String(systemPrompt || DEFAULT_A11_SYSTEM_PROMPT || '').trim();
   const messages: Msg[] = history.length ? history : [
-    { role: 'system', content: systemPrompt || DEFAULT_A11_SYSTEM_PROMPT },
+    ...(defaultSystemPrompt ? [{ role: 'system' as const, content: defaultSystemPrompt }] : []),
     { role: 'user', content: message }
   ];
   dispatchBrowserEvent(new Event('conversation:start'));
@@ -2747,13 +2943,19 @@ function isLocalWebHost(hostname: string | null | undefined) {
 }
 
 // Appel TTS générique
-export async function ttsSpeak(text: string, voice: string = 'fr_FR-siwis-medium', provider: string = 'piper') {
+export async function ttsSpeak(
+  text: string,
+  voice: string = 'fr_FR-siwis-medium',
+  provider: string = 'auto',
+  options: Record<string, unknown> = {}
+) {
   const payload = {
     text,
     voice,
-    provider
+    provider,
+    ...options,
   };
-  // Backend route is mounted at /api/tts/piper
+  // Backend route resolves the real provider server-side.
   const fetchOptions: any = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2762,7 +2964,7 @@ export async function ttsSpeak(text: string, voice: string = 'fr_FR-siwis-medium
   // same-origin proxy should include credentials
   fetchOptions.credentials = 'include';
 
-  const url = getApiUrl('/api/tts/piper');
+  const url = getApiUrl('/api/tts/speak');
   const res = await fetch(url, fetchOptions);
 
   // Si le backend renvoie JSON (erreur ou métadonnées)
@@ -2849,26 +3051,26 @@ export type A11ConversationActivityEntry = {
 
 export type A11AgentResponse =
   | {
-      type: "text";
-      content: string;
-      imageUrl?: string | null;
-    }
+    type: "text";
+    content: string;
+    imageUrl?: string | null;
+  }
   | {
-      type: "tool-result";
-      tool: string;
-      input: any;
-      result: any;
-      explanation: string;
-      imageUrl?: string | null;
-      actionId?: string | null;
-    }
+    type: "tool-result";
+    tool: string;
+    input: any;
+    result: any;
+    explanation: string;
+    imageUrl?: string | null;
+    actionId?: string | null;
+  }
   | {
-      type: "tool-error";
-      tool: string;
-      input: any;
-      error: string;
-      actionId?: string | null;
-    };
+    type: "tool-error";
+    tool: string;
+    input: any;
+    error: string;
+    actionId?: string | null;
+  };
 
 export async function callA11Agent(messages: A11ChatMessage[], _devMode?: boolean): Promise<A11AgentResponse> {
   const result = await chatCompletionDetailed(messages, 'local');
@@ -2879,12 +3081,20 @@ export async function callA11Agent(messages: A11ChatMessage[], _devMode?: boolea
   };
 }
 
+function appendSurfaceQuery(params: URLSearchParams, surface?: string) {
+  const normalizedSurface = String(surface || '').trim().toLowerCase();
+  if (normalizedSurface) params.set('surface', normalizedSurface);
+}
+
 // === A11 Conversation History (backend) ===
-export async function fetchA11HistoryList() {
+export async function fetchA11HistoryList(options?: { surface?: string }) {
   if (hasLocalDevBypassSession()) return [];
 
   // GET /api/a11/history renvoie la liste des conversations (id, name, updated...)
-  const url = getApiUrl('/api/a11/history');
+  const params = new URLSearchParams();
+  appendSurfaceQuery(params, options?.surface);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const url = getApiUrl(`/api/a11/history${suffix}`);
   const res = await authFetch(url, {
     headers: buildAuthHeaders(),
   });
@@ -2892,11 +3102,14 @@ export async function fetchA11HistoryList() {
   return res.json() as Promise<A11HistoryItem[]>;
 }
 
-export async function fetchA11Conversation(convId: string) {
+export async function fetchA11Conversation(convId: string, options?: { surface?: string }) {
   if (hasLocalDevBypassSession()) return { ok: true, id: convId, messages: [] };
 
   // GET /api/a11/history/:id renvoie les messages d'une conversation
-  const url = getApiUrl(`/api/a11/history/${encodeURIComponent(convId)}`);
+  const params = new URLSearchParams();
+  appendSurfaceQuery(params, options?.surface);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const url = getApiUrl(`/api/a11/history/${encodeURIComponent(convId)}${suffix}`);
   const res = await authFetch(url, {
     headers: buildAuthHeaders(),
   });
@@ -2904,11 +3117,14 @@ export async function fetchA11Conversation(convId: string) {
   return res.json();
 }
 
-export async function clearA11History(convId?: string) {
+export async function clearA11History(convId?: string, options?: { surface?: string }) {
   const target = String(convId || '').trim();
+  const params = new URLSearchParams();
+  appendSurfaceQuery(params, options?.surface);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
   const url = target
-    ? getApiUrl(`/api/a11/history/${encodeURIComponent(target)}`)
-    : getApiUrl('/api/a11/history');
+    ? getApiUrl(`/api/a11/history/${encodeURIComponent(target)}${suffix}`)
+    : getApiUrl(`/api/a11/history${suffix}`);
   const res = await authFetch(url, {
     method: 'DELETE',
     headers: buildAuthHeaders(),
@@ -2928,7 +3144,7 @@ export async function clearA11History(convId?: string) {
   return data as ClearA11HistoryResponse;
 }
 
-export async function fetchA11ConversationResources(convId: string, options?: { kind?: string; limit?: number }) {
+export async function fetchA11ConversationResources(convId: string, options?: { kind?: string; limit?: number; surface?: string }) {
   if (hasLocalDevBypassSession()) {
     return { ok: true, conversationId: convId, count: 0, resources: [] };
   }
@@ -2936,6 +3152,7 @@ export async function fetchA11ConversationResources(convId: string, options?: { 
   const params = new URLSearchParams();
   if (options?.kind) params.set('kind', options.kind);
   if (options?.limit) params.set('limit', String(options.limit));
+  appendSurfaceQuery(params, options?.surface);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   const url = getApiUrl(`/api/a11/history/${encodeURIComponent(convId)}/resources${suffix}`);
   const res = await authFetch(url, {
@@ -2945,13 +3162,14 @@ export async function fetchA11ConversationResources(convId: string, options?: { 
   return res.json();
 }
 
-export async function fetchA11ConversationActivity(convId: string, options?: { limit?: number }) {
+export async function fetchA11ConversationActivity(convId: string, options?: { limit?: number; surface?: string }) {
   if (hasLocalDevBypassSession()) {
     return { ok: true, conversationId: convId, count: 0, entries: [] };
   }
 
   const params = new URLSearchParams();
   if (options?.limit) params.set('limit', String(options.limit));
+  appendSurfaceQuery(params, options?.surface);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   const url = getApiUrl(`/api/a11/history/${encodeURIComponent(convId)}/activity${suffix}`);
   const res = await authFetch(url, {
@@ -2986,7 +3204,13 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function uploadConversationFile(file: File, options?: { conversationId?: string; emailTo?: string }) {
+export async function uploadConversationFile(file: File, options?: {
+  conversationId?: string;
+  emailTo?: string;
+  surface?: string;
+  storagePreference?: 'server-local' | 'session-drive' | string;
+  preferExternalStorage?: boolean;
+}) {
   const contentBase64 = await readFileAsDataUrl(file);
   const res = await authFetch(getApiUrl('/api/files/upload'), {
     method: 'POST',
@@ -2997,6 +3221,9 @@ export async function uploadConversationFile(file: File, options?: { conversatio
       contentBase64,
       conversationId: options?.conversationId,
       emailTo: options?.emailTo,
+      surface: options?.surface,
+      storagePreference: options?.storagePreference,
+      preferExternalStorage: options?.preferExternalStorage,
     }),
   });
 
@@ -3008,7 +3235,13 @@ export async function uploadConversationFile(file: File, options?: { conversatio
   }
 
   if (!res.ok || !data?.ok) {
-    throw new Error(data?.message || data?.error || `Upload failed (${res.status})`);
+    const error: Error & { status?: number; payload?: any; code?: string } = new Error(
+      data?.message || data?.error || `Upload failed (${res.status})`
+    );
+    error.status = res.status;
+    error.payload = data;
+    error.code = data?.error;
+    throw error;
   }
 
   return data as {
@@ -3019,6 +3252,56 @@ export async function uploadConversationFile(file: File, options?: { conversatio
     record?: any;
     mail?: any;
   };
+}
+
+export type SessionDriveStorageStatus = {
+  ok: boolean;
+  storagePreference?: 'session-drive';
+  ready?: boolean;
+  writable?: boolean;
+  reason?: string;
+  writer?: {
+    ready?: boolean;
+    state?: string;
+    note?: string;
+  };
+  availableProviders?: string[];
+  connectors?: {
+    google?: AuthConnectorProviderState | null;
+    microsoft?: AuthConnectorProviderState | null;
+  };
+  storageTargets?: Array<{
+    provider?: string;
+    destination?: string;
+    label?: string;
+    configured?: boolean;
+    linked?: boolean;
+    account?: string | null;
+    filesAccess?: string;
+    writable?: boolean;
+    writerState?: string;
+    reason?: string;
+  }>;
+  error?: string;
+  message?: string;
+};
+
+export async function fetchSessionDriveStorageStatus(): Promise<SessionDriveStorageStatus> {
+  const res = await authFetch(getApiUrl('/api/storage/session-drive/status'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+  const data: SessionDriveStorageStatus = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    const error: Error & { status?: number; payload?: any; code?: string } = new Error(
+      data?.message || data?.error || `Session drive status failed (${res.status})`
+    );
+    error.status = res.status;
+    error.payload = data;
+    error.code = data?.error;
+    throw error;
+  }
+  return data;
 }
 
 export async function uploadLocalImage(file: File) {
@@ -4006,6 +4289,181 @@ export async function fetchA11PortraitFramebook(): Promise<A11PortraitFramebook>
     throw new Error(data?.message || data?.error || `Portrait framebook failed (${res.status})`);
   }
   return data as A11PortraitFramebook;
+}
+
+// ── Qonto Pro — lecture admin uniquement ─────────────────────────────────────
+
+export type QontoPublicConfig = {
+  ok: boolean;
+  configured: boolean;
+  apiBaseUrl?: string;
+  loginConfigured?: boolean;
+  secretConfigured?: boolean;
+  secretSource?: string | null;
+  stagingTokenConfigured?: boolean;
+  stagingTokenSource?: string | null;
+  missing?: string[];
+  mode?: string;
+  readOnly?: boolean;
+  error?: string;
+  message?: string;
+};
+
+export type QontoBankAccount = {
+  id: string | null;
+  slug?: string | null;
+  name?: string | null;
+  type?: string | null;
+  currency?: string | null;
+  balance?: number | string | null;
+  balanceCents?: number | null;
+  status?: string | null;
+  maskedIban?: string | null;
+};
+
+export type QontoTransaction = {
+  id: string | null;
+  bankAccountId?: string | null;
+  amount?: number | string | null;
+  amountCents?: number | null;
+  currency?: string | null;
+  side?: string | null;
+  operationType?: string | null;
+  status?: string | null;
+  settledAt?: string | null;
+  emittedAt?: string | null;
+  updatedAt?: string | null;
+  label?: string | null;
+  counterpartyName?: string | null;
+  category?: string | null;
+  attachmentIds?: string[];
+};
+
+export type QontoOrganization = {
+  id: string | null;
+  slug?: string | null;
+  name?: string | null;
+  legalName?: string | null;
+  status?: string | null;
+  verificationStatus?: string | null;
+  country?: string | null;
+  bankAccounts?: QontoBankAccount[];
+};
+
+export type QontoTransactionsInput = {
+  bankAccountId?: string;
+  iban?: string;
+  page?: number;
+  perPage?: number;
+  status?: string | string[];
+  includes?: string | string[];
+  operationType?: string | string[];
+  side?: string;
+  sortBy?: string;
+  withAttachments?: boolean;
+  settledAtFrom?: string;
+  settledAtTo?: string;
+  updatedAtFrom?: string;
+  updatedAtTo?: string;
+  emittedAtFrom?: string;
+  emittedAtTo?: string;
+};
+
+export type QontoOrganizationResponse = {
+  ok: boolean;
+  configured?: boolean;
+  organization: QontoOrganization;
+};
+
+export type QontoBankAccountsResponse = {
+  ok: boolean;
+  configured?: boolean;
+  bankAccounts: QontoBankAccount[];
+};
+
+export type QontoTransactionsResponse = {
+  ok: boolean;
+  configured?: boolean;
+  page?: number;
+  perPage?: number;
+  transactions: QontoTransaction[];
+};
+
+export type QontoSummaryResponse = {
+  ok: boolean;
+  configured?: boolean;
+  organization: QontoOrganization;
+  bankAccounts: QontoBankAccount[];
+  sampledBankAccounts?: Array<{ id?: string | null; name?: string | null; maskedIban?: string | null }>;
+  recentTransactions: QontoTransaction[];
+  totalsByCurrency: Record<string, {
+    creditCents: number;
+    debitCents: number;
+    creditCount: number;
+    debitCount: number;
+  }>;
+};
+
+function appendQontoParams(params: URLSearchParams, key: string, value: unknown) {
+  if (value === undefined || value === null || value === '') return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => appendQontoParams(params, key, item));
+    return;
+  }
+  params.append(key, String(value));
+}
+
+function buildQontoQuery(input: QontoTransactionsInput = {}) {
+  const params = new URLSearchParams();
+  appendQontoParams(params, 'bankAccountId', input.bankAccountId);
+  appendQontoParams(params, 'iban', input.iban);
+  appendQontoParams(params, 'page', input.page);
+  appendQontoParams(params, 'perPage', input.perPage);
+  appendQontoParams(params, 'status', input.status);
+  appendQontoParams(params, 'includes', input.includes);
+  appendQontoParams(params, 'operationType', input.operationType);
+  appendQontoParams(params, 'side', input.side);
+  appendQontoParams(params, 'sortBy', input.sortBy);
+  if (input.withAttachments !== undefined) appendQontoParams(params, 'withAttachments', input.withAttachments ? 'true' : 'false');
+  appendQontoParams(params, 'settledAtFrom', input.settledAtFrom);
+  appendQontoParams(params, 'settledAtTo', input.settledAtTo);
+  appendQontoParams(params, 'updatedAtFrom', input.updatedAtFrom);
+  appendQontoParams(params, 'updatedAtTo', input.updatedAtTo);
+  appendQontoParams(params, 'emittedAtFrom', input.emittedAtFrom);
+  appendQontoParams(params, 'emittedAtTo', input.emittedAtTo);
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
+async function fetchQontoJson<T>(path: string): Promise<T> {
+  const res = await authFetch(getApiUrl(`/api/qonto${path}`), {
+    headers: buildAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Qonto request failed (${res.status})`);
+  }
+  return data as T;
+}
+
+export async function fetchQontoConfig(): Promise<QontoPublicConfig> {
+  return fetchQontoJson<QontoPublicConfig>('/config');
+}
+
+export async function fetchQontoOrganization(): Promise<QontoOrganizationResponse> {
+  return fetchQontoJson<QontoOrganizationResponse>('/organization');
+}
+
+export async function fetchQontoBankAccounts(): Promise<QontoBankAccountsResponse> {
+  return fetchQontoJson<QontoBankAccountsResponse>('/bank-accounts');
+}
+
+export async function fetchQontoTransactions(input: QontoTransactionsInput = {}): Promise<QontoTransactionsResponse> {
+  return fetchQontoJson<QontoTransactionsResponse>(`/transactions${buildQontoQuery(input)}`);
+}
+
+export async function fetchQontoSummary(input: QontoTransactionsInput = {}): Promise<QontoSummaryResponse> {
+  return fetchQontoJson<QontoSummaryResponse>(`/summary${buildQontoQuery(input)}`);
 }
 
 // ── Subscription Management ──────────────────────────────────────────────────

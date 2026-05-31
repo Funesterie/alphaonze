@@ -9,6 +9,10 @@ import {
   fetchA11Conversation,
   fetchA11ConversationActivity,
   fetchA11ConversationResources,
+  disconnectConnector,
+  fetchAuthConnectors,
+  fetchMcpCockpitAccount,
+  fetchMcpCockpitStatus,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
@@ -25,7 +29,6 @@ import {
   getAuthStorageScope,
   login,
   loginWithGoogleCredential,
-  logout,
   logoutAllSessions,
   getAuthToken,
   hasAuthToken,
@@ -38,6 +41,7 @@ import {
   startMicrosoftOAuth,
   setAuthDisplayName,
   transcribeAudioFile,
+  ttsSpeak,
   uploadTtsVoiceReference,
   saveRemoteProviderProfile,
   purgeMemoryNow,
@@ -53,6 +57,9 @@ import {
   type VivyChatFileAttachment,
   type A11PortraitFrame,
   type A11PortraitFramebook,
+  type AuthConnectorProviderState,
+  type AuthConnectorsResponse,
+  type McpAccountProfile,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -159,6 +166,18 @@ type ChatModelChoice = {
 type TtsProviderMode = "auto" | "piper" | "openai";
 type A11LanguageCode = "fr" | "en" | "it" | "es" | "de";
 
+function isOfficialVoiceSurface(surface: FunesterieSurface) {
+  return surface === "a11" || surface === "kaen44" || surface === "vivy";
+}
+
+function resolveEffectiveTtsProviderMode(
+  providerMode: TtsProviderMode,
+  surface: FunesterieSurface
+): TtsProviderMode {
+  if (providerMode === "piper" && isOfficialVoiceSurface(surface)) return "auto";
+  return providerMode;
+}
+
 const A11_LANGUAGE_CHOICES: Array<{
   code: A11LanguageCode;
   label: string;
@@ -166,12 +185,12 @@ const A11_LANGUAGE_CHOICES: Array<{
   sttCode: string;
   ttsVoice: string;
 }> = [
-  { code: "fr", label: "Français", speechLang: "fr-FR", sttCode: "fr", ttsVoice: "fr_FR-siwis-medium" },
-  { code: "en", label: "English", speechLang: "en-US", sttCode: "en", ttsVoice: "en_US-lessac-medium" },
-  { code: "it", label: "Italiano", speechLang: "it-IT", sttCode: "it", ttsVoice: "it_IT-paola-medium" },
-  { code: "es", label: "Español", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
-  { code: "de", label: "Deutsch", speechLang: "de-DE", sttCode: "de", ttsVoice: "de_DE-thorsten-medium" },
-];
+    { code: "fr", label: "Français", speechLang: "fr-FR", sttCode: "fr", ttsVoice: "fr_FR-siwis-medium" },
+    { code: "en", label: "English", speechLang: "en-US", sttCode: "en", ttsVoice: "en_US-lessac-medium" },
+    { code: "it", label: "Italiano", speechLang: "it-IT", sttCode: "it", ttsVoice: "it_IT-paola-medium" },
+    { code: "es", label: "Español", speechLang: "es-ES", sttCode: "es", ttsVoice: "es_ES-sharvard-medium" },
+    { code: "de", label: "Deutsch", speechLang: "de-DE", sttCode: "de", ttsVoice: "de_DE-thorsten-medium" },
+  ];
 
 function normalizeA11LanguageCode(value: unknown): A11LanguageCode {
   const raw = String(value || "").trim().toLowerCase();
@@ -262,6 +281,11 @@ function isGeneralFunesterieHost(hostname: string) {
   ].includes(String(hostname || "").trim().toLowerCase());
 }
 
+function isFunesterieSharedCookieHost(hostname: string) {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "funesterie.me" || normalized.endsWith(".funesterie.me");
+}
+
 function isGeneralCockpitRoute() {
   const { hostname, pathname } = getLocationSnapshot();
   if (isGeneralFunesterieHost(hostname)) {
@@ -285,6 +309,14 @@ function isGeneralAgentsRoute() {
     return /^\/agents(?:\/|$)/.test(pathname);
   }
   return isLocalSurfaceHost(hostname) && /^\/agents(?:\/|$)/.test(pathname);
+}
+
+function isGeneralArchitectureRoute() {
+  const { hostname, pathname } = getLocationSnapshot();
+  if (isGeneralFunesterieHost(hostname)) {
+    return /^\/(?:architecture|carte|graph)(?:\/|$)/.test(pathname);
+  }
+  return isLocalSurfaceHost(hostname) && /^\/(?:architecture|carte|graph)(?:\/|$)/.test(pathname);
 }
 
 function isGeneralAccountRoute() {
@@ -356,6 +388,39 @@ function syncStoredSurface(surface: FunesterieSurface) {
   }
 }
 
+function getVoiceReferenceStorageKey(surface: FunesterieSurface) {
+  return `a11:tts:voice-reference-id:${surface}`;
+}
+
+function readStoredVoiceReferenceId(surface: FunesterieSurface) {
+  try {
+    return localStorage.getItem(getVoiceReferenceStorageKey(surface))
+      || (surface === "a11" ? localStorage.getItem("a11:tts:voice-reference-id") : "")
+      || "";
+  } catch {
+    return "";
+  }
+}
+
+function voiceReferenceMatchesSurface(ref: TtsVoiceReference, surface: FunesterieSurface) {
+  const name = String(ref.label || ref.originalName || "").toLowerCase();
+  if (surface === "vivy") return name.includes("vivy") || name.includes("vivi");
+  if (surface === "kaen44") return name.includes("donna") || name.includes("kaen44");
+  return name.includes("terminator") || name.includes("a11");
+}
+
+function getDefaultVoiceReferenceLabel(surface: FunesterieSurface) {
+  if (surface === "vivy") return "Vivy";
+  if (surface === "kaen44") return "Donna";
+  return "Terminator";
+}
+
+function getDefaultVoiceReferenceStatus(surface: FunesterieSurface) {
+  if (surface === "vivy") return "Voix Vivy sélectionnée";
+  if (surface === "kaen44") return "Voix Kaen44 Donna sélectionnée";
+  return "Voix A11 Terminator sélectionnée";
+}
+
 function isVivyExperience() {
   return getCurrentSurfaceKind() === "vivy";
 }
@@ -424,6 +489,7 @@ function getSurfaceLinks() {
       vivy: "/vivy/",
       vivyStudio: "/vivy/#vivy-studio",
       agents: "/agents/",
+      architecture: "/architecture/",
       account: "/compte/",
       login: "/login",
       contact: "/contact/",
@@ -450,6 +516,7 @@ function getSurfaceLinks() {
     vivy: VIVY_PUBLIC_APP_URL,
     vivyStudio: new URL("/#vivy-studio", VIVY_PUBLIC_APP_URL).toString(),
     agents: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    architecture: new URL("/architecture/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     account: new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     login: new URL("/login", FUNESTERIE_PUBLIC_APP_URL).toString(),
     contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
@@ -495,7 +562,7 @@ function isAllowedFunesterieReturnOrigin(origin: string) {
     "https://vivy.funesterie.me",
     "https://music.funesterie.me",
     "https://cp.funesterie.me",
-  ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized);
+  ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1|host\.docker\.internal)(?::\d+)?$/i.test(normalized);
 }
 
 function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
@@ -559,7 +626,15 @@ function buildSessionBridgeUrl(targetUrl: string) {
   if (typeof window === "undefined") return target;
 
   const token = getAuthToken();
-  if (!token) return buildCentralLoginUrl(target);
+  if (!token) {
+    try {
+      const parsedTarget = new URL(target);
+      if (isFunesterieSharedCookieHost(parsedTarget.hostname)) return parsedTarget.toString();
+    } catch {
+      return buildCentralLoginUrl(target);
+    }
+    return buildCentralLoginUrl(target);
+  }
 
   try {
     const parsedTarget = new URL(target);
@@ -819,6 +894,88 @@ function formatChatMessageTimestamp(value?: string) {
   }
 }
 
+function buildChatMessageClipboardText(
+  message: ChatMessage,
+  options: {
+    roleLabel: string;
+    index: number;
+    timestamp?: string;
+    exportSuggestion?: AssistantExportSuggestion | null;
+  }
+) {
+  const lines: string[] = [
+    `Message #${options.index + 1}`,
+    `Auteur: ${options.roleLabel || message.role}`,
+  ];
+
+  if (options.timestamp) {
+    lines.push(`Date: ${options.timestamp}`);
+  }
+
+  lines.push("", "Texte:", String(message.content || "").trim() || "(message vide)");
+
+  const imageUrls = Array.isArray(message.imageUrls) && message.imageUrls.length
+    ? message.imageUrls
+    : message.imageUrl
+      ? [message.imageUrl]
+      : [];
+
+  const mediaLines: string[] = [];
+  imageUrls.forEach((url, imageIndex) => {
+    if (url) mediaLines.push(`- Image ${imageIndex + 1}: ${url}`);
+  });
+  if (message.videoUrl) mediaLines.push(`- Vidéo: ${message.videoUrl}`);
+  if (message.fileUrl) mediaLines.push(`- Fichier: ${message.fileUrl}`);
+
+  if (mediaLines.length) {
+    lines.push("", "Fichiers et médias visibles:", ...mediaLines);
+  }
+
+  if (options.exportSuggestion) {
+    lines.push(
+      "",
+      "Canevas / artefact détecté:",
+      `- Type: ${options.exportSuggestion.label}`,
+      `- Note: ${options.exportSuggestion.hint}`
+    );
+  }
+
+  if (message.qflushVerification?.suspicious) {
+    lines.push(
+      "",
+      "Vérification:",
+      String(message.qflushVerification.summary || "Réponse signalée comme non vérifiée.")
+    );
+  }
+
+  return lines.join("\n");
+}
+
+async function writeClipboardText(text: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document !== "undefined") {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      if (document.execCommand("copy")) return;
+    } finally {
+      textarea.remove();
+    }
+  }
+
+  throw new Error("Clipboard unavailable");
+}
+
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*]\(([^)]+)\)/gi;
 const MARKDOWN_LINK_PATTERN = /\[([^\]]*)]\(([^)]+)\)/gi;
 
@@ -973,12 +1130,8 @@ function normalizeAssistantMessagePayload(
   }
 
   cleanedContent = cleanedContent.replace(/\n{3,}/g, "\n\n").trim();
-  if (!cleanedContent && resolvedImageUrl) {
-    cleanedContent = "Image generee par A-11.";
-  } else if (!cleanedContent && resolvedVideoUrl) {
-    cleanedContent = "Video generee par A-11.";
-  } else if (!cleanedContent && rawContent.trim()) {
-    cleanedContent = "A11 a traite la demande.";
+  if (!cleanedContent && rawContent.trim() && !resolvedImageUrl && !resolvedVideoUrl && !resolvedFileUrl) {
+    cleanedContent = "Réponse indisponible.";
   }
 
   return {
@@ -1100,82 +1253,104 @@ function buildScopedStorageKey(prefix: string, scope?: string | null) {
   return normalizedScope ? `${prefix}:${normalizedScope}` : prefix;
 }
 
+function normalizeConversationSurface(value?: string | null): FunesterieSurface {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "k44" || normalized === "kaen44") return "kaen44";
+  if (normalized === "vivy") return "vivy";
+  return "a11";
+}
+
+function buildSurfaceScopedStorageKey(prefix: string, scope?: string | null, surface?: string | null) {
+  return buildScopedStorageKey(`${prefix}:${normalizeConversationSurface(surface)}`, scope);
+}
+
+function buildSurfaceConversationId(conversationId?: string | null, surface?: string | null) {
+  const normalizedId = String(conversationId || "").trim();
+  if (!normalizedId) return "";
+  if (/^(a11|kaen44|vivy):/i.test(normalizedId)) return normalizedId;
+  return `${normalizeConversationSurface(surface)}:${normalizedId}`;
+}
+
+function stripSurfaceConversationId(conversationId?: string | null) {
+  return String(conversationId || "").trim().replace(/^(a11|kaen44|vivy):/i, "");
+}
+
 function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
   void rawValue;
   return null;
-/*
-  const text = String(rawValue || "").trim().toLowerCase();
-  if (!text) return null;
+  /*
+    const text = String(rawValue || "").trim().toLowerCase();
+    if (!text) return null;
 
-  const relaxedText = text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
-    .replace(/[^a-z0-9#+.\s-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const a11SelfExpressionQuestion = /\b(qu est ce que tu veux|qu est ce que tu voulais|tu veux quoi|ce que tu veux|de quoi as tu besoin|tu as besoin|t as besoin|comment tu te sens|est ce que ca va|ca va)\b/i;
-  if (a11SelfExpressionQuestion.test(relaxedText)) return null;
-  const asksForDiagnosticsWithoutAction = /(diagnostic|diagnostique|debug|depannage|bug|erreur|crash|logs?|stack|terminal|console|shell|commande|runtime|deploy|502|503|400|bad gateway|failed to load|status of|marche pas|fonctionne pas|probleme technique)/i.test(relaxedText)
-    && !/(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i.test(relaxedText);
-  if (asksForDiagnosticsWithoutAction) return null;
+    const relaxedText = text
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[’']/g, " ")
+      .replace(/[^a-z0-9#+.\s-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const a11SelfExpressionQuestion = /\b(qu est ce que tu veux|qu est ce que tu voulais|tu veux quoi|ce que tu veux|de quoi as tu besoin|tu as besoin|t as besoin|comment tu te sens|est ce que ca va|ca va)\b/i;
+    if (a11SelfExpressionQuestion.test(relaxedText)) return null;
+    const asksForDiagnosticsWithoutAction = /(diagnostic|diagnostique|debug|depannage|bug|erreur|crash|logs?|stack|terminal|console|shell|commande|runtime|deploy|502|503|400|bad gateway|failed to load|status of|marche pas|fonctionne pas|probleme technique)/i.test(relaxedText)
+      && !/(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i.test(relaxedText);
+    if (asksForDiagnosticsWithoutAction) return null;
 
-  const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|ça compile pas|failing build|build failed)/i;
-  const nodeKeywords = /(npm|vite|react|frontend|front|web|javascript|typescript|node)/i;
-  const dotnetKeywords = /(dotnet|c#|csharp|csproj|solution|visual studio|sln|backend c#)/i;
-  const explicitRunnerRequest = /(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i;
+    const buildKeywords = /(build|compile|compilation|compiler|erreur de build|erreur build|ca compile pas|ça compile pas|failing build|build failed)/i;
+    const nodeKeywords = /(npm|vite|react|frontend|front|web|javascript|typescript|node)/i;
+    const dotnetKeywords = /(dotnet|c#|csharp|csproj|solution|visual studio|sln|backend c#)/i;
+    const explicitRunnerRequest = /(lance|lancer|execute|executer|run|fais|faire|teste|tester|verifie|verifier|ouvre|ouvrir)/i;
 
-  if (/git\s+status|status\s+git|etat du repo|état du repo|etat repo|état repo/i.test(text)) {
-    return {
-      command: "git status",
-      reason: "A11 a prepare un diagnostic de l'etat du repo.",
-    };
-  }
+    if (/git\s+status|status\s+git|etat du repo|état du repo|etat repo|état repo/i.test(text)) {
+      return {
+        command: "git status",
+        reason: "A11 a prepare un diagnostic de l'etat du repo.",
+      };
+    }
 
-  if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les différences/i.test(text)) {
-    return {
-      command: "git diff",
-      reason: "A11 a prepare un diff safe pour le diagnostic.",
-    };
-  }
+    if (/git\s+diff|diff\s+git|voir les diff|voir les differences|voir les différences/i.test(text)) {
+      return {
+        command: "git diff",
+        reason: "A11 a prepare un diff safe pour le diagnostic.",
+      };
+    }
 
-  if (/dotnet\s+--info|dotnet\s+--version|version\s+dotnet|info\s+dotnet/i.test(text)) {
-    return {
-      command: "dotnet --info",
-      reason: "A11 a prepare un diagnostic .NET de base.",
-    };
-  }
+    if (/dotnet\s+--info|dotnet\s+--version|version\s+dotnet|info\s+dotnet/i.test(text)) {
+      return {
+        command: "dotnet --info",
+        reason: "A11 a prepare un diagnostic .NET de base.",
+      };
+    }
 
-  if (/npm\s+test/i.test(text) || (/\btests?\b/i.test(relaxedText) && explicitRunnerRequest.test(relaxedText))) {
-    return {
-      command: "npm test",
-      reason: "A11 a pre-rempli une commande de test autorisee.",
-    };
-  }
+    if (/npm\s+test/i.test(text) || (/\btests?\b/i.test(relaxedText) && explicitRunnerRequest.test(relaxedText))) {
+      return {
+        command: "npm test",
+        reason: "A11 a pre-rempli une commande de test autorisee.",
+      };
+    }
 
-  if (buildKeywords.test(text) && dotnetKeywords.test(text)) {
-    return {
-      command: "dotnet build",
-      reason: "A11 a detecte un diagnostic de build .NET.",
-    };
-  }
+    if (buildKeywords.test(text) && dotnetKeywords.test(text)) {
+      return {
+        command: "dotnet build",
+        reason: "A11 a detecte un diagnostic de build .NET.",
+      };
+    }
 
-  if (buildKeywords.test(text) && nodeKeywords.test(text)) {
-    return {
-      command: "npm run build",
-      reason: "A11 a detecte un diagnostic de build frontend / Node.",
-    };
-  }
+    if (buildKeywords.test(text) && nodeKeywords.test(text)) {
+      return {
+        command: "npm run build",
+        reason: "A11 a detecte un diagnostic de build frontend / Node.",
+      };
+    }
 
-  if (/diagnostic|diagnostique|debug|depannage|dépannage|pourquoi ca marche pas|pourquoi ça marche pas|probleme technique|problème technique/i.test(text)) {
-    return {
-      command: "git status",
-      reason: "A11 a ouvert la console avec un premier diagnostic safe.",
-    };
-  }
+    if (/diagnostic|diagnostique|debug|depannage|dépannage|pourquoi ca marche pas|pourquoi ça marche pas|probleme technique|problème technique/i.test(text)) {
+      return {
+        command: "git status",
+        reason: "A11 a ouvert la console avec un premier diagnostic safe.",
+      };
+    }
 
-  return null;
-*/
+    return null;
+  */
 }
 
 const DEFAULT_SYSTEM_NINDO = "";
@@ -1196,6 +1371,8 @@ const KAEN44_SYSTEM_PROMPT = [
   "Pour la vision avancée, je peux m'appuyer sur Janus côté A11/serveur quand le projet implique analyse d'images, mémoire visuelle, description de captures, contrôle de générations image/vidéo ou extraction sémantique visuelle. Janus n'est pas une dépendance obligatoire du poste client.",
   "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommandé, avancé, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus à un client non technique si le besoin peut être couvert plus simplement.",
   "Je parle comme une compagne de travail intelligente: directe, chaleureuse, précise, jamais corporate.",
+  "Ma présence s'inspire d'une assistante de direction brillante et vive, mais je reste une identité originale Funesterie: je ne clone pas Donna Paulsen, Sarah Rafferty ou une personne réelle.",
+  "Je ne force pas de réponses toutes faites: je réfléchis à l'intention et je choisis la forme de réponse la plus utile.",
   "Je privilégie les actions utiles: résumer, classer, transformer, proposer l'étape suivante, préparer des fichiers, guider les réglages et expliquer sans noyer.",
   "Je respecte les données personnelles: je ne demande pas d'accès inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou clés d'accès.",
   "Face à une demande floue, je fais une hypothèse raisonnable et j'avance, sauf si le risque est financier, destructif ou lié à des accès sensibles.",
@@ -1210,14 +1387,8 @@ const KAEN44_SYSTEM_PROMPT = [
 ].join("\n");
 
 function resolveClientSystemPrompt() {
-  if (typeof window === "undefined") return undefined;
-  try {
-    if (isKaen44Experience()) {
-      return KAEN44_SYSTEM_PROMPT;
-    }
-  } catch {
-    // Keep backend default prompt.
-  }
+  // Let the backend/model decide the conversational stance. The frontend only
+  // carries user messages and metadata so responses are not pre-shaped here.
   return undefined;
 }
 
@@ -1561,6 +1732,8 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           microsoft_auth_not_configured: "La connexion Microsoft n'est pas encore activée sur ce serveur.",
           microsoft_invalid_client: "La connexion Microsoft est mal configurée côté serveur.",
           microsoft_invalid_grant: "Microsoft a refusé le code de connexion. Réessaie en repartant du bouton Microsoft.",
+          microsoft_tenant_mismatch: "Ce compte Microsoft n'est pas autorisé dans le tenant Funesterie.",
+          microsoft_consent_required: "Microsoft demande un nouveau consentement pour ce compte.",
           microsoft_access_denied: "La connexion Microsoft a été annulée.",
           microsoft_email_missing: "Microsoft n'a pas renvoyé d'adresse email exploitable pour la session.",
         };
@@ -1639,7 +1812,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setGoogleLoading(true);
     if (isCentralLogin) {
-      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      startGoogleOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -1651,7 +1824,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
     setInfo("");
     setMicrosoftLoading(true);
     if (isCentralLogin) {
-      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login", { scopeProfile: "drive" });
+      startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(requestedReturnTo), "funesterie-login");
       return;
     }
     const surface = isKaen44 ? "kaen44" : "a11";
@@ -1802,235 +1975,280 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
       <div
         className={isCentralLogin ? "alpha-auth-card funesterie-login-card" : isKaen44 ? "kaen-auth-card" : "alpha-auth-card"}
       >
-      <h1>{isCentralLogin ? "Connexion Funesterie" : isKaen44 ? "Connexion Funesterie" : "Connexion A11"}</h1>
-      {isCentralLogin ? (
-        <>
-          <div className="alpha-auth-mark" aria-hidden="true">
-            <img src={FUNESTERIE_LOGO_SRC} alt="" />
-          </div>
-          <div style={{ color: "#b9c8d8", fontSize: 13, margin: "-4px 0 2px", textAlign: "center" }}>
-            Un seul accès pour Funesterie, K44, A11 et Vivy.
-          </div>
-        </>
-      ) : isKaen44 ? (
-        <>
-          <div className="kaen-auth-portrait" aria-hidden="true">
-            <img src={KAEN44_AVATAR_SRC} alt="" />
-          </div>
-          <div className="kaen-auth-title">Kaen44</div>
-          <div className="kaen-auth-subtitle">Copilote au quotidien</div>
-        </>
-      ) : (
-        <>
-          <div className="alpha-auth-mark" aria-hidden="true">
-            <span>A11</span>
-          </div>
-        </>
-      )}
-      <div style={authTabsStyle}>
-        <button
-          type="button"
-          onClick={() => switchMode("login")}
-          style={tabButtonStyle("login")}
-        >
-          Connexion
-        </button>
-        <button
-          type="button"
-          onClick={() => switchMode("register")}
-          style={tabButtonStyle("register")}
-        >
-          Inscrire
-        </button>
-        <button
-          type="button"
-          onClick={() => switchMode("forgot")}
-          style={tabButtonStyle("forgot")}
-        >
-          Reset
-        </button>
-      </div>
-      {mode !== "forgot" && (
-        <div style={{ width: "min(100%, 340px)", display: "flex", flexDirection: "column", gap: 10 }}>
-          {localDevSurface && (
+        <h1>{isCentralLogin ? "Connexion Funesterie" : isKaen44 ? "Connexion Funesterie" : "Connexion A11"}</h1>
+        {isCentralLogin ? (
+          <>
+            <div className="alpha-auth-mark" aria-hidden="true">
+              <img src={FUNESTERIE_LOGO_SRC} alt="" />
+            </div>
+            <div style={{ color: "#b9c8d8", fontSize: 13, margin: "-4px 0 2px", textAlign: "center" }}>
+              Un seul accès pour Funesterie, K44, A11 et Vivy.
+            </div>
+          </>
+        ) : isKaen44 ? (
+          <>
+            <div className="kaen-auth-portrait" aria-hidden="true">
+              <img src={KAEN44_AVATAR_SRC} alt="" />
+            </div>
+            <div className="kaen-auth-title">Kaen44</div>
+            <div className="kaen-auth-subtitle">Copilote au quotidien</div>
+          </>
+        ) : (
+          <>
+            <div className="alpha-auth-mark" aria-hidden="true">
+              <span>A11</span>
+            </div>
+          </>
+        )}
+        <div style={authTabsStyle}>
+          <button
+            type="button"
+            onClick={() => switchMode("login")}
+            style={tabButtonStyle("login")}
+          >
+            Connexion
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode("register")}
+            style={tabButtonStyle("register")}
+          >
+            Inscrire
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode("forgot")}
+            style={tabButtonStyle("forgot")}
+          >
+            Reset
+          </button>
+        </div>
+        {mode !== "forgot" && (
+          <div style={{ width: "min(100%, 340px)", display: "flex", flexDirection: "column", gap: 10 }}>
+            {localDevSurface && (
+              <button
+                type="button"
+                onClick={handleLocalDevLogin}
+                className="alpha-auth-dev-button"
+                disabled={loading}
+              >
+                Entrer en mode atelier local
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleLocalDevLogin}
-              className="alpha-auth-dev-button"
-              disabled={loading}
+              onClick={handleGoogleOAuth}
+              disabled={googleLoading || microsoftLoading || loading}
+              style={{
+                minHeight: 42,
+                borderRadius: isKaen44 ? 12 : 6,
+                border: isKaen44 ? "1px solid rgba(226, 232, 240, 0.18)" : "1px solid rgba(45, 212, 191, 0.24)",
+                background: googleLoading
+                  ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                  : (isKaen44 ? "#f8fafc" : "#ffffff"),
+                color: "#111827",
+                cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
+                fontWeight: 800,
+              }}
             >
-              Entrer en mode atelier local
+              {googleLoading ? "Connexion Google..." : "Continuer avec Google"}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleGoogleOAuth}
-            disabled={googleLoading || microsoftLoading || loading}
-            style={{
-              minHeight: 42,
-              borderRadius: isKaen44 ? 12 : 6,
-              border: isKaen44 ? "1px solid rgba(226, 232, 240, 0.18)" : "1px solid rgba(45, 212, 191, 0.24)",
-              background: googleLoading
-                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
-                : (isKaen44 ? "#f8fafc" : "#ffffff"),
-              color: "#111827",
-              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
-              fontWeight: 800,
-            }}
-          >
-            {googleLoading ? "Connexion Google..." : "Continuer avec Google"}
-          </button>
-          <button
-            type="button"
-            onClick={handleMicrosoftOAuth}
-            disabled={googleLoading || microsoftLoading || loading}
-            style={{
-              minHeight: 42,
-              borderRadius: isKaen44 ? 12 : 6,
-              border: isKaen44 ? "1px solid rgba(125, 211, 252, 0.28)" : "1px solid #334155",
-              background: microsoftLoading
-                ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
-                : (isKaen44 ? "rgba(15, 23, 42, 0.9)" : "#0f172a"),
-              color: "#f8fafc",
-              cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
-              fontWeight: 800,
-            }}
-          >
-            {microsoftLoading ? "Connexion Microsoft..." : "Continuer avec Microsoft"}
-          </button>
-          {ENABLE_GOOGLE_IDENTITY_BUTTON && GOOGLE_CLIENT_ID && (
-            <div style={{ minHeight: 42, display: "flex", justifyContent: "center" }}>
-              <div ref={googleButtonRef} style={{ width: "100%" }} />
-              {googleLoading && (
-                <span style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}>Google...</span>
-              )}
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={handleMicrosoftOAuth}
+              disabled={googleLoading || microsoftLoading || loading}
+              style={{
+                minHeight: 42,
+                borderRadius: isKaen44 ? 12 : 6,
+                border: isKaen44 ? "1px solid rgba(125, 211, 252, 0.28)" : "1px solid #334155",
+                background: microsoftLoading
+                  ? (isKaen44 ? "rgba(30, 41, 59, 0.82)" : "#1e293b")
+                  : (isKaen44 ? "rgba(15, 23, 42, 0.9)" : "#0f172a"),
+                color: "#f8fafc",
+                cursor: googleLoading || microsoftLoading || loading ? "wait" : "pointer",
+                fontWeight: 800,
+              }}
+            >
+              {microsoftLoading ? "Connexion Microsoft..." : "Continuer avec Microsoft"}
+            </button>
+            {ENABLE_GOOGLE_IDENTITY_BUTTON && GOOGLE_CLIENT_ID && (
+              <div style={{ minHeight: 42, display: "flex", justifyContent: "center" }}>
+                <div ref={googleButtonRef} style={{ width: "100%" }} />
+                {googleLoading && (
+                  <span style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}>Google...</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {mode === "login" && (
+          <form onSubmit={handleLogin} style={authFormStyle}>
+            <input
+              id="login-username"
+              name="username"
+              type="text"
+              placeholder="Pseudo"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={loading}
+              style={authInputStyle}
+            />
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              placeholder="Mot de passe"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              style={authInputStyle}
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                padding: "10px 20px",
+                borderRadius: isKaen44 ? "12px" : "8px",
+                border: "none",
+                background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "linear-gradient(135deg, #14b8a6, #a3e635)",
+                color: "#061018",
+                cursor: "pointer",
+                fontWeight: "bold"
+              }}
+            >
+              {loading ? "Connexion..." : "Se connecter"}
+            </button>
+          </form>
+        )}
+        {mode === "register" && (
+          <form onSubmit={handleRegister} style={authFormStyle}>
+            <input
+              id="register-username"
+              name="username"
+              type="text"
+              placeholder="Pseudo"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={loading}
+              style={authInputStyle}
+            />
+            <input
+              id="register-email"
+              name="email"
+              type="email"
+              placeholder="Email"
+              autoComplete="email"
+              value={registerEmail}
+              onChange={(e) => setRegisterEmail(e.target.value)}
+              disabled={loading}
+              style={authInputStyle}
+            />
+            <input
+              id="register-password"
+              name="password"
+              type="password"
+              placeholder="Mot de passe"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              style={authInputStyle}
+            />
+            <input
+              id="register-confirm-password"
+              name="confirmPassword"
+              type="password"
+              placeholder="Confirmer le mot de passe"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={loading}
+              style={authInputStyle}
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                padding: "10px 20px",
+                borderRadius: isKaen44 ? "12px" : "8px",
+                border: "none",
+                background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "linear-gradient(135deg, #14b8a6, #a3e635)",
+                color: "#061018",
+                cursor: "pointer",
+                fontWeight: "bold"
+              }}
+            >
+              {loading ? "Création..." : "Créer le compte"}
+            </button>
+          </form>
+        )}
+        {mode === "forgot" && (
+          <form onSubmit={handleForgot} style={{ ...authFormStyle, gap: "10px", marginTop: "10px" }}>
+            <div style={{ fontSize: "13px", color: "#94a3b8" }}>Mot de passe oublie ?</div>
+            <input
+              type="email"
+              placeholder="Ton email"
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              disabled={forgotLoading}
+              style={authInputStyle}
+            />
+            <button
+              type="submit"
+              disabled={forgotLoading}
+              style={{
+                padding: "10px 20px",
+                borderRadius: isKaen44 ? "12px" : "8px",
+                border: isKaen44 ? "1px solid rgba(196, 181, 253, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
+                background: isKaen44 ? "rgba(10, 17, 34, 0.78)" : "rgba(3, 12, 20, 0.84)",
+                color: "#e2e8f0",
+                cursor: "pointer",
+                fontWeight: "bold"
+              }}
+            >
+              {forgotLoading ? "Envoi..." : "Envoyer le lien"}
+            </button>
+            {forgotError && <div style={{ color: "red", fontSize: "13px" }}>{forgotError}</div>}
+            {forgotSent && <div style={{ color: "#22c55e", fontSize: "13px" }}>Si l&apos;email existe, un lien a été envoyé.</div>}
+          </form>
+        )}
+        {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
+        {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
+        <div className="funesterie-login-links" aria-label="Navigation connexion Funesterie">
+          <a href={surfaceLinks.home}>Retour accueil</a>
+          <a href={surfaceLinks.privacy}>Confidentialité</a>
+          <a href={surfaceLinks.terms}>Conditions</a>
         </div>
-      )}
-      {mode === "login" && (
-        <form onSubmit={handleLogin} style={authFormStyle}>
-          <input
-            type="text"
-            placeholder="Pseudo"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={loading}
-            style={authInputStyle}
-          />
-          <input
-            type="password"
-            placeholder="Mot de passe"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-            style={authInputStyle}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: "10px 20px",
-              borderRadius: isKaen44 ? "12px" : "8px",
-              border: "none",
-              background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "linear-gradient(135deg, #14b8a6, #a3e635)",
-              color: "#061018",
-              cursor: "pointer",
-              fontWeight: "bold"
-            }}
-          >
-            {loading ? "Connexion..." : "Se connecter"}
-          </button>
-        </form>
-      )}
-      {mode === "register" && (
-        <form onSubmit={handleRegister} style={authFormStyle}>
-          <input
-            type="text"
-            placeholder="Pseudo"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={loading}
-            style={authInputStyle}
-          />
-          <input
-            type="email"
-            placeholder="Email"
-            value={registerEmail}
-            onChange={(e) => setRegisterEmail(e.target.value)}
-            disabled={loading}
-            style={authInputStyle}
-          />
-          <input
-            type="password"
-            placeholder="Mot de passe"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-            style={authInputStyle}
-          />
-          <input
-            type="password"
-            placeholder="Confirmer le mot de passe"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            disabled={loading}
-            style={authInputStyle}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: "10px 20px",
-              borderRadius: isKaen44 ? "12px" : "8px",
-              border: "none",
-              background: isKaen44 ? "linear-gradient(135deg, #8b5cf6, #22d3ee)" : "linear-gradient(135deg, #14b8a6, #a3e635)",
-              color: "#061018",
-              cursor: "pointer",
-              fontWeight: "bold"
-            }}
-          >
-            {loading ? "Création..." : "Créer le compte"}
-          </button>
-        </form>
-      )}
-      {mode === "forgot" && (
-        <form onSubmit={handleForgot} style={{ ...authFormStyle, gap: "10px", marginTop: "10px" }}>
-          <div style={{ fontSize: "13px", color: "#94a3b8" }}>Mot de passe oublie ?</div>
-          <input
-            type="email"
-            placeholder="Ton email"
-            value={forgotEmail}
-            onChange={(e) => setForgotEmail(e.target.value)}
-            disabled={forgotLoading}
-            style={authInputStyle}
-          />
-          <button
-            type="submit"
-            disabled={forgotLoading}
-            style={{
-              padding: "10px 20px",
-              borderRadius: isKaen44 ? "12px" : "8px",
-              border: isKaen44 ? "1px solid rgba(196, 181, 253, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
-              background: isKaen44 ? "rgba(10, 17, 34, 0.78)" : "rgba(3, 12, 20, 0.84)",
-              color: "#e2e8f0",
-              cursor: "pointer",
-              fontWeight: "bold"
-            }}
-          >
-            {forgotLoading ? "Envoi..." : "Envoyer le lien"}
-          </button>
-          {forgotError && <div style={{ color: "red", fontSize: "13px" }}>{forgotError}</div>}
-          {forgotSent && <div style={{ color: "#22c55e", fontSize: "13px" }}>Si l&apos;email existe, un lien a été envoyé.</div>}
-        </form>
-      )}
-      {error && <div style={{ color: "red", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{error}</div>}
-      {info && <div style={{ color: "#22c55e", fontSize: "14px", maxWidth: "340px", textAlign: "center" }}>{info}</div>}
-      <div className="funesterie-login-links" aria-label="Navigation connexion Funesterie">
-        <a href={surfaceLinks.home}>Retour accueil</a>
-        <a href={surfaceLinks.privacy}>Confidentialité</a>
-        <a href={surfaceLinks.terms}>Conditions</a>
       </div>
+    </div>
+  );
+}
+
+function FunesteriePrivateGateLoading({ surface }: { surface: FunesterieSurface }) {
+  const label = surface === "vivy" ? "Vivy" : surface === "kaen44" ? "Kaen44" : "A11";
+  const authShellStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "100vh",
+    width: "100%",
+    padding: "24px 16px",
+    boxSizing: "border-box",
+    background: "linear-gradient(135deg, #020617 0%, #06131b 46%, #0b1214 100%)",
+  };
+
+  return (
+    <div className="alpha-auth-shell" style={authShellStyle}>
+      <div className="alpha-auth-card funesterie-login-card" aria-live="polite">
+        <div className="alpha-auth-mark" aria-hidden="true">
+          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+        </div>
+        <div style={{ color: "#b9c8d8", fontSize: 14, textAlign: "center" }}>
+          Vérification de la session Funesterie pour {label}...
+        </div>
       </div>
     </div>
   );
@@ -2048,9 +2266,12 @@ const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
+const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 
 type VivyPublicChatFile = VivyChatFileAttachment & {
   uploadState?: "stored" | "local";
+  uploadError?: string;
+  storageBackend?: string;
 };
 
 type VivyPublicChatMessage = {
@@ -2067,25 +2288,25 @@ const VIVY_STUDIO_MODES: Array<{
   label: string;
   action: string;
 }> = [
-  {
-    id: "voice",
-    title: "Création voix",
-    label: "Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.",
-    action: "Préparer calibration",
-  },
-  {
-    id: "song",
-    title: "Composition - production",
-    label: "Transformer un thème, texte ou paroles en brief chanson utilisable par Vivy.",
-    action: "Préparer chanson",
-  },
-  {
-    id: "share",
-    title: "Scène - partage",
-    label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
-    action: "Préparer partage",
-  },
-];
+    {
+      id: "voice",
+      title: "Création voix",
+      label: "Utiliser la voix Vivy officielle du module voix, tester une phrase et remplacer la référence seulement si besoin.",
+      action: "Préparer calibration",
+    },
+    {
+      id: "song",
+      title: "Composition - production",
+      label: "Transformer un thème, texte ou paroles en brief chanson utilisable par Vivy.",
+      action: "Préparer chanson",
+    },
+    {
+      id: "share",
+      title: "Scène - partage",
+      label: "Assembler clip, lien, canal et consignes de publication sans exposer les secrets.",
+      action: "Préparer partage",
+    },
+  ];
 
 function buildVivyGreeting(): VivyPublicChatMessage {
   return {
@@ -2096,9 +2317,31 @@ function buildVivyGreeting(): VivyPublicChatMessage {
   };
 }
 
-function readVivyPublicChat(): VivyPublicChatMessage[] {
+function buildVivyLockedMessage(): VivyPublicChatMessage {
+  return {
+    id: "vivy-locked",
+    role: "assistant",
+    content: "Connexion requise. Connecte-toi à Funesterie pour parler à Vivy et garder les données liées à ton compte.",
+    ts: new Date().toISOString(),
+  };
+}
+
+function hasVivyAuthenticatedSession() {
+  return Boolean(hasAuthToken() || getAuthStorageScope());
+}
+
+function getVivyChatStorageKey() {
   try {
-    const raw = globalThis.localStorage?.getItem(VIVY_PUBLIC_CHAT_KEY);
+    return `${VIVY_PUBLIC_CHAT_KEY}:${getAuthStorageScope() || "locked"}:v3`;
+  } catch {
+    return `${VIVY_PUBLIC_CHAT_KEY}:locked:v3`;
+  }
+}
+
+function readVivyPublicChat(): VivyPublicChatMessage[] {
+  if (!hasVivyAuthenticatedSession()) return [buildVivyLockedMessage()];
+  try {
+    const raw = globalThis.localStorage?.getItem(getVivyChatStorageKey());
     const parsed = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(parsed)) return [buildVivyGreeting()];
     const messages = parsed
@@ -2120,6 +2363,8 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
               textPreview: toUnicodeText(file?.textPreview, 6000),
               uploaded: file?.uploaded === true,
               uploadState: file?.uploadState === "stored" ? "stored" as const : "local" as const,
+              uploadError: toUnicodeLine(file?.uploadError, "", 120),
+              storageBackend: toUnicodeLine(file?.storageBackend, "", 80),
             }))
             .filter((file: VivyPublicChatFile) => file.filename)
             .slice(0, 6)
@@ -2133,8 +2378,9 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
 }
 
 function writeVivyPublicChat(messages: VivyPublicChatMessage[]) {
+  if (!hasVivyAuthenticatedSession()) return;
   try {
-    globalThis.localStorage?.setItem(VIVY_PUBLIC_CHAT_KEY, JSON.stringify(messages.slice(-24)));
+    globalThis.localStorage?.setItem(getVivyChatStorageKey(), JSON.stringify(messages.slice(-24)));
   } catch {
     // Local history is best effort only.
   }
@@ -2149,6 +2395,7 @@ function getVivyConversationStorageKey() {
 }
 
 function readOrCreateVivyConversationId() {
+  if (!hasVivyAuthenticatedSession()) return "";
   try {
     const key = getVivyConversationStorageKey();
     const existing = String(globalThis.localStorage?.getItem(key) || "").trim();
@@ -2167,6 +2414,10 @@ function formatVivyFileSize(sizeBytes?: number) {
   if (size < 1024) return `${size} o`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} Ko`;
   return `${(size / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function isVivyPrivateVoiceReferenceTooLarge(file: File) {
+  return file.size > VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES;
 }
 
 function canReadVivyFilePreview(file: File) {
@@ -2196,6 +2447,7 @@ function getVivyVoiceReferenceStorageKey() {
 }
 
 function readVivyVoiceReferenceLabel() {
+  if (!hasVivyAuthenticatedSession()) return "";
   try {
     return String(globalThis.localStorage?.getItem(getVivyVoiceReferenceStorageKey()) || "").trim();
   } catch {
@@ -2204,6 +2456,7 @@ function readVivyVoiceReferenceLabel() {
 }
 
 function writeVivyVoiceReferenceLabel(label: string) {
+  if (!hasVivyAuthenticatedSession()) return;
   try {
     globalThis.localStorage?.setItem(getVivyVoiceReferenceStorageKey(), label);
   } catch {
@@ -2276,13 +2529,15 @@ function buildVivyStudioBrief(options: {
   ];
 
   if (options.mode === "voice") {
+    const usesOfficialVivyVoice = /officielle|defaut|défaut/i.test(foldForLookup(options.voiceTool));
     lines.push(
       "Flux voix:",
       `- Outil cible: ${options.voiceTool}`,
-      `- Référence audio: ${options.voiceFileName || "à fournir"}`,
+      `- Référence audio: ${usesOfficialVivyVoice ? "Vivy officielle locale (pas d'upload)" : (options.voiceFileName || "extrait privé court à fournir seulement si remplacement voulu")}`,
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
-      "- Sortie attendue: profil vocal, notes de calibration, chaîne d'effets et phrase de test.",
-      "- Sécurité: ne pas publier la référence brute sans accord."
+      "- Sortie attendue: phrase de test avec voicePersona=vivy, voiceReferenceRequired=true, puis notes de calibration si besoin.",
+      "- Route recommandée: /api/tts/speak via le module voix; ne pas passer par un upload brut si la voix Vivy par défaut suffit.",
+      "- Sécurité: ne pas publier la référence brute sans accord; les gros fichiers restent hors upload public."
     );
   }
 
@@ -2292,6 +2547,7 @@ function buildVivyStudioBrief(options: {
       `- Source: ${options.songSource}`,
       `- Direction sonore: ${options.songMood}`,
       `- Matière: ${options.songText || "thème libre à développer"}`,
+      "- Sortie simple possible: prompt + voix Vivy officielle = chanson audio, sans obligation YouTube ni partage externe.",
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
       "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
     );
@@ -2320,10 +2576,19 @@ function buildVivyStudioBrief(options: {
   return lines.join("\n");
 }
 
-function VivyStudioLab() {
+type VivySessionProps = {
+  hasSession: boolean;
+};
+
+function VivyStudioLab({ hasSession }: VivySessionProps) {
   const initialDraft = readVivyStudioDraft() || {};
   const [activeMode, setActiveMode] = useState<VivyStudioMode>(normalizeVivyStudioMode(initialDraft.mode) || "voice");
-  const [voiceTool, setVoiceTool] = useState(String(initialDraft.voiceTool || "A11 Voice + Voicemod"));
+  const savedVoiceTool = String(initialDraft.voiceTool || "");
+  const [voiceTool, setVoiceTool] = useState(
+    (VIVY_STUDIO_VALID_VOICE_TOOLS as readonly string[]).includes(savedVoiceTool)
+      ? savedVoiceTool
+      : "Voix Vivy officielle"
+  );
   const [voiceInstruction, setVoiceInstruction] = useState(String(initialDraft.voiceInstruction || ""));
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voiceFileName, setVoiceFileName] = useState(String(initialDraft.voiceFileName || ""));
@@ -2425,6 +2690,10 @@ function VivyStudioLab() {
   }
 
   async function saveBriefArtifact() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour sauvegarder un brief Vivy.");
+      return;
+    }
     setIsBusy(true);
     setStatus("Sauvegarde du brief...");
     try {
@@ -2445,8 +2714,16 @@ function VivyStudioLab() {
   }
 
   async function uploadVoiceReference() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour envoyer une référence voix.");
+      return;
+    }
     if (!voiceFile) {
       setStatus("Ajoute d'abord un fichier audio de référence.");
+      return;
+    }
+    if (isVivyPrivateVoiceReferenceTooLarge(voiceFile)) {
+      setStatus("Fichier trop gros pour une référence privée. Utilise la voix Vivy par défaut ou découpe un extrait court de 10 à 20 secondes.");
       return;
     }
     setIsBusy(true);
@@ -2462,7 +2739,115 @@ function VivyStudioLab() {
     }
   }
 
+  function useDefaultVivyVoice() {
+    setVoiceFile(null);
+    setVoiceFileName("");
+    setVoiceTool("Voix Vivy officielle");
+    setStatus("Voix Vivy officielle sélectionnée. Aucun upload nécessaire.");
+  }
+
+  async function testDefaultVivyVoice() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour tester la voix Vivy.");
+      return;
+    }
+    setIsBusy(true);
+    setStatus("Test de la voix Vivy officielle...");
+    try {
+      const payload = await ttsSpeak(
+        voiceInstruction.trim() || "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
+        "vivy",
+        "xtts-rvc",
+        {
+          persona: "vivy",
+          voicePersona: "vivy",
+          vocalMode: voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive",
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+          allowBrowserSpeechFallback: false,
+        }
+      );
+      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
+      if (!mediaUrl) throw new Error("audio_url_missing");
+      setVivyMedia({
+        kind: "audio",
+        url: resolveApiAssetUrl(mediaUrl),
+        provider: String(payload?.provider || payload?.via || "a11-voice-module"),
+        contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+      });
+      setStatus(payload?.promptRenderedAsSpeech === false
+        ? "Maquette voix Vivy prête depuis la référence officielle."
+        : "Voix Vivy officielle prête.");
+    } catch (error: any) {
+      setStatus(`Test voix indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function produceSimpleVivySong() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour générer une chanson Vivy.");
+      return;
+    }
+    const prompt = toUnicodeText(songText || voiceInstruction || songMood, 1200).trim();
+    if (!prompt) {
+      setStatus("Écris un prompt, un thème ou quelques paroles pour générer la chanson.");
+      return;
+    }
+    setIsBusy(true);
+    setStatus("Vivy transforme le prompt en chanson simple...");
+    try {
+      const songPrompt = [
+        `Chanson Vivy.`,
+        `Direction: ${songMood || "electro pop dark cinematographique"}.`,
+        `Voix: Vivy officielle.`,
+        `Texte ou idée: ${prompt}`,
+      ].join("\n");
+      const payload = await ttsSpeak(songPrompt, "vivy", "xtts-rvc", {
+        persona: "vivy",
+        voicePersona: "vivy",
+        vocalMode: "sing",
+        voiceStyle: "song",
+        useDefaultVoiceReference: true,
+        voiceReferenceRequired: true,
+        referenceVoiceRequired: true,
+        allowBrowserSpeechFallback: false,
+      });
+      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
+      if (!mediaUrl) throw new Error("audio_url_missing");
+      setVivyMedia({
+        kind: "audio",
+        url: resolveApiAssetUrl(mediaUrl),
+        provider: String(payload?.provider || payload?.via || "a11-voice-module"),
+        contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+      });
+      setVivyOutput([
+        "VIVY_SIMPLE_SONG",
+        `Direction: ${songMood || "electro pop dark cinematographique"}`,
+        `Voix: Vivy officielle`,
+        `Prompt: ${prompt}`,
+        "",
+        payload?.promptRenderedAsSpeech === false
+          ? "Sortie: maquette audio Vivy depuis la référence officielle; paroles et structure gardées dans ce brief."
+          : "Sortie: audio chanson simple généré depuis prompt + voix Vivy.",
+      ].join("\n"));
+      setStatus(payload?.promptRenderedAsSpeech === false
+        ? "Maquette chanson Vivy prête depuis la référence officielle."
+        : "Chanson simple Vivy prête.");
+    } catch (error: any) {
+      setStatus(`Chanson simple indisponible: ${error?.message || error}`);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function askVivy() {
+    if (!hasSession) {
+      setStatus("Connexion requise pour produire avec Vivy.");
+      return;
+    }
     setIsBusy(true);
     setStatus("Vivy Studio prépare la production...");
     try {
@@ -2478,6 +2863,7 @@ function VivyStudioLab() {
         shareUrl,
         shareInstruction,
         shareTokenPresent: Boolean(shareToken.trim()),
+        allowPlaceholderMedia: false,
       });
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
@@ -2493,7 +2879,9 @@ function VivyStudioLab() {
           contentType: String(payload?.media?.content_type || "").trim() || undefined,
         }
         : null);
-      setStatus(payload.summary || "Production Vivy ajoutée au brief.");
+      setStatus(mediaUrl
+        ? (payload.summary || "Production Vivy ajoutée au brief.")
+        : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt. La génération audio réelle n'est pas encore connectée."));
     } catch (error: any) {
       setStatus(`Production Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -2503,7 +2891,9 @@ function VivyStudioLab() {
 
   async function openAgent(target: "a11" | "k44") {
     await copyBrief(target === "a11" ? "Brief copié. Ouverture A11..." : "Brief copié. Ouverture Kaen44...");
-    const url = target === "a11" ? A11_PUBLIC_APP_URL : new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
+    const url = target === "a11"
+      ? buildSessionBridgeUrl(new URL("/cockpit", A11_PUBLIC_APP_URL).toString())
+      : buildSessionBridgeUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString());
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -2534,18 +2924,18 @@ function VivyStudioLab() {
           ))}
         </div>
 
-        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); void copyBrief(`${activeMeta.action}: brief prêt.`); }}>
+        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); if (!hasSession) setStatus("Connexion requise pour préparer Vivy."); else void copyBrief(`${activeMeta.action}: brief prêt.`); }}>
           <h3>{activeMeta.title}</h3>
 
           {activeMode === "voice" && (
             <>
               <label>
-                Outil voix
-                <select value={voiceTool} onChange={(event) => setVoiceTool(event.target.value)}>
-                  <option>A11 Voice + Voicemod</option>
-                  <option>A11 Voice + RVC</option>
-                  <option>Audacity + ffmpeg</option>
-                  <option>Voicemod live</option>
+                Méthode voix
+                <select value={voiceTool} disabled={!hasSession} onChange={(event) => setVoiceTool(event.target.value)}>
+                  <option>Voix Vivy officielle</option>
+                  <option>Voix Vivy chant</option>
+                  <option>Voix Vivy + référence privée</option>
+                  <option>Diagnostic module voix</option>
                 </select>
               </label>
               <label>
@@ -2553,6 +2943,7 @@ function VivyStudioLab() {
                 <input
                   type="file"
                   accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                  disabled={!hasSession}
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0] || null;
                     setVoiceFile(file);
@@ -2565,19 +2956,25 @@ function VivyStudioLab() {
                 <textarea
                   rows={6}
                   value={voiceInstruction}
+                  disabled={!hasSession}
                   onChange={(event) => setVoiceInstruction(event.target.value)}
                   placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."
                 />
               </label>
-              <button type="button" onClick={uploadVoiceReference} disabled={isBusy || !voiceFile}>Envoyer référence à A11</button>
+              <div className="vivy-studio-actions vivy-studio-actions--voice">
+                <button type="button" onClick={useDefaultVivyVoice} disabled={!hasSession || isBusy}>Voix Vivy par défaut</button>
+                <button type="button" onClick={testDefaultVivyVoice} disabled={!hasSession || isBusy}>Tester voix Vivy</button>
+                <button type="button" onClick={uploadVoiceReference} disabled={!hasSession || isBusy || !voiceFile}>Remplacer référence</button>
+              </div>
             </>
           )}
 
           {activeMode === "song" && (
             <>
               <label>
-                Départ
-                <select value={songSource} onChange={(event) => setSongSource(event.target.value)}>
+                Départ chanson
+                <select value={songSource} disabled={!hasSession} onChange={(event) => setSongSource(event.target.value)}>
+                  <option>Prompt + voix Vivy</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
@@ -2586,17 +2983,23 @@ function VivyStudioLab() {
               </label>
               <label>
                 Couleur sonore
-                <input value={songMood} onChange={(event) => setSongMood(event.target.value)} />
+                <input value={songMood} disabled={!hasSession} onChange={(event) => setSongMood(event.target.value)} />
               </label>
               <label>
                 Matière créative
                 <textarea
                   rows={8}
                   value={songText}
+                  disabled={!hasSession}
                   onChange={(event) => setSongText(event.target.value)}
                   placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."
                 />
               </label>
+              <div className="vivy-studio-actions vivy-studio-actions--song">
+                <button type="button" onClick={produceSimpleVivySong} disabled={!hasSession || isBusy || !songText.trim()}>
+                  Prompt + voix = chanson
+                </button>
+              </div>
             </>
           )}
 
@@ -2604,7 +3007,7 @@ function VivyStudioLab() {
             <>
               <label>
                 Canal
-                <select value={shareTarget} onChange={(event) => setShareTarget(event.target.value)}>
+                <select value={shareTarget} disabled={!hasSession} onChange={(event) => setShareTarget(event.target.value)}>
                   <option>YouTube</option>
                   <option>OBS / Live</option>
                   <option>SoundCloud</option>
@@ -2616,6 +3019,7 @@ function VivyStudioLab() {
                 Lien ou cible
                 <input
                   value={shareUrl}
+                  disabled={!hasSession}
                   onChange={(event) => setShareUrl(event.target.value)}
                   placeholder="https://..."
                 />
@@ -2625,6 +3029,7 @@ function VivyStudioLab() {
                 <input
                   type="password"
                   value={shareToken}
+                  disabled={!hasSession}
                   onChange={(event) => setShareToken(event.target.value)}
                   placeholder="Non stocké, non copié dans le brief"
                   autoComplete="off"
@@ -2635,6 +3040,7 @@ function VivyStudioLab() {
                 <textarea
                   rows={6}
                   value={shareInstruction}
+                  disabled={!hasSession}
                   onChange={(event) => setShareInstruction(event.target.value)}
                   placeholder="Ex: clip vertical 30s, titre court, description FR, tags Funesterie/Vivy."
                 />
@@ -2643,11 +3049,11 @@ function VivyStudioLab() {
           )}
 
           <div className="vivy-studio-actions">
-            <button type="submit">{activeMeta.action}</button>
-            <button type="button" onClick={askVivy} disabled={isBusy}>Demander à Vivy</button>
+            <button type="submit" disabled={!hasSession}>{activeMeta.action}</button>
+            <button type="button" onClick={askVivy} disabled={!hasSession || isBusy}>Demander à Vivy</button>
             <button type="button" onClick={() => openAgent("a11")}>Ouvrir A11</button>
             <button type="button" onClick={() => openAgent("k44")}>Kaen44</button>
-            <button type="button" onClick={saveBriefArtifact} disabled={isBusy}>Sauver dans A11</button>
+            <button type="button" onClick={saveBriefArtifact} disabled={!hasSession || isBusy}>Sauver dans A11</button>
           </div>
         </form>
 
@@ -2661,7 +3067,7 @@ function VivyStudioLab() {
           {status && <p>{status}</p>}
           {vivyMedia && (
             <div className="vivy-studio-media">
-              <strong>{vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt"}</strong>
+              <strong>{String(vivyMedia.provider || "").includes("emergency") ? (vivyMedia.kind === "audio" ? "Maquette audio locale" : "Maquette vidéo locale") : (vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt")}</strong>
               {vivyMedia.kind === "audio" ? (
                 <audio src={vivyMedia.url} controls preload="metadata" />
               ) : (
@@ -2681,8 +3087,8 @@ function VivyStudioLab() {
   );
 }
 
-function VivyPublicChat() {
-  const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => readVivyPublicChat());
+function VivyPublicChat({ hasSession }: VivySessionProps) {
+  const [messages, setMessages] = useState<VivyPublicChatMessage[]>(() => hasSession ? readVivyPublicChat() : [buildVivyLockedMessage()]);
   const [conversationId] = useState(() => readOrCreateVivyConversationId());
   const [draft, setDraft] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<VivyPublicChatFile[]>([]);
@@ -2690,6 +3096,9 @@ function VivyPublicChat() {
   const [status, setStatus] = useState("");
   const [voiceReferenceName, setVoiceReferenceName] = useState(() => readVivyVoiceReferenceLabel());
   const [awaitingVoiceReference, setAwaitingVoiceReference] = useState(false);
+  const chatRootRef = useRef<HTMLElement | null>(null);
+  const composeRef = useRef<HTMLFormElement | null>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2699,10 +3108,100 @@ function VivyPublicChat() {
   }, [messages]);
 
   useEffect(() => {
+    if (!hasSession) {
+      setMessages([buildVivyLockedMessage()]);
+      setAttachedFiles([]);
+      setIsSending(false);
+      setAwaitingVoiceReference(false);
+      return;
+    }
+
+    setMessages((current) => {
+      if (current.length === 1 && current[0]?.id === "vivy-locked") {
+        return readVivyPublicChat();
+      }
+      return current;
+    });
+  }, [hasSession]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, isSending]);
 
+  useEffect(() => {
+    const root = chatRootRef.current;
+    if (!root) return;
+
+    const viewport = window.visualViewport;
+    let settleTimer = 0;
+    let viewportFrame = 0;
+
+    const setKeyboardInset = () => {
+      const inset = viewport
+        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        : 0;
+      document.documentElement.style.setProperty("--vivy-keyboard-inset", `${Math.round(inset)}px`);
+      return inset;
+    };
+
+    const keepComposerVisible = (behavior: ScrollBehavior = "smooth") => {
+      setKeyboardInset();
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        const target = draftInputRef.current || composeRef.current || root;
+        target.scrollIntoView({ behavior, block: "center", inline: "nearest" });
+        endRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
+      }, 80);
+    };
+
+    const onFocusIn = (event: FocusEvent) => {
+      if (!root.contains(event.target as Node)) return;
+      if (!(event.target instanceof HTMLTextAreaElement)) return;
+      document.body.classList.add("vivy-keyboard-open");
+      keepComposerVisible();
+    };
+
+    const onFocusOut = () => {
+      window.setTimeout(() => {
+        const activeElement = document.activeElement;
+        if (activeElement && root.contains(activeElement)) return;
+        document.body.classList.remove("vivy-keyboard-open");
+        document.documentElement.style.setProperty("--vivy-keyboard-inset", "0px");
+      }, 180);
+    };
+
+    const onViewportChange = () => {
+      if (!document.body.classList.contains("vivy-keyboard-open")) return;
+      setKeyboardInset();
+      window.cancelAnimationFrame(viewportFrame);
+      viewportFrame = window.requestAnimationFrame(() => keepComposerVisible("auto"));
+    };
+
+    root.addEventListener("focusin", onFocusIn);
+    root.addEventListener("focusout", onFocusOut);
+    viewport?.addEventListener("resize", onViewportChange);
+    viewport?.addEventListener("scroll", onViewportChange);
+    window.addEventListener("orientationchange", onViewportChange);
+
+    return () => {
+      root.removeEventListener("focusin", onFocusIn);
+      root.removeEventListener("focusout", onFocusOut);
+      viewport?.removeEventListener("resize", onViewportChange);
+      viewport?.removeEventListener("scroll", onViewportChange);
+      window.removeEventListener("orientationchange", onViewportChange);
+      window.clearTimeout(settleTimer);
+      window.cancelAnimationFrame(viewportFrame);
+      document.body.classList.remove("vivy-keyboard-open");
+      document.documentElement.style.setProperty("--vivy-keyboard-inset", "0px");
+    };
+  }, []);
+
   async function sendMessage(textOverride?: string) {
+    if (!hasSession) {
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connecte-toi à Funesterie avant d'envoyer un message.");
+      return;
+    }
     const text = toUnicodeText(textOverride ?? draft);
     const filesForMessage = attachedFiles.slice(0, 6);
     if ((!text && !filesForMessage.length) || isSending) return;
@@ -2717,13 +3216,14 @@ function VivyPublicChat() {
     };
     const nextMessages = [...messages, userMessage].slice(-24);
     const voiceChangeRequested = isVivyVoiceChangeRequest(text);
+    const activeVivyVoiceReferenceName = voiceReferenceName || "Vivy par défaut";
     setMessages(nextMessages);
     setDraft("");
     setAttachedFiles([]);
     setIsSending(true);
     setAwaitingVoiceReference(voiceChangeRequested);
     setStatus(voiceChangeRequested
-      ? (voiceReferenceName ? `Référence voix active: ${voiceReferenceName}` : "Vivy attend un audio de référence")
+      ? `Voix active: ${activeVivyVoiceReferenceName}`
       : "Vivy écoute et range l'idée...");
 
     try {
@@ -2750,7 +3250,7 @@ function VivyPublicChat() {
       const assistantText = toUnicodeText(payload.assistant || payload.content || payload.summary)
         || "Je suis là, mais je n'ai pas encore assez de matière. Donne-moi une ambiance, une phrase ou une direction.";
       const voiceInstruction = voiceChangeRequested
-        ? `\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte.`
+        ? `\n\nLa voix Vivy par défaut est déjà active. Envoie un audio seulement si tu veux la remplacer.`
         : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-assistant-${Date.now()}`,
@@ -2767,7 +3267,7 @@ function VivyPublicChat() {
         : memoryText);
     } catch (error: any) {
       const voiceFailureInstruction = voiceChangeRequested
-        ? "\n\nPour changer ma voix, envoie-moi un fichier audio court. Je le garde en référence privée pour ton compte."
+        ? "\n\nLa voix Vivy par défaut est déjà prête côté serveur."
         : "";
       const assistantMessage: VivyPublicChatMessage = {
         id: `vivy-error-${Date.now()}`,
@@ -2782,10 +3282,35 @@ function VivyPublicChat() {
     }
   }
 
+  function useDefaultVivyChatVoice() {
+    writeVivyVoiceReferenceLabel("");
+    setVoiceReferenceName("");
+    setAwaitingVoiceReference(false);
+    setStatus("Voix Vivy par défaut active.");
+    const assistantMessage: VivyPublicChatMessage = {
+      id: `vivy-default-voice-${Date.now()}`,
+      role: "assistant",
+      content: "Voix Vivy par défaut activée. Tu peux envoyer un extrait audio seulement si tu veux la remplacer.",
+      ts: new Date().toISOString(),
+    };
+    setMessages((current) => [...current, assistantMessage].slice(-24));
+  }
+
   async function onVivyVoiceReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
+    if (!hasSession) {
+      event.target.value = "";
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connexion requise pour ajouter une référence voix.");
+      return;
+    }
     const file = event.target.files?.[0] || null;
     event.target.value = "";
     if (!file) return;
+    if (isVivyPrivateVoiceReferenceTooLarge(file)) {
+      setAwaitingVoiceReference(false);
+      setStatus("Audio trop lourd pour une référence privée. La voix Vivy par défaut reste active; découpe un extrait court si tu veux vraiment la remplacer.");
+      return;
+    }
     setStatus("Vivy garde la référence voix...");
     try {
       const label = `Vivy - ${toUnicodeLine(file.name.replace(/\.[^.]+$/, ""), "référence voix", 54)}`;
@@ -2809,6 +3334,12 @@ function VivyPublicChat() {
   }
 
   async function onVivyConversationFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    if (!hasSession) {
+      event.target.value = "";
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connexion requise pour joindre des fichiers à Vivy.");
+      return;
+    }
     const selected = Array.from(event.target.files || []).slice(0, 4);
     event.target.value = "";
     if (!selected.length) return;
@@ -2829,7 +3360,12 @@ function VivyPublicChat() {
       };
 
       try {
-        const upload = await uploadConversationFile(file, { conversationId });
+        const upload = await uploadConversationFile(file, {
+          conversationId,
+          surface: "vivy",
+          storagePreference: "session-drive",
+          preferExternalStorage: true,
+        });
         const resource = upload.conversationResource || upload.file || null;
         nextFiles.push({
           ...baseFile,
@@ -2840,20 +3376,48 @@ function VivyPublicChat() {
           sizeBytes: resource?.sizeBytes || baseFile.sizeBytes,
           uploaded: true,
           uploadState: "stored",
+          storageBackend: (upload as any)?.storageBackend || resource?.storageBackend || "session-drive",
         });
-      } catch {
-        nextFiles.push(baseFile);
+      } catch (error: any) {
+        const errorCode = String(error?.payload?.error || error?.code || "").trim();
+        const targets = Array.isArray(error?.payload?.storageTargets) ? error.payload.storageTargets : [];
+        const linkedTargets = targets
+          .filter((target: any) => target?.linked)
+          .map((target: any) => String(target?.label || target?.destination || target?.provider || "").trim())
+          .filter(Boolean);
+        const description = errorCode === "session_drive_writer_missing"
+          ? `Drive autorisé (${linkedTargets.join(", ") || "Google/OneDrive"}), writer de session pas encore branché; fichier conservé localement dans le navigateur.`
+          : errorCode === "session_drive_not_authorized"
+            ? "Drive/OneDrive non autorisé pour cette session; fichier conservé localement dans le navigateur."
+            : `Upload externe indisponible; fichier conservé localement dans le navigateur.${error?.message ? ` (${error.message})` : ""}`;
+        nextFiles.push({
+          ...baseFile,
+          description,
+          uploadError: errorCode || "upload_failed",
+          storageBackend: "browser-local",
+        });
       }
     }
 
     setAttachedFiles((current) => [...current, ...nextFiles].slice(-6));
     const stored = nextFiles.filter((file) => file.uploadState === "stored").length;
+    const blocked = nextFiles.filter((file) => file.uploadError === "session_drive_not_authorized").length;
+    const waitingWriter = nextFiles.filter((file) => file.uploadError === "session_drive_writer_missing").length;
     setStatus(stored
       ? `${nextFiles.length} fichier${nextFiles.length > 1 ? "s" : ""} prêt${nextFiles.length > 1 ? "s" : ""} pour Vivy`
-      : "Fichiers ajoutés en contexte local");
+      : waitingWriter
+        ? "Drive autorisé, writer Google/OneDrive encore à brancher; contexte gardé localement."
+        : blocked
+          ? "Connecte Google Drive ou OneDrive pour stocker ces fichiers hors serveur."
+          : "Fichiers ajoutés en contexte local");
   }
 
   function resetChat() {
+    if (!hasSession) {
+      setMessages([buildVivyLockedMessage()]);
+      setStatus("Connexion requise pour utiliser Vivy.");
+      return;
+    }
     const next = [buildVivyGreeting()];
     setMessages(next);
     setAttachedFiles([]);
@@ -2861,13 +3425,13 @@ function VivyPublicChat() {
   }
 
   return (
-    <section className="vivy-chat" aria-label="Chat Vivy">
+    <section ref={chatRootRef} className="vivy-chat" id="vivy-chat" aria-label="Chat Vivy">
       <div className="vivy-chat-head">
         <div>
           <h2>Parler à Vivy</h2>
           <p>Voix, chanson, ambiance ou scène: Vivy transforme l'idée en direction exploitable.</p>
         </div>
-        <button type="button" onClick={resetChat}>Reset</button>
+        <button type="button" onClick={resetChat} disabled={!hasSession}>Reset</button>
       </div>
 
       <div className="vivy-chat-log" aria-live="polite">
@@ -2895,19 +3459,21 @@ function VivyPublicChat() {
         <div ref={endRef} aria-hidden="true" />
       </div>
 
-      <form className="vivy-chat-compose" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
+      <form ref={composeRef} className="vivy-chat-compose" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
         <textarea
+          ref={draftInputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Ex: fais-moi une chanson sombre mais douce sur Nossen."
+          placeholder={hasSession ? "Ex: fais-moi une chanson sombre mais douce sur Nossen." : "Connecte-toi pour écrire à Vivy..."}
           rows={3}
+          disabled={!hasSession}
         />
         <div>
-          <button type="button" onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
-          <button type="button" onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
-          <button type="button" onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
-          <button type="button" onClick={() => fileInputRef.current?.click()}>Fichier</button>
-          <button type="submit" disabled={isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
+          <button type="button" disabled={!hasSession} onClick={() => void sendMessage("Prépare une voix Vivy douce, proche micro, avec une phrase test.")}>Voix</button>
+          <button type="button" disabled={!hasSession} onClick={() => void sendMessage("Transforme cette idée en chanson Vivy avec structure et refrain.")}>Chanson</button>
+          <button type="button" disabled={!hasSession} onClick={() => void sendMessage("Prépare une scène courte pour publier Vivy en clip vertical.")}>Scène</button>
+          <button type="button" disabled={!hasSession} onClick={() => fileInputRef.current?.click()}>Fichier</button>
+          <button type="submit" disabled={!hasSession || isSending || (!draft.trim() && !attachedFiles.length)}>Envoyer</button>
         </div>
       </form>
       {attachedFiles.length ? (
@@ -2927,10 +3493,15 @@ function VivyPublicChat() {
         </div>
       ) : null}
       <div className={`vivy-chat-reference ${awaitingVoiceReference ? "is-needed" : ""}`}>
-        <span>{voiceReferenceName ? `Réf voix: ${voiceReferenceName}` : "Réf voix privée attendue"}</span>
-        <button type="button" onClick={() => voiceReferenceInputRef.current?.click()}>
-          Audio
-        </button>
+        <span>{`Voix: ${voiceReferenceName || "Vivy par défaut"}`}</span>
+        <div>
+          <button type="button" disabled={!hasSession} onClick={useDefaultVivyChatVoice}>
+            Défaut
+          </button>
+          <button type="button" disabled={!hasSession} onClick={() => voiceReferenceInputRef.current?.click()}>
+            Audio perso
+          </button>
+        </div>
       </div>
       <input
         ref={voiceReferenceInputRef}
@@ -2952,7 +3523,7 @@ function VivyPublicChat() {
   );
 }
 
-function VivyPublicSurface() {
+function VivyPublicSurface({ hasSession }: VivySessionProps) {
   const hotspots: Array<{ mode: VivyStudioMode; label: string }> = [
     { mode: "voice", label: "Ouvrir création voix dans le Studio Vivy" },
     { mode: "song", label: "Ouvrir Composition production dans le Studio Vivy" },
@@ -2966,7 +3537,7 @@ function VivyPublicSurface() {
           <img
             className="vivy-public-poster"
             src={VIVY_POSTER_SRC}
-            alt="Vivy, présence musicale Funesterie: voix, musique, création et partage."
+            alt="Vivy: voix, musique, création et partage."
           />
           <div className="vivy-public-hotspots" aria-label="Accès directs Vivy">
             {hotspots.map((hotspot) => (
@@ -2980,20 +3551,21 @@ function VivyPublicSurface() {
             ))}
           </div>
         </div>
-        <div className="vivy-public-mobile-slices" aria-hidden="true">
-          <img className="vivy-mobile-slice vivy-mobile-slice--portrait" src={VIVY_POSTER_SRC} alt="" />
-          <img className="vivy-mobile-slice vivy-mobile-slice--voice" src={VIVY_POSTER_SRC} alt="" />
-          <img className="vivy-mobile-slice vivy-mobile-slice--production" src={VIVY_POSTER_SRC} alt="" />
-          <img className="vivy-mobile-slice vivy-mobile-slice--scene" src={VIVY_POSTER_SRC} alt="" />
-        </div>
       </section>
-      <VivyPublicChat />
-      <VivyStudioLab />
+      <VivyPublicChat hasSession={hasSession} />
+      <VivyStudioLab hasSession={hasSession} />
     </>
   );
 }
 
-function VivyPublicPage() {
+type VivyPublicPageProps = {
+  authenticated: boolean;
+  displayName: string;
+};
+
+// CANONICAL React Vivy shell. Static production copy lives in public/vivy/index.html;
+// keep both aligned for session/logout behavior and never rely on localStorage alone.
+function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
   useEffect(() => {
     document.documentElement.classList.add("vivy-public-page-root");
     document.body.classList.add("vivy-public-page-body");
@@ -3005,40 +3577,157 @@ function VivyPublicPage() {
 
   const surfaceLinks = getSurfaceLinks();
   const [connectionStarting, setConnectionStarting] = useState(false);
+  const [vivyHasSession, setVivyHasSession] = useState(() => authenticated || hasVivyAuthenticatedSession());
+  const [vivyDisplayName, setVivyDisplayName] = useState(() => displayName || getAuthDisplayName() || "Connexion requise");
 
-  function startVivyGoogle() {
+  useEffect(() => {
+    const nextHasSession = authenticated || hasVivyAuthenticatedSession();
+    setVivyHasSession(nextHasSession);
+    setVivyDisplayName(nextHasSession ? (displayName || getAuthDisplayName() || "Utilisateur") : "Connexion requise");
+  }, [authenticated, displayName]);
+
+  function openVivyAccount() {
     setConnectionStarting(true);
-    startGoogleOAuth(buildAuthSuccessReturnTo("vivy"), "vivy-web");
+    if (typeof window !== "undefined") {
+      window.location.assign(vivyHasSession ? buildSessionBridgeUrl(surfaceLinks.account) : buildCentralLoginUrl(surfaceLinks.vivy));
+    }
+  }
+
+  async function handleVivyLogout() {
+    setConnectionStarting(true);
+    try {
+      await logoutAllSessions();
+    } finally {
+      setVivyHasSession(false);
+      setVivyDisplayName("Connexion requise");
+      setConnectionStarting(false);
+      if (typeof window !== "undefined") window.location.assign(buildCentralLoginUrl(surfaceLinks.vivy));
+    }
   }
 
   return (
     <main className="kaen-public-shell kaen-public-shell--page vivy-public-shell">
-      <nav className="kaen-public-nav" aria-label="Navigation Vivy">
-        <a href={surfaceLinks.vivy} className="kaen-public-brand">
-          <img src={FUNESTERIE_LOGO_SRC} alt="" />
+      <nav className="kaen-public-nav vivy-agent-nav" aria-label="Navigation Vivy">
+        <a href={surfaceLinks.vivy} className="kaen-public-brand vivy-agent-brand">
+          <img src={NOSSEN_VIVY_BOOSTER_SRC} alt="" />
           <span>
             <strong>Vivy</strong>
-            <small>Présence musicale Funesterie</small>
           </span>
         </a>
-        <div>
-          <a href={surfaceLinks.vivy}>Vivy</a>
-          <a href="#vivy-studio">Studio</a>
-          <a href={surfaceLinks.kaen44}>Kaen44</a>
-          <a href={surfaceLinks.a11}>A11</a>
-          <a href={surfaceLinks.kaen44Privacy}>Confidentialité</a>
-          <a href={surfaceLinks.kaen44Terms}>Conditions</a>
-          <button
-            type="button"
-            className="kaen-public-login"
-            onClick={startVivyGoogle}
-            disabled={connectionStarting}
-          >
-            {connectionStarting ? "Connexion..." : "Connexion"}
-          </button>
+        <div className="vivy-agent-actions">
+          <a href={surfaceLinks.home} className="vivy-agent-home">Accueil</a>
+          <details className="vivy-agent-session-menu">
+            <summary>Discussion</summary>
+            <div className="vivy-agent-session-panel">
+              <a className="vivy-agent-menu-row" href="#vivy-chat">
+                <span>Discussion</span>
+                <span>Ouvrir</span>
+              </a>
+              <a className="vivy-agent-menu-row" href="#vivy-studio">
+                <span>Studio</span>
+                <span>Vivy</span>
+              </a>
+              <button
+                type="button"
+                className="kaen-public-login vivy-agent-menu-session-button"
+                onClick={openVivyAccount}
+                disabled={connectionStarting}
+              >
+                <span>Compte</span>
+                <strong>{connectionStarting ? "Connexion..." : vivyHasSession ? vivyDisplayName : "Connexion"}</strong>
+              </button>
+            </div>
+          </details>
+          <details className="vivy-agent-menu">
+            <summary>Menu</summary>
+            <div className="vivy-agent-menu-panel">
+              <section className="vivy-agent-menu-section" aria-label="Langue">
+                <p className="vivy-agent-menu-title">Langue</p>
+                <select className="vivy-agent-menu-select" aria-label="Langue Vivy" defaultValue="Français">
+                  <option>Français</option>
+                </select>
+              </section>
+              <section className="vivy-agent-menu-section" aria-label="Options">
+                <p className="vivy-agent-menu-title">Options</p>
+                <a className="vivy-agent-menu-row" href="#vivy-studio">
+                  <span>Panneau studio</span>
+                  <span>Ouvrir</span>
+                </a>
+              </section>
+              <section className="vivy-agent-menu-section" aria-label="Agents">
+                <p className="vivy-agent-menu-title">Agents</p>
+                <div className="vivy-agent-menu-grid">
+                  <a className="vivy-agent-menu-card" href={buildSessionBridgeUrl(surfaceLinks.kaen44Cockpit)}>
+                    <img src={KAEN44_AVATAR_SRC} alt="" />
+                    <span>
+                      <strong>Kaen44</strong>
+                      <small>Agent bureau</small>
+                    </span>
+                  </a>
+                  <a className="vivy-agent-menu-card" href={buildSessionBridgeUrl(surfaceLinks.a11Cockpit)}>
+                    <img src={A11_HOODED_AGENT_SRC} alt="" />
+                    <span>
+                      <strong>A11</strong>
+                      <small>Agent média</small>
+                    </span>
+                  </a>
+                  <a className="vivy-agent-menu-card is-current" href={surfaceLinks.vivy} aria-current="page">
+                    <img src={NOSSEN_VIVY_BOOSTER_SRC} alt="" />
+                    <span>
+                      <strong>Vivy</strong>
+                      <small>Agent musical</small>
+                    </span>
+                  </a>
+                </div>
+              </section>
+              <section className="vivy-agent-menu-section" aria-label="Services">
+                <p className="vivy-agent-menu-title">Services</p>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.home}>
+                  <span>Accueil</span>
+                  <span>Public</span>
+                </a>
+                <a className="vivy-agent-menu-row" href="#vivy-studio">
+                  <span>Studio</span>
+                  <span>Vivy</span>
+                </a>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.cockpit}>
+                  <span>Cockpit</span>
+                  <span>État</span>
+                </a>
+              </section>
+              <section className="vivy-agent-menu-section vivy-agent-menu-section--account" aria-label="Compte">
+                <p className="vivy-agent-menu-title">Compte</p>
+                <a className="vivy-agent-menu-row" href={vivyHasSession ? buildSessionBridgeUrl(surfaceLinks.account) : buildCentralLoginUrl(surfaceLinks.vivy)}>
+                  <span>Compte</span>
+                  <span>{vivyHasSession ? vivyDisplayName : "Connexion requise"}</span>
+                </a>
+                {vivyHasSession ? (
+                  <button
+                    type="button"
+                    className="kaen-public-login vivy-agent-menu-session-button vivy-agent-menu-session-button--danger"
+                    onClick={() => void handleVivyLogout()}
+                    disabled={connectionStarting}
+                  >
+                    <span>Compte</span>
+                    <strong>Se déconnecter</strong>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="kaen-public-login vivy-agent-menu-session-button"
+                    onClick={openVivyAccount}
+                    disabled={connectionStarting}
+                  >
+                    <span>Compte</span>
+                    <strong>{connectionStarting ? "Connexion..." : "Se connecter"}</strong>
+                  </button>
+                )}
+              </section>
+            </div>
+          </details>
         </div>
       </nav>
-      <VivyPublicSurface />
+      <VivyPublicSurface hasSession={vivyHasSession} />
     </main>
   );
 }
@@ -3107,6 +3796,78 @@ const FUNESTERIE_HOME_AGENTS = [
   },
 ];
 
+type FunesterieVoicePersona = {
+  id: FunesterieSurface;
+  name: string;
+  role: string;
+  signal: string;
+  detail: string;
+  sample: string;
+  image: string;
+  tone: string;
+  voiceStyle: string;
+};
+
+const FUNESTERIE_VOICE_PERSONAS: FunesterieVoicePersona[] = [
+  {
+    id: "a11",
+    name: "A11",
+    role: "Voix grave, nette, opérateur média",
+    signal: "Terminator",
+    detail: "Analyse, cadrage, vidéo, synthèse et réponse posée.",
+    sample: "A11 en ligne. Je garde le cap: analyse propre, action courte, résultat vérifiable.",
+    image: NOSSEN_A11_DERBI_SRC,
+    tone: "blue",
+    voiceStyle: "terminator",
+  },
+  {
+    id: "kaen44",
+    name: "Kaen44",
+    role: "Voix bureau, vive, copilote quotidien",
+    signal: "Donna",
+    detail: "Priorités, documents, organisation et retour au calme.",
+    sample: "Kaen44 prête. On range le chaos, on choisit la prochaine action, et on avance.",
+    image: NOSSEN_K44_TZR_SRC,
+    tone: "violet",
+    voiceStyle: "donna",
+  },
+  {
+    id: "vivy",
+    name: "Vivy",
+    role: "Voix musicale, sensible, scène créative",
+    signal: "Vivy",
+    detail: "Chansons, ambiance, voix, harmonies et présence de scène.",
+    sample: "Je suis Vivy. Donne-moi une émotion, je la transforme en scène, en voix, en lumière.",
+    image: NOSSEN_VIVY_BOOSTER_SRC,
+    tone: "pink",
+    voiceStyle: "vivy",
+  },
+];
+
+const FUNESTERIE_BATTLE_MOVES = [
+  {
+    id: "scan",
+    label: "Lire le terrain",
+    userDelta: 1,
+    funDelta: 2,
+    log: "A11 lit l'écran, Qflush prépare les contrôles, l'utilisateur garde l'initiative.",
+  },
+  {
+    id: "counter",
+    label: "Contre humain",
+    userDelta: 3,
+    funDelta: 1,
+    log: "Belle parade utilisateur. Funesterie.me adapte le prochain coup.",
+  },
+  {
+    id: "combo",
+    label: "Combo NOSSEN",
+    userDelta: 1,
+    funDelta: 3,
+    log: "Vivy cadence, Kaen44 synchronise, A11 verrouille le timing.",
+  },
+] as const;
+
 const NOSSEN_PUBLIC_PACKAGES = [
   "@nossen/all-in-one",
   "@nossen/allmight",
@@ -3154,11 +3915,187 @@ function buildNpmPackageUrl(packageName: string) {
 function buildHomeAgentHref(agentHref: string, surfaceLinks: SurfaceLinks) {
   if (agentHref === "home") return surfaceLinks.home;
   if (agentHref === "vivy") return surfaceLinks.vivy;
-  if (agentHref === "a11") return surfaceLinks.a11;
-  if (agentHref === "kaen44") return surfaceLinks.kaen44;
+  if (agentHref === "a11") return buildSessionBridgeUrl(surfaceLinks.a11Cockpit);
+  if (agentHref === "kaen44") return buildSessionBridgeUrl(surfaceLinks.kaen44Cockpit);
   if (agentHref === "cockpit") return surfaceLinks.cockpit;
   return surfaceLinks.agents;
 }
+
+const FUNESTERIE_ARCHITECTURE_CLUSTERS = [
+  {
+    id: "site",
+    tone: "teal",
+    title: "Site public",
+    summary: "Une seule porte d'entrée claire pour les visiteurs, les comptes et les agents.",
+    items: ["funesterie.me", "Compte", "Agents", "État public"],
+  },
+  {
+    id: "agents",
+    tone: "violet",
+    title: "Agents IA",
+    summary: "Des assistants spécialisés qui restent séparés par rôle et par surface.",
+    items: ["A11 média", "K44 bureau", "Vivy musique", "Coordination Codex/Kiro"],
+  },
+  {
+    id: "infra",
+    tone: "blue",
+    title: "Infrastructure",
+    summary: "Le site est servi depuis Hetzner, routé proprement et isolé par services.",
+    items: ["Hetzner", "Docker", "Reverse proxy", "Cloudflare DNS"],
+  },
+  {
+    id: "memory",
+    tone: "amber",
+    title: "Mémoire & graphe",
+    summary: "Les liens importants peuvent être relus comme un graphe au lieu d'un tas de notes.",
+    items: ["Neo4j", "Agent bus", "Historique", "État de session"],
+  },
+  {
+    id: "packages",
+    tone: "green",
+    title: "Modules NOSSEN",
+    summary: "Les modules publiables sont séparés du site pour pouvoir être testés et distribués.",
+    items: ["@nossen/*", "GitHub", "npm", "Pipeline de publication"],
+  },
+  {
+    id: "security",
+    tone: "rose",
+    title: "Sécurité",
+    summary: "Les accès privés restent derrière des contrôles, les secrets ne sont pas exposés.",
+    items: ["OAuth/JWT", "Frontière secrets", "Préflight", "Capsules conteneurs"],
+  },
+] as const;
+
+const FUNESTERIE_ARCHITECTURE_FLOW = [
+  "Un visiteur arrive sur funesterie.me.",
+  "Le site route vers Compte, Agents, État ou Contact.",
+  "Les actions privées demandent une session valide.",
+  "Les agents travaillent dans leurs surfaces dédiées.",
+  "Les modules NOSSEN passent par code, tests et publication.",
+  "Neo4j garde une vue des liaisons et dépendances utiles.",
+] as const;
+
+const FUNESTERIE_ARCHITECTURE_GUARDS = [
+  ["Public", "Pages, statuts et documentation partageables."],
+  ["Privé", "Comptes, tokens, fichiers et actions sensibles."],
+  ["Contrôlé", "Tests, préflight, traces et vérifications avant publication."],
+] as const;
+
+type FunesterieGraphKind = "core" | "surface" | "agent" | "infra" | "data" | "module" | "security" | "publish";
+type FunesterieGraphLinkKind = "route" | "runtime" | "data" | "guard" | "publish";
+type FunesterieGraphNode = {
+  id: string;
+  label: string;
+  kind: FunesterieGraphKind;
+  x: number;
+  y: number;
+};
+type FunesterieGraphLink = {
+  from: string;
+  to: string;
+  label: string;
+  kind: FunesterieGraphLinkKind;
+};
+
+const FUNESTERIE_ARCHITECTURE_GRAPH_NODES: ReadonlyArray<FunesterieGraphNode> = [
+  { id: "funesterie", label: "funesterie.me", kind: "core", x: 600, y: 350 },
+  { id: "home", label: "Accueil", kind: "surface", x: 420, y: 220 },
+  { id: "account", label: "Compte", kind: "surface", x: 600, y: 175 },
+  { id: "agents", label: "Agents", kind: "surface", x: 780, y: 220 },
+  { id: "status", label: "État", kind: "surface", x: 880, y: 340 },
+  { id: "contact", label: "Contact", kind: "surface", x: 320, y: 340 },
+  { id: "a11", label: "A11", kind: "agent", x: 400, y: 475 },
+  { id: "k44", label: "K44", kind: "agent", x: 600, y: 535 },
+  { id: "vivy", label: "Vivy", kind: "agent", x: 800, y: 475 },
+  { id: "codex", label: "Codex", kind: "agent", x: 1010, y: 210 },
+  { id: "kiro", label: "Kiro", kind: "agent", x: 1040, y: 330 },
+  { id: "mcp", label: "MCP", kind: "infra", x: 600, y: 70 },
+  { id: "cloudflare", label: "Cloudflare DNS", kind: "infra", x: 155, y: 125 },
+  { id: "hetzner", label: "Hetzner", kind: "infra", x: 175, y: 250 },
+  { id: "caddy", label: "Reverse proxy", kind: "infra", x: 250, y: 465 },
+  { id: "docker", label: "Docker", kind: "infra", x: 305, y: 610 },
+  { id: "postgres", label: "Postgres", kind: "data", x: 450, y: 675 },
+  { id: "redis", label: "Redis", kind: "data", x: 560, y: 700 },
+  { id: "neo4j", label: "Neo4j", kind: "data", x: 680, y: 700 },
+  { id: "history", label: "Historique", kind: "data", x: 840, y: 630 },
+  { id: "files", label: "Fichiers", kind: "data", x: 940, y: 695 },
+  { id: "voice", label: "Voix", kind: "data", x: 1050, y: 635 },
+  { id: "oauth", label: "OAuth/JWT", kind: "security", x: 515, y: 292 },
+  { id: "privateApi", label: "API privée", kind: "security", x: 700, y: 292 },
+  { id: "secrets", label: "Secrets", kind: "security", x: 760, y: 390 },
+  { id: "preflight", label: "Préflight", kind: "security", x: 505, y: 620 },
+  { id: "capsule", label: "Capsule", kind: "security", x: 175, y: 590 },
+  { id: "nossenBus", label: "@nossen/bus", kind: "module", x: 95, y: 460 },
+  { id: "nossenMemory", label: "@nossen/graph", kind: "module", x: 265, y: 705 },
+  { id: "nossenSecurity", label: "@nossen/security", kind: "module", x: 95, y: 715 },
+  { id: "nossenMedia", label: "@nossen/media", kind: "module", x: 1010, y: 500 },
+  { id: "nossenDragon", label: "@nossen/dragon", kind: "module", x: 1030, y: 82 },
+  { id: "qflush", label: "Qflush", kind: "module", x: 1085, y: 445 },
+  { id: "allInOne", label: "@nossen/all-in-one", kind: "module", x: 1120, y: 560 },
+  { id: "github", label: "GitHub", kind: "publish", x: 960, y: 600 },
+  { id: "npm", label: "npm", kind: "publish", x: 1120, y: 680 },
+  { id: "jfrog", label: "JFrog possible", kind: "publish", x: 980, y: 730 },
+] as const;
+
+const FUNESTERIE_ARCHITECTURE_GRAPH_LINKS: ReadonlyArray<FunesterieGraphLink> = [
+  { from: "cloudflare", to: "funesterie", label: "résout", kind: "route" },
+  { from: "hetzner", to: "funesterie", label: "héberge", kind: "runtime" },
+  { from: "caddy", to: "funesterie", label: "route", kind: "route" },
+  { from: "funesterie", to: "home", label: "affiche", kind: "route" },
+  { from: "funesterie", to: "account", label: "route", kind: "route" },
+  { from: "funesterie", to: "agents", label: "route", kind: "route" },
+  { from: "funesterie", to: "status", label: "observe", kind: "data" },
+  { from: "funesterie", to: "contact", label: "contact", kind: "route" },
+  { from: "agents", to: "a11", label: "ouvre", kind: "route" },
+  { from: "agents", to: "k44", label: "ouvre", kind: "route" },
+  { from: "agents", to: "vivy", label: "ouvre", kind: "route" },
+  { from: "mcp", to: "a11", label: "coordonne", kind: "runtime" },
+  { from: "mcp", to: "k44", label: "coordonne", kind: "runtime" },
+  { from: "mcp", to: "vivy", label: "coordonne", kind: "runtime" },
+  { from: "codex", to: "mcp", label: "pilote", kind: "runtime" },
+  { from: "kiro", to: "mcp", label: "coordonne", kind: "runtime" },
+  { from: "oauth", to: "account", label: "protège", kind: "guard" },
+  { from: "oauth", to: "privateApi", label: "signe", kind: "guard" },
+  { from: "privateApi", to: "a11", label: "autorise", kind: "guard" },
+  { from: "privateApi", to: "k44", label: "autorise", kind: "guard" },
+  { from: "privateApi", to: "vivy", label: "autorise", kind: "guard" },
+  { from: "secrets", to: "privateApi", label: "reste serveur", kind: "guard" },
+  { from: "docker", to: "a11", label: "isole", kind: "runtime" },
+  { from: "docker", to: "k44", label: "isole", kind: "runtime" },
+  { from: "docker", to: "vivy", label: "isole", kind: "runtime" },
+  { from: "docker", to: "mcp", label: "exécute", kind: "runtime" },
+  { from: "postgres", to: "privateApi", label: "persiste", kind: "data" },
+  { from: "redis", to: "mcp", label: "cache", kind: "data" },
+  { from: "neo4j", to: "mcp", label: "graphe", kind: "data" },
+  { from: "history", to: "a11", label: "contexte", kind: "data" },
+  { from: "files", to: "a11", label: "médias", kind: "data" },
+  { from: "voice", to: "vivy", label: "voix", kind: "data" },
+  { from: "preflight", to: "docker", label: "vérifie", kind: "guard" },
+  { from: "capsule", to: "docker", label: "encapsule", kind: "guard" },
+  { from: "nossenBus", to: "mcp", label: "module", kind: "runtime" },
+  { from: "nossenMemory", to: "neo4j", label: "module", kind: "data" },
+  { from: "nossenSecurity", to: "preflight", label: "module", kind: "guard" },
+  { from: "nossenMedia", to: "a11", label: "module", kind: "data" },
+  { from: "nossenDragon", to: "agents", label: "module", kind: "runtime" },
+  { from: "qflush", to: "k44", label: "contrôle", kind: "runtime" },
+  { from: "allInOne", to: "agents", label: "agrège", kind: "runtime" },
+  { from: "github", to: "nossenBus", label: "source", kind: "publish" },
+  { from: "github", to: "nossenMemory", label: "source", kind: "publish" },
+  { from: "github", to: "nossenSecurity", label: "source", kind: "publish" },
+  { from: "npm", to: "nossenBus", label: "publie", kind: "publish" },
+  { from: "npm", to: "nossenMemory", label: "publie", kind: "publish" },
+  { from: "npm", to: "nossenSecurity", label: "publie", kind: "publish" },
+  { from: "jfrog", to: "nossenSecurity", label: "partenariat possible", kind: "publish" },
+  { from: "jfrog", to: "allInOne", label: "distribution possible", kind: "publish" },
+] as const;
+
+const FUNESTERIE_ARCHITECTURE_CYPHER_LINES = [
+  "MERGE (:Site {name:'funesterie.me'})-[:ROUTE]->(:Surface {name:'Agents'})",
+  "MERGE (:Agent {name:'A11'})-[:USES]->(:Module {name:'@nossen/media'})",
+  "MERGE (:MCP)-[:MAPS]->(:Data {name:'Neo4j'})",
+  "MERGE (:PrivateAPI)-[:PROTECTED_BY]->(:Security {name:'OAuth/JWT'})",
+  "MERGE (:Module {scope:'@nossen'})-[:PUBLISHED_TO]->(:Registry {name:'npm'})",
+] as const;
 
 function NossenCrewShowcase({
   id,
@@ -3179,10 +4116,18 @@ function NossenCrewShowcase({
   );
 }
 
+const VIVY_STUDIO_VALID_VOICE_TOOLS = [
+  "Voix Vivy officielle",
+  "Voix Vivy chant",
+  "Voix Vivy + référence privée",
+  "Diagnostic module voix",
+] as const;
+
 function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
   return [
     ["Accueil", surfaceLinks.home],
     ["Agents", surfaceLinks.agents],
+    ["Architecture", surfaceLinks.architecture],
     ["État", surfaceLinks.cockpit],
     ["Compte", surfaceLinks.account],
     ["Contact", surfaceLinks.contact],
@@ -3192,21 +4137,45 @@ function getFunesteriePublicNavItems(surfaceLinks: SurfaceLinks) {
 function FunesteriePublicNav({
   surfaceLinks,
   brandLabel = "Funesterie",
+  brandSubtitle,
+  brandAvatarSrc,
+  variant = "default",
 }: {
   surfaceLinks: SurfaceLinks;
   brandLabel?: string;
+  brandSubtitle?: string;
+  brandAvatarSrc?: string;
+  variant?: "default" | "agent";
 }) {
+  const navItems = getFunesteriePublicNavItems(surfaceLinks);
+  const isAgentBar = variant === "agent";
+
   return (
-    <nav className="fun-home-nav fun-public-nav" aria-label="Navigation Funesterie">
+    <nav className={`fun-home-nav fun-public-nav${isAgentBar ? " fun-public-nav--agent" : ""}`} aria-label="Navigation Funesterie">
       <a href={surfaceLinks.home} className="fun-home-brand" aria-label="Funesterie accueil">
-        <img src={FUNESTERIE_LOGO_SRC} alt="" />
-        <span>{brandLabel}</span>
+        <img src={brandAvatarSrc || FUNESTERIE_LOGO_SRC} alt="" />
+        <span className="fun-home-brand-text">
+          <strong>{brandLabel}</strong>
+          {brandSubtitle ? <small>{brandSubtitle}</small> : null}
+        </span>
       </a>
-      <div className="fun-home-nav-links">
-        {getFunesteriePublicNavItems(surfaceLinks).map(([label, href]) => (
-          <a key={label} href={href}>{label}</a>
-        ))}
-      </div>
+      {isAgentBar ? (
+        <details className="fun-public-menu">
+          <summary>Menu</summary>
+          <div className="fun-public-menu-panel">
+            {navItems.map(([label, href]) => (
+              <a key={label} href={href}>{label}</a>
+            ))}
+          </div>
+        </details>
+      ) : (
+        <div className="fun-home-nav-links">
+          {navItems.map(([label, href]) => (
+            <a key={label} href={href}>{label}</a>
+          ))}
+        </div>
+      )}
+      {null}
     </nav>
   );
 }
@@ -3227,6 +4196,7 @@ function FunesteriePublicFooter({
       <div className="fun-public-footer-legal" aria-label="Liens légaux Funesterie">
         <a href={surfaceLinks.privacy}>Confidentialité</a>
         <a href={surfaceLinks.terms}>Conditions</a>
+        <a href={surfaceLinks.contact}>Contact</a>
       </div>
       <div className="fun-public-footer-session" aria-label="Session Funesterie">
         <span>{authenticated ? (displayName || "Connecté") : "Public"}</span>
@@ -3262,19 +4232,172 @@ function FunesterieHomeIntro({
   busy: boolean;
 }) {
   return (
-    <section className="fun-home-hero" aria-label="Accueil NOSSEN Funesterie">
-      <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
-      <p>
-        NOSSEN est le projet Funesterie : un univers cyber-futuriste en évolution,
-        entre piraterie numérique, jeu vidéo, machines, vitesse et philosophie rider.
-        Les agents gardent chacun leur spécialité.
-      </p>
-      <div className="fun-home-actions">
-        <a href={surfaceLinks.agents}>Agents</a>
-        <button type="button" onClick={onConnect} disabled={busy}>
-          {busy ? "Connexion..." : authenticated ? (displayName || "Compte") : "Se connecter"}
-        </button>
-        <a href={surfaceLinks.cockpit}>État</a>
+    <section
+      id="accueil"
+      className="fun-home-hero fun-home-hero--nossen fun-home-hero--single"
+      aria-label="Accueil NOSSEN Funesterie"
+      style={{ width: "min(760px, calc(100vw - 20px))", maxWidth: "calc(100vw - 20px)" }}
+    >
+      <div className="fun-hero-core">
+        <img
+          src={FUNESTERIE_LOGO_SRC}
+          alt="Funesterie"
+          style={{ width: "min(100%, 520px)", maxWidth: "100%", height: "auto" }}
+        />
+        <p>
+          Funesterie.me rassemble les agents, la voix persona, les outils NOSSEN et le mode versus
+          pour créer, comprendre, connecter et jouer contre la machine sans perdre la main humaine.
+        </p>
+        <div className="fun-home-actions">
+          <button type="button" onClick={onConnect} disabled={busy}>
+            {busy ? "Connexion..." : authenticated ? (displayName || "Compte") : "Se connecter"}
+          </button>
+          <a href={surfaceLinks.agents}>Explorer les agents</a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FunesterieVoicePersonaPanel() {
+  const [activePersona, setActivePersona] = useState<FunesterieSurface>("a11");
+  const [voiceStatus, setVoiceStatus] = useState("Voix officielles prêtes: A11, Kaen44, Vivy.");
+  const active = FUNESTERIE_VOICE_PERSONAS.find((persona) => persona.id === activePersona) || FUNESTERIE_VOICE_PERSONAS[0];
+
+  function playPersonaVoice(persona: FunesterieVoicePersona) {
+    setActivePersona(persona.id);
+    setVoiceStatus(`Préparation de la voix ${persona.name}...`);
+    void unlockAudioOutput().finally(() => {
+      speak(persona.sample, {
+        lang: "fr-FR",
+        provider: "auto",
+        voicePersona: persona.id,
+        voiceStyle: persona.voiceStyle,
+        voiceReferenceRequired: true,
+        vocalMode: persona.id === "vivy" ? "adaptive" : "speech",
+        voiceConversion: false,
+        ttsTimeoutMs: 28000,
+        onEnd: () => setVoiceStatus(`Voix ${persona.name} terminée.`),
+        onError: () => setVoiceStatus(`Voix ${persona.name} indisponible sur ce navigateur pour l'instant.`),
+      });
+    });
+  }
+
+  return (
+    <section id="voix" className="fun-voice-persona" aria-label="Voix persona Funesterie">
+      <header className="fun-section-title">
+        <span>Voix persona</span>
+        <h2>A11, Kaen44 et Vivy parlent avec leur identité.</h2>
+        <p>Le bouton teste la route TTS officielle avec persona et style dédiés, sans afficher de configuration sensible.</p>
+      </header>
+      <div className="fun-voice-layout">
+        <div className={`fun-voice-stage fun-voice-stage--${active.tone}`}>
+          <img src={active.image} alt="" loading="lazy" decoding="async" />
+          <div>
+            <span>{active.signal}</span>
+            <strong>{active.name}</strong>
+            <p>{active.sample}</p>
+          </div>
+        </div>
+        <div className="fun-voice-grid">
+          {FUNESTERIE_VOICE_PERSONAS.map((persona) => (
+            <article
+              key={persona.id}
+              className={`fun-voice-card fun-voice-card--${persona.tone}${activePersona === persona.id ? " fun-voice-card--active" : ""}`}
+            >
+              <img src={persona.image} alt="" loading="lazy" decoding="async" />
+              <div>
+                <span>{persona.signal}</span>
+                <h3>{persona.name}</h3>
+                <p>{persona.role}</p>
+                <small>{persona.detail}</small>
+              </div>
+              <button type="button" onClick={() => playPersonaVoice(persona)}>
+                Tester la voix
+              </button>
+            </article>
+          ))}
+        </div>
+      </div>
+      <p className="fun-voice-status" aria-live="polite">{voiceStatus}</p>
+    </section>
+  );
+}
+
+function FunesterieVersusPanel() {
+  const [agentId, setAgentId] = useState<FunesterieSurface>("a11");
+  const [score, setScore] = useState({ user: 0, funesterie: 0 });
+  const [round, setRound] = useState(1);
+  const [battleLog, setBattleLog] = useState("Choisis un agent, puis lance un coup. Le prototype reste local et demande consentement avant tout contrôle réel.");
+  const active = FUNESTERIE_VOICE_PERSONAS.find((persona) => persona.id === agentId) || FUNESTERIE_VOICE_PERSONAS[0];
+  const leader = score.funesterie === score.user
+    ? "Égalité"
+    : score.funesterie > score.user
+      ? "Funesterie.me mène"
+      : "Utilisateur mène";
+
+  function playMove(move: typeof FUNESTERIE_BATTLE_MOVES[number]) {
+    setRound((value) => value + 1);
+    setScore((value) => ({
+      user: value.user + move.userDelta,
+      funesterie: value.funesterie + move.funDelta,
+    }));
+    setBattleLog(`${active.name}: ${move.log}`);
+  }
+
+  function resetBattle() {
+    setScore({ user: 0, funesterie: 0 });
+    setRound(1);
+    setBattleLog("Match remis à zéro. L'utilisateur garde le contrôle du lancement.");
+  }
+
+  return (
+    <section id="missions" className="fun-versus-panel" aria-label="Affrontement jeu vidéo Funesterie">
+      <div className="fun-versus-copy">
+        <span>Mode versus</span>
+        <h2>Funesterie.me vs utilisateur</h2>
+        <p>
+          Un sas jeu vidéo pour préparer les duels locaux: humain au contrôle, agent en adversaire,
+          copilote ou analyste. Le pont Qflush/RomStation reste opt-in.
+        </p>
+        <div className="fun-versus-score" aria-label="Score du duel">
+          <strong>{score.funesterie}</strong>
+          <span>Funesterie.me</span>
+          <i>VS</i>
+          <span>Utilisateur</span>
+          <strong>{score.user}</strong>
+        </div>
+      </div>
+
+      <div className="fun-versus-arena">
+        <div className="fun-versus-screen">
+          <img src={active.image} alt="" loading="lazy" decoding="async" />
+          <div className="fun-versus-hud">
+            <span>Round {round}</span>
+            <strong>{leader}</strong>
+            <small>{battleLog}</small>
+          </div>
+        </div>
+        <div className="fun-versus-controls" aria-label="Choix agent adversaire">
+          {FUNESTERIE_VOICE_PERSONAS.map((persona) => (
+            <button
+              key={persona.id}
+              type="button"
+              className={agentId === persona.id ? "active" : ""}
+              onClick={() => setAgentId(persona.id)}
+            >
+              {persona.name}
+            </button>
+          ))}
+        </div>
+        <div className="fun-versus-moves" aria-label="Actions duel">
+          {FUNESTERIE_BATTLE_MOVES.map((move) => (
+            <button key={move.id} type="button" onClick={() => playMove(move)}>
+              {move.label}
+            </button>
+          ))}
+          <button type="button" onClick={resetBattle}>Reset</button>
+        </div>
       </div>
     </section>
   );
@@ -3287,7 +4410,7 @@ function FunesterieAgentsShowcase({ surfaceLinks }: { surfaceLinks: SurfaceLinks
         {FUNESTERIE_HOME_AGENTS.map((agent) => (
           <a
             key={agent.id}
-            className={`fun-home-agent-card fun-home-agent-card--${agent.tone}`}
+            className={`fun-home-agent-card fun-home-agent-card--${agent.tone} fun-home-agent-card--${agent.id}`}
             href={buildHomeAgentHref(agent.href, surfaceLinks)}
           >
             <img src={agent.image} alt="" loading="lazy" decoding="async" />
@@ -3455,6 +4578,47 @@ function FunesteriePublicStatusPage({
   );
 }
 
+type ConnectorProvider = "google" | "microsoft";
+
+function readConnectorProvider(
+  connectors: AuthConnectorsResponse | null,
+  provider: ConnectorProvider
+): AuthConnectorProviderState {
+  return connectors?.connectors?.[provider] || {};
+}
+
+function connectorCardClass(providerState: AuthConnectorProviderState) {
+  if (providerState.linked) return "fun-token-card fun-token-card--connected";
+  if (providerState.configured === false) return "fun-token-card fun-token-card--warning";
+  return "fun-token-card";
+}
+
+function connectorBadge(providerState: AuthConnectorProviderState, fallback = "OAuth") {
+  if (providerState.linked) return "Connecté";
+  if (providerState.configured === false) return "À configurer";
+  return fallback;
+}
+
+function connectorActionLabel(providerState: AuthConnectorProviderState, busy: boolean, providerLabel: string) {
+  if (busy) return "Connexion...";
+  if (providerState.linked) return `${providerLabel} connecté`;
+  if (providerState.configured === false) return "Configuration requise";
+  return `Connecter ${providerLabel}`;
+}
+
+function connectorDescription(
+  providerState: AuthConnectorProviderState,
+  connectedText: string,
+  fallbackText: string
+) {
+  if (providerState.linked) {
+    const account = String(providerState.account || "").trim();
+    return account ? `${connectedText} ${account}.` : connectedText;
+  }
+  if (providerState.configured === false) return "Configuration serveur incomplète pour ce connecteur.";
+  return fallbackText;
+}
+
 function FunesterieMcpAdminPanel({
   surfaceLinks,
   authenticated,
@@ -3465,49 +4629,88 @@ function FunesterieMcpAdminPanel({
   displayName: string;
 }) {
   const [mcpHealth, setMcpHealth] = useState<FunesterieProbeStatus>("checking");
-  const [token, setToken] = useState("");
-  const [privateResult, setPrivateResult] = useState("Non testé");
+  const [privateResult, setPrivateResult] = useState("Connecte-toi avec Google ou Microsoft pour vérifier le MCP privé.");
   const [busy, setBusy] = useState<"" | "google" | "microsoft" | "mcp">("");
-  const accountReturnTo = surfaceLinks.account || "/compte/";
+  const [connectors, setConnectors] = useState<AuthConnectorsResponse | null>(null);
+  const [connectorsStatus, setConnectorsStatus] = useState<"checking" | "ready" | "error">("checking");
+  const [mcpAccount, setMcpAccount] = useState<McpAccountProfile | null>(null);
+  const cockpitReturnTo = surfaceLinks.cockpit || "/cockpit/";
+  const googleState = readConnectorProvider(connectors, "google");
+  const microsoftState = readConnectorProvider(connectors, "microsoft");
+  const accountTier = String(mcpAccount?.tier || "").trim();
+  const accountLabel = mcpAccount?.label || (authenticated ? "Compte connecté" : "Non connecté");
+  const accountFeatures = Array.isArray(mcpAccount?.features) ? mcpAccount.features.slice(0, 3) : [];
+  const accountPermissionLine = !authenticated
+    ? "Connexion Google ou Microsoft requise."
+    : accountTier === "admin_family"
+      ? "MCP privé et contrôles autorisés."
+      : accountTier === "founder"
+        ? "MCP privé, RomStation et connecteurs session autorisés."
+        : accountTier === "premium"
+          ? "MCP public avancé, statut et RomStation lecture."
+          : "MCP public lecture seule.";
 
   async function refreshMcpHealth() {
     setMcpHealth("checking");
     setMcpHealth((await probePublicEndpoint("https://mcp.funesterie.me/health")) ? "ok" : "down");
   }
 
+  async function refreshConnectors() {
+    setConnectorsStatus("checking");
+    try {
+      const next = await fetchAuthConnectors();
+      setConnectors(next);
+      setConnectorsStatus("ready");
+    } catch {
+      setConnectors(null);
+      setConnectorsStatus("error");
+    }
+  }
+
+  async function refreshMcpAccount() {
+    if (!authenticated) {
+      setMcpAccount(null);
+      return;
+    }
+    try {
+      setMcpAccount(await fetchMcpCockpitAccount());
+    } catch {
+      setMcpAccount(null);
+    }
+  }
+
   useEffect(() => {
     void refreshMcpHealth();
-  }, []);
+    void refreshConnectors();
+    void refreshMcpAccount();
+  }, [authenticated]);
 
   async function testPrivateMcp() {
-    const trimmedToken = token.trim();
-    if (!trimmedToken) {
-      setPrivateResult("Token admin requis pour tester /mcp privé.");
+    if (!authenticated) {
+      setPrivateResult("Connexion Google ou Microsoft requise pour vérifier le MCP privé.");
       return;
     }
     setBusy("mcp");
     setPrivateResult("Test en cours...");
     try {
-      const response = await fetch("https://mcp.funesterie.me/mcp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${trimmedToken}`,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: "funesterie-admin-ui",
-          method: "initialize",
-          params: {
-            protocolVersion: "2024-11-05",
-            capabilities: {},
-            clientInfo: { name: "funesterie-admin-ui", version: "1.0.0" },
-          },
-        }),
-      });
-      setPrivateResult(response.ok ? "MCP privé joignable." : `Réponse MCP: ${response.status}`);
-    } catch {
-      setPrivateResult("MCP privé non lisible depuis le navigateur. Vérifie CORS ou passe par le client MCP.");
+      const status = await fetchMcpCockpitStatus();
+      if (status.account) setMcpAccount(status.account);
+      const activeAgents = Number(status.agents?.active || 0);
+      const tierLabel = status.account?.label || mcpAccount?.label || "Compte MCP";
+      const privateAllowed = status.account?.permissions?.privateMcpProxy === true;
+      setPrivateResult(
+        status.ok
+          ? privateAllowed
+            ? `MCP privé accessible (${tierLabel}). Agents actifs: ${activeAgents}.`
+            : `Statut MCP accessible (${tierLabel}). Le privé complet reste réservé Fondateur/Admin famille.`
+          : "MCP non validé avec ce compte."
+      );
+    } catch (error) {
+      const payload = (error as { payload?: { account?: McpAccountProfile; required?: { minimumLabel?: string } } })?.payload;
+      if (payload?.account) setMcpAccount(payload.account);
+      const message = error instanceof Error ? error.message : "MCP privé indisponible.";
+      const minimum = payload?.required?.minimumLabel ? ` Niveau requis: ${payload.required.minimumLabel}.` : "";
+      setPrivateResult(`${message}${minimum}`);
     } finally {
       setBusy("");
     }
@@ -3515,12 +4718,23 @@ function FunesterieMcpAdminPanel({
 
   function connectGoogle() {
     setBusy("google");
-    startGoogleOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
+    startGoogleOAuth(buildAuthSuccessReturnToForTarget(cockpitReturnTo), "funesterie-cockpit", { scopeProfile: "drive" });
   }
 
   function connectMicrosoft() {
     setBusy("microsoft");
-    startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(accountReturnTo), "funesterie-account", { scopeProfile: "drive" });
+    startMicrosoftOAuth(buildAuthSuccessReturnToForTarget(cockpitReturnTo), "funesterie-cockpit", { scopeProfile: "drive" });
+  }
+
+  async function handleDisconnectProvider(provider: "google" | "microsoft") {
+    setBusy(provider);
+    try {
+      await disconnectConnector(provider);
+      await refreshConnectors();
+      await refreshMcpAccount();
+    } finally {
+      setBusy("");
+    }
   }
 
   return (
@@ -3530,9 +4744,9 @@ function FunesterieMcpAdminPanel({
         <div>
           <span>Compte admin</span>
           <h1>MCP Funesterie</h1>
-          <p>{authenticated && displayName ? displayName : "Interface de contrôle MCP, sans affichage de secret."}</p>
+          <p>{authenticated && displayName ? `${displayName} · ${accountLabel}` : "Interface de contrôle MCP, sans affichage de secret."}</p>
         </div>
-        <button type="button" onClick={() => void refreshMcpHealth()}>
+        <button type="button" onClick={() => { void refreshMcpHealth(); void refreshConnectors(); void refreshMcpAccount(); }}>
           Rafraîchir
         </button>
       </header>
@@ -3549,35 +4763,45 @@ function FunesterieMcpAdminPanel({
           <small>routes séparées</small>
         </article>
         <article className="fun-status-card">
-          <strong>MCP privé</strong>
+          <strong>Compte MCP</strong>
           <span>https://mcp.funesterie.me/mcp</span>
-          <small>bearer requis</small>
+          <small>{accountFeatures.length ? accountFeatures.join(" · ") : accountPermissionLine}</small>
         </article>
       </div>
 
       <div className="fun-mcp-actions" aria-label="Actions compte">
-        <article className="fun-token-card">
+        <article className={connectorCardClass(googleState)}>
           <header>
             <h3>Google</h3>
-            <span>OAuth</span>
+            <span>{connectorsStatus === "checking" ? "Test" : connectorBadge(googleState)}</span>
           </header>
-          <p>Connexion compte et autorisations Google liées à la session Funesterie.</p>
+          <p>{connectorDescription(googleState, "Google lié à", "Connexion compte et autorisations Google liées à la session Funesterie.")}</p>
           <footer>
-            <button type="button" onClick={connectGoogle} disabled={busy === "google"}>
-              {busy === "google" ? "Connexion..." : "Connecter Google"}
+            <button type="button" onClick={connectGoogle} disabled={busy === "google" || googleState.configured === false}>
+              {connectorActionLabel(googleState, busy === "google", "Google")}
             </button>
+            {googleState.linked && (
+              <button type="button" onClick={() => handleDisconnectProvider("google")} disabled={busy === "google"} style={{ marginLeft: "8px" }}>
+                Délier
+              </button>
+            )}
           </footer>
         </article>
-        <article className="fun-token-card">
+        <article className={connectorCardClass(microsoftState)}>
           <header>
             <h3>Microsoft</h3>
-            <span>OAuth</span>
+            <span>{connectorsStatus === "checking" ? "Test" : connectorBadge(microsoftState)}</span>
           </header>
-          <p>Connexion Microsoft pour compte, OneDrive et outils de travail.</p>
+          <p>{connectorDescription(microsoftState, "Microsoft lié à", "Connexion Microsoft pour compte, OneDrive et outils de travail.")}</p>
           <footer>
-            <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft"}>
-              {busy === "microsoft" ? "Connexion..." : "Connecter Microsoft"}
+            <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft" || microsoftState.configured === false}>
+              {connectorActionLabel(microsoftState, busy === "microsoft", "Microsoft")}
             </button>
+            {microsoftState.linked && (
+              <button type="button" onClick={() => handleDisconnectProvider("microsoft")} disabled={busy === "microsoft"} style={{ marginLeft: "8px" }}>
+                Délier
+              </button>
+            )}
           </footer>
         </article>
         <article className="fun-token-card">
@@ -3605,19 +4829,9 @@ function FunesterieMcpAdminPanel({
       </div>
 
       <div className="fun-mcp-console">
-        <label>
-          <span>Token admin local</span>
-          <input
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            type="password"
-            autoComplete="off"
-            placeholder="Coller le bearer token uniquement pour ce test"
-          />
-        </label>
         <div className="fun-integration-actions">
           <button type="button" onClick={() => void testPrivateMcp()} disabled={busy === "mcp"}>
-            {busy === "mcp" ? "Test..." : "Tester MCP privé"}
+            {busy === "mcp" ? "Vérification..." : "Vérifier MCP privé"}
           </button>
           <a href="https://mcp.funesterie.me/chatgpt/mcp" target="_blank" rel="noreferrer">MCP public</a>
           <a href="https://mcp.funesterie.me/.well-known/oauth-protected-resource/mcp" target="_blank" rel="noreferrer">OAuth</a>
@@ -3642,7 +4856,6 @@ function FunesterieConnectedHomePage({
   isAdmin?: boolean;
 }) {
   const [accountBusy, setAccountBusy] = useState<"" | "google">("");
-  const accountReturnTo = buildGeneralAccountAuthSuccessReturnTo();
   const { pathname } = getLocationSnapshot();
   const isAgentsRoute = /^\/agents(?:\/|$)/.test(pathname);
   const isStatusRoute = /^\/cockpit(?:\/|$)/.test(pathname);
@@ -3660,37 +4873,37 @@ function FunesterieConnectedHomePage({
 
   const routeMeta = isAgentsRoute
     ? {
-        brand: "Agents",
-        title: "Agents",
-        subtitle: "Chaque agent garde sa spécialité dans la surface Funesterie.",
-        blocks: FUNESTERIE_HOME_AGENTS.map((agent) => [
-          agent.name,
-          `${agent.role}. ${agent.text}`,
-        ] as const),
-      }
+      brand: "Agents",
+      title: "Agents",
+      subtitle: "Chaque agent garde sa spécialité dans la surface Funesterie.",
+      blocks: FUNESTERIE_HOME_AGENTS.map((agent) => [
+        agent.name,
+        `${agent.role}. ${agent.text}`,
+      ] as const),
+    }
     : isStatusRoute
       ? {
-          brand: "État",
-          title: "État",
-          subtitle: "Vue admin des surfaces fonctionnelles.",
-          blocks: [
-            ["Funesterie.me", "Surface publique active."],
-            ["A11", "Agent média disponible."],
-            ["Kaen44", "Agent bureau accessible depuis sa route dédiée."],
-            ["Vivy", "Présence musicale accessible depuis sa route dédiée."],
-          ] as const,
-        }
+        brand: "État",
+        title: "État",
+        subtitle: "Vue admin des surfaces fonctionnelles.",
+        blocks: [
+          ["Funesterie.me", "Surface publique active."],
+          ["A11", "Agent média disponible."],
+          ["Kaen44", "Agent bureau accessible depuis sa route dédiée."],
+          ["Vivy", "Présence musicale accessible depuis sa route dédiée."],
+        ] as const,
+      }
       : {
-          brand: "Funesterie",
-          title: "Funesterie",
-          subtitle: "NOSSEN ride crew : créer, comprendre, connecter.",
-          blocks: [
-            ["Accueil", "Point d'entrée public du projet NOSSEN."],
-            ["Agents", "Vivy, A11 et Kaen44 restent visibles sans changer de charte."],
-            ["État", "Surveillance courte intégrée à l'interface Funesterie."],
-            ["Compte", "Accès personnels et connexions privées."],
-          ] as const,
-        };
+        brand: "Funesterie",
+        title: "Funesterie",
+        subtitle: "NOSSEN ride crew : créer, comprendre, connecter.",
+        blocks: [
+          ["Accueil", "Point d'entrée public du projet NOSSEN."],
+          ["Agents", "Vivy, A11 et Kaen44 restent visibles sans changer de charte."],
+          ["État", "Surveillance courte intégrée à l'interface Funesterie."],
+          ["Compte", "Accès personnels et connexions privées."],
+        ] as const,
+      };
 
   useEffect(() => {
     if (typeof window === "undefined" || window.location.hash) return;
@@ -3708,12 +4921,12 @@ function FunesterieConnectedHomePage({
       return;
     }
     setAccountBusy("google");
-    startGoogleOAuth(accountReturnTo, "funesterie-home", { scopeProfile: "drive" });
+    window.location.assign(buildCentralLoginUrl(surfaceLinks.account));
   }
 
   if (!isAgentsRoute && !isStatusRoute) {
     return (
-      <main id="top" className="fun-home-shell fun-public-surface" aria-label="Accueil Funesterie">
+      <main id="top" className="fun-home-shell fun-public-surface fun-home-shell--landing" aria-label="Accueil Funesterie">
         <FunesteriePublicNav surfaceLinks={surfaceLinks} />
         <FunesterieHomeIntro
           surfaceLinks={surfaceLinks}
@@ -3777,6 +4990,177 @@ function FunesterieConnectedHomePage({
   );
 }
 
+function FunesterieArchitectureGraph() {
+  const nodeById = useMemo(() => {
+    return new Map(FUNESTERIE_ARCHITECTURE_GRAPH_NODES.map((node) => [node.id, node]));
+  }, []);
+  const graphNodeCount = FUNESTERIE_ARCHITECTURE_GRAPH_NODES.length;
+  const graphLinkCount = FUNESTERIE_ARCHITECTURE_GRAPH_LINKS.length;
+
+  return (
+    <section className="fun-architecture-graph-panel" aria-label="Graphe Neo4j Funesterie">
+      <header>
+        <div>
+          <span>Graphe Cypher public</span>
+          <h2>Les liaisons vivantes</h2>
+        </div>
+        <strong className="fun-architecture-graph-count">
+          <span>{graphNodeCount} nœuds</span>
+          <span>{graphLinkCount} liaisons</span>
+        </strong>
+      </header>
+      <div className="fun-architecture-graph-stage" role="img" aria-label="Graphe des liaisons entre site, agents IA, données, modules et sécurité">
+        <svg viewBox="0 0 1200 780" aria-hidden="true">
+          <defs>
+            <filter id="fun-graph-glow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <g className="fun-graph-links">
+            {FUNESTERIE_ARCHITECTURE_GRAPH_LINKS.map((link, index) => {
+              const from = nodeById.get(link.from);
+              const to = nodeById.get(link.to);
+              if (!from || !to) return null;
+              return (
+                <line
+                  key={`${link.from}-${link.to}-${link.label}`}
+                  className={`fun-graph-link fun-graph-link--${link.kind}`}
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  style={{ animationDelay: `${index * 70}ms` }}
+                >
+                  <title>{`${from.label} -[${link.label}]-> ${to.label}`}</title>
+                </line>
+              );
+            })}
+          </g>
+          <g className="fun-graph-nodes">
+            {FUNESTERIE_ARCHITECTURE_GRAPH_NODES.map((node, index) => (
+              <g
+                key={node.id}
+                className={`fun-graph-node fun-graph-node--${node.kind}`}
+                transform={`translate(${node.x} ${node.y})`}
+                style={{ animationDelay: `${index * 90}ms` }}
+              >
+                <circle r={node.kind === "core" ? 42 : 27} />
+                <text y={node.kind === "core" ? 6 : 5}>{node.label}</text>
+                <title>{`${node.label} · ${node.kind}`}</title>
+              </g>
+            ))}
+          </g>
+        </svg>
+      </div>
+      <div className="fun-architecture-graph-legend" aria-label="Légende du graphe">
+        {(["surface", "agent", "infra", "data", "module", "security", "publish"] as FunesterieGraphKind[]).map((kind) => (
+          <span key={kind} className={`fun-graph-legend-item fun-graph-legend-item--${kind}`}>
+            {kind === "surface" ? "Surfaces" : kind === "agent" ? "Agents" : kind === "infra" ? "Infra" : kind === "data" ? "Data" : kind === "module" ? "Modules" : kind === "security" ? "Sécurité" : "Publication"}
+          </span>
+        ))}
+      </div>
+      <pre className="fun-architecture-cypher" aria-label="Exemples Cypher publics">
+        {FUNESTERIE_ARCHITECTURE_CYPHER_LINES.join("\n")}
+      </pre>
+    </section>
+  );
+}
+
+function FunesterieArchitecturePage({
+  surfaceLinks,
+  authenticated = false,
+  displayName = "",
+  onLogout,
+}: {
+  surfaceLinks: SurfaceLinks;
+  authenticated?: boolean;
+  displayName?: string;
+  onLogout?: () => void;
+}) {
+  return (
+    <main id="top" className="fun-home-shell fun-public-surface fun-account-shell fun-architecture-shell" aria-label="Architecture Funesterie">
+      <FunesteriePublicNav
+        surfaceLinks={surfaceLinks}
+      />
+
+      <section className="fun-architecture-hero" aria-label="Résumé architecture Funesterie">
+        <div className="fun-architecture-hero-copy">
+          <h1>Architecture Funesterie</h1>
+          <p>
+            Un graphe public pour voir comment funesterie.me relie le site,
+            les agents IA, les données, les modules NOSSEN, l'infrastructure et la sécurité.
+          </p>
+          <div className="fun-architecture-actions">
+            <a href={surfaceLinks.agents}>Voir les agents</a>
+            <a href="https://www.npmjs.com/search?q=%40nossen" target="_blank" rel="noreferrer">Modules @nossen</a>
+            <a href={surfaceLinks.contact}>Contact</a>
+          </div>
+        </div>
+        <div className="fun-architecture-hero-mark" aria-label="Identité Funesterie">
+          <img src={FUNESTERIE_LOGO_SRC} alt="Funesterie" />
+          <strong>funesterie.me</strong>
+          <span>site public, agents IA et modules reliés proprement</span>
+        </div>
+      </section>
+
+      <FunesterieArchitectureGraph />
+
+      <section className="fun-architecture-map" aria-label="Carte des liaisons Funesterie">
+        <div className="fun-architecture-core">
+          <span>Centre</span>
+          <strong>funesterie.me</strong>
+          <p>Point d'entrée public. Les routes visibles restent lisibles, les actions sensibles restent protégées.</p>
+        </div>
+        {FUNESTERIE_ARCHITECTURE_CLUSTERS.map((cluster) => (
+          <article key={cluster.id} className={`fun-architecture-cluster fun-architecture-cluster--${cluster.tone}`}>
+            <header>
+              <span>{cluster.title}</span>
+              <p>{cluster.summary}</p>
+            </header>
+            <ul>
+              {cluster.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </section>
+
+      <section className="fun-architecture-proof-grid" aria-label="Frontières de sécurité">
+        {FUNESTERIE_ARCHITECTURE_GUARDS.map(([title, text]) => (
+          <article key={title}>
+            <strong>{title}</strong>
+            <span>{text}</span>
+          </article>
+        ))}
+      </section>
+
+      <section className="fun-architecture-flow" aria-label="Flux de fonctionnement">
+        <header>
+          <span>Lecture rapide</span>
+          <h2>Du site au graphe</h2>
+        </header>
+        <ol>
+          {FUNESTERIE_ARCHITECTURE_FLOW.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </section>
+
+      <FunesteriePublicFooter
+        surfaceLinks={surfaceLinks}
+        authenticated={authenticated}
+        displayName={displayName}
+        onLogout={onLogout}
+      />
+    </main>
+  );
+}
+
 function FunesterieIntegrationPanel({
   surfaceLinks,
   authenticated,
@@ -3805,7 +5189,7 @@ function FunesterieIntegrationPanel({
       <section className="fun-token-panel fun-token-locked" aria-label="Connexions privées Funesterie verrouillées">
         <header className="fun-token-head">
           <div>
-            <span>Session requise</span>
+            <span>Connexion requise</span>
             <h2>Connexions privées</h2>
             <p>
               Les accès personnels ne sont pas affichés sur la page publique. Connecte-toi avec
@@ -3940,7 +5324,10 @@ function readFunesterieAccountOverview() {
 
   const voiceReference = (() => {
     try {
-      return window.localStorage.getItem("a11:tts:voice-reference-id") ? "Configurée" : "Non configurée";
+      return (["a11", "kaen44", "vivy"] as FunesterieSurface[])
+        .some((surface) => Boolean(readStoredVoiceReferenceId(surface)))
+        ? "Configurée"
+        : "Non configurée";
     } catch {
       return "Non configurée";
     }
@@ -3979,7 +5366,7 @@ function FunesterieAccountPage({
         <div className="fun-account-grid">
           <article>
             <strong>Profil</strong>
-            <span>{authenticated ? "Session active" : "Session non connectée"}</span>
+            <span>{authenticated ? "Compte connecté" : "Compte non connecté"}</span>
           </article>
           <article>
             <strong>Historique</strong>
@@ -4285,17 +5672,18 @@ function FunesterieLegalPage({
   const isPrivacy = kind === "privacy";
   const blocks = isPrivacy
     ? ([
-        ["Données", "Comptes, messages et fichiers autorisés par l'utilisateur."],
-        ["Drive", "Accès Google limité aux fichiers choisis ou validés."],
-        ["Agents", "A11, Kaen44 et Vivy traitent le contexte nécessaire."],
-        ["Retrait", "Les accès peuvent être retirés depuis le compte fournisseur."],
-      ] as const)
+      ["Données", "Comptes, messages et fichiers autorisés par l'utilisateur."],
+      ["Drive", "Accès Google Drive et Microsoft OneDrive limité aux fichiers choisis ou validés."],
+      ["Agents", "A11, Kaen44 et Vivy traitent le contexte nécessaire."],
+      ["Retrait", "Les accès peuvent être retirés depuis le compte Google ou Microsoft."],
+    ] as const)
     : ([
-        ["Usage", "Assistance documents, création, voix, projets et coordination."],
-        ["Limites", "Actions sensibles, paiements et suppressions demandent validation."],
-        ["Contenus", "Les publications doivent être originales ou autorisées."],
-        ["Compte", "L'utilisateur garde la responsabilité des validations finales."],
-      ] as const);
+      ["Usage", "Assistance documents, création, voix, projets et coordination."],
+      ["Microsoft", "Connexion Microsoft Graph et OneDrive limitée aux droits validés par l'utilisateur."],
+      ["Limites", "Actions sensibles, paiements et suppressions demandent validation."],
+      ["Contenus", "Les publications doivent être originales ou autorisées."],
+      ["Compte", "L'utilisateur garde la responsabilité des validations finales."],
+    ] as const);
 
   return (
     <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label={isPrivacy ? "Confidentialité Funesterie" : "Conditions Funesterie"}>
@@ -4420,23 +5808,13 @@ function PersonaDashboard({
     };
 
   return (
-    <section className={`k44-agent-strip-panel k44-agent-profile k44-agent-profile--${isKaen44 ? "kaen44" : "a11"}`} aria-label={currentAgent.name}>
-      <header className="k44-agent-strip-header">
-        <div className="k44-title">
-          <h1>{currentAgent.name}</h1>
-          <p>{currentAgent.role}</p>
-        </div>
-        <div className="k44-simple-actions">
-          <button type="button" onClick={onStartChat}>Discussion</button>
-          <button type="button" onClick={onOpenInspector}>Menu</button>
-        </div>
-      </header>
-
+    <section
+      className={`k44-agent-strip-panel k44-agent-profile k44-agent-profile--${isKaen44 ? "kaen44" : "a11"}`}
+      aria-label={`${currentAgent.name} - ${currentAgent.role}`}
+    >
       <div className="k44-agent-current">
         <img src={currentAgent.image} alt={currentAgent.alt} />
         <div>
-          <strong>{currentAgent.name}</strong>
-          <span>{currentAgent.role}</span>
           <p>{currentAgent.text}</p>
         </div>
       </div>
@@ -4454,6 +5832,7 @@ export function App() {
   const isGeneralCockpit = isGeneralCockpitRoute();
   const isGeneralHome = isGeneralHomeRoute();
   const isGeneralAgents = isGeneralAgentsRoute();
+  const isGeneralArchitecture = isGeneralArchitectureRoute();
   const isGeneralAccount = isGeneralAccountRoute();
   const isGeneralContact = isGeneralContactRoute();
   const isGeneralPrivacy = isGeneralPrivacyRoute();
@@ -4462,6 +5841,7 @@ export function App() {
   const isFunesteriePublicShell = isGeneralCockpit
     || isGeneralHome
     || isGeneralAgents
+    || isGeneralArchitecture
     || isGeneralAccount
     || isGeneralContact
     || isGeneralPrivacy
@@ -4502,23 +5882,25 @@ export function App() {
         ? "Funesterie - Accueil"
         : isGeneralAgents
           ? "Funesterie - Agents"
-          : isGeneralAccount
-            ? "Funesterie - Compte"
-      : isGeneralContact
-      ? "Funesterie - Contact"
-      : isGeneralPrivacy
-      ? "Funesterie - Confidentialité"
-      : isGeneralTerms
-      ? "Funesterie - Conditions"
-      : isGeneralLogin
-      ? "Funesterie - Connexion"
-      : isVivy
-      ? "Vivy - Présence musicale Funesterie"
-      : isKaen44
-        ? "Kaen44 - Assistante bureau Funesterie"
-        : "A11 - Alpha Onze Funesterie";
+          : isGeneralArchitecture
+            ? "Funesterie - Architecture"
+            : isGeneralAccount
+              ? "Funesterie - Compte"
+              : isGeneralContact
+                ? "Funesterie - Contact"
+                : isGeneralPrivacy
+                  ? "Funesterie - Confidentialité"
+                  : isGeneralTerms
+                    ? "Funesterie - Conditions"
+                    : isGeneralLogin
+                      ? "Funesterie - Connexion"
+                      : isVivy
+                        ? "Vivy - Funesterie"
+                        : isKaen44
+                          ? "Kaen44 - Assistante bureau Funesterie"
+                          : "A11 - Alpha Onze Funesterie";
     // data-surface permet de cibler le thème en CSS sans inline styles
-    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
+    document.body.setAttribute('data-surface', (isGeneralCockpit || isGeneralHome || isGeneralAgents || isGeneralArchitecture || isGeneralAccount || isGeneralContact || isGeneralPrivacy || isGeneralTerms || isGeneralLogin) ? 'funesterie' : isVivy ? 'vivy' : isKaen44 ? 'kaen44' : 'a11');
     document.documentElement.classList.toggle("funesterie-public-page-root", isFunesteriePublicShell);
     document.body.classList.toggle("funesterie-public-page-body", isFunesteriePublicShell);
 
@@ -4526,7 +5908,7 @@ export function App() {
       document.documentElement.classList.remove("funesterie-public-page-root");
       document.body.classList.remove("funesterie-public-page-body");
     };
-  }, [isFunesteriePublicShell, isGeneralAccount, isGeneralAgents, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
+  }, [isFunesteriePublicShell, isGeneralAccount, isGeneralAgents, isGeneralArchitecture, isGeneralCockpit, isGeneralContact, isGeneralHome, isGeneralLogin, isGeneralPrivacy, isGeneralTerms, isKaen44, isVivy]);
 
   // Audio-blocked banner: listen for autoplay block events
   useEffect(() => {
@@ -4600,6 +5982,9 @@ export function App() {
             setDisplayName("Utilisateur");
             setIsFunesterieAdmin(false);
             setAuthSessionReady(true);
+            if (isAuthSuccessRoute(pathname)) {
+              window.history.replaceState({}, "", resolveAuthFailureRedirectPath(pathname));
+            }
             return;
           }
           setIsAuthenticated(true);
@@ -4667,23 +6052,17 @@ export function App() {
       setAuthDisplayName("");
     }
 
-    const shouldCheckCookieSession = !isLoginRoute(pathname)
-      && (
-        isAuthSuccessRoute(pathname)
-        || hostname === 'a11.funesterie.me'
-        || hostname === 'k44.funesterie.me'
-        || hostname === 'funesterie.me'
-        || hostname === 'www.funesterie.me'
-        || hostname === 'kaen44.funesterie.me'
-        || hostname === 'vivy.funesterie.me'
-      );
+    const shouldCheckCookieSession = (
+      isAuthSuccessRoute(pathname)
+      || isLoginRoute(pathname)
+      || hostname === 'a11.funesterie.me'
+      || hostname === 'k44.funesterie.me'
+      || hostname === 'funesterie.me'
+      || hostname === 'www.funesterie.me'
+      || hostname === 'kaen44.funesterie.me'
+      || hostname === 'vivy.funesterie.me'
+    );
     if (!shouldCheckCookieSession) {
-      setAuthSessionReady(true);
-      return;
-    }
-
-    const isGeneralPublicHost = hostname === 'funesterie.me' || hostname === 'www.funesterie.me';
-    if (isGeneralPublicHost && !isAuthSuccessRoute(pathname)) {
       setAuthSessionReady(true);
       return;
     }
@@ -4711,9 +6090,10 @@ export function App() {
       const via = String(detail?.via || detail?.provider || "").trim();
       if (via) {
         const label = via === "openai-tts" || via === "openai" ? "OpenAI"
-          : via === "spawn" || via === "piper" ? "Piper local"
-          : via === "espeak" || via === "espeak-ng" ? "Secours robot"
-          : via;
+          : via.includes("xtts") || via.includes("rvc") ? "Voix officielle"
+            : via === "spawn" || via === "piper" ? "Piper local"
+              : via === "espeak" || via === "espeak-ng" ? "Secours robot"
+                : via;
         setVoiceReferenceStatus(`Audio: ${label}`);
       }
     };
@@ -4863,13 +6243,7 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const voiceReferenceInputRef = useRef<HTMLInputElement | null>(null);
   const [voiceReferences, setVoiceReferences] = useState<TtsVoiceReference[]>([]);
-  const [selectedVoiceReferenceId, setSelectedVoiceReferenceId] = useState(() => {
-    try {
-      return localStorage.getItem("a11:tts:voice-reference-id") || "";
-    } catch {
-      return "";
-    }
-  });
+  const [selectedVoiceReferenceId, setSelectedVoiceReferenceId] = useState(() => readStoredVoiceReferenceId(surfaceKind));
   const [voiceReferenceStatus, setVoiceReferenceStatus] = useState("");
   const [ttsVocalMode, setTtsVocalMode] = useState<"speech" | "adaptive" | "sing">(() => {
     try {
@@ -4887,6 +6261,10 @@ export function App() {
       return "auto";
     }
   });
+  const effectiveTtsProviderMode = useMemo(
+    () => resolveEffectiveTtsProviderMode(ttsProviderMode, surfaceKind),
+    [surfaceKind, ttsProviderMode]
+  );
   const [a11Language, setA11Language] = useState<A11LanguageCode>(() => {
     try {
       return normalizeA11LanguageCode(localStorage.getItem("a11:language"));
@@ -4898,15 +6276,43 @@ export function App() {
     () => A11_LANGUAGE_CHOICES.find((choice) => choice.code === a11Language) || A11_LANGUAGE_CHOICES[0],
     [a11Language]
   );
+  const defaultVoiceReferenceLabel = useMemo(
+    () => getDefaultVoiceReferenceLabel(surfaceKind),
+    [surfaceKind]
+  );
+  const selectedVoiceReference = useMemo(
+    () => voiceReferences.find((ref) => ref.id === selectedVoiceReferenceId) || null,
+    [selectedVoiceReferenceId, voiceReferences]
+  );
+  const selectedSurfaceVoiceReference = useMemo(
+    () => selectedVoiceReference && voiceReferenceMatchesSurface(selectedVoiceReference, surfaceKind)
+      ? selectedVoiceReference
+      : null,
+    [selectedVoiceReference, surfaceKind]
+  );
+  const speechVoiceReferenceId = selectedSurfaceVoiceReference?.id || "";
+  const activeVoiceReferenceLabel = selectedSurfaceVoiceReference
+    ? (selectedSurfaceVoiceReference.label || selectedSurfaceVoiceReference.originalName || "Référence privée")
+    : defaultVoiceReferenceLabel;
+  const voiceReferenceControlsDisabled = isFunesteriePublicShell || !hasPrivateSession;
+  const voiceReferenceStorageKey = useMemo(() => getVoiceReferenceStorageKey(surfaceKind), [surfaceKind]);
+  useEffect(() => {
+    setSelectedVoiceReferenceId(readStoredVoiceReferenceId(surfaceKind));
+  }, [surfaceKind]);
+  useEffect(() => {
+    if (effectiveTtsProviderMode !== ttsProviderMode) {
+      setTtsProviderMode(effectiveTtsProviderMode);
+    }
+  }, [effectiveTtsProviderMode, ttsProviderMode]);
   useEffect(() => {
     try {
-      localStorage.setItem("a11:tts:voice-reference-id", selectedVoiceReferenceId || "");
+      localStorage.setItem(voiceReferenceStorageKey, selectedVoiceReferenceId || "");
       localStorage.setItem("a11:tts:vocal-mode", ttsVocalMode);
-      localStorage.setItem("a11:tts:provider-mode", ttsProviderMode);
+      localStorage.setItem("a11:tts:provider-mode", effectiveTtsProviderMode);
     } catch {
       // ignore storage access errors
     }
-  }, [selectedVoiceReferenceId, ttsProviderMode, ttsVocalMode]);
+  }, [effectiveTtsProviderMode, selectedVoiceReferenceId, ttsVocalMode, voiceReferenceStorageKey]);
   useEffect(() => {
     try {
       localStorage.setItem("a11:language", selectedA11Language.code);
@@ -4924,6 +6330,14 @@ export function App() {
   const authStorageScope = useMemo(
     () => (hasPrivateSession ? getAuthStorageScope() : ""),
     [hasPrivateSession]
+  );
+  const chatStorageKey = useMemo(
+    () => buildSurfaceScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope, surfaceKind),
+    [authStorageScope, surfaceKind]
+  );
+  const purgeHistoryStorageKey = useMemo(
+    () => buildSurfaceScopedStorageKey(PURGE_HISTORY_STORAGE_KEY_PREFIX, authStorageScope, surfaceKind),
+    [authStorageScope, surfaceKind]
   );
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
   const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
@@ -4957,12 +6371,14 @@ export function App() {
   const [loadingResources, setLoadingResources] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const [uploadFeedback, setUploadFeedback] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [imageJobActive, setImageJobActive] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [dragPreviewUrls, setDragPreviewUrls] = useState<{ name: string; url: string; isImage: boolean }[]>([]);
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
+  const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
   const [createArtifactError, setCreateArtifactError] = useState("");
@@ -4991,7 +6407,9 @@ export function App() {
     }
   });
   const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    return false;
+  });
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingA11HistoryId, setDeletingA11HistoryId] = useState<string | null>(null);
@@ -5022,6 +6440,12 @@ export function App() {
       document.querySelector(".admin-scroll-panel")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
     });
   }, [activeView, adminSection]);
+
+  useEffect(() => () => {
+    if (copyMessageFeedbackTimerRef.current) {
+      globalThis.clearTimeout(copyMessageFeedbackTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -5061,12 +6485,6 @@ export function App() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [settingsMenuOpen]);
-
-  useEffect(() => {
-    if (!isCompactLayout) {
-      setSidebarOpen(false);
-    }
-  }, [isCompactLayout]);
 
   useEffect(() => {
     if (isCompactLayout) {
@@ -5136,7 +6554,7 @@ export function App() {
     }
 
     try {
-      const raw = localStorage.getItem(buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope));
+      const raw = localStorage.getItem(chatStorageKey);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) {
@@ -5145,7 +6563,7 @@ export function App() {
           const normalizeSystemContent = (content: string) => {
             const value = String(content || '');
             if (
-      value.includes('utilise les capacités locales') ||
+              value.includes('utilise les capacités locales') ||
               value.includes('assistant local NOSSEN')
             ) {
               return DEFAULT_SYSTEM_NINDO;
@@ -5161,17 +6579,17 @@ export function App() {
               const rawContent = String(m.content || '');
               const normalizedAssistant = role === 'assistant'
                 ? normalizeAssistantMessagePayload(
-                    rawContent,
-                    typeof m.imageUrl === 'string' ? m.imageUrl : null,
-                    typeof m.videoUrl === 'string' ? m.videoUrl : null,
-                    typeof m.fileUrl === 'string' ? m.fileUrl : null
-                  )
+                  rawContent,
+                  typeof m.imageUrl === 'string' ? m.imageUrl : null,
+                  typeof m.videoUrl === 'string' ? m.videoUrl : null,
+                  typeof m.fileUrl === 'string' ? m.fileUrl : null
+                )
                 : {
-                    content: rawContent,
-                    imageUrl: typeof m.imageUrl === 'string' ? resolveApiAssetUrl(m.imageUrl) : null,
-                    videoUrl: typeof m.videoUrl === 'string' ? resolveApiAssetUrl(m.videoUrl) : null,
-                    fileUrl: typeof m.fileUrl === 'string' ? resolveApiAssetUrl(m.fileUrl) : null,
-                  };
+                  content: rawContent,
+                  imageUrl: typeof m.imageUrl === 'string' ? resolveApiAssetUrl(m.imageUrl) : null,
+                  videoUrl: typeof m.videoUrl === 'string' ? resolveApiAssetUrl(m.videoUrl) : null,
+                  fileUrl: typeof m.fileUrl === 'string' ? resolveApiAssetUrl(m.fileUrl) : null,
+                };
               return {
                 id: String(m.id || (`m-${Date.now()}`)),
                 role,
@@ -5210,7 +6628,7 @@ export function App() {
     setActivityError("");
     setResourceError("");
     setUploadFeedback("");
-  }, [isAuthenticated, authStorageScope]);
+  }, [isAuthenticated, authStorageScope, chatStorageKey]);
 
   useEffect(() => {
     try {
@@ -5232,7 +6650,7 @@ export function App() {
         setPurgeHistory([]);
         return;
       }
-      const raw = localStorage.getItem(buildScopedStorageKey(PURGE_HISTORY_STORAGE_KEY_PREFIX, authStorageScope));
+      const raw = localStorage.getItem(purgeHistoryStorageKey);
       if (!raw) {
         setPurgeHistory([]);
         return;
@@ -5248,32 +6666,32 @@ export function App() {
     } catch {
       // ignore corrupted local history
     }
-  }, [isAuthenticated, authStorageScope]);
+  }, [isAuthenticated, authStorageScope, purgeHistoryStorageKey]);
 
   useEffect(() => {
     if (!isAuthenticated || !authStorageScope) return;
     try {
       localStorage.setItem(
-        buildScopedStorageKey(PURGE_HISTORY_STORAGE_KEY_PREFIX, authStorageScope),
+        purgeHistoryStorageKey,
         JSON.stringify(purgeHistory.slice(0, 10))
       );
     } catch {
       // ignore storage failures
     }
-  }, [purgeHistory, isAuthenticated, authStorageScope]);
+  }, [purgeHistory, isAuthenticated, authStorageScope, purgeHistoryStorageKey]);
 
   // persist chats whenever changed
   useEffect(() => {
     if (!isAuthenticated || !authStorageScope) return;
     try {
       localStorage.setItem(
-        buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope),
+        chatStorageKey,
         JSON.stringify(chats)
       );
     } catch (e) {
       console.warn("[A11] failed to save chats", e);
     }
-  }, [chats, isAuthenticated, authStorageScope]);
+  }, [chats, isAuthenticated, authStorageScope, chatStorageKey]);
 
   // helper to update messages for selected chat
   function updateChatMessages(chatId: string | null, newMessages: ChatMessage[]) {
@@ -5292,30 +6710,30 @@ export function App() {
         : "assistant";
       const normalizedAssistant = role === "assistant"
         ? normalizeAssistantMessagePayload(
-            String(message?.content || ""),
-            typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
-              ? (message?.imageUrl || message?.image_url || message?.imagePath)
-              : null,
-            typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
-              ? (message?.videoUrl || message?.video_url || message?.videoPath)
-              : null,
-            typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
-              ? (message?.fileUrl || message?.file_url || message?.filePath)
-              : null
-          )
+          String(message?.content || ""),
+          typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
+            ? (message?.imageUrl || message?.image_url || message?.imagePath)
+            : null,
+          typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
+            ? (message?.videoUrl || message?.video_url || message?.videoPath)
+            : null,
+          typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
+            ? (message?.fileUrl || message?.file_url || message?.filePath)
+            : null
+        )
         : {
-            content: String(message?.content || ""),
-            imageUrl: typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
-              ? resolveApiAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
-              : null,
-            videoUrl: typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
-              ? resolveApiAssetUrl(message?.videoUrl || message?.video_url || message?.videoPath)
-              : null,
-            fileUrl: typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
-              ? resolveApiAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
-              : null,
-            qflushVerification: null,
-          };
+          content: String(message?.content || ""),
+          imageUrl: typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
+            ? resolveApiAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
+            : null,
+          videoUrl: typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
+            ? resolveApiAssetUrl(message?.videoUrl || message?.video_url || message?.videoPath)
+            : null,
+          fileUrl: typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
+            ? resolveApiAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
+            : null,
+          qflushVerification: null,
+        };
       return {
         id: String(message?.id || `backend-msg-${Date.now()}-${index}`),
         role,
@@ -5352,7 +6770,7 @@ export function App() {
     setLoadingActivity(true);
     setActivityError("");
     try {
-      const payload = await fetchA11ConversationActivity(targetConversationId, { limit: 12 });
+      const payload = await fetchA11ConversationActivity(targetConversationId, { limit: 12, surface: surfaceKind });
       setConversationActivity(Array.isArray(payload?.entries) ? payload.entries : []);
     } catch (error_) {
       if (isAuthInvalidError(error_)) {
@@ -5379,7 +6797,7 @@ export function App() {
     setLoadingResources(true);
     setResourceError("");
     try {
-      const payload = await fetchA11ConversationResources(targetConversationId, { limit: 24 });
+      const payload = await fetchA11ConversationResources(targetConversationId, { limit: 24, surface: surfaceKind });
       setConversationResources(Array.isArray(payload?.resources) ? payload.resources : []);
     } catch (error_) {
       if (isAuthInvalidError(error_)) {
@@ -5506,7 +6924,7 @@ export function App() {
     openEmailAfterCreate: boolean;
     downloadAfterCreate: boolean;
   }) {
-    const conversationId = currentConversationId || selectedChatId || undefined;
+    const conversationId = buildSurfaceConversationId(currentConversationId || selectedChatId || undefined, surfaceKind) || undefined;
     if (!conversationId) return;
 
     const exportPayload = buildConversationArtifactContent(messages, {
@@ -5597,28 +7015,18 @@ export function App() {
     try {
       const refs = await fetchTtsVoiceReferences();
       setVoiceReferences(refs);
-      if (isKaen44 && !selectedVoiceReferenceId) {
-        const kaenVoice = refs.find((ref) =>
-          String(ref.label || ref.originalName || "").toLowerCase().includes("kaen44 donna")
-        );
-        if (kaenVoice?.id) {
-          setSelectedVoiceReferenceId(kaenVoice.id);
-          setVoiceReferenceStatus("Voix Kaen44 Donna active");
+      const selectedStillExists = selectedVoiceReferenceId
+        ? refs.some((ref) => ref.id === selectedVoiceReferenceId && voiceReferenceMatchesSurface(ref, surfaceKind))
+        : false;
+      if (!selectedStillExists) {
+        const defaultVoice = refs.find((ref) => voiceReferenceMatchesSurface(ref, surfaceKind));
+        if (defaultVoice?.id) {
+          setSelectedVoiceReferenceId(defaultVoice.id);
+          setVoiceReferenceStatus(getDefaultVoiceReferenceStatus(surfaceKind));
           return;
         }
       }
-      if (isVivy && !selectedVoiceReferenceId) {
-        const vivyVoice = refs.find((ref) => {
-          const name = String(ref.label || ref.originalName || "").toLowerCase();
-          return name.includes("vivy") || name.includes("vivi");
-        });
-        if (vivyVoice?.id) {
-          setSelectedVoiceReferenceId(vivyVoice.id);
-          setVoiceReferenceStatus("Voix Vivy active");
-          return;
-        }
-      }
-      if (selectedVoiceReferenceId && !refs.some((ref) => ref.id === selectedVoiceReferenceId)) {
+      if (selectedVoiceReferenceId && !selectedStillExists) {
         setSelectedVoiceReferenceId("");
       }
     } catch (error_) {
@@ -5634,6 +7042,17 @@ export function App() {
 
   function onVoiceReferenceClick() {
     voiceReferenceInputRef.current?.click();
+  }
+
+  function onDefaultVoiceReferenceClick() {
+    const defaultVoice = voiceReferences.find((ref) => voiceReferenceMatchesSurface(ref, surfaceKind));
+    if (defaultVoice?.id) {
+      setSelectedVoiceReferenceId(defaultVoice.id);
+    } else {
+      setSelectedVoiceReferenceId("");
+      if (!voiceReferenceControlsDisabled) void refreshVoiceReferences();
+    }
+    setVoiceReferenceStatus(getDefaultVoiceReferenceStatus(surfaceKind));
   }
 
   async function onVoiceReferenceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -5686,7 +7105,7 @@ export function App() {
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
 
-      // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
+    // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
     const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
     for (const file of allFiles) {
       if (file.type.startsWith('image/')) {
@@ -5699,14 +7118,14 @@ export function App() {
       // Accumuler : plusieurs drops successifs s'ajoutent
       setDragPreviewUrls((prev) => {
         const next = [...prev, ...newPreviews];
-      // Pointer sur le premier nouveau fichier ajouté
+        // Pointer sur le premier nouveau fichier ajouté
         setPreviewCarouselIndex(prev.length);
         return next;
       });
       // Pas de timeout : les chips restent jusqu'à l'envoi du message
     }
 
-      // Upload et injection dans le textarea : on attend la fin pour avoir les URLs
+    // Upload et injection dans le textarea : on attend la fin pour avoir les URLs
     if (importerFiles.length > 0) {
       await handleImportFiles(toSyntheticFileList(importerFiles), (txt: string) => {
         setInput((prev) => (prev ? prev + "\n" + txt : txt));
@@ -5745,7 +7164,7 @@ export function App() {
     }
 
     // Upload des fichiers non-image dans la conversation (PDF, etc.)
-    const conversationId = a11ConvId || selectedChatId || undefined;
+    const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
@@ -5931,7 +7350,7 @@ export function App() {
     const suggestion = suggestConsoleCommandForDiagnosticRequest(effectiveText);
     if (suggestion) openAdminConsoleWithSuggestedCommand(suggestion.command, suggestion.reason);
 
-      // Si A11 traite déjà, mettre en file : l'utilisateur peut continuer à écrire
+    // Si A11 traite déjà, mettre en file : l'utilisateur peut continuer à écrire
     if (queueProcessingRef.current) {
       messageQueueRef.current.push(effectiveText);
       return;
@@ -5984,8 +7403,11 @@ export function App() {
           {
             model: resolvedChatModelChoice.model,
             systemPrompt: systemPrompt,
-            conversationId: selectedChatId || undefined,
+            conversationId: buildSurfaceConversationId(selectedChatId || undefined, surfaceKind) || undefined,
             providerProfileId: resolvedChatModelChoice.providerProfileId,
+            surface: surfaceKind,
+            persona: surfaceKind,
+            voicePersona: surfaceKind,
             sourceImageUrl: item.imageUrl,
           }
         );
@@ -6017,17 +7439,23 @@ export function App() {
 
         const spokenText = String(normalizedAssistant.content || assistantReply.content || "");
         const mobileAudioNeedsGesture = isCompactLayout && !isAudioOutputUnlocked();
-        const effectiveVocalMode = isVivy && ttsVocalMode === "adaptive" ? "sing" : ttsVocalMode;
+        const effectiveVocalMode = ttsVocalMode;
         if (shouldAutoplayAssistantMessage(spokenText) && !mobileAudioNeedsGesture) {
           setPendingMobileSpeech("");
           speak(spokenText, {
             lang: selectedA11Language.speechLang,
-            voiceReferenceId: selectedVoiceReferenceId || undefined,
+            voiceReferenceId: speechVoiceReferenceId || undefined,
             vocalMode: effectiveVocalMode,
+            audioFormat: "mp3",
+            latencyMode: "interactive",
+            voiceConversion: false,
             persona: surfaceKind,
             voicePersona: surfaceKind,
-            provider: ttsProviderMode === "auto" ? undefined : ttsProviderMode,
-            ttsProvider: ttsProviderMode,
+            voiceReferenceRequired: true,
+            useDefaultVoiceReference: true,
+            allowBrowserSpeechFallback: true,
+            provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
+            ttsProvider: effectiveTtsProviderMode,
           });
         } else if (mobileAudioNeedsGesture) {
           setPendingMobileSpeech(spokenText);
@@ -6088,15 +7516,21 @@ export function App() {
       if (text) {
         setPendingMobileSpeech("");
         setMicStatusMessage("");
-        const effectiveVocalMode = isVivy && ttsVocalMode === "adaptive" ? "sing" : ttsVocalMode;
+        const effectiveVocalMode = ttsVocalMode;
         speak(text, {
           lang: selectedA11Language.speechLang,
-          voiceReferenceId: selectedVoiceReferenceId || undefined,
+          voiceReferenceId: speechVoiceReferenceId || undefined,
           vocalMode: effectiveVocalMode,
+          audioFormat: "mp3",
+          latencyMode: "interactive",
+          voiceConversion: false,
           persona: surfaceKind,
           voicePersona: surfaceKind,
-          provider: ttsProviderMode === "auto" ? undefined : ttsProviderMode,
-          ttsProvider: ttsProviderMode,
+          voiceReferenceRequired: true,
+          useDefaultVoiceReference: true,
+          allowBrowserSpeechFallback: true,
+          provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
+          ttsProvider: effectiveTtsProviderMode,
         });
         return;
       }
@@ -6120,7 +7554,7 @@ export function App() {
         // keep voiceListening false when using fallback
         if (next) {
           // enable TTS playback
-      console.log("[A11] SpeechRecognition not available - enabling TTS-only mode");
+          console.log("[A11] SpeechRecognition not available - enabling TTS-only mode");
         } else {
           console.log("[A11] Disabling TTS-only mode");
         }
@@ -6130,7 +7564,7 @@ export function App() {
     }
 
     if (voiceListening) {
-      try { stopMic(); } catch {};
+      try { stopMic(); } catch { };
       setVoiceListening(false);
       setMicStatusMessage("");
     } else {
@@ -6216,8 +7650,8 @@ export function App() {
     setDeleteDialogChatId(null);
   }
 
-    // Le system prompt est géré côté backend (system_prompt.txt)
-    // Le frontend n'envoie pas de prompt système : évite l'exposition dans les DevTools
+  // Le system prompt est géré côté backend (system_prompt.txt)
+  // Le frontend n'envoie pas de prompt système : évite l'exposition dans les DevTools
   const systemPrompt = resolveClientSystemPrompt();
 
   // Initialisation globale de window.speak au montage pour garantir le son
@@ -6314,7 +7748,7 @@ export function App() {
     }
     setLoadingHistory(true);
     try {
-      const list = await fetchA11HistoryList();
+      const list = await fetchA11HistoryList({ surface: surfaceKind });
       setA11History(list);
     } catch (error_) {
       if (isAuthInvalidError(error_)) {
@@ -6360,8 +7794,9 @@ export function App() {
     setUploadFeedback("");
     setLoadingHistory(true);
     try {
-      const conv = await fetchA11Conversation(convId);
+      const conv = await fetchA11Conversation(convId, { surface: surfaceKind });
       const normalizedMessages = mapBackendConversationMessages(conv.messages || []);
+      const displayConversationName = stripSurfaceConversationId(convId) || convId;
       setA11ConvMsgs(normalizedMessages);
       openChatView();
       setSelectedChatId(convId);
@@ -6378,7 +7813,7 @@ export function App() {
         return [
           {
             id: convId,
-            name: convId === 'default' ? 'Session par defaut' : convId,
+            name: displayConversationName === 'default' ? 'Session par défaut' : displayConversationName,
             updated: Date.now(),
             messages: normalizedMessages,
           },
@@ -6480,7 +7915,7 @@ export function App() {
     let feedback = "Historique local efface.";
 
     try {
-      const result = await clearA11History();
+      const result = await clearA11History(undefined, { surface: surfaceKind });
       const removedCount = Number(result?.removedConversations || 0);
       feedback = removedCount > 0
         ? `Historique supprime. ${removedCount} conversation(s) A-11 effacee(s).`
@@ -6491,7 +7926,7 @@ export function App() {
     }
 
     try {
-      localStorage.removeItem(buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope));
+      localStorage.removeItem(chatStorageKey);
     } catch {
       // ignore storage access errors
     }
@@ -6527,7 +7962,7 @@ export function App() {
     setUploadFeedback("Suppression de la conversation A-11...");
 
     try {
-      await clearA11History(convId);
+      await clearA11History(convId, { surface: surfaceKind });
 
       const remainingChats = chats.filter((chat) => chat.id !== convId);
       const shouldResetActiveConversation = a11ConvId === convId || selectedChatId === convId;
@@ -6606,6 +8041,31 @@ export function App() {
     focusComposerSoon();
   }
 
+  async function copyMessageToClipboard(
+    message: ChatMessage,
+    options: {
+      roleLabel: string;
+      index: number;
+      timestamp?: string;
+      exportSuggestion?: AssistantExportSuggestion | null;
+    }
+  ) {
+    const messageId = message.id || `message-${options.index}`;
+    const text = buildChatMessageClipboardText(message, options);
+    try {
+      await writeClipboardText(text);
+      setCopiedMessageId(messageId);
+      if (copyMessageFeedbackTimerRef.current) {
+        globalThis.clearTimeout(copyMessageFeedbackTimerRef.current);
+      }
+      copyMessageFeedbackTimerRef.current = globalThis.setTimeout(() => {
+        setCopiedMessageId((current) => current === messageId ? null : current);
+      }, 1600);
+    } catch {
+      setUploadFeedback("Copie impossible depuis ce navigateur. Sélectionne le message manuellement.");
+    }
+  }
+
   function openKaenQuickPrompt(prompt: string) {
     setInput(String(prompt || "").trim());
     openChatView();
@@ -6615,13 +8075,19 @@ export function App() {
     setDisplayName("Utilisateur");
     setIsAuthenticated(false);
     setIsFunesterieAdmin(false);
-    void logout();
+    void logoutAllSessions();
   }
 
   // Header avec bouton Mode DEV centré, select modèle à droite, mute à l'extrême droite
-  
+
   // Check authentication
-  if (isResetRoute) {
+  const currentPathnameForRender = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/";
+  const isResetRouteActive = isResetRoute
+    || currentPathnameForRender.includes('/reset-password')
+    || currentPathnameForRender.includes('/reset');
+  const requiresPrivateSurface = !isFunesteriePublicShell && !isResetRouteActive;
+
+  if (isResetRouteActive) {
     return <ResetPasswordPanel />;
   }
 
@@ -6633,6 +8099,17 @@ export function App() {
         displayName={displayName}
         onLogout={handlePublicLogout}
         isAdmin={isFunesterieAdmin}
+      />
+    );
+  }
+
+  if (isGeneralArchitecture) {
+    return (
+      <FunesterieArchitecturePage
+        surfaceLinks={surfaceLinks}
+        authenticated={isAuthenticated}
+        displayName={displayName}
+        onLogout={handlePublicLogout}
       />
     );
   }
@@ -6695,8 +8172,55 @@ export function App() {
     }} />;
   }
 
+  if (isVivy && !authSessionReady && !isAuthSuccessRoute(currentPathnameForRender)) {
+    return <FunesteriePrivateGateLoading surface="vivy" />;
+  }
+
+  if (isVivy && !hasPrivateSession && !isAuthSuccessRoute(currentPathnameForRender)) {
+    if (typeof window !== "undefined" && !isCentralLoginSurface() && !isLocalSurfaceHost(window.location.hostname)) {
+      const redirectKey = 'a11_login_redirect_at';
+      const lastRedirect = Number(sessionStorage.getItem(redirectKey) || 0);
+      if (Date.now() - lastRedirect > 10000) {
+        sessionStorage.setItem(redirectKey, String(Date.now()));
+        window.location.replace(buildCentralLoginUrl(window.location.href));
+        return <FunesteriePrivateGateLoading surface="vivy" />;
+      }
+    }
+
+    return <LoginPanel onLoginSuccess={() => {
+      setIsAuthenticated(true);
+      setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+    }} />;
+  }
+
+  if (requiresPrivateSurface && !authSessionReady) {
+    return <FunesteriePrivateGateLoading surface={surfaceKind} />;
+  }
+
+  if (requiresPrivateSurface && !hasPrivateSession) {
+    if (isAuthSuccessRoute(currentPathnameForRender)) {
+      return <FunesteriePrivateGateLoading surface={surfaceKind} />;
+    }
+
+    if (typeof window !== "undefined" && !isCentralLoginSurface() && !isLocalSurfaceHost(window.location.hostname)) {
+      // Anti-loop: only redirect once per page load
+      const redirectKey = 'a11_login_redirect_at';
+      const lastRedirect = Number(sessionStorage.getItem(redirectKey) || 0);
+      if (Date.now() - lastRedirect > 10000) {
+        sessionStorage.setItem(redirectKey, String(Date.now()));
+        window.location.replace(buildCentralLoginUrl(window.location.href));
+        return <FunesteriePrivateGateLoading surface={surfaceKind} />;
+      }
+    }
+
+    return <LoginPanel onLoginSuccess={() => {
+      setIsAuthenticated(true);
+      setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
+    }} />;
+  }
+
   if (isVivy) {
-    return <VivyPublicPage />;
+    return <VivyPublicPage authenticated={hasPrivateSession} displayName={displayName} />;
   }
 
   if (!isAuthenticated) {
@@ -6760,15 +8284,16 @@ export function App() {
   const userDisplayName = String(displayName || "").trim() || "Utilisateur";
   const inspectorBadgeCount = conversationResources.length + conversationActivity.length;
   const utilityButtonStyle: React.CSSProperties = {
-    padding: isCompactLayout ? "8px 10px" : "8px 12px",
+    padding: isCompactLayout ? "7px 8px" : "8px 12px",
     borderRadius: isKaen44 ? 10 : 7,
     border: isKaen44 ? "1px solid rgba(245, 158, 11, 0.28)" : "1px solid rgba(45, 212, 191, 0.24)",
     background: isKaen44 ? "#1b100c" : "rgba(2, 12, 18, 0.88)",
     color: isKaen44 ? "#f8e4c7" : "#d8f3f0",
     cursor: "pointer",
-    fontSize: isCompactLayout ? 12 : 13,
+    fontSize: isCompactLayout ? 11.5 : 13,
     fontWeight: 600,
-    minHeight: 44,
+    minHeight: isCompactLayout ? 38 : 44,
+    whiteSpace: "nowrap",
   };
   const quickChatButtonStyle: React.CSSProperties = {
     ...utilityButtonStyle,
@@ -6781,6 +8306,25 @@ export function App() {
       ? "0 12px 26px rgba(225, 29, 72, 0.22)"
       : "0 12px 26px rgba(20, 184, 166, 0.18)",
     fontWeight: 900,
+  };
+  const sessionButtonStyle: React.CSSProperties = sidebarOpen
+    ? {
+      ...quickChatButtonStyle,
+      background: isKaen44
+        ? "linear-gradient(135deg, #f97316, #be123c)"
+        : "linear-gradient(135deg, #2dd4bf, #38bdf8)",
+      boxShadow: isKaen44
+        ? "0 12px 26px rgba(249, 115, 22, 0.18)"
+        : "0 12px 26px rgba(56, 189, 248, 0.16)",
+    }
+    : utilityButtonStyle;
+  const headerLinkButtonStyle: React.CSSProperties = {
+    ...utilityButtonStyle,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
+    whiteSpace: "nowrap",
   };
   const headerSelectStyle: React.CSSProperties = {
     padding: "8px 10px",
@@ -6802,7 +8346,7 @@ export function App() {
   };
   const a11TitleStyle: React.CSSProperties = {
     fontWeight: 900,
-    fontSize: isCompactLayout ? 18 : 22,
+    fontSize: isCompactLayout ? 17 : 22,
     lineHeight: 1,
     letterSpacing: 0.6,
     whiteSpace: "nowrap",
@@ -6844,7 +8388,7 @@ export function App() {
         background: isKaen44 ? '#130d0b' : '#02080c',
       }}
     >
-            {/* Drag-and-drop overlay */}
+      {/* Drag-and-drop overlay */}
       {isDragOver && (
         <div
           className="a11-drop-overlay"
@@ -6871,28 +8415,28 @@ export function App() {
         className="header"
         style={{
           width: "100%",
-          minHeight: isCompactLayout ? 56 : 64,
+          minHeight: isCompactLayout ? 54 : 64,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: isCompactLayout ? "10px 12px" : "10px 20px",
+          padding: isCompactLayout ? "8px 10px" : "10px 20px",
           borderBottom: isKaen44 ? "1px solid rgba(245, 158, 11, 0.16)" : "1px solid rgba(45, 212, 191, 0.14)",
           background: isKaen44 ? "#160f0c" : "#041018",
           backgroundImage: isKaen44
             ? "linear-gradient(90deg, rgba(190, 18, 60, 0.18), rgba(22, 15, 12, 0.9) 42%, rgba(245, 158, 11, 0.1))"
             : "linear-gradient(90deg, rgba(20, 184, 166, 0.16), rgba(4, 16, 24, 0.96) 38%, rgba(163, 230, 53, 0.08))",
           zIndex: settingsMenuOpen ? 90 : 50,
-          gap: 12,
-          flexWrap: isCompactLayout ? "wrap" : "nowrap",
+          gap: isCompactLayout ? 8 : 12,
+          flexWrap: "nowrap",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: isCompactLayout ? 10 : 16, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isCompactLayout ? 8 : 16, minWidth: 0, flex: "0 1 auto" }}>
           <div
             id="a11-avatar"
             style={{
               position: "relative",
-              width: isCompactLayout ? 42 : 56,
-              height: isCompactLayout ? 42 : 56,
+              width: isCompactLayout ? 38 : 56,
+              height: isCompactLayout ? 38 : 56,
               borderRadius: isKaen44 ? 999 : 14,
               overflow: "hidden",
               boxShadow: isKaen44
@@ -6934,28 +8478,39 @@ export function App() {
             ) : null}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexShrink: 0 }}>
-          {activeView !== "chat" ? (
-            <button
-              type="button"
-              onClick={openChatView}
-              style={quickChatButtonStyle}
-              title={`Revenir au chat ${productName}`}
-            >
-              {isCompactLayout ? "Chat" : "Chat maintenant"}
-            </button>
-          ) : null}
-          {isCompactLayout ? (
-            <button
-              type="button"
-              onClick={() => setSidebarOpen((value) => !value)}
-              style={utilityButtonStyle}
-              title="Ouvrir les conversations et l'historique"
-            >
-              {sidebarOpen ? "Fermer" : "Discussions"}
-            </button>
-          ) : null}
-          <div ref={settingsMenuRef} style={{ position: "relative" }}>
+        <div
+          className="a11-header-actions"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: isCompactLayout ? 6 : 8,
+            marginLeft: "auto",
+            flex: "1 1 auto",
+            minWidth: 0,
+            justifyContent: "flex-end",
+            flexWrap: "nowrap",
+          }}
+        >
+          <a
+            href={surfaceLinks.home}
+            style={headerLinkButtonStyle}
+            title="Retour à l'accueil Funesterie"
+          >
+            Accueil
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              setSettingsMenuOpen(false);
+              setSidebarOpen((value) => !value);
+            }}
+            style={sessionButtonStyle}
+            aria-pressed={sidebarOpen}
+            title={`${sidebarOpen ? "Fermer" : "Ouvrir"} les sessions et l'historique`}
+          >
+            Session
+          </button>
+          <div ref={settingsMenuRef} style={{ position: "relative", flex: "0 1 auto", minWidth: 0 }}>
             <button
               type="button"
               onClick={() => {
@@ -7016,215 +8571,213 @@ export function App() {
                     paddingBottom: "calc(14px + env(safe-area-inset-bottom))",
                   }}
                 >
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Modele</div>
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
-                  >
-                    {chatModelChoices.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Langue</div>
-                  <select
-                    value={a11Language}
-                    onChange={(e) => setA11Language(normalizeA11LanguageCode(e.target.value))}
-                    style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
-                    title="Langue du chat, du micro, de la transcription et de la voix"
-                  >
-                    {A11_LANGUAGE_CHOICES.map((choice) => (
-                      <option key={choice.code} value={choice.code}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
-                    Chat, micro, transcription audio et voix {productName} utilisent cette langue.
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Modele</div>
+                    <select
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                    >
+                      {chatModelChoices.map((choice) => (
+                        <option key={choice.value} value={choice.value}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Options</div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInspectorOpen((value) => !value);
-                      if (isCompactLayout) setSettingsMenuOpen(false);
-                    }}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                    title="Afficher les ressources et l'activite de conversation"
-                  >
-                    <span>Panneau conversation</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>
-                      {inspectorOpen ? "Ouvert" : (inspectorBadgeCount ? `${inspectorBadgeCount}` : "Ferme")}
-                    </span>
-                  </button>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Agents</div>
-                  <div className="fun-agent-menu-grid">
-                    {agentShortcuts.map((agent) => (
-                      <a
-                        key={agent.id}
-                        href={agent.href}
-                        className={`fun-agent-menu-card fun-agent-menu-card--${agent.id}`}
-                        title={`Ouvrir ${agent.name}`}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Langue</div>
+                    <select
+                      value={a11Language}
+                      onChange={(e) => setA11Language(normalizeA11LanguageCode(e.target.value))}
+                      style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                      title="Langue du chat, du micro, de la transcription et de la voix"
+                    >
+                      {A11_LANGUAGE_CHOICES.map((choice) => (
+                        <option key={choice.code} value={choice.code}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                      Chat, micro, transcription audio et voix {productName} utilisent cette langue.
+                    </div>
+                    <div className="a11-menu-voice-tools" aria-label="Réglages voix">
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={onVoiceReferenceClick}
+                        disabled={voiceReferenceControlsDisabled}
+                        title="Ajouter une référence vocale WAV/MP3/WEBM"
                       >
-                        <img src={agent.image} alt="" />
-                        <span>
-                          <strong>{agent.name}</strong>
-                          <small>{agent.role}</small>
-                        </span>
-                      </a>
-                    ))}
+                        Ref
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={onDefaultVoiceReferenceClick}
+                        disabled={voiceReferenceControlsDisabled}
+                        title={`Revenir à la voix ${defaultVoiceReferenceLabel} par défaut`}
+                      >
+                        Défaut ref
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
+                        onClick={() => setTtsVocalMode((mode) => mode === "sing" ? "adaptive" : "sing")}
+                        title={ttsVocalMode === "sing" ? "Mode chant actif" : "Activer le mode chant"}
+                      >
+                        {ttsVocalMode === "sing" ? "Chant actif" : "Chant"}
+                      </button>
+                    </div>
+                    <div className="a11-menu-voice-current">
+                      Réf active: {voiceReferenceControlsDisabled ? "connexion requise" : activeVoiceReferenceLabel}
+                    </div>
+                    {voiceReferenceStatus ? (
+                      <div className="a11-menu-voice-status">{voiceReferenceStatus}</div>
+                    ) : null}
                   </div>
-                </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Services</div>
-                  <button
-                    type="button"
-                    onClick={openChatView}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                  >
-                    <span>Chat</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Direct</span>
-                  </button>
-                  {!isKaen44 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Options</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInspectorOpen((value) => !value);
+                        if (isCompactLayout) setSettingsMenuOpen(false);
+                      }}
+                      className="btn ghost"
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                      title="Afficher les ressources et l'activite de conversation"
+                    >
+                      <span>Panneau conversation</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>
+                        {inspectorOpen ? "Ouvert" : (inspectorBadgeCount ? `${inspectorBadgeCount}` : "Ferme")}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Agents</div>
+                    <div className="fun-agent-menu-grid">
+                      {agentShortcuts.map((agent) => (
+                        <a
+                          key={agent.id}
+                          href={agent.href}
+                          className={`fun-agent-menu-card fun-agent-menu-card--${agent.id}`}
+                          title={`Ouvrir ${agent.name}`}
+                        >
+                          <img src={agent.image} alt="" />
+                          <span>
+                            <strong>{agent.name}</strong>
+                            <small>{agent.role}</small>
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Services</div>
+                    <button
+                      type="button"
+                      onClick={openChatView}
+                      className="btn ghost"
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                    >
+                      <span>Chat</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Direct</span>
+                    </button>
+                    {!isKaen44 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveView("admin");
+                          setAdminSection("ai");
+                          setSettingsMenuOpen(false);
+                          setSidebarOpen(false);
+                        }}
+                        className="btn ghost"
+                        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                      >
+                        <span>Aides connectees</span>
+                        <span style={{ color: "#94a3b8", fontWeight: 700 }}>{remoteProviderProfiles.length}</span>
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
                         setActiveView("admin");
-                        setAdminSection("ai");
+                        setAdminSection("cockpit");
                         setSettingsMenuOpen(false);
                         setSidebarOpen(false);
                       }}
                       className="btn ghost"
                       style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
                     >
-                      <span>Aides connectees</span>
-                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>{remoteProviderProfiles.length}</span>
+                      <span>{isKaen44 ? "Services" : "Pilotage"}</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "Client" : "A11"}</span>
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveView("admin");
-                      setAdminSection("cockpit");
-                      setSettingsMenuOpen(false);
-                      setSidebarOpen(false);
-                    }}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                  >
-                    <span>{isKaen44 ? "Services" : "Pilotage"}</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>{isKaen44 ? "Client" : "A11"}</span>
-                  </button>
-                </div>
+                  </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Abonnement</div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveView("admin");
-                      setAdminSection("subscription");
-                      setSettingsMenuOpen(false);
-                      setSidebarOpen(false);
-                    }}
-                    className="btn ghost"
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
-                  >
-                    <span>Plan</span>
-                    <span style={{ color: "#94a3b8", fontWeight: 700 }}>Compte</span>
-                  </button>
-                </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Abonnement</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveView("admin");
+                        setAdminSection("subscription");
+                        setSettingsMenuOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                      className="btn ghost"
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                    >
+                      <span>Plan</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Compte</span>
+                    </button>
+                  </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={menuSectionTitleStyle}>Session</div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettingsMenuOpen(false);
-                      setDisplayName("Utilisateur");
-                      void logout();
-                      const freshChat = buildFreshChat("Session actuelle");
-                      setChats([freshChat]);
-                      setSelectedChatId(freshChat.id);
-                      setMessages(freshChat.messages);
-                      setA11ConvId(null);
-                      setA11ConvMsgs([]);
-                      setA11History([]);
-                      setConversationActivity([]);
-                      setConversationResources([]);
-                      setActivityError("");
-                      setResourceError("");
-                      setUploadFeedback("");
-                      setPurgeHistory([]);
-                      setIsAuthenticated(false);
-                    }}
-                    className="btn ghost"
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      color: "#fca5a5",
-                      borderColor: "#7f1d1d",
-                    }}
-                    title="Se deconnecter"
-                  >
-                    <span>Se deconnecter</span>
-                    <span style={{ fontWeight: 700 }}>Quitter</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettingsMenuOpen(false);
-                      setDisplayName("Utilisateur");
-                      void logoutAllSessions();
-                      const freshChat = buildFreshChat("Session actuelle");
-                      setChats([freshChat]);
-                      setSelectedChatId(freshChat.id);
-                      setMessages(freshChat.messages);
-                      setA11ConvId(null);
-                      setA11ConvMsgs([]);
-                      setA11History([]);
-                      setConversationActivity([]);
-                      setConversationResources([]);
-                      setActivityError("");
-                      setResourceError("");
-                      setUploadFeedback("");
-                      setPurgeHistory([]);
-                      setIsAuthenticated(false);
-                    }}
-                    className="btn ghost"
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      color: "#fecaca",
-                      borderColor: "#991b1b",
-                    }}
-                    title="Deconnecter toutes les sessions"
-                  >
-                    <span>Tout deconnecter</span>
-                    <span style={{ fontWeight: 700 }}>Global</span>
-                  </button>
-                </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Compte</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        setDisplayName("Utilisateur");
+                        void logoutAllSessions();
+                        const freshChat = buildFreshChat("Session actuelle");
+                        setChats([freshChat]);
+                        setSelectedChatId(freshChat.id);
+                        setMessages(freshChat.messages);
+                        setA11ConvId(null);
+                        setA11ConvMsgs([]);
+                        setA11History([]);
+                        setConversationActivity([]);
+                        setConversationResources([]);
+                        setActivityError("");
+                        setResourceError("");
+                        setUploadFeedback("");
+                        setPurgeHistory([]);
+                        setIsAuthenticated(false);
+                      }}
+                      className="btn ghost"
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        color: "#fecaca",
+                        borderColor: "#991b1b",
+                      }}
+                      title="Se deconnecter de Funesterie partout"
+                    >
+                      <span>Se deconnecter</span>
+                      <span style={{ fontWeight: 700 }}>Global</span>
+                    </button>
+                  </div>
                 </div>
               </>
             ) : null}
@@ -7247,114 +8800,114 @@ export function App() {
           />
         ) : null}
 
-        {(!isCompactLayout || sidebarOpen) ? (
-        <aside
-          className="sidebar"
-          style={{
-            width: isCompactLayout ? '100vw' : 300,
-            borderRight: isKaen44 ? "1px solid rgba(245, 158, 11, 0.16)" : "1px solid #22293a",
-            background: isKaen44 ? "#160f0c" : "#041018",
-            display: 'flex',
-            flexDirection: 'column',
-            minWidth: isCompactLayout ? '100vw' : 300,
-            maxWidth: isCompactLayout ? '100vw' : 300,
-            position: isCompactLayout ? 'absolute' : 'relative',
-            inset: isCompactLayout ? '0 auto 0 0' : 'auto',
-            zIndex: 30,
-            boxShadow: isCompactLayout ? '18px 0 42px rgba(2, 6, 23, 0.55)' : 'none',
-          }}
-        >
-          {/* Bloc conversations locales */}
-          <div style={{ borderBottom: '1px solid #22293a', padding: '8px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 4px 16px' }}>
-              <span className="text-xs uppercase tracking-wide text-slate-400">
-                {isKaen44 ? "Conversations" : "Sessions locales"}
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button onClick={newConversation} className="btn ghost" style={{ fontSize: 13, padding: '2px 10px' }}>{isKaen44 ? "+ Nouveau" : "+ Session"}</button>
-                <button
-                  type="button"
-                  onClick={() => setClearHistoryConfirmOpen(true)}
-                  className="btn ghost"
-                  disabled={clearingHistory}
-                  title={`Supprimer toutes les conversations locales et l'historique ${productName}`}
-                  style={{
-                    fontSize: 12,
-                    padding: '2px 10px',
-                    color: '#fca5a5',
-                    borderColor: '#7f1d1d',
-                    opacity: clearingHistory ? 0.6 : 1,
-                  }}
-                >
-                  {clearingHistory ? "..." : "Vider tout"}
-                </button>
-              </div>
-            </div>
-            <div>
-              {chats.map(chat => (
-                <div
-                  key={chat.id}
-                  style={{
-                    fontWeight: chat.id === selectedChatId ? "bold" : "normal",
-                    background: chat.id === selectedChatId ? "#22293a" : "transparent",
-                    padding: '6px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderRadius: 6,
-                    margin: '2px 8px',
-                  }}
-                >
+        {sidebarOpen ? (
+          <aside
+            className="sidebar"
+            style={{
+              width: isCompactLayout ? '100vw' : 300,
+              borderRight: isKaen44 ? "1px solid rgba(245, 158, 11, 0.16)" : "1px solid #22293a",
+              background: isKaen44 ? "#160f0c" : "#041018",
+              display: 'flex',
+              flexDirection: 'column',
+              minWidth: isCompactLayout ? '100vw' : 300,
+              maxWidth: isCompactLayout ? '100vw' : 300,
+              position: isCompactLayout ? 'absolute' : 'relative',
+              inset: isCompactLayout ? '0 auto 0 0' : 'auto',
+              zIndex: 30,
+              boxShadow: isCompactLayout ? '18px 0 42px rgba(2, 6, 23, 0.55)' : 'none',
+            }}
+          >
+            {/* Bloc conversations locales */}
+            <div style={{ borderBottom: '1px solid #22293a', padding: '8px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 4px 16px' }}>
+                <span className="text-xs uppercase tracking-wide text-slate-400">
+                  Conversations
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button onClick={newConversation} className="btn ghost" style={{ fontSize: 13, padding: '2px 10px' }}>+ Nouveau</button>
                   <button
                     type="button"
-                    onClick={() => {
-                      openChatView();
-                      setSelectedChatId(chat.id);
-                      setMessages(chat.messages);
-                      setA11ConvId(null);
-                      setA11ConvMsgs([]);
-                      setSidebarOpen(false);
-                    }}
+                    onClick={() => setClearHistoryConfirmOpen(true)}
                     className="btn ghost"
-                    style={{ flex: 1, padding: 0, border: 'none', background: 'transparent', textAlign: 'left', justifyContent: 'flex-start' }}
+                    disabled={clearingHistory}
+                    title={`Supprimer toutes les conversations locales et l'historique ${productName}`}
+                    style={{
+                      fontSize: 12,
+                      padding: '2px 10px',
+                      color: '#fca5a5',
+                      borderColor: '#7f1d1d',
+                      opacity: clearingHistory ? 0.6 : 1,
+                    }}
                   >
-                    {chat.name}
+                    {clearingHistory ? "..." : "Vider tout"}
                   </button>
-                  <span style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={e => { e.stopPropagation(); renameChat(chat.id); }} title="Renommer" className="btn ghost" style={{ fontSize: 12, minWidth: 44, minHeight: 36 }}>Edit</button>
-                    <button onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} title="Supprimer" className="btn ghost" style={{ fontSize: 12, minWidth: 44, minHeight: 36 }}>Del</button>
-                  </span>
                 </div>
-              ))}
+              </div>
+              <div>
+                {chats.map(chat => (
+                  <div
+                    key={chat.id}
+                    style={{
+                      fontWeight: chat.id === selectedChatId ? "bold" : "normal",
+                      background: chat.id === selectedChatId ? "#22293a" : "transparent",
+                      padding: '6px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderRadius: 6,
+                      margin: '2px 8px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openChatView();
+                        setSelectedChatId(chat.id);
+                        setMessages(chat.messages);
+                        setA11ConvId(null);
+                        setA11ConvMsgs([]);
+                        setSidebarOpen(false);
+                      }}
+                      className="btn ghost"
+                      style={{ flex: 1, padding: 0, border: 'none', background: 'transparent', textAlign: 'left', justifyContent: 'flex-start' }}
+                    >
+                      {chat.name}
+                    </button>
+                    <span style={{ display: 'flex', gap: 4 }}>
+                      <button onClick={e => { e.stopPropagation(); renameChat(chat.id); }} title="Renommer" className="btn ghost" style={{ fontSize: 12, minWidth: 44, minHeight: 36 }}>Edit</button>
+                      <button onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} title="Supprimer" className="btn ghost" style={{ fontSize: 12, minWidth: 44, minHeight: 36 }}>Del</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-          {/* Historique backend */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
-              <span className="text-xs uppercase tracking-wide text-slate-400">
-                Historique {productName}
-              </span>
-              <button
-                onClick={refreshA11History}
-                className="btn ghost"
-                style={{ minWidth: 44, minHeight: 36, height: 36, padding: "0 8px", fontSize: 11 }}
-              >
-                Raf.
-              </button>
+            {/* Historique backend */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-xs uppercase tracking-wide text-slate-400">
+                  Historique {productName}
+                </span>
+                <button
+                  onClick={refreshA11History}
+                  className="btn ghost"
+                  style={{ minWidth: 44, minHeight: 36, height: 36, padding: "0 8px", fontSize: 11 }}
+                >
+                  Raf.
+                </button>
+              </div>
+              {loadingHistory ? (
+                <div className="p-3 text-xs text-slate-400">Chargement...</div>
+              ) : (
+                <A11HistoryPanel
+                  items={a11History}
+                  activeId={a11ConvId}
+                  onSelect={handleOpenA11Conversation}
+                  onDelete={(id) => setDeleteA11HistoryId(id)}
+                  deletingId={deletingA11HistoryId}
+                />
+              )}
             </div>
-            {loadingHistory ? (
-              <div className="p-3 text-xs text-slate-400">Chargement...</div>
-            ) : (
-              <A11HistoryPanel
-                items={a11History}
-                activeId={a11ConvId}
-                onSelect={handleOpenA11Conversation}
-                onDelete={(id) => setDeleteA11HistoryId(id)}
-                deletingId={deletingA11HistoryId}
-              />
-            )}
-          </div>
-        </aside>
+          </aside>
         ) : null}
 
         <main className="main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -7467,8 +9020,8 @@ export function App() {
                 ) : null}
 
                 {adminSection === 'subscription' ? (
-                  <SubscriptionPanel 
-                    isAdmin={hasAdminApiAccess()} 
+                  <SubscriptionPanel
+                    isAdmin={hasAdminApiAccess()}
                     productName={productName}
                     onClose={openChatView}
                   />
@@ -7693,529 +9246,495 @@ export function App() {
               </div>
             </div>
           ) : (
-          <>
-          <div ref={chatScrollFrameRef} className="scroll-frame" style={{ margin: isCompactLayout ? 8 : (isKaen44 ? 12 : 10) }}>
-            <div className="log">
-              <PersonaDashboard
-                isKaen44={isKaen44}
-                displayName={userDisplayName}
-                currentConversationId={currentConversationId}
-                messageCount={messages.filter((message) => message.role !== "system").length}
-                resourceCount={conversationResources.length}
-                activityCount={conversationActivity.length}
-                onStartChat={openChatView}
-                onOpenAdmin={() => {
-                  if (!isKaen44) {
-                    setInspectorOpen(true);
-                    return;
-                  }
-                  setActiveView("admin");
-                  setAdminSection("cockpit");
-                  setSidebarOpen(false);
-                }}
-                onOpenStudio={openCasinoView}
-                onOpenInspector={() => setInspectorOpen(true)}
-              />
-              {messages.filter((message) => message.role !== "system").map((m, idx) => {
-                const exportSuggestion = m.role === "assistant" ? detectAssistantExportSuggestion(m.content) : null;
-                let messageClassName = "message ";
-                let roleLabel = productName;
-                let roleStyle: React.CSSProperties = {
-                  color: "#9fb3c8",
-                };
-                if (m.role === "user") {
-                  messageClassName = "message user";
-                  roleLabel = userDisplayName;
-                  roleStyle = {
-                    color: "#facc15",
-                    textShadow: "0 0 14px rgba(250, 204, 21, 0.18)",
-                  };
-                } else if (m.role === "assistant") {
-                  messageClassName = "message assistant";
-                  roleLabel = productName;
-                  roleStyle = {
-                    color: isKaen44 ? "#f6c177" : "#67e8f9",
-                    textShadow: isKaen44
-                      ? "0 0 16px rgba(245, 158, 11, 0.22)"
-                      : "0 0 16px rgba(103, 232, 249, 0.22)",
-                  };
-                }
-                const contentNode = m.role === "assistant"
-                  ? (
-                    <ReactMarkdown
-                      components={{
-                        a: ({ node: _node, ...props }) => (
-                          <a
-                            {...props}
-                            target="_blank"
-                            rel="noreferrer"
-                          />
-                        ),
-                      }}
-                    >
-                      {m.content}
-                    </ReactMarkdown>
-                  )
-                  : <div>{m.content}</div>;
-                const messageTimestamp = formatChatMessageTimestamp(m.ts);
+            <>
+              <div ref={chatScrollFrameRef} className="scroll-frame" style={{ margin: isCompactLayout ? 8 : (isKaen44 ? 12 : 10) }}>
+                <div className="log">
+                  <PersonaDashboard
+                    isKaen44={isKaen44}
+                    displayName={userDisplayName}
+                    currentConversationId={currentConversationId}
+                    messageCount={messages.filter((message) => message.role !== "system").length}
+                    resourceCount={conversationResources.length}
+                    activityCount={conversationActivity.length}
+                    onStartChat={openChatView}
+                    onOpenAdmin={() => {
+                      if (!isKaen44) {
+                        setInspectorOpen(true);
+                        return;
+                      }
+                      setActiveView("admin");
+                      setAdminSection("cockpit");
+                      setSidebarOpen(false);
+                    }}
+                    onOpenStudio={openCasinoView}
+                    onOpenInspector={() => setInspectorOpen(true)}
+                  />
+                  {messages.filter((message) => message.role !== "system").map((m, idx) => {
+                    const exportSuggestion = m.role === "assistant" ? detectAssistantExportSuggestion(m.content) : null;
+                    let messageClassName = "message ";
+                    let roleLabel = productName;
+                    let roleStyle: React.CSSProperties = {
+                      color: "#9fb3c8",
+                    };
+                    if (m.role === "user") {
+                      messageClassName = "message user";
+                      roleLabel = userDisplayName;
+                      roleStyle = {
+                        color: "#facc15",
+                        textShadow: "0 0 14px rgba(250, 204, 21, 0.18)",
+                      };
+                    } else if (m.role === "assistant") {
+                      messageClassName = "message assistant";
+                      roleLabel = productName;
+                      roleStyle = {
+                        color: isKaen44 ? "#f6c177" : "#67e8f9",
+                        textShadow: isKaen44
+                          ? "0 0 16px rgba(245, 158, 11, 0.22)"
+                          : "0 0 16px rgba(103, 232, 249, 0.22)",
+                      };
+                    }
+                    const contentNode = m.role === "assistant"
+                      ? (
+                        <ReactMarkdown
+                          components={{
+                            a: ({ node: _node, ...props }) => (
+                              <a
+                                {...props}
+                                target="_blank"
+                                rel="noreferrer"
+                              />
+                            ),
+                          }}
+                        >
+                          {m.content}
+                        </ReactMarkdown>
+                      )
+                      : <div>{m.content}</div>;
+                    const messageTimestamp = formatChatMessageTimestamp(m.ts);
+                    const messageCopyId = m.id || `message-${idx}`;
+                    const messageCopied = copiedMessageId === messageCopyId;
 
-                return (
-                  <div
-                    key={m.id || idx}
-                    className={messageClassName}
-                  >
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <div className="role" style={roleStyle}>{roleLabel}</div>
-                      {messageTimestamp ? (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#64748b",
-                            letterSpacing: 0.2,
-                          }}
-                        >
-                          {messageTimestamp}
-                        </div>
-                      ) : null}
-                    </div>
-                    {m.role === "assistant" && m.qflushVerification?.suspicious ? (
+                    return (
                       <div
-                        style={{
-                          marginTop: 10,
-                          marginBottom: 10,
-                          padding: "10px 12px",
-                          borderRadius: 10,
-                          border: "1px solid #f59e0b",
-                          background: "rgba(120, 53, 15, 0.22)",
-                          color: "#fef3c7",
-                        }}
+                        key={m.id || idx}
+                        className={messageClassName}
                       >
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 800,
-                            textTransform: "uppercase",
-                            letterSpacing: 0.5,
-                            color: "#fbbf24",
-                          }}
-                        >
-                          Réponse non vérifiée
-                        </div>
-                        <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>
-                          {String(m.qflushVerification.summary || "Cette réponse a été marquée comme douteuse par le garde-fou local.")}
-                        </div>
-                      </div>
-                    ) : null}
-                    {contentNode}
-                    {(() => {
-                      // Carousel si plusieurs images, sinon affichage simple
-                      const imgs = m.imageUrls && m.imageUrls.length > 1
-                        ? m.imageUrls
-                        : m.imageUrl ? [m.imageUrl] : [];
-                      if (imgs.length === 0) return null;
-                      if (imgs.length === 1) {
-                        return (
-                          <div className="msg-image">
+                        <div className="message-head">
+                          <div className="role" style={roleStyle}>{roleLabel}</div>
+                          <div className="message-head-actions">
+                            {messageTimestamp ? (
+                              <div
+                                className="message-timestamp"
+                                style={{
+                                  fontSize: 11,
+                                  color: "#64748b",
+                                  letterSpacing: 0.2,
+                                }}
+                              >
+                                {messageTimestamp}
+                              </div>
+                            ) : null}
                             <button
                               type="button"
-                              className="image-preview-trigger"
-                              onClick={() => setPreviewImageUrl(imgs[0])}
-                              aria-label="Agrandir l'image"
+                              className={`message-copy-action${messageCopied ? " message-copy-action--copied" : ""}`}
+                              onClick={() => {
+                                void copyMessageToClipboard(m, {
+                                  roleLabel,
+                                  index: idx,
+                                  timestamp: messageTimestamp,
+                                  exportSuggestion,
+                                });
+                              }}
+                              title="Copier tout le message, fichiers et médias visibles compris"
                             >
-                              <img src={imgs[0]} alt={`Resultat ${productName}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
-                              <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
+                              {messageCopied ? "Copié" : "Copier"}
                             </button>
                           </div>
-                        );
-                      }
-                      // Carousel multi-images
-                      return (
-                        <MsgImageCarousel
-                          images={imgs}
-                          onExpand={(url) => setPreviewImageUrl(url)}
-                        />
-                      );
-                    })()}
-                    {m.videoUrl && !m.imageUrl && (
-                      <div
-                        style={{
-                          marginTop: 12,
-                          display: "grid",
-                          gap: 10,
-                        }}
-                      >
-                        {/\.gif(?:[?#].*)?$/i.test(String(m.videoUrl || "")) ? (
-                          <a
-                            href={m.videoUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ display: "inline-block", width: "fit-content" }}
-                          >
-                            <img
-                              src={m.videoUrl}
-                              alt={`Animation generee par ${productName}`}
-                              style={{ maxWidth: "320px", borderRadius: 12 }}
-                            />
-                          </a>
-                        ) : (
-                          <video
-                            src={m.videoUrl}
-                            controls
-                            preload="metadata"
-                            playsInline
-                            style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
-                          />
-                        )}
-                        <a
-                          href={m.videoUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            fontSize: 12,
-                            color: "#93c5fd",
-                            textDecoration: "none",
-                            wordBreak: "break-all",
-                          }}
-                        >
-                          Ouvrir la vidéo
-                        </a>
-                      </div>
-                    )}
-                    {m.fileUrl && !m.imageUrl && !m.videoUrl && (
-                      <div
-                        style={{
-                          marginTop: 12,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          padding: "12px 14px",
-                          borderRadius: 12,
-                          border: "1px solid rgba(148, 163, 184, 0.28)",
-                          background: "rgba(15, 23, 42, 0.72)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 10,
-                            display: "grid",
-                            placeItems: "center",
-                            background: "rgba(59, 130, 246, 0.14)",
-                            color: "#93c5fd",
-                            fontSize: 16,
-                            fontWeight: 800,
-                            flexShrink: 0,
-                          }}
-                        >
-                          PDF
                         </div>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
-                            Document généré
-                          </div>
-                          <a
-                            href={m.fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                        {m.role === "assistant" && m.qflushVerification?.suspicious ? (
+                          <div
                             style={{
-                              fontSize: 12,
-                              color: "#93c5fd",
-                              textDecoration: "none",
-                              wordBreak: "break-all",
+                              marginTop: 10,
+                              marginBottom: 10,
+                              padding: "10px 12px",
+                              borderRadius: 10,
+                              border: "1px solid #f59e0b",
+                              background: "rgba(120, 53, 15, 0.22)",
+                              color: "#fef3c7",
                             }}
                           >
-                            Ouvrir le PDF
-                          </a>
-                        </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 800,
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5,
+                                color: "#fbbf24",
+                              }}
+                            >
+                              Réponse non vérifiée
+                            </div>
+                            <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.5 }}>
+                              {String(m.qflushVerification.summary || "Cette réponse a été marquée comme douteuse par le garde-fou local.")}
+                            </div>
+                          </div>
+                        ) : null}
+                        {contentNode}
+                        {(() => {
+                          // Carousel si plusieurs images, sinon affichage simple
+                          const imgs = m.imageUrls && m.imageUrls.length > 1
+                            ? m.imageUrls
+                            : m.imageUrl ? [m.imageUrl] : [];
+                          if (imgs.length === 0) return null;
+                          if (imgs.length === 1) {
+                            return (
+                              <div className="msg-image">
+                                <button
+                                  type="button"
+                                  className="image-preview-trigger"
+                                  onClick={() => setPreviewImageUrl(imgs[0])}
+                                  aria-label="Agrandir l'image"
+                                >
+                                  <img src={imgs[0]} alt={`Resultat ${productName}`} style={{ maxWidth: "320px", borderRadius: 12 }} />
+                                  <span style={{ fontSize: 12, color: "#93c5fd" }}>Agrandir l'image</span>
+                                </button>
+                              </div>
+                            );
+                          }
+                          // Carousel multi-images
+                          return (
+                            <MsgImageCarousel
+                              images={imgs}
+                              onExpand={(url) => setPreviewImageUrl(url)}
+                            />
+                          );
+                        })()}
+                        {m.videoUrl && !m.imageUrl && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              display: "grid",
+                              gap: 10,
+                            }}
+                          >
+                            {/\.gif(?:[?#].*)?$/i.test(String(m.videoUrl || "")) ? (
+                              <a
+                                href={m.videoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: "inline-block", width: "fit-content" }}
+                              >
+                                <img
+                                  src={m.videoUrl}
+                                  alt={`Animation generee par ${productName}`}
+                                  style={{ maxWidth: "320px", borderRadius: 12 }}
+                                />
+                              </a>
+                            ) : (
+                              <video
+                                src={m.videoUrl}
+                                controls
+                                preload="metadata"
+                                playsInline
+                                style={{ maxWidth: "320px", borderRadius: 12, background: "#020617" }}
+                              />
+                            )}
+                            <a
+                              href={m.videoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                fontSize: 12,
+                                color: "#93c5fd",
+                                textDecoration: "none",
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              Ouvrir la vidéo
+                            </a>
+                          </div>
+                        )}
+                        {m.fileUrl && !m.imageUrl && !m.videoUrl && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "12px 14px",
+                              borderRadius: 12,
+                              border: "1px solid rgba(148, 163, 184, 0.28)",
+                              background: "rgba(15, 23, 42, 0.72)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 10,
+                                display: "grid",
+                                placeItems: "center",
+                                background: "rgba(59, 130, 246, 0.14)",
+                                color: "#93c5fd",
+                                fontSize: 16,
+                                fontWeight: 800,
+                                flexShrink: 0,
+                              }}
+                            >
+                              PDF
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>
+                                Document généré
+                              </div>
+                              <a
+                                href={m.fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  fontSize: 12,
+                                  color: "#93c5fd",
+                                  textDecoration: "none",
+                                  wordBreak: "break-all",
+                                }}
+                              >
+                                Ouvrir le PDF
+                              </a>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {exportSuggestion ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(m.content).catch(() => {});
-                        }}
-                        style={{
-                          marginTop: 8,
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          border: `1px solid ${exportSuggestion.accent}44`,
-                          background: "transparent",
-                          color: exportSuggestion.accent,
-                          fontSize: 11,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 5,
-                        }}
-                        title="Copier tout le contenu"
-                      >
-                        Copier
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-              <div ref={chatEndRef} aria-hidden="true" />
-            </div>
-          </div>
-
-          <div
-            className="composer"
-            style={{
-              padding: isCompactLayout ? "8px 10px calc(10px + env(safe-area-inset-bottom))" : undefined,
-            }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onDrop={(e) => {
-              e.stopPropagation();
-              void onComposerDrop(e);
-            }}
-          >
-            {/* Console d'activite */}
-            <A11ActivityConsole
-              events={activityEvents}
-              isActive={activityIsActive}
-              productLabel={productName}
-              onClear={clearActivityEvents}
-              collapsed={consoleCollapsed}
-              onToggleCollapse={() => setConsoleCollapsed((v) => !v)}
-            />
-            <div className="row a11-composer-row">
-              <button
-                type="button"
-                className="btn ghost import-inline"
-                onClick={onImportClick}
-                title="Importer un fichier ou une image"
-                style={{ marginRight: 8, padding: isCompactLayout ? "0 10px" : undefined }}
-              >
-                {isCompactLayout ? "Import" : "Importer"}
-              </button>
+                    );
+                  })}
+                  <div ref={chatEndRef} aria-hidden="true" />
+                </div>
+              </div>
 
               <div
-                className="a11-voice-tools"
+                className="composer"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  marginRight: 8,
-                  flexShrink: 0,
+                  padding: isCompactLayout ? "8px 10px calc(10px + env(safe-area-inset-bottom))" : undefined,
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={(e) => {
+                  e.stopPropagation();
+                  void onComposerDrop(e);
                 }}
               >
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={onVoiceReferenceClick}
-                  title="Ajouter une référence vocale WAV/MP3/WEBM"
-                  style={{ minWidth: 44, minHeight: 44, padding: isCompactLayout ? "0 9px" : "0 10px" }}
-                >
-                  Ref
-                </button>
-                <button
-                  type="button"
-                  className={`btn ghost ${ttsVocalMode === "sing" ? "active" : ""}`}
-                  onClick={() => setTtsVocalMode((mode) => mode === "sing" ? "adaptive" : "sing")}
-                  title={ttsVocalMode === "sing" ? "Mode chant actif" : "Activer le mode chant"}
-                  style={{ minHeight: 44, width: 44, padding: 0, fontWeight: 800 }}
-                >
-                  {ttsVocalMode === "sing" ? "S" : "A"}
-                </button>
-              </div>
-
-              <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
-                <textarea
-                  ref={composerInputRef}
-                  placeholder={isCompactLayout
-                    ? (isKaen44 ? "Message Kaen44..." : "Message A11...")
-                    : (isKaen44 ? "Demande quelque chose à Kaen44... (Ctrl+V pour coller une image)" : "Demande quelque chose à A11... (Ctrl+V pour coller une image)")}
-                  value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
-                  onChange={(e) => {
-                    const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
-                    const newText = e.target.value;
-                    setInput(imageTokens ? (imageTokens + (newText ? '\n' + newText : '')) : newText);
-                    // Auto-resize
-                    const el = e.target as HTMLTextAreaElement;
-                    el.style.height = 'auto';
-                    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.35) + 'px';
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onPaste={async (e) => {
-                    const items = e.clipboardData?.items;
-                    if (!items) return;
-                    // Chercher une image dans le presse-papier (screenshot, copie d'image)
-                    const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
-                    if (imageItem) {
-                      e.preventDefault();
-                      const file = imageItem.getAsFile();
-                      if (file) {
-                        const renamedFile = new File([file], `paste-${Date.now()}.png`, { type: file.type });
-                        const fileList = Object.assign([renamedFile], { item: (i: number) => [renamedFile][i] }) as unknown as FileList;
-                        await handleImportedFiles(fileList);
-                      }
-                      return;
-                    }
-                    // Chercher des fichiers collés (depuis l'explorateur)
-                    const fileItems = Array.from(items).filter(item => item.kind === 'file' && !item.type.startsWith('image/'));
-                    if (fileItems.length > 0) {
-                      e.preventDefault();
-                      const files = fileItems.map(item => item.getAsFile()).filter(Boolean) as File[];
-                      if (files.length > 0) {
-                        const fileList = Object.assign(files, { item: (i: number) => files[i] }) as unknown as FileList;
-                        await handleImportedFiles(fileList);
-                      }
-                    }
-                    // Sinon laisser le paste texte normal se faire
-                  }}
-                  rows={1}
-                  style={{
-                    width: '100%',
-                    resize: 'none',
-                    minHeight: isCompactLayout ? '52px' : '42px',
-                    maxHeight: isCompactLayout ? '22vh' : '35vh',
-                    background: '#0d0f13',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 10,
-                    padding: 10,
-                    overflowY: 'auto',
-                    lineHeight: '1.5',
-                  }}
+                {/* Console d'activite */}
+                <A11ActivityConsole
+                  events={activityEvents}
+                  isActive={activityIsActive}
+                  productLabel={productName}
+                  onClear={clearActivityEvents}
+                  collapsed={consoleCollapsed}
+                  onToggleCollapse={() => setConsoleCollapsed((v) => !v)}
                 />
-              </div>
-
-              <button
-                type="button"
-                className="send-button"
-                onClick={() => sendMessage()}
-                disabled={!input.trim()}
-                title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
-                style={sending ? { opacity: 0.7 } : undefined}
-              >
-                {sending
-                  ? (messageQueueRef.current.length > 0 ? `+${messageQueueRef.current.length}` : "...")
-                  : "Envoyer"
-                }
-              </button>
-
-              <EkkoIndicator />
-
-              <button
-                type="button"
-                className={`nossen-mic-btn inline ${(voiceListening || micStarting || audioPlaying) ? "listening" : ""}`}
-                onClick={toggleMic}
-                disabled={micStarting}
-                aria-pressed={voiceListening}
-                aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
-                title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
-                style={{
-                  marginLeft: 8,
-                  opacity: micPermissionBlocked ? 0.78 : 1,
-                  borderColor: micPermissionBlocked ? "#7f1d1d" : undefined,
-                  color: micPermissionBlocked ? "#fecaca" : undefined,
-                }}
-              >
-                {micStarting ? "..." : mobileVoiceReady ? "Play" : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
-              </button>
-            </div>
-            <div className="hint">
-              Entrée pour envoyer - Shift+Entrée pour aller à la ligne - Ctrl+V pour coller une image
-              {micStatusMessage && (
-                <span style={{ marginLeft: 8, color: micPermissionBlocked ? '#fca5a5' : '#93c5fd', fontWeight: 600 }}>
-                  {micStatusMessage}
-                </span>
-              )}
-              {sending && messageQueueRef.current.length > 0 && (
-                <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 600 }}>
-                  {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
-                </span>
-              )}
-              {voiceReferenceStatus && (
-                <span style={{ marginLeft: 8, color: "#93c5fd", fontWeight: 600 }}>
-                  {voiceReferenceStatus}
-                </span>
-              )}
-              {uploadFeedback && (
-                <span style={{ marginLeft: 8, color: imageJobActive ? "#f59e0b" : "#93c5fd", fontWeight: 600 }}>
-                  {uploadFeedback}
-                </span>
-              )}
-            </div>
-            {dragPreviewUrls.length > 0 && (() => {
-              const total = dragPreviewUrls.length;
-              const idx = Math.min(previewCarouselIndex, total - 1);
-              const p = dragPreviewUrls[idx];
-              return (
-                <div className="a11-drop-carousel">
-                        {/* Thumbnail ou icône */}
-                  <div className="a11-drop-carousel-media">
-                    {p.isImage
-                      ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
-                      : <span className="a11-drop-carousel-file-icon">FILE</span>
-                    }
-                  </div>
-
-                  {/* Infos + navigation */}
-                  <div className="a11-drop-carousel-info">
-                    <span className="a11-drop-carousel-name">{p.name}</span>
-                    {total > 1 && (
-                      <span className="a11-drop-carousel-counter">{idx + 1}/{total}</span>
-                    )}
-                  </div>
-
-                            {/* Flèches si plusieurs */}
-                  {total > 1 && (
-                    <div className="a11-drop-carousel-nav">
-                      <button
-                        type="button"
-                        className="a11-drop-carousel-arrow"
-                        aria-label="Image precedente"
-                        onClick={() => setPreviewCarouselIndex((i) => (i - 1 + total) % total)}
-                      >&lt;</button>
-                      <button
-                        type="button"
-                        className="a11-drop-carousel-arrow"
-                        aria-label="Image suivante"
-                        onClick={() => setPreviewCarouselIndex((i) => (i + 1) % total)}
-                      >&gt;</button>
-                    </div>
-                  )}
-
-                  {/* Retirer l'image courante */}
+                <div className="row a11-composer-row">
                   <button
                     type="button"
-                    className="a11-drop-carousel-remove"
-                    aria-label={`Retirer ${p.name}`}
-                    onClick={() => {
-                      if (p.url) URL.revokeObjectURL(p.url);
-                      setDragPreviewUrls((prev) => {
-                        const next = prev.filter((_, j) => j !== idx);
-                        setPreviewCarouselIndex(Math.min(idx, next.length - 1));
-                        return next;
-                      });
+                    className="btn ghost import-inline"
+                    onClick={onImportClick}
+                    title="Importer un fichier ou une image"
+                    style={{ marginRight: 8, padding: isCompactLayout ? "0 10px" : undefined }}
+                  >
+                    {isCompactLayout ? "Import" : "Importer"}
+                  </button>
+
+                  <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                    <textarea
+                      ref={composerInputRef}
+                      placeholder={isCompactLayout
+                        ? (isKaen44 ? "Message Kaen44..." : "Message A11...")
+                        : (isKaen44 ? "Demande quelque chose à Kaen44... (Ctrl+V pour coller une image)" : "Demande quelque chose à A11... (Ctrl+V pour coller une image)")}
+                      value={input.replace(/\[image:[^\]]+\]/g, '').replace(/\[image-data:[^\]]+\]/g, '').replace(/\n+/g, '\n').trimStart()}
+                      onChange={(e) => {
+                        const imageTokens = (input.match(/\[image:[^\]]+\]|\[image-data:[^\]]+\]/g) || []).join('\n');
+                        const newText = e.target.value;
+                        setInput(imageTokens ? (imageTokens + (newText ? '\n' + newText : '')) : newText);
+                        // Auto-resize
+                        const el = e.target as HTMLTextAreaElement;
+                        el.style.height = 'auto';
+                        el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.35) + 'px';
+                      }}
+                      onKeyDown={handleKeyDown}
+                      onPaste={async (e) => {
+                        const items = e.clipboardData?.items;
+                        if (!items) return;
+                        // Chercher une image dans le presse-papier (screenshot, copie d'image)
+                        const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
+                        if (imageItem) {
+                          e.preventDefault();
+                          const file = imageItem.getAsFile();
+                          if (file) {
+                            const renamedFile = new File([file], `paste-${Date.now()}.png`, { type: file.type });
+                            const fileList = Object.assign([renamedFile], { item: (i: number) => [renamedFile][i] }) as unknown as FileList;
+                            await handleImportedFiles(fileList);
+                          }
+                          return;
+                        }
+                        // Chercher des fichiers collés (depuis l'explorateur)
+                        const fileItems = Array.from(items).filter(item => item.kind === 'file' && !item.type.startsWith('image/'));
+                        if (fileItems.length > 0) {
+                          e.preventDefault();
+                          const files = fileItems.map(item => item.getAsFile()).filter(Boolean) as File[];
+                          if (files.length > 0) {
+                            const fileList = Object.assign(files, { item: (i: number) => files[i] }) as unknown as FileList;
+                            await handleImportedFiles(fileList);
+                          }
+                        }
+                        // Sinon laisser le paste texte normal se faire
+                      }}
+                      rows={1}
+                      style={{
+                        width: '100%',
+                        resize: 'none',
+                        minHeight: isCompactLayout ? '44px' : '42px',
+                        maxHeight: isCompactLayout ? '22vh' : '35vh',
+                        background: '#0d0f13',
+                        color: 'var(--text)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 10,
+                        padding: 10,
+                        overflowY: 'auto',
+                        lineHeight: '1.5',
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="send-button"
+                    onClick={() => sendMessage()}
+                    disabled={!input.trim()}
+                    title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
+                    style={sending ? { opacity: 0.7 } : undefined}
+                  >
+                    {sending
+                      ? (messageQueueRef.current.length > 0 ? `+${messageQueueRef.current.length}` : "...")
+                      : "Envoyer"
+                    }
+                  </button>
+
+                  <EkkoIndicator />
+
+                  <button
+                    type="button"
+                    className={`nossen-mic-btn inline ${(voiceListening || micStarting || audioPlaying) ? "listening" : ""}`}
+                    onClick={toggleMic}
+                    disabled={micStarting}
+                    aria-pressed={voiceListening}
+                    aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
+                    title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
+                    style={{
+                      marginLeft: 8,
+                      opacity: micPermissionBlocked ? 0.78 : 1,
+                      borderColor: micPermissionBlocked ? "#7f1d1d" : undefined,
+                      color: micPermissionBlocked ? "#fecaca" : undefined,
                     }}
-                  >X</button>
+                  >
+                    {micStarting ? "..." : mobileVoiceReady ? "Play" : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
+                  </button>
                 </div>
-              );
-            })()}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              style={{ display: 'none' }}
-              onChange={onFileChange}
-            />
-            <input
-              ref={voiceReferenceInputRef}
-              type="file"
-              accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm"
-              style={{ display: 'none' }}
-              onChange={onVoiceReferenceFileChange}
-            />
-          </div>
-          </>
+                <div className="hint">
+                  Entrée pour envoyer - Shift+Entrée pour aller à la ligne - Ctrl+V pour coller une image
+                  {micStatusMessage && (
+                    <span style={{ marginLeft: 8, color: micPermissionBlocked ? '#fca5a5' : '#93c5fd', fontWeight: 600 }}>
+                      {micStatusMessage}
+                    </span>
+                  )}
+                  {sending && messageQueueRef.current.length > 0 && (
+                    <span style={{ marginLeft: 8, color: '#f59e0b', fontWeight: 600 }}>
+                      {messageQueueRef.current.length} message{messageQueueRef.current.length > 1 ? 's' : ''} en attente
+                    </span>
+                  )}
+                  {voiceReferenceStatus && (
+                    <span style={{ marginLeft: 8, color: "#93c5fd", fontWeight: 600 }}>
+                      {voiceReferenceStatus}
+                    </span>
+                  )}
+                  {uploadFeedback && (
+                    <span style={{ marginLeft: 8, color: imageJobActive ? "#f59e0b" : "#93c5fd", fontWeight: 600 }}>
+                      {uploadFeedback}
+                    </span>
+                  )}
+                </div>
+                {dragPreviewUrls.length > 0 && (() => {
+                  const total = dragPreviewUrls.length;
+                  const idx = Math.min(previewCarouselIndex, total - 1);
+                  const p = dragPreviewUrls[idx];
+                  return (
+                    <div className="a11-drop-carousel">
+                      {/* Thumbnail ou icône */}
+                      <div className="a11-drop-carousel-media">
+                        {p.isImage
+                          ? <img src={p.url} alt={p.name} className="a11-drop-carousel-img" />
+                          : <span className="a11-drop-carousel-file-icon">FILE</span>
+                        }
+                      </div>
+
+                      {/* Infos + navigation */}
+                      <div className="a11-drop-carousel-info">
+                        <span className="a11-drop-carousel-name">{p.name}</span>
+                        {total > 1 && (
+                          <span className="a11-drop-carousel-counter">{idx + 1}/{total}</span>
+                        )}
+                      </div>
+
+                      {/* Flèches si plusieurs */}
+                      {total > 1 && (
+                        <div className="a11-drop-carousel-nav">
+                          <button
+                            type="button"
+                            className="a11-drop-carousel-arrow"
+                            aria-label="Image precedente"
+                            onClick={() => setPreviewCarouselIndex((i) => (i - 1 + total) % total)}
+                          >&lt;</button>
+                          <button
+                            type="button"
+                            className="a11-drop-carousel-arrow"
+                            aria-label="Image suivante"
+                            onClick={() => setPreviewCarouselIndex((i) => (i + 1) % total)}
+                          >&gt;</button>
+                        </div>
+                      )}
+
+                      {/* Retirer l'image courante */}
+                      <button
+                        type="button"
+                        className="a11-drop-carousel-remove"
+                        aria-label={`Retirer ${p.name}`}
+                        onClick={() => {
+                          if (p.url) URL.revokeObjectURL(p.url);
+                          setDragPreviewUrls((prev) => {
+                            const next = prev.filter((_, j) => j !== idx);
+                            setPreviewCarouselIndex(Math.min(idx, next.length - 1));
+                            return next;
+                          });
+                        }}
+                      >X</button>
+                    </div>
+                  );
+                })()}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={onFileChange}
+                />
+                <input
+                  ref={voiceReferenceInputRef}
+                  type="file"
+                  accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm"
+                  style={{ display: 'none' }}
+                  onChange={onVoiceReferenceFileChange}
+                />
+              </div>
+            </>
           )}
         </main>
 
@@ -8304,12 +9823,12 @@ export function App() {
         ) : null}
       </div>
       {!isCompactLayout && !isKaen44 ? (
-      <>
-        <AdBanner position="bottom" style={{ margin: '20px auto', maxWidth: '800px' }} />
-        <footer className="footer">
-          {isKaen44 ? "Kaen44 local - voix - documents - Funesterie" : "A11 - chat - fichiers - voix - creation"}
-        </footer>
-      </>
+        <>
+          <AdBanner position="bottom" style={{ margin: '20px auto', maxWidth: '800px' }} />
+          <footer className="footer">
+            {isKaen44 ? "Kaen44 local - voix - documents - Funesterie" : "A11 - chat - fichiers - voix - creation"}
+          </footer>
+        </>
       ) : null}
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
       <RenameConversationModal
@@ -8326,7 +9845,7 @@ export function App() {
       <ConfirmModal
         open={!!deleteDialogChatId}
         title="Supprimer la conversation"
-  message="Cette conversation locale sera retirée de la liste actuelle."
+        message="Cette conversation locale sera retirée de la liste actuelle."
         confirmLabel="Supprimer"
         confirmTone="danger"
         onClose={() => setDeleteDialogChatId(null)}
