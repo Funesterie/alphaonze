@@ -80,12 +80,13 @@ RUN mkdir -p /app/apps/tts/piper \
 COPY package*.json ./
 
 # Installer les dependances avec les outils de patch, puis retirer le dev-only.
-# Si un secret BuildKit npm_token est fourni, il sert uniquement pour GitHub Packages
-# et n'est pas persiste dans l'image.
-RUN --mount=type=secret,id=npm_token,required=false set -eu; \
-    if [ -s /run/secrets/npm_token ]; then \
+# Si NPM_TOKEN est fourni (via Railway variable ou docker build --build-arg),
+# il sert uniquement pour GitHub Packages et n'est pas persiste dans l'image.
+ARG NPM_TOKEN=""
+RUN set -eu; \
+    if [ -n "$NPM_TOKEN" ]; then \
       npm config set @funesterie:registry "https://npm.pkg.github.com"; \
-      npm config set "//npm.pkg.github.com/:_authToken" "$(cat /run/secrets/npm_token)"; \
+      npm config set "//npm.pkg.github.com/:_authToken" "$NPM_TOKEN"; \
     fi; \
     npm ci --include=dev; \
     npm prune --omit=dev; \
