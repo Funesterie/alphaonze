@@ -84,6 +84,41 @@ test('mini cerbere adds Together as an OpenAI-compatible fallback', () => {
   assert.equal(shouldSkipTargetByMismatch(together), false);
 });
 
+test('mini cerbere forwards primary remote provider API key', async () => {
+  const seen = [];
+  const runtime = createMiniCerbereRuntime({
+    env: {},
+    requestChatUpstream: async (url, body, options) => {
+      seen.push({ url, body, options });
+      return {
+        upstreamRes: { status: 200 },
+        data: { choices: [{ message: { role: 'assistant', content: 'ok primary' } }] },
+      };
+    },
+    getLocalCompletionsUrl: () => '',
+    logger: { warn() {} },
+  });
+
+  const result = await runtime.requestChat({
+    provider: 'openai',
+    upstreamUrl: 'https://openrouter.ai/api/v1/chat/completions',
+    upstreamBody: {
+      model: 'anthropic/claude-3.5-sonnet',
+      messages: [{ role: 'user', content: 'salut' }],
+    },
+    remoteProviderConfig: {
+      apiKey: 'openrouter-profile-key',
+      model: 'anthropic/claude-3.5-sonnet',
+    },
+    reqHeaders: {},
+    requestId: 'primary-provider-key-test',
+  });
+
+  assert.equal(result.target.role, 'primary');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].options.apiKey, 'openrouter-profile-key');
+});
+
 test('mini cerbere adds Janus Llama Pro fallback for vision requests', () => {
   const runtime = createMiniCerbereRuntime({
     env: {
