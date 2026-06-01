@@ -97,7 +97,18 @@ test('match arena scans local games and lets the local worker prepare a session'
 
         const completed = await postJson(baseUrl, `/api/match-arena/local-worker/sessions/${started.json.session.id}/complete`, {
           workerId: 'test-match-worker',
-          streamMode: 'pending-retroarch-stream',
+          stream: {
+            ready: true,
+            mode: 'novnc',
+            url: 'https://stream.example.test/vnc.html',
+          },
+          runtime: {
+            playable: true,
+            emulator: 'retroarch',
+            stream: 'novnc',
+            input: 'queued-json',
+            capabilities: ['retroarch', 'input-event-pull'],
+          },
           localExportPath: 'D:\\agent-bus\\match-arena\\sessions\\test',
           message: 'pret',
         }, {
@@ -106,7 +117,25 @@ test('match arena scans local games and lets the local worker prepare a session'
         assert.equal(completed.response.status, 200);
         assert.equal(completed.json.session.state, 'ready');
         assert.equal(completed.json.session.export.ready, true);
-        assert.equal(completed.json.session.stream.ready, false);
+        assert.equal(completed.json.session.stream.ready, true);
+        assert.equal(completed.json.session.runtime.playable, true);
+
+        const input = await postJson(baseUrl, `/api/match-arena/sessions/${started.json.session.id}/input`, {
+          control: 'a',
+          action: 'press',
+        });
+        assert.equal(input.response.status, 200);
+        assert.equal(input.json.eventSeq, 1);
+        assert.equal(input.json.session.state, 'running');
+
+        const inputEvents = await postJson(baseUrl, `/api/match-arena/local-worker/sessions/${started.json.session.id}/input-events`, {
+          afterSeq: 0,
+        }, {
+          authorization: 'Bearer test-match-arena-worker-token',
+        });
+        assert.equal(inputEvents.response.status, 200);
+        assert.equal(inputEvents.json.events.length, 1);
+        assert.equal(inputEvents.json.events[0].control, 'a');
 
         const statusResponse = await fetch(baseUrl + '/api/match-arena/status');
         const status = await statusResponse.json();

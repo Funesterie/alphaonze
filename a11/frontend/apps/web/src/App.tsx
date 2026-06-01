@@ -14,6 +14,7 @@ import {
   fetchMcpCockpitAccount,
   fetchMcpCockpitStatus,
   fetchMatchArenaGames,
+  fetchMatchArenaSession,
   fetchMatchArenaStatus,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
@@ -39,6 +40,7 @@ import {
   forgotPassword,
   resetPassword,
   runVivyStudioProduction,
+  sendMatchArenaInput,
   startGoogleOAuth,
   setAuthToken,
   startMicrosoftOAuth,
@@ -5975,6 +5977,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
+  const [sendingInput, setSendingInput] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -6002,8 +6005,31 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!session?.id) return undefined;
+    let cancelled = false;
+    const pollSession = async () => {
+      try {
+        const nextSession = await fetchMatchArenaSession(session.id);
+        if (!cancelled) setSession(nextSession);
+      } catch (err) {
+        if (!cancelled) setError(String((err as Error)?.message || err));
+      }
+    };
+    void pollSession();
+    const timer = window.setInterval(() => {
+      void pollSession();
+    }, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [session?.id]);
+
   const selectedGame = games.find((game) => game.id === selectedGameId) || null;
   const workerOnline = status?.worker?.online === true;
+  const streamUrl = session?.stream?.embedUrl || session?.stream?.url || "";
+  const inputReady = session?.input?.ready !== false && Boolean(session?.id);
 
   const startSession = async () => {
     if (!selectedGameId) return;
@@ -6024,6 +6050,26 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     }
   };
 
+  const sendControl = async (control: string) => {
+    if (!session?.id) return;
+    setSendingInput(control);
+    setError("");
+    try {
+      const nextSession = await sendMatchArenaInput(session.id, {
+        control,
+        action: "press",
+        value: 1,
+        durationMs: 80,
+        player: 1,
+      });
+      setSession(nextSession);
+    } catch (err) {
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setSendingInput("");
+    }
+  };
+
   const pillStyle = (active: boolean): React.CSSProperties => ({
     minHeight: 34,
     borderRadius: 7,
@@ -6035,6 +6081,16 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     padding: "0 10px",
     cursor: "pointer",
   });
+  const controlStyle: React.CSSProperties = {
+    minHeight: 42,
+    minWidth: 48,
+    borderRadius: 8,
+    border: "1px solid #334155",
+    background: "#111827",
+    color: "#e2e8f0",
+    fontWeight: 900,
+    cursor: inputReady ? "pointer" : "not-allowed",
+  };
 
   return (
     <section
@@ -6053,7 +6109,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         <div>
           <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 18 }}>Match Arena</h3>
           <p style={{ color: "#94a3b8", margin: "6px 0 0", fontSize: 13, maxWidth: 760 }}>
-            Sessions jeu avec inventaire local, file priorisee et exports Drive/OneDrive. Les fichiers de jeu restent sur ton PC.
+            Sessions jeu avec inventaire local, file priorisee, commandes navigateur et exports Drive/OneDrive.
           </p>
         </div>
         <button type="button" className="btn ghost" onClick={refresh} disabled={loading} style={{ alignSelf: "flex-start" }}>
@@ -6072,7 +6128,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
           ["Jeux", String(status?.catalog?.count ?? games.length)],
           ["Worker", workerOnline ? "En ligne" : status?.worker?.configured ? "Attente" : "Token manquant"],
           ["File", String(status?.queue?.active ?? 0)],
-          ["Priorites", Object.entries(status?.queue?.priorities || {}).map(([key, value]) => `${key}:${value}`).join(" ") || "calme"],
+          ["Stream", status?.worker?.heartbeat?.streamReady ? "Pret" : session?.stream?.ready ? "Pret" : "Attente"],
         ].map(([label, value]) => (
           <div key={label} style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d" }}>
             <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>{label}</div>
@@ -6156,12 +6212,58 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
               <div>{session.gameTitle}</div>
               <div>Priorite: {session.priorityLabel || session.priorityTier || "Public"}</div>
               <div>Worker: {session.workerId || "en attente"}</div>
+              <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream pret" : "stream en attente"}</div>
               {session.export?.localPath ? <div>Export: {session.export.localPath}</div> : null}
               {session.message ? <div style={{ marginTop: 6 }}>{session.message}</div> : null}
             </div>
           ) : null}
         </div>
       </div>
+
+      {session ? (
+        <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(0, 1.4fr) minmax(260px, 0.6fr)", gap: 12 }}>
+          <div style={{ border: "1px solid #1f2937", borderRadius: 10, minHeight: isCompactLayout ? 220 : 360, overflow: "hidden", background: "#020817" }}>
+            {streamUrl ? (
+              <iframe
+                title="Match Arena stream"
+                src={streamUrl}
+                style={{ width: "100%", height: isCompactLayout ? 260 : 420, border: 0, display: "block", background: "#020817" }}
+                allow="fullscreen; gamepad"
+              />
+            ) : (
+              <div style={{ minHeight: isCompactLayout ? 220 : 360, display: "grid", placeItems: "center", color: "#94a3b8", padding: 18, textAlign: "center" }}>
+                {session.stream?.message || "Le worker garde la session active. Le stream apparait ici quand noVNC/WebRTC est publie."}
+              </div>
+            )}
+          </div>
+          <div style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 48px)", gap: 8, justifyContent: "center" }}>
+              <span />
+              <button type="button" style={controlStyle} disabled={!inputReady || sendingInput === "up"} onClick={() => sendControl("up")}>H</button>
+              <span />
+              <button type="button" style={controlStyle} disabled={!inputReady || sendingInput === "left"} onClick={() => sendControl("left")}>G</button>
+              <button type="button" style={controlStyle} disabled={!inputReady || sendingInput === "down"} onClick={() => sendControl("down")}>B</button>
+              <button type="button" style={controlStyle} disabled={!inputReady || sendingInput === "right"} onClick={() => sendControl("right")}>D</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(42px, 1fr))", gap: 8 }}>
+              {["a", "b", "x", "y", "l", "r", "start", "select"].map((control) => (
+                <button
+                  key={control}
+                  type="button"
+                  style={controlStyle}
+                  disabled={!inputReady || sendingInput === control}
+                  onClick={() => sendControl(control)}
+                >
+                  {control.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+              Input: {session.input?.mode || "queued-json"} {session.input?.sequence ? `#${session.input.sequence}` : ""}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div style={{ border: "1px solid #7f1d1d", background: "#2a0f0f", color: "#fecaca", borderRadius: 8, padding: 10, fontSize: 12 }}>

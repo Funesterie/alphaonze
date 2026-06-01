@@ -4384,6 +4384,25 @@ export type MatchArenaSession = {
     ready?: boolean;
     mode?: string;
     url?: string | null;
+    embedUrl?: string | null;
+    controlUrl?: string | null;
+    message?: string | null;
+  } | null;
+  input?: {
+    ready?: boolean;
+    mode?: string;
+    endpoint?: string | null;
+    claimEndpoint?: string | null;
+    sequence?: number;
+    accepted?: string[];
+  } | null;
+  runtime?: {
+    playable?: boolean;
+    emulator?: string;
+    transport?: string;
+    stream?: string;
+    input?: string;
+    capabilities?: string[];
   } | null;
   export?: {
     ready?: boolean;
@@ -4394,6 +4413,7 @@ export type MatchArenaSession = {
   message?: string | null;
   error?: string | null;
   plan?: Record<string, unknown> | null;
+  lastInputAt?: string | null;
 };
 
 export type MatchArenaStatus = {
@@ -4464,6 +4484,37 @@ export async function createMatchArenaSession(input: {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.ok === false) {
     throw new Error(data?.message || data?.error || `Session Match Arena refusee (${res.status})`);
+  }
+  return data.session as MatchArenaSession;
+}
+
+export async function fetchMatchArenaSession(sessionId: string): Promise<MatchArenaSession> {
+  const res = await authFetch(getApiUrl(`/api/match-arena/sessions/${encodeURIComponent(sessionId)}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Session Match Arena indisponible (${res.status})`);
+  }
+  return data.session as MatchArenaSession;
+}
+
+export async function sendMatchArenaInput(sessionId: string, input: {
+  control: string;
+  action?: string;
+  value?: number;
+  durationMs?: number;
+  player?: number;
+}): Promise<MatchArenaSession> {
+  const res = await authFetch(getApiUrl(`/api/match-arena/sessions/${encodeURIComponent(sessionId)}/input`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify(input || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Commande Match Arena refusee (${res.status})`);
   }
   return data.session as MatchArenaSession;
 }

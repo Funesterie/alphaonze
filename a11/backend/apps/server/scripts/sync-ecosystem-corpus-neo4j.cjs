@@ -156,8 +156,9 @@ async function syncCorpus(session, corpus, endpoint) {
   for (const constraint of constraints) await session.run(constraint);
 
   await session.run(`
-    MERGE (pack:FunesterieEcosystemNode:FunesterieCorpusPack {id: $id})
-    SET pack.label = $label,
+    MERGE (pack:FunesterieEcosystemNode {id: $id})
+    SET pack:FunesterieCorpusPack,
+        pack.label = $label,
         pack.schema = $schema,
         pack.mode = $mode,
         pack.sourceScopeId = $sourceScopeId,
@@ -318,8 +319,9 @@ async function upsertNodes(session, label, nodes, corpus, packRelType) {
   await session.run(`
     MATCH (pack:FunesterieCorpusPack {id: $packId})
     UNWIND $rows AS item
-    MERGE (node:FunesterieEcosystemNode:${safeLabel} {id: item.id})
-    SET node += item.props,
+    MERGE (node:FunesterieEcosystemNode {id: item.id})
+    SET node:${safeLabel},
+        node += item.props,
         node.updatedAt = datetime($generatedAt)
     MERGE (pack)-[r:${safeRelType}]->(node)
     SET r.source = 'funesterie-ecosystem-corpus',

@@ -12,6 +12,7 @@ const DEFAULT_WORKER_TOKEN_FILE = '/app/runtime/secrets/match_arena_worker_token
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 const WORKER_STALE_MS = 2 * 60 * 1000;
 const WORKER_LEASE_MS = 10 * 60 * 1000;
+const MAX_INPUT_EVENTS = 240;
 const MAX_SCAN_FILES = 5000;
 const PLAYABLE_EXTENSIONS = new Set([
   '.zip',
@@ -304,6 +305,60 @@ function createSessionId() {
   return `match-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function sanitizeUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (!/^https?:\/\//i.test(raw)) return null;
+  return raw.slice(0, 900);
+}
+
+function sanitizeStreamDescriptor(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const url = sanitizeUrl(source.url || source.streamUrl || source.embedUrl || source.playerUrl);
+  const embedUrl = sanitizeUrl(source.embedUrl || source.url || source.streamUrl || source.playerUrl);
+  const controlUrl = sanitizeUrl(source.controlUrl);
+  const mode = String(source.mode || source.streamMode || (url ? 'novnc' : 'waiting-worker-stream'))
+    .trim()
+    .toLowerCase()
+    .slice(0, 80) || 'waiting-worker-stream';
+  return {
+    ready: source.ready === true || Boolean(url),
+    mode,
+    url,
+    embedUrl,
+    controlUrl,
+    message: String(source.message || '').trim().slice(0, 280) || null,
+  };
+}
+
+function buildInputDescriptor(session = {}) {
+  const sessionId = String(session.id || '').trim();
+  return {
+    ready: true,
+    mode: 'queued-json',
+    endpoint: sessionId ? `/api/match-arena/sessions/${encodeURIComponent(sessionId)}/input` : null,
+    claimEndpoint: sessionId ? `/api/match-arena/local-worker/sessions/${encodeURIComponent(sessionId)}/input-events` : null,
+    sequence: Number(session.inputSeq || 0),
+    accepted: ['up', 'down', 'left', 'right', 'a', 'b', 'x', 'y', 'start', 'select', 'l', 'r', 'coin'],
+  };
+}
+
+function sanitizeRuntimeDescriptor(input = {}, fallback = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const capabilities = Array.isArray(source.capabilities) ? source.capabilities : fallback.capabilities;
+  return {
+    playable: source.playable === true || fallback.playable === true || false,
+    emulator: String(source.emulator || fallback.emulator || 'retroarch/libretro').trim().slice(0, 120),
+    transport: String(source.transport || fallback.transport || 'local-worker-pull').trim().slice(0, 120),
+    stream: String(source.stream || fallback.stream || 'waiting-worker-stream').trim().slice(0, 120),
+    input: String(source.input || fallback.input || 'queued-json').trim().slice(0, 120),
+    capabilities: (Array.isArray(capabilities) ? capabilities : [])
+      .map((value) => String(value || '').trim().slice(0, 80))
+      .filter(Boolean)
+      .slice(0, 24),
+  };
+}
+
 function publicSession(session = {}) {
   return {
     id: session.id,
@@ -321,11 +376,20 @@ function publicSession(session = {}) {
     workerId: session.workerId || null,
     leasedAt: session.leasedAt || null,
     stream: session.stream || null,
+    input: session.input || buildInputDescriptor(session),
+    runtime: session.runtime || sanitizeRuntimeDescriptor(),
     export: session.export || null,
     error: session.error || null,
     message: session.message || null,
     plan: session.plan || null,
+    lastInputAt: session.lastInputAt || null,
   };
+}
+
+function requestOwnsSession(req, session = {}) {
+  const requestUserId = req.user?.id || req.user?.sub || null;
+  if (!session.userId || !requestUserId) return true;
+  return session.userId === requestUserId;
 }
 
 function pruneSessions(now = Date.now()) {
@@ -368,10 +432,38 @@ function buildQueueStatus() {
   }, {});
   return {
     total: list.length,
-    active: list.filter((session) => ['queued', 'leased', 'running'].includes(session.state)).length,
+    active: list.filter((session) => ['queued', 'leased', 'ready', 'running'].includes(session.state)).length,
     states,
     priorities,
   };
+}
+
+function recordInputEvent(session, body = {}, req = {}) {
+  const control = String(body.control || body.button || body.key || body.action || '').trim().toLowerCase().slice(0, 40);
+  if (!control) return { error: 'missing_control' };
+  const action = String(body.action || body.type || 'press').trim().toLowerCase().slice(0, 40) || 'press';
+  const now = new Date().toISOString();
+  const event = {
+    seq: Number(session.inputSeq || 0) + 1,
+    at: now,
+    source: 'browser',
+    player: Number.isFinite(Number(body.player)) ? Math.max(1, Math.min(4, Number(body.player))) : 1,
+    control,
+    action,
+    value: Number.isFinite(Number(body.value)) ? Number(body.value) : (action === 'release' ? 0 : 1),
+    durationMs: Number.isFinite(Number(body.durationMs)) ? Math.max(0, Math.min(5000, Number(body.durationMs))) : null,
+    clientId: String(req.headers?.['x-a11-client-id'] || '').trim().slice(0, 80) || null,
+  };
+  session.inputSeq = event.seq;
+  session.lastInputAt = now;
+  session.inputEvents = Array.isArray(session.inputEvents) ? session.inputEvents : [];
+  session.inputEvents.push(event);
+  if (session.inputEvents.length > MAX_INPUT_EVENTS) {
+    session.inputEvents.splice(0, session.inputEvents.length - MAX_INPUT_EVENTS);
+  }
+  session.input = buildInputDescriptor(session);
+  if (session.state === 'ready') session.state = 'running';
+  return { event };
 }
 
 function createMatchArenaRouter(options = {}) {
@@ -413,7 +505,8 @@ function createMatchArenaRouter(options = {}) {
         heartbeat: lastWorkerHeartbeat?.payload || null,
       },
       architecture: {
-        screen: 'WebRTC/noVNC a brancher sur worker local ou serveur GPU',
+        screen: 'Session navigateur active: le worker publie WebRTC/noVNC quand son pont RetroArch est disponible',
+        input: 'Commandes clavier/manette envoyees en queue; le worker local les recupere sans port entrant',
         storage: 'Drive/OneDrive/R2 reserves aux exports: saves, replays, logs, configs',
         games: 'Fichiers locaux fournis par le proprietaire; non publies par l API',
       },
@@ -462,8 +555,27 @@ function createMatchArenaRouter(options = {}) {
       leasedAtMs: null,
       stream: {
         ready: false,
-        mode: 'pending-worker-stream',
+        mode: 'waiting-worker-stream',
         url: null,
+        embedUrl: null,
+        controlUrl: null,
+        message: 'Le worker local va publier le lien noVNC/WebRTC des qu il est pret.',
+      },
+      input: {
+        ready: true,
+        mode: 'queued-json',
+        endpoint: null,
+        claimEndpoint: null,
+        sequence: 0,
+        accepted: ['up', 'down', 'left', 'right', 'a', 'b', 'x', 'y', 'start', 'select', 'l', 'r', 'coin'],
+      },
+      runtime: {
+        playable: false,
+        emulator: 'retroarch/libretro',
+        transport: 'local-worker-pull',
+        stream: 'waiting-worker-stream',
+        input: 'queued-json',
+        capabilities: ['priority-queue', 'local-rom-inventory', 'drive-export', 'input-queue'],
       },
       export: {
         ready: false,
@@ -473,13 +585,17 @@ function createMatchArenaRouter(options = {}) {
       },
       plan: {
         engine: 'retroarch/libretro worker',
-        input: 'browser gamepad/keyboard -> network input worker',
-        video: 'worker capture -> WebRTC/noVNC later',
+        input: 'browser controls -> backend queue -> local worker pull',
+        video: 'worker capture -> WebRTC/noVNC URL when configured',
         storage: ['save states', 'replays', 'configs', 'logs'],
       },
+      inputEvents: [],
+      inputSeq: 0,
+      lastInputAt: null,
       error: null,
       message: null,
     };
+    session.input = buildInputDescriptor(session);
     sessions.set(session.id, session);
     return res.status(202).json({ ok: true, session: publicSession(session) });
   });
@@ -496,6 +612,31 @@ function createMatchArenaRouter(options = {}) {
     return res.json({ ok: true, session: publicSession(session) });
   });
 
+  router.post('/sessions/:sessionId/input', requireUser, (req, res) => {
+    pruneSessions();
+    const sessionId = String(req.params?.sessionId || '').trim();
+    const session = sessions.get(sessionId);
+    if (!session || !requestOwnsSession(req, session)) {
+      return res.status(404).json({ ok: false, error: 'match_session_not_found' });
+    }
+    if (['failed', 'done'].includes(session.state)) {
+      return res.status(409).json({
+        ok: false,
+        error: 'match_session_closed',
+        message: 'Cette session Match Arena est terminee.',
+      });
+    }
+    const recorded = recordInputEvent(session, req.body || {}, req);
+    if (recorded.error) {
+      return res.status(400).json({ ok: false, error: recorded.error });
+    }
+    return res.json({
+      ok: true,
+      eventSeq: recorded.event.seq,
+      session: publicSession(session),
+    });
+  });
+
   router.post('/local-worker/heartbeat', requireWorkerAuth, (req, res) => {
     const workerId = String(req.body?.workerId || req.body?.id || `${os.hostname()}-match-worker`).trim().slice(0, 120);
     lastWorkerHeartbeat = {
@@ -505,9 +646,15 @@ function createMatchArenaRouter(options = {}) {
         workerId,
         state: String(req.body?.state || 'online').trim().slice(0, 80),
         retroarchAvailable: req.body?.retroarchAvailable === true,
+        dockerAvailable: req.body?.dockerAvailable === true,
+        podmanAvailable: req.body?.podmanAvailable === true,
+        streamReady: req.body?.streamReady === true,
+        streamMode: String(req.body?.streamMode || '').trim().slice(0, 80) || null,
+        inputMode: String(req.body?.inputMode || '').trim().slice(0, 80) || null,
         gamesRootAvailable: req.body?.gamesRootAvailable === true,
         processed: Number.isFinite(Number(req.body?.processed)) ? Number(req.body.processed) : null,
         failed: Number.isFinite(Number(req.body?.failed)) ? Number(req.body.failed) : null,
+        activeSessions: Number.isFinite(Number(req.body?.activeSessions)) ? Number(req.body.activeSessions) : null,
       },
     };
     const claimable = findClaimableSession();
@@ -530,6 +677,11 @@ function createMatchArenaRouter(options = {}) {
         workerId,
         state: 'inventory',
         retroarchAvailable: req.body?.retroarchAvailable === true,
+        dockerAvailable: req.body?.dockerAvailable === true,
+        podmanAvailable: req.body?.podmanAvailable === true,
+        streamReady: req.body?.streamReady === true,
+        streamMode: String(req.body?.streamMode || '').trim().slice(0, 80) || null,
+        inputMode: String(req.body?.inputMode || '').trim().slice(0, 80) || null,
         gamesRootAvailable: req.body?.gamesRootAvailable === true,
         processed: null,
         failed: null,
@@ -578,17 +730,59 @@ function createMatchArenaRouter(options = {}) {
     });
   });
 
+  router.post('/local-worker/sessions/:sessionId/live', requireWorkerAuth, (req, res) => {
+    pruneSessions();
+    const sessionId = String(req.params?.sessionId || '').trim();
+    const session = sessions.get(sessionId);
+    if (!session) return res.status(404).json({ ok: false, error: 'match_session_not_found' });
+    const requestedState = String(req.body?.state || 'running').trim().toLowerCase();
+    session.state = ['ready', 'running', 'leased'].includes(requestedState) ? requestedState : 'running';
+    session.startedAt = session.startedAt || new Date().toISOString();
+    session.workerId = String(req.body?.workerId || session.workerId || '').trim().slice(0, 120) || session.workerId;
+    session.stream = sanitizeStreamDescriptor(req.body?.stream || req.body || {});
+    session.runtime = sanitizeRuntimeDescriptor(req.body?.runtime || {}, session.runtime);
+    session.input = {
+      ...buildInputDescriptor(session),
+      mode: String(req.body?.input?.mode || session.input?.mode || 'queued-json').trim().slice(0, 80),
+    };
+    session.message = String(req.body?.message || session.message || 'Session Match Arena active.').slice(0, 800);
+    session.error = null;
+    return res.json({ ok: true, session: publicSession(session) });
+  });
+
+  router.post('/local-worker/sessions/:sessionId/input-events', requireWorkerAuth, (req, res) => {
+    pruneSessions();
+    const sessionId = String(req.params?.sessionId || '').trim();
+    const session = sessions.get(sessionId);
+    if (!session) return res.status(404).json({ ok: false, error: 'match_session_not_found' });
+    const afterSeq = Number.isFinite(Number(req.body?.afterSeq ?? req.body?.lastSeq))
+      ? Number(req.body?.afterSeq ?? req.body?.lastSeq)
+      : 0;
+    const events = (Array.isArray(session.inputEvents) ? session.inputEvents : [])
+      .filter((event) => Number(event.seq || 0) > afterSeq)
+      .slice(0, 80);
+    return res.json({
+      ok: true,
+      sessionId,
+      state: session.state,
+      events,
+      lastSeq: events.length ? events[events.length - 1].seq : Number(session.inputSeq || afterSeq || 0),
+    });
+  });
+
   router.post('/local-worker/sessions/:sessionId/complete', requireWorkerAuth, (req, res) => {
     pruneSessions();
     const sessionId = String(req.params?.sessionId || '').trim();
     const session = sessions.get(sessionId);
     if (!session) return res.status(404).json({ ok: false, error: 'match_session_not_found' });
-    session.state = String(req.body?.state || 'ready').trim().toLowerCase() === 'done' ? 'done' : 'ready';
-    session.finishedAt = new Date().toISOString();
-    session.stream = {
-      ready: Boolean(req.body?.streamUrl || req.body?.stream?.url),
-      mode: String(req.body?.streamMode || req.body?.stream?.mode || 'pending-retroarch-stream').trim(),
-      url: String(req.body?.streamUrl || req.body?.stream?.url || '').trim() || null,
+    const nextState = String(req.body?.state || 'ready').trim().toLowerCase();
+    session.state = nextState === 'done' ? 'done' : nextState === 'running' ? 'running' : 'ready';
+    session.finishedAt = session.state === 'done' ? new Date().toISOString() : null;
+    session.stream = sanitizeStreamDescriptor(req.body?.stream || req.body || {});
+    session.runtime = sanitizeRuntimeDescriptor(req.body?.runtime || {}, session.runtime);
+    session.input = {
+      ...buildInputDescriptor(session),
+      mode: String(req.body?.input?.mode || session.input?.mode || 'queued-json').trim().slice(0, 80),
     };
     session.export = {
       ready: true,

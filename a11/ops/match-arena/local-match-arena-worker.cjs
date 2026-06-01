@@ -42,6 +42,12 @@ function env(name, fallback = '') {
   return value || fallback;
 }
 
+function envBool(name, fallback = false) {
+  const raw = env(name).toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(raw);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -93,6 +99,70 @@ function commandAvailable(command) {
   } catch {
     return false;
   }
+}
+
+function detectCapabilities() {
+  const configuredStreamUrl = env('A11_MATCH_ARENA_STREAM_URL', env('A11_MATCH_ARENA_NOVNC_URL'));
+  const retroarchAvailable = commandAvailable('retroarch') || Boolean(env('A11_MATCH_ARENA_RETROARCH_COMMAND'));
+  const dockerAvailable = commandAvailable('docker');
+  const podmanAvailable = commandAvailable('podman');
+  const streamMode = env('A11_MATCH_ARENA_STREAM_MODE', configuredStreamUrl ? 'novnc' : 'waiting-novnc');
+  return {
+    retroarchAvailable,
+    dockerAvailable,
+    podmanAvailable,
+    streamReady: Boolean(configuredStreamUrl),
+    streamUrl: configuredStreamUrl || '',
+    streamMode,
+    inputMode: env('A11_MATCH_ARENA_INPUT_MODE', 'queued-json'),
+    autolaunch: envBool('A11_MATCH_ARENA_AUTOLAUNCH', false),
+    capabilities: [
+      'local-rom-inventory',
+      'priority-claim',
+      'drive-export',
+      'input-event-pull',
+      retroarchAvailable ? 'retroarch' : null,
+      dockerAvailable ? 'docker' : null,
+      podmanAvailable ? 'podman' : null,
+      configuredStreamUrl ? 'browser-stream-url' : null,
+    ].filter(Boolean),
+  };
+}
+
+function buildStreamDescriptor(capabilities) {
+  const url = capabilities.streamUrl || '';
+  return {
+    ready: Boolean(url),
+    mode: capabilities.streamMode || (url ? 'novnc' : 'waiting-novnc'),
+    url: url || null,
+    embedUrl: url || null,
+    message: url
+      ? 'Pont video publie par le worker local.'
+      : 'Worker pret: configure A11_MATCH_ARENA_STREAM_URL quand le pont noVNC/WebRTC est lance.',
+  };
+}
+
+function resolvePlayablePath(session, inventory) {
+  const root = inventory.gamesRoot;
+  const game = inventory.games.find((candidate) => candidate.id === session.gameId) || session.game || null;
+  const relative = game?.playableFiles?.[0]?.relativePath;
+  if (!root || !relative) return { game, playablePath: null };
+  const fullPath = path.resolve(root, game.title || '', relative);
+  const safe = safeRelative(root, fullPath);
+  if (!safe) return { game, playablePath: null };
+  return { game, playablePath: fs.existsSync(fullPath) ? fullPath : null };
+}
+
+function buildRuntimeDescriptor(capabilities, playablePath) {
+  const stream = buildStreamDescriptor(capabilities);
+  return {
+    playable: Boolean(playablePath && capabilities.streamReady && (capabilities.retroarchAvailable || capabilities.dockerAvailable || capabilities.podmanAvailable)),
+    emulator: capabilities.retroarchAvailable ? 'retroarch' : 'retroarch/libretro container-ready',
+    transport: 'local-worker-pull',
+    stream: stream.mode,
+    input: capabilities.inputMode,
+    capabilities: capabilities.capabilities,
+  };
 }
 
 function safeRelative(root, target) {
@@ -216,6 +286,11 @@ async function postJson(url, token, payload, timeoutMs = 30000) {
   return body || {};
 }
 
+function appendJsonl(filePath, entry) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, 'utf8');
+}
+
 function buildDriveExportPath(sessionId) {
   const configured = env('A11_MATCH_ARENA_DRIVE_ROOT');
   const candidates = [
@@ -233,11 +308,17 @@ function buildDriveExportPath(sessionId) {
   return null;
 }
 
-function writeSessionManifest(session, inventory) {
+function writeSessionManifest(session, inventory, capabilities) {
   const exportRoot = env('A11_MATCH_ARENA_EXPORT_ROOT', DEFAULT_EXPORT_ROOT);
   const sessionDir = path.join(exportRoot, session.id);
   fs.mkdirSync(sessionDir, { recursive: true });
-  const game = inventory.games.find((candidate) => candidate.id === session.gameId) || session.game || null;
+  fs.mkdirSync(path.join(sessionDir, 'inputs'), { recursive: true });
+  fs.mkdirSync(path.join(sessionDir, 'logs'), { recursive: true });
+  fs.mkdirSync(path.join(sessionDir, 'replays'), { recursive: true });
+  fs.mkdirSync(path.join(sessionDir, 'saves'), { recursive: true });
+  const { game, playablePath } = resolvePlayablePath(session, inventory);
+  const stream = buildStreamDescriptor(capabilities);
+  const runtime = buildRuntimeDescriptor(capabilities, playablePath);
   const manifest = {
     schema: 'funesterie.match-arena.session-export.v1',
     createdAt: new Date().toISOString(),
@@ -255,15 +336,28 @@ function writeSessionManifest(session, inventory) {
       playableCount: game.playableCount,
       playableFiles: game.playableFiles,
     } : null,
+    launch: {
+      localPlayablePath: playablePath,
+      autolaunch: capabilities.autolaunch,
+      retroarchCommand: env('A11_MATCH_ARENA_RETROARCH_COMMAND') || null,
+      containerImage: env('A11_MATCH_ARENA_CONTAINER_IMAGE') || null,
+    },
+    stream,
+    input: {
+      mode: capabilities.inputMode,
+      eventsFile: path.join(sessionDir, 'inputs', 'events.jsonl'),
+    },
+    runtime,
     worker: {
       id: env('A11_MATCH_ARENA_WORKER_ID', `${os.hostname()}-match-arena`),
-      retroarchAvailable: commandAvailable('retroarch'),
-      streamMode: 'pending-retroarch-stream',
+      retroarchAvailable: capabilities.retroarchAvailable,
+      dockerAvailable: capabilities.dockerAvailable,
+      podmanAvailable: capabilities.podmanAvailable,
+      streamMode: stream.mode,
     },
     next: [
-      'Launch RetroArch/libretro container or desktop bridge',
-      'Attach browser input to worker input adapter',
-      'Publish WebRTC/noVNC stream URL',
+      'Launch RetroArch/noVNC bridge when stream URL is configured',
+      'Map input events to RetroArch controls',
       'Mirror save/replay/logs to Drive or OneDrive',
     ],
   };
@@ -280,7 +374,31 @@ function writeSessionManifest(session, inventory) {
     }
   }
 
-  return { manifestPath, sessionDir, drivePath };
+  return { manifestPath, sessionDir, drivePath, stream, runtime, playablePath };
+}
+
+async function pollActiveSessionInputs(activeSessions, token) {
+  for (const [sessionId, active] of activeSessions.entries()) {
+    try {
+      const result = await postJson(
+        buildUrl(active.remoteBaseUrl, `/api/match-arena/local-worker/sessions/${encodeURIComponent(sessionId)}/input-events`),
+        token,
+        { afterSeq: active.lastSeq || 0 },
+        10000
+      );
+      const events = Array.isArray(result.events) ? result.events : [];
+      for (const event of events) {
+        appendJsonl(path.join(active.sessionDir, 'inputs', 'events.jsonl'), event);
+        active.lastSeq = Math.max(Number(active.lastSeq || 0), Number(event.seq || 0));
+      }
+      if (['done', 'failed'].includes(String(result.state || '').toLowerCase())) {
+        activeSessions.delete(sessionId);
+      }
+    } catch {
+      active.failures = Number(active.failures || 0) + 1;
+      if (active.failures > 20) activeSessions.delete(sessionId);
+    }
+  }
 }
 
 async function run() {
@@ -293,19 +411,27 @@ async function run() {
   let failed = 0;
   let lastInventoryAt = 0;
   let cachedInventory = scanGames();
+  const activeSessions = new Map();
 
   writeStatus({ ok: true, state: 'starting', workerId, remoteBaseUrls, games: cachedInventory.games.length, processed, failed });
 
   while (true) {
     try {
       const now = Date.now();
+      const capabilities = detectCapabilities();
+      await pollActiveSessionInputs(activeSessions, token);
       if (!lastInventoryAt || now - lastInventoryAt > 60000) {
         cachedInventory = scanGames();
         for (const remoteBaseUrl of remoteBaseUrls) {
           await postJson(buildUrl(remoteBaseUrl, '/api/match-arena/local-worker/inventory'), token, {
             workerId,
             gamesRootAvailable: cachedInventory.gamesRootAvailable,
-            retroarchAvailable: commandAvailable('retroarch'),
+            retroarchAvailable: capabilities.retroarchAvailable,
+            dockerAvailable: capabilities.dockerAvailable,
+            podmanAvailable: capabilities.podmanAvailable,
+            streamReady: capabilities.streamReady,
+            streamMode: capabilities.streamMode,
+            inputMode: capabilities.inputMode,
             games: cachedInventory.games,
           }, 30000).catch(() => null);
         }
@@ -321,7 +447,13 @@ async function run() {
             workerId,
             state: 'polling',
             gamesRootAvailable: cachedInventory.gamesRootAvailable,
-            retroarchAvailable: commandAvailable('retroarch'),
+            retroarchAvailable: capabilities.retroarchAvailable,
+            dockerAvailable: capabilities.dockerAvailable,
+            podmanAvailable: capabilities.podmanAvailable,
+            streamReady: capabilities.streamReady,
+            streamMode: capabilities.streamMode,
+            inputMode: capabilities.inputMode,
+            activeSessions: activeSessions.size,
             processed,
             failed,
           }, 15000);
@@ -352,6 +484,10 @@ async function run() {
           games: cachedInventory.games.length,
           processed,
           failed,
+          capabilities: capabilities.capabilities,
+          streamReady: capabilities.streamReady,
+          streamMode: capabilities.streamMode,
+          activeSessions: activeSessions.size,
           remoteQueue: claim?.queue || null,
         });
         await sleep(Number(claim?.pollIntervalMs || 1500) || 1500);
@@ -371,18 +507,45 @@ async function run() {
       });
 
       try {
-        const exported = writeSessionManifest(session, cachedInventory);
+        const exported = writeSessionManifest(session, cachedInventory, capabilities);
+        activeSessions.set(session.id, {
+          remoteBaseUrl: claimedRemoteBaseUrl,
+          sessionDir: exported.sessionDir,
+          lastSeq: Number(session.input?.sequence || 0),
+          failures: 0,
+        });
         await postJson(buildUrl(claimedRemoteBaseUrl, `/api/match-arena/local-worker/sessions/${encodeURIComponent(session.id)}/complete`), token, {
           workerId,
           state: 'ready',
-          streamMode: 'pending-retroarch-stream',
+          stream: exported.stream,
+          runtime: exported.runtime,
+          input: { mode: capabilities.inputMode },
+          streamMode: exported.stream.mode,
+          streamUrl: exported.stream.url,
           localExportPath: exported.sessionDir,
           drivePath: exported.drivePath,
-          message: 'Inventaire et manifeste prets; le streaming RetroArch/WebRTC reste la prochaine etape.',
+          message: exported.stream.ready
+            ? 'Session prete: le stream worker est publie et les commandes navigateur sont en file active.'
+            : 'Session prete cote worker: commandes en file active; lance le pont noVNC/WebRTC pour afficher le jeu.',
         }, 30000);
         processed += 1;
-        writeStatus({ ok: true, state: 'prepared', workerId, remoteBaseUrl: claimedRemoteBaseUrl, sessionId: session.id, localExportPath: exported.sessionDir, drivePath: exported.drivePath, processed, failed });
+        writeStatus({
+          ok: true,
+          state: 'prepared',
+          workerId,
+          remoteBaseUrl: claimedRemoteBaseUrl,
+          sessionId: session.id,
+          localExportPath: exported.sessionDir,
+          drivePath: exported.drivePath,
+          playablePath: exported.playablePath,
+          stream: exported.stream,
+          runtime: exported.runtime,
+          activeSessions: activeSessions.size,
+          processed,
+          failed,
+        });
       } catch (error) {
+        activeSessions.delete(session.id);
         failed += 1;
         await postJson(buildUrl(claimedRemoteBaseUrl, `/api/match-arena/local-worker/sessions/${encodeURIComponent(session.id)}/fail`), token, {
           workerId,

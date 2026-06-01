@@ -552,6 +552,8 @@ function createChatRouter(overrides = {}) {
   };
 
   router.post('/chat', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
+    let resolution = null;
+    let pendingStructuredPayload = null;
     try {
       const userMessage = String(req.body?.message || req.body?.prompt || '').trim();
       if (!userMessage) {
@@ -814,7 +816,7 @@ function createChatRouter(overrides = {}) {
         ].join('\n'));
       }
 
-      const resolution = await intentResolver.resolveUserRequest({
+      resolution = await intentResolver.resolveUserRequest({
         req,
         body: req.body || {},
         userText: userMessage,
@@ -822,7 +824,6 @@ function createChatRouter(overrides = {}) {
         executeRuntime: true,
       });
 
-      let pendingStructuredPayload = null;
       if (
         resolution.kind !== 'chat.reply'
         && resolution.kind !== 'code.python.generate'

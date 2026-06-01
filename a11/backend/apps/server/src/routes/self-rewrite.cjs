@@ -116,6 +116,23 @@ function replaceCompactLine(prompt, label, content) {
   return prompt.replace(pattern, `${label} : ${content.trim()}`);
 }
 
+function insertCompactNindoLine(prompt, label, content) {
+  const line = `${label} : ${content.trim()}`;
+  const siblingPattern = /^Nindo2\s*:\s*.*$/m;
+  if (siblingPattern.test(prompt)) {
+    return prompt.replace(siblingPattern, (match) => `${match}\n${line}`);
+  }
+  const firstNindoPattern = /^Nindo\s*:\s*.*$/m;
+  if (firstNindoPattern.test(prompt)) {
+    return prompt.replace(firstNindoPattern, (match) => `${match}\n${line}`);
+  }
+  const firstHeadingPattern = /^#/m;
+  if (firstHeadingPattern.test(prompt)) {
+    return prompt.replace(firstHeadingPattern, `${line}\n\n#`);
+  }
+  return `${line}\n\n${prompt}`;
+}
+
 function createSelfRewriteRouter({ verifyJWT }) {
   const router = Router();
 
@@ -184,8 +201,12 @@ function createSelfRewriteRouter({ verifyJWT }) {
       try {
         const currentPrompt = fs.existsSync(PROMPT_PATH)
           ? fs.readFileSync(PROMPT_PATH, 'utf-8') : '';
-        const nindoCount = (currentPrompt.match(/^# Nindo/gm) || []).length;
-        const isNewNindo = !currentPrompt.includes(`# ${section.charAt(0).toUpperCase() + section.slice(1)}`);
+        const nindoCount = new Set([
+          ...(currentPrompt.match(/^#\s*Nindo\d*/gm) || []).map((value) => value.replace(/^#\s*/, '').toLowerCase()),
+          ...(currentPrompt.match(/^Nindo\d*\s*:/gm) || []).map((value) => value.replace(/\s*:.*$/, '').toLowerCase()),
+        ]).size;
+        const sectionLabel = section.charAt(0).toUpperCase() + section.slice(1);
+        const isNewNindo = !new RegExp(`^(?:#\\s*)?${sectionLabel}\\s*(?::|$)`, 'mi').test(currentPrompt);
         if (isNewNindo && nindoCount >= MAX_NINDO_COUNT) {
           return res.status(400).json({
             error: `Limite atteinte : A11 ne peut avoir que ${MAX_NINDO_COUNT} Nindo simultanément.`,
@@ -256,11 +277,7 @@ function createSelfRewriteRouter({ verifyJWT }) {
               `$1${content.trim()}\n$3`
             );
           } else {
-            // Ajoute le nouveau Nindo avant "Limites:"
-            newPrompt = currentPrompt.replace(
-              /(\nLimites:)/,
-              `\n${sectionHeader}\n${content.trim()}\n$1`
-            );
+            newPrompt = insertCompactNindoLine(currentPrompt, label, content);
           }
         }
       } else if (sectionKey === 'identite' || sectionKey === 'ambition') {

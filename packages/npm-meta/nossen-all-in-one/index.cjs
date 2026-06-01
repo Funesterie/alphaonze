@@ -42,7 +42,7 @@ const packages = Object.freeze([
 module.exports = Object.freeze({
   name: '@nossen/all-in-one',
   scope: 'public',
-  generatedAt: '2026-05-28',
+  generatedAt: '2026-06-01',
   packageCount: packages.length,
   packages
 });

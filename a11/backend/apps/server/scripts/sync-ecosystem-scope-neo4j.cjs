@@ -180,8 +180,9 @@ async function syncScope(session, scope, endpoint) {
   for (const constraint of constraints) await session.run(constraint);
 
   await session.run(`
-    MERGE (scope:FunesterieEcosystemNode:FunesterieEcosystemScope {id: $id})
-    SET scope.label = $label,
+    MERGE (scope:FunesterieEcosystemNode {id: $id})
+    SET scope:FunesterieEcosystemScope,
+        scope.label = $label,
         scope.org = $org,
         scope.schema = $schema,
         scope.mode = $mode,
@@ -442,8 +443,9 @@ async function upsertNodes(session, label, nodes, scope, scopeRelType) {
   await session.run(`
     MATCH (scope:FunesterieEcosystemScope {id: $scopeId})
     UNWIND $rows AS item
-    MERGE (node:FunesterieEcosystemNode:${safeLabel} {id: item.id})
-    SET node += item.props,
+    MERGE (node:FunesterieEcosystemNode {id: item.id})
+    SET node:${safeLabel},
+        node += item.props,
         node.updatedAt = datetime($generatedAt)
     MERGE (scope)-[r:${safeScopeRel}]->(node)
     SET r.updatedAt = datetime($generatedAt)

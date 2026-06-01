@@ -43,7 +43,7 @@ const privatePackages = Object.freeze([
 module.exports = Object.freeze({
   name: '@funeste/all-in-one-nossen',
   scope: 'private',
-  generatedAt: '2026-05-25',
+  generatedAt: '2026-06-01',
   publicMetaPackage: '@nossen/all-in-one',
   privatePackageCount: privatePackages.length,
   privatePackages

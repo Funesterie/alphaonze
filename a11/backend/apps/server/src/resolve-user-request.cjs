@@ -252,6 +252,14 @@ function isImageTransformRequest(text = '') {
   return (transformCue && (referenceCue || imageCue)) || (visualFeedbackCue && (referenceCue || imageCue));
 }
 
+function isVisualFeedbackEditRequest(text = '') {
+  const normalized = normalizeLookup(text);
+  if (!normalized) return false;
+  const feedbackCue = /\b(mais|par contre|sauf que|pas bon|pas bonne|pas correct|pas correcte|mauvais|mauvaise|trop|pas assez|devrait|devrais|doit|doivent|elle a|il a|ils ont|elles ont|met|mets|ajoute|retire|change|corrige)\b/.test(normalized);
+  const visualAttributeCue = /\b(yeux|oeil|iris|regard|cheveux|peau|visage|bouche|nez|robe|tenue|couleur|bleu|bleue|bleus|bleues|vert|verte|verts|vertes|marron|noir|noire|roux|rousse|blond|blonde|rouge|violet|violette|grand|petit|sombre|clair)\b/.test(normalized);
+  return feedbackCue && visualAttributeCue;
+}
+
 function isExplicitImageGenerationRequest(text = '') {
   const normalized = normalizeLookup(text);
   if (!normalized) return false;
@@ -716,7 +724,7 @@ function createIntentResolver(overrides = {}) {
     const allowSafeSemanticFallback = shouldUseSemanticIntentFallback(llmIntentResult);
     const forcedReferenceImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
       && hasReferenceImageForRequest
-      && isImageTransformRequest(userText);
+      && (isImageTransformRequest(userText) || isVisualFeedbackEditRequest(userText));
     const forcedExplicitImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
       && isExplicitImageGenerationRequest(userText);
     const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
