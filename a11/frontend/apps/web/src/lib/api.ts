@@ -1269,13 +1269,34 @@ export async function fetchMcpCockpitAccount(): Promise<McpAccountProfile> {
   const tokenAtStart = getAuthToken();
   const usedBearer = !!tokenAtStart && !shouldUseCookieOnlyAuthSessionProbe();
   if (usedBearer) headers.Authorization = `Bearer ${tokenAtStart}`;
-  const res = await fetch(getApiUrl('/api/cockpit/mcp/me'), {
+  let res = await fetch(getApiUrl('/api/cockpit/mcp/me'), {
     method: 'GET',
     headers,
     credentials: 'include',
     cache: 'no-store',
   });
-  const data = await res.json().catch(() => ({ ok: false }));
+  let data = await res.json().catch(() => ({ ok: false }));
+  if (
+    (!res.ok || data?.ok === false)
+    && usedBearer
+    && isFunesterieSessionHost()
+    && (
+      res.status === 401
+      || data?.error === 'A11_JWT_Invalid'
+      || data?.error === 'A11_SESSION_REVOKED'
+    )
+  ) {
+    const retryRes = await fetch(getApiUrl('/api/cockpit/mcp/me'), {
+      method: 'GET',
+      headers: {},
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const retryData = await retryRes.json().catch(() => ({ ok: false }));
+    if (retryRes.ok && retryData?.ok !== false) return retryData.account || retryData;
+    res = retryRes;
+    data = retryData;
+  }
   if (!res.ok || data?.ok === false) {
     const error = new Error(data?.message || data?.error || `Compte MCP indisponible (${res.status})`) as Error & {
       status?: number;

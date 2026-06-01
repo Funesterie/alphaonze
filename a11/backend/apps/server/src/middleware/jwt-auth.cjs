@@ -18,7 +18,7 @@ function parseCookieHeader(headerValue) {
   return cookies;
 }
 
-function extractRequestAuthToken(req) {
+function extractRequestAuthTokenCandidates(req) {
   const headerToken = String(req?.headers?.['x-nez-token'] || '').trim();
   const bearerToken = String(req?.headers?.authorization || '')
     .replace(/^Bearer\s+/i, '')
@@ -29,10 +29,27 @@ function extractRequestAuthToken(req) {
     || ''
   ).trim();
 
-  if (looksLikeJwtToken(bearerToken)) return bearerToken;
-  if (looksLikeJwtToken(headerToken)) return headerToken;
-  if (looksLikeJwtToken(cookieToken)) return cookieToken;
-  return bearerToken || headerToken || cookieToken;
+  const ordered = [bearerToken, headerToken, cookieToken]
+    .map((token) => String(token || '').trim())
+    .filter((token, index, tokens) => token && looksLikeJwtToken(token) && tokens.indexOf(token) === index);
+
+  if (!ordered.length) {
+    const fallback = [bearerToken, headerToken, cookieToken]
+      .map((token) => String(token || '').trim())
+      .find(Boolean);
+    if (fallback) ordered.push(fallback);
+  }
+
+  return {
+    bearerToken,
+    headerToken,
+    cookieToken,
+    ordered,
+  };
+}
+
+function extractRequestAuthToken(req) {
+  return extractRequestAuthTokenCandidates(req).ordered[0] || '';
 }
 
 function isLoopbackRequest(req) {
@@ -85,9 +102,9 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false,
       return next();
     }
 
-    const token = extractRequestAuthToken(req);
+    const tokenCandidates = extractRequestAuthTokenCandidates(req).ordered;
 
-    if (!token) {
+    if (!tokenCandidates.length) {
       logger?.warn?.('[JWT] No token provided');
       return res.status(401).json({
         error: 'A11_JWT_Missing',
@@ -95,36 +112,43 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false,
       });
     }
 
-    try {
-      const decoded = jwt.verify(token, resolvedSecret);
-      if (authSessionRegistry && typeof authSessionRegistry.assertTokenCurrent === 'function') {
-        await authSessionRegistry.assertTokenCurrent(decoded);
+    let lastError = null;
+    for (const token of tokenCandidates) {
+      try {
+        const decoded = jwt.verify(token, resolvedSecret);
+        if (authSessionRegistry && typeof authSessionRegistry.assertTokenCurrent === 'function') {
+          await authSessionRegistry.assertTokenCurrent(decoded);
+        }
+        req.user = decoded;
+        req.authToken = token;
+        if (logSuccess) {
+          logger?.log?.('[JWT] ✅ Token vérifié');
+        }
+        return next();
+      } catch (err) {
+        lastError = err;
       }
-      req.user = decoded;
-      if (logSuccess) {
-        logger?.log?.('[JWT] ✅ Token vérifié');
-      }
-      return next();
-    } catch (err) {
-      if (err?.code === 'A11_SESSION_REVOKED') {
-        logger?.warn?.('[JWT] Session revoked');
-        return res.status(401).json({
-          error: 'A11_SESSION_REVOKED',
-          message: 'Session révoquée. Reconnecte-toi.',
-        });
-      }
-      logger?.warn?.('[JWT] Verification failed:', err?.message);
+    }
+
+    if (lastError?.code === 'A11_SESSION_REVOKED') {
+      logger?.warn?.('[JWT] Session revoked');
       return res.status(401).json({
-        error: 'A11_JWT_Invalid',
-        message: `JWT invalide ou expiré: ${err?.message}`,
+        error: 'A11_SESSION_REVOKED',
+        message: 'Session révoquée. Reconnecte-toi.',
       });
     }
+    logger?.warn?.('[JWT] Verification failed:', lastError?.message);
+    return res.status(401).json({
+      error: 'A11_JWT_Invalid',
+      message: `JWT invalide ou expiré: ${lastError?.message}`,
+    });
   };
 }
 
 module.exports = {
   looksLikeJwtToken,
   extractRequestAuthToken,
+  extractRequestAuthTokenCandidates,
   parseCookieHeader,
   shouldBypassJwtForLocalDev,
   createVerifyJWT,
