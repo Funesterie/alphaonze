@@ -1032,9 +1032,12 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
 
         const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
         if (response.ok && (contentType.startsWith('audio/') || contentType === 'application/octet-stream')) {
-          const convertedUrl = saveProviderAudioBuffer(
+          const requestedFormat = normalizeTtsAudioFormat(req?.body || {}, audioExtensionFromContentType(contentType, 'wav'));
+          const convertedUrl = await saveProviderAudioBufferForFormat(
             Buffer.from(await response.arrayBuffer()),
-            'xtts-rvc'
+            'xtts-rvc',
+            requestedFormat,
+            contentType
           );
           if (!convertedUrl) throw new Error('voice_conversion_empty_audio');
           await loadTtsAudioBuffer(audioUrl, { consume: true }).catch(() => null);
@@ -1044,6 +1047,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
             original_audio_url: audioUrl,
             audioUrl: convertedUrl,
             audio_url: convertedUrl,
+            audioFormat: /\.mp3(?:[?#].*)?$/i.test(convertedUrl) ? 'mp3' : audioExtensionFromContentType(contentType, requestedFormat),
             provider: PROVIDERS.XTTS_RVC,
             via: `${payload?.via || payload?.provider || 'tts'}+xtts-rvc`,
             providerCapabilities: {
@@ -1457,6 +1461,84 @@ function saveProviderAudioBuffer(buffer, provider = 'tts', extension = 'wav') {
   return buildBackendTtsOutPath(`/out/${outFileName}`);
 }
 
+function getAudioFfmpegBinary() {
+  return String(process.env.A11_AUDIO_FFMPEG_BIN || process.env.FFMPEG_BIN || 'ffmpeg').trim() || 'ffmpeg';
+}
+
+async function transcodeAudioBuffer(buffer, targetFormat = 'mp3') {
+  if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
+  const format = String(targetFormat || '').toLowerCase();
+  if (format !== 'mp3') return null;
+  const ttsDir = ensurePublicTtsDir();
+  const tempBase = `tts-transcode-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const inputPath = path.join(ttsDir, `${tempBase}.input`);
+  const outputPath = path.join(ttsDir, `${tempBase}.mp3`);
+  fs.writeFileSync(inputPath, buffer);
+  try {
+    await new Promise((resolve, reject) => {
+      const proc = spawn(getAudioFfmpegBinary(), [
+        '-y',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        inputPath,
+        '-vn',
+        '-ac',
+        '1',
+        '-ar',
+        '44100',
+        '-b:a',
+        '160k',
+        outputPath,
+      ], { windowsHide: true });
+      let stderr = '';
+      proc.stderr?.on?.('data', (chunk) => { stderr += String(chunk || ''); });
+      proc.on('error', reject);
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) return resolve();
+        reject(new Error(`ffmpeg_audio_transcode_failed:${code}:${stderr.slice(0, 300)}`));
+      });
+    });
+    return fs.readFileSync(outputPath);
+  } finally {
+    for (const item of [inputPath, outputPath]) {
+      try {
+        if (fs.existsSync(item)) fs.unlinkSync(item);
+      } catch {}
+    }
+  }
+}
+
+async function saveProviderAudioBufferForFormat(buffer, provider = 'tts', requestedFormat = 'wav', sourceContentType = '') {
+  const targetFormat = normalizeTtsAudioFormat({ audioFormat: requestedFormat }, 'wav');
+  const sourceExtension = audioExtensionFromContentType(sourceContentType, 'wav');
+  if (targetFormat === 'mp3' && sourceExtension !== 'mp3') {
+    try {
+      const converted = await transcodeAudioBuffer(buffer, 'mp3');
+      if (converted?.length) return saveProviderAudioBuffer(converted, provider, 'mp3');
+    } catch (error_) {
+      console.warn('[TTS] audio transcode to mp3 failed, keeping source format:', error_?.message || error_);
+    }
+  }
+  return saveProviderAudioBuffer(buffer, provider, sourceExtension || targetFormat || 'wav');
+}
+
+async function materializeTtsAudioUrlForFormat(audioUrl, requestedFormat = 'wav', provider = 'tts') {
+  const targetFormat = normalizeTtsAudioFormat({ audioFormat: requestedFormat }, 'wav');
+  if (targetFormat !== 'mp3') return null;
+  const raw = String(audioUrl || '').trim();
+  if (!raw || /\.mp3(?:[?#].*)?$/i.test(raw)) return null;
+  try {
+    const audio = await loadTtsAudioBuffer(raw);
+    if (!audio?.buffer?.length) return null;
+    return await saveProviderAudioBufferForFormat(audio.buffer, provider, 'mp3', audio.contentType || 'audio/wav');
+  } catch (error_) {
+    console.warn('[TTS] materialize mp3 failed, keeping remote source:', error_?.message || error_);
+    return null;
+  }
+}
+
 function audioExtensionFromContentType(contentType = '', fallback = 'wav') {
   const raw = String(contentType || '').trim().toLowerCase();
   if (raw.includes('mpeg') || raw.includes('mp3')) return 'mp3';
@@ -1516,6 +1598,8 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
           || synthesizePayload?.providerCapabilities?.referenceVoice === true
           || synthesizePayload?.voiceReference?.id;
         if (remoteAudioUrl && referenceAware) {
+          const materializedAudioUrl = await materializeTtsAudioUrlForFormat(remoteAudioUrl, audioFormat, 'xtts-rvc');
+          const finalAudioUrl = materializedAudioUrl || remoteAudioUrl;
           return {
             ...(synthesizePayload && typeof synthesizePayload === 'object' ? synthesizePayload : {}),
             success: true,
@@ -1523,8 +1607,11 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
             via: synthesizePayload?.via || 'a11-voice-module-persona',
             text,
             vocalMode,
-            audio_url: remoteAudioUrl,
-            audioUrl: remoteAudioUrl,
+            audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', audioFormat || 'wav'),
+            originalAudioUrl: materializedAudioUrl ? remoteAudioUrl : undefined,
+            original_audio_url: materializedAudioUrl ? remoteAudioUrl : undefined,
+            audio_url: finalAudioUrl,
+            audioUrl: finalAudioUrl,
             providerCapabilities: {
               ...(synthesizePayload?.providerCapabilities || {}),
               referenceVoice: true,
@@ -1586,7 +1673,12 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
       if (response.ok && (contentType.startsWith('audio/') || contentType === 'application/octet-stream')) {
         const extension = audioExtensionFromContentType(contentType, audioFormat || 'wav');
-        const audioUrl = saveProviderAudioBuffer(Buffer.from(await response.arrayBuffer()), 'xtts-rvc', extension);
+        const audioUrl = await saveProviderAudioBufferForFormat(
+          Buffer.from(await response.arrayBuffer()),
+          'xtts-rvc',
+          audioFormat || extension,
+          contentType
+        );
         if (!audioUrl) throw new Error('xtts_rvc_empty_audio');
         const rvcModel = response.headers?.get?.('x-a11-rvc-model') || '';
         const rvcIndex = response.headers?.get?.('x-a11-rvc-index') || '';
@@ -1596,7 +1688,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
           via: 'xtts-rvc-direct',
           text,
           vocalMode,
-          audioFormat: extension,
+          audioFormat: /\.mp3(?:[?#].*)?$/i.test(audioUrl) ? 'mp3' : extension,
           audio_url: audioUrl,
           audioUrl,
           providerCapabilities: { referenceVoice: true },
