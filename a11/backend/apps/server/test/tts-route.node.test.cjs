@@ -404,6 +404,99 @@ test('tts async official voice jobs can be claimed and completed by the local GP
   }
 });
 
+test('tts local GPU worker claims admin, family, then public jobs by priority', async () => {
+  const previousEnv = {
+    A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
+    A11_LOCAL_GPU_WORKER_ENABLED: process.env.A11_LOCAL_GPU_WORKER_ENABLED,
+    A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
+    A11_TTS_LOCAL_WORKER_TOKEN: process.env.A11_TTS_LOCAL_WORKER_TOKEN,
+    A11_LOCAL_GPU_WORKER_TOKEN_FILE: process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE,
+    A11_TTS_LOCAL_WORKER_TOKEN_FILE: process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE,
+    A11_LOCAL_GPU_WORKER_MAX_ACTIVE: process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE,
+  };
+  const wav = createPcm16Wav();
+
+  process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '1';
+  delete process.env.A11_LOCAL_GPU_WORKER_ENABLED;
+  process.env.A11_LOCAL_GPU_WORKER_TOKEN = 'test-priority-worker-token';
+  process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE = '3';
+  delete process.env.A11_TTS_LOCAL_WORKER_TOKEN;
+  delete process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE;
+  delete process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use((req, _res, next) => {
+          if (req.headers['x-test-user'] === 'admin') req.user = { role: 'admin', fullAccess: true };
+          next();
+        });
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const publicJob = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'public job',
+          persona: 'a11',
+          ttsAsync: true,
+          audioFormat: 'wav',
+        });
+        const familyJob = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'family job',
+          persona: 'a11',
+          ttsAsync: true,
+          audioFormat: 'wav',
+          priorityTier: 'family',
+        });
+        const adminJob = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'admin job',
+          persona: 'a11',
+          ttsAsync: true,
+          audioFormat: 'wav',
+        }, {
+          'x-test-user': 'admin',
+        });
+
+        assert.equal(publicJob.response.status, 202);
+        assert.equal(publicJob.json.priorityTier, 'public');
+        assert.equal(familyJob.response.status, 202);
+        assert.equal(familyJob.json.priorityTier, 'family');
+        assert.equal(adminJob.response.status, 202);
+        assert.equal(adminJob.json.priorityTier, 'admin');
+
+        const headers = { authorization: 'Bearer test-priority-worker-token' };
+        const first = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'priority-worker' }, headers);
+        const second = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'priority-worker' }, headers);
+        const third = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'priority-worker' }, headers);
+
+        assert.equal(first.response.status, 200);
+        assert.equal(first.json.job.id, adminJob.json.jobId);
+        assert.equal(first.json.job.priorityTier, 'admin');
+        assert.equal(second.json.job.id, familyJob.json.jobId);
+        assert.equal(second.json.job.priorityTier, 'family');
+        assert.equal(third.json.job.id, publicJob.json.jobId);
+        assert.equal(third.json.job.priorityTier, 'public');
+
+        for (const jobId of [adminJob.json.jobId, familyJob.json.jobId, publicJob.json.jobId]) {
+          const completed = await postJson(baseUrl, `/api/tts/local-worker/jobs/${jobId}/complete`, {
+            workerId: 'priority-worker',
+            audioBase64: wav.toString('base64'),
+            contentType: 'audio/wav',
+            engine: 'test-local-gpu',
+          }, headers);
+          assert.equal(completed.response.status, 200);
+          assert.equal(completed.json.state, 'done');
+        }
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio output', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,

@@ -49,6 +49,11 @@ const TTS_XTTS_RVC_DEFAULT_CONCURRENCY = 1;
 const TTS_XTTS_RVC_DEFAULT_QUEUE_MAX = 24;
 const LOCAL_GPU_WORKER_DEFAULT_MAX_ACTIVE = 1;
 const LOCAL_GPU_WORKER_DEFAULT_MAX_LEASE_EXPIRIES = 1;
+const TTS_PRIORITY_SCORES = {
+  admin: 100,
+  family: 60,
+  public: 10,
+};
 
 function configureTtsRouter(options = {}) {
   if (typeof options.verifyJWT === 'function') {
@@ -512,6 +517,38 @@ function fallbackLocalGpuJobToServer(job, reason = 'local_gpu_worker_fallback') 
   return true;
 }
 
+function isPrivilegedTtsUser(user = {}) {
+  const roles = [
+    user?.role,
+    user?.tier,
+    user?.plan,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+  return user?.isAdmin === true
+    || user?.admin === true
+    || user?.fullAccess === true
+    || roles.some((role) => ['admin', 'owner', 'founder', 'fondateur', 'djeff'].includes(role));
+}
+
+function resolveTtsPriorityLane(req = {}, body = {}) {
+  const raw = String(
+    body.priorityTier
+    || body.ttsPriorityTier
+    || body.priority
+    || body.audience
+    || body.accessTier
+    || ''
+  ).trim().toLowerCase();
+  const privileged = isPrivilegedTtsUser(req.user || {});
+  if (privileged) {
+    return { tier: 'admin', score: TTS_PRIORITY_SCORES.admin, label: 'Admin' };
+  }
+  if (['family', 'famille', 'premium'].includes(raw)) {
+    return { tier: 'family', score: TTS_PRIORITY_SCORES.family, label: 'Famille' };
+  }
+  return { tier: 'public', score: TTS_PRIORITY_SCORES.public, label: 'Public' };
+}
+
 function releaseStaleLocalGpuWorkerLeases(now = Date.now()) {
   const leaseMs = getLocalGpuWorkerLeaseMs();
   for (const job of ttsAsyncJobs.values()) {
@@ -544,6 +581,8 @@ function publicLocalGpuWorkerJob(job = {}) {
     id: job.id,
     kind: job.kind,
     queue: job.queue,
+    priorityTier: job.priorityTier || 'public',
+    priorityScore: Number(job.priorityScore || TTS_PRIORITY_SCORES.public),
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     leasedAt: job.leasedAt || null,
@@ -557,7 +596,11 @@ function findClaimableLocalGpuWorkerJob(now = Date.now()) {
   releaseStaleLocalGpuWorkerLeases(now);
   const jobs = Array.from(ttsAsyncJobs.values())
     .filter((job) => job?.worker === 'local-gpu' && job.state === 'queued')
-    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+    .sort((a, b) => {
+      const priorityDelta = Number(b.priorityScore || TTS_PRIORITY_SCORES.public) - Number(a.priorityScore || TTS_PRIORITY_SCORES.public);
+      if (priorityDelta) return priorityDelta;
+      return Number(a.createdAt || 0) - Number(b.createdAt || 0);
+    });
   return jobs[0] || null;
 }
 
@@ -571,6 +614,8 @@ function publicTtsAsyncJob(job = {}) {
     jobId: job.id || null,
     kind: job.kind || 'tts.speak',
     queue: job.queue || 'media.audio',
+    priorityTier: job.priorityTier || 'public',
+    priorityLabel: job.priorityLabel || null,
     state: job.state || 'queued',
     status: job.state || 'queued',
     statusCode: job.statusCode || null,
@@ -617,6 +662,11 @@ function buildTtsQueueSnapshot(now = Date.now()) {
     acc[state] = (acc[state] || 0) + 1;
     return acc;
   }, {});
+  const countsByPriority = jobs.reduce((acc, job) => {
+    const tier = String(job?.priorityTier || 'public');
+    acc[tier] = (acc[tier] || 0) + 1;
+    return acc;
+  }, {});
   const localJobs = jobs.filter((job) => job?.worker === 'local-gpu');
   const leaseMs = getLocalGpuWorkerLeaseMs();
   const activeAsync = jobs.filter(isActiveTtsAsyncJob);
@@ -638,6 +688,7 @@ function buildTtsQueueSnapshot(now = Date.now()) {
       active: activeAsync.length,
       max: getTtsAsyncQueueMax(),
       states: countsByState,
+      priorities: countsByPriority,
       oldestQueuedAgeMs: oldestQueuedAt ? Math.max(0, now - oldestQueuedAt) : null,
     },
     localGpu: {
@@ -3250,10 +3301,14 @@ function startTtsAsyncJob(req, res, options = {}) {
   }
   const body = buildAsyncTtsJobBody(req.body || {});
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
+  const priorityLane = resolveTtsPriorityLane(req, body);
   const job = {
     id: createTtsAsyncJobId(),
     kind: String(options.kind || body.jobKind || body.kind || 'tts.speak').trim() || 'tts.speak',
     queue: String(options.queue || body.queue || 'media.audio').trim() || 'media.audio',
+    priorityTier: priorityLane.tier,
+    priorityScore: priorityLane.score,
+    priorityLabel: priorityLane.label,
     statusUrlBase: String(options.statusUrlBase || '/api/tts/jobs').trim() || '/api/tts/jobs',
     orchestrator: buildBatRomeTtsOrchestrator(body),
     pollIntervalMs: Number(options.pollIntervalMs || 1500),

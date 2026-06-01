@@ -4347,6 +4347,127 @@ export async function fetchA11PortraitFramebook(): Promise<A11PortraitFramebook>
   return data as A11PortraitFramebook;
 }
 
+export type MatchArenaPriorityTier = 'admin' | 'family' | 'public';
+
+export type MatchArenaGame = {
+  id: string;
+  title: string;
+  source?: string;
+  rootLabel?: string;
+  playableCount?: number;
+  extensions?: Record<string, number>;
+  hasCover?: boolean;
+  playableFiles?: Array<{
+    name: string;
+    relativePath: string;
+    extension: string;
+    size?: number | null;
+  }>;
+  note?: string;
+};
+
+export type MatchArenaSession = {
+  id: string;
+  state: string;
+  status?: string;
+  gameId: string;
+  gameTitle: string;
+  mode?: string;
+  opponent?: string;
+  priorityTier?: MatchArenaPriorityTier;
+  priorityLabel?: string;
+  createdAt?: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  workerId?: string | null;
+  stream?: {
+    ready?: boolean;
+    mode?: string;
+    url?: string | null;
+  } | null;
+  export?: {
+    ready?: boolean;
+    localPath?: string | null;
+    drivePath?: string | null;
+    manifestUrl?: string | null;
+  } | null;
+  message?: string | null;
+  error?: string | null;
+  plan?: Record<string, unknown> | null;
+};
+
+export type MatchArenaStatus = {
+  ok: boolean;
+  enabled: boolean;
+  generatedAt?: string;
+  gamesRoot?: {
+    configured?: boolean;
+    localRootLabel?: string;
+    localRootAvailable?: boolean;
+  };
+  catalog?: {
+    count?: number;
+    sources?: Record<string, number>;
+    workerInventoryAt?: string | null;
+  };
+  queue?: {
+    total?: number;
+    active?: number;
+    states?: Record<string, number>;
+    priorities?: Record<string, number>;
+  };
+  worker?: {
+    configured?: boolean;
+    lastSeenAt?: string | null;
+    ageMs?: number | null;
+    online?: boolean;
+    heartbeat?: Record<string, unknown> | null;
+  };
+  architecture?: Record<string, string>;
+};
+
+export async function fetchMatchArenaStatus(): Promise<MatchArenaStatus> {
+  const res = await authFetch(getApiUrl('/api/match-arena/status'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Match Arena indisponible (${res.status})`);
+  }
+  return data as MatchArenaStatus;
+}
+
+export async function fetchMatchArenaGames(): Promise<MatchArenaGame[]> {
+  const res = await authFetch(getApiUrl('/api/match-arena/games'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Inventaire Match Arena indisponible (${res.status})`);
+  }
+  return (Array.isArray(data?.games) ? data.games : []) as MatchArenaGame[];
+}
+
+export async function createMatchArenaSession(input: {
+  gameId: string;
+  mode?: string;
+  opponent?: string;
+  priorityTier?: MatchArenaPriorityTier;
+}): Promise<MatchArenaSession> {
+  const res = await authFetch(getApiUrl('/api/match-arena/sessions'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify(input || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Session Match Arena refusee (${res.status})`);
+  }
+  return data.session as MatchArenaSession;
+}
+
 // ── Qonto Pro — lecture admin uniquement ─────────────────────────────────────
 
 export type QontoPublicConfig = {

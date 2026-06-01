@@ -13,6 +13,8 @@ import {
   fetchAuthConnectors,
   fetchMcpCockpitAccount,
   fetchMcpCockpitStatus,
+  fetchMatchArenaGames,
+  fetchMatchArenaStatus,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
@@ -23,6 +25,7 @@ import {
   chatWithVivy,
   createCheckoutSession,
   createCustomerPortal,
+  createMatchArenaSession,
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
@@ -60,6 +63,9 @@ import {
   type AuthConnectorProviderState,
   type AuthConnectorsResponse,
   type McpAccountProfile,
+  type MatchArenaGame,
+  type MatchArenaSession,
+  type MatchArenaStatus,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -5893,12 +5899,14 @@ function Kaen44ModulesPanel({
   onBackToChat,
   onOpenStudio,
   onOpenAccount,
+  onOpenArena,
   onQuickPrompt,
 }: {
   isCompactLayout: boolean;
   onBackToChat: () => void;
   onOpenStudio: () => void;
   onOpenAccount: () => void;
+  onOpenArena: () => void;
   onQuickPrompt: (prompt: string) => void;
 }) {
   const services = [
@@ -5923,6 +5931,9 @@ function Kaen44ModulesPanel({
             <button type="button" className="kaen-service-secondary" onClick={onOpenAccount}>
               Compte
             </button>
+            <button type="button" className="kaen-service-secondary" onClick={onOpenArena}>
+              Match
+            </button>
           </div>
         </div>
       </div>
@@ -5935,6 +5946,214 @@ function Kaen44ModulesPanel({
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
+  const [status, setStatus] = useState<MatchArenaStatus | null>(null);
+  const [games, setGames] = useState<MatchArenaGame[]>([]);
+  const [selectedGameId, setSelectedGameId] = useState("");
+  const [priorityTier, setPriorityTier] = useState<"admin" | "family" | "public">(
+    hasAdminApiAccess() ? "admin" : "public"
+  );
+  const [session, setSession] = useState<MatchArenaSession | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [nextStatus, nextGames] = await Promise.all([
+        fetchMatchArenaStatus(),
+        fetchMatchArenaGames(),
+      ]);
+      setStatus(nextStatus);
+      setGames(nextGames);
+      setSelectedGameId((current) => current || nextGames[0]?.id || "");
+    } catch (err) {
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const selectedGame = games.find((game) => game.id === selectedGameId) || null;
+  const workerOnline = status?.worker?.online === true;
+
+  const startSession = async () => {
+    if (!selectedGameId) return;
+    setStarting(true);
+    setError("");
+    try {
+      const nextSession = await createMatchArenaSession({
+        gameId: selectedGameId,
+        mode: "user-vs-ai",
+        opponent: "a11",
+        priorityTier,
+      });
+      setSession(nextSession);
+    } catch (err) {
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const pillStyle = (active: boolean): React.CSSProperties => ({
+    minHeight: 34,
+    borderRadius: 7,
+    border: `1px solid ${active ? "#38bdf8" : "#334155"}`,
+    background: active ? "rgba(14, 165, 233, 0.18)" : "rgba(15, 23, 42, 0.72)",
+    color: active ? "#e0f2fe" : "#cbd5e1",
+    fontWeight: 800,
+    fontSize: 12,
+    padding: "0 10px",
+    cursor: "pointer",
+  });
+
+  return (
+    <section
+      style={{
+        border: "1px solid #1f2937",
+        borderRadius: 14,
+        background: "#0b1220",
+        padding: isCompactLayout ? 14 : 16,
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+      aria-label="Match Arena"
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 18 }}>Match Arena</h3>
+          <p style={{ color: "#94a3b8", margin: "6px 0 0", fontSize: 13, maxWidth: 760 }}>
+            Sessions jeu avec inventaire local, file priorisee et exports Drive/OneDrive. Les fichiers de jeu restent sur ton PC.
+          </p>
+        </div>
+        <button type="button" className="btn ghost" onClick={refresh} disabled={loading} style={{ alignSelf: "flex-start" }}>
+          {loading ? "..." : "Actualiser"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isCompactLayout ? "1fr" : "repeat(4, minmax(0, 1fr))",
+          gap: 10,
+        }}
+      >
+        {[
+          ["Jeux", String(status?.catalog?.count ?? games.length)],
+          ["Worker", workerOnline ? "En ligne" : status?.worker?.configured ? "Attente" : "Token manquant"],
+          ["File", String(status?.queue?.active ?? 0)],
+          ["Priorites", Object.entries(status?.queue?.priorities || {}).map(([key, value]) => `${key}:${value}`).join(" ") || "calme"],
+        ].map(([label, value]) => (
+          <div key={label} style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d" }}>
+            <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>{label}</div>
+            <div style={{ color: "#e2e8f0", fontWeight: 800, marginTop: 4 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(260px, 420px) 1fr", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label style={{ color: "#cbd5e1", fontSize: 12, fontWeight: 800 }} htmlFor="match-arena-game">
+            Jeu local
+          </label>
+          <select
+            id="match-arena-game"
+            name="matchArenaGame"
+            value={selectedGameId}
+            onChange={(event) => setSelectedGameId(event.target.value)}
+            style={{
+              minHeight: 42,
+              borderRadius: 8,
+              border: "1px solid #334155",
+              background: "#020817",
+              color: "#e2e8f0",
+              padding: "0 10px",
+            }}
+          >
+            {games.length === 0 ? <option value="">Aucun jeu detecte</option> : null}
+            {games.map((game) => (
+              <option key={game.id} value={game.id}>{game.title}</option>
+            ))}
+          </select>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorite session">
+            {[
+              ["admin", "Admin"],
+              ["family", "Famille"],
+              ["public", "Public"],
+            ].map(([tier, label]) => (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => setPriorityTier(tier as "admin" | "family" | "public")}
+                style={pillStyle(priorityTier === tier)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={startSession}
+            disabled={!selectedGameId || starting}
+            className="btn primary"
+            style={{ justifyContent: "center", minHeight: 42 }}
+          >
+            {starting ? "Preparation..." : "Creer une session"}
+          </button>
+        </div>
+
+        <div style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d", color: "#cbd5e1", fontSize: 12 }}>
+          <div style={{ color: "#e2e8f0", fontWeight: 800, marginBottom: 8 }}>
+            {selectedGame?.title || "Inventaire"}
+          </div>
+          {selectedGame ? (
+            <>
+              <div>Source: {selectedGame.source || "local"}</div>
+              <div>Fichiers jouables: {selectedGame.playableCount ?? selectedGame.playableFiles?.length ?? 0}</div>
+              <div>Cover: {selectedGame.hasCover ? "oui" : "non"}</div>
+              <div style={{ marginTop: 8, color: "#94a3b8" }}>
+                {selectedGame.playableFiles?.slice(0, 4).map((file) => file.name).join(" | ") || "Aucun fichier affiche"}
+              </div>
+            </>
+          ) : (
+            <div>Le worker local doit publier l inventaire de C:\Users\Djeff\Desktop\jeux.</div>
+          )}
+          {session ? (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1f2937" }}>
+              <div style={{ color: "#e2e8f0", fontWeight: 800 }}>Session {session.state}</div>
+              <div>{session.gameTitle}</div>
+              <div>Priorite: {session.priorityLabel || session.priorityTier || "Public"}</div>
+              <div>Worker: {session.workerId || "en attente"}</div>
+              {session.export?.localPath ? <div>Export: {session.export.localPath}</div> : null}
+              {session.message ? <div style={{ marginTop: 6 }}>{session.message}</div> : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {error ? (
+        <div style={{ border: "1px solid #7f1d1d", background: "#2a0f0f", color: "#fecaca", borderRadius: 8, padding: 10, fontSize: 12 }}>
+          {error}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -5996,7 +6215,7 @@ function PersonaDashboard({
 }
 
 export function App() {
-  type AdminSection = "cockpit" | "memory" | "runtime" | "console" | "ai" | "subscription";
+  type AdminSection = "cockpit" | "arena" | "memory" | "runtime" | "console" | "ai" | "subscription";
   type AppView = "chat" | "admin" | "casino";
   const surfaceKind = getCurrentSurfaceKind();
   syncStoredSurface(surfaceKind);
@@ -6597,7 +6816,7 @@ export function App() {
 
   useEffect(() => {
     if (!isKaen44) return;
-    if (adminSection !== "cockpit" && adminSection !== "subscription") {
+    if (adminSection !== "cockpit" && adminSection !== "arena" && adminSection !== "subscription") {
       setAdminSection("cockpit");
     }
   }, [adminSection, isKaen44]);
@@ -9261,7 +9480,7 @@ export function App() {
               }}
             >
               <div style={{ width: '100%', maxWidth: 1080, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {(!isKaen44 || adminSection === 'subscription') ? (
+                {(!isKaen44 || adminSection === 'arena' || adminSection === 'subscription') ? (
                   <div
                     style={{
                       border: '1px solid #1f2937',
@@ -9299,6 +9518,9 @@ export function App() {
                       <button type="button" onClick={() => setAdminSection('cockpit')} style={adminTabButtonStyle('cockpit')}>
                         {isKaen44 ? "Services" : "Outils"}
                       </button>
+                      <button type="button" onClick={() => setAdminSection('arena')} style={adminTabButtonStyle('arena')}>
+                        Match
+                      </button>
                       {!isKaen44 ? (
                         <button type="button" onClick={() => setAdminSection('memory')} style={adminTabButtonStyle('memory')}>
                           Memoire
@@ -9333,9 +9555,14 @@ export function App() {
                       onBackToChat={openChatView}
                       onOpenStudio={openCasinoView}
                       onOpenAccount={() => setAdminSection('subscription')}
+                      onOpenArena={() => setAdminSection('arena')}
                       onQuickPrompt={openKaenQuickPrompt}
                     />
                   ) : <A11ControlCenterPanel />
+                ) : null}
+
+                {adminSection === 'arena' ? (
+                  <MatchArenaPanel isCompactLayout={isCompactLayout} />
                 ) : null}
 
                 {!isKaen44 && adminSection === 'ai' ? (

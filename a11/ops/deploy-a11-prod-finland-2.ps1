@@ -490,6 +490,8 @@ services:
       A11_LOCAL_GPU_WORKER_MAX_ACTIVE: ${A11_LOCAL_GPU_WORKER_MAX_ACTIVE:-1}
       A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES: ${A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES:-1}
       A11_TTS_ASYNC_QUEUE_MAX: ${A11_TTS_ASYNC_QUEUE_MAX:-50}
+      A11_MATCH_ARENA_ENABLED: ${A11_MATCH_ARENA_ENABLED:-true}
+      A11_MATCH_ARENA_WORKER_TOKEN_FILE: ${A11_MATCH_ARENA_WORKER_TOKEN_FILE:-/app/runtime/secrets/match_arena_worker_token}
     depends_on:
       a11-postgres:
         condition: service_healthy
@@ -558,6 +560,8 @@ services:
       A11_LOCAL_GPU_WORKER_MAX_ACTIVE: ${A11_LOCAL_GPU_WORKER_MAX_ACTIVE:-1}
       A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES: ${A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES:-1}
       A11_TTS_ASYNC_QUEUE_MAX: ${A11_TTS_ASYNC_QUEUE_MAX:-50}
+      A11_MATCH_ARENA_ENABLED: ${A11_MATCH_ARENA_ENABLED:-true}
+      A11_MATCH_ARENA_WORKER_TOKEN_FILE: ${A11_MATCH_ARENA_WORKER_TOKEN_FILE:-/app/runtime/secrets/match_arena_worker_token}
       A11_PRODUCT: kaen44
       A11_INSTANCE_NAME: Kaen44
       A11_RUNTIME_PROFILE: kaen44
@@ -930,6 +934,8 @@ $overrides = [ordered]@{
   A11_LOCAL_GPU_WORKER_MAX_ACTIVE = $(if ($env:A11_LOCAL_GPU_WORKER_MAX_ACTIVE) { $env:A11_LOCAL_GPU_WORKER_MAX_ACTIVE } else { "1" })
   A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES = $(if ($env:A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES) { $env:A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES } else { "1" })
   A11_TTS_ASYNC_QUEUE_MAX = $(if ($env:A11_TTS_ASYNC_QUEUE_MAX) { $env:A11_TTS_ASYNC_QUEUE_MAX } else { "50" })
+  A11_MATCH_ARENA_ENABLED = $(if ($env:A11_MATCH_ARENA_ENABLED) { $env:A11_MATCH_ARENA_ENABLED } else { "true" })
+  A11_MATCH_ARENA_WORKER_TOKEN_FILE = $(if ($env:A11_MATCH_ARENA_WORKER_TOKEN_FILE) { $env:A11_MATCH_ARENA_WORKER_TOKEN_FILE } else { "/app/runtime/secrets/match_arena_worker_token" })
   VIVY_ALEXA_TRACK_URL = "https://files.funesterie.me/public/vivy/2026-05-14/6e66f829-2c46-4254-95c8-4757a75ca07d-vivy-reference-short.mp3"
   VIVY_ALEXA_TRACK_TITLE = "Vivy Reference"
   VIVY_ALEXA_TRACK_ARTIST = "Funesterie"
@@ -981,7 +987,7 @@ if ($LASTEXITCODE -ne 0) { throw "Creation archive echouee" }
 $archiveSizeMb = [Math]::Round((Get-Item -LiteralPath $Archive).Length / 1MB, 2)
 Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCyan
 
-$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
+$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 

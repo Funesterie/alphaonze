@@ -6605,6 +6605,10 @@ const { createVivyStudioRouter } = require('./src/routes/vivy-studio.cjs');
 app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
+const createMatchArenaRouter = require('./routes/match-arena.cjs');
+app.use('/api/match-arena', createMatchArenaRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+console.log('[Server] Match Arena routes mounted under /api/match-arena');
+
 // Qflush Flow — A11 contrôle ses flows directement (Jarvis mode)
 const createQflushFlowRouter = require('./src/routes/qflush-flow.cjs');
 app.use('/api/qflush/admin', verifyJWT); // admin routes nécessitent JWT
