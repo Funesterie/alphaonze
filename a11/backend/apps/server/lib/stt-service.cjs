@@ -258,7 +258,7 @@ function normalizeMimeType(mimeType) {
   const raw = String(mimeType || 'audio/webm').trim().toLowerCase();
   // Normaliser les variantes courantes
   if (raw.includes('webm')) return 'audio/webm';
-  if (raw.includes('mp4') || raw.includes('m4a')) return 'audio/mp4';
+  if (raw.includes('mp4') || raw.includes('m4a') || raw.includes('quicktime')) return 'audio/mp4';
   if (raw.includes('wav')) return 'audio/wav';
   if (raw.includes('ogg')) return 'audio/ogg';
   if (raw.includes('mp3') || raw.includes('mpeg')) return 'audio/mpeg';
@@ -270,6 +270,7 @@ function mimeTypeToExt(mimeType) {
   const map = {
     'audio/webm': 'webm',
     'audio/mp4': 'mp4',
+    'video/quicktime': 'mov',
     'audio/wav': 'wav',
     'audio/ogg': 'ogg',
     'audio/mpeg': 'mp3',

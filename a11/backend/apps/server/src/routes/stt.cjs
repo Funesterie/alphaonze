@@ -44,10 +44,12 @@ const upload = multer({
       'audio/x-wav',
       'audio/x-m4a',
       'video/webm', // certains navigateurs envoient video/webm pour les enregistrements micro
+      'video/mp4',
+      'video/quicktime',
     ];
     // Accepter aussi si le nom de fichier a une extension audio connue
     const ext = (file.originalname || '').split('.').pop().toLowerCase();
-    const allowedExts = ['webm', 'mp4', 'm4a', 'wav', 'ogg', 'mp3', 'flac'];
+    const allowedExts = ['webm', 'mp4', 'm4a', 'mov', 'wav', 'ogg', 'mp3', 'flac'];
     if (allowed.includes(file.mimetype) || allowedExts.includes(ext)) {
       cb(null, true);
     } else {

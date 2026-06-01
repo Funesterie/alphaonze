@@ -1218,6 +1218,20 @@ function isLastImageRecallRequest(value: string) {
     && !/\b(genere|cree|fabrique|nouvelle|nouveau)\b/.test(text);
 }
 
+function isImageInspectionRequest(value: string) {
+  const text = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, " ")
+    .toLowerCase()
+    .trim();
+  if (!text) return false;
+  if (/\b(genere|cree|fabrique|dessine|rajoute|ajoute|modifie|retouche|transforme|remplace|anime|video)\b/.test(text)) {
+    return false;
+  }
+  return /\b(c est qui|c est quoi|qui est ce|qui c est|qui est sur|c quoi|qu est ce que c est|que vois tu|qu y a t il|decris|decrit|analyse|identifie|reconnais|tu vois quoi|image|photo|visuel|capture|dessus)\b/.test(text);
+}
+
 function findLastVisibleMedia(messages: ChatMessage[]) {
   const list = Array.isArray(messages) ? [...messages].reverse() : [];
   for (const message of list) {
@@ -6540,7 +6554,7 @@ export function App() {
   const [portraitFramebook, setPortraitFramebook] = useState<A11PortraitFramebook>(DEFAULT_A11_PORTRAIT_FRAMEBOOK);
   const [portraitFrameIndex, setPortraitFrameIndex] = useState(0);
   // File d'attente : messages envoyés pendant qu'A11 réfléchit
-  const messageQueueRef = useRef<string[]>([]);
+  const messageQueueRef = useRef<Array<{ text: string; imageUrl?: string }>>([]);
   const queueProcessingRef = useRef(false);
 
   useEffect(() => {
@@ -7539,6 +7553,7 @@ export function App() {
       }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
     }
 
+    const audioTranscriptByName = new Map<string, string>();
     if (audioFiles.length > 0) {
       setAudioTranscribing(true);
       setUploadFeedback(`Transcription audio de ${audioFiles.length} fichier(s)...`);
@@ -7548,6 +7563,7 @@ export function App() {
         try {
           const transcript = await transcribeAudioFile(file, { language: selectedA11Language.sttCode, provider: "auto" });
           if (transcript.text) {
+            audioTranscriptByName.set(file.name, transcript.text);
             transcriptBlocks.push(`[audio:${file.name}]\n${transcript.text}`);
           } else {
             failedAudio.push(file.name);
@@ -7560,6 +7576,15 @@ export function App() {
       if (transcriptBlocks.length > 0) {
         setInput((prev) => {
           const nextText = transcriptBlocks.join("\n\n");
+          return prev ? `${prev}\n${nextText}` : nextText;
+        });
+      }
+      if (failedAudio.length > 0) {
+        const fallbackBlocks = failedAudio.map((name) => (
+          `[audio:${name}]\nAudio importe. La transcription automatique n'a pas abouti; garde ce fichier comme contexte de conversation et signale si tu as besoin d'un extrait plus court.`
+        ));
+        setInput((prev) => {
+          const nextText = fallbackBlocks.join("\n\n");
           return prev ? `${prev}\n${nextText}` : nextText;
         });
       }
@@ -7576,15 +7601,36 @@ export function App() {
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
       const failed: string[] = [];
+      const resourceBlocks: string[] = [];
       setUploadFeedback(`Import de ${nonImageFiles.length} fichier(s) en cours...`);
       for (const file of nonImageFiles) {
         try {
-          await uploadConversationFile(file, { conversationId });
+          const upload = await uploadConversationFile(file, { conversationId });
+          const resource = upload.conversationResource || upload.file || null;
+          const resourceId = String(resource?.id || resource?.storageKey || "").trim();
+          const resourceUrl = String(resource?.downloadUrl || resource?.url || "").trim();
+          const kind = isAudioLikeFile(file) ? "audio" : "fichier";
+          const transcriptAlreadyInjected = isAudioLikeFile(file) && audioTranscriptByName.has(file.name);
+          const parts = [
+            `[${kind}-joint:${file.name}]`,
+            resourceId ? `id=${resourceId}` : "",
+            resourceUrl ? `url=${resourceUrl}` : "",
+            transcriptAlreadyInjected
+              ? "Transcription ajoutee plus haut."
+              : "Fichier rattache a la conversation; utilise-le comme contexte si necessaire.",
+          ].filter(Boolean);
+          resourceBlocks.push(parts.join(" "));
           uploaded.push(file.name);
         } catch (error_) {
           console.warn("[A11] file upload failed", file.name, error_);
           failed.push(file.name);
         }
+      }
+      if (resourceBlocks.length > 0) {
+        setInput((prev) => {
+          const nextText = resourceBlocks.join("\n");
+          return prev ? `${prev}\n${nextText}` : nextText;
+        });
       }
       if (conversationId) {
         await refreshConversationActivity(conversationId);
@@ -7695,9 +7741,14 @@ export function App() {
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
     const allImageUrls = imageUrls.map((u) => resolveApiAssetUrl(u) || u).filter(Boolean);
     const previewImageUrl = allImageUrls[0] ?? "";
-    const sourceImageUrl = previewImageUrl || undefined;
-    const effectiveText = cleanedInput || (sourceImageUrl ? "Image jointe." : text);
+    const explicitSourceImageUrl = previewImageUrl || undefined;
+    const effectiveText = cleanedInput || (explicitSourceImageUrl ? "Image jointe." : text);
     if (!effectiveText) return;
+    const lastMediaForVision = !explicitSourceImageUrl && isImageInspectionRequest(effectiveText)
+      ? findLastVisibleMedia(messages)
+      : null;
+    const sourceImageUrl = explicitSourceImageUrl
+      || (lastMediaForVision?.kind === "image" ? lastMediaForVision.url : undefined);
     const submitKey = normalizeOutgoingMessageKey(`${effectiveText}\n${sourceImageUrl || ""}`);
     const now = Date.now();
     if (
@@ -7717,7 +7768,7 @@ export function App() {
       id: `u-${Date.now()}`,
       role: "user",
       content: effectiveText,
-      imageUrl: previewImageUrl || null,
+      imageUrl: previewImageUrl || (sourceImageUrl && isImageInspectionRequest(effectiveText) ? sourceImageUrl : null),
       imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
       ts: new Date().toISOString(),
     };
@@ -7759,7 +7810,7 @@ export function App() {
 
     // Si A11 traite déjà, mettre en file : l'utilisateur peut continuer à écrire
     if (queueProcessingRef.current) {
-      messageQueueRef.current.push(effectiveText);
+      messageQueueRef.current.push({ text: effectiveText, imageUrl: sourceImageUrl });
       return;
     }
 
@@ -7788,7 +7839,7 @@ export function App() {
       ) {
         // Drainer la queue avant de continuer
         while (messageQueueRef.current.length > 0) {
-          toProcess.push({ text: messageQueueRef.current.shift()! });
+          toProcess.push(messageQueueRef.current.shift()!);
         }
         continue;
       }
@@ -7887,7 +7938,7 @@ export function App() {
 
       // Absorber les messages arrivés pendant ce traitement
       while (messageQueueRef.current.length > 0) {
-        toProcess.push({ text: messageQueueRef.current.shift()! });
+        toProcess.push(messageQueueRef.current.shift()!);
       }
     }
 

@@ -30,7 +30,7 @@ CONVERSION_PROVIDER = os.environ.get("A11_VOICE_CONVERTER_PROVIDER", "ffmpeg").s
 DEFAULT_CONVERSION_STRENGTH = float(os.environ.get("A11_VOICE_CONVERSION_STRENGTH", "0.45") or "0.45")
 DEFAULT_F0_SHIFT = float(os.environ.get("A11_VOICE_DEFAULT_F0_SHIFT", "-1.5") or "-1.5")
 VIVY_CONVERSION_STRENGTH = float(os.environ.get("A11_VIVY_VOICE_CONVERSION_STRENGTH", "0.28") or "0.28")
-VIVY_DEFAULT_F0_SHIFT = float(os.environ.get("A11_VIVY_VOICE_DEFAULT_F0_SHIFT", "-0.75") or "-0.75")
+VIVY_DEFAULT_F0_SHIFT = float(os.environ.get("A11_VIVY_VOICE_DEFAULT_F0_SHIFT", "0") or "0")
 XTTS_RVC_URL = (
     os.environ.get("A11_VOICE_XTTS_RVC_URL")
     or os.environ.get("A11_XTTS_RVC_URL")

@@ -6774,7 +6774,7 @@ app.get('/api/storage/session-drive/status', verifyJWT, async (req, res) => {
   }
 });
 
-app.post('/api/files/upload', express.json({ limit: '20mb' }), async (req, res) => {
+app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_BODY_LIMIT || '64mb' }), async (req, res) => {
   try {
     let userId = String(req.user?.id || '').trim();
     // Permettre l'appel interne (A11/Qflush) sans JWT via un header spécial
@@ -11057,13 +11057,49 @@ function buildRequestMessagesFromBody(body) {
   ];
 }
 
+function normalizeImageIntentText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function extractSourceImageReferenceFromBody(body = {}) {
+  const direct = String(
+    body?.sourceImageUrl
+    || body?.source_image_url
+    || body?.imageUrl
+    || body?.image_url
+    || body?.referenceImageUrl
+    || body?.reference_image_url
+    || ''
+  ).trim();
+  if (direct) return direct;
+
+  const sourceMessages = Array.isArray(body?.messages) ? body.messages : [];
+  for (let index = sourceMessages.length - 1; index >= 0; index -= 1) {
+    const content = String(sourceMessages[index]?.content || '');
+    const match = content.match(/\[(?:image|image-data):([^\]]+)\]/i);
+    if (match?.[1]) return String(match[1]).trim();
+  }
+  return '';
+}
+
 function detectConversationImageReason(body) {
   const latestUserMessage = getLatestUserMessage(body || {});
-  const text = String(latestUserMessage || '').trim().toLowerCase();
+  const text = normalizeImageIntentText(latestUserMessage);
   if (!text) return null;
 
-  const asksAboutCurrentImage = /(cette image|l'image|mon image|image importee|image importé|image importee|photo importee|photo importée|capture|fichier import[eé]|fichier joint|piece jointe|pi[eè]ce jointe|dessus|sur l'image|dans l'image|que vois-tu|que voit tu|qu'y a-t-il|qu'y a t il|qui a t'il|decris|décris|analyse)/i.test(text);
-  if (!asksAboutCurrentImage) return null;
+  const hasImageReference = Boolean(extractSourceImageReferenceFromBody(body))
+    || /\[(?:image|image-data):/i.test(String(latestUserMessage || ''));
+  const asksAboutCurrentImage = /(cette image|l image|mon image|image jointe|image importee|photo importee|capture|fichier importe|fichier joint|piece jointe|dessus|sur l image|dans l image|que vois tu|qu y a t il|qui a t il|decris|decrit|analyse|identifie|reconnais|c est qui|c est quoi|qui est ce|qui c est|qui est sur|c quoi|qu est ce que c est|tu vois quoi)/i.test(text);
+  const shortVisualQuestion = hasImageReference
+    && /^(c est qui|c est quoi|c quoi|qui est ce|qui c est|qui est sur|quoi|qui|tu vois quoi)\s*\??$/i.test(text);
+  if (!asksAboutCurrentImage && !shortVisualQuestion) return null;
+  if (shortVisualQuestion) return 'identifier ou decrire l image jointe';
   return 'analyser la derniere image de la conversation';
 }
 
@@ -11341,13 +11377,22 @@ function buildDirectSafeUserEnvelope(body, { conversationId, userId, overrideIma
   }
 
   if (detectConversationImageReason(body)) {
+    const sourceImageRef = extractSourceImageReferenceFromBody(body);
     return {
       version: 'a11-envelope-1',
       mode: 'actions',
       conversationId,
       userId,
       actions: [
-        { name: 'vision_analyze', id: 'vision-1', arguments: { conversationId, task: 'describe' } },
+        {
+          name: 'vision_analyze',
+          id: 'vision-1',
+          arguments: {
+            conversationId,
+            task: 'describe',
+            ...(sourceImageRef ? { url: sourceImageRef } : {}),
+          },
+        },
       ],
     };
   }

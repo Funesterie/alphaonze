@@ -74,6 +74,15 @@ To fabricate the persona models instead of pretending they exist, first build ap
 from local voice references:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\Update-FunesterieVoiceCorpus.ps1
+```
+
+The corpus helper refreshes `D:\agent-bus\voice\personas\corpus-status.json` for A11, Kaen44,
+and Vivy from the local approved voice library. Voices do not improve by themselves at runtime:
+the reference clips, dataset manifests, RVC `.pth`/`.index` artifacts, and bridge tuning are the
+parts that must be improved deliberately.
+
+```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File D:\projets\funesterie\a11\ops\voice\New-RvcPersonaDataset.ps1 `
   -Persona a11 `
   -Source D:\projets\funesterie\a11\backend\runtime\voice-library\a11-terminator.wav

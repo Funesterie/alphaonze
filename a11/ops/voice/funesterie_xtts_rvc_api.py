@@ -34,7 +34,7 @@ VOICES_DIR = ROOT / "voices"
 RVCS_DIR = ROOT / "rvcs"
 OUT_DIR = Path(os.environ.get("A11_XTTS_RVC_OUT_DIR", ROOT / "outputs")).resolve()
 LANGUAGE = os.environ.get("A11_XTTS_RVC_LANGUAGE", "fr").strip() or "fr"
-INDEX_RATE = float(os.environ.get("A11_XTTS_RVC_INDEX_RATE", "0.75") or "0.75")
+INDEX_RATE = float(os.environ.get("A11_XTTS_RVC_INDEX_RATE", "0.45") or "0.45")
 HOST = os.environ.get("A11_XTTS_RVC_HOST", "127.0.0.1")
 PORT = int(os.environ.get("A11_XTTS_RVC_PORT", "5000") or "5000")
 PERSONA_MANIFEST_PATH = Path(
@@ -209,6 +209,50 @@ def resolve_persona_binding(style: str) -> dict:
     }
 
 
+STYLE_RVC_TUNING = {
+    "terminator": {
+        "pitch": -1.0,
+        "index_rate": 0.5,
+        "rms_mix_rate": 0.38,
+        "protect": 0.28,
+    },
+    "donna": {
+        "pitch": 0.0,
+        "index_rate": 0.42,
+        "rms_mix_rate": 0.48,
+        "protect": 0.35,
+    },
+    "vivy": {
+        "pitch": 0.0,
+        "index_rate": 0.28,
+        "rms_mix_rate": 0.58,
+        "protect": 0.48,
+    },
+}
+
+
+def env_float(name: str, fallback: float) -> float:
+    try:
+        return float(os.environ.get(name, str(fallback)) or fallback)
+    except Exception:
+        return fallback
+
+
+def resolve_rvc_tuning(style: str, requested_pitch: Optional[float] = None) -> dict:
+    defaults = STYLE_RVC_TUNING.get(style, STYLE_RVC_TUNING["terminator"])
+    style_key = style.upper().replace("-", "_")
+    pitch = requested_pitch if requested_pitch is not None else env_float(
+        f"A11_XTTS_RVC_{style_key}_PITCH",
+        defaults["pitch"],
+    )
+    return {
+        "pitch": int(round(float(pitch))),
+        "index_rate": max(0.0, min(1.0, env_float(f"A11_XTTS_RVC_{style_key}_INDEX_RATE", defaults["index_rate"]))),
+        "rms_mix_rate": max(0.0, min(1.0, env_float(f"A11_XTTS_RVC_{style_key}_RMS_MIX_RATE", defaults["rms_mix_rate"]))),
+        "protect": max(0.0, min(0.5, env_float(f"A11_XTTS_RVC_{style_key}_PROTECT", defaults["protect"]))),
+    }
+
+
 def load_trusted_xtts_model():
     original_torch_load = torch.load
 
@@ -286,6 +330,8 @@ def run_rvc(
     pitch: int,
     index_rate: float,
     index_path: Optional[Path] = None,
+    rms_mix_rate: float = 0.5,
+    protect: float = 0.35,
 ) -> None:
     ensure_rvc_runtime()
     if _rvc_data is None:
@@ -308,8 +354,8 @@ def run_rvc(
         net_g=_rvc_data.net_g,
         filter_radius=3,
         tgt_sr=_rvc_data.tgt_sr,
-        rms_mix_rate=0.25,
-        protect=0,
+        rms_mix_rate=rms_mix_rate,
+        protect=protect,
         crepe_hop_length=0,
         vc=_rvc_data.vc,
         hubert_model=_hubert_model,
@@ -379,15 +425,17 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
             )
 
             engine = "xtts-reference"
+            tuning = resolve_rvc_tuning(style, f0_shift)
             if rvc_path.exists():
-                pitch = int(round(float(f0_shift if f0_shift is not None else 0)))
                 run_rvc(
                     xtts_path,
                     final_path,
                     rvc_path,
-                    pitch,
-                    INDEX_RATE,
+                    tuning["pitch"],
+                    tuning["index_rate"],
                     index_path=rvc_index_path if rvc_index_path.exists() else None,
+                    rms_mix_rate=tuning["rms_mix_rate"],
+                    protect=tuning["protect"],
                 )
                 engine = "xtts-rvc"
             else:
@@ -408,6 +456,7 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
         "rvcIndexPath": rvc_index_path,
         "hasRvc": rvc_path.exists(),
         "hasRvcIndex": rvc_index_path.exists(),
+        "tuning": tuning,
     }
 
 
@@ -427,6 +476,7 @@ def health():
             "hasVoice": binding["hasVoice"],
             "hasRvc": binding["hasRvc"],
             "hasIndex": binding["hasIndex"],
+            "tuning": resolve_rvc_tuning(style),
         }
     return {
         "ok": True,
@@ -510,6 +560,7 @@ def synthesize_voice(req: SynthesizeRequest):
             "attemptedEngines": [result["engine"]],
             "rvcModel": rvc_path.name if rvc_path.exists() else "",
             "rvcIndex": rvc_index_path.name if rvc_index_path.exists() else "",
+            "tuning": result.get("tuning"),
         },
     }
 

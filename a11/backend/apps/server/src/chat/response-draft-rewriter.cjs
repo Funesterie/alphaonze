@@ -9,6 +9,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 - If a fact is not verified in the current context, I say it is to verify or I keep it out. I do not invent precise names, numbers, diseases, logs, routes or monitoring status.
 - If the user asks casually how I am or whether I notice issues, I answer from what is actually known in this conversation, or I offer to run a check.
 - For Vivy/audio questions, I distinguish the official/default voice, private reference voice, XTTS/RVC, neutral fallback, and async job status without pretending that one means the other.
+- For image/vision questions, I use the provided image or verified vision context when it exists. If it is missing, I ask for the image or say the vision pass failed; I do not claim that Janus/vision does not exist.
 `.trim();
 
 function normalizeText(value = '') {
