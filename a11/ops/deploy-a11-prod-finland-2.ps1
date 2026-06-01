@@ -189,7 +189,7 @@ function Assert-FunesterieWebBundle([string]$DistRoot, [string]$Label) {
   $content = Get-Content -LiteralPath $bundle.FullName -Raw
   $requiredMarkers = @(
     "a11-menu-voice-tools",
-    "Défaut ref"
+    "a11-menu-voice-current"
   )
   foreach ($marker in $requiredMarkers) {
     if ($content -notlike "*$marker*") {
