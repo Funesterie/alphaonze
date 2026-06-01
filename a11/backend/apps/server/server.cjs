@@ -8625,10 +8625,14 @@ function getLocalCompletionsUrl() {
     String(process.env.LLM_ROUTER_URL || '').trim(),
     'LLM_ROUTER_URL'
   );
+  const ollamaBase = sanitizeConfiguredLocalUpstream(
+    String(process.env.OLLAMA_BASE || process.env.A11_OLLAMA_BASE || '').trim(),
+    process.env.OLLAMA_BASE?.trim() ? 'OLLAMA_BASE' : 'A11_OLLAMA_BASE'
+  );
   const inferredLocalBase = (String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production')
     ? `http://127.0.0.1:${String(process.env.LLAMA_PORT || process.env.LOCAL_LLM_PORT || '8080').trim() || '8080'}`
     : '';
-  const base = routerBase || explicitBase || inferredLocalBase;
+  const base = routerBase || explicitBase || ollamaBase || inferredLocalBase;
   if (!base) return null;
   const normalized = base.replace(/\/$/, '');
   return normalized.endsWith('/v1') ? `${normalized}/chat/completions` : `${normalized}/v1/chat/completions`;

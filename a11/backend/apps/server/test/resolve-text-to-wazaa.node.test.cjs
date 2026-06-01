@@ -195,6 +195,50 @@ test('resolveTranslationConfig supports OpenRouter provider with only the scoped
   }
 });
 
+test('resolveTranslationConfig keeps remote structured model compatible when main provider is Ollama', () => {
+  const previous = {
+    A11_TRANSLATION_BASE_URL: process.env.A11_TRANSLATION_BASE_URL,
+    LLM_ROUTER_URL: process.env.LLM_ROUTER_URL,
+    OLLAMA_BASE: process.env.OLLAMA_BASE,
+    A11_TRANSLATION_API_KEY: process.env.A11_TRANSLATION_API_KEY,
+    A11_TRANSLATION_MODEL: process.env.A11_TRANSLATION_MODEL,
+    A11_LLM_PROVIDER: process.env.A11_LLM_PROVIDER,
+    A11_OPENAI_MODEL: process.env.A11_OPENAI_MODEL,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    A11_OLLAMA_PRIMARY_MODEL: process.env.A11_OLLAMA_PRIMARY_MODEL,
+  };
+
+  process.env.A11_TRANSLATION_BASE_URL = 'https://openrouter.ai/api/v1';
+  process.env.LLM_ROUTER_URL = '';
+  process.env.OLLAMA_BASE = 'http://127.0.0.1:11434';
+  setEnv('A11_TRANSLATION_API_KEY', '');
+  process.env.A11_TRANSLATION_MODEL = '';
+  process.env.A11_LLM_PROVIDER = 'ollama';
+  process.env.A11_OPENAI_MODEL = 'meta-llama/llama-3.3-70b-instruct';
+  process.env.OPENAI_MODEL = '';
+  process.env.OPENROUTER_API_KEY = 'openrouter-test-key';
+  process.env.A11_OLLAMA_PRIMARY_MODEL = 'gpt-oss:20b-cloud';
+
+  try {
+    const config = resolveTranslationConfig();
+    assert.equal(config.url, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(config.model, 'meta-llama/llama-3.3-70b-instruct');
+    assert.equal(config.isConfigured, true);
+  } finally {
+    process.env.A11_TRANSLATION_BASE_URL = previous.A11_TRANSLATION_BASE_URL;
+    process.env.LLM_ROUTER_URL = previous.LLM_ROUTER_URL;
+    process.env.OLLAMA_BASE = previous.OLLAMA_BASE;
+    setEnv('A11_TRANSLATION_API_KEY', previous.A11_TRANSLATION_API_KEY);
+    process.env.A11_TRANSLATION_MODEL = previous.A11_TRANSLATION_MODEL;
+    process.env.A11_LLM_PROVIDER = previous.A11_LLM_PROVIDER;
+    process.env.A11_OPENAI_MODEL = previous.A11_OPENAI_MODEL;
+    process.env.OPENAI_MODEL = previous.OPENAI_MODEL;
+    process.env.OPENROUTER_API_KEY = previous.OPENROUTER_API_KEY;
+    process.env.A11_OLLAMA_PRIMARY_MODEL = previous.A11_OLLAMA_PRIMARY_MODEL;
+  }
+});
+
 test('isLlmEnrichmentEnabled still supports explicit scoped translation keys', () => {
   const previous = {
     A11_WAZAA_LLM_ENRICH: process.env.A11_WAZAA_LLM_ENRICH,

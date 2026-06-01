@@ -183,8 +183,17 @@ function resolveTranslationConfig() {
   const baseUrl = explicitTranslationBaseUrl || routerBaseUrl || localStructuredLlmBaseUrl || genericOpenAiBaseUrl || '';
   const url = buildChatCompletionsUrl(baseUrl);
   const isOpenRouterBaseUrl = /openrouter\.ai/i.test(baseUrl);
+  const isRemoteOpenAiCompatibleBaseUrl = Boolean(
+    baseUrl
+    && !isRouterLikeBaseUrl(baseUrl)
+    && !isLocalStructuredLlmBaseUrl(baseUrl)
+  );
   const openRouterApiKey = isOpenRouterBaseUrl
-    ? normalizeEnvValue(process.env.A11_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || '')
+    ? (
+      normalizeEnvValue(process.env.A11_OPENROUTER_API_KEY)
+      || normalizeEnvValue(process.env.OPENROUTER_API_KEY)
+      || ''
+    )
     : '';
 
   const apiKey = (
@@ -206,19 +215,27 @@ function resolveTranslationConfig() {
   );
 
   const model = (
-    process.env.A11_TRANSLATION_MODEL
-    || (allowGenericOpenAiFallback
+    normalizeEnvValue(process.env.A11_TRANSLATION_MODEL)
+    || (isRemoteOpenAiCompatibleBaseUrl
       ? (
-        process.env.A11_OPENAI_MODEL
-        || process.env.OPENAI_MODEL
-        || process.env.GROQ_MODEL
+        normalizeEnvValue(process.env.A11_OPENAI_MODEL)
+        || normalizeEnvValue(process.env.OPENAI_MODEL)
+        || normalizeEnvValue(process.env.GROQ_MODEL)
         || ''
       )
       : '')
-    || process.env.A11_OLLAMA_PRIMARY_MODEL
-    || process.env.LOCAL_DEFAULT_MODEL
-    || process.env.DEFAULT_MODEL
-    || process.env.LLAMA_MODEL
+    || (allowGenericOpenAiFallback
+      ? (
+        normalizeEnvValue(process.env.A11_OPENAI_MODEL)
+        || normalizeEnvValue(process.env.OPENAI_MODEL)
+        || normalizeEnvValue(process.env.GROQ_MODEL)
+        || ''
+      )
+      : '')
+    || normalizeEnvValue(process.env.A11_OLLAMA_PRIMARY_MODEL)
+    || normalizeEnvValue(process.env.LOCAL_DEFAULT_MODEL)
+    || normalizeEnvValue(process.env.DEFAULT_MODEL)
+    || normalizeEnvValue(process.env.LLAMA_MODEL)
     || 'gemma4:e4b'
   );
 
