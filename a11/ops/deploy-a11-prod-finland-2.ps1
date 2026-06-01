@@ -1020,6 +1020,30 @@ chmod 600 $RemoteRoot/secrets/compose.env
 "@
 }
 
+$remoteOllamaStep = @'
+mkdir -p /srv/a11-data/ollama
+docker network inspect server_default >/dev/null 2>&1 || docker network create server_default >/dev/null
+if docker inspect a11-ollama >/dev/null 2>&1; then
+  docker start a11-ollama >/dev/null 2>&1 || true
+else
+  docker pull ollama/ollama:latest
+  docker run -d \
+    --name a11-ollama \
+    --restart unless-stopped \
+    --network server_default \
+    --network-alias a11-ollama \
+    -p 127.0.0.1:11434:11434 \
+    -v /srv/a11-data/ollama:/root/.ollama \
+    -e OLLAMA_HOST=0.0.0.0:11434 \
+    ollama/ollama:latest >/dev/null
+fi
+if ! docker inspect a11-ollama --format '{{json .NetworkSettings.Networks}}' | grep -q '"server_default"'; then
+  docker network connect --alias a11-ollama server_default a11-ollama >/dev/null 2>&1 || true
+fi
+docker update --restart unless-stopped a11-ollama >/dev/null
+docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
+'@
+
 if ($BlueGreen) {
   $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
   $remoteDeploy = @"
@@ -1035,6 +1059,7 @@ mkdir -p "`$release" $RemoteRoot/bluegreen
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
 $remoteSecretStep
+$remoteOllamaStep
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build a11-postgres a11-redis a11-xtts-rvc a11-voice
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko "`$a11_service" "`$k44_service"
 echo "__BLUEGREEN_HEALTH__"
@@ -1074,6 +1099,7 @@ mkdir -p "`$release"
 tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
 $remoteSecretStep
+$remoteOllamaStep
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env ps
 echo "__A11_HEALTH__"
