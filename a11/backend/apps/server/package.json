@@ -9,7 +9,7 @@
   "description": "Backend AlphaOnze server (Express)",
   "main": "dist/index.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15.0"
   },
   "exports": {
     ".": {

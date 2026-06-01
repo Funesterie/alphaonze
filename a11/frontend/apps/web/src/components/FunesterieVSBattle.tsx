@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
+import { ttsSpeak } from "../lib/api";
 import "./FunesterieVSBattle.css";
 
 function browserSpeak(text: string) {
@@ -192,11 +193,12 @@ export function FunesterieVSBattle({ agentLinks }: FunesterieVSBattleProps) {
       setTaunt(`"${tauntText}"`);
 
       try {
-        await ttsSpeak(tauntText, {
+        await ttsSpeak(tauntText, agent.id === "vivy" ? "vivy" : agent.id === "kaen44" ? "kaen44" : "a11", "auto", {
           persona: agent.id === "vivy" ? "vivy" : agent.id === "kaen44" ? "kaen44" : "a11",
         });
       } catch {
-        // TTS optional — silently ignore if unavailable
+        // TTS optional — fall back to browser voice if backend is unavailable
+        browserSpeak(tauntText);
       }
 
       if (newAgentHp <= 0) {

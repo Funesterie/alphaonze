@@ -35,7 +35,8 @@ function shouldDisableServiceWorker() {
 function canRegisterServiceWorker() {
   if (!('serviceWorker' in navigator)) return false;
   if (!globalThis.isSecureContext) return false;
-  if (document.prerendering || document.visibilityState === 'prerender') return false;
+  const prerenderingDocument = document as Document & { prerendering?: boolean };
+  if (prerenderingDocument.prerendering) return false;
   return document.defaultView === globalThis;
 }
 

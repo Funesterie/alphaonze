@@ -51,11 +51,11 @@ const CASINO_ACTIONS: CasinoAction[] = [
   { kind: "video", label: "Video", shortLabel: "VID", color: "#fb7185", cost: 18 },
 ];
 
-function sleep(ms: number) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function resolveUploadedPhotoUrl(uploadResult: any) {
+function resolveUploadedPhotoUrl(uploadResult: any): string | null {
   const candidates = [
     uploadResult?.conversationResource?.url,
     uploadResult?.conversationResource?.downloadUrl,
@@ -71,7 +71,7 @@ function resolveUploadedPhotoUrl(uploadResult: any) {
   return null;
 }
 
-function asBriefText(value: unknown) {
+function asBriefText(value: unknown): string {
   if (!value) return "";
   if (Array.isArray(value)) {
     return value
@@ -88,7 +88,7 @@ function asBriefText(value: unknown) {
   return String(value).trim();
 }
 
-function formatVisionEntry(entry: any) {
+function formatVisionEntry(entry: any): string {
   const analysis = entry?.analysis || entry?.vision || entry?.memory || entry?.metadata || entry || {};
   const parts = [
     analysis?.summary,
