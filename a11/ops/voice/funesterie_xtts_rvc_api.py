@@ -72,6 +72,13 @@ _hubert_model = None
 _rvc_config = None
 _rvc_data = None
 _rvc_runtime_lock = threading.Lock()
+_synthesis_lock = threading.Lock()
+_synthesis_state_lock = threading.Lock()
+_synthesis_state = {
+    "busy": False,
+    "style": None,
+    "startedAt": None,
+}
 
 
 def download_file(url: str, target: Path) -> None:
@@ -318,6 +325,23 @@ def remove_later(path: Path) -> None:
         pass
 
 
+def set_synthesis_state(busy: bool, style: Optional[str] = None) -> None:
+    with _synthesis_state_lock:
+        _synthesis_state["busy"] = bool(busy)
+        _synthesis_state["style"] = style if busy else None
+        _synthesis_state["startedAt"] = time.time() if busy else None
+
+
+def get_synthesis_state() -> dict:
+    with _synthesis_state_lock:
+        started_at = _synthesis_state.get("startedAt")
+        return {
+            "busy": bool(_synthesis_state.get("busy")),
+            "style": _synthesis_state.get("style"),
+            "activeSeconds": round(time.time() - started_at, 3) if started_at else 0,
+        }
+
+
 class SynthesizeRequest(BaseModel):
     text: str = ""
     persona: str = ""
@@ -341,34 +365,39 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
     if not voice_path.exists():
         raise HTTPException(status_code=404, detail=f"voice_sample_missing:{voice_path.name}")
 
-    stamp = int(time.time() * 1000)
-    xtts_path = OUT_DIR / f"xtts-{style}-{stamp}.wav"
-    final_path = OUT_DIR / f"xtts-rvc-{style}-{stamp}.wav"
-    get_tts().tts_to_file(
-        text=clean_text,
-        speaker_wav=str(voice_path),
-        language=LANGUAGE,
-        file_path=str(xtts_path),
-    )
+    with _synthesis_lock:
+        set_synthesis_state(True, style)
+        try:
+            stamp = int(time.time() * 1000)
+            xtts_path = OUT_DIR / f"xtts-{style}-{stamp}.wav"
+            final_path = OUT_DIR / f"xtts-rvc-{style}-{stamp}.wav"
+            get_tts().tts_to_file(
+                text=clean_text,
+                speaker_wav=str(voice_path),
+                language=LANGUAGE,
+                file_path=str(xtts_path),
+            )
 
-    engine = "xtts-reference"
-    if rvc_path.exists():
-        pitch = int(round(float(f0_shift if f0_shift is not None else 0)))
-        run_rvc(
-            xtts_path,
-            final_path,
-            rvc_path,
-            pitch,
-            INDEX_RATE,
-            index_path=rvc_index_path if rvc_index_path.exists() else None,
-        )
-        engine = "xtts-rvc"
-    else:
-        shutil.copyfile(xtts_path, final_path)
+            engine = "xtts-reference"
+            if rvc_path.exists():
+                pitch = int(round(float(f0_shift if f0_shift is not None else 0)))
+                run_rvc(
+                    xtts_path,
+                    final_path,
+                    rvc_path,
+                    pitch,
+                    INDEX_RATE,
+                    index_path=rvc_index_path if rvc_index_path.exists() else None,
+                )
+                engine = "xtts-rvc"
+            else:
+                shutil.copyfile(xtts_path, final_path)
 
-    remove_later(xtts_path)
-    if not final_path.exists() or final_path.stat().st_size <= 0:
-        raise HTTPException(status_code=500, detail="voice_output_missing")
+            remove_later(xtts_path)
+            if not final_path.exists() or final_path.stat().st_size <= 0:
+                raise HTTPException(status_code=500, detail="voice_output_missing")
+        finally:
+            set_synthesis_state(False)
 
     return {
         "path": final_path,
@@ -410,6 +439,7 @@ def health():
         "rvcModels": rvcs,
         "rvcIndexes": rvc_indexes,
         "styles": styles,
+        "synthesis": get_synthesis_state(),
     }
 
 

@@ -31,6 +31,7 @@ export function isSpeechMuted() { return speechMuted; }
 let currentAudio: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
 let serverTtsDisabledUntil = 0;
+const OFFICIAL_VOICE_PERSONAS = new Set(['a11', 'kaen44', 'k44', 'kaen', 'vivy']);
 
 // Unlock audio context on first user interaction (required by autoplay policy)
 let _audioUnlocked = false;
@@ -185,6 +186,80 @@ function resolveAudioUrl(audioUrl: string): string {
   }
 }
 
+function resolveTtsStatusUrl(statusUrl: string): string {
+  const value = String(statusUrl || '').trim();
+  if (!value) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  return buildApiUrl(value);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
+function normalizePersonaName(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function shouldUseAsyncServerTts(options: any = {}): boolean {
+  if (options.ttsAsync === false || options.asyncTts === false || options.backgroundTts === false) return false;
+  if (options.ttsAsync === true || options.asyncTts === true || options.backgroundTts === true) return true;
+  if (options.voiceReferenceRequired === true || options.referenceVoiceRequired === true) return true;
+  return [
+    options.voicePersona,
+    options.ttsPersona,
+    options.persona,
+    options.surface,
+  ].some((value) => OFFICIAL_VOICE_PERSONAS.has(normalizePersonaName(value)));
+}
+
+async function pollServerTtsJob(
+  statusUrl: string,
+  options: any = {}
+): Promise<any> {
+  const timeoutMs = Math.max(
+    10_000,
+    Math.min(300_000, Number(options.ttsJobTimeoutMs || options.asyncTimeoutMs || options.timeoutMs || 180_000) || 180_000)
+  );
+  const deadline = Date.now() + timeoutMs;
+  let delayMs = Math.max(500, Math.min(5000, Number(options.ttsPollIntervalMs || 1200) || 1200));
+
+  while (Date.now() < deadline) {
+    await wait(delayMs);
+    const headers: Record<string, string> = {};
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(resolveTtsStatusUrl(statusUrl), {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    const payload = await response.json().catch(() => ({}));
+    const state = String(payload?.state || payload?.status || '').toLowerCase();
+    emitCustomEvent('a11:ttsDiagnostics', {
+      provider: payload?.provider || payload?.result?.provider || null,
+      via: payload?.via || payload?.result?.via || null,
+      state,
+      jobId: payload?.jobId || null,
+      async: true,
+    });
+
+    if (!response.ok) {
+      throw new Error(payload?.message || payload?.error || `TTS job unavailable (${response.status})`);
+    }
+    if (state === 'done' || state === 'complete' || state === 'completed') {
+      return payload?.result || payload;
+    }
+    if (state === 'failed' || state === 'error') {
+      const result = payload?.result || {};
+      throw new Error(payload?.message || result?.message || payload?.error || result?.error || 'tts_job_failed');
+    }
+    delayMs = Math.min(5000, delayMs + 600);
+  }
+
+  throw new Error('tts_job_timeout');
+}
+
 function isRobotVoiceFallbackPayload(data: any): boolean {
   const provider = String(data?.provider || data?.audioModule?.provider || '').trim().toLowerCase();
   const via = String(data?.via || data?.audioModule?.via || provider).trim().toLowerCase();
@@ -325,14 +400,22 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
     const token = getAuthToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const requestBody = {
+    const useAsyncTts = shouldUseAsyncServerTts(options);
+    const requestBody: Record<string, any> = {
       audioFormat: 'mp3',
-      latencyMode: 'interactive',
+      latencyMode: useAsyncTts ? 'background' : 'interactive',
       voiceConversion: false,
       ...options,
       text,
-      stream: true,
+      stream: !useAsyncTts,
+      ttsAsync: useAsyncTts,
+      ttsJobTimeoutMs: options.ttsJobTimeoutMs || (useAsyncTts ? 180_000 : undefined),
     };
+    if (useAsyncTts) {
+      requestBody.latencyMode = 'background';
+      requestBody.ttsLatencyMode = 'background';
+      requestBody.playbackMode = 'background';
+    }
     const timeoutMs = Math.max(4000, Math.min(60_000, Number(options.ttsTimeoutMs || options.timeoutMs || 35_000) || 35_000));
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -370,6 +453,13 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
         data = rawText ? JSON.parse(rawText) : null;
       } catch {
         data = rawText;
+      }
+
+      if (data?.async && data?.statusUrl) {
+        data = await pollServerTtsJob(String(data.statusUrl), {
+          ...options,
+          ttsJobTimeoutMs: requestBody.ttsJobTimeoutMs,
+        });
       }
 
       const audioUrl =

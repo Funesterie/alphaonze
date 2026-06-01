@@ -386,7 +386,7 @@ services:
       A11_XTTS_RVC_PORT: "5000"
       A11_XTTS_RVC_DEVICE: ${A11_XTTS_RVC_DEVICE:-cpu}
       A11_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
-      A11_XTTS_RVC_TORCH_THREADS: ${A11_XTTS_RVC_TORCH_THREADS:-4}
+      A11_XTTS_RVC_TORCH_THREADS: ${A11_XTTS_RVC_TORCH_THREADS:-2}
     volumes:
       - /srv/a11-data/a11/xtts-rvc/models:/app/models
       - /srv/a11-data/a11/xtts-rvc/rvcs:/app/rvcs

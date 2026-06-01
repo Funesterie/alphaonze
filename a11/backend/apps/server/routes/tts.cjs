@@ -39,8 +39,12 @@ const {
 const commandAvailabilityCache = new Map();
 let configuredVerifyJWT = null;
 const ttsAsyncJobs = new Map();
+const xttsRvcQueue = [];
+let xttsRvcActive = 0;
 const TTS_ASYNC_JOB_TTL_MS = Number(process.env.A11_TTS_ASYNC_JOB_TTL_MS || 15 * 60 * 1000);
 const TTS_ASYNC_JOB_MAX_AGE_MS = Number(process.env.A11_TTS_ASYNC_JOB_MAX_AGE_MS || 30 * 60 * 1000);
+const TTS_XTTS_RVC_DEFAULT_CONCURRENCY = 1;
+const TTS_XTTS_RVC_DEFAULT_QUEUE_MAX = 24;
 
 function configureTtsRouter(options = {}) {
   if (typeof options.verifyJWT === 'function') {
@@ -286,6 +290,57 @@ function requiresReferenceVoice(req = {}) {
   ) === true;
 }
 
+function positiveIntFromEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  return Math.floor(value);
+}
+
+function getXttsRvcQueueConcurrency() {
+  return Math.max(1, Math.min(4, positiveIntFromEnv('A11_TTS_XTTS_RVC_CONCURRENCY', TTS_XTTS_RVC_DEFAULT_CONCURRENCY)));
+}
+
+function getXttsRvcQueueMax() {
+  return Math.max(1, Math.min(100, positiveIntFromEnv('A11_TTS_XTTS_RVC_QUEUE_MAX', TTS_XTTS_RVC_DEFAULT_QUEUE_MAX)));
+}
+
+function createXttsRvcQueueError() {
+  const error = new Error('xtts_rvc_queue_saturated');
+  error.code = 'xtts_rvc_queue_saturated';
+  error.statusCode = 429;
+  return error;
+}
+
+function drainXttsRvcQueue() {
+  const concurrency = getXttsRvcQueueConcurrency();
+  while (xttsRvcActive < concurrency && xttsRvcQueue.length > 0) {
+    const item = xttsRvcQueue.shift();
+    xttsRvcActive += 1;
+    Promise.resolve()
+      .then(item.work)
+      .then(item.resolve, item.reject)
+      .finally(() => {
+        xttsRvcActive = Math.max(0, xttsRvcActive - 1);
+        drainXttsRvcQueue();
+      });
+  }
+}
+
+function enqueueXttsRvcWork(work) {
+  if (xttsRvcQueue.length >= getXttsRvcQueueMax()) {
+    return Promise.reject(createXttsRvcQueueError());
+  }
+  return new Promise((resolve, reject) => {
+    xttsRvcQueue.push({
+      work,
+      resolve,
+      reject,
+      queuedAt: Date.now(),
+    });
+    drainXttsRvcQueue();
+  });
+}
+
 function wantsAsyncTtsJob(body = {}) {
   return parseOptionalBoolean(
     body.ttsAsync
@@ -435,12 +490,26 @@ function createTtsJobResponseCapture(job) {
 }
 
 function buildAsyncTtsJobBody(body = {}) {
+  const rawLatencyMode = String(
+    body.latencyMode
+    || body.ttsLatencyMode
+    || body.playbackMode
+    || body.modeHint
+    || ''
+  ).trim().toLowerCase();
+  const latencyMode = ['interactive', 'realtime', 'real-time', 'live', 'fast'].includes(rawLatencyMode)
+    ? 'background'
+    : (body.latencyMode || body.ttsLatencyMode || body.playbackMode || body.modeHint || 'background');
   return {
     ...body,
     ttsAsync: false,
     asyncTts: false,
     backgroundTts: false,
     async: false,
+    latencyMode,
+    ttsLatencyMode: 'background',
+    playbackMode: 'background',
+    modeHint: 'background',
     stream: false,
     returnAudioBuffer: false,
   };
@@ -1784,19 +1853,21 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
 }
 
 async function requestDirectXttsRvcWithRetry(text, body = {}, options = {}) {
-  const attempts = Math.max(1, Math.min(3, Number(process.env.A11_VOICE_XTTS_RVC_RETRIES || 2) || 2));
-  const retryDelayMs = Math.max(0, Math.min(5000, Number(process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS || 1200) || 1200));
-  let lastError = null;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await requestDirectXttsRvc(text, body, options);
-    } catch (error_) {
-      lastError = error_;
-      if (attempt >= attempts) break;
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+  return enqueueXttsRvcWork(async () => {
+    const attempts = Math.max(1, Math.min(3, Number(process.env.A11_VOICE_XTTS_RVC_RETRIES || 2) || 2));
+    const retryDelayMs = Math.max(0, Math.min(5000, Number(process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS || 1200) || 1200));
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await requestDirectXttsRvc(text, body, options);
+      } catch (error_) {
+        lastError = error_;
+        if (attempt >= attempts) break;
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+      }
     }
-  }
-  throw lastError || new Error('xtts_rvc_unreachable');
+    throw lastError || new Error('xtts_rvc_unreachable');
+  });
 }
 
 function buildOpenAiTtsInstructions({ vocalMode = 'speech', reference = null, persona = 'a11' } = {}) {
