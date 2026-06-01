@@ -5994,6 +5994,8 @@ export function App() {
           if (isAuthSuccessRoute(pathname)) {
             const surface = getCurrentSurfaceKind();
             window.history.replaceState({}, "", resolveAuthSuccessRedirectPath(pathname, surface));
+          } else if (isLoginRoute(pathname)) {
+            window.location.replace(normalizeAllowedReturnTo(getRequestedLoginReturnTo()));
           }
         })
         .catch(() => {
@@ -6010,19 +6012,8 @@ export function App() {
 
     const consumedOAuthToken = consumeOAuthTokenFromLocation();
     if (consumedOAuthToken) {
-      setIsAuthenticated(true);
-      setDisplayName(getAuthDisplayName() || "Utilisateur");
-      setIsFunesterieAdmin(hasAuthenticatedAdminApiAccess());
-      setAuthSessionReady(true);
-      if (isAuthSuccessRoute(pathname)) {
-        const surface = getCurrentSurfaceKind();
-        window.history.replaceState({}, "", resolveAuthSuccessRedirectPath(pathname, surface));
-        return;
-      }
-      if (isLoginRoute(pathname)) {
-        window.location.replace(normalizeAllowedReturnTo(getRequestedLoginReturnTo()));
-        return;
-      }
+      refreshCookieSession();
+      return;
     }
 
     if (isAuthSuccessRoute(pathname)) {
