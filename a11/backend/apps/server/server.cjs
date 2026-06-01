@@ -10074,9 +10074,17 @@ async function generateDevActionReply({ messages = [], cerbere, imagePath = null
 function isSiwisStatusQuestion(value) {
   const text = String(value || '').trim().toLowerCase();
   if (!text) return false;
-  const mentionsSiwis = /siwis|piper|tts|voix/.test(text);
+  const mentionsSiwis = /siwis|piper|ttssiwis|\btts\b/.test(text);
   const asksStatus = /marche|fonctionne|disponible|status|etat|up|down|ok/.test(text);
   return mentionsSiwis && asksStatus;
+}
+
+function isOfficialVoiceStatusQuestion(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text || isSiwisStatusQuestion(text)) return false;
+  const mentionsVoice = /voix|voice|parle|parler|audio|son/.test(text);
+  const asksStatus = /marche|fonctionne|disponible|status|etat|up|down|ok|cass|bug|repond|répond/.test(text);
+  return mentionsVoice && asksStatus;
 }
 
 async function getSiwisHealthSnapshot() {
@@ -10110,6 +10118,23 @@ function formatSiwisStatusReply(snapshot) {
 
   const errorCode = String(snapshot?.body?.error || `http_${snapshot?.status || 'unknown'}`);
   return `Non, SIWIS est indisponible actuellement (raison: ${errorCode}).`;
+}
+
+function formatOfficialVoiceStatusReply(snapshot) {
+  const body = snapshot?.body?.body || snapshot?.body || {};
+  const conversion = body?.conversion || {};
+  const xttsRvc = conversion?.xttsRvc || {};
+  if (snapshot?.ok && snapshot?.body?.ok && (conversion.ok || xttsRvc.configured)) {
+    const provider = String(conversion.provider || 'XTTS/RVC').trim();
+    return `La voix officielle ne doit pas etre résumée à SIWIS: SIWIS/Piper est seulement le fallback neutre. Là, le module voix répond et le pont ${provider} est configuré pour les voix A11/Kaen44/Vivy.`;
+  }
+
+  if (snapshot?.ok && snapshot?.body?.ok) {
+    return 'Le module voix répond, mais je ne vois pas encore le pont de voix identitaire dans le health. Pour Vivy/A11, il faut XTTS/RVC, pas seulement SIWIS.';
+  }
+
+  const errorCode = String(snapshot?.body?.error || `http_${snapshot?.status || 'unknown'}`);
+  return `La voix officielle est à vérifier: le module voix ne répond pas proprement pour l’instant (${errorCode}).`;
 }
 
 function toSimpleAssistantCompletion(content, model = 'a11-runtime') {
@@ -12772,6 +12797,20 @@ async function proxyChatToOpenAI(req, res) {
     } catch {
       const fallback = toSimpleAssistantCompletion('Je ne peux pas verifier SIWIS pour le moment (health timeout).');
       appendChatTurnLogSafe(req.body, fallback, 'a11-runtime-tts-health', userId);
+      return res.status(200).json(fallback);
+    }
+  }
+
+  if (isOfficialVoiceStatusQuestion(latestUserMessage)) {
+    try {
+      const snapshot = await getSiwisHealthSnapshot();
+      const reply = formatOfficialVoiceStatusReply(snapshot);
+      const data = toSimpleAssistantCompletion(reply, 'a11-runtime-voice-health');
+      appendChatTurnLogSafe(req.body, data, 'a11-runtime-voice-health', userId);
+      return res.status(200).json(data);
+    } catch {
+      const fallback = toSimpleAssistantCompletion('Je ne peux pas vérifier la voix officielle pour le moment. Pour A11/Vivy, le bon chemin est XTTS/RVC; SIWIS n’est que le fallback neutre.');
+      appendChatTurnLogSafe(req.body, fallback, 'a11-runtime-voice-health', userId);
       return res.status(200).json(fallback);
     }
   }

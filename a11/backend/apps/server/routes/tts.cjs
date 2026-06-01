@@ -1478,6 +1478,22 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   throw lastError || new Error('xtts_rvc_unreachable');
 }
 
+async function requestDirectXttsRvcWithRetry(text, body = {}, options = {}) {
+  const attempts = Math.max(1, Math.min(3, Number(process.env.A11_VOICE_XTTS_RVC_RETRIES || 2) || 2));
+  const retryDelayMs = Math.max(0, Math.min(5000, Number(process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS || 1200) || 1200));
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await requestDirectXttsRvc(text, body, options);
+    } catch (error_) {
+      lastError = error_;
+      if (attempt >= attempts) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+    }
+  }
+  throw lastError || new Error('xtts_rvc_unreachable');
+}
+
 function buildOpenAiTtsInstructions({ vocalMode = 'speech', reference = null, persona = 'a11' } = {}) {
   const normalizedPersona = normalizeTtsPersona(persona);
   const base = [buildVoicePersonaInstruction(normalizedPersona)];
@@ -2434,7 +2450,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
 
     if (resolvedProvider.provider === PROVIDERS.XTTS_RVC) {
       try {
-        const directVoice = await requestDirectXttsRvc(readableText, preparedBody, {
+        const directVoice = await requestDirectXttsRvcWithRetry(readableText, preparedBody, {
           vocalMode,
           persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
           user: req.user || null,

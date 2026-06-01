@@ -275,6 +275,8 @@ test('tts piper route leaves voice free unless language voice is explicitly forc
 test('tts speak route uses XTTS/RVC bridge before Piper for official persona voice', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_VOICE_XTTS_RVC_RETRIES: process.env.A11_VOICE_XTTS_RVC_RETRIES,
+    A11_VOICE_XTTS_RVC_RETRY_DELAY_MS: process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
@@ -565,6 +567,8 @@ test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC brid
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.A11_VOICE_CONVERSION_ENABLED = 'false';
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_VOICE_XTTS_RVC_RETRIES = '2';
+  process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS = '1';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
@@ -631,7 +635,7 @@ test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC brid
         assert.equal(result.json.provider, 'openai');
         assert.equal(result.json.providerCapabilities.referenceVoice, true);
         assert.match(result.json.voiceReference.label, /Kaen44 Donna/i);
-        assert.equal(bridgeCalls.length, 1);
+        assert.equal(bridgeCalls.length, 2);
         assert.equal(openAiBodies.length, 1);
         assert.match(openAiBodies[0].instructions, /Voix Kaen44/i);
         assert.equal(remoteTtsCalls.length, 0);
