@@ -312,18 +312,59 @@ function createTtsAsyncJobId() {
   return `ttsjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function buildBatRomeTtsOrchestrator(body = {}) {
+  const outputFormat = normalizeTtsAudioFormat(body, 'mp3');
+  return {
+    mode: 'bat-rome',
+    family: 'vivy-audio',
+    queue: 'media.audio',
+    bat: {
+      role: 'request-control',
+      capabilities: ['async timer', 'sleep guard', 'retry/noise scoring'],
+    },
+    rome: {
+      role: 'workspace runner',
+      capabilities: ['job routing', 'duo/trio async', 'safe process handoff'],
+    },
+    stages: [
+      'queued',
+      'prepare_reference',
+      'normalize_reference_wav',
+      'xtts',
+      'rvc',
+      'normalize_audio',
+      'publish_web_audio',
+    ],
+    formats: {
+      acceptedInput: ['wav', 'mp3', 'm4a', 'mov'],
+      internalReference: 'wav mono 16/24k',
+      output: outputFormat,
+      clip: 'mp4',
+    },
+    discord: {
+      role: 'optional_notification',
+      engine: false,
+    },
+  };
+}
+
 function publicTtsAsyncJob(job = {}) {
   const payload = {
     ok: job.state !== 'failed',
     async: true,
     jobId: job.id || null,
+    kind: job.kind || 'tts.speak',
+    queue: job.queue || 'media.audio',
     state: job.state || 'queued',
     status: job.state || 'queued',
     statusCode: job.statusCode || null,
-    statusUrl: job.id ? `/api/tts/jobs/${encodeURIComponent(job.id)}` : null,
+    statusUrl: job.id ? `${job.statusUrlBase || '/api/tts/jobs'}/${encodeURIComponent(job.id)}` : null,
     createdAt: job.createdAt || null,
     startedAt: job.startedAt || null,
     finishedAt: job.finishedAt || null,
+    orchestrator: job.orchestrator || null,
+    formats: job.orchestrator?.formats || null,
+    pollIntervalMs: job.pollIntervalMs || 1500,
   };
   if (job.result && (job.state === 'done' || job.state === 'failed')) {
     payload.result = job.result;
@@ -2442,7 +2483,40 @@ async function sendTtsPayloadResponse(req, res, payload) {
   }
 }
 
-router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/tts/out/:filename'], (req, res) => {
+function buildVivyTtsJobBody(body = {}) {
+  const text = String(
+    body.text
+    || body.prompt
+    || body.lyrics
+    || body.brief
+    || body.message
+    || ''
+  ).trim();
+  const isSong = parseOptionalBoolean(body.song || body.isSong || body.makeSong, false) === true
+    || /\b(song|chanson|refrain|couplet|lyrics|paroles)\b/i.test(String(body.kind || body.mode || body.vocalMode || body.prompt || ''));
+  return {
+    ...body,
+    text,
+    voice: body.voice || 'vivy',
+    provider: body.provider || PROVIDERS.XTTS_RVC,
+    ttsProvider: body.ttsProvider || body.provider || PROVIDERS.XTTS_RVC,
+    persona: body.persona || 'vivy',
+    voicePersona: body.voicePersona || 'vivy',
+    surface: body.surface || 'vivy',
+    vocalMode: body.vocalMode || (isSong ? 'sing' : 'adaptive'),
+    voiceConversion: body.voiceConversion ?? true,
+    useDefaultVoiceReference: body.useDefaultVoiceReference ?? !body.voiceReferenceId,
+    defaultVoiceReference: body.defaultVoiceReference ?? !body.voiceReferenceId,
+    voiceReferenceRequired: body.voiceReferenceRequired ?? true,
+    referenceVoiceRequired: body.referenceVoiceRequired ?? true,
+    allowBrowserSpeechFallback: false,
+    audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
+    responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
+    jobKind: body.jobKind || (isSong ? 'vivy.song.xtts-rvc' : 'vivy.xtts-rvc'),
+  };
+}
+
+router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/vivy/jobs/:jobId', '/tts/out/:filename'], (req, res) => {
   setTtsCorsHeaders(req, res);
   return res.status(204).end();
 });
@@ -2676,17 +2750,23 @@ async function handleTtsSpeakRequest(req, res) {
   }
 }
 
-function startTtsAsyncJob(req, res) {
+function startTtsAsyncJob(req, res, options = {}) {
   pruneTtsAsyncJobs();
+  const body = buildAsyncTtsJobBody(req.body || {});
   const job = {
     id: createTtsAsyncJobId(),
+    kind: String(options.kind || body.jobKind || body.kind || 'tts.speak').trim() || 'tts.speak',
+    queue: String(options.queue || body.queue || 'media.audio').trim() || 'media.audio',
+    statusUrlBase: String(options.statusUrlBase || '/api/tts/jobs').trim() || '/api/tts/jobs',
+    orchestrator: buildBatRomeTtsOrchestrator(body),
+    pollIntervalMs: Number(options.pollIntervalMs || 1500),
     state: 'queued',
     statusCode: null,
     createdAt: Date.now(),
     startedAt: null,
     finishedAt: null,
     userId: req.user?.id || req.user?.sub || null,
-    body: buildAsyncTtsJobBody(req.body || {}),
+    body,
     result: null,
     error: null,
     message: null,
@@ -2737,6 +2817,36 @@ router.get('/tts/jobs/:jobId', runOptionalJwt, (req, res) => {
     return res.status(404).json({ ok: false, error: 'tts_job_not_found' });
   }
   return res.json(publicTtsAsyncJob(job));
+});
+
+router.post('/vivy/jobs', runOptionalJwt, async (req, res) => {
+  setTtsCorsHeaders(req, res);
+  const body = buildVivyTtsJobBody(req.body || {});
+  if (!body.text) {
+    return res.status(400).json({ ok: false, error: 'missing_text' });
+  }
+  req.body = body;
+  return startTtsAsyncJob(req, res, {
+    kind: body.jobKind || 'vivy.xtts-rvc',
+    queue: 'media.audio',
+    statusUrlBase: '/api/vivy/jobs',
+    pollIntervalMs: 1500,
+  });
+});
+
+router.get('/vivy/jobs/:jobId', runOptionalJwt, (req, res) => {
+  setTtsCorsHeaders(req, res);
+  pruneTtsAsyncJobs();
+  const jobId = String(req.params?.jobId || '').trim();
+  const job = ttsAsyncJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ ok: false, error: 'tts_job_not_found' });
+  }
+  const requestUserId = req.user?.id || req.user?.sub || null;
+  if (job.userId && requestUserId && job.userId !== requestUserId) {
+    return res.status(404).json({ ok: false, error: 'tts_job_not_found' });
+  }
+  return res.json(publicTtsAsyncJob({ ...job, statusUrlBase: '/api/vivy/jobs' }));
 });
 
 router.get('/tts/out/:filename', async (req, res) => {

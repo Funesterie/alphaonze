@@ -18,6 +18,9 @@ const {
   isRuntimeModulesAccessQuestion,
 } = require('../chat/a11-active-identity.cjs');
 const {
+  postProcessA11AssistantResponse,
+} = require('../chat/response-draft-rewriter.cjs');
+const {
   buildAccountConnectorState,
   buildConnectorAwareSystemPrompt,
   isConnectorCapabilitiesQuestion,
@@ -339,6 +342,14 @@ function buildOllamaMessages(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT
     { role: 'system', content: buildA11ChatSystemPrompt(systemPrompt || PUBLIC_SYSTEM_PROMPT) },
     ...conversationMessages,
   ];
+}
+
+function finalizeA11ChatReply(text, userMessage = '', contextText = '') {
+  return postProcessA11AssistantResponse({
+    text,
+    userMessage,
+    contextText,
+  }).content;
 }
 
 /**
@@ -933,10 +944,11 @@ function createChatRouter(overrides = {}) {
         );
         if (ollamaText) {
           const { model } = getOllamaConfig();
+          const finalText = finalizeA11ChatReply(ollamaText, userMessage, systemPrompt);
           if (pendingStructuredPayload) {
-            return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: ollamaText }, resolution, req.body || {}));
+            return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: finalText }, resolution, req.body || {}));
           }
-          return res.json({ ok: true, mode: 'ollama', model, assistant: ollamaText });
+          return res.json({ ok: true, mode: 'ollama', model, assistant: finalText });
         }
       } catch (qErr) {
         if (qErr.statusCode === 503) {
@@ -981,7 +993,7 @@ function createChatRouter(overrides = {}) {
         max_tokens: Number(process.env.A11_CHAT_MAX_TOKENS || 16384),
       });
 
-      const text = completion?.choices?.[0]?.message?.content || '';
+      const text = finalizeA11ChatReply(completion?.choices?.[0]?.message?.content || '', userMessage, systemPrompt);
       if (pendingStructuredPayload) {
         return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: text }, resolution, req.body || {}));
       }

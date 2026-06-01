@@ -283,6 +283,95 @@ test('tts speak route can return an async job and poll the generated audio paylo
   }
 });
 
+test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio output', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const bridgeBodies = [];
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      bridgeBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            audio_url: '/out/vivy-job.mp3',
+            audioUrl: '/out/vivy-job.mp3',
+            via: 'a11-voice-module-persona',
+            providerCapabilities: { referenceVoice: true },
+            voiceReference: { id: 'vivy', label: 'vivy' },
+            voiceConversion: { ok: true, provider: 'xtts-rvc', engine: 'persona-voice' },
+          });
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('neutral_tts_should_not_run_for_vivy_job');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const started = await postJson(baseUrl, '/api/vivy/jobs', {
+          prompt: 'Chante une phrase courte pour Vivy.',
+          song: true,
+        });
+
+        assert.equal(started.response.status, 202);
+        assert.equal(started.json.async, true);
+        assert.equal(started.json.kind, 'vivy.song.xtts-rvc');
+        assert.equal(started.json.queue, 'media.audio');
+        assert.match(started.json.statusUrl, /^\/api\/vivy\/jobs\//);
+        assert.equal(started.json.orchestrator.mode, 'bat-rome');
+        assert.equal(started.json.formats.output, 'mp3');
+        assert.deepEqual(started.json.formats.acceptedInput, ['wav', 'mp3', 'm4a', 'mov']);
+
+        let polled = null;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const response = await fetch(baseUrl + started.json.statusUrl);
+          polled = await response.json();
+          if (polled.state === 'done' || polled.state === 'failed') break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        assert.equal(polled.state, 'done');
+        assert.equal(polled.provider, 'xtts-rvc');
+        assert.equal(polled.audioUrl, '/api/tts/out/vivy-job.mp3');
+        assert.equal(bridgeBodies.length, 1);
+        assert.equal(bridgeBodies[0].persona, 'vivy');
+        assert.equal(bridgeBodies[0].audioFormat, 'mp3');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts piper route leaves voice free unless language voice is explicitly forced', async () => {
   const previousEnv = {
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,

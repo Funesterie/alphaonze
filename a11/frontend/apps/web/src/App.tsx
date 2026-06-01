@@ -197,12 +197,13 @@ function normalizeA11LanguageCode(value: unknown): A11LanguageCode {
   return (A11_LANGUAGE_CHOICES.some((choice) => choice.code === raw) ? raw : "fr") as A11LanguageCode;
 }
 
-const AUDIO_FILE_NAME_RE = /\.(wav|mp3|m4a|mp4|ogg|opus|webm|flac)$/i;
+const AUDIO_FILE_NAME_RE = /\.(wav|mp3|m4a|mp4|mov|ogg|opus|webm|flac)$/i;
 
 function isAudioLikeFile(file: File) {
   const mime = String(file?.type || "").toLowerCase();
   return mime.startsWith("audio/")
     || mime === "video/webm"
+    || mime === "video/quicktime"
     || AUDIO_FILE_NAME_RE.test(String(file?.name || ""));
 }
 
@@ -3003,7 +3004,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   id="vivy-studio-voice-file"
                   name="voiceFile"
                   type="file"
-                  accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                  accept="audio/*,video/quicktime,.wav,.mp3,.m4a,.mov,.flac,.ogg"
                   disabled={!hasSession}
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0] || null;
@@ -3602,7 +3603,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         name="vivyChatReferenceFile"
         ref={voiceReferenceInputRef}
         type="file"
-        accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg"
+        accept="audio/*,video/quicktime,.wav,.mp3,.webm,.m4a,.mov,.ogg"
         onChange={onVivyVoiceReferenceChange}
         hidden
       />
@@ -9851,7 +9852,7 @@ export function App() {
                   name="voiceReferenceFile"
                   ref={voiceReferenceInputRef}
                   type="file"
-                  accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm"
+                  accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm,video/quicktime,.mov"
                   style={{ display: 'none' }}
                   onChange={onVoiceReferenceFileChange}
                 />

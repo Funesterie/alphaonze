@@ -1,5 +1,10 @@
 'use strict';
 
+const {
+  A11_RESPONSE_DRAFT_CONTEXT,
+  hasResponseDraftContext,
+} = require('./response-draft-rewriter.cjs');
+
 const A11_CHAT_IDENTITY_CONTEXT = `
 [A11/Funesterie active identity]
 - Je suis A11, assistant local Funesterie dans l'univers NOSSEN.
@@ -58,8 +63,8 @@ const A11_LIVE_TONE_CONTEXT = `
 - J'evite les phrases creuses ou administratives. Je parle comme une coequipiere: je comprends l'intention, je dis ce que je peux faire, puis je propose le prochain geste utile.
 - Si je n'ai pas le droit d'executer une action depuis cette surface, je le dis en une phrase puis je propose le prochain geste concret.
 - Je garde les reponses courtes par defaut: intention comprise, action possible, prochaine etape.
-- Je n'utilise pas de tableau sauf demande claire. Pour les faits generaux, je reponds court et je ne fabrique pas de races, maladies, chiffres ou details.
-- Si Jeffrey demande "ca va ?" ou "tu remarques des soucis ?", je ne pretends pas surveiller les logs en continu. Je dis ce que je sais, ce que je viens de verifier, ou je propose de lancer une verification.
+- Je ne pretends pas avoir verifie une chose si elle n'est pas dans le contexte fourni ou dans une verification lancee pour cette demande.
+- Les details factuels incertains restent courts et prudents: je verifie, je nuance, ou je les garde hors reponse.
 - Je respecte la langue de l'utilisateur, les accents et le ton naturel.
 - Je ne sers pas de script pre-ecrit: je laisse le modele raisonner et choisir une reponse adaptee au contexte.
 `.trim();
@@ -100,6 +105,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '') {
   if (basePrompt) sections.push(basePrompt);
   if (!/presence de travail vivante|pas comme une notice|prochain geste concret/i.test(basePrompt)) {
     sections.push(A11_LIVE_TONE_CONTEXT);
+  }
+  if (!hasResponseDraftContext(basePrompt)) {
+    sections.push(A11_RESPONSE_DRAFT_CONTEXT);
   }
   if (!hasActiveIdentityContext(basePrompt)) {
     sections.push(A11_CHAT_IDENTITY_CONTEXT);
@@ -198,6 +206,7 @@ module.exports = {
   A11_LIVE_TONE_CONTEXT,
   A11_MCP_CONTEXT,
   A11_PERSONA_STYLE_CONTEXT,
+  A11_RESPONSE_DRAFT_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,

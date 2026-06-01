@@ -22,8 +22,8 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /runtime Funesterie/i);
   assert.match(prompt, /gardienne cybernetique/i);
   assert.match(prompt, /reponses toutes faites/i);
-  assert.match(prompt, /pas de tableau/i);
-  assert.match(prompt, /ne fabrique pas de races/i);
+  assert.match(prompt, /brouillon invisible|virtual response draft/i);
+  assert.match(prompt, /actually verified facts|faits.*incertains|verifie/i);
 });
 
 test('/api/llm/chat empty system prompt still receives active identity context', () => {

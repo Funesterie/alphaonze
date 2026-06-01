@@ -7,7 +7,7 @@ const { getBackendRoot } = require('../../lib/tts-paths.cjs');
 const { hasFullAccess, normalizeEmail } = require('../auth/full-access.cjs');
 const { assertAccountStorageQuota } = require('../storage/account-storage-quota.cjs');
 
-const AUDIO_EXTENSIONS = new Set(['.wav', '.wave', '.mp3', '.ogg', '.webm', '.m4a', '.mp4', '.flac']);
+const AUDIO_EXTENSIONS = new Set(['.wav', '.wave', '.mp3', '.ogg', '.webm', '.m4a', '.mp4', '.mov', '.flac']);
 const AUDIO_MIME_TYPES = new Set([
   'audio/wav',
   'audio/wave',
@@ -20,6 +20,8 @@ const AUDIO_MIME_TYPES = new Set([
   'audio/flac',
   'audio/x-m4a',
   'video/webm',
+  'video/quicktime',
+  'video/mp4',
 ]);
 const libraryReferenceCache = new Map();
 
@@ -151,6 +153,7 @@ function inferAudioExtension(file = {}) {
   if (mime.includes('ogg')) return '.ogg';
   if (mime.includes('webm')) return '.webm';
   if (mime.includes('flac')) return '.flac';
+  if (mime.includes('quicktime')) return '.mov';
   if (mime.includes('mp4') || mime.includes('m4a')) return '.m4a';
   return '.wav';
 }
@@ -363,6 +366,7 @@ function inferMimeTypeFromPath(filePath = '') {
   if (ext === '.webm') return 'audio/webm';
   if (ext === '.flac') return 'audio/flac';
   if (ext === '.m4a' || ext === '.mp4') return 'audio/mp4';
+  if (ext === '.mov') return 'video/quicktime';
   return 'application/octet-stream';
 }
 

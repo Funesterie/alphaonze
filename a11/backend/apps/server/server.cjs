@@ -582,6 +582,9 @@ const {
   isMcpAccessQuestion,
   isRuntimeModulesAccessQuestion,
 } = require('./src/chat/a11-active-identity.cjs');
+const {
+  postProcessA11AssistantResponse,
+} = require('./src/chat/response-draft-rewriter.cjs');
 const createMailRouter = require('./src/routes/mail.cjs');
 const createMemoryRouter = require('./src/routes/memory.cjs');
 const {
@@ -9368,6 +9371,16 @@ function applyAssistantTextToPayload(payload, content, extras = null) {
   return payload;
 }
 
+function finalizeA11AssistantContent(content, req = null, contextText = '') {
+  const body = req?.body || {};
+  const userMessage = getLatestUserMessage(body);
+  return postProcessA11AssistantResponse({
+    text: content,
+    userMessage,
+    contextText,
+  }).content;
+}
+
 async function resolveAssistantActionEnvelope({
   content,
   allowDevActions = false,
@@ -12600,7 +12613,7 @@ async function proxyQflushChat(req, res) {
       allowedActions: USER_SAFE_AGENT_ACTIONS,
       messages: Array.isArray(body.messages) ? body.messages : [],
     });
-    const content = resolvedAssistant.content;
+    const content = finalizeA11AssistantContent(resolvedAssistant.content, req, systemPrompt);
     if (userId && content) {
       await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
     }
@@ -12729,7 +12742,7 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
       allowedActions: USER_SAFE_AGENT_ACTIONS,
       messages: Array.isArray(body.messages) ? body.messages : [],
     });
-    const content = resolvedAssistant.content;
+    const content = finalizeA11AssistantContent(resolvedAssistant.content, req, systemPrompt);
     const data = {
       id: `chatcmpl-local-${Date.now()}`,
       object: 'chat.completion',
@@ -13078,7 +13091,7 @@ async function proxyChatToOpenAI(req, res) {
       allowedActions: USER_SAFE_AGENT_ACTIONS,
       messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
     });
-    let content = resolvedAssistant.content;
+    let content = finalizeA11AssistantContent(resolvedAssistant.content, req, systemPrompt);
 
     // Some browser-originated local requests sporadically yield an empty normalized
     // assistant payload on the first attempt. Retry once with minimal headers and
@@ -13114,7 +13127,7 @@ async function proxyChatToOpenAI(req, res) {
           data = retryResult.data;
           rawContent = retryRawContent;
           resolvedAssistant = retryResolvedAssistant;
-          content = retryResolvedAssistant.content;
+          content = finalizeA11AssistantContent(retryResolvedAssistant.content, req, systemPrompt);
         }
       } catch (retryError) {
         console.warn('[A11] Local assistant retry failed:', sanitizeAxiosErrorForLog(retryError));
@@ -13169,7 +13182,7 @@ async function proxyChatToOpenAI(req, res) {
             allowedActions: USER_SAFE_AGENT_ACTIONS,
             messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
           });
-          const content = resolvedAssistant.content;
+          const content = finalizeA11AssistantContent(resolvedAssistant.content, req, systemPrompt);
           const responsePayload = applyAssistantTextToPayload(localData, content, resolvedAssistant.extras);
           if (userId && content) {
             await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
@@ -13231,7 +13244,7 @@ async function proxyChatToOpenAI(req, res) {
             allowedActions: USER_SAFE_AGENT_ACTIONS,
             messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
           });
-          const content = resolvedAssistant.content;
+          const content = finalizeA11AssistantContent(resolvedAssistant.content, req, systemPrompt);
           const responsePayload = applyAssistantTextToPayload(remoteData, content, resolvedAssistant.extras);
           if (userId && content) {
             await saveChatMemoryMessageWithVector(userId, 'assistant', content, conversationId);
