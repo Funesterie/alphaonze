@@ -3,8 +3,11 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const DEFAULT_STATUS_PATH = 'D:\\agent-bus\\voice\\local-gpu-worker-status.json';
+let cachedGpuStatus = null;
+let cachedGpuStatusAt = 0;
 
 function env(name, fallback = '') {
   const value = String(process.env[name] || '').trim();
@@ -32,13 +35,54 @@ function readToken() {
   return env('A11_LOCAL_GPU_WORKER_TOKEN') || env('A11_TTS_LOCAL_WORKER_TOKEN');
 }
 
+function readGpuStatus() {
+  if (String(env('A11_LOCAL_GPU_WORKER_GPU_STATUS', 'true')).toLowerCase() === 'false') return null;
+  const now = Date.now();
+  if (cachedGpuStatusAt && now - cachedGpuStatusAt < 5000) return cachedGpuStatus;
+  cachedGpuStatusAt = now;
+  try {
+    const probe = spawnSync('nvidia-smi', [
+      '--query-gpu=name,utilization.gpu,memory.used,memory.total',
+      '--format=csv,noheader,nounits',
+    ], {
+      encoding: 'utf8',
+      timeout: 1500,
+      windowsHide: true,
+    });
+    if (probe.status !== 0 || !String(probe.stdout || '').trim()) {
+      cachedGpuStatus = null;
+      return cachedGpuStatus;
+    }
+    const [name, utilization, memoryUsed, memoryTotal] = String(probe.stdout || '').split(/\r?\n/)[0]
+      .split(',')
+      .map((part) => part.trim());
+    const used = Number(memoryUsed);
+    const total = Number(memoryTotal);
+    cachedGpuStatus = {
+      name: name || null,
+      utilizationGpuPercent: Number(utilization),
+      memoryUsedMiB: used,
+      memoryTotalMiB: total,
+      memoryUsedPercent: Number.isFinite(used) && Number.isFinite(total) && total > 0
+        ? Math.round((used / total) * 1000) / 10
+        : null,
+    };
+    return cachedGpuStatus;
+  } catch {
+    cachedGpuStatus = null;
+    return cachedGpuStatus;
+  }
+}
+
 function writeStatus(status) {
   const statusPath = env('A11_LOCAL_GPU_WORKER_STATUS_PATH', DEFAULT_STATUS_PATH);
+  const gpu = readGpuStatus();
   try {
     fs.mkdirSync(path.dirname(statusPath), { recursive: true });
     fs.writeFileSync(statusPath, JSON.stringify({
       schema: 'funesterie.local-gpu-voice-worker.v1',
       updatedAt: new Date().toISOString(),
+      ...(gpu ? { gpu } : {}),
       ...status,
     }, null, 2), 'utf8');
   } catch {
@@ -194,13 +238,42 @@ async function run() {
       if (!claim && lastClaimError) throw lastClaimError;
 
       if (!claim?.job) {
-        writeStatus({ ok: true, state: 'idle', workerId, remoteBaseUrls, localBaseUrl, processed, failed, pollIntervalMs: claim?.pollIntervalMs || 1500 });
+        writeStatus({
+          ok: true,
+          state: 'idle',
+          workerId,
+          remoteBaseUrls,
+          localBaseUrl,
+          processed,
+          failed,
+          pollIntervalMs: claim?.pollIntervalMs || 1500,
+          remoteQueue: claim ? {
+            enabled: claim.enabled ?? null,
+            backpressure: Boolean(claim.backpressure),
+            reason: claim.reason || null,
+            queueDepth: claim.queueDepth ?? null,
+            leased: claim.leased ?? null,
+            maxActive: claim.maxActive ?? null,
+            availableSlots: claim.availableSlots ?? null,
+          } : null,
+        });
         await sleep(Number(claim?.pollIntervalMs || 1500) || 1500);
         continue;
       }
 
       const job = claim.job;
-      writeStatus({ ok: true, state: 'processing', workerId, remoteBaseUrls, remoteBaseUrl: claimedRemoteBaseUrl, localBaseUrl, jobId: job.id, processed, failed });
+      writeStatus({
+        ok: true,
+        state: 'processing',
+        workerId,
+        remoteBaseUrls,
+        remoteBaseUrl: claimedRemoteBaseUrl,
+        localBaseUrl,
+        jobId: job.id,
+        leaseMs: claim.leaseMs || null,
+        processed,
+        failed,
+      });
       try {
         const result = await synthesizeLocalAudio(localBaseUrl, job);
         await postJson(buildUrl(claimedRemoteBaseUrl, `/api/tts/local-worker/jobs/${encodeURIComponent(job.id)}/complete`), token, {

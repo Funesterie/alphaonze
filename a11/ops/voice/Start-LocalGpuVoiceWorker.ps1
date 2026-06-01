@@ -5,6 +5,7 @@ param(
   [string]$StatusPath = "D:\agent-bus\voice\local-gpu-worker-status.json",
   [ValidateSet("auto", "cuda", "cpu")]
   [string]$Device = "auto",
+  [switch]$RestartWorker,
   [switch]$Visible
 )
 
@@ -85,6 +86,27 @@ except Exception as exc:
   return "cpu"
 }
 
+function Get-LocalGpuWorkerProcesses {
+  $scriptName = "local-gpu-voice-worker.cjs"
+  Get-CimInstance Win32_Process |
+    Where-Object {
+      $_.ProcessId -ne $PID -and
+      $_.CommandLine -and
+      $_.CommandLine -like "*$scriptName*"
+    }
+}
+
+function Stop-LocalGpuWorkerProcesses {
+  $existing = @(Get-LocalGpuWorkerProcesses)
+  foreach ($process in $existing) {
+    try {
+      Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+    } catch {
+      Write-Warning "Impossible d'arreter le worker local PID $($process.ProcessId): $($_.Exception.Message)"
+    }
+  }
+}
+
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 New-WorkerTokenIfMissing
 
@@ -129,6 +151,17 @@ if (-not (Test-BridgeHealth)) {
 }
 
 Write-Step "Demarrage worker GPU local"
+$existingWorkers = @(Get-LocalGpuWorkerProcesses)
+if ($existingWorkers.Count -gt 0 -and -not $RestartWorker) {
+  Write-Host "Local GPU voice worker already running ($($existingWorkers.Count) process). Use -RestartWorker to reload it."
+  Write-Host "  bridge: $healthUrl ($resolvedDevice)"
+  Write-Host "  status: $StatusPath"
+  Write-Host "  logs: $logDir"
+  return
+}
+if ($RestartWorker) {
+  Stop-LocalGpuWorkerProcesses
+}
 $node = (Get-Command node -ErrorAction Stop).Source
 $workerId = "$env:COMPUTERNAME-rtx5070-voice"
 $workerEnv = @"

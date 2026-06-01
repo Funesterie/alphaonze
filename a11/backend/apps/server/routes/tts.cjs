@@ -44,8 +44,11 @@ const xttsRvcQueue = [];
 let xttsRvcActive = 0;
 const TTS_ASYNC_JOB_TTL_MS = Number(process.env.A11_TTS_ASYNC_JOB_TTL_MS || 15 * 60 * 1000);
 const TTS_ASYNC_JOB_MAX_AGE_MS = Number(process.env.A11_TTS_ASYNC_JOB_MAX_AGE_MS || 30 * 60 * 1000);
+const TTS_ASYNC_DEFAULT_QUEUE_MAX = 50;
 const TTS_XTTS_RVC_DEFAULT_CONCURRENCY = 1;
 const TTS_XTTS_RVC_DEFAULT_QUEUE_MAX = 24;
+const LOCAL_GPU_WORKER_DEFAULT_MAX_ACTIVE = 1;
+const LOCAL_GPU_WORKER_DEFAULT_MAX_LEASE_EXPIRIES = 1;
 
 function configureTtsRouter(options = {}) {
   if (typeof options.verifyJWT === 'function') {
@@ -305,6 +308,10 @@ function getXttsRvcQueueMax() {
   return Math.max(1, Math.min(100, positiveIntFromEnv('A11_TTS_XTTS_RVC_QUEUE_MAX', TTS_XTTS_RVC_DEFAULT_QUEUE_MAX)));
 }
 
+function getTtsAsyncQueueMax() {
+  return Math.max(1, Math.min(250, positiveIntFromEnv('A11_TTS_ASYNC_QUEUE_MAX', TTS_ASYNC_DEFAULT_QUEUE_MAX)));
+}
+
 function createXttsRvcQueueError() {
   const error = new Error('xtts_rvc_queue_saturated');
   error.code = 'xtts_rvc_queue_saturated';
@@ -350,6 +357,10 @@ function wantsAsyncTtsJob(body = {}) {
     ?? body.async,
     false
   ) === true;
+}
+
+function isActiveTtsAsyncJob(job = {}) {
+  return ['queued', 'leased', 'running'].includes(job?.state);
 }
 
 function pruneTtsAsyncJobs(now = Date.now()) {
@@ -466,10 +477,39 @@ function getLocalGpuWorkerLeaseMs() {
   return Math.max(30_000, Math.min(20 * 60_000, Number(process.env.A11_LOCAL_GPU_WORKER_LEASE_MS || 6 * 60_000) || 6 * 60_000));
 }
 
+function getLocalGpuWorkerMaxActive() {
+  return Math.max(1, Math.min(8, positiveIntFromEnv('A11_LOCAL_GPU_WORKER_MAX_ACTIVE', LOCAL_GPU_WORKER_DEFAULT_MAX_ACTIVE)));
+}
+
+function getLocalGpuWorkerMaxLeaseExpiries() {
+  return Math.max(1, Math.min(5, positiveIntFromEnv('A11_LOCAL_GPU_WORKER_MAX_LEASE_EXPIRIES', LOCAL_GPU_WORKER_DEFAULT_MAX_LEASE_EXPIRIES)));
+}
+
 function getLocalGpuWorkerFallbackMs() {
   const value = Number(process.env.A11_LOCAL_GPU_WORKER_FALLBACK_MS || 45_000);
   if (!Number.isFinite(value)) return 45_000;
   return Math.max(0, Math.min(5 * 60_000, value));
+}
+
+function fallbackLocalGpuJobToServer(job, reason = 'local_gpu_worker_fallback') {
+  if (!job || job.worker !== 'local-gpu') return false;
+  job.worker = 'server';
+  job.state = 'queued';
+  job.statusCode = null;
+  job.error = null;
+  job.message = null;
+  job.workerFallbackAt = Date.now();
+  job.workerFallbackReason = reason;
+  job.workerId = null;
+  job.leasedAt = null;
+  job.result = null;
+  job.finishedAt = null;
+  runInternalTtsAsyncJob(job, {
+    body: job.body || {},
+    headers: {},
+    user: job.userId ? { id: job.userId } : null,
+  }, { 'x-a11-internal-tts-job': '1' });
+  return true;
 }
 
 function releaseStaleLocalGpuWorkerLeases(now = Date.now()) {
@@ -478,11 +518,15 @@ function releaseStaleLocalGpuWorkerLeases(now = Date.now()) {
     if (job?.worker !== 'local-gpu') continue;
     if (job.state !== 'leased') continue;
     if (!job.leasedAt || now - job.leasedAt <= leaseMs) continue;
+    job.leaseExpiredCount = Number(job.leaseExpiredCount || 0) + 1;
     job.state = 'queued';
     job.statusCode = null;
     job.workerId = null;
     job.leaseExpiredAt = now;
     job.leasedAt = null;
+    if (job.leaseExpiredCount >= getLocalGpuWorkerMaxLeaseExpiries()) {
+      fallbackLocalGpuJobToServer(job, 'local_gpu_worker_lease_expired');
+    }
   }
 }
 
@@ -518,6 +562,9 @@ function findClaimableLocalGpuWorkerJob(now = Date.now()) {
 }
 
 function publicTtsAsyncJob(job = {}) {
+  const leaseExpiresAt = job.leasedAt
+    ? Number(job.leasedAt) + getLocalGpuWorkerLeaseMs()
+    : null;
   const payload = {
     ok: job.state !== 'failed',
     async: true,
@@ -537,7 +584,10 @@ function publicTtsAsyncJob(job = {}) {
     worker: job.worker || null,
     workerId: job.workerId || null,
     leasedAt: job.leasedAt || null,
+    leaseExpiresAt,
+    leaseExpiredCount: Number(job.leaseExpiredCount || 0),
     workerFallbackAt: job.workerFallbackAt || null,
+    workerFallbackReason: job.workerFallbackReason || null,
   };
   if (job.result && (job.state === 'done' || job.state === 'failed')) {
     payload.result = job.result;
@@ -552,6 +602,63 @@ function publicTtsAsyncJob(job = {}) {
     payload.message = job.message || job.error;
   }
   return payload;
+}
+
+function countLocalGpuWorkerLeases() {
+  return Array.from(ttsAsyncJobs.values())
+    .filter((job) => job?.worker === 'local-gpu' && ['leased', 'running'].includes(job.state))
+    .length;
+}
+
+function buildTtsQueueSnapshot(now = Date.now()) {
+  const jobs = Array.from(ttsAsyncJobs.values());
+  const countsByState = jobs.reduce((acc, job) => {
+    const state = String(job?.state || 'unknown');
+    acc[state] = (acc[state] || 0) + 1;
+    return acc;
+  }, {});
+  const localJobs = jobs.filter((job) => job?.worker === 'local-gpu');
+  const leaseMs = getLocalGpuWorkerLeaseMs();
+  const activeAsync = jobs.filter(isActiveTtsAsyncJob);
+  const localQueued = localJobs.filter((job) => job.state === 'queued');
+  const localLeased = localJobs.filter((job) => ['leased', 'running'].includes(job.state));
+  const staleLeases = localLeased.filter((job) => job.leasedAt && now - Number(job.leasedAt) > leaseMs);
+  const oldestQueuedAt = activeAsync
+    .filter((job) => job.state === 'queued')
+    .map((job) => Number(job.createdAt || 0))
+    .filter(Boolean)
+    .sort((a, b) => a - b)[0] || null;
+  const maxActive = getLocalGpuWorkerMaxActive();
+
+  return {
+    schema: 'funesterie.tts.queue-status.v1',
+    generatedAt: new Date(now).toISOString(),
+    asyncJobs: {
+      total: jobs.length,
+      active: activeAsync.length,
+      max: getTtsAsyncQueueMax(),
+      states: countsByState,
+      oldestQueuedAgeMs: oldestQueuedAt ? Math.max(0, now - oldestQueuedAt) : null,
+    },
+    localGpu: {
+      enabled: localGpuWorkerEnabled(),
+      queued: localQueued.length,
+      leased: localLeased.length,
+      active: localJobs.filter(isActiveTtsAsyncJob).length,
+      maxActive,
+      availableSlots: Math.max(0, maxActive - localLeased.length),
+      staleLeases: staleLeases.length,
+      leaseMs,
+      fallbackMs: getLocalGpuWorkerFallbackMs(),
+      maxLeaseExpiries: getLocalGpuWorkerMaxLeaseExpiries(),
+    },
+    xttsRvc: {
+      queued: xttsRvcQueue.length,
+      active: xttsRvcActive,
+      concurrency: getXttsRvcQueueConcurrency(),
+      max: getXttsRvcQueueMax(),
+    },
+  };
 }
 
 function createTtsJobResponseCapture(job) {
@@ -3131,6 +3238,16 @@ function scheduleLocalGpuWorkerFallback(job, req, headers) {
 
 function startTtsAsyncJob(req, res, options = {}) {
   pruneTtsAsyncJobs();
+  const queueMax = getTtsAsyncQueueMax();
+  const activeJobs = Array.from(ttsAsyncJobs.values()).filter(isActiveTtsAsyncJob).length;
+  if (activeJobs >= queueMax) {
+    return res.status(429).json({
+      ok: false,
+      error: 'tts_async_queue_saturated',
+      message: 'La file voix est pleine, reessaie dans quelques instants.',
+      queue: buildTtsQueueSnapshot(),
+    });
+  }
   const body = buildAsyncTtsJobBody(req.body || {});
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
   const job = {
@@ -3183,6 +3300,15 @@ router.get('/tts/jobs/:jobId', runOptionalJwt, (req, res) => {
   return res.json(publicTtsAsyncJob(job));
 });
 
+router.get('/tts/queue/status', runOptionalJwt, (req, res) => {
+  setTtsCorsHeaders(req, res);
+  pruneTtsAsyncJobs();
+  return res.json({
+    ok: true,
+    ...buildTtsQueueSnapshot(),
+  });
+});
+
 router.post('/vivy/jobs', runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
   const body = buildVivyTtsJobBody(req.body || {});
@@ -3217,12 +3343,18 @@ router.post('/tts/local-worker/heartbeat', express.json({ limit: '16kb' }), requ
   pruneTtsAsyncJobs();
   const workerId = String(req.body?.workerId || req.body?.id || 'local-gpu-worker').trim().slice(0, 120) || 'local-gpu-worker';
   const claimable = findClaimableLocalGpuWorkerJob();
+  const snapshot = buildTtsQueueSnapshot();
   return res.json({
     ok: true,
     enabled: localGpuWorkerEnabled(),
     workerId,
-    queueDepth: Array.from(ttsAsyncJobs.values()).filter((job) => job?.worker === 'local-gpu' && job.state === 'queued').length,
-    active: Array.from(ttsAsyncJobs.values()).filter((job) => job?.worker === 'local-gpu' && ['queued', 'leased', 'running'].includes(job.state)).length,
+    queueDepth: snapshot.localGpu.queued,
+    active: snapshot.localGpu.active,
+    leased: snapshot.localGpu.leased,
+    maxActive: snapshot.localGpu.maxActive,
+    availableSlots: snapshot.localGpu.availableSlots,
+    staleLeases: snapshot.localGpu.staleLeases,
+    xttsRvc: snapshot.xttsRvc,
     nextJobId: claimable?.id || null,
   });
 });
@@ -3232,9 +3364,36 @@ router.post('/tts/local-worker/claim', express.json({ limit: '16kb' }), requireL
   if (!localGpuWorkerEnabled()) {
     return res.json({ ok: true, enabled: false, job: null, pollIntervalMs: 2500 });
   }
+  const activeLeases = countLocalGpuWorkerLeases();
+  const maxActive = getLocalGpuWorkerMaxActive();
+  if (activeLeases >= maxActive) {
+    const snapshot = buildTtsQueueSnapshot();
+    return res.json({
+      ok: true,
+      enabled: true,
+      job: null,
+      backpressure: true,
+      reason: 'local_gpu_worker_busy',
+      pollIntervalMs: 1500,
+      queueDepth: snapshot.localGpu.queued,
+      leased: snapshot.localGpu.leased,
+      maxActive,
+      availableSlots: snapshot.localGpu.availableSlots,
+    });
+  }
   const job = findClaimableLocalGpuWorkerJob();
   if (!job) {
-    return res.json({ ok: true, enabled: true, job: null, pollIntervalMs: 1500 });
+    const snapshot = buildTtsQueueSnapshot();
+    return res.json({
+      ok: true,
+      enabled: true,
+      job: null,
+      pollIntervalMs: 1500,
+      queueDepth: snapshot.localGpu.queued,
+      leased: snapshot.localGpu.leased,
+      maxActive,
+      availableSlots: snapshot.localGpu.availableSlots,
+    });
   }
   job.state = 'leased';
   job.startedAt = job.startedAt || Date.now();
@@ -3244,6 +3403,8 @@ router.post('/tts/local-worker/claim', express.json({ limit: '16kb' }), requireL
     ok: true,
     enabled: true,
     leaseMs: getLocalGpuWorkerLeaseMs(),
+    maxActive,
+    activeLeases: countLocalGpuWorkerLeases(),
     job: publicLocalGpuWorkerJob(job),
   });
 });
@@ -3330,28 +3491,13 @@ router.post('/tts/local-worker/jobs/:jobId/fail', express.json({ limit: '64kb' }
   if (!job || job.worker !== 'local-gpu') {
     return res.status(404).json({ ok: false, error: 'tts_job_not_found' });
   }
-  job.worker = 'server';
-  job.state = 'queued';
-  job.statusCode = null;
-  job.error = null;
-  job.message = null;
   job.localGpuFailure = {
     at: Date.now(),
     workerId: job.workerId || String(req.body?.workerId || req.body?.id || '').trim() || null,
     error: String(req.body?.error || 'local_gpu_worker_failed').slice(0, 120),
     message: String(req.body?.message || req.body?.error || 'Le worker GPU local n’a pas produit l’audio.').slice(0, 800),
   };
-  job.workerFallbackAt = Date.now();
-  job.workerFallbackReason = job.localGpuFailure.error;
-  job.workerId = null;
-  job.leasedAt = null;
-  job.result = null;
-  job.finishedAt = null;
-  runInternalTtsAsyncJob(job, {
-    body: job.body || {},
-    headers: {},
-    user: job.userId ? { id: job.userId } : null,
-  }, { 'x-a11-internal-tts-job': '1' });
+  fallbackLocalGpuJobToServer(job, job.localGpuFailure.error);
   return res.json(publicTtsAsyncJob(job));
 });
 

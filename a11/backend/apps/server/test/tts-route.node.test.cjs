@@ -291,12 +291,14 @@ test('tts async official voice jobs can be claimed and completed by the local GP
     A11_TTS_LOCAL_WORKER_TOKEN: process.env.A11_TTS_LOCAL_WORKER_TOKEN,
     A11_LOCAL_GPU_WORKER_TOKEN_FILE: process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE,
     A11_TTS_LOCAL_WORKER_TOKEN_FILE: process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE,
+    A11_LOCAL_GPU_WORKER_MAX_ACTIVE: process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE,
   };
   const wav = createPcm16Wav();
 
   process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '1';
   delete process.env.A11_LOCAL_GPU_WORKER_ENABLED;
   process.env.A11_LOCAL_GPU_WORKER_TOKEN = 'test-local-gpu-worker-token';
+  process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE = '1';
   delete process.env.A11_TTS_LOCAL_WORKER_TOKEN;
   delete process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE;
   delete process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE;
@@ -328,6 +330,36 @@ test('tts async official voice jobs can be claimed and completed by the local GP
         assert.equal(claimed.response.status, 200);
         assert.equal(claimed.json.job.id, started.json.jobId);
         assert.equal(claimed.json.job.body.text, 'bonjour local');
+        assert.equal(claimed.json.maxActive, 1);
+        assert.equal(claimed.json.activeLeases, 1);
+
+        const second = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'deuxieme job local',
+          persona: 'a11',
+          ttsAsync: true,
+          audioFormat: 'wav',
+        });
+        assert.equal(second.response.status, 202);
+        assert.equal(second.json.worker, 'local-gpu');
+
+        const busyClaim = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'test-worker-2' }, {
+          authorization: 'Bearer test-local-gpu-worker-token',
+        });
+        assert.equal(busyClaim.response.status, 200);
+        assert.equal(busyClaim.json.job, null);
+        assert.equal(busyClaim.json.backpressure, true);
+        assert.equal(busyClaim.json.reason, 'local_gpu_worker_busy');
+        assert.equal(busyClaim.json.queueDepth, 1);
+        assert.equal(busyClaim.json.leased, 1);
+
+        const queueStatus = await fetch(baseUrl + '/api/tts/queue/status');
+        const queueJson = await queueStatus.json();
+        assert.equal(queueStatus.status, 200);
+        assert.equal(queueJson.ok, true);
+        assert.equal(queueJson.localGpu.queued, 1);
+        assert.equal(queueJson.localGpu.leased, 1);
+        assert.equal(queueJson.localGpu.maxActive, 1);
+        assert.equal(queueJson.xttsRvc.concurrency, 1);
 
         const completed = await postJson(baseUrl, `/api/tts/local-worker/jobs/${started.json.jobId}/complete`, {
           workerId: 'test-worker',
@@ -344,6 +376,24 @@ test('tts async official voice jobs can be claimed and completed by the local GP
         assert.equal(completed.json.result.via, 'local-gpu-worker');
         assert.equal(completed.json.result.provider, 'xtts-rvc');
         assert.match(completed.json.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-local-gpu-xtts-rvc\.wav$/);
+
+        const claimedSecond = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'test-worker' }, {
+          authorization: 'Bearer test-local-gpu-worker-token',
+        });
+        assert.equal(claimedSecond.response.status, 200);
+        assert.equal(claimedSecond.json.job.id, second.json.jobId);
+
+        const completedSecond = await postJson(baseUrl, `/api/tts/local-worker/jobs/${second.json.jobId}/complete`, {
+          workerId: 'test-worker',
+          audioBase64: wav.toString('base64'),
+          contentType: 'audio/wav',
+          engine: 'test-local-gpu',
+          voiceStyle: 'terminator',
+        }, {
+          authorization: 'Bearer test-local-gpu-worker-token',
+        });
+        assert.equal(completedSecond.response.status, 200);
+        assert.equal(completedSecond.json.state, 'done');
       }
     );
   } finally {
