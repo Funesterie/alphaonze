@@ -4324,11 +4324,21 @@ function FunesteriePublicNav({
           </div>
         </details>
       ) : (
-        <div className="fun-home-nav-links">
-          {navItems.map(([label, href]) => (
-            <a key={label} href={href}>{label}</a>
-          ))}
-        </div>
+        <>
+          <div className="fun-home-nav-links">
+            {navItems.map(([label, href]) => (
+              <a key={label} href={href}>{label}</a>
+            ))}
+          </div>
+          <details className="fun-public-menu fun-public-menu--mobile">
+            <summary>Menu</summary>
+            <div className="fun-public-menu-panel">
+              {navItems.map(([label, href]) => (
+                <a key={label} href={href}>{label}</a>
+              ))}
+            </div>
+          </details>
+        </>
       )}
       {null}
     </nav>
