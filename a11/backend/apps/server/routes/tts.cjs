@@ -38,6 +38,9 @@ const {
 
 const commandAvailabilityCache = new Map();
 let configuredVerifyJWT = null;
+const ttsAsyncJobs = new Map();
+const TTS_ASYNC_JOB_TTL_MS = Number(process.env.A11_TTS_ASYNC_JOB_TTL_MS || 15 * 60 * 1000);
+const TTS_ASYNC_JOB_MAX_AGE_MS = Number(process.env.A11_TTS_ASYNC_JOB_MAX_AGE_MS || 30 * 60 * 1000);
 
 function configureTtsRouter(options = {}) {
   if (typeof options.verifyJWT === 'function') {
@@ -281,6 +284,125 @@ function requiresReferenceVoice(req = {}) {
     ?? body.referenceVoiceRequired,
     false
   ) === true;
+}
+
+function wantsAsyncTtsJob(body = {}) {
+  return parseOptionalBoolean(
+    body.ttsAsync
+    ?? body.asyncTts
+    ?? body.backgroundTts
+    ?? body.async,
+    false
+  ) === true;
+}
+
+function pruneTtsAsyncJobs(now = Date.now()) {
+  for (const [id, job] of ttsAsyncJobs.entries()) {
+    const finishedAt = Number(job?.finishedAt || 0);
+    const createdAt = Number(job?.createdAt || 0);
+    if (finishedAt && now - finishedAt > TTS_ASYNC_JOB_TTL_MS) {
+      ttsAsyncJobs.delete(id);
+    } else if (createdAt && now - createdAt > TTS_ASYNC_JOB_MAX_AGE_MS) {
+      ttsAsyncJobs.delete(id);
+    }
+  }
+}
+
+function createTtsAsyncJobId() {
+  return `ttsjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function publicTtsAsyncJob(job = {}) {
+  const payload = {
+    ok: job.state !== 'failed',
+    async: true,
+    jobId: job.id || null,
+    state: job.state || 'queued',
+    status: job.state || 'queued',
+    statusCode: job.statusCode || null,
+    statusUrl: job.id ? `/api/tts/jobs/${encodeURIComponent(job.id)}` : null,
+    createdAt: job.createdAt || null,
+    startedAt: job.startedAt || null,
+    finishedAt: job.finishedAt || null,
+  };
+  if (job.result && (job.state === 'done' || job.state === 'failed')) {
+    payload.result = job.result;
+    payload.audioUrl = job.result.audioUrl || job.result.audio_url || job.result.url || null;
+    payload.audio_url = payload.audioUrl || null;
+    payload.provider = job.result.provider || job.result.via || null;
+    payload.via = job.result.via || null;
+  }
+  if (job.error) {
+    payload.ok = false;
+    payload.error = job.error;
+    payload.message = job.message || job.error;
+  }
+  return payload;
+}
+
+function createTtsJobResponseCapture(job) {
+  const capture = {
+    statusCode: 200,
+    headers: {},
+    setHeader(name, value) {
+      this.headers[String(name || '').toLowerCase()] = value;
+      return this;
+    },
+    getHeader(name) {
+      return this.headers[String(name || '').toLowerCase()];
+    },
+    status(code) {
+      this.statusCode = Number(code) || 200;
+      return this;
+    },
+    json(payload) {
+      job.statusCode = this.statusCode;
+      job.result = payload || {};
+      job.state = this.statusCode >= 400 || payload?.ok === false ? 'failed' : 'done';
+      job.error = job.state === 'failed' ? String(payload?.message || payload?.error || `tts_job_failed_${this.statusCode}`) : null;
+      job.message = job.error;
+      job.finishedAt = Date.now();
+      return payload;
+    },
+    send(payload) {
+      job.statusCode = this.statusCode;
+      if (Buffer.isBuffer(payload)) {
+        job.result = {
+          ok: true,
+          contentType: String(this.headers['content-type'] || 'audio/wav'),
+          note: 'audio_buffer_response',
+        };
+      } else {
+        job.result = payload || {};
+      }
+      job.state = this.statusCode >= 400 ? 'failed' : 'done';
+      job.error = job.state === 'failed' ? `tts_job_failed_${this.statusCode}` : null;
+      job.message = job.error;
+      job.finishedAt = Date.now();
+      return payload;
+    },
+    end() {
+      if (job.state === 'running') {
+        job.statusCode = this.statusCode;
+        job.state = this.statusCode >= 400 ? 'failed' : 'done';
+        job.finishedAt = Date.now();
+      }
+      return null;
+    },
+  };
+  return capture;
+}
+
+function buildAsyncTtsJobBody(body = {}) {
+  return {
+    ...body,
+    ttsAsync: false,
+    asyncTts: false,
+    backgroundTts: false,
+    async: false,
+    stream: false,
+    returnAudioBuffer: false,
+  };
 }
 
 function isInteractiveTtsRequest(req = {}) {
@@ -2320,9 +2442,301 @@ async function sendTtsPayloadResponse(req, res, payload) {
   }
 }
 
-router.options(['/tts/piper', '/tts/speak', '/tts/out/:filename'], (req, res) => {
+router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/tts/out/:filename'], (req, res) => {
   setTtsCorsHeaders(req, res);
   return res.status(204).end();
+});
+
+async function handleTtsSpeakRequest(req, res) {
+  try {
+    const text = String(req.body?.text || '').trim();
+    const vocalMode = normalizeVocalMode(req.body || {});
+    const readableText = shapeTextForVocalMode(buildTtsReadableText(text), vocalMode);
+    const voice = resolveVoiceForRequest(req.body || {});
+    const preferHttpTts = shouldPreferHttpTts();
+
+    if (!readableText) {
+      return res.status(400).json({ error: 'missing_text' });
+    }
+
+    let remoteError = null;
+    const preparedBody = {
+      ...(req.body || {}),
+      text: readableText,
+      voice,
+      model: voice || req.body?.model,
+      vocalMode,
+    };
+    let openAiTtsErrorMessage = null;
+    const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
+    const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
+    const canUseOpenAiIdentityFallback = shouldTryOpenAiTts(preparedBody);
+    const interactiveTts = isInteractiveTtsRequest(preparedBody);
+    const hasDirectIdentityBridge = resolvedProvider.provider === PROVIDERS.XTTS_RVC
+      && resolvedProvider.configured !== false;
+    const hasExplicitDirectIdentityBridge = hasExplicitXttsRvcBridgeConfig();
+    const preferOpenAiTtsFirst = shouldPreferOpenAiTtsFirst(preparedBody, vocalMode)
+      || (interactiveTts && canUseOpenAiIdentityFallback)
+      || (strictOfficialVoice && canUseOpenAiIdentityFallback && !hasDirectIdentityBridge);
+    const preferOpenAiBeforeDirectBridge = preferOpenAiTtsFirst
+      && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
+    const sendFinalizedPayload = async (basePayload) => {
+      const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
+      if (requiresReferenceVoice(req) && !isReferenceAwareTtsPayload(payload)) {
+        return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
+      }
+      return sendTtsPayloadResponse(req, res, payload);
+    };
+
+    if (preferOpenAiBeforeDirectBridge) {
+      try {
+        const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
+        return sendFinalizedPayload({
+          ...openAiTts,
+          via: 'openai-tts',
+          text: readableText,
+          vocalMode,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        });
+      } catch (openAiTtsError) {
+        openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
+        console.warn('[TTS][OpenAI] preferred voice failed:', openAiTtsErrorMessage);
+        if (strictOfficialVoice && isExplicitOpenAiProvider(getRequestedTtsProvider(preparedBody))) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: OpenAI TTS n’a pas produit la voix demandee. Piper est bloque pour cette voix.',
+            provider: 'openai',
+            diagnostic: 'openai_tts_failed',
+          });
+        }
+      }
+    }
+
+    if (resolvedProvider.provider === PROVIDERS.XTTS_RVC) {
+      try {
+        const directVoice = await requestDirectXttsRvcWithRetry(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        return sendFinalizedPayload(directVoice);
+      } catch (xttsRvcError) {
+        const message = String(xttsRvcError?.message || xttsRvcError);
+        console.warn('[TTS][XTTS/RVC] official voice failed:', message);
+        if (strictOfficialVoice && !canUseOpenAiIdentityFallback) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: le runtime XTTS/RVC n’a pas produit la voix demandee. Piper est bloque pour cette voix.',
+            provider: PROVIDERS.XTTS_RVC,
+            diagnostic: 'xtts_rvc_failed',
+          });
+        }
+      }
+    } else if (strictOfficialVoice && resolvedProvider.configured === false && !canUseOpenAiIdentityFallback) {
+      return res.status(424).json({
+        ok: false,
+        error: 'voice_reference_tts_unavailable',
+        message: 'Voix officielle indisponible: aucun provider de voix identitaire n’est configure. Piper est bloque pour cette voix.',
+        provider: resolvedProvider.provider || null,
+        diagnostic: resolvedProvider.diagnostic || 'identity_voice_unavailable',
+      });
+    }
+
+    if (preferOpenAiTtsFirst && !openAiTtsErrorMessage) {
+      try {
+        const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
+        return sendFinalizedPayload({
+          ...openAiTts,
+          via: 'openai-tts',
+          text: readableText,
+          vocalMode,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        });
+      } catch (openAiTtsError) {
+        openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
+        console.warn('[TTS][OpenAI] preferred voice failed:', openAiTtsErrorMessage);
+        if (strictOfficialVoice && isExplicitOpenAiProvider(getRequestedTtsProvider(preparedBody))) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: OpenAI TTS n’a pas produit la voix demandee. Piper est bloque pour cette voix.',
+            provider: 'openai',
+            diagnostic: 'openai_tts_failed',
+          });
+        }
+      }
+    }
+
+    if (preferHttpTts) {
+      try {
+        const remote = await requestRemoteTts(preparedBody);
+        return sendFinalizedPayload({ ...remote, text: readableText, vocalMode });
+      } catch (error_) {
+        remoteError = String(error_?.message || error_);
+        console.warn('[TTS] HTTP backend unavailable:', remoteError);
+        if (strictOfficialVoice) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: 'Voix officielle indisponible: le module voix n’a pas repondu avec une voix identitaire. Piper est bloque pour cette voix.',
+            provider: resolvedProvider.provider || null,
+            diagnostic: 'voice_module_failed',
+          });
+        }
+      }
+    }
+
+    let spawnErrorMessage = null;
+    if (strictOfficialVoice) {
+      return res.status(424).json({
+        ok: false,
+        error: 'voice_reference_tts_unavailable',
+        message: 'Voix officielle indisponible: aucun provider identitaire n’a produit d’audio. Piper est bloque pour cette voix.',
+        provider: resolvedProvider.provider || null,
+        diagnostic: 'neutral_fallback_blocked',
+      });
+    }
+
+    try {
+      const local = await spawnPiperLocal(readableText, voice || null);
+      const absoluteAudioUrl = String(local.audioUrl || local.audio_url || '').trim();
+      return sendFinalizedPayload({
+        ...local,
+        via: 'spawn',
+        text: readableText,
+        vocalMode,
+        audio_url: absoluteAudioUrl || null,
+        audioUrl: absoluteAudioUrl || null,
+      });
+    } catch (spawnError) {
+      spawnErrorMessage = String(spawnError?.message || spawnError);
+    }
+
+    if (!preferOpenAiTtsFirst && shouldTryOpenAiTts(preparedBody)) {
+      try {
+        const openAiTts = await requestOpenAiTts(readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(openAiTts.audioUrl || openAiTts.audio_url || '').trim();
+        return sendFinalizedPayload({
+          ...openAiTts,
+          via: 'openai-tts',
+          text: readableText,
+          vocalMode,
+          piperError: spawnErrorMessage,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        });
+      } catch (openAiTtsError) {
+        openAiTtsErrorMessage = String(openAiTtsError?.message || openAiTtsError);
+        console.warn('[TTS][OpenAI] speech fallback failed, trying espeak:', openAiTtsErrorMessage);
+      }
+    }
+
+    try {
+      const fallback = await spawnEspeakLocal(readableText, voice || null, { vocalMode });
+      const absoluteAudioUrl = String(fallback.audioUrl || fallback.audio_url || '').trim();
+      return sendFinalizedPayload({
+        ...fallback,
+        via: 'espeak',
+        text: readableText,
+        vocalMode,
+        piperError: spawnErrorMessage,
+        openAiTtsError: openAiTtsErrorMessage,
+        audio_url: absoluteAudioUrl || null,
+        audioUrl: absoluteAudioUrl || null,
+      });
+    } catch (espeakError) {
+      return res.status(503).json({
+        error: 'tts_unavailable',
+        remoteError,
+        localError: spawnErrorMessage,
+        openAiTtsError: openAiTtsErrorMessage,
+        fallbackError: String(espeakError?.message || espeakError),
+      });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: String(e) });
+  }
+}
+
+function startTtsAsyncJob(req, res) {
+  pruneTtsAsyncJobs();
+  const job = {
+    id: createTtsAsyncJobId(),
+    state: 'queued',
+    statusCode: null,
+    createdAt: Date.now(),
+    startedAt: null,
+    finishedAt: null,
+    userId: req.user?.id || req.user?.sub || null,
+    body: buildAsyncTtsJobBody(req.body || {}),
+    result: null,
+    error: null,
+    message: null,
+  };
+  ttsAsyncJobs.set(job.id, job);
+
+  const headers = { ...(req.headers || {}), 'x-a11-internal-tts-job': '1' };
+  setImmediate(() => {
+    Promise.resolve().then(async () => {
+      job.state = 'running';
+      job.startedAt = Date.now();
+      const capture = createTtsJobResponseCapture(job);
+      const internalReq = {
+        ...req,
+        body: job.body,
+        headers,
+        user: req.user || null,
+      };
+      await handleTtsSpeakRequest(internalReq, capture);
+      if (job.state === 'running' || job.state === 'queued') {
+        job.state = 'done';
+        job.statusCode = capture.statusCode || 200;
+        job.finishedAt = Date.now();
+      }
+    }).catch((error_) => {
+      job.state = 'failed';
+      job.statusCode = 500;
+      job.error = 'tts_job_failed';
+      job.message = String(error_?.message || error_);
+      job.result = { ok: false, error: job.error, message: job.message };
+      job.finishedAt = Date.now();
+    });
+  });
+
+  return res.status(202).json(publicTtsAsyncJob(job));
+}
+
+router.get('/tts/jobs/:jobId', runOptionalJwt, (req, res) => {
+  setTtsCorsHeaders(req, res);
+  pruneTtsAsyncJobs();
+  const jobId = String(req.params?.jobId || '').trim();
+  const job = ttsAsyncJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ ok: false, error: 'tts_job_not_found' });
+  }
+  const requestUserId = req.user?.id || req.user?.sub || null;
+  if (job.userId && requestUserId && job.userId !== requestUserId) {
+    return res.status(404).json({ ok: false, error: 'tts_job_not_found' });
+  }
+  return res.json(publicTtsAsyncJob(job));
 });
 
 router.get('/tts/out/:filename', async (req, res) => {
@@ -2377,6 +2791,9 @@ router.get('/tts/out/:filename', async (req, res) => {
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
+  if (wantsAsyncTtsJob(req.body || {}) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
+    return startTtsAsyncJob(req, res);
+  }
   try {
     const text = String(req.body?.text || '').trim();
     const vocalMode = normalizeVocalMode(req.body || {});

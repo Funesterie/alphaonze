@@ -1468,7 +1468,7 @@
             <div class="vivy-top-menu-panel">
               <section class="vivy-top-menu-section" aria-label="Langue">
                 <p class="vivy-top-menu-title">Langue</p>
-                <select class="vivy-top-menu-select" aria-label="Langue Vivy">
+                <select id="vivy-top-menu-language" name="vivyLanguage" class="vivy-top-menu-select" aria-label="Langue Vivy">
                   <option>Français</option>
                 </select>
               </section>
@@ -1574,8 +1574,8 @@
           <button type="button" data-vivy-chat-default-voice>Défaut</button>
           <button type="button" data-vivy-chat-reference-button>Audio perso</button>
         </div>
-        <input type="file" accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg" hidden data-vivy-chat-reference-file />
-        <input type="file" accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf" multiple hidden data-vivy-chat-file />
+        <input id="vivy-chat-reference-file" name="vivyChatReferenceFile" type="file" accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg" hidden data-vivy-chat-reference-file />
+        <input id="vivy-chat-file" name="vivyChatFiles" type="file" accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf" multiple hidden data-vivy-chat-file />
         <p class="vivy-chat-status" data-vivy-chat-status></p>
       </section>
       <section id="vivy-studio" class="vivy-studio" aria-label="Studio Vivy">
@@ -1609,7 +1609,7 @@
             <div data-vivy-panel="voice">
               <label>
                 Méthode voix
-                <select name="voiceTool">
+                <select id="vivy-studio-voice-tool" name="voiceTool">
                   <option>Voix Vivy officielle</option>
                   <option>Voix Vivy chant</option>
                   <option>Voix Vivy + référence privée</option>
@@ -1618,11 +1618,11 @@
               </label>
               <label>
                 Référence audio
-                <input name="voiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" />
+                <input id="vivy-studio-voice-file" name="voiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" />
               </label>
               <label>
                 Instruction voix
-                <textarea name="voiceInstruction" rows="6" placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."></textarea>
+                <textarea id="vivy-studio-voice-instruction" name="voiceInstruction" rows="6" placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."></textarea>
               </label>
               <div class="vivy-studio-actions vivy-studio-actions--voice">
                 <button type="button" data-vivy-default-voice>Voix Vivy par défaut</button>
@@ -1635,7 +1635,7 @@
             <div data-vivy-panel="song" hidden>
               <label>
                 Départ
-                <select name="songSource">
+                <select id="vivy-studio-song-source" name="songSource">
                   <option>Prompt + voix Vivy</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
@@ -1645,11 +1645,11 @@
               </label>
               <label>
                 Couleur sonore
-                <input name="songMood" value="Electro pop dark cinematographique" />
+                <input id="vivy-studio-song-mood" name="songMood" value="Electro pop dark cinematographique" />
               </label>
               <label>
                 Matière créative
-                <textarea name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
+                <textarea id="vivy-studio-song-text" name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
               </label>
               <div class="vivy-studio-actions vivy-studio-actions--song">
                 <button type="button" data-vivy-simple-song>Prompt + voix active = chanson</button>
@@ -1659,7 +1659,7 @@
             <div data-vivy-panel="share" hidden>
               <label>
                 Canal
-                <select name="shareTarget">
+                <select id="vivy-studio-share-target" name="shareTarget">
                   <option>YouTube</option>
                   <option>OBS / Live</option>
                   <option>SoundCloud</option>
@@ -1669,15 +1669,15 @@
               </label>
               <label>
                 Lien ou cible
-                <input name="shareUrl" placeholder="https://..." />
+                <input id="vivy-studio-share-url" name="shareUrl" placeholder="https://..." />
               </label>
               <label>
                 Token local
-                <input name="shareToken" type="password" placeholder="Non stocké, non copié dans le brief" autocomplete="off" />
+                <input id="vivy-studio-share-token" name="shareToken" type="password" placeholder="Non stocké, non copié dans le brief" autocomplete="off" />
               </label>
               <label>
                 Instruction publication
-                <textarea name="shareInstruction" rows="6" placeholder="Ex: clip vertical 30s, titre court, description FR, tags Funesterie/Vivy."></textarea>
+                <textarea id="vivy-studio-share-instruction" name="shareInstruction" rows="6" placeholder="Ex: clip vertical 30s, titre court, description FR, tags Funesterie/Vivy."></textarea>
               </label>
             </div>
 
@@ -2892,7 +2892,58 @@
           if (briefNode) briefNode.textContent = buildBrief();
         }
 
+        function wait(ms) {
+          return new Promise(function (resolve) {
+            window.setTimeout(resolve, ms);
+          });
+        }
+
+        function compactVivyPlayableText(text, fallback, maxLength) {
+          var limit = Math.max(80, Number(maxLength) || 260);
+          var raw = String(text || fallback || "")
+            .replace(/\([A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?(?:\s*-\s*[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?)*\)/gi, " ")
+            .replace(/\b[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?\b(?:\s*-\s*\b[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?\b)+/gi, " ")
+            .replace(/\[[^\]]+\]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!raw) raw = String(fallback || "");
+          return raw.slice(0, limit).trim();
+        }
+
+        function pollTtsJob(statusUrl, timeoutMs) {
+          var deadline = Date.now() + Math.max(10000, Number(timeoutMs) || 180000);
+          var delayMs = 1200;
+          function poll() {
+            if (Date.now() >= deadline) throw new Error("tts_job_timeout");
+            return wait(delayMs).then(function () {
+              return fetch(statusUrl, {
+                method: "GET",
+                credentials: "include",
+                headers: authHeaders()
+              }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (payload) {
+                  var state = String(payload.state || payload.status || "").toLowerCase();
+                  if (!response.ok) {
+                    throw new Error(payload.message || payload.error || ("TTS job indisponible (" + response.status + ")"));
+                  }
+                  if (state === "done" || state === "complete" || state === "completed") {
+                    return payload.result || payload;
+                  }
+                  if (state === "failed" || state === "error") {
+                    var result = payload.result || {};
+                    throw new Error(payload.message || result.message || payload.error || result.error || "tts_job_failed");
+                  }
+                  delayMs = Math.min(5000, delayMs + 600);
+                  return poll();
+                });
+              });
+            });
+          }
+          return poll();
+        }
+
         function speakVivy(text, options) {
+          options = options || {};
           return fetch("/api/tts/speak", {
             method: "POST",
             credentials: "include",
@@ -2929,7 +2980,12 @@
                 };
               });
             }
-            return response.json().catch(function () { return {}; });
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              if (payload && payload.async && payload.statusUrl) {
+                return pollTtsJob(payload.statusUrl, options.ttsJobTimeoutMs || 180000);
+              }
+              return payload;
+            });
           });
         }
 
@@ -2937,8 +2993,17 @@
           if (!ensureSession()) return;
           if (button) button.disabled = true;
           setStatus("Test de la voix Vivy active: " + activeVoiceLabel() + "...");
-          speakVivy(value("voiceInstruction") || "Je suis Vivy. Ma voix active est prête côté Funesterie.", {
-            vocalMode: /chant/i.test(value("voiceTool")) ? "sing" : "adaptive"
+          var line = compactVivyPlayableText(
+            value("voiceInstruction"),
+            "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
+            180
+          );
+          speakVivy(line, {
+            vocalMode: /chant/i.test(value("voiceTool")) ? "sing" : "adaptive",
+            ttsAsync: true,
+            asyncTts: true,
+            ttsJobTimeoutMs: 180000,
+            audioFormat: "mp3"
           }).then(function (payload) {
             setMediaPreview(Object.assign({}, payload, { media: { kind: "audio", provider: payload.provider } }));
             setStatus("Voix Vivy prête depuis " + activeVoiceLabel() + ".");
@@ -3007,23 +3072,28 @@
             return;
           }
           if (button) button.disabled = true;
-          setStatus("Vivy transforme le prompt en chanson simple...");
+          setStatus("Vivy lance la génération audio...");
+          var playablePrompt = compactVivyPlayableText(prompt, value("songMood") || "Vivy garde la lumière dans l'obscurité.", 320);
           var songPrompt = [
-            "Chanson Vivy.",
+            "Chanson Vivy courte.",
             "Direction: " + (value("songMood") || "Electro pop dark cinematographique") + ".",
             "Voix: " + activeVoiceLabel() + ".",
-            "Texte ou idée: " + prompt
+            "Refrain à chanter: " + playablePrompt
           ].join("\n");
           speakVivy(songPrompt, {
             vocalMode: "sing",
-            voiceStyle: "song"
+            voiceStyle: "song",
+            ttsAsync: true,
+            asyncTts: true,
+            ttsJobTimeoutMs: 240000,
+            audioFormat: "mp3"
           }).then(function (payload) {
             setMediaPreview(Object.assign({}, payload, { media: { kind: "audio", provider: payload.provider } }));
             vivyOutput = [
               "VIVY_SIMPLE_SONG",
               "Direction: " + (value("songMood") || "Electro pop dark cinematographique"),
               "Voix: " + activeVoiceLabel(),
-              "Prompt: " + prompt,
+              "Prompt: " + playablePrompt,
               "",
               "Sortie: audio chanson simple généré depuis prompt + voix Vivy active."
             ].join("\n");

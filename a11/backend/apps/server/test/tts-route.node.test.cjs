@@ -199,6 +199,90 @@ test('tts piper route rewrites container TTS asset URLs to backend proxy paths',
   }
 });
 
+test('tts speak route can return an async job and poll the generated audio payload', async () => {
+  const previousEnv = {
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const backendBodies = [];
+
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'http://a11-voice:5002/api/tts') {
+      backendBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            audio_url: '/out/async-vivy.mp3',
+            audioUrl: '/out/async-vivy.mp3',
+            provider: 'xtts-rvc',
+            via: 'funesterie-xtts-rvc-bridge',
+          });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const started = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Je suis Vivy.',
+          voice: 'vivy',
+          provider: 'auto',
+          ttsAsync: true,
+          stream: true,
+        });
+
+        assert.equal(started.response.status, 202);
+        assert.equal(started.json.async, true);
+        assert.match(started.json.jobId, /^ttsjob-/);
+        assert.match(started.json.statusUrl, /^\/api\/tts\/jobs\//);
+
+        let polled = null;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const response = await fetch(baseUrl + started.json.statusUrl);
+          polled = await response.json();
+          if (polled.state === 'done' || polled.state === 'failed') break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        assert.equal(polled.state, 'done');
+        assert.equal(polled.result.via, 'http');
+        assert.equal(polled.audioUrl, '/api/tts/out/async-vivy.mp3');
+        assert.equal(backendBodies.length, 1);
+        assert.equal(backendBodies[0].ttsAsync, false);
+        assert.equal(backendBodies[0].stream, false);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts piper route leaves voice free unless language voice is explicitly forced', async () => {
   const previousEnv = {
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,

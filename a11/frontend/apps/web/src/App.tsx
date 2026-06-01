@@ -2189,6 +2189,8 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
           <form onSubmit={handleForgot} style={{ ...authFormStyle, gap: "10px", marginTop: "10px" }}>
             <div style={{ fontSize: "13px", color: "#94a3b8" }}>Mot de passe oublie ?</div>
             <input
+              id="auth-forgot-email"
+              name="email"
               type="email"
               placeholder="Ton email"
               value={forgotEmail}
@@ -2677,6 +2679,16 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     ? (voiceFileName || "référence privée")
     : "Vivy officielle";
 
+  function buildVivyPlayableText(value: string, fallback: string, maxLength = 260) {
+    const raw = toUnicodeText(value || fallback, maxLength * 3)
+      .replace(/\([A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?(?:\s*-\s*[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?)*\)/gi, " ")
+      .replace(/\b[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?\b(?:\s*-\s*\b[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?\b)+/gi, " ")
+      .replace(/\[[^\]]+\]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return toUnicodeText(raw || fallback, maxLength).trim();
+  }
+
   function buildVivyVoiceReferenceOptions(): Record<string, unknown> {
     if (hasPrivateVoiceReference) {
       return {
@@ -2780,14 +2792,23 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     setIsBusy(true);
     setStatus(`Test de la voix Vivy active: ${activeVoiceReferenceLabel}...`);
     try {
+      const testLine = buildVivyPlayableText(
+        voiceInstruction.trim(),
+        "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
+        180
+      );
       const payload = await ttsSpeak(
-        voiceInstruction.trim() || "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
+        testLine,
         "vivy",
         "xtts-rvc",
         {
           persona: "vivy",
           voicePersona: "vivy",
           vocalMode: voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive",
+          ttsAsync: true,
+          asyncTts: true,
+          ttsJobTimeoutMs: 180000,
+          audioFormat: "mp3",
           ...buildVivyVoiceReferenceOptions(),
           voiceReferenceRequired: true,
           referenceVoiceRequired: true,
@@ -2823,19 +2844,24 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       return;
     }
     setIsBusy(true);
-    setStatus("Vivy transforme le prompt en chanson simple...");
+    setStatus("Vivy lance la génération audio...");
     try {
+      const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde la lumière dans l'obscurité.", 320);
       const songPrompt = [
-        `Chanson Vivy.`,
+        `Chanson Vivy courte.`,
         `Direction: ${songMood || "electro pop dark cinematographique"}.`,
         `Voix: ${activeVoiceReferenceLabel}.`,
-        `Texte ou idée: ${prompt}`,
+        `Refrain à chanter: ${playablePrompt}`,
       ].join("\n");
       const payload = await ttsSpeak(songPrompt, "vivy", "xtts-rvc", {
         persona: "vivy",
         voicePersona: "vivy",
         vocalMode: "sing",
         voiceStyle: "song",
+        ttsAsync: true,
+        asyncTts: true,
+        ttsJobTimeoutMs: 240000,
+        audioFormat: "mp3",
         ...buildVivyVoiceReferenceOptions(),
         voiceReferenceRequired: true,
         referenceVoiceRequired: true,
@@ -2853,7 +2879,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         "VIVY_SIMPLE_SONG",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
         `Voix: ${activeVoiceReferenceLabel}`,
-        `Prompt: ${prompt}`,
+        `Prompt: ${playablePrompt}`,
         "",
         payload?.promptRenderedAsSpeech === false
           ? `Sortie: maquette audio Vivy depuis ${activeVoiceReferenceLabel}; paroles et structure gardées dans ce brief.`
@@ -2958,7 +2984,13 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
             <>
               <label>
                 Méthode voix
-                <select value={voiceTool} disabled={!hasSession} onChange={(event) => setVoiceTool(event.target.value)}>
+                <select
+                  id="vivy-studio-voice-tool"
+                  name="voiceTool"
+                  value={voiceTool}
+                  disabled={!hasSession}
+                  onChange={(event) => setVoiceTool(event.target.value)}
+                >
                   <option>Voix Vivy officielle</option>
                   <option>Voix Vivy chant</option>
                   <option>Voix Vivy + référence privée</option>
@@ -2968,6 +3000,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               <label>
                 Référence audio
                 <input
+                  id="vivy-studio-voice-file"
+                  name="voiceFile"
                   type="file"
                   accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
                   disabled={!hasSession}
@@ -2983,6 +3017,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               <label>
                 Instruction voix
                 <textarea
+                  id="vivy-studio-voice-instruction"
+                  name="voiceInstruction"
                   rows={6}
                   value={voiceInstruction}
                   disabled={!hasSession}
@@ -3003,7 +3039,13 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
             <>
               <label>
                 Départ chanson
-                <select value={songSource} disabled={!hasSession} onChange={(event) => setSongSource(event.target.value)}>
+                <select
+                  id="vivy-studio-song-source"
+                  name="songSource"
+                  value={songSource}
+                  disabled={!hasSession}
+                  onChange={(event) => setSongSource(event.target.value)}
+                >
                   <option>Prompt + voix Vivy</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
@@ -3013,11 +3055,19 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               </label>
               <label>
                 Couleur sonore
-                <input value={songMood} disabled={!hasSession} onChange={(event) => setSongMood(event.target.value)} />
+                <input
+                  id="vivy-studio-song-mood"
+                  name="songMood"
+                  value={songMood}
+                  disabled={!hasSession}
+                  onChange={(event) => setSongMood(event.target.value)}
+                />
               </label>
               <label>
                 Matière créative
                 <textarea
+                  id="vivy-studio-song-text"
+                  name="songText"
                   rows={8}
                   value={songText}
                   disabled={!hasSession}
@@ -3037,7 +3087,13 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
             <>
               <label>
                 Canal
-                <select value={shareTarget} disabled={!hasSession} onChange={(event) => setShareTarget(event.target.value)}>
+                <select
+                  id="vivy-studio-share-target"
+                  name="shareTarget"
+                  value={shareTarget}
+                  disabled={!hasSession}
+                  onChange={(event) => setShareTarget(event.target.value)}
+                >
                   <option>YouTube</option>
                   <option>OBS / Live</option>
                   <option>SoundCloud</option>
@@ -3048,6 +3104,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               <label>
                 Lien ou cible
                 <input
+                  id="vivy-studio-share-url"
+                  name="shareUrl"
                   value={shareUrl}
                   disabled={!hasSession}
                   onChange={(event) => setShareUrl(event.target.value)}
@@ -3057,6 +3115,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               <label>
                 Token local
                 <input
+                  id="vivy-studio-share-token"
+                  name="shareToken"
                   type="password"
                   value={shareToken}
                   disabled={!hasSession}
@@ -3068,6 +3128,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               <label>
                 Instruction publication
                 <textarea
+                  id="vivy-studio-share-instruction"
+                  name="shareInstruction"
                   rows={6}
                   value={shareInstruction}
                   disabled={!hasSession}
@@ -3491,6 +3553,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
 
       <form ref={composeRef} className="vivy-chat-compose" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
         <textarea
+          id="vivy-chat-message"
+          name="message"
           ref={draftInputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -3534,6 +3598,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         </div>
       </div>
       <input
+        id="vivy-chat-reference-file"
+        name="vivyChatReferenceFile"
         ref={voiceReferenceInputRef}
         type="file"
         accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg"
@@ -3541,6 +3607,8 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         hidden
       />
       <input
+        id="vivy-chat-file"
+        name="vivyChatFiles"
         ref={fileInputRef}
         type="file"
         accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf"
@@ -3673,7 +3741,13 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
             <div className="vivy-agent-menu-panel">
               <section className="vivy-agent-menu-section" aria-label="Langue">
                 <p className="vivy-agent-menu-title">Langue</p>
-                <select className="vivy-agent-menu-select" aria-label="Langue Vivy" defaultValue="Français">
+                <select
+                  id="vivy-agent-menu-language"
+                  name="vivyLanguage"
+                  className="vivy-agent-menu-select"
+                  aria-label="Langue Vivy"
+                  defaultValue="Français"
+                >
                   <option>Français</option>
                 </select>
               </section>
@@ -5593,6 +5667,8 @@ function ResetPasswordPanel() {
       <h1>Reinitialiser le mot de passe</h1>
       <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: "12px", width: "min(100%, 340px)" }}>
         <input
+          id="reset-password"
+          name="password"
           type="password"
           placeholder="Nouveau mot de passe"
           value={password}
@@ -5601,6 +5677,8 @@ function ResetPasswordPanel() {
           style={{ padding: "10px", borderRadius: "4px", border: "1px solid #ccc", width: "100%", boxSizing: "border-box" }}
         />
         <input
+          id="reset-confirm-password"
+          name="confirmPassword"
           type="password"
           placeholder="Confirmer le mot de passe"
           value={confirmPassword}
@@ -8606,6 +8684,8 @@ export function App() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div style={menuSectionTitleStyle}>Modele</div>
                     <select
+                      id="a11-chat-model"
+                      name="chatModel"
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
                       style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
@@ -8621,6 +8701,8 @@ export function App() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div style={menuSectionTitleStyle}>Langue</div>
                     <select
+                      id="a11-chat-language"
+                      name="a11Language"
                       value={a11Language}
                       onChange={(e) => setA11Language(normalizeA11LanguageCode(e.target.value))}
                       style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
@@ -9086,6 +9168,8 @@ export function App() {
                     }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#cbd5e1', fontSize: 13 }}>
                         <input
+                          id="a11-memory-purge-dry-run"
+                          name="memoryPurgeDryRun"
                           type="checkbox"
                           checked={memoryPurgeDryRun}
                           onChange={(e) => setMemoryPurgeDryRun(e.target.checked)}
@@ -9578,6 +9662,8 @@ export function App() {
 
                   <div className="a11-input-wrap" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <textarea
+                      id="a11-chat-composer"
+                      name="message"
                       ref={composerInputRef}
                       placeholder={isCompactLayout
                         ? (isKaen44 ? "Message Kaen44..." : "Message A11...")
@@ -9752,6 +9838,8 @@ export function App() {
                   );
                 })()}
                 <input
+                  id="a11-chat-file-input"
+                  name="chatFiles"
                   ref={fileInputRef}
                   type="file"
                   multiple
@@ -9759,6 +9847,8 @@ export function App() {
                   onChange={onFileChange}
                 />
                 <input
+                  id="a11-chat-voice-reference-input"
+                  name="voiceReferenceFile"
                   ref={voiceReferenceInputRef}
                   type="file"
                   accept="audio/wav,audio/x-wav,audio/mpeg,audio/mp3,audio/ogg,audio/webm,audio/mp4,audio/flac,video/webm"

@@ -1731,6 +1731,38 @@ export function getTtsApiUrl() {
   return import.meta.env.VITE_TTS_API || getApiUrl('/api/tts/speak');
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollTtsJob(statusUrl: string, timeoutMs = 180000) {
+  const deadline = Date.now() + Math.max(10000, timeoutMs);
+  let delayMs = 1200;
+  while (Date.now() < deadline) {
+    await wait(delayMs);
+    const response = await fetch(getApiUrl(statusUrl), {
+      method: 'GET',
+      credentials: 'include',
+      headers: buildAuthHeaders(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    const state = String(payload?.state || payload?.status || '').toLowerCase();
+
+    if (!response.ok) {
+      throw new Error(payload?.message || payload?.error || `TTS job indisponible (${response.status})`);
+    }
+    if (state === 'done' || state === 'complete' || state === 'completed') {
+      return payload?.result || payload;
+    }
+    if (state === 'failed' || state === 'error') {
+      const result = payload?.result || {};
+      throw new Error(payload?.message || result?.message || payload?.error || result?.error || 'tts_job_failed');
+    }
+    delayMs = Math.min(5000, delayMs + 600);
+  }
+  throw new Error('tts_job_timeout');
+}
+
 export const TTS_VOICES = [
   'fr_FR-siwis-medium',
   'en_US-lessac-medium',
@@ -2976,7 +3008,7 @@ export async function ttsSpeak(
   // Backend route resolves the real provider server-side.
   const fetchOptions: any = {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildAuthHeaders('application/json'),
     body: JSON.stringify(payload),
   };
   // same-origin proxy should include credentials
@@ -3008,6 +3040,10 @@ export async function ttsSpeak(
   // Sinon on essaie le JSON (cas ElevenLabs / fallback)
   try {
     const data = await res.json();
+    if (data?.async && data?.statusUrl) {
+      const timeoutMs = Number(options.ttsJobTimeoutMs || options.timeoutMs || 180000);
+      return pollTtsJob(String(data.statusUrl), Number.isFinite(timeoutMs) ? timeoutMs : 180000);
+    }
     return data;
   } catch {
     // fallback: retourner le texte brut
