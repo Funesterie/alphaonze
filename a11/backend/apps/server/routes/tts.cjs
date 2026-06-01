@@ -1178,6 +1178,24 @@ function normalizeRemoteAssetUrl(baseUrl, value) {
   return new URL(assetUrl.replace(/^\.\//, ''), `${String(baseUrl).replace(/\/$/, '')}/`).toString();
 }
 
+function resolveRemoteTtsAssetFetchUrl(baseUrl, value) {
+  const assetUrl = String(value || '').trim();
+  if (!assetUrl) return null;
+  if (/^https?:\/\//i.test(assetUrl)) return assetUrl;
+  try {
+    const parsed = new URL(assetUrl.replace(/^\.\//, ''), `${String(baseUrl).replace(/\/$/, '')}/`);
+    if (parsed.pathname.startsWith('/api/tts/out/')) {
+      const filename = path.posix.basename(decodeURIComponent(parsed.pathname));
+      if (filename && filename !== '.' && filename !== '..') {
+        parsed.pathname = `/out/${encodeURIComponent(filename)}`;
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function requestRemoteTts(payload) {
   const ttsConfig = getLocalTtsConfig();
   const preferredPublicBaseUrl = String(ttsConfig.publicBaseUrl || ttsConfig.requestBaseUrl || ttsConfig.baseUrl || '').replace(/\/$/, '');
@@ -1590,15 +1608,17 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       const synthesizeText = await synthesizeResponse.text();
       const synthesizePayload = parseJsonMaybe(synthesizeText);
       if (synthesizeResponse.ok && synthesizePayload?.ok !== false) {
+        const rawAudioUrl = synthesizePayload?.audio_url || synthesizePayload?.audioUrl || synthesizePayload?.url || '';
         const remoteAudioUrl = normalizeRemoteAssetUrl(
           baseUrl,
-          synthesizePayload?.audio_url || synthesizePayload?.audioUrl || synthesizePayload?.url || ''
+          rawAudioUrl
         );
         const referenceAware = synthesizePayload?.voiceConversion?.ok === true
           || synthesizePayload?.providerCapabilities?.referenceVoice === true
           || synthesizePayload?.voiceReference?.id;
         if (remoteAudioUrl && referenceAware) {
-          const materializedAudioUrl = await materializeTtsAudioUrlForFormat(remoteAudioUrl, audioFormat, 'xtts-rvc');
+          const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(baseUrl, rawAudioUrl) || remoteAudioUrl;
+          const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, audioFormat, 'xtts-rvc');
           const finalAudioUrl = materializedAudioUrl || remoteAudioUrl;
           return {
             ...(synthesizePayload && typeof synthesizePayload === 'object' ? synthesizePayload : {}),
@@ -1607,7 +1627,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
             via: synthesizePayload?.via || 'a11-voice-module-persona',
             text,
             vocalMode,
-            audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', audioFormat || 'wav'),
+            audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(finalAudioUrl, 'http://127.0.0.1').pathname).slice(1) || audioFormat || 'wav'),
             originalAudioUrl: materializedAudioUrl ? remoteAudioUrl : undefined,
             original_audio_url: materializedAudioUrl ? remoteAudioUrl : undefined,
             audio_url: finalAudioUrl,
@@ -1716,8 +1736,12 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       if (!response.ok || parsed?.ok === false) {
         throw new Error(parsed?.detail || parsed?.message || parsed?.error || `xtts_rvc_http_${response.status}`);
       }
-      const remoteAudioUrl = normalizeRemoteAssetUrl(baseUrl, parsed?.audio_url || parsed?.audioUrl || parsed?.url || '');
+      const rawAudioUrl = parsed?.audio_url || parsed?.audioUrl || parsed?.url || '';
+      const remoteAudioUrl = normalizeRemoteAssetUrl(baseUrl, rawAudioUrl);
       if (!remoteAudioUrl) throw new Error('xtts_rvc_missing_audio_url');
+      const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(baseUrl, rawAudioUrl) || remoteAudioUrl;
+      const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, audioFormat, 'xtts-rvc');
+      const finalAudioUrl = materializedAudioUrl || remoteAudioUrl;
       return {
         ...(parsed && typeof parsed === 'object' ? parsed : {}),
         success: true,
@@ -1725,8 +1749,11 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
         via: parsed?.via || 'xtts-rvc-direct',
         text,
         vocalMode,
-        audio_url: remoteAudioUrl,
-        audioUrl: remoteAudioUrl,
+        audioFormat: materializedAudioUrl ? 'mp3' : audioExtensionFromContentType('', path.extname(new URL(finalAudioUrl, 'http://127.0.0.1').pathname).slice(1) || audioFormat || 'wav'),
+        originalAudioUrl: materializedAudioUrl ? remoteAudioUrl : undefined,
+        original_audio_url: materializedAudioUrl ? remoteAudioUrl : undefined,
+        audio_url: finalAudioUrl,
+        audioUrl: finalAudioUrl,
         providerCapabilities: {
           ...(parsed?.providerCapabilities || {}),
           referenceVoice: true,
