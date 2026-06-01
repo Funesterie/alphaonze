@@ -475,6 +475,22 @@ function normalizeTtsAudioFormat(body = {}, fallback = '') {
   return 'mp3';
 }
 
+function resolveVoiceConversionStrength(body = {}) {
+  const value = body?.voiceConversionStrength ?? body?.strength ?? body?.conversionStrength;
+  if (value === undefined || value === null || value === '') return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return Math.max(0.05, Math.min(1, numeric));
+}
+
+function resolveVoiceF0Shift(body = {}) {
+  const value = body?.f0Shift ?? body?.voiceF0Shift;
+  if (value === undefined || value === null || value === '') return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return Math.max(-12, Math.min(12, numeric));
+}
+
 function shouldTryVoiceConversion(req = {}, vocalMode = 'speech') {
   const body = req?.body || {};
   const explicitBody = parseOptionalBoolean(
@@ -1456,6 +1472,8 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
   const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
   const voiceStyle = getPreferredVoiceReferenceLabelForPersona(persona);
   const audioFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : 'wav');
+  const conversionStrength = resolveVoiceConversionStrength(body);
+  const f0Shift = resolveVoiceF0Shift(body);
   const timeoutMs = Number(
     isInteractiveTtsRequest(body)
       ? (process.env.A11_VOICE_XTTS_RVC_INTERACTIVE_TIMEOUT_MS || 22000)
@@ -1477,7 +1495,9 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
           vocalMode: vocalMode || 'adaptive',
           engine: body?.engine || body?.voiceEngine || 'auto',
           audioFormat,
-          f0Shift: body?.f0Shift ?? body?.voiceF0Shift,
+          responseFormat: audioFormat,
+          strength: conversionStrength,
+          f0Shift,
           useDefaultVoiceReference: true,
           defaultVoiceReference: true,
           voiceReferenceRequired: true,
@@ -1550,8 +1570,11 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       form.append('styleInstruction', buildVoicePersonaInstruction(persona));
       form.append('mode', vocalMode || 'adaptive');
       form.append('audioFormat', audioFormat);
-      if (body?.f0Shift !== undefined || body?.voiceF0Shift !== undefined) {
-        form.append('f0Shift', String(body?.f0Shift ?? body?.voiceF0Shift));
+      if (conversionStrength !== undefined) {
+        form.append('strength', String(conversionStrength));
+      }
+      if (f0Shift !== undefined) {
+        form.append('f0Shift', String(f0Shift));
       }
 
       const response = await fetch(`${String(baseUrl).replace(/\/$/, '')}/api/voice/convert`, {
@@ -2494,6 +2517,10 @@ function buildVivyTtsJobBody(body = {}) {
   ).trim();
   const isSong = parseOptionalBoolean(body.song || body.isSong || body.makeSong, false) === true
     || /\b(song|chanson|refrain|couplet|lyrics|paroles)\b/i.test(String(body.kind || body.mode || body.vocalMode || body.prompt || ''));
+  const requestedStrength = resolveVoiceConversionStrength(body);
+  const requestedF0Shift = resolveVoiceF0Shift(body);
+  const vivyVoiceStrength = requestedStrength ?? (isSong ? 0.32 : 0.24);
+  const vivyF0Shift = requestedF0Shift ?? (isSong ? -0.35 : -0.8);
   return {
     ...body,
     text,
@@ -2512,6 +2539,9 @@ function buildVivyTtsJobBody(body = {}) {
     allowBrowserSpeechFallback: false,
     audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
     responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
+    voiceConversionStrength: vivyVoiceStrength,
+    strength: vivyVoiceStrength,
+    f0Shift: vivyF0Shift,
     jobKind: body.jobKind || (isSong ? 'vivy.song.xtts-rvc' : 'vivy.xtts-rvc'),
   };
 }

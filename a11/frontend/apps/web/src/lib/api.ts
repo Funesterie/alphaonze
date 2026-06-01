@@ -1929,6 +1929,8 @@ export type VivyStudioProductionInput = {
   voiceTool?: string;
   voiceInstruction?: string;
   voiceFileName?: string;
+  voiceReferenceId?: string;
+  voiceReferenceName?: string;
   songSource?: string;
   songMood?: string;
   songText?: string;

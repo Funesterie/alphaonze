@@ -29,6 +29,8 @@ ESPEAK_DATA = Path(os.environ.get("A11_ESPEAK_DATA", ROOT / "piper" / "espeak-ng
 CONVERSION_PROVIDER = os.environ.get("A11_VOICE_CONVERTER_PROVIDER", "ffmpeg").strip().lower() or "ffmpeg"
 DEFAULT_CONVERSION_STRENGTH = float(os.environ.get("A11_VOICE_CONVERSION_STRENGTH", "0.45") or "0.45")
 DEFAULT_F0_SHIFT = float(os.environ.get("A11_VOICE_DEFAULT_F0_SHIFT", "-1.5") or "-1.5")
+VIVY_CONVERSION_STRENGTH = float(os.environ.get("A11_VIVY_VOICE_CONVERSION_STRENGTH", "0.28") or "0.28")
+VIVY_DEFAULT_F0_SHIFT = float(os.environ.get("A11_VIVY_VOICE_DEFAULT_F0_SHIFT", "-0.75") or "-0.75")
 XTTS_RVC_URL = (
     os.environ.get("A11_VOICE_XTTS_RVC_URL")
     or os.environ.get("A11_XTTS_RVC_URL")
@@ -99,7 +101,7 @@ def preferred_reference_names(persona: str, mode: str) -> list[str]:
     if persona == "vivy":
         if mode == "sing":
             return ["vivy.wav", "vivy-song-context.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
-        return ["vivy-adaptive.wav", "vivy.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
+        return ["vivy.wav", "vivy-adaptive.wav", "vivy-pv-context.wav", "vivy-song-context.wav"]
     return []
 
 
@@ -253,6 +255,18 @@ def clamp_float(value: Optional[float], fallback: float, low: float, high: float
     except Exception:
         parsed = fallback
     return max(low, min(high, parsed))
+
+
+def default_conversion_strength_for(reference_style: str, persona: str = "") -> float:
+    if normalize_persona(persona or reference_style) == "vivy" or reference_style == "vivy":
+        return VIVY_CONVERSION_STRENGTH
+    return DEFAULT_CONVERSION_STRENGTH
+
+
+def default_f0_shift_for(reference_style: str, persona: str = "") -> float:
+    if normalize_persona(persona or reference_style) == "vivy" or reference_style == "vivy":
+        return VIVY_DEFAULT_F0_SHIFT
+    return DEFAULT_F0_SHIFT
 
 
 def wav_profile(path: Path) -> dict:
@@ -563,6 +577,9 @@ def ffmpeg_morph_filter(mode: str, strength: float, f0_shift: Optional[float], g
     if reference_style == "terminator":
         strength = max(strength, 0.84)
         default_shift = -5.8 if mode != "sing" else -3.2
+    elif reference_style == "vivy":
+        strength = min(strength, 0.38)
+        default_shift = VIVY_DEFAULT_F0_SHIFT + (0.15 if mode == "sing" else 0.0)
     else:
         default_shift = DEFAULT_F0_SHIFT + mode_shift
     shift = clamp_float(f0_shift, default_shift, -12.0, 12.0) * strength
@@ -861,7 +878,14 @@ def synthesize(req: SynthesizeRequest) -> dict:
             }
 
         selected_engine = (req.engine or "auto").strip().lower()
-        morph_strength = clamp_float(req.strength, DEFAULT_CONVERSION_STRENGTH, 0.05, 1.0)
+        reference_style = infer_reference_style(reference_file)
+        morph_strength = clamp_float(
+            req.strength,
+            default_conversion_strength_for(reference_style, persona),
+            0.05,
+            1.0,
+        )
+        morph_f0_shift = req.f0Shift if req.f0Shift is not None else default_f0_shift_for(reference_style, persona)
         attempted = []
         last_error = None
 
@@ -877,7 +901,7 @@ def synthesize(req: SynthesizeRequest) -> dict:
                             req.vocalMode,
                             text,
                             morph_strength,
-                            req.f0Shift,
+                            morph_f0_shift,
                         )
                         break
                     if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
@@ -887,7 +911,7 @@ def synthesize(req: SynthesizeRequest) -> dict:
                             converted_file,
                             req.vocalMode,
                             morph_strength,
-                            req.f0Shift,
+                            morph_f0_shift,
                         )
                         break
                     raise RuntimeError(f"unknown_voice_converter:{provider}")
@@ -990,7 +1014,15 @@ async def convert_voice(
     out_name = f"a11-converted-{int(time.time() * 1000)}.wav"
     out_file = OUT_DIR / out_name
     selected_engine = (engine or "auto").strip().lower()
-    morph_strength = clamp_float(strength, DEFAULT_CONVERSION_STRENGTH, 0.05, 1.0)
+    reference_style = infer_reference_style(reference_file)
+    normalized_persona = normalize_persona(persona or voiceStyle or reference_style)
+    morph_strength = clamp_float(
+        strength,
+        default_conversion_strength_for(reference_style, normalized_persona),
+        0.05,
+        1.0,
+    )
+    morph_f0_shift = f0Shift if f0Shift is not None else default_f0_shift_for(reference_style, normalized_persona)
     last_error = None
     attempted = []
 
@@ -999,10 +1031,10 @@ async def convert_voice(
             attempted.append(provider)
             try:
                 if is_xtts_rvc_provider(provider):
-                    meta = run_xtts_rvc(generated_file, reference_file, out_file, mode, clean_text(text), morph_strength, f0Shift)
+                    meta = run_xtts_rvc(generated_file, reference_file, out_file, mode, clean_text(text), morph_strength, morph_f0_shift)
                     break
                 if provider in {"ffmpeg", "ffmpeg-morph", "morph"}:
-                    meta = run_ffmpeg_morph(generated_file, reference_file, out_file, mode, morph_strength, f0Shift)
+                    meta = run_ffmpeg_morph(generated_file, reference_file, out_file, mode, morph_strength, morph_f0_shift)
                     break
                 raise RuntimeError(f"unknown_voice_converter:{provider}")
             except Exception as exc:

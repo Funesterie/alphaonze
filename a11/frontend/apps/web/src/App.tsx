@@ -1248,6 +1248,12 @@ function isCompactViewportNow() {
 
 const CHAT_STORAGE_KEY_PREFIX = "a11:chats";
 const PURGE_HISTORY_STORAGE_KEY_PREFIX = "a11:memory-purge-history";
+const FUNESTERIE_CHAT_SURFACES: FunesterieSurface[] = ["a11", "kaen44", "vivy"];
+const FUNESTERIE_SURFACE_LABELS: Record<FunesterieSurface, string> = {
+  a11: "A11",
+  kaen44: "K44",
+  vivy: "Vivy",
+};
 
 function buildScopedStorageKey(prefix: string, scope?: string | null) {
   const normalizedScope = String(scope || "").trim();
@@ -1263,6 +1269,36 @@ function normalizeConversationSurface(value?: string | null): FunesterieSurface 
 
 function buildSurfaceScopedStorageKey(prefix: string, scope?: string | null, surface?: string | null) {
   return buildScopedStorageKey(`${prefix}:${normalizeConversationSurface(surface)}`, scope);
+}
+
+function readStoredChatCountForSurface(surface: FunesterieSurface, scope?: string | null) {
+  if (typeof window === "undefined") return 0;
+  const keys = [
+    buildSurfaceScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope, surface),
+    buildSurfaceScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, "", surface),
+  ];
+  if (surface === "a11") {
+    keys.push(buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope), CHAT_STORAGE_KEY_PREFIX);
+  }
+
+  for (const key of Array.from(new Set(keys))) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.length;
+    } catch {
+      // Ignore malformed client cache.
+    }
+  }
+  return 0;
+}
+
+function readSurfaceChatCounts(scope?: string | null) {
+  return FUNESTERIE_CHAT_SURFACES.reduce((counts, surface) => {
+    counts[surface] = readStoredChatCountForSurface(surface, scope);
+    return counts;
+  }, {} as Record<FunesterieSurface, number>);
 }
 
 function buildSurfaceConversationId(conversationId?: string | null, surface?: string | null) {
@@ -2271,6 +2307,12 @@ const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
 const VIVY_PRIVATE_REFERENCE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
 
+function getVivyVoiceTuning(vocalMode?: string | null): Record<string, number> {
+  return String(vocalMode || "").toLowerCase() === "sing"
+    ? { voiceConversionStrength: 0.32, f0Shift: -0.35 }
+    : { voiceConversionStrength: 0.24, f0Shift: -0.8 };
+}
+
 type VivyPublicChatFile = VivyChatFileAttachment & {
   uploadState?: "stored" | "local";
   uploadError?: string;
@@ -2806,6 +2848,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
           persona: "vivy",
           voicePersona: "vivy",
           vocalMode: voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive",
+          ...getVivyVoiceTuning(voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive"),
           ttsAsync: true,
           asyncTts: true,
           ttsJobTimeoutMs: 180000,
@@ -2859,6 +2902,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         voicePersona: "vivy",
         vocalMode: "sing",
         voiceStyle: "song",
+        ...getVivyVoiceTuning("sing"),
         ttsAsync: true,
         asyncTts: true,
         ttsJobTimeoutMs: 240000,
@@ -3838,6 +3882,12 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
 }
 
 type SurfaceLinks = ReturnType<typeof getSurfaceLinks>;
+
+function getSurfaceChatHref(surface: FunesterieSurface, surfaceLinks: SurfaceLinks) {
+  if (surface === "vivy") return surfaceLinks.vivy;
+  if (surface === "kaen44") return surfaceLinks.kaen44Cockpit;
+  return surfaceLinks.a11Cockpit;
+}
 
 function getFunesterieAgentShortcuts(surfaceLinks: SurfaceLinks) {
   return [
@@ -5396,10 +5446,14 @@ function readFunesterieAccountOverview() {
   }
 
   const scope = getAuthStorageScope();
-  const chatKeys = [
+  const chatKeys = Array.from(new Set([
+    ...FUNESTERIE_CHAT_SURFACES.flatMap((surface) => [
+      buildSurfaceScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope, surface),
+      buildSurfaceScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, "", surface),
+    ]),
     buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope),
     CHAT_STORAGE_KEY_PREFIX,
-  ];
+  ]));
   let conversations = 0;
   let files = 0;
   for (const key of chatKeys) {
@@ -5408,11 +5462,11 @@ function readFunesterieAccountOverview() {
       if (!raw) continue;
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) continue;
-      conversations = Math.max(conversations, parsed.length);
-      files = Math.max(files, parsed.reduce((count: number, chat: any) => {
+      conversations += parsed.length;
+      files += parsed.reduce((count: number, chat: any) => {
         const messages = Array.isArray(chat?.messages) ? chat.messages : [];
         return count + messages.filter((message: any) => message?.fileUrl || message?.imageUrl || message?.videoUrl).length;
-      }, 0));
+      }, 0);
     } catch {
       // Ignore malformed client cache.
     }
@@ -6459,6 +6513,11 @@ export function App() {
     messages: ChatMessage[];
   }[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const surfaceChatCounts = useMemo(() => {
+    const counts = readSurfaceChatCounts(authStorageScope);
+    counts[surfaceKind] = chats.length;
+    return counts;
+  }, [authStorageScope, chats.length, surfaceKind]);
 
   // Historique A-11 (backend)
   const [a11History, setA11History] = useState<A11HistoryItem[]>([]);
@@ -6647,15 +6706,34 @@ export function App() {
       return;
     }
 
+    let legacyChatRaw = "";
     try {
-      localStorage.removeItem(CHAT_STORAGE_KEY_PREFIX);
+      const legacyKeys = [
+        buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope),
+        CHAT_STORAGE_KEY_PREFIX,
+      ].filter((key) => key !== chatStorageKey);
+      for (const key of legacyKeys) {
+        const rawLegacy = localStorage.getItem(key);
+        if (rawLegacy) {
+          legacyChatRaw = rawLegacy;
+          break;
+        }
+      }
     } catch {
-      // ignore legacy storage cleanup issues
+      // ignore legacy storage lookup issues
     }
 
     try {
-      const raw = localStorage.getItem(chatStorageKey);
+      const currentRaw = localStorage.getItem(chatStorageKey);
+      const raw = currentRaw || (surfaceKind === "a11" ? legacyChatRaw : "");
       if (raw) {
+        if (!currentRaw && surfaceKind === "a11") {
+          try {
+            localStorage.setItem(chatStorageKey, raw);
+          } catch {
+            // Keep reading even if migration cannot be written.
+          }
+        }
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length) {
           // sanitize chats and messages to conform to expected types
@@ -7754,10 +7832,107 @@ export function App() {
   // Le frontend n'envoie pas de prompt système : évite l'exposition dans les DevTools
   const systemPrompt = resolveClientSystemPrompt();
 
-  // Initialisation globale de window.speak au montage pour garantir le son
+  // Initialisation globale des helpers voix au montage pour garantir le son
   useEffect(() => {
-    (globalThis as any).speak = speak;
-  }, []);
+    const win = globalThis as any;
+    const normalizeConsoleSurface = (value?: string | null): FunesterieSurface => (
+      value ? normalizeConversationSurface(value) : surfaceKind
+    );
+    const defaultVoiceTextForSurface = (surface: FunesterieSurface) => {
+      if (surface === "vivy") return "Je suis Vivy. Ma voix officielle est prete cote Funesterie.";
+      if (surface === "kaen44") return "Je suis Kaen44. Ma voix officielle est prete cote Funesterie.";
+      return "Je suis A11. Ma voix officielle est prete cote Funesterie.";
+    };
+    const testVoice = (surfaceOrText?: string, maybeText?: string, extraOptions?: Record<string, unknown>) => {
+      const first = String(surfaceOrText || "").trim();
+      const firstAsSurface = /^(a11|k44|kaen44|vivy)$/i.test(first);
+      const targetSurface = normalizeConsoleSurface(firstAsSurface ? first : undefined);
+      const text = String(firstAsSurface ? maybeText : first || maybeText || "").trim()
+        || defaultVoiceTextForSurface(targetSurface);
+      const vocalMode = targetSurface === "vivy" ? "adaptive" : ttsVocalMode;
+      const voiceOptions: Record<string, unknown> = {
+        lang: selectedA11Language.speechLang,
+        voice: targetSurface === "kaen44" ? "kaen44" : targetSurface,
+        persona: targetSurface,
+        surface: targetSurface,
+        voicePersona: targetSurface,
+        provider: "xtts-rvc",
+        ttsProvider: "xtts-rvc",
+        audioFormat: "mp3",
+        responseFormat: "mp3",
+        latencyMode: "interactive",
+        vocalMode,
+        voiceConversion: true,
+        useDefaultVoiceReference: true,
+        defaultVoiceReference: true,
+        voiceReferenceRequired: true,
+        referenceVoiceRequired: true,
+        allowBrowserSpeechFallback: true,
+        ...(targetSurface === "vivy" ? getVivyVoiceTuning(vocalMode) : {}),
+        ...(extraOptions || {}),
+      };
+      void unlockAudioOutput();
+      speak(text, voiceOptions);
+      return {
+        ok: true,
+        surface: targetSurface,
+        voice: voiceOptions.voice,
+        vocalMode,
+        text,
+      };
+    };
+
+    win.speak = speak;
+    win.a11 = {
+      ...(win.a11 || {}),
+      voice: {
+        ...(win.a11?.voice || {}),
+        test: testVoice,
+        stop: cancelSpeech,
+        default(surface?: string) {
+          const targetSurface = normalizeConsoleSurface(surface);
+          try {
+            localStorage.removeItem(getVoiceReferenceStorageKey(targetSurface));
+            if (targetSurface === "vivy") {
+              localStorage.removeItem(getVivyVoiceReferenceStorageKey());
+              const draft = readVivyStudioDraft();
+              if (draft && typeof draft === "object") {
+                writeVivyStudioDraft({
+                  ...(draft as Record<string, unknown>),
+                  voiceTool: "Voix Vivy officielle",
+                  voiceFileName: "",
+                  voiceReferenceId: "",
+                });
+              }
+            }
+            if (targetSurface === surfaceKind) {
+              setSelectedVoiceReferenceId("");
+            }
+          } catch {
+            // Storage can be blocked in private contexts.
+          }
+          return { ok: true, surface: targetSurface, label: getDefaultVoiceReferenceLabel(targetSurface) };
+        },
+      },
+      chat: {
+        ...(win.a11?.chat || {}),
+        surface: surfaceKind,
+        counts: surfaceChatCounts,
+        open(surface?: string) {
+          const targetSurface = normalizeConsoleSurface(surface);
+          window.location.assign(buildSessionBridgeUrl(getSurfaceChatHref(targetSurface, surfaceLinks)));
+          return { ok: true, surface: targetSurface };
+        },
+      },
+      surface: surfaceKind,
+    };
+  }, [
+    selectedA11Language.speechLang,
+    surfaceChatCounts,
+    surfaceKind,
+    surfaceLinks,
+    ttsVocalMode,
+  ]);
 
   // Chargement de l'historique backend au montage
   useEffect(() => {
@@ -8470,15 +8645,17 @@ export function App() {
   };
   const activeAdminBorder = isKaen44 ? "#f59e0b" : "#14b8a6";
   const inactiveAdminBorder = isKaen44 ? "rgba(245, 158, 11, 0.18)" : "#1f2937";
+  const activeAdminBackground = isKaen44 ? "rgba(245, 158, 11, 0.16)" : "rgba(20, 184, 166, 0.16)";
+  const activeAdminColor = isKaen44 ? "#fed7aa" : "#ccfbf1";
   const adminTabButtonStyle = (section: AdminSection): React.CSSProperties => ({
     padding: isCompactLayout ? "8px 10px" : "9px 12px",
     borderRadius: 999,
     border: `1px solid ${adminSection === section ? activeAdminBorder : inactiveAdminBorder}`,
     background: adminSection === section
-      ? (isKaen44 ? "rgba(245, 158, 11, 0.16)" : "rgba(20, 184, 166, 0.16)")
+      ? activeAdminBackground
       : (isKaen44 ? "#1b100c" : "#0b1220"),
     color: adminSection === section
-      ? (isKaen44 ? "#fed7aa" : "#ccfbf1")
+      ? activeAdminColor
       : (isKaen44 ? "#e7c8a2" : "#cbd5e1"),
     cursor: "pointer",
     fontSize: 12,
@@ -8936,7 +9113,7 @@ export function App() {
             <div style={{ borderBottom: '1px solid #22293a', padding: '8px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 4px 16px' }}>
                 <span className="text-xs uppercase tracking-wide text-slate-400">
-                  Conversations
+                  Conversations {FUNESTERIE_SURFACE_LABELS[surfaceKind]}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <button onClick={newConversation} className="btn ghost" style={{ fontSize: 13, padding: '2px 10px' }}>+ Nouveau</button>
@@ -8957,6 +9134,38 @@ export function App() {
                     {clearingHistory ? "..." : "Vider tout"}
                   </button>
                 </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, padding: '4px 16px 8px' }}>
+                {FUNESTERIE_CHAT_SURFACES.map((surface) => {
+                  const active = surface === surfaceKind;
+                  const href = getSurfaceChatHref(surface, surfaceLinks);
+                  const content = (
+                    <>
+                      <span>{FUNESTERIE_SURFACE_LABELS[surface]}</span>
+                      <small style={{ opacity: 0.78 }}>{surfaceChatCounts[surface] || 0}</small>
+                    </>
+                  );
+                  const sharedStyle: React.CSSProperties = {
+                    minHeight: 32,
+                    borderRadius: 7,
+                    border: active ? `1px solid ${activeAdminBorder}` : `1px solid ${inactiveAdminBorder}`,
+                    background: active ? activeAdminBackground : "rgba(2, 8, 14, 0.72)",
+                    color: active ? activeAdminColor : "#cbd5e1",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 6,
+                    padding: "0 8px",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    textDecoration: "none",
+                  };
+                  return active ? (
+                    <span key={surface} style={sharedStyle} aria-current="page">{content}</span>
+                  ) : (
+                    <a key={surface} href={buildSessionBridgeUrl(href)} style={sharedStyle}>{content}</a>
+                  );
+                })}
               </div>
               <div>
                 {chats.map(chat => (

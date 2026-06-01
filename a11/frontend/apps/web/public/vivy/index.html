@@ -2700,6 +2700,12 @@
           return { useDefaultVoiceReference: true };
         }
 
+        function vivyVoiceTuning(vocalMode) {
+          return String(vocalMode || "").toLowerCase() === "sing"
+            ? { voiceConversionStrength: 0.32, f0Shift: -0.35 }
+            : { voiceConversionStrength: 0.24, f0Shift: -0.8 };
+        }
+
         function firstText() {
           for (var i = 0; i < arguments.length; i += 1) {
             var value = String(arguments[i] || "").trim();
@@ -2944,6 +2950,7 @@
 
         function speakVivy(text, options) {
           options = options || {};
+          var vocalMode = options.vocalMode || "adaptive";
           return fetch("/api/tts/speak", {
             method: "POST",
             credentials: "include",
@@ -2957,7 +2964,7 @@
               voiceReferenceRequired: true,
               referenceVoiceRequired: true,
               allowBrowserSpeechFallback: false
-            }, voiceReferenceOptions(), options || {}))
+            }, vivyVoiceTuning(vocalMode), voiceReferenceOptions(), options || {}))
           }).then(function (response) {
             var contentType = response.headers.get("content-type") || "";
             if (!response.ok) {

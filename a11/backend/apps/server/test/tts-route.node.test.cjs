@@ -361,6 +361,9 @@ test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio outpu
         assert.equal(bridgeBodies.length, 1);
         assert.equal(bridgeBodies[0].persona, 'vivy');
         assert.equal(bridgeBodies[0].audioFormat, 'mp3');
+        assert.equal(bridgeBodies[0].responseFormat, 'mp3');
+        assert.equal(bridgeBodies[0].strength, 0.32);
+        assert.equal(bridgeBodies[0].f0Shift, -0.35);
       }
     );
   } finally {
