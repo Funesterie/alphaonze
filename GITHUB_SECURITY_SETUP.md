@@ -88,13 +88,13 @@ Ajouter ces secrets :
 
 | Key                     | Value                                                                                  | Source            |
 | ----------------------- | -------------------------------------------------------------------------------------- | ----------------- |
-| `JWT_SECRET`            | `f564db4d80721484148880ee27f31a29f3e4fc005ee7f17b9026bf10a32aa7c6`                     | `.env.local`      |
-| `GROQ_API_KEY`          | `GROQ_API_KEY_VALUE`                             | Testé OK          |
+| `JWT_SECRET`            | `<set-in-github-secret>`                                                              | Secret store      |
+| `GROQ_API_KEY`          | `<set-in-github-secret>`                                                              | Secret store      |
 | `TOGETHER_API_KEY`      | (à obtenir sur api.together.xyz)                                                       | Optionnel         |
-| `XAI_API_KEY`           | `XAI_API_KEY_VALUE` | Nécessite crédits |
-| `STRIPE_SECRET_KEY`     | `STRIPE_LIVE_SECRET_VALUE...`                                                         | `.env.local`      |
-| `STRIPE_WEBHOOK_SECRET` | `STRIPE_WEBHOOK_SECRET_VALUE`                                               | `.env.local`      |
-| `RESEND_API_KEY`        | `RESEND_API_KEY_VALUE`                                                 | `.env.local`      |
+| `XAI_API_KEY`           | `<set-in-github-secret>`                                                              | Secret store      |
+| `STRIPE_SECRET_KEY`     | `<set-in-github-secret>`                                                              | Secret store      |
+| `STRIPE_WEBHOOK_SECRET` | `<set-in-github-secret>`                                                              | Secret store      |
+| `RESEND_API_KEY`        | `<set-in-github-secret>`                                                              | Secret store      |
 
 **Minimum vital pour que A11 réponde** : `JWT_SECRET` + `GROQ_API_KEY`
 

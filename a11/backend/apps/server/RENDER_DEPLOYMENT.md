@@ -184,7 +184,7 @@ Réponse attendue :
 ```bash
 curl -X POST https://a11-backend.onrender.com/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"Djeff","password":"1991"}'
+  -d '{"username":"<admin-user>","password":"<admin-password>"}'
 ```
 
 ### Test Subscription Status
