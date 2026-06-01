@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -1275,7 +1275,7 @@ function stripSurfaceConversationId(conversationId?: string | null) {
   return String(conversationId || "").trim().replace(/^(a11|kaen44|vivy):/i, "");
 }
 
-function suggestConsoleCommandForDiagnosticRequest(rawValue: string) {
+function suggestConsoleCommandForDiagnosticRequest(rawValue: string): ConsoleSuggestion | null {
   void rawValue;
   return null;
   /*
@@ -2772,7 +2772,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
         kind: "audio",
-        url: resolveApiAssetUrl(mediaUrl),
+        url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(payload?.provider || payload?.via || "a11-voice-module"),
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
       });
@@ -2819,7 +2819,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
         kind: "audio",
-        url: resolveApiAssetUrl(mediaUrl),
+        url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
         provider: String(payload?.provider || payload?.via || "a11-voice-module"),
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
       });
@@ -2874,7 +2874,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       setVivyMedia(mediaUrl
         ? {
           kind: audioUrl ? "audio" : "video",
-          url: resolveApiAssetUrl(mediaUrl),
+          url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
           provider: String(payload?.media?.provider || "").trim() || undefined,
           contentType: String(payload?.media?.content_type || "").trim() || undefined,
         }
@@ -3376,7 +3376,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           sizeBytes: resource?.sizeBytes || baseFile.sizeBytes,
           uploaded: true,
           uploadState: "stored",
-          storageBackend: (upload as any)?.storageBackend || resource?.storageBackend || "session-drive",
+          storageBackend: (upload as any)?.storageBackend || (resource as any)?.storageBackend || "session-drive",
         });
       } catch (error: any) {
         const errorCode = String(error?.payload?.error || error?.code || "").trim();
@@ -9308,7 +9308,7 @@ export function App() {
                       ? (
                         <ReactMarkdown
                           components={{
-                            a: ({ node: _node, ...props }) => (
+                            a: ({ node: _node, ref: _ref, ...props }: any) => (
                               <a
                                 {...props}
                                 target="_blank"

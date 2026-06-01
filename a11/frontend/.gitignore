@@ -39,3 +39,9 @@ Logo et personnage Funesterie.png
 # OS files
 .DS_Store
 Thumbs.db
+.env
+.env.local
+.env.*.local
+apps/web/.env
+apps/web/.env.local
+apps/web/.env.*.local

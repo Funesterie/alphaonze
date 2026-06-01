@@ -11,7 +11,8 @@
     "build": "vite build && node scripts/copy_legacy.js",
     "preview": "vite preview",
     "lint": "echo \"no lint configured\"",
-    "test": "echo \"no tests configured\""
+    "test": "echo \"no tests configured\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^19.2.6",
