@@ -245,15 +245,17 @@ function buildRouting(mode = 'song') {
 }
 
 function buildVoiceProduction(input) {
-  const tool = cleanOneLine(input.voiceTool, 'A11 Voice + Voicemod', 80);
+  const tool = cleanOneLine(input.voiceTool, 'Voix Vivy officielle', 80);
   const instruction = cleanText(input.voiceInstruction, 900);
   const referenceName = cleanOneLine(input.voiceFileName || input.voiceReferenceName, '', 160);
+  const referenceId = cleanOneLine(input.voiceReferenceId || input.voiceRefId || input.referenceId, '', 160);
+  const hasPrivateReference = Boolean(referenceName || referenceId);
 
   const steps = [
-    referenceName
-      ? `Référence audio reçue: ${referenceName}. La garder privée et l'utiliser comme repère de timbre.`
-      : 'Ajouter une référence audio avant calibration fine.',
-    `Chaîne cible: ${tool}.`,
+    hasPrivateReference
+      ? `Référence privée active: ${referenceName || 'référence stockée'}. La garder privée et l'utiliser comme repère de timbre.`
+      : 'Voix Vivy officielle active: aucun upload requis pour générer une phrase test.',
+    `Méthode cible: ${tool}.`,
     instruction
       ? `Direction: ${instruction}`
       : 'Définir proximité micro, énergie, diction, souffle, saturation et limites de transformation.',
@@ -263,11 +265,13 @@ function buildVoiceProduction(input) {
 
   return {
     title: 'Calibration voix Vivy',
-    summary: 'Profil vocal et chaîne de calibration prêts pour module voix.',
+    summary: hasPrivateReference
+      ? 'Référence privée Vivy prête pour phrase test et calibration.'
+      : 'Voix Vivy officielle prête pour phrase test et chanson simple.',
     brief: [
       'VIVY_VOICE_CALIBRATION',
-      `Outil: ${tool}`,
-      `Référence: ${referenceName || 'à fournir'}`,
+      `Méthode: ${tool}`,
+      `Référence: ${hasPrivateReference ? (referenceName || 'privée active') : 'Vivy officielle locale'}`,
       '',
       'Plan:',
       lineList(steps),
@@ -280,9 +284,10 @@ function buildVoiceProduction(input) {
       ]),
     ].join('\n'),
     actions: [
-      { id: 'upload_reference', label: 'Envoyer référence à A11', target: '/api/tts/references', ready: Boolean(referenceName) },
-      { id: 'tts_test', label: 'Générer phrase test', target: '/api/tts/speak', ready: true },
-      { id: 'voice_convert', label: 'Convertir vers référence', target: '/api/voice/convert', ready: Boolean(referenceName) },
+      { id: 'default_voice', label: 'Revenir voix Vivy officielle', target: '/api/tts/speak', ready: true },
+      { id: 'upload_reference', label: 'Remplacer référence privée', target: '/api/tts/references', ready: Boolean(referenceName) },
+      { id: 'tts_test', label: 'Tester voix Vivy active', target: '/api/tts/speak', ready: true },
+      { id: 'voice_convert', label: 'Convertir vers référence privée', target: '/api/voice/convert', ready: hasPrivateReference },
     ],
   };
 }
@@ -343,7 +348,8 @@ function buildSongProduction(input) {
     brief: briefLines.join('\n'),
     actions: [
       { id: 'lyrics_refine', label: 'Finaliser paroles', target: '/api/chat', ready: hasMaterial },
-      { id: 'voice_guide', label: 'Créer voix guide', target: '/api/tts/speak', ready: hasMaterial },
+      { id: 'voice_guide', label: 'Créer voix guide Vivy', target: '/api/tts/speak', ready: hasMaterial },
+      { id: 'simple_song_audio', label: 'Créer audio chanson avec voix Vivy active', target: '/api/tts/speak', ready: hasMaterial },
       { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
@@ -747,7 +753,7 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         payload.mediaStatus = {
           state: 'not_configured',
           reason: 'real_music_provider_not_connected',
-          message: 'Brief prêt. Génération audio réelle non connectée; aucun faux WAV de secours ajouté.',
+          message: 'Brief prêt. Aucun faux WAV ajouté; utilise le bouton prompt + voix active pour créer un audio via /api/tts/speak.',
         };
       }
       res.json(payload);

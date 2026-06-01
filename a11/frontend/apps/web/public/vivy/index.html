@@ -1571,7 +1571,8 @@
         <div class="vivy-chat-attachments" data-vivy-chat-attachments></div>
         <div class="vivy-chat-reference" data-vivy-chat-reference>
           <span data-vivy-chat-reference-label>Voix: Vivy par défaut</span>
-          <button type="button" data-vivy-chat-reference-button>Audio</button>
+          <button type="button" data-vivy-chat-default-voice>Défaut</button>
+          <button type="button" data-vivy-chat-reference-button>Audio perso</button>
         </div>
         <input type="file" accept="audio/*,.wav,.mp3,.webm,.m4a,.ogg" hidden data-vivy-chat-reference-file />
         <input type="file" accept="audio/*,image/*,video/*,text/*,.txt,.md,.json,.csv,.srt,.vtt,.pdf" multiple hidden data-vivy-chat-file />
@@ -1607,12 +1608,12 @@
 
             <div data-vivy-panel="voice">
               <label>
-                Outil voix
+                Méthode voix
                 <select name="voiceTool">
-                  <option>A11 Voice + Voicemod</option>
-                  <option>A11 Voice + RVC</option>
-                  <option>Audacity + ffmpeg</option>
-                  <option>Voicemod live</option>
+                  <option>Voix Vivy officielle</option>
+                  <option>Voix Vivy chant</option>
+                  <option>Voix Vivy + référence privée</option>
+                  <option>Diagnostic module voix</option>
                 </select>
               </label>
               <label>
@@ -1623,12 +1624,19 @@
                 Instruction voix
                 <textarea name="voiceInstruction" rows="6" placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."></textarea>
               </label>
+              <div class="vivy-studio-actions vivy-studio-actions--voice">
+                <button type="button" data-vivy-default-voice>Voix Vivy par défaut</button>
+                <button type="button" data-vivy-test-voice>Tester voix Vivy</button>
+                <button type="button" data-vivy-upload-reference>Remplacer référence</button>
+              </div>
+              <p class="vivy-studio-active-voice" data-vivy-active-voice>Voix active: Vivy officielle</p>
             </div>
 
             <div data-vivy-panel="song" hidden>
               <label>
                 Départ
                 <select name="songSource">
+                  <option>Prompt + voix Vivy</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
@@ -1643,6 +1651,9 @@
                 Matière créative
                 <textarea name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
               </label>
+              <div class="vivy-studio-actions vivy-studio-actions--song">
+                <button type="button" data-vivy-simple-song>Prompt + voix active = chanson</button>
+              </div>
             </div>
 
             <div data-vivy-panel="share" hidden>
@@ -1992,6 +2003,7 @@
         var reset = root.querySelector("[data-vivy-chat-reset]");
         var refBox = root.querySelector("[data-vivy-chat-reference]");
         var refLabel = root.querySelector("[data-vivy-chat-reference-label]");
+        var refDefaultButton = root.querySelector("[data-vivy-chat-default-voice]");
         var refButton = root.querySelector("[data-vivy-chat-reference-button]");
         var refFile = root.querySelector("[data-vivy-chat-reference-file]");
         var attachmentsRoot = root.querySelector("[data-vivy-chat-attachments]");
@@ -2070,6 +2082,7 @@
             button.disabled = Boolean(locked);
           });
           if (reset) reset.disabled = Boolean(locked);
+          if (refDefaultButton) refDefaultButton.disabled = Boolean(locked);
           if (refButton) refButton.disabled = Boolean(locked);
           if (fileButton) fileButton.disabled = Boolean(locked);
         }
@@ -2491,6 +2504,16 @@
             uploadReference(file);
           });
         }
+        if (refDefaultButton) {
+          refDefaultButton.addEventListener("click", function () {
+            if (!ensureSession()) return;
+            setReferenceName("");
+            awaitingReference = false;
+            renderReference(true);
+            addMessage("assistant", "Voix Vivy par défaut réactivée. L'audio privé ne sera utilisé que si tu le remplaces à nouveau.");
+            setStatus("Voix Vivy par défaut active.");
+          });
+        }
         if (fileButton && fileInput) {
           fileButton.addEventListener("click", function () {
             if (!ensureSession()) return;
@@ -2514,12 +2537,12 @@
         var modes = {
           voice: {
             title: "Création voix",
-            label: "Calibrer une voix, préparer Voicemod/RVC/A11 Voice et garder la référence propre.",
+            label: "Utiliser la voix Vivy officielle, tester XTTS/RVC ou remplacer la référence privée.",
             action: "Préparer calibration"
           },
           song: {
             title: "Composition - production",
-            label: "Transformer un thème, texte ou paroles en brief chanson utilisable par Vivy.",
+            label: "Transformer un prompt, texte ou paroles en audio écoutable avec la voix Vivy active.",
             action: "Préparer chanson"
           },
           share: {
@@ -2530,6 +2553,8 @@
         };
         var activeMode = "voice";
         var voiceFileName = "";
+        var voiceReferenceId = "";
+        var voiceFile = null;
         var vivyOutput = "";
         var form = root.querySelector("[data-vivy-form]");
         var title = root.querySelector("[data-vivy-form-title]");
@@ -2537,6 +2562,7 @@
         var briefNode = root.querySelector("[data-vivy-brief]");
         var statusNode = root.querySelector("[data-vivy-status]");
         var mediaNode = root.querySelector("[data-vivy-media]");
+        var activeVoiceNode = root.querySelector("[data-vivy-active-voice]");
         var hasSession = Boolean(window.__vivySession && window.__vivySession.authenticated);
 
         function vivyAuth() {
@@ -2627,7 +2653,7 @@
 
         function setStudioLocked(locked) {
           root.classList.toggle("is-locked", Boolean(locked));
-          Array.prototype.forEach.call(root.querySelectorAll("input, textarea, select, [data-vivy-action], [data-vivy-ask]"), function (control) {
+          Array.prototype.forEach.call(root.querySelectorAll("input, textarea, select, [data-vivy-action], [data-vivy-ask], [data-vivy-default-voice], [data-vivy-test-voice], [data-vivy-upload-reference], [data-vivy-simple-song]"), function (control) {
             control.disabled = Boolean(locked);
           });
           if (locked) setStatus("Connexion requise pour produire avec Vivy.");
@@ -2658,6 +2684,20 @@
 
         function setStatus(text) {
           if (statusNode) statusNode.textContent = text || "";
+        }
+
+        function activeVoiceLabel() {
+          return voiceReferenceId ? (voiceFileName || "référence privée") : "Vivy officielle";
+        }
+
+        function voiceReferenceOptions() {
+          if (voiceReferenceId) {
+            return {
+              voiceReferenceId: voiceReferenceId,
+              useDefaultVoiceReference: false
+            };
+          }
+          return { useDefaultVoiceReference: true };
         }
 
         function firstText() {
@@ -2724,6 +2764,7 @@
             voiceTool: value("voiceTool"),
             voiceFileName: voiceFileName,
             voiceReferenceName: voiceFileName,
+            voiceReferenceId: voiceReferenceId,
             voiceInstruction: value("voiceInstruction"),
             songSource: value("songSource"),
             songMood: value("songMood"),
@@ -2763,7 +2804,7 @@
             var hasMedia = Boolean(payload && (payload.audioUrl || payload.audio_url || payload.videoUrl || payload.video_url || (payload.media && payload.media.url)));
             setStatus(hasMedia
               ? "Production Vivy prête. Le lecteur est disponible dans le brief."
-              : (mediaStatus.message || "Brief Vivy prêt. La génération audio réelle n'est pas encore connectée."));
+              : (mediaStatus.message || "Brief Vivy prêt. Le bouton chanson crée un audio via la voix Vivy active."));
             render();
           }).catch(function (error) {
             setMediaPreview(null);
@@ -2782,12 +2823,17 @@
           ];
 
           if (activeMode === "voice") {
+            var hasPrivateReference = Boolean(voiceReferenceId || voiceFileName);
+            var referenceLabel = hasPrivateReference
+              ? (voiceFileName || "référence privée active")
+              : "Vivy officielle locale (pas d'upload)";
             lines.push(
               "Flux voix:",
               "- Outil cible: " + value("voiceTool"),
-              "- Référence audio: " + (voiceFileName || "à fournir"),
+              "- Référence audio: " + referenceLabel,
               "- Instruction: " + (value("voiceInstruction") || "définir le timbre, les limites et le style de modulation"),
-              "- Sortie attendue: profil vocal, notes de calibration, chaîne d'effets et phrase de test.",
+              "- Sortie attendue: phrase de test avec voicePersona=vivy, voiceReferenceRequired=true, puis notes de calibration si besoin.",
+              "- Route recommandée: /api/tts/speak via le module voix.",
               "- Sécurité: ne pas publier la référence brute sans accord."
             );
           }
@@ -2798,6 +2844,7 @@
               "- Source: " + value("songSource"),
               "- Direction sonore: " + (value("songMood") || "Electro pop dark cinematographique"),
               "- Matière: " + (value("songText") || "thème libre à développer"),
+              "- Sortie simple possible: prompt + voix Vivy active = audio écoutable directement.",
               "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
               "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
             );
@@ -2841,7 +2888,153 @@
           });
           if (title) title.textContent = modes[activeMode].title;
           if (action) action.textContent = modes[activeMode].action;
+          if (activeVoiceNode) activeVoiceNode.textContent = "Voix active: " + activeVoiceLabel();
           if (briefNode) briefNode.textContent = buildBrief();
+        }
+
+        function speakVivy(text, options) {
+          return fetch("/api/tts/speak", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(Object.assign({
+              text: text,
+              voice: "vivy",
+              provider: "xtts-rvc",
+              persona: "vivy",
+              voicePersona: "vivy",
+              voiceReferenceRequired: true,
+              referenceVoiceRequired: true,
+              allowBrowserSpeechFallback: false
+            }, voiceReferenceOptions(), options || {}))
+          }).then(function (response) {
+            var contentType = response.headers.get("content-type") || "";
+            if (!response.ok) {
+              return response.text().then(function (textBody) {
+                var message = textBody || ("TTS indisponible (" + response.status + ")");
+                try {
+                  var parsed = JSON.parse(textBody);
+                  message = parsed.message || parsed.error || message;
+                } catch (_) {}
+                throw new Error(message);
+              });
+            }
+            if (/^audio\//i.test(contentType) || contentType === "application/octet-stream") {
+              return response.blob().then(function (blob) {
+                return {
+                  ok: true,
+                  audioUrl: URL.createObjectURL(blob),
+                  provider: "a11-voice-module",
+                  contentType: contentType || "audio/wav"
+                };
+              });
+            }
+            return response.json().catch(function () { return {}; });
+          });
+        }
+
+        function testVoice(button) {
+          if (!ensureSession()) return;
+          if (button) button.disabled = true;
+          setStatus("Test de la voix Vivy active: " + activeVoiceLabel() + "...");
+          speakVivy(value("voiceInstruction") || "Je suis Vivy. Ma voix active est prête côté Funesterie.", {
+            vocalMode: /chant/i.test(value("voiceTool")) ? "sing" : "adaptive"
+          }).then(function (payload) {
+            setMediaPreview(Object.assign({}, payload, { media: { kind: "audio", provider: payload.provider } }));
+            setStatus("Voix Vivy prête depuis " + activeVoiceLabel() + ".");
+          }).catch(function (error) {
+            setMediaPreview(null);
+            setStatus("Test voix indisponible: " + (error && error.message ? error.message : error));
+          }).finally(function () {
+            if (button) button.disabled = !hasSession;
+          });
+        }
+
+        function useDefaultVoice() {
+          voiceFile = null;
+          voiceFileName = "";
+          voiceReferenceId = "";
+          if (field("voiceFile")) field("voiceFile").value = "";
+          if (field("voiceTool")) field("voiceTool").value = "Voix Vivy officielle";
+          setStatus("Voix Vivy officielle sélectionnée. Aucun upload nécessaire.");
+          render();
+        }
+
+        function uploadStudioVoiceReference(button) {
+          if (!ensureSession()) return;
+          if (!voiceFile) {
+            setStatus("Ajoute d'abord un fichier audio de référence.");
+            return;
+          }
+          if (button) button.disabled = true;
+          var body = new FormData();
+          body.append("voiceReference", voiceFile);
+          body.append("label", "Vivy - " + (voiceFile.name || "référence voix"));
+          body.append("scope", "private");
+          setStatus("Upload référence voix...");
+          fetch("/api/tts/references", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders(),
+            body: body
+          }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              if (!response.ok || payload.ok === false) {
+                if (response.status === 401) throw new Error("Connexion requise");
+                throw new Error(payload.message || payload.error || ("Upload voix impossible (" + response.status + ")"));
+              }
+              return payload;
+            });
+          }).then(function (payload) {
+            var reference = payload && payload.reference ? payload.reference : {};
+            voiceReferenceId = String(reference.id || "");
+            voiceFileName = String(reference.originalName || reference.label || voiceFile.name || "référence privée");
+            if (field("voiceTool")) field("voiceTool").value = "Voix Vivy + référence privée";
+            setStatus("Référence voix privée active pour Vivy.");
+            render();
+          }).catch(function (error) {
+            setStatus("Upload voix indisponible: " + (error && error.message ? error.message : error));
+          }).finally(function () {
+            if (button) button.disabled = !hasSession;
+          });
+        }
+
+        function simpleSong(button) {
+          if (!ensureSession()) return;
+          var prompt = value("songText") || value("voiceInstruction") || value("songMood");
+          if (!prompt) {
+            setStatus("Écris un prompt, un thème ou quelques paroles pour générer la chanson.");
+            return;
+          }
+          if (button) button.disabled = true;
+          setStatus("Vivy transforme le prompt en chanson simple...");
+          var songPrompt = [
+            "Chanson Vivy.",
+            "Direction: " + (value("songMood") || "Electro pop dark cinematographique") + ".",
+            "Voix: " + activeVoiceLabel() + ".",
+            "Texte ou idée: " + prompt
+          ].join("\n");
+          speakVivy(songPrompt, {
+            vocalMode: "sing",
+            voiceStyle: "song"
+          }).then(function (payload) {
+            setMediaPreview(Object.assign({}, payload, { media: { kind: "audio", provider: payload.provider } }));
+            vivyOutput = [
+              "VIVY_SIMPLE_SONG",
+              "Direction: " + (value("songMood") || "Electro pop dark cinematographique"),
+              "Voix: " + activeVoiceLabel(),
+              "Prompt: " + prompt,
+              "",
+              "Sortie: audio chanson simple généré depuis prompt + voix Vivy active."
+            ].join("\n");
+            setStatus("Chanson simple Vivy prête.");
+            render();
+          }).catch(function (error) {
+            setMediaPreview(null);
+            setStatus("Chanson simple indisponible: " + (error && error.message ? error.message : error));
+          }).finally(function () {
+            if (button) button.disabled = !hasSession;
+          });
         }
 
         function copyBrief(message) {
@@ -2878,7 +3071,10 @@
         form.addEventListener("input", render);
         form.addEventListener("change", function (event) {
           if (event.target && event.target.name === "voiceFile") {
-            voiceFileName = event.target.files && event.target.files[0] ? event.target.files[0].name : "";
+            voiceFile = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+            voiceFileName = voiceFile ? voiceFile.name : "";
+            voiceReferenceId = "";
+            if (voiceFile && field("voiceTool")) field("voiceTool").value = "Voix Vivy + référence privée";
           }
           render();
         });
@@ -2904,6 +3100,22 @@
               copyBrief("Brief prêt à coller dans l'équipe.");
             }
           });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-default-voice]"), function (button) {
+          button.addEventListener("click", useDefaultVoice);
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-test-voice]"), function (button) {
+          button.addEventListener("click", function () { testVoice(button); });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-upload-reference]"), function (button) {
+          button.addEventListener("click", function () { uploadStudioVoiceReference(button); });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-simple-song]"), function (button) {
+          button.addEventListener("click", function () { simpleSong(button); });
         });
 
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-open]"), function (button) {

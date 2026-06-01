@@ -2512,6 +2512,7 @@ function buildVivyStudioBrief(options: {
   voiceTool: string;
   voiceInstruction: string;
   voiceFileName: string;
+  voiceReferenceId?: string;
   songSource: string;
   songMood: string;
   songText: string;
@@ -2530,10 +2531,14 @@ function buildVivyStudioBrief(options: {
 
   if (options.mode === "voice") {
     const usesOfficialVivyVoice = /officielle|defaut|défaut/i.test(foldForLookup(options.voiceTool));
+    const hasPrivateReference = Boolean(String(options.voiceReferenceId || "").trim() || options.voiceFileName.trim());
+    const referenceLabel = !hasPrivateReference && usesOfficialVivyVoice
+      ? "Vivy officielle locale (pas d'upload)"
+      : (options.voiceFileName || "référence privée active après upload");
     lines.push(
       "Flux voix:",
       `- Outil cible: ${options.voiceTool}`,
-      `- Référence audio: ${usesOfficialVivyVoice ? "Vivy officielle locale (pas d'upload)" : (options.voiceFileName || "extrait privé court à fournir seulement si remplacement voulu")}`,
+      `- Référence audio: ${referenceLabel}`,
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
       "- Sortie attendue: phrase de test avec voicePersona=vivy, voiceReferenceRequired=true, puis notes de calibration si besoin.",
       "- Route recommandée: /api/tts/speak via le module voix; ne pas passer par un upload brut si la voix Vivy par défaut suffit.",
@@ -2547,7 +2552,7 @@ function buildVivyStudioBrief(options: {
       `- Source: ${options.songSource}`,
       `- Direction sonore: ${options.songMood}`,
       `- Matière: ${options.songText || "thème libre à développer"}`,
-      "- Sortie simple possible: prompt + voix Vivy officielle = chanson audio, sans obligation YouTube ni partage externe.",
+      "- Sortie simple possible: prompt + voix Vivy active = chanson audio, sans obligation YouTube ni partage externe.",
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
       "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
     );
@@ -2592,6 +2597,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const [voiceInstruction, setVoiceInstruction] = useState(String(initialDraft.voiceInstruction || ""));
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voiceFileName, setVoiceFileName] = useState(String(initialDraft.voiceFileName || ""));
+  const [voiceReferenceId, setVoiceReferenceId] = useState(String(initialDraft.voiceReferenceId || ""));
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Thème"));
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
@@ -2620,6 +2626,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     voiceTool,
     voiceInstruction,
     voiceFileName,
+    voiceReferenceId,
     songSource,
     songMood,
     songText,
@@ -2632,6 +2639,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     voiceTool,
     voiceInstruction,
     voiceFileName,
+    voiceReferenceId,
     songSource,
     songMood,
     songText,
@@ -2651,6 +2659,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       voiceTool,
       voiceInstruction,
       voiceFileName,
+      voiceReferenceId,
       songSource,
       songMood,
       songText,
@@ -2660,9 +2669,23 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       tokenPresent: Boolean(shareToken.trim()),
       vivyOutput,
     });
-  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, songSource, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+  }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, songSource, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
 
   const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
+  const hasPrivateVoiceReference = Boolean(voiceReferenceId.trim());
+  const activeVoiceReferenceLabel = hasPrivateVoiceReference
+    ? (voiceFileName || "référence privée")
+    : "Vivy officielle";
+
+  function buildVivyVoiceReferenceOptions(): Record<string, unknown> {
+    if (hasPrivateVoiceReference) {
+      return {
+        voiceReferenceId: voiceReferenceId.trim(),
+        useDefaultVoiceReference: false,
+      };
+    }
+    return { useDefaultVoiceReference: true };
+  }
 
   async function copyBrief(nextStatus = "Brief copié pour les agents.") {
     try {
@@ -2731,7 +2754,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     try {
       const result = await uploadTtsVoiceReference(voiceFile, `Vivy - ${voiceFile.name}`, "private");
       setVoiceFileName(result.reference?.originalName || result.reference?.label || voiceFile.name);
-      setStatus("Référence voix envoyée à A11.");
+      setVoiceReferenceId(String(result.reference?.id || ""));
+      setVoiceTool("Voix Vivy + référence privée");
+      setStatus("Référence voix privée active pour Vivy.");
     } catch (error: any) {
       setStatus(`Upload voix indisponible: ${error?.message || error}`);
     } finally {
@@ -2742,6 +2767,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   function useDefaultVivyVoice() {
     setVoiceFile(null);
     setVoiceFileName("");
+    setVoiceReferenceId("");
     setVoiceTool("Voix Vivy officielle");
     setStatus("Voix Vivy officielle sélectionnée. Aucun upload nécessaire.");
   }
@@ -2752,7 +2778,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       return;
     }
     setIsBusy(true);
-    setStatus("Test de la voix Vivy officielle...");
+    setStatus(`Test de la voix Vivy active: ${activeVoiceReferenceLabel}...`);
     try {
       const payload = await ttsSpeak(
         voiceInstruction.trim() || "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
@@ -2762,7 +2788,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
           persona: "vivy",
           voicePersona: "vivy",
           vocalMode: voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive",
-          useDefaultVoiceReference: true,
+          ...buildVivyVoiceReferenceOptions(),
           voiceReferenceRequired: true,
           referenceVoiceRequired: true,
           allowBrowserSpeechFallback: false,
@@ -2777,8 +2803,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
       });
       setStatus(payload?.promptRenderedAsSpeech === false
-        ? "Maquette voix Vivy prête depuis la référence officielle."
-        : "Voix Vivy officielle prête.");
+        ? `Maquette voix Vivy prête depuis ${activeVoiceReferenceLabel}.`
+        : `Voix Vivy prête depuis ${activeVoiceReferenceLabel}.`);
     } catch (error: any) {
       setStatus(`Test voix indisponible: ${error?.message || error}`);
     } finally {
@@ -2802,7 +2828,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       const songPrompt = [
         `Chanson Vivy.`,
         `Direction: ${songMood || "electro pop dark cinematographique"}.`,
-        `Voix: Vivy officielle.`,
+        `Voix: ${activeVoiceReferenceLabel}.`,
         `Texte ou idée: ${prompt}`,
       ].join("\n");
       const payload = await ttsSpeak(songPrompt, "vivy", "xtts-rvc", {
@@ -2810,7 +2836,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         voicePersona: "vivy",
         vocalMode: "sing",
         voiceStyle: "song",
-        useDefaultVoiceReference: true,
+        ...buildVivyVoiceReferenceOptions(),
         voiceReferenceRequired: true,
         referenceVoiceRequired: true,
         allowBrowserSpeechFallback: false,
@@ -2826,15 +2852,15 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       setVivyOutput([
         "VIVY_SIMPLE_SONG",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
-        `Voix: Vivy officielle`,
+        `Voix: ${activeVoiceReferenceLabel}`,
         `Prompt: ${prompt}`,
         "",
         payload?.promptRenderedAsSpeech === false
-          ? "Sortie: maquette audio Vivy depuis la référence officielle; paroles et structure gardées dans ce brief."
+          ? `Sortie: maquette audio Vivy depuis ${activeVoiceReferenceLabel}; paroles et structure gardées dans ce brief.`
           : "Sortie: audio chanson simple généré depuis prompt + voix Vivy.",
       ].join("\n"));
       setStatus(payload?.promptRenderedAsSpeech === false
-        ? "Maquette chanson Vivy prête depuis la référence officielle."
+        ? `Maquette chanson Vivy prête depuis ${activeVoiceReferenceLabel}.`
         : "Chanson simple Vivy prête.");
     } catch (error: any) {
       setStatus(`Chanson simple indisponible: ${error?.message || error}`);
@@ -2856,6 +2882,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         voiceTool,
         voiceInstruction,
         voiceFileName,
+        voiceReferenceId,
         songSource,
         songMood,
         songText,
@@ -2881,7 +2908,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         : null);
       setStatus(mediaUrl
         ? (payload.summary || "Production Vivy ajoutée au brief.")
-        : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt. La génération audio réelle n'est pas encore connectée."));
+        : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt. Le bouton chanson crée un audio via la voix Vivy active."));
     } catch (error: any) {
       setStatus(`Production Vivy indisponible: ${error?.message || error}`);
     } finally {
@@ -2948,6 +2975,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                     const file = event.currentTarget.files?.[0] || null;
                     setVoiceFile(file);
                     setVoiceFileName(file?.name || "");
+                    setVoiceReferenceId("");
+                    if (file) setVoiceTool("Voix Vivy + référence privée");
                   }}
                 />
               </label>
@@ -2966,6 +2995,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                 <button type="button" onClick={testDefaultVivyVoice} disabled={!hasSession || isBusy}>Tester voix Vivy</button>
                 <button type="button" onClick={uploadVoiceReference} disabled={!hasSession || isBusy || !voiceFile}>Remplacer référence</button>
               </div>
+              <p className="vivy-studio-active-voice">Voix active: {activeVoiceReferenceLabel}</p>
             </>
           )}
 
@@ -2997,7 +3027,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               </label>
               <div className="vivy-studio-actions vivy-studio-actions--song">
                 <button type="button" onClick={produceSimpleVivySong} disabled={!hasSession || isBusy || !songText.trim()}>
-                  Prompt + voix = chanson
+                  Prompt + voix active = chanson
                 </button>
               </div>
             </>

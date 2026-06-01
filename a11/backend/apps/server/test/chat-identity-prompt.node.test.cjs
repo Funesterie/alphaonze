@@ -13,11 +13,10 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /\bFunesterie\b/);
   assert.match(prompt, /assistant local/i);
   assert.match(prompt, /QFlush/i);
-  assert.match(prompt, /Cerbere/i);
   assert.match(prompt, /Vivy/i);
   assert.match(prompt, /\bMCP\b/);
   assert.match(prompt, /Model Context Protocol/i);
-  assert.match(prompt, /a11_mcp_dimension_status/i);
+  assert.match(prompt, /inventaire d'outils/i);
   assert.match(prompt, /WestSide Chopper/i);
   assert.match(prompt, /Funesterie Mixer/i);
   assert.match(prompt, /runtime Funesterie/i);
@@ -45,7 +44,8 @@ test('/api/chat Ollama fallback injects the active identity before the user mess
 
   assert.equal(messages[0].role, 'system');
   assert.match(messages[0].content, /\bNOSSEN\b/);
-  assert.match(messages[0].content, /Je connais Funesterie comme l'espace de travail/i);
+  assert.match(messages[0].content, /Funesterie est mon contexte actif/i);
+  assert.match(messages[0].content, /voix Vivy active/i);
   assert.match(messages[0].content, /Model Context Protocol/i);
   assert.deepEqual(messages[1], { role: 'user', content: 'et NOSSEN ?' });
 });
@@ -84,7 +84,9 @@ test('/api/chat recognizes MCP access questions and answers without hallucinatin
   const reply = chatRouter.buildMcpAccessReply({ familyAccess: true });
   assert.match(reply, /Oui/);
   assert.match(reply, /MCP A11/);
-  assert.match(reply, /a11_health/);
+  assert.match(reply, /sante du pont/i);
+  assert.doesNotMatch(reply, /a11_health/);
+  assert.doesNotMatch(reply, /\|.*Outils disponibles/i);
   assert.doesNotMatch(reply, /\bNon\b/i);
 });
 
