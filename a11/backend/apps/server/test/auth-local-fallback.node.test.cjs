@@ -1219,6 +1219,15 @@ test('auth sessions list, current logout, targeted revoke, and logout-all are di
       assert.equal(secondStillValid.response.status, 200);
       assert.equal(secondStillValid.json.authenticated, true);
 
+      const staleBearerFreshCookie = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${firstToken}`,
+        Cookie: `a11_session=${encodeURIComponent(secondToken)}`,
+      });
+      assert.equal(staleBearerFreshCookie.response.status, 200);
+      assert.equal(staleBearerFreshCookie.json.authenticated, true);
+      assert.equal(staleBearerFreshCookie.json.token, secondToken);
+      assert.equal(staleBearerFreshCookie.json.session.id, secondSid);
+
       const thirdLogin = await postJson(baseUrl, '/api/auth/login', {
         email: 'session-registry@example.test',
         password: 'secret123',

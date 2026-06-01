@@ -11,6 +11,7 @@ const {
 } = require('../auth/google-id-token.cjs');
 const {
   extractRequestAuthToken,
+  extractRequestAuthTokenCandidates,
   parseCookieHeader,
 } = require('../middleware/jwt-auth.cjs');
 const {
@@ -885,11 +886,25 @@ function createAuthRouter({
   }
 
   async function decodeRequestAuthClaims(req) {
-    const token = extractRequestAuthToken(req);
-    if (!token) return null;
-    const decoded = jwt.verify(token, jwtSecret);
-    await sessionRegistry.assertTokenCurrent(decoded);
-    return decoded;
+    const tokenCandidates = extractRequestAuthTokenCandidates(req).ordered;
+    if (!tokenCandidates.length) return null;
+
+    let lastError = null;
+    for (const token of tokenCandidates) {
+      try {
+        const decoded = jwt.verify(token, jwtSecret);
+        await sessionRegistry.assertTokenCurrent(decoded);
+        Object.defineProperty(decoded, '__authTokenUsed', {
+          value: token,
+          enumerable: false,
+          configurable: true,
+        });
+        return decoded;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
   }
 
   async function mergeSessionOAuthConnector(req, provider, options = {}) {
@@ -1694,7 +1709,7 @@ function createAuthRouter({
       return res.json({
         ok: true,
         authenticated: true,
-        token,
+        token: decoded.__authTokenUsed || token,
         user: buildPublicAuthUser(decoded, decoded),
         session: {
           id: decoded.sid || null,
