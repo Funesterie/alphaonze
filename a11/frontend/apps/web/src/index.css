@@ -8599,12 +8599,20 @@ body {
     overflow-x: hidden;
   }
 
+  .fun-home-shell--landing {
+    min-height: 100svh;
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    padding: 6px 10px 10px;
+  }
+
   .fun-home-nav {
     padding: 10px;
   }
 
   .fun-home-shell--landing .fun-home-nav {
-    min-height: 44px;
+    min-height: 0;
     display: flex;
     justify-content: flex-start;
     border: 0;
@@ -8633,20 +8641,24 @@ body {
   .fun-home-shell--landing .fun-home-hero--single {
     width: 100%;
     max-width: calc(100vw - 20px);
-    margin-top: 12px;
+    margin-top: 0;
   }
 
   .fun-home-hero--single .fun-hero-core {
     width: 100%;
     max-width: 100%;
-    padding-inline: 18px;
+    min-height: auto;
+    gap: 12px;
+    padding: 16px 14px;
     overflow: hidden;
   }
 
   .fun-home-hero--single .fun-hero-core > img {
-    width: min(100%, 260px) !important;
+    width: min(100%, 220px) !important;
     max-width: 100%;
+    max-height: 96px;
     height: auto;
+    object-fit: contain;
   }
 
   .fun-home-hero--single .fun-hero-core p,
@@ -8656,6 +8668,8 @@ body {
   }
 
   .fun-home-hero--single .fun-hero-core p {
+    font-size: 15px;
+    line-height: 1.42;
     overflow-wrap: anywhere;
   }
 
@@ -8706,11 +8720,20 @@ body {
   .fun-home-actions a,
   .fun-home-actions button {
     width: 100%;
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    min-height: 42px;
+    padding-inline: 12px;
+  }
+
+  .fun-home-shell--landing .fun-home-hero--nossen .fun-home-actions a,
+  .fun-home-shell--landing .fun-home-hero--nossen .fun-home-actions button {
+    flex: 0 0 auto;
   }
 
   .fun-home-hero--single .fun-home-actions {
+    width: min(100%, 260px);
     flex-direction: column;
+    gap: 8px;
   }
 
   .fun-home-signal-grid {
@@ -8722,7 +8745,7 @@ body {
   }
 
   .fun-home-agent-card {
-    min-height: min(680px, 150vw);
+    min-height: clamp(300px, 82vw, 460px);
   }
 
   .fun-hero-core,
@@ -8755,6 +8778,22 @@ body {
   .fun-versus-score i {
     grid-column: 2;
     grid-row: 1 / span 2;
+  }
+
+  .fun-home-shell--landing .fun-home-footer {
+    min-height: 0;
+    margin-top: 0;
+    padding-top: 10px;
+    gap: 8px;
+    justify-content: center;
+    font-size: 11px;
+  }
+
+  .fun-home-shell--landing .fun-public-footer-legal,
+  .fun-home-shell--landing .fun-public-footer-session {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
   }
 
   .fun-versus-score span:last-of-type,
