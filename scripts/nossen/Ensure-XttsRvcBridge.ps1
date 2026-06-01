@@ -2,12 +2,19 @@ param(
   [string]$InstallDir = "D:\agent-bus\voice\XTTS-RVC-UI",
   [int]$Port = 5000,
   [int]$TimeoutSeconds = 90,
-  [switch]$Visible
+  [switch]$Visible,
+  [ValidateSet("auto", "cuda", "cpu")]
+  [string]$Device = "auto"
 )
 
 $ErrorActionPreference = "Stop"
 
-$venvPython = Join-Path $InstallDir ".venv311\Scripts\python.exe"
+$venvPythonCandidates = @(
+  (Join-Path $InstallDir ".venv310\Scripts\python.exe"),
+  (Join-Path $InstallDir ".venv311\Scripts\python.exe"),
+  (Join-Path $InstallDir ".venv\Scripts\python.exe")
+)
+$venvPython = $venvPythonCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 $bridgeFile = Join-Path $InstallDir "funesterie_xtts_rvc_api.py"
 $healthUrl = "http://127.0.0.1:$Port/health"
 $logDir = Join-Path $InstallDir "logs"
@@ -39,6 +46,27 @@ function Get-BridgeSummary {
   }
 }
 
+function Resolve-XttsDevice {
+  if ($Device -eq "cpu") { return "cpu" }
+  if ($Device -eq "cuda") { return "cuda:0" }
+  $probe = @'
+import sys
+try:
+    import torch
+    if torch.cuda.is_available():
+        x = torch.ones((1,), device="cuda")
+        torch.cuda.synchronize()
+        print("cuda")
+    else:
+        print("cpu")
+except Exception:
+    print("cpu")
+'@
+  $resolved = ($probe | & $venvPython -).Trim().Split("`n")[-1].Trim().ToLowerInvariant()
+  if ($resolved -eq "cuda") { return "cuda:0" }
+  return "cpu"
+}
+
 if (Test-BridgeHealth) {
   Write-Host "XTTS/RVC bridge already healthy: $healthUrl" -ForegroundColor Green
   Write-Host "  $(Get-BridgeSummary)"
@@ -48,8 +76,8 @@ if (Test-BridgeHealth) {
 if (-not (Test-Path -LiteralPath $InstallDir)) {
   throw "XTTS/RVC install dir is missing: $InstallDir"
 }
-if (-not (Test-Path -LiteralPath $venvPython)) {
-  throw "Python venv is missing: $venvPython. Run a11\ops\voice\Start-XttsRvcUi.ps1 once."
+if (-not $venvPython) {
+  throw "Python venv is missing under $InstallDir. Run a11\ops\voice\Start-XttsRvcUi.ps1 once."
 }
 if (-not (Test-Path -LiteralPath $bridgeFile)) {
   throw "Bridge file is missing: $bridgeFile. Run a11\ops\voice\Start-XttsRvcUi.ps1 once."
@@ -58,16 +86,18 @@ if (-not (Test-Path -LiteralPath $bridgeFile)) {
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 $windowStyle = if ($Visible) { "Normal" } else { "Hidden" }
+$resolvedDevice = Resolve-XttsDevice
 $envBlock = @"
-`$env:A11_XTTS_RVC_DEVICE='cpu'
+`$env:A11_XTTS_RVC_DEVICE='$resolvedDevice'
 `$env:A11_XTTS_RVC_HOST='127.0.0.1'
 `$env:A11_XTTS_RVC_PORT='$Port'
 `$env:A11_XTTS_RVC_ROOT='$InstallDir'
+`$env:TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD='1'
 Set-Location -LiteralPath '$InstallDir'
 & '$venvPython' '$bridgeFile' 1>> '$stdoutLog' 2>> '$stderrLog'
 "@
 
-Write-Host "Starting XTTS/RVC bridge on $healthUrl" -ForegroundColor Cyan
+Write-Host "Starting XTTS/RVC bridge on $healthUrl ($resolvedDevice)" -ForegroundColor Cyan
 Start-Process -FilePath "powershell.exe" -WindowStyle $windowStyle -ArgumentList @(
   "-NoProfile",
   "-ExecutionPolicy",

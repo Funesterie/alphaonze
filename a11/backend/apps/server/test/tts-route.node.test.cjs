@@ -283,6 +283,77 @@ test('tts speak route can return an async job and poll the generated audio paylo
   }
 });
 
+test('tts async official voice jobs can be claimed and completed by the local GPU worker', async () => {
+  const previousEnv = {
+    A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
+    A11_LOCAL_GPU_WORKER_ENABLED: process.env.A11_LOCAL_GPU_WORKER_ENABLED,
+    A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
+    A11_TTS_LOCAL_WORKER_TOKEN: process.env.A11_TTS_LOCAL_WORKER_TOKEN,
+    A11_LOCAL_GPU_WORKER_TOKEN_FILE: process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE,
+    A11_TTS_LOCAL_WORKER_TOKEN_FILE: process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE,
+  };
+  const wav = createPcm16Wav();
+
+  process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '1';
+  delete process.env.A11_LOCAL_GPU_WORKER_ENABLED;
+  process.env.A11_LOCAL_GPU_WORKER_TOKEN = 'test-local-gpu-worker-token';
+  delete process.env.A11_TTS_LOCAL_WORKER_TOKEN;
+  delete process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE;
+  delete process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const started = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour local',
+          persona: 'a11',
+          ttsAsync: true,
+          audioFormat: 'wav',
+        });
+
+        assert.equal(started.response.status, 202);
+        assert.equal(started.json.state, 'queued');
+        assert.equal(started.json.worker, 'local-gpu');
+
+        const unauthorized = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'bad-worker' });
+        assert.equal(unauthorized.response.status, 401);
+
+        const claimed = await postJson(baseUrl, '/api/tts/local-worker/claim', { workerId: 'test-worker' }, {
+          authorization: 'Bearer test-local-gpu-worker-token',
+        });
+        assert.equal(claimed.response.status, 200);
+        assert.equal(claimed.json.job.id, started.json.jobId);
+        assert.equal(claimed.json.job.body.text, 'bonjour local');
+
+        const completed = await postJson(baseUrl, `/api/tts/local-worker/jobs/${started.json.jobId}/complete`, {
+          workerId: 'test-worker',
+          audioBase64: wav.toString('base64'),
+          contentType: 'audio/wav',
+          engine: 'test-local-gpu',
+          voiceStyle: 'terminator',
+        }, {
+          authorization: 'Bearer test-local-gpu-worker-token',
+        });
+
+        assert.equal(completed.response.status, 200);
+        assert.equal(completed.json.state, 'done');
+        assert.equal(completed.json.result.via, 'local-gpu-worker');
+        assert.equal(completed.json.result.provider, 'xtts-rvc');
+        assert.match(completed.json.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-local-gpu-xtts-rvc\.wav$/);
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio output', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,

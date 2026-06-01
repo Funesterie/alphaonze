@@ -2,7 +2,9 @@ param(
   [string]$InstallDir = "D:\agent-bus\voice\XTTS-RVC-UI",
   [switch]$InstallOnly,
   [switch]$SkipInstall,
-  [switch]$Visible
+  [switch]$Visible,
+  [ValidateSet("auto", "cuda", "cpu")]
+  [string]$Device = "auto"
 )
 
 $ErrorActionPreference = "Stop"
@@ -117,6 +119,28 @@ def runtts(rvc, voice, text, pitch_change, index_rate, language):
     Write-Host "Patched XTTS-RVC-UI Gradio launch for local Windows startup."
   }
   Set-Content -LiteralPath $appPath -Value $content -Encoding UTF8
+}
+
+function Resolve-XttsDevice {
+  param([string]$Python)
+  if ($Device -eq "cpu") { return "cpu" }
+  if ($Device -eq "cuda") { return "cuda:0" }
+  $probe = @'
+import sys
+try:
+    import torch
+    if torch.cuda.is_available():
+        x = torch.ones((1,), device="cuda")
+        torch.cuda.synchronize()
+        print("cuda")
+    else:
+        print("cpu")
+except Exception:
+    print("cpu")
+'@
+  $resolved = ($probe | & $Python -).Trim().Split("`n")[-1].Trim().ToLowerInvariant()
+  if ($resolved -eq "cuda") { return "cuda:0" }
+  return "cpu"
 }
 
 Write-Step "Preparing XTTS-RVC-UI in $InstallDir"
@@ -252,11 +276,13 @@ Write-Step "Starting Funesterie XTTS/RVC bridge"
 $logDir = Join-Path $InstallDir "logs"
 $logPath = Join-Path $logDir "xtts-rvc-bridge.log"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$resolvedDevice = Resolve-XttsDevice -Python $venvPython
 $envBlock = @"
-`$env:A11_XTTS_RVC_DEVICE='cpu'
+`$env:A11_XTTS_RVC_DEVICE='$resolvedDevice'
 `$env:A11_XTTS_RVC_HOST='127.0.0.1'
 `$env:A11_XTTS_RVC_PORT='5000'
 `$env:A11_XTTS_RVC_ROOT='$InstallDir'
+`$env:TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD='1'
 Set-Location -LiteralPath '$InstallDir'
 & '$venvPython' funesterie_xtts_rvc_api.py *>> '$logPath'
 "@
@@ -270,5 +296,5 @@ Start-Process -FilePath "powershell.exe" -WindowStyle $windowStyle -ArgumentList
   $envBlock
 )
 
-Write-Host "Funesterie XTTS/RVC bridge starting on http://127.0.0.1:5000"
+Write-Host "Funesterie XTTS/RVC bridge starting on http://127.0.0.1:5000 ($resolvedDevice)"
 Write-Host "Log: $logPath"
