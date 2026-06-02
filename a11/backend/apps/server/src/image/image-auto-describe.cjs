@@ -116,6 +116,7 @@ async function autoDescribeImage({
   runtimeRoot = '',
   timeoutMs = 30000,
   requestId = '',
+  prompt = AUTO_DESCRIBE_PROMPT,
 } = {}) {
   const locator = String(imageLocator || '').trim();
   if (!locator) {
@@ -144,7 +145,7 @@ async function autoDescribeImage({
     const result = await callJanusVisionText({
       imageBuffer,
       contentType,
-      prompt: AUTO_DESCRIBE_PROMPT,
+      prompt: String(prompt || AUTO_DESCRIBE_PROMPT).trim() || AUTO_DESCRIBE_PROMPT,
       requestId: requestId || `auto-describe-${Date.now()}`,
       maxNewTokens: 120,
       timeoutMs: Math.max(5000, Number(timeoutMs) || 30000),

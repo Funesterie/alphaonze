@@ -4031,9 +4031,6 @@ router.get('/tts/out/:filename', async (req, res) => {
 
   res.setHeader('Content-Type', contentTypeForTtsAsset(filename));
   res.setHeader('Cache-Control', 'no-store');
-  res.on('finish', () => {
-    deleteGeneratedTtsAsset(localPath);
-  });
   return res.sendFile(localPath);
 });
 

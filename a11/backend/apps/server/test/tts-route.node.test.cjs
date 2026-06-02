@@ -1892,6 +1892,35 @@ test('tts out proxy fetches loopback TTS assets server-side', async () => {
   }
 });
 
+test('tts out local generated assets survive repeated browser reads', async () => {
+  const publicTtsDir = path.resolve(__dirname, '..', '..', '..', 'public', 'tts');
+  const filename = `tts-out-test-${process.pid}-${Date.now()}.mp3`;
+  const filePath = path.join(publicTtsDir, filename);
+  fs.mkdirSync(publicTtsDir, { recursive: true });
+  fs.writeFileSync(filePath, Buffer.from('ID3fake-mp3'));
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const first = await fetch(`${baseUrl}/api/tts/out/${filename}`);
+        assert.equal(first.status, 200);
+        assert.match(String(first.headers.get('content-type') || ''), /audio\/mpeg/i);
+        assert.equal(Buffer.from(await first.arrayBuffer()).toString(), 'ID3fake-mp3');
+        assert.equal(fs.existsSync(filePath), true);
+
+        const second = await fetch(`${baseUrl}/api/tts/out/${filename}`);
+        assert.equal(second.status, 200);
+        assert.equal(Buffer.from(await second.arrayBuffer()).toString(), 'ID3fake-mp3');
+      }
+    );
+  } finally {
+    fs.rmSync(filePath, { force: true });
+  }
+});
+
 test('tts route can run generated audio through the voice conversion module', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-conversion-'));
   const previousEnv = {

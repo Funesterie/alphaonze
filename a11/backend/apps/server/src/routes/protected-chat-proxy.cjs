@@ -12,6 +12,9 @@ const {
   isIntentRouterV2Enabled,
 } = require('../resolve-user-request.cjs');
 const {
+  autoDescribeImage: defaultAutoDescribeImage,
+} = require('../image/image-auto-describe.cjs');
+const {
   parsePdfEmailIntent,
   parseSimpleEmailIntent,
   parseSimplePdfIntent,
@@ -629,6 +632,62 @@ function buildAssistantChoice(content) {
       finish_reason: 'stop',
     },
   ];
+}
+
+function extractVisionImageLocator(body = {}) {
+  return String(
+    body?.sourceImageUrl
+    || body?.source_image_url
+    || body?.imageUrl
+    || body?.image_url
+    || body?.initImageUrl
+    || body?.init_image_url
+    || body?.referenceImageUrl
+    || body?.reference_image_url
+    || ''
+  ).trim();
+}
+
+function isVisionInspectionChatRequest(text = '') {
+  const normalized = String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  if (!normalized.trim()) return false;
+  return /\b(image|photo|capture|screenshot|screen|visuel|voir|vois|voit|regarde|analyse|analyser|decris|decrire|identifie|identifier|qui|quoi|c(?:e|')?est|celle|celui|ca|ça)\b/.test(normalized)
+    || /t.?arriv(?:e|es).{0,20}voir/.test(normalized)
+    || /tu.{0,12}vois/.test(normalized);
+}
+
+function buildVisionQuestionPrompt(userMessage = '') {
+  const question = String(userMessage || '').trim();
+  return [
+    'Réponds en français à partir de cette image.',
+    'Décris les éléments visibles, le style, les couleurs, les textes lisibles et le sujet principal.',
+    'Si la question demande qui ou quoi c’est, identifie seulement ce qui est visible et évite d’inventer.',
+    question ? `Question utilisateur: ${question}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function buildVisionChatPayload({
+  content = '',
+  provider = '',
+  sourceImageUrl = '',
+  skipped = false,
+  reason = '',
+} = {}) {
+  const assistant = String(content || '').trim();
+  return {
+    ok: true,
+    mode: 'vision_chat',
+    provider: String(provider || '').trim() || 'janus',
+    assistant,
+    content: assistant,
+    sourceImageUrl: String(sourceImageUrl || '').trim() || null,
+    skipped: Boolean(skipped),
+    reason: String(reason || '').trim() || null,
+    choices: buildAssistantChoice(assistant),
+  };
 }
 
 function buildIllustratedPdfFallbackPrompt(sourceText = '') {
@@ -1438,6 +1497,7 @@ function createProtectedChatProxyRouter({
   hasRemoteChatProviderConfigured = defaultHasRemoteChatProviderConfigured,
   hasFamilyAccess = (user) => hasFullAccess(user),
   shouldDefaultToLocalProvider = defaultShouldDefaultToLocalProvider,
+  autoDescribeImage = defaultAutoDescribeImage,
   intentRouterV2Enabled = isIntentRouterV2Enabled(),
   localDefaultModel = String(process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b'),
   remoteDefaultModel = String(
@@ -1706,6 +1766,52 @@ function createProtectedChatProxyRouter({
       canonicalizeImage: true,
       executeWebSearch: true,
     });
+
+    const visionImageLocator = extractVisionImageLocator(req.body || {});
+    if (
+      resolution.kind === 'chat.reply'
+      && visionImageLocator
+      && isVisionInspectionChatRequest(latestUserMessage)
+    ) {
+      const runtimeRoot = String(
+        process.env.A11_RUNTIME_ROOT
+        || path.resolve(__dirname, '..', '..', '..', 'runtime')
+      ).trim();
+      let visionResult = null;
+      try {
+        visionResult = await autoDescribeImage({
+          imageLocator: visionImageLocator,
+          runtimeRoot,
+          timeoutMs: Number(req.body?.visionTimeoutMs || process.env.A11_CHAT_VISION_TIMEOUT_MS || 18000),
+          requestId: `chat-vision-${Date.now()}`,
+          prompt: buildVisionQuestionPrompt(latestUserMessage),
+        });
+      } catch (visionError) {
+        visionResult = {
+          skipped: true,
+          provider: 'janus',
+          reason: String(visionError?.message || visionError || 'vision_failed'),
+        };
+      }
+
+      const description = String(visionResult?.description || '').trim();
+      if (description && visionResult?.skipped !== true) {
+        return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
+          content: `Oui, je la vois. ${description}`,
+          provider: visionResult?.provider,
+          sourceImageUrl: visionImageLocator,
+        }), resolution, req.body || {}));
+      }
+
+      const reason = String(visionResult?.reason || 'vision_unavailable').trim();
+      return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
+        content: "Je vois bien qu'une image est jointe, mais le passage vision n'a pas abouti cette fois. Relance l'analyse ou renvoie l'image, et je retente sans passer par le chat texte.",
+        provider: visionResult?.provider,
+        sourceImageUrl: visionImageLocator,
+        skipped: true,
+        reason,
+      }), resolution, req.body || {}));
+    }
 
     if (
       resolution.kind === 'chat.reply'

@@ -3244,9 +3244,26 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
             <div className="vivy-studio-media">
               <strong>{String(vivyMedia.provider || "").includes("emergency") ? (vivyMedia.kind === "audio" ? "Maquette audio locale" : "Maquette vidéo locale") : (vivyMedia.kind === "audio" ? "Audio Vivy prêt" : "Clip Vivy prêt")}</strong>
               {vivyMedia.kind === "audio" ? (
-                <audio src={vivyMedia.url} controls preload="metadata" />
+                <audio
+                  src={vivyMedia.url}
+                  controls
+                  preload="metadata"
+                  onError={() => {
+                    setVivyMedia(null);
+                    setStatus("Ancien audio Vivy expiré. Relance le test pour créer un nouveau MP3.");
+                  }}
+                />
               ) : (
-                <video src={vivyMedia.url} controls preload="metadata" playsInline />
+                <video
+                  src={vivyMedia.url}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  onError={() => {
+                    setVivyMedia(null);
+                    setStatus("Ancien clip Vivy expiré. Relance la production pour créer un nouveau média.");
+                  }}
+                />
               )}
               <a href={vivyMedia.url} target="_blank" rel="noreferrer">
                 Ouvrir le media

@@ -1765,6 +1765,60 @@ test('POST /api/llm/chat keeps explicit local provider when only Qflush chat is 
   }
 });
 
+test('POST /api/llm/chat answers image inspection with vision instead of proxying to text chat', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-vision', username: 'user-vision' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI() {
+          throw new Error('text_proxy_should_not_be_called');
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        autoDescribeImage: async ({ imageLocator, prompt }) => {
+          assert.equal(imageLocator, 'https://assets.example.test/k44.png');
+          assert.match(prompt, /français/i);
+          return {
+            skipped: false,
+            provider: 'janus-test',
+            description: 'Portrait stylisé de Kaen44 dans un cercle violet, avec un blouson futuriste et le texte KAEN44.',
+          };
+        },
+        generateSd: async () => {
+          throw new Error('should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: "et celle la t'arrive a voir ?" }],
+        sourceImageUrl: 'https://assets.example.test/k44.png',
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mode, 'vision_chat');
+      assert.equal(json.provider, 'janus-test');
+      assert.match(json.assistant, /je la vois/i);
+      assert.match(json.assistant, /Kaen44/i);
+      assert.equal(json.sourceImageUrl, 'https://assets.example.test/k44.png');
+    }
+  );
+});
+
 test('POST /api/chat propagates SD errors instead of returning a generic 500', async () => {
   await withServer(
     (app) => {
