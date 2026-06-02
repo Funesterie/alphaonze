@@ -2406,6 +2406,28 @@ function isLikelyHtmlDocument(rawValue: unknown) {
   return /^<!doctype html/i.test(raw) || /^<html/i.test(raw);
 }
 
+function buildFriendlyChatApiErrorMessage(status: number, rawValue: unknown) {
+  const raw = typeof rawValue === 'string' ? rawValue.trim() : '';
+  let parsed: any = null;
+  if (raw && !isLikelyHtmlDocument(raw)) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+  const serverMessage = String(parsed?.message || parsed?.error || '').trim();
+  const statusCode = Number(status || parsed?.status || parsed?.statusCode || 0);
+  const isOverload = [429, 502, 503, 504, 524].includes(statusCode)
+    || /cloudflare|timeout|surcharge|overload|upstream|html inattendue/i.test(raw)
+    || isLikelyHtmlDocument(raw);
+  if (isOverload) {
+    return "Le serveur IA est surchargé ou un fournisseur a coupé la réponse. Les comptes Basic passent après les files Premium/Fondateur: réessaie dans quelques instants, ou passe Premium/Fondateur si tu veux plus de priorité.";
+  }
+  if (serverMessage) return `API ${statusCode || status}: ${serverMessage}`;
+  return `API ${statusCode || status}: ${raw || 'réponse assistant indisponible'}`;
+}
+
 function shouldLogRawChatPayload() {
   if (import.meta.env?.DEV) return true;
   try {
@@ -2807,10 +2829,7 @@ async function apiPost(body: unknown) {
   }
 
   if (!res.ok) {
-    const message = isLikelyHtmlDocument(text)
-      ? `API ${res.status}: reponse HTML inattendue recue au lieu d'une reponse assistant`
-      : `API ${res.status}: ${text}`;
-    throw new Error(message);
+    throw new Error(buildFriendlyChatApiErrorMessage(res.status, text));
   }
 
   let data: any;

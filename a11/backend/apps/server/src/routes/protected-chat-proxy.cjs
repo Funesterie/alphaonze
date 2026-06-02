@@ -31,6 +31,7 @@ const {
   t_download_file: defaultDownloadFile,
 } = require('../a11/tools-dispatcher.cjs');
 const { hasFullAccess } = require('../auth/full-access.cjs');
+const { resolveMcpAccountProfileSync } = require('../auth/mcp-account-tier.cjs');
 const PUBLIC_CHAT_SYSTEM_PROMPT = [
   'Je suis A11, assistant conversationnel de Funesterie.',
   'Quand je dis "je", je parle de moi, A11. Jeffrey, Djeff, Jean ou l utilisateur sont mes interlocuteurs, pas mon identite.',
@@ -135,6 +136,32 @@ function sanitizeUpstreamPayload(upstream = null) {
 function summarizeProxyError(error_, fallbackError = 'proxy_error') {
   const candidate = error_?.payload?.message || error_?.message || error_?.upstream?.body || fallbackError;
   return sanitizeProxyMessage(candidate) || String(fallbackError);
+}
+
+function resolveProxyAccountTier(req = {}) {
+  try {
+    return String(resolveMcpAccountProfileSync(req?.user || {}).tier || 'basic').trim().toLowerCase() || 'basic';
+  } catch {
+    return hasFullAccess(req?.user || {}) ? 'admin_family' : 'basic';
+  }
+}
+
+function isProxyTransientOverloadError(error_, status = 0) {
+  const numericStatus = Number(status || error_?.status || error_?.statusCode || 0);
+  const summary = summarizeProxyError(error_, 'proxy_error');
+  return [429, 502, 503, 504, 524].includes(numericStatus)
+    || /cloudflare|timeout|upstream|html error|html inattendue|surcharge|overload/i.test(summary);
+}
+
+function buildProxyUserMessage(error_, fallbackError = 'proxy_error', req = {}, status = 0) {
+  if (isProxyTransientOverloadError(error_, status)) {
+    const tier = resolveProxyAccountTier(req);
+    if (tier === 'basic') {
+      return "Le serveur IA est surcharge ou un fournisseur a coupe la reponse. Les comptes Basic passent apres les files Premium/Fondateur: reessaie dans quelques instants, ou passe Premium/Fondateur si tu veux plus de priorite.";
+    }
+    return "Le serveur IA est surcharge ou un fournisseur a coupe la reponse. Reessaie dans quelques instants; ta file prioritaire reste conservee.";
+  }
+  return summarizeProxyError(error_, fallbackError);
 }
 
 function attachIntentDebug(payload, _resolution, _body = {}) {
@@ -424,13 +451,14 @@ function defaultShouldDefaultToLocalProvider({
   return hasLocalChatUpstreamConfigured();
 }
 
-function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
+function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error', req = {}, status = 0) {
+  const message = buildProxyUserMessage(error_, fallbackError, req, status);
   if (error_?.payload && typeof error_.payload === 'object') {
     return {
       ...error_.payload,
       requestId: String(error_.payload.requestId || requestId),
       error: String(error_.payload.error || fallbackError),
-      message: summarizeProxyError(error_, fallbackError),
+      message,
     };
   }
 
@@ -438,7 +466,7 @@ function buildProxyErrorBody(error_, requestId, fallbackError = 'proxy_error') {
     ok: false,
     error: String(error_?.error || fallbackError),
     requestId,
-    message: summarizeProxyError(error_, fallbackError),
+    message,
   };
 
   if (error_?.upstream && typeof error_.upstream === 'object') {
@@ -1998,7 +2026,7 @@ function createProtectedChatProxyRouter({
     } catch (error_) {
       console.error(`[A11][/api/llm/chat] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
       const status = resolveErrorHttpStatus(error_, 502);
-      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error', req, status));
     }
   });
 
@@ -2013,7 +2041,7 @@ function createProtectedChatProxyRouter({
     } catch (error_) {
       console.error(`[A11][AuthChat] requestId=${requestId} Proxy error: ${summarizeProxyError(error_, 'upstream_unreachable')}`);
       const status = resolveErrorHttpStatus(error_, 502);
-      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'upstream_unreachable'));
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'upstream_unreachable', req, status));
     }
   });
 
@@ -2028,7 +2056,7 @@ function createProtectedChatProxyRouter({
     } catch (error_) {
       console.error(`[A11][/api/ai] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
       const status = resolveErrorHttpStatus(error_, 502);
-      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error', req, status));
     }
   });
 
@@ -2039,7 +2067,7 @@ function createProtectedChatProxyRouter({
     } catch (error_) {
       console.error(`[A11][/api/completions] requestId=${requestId} Error: ${summarizeProxyError(error_, 'proxy_error')}`);
       const status = resolveErrorHttpStatus(error_, 502);
-      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error'));
+      return res.status(status).json(buildProxyErrorBody(error_, requestId, 'proxy_error', req, status));
     }
   });
 

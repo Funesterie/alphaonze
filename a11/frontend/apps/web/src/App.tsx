@@ -1239,6 +1239,27 @@ function isImageInspectionRequest(value: string) {
   return /\b(c est qui|c est quoi|qui est ce|qui c est|qui est sur|c quoi|qu est ce que c est|que vois tu|qu y a t il|decris|decrit|analyse|identifie|reconnais|tu vois quoi|image|photo|visuel|capture|dessus)\b/.test(text);
 }
 
+function canReuseLastMediaForRequest(value: string) {
+  const text = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, " ")
+    .toLowerCase()
+    .trim();
+  if (!text) return false;
+  if (isLastImageRecallRequest(text)) return true;
+  return /\b(cette|celle|celui|dernier|derniere|precedent|precedente|la meme|le meme|l image jointe|la photo jointe)\b/.test(text)
+    && /\b(image|photo|visuel|capture|dessus|analyse|decris|decrit|vois)\b/.test(text);
+}
+
+function formatChatErrorForUser(error: unknown) {
+  const message = String((error as any)?.message || error || "").trim();
+  if (/\b(API\s*)?(502|503|504|524)\b/i.test(message) || /html inattendue|timeout|surcharge|upstream/i.test(message)) {
+    return "Le serveur IA est surchargé ou un fournisseur a coupé la réponse. Les comptes Basic passent après les files Premium/Fondateur: réessaie dans quelques instants, ou passe Premium/Fondateur si tu veux plus de priorité.";
+  }
+  return `Erreur lors de l'appel au chat A11 : ${message || "erreur inconnue"}`;
+}
+
 function findLastVisibleMedia(messages: ChatMessage[]) {
   const list = Array.isArray(messages) ? [...messages].reverse() : [];
   for (const message of list) {
@@ -7197,6 +7218,7 @@ export function App() {
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
   const pendingImportedImageUrlsRef = useRef<string[]>([]);
   const pendingImportedFileUrlsRef = useRef<string[]>([]);
+  const dismissedImportedNamesRef = useRef<Set<string>>(new Set());
   const mobileAudioPrepKeyRef = useRef("");
   const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
@@ -7944,6 +7966,7 @@ export function App() {
     const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
+    allFiles.forEach((file) => dismissedImportedNamesRef.current.delete(file.name));
 
     // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
     const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
@@ -7974,6 +7997,7 @@ export function App() {
         conversationId,
         onAttachment: (attachment: ImportedConversationAttachment) => {
           if (attachment.kind !== "image" || !attachment.url) return;
+          if (dismissedImportedNamesRef.current.has(attachment.name)) return;
           const resolvedUrl = resolveApiAssetUrl(attachment.url) || attachment.url;
           pendingImportedImageUrlsRef.current = Array.from(new Set([
             ...pendingImportedImageUrlsRef.current,
@@ -8099,6 +8123,7 @@ export function App() {
     setUploadFeedback("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    dismissedImportedNamesRef.current.clear();
     setSidebarOpen(false);
   }
 
@@ -8246,7 +8271,9 @@ export function App() {
     const effectiveText = cleanedInput
       || (explicitSourceImageUrl ? "Image jointe." : pendingFileUrls.length ? "Fichier joint." : text);
     if (!effectiveText) return;
-    const lastMediaForVision = !explicitSourceImageUrl && isImageInspectionRequest(effectiveText)
+    const lastMediaForVision = !explicitSourceImageUrl
+      && isImageInspectionRequest(effectiveText)
+      && canReuseLastMediaForRequest(effectiveText)
       ? findLastVisibleMedia(messages)
       : null;
     const sourceImageUrl = explicitSourceImageUrl
@@ -8275,7 +8302,7 @@ export function App() {
       id: `u-${Date.now()}`,
       role: "user",
       content: effectiveText,
-      imageUrl: previewImageUrl || (sourceImageUrl && isImageInspectionRequest(effectiveText) ? sourceImageUrl : null),
+      imageUrl: previewImageUrl || (sourceImageUrl && canReuseLastMediaForRequest(effectiveText) ? sourceImageUrl : null),
       imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
       fileUrl: pendingFileUrls[0] || null,
       ts: new Date().toISOString(),
@@ -8288,6 +8315,7 @@ export function App() {
     setInput("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    dismissedImportedNamesRef.current.clear();
     setDragPreviewUrls((prev) => {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
       return [];
@@ -8425,7 +8453,7 @@ export function App() {
         const errMsg: ChatMessage = {
           id: `e-${Date.now()}`,
           role: "assistant",
-          content: "Erreur lors de l'appel au chat A11 : " + (err?.message || err),
+          content: formatChatErrorForUser(err),
           ts: new Date().toISOString(),
         };
         setMessages((prev) => {
@@ -10735,7 +10763,7 @@ export function App() {
                     type="button"
                     className="send-button"
                     onClick={() => sendMessage()}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() && dragPreviewUrls.length === 0}
                     title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
                     style={sending ? { opacity: 0.7 } : undefined}
                   >
@@ -10835,9 +10863,26 @@ export function App() {
                         aria-label={`Retirer ${p.name}`}
                         onClick={() => {
                           if (p.url) URL.revokeObjectURL(p.url);
+                          dismissedImportedNamesRef.current.add(p.name);
                           setDragPreviewUrls((prev) => {
                             const next = prev.filter((_, j) => j !== idx);
-                            setPreviewCarouselIndex(Math.min(idx, next.length - 1));
+                            const imageIndex = prev
+                              .slice(0, idx + 1)
+                              .filter((entry) => entry.isImage).length - 1;
+                            const fileIndex = prev
+                              .slice(0, idx + 1)
+                              .filter((entry) => !entry.isImage).length - 1;
+                            if (p.isImage && imageIndex >= 0) {
+                              pendingImportedImageUrlsRef.current = pendingImportedImageUrlsRef.current
+                                .filter((_, entryIndex) => entryIndex !== imageIndex);
+                            } else if (!p.isImage && fileIndex >= 0) {
+                              pendingImportedFileUrlsRef.current = pendingImportedFileUrlsRef.current
+                                .filter((_, entryIndex) => entryIndex !== fileIndex);
+                            }
+                            if (!next.some((entry) => entry.isImage)) pendingImportedImageUrlsRef.current = [];
+                            if (!next.some((entry) => !entry.isImage)) pendingImportedFileUrlsRef.current = [];
+                            if (next.length === 0) setUploadFeedback("");
+                            setPreviewCarouselIndex(Math.max(0, Math.min(idx, next.length - 1)));
                             return next;
                           });
                         }}

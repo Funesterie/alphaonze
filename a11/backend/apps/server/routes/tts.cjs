@@ -7,6 +7,7 @@ const multer = require('multer');
 const router = express.Router();
 const buildTtsReadableText = require('../src/tts/build-tts-readable-text.cjs');
 const { extractRequestAuthToken } = require('../src/middleware/jwt-auth.cjs');
+const { resolveMcpAccountProfileSync } = require('../src/auth/mcp-account-tier.cjs');
 const { buildStorageQuotaPayload } = require('../src/storage/account-storage-quota.cjs');
 const {
   buildVoicePersonaInstruction,
@@ -532,6 +533,61 @@ function isPrivilegedTtsUser(user = {}) {
     || roles.some((role) => ['admin', 'owner', 'founder', 'fondateur', 'djeff'].includes(role));
 }
 
+function resolveTtsAccountProfile(req = {}) {
+  try {
+    return resolveMcpAccountProfileSync(req?.user || {});
+  } catch {
+    return {
+      tier: isPrivilegedTtsUser(req?.user || {}) ? 'admin_family' : 'basic',
+      label: isPrivilegedTtsUser(req?.user || {}) ? 'Admin famille' : 'Basic',
+    };
+  }
+}
+
+function canUsePaidTtsVoice(req = {}) {
+  if (isPrivilegedTtsUser(req?.user || {})) return true;
+  const tier = String(resolveTtsAccountProfile(req)?.tier || 'basic').trim().toLowerCase();
+  return ['admin_family', 'founder', 'premium'].includes(tier);
+}
+
+function enforceBasicTtsCostPolicy(req = {}, body = {}) {
+  if (canUsePaidTtsVoice(req)) return body;
+  const provider = getRequestedTtsProvider(body);
+  const explicitlyNeutral = body?.identityVoice === false
+    || body?.useIdentityVoice === false
+    || body?.neutralVoice === true;
+  const alreadyNeutral = Boolean(provider)
+    && isNeutralTtsProvider(provider)
+    && explicitlyNeutral
+    && !requiresReferenceVoice(body)
+    && !wantsDefaultVoiceReference(body);
+  if (alreadyNeutral && normalizeVocalMode(body) === 'speech') return body;
+  return {
+    ...(body || {}),
+    provider: PROVIDERS.PIPER,
+    ttsProvider: PROVIDERS.PIPER,
+    voice: 'fr_FR-siwis-medium',
+    model: 'fr_FR-siwis-medium',
+    piperVoice: 'fr_FR-siwis-medium',
+    vocalMode: 'speech',
+    voiceConversion: false,
+    voiceReferenceRequired: false,
+    requireVoiceReference: false,
+    referenceVoiceRequired: false,
+    useDefaultVoiceReference: false,
+    defaultVoiceReference: false,
+    usePersonaVoiceReference: false,
+    identityVoice: false,
+    useIdentityVoice: false,
+    neutralVoice: true,
+    allowRvc: false,
+    allowXttsRvc: false,
+    allowLegacyVoiceBridge: false,
+    xttsRvcOptIn: false,
+    ttsCostPolicy: 'basic_siwis_only',
+  };
+}
+
 function resolveTtsPriorityLane(req = {}, body = {}) {
   const raw = String(
     body.priorityTier
@@ -545,7 +601,7 @@ function resolveTtsPriorityLane(req = {}, body = {}) {
   if (privileged) {
     return { tier: 'admin', score: TTS_PRIORITY_SCORES.admin, label: 'Admin' };
   }
-  if (['family', 'famille', 'premium'].includes(raw)) {
+  if (canUsePaidTtsVoice(req) && ['family', 'famille', 'premium', 'founder', 'fondateur'].includes(raw)) {
     return { tier: 'family', score: TTS_PRIORITY_SCORES.family, label: 'Famille' };
   }
   return { tier: 'public', score: TTS_PRIORITY_SCORES.public, label: 'Public' };
@@ -3566,10 +3622,12 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    const text = String(req.body?.text || '').trim();
-    const vocalMode = normalizeVocalMode(req.body || {});
+    const requestBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    req.body = requestBody;
+    const text = String(requestBody?.text || '').trim();
+    const vocalMode = normalizeVocalMode(requestBody || {});
     const readableText = shapeTextForVocalMode(buildTtsReadableText(text), vocalMode);
-    const voice = resolveVoiceForRequest(req.body || {});
+    const voice = resolveVoiceForRequest(requestBody || {});
     const preferHttpTts = shouldPreferHttpTts();
 
     if (!readableText) {
@@ -3578,10 +3636,10 @@ async function handleTtsSpeakRequest(req, res) {
 
     let remoteError = null;
     const preparedBody = {
-      ...(req.body || {}),
+      ...(requestBody || {}),
       text: readableText,
       voice,
-      model: voice || req.body?.model,
+      model: voice || requestBody?.model,
       vocalMode,
     };
     let openAiTtsErrorMessage = null;
@@ -3877,7 +3935,9 @@ function startTtsAsyncJob(req, res, options = {}) {
       queue: buildTtsQueueSnapshot(),
     });
   }
-  const body = buildAsyncTtsJobBody(req.body || {});
+  const requestBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  req.body = requestBody;
+  const body = buildAsyncTtsJobBody(requestBody);
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
   const priorityLane = resolveTtsPriorityLane(req, body);
   const job = {
@@ -4183,14 +4243,16 @@ router.get('/tts/out/:filename', async (req, res) => {
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
-  if (wantsAsyncTtsJob(req.body || {}) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
+  const requestBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  req.body = requestBody;
+  if (wantsAsyncTtsJob(requestBody) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
     return startTtsAsyncJob(req, res);
   }
   try {
-    const text = String(req.body?.text || '').trim();
-    const vocalMode = normalizeVocalMode(req.body || {});
+    const text = String(requestBody?.text || '').trim();
+    const vocalMode = normalizeVocalMode(requestBody || {});
     const readableText = shapeTextForVocalMode(buildTtsReadableText(text), vocalMode);
-    const voice = resolveVoiceForRequest(req.body || {});
+    const voice = resolveVoiceForRequest(requestBody || {});
     const preferHttpTts = shouldPreferHttpTts();
 
     if (!readableText) {
@@ -4199,10 +4261,10 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
 
     let remoteError = null;
     const preparedBody = {
-      ...(req.body || {}),
+      ...(requestBody || {}),
       text: readableText,
       voice,
-      model: voice || req.body?.model,
+      model: voice || requestBody?.model,
       vocalMode,
     };
     let openAiTtsErrorMessage = null;

@@ -10,6 +10,17 @@ const ttsRouter = require('../routes/tts.cjs');
 
 async function withServer(registerRoutes, runAssertions) {
   const app = express();
+  app.use((req, _res, next) => {
+    if (!req.user && req.headers['x-test-basic'] !== '1') {
+      req.user = {
+        id: 'test-premium-user',
+        email: 'test-premium@example.local',
+        account_tier: 'premium',
+        subscription_active: true,
+      };
+    }
+    next();
+  });
   registerRoutes(app);
 
   const server = http.createServer(app);
@@ -272,6 +283,71 @@ test('tts speak route can return an async job and poll the generated audio paylo
         assert.equal(backendBodies.length, 1);
         assert.equal(backendBodies[0].ttsAsync, false);
         assert.equal(backendBodies[0].stream, false);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route keeps basic/public accounts on neutral SIWIS instead of paid identity voices', async () => {
+  const previousEnv = {
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+  };
+  const previousFetch = global.fetch;
+  const backendBodies = [];
+
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.TTS_URL = 'http://127.0.0.1:5002';
+  process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'http://127.0.0.1:5002/api/tts') {
+      backendBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ audio_url: '/api/tts/out/basic-siwis.mp3', via: 'http' });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour vivy',
+          persona: 'vivy',
+          provider: 'cartesia',
+          useDefaultVoiceReference: true,
+          vocalMode: 'adaptive',
+        }, { 'x-test-basic': '1' });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.via, 'http');
+        assert.equal(backendBodies.length, 1);
+        assert.equal(backendBodies[0].provider, 'piper');
+        assert.equal(backendBodies[0].voice, 'fr_FR-siwis-medium');
+        assert.equal(backendBodies[0].identityVoice, false);
+        assert.equal(backendBodies[0].ttsCostPolicy, 'basic_siwis_only');
       }
     );
   } finally {
