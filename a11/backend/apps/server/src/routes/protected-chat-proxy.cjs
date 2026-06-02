@@ -1836,7 +1836,7 @@ function createProtectedChatProxyRouter({
 
       const reason = String(visionResult?.reason || 'vision_unavailable').trim();
       return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
-        content: "Je vois bien qu'une image est jointe, mais le passage vision n'a pas abouti cette fois. Relance l'analyse ou renvoie l'image, et je retente sans passer par le chat texte.",
+        content: "Je vois bien qu'une image est jointe, mais le module vision n'a pas reussi a l'analyser cette fois. Je garde l'image rattachee a la conversation; retente l'analyse ou renvoie-la si tu veux que je relance le passage vision.",
         provider: visionResult?.provider,
         sourceImageUrl: visionImageLocator,
         skipped: true,
