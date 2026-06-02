@@ -86,7 +86,7 @@ services:
       - key: PAYPAL_WEBHOOK_ID
         sync: false
       - key: PAYPAL_PUBLIC_BASE_URL
-        value: https://a11.funesterie.me
+        value: https://funesterie.me
       - key: PAYPAL_WEBHOOK_URL
         value: https://a11.funesterie.me/api/paypal/webhook
       - key: PAYPAL_RECEIVER_EMAIL

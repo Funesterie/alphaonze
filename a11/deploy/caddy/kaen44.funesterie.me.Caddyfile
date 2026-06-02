@@ -3,6 +3,7 @@ funesterie.me, www.funesterie.me, k44.funesterie.me, kaen44.funesterie.me, vivy.
 
 	@blocked_admin path /api/v1/vs/* /api/v1/fs/* /api/admin/* /api/tools/run /api/browse* /api/agent/shell* /api/runtime*
 	respond @blocked_admin 403
+	@a11_payment_api path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
 
 	header {
 		X-Content-Type-Options nosniff
@@ -12,5 +13,11 @@ funesterie.me, www.funesterie.me, k44.funesterie.me, kaen44.funesterie.me, vivy.
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
-	reverse_proxy 127.0.0.1:3001
+	handle @a11_payment_api {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3001
+	}
 }
