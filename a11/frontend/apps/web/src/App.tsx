@@ -510,6 +510,8 @@ function getSurfaceLinks() {
       contact: "/contact/",
       privacy: "/privacy/",
       terms: "/terms/",
+      vivyPrivacy: "/vivy/privacy",
+      vivyTerms: "/vivy/terms",
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
       kaen44Login: buildCentralLoginUrl("/k44/cockpit"),
@@ -537,6 +539,8 @@ function getSurfaceLinks() {
     contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    vivyPrivacy: new URL("/privacy/", VIVY_PUBLIC_APP_URL).toString(),
+    vivyTerms: new URL("/terms/", VIVY_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: buildCentralLoginUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString()),
@@ -580,6 +584,8 @@ function isAllowedFunesterieReturnOrigin(origin: string) {
   ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1|host\.docker\.internal)(?::\d+)?$/i.test(normalized);
 }
 
+const POST_LOGIN_RETURN_TO_KEY = "funesterie.postLoginReturnTo";
+
 function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
   if (surface === "kaen44") return new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
   if (surface === "vivy") return VIVY_PUBLIC_APP_URL;
@@ -601,22 +607,78 @@ function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback 
   }
 }
 
+function isSafePostLoginReturnTo(target: URL) {
+  return isAllowedFunesterieReturnOrigin(target.origin)
+    && !isLoginRoute(target.pathname)
+    && !isAuthSuccessRoute(target.pathname);
+}
+
+function rememberPostLoginReturnTo(rawValue: string | null | undefined) {
+  if (typeof window === "undefined") return;
+  const raw = String(rawValue || "").trim();
+  if (!raw) return;
+  try {
+    const target = new URL(raw, window.location.origin);
+    if (!isSafePostLoginReturnTo(target)) return;
+    window.sessionStorage.setItem(POST_LOGIN_RETURN_TO_KEY, target.toString());
+  } catch {
+    // Storage can be blocked in private contexts; explicit returnTo still works.
+  }
+}
+
+function getRememberedPostLoginReturnTo() {
+  if (typeof window === "undefined") return "";
+  try {
+    const stored = window.sessionStorage.getItem(POST_LOGIN_RETURN_TO_KEY);
+    if (!stored) return "";
+    const target = new URL(stored, window.location.origin);
+    if (!isSafePostLoginReturnTo(target)) return "";
+    return target.toString();
+  } catch {
+    return "";
+  }
+}
+
+function getReferrerPostLoginReturnTo() {
+  if (typeof document === "undefined" || typeof window === "undefined") return "";
+  try {
+    const referrer = String(document.referrer || "").trim();
+    if (!referrer) return "";
+    const target = new URL(referrer, window.location.origin);
+    if (!isSafePostLoginReturnTo(target)) return "";
+    return target.toString();
+  } catch {
+    return "";
+  }
+}
+
 function getRequestedLoginReturnTo() {
   if (typeof window === "undefined") return getDefaultPostLoginUrl();
   const params = new URLSearchParams(window.location.search || "");
   const explicit = params.get("returnTo") || params.get("next");
-  if (explicit) return normalizeAllowedReturnTo(explicit);
+  if (explicit) {
+    const normalizedExplicit = normalizeAllowedReturnTo(explicit);
+    rememberPostLoginReturnTo(normalizedExplicit);
+    return normalizedExplicit;
+  }
 
   const { pathname } = getLocationSnapshot();
-  if (isLoginRoute(pathname)) return getDefaultPostLoginUrl();
-  return normalizeAllowedReturnTo(window.location.href);
+  if (isLoginRoute(pathname)) {
+    return getRememberedPostLoginReturnTo() || getReferrerPostLoginReturnTo() || getDefaultPostLoginUrl();
+  }
+
+  const currentReturnTo = normalizeAllowedReturnTo(window.location.href);
+  rememberPostLoginReturnTo(currentReturnTo);
+  return currentReturnTo;
 }
 
 function buildCentralLoginUrl(returnTo = getRequestedLoginReturnTo()) {
   const base = typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)
     ? new URL("/login", window.location.origin)
     : new URL("/login", FUNESTERIE_PUBLIC_APP_URL);
-  base.searchParams.set("returnTo", normalizeAllowedReturnTo(returnTo));
+  const normalizedReturnTo = normalizeAllowedReturnTo(returnTo);
+  rememberPostLoginReturnTo(normalizedReturnTo);
+  base.searchParams.set("returnTo", normalizedReturnTo);
   return base.toString();
 }
 
@@ -681,7 +743,6 @@ function getSafeAuthSuccessNext(surface: FunesterieSurface) {
     const target = new URL(next, window.location.origin);
     if (target.origin !== window.location.origin) return "";
     if (isLoginRoute(target.pathname) || isAuthSuccessRoute(target.pathname)) return "";
-    if (surface === "kaen44" && !isCockpitRoute(target.pathname)) return "";
     return `${target.pathname}${target.search}${target.hash}`;
   } catch {
     return "";
@@ -3932,6 +3993,17 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
                 <a className="vivy-agent-menu-row" href={surfaceLinks.cockpit}>
                   <span>Cockpit</span>
                   <span>État</span>
+                </a>
+              </section>
+              <section className="vivy-agent-menu-section" aria-label="Légal">
+                <p className="vivy-agent-menu-title">Légal</p>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.vivyPrivacy}>
+                  <span>Confidentialité</span>
+                  <span>Vie privée</span>
+                </a>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.vivyTerms}>
+                  <span>Conditions</span>
+                  <span>Utilisation</span>
                 </a>
               </section>
               <section className="vivy-agent-menu-section vivy-agent-menu-section--account" aria-label="Compte">
@@ -9879,6 +9951,40 @@ export function App() {
                       <span>Plan</span>
                       <span style={{ color: "#94a3b8", fontWeight: 700 }}>Compte</span>
                     </button>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Légal</div>
+                    <a
+                      href={isKaen44 ? surfaceLinks.kaen44Privacy : surfaceLinks.privacy}
+                      className="btn ghost"
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <span>Confidentialité</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Vie privée</span>
+                    </a>
+                    <a
+                      href={isKaen44 ? surfaceLinks.kaen44Terms : surfaceLinks.terms}
+                      className="btn ghost"
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <span>Conditions</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Utilisation</span>
+                    </a>
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
