@@ -8336,6 +8336,15 @@ body {
   min-width: 0;
 }
 
+.fun-token-card-actions > span {
+  flex: 1 1 100%;
+  min-width: 0;
+  color: #ffe0b4;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
 .a11-media-dashboard,
 .a11-media-dashboard * {
   box-sizing: border-box;

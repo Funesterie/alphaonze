@@ -4818,6 +4818,13 @@ export interface CustomerPortalResponse {
   url: string;
 }
 
+export interface CancelSubscriptionResponse {
+  ok: boolean;
+  cancelAt?: number | null;
+  endDate?: string | null;
+  message?: string;
+}
+
 /**
  * Récupère le statut d'abonnement de l'utilisateur
  */
@@ -4865,6 +4872,23 @@ export async function createCustomerPortal(): Promise<CustomerPortalResponse> {
   }
 
   return res.json();
+}
+
+/**
+ * Programme le désabonnement Stripe à la fin de la période déjà payée.
+ */
+export async function cancelSubscription(): Promise<CancelSubscriptionResponse> {
+  const res = await authFetch(getApiUrl('/api/subscription/cancel'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `Impossible de programmer le désabonnement (${res.status})`);
+  }
+
+  return data;
 }
 
 // ------------------------------------------------------------------

@@ -29,6 +29,7 @@ import {
   chatWithVivy,
   createCheckoutSession,
   createCustomerPortal,
+  cancelSubscription,
   createMatchArenaSession,
   emailConversationResource,
   clearAuthToken,
@@ -5657,6 +5658,11 @@ function getSubscriptionAccountText(status: SubscriptionStatus | null, authentic
   if (status.fullAccess) return "Compte autorisé en accès complet.";
   if (status.active) {
     const end = status.stripeStatus?.currentPeriodEnd || status.endDate || null;
+    if (status.stripeStatus?.cancelAtPeriodEnd) {
+      return end
+        ? `Désabonnement programmé. Accès maintenu jusqu'au ${formatAccountDate(typeof end === "number" ? new Date(end * 1000).toISOString() : end)}.`
+        : "Désabonnement programmé à la fin de la période en cours.";
+    }
     return end ? `Actif jusqu'au ${formatAccountDate(typeof end === "number" ? new Date(end * 1000).toISOString() : end)}` : "Abonnement actif.";
   }
   return "Aucun abonnement actif. Premium et Fondateur passent par le paiement automatique.";
@@ -5697,7 +5703,7 @@ function FunesterieAccountPage({
     loading: false,
     error: "",
   });
-  const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal">("");
+  const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal" | "cancel">("");
 
   async function loadAccountInventory() {
     if (!authenticated) {
@@ -5816,6 +5822,27 @@ function FunesterieAccountPage({
       setPaymentBusy("");
     }
   };
+
+  async function cancelAccountSubscription() {
+    if (!authenticated) {
+      if (typeof window !== "undefined") window.location.assign(buildCentralLoginUrl(surfaceLinks.account));
+      return;
+    }
+
+    if (!window.confirm("Programmer le désabonnement à la fin de la période déjà payée ?")) return;
+    setPaymentBusy("cancel");
+    try {
+      await cancelSubscription();
+      await loadAccountInventory();
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        error: (error as Error).message || "Désabonnement indisponible",
+      }));
+    } finally {
+      setPaymentBusy("");
+    }
+  }
 
   return (
     <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Compte Funesterie">
@@ -5943,9 +5970,18 @@ function FunesterieAccountPage({
             <footer>
               <div className="fun-token-card-actions">
                 {inventory.subscription?.active ? (
-                  <button type="button" onClick={() => openPayment("portal")} disabled={!!paymentBusy}>
-                    {paymentBusy ? "Ouverture" : "Gérer"}
-                  </button>
+                  <>
+                    <button type="button" onClick={() => openPayment("portal")} disabled={!!paymentBusy}>
+                      {paymentBusy === "portal" ? "Ouverture" : "Gérer"}
+                    </button>
+                    {inventory.subscription.stripeStatus?.cancelAtPeriodEnd ? (
+                      <span>Désabonnement programmé</span>
+                    ) : (
+                      <button type="button" onClick={cancelAccountSubscription} disabled={!!paymentBusy}>
+                        {paymentBusy === "cancel" ? "En cours" : "Se désabonner"}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button type="button" onClick={() => openPayment("premium")} disabled={!!paymentBusy}>
@@ -6079,7 +6115,7 @@ function ResetPasswordPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", width: "100%", padding: "24px 16px calc(24px + env(safe-area-inset-bottom))", boxSizing: "border-box", gap: "20px" }}>
-      <h1>Reinitialiser le mot de passe</h1>
+      <h1>Réinitialiser le mot de passe</h1>
       <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: "12px", width: "min(100%, 340px)" }}>
         <input
           id="reset-password"
@@ -6119,7 +6155,7 @@ function ResetPasswordPanel() {
         {error && <div style={{ color: "red", fontSize: "14px" }}>{error}</div>}
         {success && (
           <div style={{ color: "#22c55e", fontSize: "14px" }}>
-            Mot de passe modifie. Tu peux revenir sur la page de connexion.
+            Mot de passe modifié. Tu peux revenir sur la page de connexion.
           </div>
         )}
       </form>
@@ -6155,7 +6191,7 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
   return (
     <button
       onClick={() => setMuted(m => !m)}
-      title={muted ? "Retablir la voix d'A11" : "Couper la voix d'A11"}
+      title={muted ? "Rétablir la voix d'A11" : "Couper la voix d'A11"}
       style={{
         fontSize: showLabel ? 13 : 20,
         padding: showLabel ? "10px 12px" : 6,
@@ -6170,11 +6206,11 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
       className="btn ghost"
     >
       {muted ? (
-        <span aria-label="Sortie coupee">Off</span>
+        <span aria-label="Sortie coupée">Off</span>
       ) : (
         <span aria-label="Sortie automatique">On</span>
       )}
-      {showLabel ? <span>{muted ? "Sortie coupee" : "Sortie auto"}</span> : null}
+      {showLabel ? <span>{muted ? "Sortie coupée" : "Sortie auto"}</span> : null}
     </button>
   );
 }
@@ -6490,7 +6526,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             ))}
           </select>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorite session">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorité session">
             {[
               ["admin", "Admin"],
               ["family", "Famille"],
@@ -6538,7 +6574,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1f2937" }}>
               <div style={{ color: "#e2e8f0", fontWeight: 800 }}>Session {session.state}</div>
               <div>{session.gameTitle}</div>
-              <div>Priorite: {session.priorityLabel || session.priorityTier || "Public"}</div>
+              <div>Priorité: {session.priorityLabel || session.priorityTier || "Public"}</div>
               <div>Worker: {session.workerId || "en attente"}</div>
               <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream pret" : "stream en attente"}</div>
               {session.export?.localPath ? <div>Export: {session.export.localPath}</div> : null}
@@ -8404,6 +8440,7 @@ export function App() {
             surface: surfaceKind,
             persona: surfaceKind,
             voicePersona: surfaceKind,
+            language: selectedA11Language.code,
             sourceImageUrl: item.imageUrl,
           }
         );
@@ -8648,8 +8685,8 @@ export function App() {
     );
     const defaultVoiceTextForSurface = (surface: FunesterieSurface) => {
       if (surface === "vivy") return "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.";
-      if (surface === "kaen44") return "Salut Jeffrey. Je suis Kaen44. Interface claire, ton pose, et reponse courte.";
-      return "Salut Jeffrey. Je suis A11. Je parle doucement, clairement, avec une voix posee. Si tu m'entends bien, le test vocal est bon.";
+      if (surface === "kaen44") return "Salut Jeffrey. Je suis Kaen44. Interface claire, ton posé, et réponse courte.";
+      return "Salut Jeffrey. Je suis A11. Je parle doucement, clairement, avec une voix posée. Si tu m'entends bien, le test vocal est bon.";
     };
     const testVoice = (surfaceOrText?: string, maybeText?: string, extraOptions?: Record<string, unknown>) => {
       const first = String(surfaceOrText || "").trim();
@@ -10117,7 +10154,7 @@ export function App() {
                       ) : null}
                       {!isKaen44 ? (
                         <button type="button" onClick={() => setAdminSection('runtime')} style={adminTabButtonStyle('runtime')}>
-                          Etat
+                          État
                         </button>
                       ) : null}
                       {!isKaen44 ? (
@@ -11062,7 +11099,7 @@ export function App() {
         open={technicalMemoConfirmOpen}
         title="Réinitialiser la mémoire non cruciale"
         message="Cette action efface les snapshots techniques locaux d'A11 (env, qflush, journaux memo). Cela ne touche pas l'historique de conversation utilisateur ni la mémoire critique."
-        confirmLabel="Reinitialiser"
+        confirmLabel="Réinitialiser"
         confirmTone="danger"
         loading={purgingTechnicalMemos}
         onClose={() => setTechnicalMemoConfirmOpen(false)}

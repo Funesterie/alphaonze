@@ -129,12 +129,12 @@ function inferSubscriptionPlan(input, fallback = 'premium') {
  */
 async function createCheckoutSession(userId, userEmail, options = {}) {
   if (!stripe) {
-    throw new Error('Stripe non configure');
+    throw new Error('Stripe non configuré');
   }
 
   const plan = resolvePlanConfig(options.plan);
   if (!plan.priceId) {
-    throw new Error(`Stripe price non configure pour ${plan.id}`);
+    throw new Error(`Stripe price non configuré pour ${plan.id}`);
   }
 
   const metadata = {
@@ -172,7 +172,7 @@ async function createCheckoutSession(userId, userEmail, options = {}) {
 
 async function createCustomerPortalSession(customerId) {
   if (!stripe) {
-    throw new Error('Stripe non configure');
+    throw new Error('Stripe non configuré');
   }
 
   const session = await stripe.billingPortal.sessions.create({
@@ -217,14 +217,14 @@ async function getSubscriptionStatus(customerId) {
       plan,
     };
   } catch (error) {
-    console.error('[Stripe] Erreur lors de la recuperation du statut:', error);
+    console.error('[Stripe] Erreur lors de la récupération du statut:', error);
     return { active: false, status: 'error', currentPeriodEnd: null, plan: null };
   }
 }
 
 async function cancelSubscription(subscriptionId) {
   if (!stripe) {
-    throw new Error('Stripe non configure');
+    throw new Error('Stripe non configuré');
   }
 
   const subscription = await stripe.subscriptions.update(subscriptionId, {

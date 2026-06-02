@@ -3,6 +3,7 @@ import {
   getSubscriptionStatus, 
   createCheckoutSession, 
   createCustomerPortal,
+  cancelSubscription,
   type SubscriptionStatus 
 } from '../lib/api';
 
@@ -27,12 +28,12 @@ const SUBSCRIPTION_PLANS: Array<{
     name: 'A11 Premium',
     price: '8,99 EUR',
     period: 'par mois',
-    includedTokens: 'Chat long + credits creation inclus',
+    includedTokens: 'Chat long + crédits création inclus',
     features: [
-      'Chat long et contexte mieux conserve',
-      'Credits mensuels pour images, audio, fichiers et exports',
+      'Chat long et contexte mieux conservé',
+      'Crédits mensuels pour images, audio, fichiers et exports',
       'Routage automatique vers le meilleur pipeline disponible',
-      'Annulable a tout moment depuis le portail client',
+      'Annulable à tout moment depuis le portail client',
     ],
   },
   {
@@ -40,40 +41,40 @@ const SUBSCRIPTION_PLANS: Array<{
     name: 'Fondateur',
     price: '29,99 EUR',
     period: 'par mois',
-    includedTokens: 'Priorite haute, outils avances et cadrage prive',
+    includedTokens: 'Priorité haute, outils avancés et cadrage privé',
     features: [
-      'Priorite haute sur les jobs et files de traitement',
-      'Acces fondateur aux outils avances, sessions et connecteurs',
-      'Canal de cadrage pour blueprint, gros achats et integrations',
-      'Coordonnees de paiement manuel reservees aux besoins qualifies',
+      'Priorité haute sur les jobs et files de traitement',
+      'Accès fondateur aux outils avancés, sessions et connecteurs',
+      'Canal de cadrage pour blueprint, gros achats et intégrations',
+      'Coordonnées de paiement manuel réservées aux besoins qualifiés',
     ],
   },
 ];
 
 const CONTRIBUTION_REWARDS = [
-  '+10 a +40 credits pour un retour utile, reproductible ou bien annote',
-  '+100 a +300 credits pour un dataset, prompt, correction ou cas metier qui ameliore A11',
-  'Attribution apres score de pertinence, pas de revente ni publication automatique des apports',
+  '+10 à +40 crédits pour un retour utile, reproductible ou bien annoté',
+  '+100 à +300 crédits pour un dataset, prompt, correction ou cas métier qui améliore A11',
+  'Attribution après score de pertinence, sans revente ni publication automatique des apports',
 ];
 
 const BLUEPRINT_OFFER = {
   price: '85 000 EUR+',
-  label: 'Blueprint source qualifie',
-  detail: 'Source, orchestration, memoire, runbook, transfert technique et cadrage de deploiement.',
+  label: 'Blueprint source qualifié',
+  detail: 'Source, orchestration, mémoire, runbook, transfert technique et cadrage de déploiement.',
 };
 
 const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
-const WERO_QR_URL = String(import.meta.env.VITE_A11_WERO_QR_URL || '/assets/wero-jeffrey-cellauro.png').trim();
+const WERO_QR_URL = String(import.meta.env.VITE_A11_WERO_QR_URL || '/assets/wero-jeffrey-cellauro-qr.png').trim();
 
 function buildBlueprintContactLink() {
   return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent('Qualification Blueprint A11')}&body=${encodeURIComponent(
-    'Bonjour,\n\nJe souhaite qualifier une licence Blueprint A11.\n\nOrganisation:\nBesoin:\nBudget:\nDelai:\n\nMerci.'
+    'Bonjour,\n\nJe souhaite qualifier une licence Blueprint A11.\n\nOrganisation:\nBesoin:\nBudget:\nDélai:\n\nMerci.'
   )}`;
 }
 
 function buildPaymentContactLink() {
   return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent('Paiement A11')}&body=${encodeURIComponent(
-    'Bonjour,\n\nJe souhaite cadrer un paiement A11.\n\nCompte A11 / email:\nOffre visee: Premium / Fondateur / Blueprint\nBesoin:\n\nMerci.'
+    'Bonjour,\n\nJe souhaite cadrer un paiement A11.\n\nCompte A11 / email:\nOffre visée: Premium / Fondateur / Blueprint\nBesoin:\n\nMerci.'
   )}`;
 }
 
@@ -144,6 +145,20 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
     }
   }
 
+  async function handleCancelSubscription() {
+    if (!window.confirm("Programmer le désabonnement à la fin de la période déjà payée ?")) return;
+    setActionLoading(true);
+    setError('');
+    try {
+      await cancelSubscription();
+      await loadSubscriptionStatus();
+    } catch (err) {
+      setError((err as Error).message || "Erreur lors du désabonnement");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   function formatDate(dateString?: string | number | null) {
     if (!dateString) return 'N/A';
     try {
@@ -198,6 +213,13 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
     color: '#e2e8f0',
   };
 
+  const dangerButtonStyle: React.CSSProperties = {
+    ...buttonStyle,
+    background: '#7f1d1d',
+    color: '#fecaca',
+    border: '1px solid #dc2626',
+  };
+
   const paymentGridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
@@ -222,6 +244,10 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
     width: '100%',
     padding: '9px 12px',
     fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textDecoration: 'none',
   };
 
   const subscriptionPlans = SUBSCRIPTION_PLANS.map((plan) => ({
@@ -273,17 +299,17 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
         <div style={{ ...cardStyle, textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>👑</div>
           <h3 style={{ margin: '0 0 8px 0', color: '#f1f5f9' }}>
-            {isAdmin ? 'Acces Administrateur' : 'Acces gratuit complet'}
+            {isAdmin ? 'Accès administrateur' : 'Accès gratuit complet'}
           </h3>
           <p style={{ margin: 0, color: '#94a3b8' }}>
-            Vous avez un acces complet a {productName}, aux quotas internes et a la supervision des credits.
+            Vous avez un accès complet à {productName}, aux quotas internes et à la supervision des crédits.
           </p>
         </div>
         {founderPayment?.available && founderPayment.ribUrl && (
           <div style={cardStyle}>
-            <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: '16px' }}>Paiement fondateur reserve</div>
+            <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: '16px' }}>Paiement fondateur réservé</div>
             <p style={{ margin: '8px 0 14px', color: '#94a3b8', fontSize: '13px' }}>
-              Coordonnees bancaires pour blueprint, achats importants et paiements qualifies.
+              Coordonnées bancaires pour blueprint, achats importants et paiements qualifiés.
               {founderPayment.phone ? ` Contact: ${formatFrenchPhone(founderPayment.phone)}.` : ''}
             </p>
             <button
@@ -336,14 +362,14 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
           </div>
           <div>
             <h3 style={{ margin: '0 0 4px 0', color: '#f1f5f9' }}>
-              {isActive ? 'Abonnement Actif' : 'Pas d\'abonnement'}
+              {isActive ? 'Abonnement actif' : 'Pas d\'abonnement'}
             </h3>
             <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>
               {isActive 
                 ? willCancel 
                   ? `Actif jusqu'au ${formatDate(status?.stripeStatus?.currentPeriodEnd)}`
                   : `Renouvellement le ${formatDate(status?.stripeStatus?.currentPeriodEnd)}`
-                : `Activez ${activePlan.name} pour obtenir le chat long et des credits creation`
+                : `Activez ${activePlan.name} pour obtenir le chat long et des crédits création`
               }
             </p>
           </div>
@@ -423,7 +449,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
               {actionLoading ? 'Chargement...' : 'Gérer mon abonnement'}
             </button>
 
-            {/* Acces au portail Stripe (factures) */}
+            {/* Accès au portail Stripe (factures) */}
             <button
               onClick={handleManageSubscription}
               disabled={actionLoading}
@@ -438,6 +464,29 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
             >
               🧾 {actionLoading ? 'Chargement...' : 'Mes factures'}
             </button>
+            {willCancel ? (
+              <span style={{
+                alignSelf: 'center',
+                color: '#fbbf24',
+                fontWeight: 800,
+                fontSize: '13px',
+              }}>
+                Désabonnement programmé
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCancelSubscription}
+                disabled={actionLoading}
+                style={{
+                  ...dangerButtonStyle,
+                  opacity: actionLoading ? 0.6 : 1,
+                  cursor: actionLoading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {actionLoading ? 'Chargement...' : 'Se désabonner'}
+              </button>
+            )}
           </div>
         )}
 
@@ -447,7 +496,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
               Moyens de paiement disponibles
             </div>
             <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px' }}>
-              Stripe active les abonnements automatiquement. Wero reste un don libre, et le virement n'apparait qu'aux comptes fondateurs.
+              Stripe active les abonnements automatiquement. Wero reste un don libre, et le virement n'apparaît qu'aux comptes fondateurs.
             </div>
 
             <div style={paymentGridStyle}>
@@ -467,7 +516,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                 <div>
                   <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Don Wero</div>
                   <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                    Scannez le QR code pour un don libre. Aucun numero public n'est affiche.
+                    Scannez le QR code pour un don libre. Aucun numéro public n'est affiché.
                   </div>
                 </div>
                 <img
@@ -491,11 +540,11 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                   <div>
                     <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Virement bancaire</div>
                     <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                      Reserve aux comptes fondateurs pour blueprint, gros achats et paiements qualifies.
+                      Réservé aux comptes fondateurs pour blueprint, gros achats et paiements qualifiés.
                     </div>
                     {founderPayment.phone && (
                       <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '6px', fontWeight: 800 }}>
-                        Tel fondateur: {formatFrenchPhone(founderPayment.phone)}
+                        Tél. fondateur: {formatFrenchPhone(founderPayment.phone)}
                       </div>
                     )}
                   </div>
@@ -516,13 +565,12 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                     Pour facture, preuve de paiement, changement d'offre ou paiement manuel.
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openExternal(buildPaymentContactLink())}
+                <a
+                  href={buildPaymentContactLink()}
                   style={paymentTileButtonStyle}
                 >
                   Contacter
-                </button>
+                </a>
               </div>
             </div>
           </div>
@@ -538,7 +586,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
           color: '#a7f3d0',
           fontSize: '14px',
         }}>
-          <strong>Merci pour votre soutien !</strong> Vous avez acces a {activePlan.name}, au chat long et aux credits de creation.
+          <strong>Merci pour votre soutien !</strong> Vous avez accès à {activePlan.name}, au chat long et aux crédits de création.
         </div>
       )}
 
@@ -554,18 +602,24 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
           <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: '16px' }}>{BLUEPRINT_OFFER.label}</div>
           <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '6px' }}>{BLUEPRINT_OFFER.detail}</div>
           <div style={{ color: '#cbd5e1', fontSize: '12px', marginTop: '8px' }}>
-            Contact qualifie par email; telephone transmis uniquement apres cadrage.
+            Contact qualifié par email; téléphone transmis uniquement après cadrage.
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: '22px' }}>{BLUEPRINT_OFFER.price}</div>
-          <button
-            type="button"
-            onClick={() => window.open(buildBlueprintContactLink(), '_blank')}
-            style={{ ...secondaryButtonStyle, marginTop: '10px' }}
+          <a
+            href={buildBlueprintContactLink()}
+            style={{
+              ...secondaryButtonStyle,
+              marginTop: '10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+            }}
           >
             Qualifier le Blueprint
-          </button>
+          </a>
         </div>
       </div>
     </div>

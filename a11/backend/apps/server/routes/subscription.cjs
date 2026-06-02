@@ -171,11 +171,11 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       }
 
       if (!db) {
-        return res.status(503).json({ error: 'Base de donnees non disponible' });
+        return res.status(503).json({ error: 'Base de données non disponible' });
       }
 
       if (!stripeService.isStripeEnabled(requestedPlan)) {
-        return res.status(503).json({ error: `Paiement ${requestedPlan} non configure` });
+        return res.status(503).json({ error: `Paiement ${requestedPlan} non configuré` });
       }
 
       const userResult = await db.query(
@@ -184,7 +184,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       );
 
       if (!userResult.rows[0]?.email) {
-        return res.status(404).json({ error: 'Email utilisateur non trouve' });
+        return res.status(404).json({ error: 'Email utilisateur non trouvé' });
       }
 
       const userEmail = userResult.rows[0].email;
@@ -203,7 +203,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       });
     } catch (error) {
       console.error('[Subscription] Checkout creation error:', error);
-      return res.status(500).json({ error: 'Erreur lors de la creation de la session' });
+      return res.status(500).json({ error: 'Erreur lors de la création de la session' });
     }
   });
 
@@ -216,7 +216,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       }
 
       if (!db) {
-        return res.status(503).json({ error: 'Base de donnees non disponible' });
+        return res.status(503).json({ error: 'Base de données non disponible' });
       }
 
       if (!stripeService.isStripeEnabled('premium')) {
@@ -229,7 +229,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       );
 
       if (!userResult.rows[0]?.stripe_customer_id) {
-        return res.status(404).json({ error: 'Aucun abonnement trouve' });
+        return res.status(404).json({ error: 'Aucun abonnement trouvé' });
       }
 
       const session = await stripeService.createCustomerPortalSession(
@@ -242,7 +242,76 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       });
     } catch (error) {
       console.error('[Subscription] Portal creation error:', error);
-      return res.status(500).json({ error: 'Erreur lors de la creation du portail' });
+      return res.status(500).json({ error: 'Erreur lors de la création du portail' });
+    }
+  });
+
+  router.post('/cancel', verifyJWT, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID requis' });
+      }
+
+      if (hasFullAccess(req.user)) {
+        return res.status(400).json({
+          error: "Ce compte est en accès complet interne: il n'a pas d'abonnement Stripe à annuler.",
+        });
+      }
+
+      if (!db) {
+        return res.status(503).json({ error: 'Base de données non disponible' });
+      }
+
+      const userResult = await db.query(
+        `SELECT email, stripe_subscription_id, stripe_customer_id, subscription_plan, account_tier
+          FROM users WHERE id = $1`,
+        [userId]
+      );
+      const user = userResult.rows[0];
+
+      if (!user) {
+        return res.status(404).json({ error: 'Utilisateur non trouvé' });
+      }
+
+      if (isFullAccessEmail(user.email)) {
+        return res.status(400).json({
+          error: "Ce compte est en accès complet interne: il n'a pas d'abonnement Stripe à annuler.",
+        });
+      }
+
+      if (!user.stripe_subscription_id) {
+        return res.status(404).json({ error: 'Aucun abonnement Stripe à annuler' });
+      }
+
+      const plan = stripeService.normalizeCheckoutPlan(user.subscription_plan || user.account_tier || 'premium');
+      if (!stripeService.isStripeEnabled(plan)) {
+        return res.status(503).json({ error: `Paiement ${plan} non configuré` });
+      }
+
+      const cancellation = await stripeService.cancelSubscription(user.stripe_subscription_id);
+      const cancelDate = timestampToDate(cancellation.cancelAt);
+      await db.query(
+        `UPDATE users
+          SET subscription_active = true,
+              subscription_end_date = COALESCE($1, subscription_end_date),
+              updated_at = NOW()
+          WHERE id = $2`,
+        [cancelDate, userId]
+      );
+
+      return res.json({
+        ok: true,
+        cancelAt: cancellation.cancelAt || null,
+        endDate: cancelDate ? cancelDate.toISOString() : null,
+        message: cancelDate
+          ? `Désabonnement programmé jusqu'au ${cancelDate.toISOString()}`
+          : 'Désabonnement programmé à la fin de la période en cours.',
+      });
+    } catch (error) {
+      console.error('[Subscription] Cancel error:', error);
+      return res.status(500).json({ error: "Erreur lors de la programmation du désabonnement" });
     }
   });
 
@@ -281,7 +350,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       const user = userResult.rows[0];
 
       if (!user) {
-        return res.status(404).json({ error: 'Utilisateur non trouve' });
+        return res.status(404).json({ error: 'Utilisateur non trouvé' });
       }
 
       const fullAccess = isFullAccessEmail(user.email) || hasFullAccess(req.user);
@@ -317,7 +386,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       });
     } catch (error) {
       console.error('[Subscription] Status error:', error);
-      return res.status(500).json({ error: 'Erreur lors de la recuperation du statut' });
+      return res.status(500).json({ error: 'Erreur lors de la récupération du statut' });
     }
   });
 
@@ -326,8 +395,8 @@ function createSubscriptionRouter({ verifyJWT, db }) {
     const webhookSecrets = getStripeWebhookSecrets();
 
     if (!webhookSecrets.length) {
-      console.error('[Stripe] STRIPE_WEBHOOK_SECRET(S) non configure');
-      return res.status(500).send('Webhook secret non configure');
+      console.error('[Stripe] STRIPE_WEBHOOK_SECRET(S) non configuré');
+      return res.status(500).send('Webhook secret non configuré');
     }
 
     if (!db) {
