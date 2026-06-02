@@ -78,17 +78,37 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_PRICE_ID
-        sync: false # Price ID A11 Studio leger, 9 EUR/mois, a creer/configurer dans Stripe
+        value: price_1Tdp54HkqLcMgv54haf1faZV
+      - key: STRIPE_PREMIUM_PRICE_ID
+        value: price_1Tdp54HkqLcMgv54haf1faZV
+      - key: STRIPE_FOUNDER_PRICE_ID
+        value: price_1Tdp55HkqLcMgv54eIhku9Ah
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # Secret, à configurer manuellement
+      - key: STRIPE_WEBHOOK_URL
+        value: https://a11.funesterie.me/api/subscription/webhook
       - key: STRIPE_SUCCESS_URL
-        value: https://a11.funesterie.me/subscription/success
+        value: https://funesterie.me/subscription/success
       - key: STRIPE_CANCEL_URL
-        value: https://a11.funesterie.me/subscription/cancel
+        value: https://funesterie.me/subscription/cancel
       - key: STRIPE_PORTAL_RETURN_URL
-        value: https://a11.funesterie.me/account
+        value: https://funesterie.me/compte/
 
-      # Email
+      # PayPal
+      - key: PAYPAL_ENV
+        value: live
+      - key: PAYPAL_CLIENT_ID
+        sync: false # Secret store
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false # Secret store
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false # Secret store
+      - key: PAYPAL_PUBLIC_BASE_URL
+        value: https://a11.funesterie.me
+      - key: PAYPAL_WEBHOOK_URL
+        value: https://a11.funesterie.me/api/paypal/webhook
+      - key: PAYPAL_RECEIVER_EMAIL
+        value: cellaurojeffrey@hotmail.com
       - key: RESEND_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: EMAIL_FROM
