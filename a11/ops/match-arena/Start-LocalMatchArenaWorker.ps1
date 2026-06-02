@@ -4,6 +4,8 @@ param(
   [string]$TokenFile = "D:\projets\funesterie\secrets\match-arena-worker-token.txt",
   [string]$StatusPath = "D:\agent-bus\match-arena\local-match-arena-worker-status.json",
   [string]$ExportRoot = "D:\agent-bus\match-arena\sessions",
+  [string]$StreamUrl = "",
+  [string]$StreamCandidates = "",
   [switch]$RestartWorker,
   [switch]$Visible
 )
@@ -84,6 +86,8 @@ $workerEnv = @"
 `$env:A11_MATCH_ARENA_STATUS_PATH='$StatusPath'
 `$env:A11_MATCH_ARENA_EXPORT_ROOT='$ExportRoot'
 `$env:A11_MATCH_ARENA_WORKER_ID='$workerId'
+`$env:A11_MATCH_ARENA_STREAM_URL='$StreamUrl'
+`$env:A11_MATCH_ARENA_STREAM_CANDIDATES='$StreamCandidates'
 Set-Location -LiteralPath 'D:\projets\funesterie'
 & '$node' '$workerScript' 1>> '$workerStdout' 2>> '$workerStderr'
 "@
