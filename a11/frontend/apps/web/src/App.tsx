@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -15,6 +15,7 @@ import {
   fetchMcpCockpitStatus,
   fetchMatchArenaGames,
   fetchMatchArenaSession,
+  fetchMatchArenaSessions,
   fetchMatchArenaStatus,
   fetchMyConversationResources,
   fetchMyStoredFiles,
@@ -40,6 +41,7 @@ import {
   logoutAllSessions,
   getAuthToken,
   hasAuthToken,
+  joinMatchArenaSession,
   register,
   forgotPassword,
   resetPassword,
@@ -6402,10 +6404,86 @@ function Kaen44ModulesPanel({
   );
 }
 
+const MATCH_ARENA_CONTROLS = [
+  { id: "up", label: "Haut", short: "H" },
+  { id: "left", label: "Gauche", short: "G" },
+  { id: "down", label: "Bas", short: "B" },
+  { id: "right", label: "Droite", short: "D" },
+  { id: "a", label: "A", short: "A" },
+  { id: "b", label: "B", short: "B" },
+  { id: "x", label: "X", short: "X" },
+  { id: "y", label: "Y", short: "Y" },
+  { id: "l", label: "L", short: "L" },
+  { id: "r", label: "R", short: "R" },
+  { id: "start", label: "Start", short: "START" },
+  { id: "select", label: "Select", short: "SELECT" },
+] as const;
+
+type MatchArenaControl = typeof MATCH_ARENA_CONTROLS[number]["id"];
+type MatchArenaKeyBindings = Record<MatchArenaControl, string[]>;
+
+const MATCH_ARENA_DEFAULT_KEY_BINDINGS: MatchArenaKeyBindings = {
+  up: ["ArrowUp", "z", "w"],
+  down: ["ArrowDown", "s"],
+  left: ["ArrowLeft", "q", "a"],
+  right: ["ArrowRight", "d"],
+  a: ["j"],
+  b: ["k"],
+  x: ["u"],
+  y: ["i"],
+  l: ["o"],
+  r: ["p"],
+  start: ["Enter"],
+  select: ["Backspace"],
+};
+
+const MATCH_ARENA_GAMEPAD_BUTTONS: Record<number, MatchArenaControl> = {
+  0: "a",
+  1: "b",
+  2: "x",
+  3: "y",
+  4: "l",
+  5: "r",
+  8: "select",
+  9: "start",
+  12: "up",
+  13: "down",
+  14: "left",
+  15: "right",
+};
+
+function formatMatchArenaKey(key: string) {
+  if (key === "ArrowUp") return "↑";
+  if (key === "ArrowDown") return "↓";
+  if (key === "ArrowLeft") return "←";
+  if (key === "ArrowRight") return "→";
+  if (key === " ") return "Espace";
+  if (key === "Backspace") return "Retour";
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+function readMatchArenaKeyBindings(): MatchArenaKeyBindings {
+  if (typeof window === "undefined") return MATCH_ARENA_DEFAULT_KEY_BINDINGS;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem("funesterie.matchArena.keyBindings") || "{}");
+    const next = { ...MATCH_ARENA_DEFAULT_KEY_BINDINGS };
+    for (const control of MATCH_ARENA_CONTROLS) {
+      const values = Array.isArray(parsed?.[control.id]) ? parsed[control.id] : [];
+      const clean = values.map((value: unknown) => String(value || "").trim()).filter(Boolean).slice(0, 4);
+      if (clean.length) next[control.id] = clean;
+    }
+    return next;
+  } catch {
+    return MATCH_ARENA_DEFAULT_KEY_BINDINGS;
+  }
+}
+
 function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const [status, setStatus] = useState<MatchArenaStatus | null>(null);
   const [games, setGames] = useState<MatchArenaGame[]>([]);
+  const [lobbySessions, setLobbySessions] = useState<MatchArenaSession[]>([]);
   const [selectedGameId, setSelectedGameId] = useState("");
+  const [matchMode, setMatchMode] = useState<"user-vs-ai" | "user-vs-player">("user-vs-ai");
   const [priorityTier, setPriorityTier] = useState<"admin" | "family" | "public">(
     hasAdminApiAccess() ? "admin" : "public"
   );
@@ -6414,6 +6492,11 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [sendingInput, setSendingInput] = useState("");
+  const [keyboardEnabled, setKeyboardEnabled] = useState(true);
+  const [gamepadEnabled, setGamepadEnabled] = useState(true);
+  const [gamepadLabel, setGamepadLabel] = useState("Aucune manette");
+  const [captureControl, setCaptureControl] = useState<MatchArenaControl | "">("");
+  const [keyBindings, setKeyBindings] = useState<MatchArenaKeyBindings>(() => readMatchArenaKeyBindings());
 
   const refresh = async () => {
     setLoading(true);
@@ -6423,8 +6506,10 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         fetchMatchArenaStatus(),
         fetchMatchArenaGames(),
       ]);
+      const nextSessions = await fetchMatchArenaSessions().catch(() => []);
       setStatus(nextStatus);
       setGames(nextGames);
+      setLobbySessions(nextSessions);
       setSelectedGameId((current) => current || nextGames[0]?.id || "");
     } catch (err) {
       setError(String((err as Error)?.message || err));
@@ -6466,6 +6551,12 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const workerOnline = status?.worker?.online === true;
   const streamUrl = session?.stream?.embedUrl || session?.stream?.url || "";
   const inputReady = session?.input?.ready !== false && Boolean(session?.id);
+  const publicLobbySessions = lobbySessions.filter((item) => item.visibility === "public" && item.id !== session?.id);
+  const localPlayerSlot = session?.playerSlot || 1;
+  const streamMessage = session?.stream?.message
+    || (workerOnline
+      ? "Le worker est prêt. L'image s'affichera automatiquement dès qu'un pont vidéo local ou tunnel public est disponible."
+      : "Le worker local n'est pas encore connecté. La session reste en file et les joueurs n'ont rien à installer.");
 
   const startSession = async () => {
     if (!selectedGameId) return;
@@ -6474,11 +6565,13 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     try {
       const nextSession = await createMatchArenaSession({
         gameId: selectedGameId,
-        mode: "user-vs-ai",
-        opponent: "a11",
+        mode: matchMode,
+        opponent: matchMode === "user-vs-player" ? "public-player" : "a11",
         priorityTier,
+        visibility: matchMode === "user-vs-player" ? "public" : "private",
       });
       setSession(nextSession);
+      void refresh();
     } catch (err) {
       setError(String((err as Error)?.message || err));
     } finally {
@@ -6486,7 +6579,21 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     }
   };
 
-  const sendControl = async (control: string) => {
+  const joinSession = async (sessionId: string) => {
+    setStarting(true);
+    setError("");
+    try {
+      const nextSession = await joinMatchArenaSession(sessionId);
+      setSession(nextSession);
+      void refresh();
+    } catch (err) {
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const sendControl = useCallback(async (control: string) => {
     if (!session?.id) return;
     setSendingInput(control);
     setError("");
@@ -6504,7 +6611,92 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     } finally {
       setSendingInput("");
     }
-  };
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("funesterie.matchArena.keyBindings", JSON.stringify(keyBindings));
+    } catch {
+      // Local preferences are best-effort.
+    }
+  }, [keyBindings]);
+
+  useEffect(() => {
+    if (!captureControl || typeof window === "undefined") return undefined;
+    const captureKey = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = event.key || event.code;
+      if (!key) return;
+      setKeyBindings((current) => ({
+        ...current,
+        [captureControl]: [key],
+      }));
+      setCaptureControl("");
+    };
+    window.addEventListener("keydown", captureKey, true);
+    return () => window.removeEventListener("keydown", captureKey, true);
+  }, [captureControl]);
+
+  useEffect(() => {
+    if (!keyboardEnabled || !inputReady || captureControl || typeof window === "undefined") return undefined;
+    const lookup = new Map<string, MatchArenaControl>();
+    for (const control of MATCH_ARENA_CONTROLS) {
+      for (const key of keyBindings[control.id] || []) lookup.set(String(key).toLowerCase(), control.id);
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      const tagName = String(target?.tagName || "").toLowerCase();
+      if (["input", "textarea", "select", "button"].includes(tagName) || target?.isContentEditable) return;
+      const control = lookup.get(String(event.key || event.code || "").toLowerCase());
+      if (!control) return;
+      event.preventDefault();
+      void sendControl(control);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [captureControl, inputReady, keyBindings, keyboardEnabled, sendControl]);
+
+  useEffect(() => {
+    if (!gamepadEnabled || !inputReady || typeof window === "undefined") return undefined;
+    let frame = 0;
+    let lastName = "";
+    const activeControls = new Set<MatchArenaControl>();
+    const emitControl = (control: MatchArenaControl, active: boolean) => {
+      if (active && !activeControls.has(control)) {
+        activeControls.add(control);
+        void sendControl(control);
+      }
+      if (!active) activeControls.delete(control);
+    };
+    const tick = () => {
+      const pads = typeof navigator !== "undefined" && navigator.getGamepads ? Array.from(navigator.getGamepads()) : [];
+      const pad = pads.find(Boolean);
+      const nextName = pad?.id ? String(pad.id).slice(0, 72) : "Aucune manette";
+      if (nextName !== lastName) {
+        lastName = nextName;
+        setGamepadLabel(nextName);
+      }
+      if (pad) {
+        Object.entries(MATCH_ARENA_GAMEPAD_BUTTONS).forEach(([index, control]) => {
+          emitControl(control, Boolean(pad.buttons[Number(index)]?.pressed));
+        });
+        const horizontal = Number(pad.axes[0] || 0);
+        const vertical = Number(pad.axes[1] || 0);
+        emitControl("left", horizontal < -0.55);
+        emitControl("right", horizontal > 0.55);
+        emitControl("up", vertical < -0.55);
+        emitControl("down", vertical > 0.55);
+      } else {
+        activeControls.clear();
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [gamepadEnabled, inputReady, sendControl]);
 
   const pillStyle = (active: boolean): React.CSSProperties => ({
     minHeight: 34,
@@ -6535,6 +6727,9 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         borderRadius: 14,
         background: "#0b1220",
         padding: isCompactLayout ? 14 : 16,
+        width: "100%",
+        maxWidth: 1180,
+        margin: "0 auto",
         display: "flex",
         flexDirection: "column",
         gap: 14,
@@ -6545,7 +6740,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         <div>
           <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 18 }}>Match Arena</h3>
           <p style={{ color: "#94a3b8", margin: "6px 0 0", fontSize: 13, maxWidth: 760 }}>
-            Sessions jeu avec inventaire local, file priorisee, commandes navigateur et exports Drive/OneDrive.
+            Sessions jeu en ligne avec file priorisée, clavier/manette navigateur et image publiée par le worker dès que le pont vidéo est prêt.
           </p>
         </div>
         <button type="button" className="btn ghost" onClick={refresh} disabled={loading} style={{ alignSelf: "flex-start" }}>
@@ -6564,7 +6759,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
           ["Jeux", String(status?.catalog?.count ?? games.length)],
           ["Worker", workerOnline ? "En ligne" : status?.worker?.configured ? "Attente" : "Token manquant"],
           ["File", String(status?.queue?.active ?? 0)],
-          ["Stream", status?.worker?.heartbeat?.streamReady ? "Pret" : session?.stream?.ready ? "Pret" : "Attente"],
+          ["Stream", status?.worker?.heartbeat?.streamReady ? "Prêt" : session?.stream?.ready ? "Prêt" : "Attente"],
         ].map(([label, value]) => (
           <div key={label} style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d" }}>
             <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>{label}</div>
@@ -6598,6 +6793,22 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             ))}
           </select>
 
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Mode de match">
+            {[
+              ["user-vs-ai", "Contre A11"],
+              ["user-vs-player", "Joueur en ligne"],
+            ].map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setMatchMode(mode as "user-vs-ai" | "user-vs-player")}
+                style={pillStyle(matchMode === mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorité session">
             {[
               ["admin", "Admin"],
@@ -6622,8 +6833,38 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             className="btn primary"
             style={{ justifyContent: "center", minHeight: 42 }}
           >
-            {starting ? "Preparation..." : "Creer une session"}
+            {starting ? "Préparation..." : matchMode === "user-vs-player" ? "Créer une session publique" : "Créer une session"}
           </button>
+
+          {publicLobbySessions.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                Sessions publiques
+              </div>
+              {publicLobbySessions.slice(0, 4).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => void joinSession(item.id)}
+                  disabled={starting || !item.joinable}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    minHeight: 38,
+                  }}
+                >
+                  <span>{item.gameTitle}</span>
+                  <span style={{ color: "#94a3b8", fontWeight: 800 }}>
+                    {item.joinable ? "Rejoindre" : "Complet"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d", color: "#cbd5e1", fontSize: 12 }}>
@@ -6636,19 +6877,21 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
               <div>Fichiers jouables: {selectedGame.playableCount ?? selectedGame.playableFiles?.length ?? 0}</div>
               <div>Cover: {selectedGame.hasCover ? "oui" : "non"}</div>
               <div style={{ marginTop: 8, color: "#94a3b8" }}>
-                {selectedGame.playableFiles?.slice(0, 4).map((file) => file.name).join(" | ") || "Aucun fichier affiche"}
+                {selectedGame.playableFiles?.slice(0, 4).map((file) => file.name).join(" | ") || "Aucun fichier affiché"}
               </div>
             </>
           ) : (
-            <div>Le worker local doit publier l inventaire de C:\Users\Djeff\Desktop\jeux.</div>
+            <div>Le worker local publie l'inventaire de C:\Users\Djeff\Desktop\jeux.</div>
           )}
           {session ? (
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1f2937" }}>
               <div style={{ color: "#e2e8f0", fontWeight: 800 }}>Session {session.state}</div>
               <div>{session.gameTitle}</div>
               <div>Priorité: {session.priorityLabel || session.priorityTier || "Public"}</div>
+              <div>Mode: {session.visibility === "public" ? "public" : "privé"} · joueur {localPlayerSlot}</div>
+              <div>Participants: {session.players?.length || 1}</div>
               <div>Worker: {session.workerId || "en attente"}</div>
-              <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream pret" : "stream en attente"}</div>
+              <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream prêt" : "stream en attente"}</div>
               {session.export?.localPath ? <div>Export: {session.export.localPath}</div> : null}
               {session.message ? <div style={{ marginTop: 6 }}>{session.message}</div> : null}
             </div>
@@ -6658,21 +6901,54 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
 
       {session ? (
         <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(0, 1.4fr) minmax(260px, 0.6fr)", gap: 12 }}>
-          <div style={{ border: "1px solid #1f2937", borderRadius: 10, minHeight: isCompactLayout ? 220 : 360, overflow: "hidden", background: "#020817" }}>
+          <div
+            style={{
+              border: "1px solid #1f2937",
+              borderRadius: 10,
+              minHeight: isCompactLayout ? 220 : 360,
+              overflow: "hidden",
+              background: "#020817",
+              aspectRatio: "16 / 9",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
             {streamUrl ? (
               <iframe
                 title="Match Arena stream"
                 src={streamUrl}
-                style={{ width: "100%", height: isCompactLayout ? 260 : 420, border: 0, display: "block", background: "#020817" }}
+                style={{ width: "100%", height: "100%", border: 0, display: "block", background: "#020817" }}
                 allow="fullscreen; gamepad"
               />
             ) : (
-              <div style={{ minHeight: isCompactLayout ? 220 : 360, display: "grid", placeItems: "center", color: "#94a3b8", padding: 18, textAlign: "center" }}>
-                {session.stream?.message || "Le worker garde la session active. Le stream apparait ici quand noVNC/WebRTC est publie."}
+              <div style={{ color: "#94a3b8", padding: 24, textAlign: "center", maxWidth: 520 }}>
+                <div style={{ color: "#e2e8f0", fontWeight: 900, marginBottom: 8 }}>Image en attente</div>
+                <div>{streamMessage}</div>
+                <div style={{ marginTop: 10, fontSize: 12 }}>
+                  Commandes actives: clavier, boutons et manette passent par la file du worker.
+                </div>
               </div>
             )}
           </div>
           <div style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setKeyboardEnabled((value) => !value)}
+                style={{ justifyContent: "center", minHeight: 36 }}
+              >
+                Clavier {keyboardEnabled ? "actif" : "coupé"}
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setGamepadEnabled((value) => !value)}
+                style={{ justifyContent: "center", minHeight: 36 }}
+              >
+                Manette {gamepadEnabled ? "active" : "coupée"}
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 48px)", gap: 8, justifyContent: "center" }}>
               <span />
               <button type="button" style={controlStyle} disabled={!inputReady || sendingInput === "up"} onClick={() => sendControl("up")}>H</button>
@@ -6695,7 +6971,48 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
               ))}
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12 }}>
-              Input: {session.input?.mode || "queued-json"} {session.input?.sequence ? `#${session.input.sequence}` : ""}
+              Input: {session.input?.mode || "queued-json"} {session.input?.sequence ? `#${session.input.sequence}` : ""} · {gamepadLabel}
+            </div>
+            <div style={{ borderTop: "1px solid #1f2937", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                Touches
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
+                {MATCH_ARENA_CONTROLS.map((control) => (
+                  <button
+                    key={control.id}
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => setCaptureControl(control.id)}
+                    style={{
+                      minHeight: 34,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      padding: "0 9px",
+                      fontSize: 11,
+                    }}
+                  >
+                    <span>{control.label}</span>
+                    <span style={{ color: captureControl === control.id ? "#fef3c7" : "#94a3b8", fontWeight: 900 }}>
+                      {captureControl === control.id
+                        ? "Appuie..."
+                        : (keyBindings[control.id] || []).map(formatMatchArenaKey).slice(0, 2).join(" / ")}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  setKeyBindings(MATCH_ARENA_DEFAULT_KEY_BINDINGS);
+                  setCaptureControl("");
+                }}
+                style={{ justifyContent: "center", minHeight: 34 }}
+              >
+                Touches par défaut
+              </button>
             </div>
           </div>
         </div>
