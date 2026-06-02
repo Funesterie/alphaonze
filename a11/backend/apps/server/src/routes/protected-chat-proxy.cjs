@@ -39,6 +39,9 @@ const { resolveMcpAccountProfileSync } = require('../auth/mcp-account-tier.cjs')
 const {
   buildA11ChatSystemPrompt,
 } = require('../chat/a11-active-identity.cjs');
+const {
+  postProcessA11AssistantResponse,
+} = require('../chat/response-draft-rewriter.cjs');
 const PUBLIC_CHAT_SYSTEM_PROMPT = [
   'Je suis A11, assistant conversationnel de Funesterie.',
   'Quand je dis "je", je parle de moi, A11. Jeffrey, Djeff, Jean ou l’utilisateur sont mes interlocuteurs, pas mon identité.',
@@ -66,6 +69,7 @@ function buildProxySystemPrompt(req = {}) {
     buildA11ChatSystemPrompt(PUBLIC_CHAT_SYSTEM_PROMPT),
     buildLanguageInstruction(language),
     "Si le dernier message utilisateur change de langue, privilégie cette langue plutôt que l'historique.",
+    "S'il y a eu une pause ou un changement de sujet, réponds au dernier message visible sans réutiliser une ancienne demande.",
   ].join('\n');
 }
 
@@ -104,6 +108,49 @@ function buildInternalAccessDeniedPayload() {
     assistant: content,
     choices: buildAssistantChoice(content),
   };
+}
+
+function extractProxyPayloadAssistantText(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  return String(
+    payload.content
+    || payload.assistant
+    || payload.message
+    || payload.choices?.[0]?.message?.content
+    || ''
+  ).trim();
+}
+
+function writeProxyPayloadAssistantText(payload, content = '') {
+  if (!payload || typeof payload !== 'object') return payload;
+  const nextContent = String(content || '').trim();
+  if (!nextContent) return payload;
+  if ('content' in payload) payload.content = nextContent;
+  if ('assistant' in payload) payload.assistant = nextContent;
+  if ('message' in payload && typeof payload.message === 'string') payload.message = nextContent;
+  if (payload.choices?.[0]?.message && typeof payload.choices[0].message === 'object') {
+    payload.choices[0].message.content = nextContent;
+  }
+  return payload;
+}
+
+function postProcessProxyPayload(payload, latestUserMessage = '') {
+  const assistantText = extractProxyPayloadAssistantText(payload);
+  if (!assistantText) return payload;
+  const processed = postProcessA11AssistantResponse({
+    text: assistantText,
+    userMessage: latestUserMessage,
+  });
+  if (!processed?.rewritten) return payload;
+  return writeProxyPayloadAssistantText(payload, processed.content);
+}
+
+function installProxyResponsePostProcessor(res, latestUserMessage = '') {
+  if (!res || res.locals?.a11ProxyPostProcessorInstalled) return;
+  res.locals = res.locals || {};
+  res.locals.a11ProxyPostProcessorInstalled = true;
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => originalJson(postProcessProxyPayload(payload, latestUserMessage));
 }
 
 function guardNonFamilyPromptAccess(req) {
@@ -193,6 +240,128 @@ function resolveProxyAccountTier(req = {}) {
   } catch {
     return hasFullAccess(req?.user || {}) ? 'admin_family' : 'basic';
   }
+}
+
+const PROXY_MAX_CONTEXT_CHARS = Math.max(8000, Number(process.env.A11_PROXY_MAX_CONTEXT_CHARS || 48000));
+const PROXY_MAX_MESSAGE_CHARS = Math.max(2000, Number(process.env.A11_PROXY_MAX_MESSAGE_CHARS || 12000));
+const PROXY_MAX_HISTORY_MESSAGES = Math.max(4, Number(process.env.A11_PROXY_MAX_HISTORY_MESSAGES || 18));
+
+function stripHistoricalMediaMarkers(content = '') {
+  return String(content || '')
+    .replace(/\[image-data:data:image\/[^;]+;base64,[^\]]+\]/gi, '')
+    .replace(/\[(?:image|video|file|audio):[^\]]+\]/gi, '')
+    .replace(/\[(?:image|fichier|audio)-joint(?:e)?[^\]]*\]/gi, '')
+    .replace(/\b(?:id|url|analyse|action-probable)=[^\s]+/gi, '')
+    .replace(/Image rattachee a la conversation;?\s*/gi, '')
+    .replace(/Fichier rattache a la conversation;?\s*/gi, '')
+    .replace(/analyse-la avec la vision[^.?!]*(?:[.?!]|$)/gi, '')
+    .replace(/analyse-le et decide quoi en faire avant de repondre\.?/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function trimProxyMessageContent(content = '', maxChars = PROXY_MAX_MESSAGE_CHARS) {
+  const text = String(content || '').trim();
+  if (text.length <= maxChars) return text;
+  const headChars = Math.max(1200, Math.floor(maxChars * 0.58));
+  const tailChars = Math.max(1200, maxChars - headChars - 140);
+  return [
+    text.slice(0, headChars).trimEnd(),
+    `\n\n[... contexte ancien coupe: ${text.length - headChars - tailChars} caracteres retires ...]\n\n`,
+    text.slice(-tailChars).trimStart(),
+  ].join('').trim();
+}
+
+function normalizeProxyMessagesForModel(messages = [], latestUserMessage = '') {
+  const rawMessages = (Array.isArray(messages) ? messages : [])
+    .filter((message) => {
+      const role = String(message?.role || '').trim().toLowerCase();
+      if (role !== 'user' && role !== 'assistant' && role !== 'system') return false;
+      return String(message?.content || '').trim();
+    })
+    .slice(-PROXY_MAX_HISTORY_MESSAGES);
+
+  const latestUserIndex = (() => {
+    for (let index = rawMessages.length - 1; index >= 0; index -= 1) {
+      if (String(rawMessages[index]?.role || '').trim().toLowerCase() === 'user') return index;
+    }
+    return -1;
+  })();
+
+  const normalized = rawMessages
+    .map((message, index) => {
+      const role = String(message?.role || '').trim().toLowerCase();
+      const keepCurrentMediaMarkers = role === 'user' && index === latestUserIndex;
+      const content = trimProxyMessageContent(
+        keepCurrentMediaMarkers
+          ? String(message?.content || '').trim()
+          : stripHistoricalMediaMarkers(message?.content || '')
+      );
+      if (!content) return null;
+      return { role, content };
+    })
+    .filter(Boolean);
+
+  const latest = String(latestUserMessage || '').trim();
+  const lastMessage = normalized[normalized.length - 1];
+  if (latest && (!lastMessage || lastMessage.role !== 'user' || String(lastMessage.content || '').trim() !== latest)) {
+    normalized.push({ role: 'user', content: latest });
+  }
+
+  let usedChars = 0;
+  const selected = [];
+  for (let index = normalized.length - 1; index >= 0; index -= 1) {
+    const message = normalized[index];
+    const contentLength = String(message.content || '').length;
+    const remaining = PROXY_MAX_CONTEXT_CHARS - usedChars;
+    if (remaining <= 0) break;
+    if (contentLength > remaining) {
+      selected.unshift({
+        ...message,
+        content: trimProxyMessageContent(message.content, Math.max(1600, remaining)),
+      });
+      break;
+    }
+    selected.unshift(message);
+    usedChars += contentLength;
+  }
+
+  return selected;
+}
+
+function sanitizeProxyRequestHistory(req, latestUserMessage = '') {
+  if (!req?.body || typeof req.body !== 'object') return;
+  req.body.messages = normalizeProxyMessagesForModel(req.body.messages, latestUserMessage);
+}
+
+function buildIntentScopedBody(rawBody = {}, latestUserMessage = '') {
+  const body = { ...(rawBody || {}) };
+  const text = String(latestUserMessage || '').trim();
+  body.messages = text ? [{ role: 'user', content: text }] : [];
+  body.message = text || body.message;
+  body.prompt = text || body.prompt;
+  return body;
+}
+
+function getResolutionExecutionContext(resolution, req) {
+  const body = resolution?._scopedBody || req?.body || {};
+  const messages = resolution?._scopedMessages || (Array.isArray(body?.messages) ? body.messages : []);
+  return { body, messages };
+}
+
+function isCurrentTurnImageActionRequest(text = '', body = {}) {
+  const normalized = String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .toLowerCase()
+    .trim();
+  if (!normalized) return false;
+  const hasCurrentImage = Boolean(extractVisionImageLocator(body));
+  const hasImageNoun = /\b(image|photo|illustration|visuel|avatar|logo|dessin|portrait|capture|screenshot|screen)\b/.test(normalized);
+  const hasCreationVerb = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|imagine|fais|faire)\b/.test(normalized);
+  const hasEditVerb = /\b(rajoute|ajoute|modifie|retouche|transforme|remplace|anime|ameliore|corrige)\b/.test(normalized);
+  return (hasCreationVerb && hasImageNoun) || (hasCurrentImage && (hasImageNoun || hasEditVerb || isVisionInspectionChatRequest(text)));
 }
 
 function isProxyTransientOverloadError(error_, status = 0) {
@@ -1731,10 +1900,11 @@ function createProtectedChatProxyRouter({
         job.updatedAt = Date.now();
         persistAsyncImageJobsSnapshot();
         if (payload) return payload;
+        const executionContext = getResolutionExecutionContext(resolution, req);
         const executed = await intentResolver.executeResolvedRuntime(resolution, {
           req,
-          body: req.body || {},
-          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+          body: executionContext.body,
+          messages: executionContext.messages,
         });
         return executed?.responsePayload || null;
       })
@@ -1834,15 +2004,19 @@ function createProtectedChatProxyRouter({
       return res.status(200).json(compoundPayload);
     }
 
+    const scopedBody = buildIntentScopedBody(req.body || {}, latestUserMessage);
+    const scopedMessages = Array.isArray(scopedBody.messages) ? scopedBody.messages : [];
     const resolution = await intentResolver.resolveUserRequest({
       req,
-      body: req.body || {},
+      body: scopedBody,
       userText: latestUserMessage,
-      messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+      messages: scopedMessages,
       executeImage: false,
       canonicalizeImage: true,
       executeWebSearch: true,
     });
+    resolution._scopedBody = scopedBody;
+    resolution._scopedMessages = scopedMessages;
 
     const visionImageLocator = extractVisionImageLocator(req.body || {});
     if (
@@ -1900,6 +2074,14 @@ function createProtectedChatProxyRouter({
       return false;
     }
 
+    if (
+      (resolution.kind === 'image.generate' || resolution.kind === 'image.generate.diagnostic')
+      && !isCurrentTurnImageActionRequest(latestUserMessage, scopedBody)
+    ) {
+      console.warn(`[A11][intent-router] ignored stale image intent for latest="${String(latestUserMessage).slice(0, 80)}"`);
+      return false;
+    }
+
     // web.search avec résultats : retourner directement le payload
     if (resolution.kind === 'web.search' && resolution.responsePayload) {
       return res.status(200).json(attachIntentDebug(resolution.responsePayload, resolution, req.body || {}));
@@ -1919,11 +2101,12 @@ function createProtectedChatProxyRouter({
     const acceptsAsyncImageJob = resolution.kind === 'image.generate' && isAsyncImageJobRequested(req.body || {});
 
     if (!isCacheable) {
+      const executionContext = getResolutionExecutionContext(resolution, req);
       const payload = resolution.responsePayload
         || (await intentResolver.executeResolvedRuntime(resolution, {
           req,
-          body: req.body || {},
-          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+          body: executionContext.body,
+          messages: executionContext.messages,
         }))?.responsePayload
         || null;
       return res.status(200).json(attachIntentDebug(payload, resolution, req.body || {}));
@@ -1931,11 +2114,12 @@ function createProtectedChatProxyRouter({
 
     if (shouldBypassCache && !acceptsAsyncImageJob) {
       console.log('[A11][intent-sync] bypass short cache for special image compiler');
+      const executionContext = getResolutionExecutionContext(resolution, req);
       const payload = resolution.responsePayload
         || (await intentResolver.executeResolvedRuntime(resolution, {
           req,
-          body: req.body || {},
-          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+          body: executionContext.body,
+          messages: executionContext.messages,
         }))?.responsePayload
         || null;
       return res.status(200).json(attachIntentDebug(payload, resolution, req.body || {}));
@@ -1979,10 +2163,11 @@ function createProtectedChatProxyRouter({
     const executionPromise = Promise.resolve(resolution.responsePayload)
       .then(async (payload) => {
         if (payload) return payload;
+        const executionContext = getResolutionExecutionContext(resolution, req);
         const executed = await intentResolver.executeResolvedRuntime(resolution, {
           req,
-          body: req.body || {},
-          messages: Array.isArray(req.body?.messages) ? req.body.messages : [],
+          body: executionContext.body,
+          messages: executionContext.messages,
         });
         return executed?.responsePayload || null;
       })
@@ -2033,6 +2218,7 @@ function createProtectedChatProxyRouter({
   async function handleProxy(req, res) {
     const familyAccess = hasFamilyAccess(req?.user);
     const latestUserMessage = extractLatestUserMessage(req.body || {});
+    sanitizeProxyRequestHistory(req, latestUserMessage);
     if (!familyAccess) {
       guardNonFamilyPromptAccess(req);
       if (isInternalDisclosureRequest(latestUserMessage)) {
@@ -2045,6 +2231,7 @@ function createProtectedChatProxyRouter({
 
     applyProviderDefaults(req);
     injectProxySystemPrompt(req);
+    installProxyResponsePostProcessor(res, latestUserMessage);
     return proxyChatToOpenAI(req, res);
   }
 

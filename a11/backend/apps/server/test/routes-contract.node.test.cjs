@@ -1819,6 +1819,105 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
   );
 });
 
+test('POST /api/llm/chat strips stale media markers before text proxy chat', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-context', username: 'user-context' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(req, res) {
+          const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+          const joined = messages.map((message) => String(message?.content || '')).join('\n');
+          assert.doesNotMatch(joined, /\[image:/i);
+          assert.doesNotMatch(joined, /Image rattachee a la conversation/i);
+          assert.equal(messages[messages.length - 1]?.role, 'user');
+          assert.equal(messages[messages.length - 1]?.content, "t'es vexé ?");
+          return res.status(200).json({
+            ok: true,
+            assistant: "Non, je ne suis pas vexée. Je reprends juste depuis ton dernier message.",
+            content: "Non, je ne suis pas vexée. Je reprends juste depuis ton dernier message.",
+          });
+        },
+        detectImageIntent: () => false,
+        detectVideoIntent: () => false,
+        detectWebImageIntent: () => false,
+        generateSd: async () => {
+          throw new Error('image_runtime_should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        conversationId: 'a11:test-context',
+        messages: [
+          { role: 'user', content: 'tu vois quoi sur cette image ?\n[image:https://assets.example.test/old.png]' },
+          { role: 'assistant', content: "Je vois bien qu'une image est jointe." },
+          { role: 'user', content: "t'es vexé ?" },
+        ],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.match(json.content, /dernier message/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat rewrites stale proxy echoes before returning to user', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-stale', username: 'user-stale' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.status(200).json({
+            ok: true,
+            content: 'Vous avez écrit: "Que type d’image ?" Je peux vous aider à choisir une image.',
+            choices: [{ message: { role: 'assistant', content: 'Vous avez écrit: "Que type d’image ?" Je peux vous aider à choisir une image.' } }],
+          });
+        },
+        detectImageIntent: () => false,
+        detectVideoIntent: () => false,
+        detectWebImageIntent: () => false,
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: "t'es vexé ?" }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.match(json.content, /mauvais contexte/i);
+      assert.equal(json.choices[0].message.content, json.content);
+    }
+  );
+});
+
 test('POST /api/chat propagates SD errors instead of returning a generic 500', async () => {
   await withServer(
     (app) => {

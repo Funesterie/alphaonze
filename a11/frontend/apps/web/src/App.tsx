@@ -1222,8 +1222,9 @@ function normalizeAssistantMessagePayload(
   };
 }
 
-const A11_MAX_CONTEXT_CHARS = 420_000;
-const A11_MAX_MESSAGE_CHARS = 180_000;
+const A11_MAX_CONTEXT_CHARS = 48_000;
+const A11_MAX_MESSAGE_CHARS = 12_000;
+const A11_MAX_HISTORY_MESSAGES = 18;
 
 function trimChatContentForContext(content: string, maxChars: number) {
   const text = String(content || "").trim();
@@ -1237,25 +1238,53 @@ function trimChatContentForContext(content: string, maxChars: number) {
   ].join("");
 }
 
+function stripHistoricalMediaMarkersForModel(content: string) {
+  return String(content || "")
+    .replace(/\[image-data:data:image\/[^;]+;base64,[^\]]+\]/gi, "")
+    .replace(/\[(?:image|video|file|audio):[^\]]+\]/gi, "")
+    .replace(/\[(?:image|fichier|audio)-joint(?:e)?[^\]]*\]/gi, "")
+    .replace(/\b(?:id|url|analyse|action-probable)=[^\s]+/gi, "")
+    .replace(/Image rattachee a la conversation;?\s*/gi, "")
+    .replace(/analyse-la avec la vision[^.?!]*(?:[.?!]|$)/gi, "")
+    .replace(/Fichier rattache a la conversation;?\s*/gi, "")
+    .replace(/analyse-le et decide quoi en faire avant de repondre\.?/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function sanitizeConversationHistoryForModel(messages: ChatMessage[]) {
   const cleanMessages = (Array.isArray(messages) ? messages : []).filter((message) => {
     if (!message || message.role === "system") return false;
     if (message.role !== "assistant") return true;
     return !isAssistantHistoryPoisoned(message.content);
-  });
+  }).slice(-A11_MAX_HISTORY_MESSAGES);
 
-  const trimmed = cleanMessages.map((message) => ({
-    ...message,
-    content: trimChatContentForContext(
-      [
-        message.content,
-        message.imageUrl ? `[image:${message.imageUrl}]` : "",
-        message.videoUrl ? `[video:${message.videoUrl}]` : "",
-        message.fileUrl ? `[file:${message.fileUrl}]` : "",
-      ].filter(Boolean).join("\n"),
-      A11_MAX_MESSAGE_CHARS
-    ),
-  }));
+  const latestUserIndex = (() => {
+    for (let index = cleanMessages.length - 1; index >= 0; index -= 1) {
+      if (cleanMessages[index]?.role === "user") return index;
+    }
+    return -1;
+  })();
+
+  const trimmed = cleanMessages.map((message, index) => {
+    const keepCurrentMediaMarkers = message.role === "user" && index === latestUserIndex;
+    const baseContent = keepCurrentMediaMarkers
+      ? String(message.content || "").trim()
+      : stripHistoricalMediaMarkersForModel(message.content);
+
+    return {
+      ...message,
+      content: trimChatContentForContext(
+        [
+          baseContent,
+          keepCurrentMediaMarkers && message.imageUrl ? `[image:${message.imageUrl}]` : "",
+          keepCurrentMediaMarkers && message.videoUrl ? `[video:${message.videoUrl}]` : "",
+          keepCurrentMediaMarkers && message.fileUrl ? `[file:${message.fileUrl}]` : "",
+        ].filter(Boolean).join("\n"),
+        A11_MAX_MESSAGE_CHARS
+      ),
+    };
+  }).filter((message) => String(message.content || "").trim());
 
   let usedChars = 0;
   const selected: ChatMessage[] = [];
@@ -8901,7 +8930,7 @@ export function App() {
           {
             model: resolvedChatModelChoice.model,
             systemPrompt: systemPrompt,
-            conversationId: buildSurfaceConversationId(selectedChatId || undefined, surfaceKind) || undefined,
+            conversationId: buildSurfaceConversationId(currentConversationId || selectedChatId || undefined, surfaceKind) || undefined,
             providerProfileId: resolvedChatModelChoice.providerProfileId,
             surface: surfaceKind,
             persona: surfaceKind,
