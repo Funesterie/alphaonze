@@ -65,6 +65,7 @@ const BLUEPRINT_OFFER = {
 
 const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
 const WERO_QR_URL = String(import.meta.env.VITE_A11_WERO_QR_URL || '/assets/wero-jeffrey-cellauro-qr.png').trim();
+const PAYPAL_DONATION_URL = String(import.meta.env.VITE_A11_PAYPAL_URL || 'https://paypal.me/funeste38').trim();
 
 function buildBlueprintContactLink() {
   return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent('Qualification Blueprint A11')}&body=${encodeURIComponent(
@@ -519,20 +520,54 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                     Scannez le QR code pour un don libre. Aucun numéro public n'est affiché.
                   </div>
                 </div>
-                <img
-                  src={WERO_QR_URL}
-                  alt="QR code Wero"
+                <a
+                  href={WERO_QR_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Agrandir le QR code Wero"
                   style={{
-                    width: '100%',
-                    maxWidth: '160px',
-                    aspectRatio: '1 / 1',
-                    objectFit: 'contain',
                     alignSelf: 'center',
-                    background: '#f8fafc',
-                    borderRadius: '8px',
-                    padding: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#38bdf8',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    textDecoration: 'none',
                   }}
-                />
+                >
+                  <img
+                    src={WERO_QR_URL}
+                    alt="QR code Wero"
+                    style={{
+                      width: '100%',
+                      maxWidth: '176px',
+                      aspectRatio: '1 / 1',
+                      objectFit: 'contain',
+                      background: '#ffffff',
+                      borderRadius: '8px',
+                      padding: '8px',
+                    }}
+                  />
+                  Agrandir le QR
+                </a>
+              </div>
+
+              <div style={paymentTileStyle}>
+                <div>
+                  <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Don PayPal</div>
+                  <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
+                    PayPal.me Funesterie pour les pourboires et coups de pouce, montant libre.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openExternal(PAYPAL_DONATION_URL)}
+                  style={paymentTileButtonStyle}
+                >
+                  Ouvrir PayPal
+                </button>
               </div>
 
               {founderPayment?.available && founderPayment.ribUrl && (

@@ -8,7 +8,11 @@
     },
     {
       "type": "custom",
-      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro.png"
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
     }
   ],
   "type": "module",
@@ -53,8 +57,13 @@
     "email": "funeste38@gmail.com",
     "wero": "+33783463761",
     "weroDisplay": "+33 7 83 46 37 61",
-    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro.png",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
     "paypal": "https://paypal.me/funeste38",
+    "contact": "https://funesterie.me/contact/"
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
     "contact": "https://funesterie.me/contact/"
   }
 }

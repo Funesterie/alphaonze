@@ -2,10 +2,20 @@
   "name": "a11-local-desktop",
   "private": true,
   "version": "0.0.1",
-  "funding": {
-    "type": "custom",
-    "url": "https://funesterie.me/contact/"
-  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,5 +34,10 @@
     "@tauri-apps/cli": "^2.11.2",
     "typescript": "~6.0.3",
     "vite": "^8.0.14"
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
   }
 }

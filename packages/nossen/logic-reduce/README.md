@@ -35,4 +35,10 @@ nossen-logic-reduce --json --steps "A + timeout retry + verify auth + C"
 This package does not read secrets, environment variables, or local files. It is
 a pure reducer over provided text/step data.
 
-Support is voluntary: https://funesterie.me/contact/
+## Support NOSSEN
+
+NOSSEN packages stay public and usable under their license. If this package helps your workflow, support is voluntary and can be any amount:
+
+- PayPal: https://paypal.me/funeste38
+- QR Wero: https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png
+- Contact, invoice, sponsorship or custom support: https://funesterie.me/contact/

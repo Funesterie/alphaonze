@@ -167,10 +167,10 @@ et du travail operateur continu. Pour soutenir le projet, proposer un don,
 une aide, un sponsorship ou une coordination directe, choisis librement le
 montant qui te semble juste:
 
+- PayPal: https://paypal.me/funeste38
+- QR Wero: https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png
 - contact/support: https://funesterie.me/contact/
 - email: funeste38@gmail.com
-- Wero: +33 7 83 46 37 61
-- PayPal: https://paypal.me/funeste38
 - Stripe/carte: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
 
 Le soutien est volontaire; aucun prix fixe n'est impose pour les packages

@@ -550,8 +550,54 @@ function canUsePaidTtsVoice(req = {}) {
   return ['admin_family', 'founder', 'premium'].includes(tier);
 }
 
+function shouldUseA11OfficialReferenceForBasic(body = {}) {
+  const explicitPersona = getExplicitTtsPersonaFromBody(body);
+  if (explicitPersona !== 'a11') return false;
+  if (body?.identityVoice === false || body?.useIdentityVoice === false || body?.neutralVoice === true) {
+    return false;
+  }
+  return wantsOfficialIdentityVoice(body);
+}
+
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
+  if (shouldUseA11OfficialReferenceForBasic(body)) {
+    const piperProfile = getReadyVoiceProfile('a11', PROVIDERS.PIPER);
+    const piperVoice = String(piperProfile?.piperVoice || 'fr_FR-upmc-medium').trim() || 'fr_FR-upmc-medium';
+    const vocalMode = normalizeVocalMode(body);
+    return {
+      ...(body || {}),
+      provider: PROVIDERS.PIPER,
+      ttsProvider: PROVIDERS.PIPER,
+      voice: body?.voice || piperVoice,
+      model: body?.model || piperVoice,
+      piperVoice,
+      persona: 'a11',
+      voicePersona: 'a11',
+      surface: body?.surface || 'a11',
+      vocalMode: vocalMode === 'speech' ? 'adaptive' : vocalMode,
+      voiceConversion: true,
+      convertVoice: true,
+      morphVoice: true,
+      rvc: true,
+      voiceReferenceRequired: true,
+      requireVoiceReference: true,
+      referenceVoiceRequired: true,
+      useDefaultVoiceReference: true,
+      defaultVoiceReference: true,
+      usePersonaVoiceReference: true,
+      identityVoice: true,
+      useIdentityVoice: true,
+      neutralVoice: false,
+      allowRvc: true,
+      allowXttsRvc: true,
+      allowLegacyVoiceBridge: true,
+      xttsRvcOptIn: true,
+      audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
+      responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
+      ttsCostPolicy: 'basic_a11_official_reference',
+    };
+  }
   const provider = getRequestedTtsProvider(body);
   const explicitlyNeutral = body?.identityVoice === false
     || body?.useIdentityVoice === false
@@ -1565,6 +1611,9 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
 }
 
 async function finalizeTtsPayload(payload, req, vocalMode) {
+  if (isReferenceAwareTtsPayload(payload)) {
+    return enrichTtsPayloadWithAudioModule(payload, req, vocalMode);
+  }
   const converted = await requestVoiceConversionWithModule(payload, req, vocalMode);
   return enrichTtsPayloadWithAudioModule(converted, req, vocalMode);
 }
