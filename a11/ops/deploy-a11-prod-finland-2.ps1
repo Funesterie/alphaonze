@@ -22,7 +22,11 @@ $A11VoiceReference = Join-Path $RuntimeVoiceLibrary "a11-official-stern-french.w
 $VivyVoiceReference = Join-Path $RuntimeVoiceLibrary "vivy-official-french-conversational.wav"
 $Kaen44VoiceReference = Join-Path $RuntimeVoiceLibrary "kaen44-official-french-narrator.wav"
 $Remote = "deploy@62.238.43.32"
-$SshKey = "C:\Users\Djeff\.ssh\codex_a11_hetzner_20260511"
+$SshKey = if ($env:A11_HETZNER_SSH_KEY) {
+  $env:A11_HETZNER_SSH_KEY
+} else {
+  "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519"
+}
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $TmpRoot = Join-Path $RepoRoot ".codex-tmp"
 $StageRoot = Join-Path $TmpRoot "a11-prod-finland-2-$Stamp"

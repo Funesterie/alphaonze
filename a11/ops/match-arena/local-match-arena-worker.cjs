@@ -8,6 +8,14 @@ const { spawnSync } = require('node:child_process');
 const DEFAULT_GAMES_ROOT = 'C:\\Users\\Djeff\\Desktop\\jeux';
 const DEFAULT_STATUS_PATH = 'D:\\agent-bus\\match-arena\\local-match-arena-worker-status.json';
 const DEFAULT_EXPORT_ROOT = 'D:\\agent-bus\\match-arena\\sessions';
+const DEFAULT_STREAM_CANDIDATES = [
+  'http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',
+  'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',
+  'http://127.0.0.1:6081/vnc.html?autoconnect=true&resize=scale&view_only=false',
+  'http://localhost:6081/vnc.html?autoconnect=true&resize=scale&view_only=false',
+  'http://127.0.0.1:8080/',
+  'http://localhost:8080/',
+];
 const PLAYABLE_EXTENSIONS = new Set([
   '.zip',
   '.7z',
@@ -101,18 +109,66 @@ function commandAvailable(command) {
   }
 }
 
-function detectCapabilities() {
-  const configuredStreamUrl = env('A11_MATCH_ARENA_STREAM_URL', env('A11_MATCH_ARENA_NOVNC_URL'));
+async function urlResponds(url, timeoutMs = 900) {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return response.ok || response.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+function parseStreamCandidates() {
+  const raw = env('A11_MATCH_ARENA_STREAM_CANDIDATES');
+  const configured = raw
+    ? raw.split(/[,\s]+/).map((value) => value.trim()).filter(Boolean)
+    : [];
+  const port = env('A11_MATCH_ARENA_NOVNC_PORT');
+  if (port) {
+    configured.push(`http://127.0.0.1:${port}/vnc.html?autoconnect=true&resize=scale&view_only=false`);
+    configured.push(`http://localhost:${port}/vnc.html?autoconnect=true&resize=scale&view_only=false`);
+  }
+  return Array.from(new Set([...configured, ...DEFAULT_STREAM_CANDIDATES]));
+}
+
+async function resolveStreamUrl() {
+  const explicit = env('A11_MATCH_ARENA_STREAM_URL', env('A11_MATCH_ARENA_NOVNC_URL'));
+  if (explicit) {
+    return {
+      url: explicit,
+      source: 'configured',
+      reachable: await urlResponds(explicit, 1200),
+    };
+  }
+  for (const candidate of parseStreamCandidates()) {
+    if (await urlResponds(candidate)) {
+      return {
+        url: candidate,
+        source: 'auto-detected',
+        reachable: true,
+      };
+    }
+  }
+  return { url: '', source: 'none', reachable: false };
+}
+
+async function detectCapabilities() {
+  const stream = await resolveStreamUrl();
   const retroarchAvailable = commandAvailable('retroarch') || Boolean(env('A11_MATCH_ARENA_RETROARCH_COMMAND'));
   const dockerAvailable = commandAvailable('docker');
   const podmanAvailable = commandAvailable('podman');
-  const streamMode = env('A11_MATCH_ARENA_STREAM_MODE', configuredStreamUrl ? 'novnc' : 'waiting-novnc');
+  const streamMode = env('A11_MATCH_ARENA_STREAM_MODE', stream.url ? 'novnc' : 'waiting-novnc');
   return {
     retroarchAvailable,
     dockerAvailable,
     podmanAvailable,
-    streamReady: Boolean(configuredStreamUrl),
-    streamUrl: configuredStreamUrl || '',
+    streamReady: Boolean(stream.url),
+    streamUrl: stream.url || '',
+    streamSource: stream.source,
+    streamReachable: stream.reachable,
     streamMode,
     inputMode: env('A11_MATCH_ARENA_INPUT_MODE', 'queued-json'),
     autolaunch: envBool('A11_MATCH_ARENA_AUTOLAUNCH', false),
@@ -124,7 +180,7 @@ function detectCapabilities() {
       retroarchAvailable ? 'retroarch' : null,
       dockerAvailable ? 'docker' : null,
       podmanAvailable ? 'podman' : null,
-      configuredStreamUrl ? 'browser-stream-url' : null,
+      stream.url ? `browser-stream-url:${stream.source}` : null,
     ].filter(Boolean),
   };
 }
@@ -138,7 +194,7 @@ function buildStreamDescriptor(capabilities) {
     embedUrl: url || null,
     message: url
       ? 'Pont video publie par le worker local.'
-      : 'Worker pret: configure A11_MATCH_ARENA_STREAM_URL quand le pont noVNC/WebRTC est lance.',
+      : 'Worker pret cote commandes; aucun pont video noVNC/WebRTC detectable pour l instant.',
   };
 }
 
@@ -418,7 +474,7 @@ async function run() {
   while (true) {
     try {
       const now = Date.now();
-      const capabilities = detectCapabilities();
+      const capabilities = await detectCapabilities();
       await pollActiveSessionInputs(activeSessions, token);
       if (!lastInventoryAt || now - lastInventoryAt > 60000) {
         cachedInventory = scanGames();
@@ -429,9 +485,10 @@ async function run() {
             retroarchAvailable: capabilities.retroarchAvailable,
             dockerAvailable: capabilities.dockerAvailable,
             podmanAvailable: capabilities.podmanAvailable,
-            streamReady: capabilities.streamReady,
-            streamMode: capabilities.streamMode,
-            inputMode: capabilities.inputMode,
+          streamReady: capabilities.streamReady,
+          streamMode: capabilities.streamMode,
+          streamSource: capabilities.streamSource,
+          inputMode: capabilities.inputMode,
             games: cachedInventory.games,
           }, 30000).catch(() => null);
         }
@@ -452,6 +509,7 @@ async function run() {
             podmanAvailable: capabilities.podmanAvailable,
             streamReady: capabilities.streamReady,
             streamMode: capabilities.streamMode,
+            streamSource: capabilities.streamSource,
             inputMode: capabilities.inputMode,
             activeSessions: activeSessions.size,
             processed,
@@ -487,6 +545,7 @@ async function run() {
           capabilities: capabilities.capabilities,
           streamReady: capabilities.streamReady,
           streamMode: capabilities.streamMode,
+          streamSource: capabilities.streamSource,
           activeSessions: activeSessions.size,
           remoteQueue: claim?.queue || null,
         });
@@ -526,7 +585,7 @@ async function run() {
           drivePath: exported.drivePath,
           message: exported.stream.ready
             ? 'Session prete: le stream worker est publie et les commandes navigateur sont en file active.'
-            : 'Session prete cote worker: commandes en file active; lance le pont noVNC/WebRTC pour afficher le jeu.',
+            : 'Session prete cote worker: commandes en file active; le flux video apparaitra automatiquement quand le pont noVNC/WebRTC sera detecte.',
         }, 30000);
         processed += 1;
         writeStatus({
