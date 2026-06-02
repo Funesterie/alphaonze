@@ -19,10 +19,14 @@ function decodeBase64Content(contentBase64) {
   return buffer;
 }
 
-function buildContentAddressedStorageKey(userId, filename, buffer) {
+function buildContentHash(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function buildContentAddressedStorageKey(userId, filename, buffer, contentHash = '') {
   const normalizedUserId = String(userId || 'anonymous').replace(/[^a-zA-Z0-9_-]/g, '_') || 'anonymous';
   const safeFilename = String(filename || 'file.bin').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').slice(0, 180) || 'file.bin';
-  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const hash = String(contentHash || '').trim() || buildContentHash(buffer);
   return `users/${normalizedUserId}/uploads/${hash}-${safeFilename}`;
 }
 
@@ -42,6 +46,7 @@ async function ingestUploadedFile({
   saveFileRecord,
   saveUserFileMemory,
   enforceAccountStorageQuota,
+  findExistingResourceByHash,
   sanitizeFileName,
   expiresAt,
 }) {
@@ -63,6 +68,56 @@ async function ingestUploadedFile({
     throw error;
   }
 
+  const contentHash = buildContentHash(buffer);
+  const baseResourceMetadata = resourceMetadata && typeof resourceMetadata === 'object'
+    ? resourceMetadata
+    : {};
+  const hashResourceMetadata = {
+    ...baseResourceMetadata,
+    contentHash,
+    sha256: contentHash,
+    allmight: {
+      ...(baseResourceMetadata.allmight && typeof baseResourceMetadata.allmight === 'object'
+        ? baseResourceMetadata.allmight
+        : {}),
+      triage: 'canonical-resource',
+      dedupeKey: `sha256:${contentHash}`,
+      storage: 'content-addressed',
+    },
+  };
+
+  if (conversationId && typeof findExistingResourceByHash === 'function') {
+    const existingResource = await findExistingResourceByHash({
+      userId: normalizedUserId,
+      conversationId,
+      contentHash,
+      contentType: normalizedContentType,
+      resourceKind,
+    });
+    if (existingResource) {
+      return {
+        file: {
+          filename: existingResource.filename || safeFilename,
+          storageKey: existingResource.storageKey || '',
+          url: existingResource.url || '',
+          contentType: existingResource.contentType || normalizedContentType,
+          sizeBytes: Number(existingResource.sizeBytes || buffer.length),
+          expiresAt: existingResource.expiresAt || expiresAt || null,
+        },
+        record: null,
+        buffer,
+        analysis: existingResource.metadata?.analysis || null,
+        conversationResource: existingResource,
+        deduped: true,
+        duplicateOf: existingResource.id || null,
+        dedupe: {
+          contentHash,
+          strategy: 'allmight-canonical-resource',
+        },
+      };
+    }
+  }
+
   if (typeof enforceAccountStorageQuota === 'function') {
     await enforceAccountStorageQuota({
       userId: normalizedUserId,
@@ -74,7 +129,7 @@ async function ingestUploadedFile({
     });
   }
 
-  let effectiveResourceMetadata = resourceMetadata;
+  let effectiveResourceMetadata = hashResourceMetadata;
   let analysis = null;
   if (typeof analyzeResourceContent === 'function') {
     analysis = await analyzeResourceContent({
@@ -87,11 +142,8 @@ async function ingestUploadedFile({
     });
 
     if (analysis) {
-      const normalizedMetadata = resourceMetadata && typeof resourceMetadata === 'object'
-        ? resourceMetadata
-        : {};
       effectiveResourceMetadata = {
-        ...normalizedMetadata,
+        ...hashResourceMetadata,
         analysis,
       };
     }
@@ -102,7 +154,7 @@ async function ingestUploadedFile({
     filename: safeFilename,
     buffer,
     contentType: normalizedContentType,
-    storageKey: buildContentAddressedStorageKey(normalizedUserId, safeFilename, buffer),
+    storageKey: buildContentAddressedStorageKey(normalizedUserId, safeFilename, buffer, contentHash),
   });
 
   const record = await saveFileRecord({
@@ -156,10 +208,13 @@ async function ingestUploadedFile({
     buffer,
     analysis,
     conversationResource,
+    contentHash,
+    deduped: false,
   };
 }
 
 module.exports = {
+  buildContentHash,
   decodeBase64Content,
   ingestUploadedFile,
 };

@@ -12,6 +12,12 @@ function Write-Step([string]$Message) {
   }
 }
 
+function Invoke-WslScript([string]$Script) {
+  $normalizedScript = $Script -replace "`r`n?", "`n"
+  $encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($normalizedScript))
+  & wsl -d $Distro -- bash -lc ("printf '%s' '{0}' | base64 -d | bash" -f $encodedScript)
+}
+
 if (-not (Get-Command podman -ErrorAction SilentlyContinue)) {
   throw "podman introuvable dans le PATH"
 }
@@ -37,22 +43,24 @@ if (Test-Path -LiteralPath $dnsRepairScript) {
 }
 
 Write-Step "Preparation runtime Podman rootless"
+$runtimeUid = "1000"
 try {
   $uid = (& wsl -d $Distro -- sh -lc "id -u").Trim()
   $gid = (& wsl -d $Distro -- sh -lc "id -g").Trim()
   if ($uid -match '^\d+$' -and $gid -match '^\d+$') {
+    $runtimeUid = $uid
     $runtimeRootCommand = "set -eu; install -d -m 700 -o $uid -g $gid /run/user/$uid; install -d -m 700 -o $uid -g $gid /run/user/$uid/containers; install -d -m 700 -o $uid -g $gid /run/user/$uid/containers/networks"
     & wsl -d $Distro -u root -- bash -lc $runtimeRootCommand
   }
 } catch {
   Write-Step "Preparation runtime root: $($_.Exception.Message)"
 }
-$runtimeCommand = 'runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"; mkdir -p "$runtime_dir/containers/networks" 2>/dev/null || true'
-& wsl -d $Distro -- bash -lc $runtimeCommand
+$runtimeCommand = 'runtime_dir="/run/user/{0}"; mkdir -p "$runtime_dir/containers/networks" 2>/dev/null || true' -f $runtimeUid
+Invoke-WslScript $runtimeCommand
 
 Write-Step "Activation du service Podman dans $Distro sur localhost:$Port"
-$wslCommand = "if ! ss -ltn 2>/dev/null | grep -q ':$Port '; then nohup podman system service --time=0 tcp:0.0.0.0:$Port >/tmp/a11-podman-service.log 2>&1 & fi; sleep 1; podman info >/dev/null"
-& wsl -d $Distro -- bash -lc $wslCommand
+$wslCommand = 'set -eu; runtime_dir="/run/user/{1}"; export XDG_RUNTIME_DIR="$runtime_dir"; mkdir -p "$runtime_dir/containers/networks"; service_pids=$(pgrep -a -x podman 2>/dev/null | awk ''/system service/ && /:{0}/ {{ print $1 }}'' || true); if [ -n "$service_pids" ]; then kill -9 $service_pids 2>/dev/null || true; sleep 1; fi; nohup env -u DOCKER_HOST XDG_RUNTIME_DIR="$runtime_dir" podman system service --time=0 tcp:0.0.0.0:{0} >/tmp/a11-podman-service.log 2>&1 & sleep 1; env XDG_RUNTIME_DIR="$runtime_dir" podman info >/dev/null' -f @($Port, $runtimeUid)
+Invoke-WslScript $wslCommand
 if ($LASTEXITCODE -ne 0) {
   throw "Impossible de demarrer le service Podman dans $Distro"
 }

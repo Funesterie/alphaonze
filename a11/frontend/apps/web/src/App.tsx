@@ -8472,24 +8472,40 @@ export function App() {
 
   async function handleImportedFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const allFiles = Array.from(files);
+    const buildFileImportFingerprint = (file: File) => {
+      const name = String(file.name || "").trim();
+      const stableName = /^paste-\d+\.[a-z0-9]+$/i.test(name)
+        ? "clipboard-image"
+        : name;
+      return `${stableName}:${file.size}:${file.type}`;
+    };
+    const seenFileKeys = new Set<string>();
+    let duplicateImportCount = 0;
+    const allFiles = Array.from(files).filter((file) => {
+      const key = buildFileImportFingerprint(file);
+      if (seenFileKeys.has(key)) {
+        duplicateImportCount += 1;
+        return false;
+      }
+      seenFileKeys.add(key);
+      return true;
+    });
+    if (allFiles.length === 0) {
+      setUploadFeedback("Doublon ignoré: ce fichier est déjà dans l'import en cours.");
+      return;
+    }
     const importKey = allFiles
-      .map((file) => {
-        const name = String(file.name || "").trim();
-        const stableName = /^paste-\d+\.[a-z0-9]+$/i.test(name)
-          ? "clipboard-image"
-          : name;
-        return `${stableName}:${file.size}:${file.type}`;
-      })
+      .map(buildFileImportFingerprint)
       .sort()
       .join("|");
     const now = Date.now();
     if (
       importKey
       && recentFileImportRef.current.key === importKey
-      && now - recentFileImportRef.current.at < 3000
+      && now - recentFileImportRef.current.at < 120000
     ) {
       console.info("[A11] duplicate file import ignored", importKey);
+      setUploadFeedback("Doublon ignoré: ce fichier est déjà prêt dans cette conversation.");
       return;
     }
     recentFileImportRef.current = { key: importKey, at: now };
@@ -8517,6 +8533,9 @@ export function App() {
         return next;
       });
       // Pas de timeout : les chips restent jusqu'à l'envoi du message
+    }
+    if (duplicateImportCount > 0) {
+      setUploadFeedback(`${duplicateImportCount} doublon(s) ignoré(s) avant analyse.`);
     }
 
     // Upload des images: garder les URLs en metadata interne, pas dans le texte visible.
@@ -8846,6 +8865,7 @@ export function App() {
     setInput("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    recentFileImportRef.current = { key: "", at: 0 };
     dismissedImportedNamesRef.current.clear();
     setDragPreviewUrls((prev) => {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });

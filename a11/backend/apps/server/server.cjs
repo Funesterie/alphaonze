@@ -4564,6 +4564,26 @@ function parseConversationResourceMetadata(value) {
   return value;
 }
 
+function mapConversationResourceRow(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id || 0),
+    userId: String(row.user_id || ''),
+    conversationId: String(row.conversation_id || 'default'),
+    resourceKind: String(row.resource_kind || 'file'),
+    origin: String(row.origin || ''),
+    filename: String(row.filename || ''),
+    storageKey: String(row.storage_key || ''),
+    url: String(row.url || ''),
+    contentType: String(row.content_type || ''),
+    sizeBytes: Number(row.size_bytes || 0),
+    metadata: parseConversationResourceMetadata(row.metadata_json),
+    expiresAt: row.expires_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 async function linkConversationResource({
   userId,
   conversationId,
@@ -4631,23 +4651,42 @@ async function linkConversationResource({
   );
 
   const row = result.rows[0] || null;
-  if (!row) return null;
-  return {
-    id: Number(row.id || 0),
-    userId: String(row.user_id || ''),
-    conversationId: String(row.conversation_id || 'default'),
-    resourceKind: String(row.resource_kind || 'file'),
-    origin: String(row.origin || ''),
-    filename: String(row.filename || ''),
-    storageKey: String(row.storage_key || ''),
-    url: String(row.url || ''),
-    contentType: String(row.content_type || ''),
-    sizeBytes: Number(row.size_bytes || 0),
-    metadata: parseConversationResourceMetadata(row.metadata_json),
-    expiresAt: row.expires_at || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+  return mapConversationResourceRow(row);
+}
+
+async function findConversationResourceByContentHash({
+  userId,
+  conversationId,
+  contentHash,
+  resourceKind = 'file',
+}) {
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedConversationId = normalizeConversationId(conversationId);
+  const normalizedHash = String(contentHash || '').trim().toLowerCase();
+  if (!db || !normalizedUserId || !normalizedConversationId || !normalizedHash) return null;
+
+  const result = await db.query(
+    `SELECT id, user_id, conversation_id, resource_kind, origin, filename, storage_key, url, content_type, size_bytes, metadata_json, expires_at, created_at, updated_at
+     FROM conversation_resources
+     WHERE user_id=$1
+       AND conversation_id=$2
+       AND resource_kind=$3
+       AND (expires_at IS NULL OR expires_at > NOW())
+       AND (
+         metadata_json->>'contentHash' = $4
+         OR metadata_json->>'sha256' = $4
+       )
+     ORDER BY updated_at DESC, created_at DESC, id DESC
+     LIMIT 1`,
+    [
+      normalizedUserId,
+      normalizedConversationId,
+      normalizeConversationResourceKind(resourceKind),
+      normalizedHash,
+    ]
+  );
+
+  return mapConversationResourceRow(result.rows[0] || null);
 }
 
 async function listConversationResources(userId, { conversationId, resourceKind, limit = FILE_MEMORY_LIMIT } = {}) {
@@ -6894,6 +6933,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
         ...(sessionDrivePayload ? { sessionDriveProvider: uploadWriter.provider || null } : {}),
       },
       linkConversationResource,
+      findExistingResourceByHash: findConversationResourceByContentHash,
       analyzeResourceContent: analyzeUploadedResource,
       uploadBufferToR2: uploadWriter.uploadBuffer,
       saveFileRecord,
@@ -6940,7 +6980,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
     }
 
     appendConversationLog({
-      type: 'file_uploaded',
+      type: ingestion.deduped ? 'file_upload_deduped' : 'file_uploaded',
       userId,
       conversationId: normalizedConversationId,
       file: {
@@ -6951,11 +6991,16 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
         sizeBytes: ingestion.file.sizeBytes,
       },
       analysis: ingestion.analysis || ingestion.conversationResource?.metadata?.analysis || null,
+      dedupe: ingestion.dedupe || null,
+      duplicateOf: ingestion.duplicateOf || null,
       mail,
     });
 
     return res.json({
       ok: true,
+      deduped: Boolean(ingestion.deduped),
+      duplicateOf: ingestion.duplicateOf || null,
+      dedupe: ingestion.dedupe || null,
       conversationId: normalizedConversationId,
       file: {
         ...ingestion.file,

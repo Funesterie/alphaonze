@@ -1,7 +1,10 @@
 import { uploadConversationFile, uploadLocalImage } from './api';
 
-const RECENT_IMAGE_IMPORT_TTL_MS = 10_000;
-const recentImageImports = new Map<string, number>();
+const RECENT_IMAGE_IMPORT_TTL_MS = 120_000;
+const recentImageImports = new Map<string, {
+  at: number;
+  attachment?: ImportedConversationAttachment;
+}>();
 
 export type ImportedConversationAttachment = {
   kind: 'image' | 'file';
@@ -29,8 +32,8 @@ async function buildImageImportKey(file: File): Promise<string> {
 }
 
 function pruneRecentImageImports(now: number) {
-  for (const [key, at] of recentImageImports) {
-    if (now - at > RECENT_IMAGE_IMPORT_TTL_MS) {
+  for (const [key, entry] of recentImageImports) {
+    if (now - entry.at > RECENT_IMAGE_IMPORT_TTL_MS) {
       recentImageImports.delete(key);
     }
   }
@@ -78,12 +81,15 @@ export default async function handleImportFiles(
           const now = Date.now();
           pruneRecentImageImports(now);
           const importKey = await buildImageImportKey(f);
-          const previousImportAt = recentImageImports.get(importKey);
-          if (previousImportAt && now - previousImportAt < RECENT_IMAGE_IMPORT_TTL_MS) {
-            console.info(`[Importer] Duplicate image skipped: ${f.name}`);
+          const previousImport = recentImageImports.get(importKey);
+          if (previousImport && now - previousImport.at < RECENT_IMAGE_IMPORT_TTL_MS) {
+            if (previousImport.attachment?.url) {
+              options?.onAttachment?.(previousImport.attachment);
+            }
+            console.info(`[Importer] Duplicate image reused: ${f.name}`);
             continue;
           }
-          recentImageImports.set(importKey, now);
+          recentImageImports.set(importKey, { at: now });
 
           let data: any = null;
           if (options?.conversationId) {
@@ -98,6 +104,7 @@ export default async function handleImportFiles(
           }
           const attachment = buildImageAttachment(f, data);
           if (attachment?.url) {
+            recentImageImports.set(importKey, { at: Date.now(), attachment });
             options?.onAttachment?.(attachment);
             const loggedUrl = attachment.url || data?.conversationResource?.downloadUrl || data?.file?.downloadUrl || '';
             console.log(`[Importer] Image uploaded locally: ${f.name}${loggedUrl ? ` -> ${loggedUrl}` : ''}`);
