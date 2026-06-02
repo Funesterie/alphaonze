@@ -78,11 +78,11 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_PRICE_ID
-        value: price_1Tdp54HkqLcMgv54haf1faZV
+        value: price_1TdqwVHkqLcMgv54LWqd5jEb
       - key: STRIPE_PREMIUM_PRICE_ID
-        value: price_1Tdp54HkqLcMgv54haf1faZV
+        value: price_1TdqwVHkqLcMgv54LWqd5jEb
       - key: STRIPE_FOUNDER_PRICE_ID
-        value: price_1Tdp55HkqLcMgv54eIhku9Ah
+        value: price_1TdqwWHkqLcMgv54ZFUAbVFl
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # Secret, à configurer manuellement
       - key: STRIPE_WEBHOOK_URL
