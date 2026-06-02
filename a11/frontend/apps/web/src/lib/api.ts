@@ -4706,14 +4706,26 @@ export interface SubscriptionStatus {
   ok: boolean;
   active: boolean;
   fullAccess?: boolean;
+  tier?: string | null;
   plan?: string | null;
   reason?: string | null;
   endDate?: string | null;
+  founderPayment?: {
+    available: boolean;
+    phone?: string | null;
+    ribUrl?: string | null;
+  } | null;
+  availablePlans?: Array<{
+    id: 'premium' | 'founder' | string;
+    label: string;
+    monthlyEur: number;
+  }>;
   stripeStatus?: {
     active: boolean;
     status: string;
     currentPeriodEnd: number | null;
     cancelAtPeriodEnd?: boolean;
+    plan?: string | null;
   } | null;
 }
 
@@ -4747,10 +4759,11 @@ export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {
 /**
  * Crée une session de checkout Stripe pour souscrire
  */
-export async function createCheckoutSession(): Promise<CheckoutSessionResponse> {
+export async function createCheckoutSession(plan: 'premium' | 'founder' = 'premium'): Promise<CheckoutSessionResponse> {
   const res = await authFetch(getApiUrl('/api/subscription/create-checkout'), {
     method: 'POST',
     headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify({ plan }),
   });
 
   if (!res.ok) {

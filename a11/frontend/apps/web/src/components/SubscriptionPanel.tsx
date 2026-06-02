@@ -12,18 +12,42 @@ interface SubscriptionPanelProps {
   productName?: string;
 }
 
-const A11_STUDIO_PLAN = {
-  name: 'A11 Studio',
-  price: '9 EUR',
-  period: 'par mois',
-  includedTokens: 'Chat long + 120 credits creation inclus',
-};
+type CheckoutPlan = 'premium' | 'founder';
 
-const STUDIO_FEATURES = [
-  'Chat court accessible, chat long protege par abonnement leger',
-  'Credits mensuels pour images, videos courtes, audio et exports',
-  'A11 choisit automatiquement le meilleur pipeline selon la source partagee',
-  'Annulable a tout moment depuis le portail client',
+const SUBSCRIPTION_PLANS: Array<{
+  id: CheckoutPlan;
+  name: string;
+  price: string;
+  period: string;
+  includedTokens: string;
+  features: string[];
+}> = [
+  {
+    id: 'premium',
+    name: 'A11 Premium',
+    price: '8,99 EUR',
+    period: 'par mois',
+    includedTokens: 'Chat long + credits creation inclus',
+    features: [
+      'Chat long et contexte mieux conserve',
+      'Credits mensuels pour images, audio, fichiers et exports',
+      'Routage automatique vers le meilleur pipeline disponible',
+      'Annulable a tout moment depuis le portail client',
+    ],
+  },
+  {
+    id: 'founder',
+    name: 'Fondateur',
+    price: '29,99 EUR',
+    period: 'par mois',
+    includedTokens: 'Priorite haute, outils avances et cadrage prive',
+    features: [
+      'Priorite haute sur les jobs et files de traitement',
+      'Acces fondateur aux outils avances, sessions et connecteurs',
+      'Canal de cadrage pour blueprint, gros achats et integrations',
+      'Coordonnees de paiement manuel reservees aux besoins qualifies',
+    ],
+  },
 ];
 
 const CONTRIBUTION_REWARDS = [
@@ -39,13 +63,7 @@ const BLUEPRINT_OFFER = {
 };
 
 const SALES_CONTACT_EMAIL = 'funeste38@gmail.com';
-const STRIPE_SUPPORT_URL = String(
-  import.meta.env.VITE_A11_STRIPE_SUPPORT_URL || 'https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01'
-).trim();
-const WERO_PHONE = String(import.meta.env.VITE_A11_WERO_PHONE || '').trim();
-const RIB_DOCUMENT_URL = String(import.meta.env.VITE_A11_RIB_URL || '').trim();
-const PAYPAL_URL = String(import.meta.env.VITE_A11_PAYPAL_URL || '').trim();
-const PAYPAL_EMAIL = String(import.meta.env.VITE_A11_PAYPAL_EMAIL || '').trim();
+const WERO_QR_URL = String(import.meta.env.VITE_A11_WERO_QR_URL || '/assets/wero-jeffrey-cellauro.png').trim();
 
 function buildBlueprintContactLink() {
   return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent('Qualification Blueprint A11')}&body=${encodeURIComponent(
@@ -54,8 +72,8 @@ function buildBlueprintContactLink() {
 }
 
 function buildPaymentContactLink() {
-  return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent('Paiement A11 Studio')}&body=${encodeURIComponent(
-    'Bonjour,\n\nJe souhaite payer A11 Studio.\n\nCompte A11 / email:\nMoyen prefere: Stripe / Wero / virement / PayPal\nReference:\n\nMerci.'
+  return `mailto:${SALES_CONTACT_EMAIL}?subject=${encodeURIComponent('Paiement A11')}&body=${encodeURIComponent(
+    'Bonjour,\n\nJe souhaite cadrer un paiement A11.\n\nCompte A11 / email:\nOffre visee: Premium / Fondateur / Blueprint\nBesoin:\n\nMerci.'
   )}`;
 }
 
@@ -75,7 +93,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [copyFeedback, setCopyFeedback] = useState('');
+  const [actionLoadingPlan, setActionLoadingPlan] = useState<CheckoutPlan | null>(null);
 
   useEffect(() => {
     loadSubscriptionStatus();
@@ -94,11 +112,12 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
     }
   }
 
-  async function handleSubscribe() {
+  async function handleSubscribe(plan: CheckoutPlan = 'premium') {
     setActionLoading(true);
+    setActionLoadingPlan(plan);
     setError('');
     try {
-      const data = await createCheckoutSession();
+      const data = await createCheckoutSession(plan);
       if (data.url) {
         window.location.href = data.url;
       }
@@ -106,6 +125,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
       setError((err as Error).message || 'Erreur lors de la souscription');
     } finally {
       setActionLoading(false);
+      setActionLoadingPlan(null);
     }
   }
 
@@ -121,17 +141,6 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
       setError((err as Error).message || 'Erreur lors de l\'ouverture du portail');
     } finally {
       setActionLoading(false);
-    }
-  }
-
-  async function handleCopyPaymentValue(label: string, value: string) {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopyFeedback(`${label} copie`);
-      window.setTimeout(() => setCopyFeedback(''), 2200);
-    } catch {
-      setCopyFeedback(`${label}: ${value}`);
     }
   }
 
@@ -215,14 +224,26 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
     fontSize: '13px',
   };
 
-  const studioPlan = {
-    ...A11_STUDIO_PLAN,
-    name: productName === 'Kaen44' ? 'Kaen44 Plus' : A11_STUDIO_PLAN.name,
-  };
-  const studioFeatures = STUDIO_FEATURES.map((feature) => feature.replace(/\bA11\b/g, productName));
+  const subscriptionPlans = SUBSCRIPTION_PLANS.map((plan) => ({
+    ...plan,
+    name: plan.id === 'premium' && productName === 'Kaen44' ? 'Kaen44 Premium' : plan.name.replace(/\bA11\b/g, productName),
+    includedTokens: plan.includedTokens.replace(/\bA11\b/g, productName),
+    features: plan.features.map((feature) => feature.replace(/\bA11\b/g, productName)),
+  }));
+  const activeTier = String(status?.tier || status?.plan || '').toLowerCase();
+  const isFounderAccount = Boolean(
+    isAdmin
+    || status?.fullAccess
+    || activeTier.includes('founder')
+    || activeTier.includes('fondateur')
+    || activeTier.includes('admin')
+  );
+  const founderPayment = isFounderAccount ? status?.founderPayment : null;
+  const activePlan = activeTier.includes('founder') || activeTier.includes('fondateur')
+    ? subscriptionPlans.find((plan) => plan.id === 'founder') || subscriptionPlans[1]
+    : subscriptionPlans[0];
   const contributionRewards = CONTRIBUTION_REWARDS.map((reward) => reward.replace(/\bA11\b/g, productName));
   const subscriptionTitle = productName === 'Kaen44' ? 'Abonnement Kaen44' : 'Abonnement A11';
-  const activationLabel = productName === 'Kaen44' ? 'Activer Kaen44 Plus' : 'Activer A11 Studio';
 
   if (loading) {
     return (
@@ -258,6 +279,22 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
             Vous avez un acces complet a {productName}, aux quotas internes et a la supervision des credits.
           </p>
         </div>
+        {founderPayment?.available && founderPayment.ribUrl && (
+          <div style={cardStyle}>
+            <div style={{ color: '#f1f5f9', fontWeight: 800, fontSize: '16px' }}>Paiement fondateur reserve</div>
+            <p style={{ margin: '8px 0 14px', color: '#94a3b8', fontSize: '13px' }}>
+              Coordonnees bancaires pour blueprint, achats importants et paiements qualifies.
+              {founderPayment.phone ? ` Contact: ${formatFrenchPhone(founderPayment.phone)}.` : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => openExternal(founderPayment.ribUrl || '')}
+              style={secondaryButtonStyle}
+            >
+              Ouvrir le RIB
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -306,7 +343,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                 ? willCancel 
                   ? `Actif jusqu'au ${formatDate(status?.stripeStatus?.currentPeriodEnd)}`
                   : `Renouvellement le ${formatDate(status?.stripeStatus?.currentPeriodEnd)}`
-                : `Activez ${studioPlan.name} pour obtenir le chat long et des credits creation`
+                : `Activez ${activePlan.name} pour obtenir le chat long et des credits creation`
               }
             </p>
           </div>
@@ -314,53 +351,66 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
 
         {!isActive && (
           <div style={{
-            background: '#0f172a',
-            borderRadius: '8px',
-            padding: '16px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '12px',
             marginBottom: '16px',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '12px' }}>
-              <div>
-                <div style={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '18px' }}>{studioPlan.name}</div>
-                <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '4px' }}>{studioPlan.includedTokens}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '24px' }}>{studioPlan.price}</span>
-                <div style={{ color: '#94a3b8', fontSize: '14px' }}>{studioPlan.period}</div>
-              </div>
-            </div>
-            <ul style={{ margin: '0', paddingLeft: '20px', color: '#cbd5e1', fontSize: '14px' }}>
-              {studioFeatures.map((feature) => (
-                <li key={feature}>{feature}</li>
-              ))}
-            </ul>
-            <div style={{ borderTop: '1px solid #1e293b', marginTop: '16px', paddingTop: '14px' }}>
-              <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '13px', marginBottom: '8px' }}>
-                Jetons bonus par pertinence
-              </div>
-              <ul style={{ margin: '0', paddingLeft: '20px', color: '#cbd5e1', fontSize: '13px' }}>
-                {contributionRewards.map((reward) => (
-                  <li key={reward}>{reward}</li>
-                ))}
-              </ul>
-            </div>
+            {subscriptionPlans.map((plan) => {
+              const loadingThisPlan = actionLoadingPlan === plan.id;
+              return (
+                <div
+                  key={plan.id}
+                  style={{
+                    background: '#0f172a',
+                    border: plan.id === 'founder' ? '1px solid #a855f7' : '1px solid #334155',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                    <div>
+                      <div style={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '18px' }}>{plan.name}</div>
+                      <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '4px' }}>{plan.includedTokens}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <span style={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '22px' }}>{plan.price}</span>
+                      <div style={{ color: '#94a3b8', fontSize: '13px' }}>{plan.period}</div>
+                    </div>
+                  </div>
+                  <ul style={{ margin: '0', paddingLeft: '18px', color: '#cbd5e1', fontSize: '13px' }}>
+                    {plan.features.map((feature) => (
+                      <li key={feature}>{feature}</li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={() => handleSubscribe(plan.id)}
+                    disabled={actionLoading}
+                    style={{
+                      ...(plan.id === 'founder' ? primaryButtonStyle : secondaryButtonStyle),
+                      marginTop: 'auto',
+                      opacity: actionLoading ? 0.6 : 1,
+                      cursor: actionLoading ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {loadingThisPlan
+                      ? 'Chargement...'
+                      : plan.id === 'founder'
+                        ? 'Devenir Fondateur'
+                        : 'Activer Premium'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {!isActive ? (
-            <button
-              onClick={handleSubscribe}
-              disabled={actionLoading}
-              style={{
-                ...primaryButtonStyle,
-                opacity: actionLoading ? 0.6 : 1,
-                cursor: actionLoading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {actionLoading ? 'Chargement...' : activationLabel}
-            </button>
-          ) : (
+        {isActive && (
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <button
               onClick={handleManageSubscription}
               disabled={actionLoading}
@@ -372,10 +422,8 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
             >
               {actionLoading ? 'Chargement...' : 'Gérer mon abonnement'}
             </button>
-          )}
 
-          {/* Accès au portail Stripe (factures) — disponible dès qu'un compte Stripe existe */}
-          {(isActive || status?.stripeStatus) && (
+            {/* Acces au portail Stripe (factures) */}
             <button
               onClick={handleManageSubscription}
               disabled={actionLoading}
@@ -390,8 +438,8 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
             >
               🧾 {actionLoading ? 'Chargement...' : 'Mes factures'}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {!isActive && (
           <div style={{ borderTop: '1px solid #1e293b', marginTop: '18px', paddingTop: '16px' }}>
@@ -399,7 +447,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
               Moyens de paiement disponibles
             </div>
             <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px' }}>
-              Stripe active automatiquement les moyens compatibles depuis le dashboard; Wero et virement restent en validation manuelle.
+              Stripe active les abonnements automatiquement. Wero reste un don libre, et le virement n'apparait qu'aux comptes fondateurs.
             </div>
 
             <div style={paymentGridStyle}>
@@ -407,106 +455,56 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                 <div>
                   <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Stripe Checkout</div>
                   <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                    Carte, wallets, Link et moyens locaux actives selon pays et configuration Stripe.
+                    Carte, wallets, Link et moyens locaux selon pays. Choisissez Premium ou Fondateur ci-dessus.
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSubscribe}
-                  disabled={actionLoading}
-                  style={{
-                    ...paymentTileButtonStyle,
-                    opacity: actionLoading ? 0.6 : 1,
-                    cursor: actionLoading ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Ouvrir Stripe
-                </button>
+                <div style={{ color: '#a7f3d0', fontSize: '12px', fontWeight: 800 }}>
+                  Activation automatique par webhook
+                </div>
               </div>
 
-              {STRIPE_SUPPORT_URL && (
-                <div style={paymentTileStyle}>
-                  <div>
-                    <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Soutenir le projet</div>
-                    <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '5px', fontWeight: 800 }}>
-                      Don libre par paliers de 5 EUR
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                      Lien Stripe public pour aider Funesterie/NOSSEN, sans creation de compte.
-                    </div>
+              <div style={{ ...paymentTileStyle, minHeight: 210 }}>
+                <div>
+                  <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Don Wero</div>
+                  <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
+                    Scannez le QR code pour un don libre. Aucun numero public n'est affiche.
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => openExternal(STRIPE_SUPPORT_URL)}
-                    style={paymentTileButtonStyle}
-                  >
-                    Faire un don
-                  </button>
                 </div>
-              )}
+                <img
+                  src={WERO_QR_URL}
+                  alt="QR code Wero"
+                  style={{
+                    width: '100%',
+                    maxWidth: '160px',
+                    aspectRatio: '1 / 1',
+                    objectFit: 'contain',
+                    alignSelf: 'center',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    padding: '6px',
+                  }}
+                />
+              </div>
 
-              {WERO_PHONE && (
-                <div style={paymentTileStyle}>
-                  <div>
-                    <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Wero</div>
-                    <div style={{ color: '#38bdf8', fontSize: '15px', marginTop: '5px', fontWeight: 800 }}>
-                      {formatFrenchPhone(WERO_PHONE)}
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                      Indiquez l'email du compte {productName} en reference.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyPaymentValue('Numero Wero', WERO_PHONE)}
-                    style={paymentTileButtonStyle}
-                  >
-                    Copier Wero
-                  </button>
-                </div>
-              )}
-
-              {RIB_DOCUMENT_URL && (
+              {founderPayment?.available && founderPayment.ribUrl && (
                 <div style={paymentTileStyle}>
                   <div>
                     <div style={{ color: '#e2e8f0', fontWeight: 800 }}>Virement bancaire</div>
                     <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                      Ouvre le document RIB securise. Ajoutez l'email du compte {productName} dans le libelle.
+                      Reserve aux comptes fondateurs pour blueprint, gros achats et paiements qualifies.
                     </div>
+                    {founderPayment.phone && (
+                      <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '6px', fontWeight: 800 }}>
+                        Tel fondateur: {formatFrenchPhone(founderPayment.phone)}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
-                    onClick={() => openExternal(RIB_DOCUMENT_URL)}
+                    onClick={() => openExternal(founderPayment.ribUrl || '')}
                     style={paymentTileButtonStyle}
                   >
                     Ouvrir le RIB
-                  </button>
-                </div>
-              )}
-
-              {(PAYPAL_URL || PAYPAL_EMAIL) && (
-                <div style={paymentTileStyle}>
-                  <div>
-                    <div style={{ color: '#e2e8f0', fontWeight: 800 }}>PayPal</div>
-                    {PAYPAL_EMAIL && (
-                      <div style={{ color: '#38bdf8', fontSize: '13px', marginTop: '5px', fontWeight: 800, wordBreak: 'break-word' }}>
-                        {PAYPAL_EMAIL}
-                      </div>
-                    )}
-                    <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '5px' }}>
-                      Compte Business PayPal avec validation manuelle.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => (
-                      PAYPAL_URL
-                        ? openExternal(PAYPAL_URL)
-                        : handleCopyPaymentValue('Email PayPal', PAYPAL_EMAIL)
-                    )}
-                    style={paymentTileButtonStyle}
-                  >
-                    {PAYPAL_URL ? 'Ouvrir PayPal' : 'Copier PayPal'}
                   </button>
                 </div>
               )}
@@ -527,12 +525,6 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
                 </button>
               </div>
             </div>
-
-            {copyFeedback && (
-              <div style={{ color: '#a7f3d0', fontSize: '12px', marginTop: '10px' }}>
-                {copyFeedback}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -546,7 +538,7 @@ export function SubscriptionPanel({ isAdmin, onClose, productName = 'A11' }: Sub
           color: '#a7f3d0',
           fontSize: '14px',
         }}>
-          <strong>Merci pour votre soutien !</strong> Vous avez accès à {studioPlan.name}, au chat long et aux credits de creation.
+          <strong>Merci pour votre soutien !</strong> Vous avez acces a {activePlan.name}, au chat long et aux credits de creation.
         </div>
       )}
 

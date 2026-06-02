@@ -5,14 +5,21 @@
 -- Ajouter les colonnes si elles n'existent pas déjà
 ALTER TABLE users 
 ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255) UNIQUE,
+ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255),
+ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255),
 ADD COLUMN IF NOT EXISTS subscription_active BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP,
+ADD COLUMN IF NOT EXISTS subscription_plan TEXT,
+ADD COLUMN IF NOT EXISTS account_tier TEXT,
 ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
 ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 
 -- Index pour améliorer les performances des requêtes
 CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON users(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS idx_users_stripe_subscription_id ON users(stripe_subscription_id);
 CREATE INDEX IF NOT EXISTS idx_users_subscription_active ON users(subscription_active);
+CREATE INDEX IF NOT EXISTS idx_users_subscription_plan ON users(subscription_plan);
+CREATE INDEX IF NOT EXISTS idx_users_account_tier ON users(account_tier);
 
 -- Mettre à jour les admins existants pour qu'ils aient un accès illimité
 UPDATE users 
@@ -21,5 +28,9 @@ WHERE role = 'admin' AND subscription_active IS NULL;
 
 -- Commentaires
 COMMENT ON COLUMN users.stripe_customer_id IS 'ID client Stripe pour gérer l''abonnement';
+COMMENT ON COLUMN users.stripe_subscription_id IS 'ID abonnement Stripe actif ou recent';
+COMMENT ON COLUMN users.stripe_price_id IS 'ID du prix Stripe associe au plan';
 COMMENT ON COLUMN users.subscription_active IS 'Indique si l''utilisateur a un abonnement actif';
 COMMENT ON COLUMN users.subscription_end_date IS 'Date de fin de l''abonnement en cours';
+COMMENT ON COLUMN users.subscription_plan IS 'Plan commercial: premium ou founder';
+COMMENT ON COLUMN users.account_tier IS 'Tier fonctionnel du compte: basic, premium, founder ou admin_family';

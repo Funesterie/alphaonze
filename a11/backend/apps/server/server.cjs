@@ -1527,6 +1527,17 @@ if (db) {
       try {
         await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT');
         await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMP');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255)');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255)');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_active BOOLEAN DEFAULT false');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan TEXT');
+        await db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS account_tier TEXT');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON users(stripe_customer_id)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_users_stripe_subscription_id ON users(stripe_subscription_id)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_users_subscription_plan ON users(subscription_plan)');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_users_account_tier ON users(account_tier)');
         await db.query(`
             CREATE TABLE IF NOT EXISTS messages (
               id SERIAL PRIMARY KEY,

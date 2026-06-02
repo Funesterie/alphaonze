@@ -36,8 +36,8 @@ const TIER_ORDER = Object.freeze([
 
 const TIER_PRICING = Object.freeze({
   [TIERS.BASIC]: Object.freeze({ monthlyEur: 0, publicLabel: 'Basic' }),
-  [TIERS.PREMIUM]: Object.freeze({ monthlyEur: 5, publicLabel: 'Premium' }),
-  [TIERS.FOUNDER]: Object.freeze({ monthlyEur: 30, publicLabel: 'Fondateur' }),
+  [TIERS.PREMIUM]: Object.freeze({ monthlyEur: 8.99, publicLabel: 'Premium' }),
+  [TIERS.FOUNDER]: Object.freeze({ monthlyEur: 29.99, publicLabel: 'Fondateur' }),
   [TIERS.ADMIN_FAMILY]: Object.freeze({ monthlyEur: null, publicLabel: 'Admin famille' }),
 });
 
@@ -203,6 +203,10 @@ function normalizeTier(value) {
     || raw === 'fondateur'
     || raw === 'founder_30'
     || raw === 'fondateur_30'
+    || raw === 'founder_2999'
+    || raw === 'fondateur_2999'
+    || raw === 'a11_founder'
+    || raw === 'a11_fondateur'
     || raw === 'founding'
     || raw === 'god_like'
     || raw === 'godlike'
@@ -212,6 +216,8 @@ function normalizeTier(value) {
   if (
     raw === TIERS.PREMIUM
     || raw === 'premium_5'
+    || raw === 'premium_899'
+    || raw === 'a11_premium'
     || raw === 'plus'
     || raw === 'studio'
     || raw === 'a11_studio'

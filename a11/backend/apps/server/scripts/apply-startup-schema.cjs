@@ -67,6 +67,9 @@ const statements = [
     subscription_active BOOLEAN DEFAULT false,
     subscription_end_date TIMESTAMP,
     stripe_subscription_id VARCHAR(255),
+    stripe_price_id VARCHAR(255),
+    subscription_plan TEXT,
+    account_tier TEXT,
     auth_session_version INTEGER DEFAULT 0,
     last_global_logout_at TIMESTAMP
   )`,
@@ -82,10 +85,16 @@ const statements = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_active BOOLEAN DEFAULT false`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id VARCHAR(255)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS account_tier TEXT`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_session_version INTEGER DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_global_logout_at TIMESTAMP`,
   `CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON users(stripe_customer_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_users_stripe_subscription_id ON users(stripe_subscription_id)`,
   `CREATE INDEX IF NOT EXISTS idx_users_subscription_active ON users(subscription_active)`,
+  `CREATE INDEX IF NOT EXISTS idx_users_subscription_plan ON users(subscription_plan)`,
+  `CREATE INDEX IF NOT EXISTS idx_users_account_tier ON users(account_tier)`,
 
   `CREATE TABLE IF NOT EXISTS auth_sessions (
     session_id TEXT PRIMARY KEY,

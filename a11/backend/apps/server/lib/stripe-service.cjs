@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * Service Stripe pour gérer les abonnements A11
- * Forfait public : A11 Studio leger, chat long + credits de creation.
- * Les credits bonus sont attribues apres score de pertinence des apports utilisateur.
+ * Service Stripe pour gerer les abonnements A11.
+ * Plans publics :
+ * - Premium : 8,99 EUR / mois
+ * - Fondateur : 29,99 EUR / mois
  */
 
 let stripe = null;
@@ -17,42 +18,136 @@ try {
     });
   }
 } catch (error) {
-  console.warn('[Stripe] Module non disponible ou clé manquante');
+  console.warn('[Stripe] Module non disponible ou cle manquante');
 }
 
-const PRICE_ID = process.env.STRIPE_PRICE_ID || 'price_default'; // À configurer dans Stripe Dashboard
 const DEFAULT_PUBLIC_BASE_URL = String(
   process.env.A11_PUBLIC_BASE_URL
     || process.env.PUBLIC_APP_URL
     || process.env.FRONTEND_URL
     || 'https://a11.funesterie.me'
 ).trim().replace(/\/+$/, '');
-const ACTIVE_PRICE_ID = String(process.env.STRIPE_PRICE_ID || '').trim();
+
 const SUCCESS_URL = process.env.STRIPE_SUCCESS_URL || `${DEFAULT_PUBLIC_BASE_URL}/subscription/success`;
 const CANCEL_URL = process.env.STRIPE_CANCEL_URL || `${DEFAULT_PUBLIC_BASE_URL}/subscription/cancel`;
 
-/**
- * Crée une session de checkout Stripe pour l'abonnement
- * @param {string} userId - ID de l'utilisateur
- * @param {string} userEmail - Email de l'utilisateur
- * @returns {Promise<{sessionId: string, url: string}>}
- */
-async function createCheckoutSession(userId, userEmail) {
-  if (!stripe) {
-    throw new Error('Stripe non configuré');
+const SUBSCRIPTION_PLANS = Object.freeze({
+  premium: Object.freeze({
+    id: 'premium',
+    accountTier: 'premium',
+    label: 'A11 Premium',
+    monthlyEur: 8.99,
+    priceEnv: 'STRIPE_PREMIUM_PRICE_ID',
+    fallbackPriceEnv: 'STRIPE_PRICE_ID',
+    lookupKey: 'a11_premium_monthly_899',
+  }),
+  founder: Object.freeze({
+    id: 'founder',
+    accountTier: 'founder',
+    label: 'A11 Fondateur',
+    monthlyEur: 29.99,
+    priceEnv: 'STRIPE_FOUNDER_PRICE_ID',
+    lookupKey: 'a11_founder_monthly_2999',
+  }),
+});
+
+function normalizeCheckoutPlan(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  if (
+    raw === 'founder'
+    || raw === 'fondateur'
+    || raw === 'founder_2999'
+    || raw === 'fondateur_2999'
+    || raw === 'a11_founder'
+    || raw === 'a11_fondateur'
+  ) {
+    return 'founder';
+  }
+  return 'premium';
+}
+
+function getPlanPriceId(planId) {
+  const plan = SUBSCRIPTION_PLANS[normalizeCheckoutPlan(planId)] || SUBSCRIPTION_PLANS.premium;
+  return String(
+    process.env[plan.priceEnv]
+      || (plan.fallbackPriceEnv ? process.env[plan.fallbackPriceEnv] : '')
+      || ''
+  ).trim();
+}
+
+function resolvePlanConfig(value) {
+  const planId = normalizeCheckoutPlan(value);
+  const plan = SUBSCRIPTION_PLANS[planId] || SUBSCRIPTION_PLANS.premium;
+  return {
+    ...plan,
+    priceId: getPlanPriceId(planId),
+  };
+}
+
+function getConfiguredPriceIds() {
+  return Object.fromEntries(
+    Object.keys(SUBSCRIPTION_PLANS).map((planId) => [planId, getPlanPriceId(planId)])
+  );
+}
+
+function inferSubscriptionPlan(input, fallback = 'premium') {
+  const metadataPlan = input?.metadata?.plan
+    || input?.metadata?.accountTier
+    || input?.plan
+    || input?.accountTier;
+  const normalizedMetadataPlan = normalizeCheckoutPlan(metadataPlan);
+  if (metadataPlan && normalizedMetadataPlan) {
+    return normalizedMetadataPlan;
   }
 
-  if (!ACTIVE_PRICE_ID) {
-    throw new Error('Stripe price non configure');
+  const price = input?.items?.data?.[0]?.price || input?.price || input;
+  const priceId = String(price?.id || input?.priceId || '').trim();
+  const lookupKey = String(price?.lookup_key || price?.lookupKey || '').trim().toLowerCase();
+
+  const configured = getConfiguredPriceIds();
+  if ((configured.founder && priceId === configured.founder) || lookupKey === SUBSCRIPTION_PLANS.founder.lookupKey) {
+    return 'founder';
   }
+  if ((configured.premium && priceId === configured.premium) || lookupKey === SUBSCRIPTION_PLANS.premium.lookupKey) {
+    return 'premium';
+  }
+  if (lookupKey.includes('founder') || lookupKey.includes('fondateur') || lookupKey.includes('2999')) {
+    return 'founder';
+  }
+  if (lookupKey.includes('premium') || lookupKey.includes('899')) {
+    return 'premium';
+  }
+  return normalizeCheckoutPlan(fallback);
+}
+
+/**
+ * Cree une session de checkout Stripe pour l'abonnement.
+ * @param {string} userId
+ * @param {string} userEmail
+ * @param {{ plan?: string }} options
+ * @returns {Promise<{sessionId: string, url: string, plan: string}>}
+ */
+async function createCheckoutSession(userId, userEmail, options = {}) {
+  if (!stripe) {
+    throw new Error('Stripe non configure');
+  }
+
+  const plan = resolvePlanConfig(options.plan);
+  if (!plan.priceId) {
+    throw new Error(`Stripe price non configure pour ${plan.id}`);
+  }
+
+  const metadata = {
+    userId,
+    plan: plan.id,
+    accountTier: plan.accountTier,
+  };
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
-    // Let Stripe Checkout select every enabled method for the customer
-    // (cards, wallets, SEPA/Link/etc.) from the Stripe Dashboard.
     line_items: [
       {
-        price: ACTIVE_PRICE_ID,
+        price: plan.priceId,
         quantity: 1,
       },
     ],
@@ -62,30 +157,22 @@ async function createCheckoutSession(userId, userEmail) {
     cancel_url: CANCEL_URL,
     client_reference_id: userId,
     customer_email: userEmail,
-    metadata: {
-      userId,
-    },
+    metadata,
     subscription_data: {
-      metadata: {
-        userId,
-      },
+      metadata,
     },
   });
 
   return {
     sessionId: session.id,
     url: session.url,
+    plan: plan.id,
   };
 }
 
-/**
- * Crée un portail client Stripe pour gérer l'abonnement
- * @param {string} customerId - ID client Stripe
- * @returns {Promise<{url: string}>}
- */
 async function createCustomerPortalSession(customerId) {
   if (!stripe) {
-    throw new Error('Stripe non configuré');
+    throw new Error('Stripe non configure');
   }
 
   const session = await stripe.billingPortal.sessions.create({
@@ -98,48 +185,46 @@ async function createCustomerPortalSession(customerId) {
   };
 }
 
-/**
- * Récupère les informations d'abonnement d'un utilisateur
- * @param {string} customerId - ID client Stripe
- * @returns {Promise<{active: boolean, status: string, currentPeriodEnd: number}>}
- */
 async function getSubscriptionStatus(customerId) {
   if (!stripe) {
-    return { active: false, status: 'no_stripe', currentPeriodEnd: null };
+    return { active: false, status: 'no_stripe', currentPeriodEnd: null, plan: null };
   }
 
   try {
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
-      status: 'active',
-      limit: 1,
+      status: 'all',
+      limit: 10,
+      expand: ['data.items.data.price'],
     });
 
-    if (subscriptions.data.length === 0) {
-      return { active: false, status: 'no_subscription', currentPeriodEnd: null };
+    const sub = subscriptions.data.find((candidate) => (
+      candidate.status === 'active'
+      || candidate.status === 'trialing'
+      || candidate.status === 'past_due'
+    )) || subscriptions.data[0];
+
+    if (!sub) {
+      return { active: false, status: 'no_subscription', currentPeriodEnd: null, plan: null };
     }
 
-    const sub = subscriptions.data[0];
+    const plan = inferSubscriptionPlan(sub, 'premium');
     return {
-      active: sub.status === 'active',
+      active: sub.status === 'active' || sub.status === 'trialing',
       status: sub.status,
       currentPeriodEnd: sub.current_period_end,
       cancelAtPeriodEnd: sub.cancel_at_period_end,
+      plan,
     };
   } catch (error) {
-    console.error('[Stripe] Erreur lors de la récupération du statut:', error);
-    return { active: false, status: 'error', currentPeriodEnd: null };
+    console.error('[Stripe] Erreur lors de la recuperation du statut:', error);
+    return { active: false, status: 'error', currentPeriodEnd: null, plan: null };
   }
 }
 
-/**
- * Annule un abonnement à la fin de la période en cours
- * @param {string} subscriptionId - ID de l'abonnement Stripe
- * @returns {Promise<{success: boolean, cancelAt: number}>}
- */
 async function cancelSubscription(subscriptionId) {
   if (!stripe) {
-    throw new Error('Stripe non configuré');
+    throw new Error('Stripe non configure');
   }
 
   const subscription = await stripe.subscriptions.update(subscriptionId, {
@@ -152,18 +237,28 @@ async function cancelSubscription(subscriptionId) {
   };
 }
 
-/**
- * Vérifie si Stripe est configuré
- * @returns {boolean}
- */
-function isStripeEnabled() {
-  return stripe !== null && Boolean(ACTIVE_PRICE_ID);
+function isStripeEnabled(plan = 'premium') {
+  return stripe !== null && Boolean(resolvePlanConfig(plan).priceId);
+}
+
+function getAvailablePlans() {
+  return Object.values(SUBSCRIPTION_PLANS).map((plan) => ({
+    id: plan.id,
+    label: plan.label,
+    monthlyEur: plan.monthlyEur,
+  }));
 }
 
 module.exports = {
+  SUBSCRIPTION_PLANS,
   createCheckoutSession,
   createCustomerPortalSession,
   getSubscriptionStatus,
   cancelSubscription,
   isStripeEnabled,
+  normalizeCheckoutPlan,
+  resolvePlanConfig,
+  inferSubscriptionPlan,
+  getAvailablePlans,
+  getConfiguredPriceIds,
 };

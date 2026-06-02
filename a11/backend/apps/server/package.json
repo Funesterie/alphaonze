@@ -86,7 +86,8 @@
     "railway:build": "echo 'No build step needed for backend'",
     "sonar": "pwsh -File run-sonar-analysis.ps1",
     "sonar:local": "pwsh -File run-sonar-analysis.ps1 -Local",
-    "stripe:setup": "pwsh -File setup-stripe.ps1"
+    "stripe:setup": "pwsh -File setup-stripe.ps1",
+    "stripe:setup:billing": "node scripts/setup-stripe-billing.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
