@@ -2761,7 +2761,45 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         useDefaultVoiceReference: false,
       };
     }
-    return { useDefaultVoiceReference: true };
+    return {
+      useDefaultVoiceReference: true,
+      defaultVoiceReference: true,
+    };
+  }
+
+  function usesOfficialVivyVoiceTool() {
+    return !hasPrivateVoiceReference && /officielle|defaut|default/.test(foldForLookup(voiceTool));
+  }
+
+  function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
+    const officialOnly = usesOfficialVivyVoiceTool();
+    const provider = officialOnly ? "cartesia" : "auto";
+    return {
+      persona: "vivy",
+      voicePersona: "vivy",
+      surface: "vivy",
+      provider,
+      ttsProvider: provider,
+      vocalMode,
+      ...getVivyVoiceTuning(vocalMode),
+      ttsAsync: true,
+      asyncTts: true,
+      ttsJobTimeoutMs: vocalMode === "sing" ? 240000 : 180000,
+      audioFormat: "mp3",
+      responseFormat: "mp3",
+      ...buildVivyVoiceReferenceOptions(),
+      voiceReferenceRequired: officialOnly || hasPrivateVoiceReference,
+      referenceVoiceRequired: officialOnly || hasPrivateVoiceReference,
+      voiceConversion: officialOnly ? false : undefined,
+      convertVoice: officialOnly ? false : undefined,
+      morphVoice: officialOnly ? false : undefined,
+      rvc: officialOnly ? false : undefined,
+      allowRvc: !officialOnly && hasPrivateVoiceReference,
+      allowXttsRvc: !officialOnly && hasPrivateVoiceReference,
+      allowLegacyVoiceBridge: !officialOnly && hasPrivateVoiceReference,
+      xttsRvcOptIn: !officialOnly && hasPrivateVoiceReference,
+      allowBrowserSpeechFallback: false,
+    };
   }
 
   async function copyBrief(nextStatus = "Brief copié pour les agents.") {
@@ -2862,24 +2900,13 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
         180
       );
+      const vocalMode = voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive";
+      const provider = usesOfficialVivyVoiceTool() ? "cartesia" : "auto";
       const payload = await ttsSpeak(
         testLine,
         "vivy",
-        "auto",
-        {
-          persona: "vivy",
-          voicePersona: "vivy",
-          vocalMode: voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive",
-          ...getVivyVoiceTuning(voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive"),
-          ttsAsync: true,
-          asyncTts: true,
-          ttsJobTimeoutMs: 180000,
-          audioFormat: "mp3",
-          ...buildVivyVoiceReferenceOptions(),
-          voiceReferenceRequired: false,
-          referenceVoiceRequired: false,
-          allowBrowserSpeechFallback: false,
-        }
+        provider,
+        buildVivyTtsOptions(vocalMode)
       );
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
@@ -2920,19 +2947,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         `Refrain à chanter: ${playablePrompt}`,
       ].join("\n");
       const payload = await ttsSpeak(songPrompt, "vivy", "auto", {
-        persona: "vivy",
-        voicePersona: "vivy",
-        vocalMode: "sing",
+        ...buildVivyTtsOptions("sing"),
         voiceStyle: "vivy-official-song",
-        ...getVivyVoiceTuning("sing"),
-        ttsAsync: true,
-        asyncTts: true,
-        ttsJobTimeoutMs: 240000,
-        audioFormat: "mp3",
-        ...buildVivyVoiceReferenceOptions(),
-        voiceReferenceRequired: false,
-        referenceVoiceRequired: false,
-        allowBrowserSpeechFallback: false,
       });
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
@@ -6589,7 +6605,8 @@ export function App() {
       const via = String(detail?.via || detail?.provider || "").trim();
       if (via) {
         const label = via === "openai-tts" || via === "openai" ? "OpenAI"
-          : via.includes("xtts") || via.includes("rvc") ? "Voix officielle"
+          : via.includes("cartesia") ? "Cartesia"
+            : via.includes("xtts") || via.includes("rvc") ? "XTTS/RVC privé"
             : via === "spawn" || via === "piper" ? "Piper local"
               : via === "espeak" || via === "espeak-ng" ? "Secours robot"
                 : via;

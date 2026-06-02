@@ -572,6 +572,7 @@ function releaseStaleLocalGpuWorkerLeases(now = Date.now()) {
 function shouldRouteTtsJobToLocalGpuWorker(body = {}) {
   if (!localGpuWorkerEnabled()) return false;
   const provider = getRequestedTtsProvider(body);
+  if (isCloudTtsProvider(provider) && !allowsXttsRvcForBody(body)) return false;
   return provider === PROVIDERS.XTTS_RVC
     || wantsOfficialIdentityVoice(body)
     || requiresReferenceVoice(body)

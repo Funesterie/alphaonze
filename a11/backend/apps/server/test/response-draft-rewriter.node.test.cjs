@@ -44,3 +44,23 @@ test('response draft blocks unverified realtime monitoring claims', () => {
   assert.match(processed.content, /pas faire semblant/i);
   assert.doesNotMatch(processed.content, /temps reel|garde un oeil/i);
 });
+
+test('response draft does not expose prose-short guardrails in final answers', () => {
+  const raw = [
+    '| Etat | Detail |',
+    '|------|--------|',
+    '| Bonjour | Tout ce qui se passe aujourd hui |',
+    '',
+    "Bonjour ! Tout ce qui se passe aujourd hui ! 1 / : ? Je te l'ai remis en prose courte: pas de tableau ni de detail fragile si tu ne l'as pas demande. Pour des donnees precises, je verifierai avant d'affirmer.",
+  ].join('\n');
+
+  const processed = postProcessA11AssistantResponse({
+    userMessage: 'ca va ?',
+    text: raw,
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.doesNotMatch(processed.content, /prose courte|detail fragile|verifierai avant|tableau/i);
+  assert.doesNotMatch(processed.content, /\d+\s*\/\s*:\s*\?/);
+  assert.doesNotMatch(processed.content, /\|/);
+});

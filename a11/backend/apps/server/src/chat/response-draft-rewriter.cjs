@@ -113,6 +113,10 @@ function firstUsefulSentence(text = '') {
   const cleaned = stripMarkdownTable(text)
     .replace(/\*\*/g, '')
     .replace(/<br\s*\/?>/gi, ', ')
+    .replace(/\bJe te l['’]ai remis en prose courte\s*:?\s*pas de tableau ni de d[ée]tail fragile si tu ne l['’]as pas demand[ée]\.?\s*/gi, '')
+    .replace(/\bPour des donn[ée]es pr[ée]cises, je v[ée]rifierai avant d['’]affirmer\.?\s*/gi, '')
+    .replace(/\bJe te r[ée]ponds en prose courte plut[oô]t qu['’]en tableau\.?\s*/gi, '')
+    .replace(/\s+\d+\s*\/\s*:\s*\?\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!cleaned) return '';
@@ -136,9 +140,9 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   if (responseDraft.flags.includes('unrequested_table')) {
     const sentence = firstUsefulSentence(text);
     if (sentence) {
-      return `${sentence}\n\nJe te l'ai remis en prose courte: pas de tableau ni de detail fragile si tu ne l'as pas demande. Pour des donnees precises, je verifierai avant d'affirmer.`;
+      return sentence;
     }
-    return "Je te reponds en prose courte plutot qu'en tableau. Pour les details precis, je verifie avant d'affirmer.";
+    return "Je garde ca simple et je peux detailler si tu veux.";
   }
 
   if (responseDraft.flags.includes('virtual_draft_leak')) {
