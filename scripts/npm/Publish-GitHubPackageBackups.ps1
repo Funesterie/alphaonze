@@ -4,6 +4,7 @@ param(
   [string]$Registry = "https://npm.pkg.github.com",
   [string]$RepositoryUrl = "git+https://github.com/Funesterie/alphaonze.git",
   [string]$FundingUrl = "https://paypal.me/funeste38",
+  [string]$FundingWeroQrUrl = "https://funesterie.me/assets/wero-jeffrey-cellauro.png",
   [string]$WorkRoot = "$env:TEMP\funesterie-github-package-backups",
   [switch]$DryRun
 )
@@ -117,9 +118,25 @@ foreach ($packageDir in $packages) {
     type = "git"
     url = $RepositoryUrl
   })
-  Set-JsonProperty -Object $json -Name "funding" -Value ([ordered]@{
-    type = "custom"
-    url = $FundingUrl
+  Set-JsonProperty -Object $json -Name "funding" -Value (@(
+    [ordered]@{
+      type = "paypal"
+      url = $FundingUrl
+    },
+    [ordered]@{
+      type = "custom"
+      url = $FundingWeroQrUrl
+    }
+  ))
+  Set-JsonProperty -Object $json -Name "donations" -Value ([ordered]@{
+    policy = "voluntary"
+    amount = "user-choice"
+    email = "funeste38@gmail.com"
+    wero = "+33783463761"
+    weroDisplay = "+33 7 83 46 37 61"
+    weroQr = $FundingWeroQrUrl
+    paypal = $FundingUrl
+    contact = "https://funesterie.me/contact/"
   })
   Set-JsonProperty -Object $json -Name "funesterieBackup" -Value ([ordered]@{
     sourceName = $originalJson.name

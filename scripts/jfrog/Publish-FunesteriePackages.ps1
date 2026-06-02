@@ -58,16 +58,57 @@ function Test-NpmPackageVersionExists {
 }
 
 $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
-$funding = if ($manifest.funding -and $manifest.funding.url) {
-  [ordered]@{
-    type = if ($manifest.funding.type) { [string]$manifest.funding.type } else { "custom" }
-    url = [string]$manifest.funding.url
+
+function Convert-FundingEntry {
+  param($Entry)
+
+  if ($null -eq $Entry -or [string]::IsNullOrWhiteSpace([string]$Entry.url)) {
+    return $null
   }
-} else {
+
+  [ordered]@{
+    type = if ($Entry.type) { [string]$Entry.type } else { "custom" }
+    url = [string]$Entry.url
+  }
+}
+
+$defaultFunding = @(
+  [ordered]@{
+    type = "paypal"
+    url = "https://paypal.me/funeste38"
+  },
   [ordered]@{
     type = "custom"
-    url = "https://paypal.me/funeste38"
+    url = "https://funesterie.me/assets/wero-jeffrey-cellauro.png"
   }
+)
+$funding = @()
+if ($manifest.PSObject.Properties.Name -contains "funding" -and $null -ne $manifest.funding) {
+  foreach ($entry in @($manifest.funding)) {
+    $converted = Convert-FundingEntry -Entry $entry
+    if ($null -ne $converted) {
+      $funding += $converted
+    }
+  }
+}
+if ($funding.Count -eq 0) {
+  $funding = $defaultFunding
+}
+
+$defaultDonations = [ordered]@{
+  policy = "voluntary"
+  amount = "user-choice"
+  email = "funeste38@gmail.com"
+  wero = "+33783463761"
+  weroDisplay = "+33 7 83 46 37 61"
+  weroQr = "https://funesterie.me/assets/wero-jeffrey-cellauro.png"
+  paypal = "https://paypal.me/funeste38"
+  contact = "https://funesterie.me/contact/"
+}
+$donations = if ($manifest.PSObject.Properties.Name -contains "donations" -and $null -ne $manifest.donations) {
+  $manifest.donations
+} else {
+  $defaultDonations
 }
 $packages = @($manifest.packages | Where-Object {
   $_.publish -eq $true -or ($IncludeExperimental -and $_.publish -ne $true)
@@ -106,14 +147,28 @@ function Set-JsonProperty {
 function Ensure-PackageFunding {
   param(
     [Parameter(Mandatory = $true)][string]$PackageJsonPath,
-    [Parameter(Mandatory = $true)]$Funding
+    [Parameter(Mandatory = $true)]$Funding,
+    [Parameter(Mandatory = $true)]$Donations
   )
 
   $json = Get-Content -Raw -LiteralPath $PackageJsonPath | ConvertFrom-Json
-  $currentUrl = if ($json.funding -and $json.funding.url) { [string]$json.funding.url } else { "" }
-  $currentType = if ($json.funding -and $json.funding.type) { [string]$json.funding.type } else { "" }
-  if ($currentUrl -ne [string]$Funding.url -or $currentType -ne [string]$Funding.type) {
-    Set-JsonProperty -Object $json -Name "funding" -Value $Funding
+
+  $currentFundingJson = if ($json.PSObject.Properties.Name -contains "funding") {
+    $json.funding | ConvertTo-Json -Depth 80 -Compress
+  } else {
+    ""
+  }
+  $targetFundingJson = $Funding | ConvertTo-Json -Depth 80 -Compress
+  $currentDonationsJson = if ($json.PSObject.Properties.Name -contains "donations") {
+    $json.donations | ConvertTo-Json -Depth 80 -Compress
+  } else {
+    ""
+  }
+  $targetDonationsJson = $Donations | ConvertTo-Json -Depth 80 -Compress
+
+  if ($currentFundingJson -ne $targetFundingJson -or $currentDonationsJson -ne $targetDonationsJson) {
+    Set-JsonProperty -Object $json -Name "funding" -Value ([object[]]$Funding)
+    Set-JsonProperty -Object $json -Name "donations" -Value $Donations
     $json | ConvertTo-Json -Depth 80 | Set-Content -LiteralPath $PackageJsonPath -Encoding UTF8
   }
   return $json
@@ -129,7 +184,7 @@ foreach ($entry in $packages) {
     throw "Missing package.json for $($entry.name) at $packageJsonPath"
   }
 
-  $packageJson = Ensure-PackageFunding -PackageJsonPath $packageJsonPath -Funding $funding
+  $packageJson = Ensure-PackageFunding -PackageJsonPath $packageJsonPath -Funding $funding -Donations $donations
   if ($packageJson.name -ne $entry.name) {
     throw "Manifest name mismatch for $($entry.path): expected $($entry.name), found $($packageJson.name)"
   }
