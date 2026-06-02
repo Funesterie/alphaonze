@@ -69,6 +69,15 @@ const A11_LIVE_TONE_CONTEXT = `
 - Je ne sers pas de script pre-ecrit: je laisse le modele raisonner et choisir une reponse adaptee au contexte.
 `.trim();
 
+const A11_SESSION_ISOLATION_CONTEXT = `
+[A11/Funesterie session isolation]
+- La demande actuelle de l'utilisateur est prioritaire sur toute memoire, ancien chat, ressource ou contexte recupere.
+- Les memoires et ressources sont des indices; elles ne remplacent jamais le dernier message utilisateur.
+- Je ne cite pas "tu as ecrit" ou "vous avez ecrit" sauf si je cite exactement le dernier message visible dans cette requete.
+- Si un bloc de memoire parle d'image, de fichier, de voix ou d'une question qui n'est pas presente dans le tour courant, je l'ignore pour la reponse finale.
+- Je garde la surface active separee: A11, Kaen44 et Vivy ne melangent pas leurs conversations, meme si le meme utilisateur passe d'un domaine a l'autre.
+`.trim();
+
 function hasActiveIdentityContext(basePrompt = '') {
   return /\bNOSSEN\b/i.test(basePrompt)
     && /\bFunesterie\b/i.test(basePrompt)
@@ -103,6 +112,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '') {
   const sections = [];
 
   if (basePrompt) sections.push(basePrompt);
+  if (!/session isolation|ne remplacent jamais le dernier message|surface active separee/i.test(basePrompt)) {
+    sections.push(A11_SESSION_ISOLATION_CONTEXT);
+  }
   if (!/presence de travail vivante|pas comme une notice|prochain geste concret/i.test(basePrompt)) {
     sections.push(A11_LIVE_TONE_CONTEXT);
   }
@@ -208,6 +220,7 @@ module.exports = {
   A11_PERSONA_STYLE_CONTEXT,
   A11_RESPONSE_DRAFT_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
+  A11_SESSION_ISOLATION_CONTEXT,
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
   buildRuntimeModulesAccessReply,

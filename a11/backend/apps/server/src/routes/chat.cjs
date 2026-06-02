@@ -952,6 +952,9 @@ function createChatRouter(overrides = {}) {
           return res.json({ ok: true, mode: 'ollama', model, assistant: finalText });
         }
       } catch (qErr) {
+        if (pendingStructuredPayload) {
+          return res.json(attachIntentDebug(pendingStructuredPayload, resolution, req.body || {}));
+        }
         if (qErr.statusCode === 503) {
           return res.status(503).json({
             ok: false,
@@ -972,6 +975,9 @@ function createChatRouter(overrides = {}) {
 
       // Priorite 2 : OpenAI (fallback cloud explicite uniquement)
       if (!shouldAllowCloudChatFallback()) {
+        if (pendingStructuredPayload) {
+          return res.json(attachIntentDebug(pendingStructuredPayload, resolution, req.body || {}));
+        }
         const { base, model } = getOllamaConfig();
         return res.status(503).json({
           ok: false,
@@ -984,6 +990,9 @@ function createChatRouter(overrides = {}) {
 
       const activeOpenAIClient = openaiClient || createOpenAIClient();
       if (!activeOpenAIClient) {
+        if (pendingStructuredPayload) {
+          return res.json(attachIntentDebug(pendingStructuredPayload, resolution, req.body || {}));
+        }
         return res.status(500).json({ ok: false, error: 'llm_unavailable' });
       }
 

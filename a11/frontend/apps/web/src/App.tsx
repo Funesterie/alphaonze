@@ -6404,6 +6404,8 @@ export function App() {
   const [ttsFallback, setTtsFallback] = useState(false);
   const [audioBlockedUrl, setAudioBlockedUrl] = useState<string | null>(null);
   const [pendingMobileSpeech, setPendingMobileSpeech] = useState("");
+  const [pendingMobileAudioUrl, setPendingMobileAudioUrl] = useState<string | null>(null);
+  const [preparingMobileAudio, setPreparingMobileAudio] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioTranscribing, setAudioTranscribing] = useState(false);
   const [micStarting, setMicStarting] = useState(false);
@@ -6453,15 +6455,18 @@ export function App() {
     const onBlocked = (e: Event) => {
       const url = (e as CustomEvent).detail?.url;
       if (isCompactViewportNow()) {
-        setAudioBlockedUrl(url || null);
+        setAudioBlockedUrl(url ? (resolveApiAssetUrl(String(url)) || String(url)) : null);
         setMicStatusMessage("Voix mobile prête: touche le bouton lecture après un appui utilisateur.");
         return;
       }
       if (!url) return;
-      setAudioBlockedUrl(url);
+      setAudioBlockedUrl(resolveApiAssetUrl(String(url)) || String(url));
     };
     const onSpeechStart = () => {
       setAudioBlockedUrl(null);
+      setPendingMobileAudioUrl(null);
+      setPendingMobileSpeech("");
+      setPreparingMobileAudio(false);
       setAudioPlaying(true);
     };
     const onSpeechEnd = () => setAudioPlaying(false);
@@ -6913,6 +6918,7 @@ export function App() {
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
+  const mobileAudioPrepKeyRef = useRef("");
   const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
   const [creatingArtifact, setCreatingArtifact] = useState(false);
@@ -6941,7 +6947,7 @@ export function App() {
       return false;
     }
   });
-  const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim());
+  const mobileVoiceReady = isCompactLayout && Boolean(audioBlockedUrl || pendingMobileSpeech.trim() || pendingMobileAudioUrl);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     return false;
   });
@@ -7810,6 +7816,11 @@ export function App() {
     setA11ConvMsgs([]);
     setMessages(newChat.messages);
     setInput("");
+    mobileAudioPrepKeyRef.current = "";
+    setPendingMobileSpeech("");
+    setPendingMobileAudioUrl(null);
+    setAudioBlockedUrl(null);
+    setPreparingMobileAudio(false);
     setConversationActivity([]);
     setConversationResources([]);
     setActivityError("");
@@ -7864,6 +7875,67 @@ export function App() {
     return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
+  function buildAssistantSpeechOptions(vocalMode: "speech" | "adaptive" | "sing" = ttsVocalMode) {
+    return {
+      lang: selectedA11Language.speechLang,
+      voiceReferenceId: speechVoiceReferenceId || undefined,
+      vocalMode,
+      audioFormat: "mp3",
+      latencyMode: "interactive",
+      voiceConversion: false,
+      persona: surfaceKind,
+      voicePersona: surfaceKind,
+      voiceReferenceRequired: false,
+      useDefaultVoiceReference: true,
+      allowBrowserSpeechFallback: true,
+      provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
+      ttsProvider: effectiveTtsProviderMode,
+    };
+  }
+
+  function resolvePlayableAudioUrl(rawUrl: unknown) {
+    const value = String(rawUrl || "").trim();
+    if (!value) return "";
+    return resolveApiAssetUrl(value) || value;
+  }
+
+  async function prepareMobileSpeechAudio(text: string, vocalMode: "speech" | "adaptive" | "sing" = ttsVocalMode) {
+    const spokenText = String(text || "").trim();
+    if (!spokenText || !isCompactViewportNow()) return;
+    const prepKey = normalizeOutgoingMessageKey(`${surfaceKind}:${effectiveTtsProviderMode}:${vocalMode}:${spokenText}`);
+    mobileAudioPrepKeyRef.current = prepKey;
+    setPreparingMobileAudio(true);
+    setPendingMobileAudioUrl(null);
+    setMicStatusMessage("Voix mobile: je prépare le MP3, puis le bouton lecture le lancera.");
+    try {
+      const payload = await ttsSpeak(
+        spokenText,
+        selectedA11Language.ttsVoice || "fr_FR-siwis-medium",
+        effectiveTtsProviderMode,
+        buildAssistantSpeechOptions(vocalMode)
+      );
+      if (mobileAudioPrepKeyRef.current !== prepKey) return;
+      const mediaUrl = resolvePlayableAudioUrl(
+        (payload as any)?.audioUrl
+        || (payload as any)?.audio_url
+        || (payload as any)?.url
+        || (payload as any)?.body?.audioUrl
+        || (payload as any)?.body?.audio_url
+      );
+      if (!mediaUrl) throw new Error("audio_url_missing");
+      setPendingMobileAudioUrl(mediaUrl);
+      setMicStatusMessage("Voix mobile prête: touche lecture pour lancer le son.");
+    } catch (error) {
+      if (mobileAudioPrepKeyRef.current === prepKey) {
+        setMicStatusMessage(`Voix mobile prête, mais le MP3 n'a pas été préchargé: ${String((error as any)?.message || error)}`);
+      }
+    } finally {
+      if (mobileAudioPrepKeyRef.current === prepKey) {
+        setPreparingMobileAudio(false);
+      }
+    }
+  }
+
   // Modifie la fonction sendMessage pour accepter un texte forcé
 
   function extractImageUrlsFromText(text: string): { cleanText: string; imageUrls: string[] } {
@@ -7901,6 +7973,11 @@ export function App() {
     pendingMessageKeyRef.current = submitKey;
     pendingSubmitAtRef.current = now;
     void unlockAudioOutput();
+    mobileAudioPrepKeyRef.current = "";
+    setPendingMobileSpeech("");
+    setPendingMobileAudioUrl(null);
+    setAudioBlockedUrl(null);
+    setPreparingMobileAudio(false);
 
     // Afficher le message utilisateur immédiatement : sans bloquer l'input
     const userMsg: ChatMessage = {
@@ -8039,25 +8116,14 @@ export function App() {
         const effectiveVocalMode = ttsVocalMode;
         if (shouldAutoplayAssistantMessage(spokenText) && !mobileAudioNeedsGesture) {
           setPendingMobileSpeech("");
+          setPendingMobileAudioUrl(null);
           speak(spokenText, {
-            lang: selectedA11Language.speechLang,
-            voiceReferenceId: speechVoiceReferenceId || undefined,
-            vocalMode: effectiveVocalMode,
-            audioFormat: "mp3",
-            latencyMode: "interactive",
-            voiceConversion: false,
-            persona: surfaceKind,
-            voicePersona: surfaceKind,
-            voiceReferenceRequired: false,
-            useDefaultVoiceReference: true,
-            allowBrowserSpeechFallback: true,
-            provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
-            ttsProvider: effectiveTtsProviderMode,
+            ...buildAssistantSpeechOptions(effectiveVocalMode),
           });
         } else if (mobileAudioNeedsGesture) {
           setPendingMobileSpeech(spokenText);
           setAudioBlockedUrl(null);
-          setMicStatusMessage("Voix mobile prête: touche le bouton lecture pour lancer le son.");
+          void prepareMobileSpeechAudio(spokenText, effectiveVocalMode);
         }
         lastCompletedMessageRef.current = { key: messageKey, at: Date.now() };
       } catch (err: any) {
@@ -8106,7 +8172,20 @@ export function App() {
       if (audioBlockedUrl) {
         retryPlayUrl(audioBlockedUrl);
         setAudioBlockedUrl(null);
+        setPendingMobileAudioUrl(null);
+        setPendingMobileSpeech("");
         setMicStatusMessage("");
+        return;
+      }
+      if (pendingMobileAudioUrl) {
+        retryPlayUrl(pendingMobileAudioUrl);
+        setPendingMobileAudioUrl(null);
+        setPendingMobileSpeech("");
+        setMicStatusMessage("");
+        return;
+      }
+      if (preparingMobileAudio) {
+        setMicStatusMessage("Voix mobile: le MP3 finit de se préparer, retouche lecture dans une seconde.");
         return;
       }
       const text = pendingMobileSpeech.trim();
@@ -8115,19 +8194,7 @@ export function App() {
         setMicStatusMessage("");
         const effectiveVocalMode = ttsVocalMode;
         speak(text, {
-          lang: selectedA11Language.speechLang,
-          voiceReferenceId: speechVoiceReferenceId || undefined,
-          vocalMode: effectiveVocalMode,
-          audioFormat: "mp3",
-          latencyMode: "interactive",
-          voiceConversion: false,
-          persona: surfaceKind,
-          voicePersona: surfaceKind,
-          voiceReferenceRequired: false,
-          useDefaultVoiceReference: true,
-          allowBrowserSpeechFallback: true,
-          provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
-          ttsProvider: effectiveTtsProviderMode,
+          ...buildAssistantSpeechOptions(effectiveVocalMode),
         });
         return;
       }
@@ -8486,6 +8553,11 @@ export function App() {
     setA11ConvId(convId);
     setA11ConvMsgs([]);
     setUploadFeedback("");
+    mobileAudioPrepKeyRef.current = "";
+    setPendingMobileSpeech("");
+    setPendingMobileAudioUrl(null);
+    setAudioBlockedUrl(null);
+    setPreparingMobileAudio(false);
     setLoadingHistory(true);
     try {
       const conv = await fetchA11Conversation(convId, { surface: surfaceKind });
@@ -9609,6 +9681,11 @@ export function App() {
                         setMessages(chat.messages);
                         setA11ConvId(null);
                         setA11ConvMsgs([]);
+                        mobileAudioPrepKeyRef.current = "";
+                        setPendingMobileSpeech("");
+                        setPendingMobileAudioUrl(null);
+                        setAudioBlockedUrl(null);
+                        setPreparingMobileAudio(false);
                         setSidebarOpen(false);
                       }}
                       className="btn ghost"
@@ -10383,7 +10460,7 @@ export function App() {
                     disabled={micStarting}
                     aria-pressed={voiceListening}
                     aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
-                    title={mobileVoiceReady ? `Jouer la voix ${productName}` : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
+                    title={mobileVoiceReady ? (preparingMobileAudio ? "Préparation audio mobile" : `Jouer la voix ${productName}`) : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
                     style={{
                       marginLeft: 8,
                       opacity: micPermissionBlocked ? 0.78 : 1,
@@ -10391,7 +10468,7 @@ export function App() {
                       color: micPermissionBlocked ? "#fecaca" : undefined,
                     }}
                   >
-                    {micStarting ? "..." : mobileVoiceReady ? "Play" : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
+                    {micStarting ? "..." : mobileVoiceReady ? (preparingMobileAudio ? "..." : "Play") : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
                   </button>
                 </div>
                 <div className="hint">

@@ -10919,7 +10919,24 @@ async function loadUserMemoryContext(userId, latestUserMessage, conversationId) 
   };
 }
 
-function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
+function buildConversationBoundarySystemMessage({ surface = '', conversationId = '' } = {}) {
+  const normalizedSurface = normalizeChatSurface(surface);
+  const normalizedConversationId = normalizeConversationId(conversationId);
+  const parts = [
+    '[Conversation boundary]',
+    `- Surface active: ${normalizedSurface || 'a11'}.`,
+    `- Conversation active: ${normalizedConversationId}.`,
+    '- Reponds uniquement a la derniere demande utilisateur de cette conversation active.',
+    '- La memoire globale, les anciennes conversations et les ressources d autres surfaces sont des indices faibles; ignore-les si elles ne collent pas exactement au tour courant.',
+    '- Ne transforme jamais un souvenir ou une ancienne question en demande actuelle.',
+  ];
+  return {
+    role: 'system',
+    content: parts.join('\n'),
+  };
+}
+
+function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '', options = {}) {
   const messages = [];
   const normalizedSystemPrompt = buildA11ChatSystemPrompt(systemPrompt);
   const sanitizedBaseMessages = sanitizePromptMessages(baseMessages);
@@ -10932,6 +10949,8 @@ function buildChatMessagesWithMemory(baseMessages, logicalMemory, structuredMemo
       content: normalizedSystemPrompt
     });
   }
+
+  messages.push(buildConversationBoundarySystemMessage(options));
 
   messages.push(...explicitSystemMessages);
 
@@ -12502,7 +12521,7 @@ function isLegacyWordAutomationEnabled() {
   return ['1', 'true', 'yes', 'on'].includes(String(process.env.A11_ENABLE_LEGACY_WORD_INTENT_DETECTORS || '').trim().toLowerCase());
 }
 
-function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '') {
+function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structuredMemoryContext, conversationResourceContext, systemPrompt, ephemeralMemoryContext = '', vectorContext = '', knowledgeGraphContext = '', episodicContext = '', options = {}) {
   return buildChatMessagesWithMemory(
     Array.isArray(storedMessages) ? storedMessages : [],
     logicalMemory,
@@ -12512,7 +12531,8 @@ function buildQflushMessagesWithMemory(storedMessages, logicalMemory, structured
     ephemeralMemoryContext,
     vectorContext,
     knowledgeGraphContext,
-    episodicContext
+    episodicContext,
+    options
   );
 }
 
@@ -12582,7 +12602,11 @@ async function proxyQflushChat(req, res) {
       ephemeralMemoryContext,
       vectorContext,
       knowledgeGraphContext,
-      episodicContext
+      episodicContext,
+      {
+        surface: resolveRequestSurface(body, req),
+        conversationId,
+      }
     );
     qflushMessages = appendInformativeToolContextMessages(
       qflushMessages,
@@ -12948,7 +12972,15 @@ async function proxyChatToOpenAI(req, res) {
       '',
       '',
       '',
-      systemPrompt
+      systemPrompt,
+      '',
+      '',
+      '',
+      '',
+      {
+        surface: resolveRequestSurface(req.body || {}, req),
+        conversationId,
+      }
     );
 
     if (userId) {
@@ -12962,7 +12994,11 @@ async function proxyChatToOpenAI(req, res) {
         memoryContext.ephemeralMemoryContext,
         memoryContext.vectorContext,
         memoryContext.knowledgeGraphContext,
-        memoryContext.episodicContext
+        memoryContext.episodicContext,
+        {
+          surface: resolveRequestSurface(req.body || {}, req),
+          conversationId,
+        }
       );
     }
 
@@ -13028,7 +13064,11 @@ async function proxyChatToOpenAI(req, res) {
       memoryContext.ephemeralMemoryContext,
       memoryContext.vectorContext,
       memoryContext.knowledgeGraphContext,
-      memoryContext.episodicContext
+      memoryContext.episodicContext,
+      {
+        surface: resolveRequestSurface(req.body || {}, req),
+        conversationId,
+      }
     );
     upstreamBody.messages = appendInformativeToolContextMessages(upstreamBody.messages, informativeToolContext);
 
@@ -13042,7 +13082,15 @@ async function proxyChatToOpenAI(req, res) {
       '',
       '',
       '',
-      systemPrompt
+      systemPrompt,
+      '',
+      '',
+      '',
+      '',
+      {
+        surface: resolveRequestSurface(req.body || {}, req),
+        conversationId,
+      }
     );
     upstreamBody.messages = appendInformativeToolContextMessages(upstreamBody.messages, informativeToolContext);
 
@@ -14403,7 +14451,11 @@ app.post('/api/agent', express.json(), async (req, res) => {
           memoryContext.ephemeralMemoryContext,
           memoryContext.vectorContext,
           memoryContext.knowledgeGraphContext,
-          memoryContext.episodicContext
+          memoryContext.episodicContext,
+          {
+            surface: resolveRequestSurface(body || {}, req),
+            conversationId,
+          }
         );
       }
 

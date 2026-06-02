@@ -63,6 +63,17 @@ function looksLikeUnverifiedMonitoringClaim(text = '', userMessage = '') {
   return /(temps reel|garde un oeil|aucun blocage majeur|tout roule de mon cote|logs|alerte immediatement|sans interruption)/.test(foldedText);
 }
 
+function looksLikeStaleUserMessageEcho(text = '', userMessage = '') {
+  const current = foldText(userMessage);
+  if (!current) return false;
+  const normalized = normalizeText(text);
+  const match = normalized.match(/\b(?:vous avez ecrit|vous avez écrit|tu as ecrit|tu as écrit|tu demandes|vous demandez)\s*[:：]\s*[«"“]?([^»"”\n]{3,180})/i);
+  if (!match) return false;
+  const quoted = foldText(match[1]);
+  if (!quoted || quoted.length < 3) return false;
+  return !current.includes(quoted) && !quoted.includes(current.slice(0, Math.min(quoted.length, current.length)));
+}
+
 function looksLikeVirtualDraftLeak(text = '') {
   const folded = foldText(text);
   return /^(brouillon|draft|analyse interne|intent(?:ion)? utilisateur|contexte fiable)\s*:/i.test(normalizeText(text))
@@ -83,6 +94,7 @@ function buildA11VirtualResponseDraft({ userMessage = '', assistantText = '', co
   const text = normalizeText(assistantText);
   const flags = [];
   if (looksLikeVirtualDraftLeak(text)) flags.push('virtual_draft_leak');
+  if (looksLikeStaleUserMessageEcho(text, userMessage)) flags.push('stale_user_message_echo');
   if (looksLikeToolInventory(text)) flags.push('tool_inventory_dump');
   if (looksLikeMarkdownTable(text) && !userAskedForStructuredFormat(userMessage)) flags.push('unrequested_table');
   if (looksLikeUnverifiedMonitoringClaim(text, userMessage)) flags.push('unverified_monitoring_claim');
@@ -149,6 +161,10 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
     return stripMarkdownTable(text)
       .replace(/^(brouillon|draft|analyse interne|intent(?:ion)? utilisateur|contexte fiable)\s*:\s*/i, '')
       .trim();
+  }
+
+  if (responseDraft.flags.includes('stale_user_message_echo')) {
+    return "Je me suis accrochee a un mauvais contexte de conversation. Je reprends depuis ton dernier message, sans reutiliser une ancienne demande.";
   }
 
   return text;

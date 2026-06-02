@@ -64,3 +64,15 @@ test('response draft does not expose prose-short guardrails in final answers', (
   assert.doesNotMatch(processed.content, /\d+\s*\/\s*:\s*\?/);
   assert.doesNotMatch(processed.content, /\|/);
 });
+
+test('response draft blocks stale user-message echoes from another turn', () => {
+  const processed = postProcessA11AssistantResponse({
+    userMessage: "Explique en quoi l'absence de rhetorique est une reponse insuffisante",
+    text: 'Je suis la pour vous aider ! Vous avez écrit: « Que type d’image ? » Quel type d’image cherchez-vous ?',
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.deepEqual(processed.draft.flags, ['stale_user_message_echo']);
+  assert.match(processed.content, /mauvais contexte/i);
+  assert.doesNotMatch(processed.content, /image cherchez/i);
+});
