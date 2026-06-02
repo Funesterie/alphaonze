@@ -4538,6 +4538,7 @@ export async function fetchA11PortraitFramebook(): Promise<A11PortraitFramebook>
 }
 
 export type MatchArenaPriorityTier = 'admin' | 'family' | 'public';
+export type MatchArenaMode = 'user-vs-a11' | 'user-with-a11' | 'user-vs-player';
 
 export type MatchArenaGame = {
   id: string;
@@ -4562,8 +4563,16 @@ export type MatchArenaSession = {
   status?: string;
   gameId: string;
   gameTitle: string;
-  mode?: string;
+  mode?: MatchArenaMode | string;
   opponent?: string;
+  a11Mode?: {
+    enabled?: boolean;
+    role?: 'opponent' | 'copilot' | 'none' | string;
+    label?: string;
+    requiredTier?: string | null;
+    permissions?: string[];
+    accountTier?: string;
+  };
   visibility?: 'private' | 'public';
   priorityTier?: MatchArenaPriorityTier;
   priorityLabel?: string;
@@ -4609,6 +4618,7 @@ export type MatchArenaSession = {
     slot: number;
     label?: string;
     role?: string | null;
+    automated?: boolean;
     joinedAt?: string | null;
   }>;
   playerSlot?: number | null;
@@ -4634,6 +4644,19 @@ export type MatchArenaStatus = {
     active?: number;
     states?: Record<string, number>;
     priorities?: Record<string, number>;
+  };
+  access?: {
+    accountTier?: string;
+    accountLabel?: string;
+    a11MatchAllowed?: boolean;
+    modes?: Array<{
+      enabled?: boolean;
+      role?: string;
+      label?: string;
+      requiredTier?: string | null;
+      permissions?: string[];
+      accountTier?: string;
+    }>;
   };
   worker?: {
     configured?: boolean;
@@ -4683,7 +4706,7 @@ export async function fetchMatchArenaSessions(): Promise<MatchArenaSession[]> {
 
 export async function createMatchArenaSession(input: {
   gameId: string;
-  mode?: string;
+  mode?: MatchArenaMode | string;
   opponent?: string;
   priorityTier?: MatchArenaPriorityTier;
   visibility?: 'private' | 'public';

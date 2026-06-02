@@ -5,6 +5,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
+const {
+  canUseMcpPermission,
+  resolveMcpAccountProfile,
+  TIERS,
+} = require('../src/auth/mcp-account-tier.cjs');
 
 const DEFAULT_WINDOWS_GAMES_ROOT = 'C:\\Users\\Djeff\\Desktop\\jeux';
 const DEFAULT_LINUX_GAMES_ROOT = '/app/runtime/match-arena/games';
@@ -14,6 +19,11 @@ const WORKER_STALE_MS = 2 * 60 * 1000;
 const WORKER_LEASE_MS = 10 * 60 * 1000;
 const MAX_INPUT_EVENTS = 240;
 const MAX_SCAN_FILES = 5000;
+const MATCH_ARENA_MODES = Object.freeze({
+  USER_VS_A11: 'user-vs-a11',
+  USER_WITH_A11: 'user-with-a11',
+  USER_VS_PLAYER: 'user-vs-player',
+});
 const PLAYABLE_EXTENSIONS = new Set([
   '.zip',
   '.7z',
@@ -280,7 +290,83 @@ function getMergedCatalog() {
   };
 }
 
-function resolvePriorityLane(req = {}, body = {}) {
+function normalizeMatchArenaMode(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if ([
+    'user-with-a11',
+    'with-a11',
+    'a11-with-user',
+    'coop-a11',
+    'co-op-a11',
+    'a11-copilot',
+    'copilot-a11',
+  ].includes(raw)) return MATCH_ARENA_MODES.USER_WITH_A11;
+  if ([
+    'user-vs-player',
+    'player-vs-player',
+    'versus-player',
+    'pvp',
+    'online-player',
+  ].includes(raw)) return MATCH_ARENA_MODES.USER_VS_PLAYER;
+  if ([
+    'user-vs-a11',
+    'user-vs-ai',
+    'a11-vs-user',
+    'vs-a11',
+    'versus-a11',
+    'ai',
+  ].includes(raw)) return MATCH_ARENA_MODES.USER_VS_A11;
+  return MATCH_ARENA_MODES.USER_VS_A11;
+}
+
+function buildA11ModeDescriptor(mode, profile = null) {
+  if (mode === MATCH_ARENA_MODES.USER_VS_PLAYER) {
+    return {
+      enabled: false,
+      role: 'none',
+      label: 'Joueur en ligne',
+      requiredTier: null,
+      permissions: [],
+    };
+  }
+  const role = mode === MATCH_ARENA_MODES.USER_WITH_A11 ? 'copilot' : 'opponent';
+  return {
+    enabled: true,
+    role,
+    label: role === 'copilot' ? 'Avec A11' : 'Contre A11',
+    requiredTier: TIERS.FOUNDER,
+    permissions: ['romstationControl', 'localRuntimeControl'],
+    accountTier: profile?.tier || TIERS.BASIC,
+  };
+}
+
+function canUseA11MatchMode(profile) {
+  return canUseMcpPermission(profile, 'romstationControl')
+    && canUseMcpPermission(profile, 'localRuntimeControl');
+}
+
+function a11MatchPermissionDenied(profile, mode) {
+  const descriptor = buildA11ModeDescriptor(mode, profile);
+  return {
+    ok: false,
+    error: 'match_arena_a11_mode_forbidden',
+    message: 'Le mode Match Arena contre/avec A11 est reserve aux comptes Fondateur ou Admin famille.',
+    required: {
+      minimumTier: TIERS.FOUNDER,
+      permissions: descriptor.permissions,
+    },
+    account: profile ? {
+      tier: profile.tier,
+      label: profile.label,
+      permissions: {
+        romstationControl: profile.permissions?.romstationControl === true,
+        localRuntimeControl: profile.permissions?.localRuntimeControl === true,
+      },
+    } : null,
+  };
+}
+
+function resolvePriorityLane(req = {}, body = {}, profile = null) {
   const raw = String(body.priorityTier || body.priority || body.audience || body.accessTier || '').trim().toLowerCase();
   const roles = [
     req.user?.role,
@@ -291,11 +377,17 @@ function resolvePriorityLane(req = {}, body = {}) {
   const isAdmin = req.user?.isAdmin === true
     || req.user?.admin === true
     || req.user?.fullAccess === true
-    || roles.some((role) => ['admin', 'owner', 'founder', 'fondateur', 'djeff'].includes(role));
-  if (isAdmin || raw === 'admin' || raw === 'owner' || raw === 'founder' || raw === 'fondateur') {
-    return { tier: 'admin', score: 100, label: 'Admin' };
+    || roles.some((role) => ['admin', 'owner', 'founder', 'fondateur', 'djeff'].includes(role))
+    || profile?.tier === TIERS.ADMIN_FAMILY;
+  const isFounder = profile?.tier === TIERS.FOUNDER || canUseA11MatchMode(profile);
+  const isPremium = profile?.tier === TIERS.PREMIUM;
+  if (isAdmin || isFounder) {
+    if (raw === 'family' || raw === 'famille') return { tier: 'family', score: 60, label: 'Famille' };
+    if (raw === 'public') return { tier: 'public', score: 10, label: 'Public' };
+    return { tier: 'admin', score: 100, label: isFounder && !isAdmin ? 'Fondateur' : 'Admin' };
   }
-  if (raw === 'family' || raw === 'famille' || roles.some((role) => ['family', 'famille', 'premium'].includes(role))) {
+  if (isPremium) {
+    if (raw === 'public') return { tier: 'public', score: 10, label: 'Public' };
     return { tier: 'family', score: 60, label: 'Famille' };
   }
   return { tier: 'public', score: 10, label: 'Public' };
@@ -398,6 +490,7 @@ function publicSession(session = {}, req = null) {
       slot: Number(entry.slot || 0),
       label: String(entry.label || `Joueur ${entry.slot || ''}`).trim().slice(0, 80),
       role: String(entry.role || '').trim().slice(0, 40) || null,
+      automated: entry.automated === true,
       joinedAt: entry.joinedAt || null,
     }))
     .filter((entry) => entry.slot > 0)
@@ -410,6 +503,7 @@ function publicSession(session = {}, req = null) {
     gameTitle: session.gameTitle,
     mode: session.mode,
     opponent: session.opponent,
+    a11Mode: session.a11Mode || buildA11ModeDescriptor(session.mode),
     visibility: session.visibility || 'private',
     priorityTier: session.priorityTier,
     priorityLabel: session.priorityLabel,
@@ -523,15 +617,36 @@ function recordInputEvent(session, body = {}, req = {}) {
 function createMatchArenaRouter(options = {}) {
   const router = express.Router();
   const verifyJWT = typeof options.verifyJWT === 'function' ? options.verifyJWT : null;
+  const db = options.db || null;
+  const env = options.env || process.env;
 
   function requireUser(req, res, next) {
     if (!verifyJWT) return next();
     return verifyJWT(req, res, next);
   }
 
+  async function resolveMatchArenaProfile(req) {
+    if (req.matchArenaAccount) return req.matchArenaAccount;
+    if (!verifyJWT) {
+      req.matchArenaAccount = {
+        ok: true,
+        tier: TIERS.ADMIN_FAMILY,
+        label: 'Dev local',
+        permissions: {
+          romstationControl: true,
+          localRuntimeControl: true,
+        },
+      };
+      return req.matchArenaAccount;
+    }
+    req.matchArenaAccount = await resolveMcpAccountProfile(req, { db, env });
+    return req.matchArenaAccount;
+  }
+
   router.use(express.json({ limit: '1mb' }));
 
-  router.get('/status', requireUser, (req, res) => {
+  router.get('/status', requireUser, async (req, res) => {
+    const account = await resolveMatchArenaProfile(req);
     const catalog = getMergedCatalog();
     const workerSeenAt = lastWorkerHeartbeat?.seenAtMs || (workerInventory.receivedAt ? Date.parse(workerInventory.receivedAt) : 0);
     const workerAgeMs = workerSeenAt ? Math.max(0, Date.now() - workerSeenAt) : null;
@@ -551,6 +666,16 @@ function createMatchArenaRouter(options = {}) {
         workerInventoryAt: catalog.workerInventoryAt,
       },
       queue: buildQueueStatus(),
+      access: {
+        accountTier: account.tier,
+        accountLabel: account.label,
+        a11MatchAllowed: canUseA11MatchMode(account),
+        modes: [
+          buildA11ModeDescriptor(MATCH_ARENA_MODES.USER_VS_A11, account),
+          buildA11ModeDescriptor(MATCH_ARENA_MODES.USER_WITH_A11, account),
+          buildA11ModeDescriptor(MATCH_ARENA_MODES.USER_VS_PLAYER, account),
+        ],
+      },
       worker: {
         configured: Boolean(getWorkerToken()),
         lastSeenAt: workerSeenAt ? new Date(workerSeenAt).toISOString() : null,
@@ -571,7 +696,7 @@ function createMatchArenaRouter(options = {}) {
     res.json({ ok: true, ...getMergedCatalog() });
   });
 
-  router.post('/sessions', requireUser, (req, res) => {
+  router.post('/sessions', requireUser, async (req, res) => {
     pruneSessions();
     if (!envBool('A11_MATCH_ARENA_ENABLED', true)) {
       return res.status(503).json({ ok: false, error: 'match_arena_disabled' });
@@ -586,12 +711,16 @@ function createMatchArenaRouter(options = {}) {
         message: 'Jeu introuvable dans l inventaire local.',
       });
     }
-    const lane = resolvePriorityLane(req, req.body || {});
+    const account = await resolveMatchArenaProfile(req);
+    const requestedMode = normalizeMatchArenaMode(req.body?.mode || 'user-vs-a11');
+    if (requestedMode !== MATCH_ARENA_MODES.USER_VS_PLAYER && !canUseA11MatchMode(account)) {
+      return res.status(403).json(a11MatchPermissionDenied(account, requestedMode));
+    }
+    const lane = resolvePriorityLane(req, req.body || {}, account);
     const now = Date.now();
-    const requestedMode = String(req.body?.mode || 'user-vs-ai').trim().slice(0, 80) || 'user-vs-ai';
-    const visibility = String(req.body?.visibility || (requestedMode.includes('player') ? 'public' : 'private'))
-      .trim()
-      .toLowerCase() === 'public'
+    const a11Mode = buildA11ModeDescriptor(requestedMode, account);
+    const requestedVisibility = String(req.body?.visibility || '').trim().toLowerCase();
+    const visibility = (requestedMode === MATCH_ARENA_MODES.USER_VS_PLAYER && requestedVisibility !== 'private')
       ? 'public'
       : 'private';
     const requestUserId = getRequestUserId(req);
@@ -606,7 +735,8 @@ function createMatchArenaRouter(options = {}) {
       gameTitle: game.title,
       game,
       mode: requestedMode,
-      opponent: String(req.body?.opponent || 'a11').trim().slice(0, 80) || 'a11',
+      opponent: String(req.body?.opponent || (a11Mode.role === 'copilot' ? 'a11-copilot' : a11Mode.role === 'opponent' ? 'a11' : 'public-player')).trim().slice(0, 80) || 'a11',
+      a11Mode,
       visibility,
       priorityTier: lane.tier,
       priorityScore: lane.score,
@@ -618,7 +748,14 @@ function createMatchArenaRouter(options = {}) {
         label: getRequestDisplayName(req),
         role: 'host',
         joinedAt: new Date(now).toISOString(),
-      }],
+      }].concat(a11Mode.enabled ? [{
+        slot: 2,
+        userId: 'a11-agent',
+        label: 'A11',
+        role: a11Mode.role === 'copilot' ? 'a11-copilot' : 'a11-opponent',
+        joinedAt: new Date(now).toISOString(),
+        automated: true,
+      }] : []),
       workerId: null,
       leasedAt: null,
       leasedAtMs: null,
@@ -644,7 +781,13 @@ function createMatchArenaRouter(options = {}) {
         transport: 'local-worker-pull',
         stream: 'waiting-worker-stream',
         input: 'queued-json',
-        capabilities: ['priority-queue', 'local-rom-inventory', 'drive-export', 'input-queue'],
+        capabilities: [
+          'priority-queue',
+          'local-rom-inventory',
+          'drive-export',
+          'input-queue',
+          ...(a11Mode.enabled ? ['romstation-control', 'a11-match-mode', a11Mode.role === 'copilot' ? 'a11-copilot' : 'a11-opponent'] : []),
+        ],
       },
       export: {
         ready: false,
@@ -656,6 +799,9 @@ function createMatchArenaRouter(options = {}) {
         engine: 'retroarch/libretro worker',
         input: 'browser controls -> backend queue -> local worker pull',
         video: 'worker capture -> WebRTC/noVNC URL when configured',
+        a11: a11Mode.enabled
+          ? `${a11Mode.label}: A11 utilise les outils autorises de la session pour ${a11Mode.role === 'copilot' ? 'assister le joueur' : 'jouer le second camp'}.`
+          : 'Mode joueur en ligne sans agent A11.',
         storage: ['save states', 'replays', 'configs', 'logs'],
       },
       inputEvents: [],

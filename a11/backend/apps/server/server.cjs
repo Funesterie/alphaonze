@@ -6681,7 +6681,7 @@ app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT }));
 console.log('[Server] Vivy Studio routes mounted under /api/vivy/studio');
 
 const createMatchArenaRouter = require('./routes/match-arena.cjs');
-app.use('/api/match-arena', createMatchArenaRouter({ verifyJWT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+app.use('/api/match-arena', createMatchArenaRouter({ verifyJWT, db, env: process.env, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Match Arena routes mounted under /api/match-arena');
 
 // Qflush Flow — A11 contrôle ses flows directement (Jarvis mode)

@@ -78,6 +78,7 @@ import {
   type McpAccessTierCard,
   type McpAccountProfile,
   type MatchArenaGame,
+  type MatchArenaMode,
   type MatchArenaSession,
   type MatchArenaStatus,
   type SubscriptionStatus,
@@ -6817,10 +6818,11 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const [games, setGames] = useState<MatchArenaGame[]>([]);
   const [lobbySessions, setLobbySessions] = useState<MatchArenaSession[]>([]);
   const [selectedGameId, setSelectedGameId] = useState("");
-  const [matchMode, setMatchMode] = useState<"user-vs-ai" | "user-vs-player">("user-vs-ai");
+  const [matchMode, setMatchMode] = useState<MatchArenaMode>("user-vs-a11");
   const [priorityTier, setPriorityTier] = useState<"admin" | "family" | "public">(
     hasAdminApiAccess() ? "admin" : "public"
   );
+  const [mcpAccess, setMcpAccess] = useState<McpAccessCatalogResponse | null>(null);
   const [session, setSession] = useState<MatchArenaSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -6836,13 +6838,15 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     setLoading(true);
     setError("");
     try {
-      const [nextStatus, nextGames] = await Promise.all([
+      const [nextStatus, nextGames, nextAccess] = await Promise.all([
         fetchMatchArenaStatus(),
         fetchMatchArenaGames(),
+        fetchMcpAccessCatalog().catch(() => null),
       ]);
       const nextSessions = await fetchMatchArenaSessions().catch(() => []);
       setStatus(nextStatus);
       setGames(nextGames);
+      setMcpAccess(nextAccess);
       setLobbySessions(nextSessions);
       setSelectedGameId((current) => current || nextGames[0]?.id || "");
     } catch (err) {
@@ -6887,20 +6891,55 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const inputReady = session?.input?.ready !== false && Boolean(session?.id);
   const publicLobbySessions = lobbySessions.filter((item) => item.visibility === "public" && item.id !== session?.id);
   const localPlayerSlot = session?.playerSlot || 1;
+  const accessCapabilities = mcpAccess?.catalog?.capabilities || [];
+  const hasAllowedCapability = (permission: string) => accessCapabilities.some((capability) => (
+    capability.allowed === true
+    && (capability.permission === permission || capability.id === permission)
+  ));
+  const accountTier = String(mcpAccess?.account?.tier || status?.access?.accountTier || "").toLowerCase();
+  const a11MatchAllowed = Boolean(
+    status?.access?.a11MatchAllowed
+    || (hasAllowedCapability("romstationControl") && hasAllowedCapability("localRuntimeControl"))
+    || hasAdminApiAccess()
+  );
+  const matchAccessLoaded = Boolean(status?.access || mcpAccess);
+  const canUseAdminPriority = a11MatchAllowed || accountTier === "founder" || accountTier === "admin_family";
+  const canUseFamilyPriority = canUseAdminPriority || accountTier === "premium";
+  const matchModeOptions: Array<{ mode: MatchArenaMode; label: string; detail: string; restricted: boolean }> = [
+    { mode: "user-vs-a11", label: "Contre A11", detail: "A11 prend le second camp via les outils autorisés.", restricted: true },
+    { mode: "user-with-a11", label: "Avec A11", detail: "A11 copilote: conseils, lecture d’état et actions bornées.", restricted: true },
+    { mode: "user-vs-player", label: "Joueur en ligne", detail: "Session publique pour affronter un autre joueur.", restricted: false },
+  ];
   const streamMessage = session?.stream?.message
     || (workerOnline
       ? "Le worker est prêt. L'image s'affichera automatiquement dès qu'un pont vidéo local ou tunnel public est disponible."
       : "Le worker local n'est pas encore connecté. La session reste en file et les joueurs n'ont rien à installer.");
 
+  useEffect(() => {
+    if (!matchAccessLoaded) return;
+    if (!a11MatchAllowed && matchMode !== "user-vs-player") {
+      setMatchMode("user-vs-player");
+    }
+  }, [a11MatchAllowed, matchAccessLoaded, matchMode]);
+
+  useEffect(() => {
+    if (priorityTier === "admin" && !canUseAdminPriority) setPriorityTier(canUseFamilyPriority ? "family" : "public");
+    if (priorityTier === "family" && !canUseFamilyPriority) setPriorityTier("public");
+  }, [canUseAdminPriority, canUseFamilyPriority, priorityTier]);
+
   const startSession = async () => {
     if (!selectedGameId) return;
+    if (matchMode !== "user-vs-player" && matchAccessLoaded && !a11MatchAllowed) {
+      setError("Le mode Match Arena contre/avec A11 est réservé aux comptes Fondateur ou Admin famille.");
+      return;
+    }
     setStarting(true);
     setError("");
     try {
       const nextSession = await createMatchArenaSession({
         gameId: selectedGameId,
         mode: matchMode,
-        opponent: matchMode === "user-vs-player" ? "public-player" : "a11",
+        opponent: matchMode === "user-with-a11" ? "a11-copilot" : matchMode === "user-vs-player" ? "public-player" : "a11",
         priorityTier,
         visibility: matchMode === "user-vs-player" ? "public" : "private",
       });
@@ -6937,7 +6976,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         action: "press",
         value: 1,
         durationMs: 80,
-        player: 1,
+        player: localPlayerSlot,
       });
       setSession(nextSession);
     } catch (err) {
@@ -6945,7 +6984,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     } finally {
       setSendingInput("");
     }
-  }, [session?.id]);
+  }, [localPlayerSlot, session?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -7128,19 +7167,32 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
           </select>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Mode de match">
-            {[
-              ["user-vs-ai", "Contre A11"],
-              ["user-vs-player", "Joueur en ligne"],
-            ].map(([mode, label]) => (
+            {matchModeOptions.map((option) => {
+              const disabled = option.restricted && matchAccessLoaded && !a11MatchAllowed;
+              return (
               <button
-                key={mode}
+                key={option.mode}
                 type="button"
-                onClick={() => setMatchMode(mode as "user-vs-ai" | "user-vs-player")}
-                style={pillStyle(matchMode === mode)}
+                onClick={() => setMatchMode(option.mode)}
+                disabled={disabled}
+                title={disabled ? "Réservé Fondateur / Admin famille" : option.detail}
+                style={{
+                  ...pillStyle(matchMode === option.mode),
+                  opacity: disabled ? 0.48 : 1,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                }}
               >
-                {label}
+                {option.label}
               </button>
-            ))}
+              );
+            })}
+          </div>
+          <div style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.45 }}>
+            {matchMode !== "user-vs-player"
+              ? (a11MatchAllowed
+                ? matchModeOptions.find((option) => option.mode === matchMode)?.detail
+                : "Modes A11 réservés aux comptes Fondateur ou Admin famille.")
+              : "Le mode joueur en ligne ouvre une session publique rejoignable depuis Funesterie."}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorité session">
@@ -7153,7 +7205,12 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
                 key={tier}
                 type="button"
                 onClick={() => setPriorityTier(tier as "admin" | "family" | "public")}
-                style={pillStyle(priorityTier === tier)}
+                disabled={(tier === "admin" && !canUseAdminPriority) || (tier === "family" && !canUseFamilyPriority)}
+                style={{
+                  ...pillStyle(priorityTier === tier),
+                  opacity: (tier === "admin" && !canUseAdminPriority) || (tier === "family" && !canUseFamilyPriority) ? 0.48 : 1,
+                  cursor: (tier === "admin" && !canUseAdminPriority) || (tier === "family" && !canUseFamilyPriority) ? "not-allowed" : "pointer",
+                }}
               >
                 {label}
               </button>
@@ -7167,7 +7224,13 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             className="btn primary"
             style={{ justifyContent: "center", minHeight: 42 }}
           >
-            {starting ? "Préparation..." : matchMode === "user-vs-player" ? "Créer une session publique" : "Créer une session"}
+            {starting
+              ? "Préparation..."
+              : matchMode === "user-vs-player"
+                ? "Créer une session publique"
+                : matchMode === "user-with-a11"
+                  ? "Créer avec A11"
+                  : "Créer contre A11"}
           </button>
 
           {publicLobbySessions.length ? (
@@ -7223,7 +7286,15 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
               <div>{session.gameTitle}</div>
               <div>Priorité: {session.priorityLabel || session.priorityTier || "Public"}</div>
               <div>Mode: {session.visibility === "public" ? "public" : "privé"} · joueur {localPlayerSlot}</div>
+              {session.a11Mode?.enabled ? (
+                <div>A11: {session.a11Mode.label || (session.a11Mode.role === "copilot" ? "copilote" : "adversaire")}</div>
+              ) : null}
               <div>Participants: {session.players?.length || 1}</div>
+              {session.players?.length ? (
+                <div style={{ color: "#94a3b8" }}>
+                  {session.players.map((player) => `${player.label || `Joueur ${player.slot}`}${player.automated ? " (IA)" : ""}`).join(" · ")}
+                </div>
+              ) : null}
               <div>Worker: {session.workerId || "en attente"}</div>
               <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream prêt" : "stream en attente"}</div>
               {session.export?.localPath ? <div>Export: {session.export.localPath}</div> : null}

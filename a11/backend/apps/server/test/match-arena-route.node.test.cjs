@@ -79,6 +79,11 @@ test('match arena scans local games and lets the local worker prepare a session'
         });
         assert.equal(started.response.status, 202);
         assert.equal(started.json.session.state, 'queued');
+        assert.equal(started.json.session.mode, 'user-vs-a11');
+        assert.equal(started.json.session.a11Mode.enabled, true);
+        assert.equal(started.json.session.a11Mode.role, 'opponent');
+        assert.equal(started.json.session.players.length, 2);
+        assert.equal(started.json.session.players[1].automated, true);
         assert.equal(started.json.session.priorityTier, 'family');
 
         const unauthorized = await postJson(baseUrl, '/api/match-arena/local-worker/claim', {
@@ -143,6 +148,71 @@ test('match arena scans local games and lets the local worker prepare a session'
         assert.equal(status.ok, true);
         assert.equal(status.catalog.count, 1);
         assert.equal(status.queue.priorities.family, 1);
+      }
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('match arena reserves A11 modes for founder/admin accounts', async () => {
+  const previousEnv = {
+    A11_MATCH_ARENA_GAMES_ROOT: process.env.A11_MATCH_ARENA_GAMES_ROOT,
+    A11_MATCH_ARENA_WORKER_TOKEN: process.env.A11_MATCH_ARENA_WORKER_TOKEN,
+    A11_MATCH_ARENA_WORKER_TOKEN_FILE: process.env.A11_MATCH_ARENA_WORKER_TOKEN_FILE,
+    A11_MATCH_ARENA_ENABLED: process.env.A11_MATCH_ARENA_ENABLED,
+  };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'match-arena-basic-'));
+  const gameDir = path.join(root, 'NES - Basic Test');
+  fs.mkdirSync(gameDir, { recursive: true });
+  fs.writeFileSync(path.join(gameDir, 'basic-test.nes'), Buffer.from('rom-placeholder'));
+
+  process.env.A11_MATCH_ARENA_GAMES_ROOT = root;
+  process.env.A11_MATCH_ARENA_WORKER_TOKEN = 'test-match-arena-worker-token';
+  process.env.A11_MATCH_ARENA_ENABLED = '1';
+  delete process.env.A11_MATCH_ARENA_WORKER_TOKEN_FILE;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api/match-arena', createMatchArenaRouter({
+          verifyJWT: (req, _res, next) => {
+            req.user = {
+              id: 'basic-user',
+              email: 'basic-user@example.test',
+              tier: 'basic',
+            };
+            next();
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const gamesResponse = await fetch(baseUrl + '/api/match-arena/games');
+        const games = await gamesResponse.json();
+        assert.equal(gamesResponse.status, 200);
+        assert.equal(games.games.length, 1);
+
+        const denied = await postJson(baseUrl, '/api/match-arena/sessions', {
+          gameId: games.games[0].id,
+          mode: 'user-with-a11',
+          priorityTier: 'admin',
+        });
+        assert.equal(denied.response.status, 403);
+        assert.equal(denied.json.error, 'match_arena_a11_mode_forbidden');
+
+        const publicSession = await postJson(baseUrl, '/api/match-arena/sessions', {
+          gameId: games.games[0].id,
+          mode: 'user-vs-player',
+          priorityTier: 'admin',
+        });
+        assert.equal(publicSession.response.status, 202);
+        assert.equal(publicSession.json.session.mode, 'user-vs-player');
+        assert.equal(publicSession.json.session.priorityTier, 'public');
+        assert.equal(publicSession.json.session.a11Mode.enabled, false);
       }
     );
   } finally {
