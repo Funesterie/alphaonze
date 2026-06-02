@@ -4995,7 +4995,7 @@ function FunesterieMcpAdminPanel({
   displayName: string;
 }) {
   const [mcpHealth, setMcpHealth] = useState<FunesterieProbeStatus>("checking");
-  const [privateResult, setPrivateResult] = useState("Connecte-toi avec Google ou Microsoft pour vérifier le MCP privé.");
+  const [privateResult, setPrivateResult] = useState("En attente de vérification MCP.");
   const [busy, setBusy] = useState<"" | "google" | "microsoft" | "mcp">("");
   const [connectors, setConnectors] = useState<AuthConnectorsResponse | null>(null);
   const [connectorsStatus, setConnectorsStatus] = useState<"checking" | "ready" | "error">("checking");
@@ -5053,7 +5053,7 @@ function FunesterieMcpAdminPanel({
 
   async function testPrivateMcp() {
     if (!authenticated) {
-      setPrivateResult("Connexion Google ou Microsoft requise pour vérifier le MCP privé.");
+      setPrivateResult("MCP public vérifiable. Le contrôle privé reste réservé aux comptes autorisés.");
       return;
     }
     setBusy("mcp");
@@ -5185,23 +5185,18 @@ function FunesterieMcpAdminPanel({
         <article className="fun-token-card">
           <header>
             <h3>État</h3>
-            <span>État</span>
+            <span>MCP</span>
           </header>
-          <p>Contrôle admin des services exposés.</p>
+          <p>Contrôle du statut MCP et des droits associés au compte connecté.</p>
           <footer>
-            <a href={surfaceLinks.cockpit}>Voir l'état</a>
+            <button type="button" onClick={() => void testPrivateMcp()} disabled={busy === "mcp"}>
+              {busy === "mcp" ? "Vérification..." : "Vérifier MCP"}
+            </button>
           </footer>
         </article>
       </div>
 
       <div className="fun-mcp-console">
-        <div className="fun-integration-actions">
-          <button type="button" onClick={() => void testPrivateMcp()} disabled={busy === "mcp"}>
-            {busy === "mcp" ? "Vérification..." : "Vérifier MCP privé"}
-          </button>
-          <a href="https://mcp.funesterie.me/chatgpt/mcp" target="_blank" rel="noreferrer">MCP public</a>
-          <a href="https://mcp.funesterie.me/.well-known/oauth-protected-resource/mcp" target="_blank" rel="noreferrer">OAuth</a>
-        </div>
         <p>{privateResult}</p>
       </div>
     </section>
@@ -5558,8 +5553,7 @@ function FunesterieIntegrationPanel({
             <span>Connexion requise</span>
             <h2>Connexions privées</h2>
             <p>
-              Les accès personnels ne sont pas affichés sur la page publique. Connecte-toi avec
-              Google ou Microsoft pour relier tes outils aux agents.
+              Les accès personnels ne sont pas affichés sur la page publique.
             </p>
           </div>
           <aside>
@@ -5567,14 +5561,6 @@ function FunesterieIntegrationPanel({
             <small>verrouillé</small>
           </aside>
         </header>
-        <div className="fun-integration-actions">
-          <button type="button" onClick={connectGoogle} disabled={busy === "google"}>
-            {busy === "google" ? "Connexion..." : "Google"}
-          </button>
-          <button type="button" onClick={connectMicrosoft} disabled={busy === "microsoft"}>
-            {busy === "microsoft" ? "Connexion..." : "Microsoft"}
-          </button>
-        </div>
       </section>
     );
   }
@@ -5643,7 +5629,7 @@ function FunesterieIntegrationPanel({
           </header>
           <p>Usage local avec QFlush, CLI et stockage côté machine quand disponible.</p>
           <footer>
-            <a href={surfaceLinks.cockpit}>Voir l'état</a>
+            <a href={surfaceLinks.cockpit}>Vérifier MCP</a>
           </footer>
         </article>
       </div>
