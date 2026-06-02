@@ -10,6 +10,8 @@ const { extractRequestAuthToken } = require('../src/middleware/jwt-auth.cjs');
 const { buildStorageQuotaPayload } = require('../src/storage/account-storage-quota.cjs');
 const {
   buildVoicePersonaInstruction,
+  getReadyVoiceProfile,
+  isProviderRuntimeConfigured,
   OFFICIAL_PERSONAS,
   PROVIDERS,
   resolveVoiceProvider,
@@ -1007,6 +1009,20 @@ function normalizeTtsLanguage(value) {
 function resolveVoiceForRequest(body = {}) {
   const explicit = String(body?.voice || body?.model || '').trim();
   if (explicit) return explicit;
+  const persona = getExplicitTtsPersonaFromBody(body);
+  if (OFFICIAL_PERSONAS.has(persona)) {
+    const profile = getReadyVoiceProfile(persona, PROVIDERS.PIPER);
+    const personaVoice = String(
+      body?.piperVoice
+      || body?.piperModel
+      || getPersonaScopedEnvValue('A11_PIPER', persona, ['VOICE', 'MODEL'])
+      || getPersonaScopedEnvValue('PIPER', persona, ['VOICE', 'MODEL'])
+      || profile?.piperVoice
+      || profile?.providerLabels?.[PROVIDERS.PIPER]
+      || ''
+    ).trim();
+    if (personaVoice) return personaVoice;
+  }
   const shouldFollowLanguage = parseOptionalBoolean(
     body?.forceLanguageVoice
     ?? body?.ttsForceLanguageVoice
@@ -1040,10 +1056,19 @@ function ensurePiperModelSidecars(modelPath) {
 
   if (existing) {
     const missing = preferred === existing ? legacy : preferred;
+    let canMirror = false;
     try {
-      fs.copyFileSync(existing, missing);
+      fs.accessSync(path.dirname(missing), fs.constants.W_OK);
+      canMirror = true;
     } catch (error_) {
-      console.warn('[TTS][Piper] failed to mirror model sidecar:', error_.message);
+      canMirror = false;
+    }
+    if (canMirror) {
+      try {
+        fs.copyFileSync(existing, missing);
+      } catch (error_) {
+        console.warn('[TTS][Piper] failed to mirror model sidecar:', error_.message);
+      }
     }
     return {
       modelJsonPath: fs.existsSync(preferred) ? preferred : existing,
@@ -1623,6 +1648,61 @@ function getOpenAiTtsApiKey() {
   ).trim();
 }
 
+function readFirstSecretValue(fileCandidates = [], envCandidates = []) {
+  for (const candidate of fileCandidates.filter(Boolean)) {
+    try {
+      const value = fs.readFileSync(path.resolve(candidate), 'utf8').trim();
+      if (value) return value;
+    } catch {
+      // Secret file is optional.
+    }
+  }
+  for (const name of envCandidates.filter(Boolean)) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function getCartesiaTtsApiKey() {
+  return readFirstSecretValue(
+    [
+      process.env.A11_CARTESIA_API_KEY_FILE,
+      process.env.CARTESIA_API_KEY_FILE,
+      '/app/runtime/secrets/cartesia_api_key',
+    ],
+    ['A11_CARTESIA_API_KEY', 'CARTESIA_API_KEY', 'CARTESIA_TOKEN']
+  );
+}
+
+function getAzureSpeechKey() {
+  return readFirstSecretValue(
+    [
+      process.env.A11_AZURE_SPEECH_KEY_FILE,
+      process.env.AZURE_SPEECH_KEY_FILE,
+      '/app/runtime/secrets/azure_speech_key',
+    ],
+    ['A11_AZURE_SPEECH_KEY', 'AZURE_SPEECH_KEY', 'SPEECH_KEY']
+  );
+}
+
+function getAzureSpeechEndpoint() {
+  const explicit = String(
+    process.env.A11_AZURE_SPEECH_ENDPOINT
+    || process.env.AZURE_SPEECH_ENDPOINT
+    || process.env.SPEECH_ENDPOINT
+    || ''
+  ).trim().replace(/\/$/, '');
+  if (explicit) return explicit;
+  const region = String(
+    process.env.A11_AZURE_SPEECH_REGION
+    || process.env.AZURE_SPEECH_REGION
+    || process.env.SPEECH_REGION
+    || ''
+  ).trim();
+  return region ? `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1` : '';
+}
+
 function getRequestedTtsProvider(body = {}) {
   return String(body?.ttsProvider || body?.provider || '').trim().toLowerCase();
 }
@@ -1633,6 +1713,26 @@ function isNeutralTtsProvider(provider = '') {
 
 function isExplicitOpenAiProvider(provider = '') {
   return String(provider || '').trim().toLowerCase() === 'openai';
+}
+
+function isCloudTtsProvider(provider = '') {
+  return [PROVIDERS.CARTESIA, PROVIDERS.AZURE, PROVIDERS.OPENAI]
+    .includes(String(provider || '').trim().toLowerCase());
+}
+
+function allowsXttsRvcForBody(body = {}) {
+  const requestedProvider = getRequestedTtsProvider(body);
+  const explicitBody = parseOptionalBoolean(
+    body.allowRvc
+    ?? body.allowXttsRvc
+    ?? body.allowLegacyVoiceBridge
+    ?? body.xttsRvcOptIn,
+    null
+  );
+  if (explicitBody === true) return true;
+  if (explicitBody === false) return false;
+  return requestedProvider === PROVIDERS.XTTS_RVC
+    && envBool('A11_TTS_ALLOW_EXPLICIT_XTTS_RVC', false);
 }
 
 function wantsOfficialIdentityVoice(body = {}) {
@@ -1654,15 +1754,34 @@ function shouldBlockNeutralVoiceFallback(body = {}) {
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
   const requestedProvider = getRequestedTtsProvider(body);
   if (!OFFICIAL_PERSONAS.has(explicitPersona)) return false;
-  if (isNeutralTtsProvider(requestedProvider)) return wantsOfficialIdentityVoice(body);
-  if (requiresReferenceVoice(body) || wantsDefaultVoiceReference(body)) return true;
-  return wantsOfficialIdentityVoice(body) && !isExplicitOpenAiProvider(requestedProvider);
+  if (isNeutralTtsProvider(requestedProvider)) return false;
+  if (requiresReferenceVoice(body)) {
+    const strict = String(process.env.A11_TTS_STRICT_REFERENCE_REQUIRED || '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(strict);
+  }
+  return false;
 }
 
 function resolveTtsProviderForRequest(body = {}) {
   const persona = getTtsPersonaFromBody(body);
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
   const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider === PROVIDERS.CARTESIA) {
+    return {
+      provider: PROVIDERS.CARTESIA,
+      configured: isProviderRuntimeConfigured(PROVIDERS.CARTESIA),
+      note: 'Explicit Cartesia ready-made voice request.',
+      diagnostic: isProviderRuntimeConfigured(PROVIDERS.CARTESIA) ? null : 'cartesia_tts_unavailable',
+    };
+  }
+  if (requestedProvider === PROVIDERS.AZURE) {
+    return {
+      provider: PROVIDERS.AZURE,
+      configured: isProviderRuntimeConfigured(PROVIDERS.AZURE),
+      note: 'Explicit Azure Speech ready-made voice request.',
+      diagnostic: isProviderRuntimeConfigured(PROVIDERS.AZURE) ? null : 'azure_tts_unavailable',
+    };
+  }
   if (isExplicitOpenAiProvider(requestedProvider)) {
     return {
       provider: 'openai',
@@ -1693,15 +1812,18 @@ function resolveTtsProviderForRequest(body = {}) {
   }
 
   if (OFFICIAL_PERSONAS.has(explicitPersona) && wantsOfficialIdentityVoice(body)) {
-    const bridgeAvailable = getDirectXttsRvcBaseUrls().length > 0;
-    return {
-      provider: bridgeAvailable ? PROVIDERS.XTTS_RVC : 'unavailable',
-      configured: bridgeAvailable,
-      note: bridgeAvailable
-        ? 'Official persona uses XTTS/RVC bridge before any neutral fallback.'
-        : 'Official persona voice bridge unavailable.',
-      diagnostic: bridgeAvailable ? null : 'identity_voice_unavailable',
-    };
+    if (requestedProvider === PROVIDERS.XTTS_RVC) {
+      return resolveVoiceProvider(persona, {
+        explicitProvider: requestedProvider,
+        allowRvc: allowsXttsRvcForBody(body),
+      });
+    }
+    return resolveVoiceProvider(persona, {
+      explicitProvider: requestedProvider && requestedProvider !== 'auto' && !isNeutralTtsProvider(requestedProvider)
+        ? requestedProvider
+        : undefined,
+      allowRvc: allowsXttsRvcForBody(body),
+    });
   }
 
   if (isNeutralTtsProvider(requestedProvider)) {
@@ -1736,6 +1858,18 @@ function shouldTryOpenAiTts(body = {}) {
   return Boolean(getOpenAiTtsApiKey());
 }
 
+function shouldTryCartesiaTts(body = {}) {
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.CARTESIA) return false;
+  return Boolean(getCartesiaTtsApiKey());
+}
+
+function shouldTryAzureTts(body = {}) {
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.AZURE) return false;
+  return Boolean(getAzureSpeechKey() && getAzureSpeechEndpoint());
+}
+
 function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
   const provider = getRequestedTtsProvider(body);
   if (provider === 'openai') return shouldTryOpenAiTts(body);
@@ -1753,6 +1887,31 @@ function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
     || wantsDefaultVoiceReference(body)
     || requiresReferenceVoice(body);
   return shouldTryOpenAiTts(body) && (vocalMode === 'adaptive' || vocalMode === 'sing' || hasReference);
+}
+
+function getCloudTtsProviderOrder(body = {}, resolvedProvider = {}) {
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (isCloudTtsProvider(requestedProvider)) return [requestedProvider];
+
+  const persona = getExplicitTtsPersonaFromBody(body);
+  const wantsIdentity = OFFICIAL_PERSONAS.has(persona) && wantsOfficialIdentityVoice(body);
+  if (!wantsIdentity) return [];
+
+  const configured = [];
+  if (shouldTryCartesiaTts(body)) configured.push(PROVIDERS.CARTESIA);
+  if (shouldTryAzureTts(body)) configured.push(PROVIDERS.AZURE);
+  if (shouldTryOpenAiTts(body)) configured.push(PROVIDERS.OPENAI);
+  const resolved = String(resolvedProvider?.provider || '').trim().toLowerCase();
+  if (isCloudTtsProvider(resolved) && !configured.includes(resolved)) configured.unshift(resolved);
+  return Array.from(new Set(configured));
+}
+
+async function requestCloudTtsProvider(provider, text, body = {}, options = {}) {
+  const normalized = String(provider || '').trim().toLowerCase();
+  if (normalized === PROVIDERS.CARTESIA) return requestCartesiaTts(text, body, options);
+  if (normalized === PROVIDERS.AZURE) return requestAzureTts(text, body, options);
+  if (normalized === PROVIDERS.OPENAI) return requestOpenAiTts(text, body, options);
+  throw new Error(`unsupported_cloud_tts_provider_${normalized || 'unknown'}`);
 }
 
 function getOpenAiTtsBaseUrl() {
@@ -1774,11 +1933,52 @@ function normalizeOpenAiTtsVoice(value = '', vocalMode = 'speech') {
   return String(process.env.OPENAI_TTS_VOICE || process.env.A11_OPENAI_TTS_VOICE || 'coral').trim() || 'coral';
 }
 
+function getPersonaEnvAliases(persona = 'a11') {
+  const normalized = normalizeTtsPersona(persona);
+  if (normalized === 'kaen44') return ['KAEN44', 'K44'];
+  if (normalized === 'vivy') return ['VIVY'];
+  return ['A11'];
+}
+
+function getPersonaScopedEnvValue(prefix, persona, suffixes = []) {
+  const aliases = getPersonaEnvAliases(persona);
+  const candidates = [];
+  for (const alias of aliases) {
+    for (const suffix of suffixes) {
+      candidates.push(`${prefix}_${alias}_${suffix}`);
+      candidates.push(`${alias}_${suffix}`);
+    }
+  }
+  for (const name of candidates) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function getOfficialVoiceStyleLabel(persona = 'a11', provider = '') {
+  const profile = getReadyVoiceProfile(persona, provider);
+  return String(profile?.label || profile?.displayName || profile?.styleId || `${normalizeTtsPersona(persona)}-official`).trim();
+}
+
+function getOfficialVoiceStyleId(persona = 'a11') {
+  const profile = getReadyVoiceProfile(persona);
+  return String(profile?.styleId || `${normalizeTtsPersona(persona)}-official`).trim();
+}
+
 function normalizeTtsPersona(value = '') {
   const raw = String(value || '').trim().toLowerCase();
+  const known = normalizeKnownTtsPersona(raw);
+  if (known) return known;
+  return 'a11';
+}
+
+function normalizeKnownTtsPersona(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'a11' || raw === 'alphaonze' || raw === 'alpha-onze') return 'a11';
   if (raw === 'vivy' || raw === 'vivi') return 'vivy';
   if (raw === 'kaen44' || raw === 'k44' || raw === 'kaen') return 'kaen44';
-  return 'a11';
+  return '';
 }
 
 function getTtsPersonaFromBody(body = {}, fallback = '') {
@@ -1799,14 +1999,11 @@ function getExplicitTtsPersonaFromBody(body = {}) {
     || body?.surface
     || ''
   ).trim();
-  return raw ? normalizeTtsPersona(raw) : '';
+  return raw ? normalizeKnownTtsPersona(raw) : '';
 }
 
 function getPreferredVoiceReferenceLabelForPersona(persona = 'a11') {
-  const normalized = normalizeTtsPersona(persona);
-  if (normalized === 'vivy') return 'vivy';
-  if (normalized === 'kaen44') return 'donna';
-  return 'terminator';
+  return getOfficialVoiceStyleId(persona);
 }
 
 function getPreferredVoiceReferenceLabel(req = {}) {
@@ -2166,14 +2363,16 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
 
   const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
   const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
+  const explicitPersona = getExplicitTtsPersonaFromBody(body || {});
+  const readyVoice = getReadyVoiceProfile(persona, PROVIDERS.OPENAI);
   const reference = resolveVoiceReferenceForRequest({
     user: options.user || null,
     requestedId: String(body?.voiceReferenceId || body?.voiceRefId || body?.referenceId || '').trim(),
     preferredLabel: getPreferredVoiceReferenceLabelForPersona(persona),
   });
   const officialPersonaStyleFallback = !reference
-    && isInteractiveTtsRequest(body)
-    && OFFICIAL_PERSONAS.has(persona);
+    && OFFICIAL_PERSONAS.has(explicitPersona)
+    && wantsOfficialIdentityVoice(body);
   const model = String(
     body?.ttsModel
     || process.env.OPENAI_TTS_MODEL
@@ -2184,7 +2383,7 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
     model,
     'tts-1',
   ].filter(Boolean)));
-  const voice = normalizeOpenAiTtsVoice(body?.openAiVoice || body?.ttsVoice || body?.voice, vocalMode);
+  const voice = normalizeOpenAiTtsVoice(body?.openAiVoice || body?.ttsVoice || readyVoice?.openAiVoice || body?.voice, vocalMode);
   const responseFormat = normalizeTtsAudioFormat(body, isInteractiveTtsRequest(body) ? 'mp3' : '');
   let response = null;
   let resolvedModel = modelFallbacks[0];
@@ -2224,6 +2423,7 @@ async function requestOpenAiTts(text, body = {}, options = {}) {
   return {
     success: true,
     provider: 'openai',
+    via: 'openai-tts',
     model: resolvedModel,
     voice,
     audioFormat: responseFormat,
@@ -2455,7 +2655,11 @@ function spawnPiperLocal(text, model) {
         responded = true;
         if (code === 0) {
           if (fs.existsSync(outFile)) {
-            return resolve({ success: true, audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`) });
+            return resolve({
+              success: true,
+              audioUrl: buildBackendTtsOutPath(`/out/${outFileName}`),
+              model: path.basename(modelPath || ''),
+            });
           }
           return reject(new Error(`tts_failed_no_file${stderr ? ': ' + stderr.trim().slice(0, 500) : ''}`));
         }
@@ -2991,24 +3195,219 @@ function buildVivyTtsJobBody(body = {}) {
     ...body,
     text,
     voice: body.voice || 'vivy',
-    provider: body.provider || PROVIDERS.XTTS_RVC,
-    ttsProvider: body.ttsProvider || body.provider || PROVIDERS.XTTS_RVC,
+    provider: body.provider || 'auto',
+    ttsProvider: body.ttsProvider || body.provider || 'auto',
     persona: body.persona || 'vivy',
     voicePersona: body.voicePersona || 'vivy',
     surface: body.surface || 'vivy',
     vocalMode: body.vocalMode || (isSong ? 'sing' : 'adaptive'),
-    voiceConversion: body.voiceConversion ?? true,
+    voiceConversion: body.voiceConversion ?? false,
     useDefaultVoiceReference: body.useDefaultVoiceReference ?? !body.voiceReferenceId,
     defaultVoiceReference: body.defaultVoiceReference ?? !body.voiceReferenceId,
-    voiceReferenceRequired: body.voiceReferenceRequired ?? true,
-    referenceVoiceRequired: body.referenceVoiceRequired ?? true,
+    voiceReferenceRequired: body.voiceReferenceRequired ?? false,
+    referenceVoiceRequired: body.referenceVoiceRequired ?? false,
     allowBrowserSpeechFallback: false,
     audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
     responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
     voiceConversionStrength: vivyVoiceStrength,
     strength: vivyVoiceStrength,
     f0Shift: vivyF0Shift,
-    jobKind: body.jobKind || (isSong ? 'vivy.song.xtts-rvc' : 'vivy.xtts-rvc'),
+    jobKind: body.jobKind || (isSong ? 'vivy.song.official-tts' : 'vivy.official-tts'),
+  };
+}
+
+function escapeSsmlText(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function getCartesiaTtsBaseUrl() {
+  return String(
+    process.env.A11_CARTESIA_BASE_URL
+    || process.env.CARTESIA_BASE_URL
+    || 'https://api.cartesia.ai'
+  ).trim().replace(/\/$/, '');
+}
+
+function resolveCartesiaVoiceId(persona, body = {}) {
+  const profile = getReadyVoiceProfile(persona, PROVIDERS.CARTESIA);
+  return String(
+    body?.cartesiaVoiceId
+    || body?.cartesia_voice_id
+    || body?.providerVoiceId
+    || getPersonaScopedEnvValue('A11_CARTESIA', persona, ['VOICE_ID', 'VOICE'])
+    || getPersonaScopedEnvValue('CARTESIA', persona, ['VOICE_ID', 'VOICE'])
+    || getPersonaScopedEnvValue('A11_TTS', persona, ['VOICE_ID'])
+    || profile?.cartesiaVoiceId
+    || ''
+  ).trim();
+}
+
+function resolveAzureVoiceName(persona, body = {}) {
+  const profile = getReadyVoiceProfile(persona, PROVIDERS.AZURE);
+  return String(
+    body?.azureVoice
+    || body?.azureVoiceName
+    || body?.speechVoice
+    || body?.speechVoiceName
+    || getPersonaScopedEnvValue('A11_AZURE', persona, ['VOICE', 'VOICE_NAME'])
+    || getPersonaScopedEnvValue('AZURE', persona, ['VOICE', 'VOICE_NAME'])
+    || getPersonaScopedEnvValue('A11_TTS', persona, ['AZURE_VOICE'])
+    || profile?.azureVoice
+    || ''
+  ).trim();
+}
+
+function contentTypeForGeneratedFormat(format = 'mp3') {
+  return normalizeTtsAudioFormat({ audioFormat: format }, 'mp3') === 'wav'
+    ? 'audio/wav'
+    : 'audio/mpeg';
+}
+
+function buildReadyVoicePayloadMeta(provider, persona, voice, audioFormat) {
+  const profile = getReadyVoiceProfile(persona, provider);
+  return {
+    persona,
+    voiceReference: {
+      id: getOfficialVoiceStyleId(persona),
+      label: getOfficialVoiceStyleLabel(persona, provider),
+      scope: 'ready-made-provider',
+      provider,
+    },
+    referenceVoice: {
+      ok: true,
+      mode: 'ready-made-provider',
+      provider,
+      voice,
+    },
+    providerCapabilities: {
+      referenceVoice: true,
+      readyMadeVoice: true,
+      styleVoice: true,
+      voiceLabel: profile?.label || profile?.displayName || null,
+    },
+    audioFormat,
+    content_type: contentTypeForGeneratedFormat(audioFormat),
+  };
+}
+
+async function requestCartesiaTts(text, body = {}, options = {}) {
+  const apiKey = getCartesiaTtsApiKey();
+  if (!apiKey) throw new Error('cartesia_tts_key_missing');
+
+  const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
+  const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
+  const voiceId = resolveCartesiaVoiceId(persona, body);
+  if (!voiceId) throw new Error('cartesia_voice_id_missing');
+
+  const audioFormat = normalizeTtsAudioFormat(body, 'mp3');
+  const outputFormat = audioFormat === 'wav'
+    ? { container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100 }
+    : { container: 'mp3', bit_rate: 128000, sample_rate: 44100 };
+  const model = String(
+    body?.cartesiaModel
+    || body?.ttsModel
+    || process.env.A11_CARTESIA_MODEL
+    || process.env.CARTESIA_MODEL
+    || 'sonic-3'
+  ).trim();
+  const response = await fetch(`${getCartesiaTtsBaseUrl()}/tts/bytes`, {
+    method: 'POST',
+    headers: {
+      'Cartesia-Version': String(process.env.A11_CARTESIA_VERSION || process.env.CARTESIA_VERSION || '2026-03-01').trim(),
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey,
+    },
+    body: JSON.stringify({
+      model_id: model,
+      transcript: String(text || '').slice(0, 4096),
+      voice: {
+        mode: 'id',
+        id: voiceId,
+      },
+      output_format: outputFormat,
+      language: String(body?.language || body?.ttsLanguage || 'fr').slice(0, 12),
+      speed: vocalMode === 'sing' ? 'slow' : undefined,
+    }),
+    signal: AbortSignal.timeout(Number(process.env.CARTESIA_TTS_TIMEOUT_MS || 18000) || 18000),
+  });
+
+  if (!response.ok) {
+    await response.arrayBuffer().catch(() => null);
+    throw new Error(`cartesia_tts_http_${response.status}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  if (!audioBuffer.length) throw new Error('cartesia_tts_empty_audio');
+  const audioUrl = saveProviderAudioBuffer(audioBuffer, PROVIDERS.CARTESIA, audioFormat);
+  return {
+    success: true,
+    provider: PROVIDERS.CARTESIA,
+    via: 'cartesia-tts',
+    model,
+    voice: voiceId,
+    ...buildReadyVoicePayloadMeta(PROVIDERS.CARTESIA, persona, voiceId, audioFormat),
+    audioUrl,
+    audio_url: audioUrl,
+  };
+}
+
+async function requestAzureTts(text, body = {}, options = {}) {
+  const apiKey = getAzureSpeechKey();
+  const endpoint = getAzureSpeechEndpoint();
+  if (!apiKey) throw new Error('azure_tts_key_missing');
+  if (!endpoint) throw new Error('azure_tts_endpoint_missing');
+
+  const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
+  const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
+  const voice = resolveAzureVoiceName(persona, body);
+  if (!voice) throw new Error('azure_voice_missing');
+
+  const audioFormat = normalizeTtsAudioFormat(body, 'mp3');
+  const outputFormat = audioFormat === 'wav'
+    ? 'riff-24khz-16bit-mono-pcm'
+    : 'audio-24khz-96kbitrate-mono-mp3';
+  const rate = vocalMode === 'sing' ? 'slow' : 'medium';
+  const ssml = [
+    '<speak version="1.0" xml:lang="fr-FR" xmlns="http://www.w3.org/2001/10/synthesis">',
+    `<voice name="${escapeSsmlText(voice)}">`,
+    `<prosody rate="${rate}">${escapeSsmlText(String(text || '').slice(0, 4096))}</prosody>`,
+    '</voice>',
+    '</speak>',
+  ].join('');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': apiKey,
+      'Content-Type': 'application/ssml+xml',
+      'X-Microsoft-OutputFormat': outputFormat,
+      'User-Agent': 'Funesterie-A11-TTS',
+    },
+    body: ssml,
+    signal: AbortSignal.timeout(Number(process.env.AZURE_TTS_TIMEOUT_MS || 18000) || 18000),
+  });
+
+  if (!response.ok) {
+    await response.arrayBuffer().catch(() => null);
+    throw new Error(`azure_tts_http_${response.status}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  if (!audioBuffer.length) throw new Error('azure_tts_empty_audio');
+  const audioUrl = saveProviderAudioBuffer(audioBuffer, PROVIDERS.AZURE, audioFormat);
+  return {
+    success: true,
+    provider: PROVIDERS.AZURE,
+    via: 'azure-speech-tts',
+    voice,
+    ...buildReadyVoicePayloadMeta(PROVIDERS.AZURE, persona, voice, audioFormat),
+    audioUrl,
+    audio_url: audioUrl,
   };
 }
 
@@ -3056,6 +3455,37 @@ async function handleTtsSpeakRequest(req, res) {
         return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
       }
       return sendTtsPayloadResponse(req, res, payload);
+    };
+    const cloudProviderOrder = getCloudTtsProviderOrder(preparedBody, resolvedProvider);
+    for (const provider of cloudProviderOrder) {
+      try {
+        const cloudTts = await requestCloudTtsProvider(provider, readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(cloudTts.audioUrl || cloudTts.audio_url || '').trim();
+        return sendFinalizedPayload({
+          ...cloudTts,
+          text: readableText,
+          vocalMode,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        });
+      } catch (cloudTtsError) {
+        const message = String(cloudTtsError?.message || cloudTtsError);
+        if (provider === PROVIDERS.OPENAI) openAiTtsErrorMessage = message;
+        console.warn(`[TTS][${provider}] ready-made voice failed:`, message);
+        if (strictOfficialVoice && getRequestedTtsProvider(preparedBody) === provider) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: `Voix officielle indisponible: ${provider} n'a pas produit la voix demandee.`,
+            provider,
+            diagnostic: `${provider}_tts_failed`,
+          });
+        }
+      }
     };
 
     if (preferOpenAiBeforeDirectBridge) {
@@ -3372,7 +3802,7 @@ router.post('/vivy/jobs', runOptionalJwt, async (req, res) => {
   }
   req.body = body;
   return startTtsAsyncJob(req, res, {
-    kind: body.jobKind || 'vivy.xtts-rvc',
+    kind: body.jobKind || 'vivy.official-tts',
     queue: 'media.audio',
     statusUrlBase: '/api/vivy/jobs',
     pollIntervalMs: 1500,
@@ -3650,6 +4080,37 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       }
       return sendTtsPayloadResponse(req, res, payload);
     };
+    const cloudProviderOrder = getCloudTtsProviderOrder(preparedBody, resolvedProvider);
+    for (const provider of cloudProviderOrder) {
+      try {
+        const cloudTts = await requestCloudTtsProvider(provider, readableText, preparedBody, {
+          vocalMode,
+          persona: preparedBody.voicePersona || preparedBody.ttsPersona || preparedBody.persona || preparedBody.surface || null,
+          user: req.user || null,
+        });
+        const absoluteAudioUrl = String(cloudTts.audioUrl || cloudTts.audio_url || '').trim();
+        return sendFinalizedPayload({
+          ...cloudTts,
+          text: readableText,
+          vocalMode,
+          audio_url: absoluteAudioUrl || null,
+          audioUrl: absoluteAudioUrl || null,
+        });
+      } catch (cloudTtsError) {
+        const message = String(cloudTtsError?.message || cloudTtsError);
+        if (provider === PROVIDERS.OPENAI) openAiTtsErrorMessage = message;
+        console.warn(`[TTS][${provider}] ready-made voice failed:`, message);
+        if (strictOfficialVoice && getRequestedTtsProvider(preparedBody) === provider) {
+          return res.status(424).json({
+            ok: false,
+            error: 'voice_reference_tts_unavailable',
+            message: `Voix officielle indisponible: ${provider} n'a pas produit la voix demandee.`,
+            provider,
+            diagnostic: `${provider}_tts_failed`,
+          });
+        }
+      }
+    }
 
     if (preferOpenAiBeforeDirectBridge) {
       try {

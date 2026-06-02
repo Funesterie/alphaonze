@@ -18,18 +18,9 @@ $WebDist = Join-Path $A11Root "frontend\apps\web\dist"
 $EnvSource = Join-Path $ServerRoot "profiles\a11.env"
 $McpEnvSource = Join-Path $RepoRoot "a11mcp\.env"
 $RuntimeVoiceLibrary = Join-Path $RepoRoot "runtime\voice-library"
-$A11VoiceReference = Join-Path $RuntimeVoiceLibrary "a11-terminator.wav"
-if (-not (Test-Path -LiteralPath $A11VoiceReference)) {
-  $A11VoiceReference = Join-Path $RepoRoot "runtime\sfx\terminator.wav"
-}
-$VivyVoiceReference = Join-Path $RuntimeVoiceLibrary "vivy.wav"
-if (-not (Test-Path -LiteralPath $VivyVoiceReference)) {
-  $VivyVoiceReference = Join-Path $VoiceRoot "samples\vivy-adaptive.wav"
-}
-if (-not (Test-Path -LiteralPath $VivyVoiceReference)) {
-  $VivyVoiceReference = Join-Path $VoiceRoot "samples\a11-voice-adaptive.wav"
-}
-$Kaen44VoiceReference = Join-Path $RuntimeVoiceLibrary "kaen44-donna.wav"
+$A11VoiceReference = Join-Path $RuntimeVoiceLibrary "a11-official-stern-french.wav"
+$VivyVoiceReference = Join-Path $RuntimeVoiceLibrary "vivy-official-french-conversational.wav"
+$Kaen44VoiceReference = Join-Path $RuntimeVoiceLibrary "kaen44-official-french-narrator.wav"
 $Remote = "deploy@62.238.43.32"
 $SshKey = "C:\Users\Djeff\.ssh\codex_a11_hetzner_20260511"
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -503,6 +494,7 @@ services:
       - /srv/a11-data/a11/logs:/app/logs
       - /srv/a11-data/a11/runtime:/app/runtime
       - /srv/a11-data/a11/uploads:/app/runtime/files/uploads
+      - /home/deploy/a11-data/tts:/data/tts:ro
       - /srv/a11/current/web/dist:/web/dist:ro
     expose:
       - "3000"
@@ -591,6 +583,7 @@ services:
       - /srv/a11-data/a11/kaen44-logs:/app/logs
       - /srv/a11-data/a11/kaen44-runtime:/app/runtime
       - /srv/a11-data/a11/kaen44-uploads:/app/runtime/files/uploads
+      - /home/deploy/a11-data/tts:/data/tts:ro
       - /srv/a11/current/web/dist:/web/dist:ro
     expose:
       - "3001"
@@ -987,9 +980,27 @@ if ($LASTEXITCODE -ne 0) { throw "Creation archive echouee" }
 $archiveSizeMb = [Math]::Round((Get-Item -LiteralPath $Archive).Length / 1MB, 2)
 Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCyan
 
-$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
+$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/tts $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
+
+$piperVoiceDownload = @"
+set -e
+mkdir -p $RemoteDataRoot/tts
+download_voice() {
+  url="`$1"
+  out="`$2"
+  if [ ! -s "`$out" ]; then
+    curl -fL --retry 3 --retry-delay 2 -o "`$out" "`$url"
+  fi
+}
+download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx" "$RemoteDataRoot/tts/fr_FR-upmc-medium.onnx"
+download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx.json" "$RemoteDataRoot/tts/fr_FR-upmc-medium.onnx.json"
+download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/tom/medium/fr_FR-tom-medium.onnx" "$RemoteDataRoot/tts/fr_FR-tom-medium.onnx"
+download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/tom/medium/fr_FR-tom-medium.onnx.json" "$RemoteDataRoot/tts/fr_FR-tom-medium.onnx.json"
+"@
+& ssh @sshBase $Remote $piperVoiceDownload
+if ($LASTEXITCODE -ne 0) { throw "Telechargement voix Piper distantes echoue" }
 
 & scp @sshBase $Archive "${Remote}:$RemoteArchive"
 if ($LASTEXITCODE -ne 0) { throw "Copie archive echouee" }
@@ -1004,9 +1015,9 @@ if (-not $ReuseRemoteSecrets) {
 }
 
 $voiceReferenceCopies = @(
-  @{ Path = $A11VoiceReference; Name = "a11-terminator.wav"; Label = "A11 Terminator" },
-  @{ Path = $VivyVoiceReference; Name = "vivy.wav"; Label = "Vivy" },
-  @{ Path = $Kaen44VoiceReference; Name = "kaen44-donna.wav"; Label = "Kaen44 Donna" }
+  @{ Path = $A11VoiceReference; Name = "a11-official-stern-french.wav"; Label = "A11 official stern French" },
+  @{ Path = $VivyVoiceReference; Name = "vivy-official-french-conversational.wav"; Label = "Vivy official French conversational" },
+  @{ Path = $Kaen44VoiceReference; Name = "kaen44-official-french-narrator.wav"; Label = "Kaen44 official French narrator" }
 )
 $voiceReferenceCopiesByName = @{}
 foreach ($voiceReference in $voiceReferenceCopies) {

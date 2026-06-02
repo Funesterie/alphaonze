@@ -100,9 +100,13 @@ function getVoiceReferenceLibraryCandidates() {
     defaults.push(
       path.join(runtimeRoot, 'sfx', 'terminator'),
       path.join(runtimeRoot, 'sfx', 'terminator.wav'),
+      path.join(runtimeRoot, 'sfx', 'a11-official-stern-french.wav'),
       path.join(runtimeRoot, 'voice-library', 'a11-terminator.wav'),
+      path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'),
       path.join(runtimeRoot, 'voice-library', 'vivy.wav'),
+      path.join(runtimeRoot, 'voice-library', 'vivy-official-french-conversational.wav'),
       path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'),
+      path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'),
       path.join(runtimeRoot, 'voice-library'),
       path.join(runtimeRoot, 'voice-references', 'library')
     );
@@ -616,8 +620,11 @@ function getReferencePreferenceScore(ref, preferredLabel = '') {
 
   const agentVoiceAliases = {
     terminator: ['a11', 'alpha', 'alphaonze'],
+    'a11-official-stern-french': ['a11', 'alpha', 'alphaonze'],
     donna: ['kaen44', 'k44', 'kaen'],
+    'kaen44-official-french-narrator': ['kaen44', 'k44', 'kaen'],
     vivy: ['vivy'],
+    'vivy-official-french-conversational': ['vivy'],
   };
   const agentAliases = agentVoiceAliases[needle] || [];
   if (score > 0 && agentAliases.some((alias) => tokens.has(alias) || base.includes(alias))) {

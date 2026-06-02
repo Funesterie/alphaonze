@@ -366,7 +366,7 @@ test('tts async official voice jobs can be claimed and completed by the local GP
           audioBase64: wav.toString('base64'),
           contentType: 'audio/wav',
           engine: 'test-local-gpu',
-          voiceStyle: 'terminator',
+          voiceStyle: 'a11-official-stern-french',
         }, {
           authorization: 'Bearer test-local-gpu-worker-token',
         });
@@ -388,7 +388,7 @@ test('tts async official voice jobs can be claimed and completed by the local GP
           audioBase64: wav.toString('base64'),
           contentType: 'audio/wav',
           engine: 'test-local-gpu',
-          voiceStyle: 'terminator',
+          voiceStyle: 'a11-official-stern-french',
         }, {
           authorization: 'Bearer test-local-gpu-worker-token',
         });
@@ -497,42 +497,43 @@ test('tts local GPU worker claims admin, family, then public jobs by priority', 
   }
 });
 
-test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio output', async () => {
+test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio output', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
+    A11_CARTESIA_VERSION: process.env.A11_CARTESIA_VERSION,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
-  const bridgeBodies = [];
+  const cartesiaBodies = [];
 
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
+  process.env.A11_CARTESIA_VERSION = '2026-03-01';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
-      bridgeBodies.push(JSON.parse(String(options.body || '{}')));
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
       return {
         ok: true,
         status: 200,
-        async text() {
-          return JSON.stringify({
-            ok: true,
-            audio_url: '/out/vivy-job.mp3',
-            audioUrl: '/out/vivy-job.mp3',
-            via: 'a11-voice-module-persona',
-            providerCapabilities: { referenceVoice: true },
-            voiceReference: { id: 'vivy', label: 'vivy' },
-            voiceConversion: { ok: true, provider: 'xtts-rvc', engine: 'persona-voice' },
-          });
+        async arrayBuffer() {
+          return Buffer.from('cartesia-mp3');
         },
       };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      throw new Error('legacy_xtts_rvc_should_not_run_for_vivy_official_job');
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('neutral_tts_should_not_run_for_vivy_job');
@@ -554,7 +555,7 @@ test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio outpu
 
         assert.equal(started.response.status, 202);
         assert.equal(started.json.async, true);
-        assert.equal(started.json.kind, 'vivy.song.xtts-rvc');
+        assert.equal(started.json.kind, 'vivy.song.official-tts');
         assert.equal(started.json.queue, 'media.audio');
         assert.match(started.json.statusUrl, /^\/api\/vivy\/jobs\//);
         assert.equal(started.json.orchestrator.mode, 'bat-rome');
@@ -570,14 +571,12 @@ test('vivy jobs route exposes a Bat/Rome async XTTS/RVC job with web audio outpu
         }
 
         assert.equal(polled.state, 'done');
-        assert.equal(polled.provider, 'xtts-rvc');
-        assert.equal(polled.audioUrl, '/api/tts/out/vivy-job.mp3');
-        assert.equal(bridgeBodies.length, 1);
-        assert.equal(bridgeBodies[0].persona, 'vivy');
-        assert.equal(bridgeBodies[0].audioFormat, 'mp3');
-        assert.equal(bridgeBodies[0].responseFormat, 'mp3');
-        assert.equal(bridgeBodies[0].strength, 0.32);
-        assert.equal(bridgeBodies[0].f0Shift, -0.35);
+        assert.equal(polled.provider, 'cartesia');
+        assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
+        assert.equal(cartesiaBodies.length, 1);
+        assert.equal(cartesiaBodies[0].language, 'fr');
+        assert.equal(cartesiaBodies[0].output_format.container, 'mp3');
+        assert.equal(cartesiaBodies[0].voice.mode, 'id');
       }
     );
   } finally {
@@ -662,13 +661,86 @@ test('tts piper route leaves voice free unless language voice is explicitly forc
   }
 });
 
-test('tts speak route uses XTTS/RVC bridge before Piper for official persona voice', async () => {
+test('tts piper route selects persona-specific local Piper voice when cloud TTS is unavailable', async () => {
+  const previousEnv = {
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    A11_OPENAI_TTS_DISABLED: process.env.A11_OPENAI_TTS_DISABLED,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const requestBodies = [];
+
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.A11_OPENAI_TTS_DISABLED = '1';
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'http://a11-voice:5002/api/tts') {
+      requestBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            audio_url: '/out/a11-upmc.wav',
+            via: 'piper',
+          });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/piper', {
+          text: 'bonjour A11',
+          persona: 'a11',
+          voicePersona: 'a11',
+          provider: 'piper',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(requestBodies.length, 1);
+        assert.equal(requestBodies[0].voice, 'fr_FR-upmc-medium');
+        assert.equal(requestBodies[0].model, 'fr_FR-upmc-medium');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route uses Cartesia ready-made voice before legacy bridge for official persona voice', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_VOICE_XTTS_RVC_RETRIES: process.env.A11_VOICE_XTTS_RVC_RETRIES,
     A11_VOICE_XTTS_RVC_RETRY_DELAY_MS: process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     TTS_URL: process.env.TTS_URL,
@@ -677,11 +749,13 @@ test('tts speak route uses XTTS/RVC bridge before Piper for official persona voi
     TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
   };
   const previousFetch = global.fetch;
-  const wav = createPcm16Wav();
   const bridgeCalls = [];
+  const cartesiaBodies = [];
 
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
@@ -692,28 +766,20 @@ test('tts speak route uses XTTS/RVC bridge before Piper for official persona voi
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'http://voice-bridge.test/api/voice/convert') {
-      bridgeCalls.push({ url: value, body: options.body });
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
       assert.equal(options.method, 'POST');
-      assert.equal(options.body?.get?.('text'), 'bonjour');
-      assert.equal(options.body?.get?.('persona'), 'a11');
-      assert.equal(options.body?.get?.('voiceStyle'), 'terminator');
       return {
         ok: true,
         status: 200,
-        headers: {
-          get(name) {
-            const key = String(name || '').toLowerCase();
-            if (key === 'content-type') return 'audio/wav';
-            if (key === 'x-a11-voice-engine') return 'xtts-reference';
-            if (key === 'x-a11-voice-style') return 'terminator';
-            return null;
-          },
-        },
         async arrayBuffer() {
-          return wav;
+          return Buffer.from('cartesia-a11-mp3');
         },
       };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      throw new Error('legacy_bridge_should_not_be_called_when_cartesia_is_ready');
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_be_called_for_official_voice');
@@ -738,12 +804,14 @@ test('tts speak route uses XTTS/RVC bridge before Piper for official persona voi
         });
 
         assert.equal(result.response.status, 200);
-        assert.equal(result.json.provider, 'xtts-rvc');
-        assert.equal(result.json.via, 'xtts-rvc-direct');
-        assert.equal(result.json.voiceConversion.ok, true);
-        assert.equal(result.json.voiceConversion.engine, 'xtts-reference');
-        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.wav$/);
-        assert.equal(bridgeCalls.length, 1);
+        assert.equal(result.json.provider, 'cartesia');
+        assert.equal(result.json.via, 'cartesia-tts');
+        assert.equal(result.json.providerCapabilities.readyMadeVoice, true);
+        assert.match(result.json.voiceReference.label, /Stern French Man/i);
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
+        assert.equal(cartesiaBodies.length, 1);
+        assert.equal(cartesiaBodies[0].voice.id, '0418348a-0ca2-4e90-9986-800fb8b3bbc0');
+        assert.equal(bridgeCalls.length, 0);
       }
     );
   } finally {
@@ -760,43 +828,39 @@ test('tts speak route treats official persona alone as identity voice request', 
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
-  const wav = createPcm16Wav();
   const bridgeCalls = [];
+  const cartesiaBodies = [];
 
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'http://voice-bridge.test/api/voice/convert') {
-      bridgeCalls.push({ url: value, body: options.body });
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
       assert.equal(options.method, 'POST');
-      assert.equal(options.body?.get?.('text'), 'bonjour kaen');
-      assert.equal(options.body?.get?.('persona'), 'kaen44');
-      assert.equal(options.body?.get?.('voiceStyle'), 'donna');
       return {
         ok: true,
         status: 200,
-        headers: {
-          get(name) {
-            const key = String(name || '').toLowerCase();
-            if (key === 'content-type') return 'audio/wav';
-            if (key === 'x-a11-voice-engine') return 'xtts-reference';
-            if (key === 'x-a11-voice-style') return 'donna';
-            return null;
-          },
-        },
         async arrayBuffer() {
-          return wav;
+          return Buffer.from('cartesia-kaen44-mp3');
         },
       };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      throw new Error('legacy_bridge_should_not_be_called_for_official_persona_default');
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_be_called_for_official_persona_default');
@@ -817,11 +881,13 @@ test('tts speak route treats official persona alone as identity voice request', 
         });
 
         assert.equal(result.response.status, 200);
-        assert.equal(result.json.provider, 'xtts-rvc');
-        assert.equal(result.json.via, 'xtts-rvc-direct');
-        assert.equal(result.json.voiceConversion.ok, true);
-        assert.equal(result.json.voiceConversion.voiceStyle, 'donna');
-        assert.equal(bridgeCalls.length, 1);
+        assert.equal(result.json.provider, 'cartesia');
+        assert.equal(result.json.via, 'cartesia-tts');
+        assert.equal(result.json.providerCapabilities.readyMadeVoice, true);
+        assert.match(result.json.voiceReference.label, /French Narrator Lady/i);
+        assert.equal(cartesiaBodies.length, 1);
+        assert.equal(cartesiaBodies[0].voice.id, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
+        assert.equal(bridgeCalls.length, 0);
       }
     );
   } finally {
@@ -838,6 +904,8 @@ test('tts speak route ignores stale Piper preference for official reference voic
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     TTS_URL: process.env.TTS_URL,
@@ -846,11 +914,13 @@ test('tts speak route ignores stale Piper preference for official reference voic
     TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
   };
   const previousFetch = global.fetch;
-  const wav = createPcm16Wav();
   const bridgeCalls = [];
+  const cartesiaBodies = [];
 
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
@@ -861,24 +931,19 @@ test('tts speak route ignores stale Piper preference for official reference voic
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
-    if (value === 'http://voice-bridge.test/api/voice/convert') {
-      bridgeCalls.push({ url: value, body: options.body });
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
       return {
         ok: true,
         status: 200,
-        headers: {
-          get(name) {
-            const key = String(name || '').toLowerCase();
-            if (key === 'content-type') return 'audio/wav';
-            if (key === 'x-a11-voice-engine') return 'xtts-reference';
-            if (key === 'x-a11-voice-style') return 'terminator';
-            return null;
-          },
-        },
         async arrayBuffer() {
-          return wav;
+          return Buffer.from('cartesia-a11-mp3');
         },
       };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      throw new Error('legacy_bridge_should_not_be_called_for_stale_official_voice_preference');
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_be_called_for_stale_official_voice_preference');
@@ -905,10 +970,13 @@ test('tts speak route ignores stale Piper preference for official reference voic
         });
 
         assert.equal(result.response.status, 200);
-        assert.equal(result.json.provider, 'xtts-rvc');
-        assert.equal(result.json.via, 'xtts-rvc-direct');
-        assert.equal(result.json.voiceConversion.ok, true);
-        assert.equal(bridgeCalls.length, 1);
+        assert.equal(result.json.provider, 'cartesia');
+        assert.equal(result.json.via, 'cartesia-tts');
+        assert.equal(result.json.providerCapabilities.readyMadeVoice, true);
+        assert.match(result.json.voiceReference.label, /Stern French Man/i);
+        assert.equal(cartesiaBodies.length, 1);
+        assert.equal(cartesiaBodies[0].voice.id, '0418348a-0ca2-4e90-9986-800fb8b3bbc0');
+        assert.equal(bridgeCalls.length, 0);
       }
     );
   } finally {
@@ -920,7 +988,7 @@ test('tts speak route ignores stale Piper preference for official reference voic
   }
 });
 
-test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC bridge fails', async () => {
+test('tts speak route uses ready-made OpenAI style when cloud voices are unavailable', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-identity-fallback-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -931,6 +999,8 @@ test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC brid
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
     A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
@@ -951,15 +1021,17 @@ test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC brid
   const remoteTtsCalls = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'), createPcm16Wav({ frequency: 330 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'), createPcm16Wav({ frequency: 330 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
-  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED = '1';
   process.env.A11_VOICE_CONVERSION_ENABLED = 'false';
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_VOICE_XTTS_RVC_RETRIES = '2';
   process.env.A11_VOICE_XTTS_RVC_RETRY_DELAY_MS = '1';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
@@ -1024,8 +1096,9 @@ test('tts speak route falls back to reference-informed OpenAI when XTTS/RVC brid
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'openai');
         assert.equal(result.json.providerCapabilities.referenceVoice, true);
-        assert.match(result.json.voiceReference.label, /Kaen44 Donna/i);
-        assert.equal(bridgeCalls.length, 2);
+        assert.equal(result.json.referenceVoiceFallback, true);
+        assert.match(result.json.voiceReference.label, /kaen44-official-french-narrator/i);
+        assert.equal(bridgeCalls.length, 0);
         assert.equal(openAiBodies.length, 1);
         assert.match(openAiBodies[0].instructions, /Voix Kaen44/i);
         assert.equal(remoteTtsCalls.length, 0);
@@ -1052,6 +1125,8 @@ test('tts speak route uses low-latency OpenAI MP3 and skips slow XTTS/RVC bridge
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
     A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
@@ -1075,6 +1150,8 @@ test('tts speak route uses low-latency OpenAI MP3 and skips slow XTTS/RVC bridge
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
   process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
@@ -1162,6 +1239,8 @@ test('tts speak route keeps trying voice module when OpenAI identity fallback is
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
     A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
     A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
@@ -1180,12 +1259,14 @@ test('tts speak route keeps trying voice module when OpenAI identity fallback is
   const calls = [];
 
   fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'), createPcm16Wav({ frequency: 330 }));
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'), createPcm16Wav({ frequency: 330 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
   process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_VOICE_XTTS_RVC_URL;
@@ -1233,7 +1314,7 @@ test('tts speak route keeps trying voice module when OpenAI identity fallback is
     if (value === 'http://a11-voice:5002/api/voice/convert') {
       assert.equal(options.method, 'POST');
       assert.equal(options.body?.get?.('persona'), 'kaen44');
-      assert.equal(options.body?.get?.('voiceStyle'), 'donna');
+      assert.equal(options.body?.get?.('voiceStyle'), 'kaen44-official-french-narrator');
       return {
         ok: true,
         status: 200,
@@ -1243,7 +1324,7 @@ test('tts speak route keeps trying voice module when OpenAI identity fallback is
             audio_url: '/out/converted.wav',
             provider: 'xtts-rvc',
             engine: 'xtts-rvc-api',
-            voiceStyle: 'donna',
+            voiceStyle: 'kaen44-official-french-narrator',
             attemptedEngines: ['xtts-rvc'],
             module: 'a11-voice-module',
           });
@@ -1282,7 +1363,7 @@ test('tts speak route keeps trying voice module when OpenAI identity fallback is
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'xtts-rvc');
         assert.equal(result.json.voiceConversion.ok, true);
-        assert.equal(result.json.voiceConversion.voiceStyle, 'donna');
+        assert.equal(result.json.voiceConversion.voiceStyle, 'kaen44-official-french-narrator');
         assert.ok(calls.filter((call) => call === 'https://api.openai.test/v1/audio/speech').length >= 1);
         assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/convert').length, 1);
       }
@@ -1399,7 +1480,7 @@ test('tts piper route respects OpenAI-first voice persona before HTTP module', a
   }
 });
 
-test('tts piper route blocks raw OpenAI audio when a reference voice is required', async () => {
+test('tts piper route blocks raw OpenAI audio for non-official voices when a reference voice is required', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-reference-required-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -1470,9 +1551,9 @@ test('tts piper route blocks raw OpenAI audio when a reference voice is required
       },
       async (baseUrl) => {
         const result = await postJson(baseUrl, '/api/tts/piper', {
-          text: 'hasta la vista baby',
-          persona: 'a11',
-          voicePersona: 'a11',
+          text: 'voix non officielle',
+          persona: 'custom-voice',
+          voicePersona: 'custom-voice',
           provider: 'openai',
           vocalMode: 'adaptive',
           useDefaultVoiceReference: true,
@@ -1647,8 +1728,8 @@ test('tts route can run generated audio through the voice conversion module', as
   const wav = createPcm16Wav();
   const backendCalls = [];
 
-  fs.mkdirSync(path.join(runtimeRoot, 'sfx'), { recursive: true });
-  fs.writeFileSync(path.join(runtimeRoot, 'sfx', 'terminator.wav'), createPcm16Wav({ frequency: 220 }));
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 220 }));
   process.env.A11_RUNTIME_ROOT = runtimeRoot;
   process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
   delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
@@ -1682,7 +1763,7 @@ test('tts route can run generated audio through the voice conversion module', as
       assert.equal(options.method, 'POST');
       assert.equal(options.body?.get?.('text'), 'bonjour');
       assert.equal(options.body?.get?.('mode'), 'adaptive');
-      assert.equal(options.body?.get?.('voiceStyle'), 'terminator');
+      assert.equal(options.body?.get?.('voiceStyle'), 'a11-official-stern-french');
       return {
         ok: true,
         status: 200,
@@ -1692,7 +1773,7 @@ test('tts route can run generated audio through the voice conversion module', as
             audio_url: '/out/converted.wav',
             provider: 'xtts-rvc',
             engine: 'xtts-rvc-api',
-            voiceStyle: 'terminator',
+            voiceStyle: 'a11-official-stern-french',
             attemptedEngines: ['xtts-rvc'],
             module: 'a11-voice-module',
             duration_ms: 120,
@@ -1732,9 +1813,9 @@ test('tts route can run generated audio through the voice conversion module', as
         assert.equal(result.json.voiceConversion.ok, true);
         assert.equal(result.json.voiceConversion.provider, 'xtts-rvc');
         assert.equal(result.json.voiceConversion.engine, 'xtts-rvc-api');
-        assert.equal(result.json.voiceConversion.voiceStyle, 'terminator');
+        assert.equal(result.json.voiceConversion.voiceStyle, 'a11-official-stern-french');
         assert.deepEqual(result.json.voiceConversion.attemptedEngines, ['xtts-rvc']);
-        assert.equal(result.json.audioModule.reference.label, 'Terminator');
+        assert.match(result.json.audioModule.reference.label, /A11 Official Stern French/i);
         assert.equal(
           backendCalls.filter((call) => call.url === 'http://a11-voice:5002/api/voice/convert').length,
           1

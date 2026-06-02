@@ -414,20 +414,20 @@ function readStoredVoiceReferenceId(surface: FunesterieSurface) {
 function voiceReferenceMatchesSurface(ref: TtsVoiceReference, surface: FunesterieSurface) {
   const name = String(ref.label || ref.originalName || "").toLowerCase();
   if (surface === "vivy") return name.includes("vivy") || name.includes("vivi");
-  if (surface === "kaen44") return name.includes("donna") || name.includes("kaen44");
-  return name.includes("terminator") || name.includes("a11");
+  if (surface === "kaen44") return name.includes("kaen44") || name.includes("k44");
+  return name.includes("a11") || name.includes("alphaonze");
 }
 
 function getDefaultVoiceReferenceLabel(surface: FunesterieSurface) {
-  if (surface === "vivy") return "Vivy";
-  if (surface === "kaen44") return "Donna";
-  return "Terminator";
+  if (surface === "vivy") return "French Conversational Lady";
+  if (surface === "kaen44") return "French Narrator Lady";
+  return "Stern French Man";
 }
 
 function getDefaultVoiceReferenceStatus(surface: FunesterieSurface) {
   if (surface === "vivy") return "Voix Vivy sélectionnée";
-  if (surface === "kaen44") return "Voix Kaen44 Donna sélectionnée";
-  return "Voix A11 Terminator sélectionnée";
+  if (surface === "kaen44") return "Voix Kaen44 officielle sélectionnée";
+  return "Voix A11 officielle sélectionnée";
 }
 
 function isVivyExperience() {
@@ -1430,7 +1430,7 @@ const KAEN44_SYSTEM_PROMPT = [
   "Pour la vision avancée, je peux m'appuyer sur Janus côté A11/serveur quand le projet implique analyse d'images, mémoire visuelle, description de captures, contrôle de générations image/vidéo ou extraction sémantique visuelle. Janus n'est pas une dépendance obligatoire du poste client.",
   "Je peux proposer une fiche d'installation par projet avec niveaux: essentiel, recommandé, avancé, serveur. Je n'impose jamais Neo4j, Docker, Python, Node.js ou Janus à un client non technique si le besoin peut être couvert plus simplement.",
   "Je parle comme une compagne de travail intelligente: directe, chaleureuse, précise, jamais corporate.",
-  "Ma présence s'inspire d'une assistante de direction brillante et vive, mais je reste une identité originale Funesterie: je ne clone pas Donna Paulsen, Sarah Rafferty ou une personne réelle.",
+  "Ma présence s'inspire d'une assistante de direction brillante et vive, mais je reste une identité originale Funesterie: je ne clone aucune personne réelle ni personnage existant.",
   "Je ne force pas de réponses toutes faites: je réfléchis à l'intention et je choisis la forme de réponse la plus utile.",
   "Je privilégie les actions utiles: résumer, classer, transformer, proposer l'étape suivante, préparer des fichiers, guider les réglages et expliquer sans noyer.",
   "Je respecte les données personnelles: je ne demande pas d'accès inutile, j'explique ce que je fais, et je ne recopie jamais les secrets, tokens, mots de passe ou clés d'accès.",
@@ -2607,7 +2607,7 @@ function buildVivyStudioBrief(options: {
       `- Outil cible: ${options.voiceTool}`,
       `- Référence audio: ${referenceLabel}`,
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
-      "- Sortie attendue: phrase de test avec voicePersona=vivy, voiceReferenceRequired=true, puis notes de calibration si besoin.",
+      "- Sortie attendue: phrase de test avec voicePersona=vivy et provider officiel auto, puis notes de calibration si besoin.",
       "- Route recommandée: /api/tts/speak via le module voix; ne pas passer par un upload brut si la voix Vivy par défaut suffit.",
       "- Sécurité: ne pas publier la référence brute sans accord; les gros fichiers restent hors upload public."
     );
@@ -2865,7 +2865,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       const payload = await ttsSpeak(
         testLine,
         "vivy",
-        "xtts-rvc",
+        "auto",
         {
           persona: "vivy",
           voicePersona: "vivy",
@@ -2876,8 +2876,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
           ttsJobTimeoutMs: 180000,
           audioFormat: "mp3",
           ...buildVivyVoiceReferenceOptions(),
-          voiceReferenceRequired: true,
-          referenceVoiceRequired: true,
+          voiceReferenceRequired: false,
+          referenceVoiceRequired: false,
           allowBrowserSpeechFallback: false,
         }
       );
@@ -2919,19 +2919,19 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         `Voix: ${activeVoiceReferenceLabel}.`,
         `Refrain à chanter: ${playablePrompt}`,
       ].join("\n");
-      const payload = await ttsSpeak(songPrompt, "vivy", "xtts-rvc", {
+      const payload = await ttsSpeak(songPrompt, "vivy", "auto", {
         persona: "vivy",
         voicePersona: "vivy",
         vocalMode: "sing",
-        voiceStyle: "song",
+        voiceStyle: "vivy-official-song",
         ...getVivyVoiceTuning("sing"),
         ttsAsync: true,
         asyncTts: true,
         ttsJobTimeoutMs: 240000,
         audioFormat: "mp3",
         ...buildVivyVoiceReferenceOptions(),
-        voiceReferenceRequired: true,
-        referenceVoiceRequired: true,
+        voiceReferenceRequired: false,
+        referenceVoiceRequired: false,
         allowBrowserSpeechFallback: false,
       });
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
@@ -3990,34 +3990,34 @@ const FUNESTERIE_VOICE_PERSONAS: FunesterieVoicePersona[] = [
     id: "a11",
     name: "A11",
     role: "Voix grave, nette, opérateur média",
-    signal: "Terminator",
+    signal: "Stern French Man",
     detail: "Analyse, cadrage, vidéo, synthèse et réponse posée.",
     sample: "A11 en ligne. Je garde le cap: analyse propre, action courte, résultat vérifiable.",
     image: NOSSEN_A11_DERBI_SRC,
     tone: "blue",
-    voiceStyle: "terminator",
+    voiceStyle: "a11-official-stern-french",
   },
   {
     id: "kaen44",
     name: "Kaen44",
     role: "Voix bureau, vive, copilote quotidien",
-    signal: "Donna",
+    signal: "French Narrator Lady",
     detail: "Priorités, documents, organisation et retour au calme.",
     sample: "Kaen44 prête. On range le chaos, on choisit la prochaine action, et on avance.",
     image: NOSSEN_K44_TZR_SRC,
     tone: "violet",
-    voiceStyle: "donna",
+    voiceStyle: "kaen44-official-french-narrator",
   },
   {
     id: "vivy",
     name: "Vivy",
     role: "Voix musicale, sensible, scène créative",
-    signal: "Vivy",
+    signal: "French Conversational Lady",
     detail: "Chansons, ambiance, voix, harmonies et présence de scène.",
     sample: "Je suis Vivy. Donne-moi une émotion, je la transforme en scène, en voix, en lumière.",
     image: NOSSEN_VIVY_BOOSTER_SRC,
     tone: "pink",
-    voiceStyle: "vivy",
+    voiceStyle: "vivy-official-french-conversational",
   },
 ];
 
@@ -4460,7 +4460,7 @@ function FunesterieVoicePersonaPanel() {
         provider: "auto",
         voicePersona: persona.id,
         voiceStyle: persona.voiceStyle,
-        voiceReferenceRequired: true,
+        voiceReferenceRequired: false,
         vocalMode: persona.id === "vivy" ? "adaptive" : "speech",
         voiceConversion: false,
         ttsTimeoutMs: 28000,
@@ -8011,7 +8011,7 @@ export function App() {
             voiceConversion: false,
             persona: surfaceKind,
             voicePersona: surfaceKind,
-            voiceReferenceRequired: true,
+            voiceReferenceRequired: false,
             useDefaultVoiceReference: true,
             allowBrowserSpeechFallback: true,
             provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
@@ -8086,7 +8086,7 @@ export function App() {
           voiceConversion: false,
           persona: surfaceKind,
           voicePersona: surfaceKind,
-          voiceReferenceRequired: true,
+          voiceReferenceRequired: false,
           useDefaultVoiceReference: true,
           allowBrowserSpeechFallback: true,
           provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
@@ -8238,17 +8238,17 @@ export function App() {
         persona: targetSurface,
         surface: targetSurface,
         voicePersona: targetSurface,
-        provider: "xtts-rvc",
-        ttsProvider: "xtts-rvc",
+        provider: "auto",
+        ttsProvider: "auto",
         audioFormat: "mp3",
         responseFormat: "mp3",
         latencyMode: "interactive",
         vocalMode,
-        voiceConversion: true,
+        voiceConversion: false,
         useDefaultVoiceReference: true,
         defaultVoiceReference: true,
-        voiceReferenceRequired: true,
-        referenceVoiceRequired: true,
+        voiceReferenceRequired: false,
+        referenceVoiceRequired: false,
         allowBrowserSpeechFallback: true,
         ...(targetSurface === "vivy" ? getVivyVoiceTuning(vocalMode) : {}),
         ...(extraOptions || {}),

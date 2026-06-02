@@ -6,10 +6,13 @@ const {
   VOICE_PERSONA_DIRECTIONS,
   VOICE_REFERENCE_POLICY,
   PROVIDERS,
+  OFFICIAL_READY_VOICE_PROFILES,
   OFFICIAL_PERSONAS,
   buildVoicePersonaInstruction,
   getVoicePersonaDirection,
+  getReadyVoiceProfile,
   resolveVoiceProvider,
+  isProviderRuntimeConfigured,
   isDemoModel,
   guardDemoModel,
 } = require('../src/tts/voice-provider-manifest.cjs');
@@ -36,7 +39,7 @@ describe('voice-provider-manifest', () => {
         const direction = getVoicePersonaDirection(persona);
         assert.equal(direction, VOICE_PERSONA_DIRECTIONS[persona]);
         assert.match(direction.prompt, /originale/i);
-        assert.match(direction.prompt, /Ne clone pas/i);
+        assert.match(direction.prompt, /ne clone/i);
         assert.ok(Array.isArray(direction.referenceMoodboard));
         assert.ok(direction.referenceMoodboard.length >= 1);
       }
@@ -50,12 +53,44 @@ describe('voice-provider-manifest', () => {
     });
   });
 
+  describe('OFFICIAL_READY_VOICE_PROFILES', () => {
+    it('defines ready-made voice choices for every official persona', () => {
+      for (const persona of ['a11', 'kaen44', 'vivy']) {
+        const profile = OFFICIAL_READY_VOICE_PROFILES[persona];
+        assert.ok(profile.styleId);
+        assert.ok(profile.cartesiaVoiceId);
+        assert.ok(profile.azureVoice);
+        assert.ok(profile.openAiVoice);
+        assert.equal(getReadyVoiceProfile(persona, PROVIDERS.CARTESIA).provider, PROVIDERS.CARTESIA);
+      }
+    });
+
+    it('does not use legacy character labels as official ready-made labels', () => {
+      const serialized = JSON.stringify(OFFICIAL_READY_VOICE_PROFILES).toLowerCase();
+      assert.doesNotMatch(serialized, /terminator|donna paulsen|t-800|schwarzenegger/);
+    });
+  });
+
   describe('resolveVoiceProvider — official personas', () => {
     for (const persona of ['a11', 'kaen44', 'vivy']) {
-      it(`${persona}: auto-selects XTTS/RVC reference bridge before neutral fallback`, () => {
+      it(`${persona}: auto-selects neutral fallback when no ready-made provider is configured`, () => {
         const result = resolveVoiceProvider(persona);
-        assert.equal(result.provider, PROVIDERS.XTTS_RVC);
+        assert.equal(result.provider, PROVIDERS.PIPER);
         assert.equal(result.configured, true);
+      });
+
+      it(`${persona}: auto-selects Cartesia when its key is configured`, () => {
+        const previous = process.env.A11_CARTESIA_API_KEY;
+        process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+        try {
+          assert.equal(isProviderRuntimeConfigured(PROVIDERS.CARTESIA), true);
+          const result = resolveVoiceProvider(persona);
+          assert.equal(result.provider, PROVIDERS.CARTESIA);
+          assert.equal(result.configured, true);
+        } finally {
+          if (previous === undefined) delete process.env.A11_CARTESIA_API_KEY;
+          else process.env.A11_CARTESIA_API_KEY = previous;
+        }
       });
 
       it(`${persona}: never returns demo-alice via auto-select`, () => {
