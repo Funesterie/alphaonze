@@ -55,6 +55,36 @@ function timestampToDate(value) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+function getStripeWebhookSecrets() {
+  const rawValues = [
+    process.env.STRIPE_WEBHOOK_SECRET,
+    process.env.STRIPE_WEBHOOK_SECRETS,
+    process.env.STRIPE_WEBHOOK_PRIVATE_SECRET,
+    process.env.STRIPE_WEBHOOK_PUBLIC_SECRET,
+  ];
+
+  const secrets = rawValues
+    .flatMap((value) => String(value || '').split(/[,;\s]+/))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return [...new Set(secrets)];
+}
+
+function constructStripeWebhookEvent(stripe, webhookBody, signature, webhookSecrets) {
+  let lastError = null;
+
+  for (const webhookSecret of webhookSecrets) {
+    try {
+      return stripe.webhooks.constructEvent(webhookBody, signature, webhookSecret);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Aucun secret webhook Stripe valide');
+}
+
 function getSubscriptionPriceId(subscription) {
   return String(subscription?.items?.data?.[0]?.price?.id || '').trim() || null;
 }
@@ -293,10 +323,10 @@ function createSubscriptionRouter({ verifyJWT, db }) {
 
   router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const webhookSecrets = getStripeWebhookSecrets();
 
-    if (!webhookSecret) {
-      console.error('[Stripe] STRIPE_WEBHOOK_SECRET non configure');
+    if (!webhookSecrets.length) {
+      console.error('[Stripe] STRIPE_WEBHOOK_SECRET(S) non configure');
       return res.status(500).send('Webhook secret non configure');
     }
 
@@ -311,7 +341,7 @@ function createSubscriptionRouter({ verifyJWT, db }) {
       const webhookBody = Buffer.isBuffer(req.body) || typeof req.body === 'string'
         ? req.body
         : req.rawBody;
-      event = stripe.webhooks.constructEvent(webhookBody, sig, webhookSecret);
+      event = constructStripeWebhookEvent(stripe, webhookBody, sig, webhookSecrets);
     } catch (error) {
       console.error('[Stripe] Webhook validation error:', error.message);
       return res.status(400).send(`Webhook Error: ${error.message}`);
