@@ -4458,6 +4458,7 @@ export type MatchArenaSession = {
   gameTitle: string;
   mode?: string;
   opponent?: string;
+  visibility?: 'private' | 'public';
   priorityTier?: MatchArenaPriorityTier;
   priorityLabel?: string;
   createdAt?: string;
@@ -4498,6 +4499,14 @@ export type MatchArenaSession = {
   error?: string | null;
   plan?: Record<string, unknown> | null;
   lastInputAt?: string | null;
+  players?: Array<{
+    slot: number;
+    label?: string;
+    role?: string | null;
+    joinedAt?: string | null;
+  }>;
+  playerSlot?: number | null;
+  joinable?: boolean;
 };
 
 export type MatchArenaStatus = {
@@ -4554,11 +4563,24 @@ export async function fetchMatchArenaGames(): Promise<MatchArenaGame[]> {
   return (Array.isArray(data?.games) ? data.games : []) as MatchArenaGame[];
 }
 
+export async function fetchMatchArenaSessions(): Promise<MatchArenaSession[]> {
+  const res = await authFetch(getApiUrl('/api/match-arena/sessions'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Sessions Match Arena indisponibles (${res.status})`);
+  }
+  return (Array.isArray(data?.sessions) ? data.sessions : []) as MatchArenaSession[];
+}
+
 export async function createMatchArenaSession(input: {
   gameId: string;
   mode?: string;
   opponent?: string;
   priorityTier?: MatchArenaPriorityTier;
+  visibility?: 'private' | 'public';
 }): Promise<MatchArenaSession> {
   const res = await authFetch(getApiUrl('/api/match-arena/sessions'), {
     method: 'POST',
@@ -4568,6 +4590,19 @@ export async function createMatchArenaSession(input: {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.ok === false) {
     throw new Error(data?.message || data?.error || `Session Match Arena refusee (${res.status})`);
+  }
+  return data.session as MatchArenaSession;
+}
+
+export async function joinMatchArenaSession(sessionId: string): Promise<MatchArenaSession> {
+  const res = await authFetch(getApiUrl(`/api/match-arena/sessions/${encodeURIComponent(sessionId)}/join`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Session Match Arena impossible a rejoindre (${res.status})`);
   }
   return data.session as MatchArenaSession;
 }

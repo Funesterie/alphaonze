@@ -343,6 +343,38 @@ function buildInputDescriptor(session = {}) {
   };
 }
 
+function getRequestUserId(req = {}) {
+  return req.user?.id || req.user?.sub || req.user?.email || null;
+}
+
+function getRequestDisplayName(req = {}) {
+  return String(req.user?.displayName || req.user?.name || req.user?.email || 'Joueur').trim().slice(0, 80) || 'Joueur';
+}
+
+function getSessionPlayers(session = {}) {
+  return Array.isArray(session.players) ? session.players : [];
+}
+
+function getRequestPlayer(session = {}, req = {}) {
+  const requestUserId = getRequestUserId(req);
+  const players = getSessionPlayers(session);
+  if (requestUserId) {
+    const existing = players.find((player) => player.userId && player.userId === requestUserId);
+    if (existing) return existing;
+  }
+  if (!session.userId || (requestUserId && session.userId === requestUserId)) {
+    return players.find((player) => Number(player.slot || 0) === 1) || { slot: 1, role: 'host' };
+  }
+  return null;
+}
+
+function requestCanSeeSession(req, session = {}) {
+  const requestUserId = getRequestUserId(req);
+  if (!session.userId || (requestUserId && session.userId === requestUserId)) return true;
+  if (getRequestPlayer(session, req)) return true;
+  return session.visibility === 'public';
+}
+
 function sanitizeRuntimeDescriptor(input = {}, fallback = {}) {
   const source = input && typeof input === 'object' ? input : {};
   const capabilities = Array.isArray(source.capabilities) ? source.capabilities : fallback.capabilities;
@@ -359,7 +391,17 @@ function sanitizeRuntimeDescriptor(input = {}, fallback = {}) {
   };
 }
 
-function publicSession(session = {}) {
+function publicSession(session = {}, req = null) {
+  const player = req ? getRequestPlayer(session, req) : null;
+  const players = getSessionPlayers(session)
+    .map((entry) => ({
+      slot: Number(entry.slot || 0),
+      label: String(entry.label || `Joueur ${entry.slot || ''}`).trim().slice(0, 80),
+      role: String(entry.role || '').trim().slice(0, 40) || null,
+      joinedAt: entry.joinedAt || null,
+    }))
+    .filter((entry) => entry.slot > 0)
+    .sort((a, b) => a.slot - b.slot);
   return {
     id: session.id,
     state: session.state,
@@ -368,6 +410,7 @@ function publicSession(session = {}) {
     gameTitle: session.gameTitle,
     mode: session.mode,
     opponent: session.opponent,
+    visibility: session.visibility || 'private',
     priorityTier: session.priorityTier,
     priorityLabel: session.priorityLabel,
     createdAt: session.createdAt,
@@ -383,11 +426,16 @@ function publicSession(session = {}) {
     message: session.message || null,
     plan: session.plan || null,
     lastInputAt: session.lastInputAt || null,
+    players,
+    playerSlot: player ? Number(player.slot || 1) : null,
+    joinable: session.visibility === 'public'
+      && !['failed', 'done'].includes(String(session.state || '').toLowerCase())
+      && players.length < 4,
   };
 }
 
 function requestOwnsSession(req, session = {}) {
-  const requestUserId = req.user?.id || req.user?.sub || null;
+  const requestUserId = getRequestUserId(req);
   if (!session.userId || !requestUserId) return true;
   return session.userId === requestUserId;
 }
@@ -438,6 +486,12 @@ function buildQueueStatus() {
   };
 }
 
+function resolvePlayerSlotForInput(session = {}, body = {}, req = {}) {
+  const player = getRequestPlayer(session, req);
+  if (player) return Math.max(1, Math.min(4, Number(player.slot || 1)));
+  return Number.isFinite(Number(body.player)) ? Math.max(1, Math.min(4, Number(body.player))) : 1;
+}
+
 function recordInputEvent(session, body = {}, req = {}) {
   const control = String(body.control || body.button || body.key || body.action || '').trim().toLowerCase().slice(0, 40);
   if (!control) return { error: 'missing_control' };
@@ -447,7 +501,7 @@ function recordInputEvent(session, body = {}, req = {}) {
     seq: Number(session.inputSeq || 0) + 1,
     at: now,
     source: 'browser',
-    player: Number.isFinite(Number(body.player)) ? Math.max(1, Math.min(4, Number(body.player))) : 1,
+    player: resolvePlayerSlotForInput(session, body, req),
     control,
     action,
     value: Number.isFinite(Number(body.value)) ? Number(body.value) : (action === 'release' ? 0 : 1),
@@ -534,6 +588,13 @@ function createMatchArenaRouter(options = {}) {
     }
     const lane = resolvePriorityLane(req, req.body || {});
     const now = Date.now();
+    const requestedMode = String(req.body?.mode || 'user-vs-ai').trim().slice(0, 80) || 'user-vs-ai';
+    const visibility = String(req.body?.visibility || (requestedMode.includes('player') ? 'public' : 'private'))
+      .trim()
+      .toLowerCase() === 'public'
+      ? 'public'
+      : 'private';
+    const requestUserId = getRequestUserId(req);
     const session = {
       id: createSessionId(),
       state: 'queued',
@@ -544,12 +605,20 @@ function createMatchArenaRouter(options = {}) {
       gameId: game.id,
       gameTitle: game.title,
       game,
-      mode: String(req.body?.mode || 'user-vs-ai').trim().slice(0, 80) || 'user-vs-ai',
+      mode: requestedMode,
       opponent: String(req.body?.opponent || 'a11').trim().slice(0, 80) || 'a11',
+      visibility,
       priorityTier: lane.tier,
       priorityScore: lane.score,
       priorityLabel: lane.label,
-      userId: req.user?.id || req.user?.sub || null,
+      userId: requestUserId,
+      players: [{
+        slot: 1,
+        userId: requestUserId,
+        label: getRequestDisplayName(req),
+        role: 'host',
+        joinedAt: new Date(now).toISOString(),
+      }],
       workerId: null,
       leasedAt: null,
       leasedAtMs: null,
@@ -559,7 +628,7 @@ function createMatchArenaRouter(options = {}) {
         url: null,
         embedUrl: null,
         controlUrl: null,
-        message: 'Le worker local va publier le lien noVNC/WebRTC des qu il est pret.',
+        message: 'Session creee. Le worker prepare l emulateur et publiera l image ici; aucun telechargement cote joueur.',
       },
       input: {
         ready: true,
@@ -597,7 +666,27 @@ function createMatchArenaRouter(options = {}) {
     };
     session.input = buildInputDescriptor(session);
     sessions.set(session.id, session);
-    return res.status(202).json({ ok: true, session: publicSession(session) });
+    return res.status(202).json({ ok: true, session: publicSession(session, req) });
+  });
+
+  router.get('/sessions', requireUser, (req, res) => {
+    pruneSessions();
+    const list = Array.from(sessions.values())
+      .filter((session) => requestCanSeeSession(req, session))
+      .filter((session) => ['queued', 'leased', 'ready', 'running'].includes(String(session.state || '').toLowerCase()))
+      .sort((a, b) => {
+        const priorityDelta = Number(b.priorityScore || 0) - Number(a.priorityScore || 0);
+        if (priorityDelta) return priorityDelta;
+        return Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0);
+      })
+      .slice(0, 24)
+      .map((session) => publicSession(session, req));
+    return res.json({
+      ok: true,
+      schema: 'funesterie.match-arena.sessions.v1',
+      sessions: list,
+      queue: buildQueueStatus(),
+    });
   });
 
   router.get('/sessions/:sessionId', requireUser, (req, res) => {
@@ -605,18 +694,66 @@ function createMatchArenaRouter(options = {}) {
     const sessionId = String(req.params?.sessionId || '').trim();
     const session = sessions.get(sessionId);
     if (!session) return res.status(404).json({ ok: false, error: 'match_session_not_found' });
-    const requestUserId = req.user?.id || req.user?.sub || null;
-    if (session.userId && requestUserId && session.userId !== requestUserId) {
+    if (!requestCanSeeSession(req, session)) {
       return res.status(404).json({ ok: false, error: 'match_session_not_found' });
     }
-    return res.json({ ok: true, session: publicSession(session) });
+    return res.json({ ok: true, session: publicSession(session, req) });
+  });
+
+  router.post('/sessions/:sessionId/join', requireUser, (req, res) => {
+    pruneSessions();
+    const sessionId = String(req.params?.sessionId || '').trim();
+    const session = sessions.get(sessionId);
+    if (!session) return res.status(404).json({ ok: false, error: 'match_session_not_found' });
+    if (session.visibility !== 'public') {
+      return res.status(403).json({
+        ok: false,
+        error: 'match_session_private',
+        message: 'Cette session Match Arena n est pas publique.',
+      });
+    }
+    if (['failed', 'done'].includes(String(session.state || '').toLowerCase())) {
+      return res.status(409).json({
+        ok: false,
+        error: 'match_session_closed',
+        message: 'Cette session Match Arena est terminee.',
+      });
+    }
+
+    const currentPlayer = getRequestPlayer(session, req);
+    if (currentPlayer) {
+      return res.json({ ok: true, playerSlot: currentPlayer.slot, session: publicSession(session, req) });
+    }
+
+    const players = getSessionPlayers(session);
+    const usedSlots = new Set(players.map((player) => Number(player.slot || 0)));
+    const slot = [2, 3, 4].find((candidate) => !usedSlots.has(candidate));
+    if (!slot) {
+      return res.status(409).json({
+        ok: false,
+        error: 'match_session_full',
+        message: 'Cette session Match Arena est deja complete.',
+      });
+    }
+    players.push({
+      slot,
+      userId: getRequestUserId(req),
+      label: getRequestDisplayName(req),
+      role: 'guest',
+      joinedAt: new Date().toISOString(),
+    });
+    session.players = players;
+    session.opponent = slot === 2 ? 'player-2' : session.opponent;
+    session.mode = session.mode === 'user-vs-ai' ? 'user-vs-player' : session.mode;
+    session.message = `Joueur ${slot} connecte.`;
+    return res.json({ ok: true, playerSlot: slot, session: publicSession(session, req) });
   });
 
   router.post('/sessions/:sessionId/input', requireUser, (req, res) => {
     pruneSessions();
     const sessionId = String(req.params?.sessionId || '').trim();
     const session = sessions.get(sessionId);
-    if (!session || !requestOwnsSession(req, session)) {
+    if (!session || !requestCanSeeSession(req, session)) {
       return res.status(404).json({ ok: false, error: 'match_session_not_found' });
     }
     if (['failed', 'done'].includes(session.state)) {
@@ -633,7 +770,7 @@ function createMatchArenaRouter(options = {}) {
     return res.json({
       ok: true,
       eventSeq: recorded.event.seq,
-      session: publicSession(session),
+      session: publicSession(session, req),
     });
   });
 
@@ -650,6 +787,7 @@ function createMatchArenaRouter(options = {}) {
         podmanAvailable: req.body?.podmanAvailable === true,
         streamReady: req.body?.streamReady === true,
         streamMode: String(req.body?.streamMode || '').trim().slice(0, 80) || null,
+        streamSource: String(req.body?.streamSource || '').trim().slice(0, 80) || null,
         inputMode: String(req.body?.inputMode || '').trim().slice(0, 80) || null,
         gamesRootAvailable: req.body?.gamesRootAvailable === true,
         processed: Number.isFinite(Number(req.body?.processed)) ? Number(req.body.processed) : null,
@@ -681,6 +819,7 @@ function createMatchArenaRouter(options = {}) {
         podmanAvailable: req.body?.podmanAvailable === true,
         streamReady: req.body?.streamReady === true,
         streamMode: String(req.body?.streamMode || '').trim().slice(0, 80) || null,
+        streamSource: String(req.body?.streamSource || '').trim().slice(0, 80) || null,
         inputMode: String(req.body?.inputMode || '').trim().slice(0, 80) || null,
         gamesRootAvailable: req.body?.gamesRootAvailable === true,
         processed: null,
