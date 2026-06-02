@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import {
   clearA11History,
   createTextArtifact,
@@ -15,17 +15,22 @@ import {
   fetchMcpCockpitStatus,
   fetchMatchArenaGames,
   fetchMatchArenaSession,
+  fetchMatchArenaSessions,
   fetchMatchArenaStatus,
+  fetchMyConversationResources,
+  fetchMyStoredFiles,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
   fetchAuthSession,
+  getSubscriptionStatus,
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
   isAuthInvalidError,
   chatWithVivy,
   createCheckoutSession,
   createCustomerPortal,
+  cancelSubscription,
   createMatchArenaSession,
   emailConversationResource,
   clearAuthToken,
@@ -36,6 +41,7 @@ import {
   logoutAllSessions,
   getAuthToken,
   hasAuthToken,
+  joinMatchArenaSession,
   register,
   forgotPassword,
   resetPassword,
@@ -55,6 +61,7 @@ import {
   type A11ConversationActivityEntry,
   type A11ConversationResource,
   type A11HistoryItem,
+  type A11UserStoredFile,
   type RemoteProviderProfile,
   type RemoteProviderSaveInput,
   type TechnicalMemoSummaryResponse,
@@ -68,6 +75,7 @@ import {
   type MatchArenaGame,
   type MatchArenaSession,
   type MatchArenaStatus,
+  type SubscriptionStatus,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -504,6 +512,8 @@ function getSurfaceLinks() {
       contact: "/contact/",
       privacy: "/privacy/",
       terms: "/terms/",
+      vivyPrivacy: "/vivy/privacy",
+      vivyTerms: "/vivy/terms",
       qflush: "/k44/cockpit#qflush",
       nossen: "/agents/",
       kaen44Login: buildCentralLoginUrl("/k44/cockpit"),
@@ -531,6 +541,8 @@ function getSurfaceLinks() {
     contact: new URL("/contact/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     privacy: new URL("/privacy/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     terms: new URL("/terms/", FUNESTERIE_PUBLIC_APP_URL).toString(),
+    vivyPrivacy: new URL("/privacy/", VIVY_PUBLIC_APP_URL).toString(),
+    vivyTerms: new URL("/terms/", VIVY_PUBLIC_APP_URL).toString(),
     qflush: new URL("/cockpit#qflush", KAEN44_PUBLIC_APP_URL).toString(),
     nossen: new URL("/agents/", FUNESTERIE_PUBLIC_APP_URL).toString(),
     kaen44Login: buildCentralLoginUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString()),
@@ -574,6 +586,8 @@ function isAllowedFunesterieReturnOrigin(origin: string) {
   ].includes(normalized) || /^http:\/\/(?:localhost|127\.0\.0\.1|host\.docker\.internal)(?::\d+)?$/i.test(normalized);
 }
 
+const POST_LOGIN_RETURN_TO_KEY = "funesterie.postLoginReturnTo";
+
 function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
   if (surface === "kaen44") return new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
   if (surface === "vivy") return VIVY_PUBLIC_APP_URL;
@@ -595,22 +609,78 @@ function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback 
   }
 }
 
+function isSafePostLoginReturnTo(target: URL) {
+  return isAllowedFunesterieReturnOrigin(target.origin)
+    && !isLoginRoute(target.pathname)
+    && !isAuthSuccessRoute(target.pathname);
+}
+
+function rememberPostLoginReturnTo(rawValue: string | null | undefined) {
+  if (typeof window === "undefined") return;
+  const raw = String(rawValue || "").trim();
+  if (!raw) return;
+  try {
+    const target = new URL(raw, window.location.origin);
+    if (!isSafePostLoginReturnTo(target)) return;
+    window.sessionStorage.setItem(POST_LOGIN_RETURN_TO_KEY, target.toString());
+  } catch {
+    // Storage can be blocked in private contexts; explicit returnTo still works.
+  }
+}
+
+function getRememberedPostLoginReturnTo() {
+  if (typeof window === "undefined") return "";
+  try {
+    const stored = window.sessionStorage.getItem(POST_LOGIN_RETURN_TO_KEY);
+    if (!stored) return "";
+    const target = new URL(stored, window.location.origin);
+    if (!isSafePostLoginReturnTo(target)) return "";
+    return target.toString();
+  } catch {
+    return "";
+  }
+}
+
+function getReferrerPostLoginReturnTo() {
+  if (typeof document === "undefined" || typeof window === "undefined") return "";
+  try {
+    const referrer = String(document.referrer || "").trim();
+    if (!referrer) return "";
+    const target = new URL(referrer, window.location.origin);
+    if (!isSafePostLoginReturnTo(target)) return "";
+    return target.toString();
+  } catch {
+    return "";
+  }
+}
+
 function getRequestedLoginReturnTo() {
   if (typeof window === "undefined") return getDefaultPostLoginUrl();
   const params = new URLSearchParams(window.location.search || "");
   const explicit = params.get("returnTo") || params.get("next");
-  if (explicit) return normalizeAllowedReturnTo(explicit);
+  if (explicit) {
+    const normalizedExplicit = normalizeAllowedReturnTo(explicit);
+    rememberPostLoginReturnTo(normalizedExplicit);
+    return normalizedExplicit;
+  }
 
   const { pathname } = getLocationSnapshot();
-  if (isLoginRoute(pathname)) return getDefaultPostLoginUrl();
-  return normalizeAllowedReturnTo(window.location.href);
+  if (isLoginRoute(pathname)) {
+    return getRememberedPostLoginReturnTo() || getReferrerPostLoginReturnTo() || getDefaultPostLoginUrl();
+  }
+
+  const currentReturnTo = normalizeAllowedReturnTo(window.location.href);
+  rememberPostLoginReturnTo(currentReturnTo);
+  return currentReturnTo;
 }
 
 function buildCentralLoginUrl(returnTo = getRequestedLoginReturnTo()) {
   const base = typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)
     ? new URL("/login", window.location.origin)
     : new URL("/login", FUNESTERIE_PUBLIC_APP_URL);
-  base.searchParams.set("returnTo", normalizeAllowedReturnTo(returnTo));
+  const normalizedReturnTo = normalizeAllowedReturnTo(returnTo);
+  rememberPostLoginReturnTo(normalizedReturnTo);
+  base.searchParams.set("returnTo", normalizedReturnTo);
   return base.toString();
 }
 
@@ -675,7 +745,6 @@ function getSafeAuthSuccessNext(surface: FunesterieSurface) {
     const target = new URL(next, window.location.origin);
     if (target.origin !== window.location.origin) return "";
     if (isLoginRoute(target.pathname) || isAuthSuccessRoute(target.pathname)) return "";
-    if (surface === "kaen44" && !isCockpitRoute(target.pathname)) return "";
     return `${target.pathname}${target.search}${target.hash}`;
   } catch {
     return "";
@@ -1232,6 +1301,27 @@ function isImageInspectionRequest(value: string) {
     return false;
   }
   return /\b(c est qui|c est quoi|qui est ce|qui c est|qui est sur|c quoi|qu est ce que c est|que vois tu|qu y a t il|decris|decrit|analyse|identifie|reconnais|tu vois quoi|image|photo|visuel|capture|dessus)\b/.test(text);
+}
+
+function canReuseLastMediaForRequest(value: string) {
+  const text = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, " ")
+    .toLowerCase()
+    .trim();
+  if (!text) return false;
+  if (isLastImageRecallRequest(text)) return true;
+  return /\b(cette|celle|celui|dernier|derniere|precedent|precedente|la meme|le meme|l image jointe|la photo jointe)\b/.test(text)
+    && /\b(image|photo|visuel|capture|dessus|analyse|decris|decrit|vois)\b/.test(text);
+}
+
+function formatChatErrorForUser(error: unknown) {
+  const message = String((error as any)?.message || error || "").trim();
+  if (/\b(API\s*)?(502|503|504|524)\b/i.test(message) || /html inattendue|timeout|surcharge|upstream/i.test(message)) {
+    return "Le serveur IA est surchargé ou un fournisseur a coupé la réponse. Les comptes Basic passent après les files Premium/Fondateur: réessaie dans quelques instants, ou passe Premium/Fondateur si tu veux plus de priorité.";
+  }
+  return `Erreur lors de l'appel au chat A11 : ${message || "erreur inconnue"}`;
 }
 
 function findLastVisibleMedia(messages: ChatMessage[]) {
@@ -2962,13 +3052,14 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         makeSong: true,
         durationSeconds: 45,
       });
-      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || payload?.media?.url || "").trim();
+      const payloadAny = payload as any;
+      const mediaUrl = String(payloadAny?.audioUrl || payloadAny?.audio_url || payloadAny?.media?.audioUrl || payloadAny?.media?.audio_url || payloadAny?.media?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
-        provider: String(payload?.media?.provider || "vivy-music"),
-        contentType: String(payload?.media?.content_type || payload?.contentType || payload?.content_type || "audio/mpeg"),
+        provider: String(payloadAny?.media?.provider || "vivy-music"),
+        contentType: String(payloadAny?.media?.content_type || payloadAny?.contentType || payloadAny?.content_type || "audio/mpeg"),
       });
       setVivyOutput([
         "VIVY_MUSIC_GENERATION",
@@ -3904,6 +3995,17 @@ function VivyPublicPage({ authenticated, displayName }: VivyPublicPageProps) {
                 <a className="vivy-agent-menu-row" href={surfaceLinks.cockpit}>
                   <span>Cockpit</span>
                   <span>État</span>
+                </a>
+              </section>
+              <section className="vivy-agent-menu-section" aria-label="Légal">
+                <p className="vivy-agent-menu-title">Légal</p>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.vivyPrivacy}>
+                  <span>Confidentialité</span>
+                  <span>Vie privée</span>
+                </a>
+                <a className="vivy-agent-menu-row" href={surfaceLinks.vivyTerms}>
+                  <span>Conditions</span>
+                  <span>Utilisation</span>
                 </a>
               </section>
               <section className="vivy-agent-menu-section vivy-agent-menu-section--account" aria-label="Compte">
@@ -5567,6 +5669,93 @@ function readFunesterieAccountOverview() {
   return { conversations, files, vivyMessages, voiceReference };
 }
 
+type FunesterieAccountInventory = {
+  conversations: Record<FunesterieSurface, A11HistoryItem[]>;
+  files: A11UserStoredFile[];
+  resources: A11ConversationResource[];
+  subscription: SubscriptionStatus | null;
+  loadedAt: string | null;
+  loading: boolean;
+  error: string;
+};
+
+const EMPTY_ACCOUNT_CONVERSATIONS: Record<FunesterieSurface, A11HistoryItem[]> = {
+  a11: [],
+  kaen44: [],
+  vivy: [],
+};
+
+function getStoredFileSize(file: A11UserStoredFile | A11ConversationResource) {
+  return Number((file as A11UserStoredFile).sizeBytes ?? (file as A11UserStoredFile).size_bytes ?? (file as A11ConversationResource).sizeBytes ?? 0);
+}
+
+function formatCompactFileSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return "taille inconnue";
+  if (sizeBytes < 1024) return `${sizeBytes} o`;
+  if (sizeBytes < 1024 * 1024) return `${Math.round(sizeBytes / 1024)} Ko`;
+  return `${(sizeBytes / 1024 / 1024).toFixed(sizeBytes >= 10 * 1024 * 1024 ? 0 : 1)} Mo`;
+}
+
+function formatAccountDate(value?: string | null) {
+  if (!value) return "date inconnue";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "date inconnue";
+  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+function getStoredFileDate(file: A11UserStoredFile | A11ConversationResource) {
+  return String(
+    (file as A11UserStoredFile).createdAt
+    || (file as A11UserStoredFile).created_at
+    || (file as A11ConversationResource).updatedAt
+    || (file as A11ConversationResource).createdAt
+    || ""
+  );
+}
+
+function getStoredFileUrl(file: A11UserStoredFile | A11ConversationResource) {
+  return String((file as A11ConversationResource).downloadUrl || (file as A11ConversationResource).url || (file as A11UserStoredFile).url || "");
+}
+
+function getSubscriptionAccountLabel(status: SubscriptionStatus | null, authenticated: boolean) {
+  if (!authenticated) return "Connexion requise";
+  const tier = String(status?.tier || status?.plan || "").toLowerCase();
+  if (status?.fullAccess || tier.includes("admin")) return "Accès complet";
+  if (tier.includes("founder") || tier.includes("fondateur")) return "Fondateur";
+  if (status?.active || tier.includes("premium")) return "Premium actif";
+  return "Sans abonnement";
+}
+
+function getSubscriptionAccountText(status: SubscriptionStatus | null, authenticated: boolean) {
+  if (!authenticated) return "Connecte-toi pour voir l'état exact du compte et les moyens de paiement.";
+  if (!status) return "Statut abonnement non chargé.";
+  if (status.fullAccess) return "Compte autorisé en accès complet.";
+  if (status.active) {
+    const end = status.stripeStatus?.currentPeriodEnd || status.endDate || null;
+    if (status.stripeStatus?.cancelAtPeriodEnd) {
+      return end
+        ? `Désabonnement programmé. Accès maintenu jusqu'au ${formatAccountDate(typeof end === "number" ? new Date(end * 1000).toISOString() : end)}.`
+        : "Désabonnement programmé à la fin de la période en cours.";
+    }
+    return end ? `Actif jusqu'au ${formatAccountDate(typeof end === "number" ? new Date(end * 1000).toISOString() : end)}` : "Abonnement actif.";
+  }
+  return "Aucun abonnement actif. Premium et Fondateur passent par le paiement automatique.";
+}
+
+function downloadFunesterieJson(filename: string, payload: unknown) {
+  if (typeof window === "undefined") return;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function FunesterieAccountPage({
   surfaceLinks,
   authenticated = false,
@@ -5579,11 +5768,155 @@ function FunesterieAccountPage({
   onLogout?: () => void;
 }) {
   const overview = useMemo(() => readFunesterieAccountOverview(), [authenticated, displayName]);
-  const openWithSession = (event: React.MouseEvent<HTMLButtonElement>, targetUrl: string) => {
-    event.preventDefault();
-    if (typeof window === "undefined") return;
-    window.location.assign(buildSessionBridgeUrl(targetUrl));
+  const [inventory, setInventory] = useState<FunesterieAccountInventory>({
+    conversations: EMPTY_ACCOUNT_CONVERSATIONS,
+    files: [],
+    resources: [],
+    subscription: null,
+    loadedAt: null,
+    loading: false,
+    error: "",
+  });
+  const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal" | "cancel">("");
+
+  async function loadAccountInventory() {
+    if (!authenticated) {
+      setInventory({
+        conversations: EMPTY_ACCOUNT_CONVERSATIONS,
+        files: [],
+        resources: [],
+        subscription: null,
+        loadedAt: null,
+        loading: false,
+        error: "",
+      });
+      return;
+    }
+
+    setInventory((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const [
+        a11History,
+        kaen44History,
+        vivyHistory,
+        storedFiles,
+        resources,
+        subscription,
+      ] = await Promise.all([
+        fetchA11HistoryList({ surface: "a11" }).catch(() => []),
+        fetchA11HistoryList({ surface: "kaen44" }).catch(() => []),
+        fetchA11HistoryList({ surface: "vivy" }).catch(() => []),
+        fetchMyStoredFiles({ limit: 100 }).catch(() => ({ ok: false, files: [] })),
+        fetchMyConversationResources({ limit: 100 }).catch(() => ({ ok: false, resources: [] })),
+        getSubscriptionStatus().catch(() => null),
+      ]);
+
+      setInventory({
+        conversations: {
+          a11: Array.isArray(a11History) ? a11History : [],
+          kaen44: Array.isArray(kaen44History) ? kaen44History : [],
+          vivy: Array.isArray(vivyHistory) ? vivyHistory : [],
+        },
+        files: Array.isArray(storedFiles.files) ? storedFiles.files : [],
+        resources: Array.isArray(resources.resources) ? resources.resources : [],
+        subscription,
+        loadedAt: new Date().toISOString(),
+        loading: false,
+        error: "",
+      });
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        loading: false,
+        error: (error as Error).message || "Inventaire indisponible",
+      }));
+    }
+  }
+
+  useEffect(() => {
+    loadAccountInventory();
+  }, [authenticated]);
+
+  const conversationTotal = Object.values(inventory.conversations).reduce((sum, entries) => sum + entries.length, 0);
+  const messageTotal = Object.values(inventory.conversations).reduce((sum, entries) => (
+    sum + entries.reduce((inner, entry) => inner + Number(entry.messageCount || 0), 0)
+  ), 0);
+  const resourceTotal = inventory.files.length + inventory.resources.length;
+  const latestFiles = [...inventory.resources, ...inventory.files]
+    .sort((left, right) => getStoredFileDate(right).localeCompare(getStoredFileDate(left)))
+    .slice(0, 3);
+  const subscriptionLabel = getSubscriptionAccountLabel(inventory.subscription, authenticated);
+  const subscriptionText = getSubscriptionAccountText(inventory.subscription, authenticated);
+
+  function exportAccountInventory() {
+    const today = new Date().toISOString().slice(0, 10);
+    downloadFunesterieJson(`funesterie-inventaire-${today}.json`, {
+      exportedAt: new Date().toISOString(),
+      account: {
+        authenticated,
+        displayName: displayName || null,
+        subscription: inventory.subscription ? {
+          active: inventory.subscription.active,
+          fullAccess: inventory.subscription.fullAccess,
+          tier: inventory.subscription.tier,
+          plan: inventory.subscription.plan,
+          endDate: inventory.subscription.endDate,
+          stripeStatus: inventory.subscription.stripeStatus,
+        } : null,
+      },
+      localOverview: overview,
+      conversations: inventory.conversations,
+      files: inventory.files,
+      resources: inventory.resources,
+    });
+  }
+
+  async function openPayment(plan: "premium" | "founder" | "portal" = "premium") {
+    if (!authenticated) {
+      if (typeof window !== "undefined") window.location.assign(buildCentralLoginUrl(surfaceLinks.account));
+      return;
+    }
+
+    setPaymentBusy(plan);
+    try {
+      if (plan === "portal" || inventory.subscription?.active) {
+        const data = await createCustomerPortal();
+        if (data.url) window.location.href = data.url;
+        return;
+      }
+
+      const data = await createCheckoutSession(plan);
+      if (data.url) window.location.href = data.url;
+    } catch {
+      if (typeof window !== "undefined") {
+        const target = surfaceLinks.account.includes("#") ? surfaceLinks.account : `${surfaceLinks.account}#paiements`;
+        window.location.assign(target);
+      }
+    } finally {
+      setPaymentBusy("");
+    }
   };
+
+  async function cancelAccountSubscription() {
+    if (!authenticated) {
+      if (typeof window !== "undefined") window.location.assign(buildCentralLoginUrl(surfaceLinks.account));
+      return;
+    }
+
+    if (!window.confirm("Programmer le désabonnement à la fin de la période déjà payée ?")) return;
+    setPaymentBusy("cancel");
+    try {
+      await cancelSubscription();
+      await loadAccountInventory();
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        error: (error as Error).message || "Désabonnement indisponible",
+      }));
+    } finally {
+      setPaymentBusy("");
+    }
+  }
 
   return (
     <main id="top" className="fun-home-shell fun-public-surface fun-account-shell" aria-label="Compte Funesterie">
@@ -5601,31 +5934,34 @@ function FunesterieAccountPage({
           </article>
           <article>
             <strong>Historique</strong>
-            <span>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} locale{overview.conversations > 1 ? "s" : ""}</span>
+            <span>{conversationTotal || overview.conversations} conversation{(conversationTotal || overview.conversations) > 1 ? "s" : ""}</span>
           </article>
           <article>
             <strong>Fichiers</strong>
-            <span>{overview.files} média/fichier en cache local</span>
+            <span>{resourceTotal || overview.files} média/fichier{(resourceTotal || overview.files) > 1 ? "s" : ""}</span>
           </article>
           <article>
-            <strong>Voix</strong>
-            <span>{overview.voiceReference}</span>
+            <strong>Abonnement</strong>
+            <span>{subscriptionLabel}</span>
           </article>
         </div>
       </section>
 
-      <section className="fun-token-panel" aria-label="Actions compte">
+      <section id="paiements" className="fun-token-panel" aria-label="Actions compte">
         <header className="fun-token-head">
           <div>
             <span>Réglages</span>
             <h2>Accès et données</h2>
-            <p>Gestion courte du compte, des conversations locales et des fichiers liés aux agents.</p>
+            <p>Inventaire récupérable du compte, des discussions, médias et fichiers liés à ta session.</p>
           </div>
           <aside>
-            <strong>{authenticated ? "Privé" : "Public"}</strong>
-            <small>{authenticated ? (displayName || "connecté") : "connexion requise"}</small>
+            <strong>{inventory.loading ? "Synchro" : (authenticated ? "Privé" : "Public")}</strong>
+            <small>{inventory.loadedAt ? `maj ${formatAccountDate(inventory.loadedAt)}` : (authenticated ? (displayName || "connecté") : "connexion requise")}</small>
           </aside>
         </header>
+        {inventory.error && (
+          <p className="fun-account-alert">{inventory.error}</p>
+        )}
         <div className="fun-integration-grid">
           <article className="fun-token-card">
             <header>
@@ -5644,31 +5980,93 @@ function FunesterieAccountPage({
           <article className="fun-token-card">
             <header>
               <h3>Conversations</h3>
-              <span>Historique</span>
+              <span>Inventaire</span>
             </header>
-            <p>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} détectée{overview.conversations > 1 ? "s" : ""} côté navigateur.</p>
+            <p>
+              {conversationTotal} conversation{conversationTotal > 1 ? "s" : ""} serveur,
+              {messageTotal ? ` ${messageTotal} message${messageTotal > 1 ? "s" : ""},` : ""} cache local: {overview.conversations}.
+            </p>
+            <div className="fun-account-mini-list">
+              <span>A11: {inventory.conversations.a11.length}</span>
+              <span>K44: {inventory.conversations.kaen44.length}</span>
+              <span>Vivy: {inventory.conversations.vivy.length}</span>
+            </div>
             <footer>
-              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.a11Cockpit)}>Ouvrir A11</button>
+              <div className="fun-token-card-actions">
+                <button type="button" onClick={loadAccountInventory} disabled={!authenticated || inventory.loading}>
+                  {inventory.loading ? "Chargement" : "Actualiser"}
+                </button>
+                <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
+                  Export JSON
+                </button>
+              </div>
             </footer>
           </article>
           <article className="fun-token-card">
             <header>
               <h3>Fichiers</h3>
-              <span>Ressources</span>
+              <span>Médias</span>
             </header>
-            <p>{overview.files} ressource{overview.files > 1 ? "s" : ""} locale{overview.files > 1 ? "s" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}.</p>
+            <p>
+              {inventory.files.length} fichier{inventory.files.length > 1 ? "s" : ""} compte,
+              {" "}{inventory.resources.length} ressource{inventory.resources.length > 1 ? "s" : ""} conversation.
+            </p>
+            <div className="fun-account-mini-list">
+              {latestFiles.length ? latestFiles.map((file, index) => {
+                const url = getStoredFileUrl(file);
+                const name = String(file.filename || `fichier-${index + 1}`);
+                const label = `${name} · ${formatCompactFileSize(getStoredFileSize(file))}`;
+                return url ? (
+                  <a key={`${name}-${index}`} href={resolveApiAssetUrl(url) || url} target="_blank" rel="noreferrer">{label}</a>
+                ) : (
+                  <span key={`${name}-${index}`}>{label}</span>
+                );
+              }) : (
+                <span>{overview.files} élément{overview.files > 1 ? "s" : ""} local{overview.files > 1 ? "aux" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}</span>
+              )}
+            </div>
             <footer>
-              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.vivy)}>Ouvrir Vivy</button>
+              <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
+                Télécharger l'inventaire
+              </button>
             </footer>
           </article>
           <article className="fun-token-card">
             <header>
-              <h3>Préférences</h3>
-              <span>Local</span>
+              <h3>Abonnement</h3>
+              <span>Paiement</span>
             </header>
-            <p>Voix, langue et réglages restent dans le navigateur quand ils ne nécessitent pas serveur.</p>
+            <p>{subscriptionText}</p>
+            <div className="fun-account-mini-list">
+              <span>Voix: {overview.voiceReference}</span>
+              <span>Plan: {subscriptionLabel}</span>
+            </div>
             <footer>
-              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.kaen44Cockpit)}>Ouvrir K44</button>
+              <div className="fun-token-card-actions">
+                {inventory.subscription?.active ? (
+                  <>
+                    <button type="button" onClick={() => openPayment("portal")} disabled={!!paymentBusy}>
+                      {paymentBusy === "portal" ? "Ouverture" : "Gérer"}
+                    </button>
+                    {inventory.subscription.stripeStatus?.cancelAtPeriodEnd ? (
+                      <span>Désabonnement programmé</span>
+                    ) : (
+                      <button type="button" onClick={cancelAccountSubscription} disabled={!!paymentBusy}>
+                        {paymentBusy === "cancel" ? "En cours" : "Se désabonner"}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => openPayment("premium")} disabled={!!paymentBusy}>
+                      {paymentBusy === "premium" ? "Ouverture" : "Premium"}
+                    </button>
+                    <button type="button" onClick={() => openPayment("founder")} disabled={!!paymentBusy}>
+                      {paymentBusy === "founder" ? "Ouverture" : "Fondateur"}
+                    </button>
+                  </>
+                )}
+              </div>
             </footer>
           </article>
         </div>
@@ -5791,7 +6189,7 @@ function ResetPasswordPanel() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", width: "100%", padding: "24px 16px calc(24px + env(safe-area-inset-bottom))", boxSizing: "border-box", gap: "20px" }}>
-      <h1>Reinitialiser le mot de passe</h1>
+      <h1>Réinitialiser le mot de passe</h1>
       <form onSubmit={handleReset} style={{ display: "flex", flexDirection: "column", gap: "12px", width: "min(100%, 340px)" }}>
         <input
           id="reset-password"
@@ -5831,7 +6229,7 @@ function ResetPasswordPanel() {
         {error && <div style={{ color: "red", fontSize: "14px" }}>{error}</div>}
         {success && (
           <div style={{ color: "#22c55e", fontSize: "14px" }}>
-            Mot de passe modifie. Tu peux revenir sur la page de connexion.
+            Mot de passe modifié. Tu peux revenir sur la page de connexion.
           </div>
         )}
       </form>
@@ -5867,7 +6265,7 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
   return (
     <button
       onClick={() => setMuted(m => !m)}
-      title={muted ? "Retablir la voix d'A11" : "Couper la voix d'A11"}
+      title={muted ? "Rétablir la voix d'A11" : "Couper la voix d'A11"}
       style={{
         fontSize: showLabel ? 13 : 20,
         padding: showLabel ? "10px 12px" : 6,
@@ -5882,11 +6280,11 @@ function MuteButton({ showLabel = false, fullWidth = false }: { showLabel?: bool
       className="btn ghost"
     >
       {muted ? (
-        <span aria-label="Sortie coupee">Off</span>
+        <span aria-label="Sortie coupée">Off</span>
       ) : (
         <span aria-label="Sortie automatique">On</span>
       )}
-      {showLabel ? <span>{muted ? "Sortie coupee" : "Sortie auto"}</span> : null}
+      {showLabel ? <span>{muted ? "Sortie coupée" : "Sortie auto"}</span> : null}
     </button>
   );
 }
@@ -6006,10 +6404,86 @@ function Kaen44ModulesPanel({
   );
 }
 
+const MATCH_ARENA_CONTROLS = [
+  { id: "up", label: "Haut", short: "H" },
+  { id: "left", label: "Gauche", short: "G" },
+  { id: "down", label: "Bas", short: "B" },
+  { id: "right", label: "Droite", short: "D" },
+  { id: "a", label: "A", short: "A" },
+  { id: "b", label: "B", short: "B" },
+  { id: "x", label: "X", short: "X" },
+  { id: "y", label: "Y", short: "Y" },
+  { id: "l", label: "L", short: "L" },
+  { id: "r", label: "R", short: "R" },
+  { id: "start", label: "Start", short: "START" },
+  { id: "select", label: "Select", short: "SELECT" },
+] as const;
+
+type MatchArenaControl = typeof MATCH_ARENA_CONTROLS[number]["id"];
+type MatchArenaKeyBindings = Record<MatchArenaControl, string[]>;
+
+const MATCH_ARENA_DEFAULT_KEY_BINDINGS: MatchArenaKeyBindings = {
+  up: ["ArrowUp", "z", "w"],
+  down: ["ArrowDown", "s"],
+  left: ["ArrowLeft", "q", "a"],
+  right: ["ArrowRight", "d"],
+  a: ["j"],
+  b: ["k"],
+  x: ["u"],
+  y: ["i"],
+  l: ["o"],
+  r: ["p"],
+  start: ["Enter"],
+  select: ["Backspace"],
+};
+
+const MATCH_ARENA_GAMEPAD_BUTTONS: Record<number, MatchArenaControl> = {
+  0: "a",
+  1: "b",
+  2: "x",
+  3: "y",
+  4: "l",
+  5: "r",
+  8: "select",
+  9: "start",
+  12: "up",
+  13: "down",
+  14: "left",
+  15: "right",
+};
+
+function formatMatchArenaKey(key: string) {
+  if (key === "ArrowUp") return "↑";
+  if (key === "ArrowDown") return "↓";
+  if (key === "ArrowLeft") return "←";
+  if (key === "ArrowRight") return "→";
+  if (key === " ") return "Espace";
+  if (key === "Backspace") return "Retour";
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+function readMatchArenaKeyBindings(): MatchArenaKeyBindings {
+  if (typeof window === "undefined") return MATCH_ARENA_DEFAULT_KEY_BINDINGS;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem("funesterie.matchArena.keyBindings") || "{}");
+    const next = { ...MATCH_ARENA_DEFAULT_KEY_BINDINGS };
+    for (const control of MATCH_ARENA_CONTROLS) {
+      const values = Array.isArray(parsed?.[control.id]) ? parsed[control.id] : [];
+      const clean = values.map((value: unknown) => String(value || "").trim()).filter(Boolean).slice(0, 4);
+      if (clean.length) next[control.id] = clean;
+    }
+    return next;
+  } catch {
+    return MATCH_ARENA_DEFAULT_KEY_BINDINGS;
+  }
+}
+
 function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const [status, setStatus] = useState<MatchArenaStatus | null>(null);
   const [games, setGames] = useState<MatchArenaGame[]>([]);
+  const [lobbySessions, setLobbySessions] = useState<MatchArenaSession[]>([]);
   const [selectedGameId, setSelectedGameId] = useState("");
+  const [matchMode, setMatchMode] = useState<"user-vs-ai" | "user-vs-player">("user-vs-ai");
   const [priorityTier, setPriorityTier] = useState<"admin" | "family" | "public">(
     hasAdminApiAccess() ? "admin" : "public"
   );
@@ -6018,6 +6492,11 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [sendingInput, setSendingInput] = useState("");
+  const [keyboardEnabled, setKeyboardEnabled] = useState(true);
+  const [gamepadEnabled, setGamepadEnabled] = useState(true);
+  const [gamepadLabel, setGamepadLabel] = useState("Aucune manette");
+  const [captureControl, setCaptureControl] = useState<MatchArenaControl | "">("");
+  const [keyBindings, setKeyBindings] = useState<MatchArenaKeyBindings>(() => readMatchArenaKeyBindings());
 
   const refresh = async () => {
     setLoading(true);
@@ -6027,8 +6506,10 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         fetchMatchArenaStatus(),
         fetchMatchArenaGames(),
       ]);
+      const nextSessions = await fetchMatchArenaSessions().catch(() => []);
       setStatus(nextStatus);
       setGames(nextGames);
+      setLobbySessions(nextSessions);
       setSelectedGameId((current) => current || nextGames[0]?.id || "");
     } catch (err) {
       setError(String((err as Error)?.message || err));
@@ -6070,6 +6551,12 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
   const workerOnline = status?.worker?.online === true;
   const streamUrl = session?.stream?.embedUrl || session?.stream?.url || "";
   const inputReady = session?.input?.ready !== false && Boolean(session?.id);
+  const publicLobbySessions = lobbySessions.filter((item) => item.visibility === "public" && item.id !== session?.id);
+  const localPlayerSlot = session?.playerSlot || 1;
+  const streamMessage = session?.stream?.message
+    || (workerOnline
+      ? "Le worker est prêt. L'image s'affichera automatiquement dès qu'un pont vidéo local ou tunnel public est disponible."
+      : "Le worker local n'est pas encore connecté. La session reste en file et les joueurs n'ont rien à installer.");
 
   const startSession = async () => {
     if (!selectedGameId) return;
@@ -6078,11 +6565,13 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     try {
       const nextSession = await createMatchArenaSession({
         gameId: selectedGameId,
-        mode: "user-vs-ai",
-        opponent: "a11",
+        mode: matchMode,
+        opponent: matchMode === "user-vs-player" ? "public-player" : "a11",
         priorityTier,
+        visibility: matchMode === "user-vs-player" ? "public" : "private",
       });
       setSession(nextSession);
+      void refresh();
     } catch (err) {
       setError(String((err as Error)?.message || err));
     } finally {
@@ -6090,7 +6579,21 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     }
   };
 
-  const sendControl = async (control: string) => {
+  const joinSession = async (sessionId: string) => {
+    setStarting(true);
+    setError("");
+    try {
+      const nextSession = await joinMatchArenaSession(sessionId);
+      setSession(nextSession);
+      void refresh();
+    } catch (err) {
+      setError(String((err as Error)?.message || err));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const sendControl = useCallback(async (control: string) => {
     if (!session?.id) return;
     setSendingInput(control);
     setError("");
@@ -6108,7 +6611,92 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
     } finally {
       setSendingInput("");
     }
-  };
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("funesterie.matchArena.keyBindings", JSON.stringify(keyBindings));
+    } catch {
+      // Local preferences are best-effort.
+    }
+  }, [keyBindings]);
+
+  useEffect(() => {
+    if (!captureControl || typeof window === "undefined") return undefined;
+    const captureKey = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = event.key || event.code;
+      if (!key) return;
+      setKeyBindings((current) => ({
+        ...current,
+        [captureControl]: [key],
+      }));
+      setCaptureControl("");
+    };
+    window.addEventListener("keydown", captureKey, true);
+    return () => window.removeEventListener("keydown", captureKey, true);
+  }, [captureControl]);
+
+  useEffect(() => {
+    if (!keyboardEnabled || !inputReady || captureControl || typeof window === "undefined") return undefined;
+    const lookup = new Map<string, MatchArenaControl>();
+    for (const control of MATCH_ARENA_CONTROLS) {
+      for (const key of keyBindings[control.id] || []) lookup.set(String(key).toLowerCase(), control.id);
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      const tagName = String(target?.tagName || "").toLowerCase();
+      if (["input", "textarea", "select", "button"].includes(tagName) || target?.isContentEditable) return;
+      const control = lookup.get(String(event.key || event.code || "").toLowerCase());
+      if (!control) return;
+      event.preventDefault();
+      void sendControl(control);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [captureControl, inputReady, keyBindings, keyboardEnabled, sendControl]);
+
+  useEffect(() => {
+    if (!gamepadEnabled || !inputReady || typeof window === "undefined") return undefined;
+    let frame = 0;
+    let lastName = "";
+    const activeControls = new Set<MatchArenaControl>();
+    const emitControl = (control: MatchArenaControl, active: boolean) => {
+      if (active && !activeControls.has(control)) {
+        activeControls.add(control);
+        void sendControl(control);
+      }
+      if (!active) activeControls.delete(control);
+    };
+    const tick = () => {
+      const pads = typeof navigator !== "undefined" && navigator.getGamepads ? Array.from(navigator.getGamepads()) : [];
+      const pad = pads.find(Boolean);
+      const nextName = pad?.id ? String(pad.id).slice(0, 72) : "Aucune manette";
+      if (nextName !== lastName) {
+        lastName = nextName;
+        setGamepadLabel(nextName);
+      }
+      if (pad) {
+        Object.entries(MATCH_ARENA_GAMEPAD_BUTTONS).forEach(([index, control]) => {
+          emitControl(control, Boolean(pad.buttons[Number(index)]?.pressed));
+        });
+        const horizontal = Number(pad.axes[0] || 0);
+        const vertical = Number(pad.axes[1] || 0);
+        emitControl("left", horizontal < -0.55);
+        emitControl("right", horizontal > 0.55);
+        emitControl("up", vertical < -0.55);
+        emitControl("down", vertical > 0.55);
+      } else {
+        activeControls.clear();
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [gamepadEnabled, inputReady, sendControl]);
 
   const pillStyle = (active: boolean): React.CSSProperties => ({
     minHeight: 34,
@@ -6139,6 +6727,9 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         borderRadius: 14,
         background: "#0b1220",
         padding: isCompactLayout ? 14 : 16,
+        width: "100%",
+        maxWidth: 1180,
+        margin: "0 auto",
         display: "flex",
         flexDirection: "column",
         gap: 14,
@@ -6149,7 +6740,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
         <div>
           <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 18 }}>Match Arena</h3>
           <p style={{ color: "#94a3b8", margin: "6px 0 0", fontSize: 13, maxWidth: 760 }}>
-            Sessions jeu avec inventaire local, file priorisee, commandes navigateur et exports Drive/OneDrive.
+            Sessions jeu en ligne avec file priorisée, clavier/manette navigateur et image publiée par le worker dès que le pont vidéo est prêt.
           </p>
         </div>
         <button type="button" className="btn ghost" onClick={refresh} disabled={loading} style={{ alignSelf: "flex-start" }}>
@@ -6168,7 +6759,7 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
           ["Jeux", String(status?.catalog?.count ?? games.length)],
           ["Worker", workerOnline ? "En ligne" : status?.worker?.configured ? "Attente" : "Token manquant"],
           ["File", String(status?.queue?.active ?? 0)],
-          ["Stream", status?.worker?.heartbeat?.streamReady ? "Pret" : session?.stream?.ready ? "Pret" : "Attente"],
+          ["Stream", status?.worker?.heartbeat?.streamReady ? "Prêt" : session?.stream?.ready ? "Prêt" : "Attente"],
         ].map(([label, value]) => (
           <div key={label} style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d" }}>
             <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>{label}</div>
@@ -6202,7 +6793,23 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             ))}
           </select>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorite session">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Mode de match">
+            {[
+              ["user-vs-ai", "Contre A11"],
+              ["user-vs-player", "Joueur en ligne"],
+            ].map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setMatchMode(mode as "user-vs-ai" | "user-vs-player")}
+                style={pillStyle(matchMode === mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Priorité session">
             {[
               ["admin", "Admin"],
               ["family", "Famille"],
@@ -6226,8 +6833,38 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
             className="btn primary"
             style={{ justifyContent: "center", minHeight: 42 }}
           >
-            {starting ? "Preparation..." : "Creer une session"}
+            {starting ? "Préparation..." : matchMode === "user-vs-player" ? "Créer une session publique" : "Créer une session"}
           </button>
+
+          {publicLobbySessions.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                Sessions publiques
+              </div>
+              {publicLobbySessions.slice(0, 4).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => void joinSession(item.id)}
+                  disabled={starting || !item.joinable}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    minHeight: 38,
+                  }}
+                >
+                  <span>{item.gameTitle}</span>
+                  <span style={{ color: "#94a3b8", fontWeight: 800 }}>
+                    {item.joinable ? "Rejoindre" : "Complet"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d", color: "#cbd5e1", fontSize: 12 }}>
@@ -6240,19 +6877,21 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
               <div>Fichiers jouables: {selectedGame.playableCount ?? selectedGame.playableFiles?.length ?? 0}</div>
               <div>Cover: {selectedGame.hasCover ? "oui" : "non"}</div>
               <div style={{ marginTop: 8, color: "#94a3b8" }}>
-                {selectedGame.playableFiles?.slice(0, 4).map((file) => file.name).join(" | ") || "Aucun fichier affiche"}
+                {selectedGame.playableFiles?.slice(0, 4).map((file) => file.name).join(" | ") || "Aucun fichier affiché"}
               </div>
             </>
           ) : (
-            <div>Le worker local doit publier l inventaire de C:\Users\Djeff\Desktop\jeux.</div>
+            <div>Le worker local publie l'inventaire de C:\Users\Djeff\Desktop\jeux.</div>
           )}
           {session ? (
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1f2937" }}>
               <div style={{ color: "#e2e8f0", fontWeight: 800 }}>Session {session.state}</div>
               <div>{session.gameTitle}</div>
-              <div>Priorite: {session.priorityLabel || session.priorityTier || "Public"}</div>
+              <div>Priorité: {session.priorityLabel || session.priorityTier || "Public"}</div>
+              <div>Mode: {session.visibility === "public" ? "public" : "privé"} · joueur {localPlayerSlot}</div>
+              <div>Participants: {session.players?.length || 1}</div>
               <div>Worker: {session.workerId || "en attente"}</div>
-              <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream pret" : "stream en attente"}</div>
+              <div>Runtime: {session.runtime?.playable ? "jouable" : session.stream?.ready ? "stream prêt" : "stream en attente"}</div>
               {session.export?.localPath ? <div>Export: {session.export.localPath}</div> : null}
               {session.message ? <div style={{ marginTop: 6 }}>{session.message}</div> : null}
             </div>
@@ -6262,21 +6901,54 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
 
       {session ? (
         <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(0, 1.4fr) minmax(260px, 0.6fr)", gap: 12 }}>
-          <div style={{ border: "1px solid #1f2937", borderRadius: 10, minHeight: isCompactLayout ? 220 : 360, overflow: "hidden", background: "#020817" }}>
+          <div
+            style={{
+              border: "1px solid #1f2937",
+              borderRadius: 10,
+              minHeight: isCompactLayout ? 220 : 360,
+              overflow: "hidden",
+              background: "#020817",
+              aspectRatio: "16 / 9",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
             {streamUrl ? (
               <iframe
                 title="Match Arena stream"
                 src={streamUrl}
-                style={{ width: "100%", height: isCompactLayout ? 260 : 420, border: 0, display: "block", background: "#020817" }}
+                style={{ width: "100%", height: "100%", border: 0, display: "block", background: "#020817" }}
                 allow="fullscreen; gamepad"
               />
             ) : (
-              <div style={{ minHeight: isCompactLayout ? 220 : 360, display: "grid", placeItems: "center", color: "#94a3b8", padding: 18, textAlign: "center" }}>
-                {session.stream?.message || "Le worker garde la session active. Le stream apparait ici quand noVNC/WebRTC est publie."}
+              <div style={{ color: "#94a3b8", padding: 24, textAlign: "center", maxWidth: 520 }}>
+                <div style={{ color: "#e2e8f0", fontWeight: 900, marginBottom: 8 }}>Image en attente</div>
+                <div>{streamMessage}</div>
+                <div style={{ marginTop: 10, fontSize: 12 }}>
+                  Commandes actives: clavier, boutons et manette passent par la file du worker.
+                </div>
               </div>
             )}
           </div>
           <div style={{ border: "1px solid #1f2937", borderRadius: 10, padding: 12, background: "#08101d", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setKeyboardEnabled((value) => !value)}
+                style={{ justifyContent: "center", minHeight: 36 }}
+              >
+                Clavier {keyboardEnabled ? "actif" : "coupé"}
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setGamepadEnabled((value) => !value)}
+                style={{ justifyContent: "center", minHeight: 36 }}
+              >
+                Manette {gamepadEnabled ? "active" : "coupée"}
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 48px)", gap: 8, justifyContent: "center" }}>
               <span />
               <button type="button" style={controlStyle} disabled={!inputReady || sendingInput === "up"} onClick={() => sendControl("up")}>H</button>
@@ -6299,7 +6971,48 @@ function MatchArenaPanel({ isCompactLayout }: { isCompactLayout: boolean }) {
               ))}
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12 }}>
-              Input: {session.input?.mode || "queued-json"} {session.input?.sequence ? `#${session.input.sequence}` : ""}
+              Input: {session.input?.mode || "queued-json"} {session.input?.sequence ? `#${session.input.sequence}` : ""} · {gamepadLabel}
+            </div>
+            <div style={{ borderTop: "1px solid #1f2937", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "#8b9bb4", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                Touches
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
+                {MATCH_ARENA_CONTROLS.map((control) => (
+                  <button
+                    key={control.id}
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => setCaptureControl(control.id)}
+                    style={{
+                      minHeight: 34,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      padding: "0 9px",
+                      fontSize: 11,
+                    }}
+                  >
+                    <span>{control.label}</span>
+                    <span style={{ color: captureControl === control.id ? "#fef3c7" : "#94a3b8", fontWeight: 900 }}>
+                      {captureControl === control.id
+                        ? "Appuie..."
+                        : (keyBindings[control.id] || []).map(formatMatchArenaKey).slice(0, 2).join(" / ")}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  setKeyBindings(MATCH_ARENA_DEFAULT_KEY_BINDINGS);
+                  setCaptureControl("");
+                }}
+                style={{ justifyContent: "center", minHeight: 34 }}
+              >
+                Touches par défaut
+              </button>
             </div>
           </div>
         </div>
@@ -6930,6 +7643,7 @@ export function App() {
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
   const pendingImportedImageUrlsRef = useRef<string[]>([]);
   const pendingImportedFileUrlsRef = useRef<string[]>([]);
+  const dismissedImportedNamesRef = useRef<Set<string>>(new Set());
   const mobileAudioPrepKeyRef = useRef("");
   const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
@@ -7677,6 +8391,7 @@ export function App() {
     const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
+    allFiles.forEach((file) => dismissedImportedNamesRef.current.delete(file.name));
 
     // Previews locaux immédiats (object URL, pas de réseau) : accumulés, pas remplacés
     const newPreviews: { name: string; url: string; isImage: boolean }[] = [];
@@ -7707,6 +8422,7 @@ export function App() {
         conversationId,
         onAttachment: (attachment: ImportedConversationAttachment) => {
           if (attachment.kind !== "image" || !attachment.url) return;
+          if (dismissedImportedNamesRef.current.has(attachment.name)) return;
           const resolvedUrl = resolveApiAssetUrl(attachment.url) || attachment.url;
           pendingImportedImageUrlsRef.current = Array.from(new Set([
             ...pendingImportedImageUrlsRef.current,
@@ -7832,6 +8548,7 @@ export function App() {
     setUploadFeedback("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    dismissedImportedNamesRef.current.clear();
     setSidebarOpen(false);
   }
 
@@ -7979,7 +8696,9 @@ export function App() {
     const effectiveText = cleanedInput
       || (explicitSourceImageUrl ? "Image jointe." : pendingFileUrls.length ? "Fichier joint." : text);
     if (!effectiveText) return;
-    const lastMediaForVision = !explicitSourceImageUrl && isImageInspectionRequest(effectiveText)
+    const lastMediaForVision = !explicitSourceImageUrl
+      && isImageInspectionRequest(effectiveText)
+      && canReuseLastMediaForRequest(effectiveText)
       ? findLastVisibleMedia(messages)
       : null;
     const sourceImageUrl = explicitSourceImageUrl
@@ -8008,7 +8727,7 @@ export function App() {
       id: `u-${Date.now()}`,
       role: "user",
       content: effectiveText,
-      imageUrl: previewImageUrl || (sourceImageUrl && isImageInspectionRequest(effectiveText) ? sourceImageUrl : null),
+      imageUrl: previewImageUrl || (sourceImageUrl && canReuseLastMediaForRequest(effectiveText) ? sourceImageUrl : null),
       imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
       fileUrl: pendingFileUrls[0] || null,
       ts: new Date().toISOString(),
@@ -8021,6 +8740,7 @@ export function App() {
     setInput("");
     pendingImportedImageUrlsRef.current = [];
     pendingImportedFileUrlsRef.current = [];
+    dismissedImportedNamesRef.current.clear();
     setDragPreviewUrls((prev) => {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
       return [];
@@ -8109,6 +8829,7 @@ export function App() {
             surface: surfaceKind,
             persona: surfaceKind,
             voicePersona: surfaceKind,
+            language: selectedA11Language.code,
             sourceImageUrl: item.imageUrl,
           }
         );
@@ -8158,7 +8879,7 @@ export function App() {
         const errMsg: ChatMessage = {
           id: `e-${Date.now()}`,
           role: "assistant",
-          content: "Erreur lors de l'appel au chat A11 : " + (err?.message || err),
+          content: formatChatErrorForUser(err),
           ts: new Date().toISOString(),
         };
         setMessages((prev) => {
@@ -8353,8 +9074,8 @@ export function App() {
     );
     const defaultVoiceTextForSurface = (surface: FunesterieSurface) => {
       if (surface === "vivy") return "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.";
-      if (surface === "kaen44") return "Salut Jeffrey. Je suis Kaen44. Interface claire, ton pose, et reponse courte.";
-      return "Salut Jeffrey. Je suis A11. Je parle doucement, clairement, avec une voix posee. Si tu m'entends bien, le test vocal est bon.";
+      if (surface === "kaen44") return "Salut Jeffrey. Je suis Kaen44. Interface claire, ton posé, et réponse courte.";
+      return "Salut Jeffrey. Je suis A11. Je parle doucement, clairement, avec une voix posée. Si tu m'entends bien, le test vocal est bon.";
     };
     const testVoice = (surfaceOrText?: string, maybeText?: string, extraOptions?: Record<string, unknown>) => {
       const first = String(surfaceOrText || "").trim();
@@ -9550,6 +10271,40 @@ export function App() {
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={menuSectionTitleStyle}>Légal</div>
+                    <a
+                      href={isKaen44 ? surfaceLinks.kaen44Privacy : surfaceLinks.privacy}
+                      className="btn ghost"
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <span>Confidentialité</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Vie privée</span>
+                    </a>
+                    <a
+                      href={isKaen44 ? surfaceLinks.kaen44Terms : surfaceLinks.terms}
+                      className="btn ghost"
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <span>Conditions</span>
+                      <span style={{ color: "#94a3b8", fontWeight: 700 }}>Utilisation</span>
+                    </a>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div style={menuSectionTitleStyle}>Compte</div>
                     <button
                       type="button"
@@ -9822,7 +10577,7 @@ export function App() {
                       ) : null}
                       {!isKaen44 ? (
                         <button type="button" onClick={() => setAdminSection('runtime')} style={adminTabButtonStyle('runtime')}>
-                          Etat
+                          État
                         </button>
                       ) : null}
                       {!isKaen44 ? (
@@ -10468,7 +11223,7 @@ export function App() {
                     type="button"
                     className="send-button"
                     onClick={() => sendMessage()}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() && dragPreviewUrls.length === 0}
                     title="Entrée pour envoyer, Shift+Entrée pour aller à la ligne"
                     style={sending ? { opacity: 0.7 } : undefined}
                   >
@@ -10568,9 +11323,26 @@ export function App() {
                         aria-label={`Retirer ${p.name}`}
                         onClick={() => {
                           if (p.url) URL.revokeObjectURL(p.url);
+                          dismissedImportedNamesRef.current.add(p.name);
                           setDragPreviewUrls((prev) => {
                             const next = prev.filter((_, j) => j !== idx);
-                            setPreviewCarouselIndex(Math.min(idx, next.length - 1));
+                            const imageIndex = prev
+                              .slice(0, idx + 1)
+                              .filter((entry) => entry.isImage).length - 1;
+                            const fileIndex = prev
+                              .slice(0, idx + 1)
+                              .filter((entry) => !entry.isImage).length - 1;
+                            if (p.isImage && imageIndex >= 0) {
+                              pendingImportedImageUrlsRef.current = pendingImportedImageUrlsRef.current
+                                .filter((_, entryIndex) => entryIndex !== imageIndex);
+                            } else if (!p.isImage && fileIndex >= 0) {
+                              pendingImportedFileUrlsRef.current = pendingImportedFileUrlsRef.current
+                                .filter((_, entryIndex) => entryIndex !== fileIndex);
+                            }
+                            if (!next.some((entry) => entry.isImage)) pendingImportedImageUrlsRef.current = [];
+                            if (!next.some((entry) => !entry.isImage)) pendingImportedFileUrlsRef.current = [];
+                            if (next.length === 0) setUploadFeedback("");
+                            setPreviewCarouselIndex(Math.max(0, Math.min(idx, next.length - 1)));
                             return next;
                           });
                         }}
@@ -10750,7 +11522,7 @@ export function App() {
         open={technicalMemoConfirmOpen}
         title="Réinitialiser la mémoire non cruciale"
         message="Cette action efface les snapshots techniques locaux d'A11 (env, qflush, journaux memo). Cela ne touche pas l'historique de conversation utilisateur ni la mémoire critique."
-        confirmLabel="Reinitialiser"
+        confirmLabel="Réinitialiser"
         confirmTone="danger"
         loading={purgingTechnicalMemos}
         onClose={() => setTechnicalMemoConfirmOpen(false)}

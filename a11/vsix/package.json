@@ -3,10 +3,20 @@
   "displayName": "A11 Coder",
   "description": "NOSSEN coding assistant for VS Code-compatible editors, including Kiro.",
   "version": "1.0.1",
-  "funding": {
-    "type": "custom",
-    "url": "https://funesterie.me/contact/"
-  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
   "publisher": "funesterie",
   "engines": {
     "vscode": "^1.85.0"
@@ -263,5 +273,10 @@
     "@vscode/vsce": "^3.9.1",
     "eslint": "^10.4.0",
     "typescript": "^6.0.3"
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
   }
 }

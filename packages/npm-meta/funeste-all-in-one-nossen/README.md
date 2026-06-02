@@ -32,6 +32,14 @@ console.log(funeste.privatePackages);
 
 On a trusted Funesterie PC, keep this package as the only top-level NOSSEN dependency. The individual public and private packages should arrive through this meta-package so the machine stays easy to update.
 
+## Support NOSSEN
+
+NOSSEN packages stay public and usable under their license. If this package helps your workflow, support is voluntary and can be any amount:
+
+- PayPal: https://paypal.me/funeste38
+- QR Wero: https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png
+- Contact, invoice, sponsorship or custom support: https://funesterie.me/contact/
+
 ## Adding Future Modules
 
 1. Publish public modules under `@nossen`.

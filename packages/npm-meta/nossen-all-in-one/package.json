@@ -1,6 +1,6 @@
 {
   "name": "@nossen/all-in-one",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Public all-in-one NOSSEN package that installs every public NOSSEN module.",
   "type": "commonjs",
   "main": "index.cjs",
@@ -40,7 +40,7 @@
     "@nossen/freeland": "2.0.2",
     "@nossen/freeland-bros": "2.0.3",
     "@nossen/katana": "2.0.0",
-    "@nossen/logic-reduce": "2.0.1",
+    "@nossen/logic-reduce": "2.0.2",
     "@nossen/mcp-agent-bus": "0.1.2",
     "@nossen/mcp-chopper-mixer": "0.1.2",
     "@nossen/mcp-cloud-assets": "0.1.2",
@@ -64,5 +64,34 @@
     "@nossen/scream": "2.0.2",
     "@nossen/spyder": "2.0.2",
     "a11-coder": "1.0.1"
+  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
+  "donations": {
+    "policy": "voluntary",
+    "amount": "user-choice",
+    "email": "funeste38@gmail.com",
+    "wero": "+33783463761",
+    "weroDisplay": "+33 7 83 46 37 61",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "paypal": "https://paypal.me/funeste38",
+    "contact": "https://funesterie.me/contact/"
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
   }
 }

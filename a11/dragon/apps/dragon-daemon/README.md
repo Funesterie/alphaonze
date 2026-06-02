@@ -7,9 +7,9 @@ coordinated services.
 
 NOSSEN packages stay public and usable under their license. If this package helps your workflow, choose any support amount that fits your situation. Contributions support Funesterie infrastructure, releases, and maintenance:
 
-- Email: funeste38@gmail.com
-- Wero: `+33 7 83 46 37 61` (choose your amount)
 - PayPal: https://paypal.me/funeste38 (choose your amount)
+- QR Wero: https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png
+- Email: funeste38@gmail.com
 - Stripe/card support: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
 - Contact, invoice, sponsorship or custom support: https://funesterie.me/contact/
 

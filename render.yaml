@@ -60,15 +60,37 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PRICE_ID
-        value: price_1TQwxHHkqLcMgv548uBa6GDZ
+        value: price_1TdqwVHkqLcMgv54LWqd5jEb
+      - key: STRIPE_PREMIUM_PRICE_ID
+        value: price_1TdqwVHkqLcMgv54LWqd5jEb
+      - key: STRIPE_FOUNDER_PRICE_ID
+        value: price_1TdqwWHkqLcMgv54ZFUAbVFl
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      - key: STRIPE_WEBHOOK_URL
+        value: https://a11.funesterie.me/api/subscription/webhook
       - key: STRIPE_SUCCESS_URL
-        value: https://a11.funesterie.me/subscription/success
+        value: https://funesterie.me/subscription/success
       - key: STRIPE_CANCEL_URL
-        value: https://a11.funesterie.me/subscription/cancel
+        value: https://funesterie.me/subscription/cancel
       - key: STRIPE_PORTAL_RETURN_URL
-        value: https://a11.funesterie.me/account
+        value: https://funesterie.me/compte/
+
+      # PayPal
+      - key: PAYPAL_ENV
+        value: live
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_PUBLIC_BASE_URL
+        value: https://funesterie.me
+      - key: PAYPAL_WEBHOOK_URL
+        value: https://a11.funesterie.me/api/paypal/webhook
+      - key: PAYPAL_RECEIVER_EMAIL
+        value: cellaurojeffrey@hotmail.com
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM

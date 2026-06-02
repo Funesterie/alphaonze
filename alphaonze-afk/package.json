@@ -2,11 +2,26 @@
   "name": "alphaonze-afk",
   "private": true,
   "version": "0.0.1",
-  "funding": {
-    "type": "custom",
-    "url": "https://funesterie.me/contact/"
-  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
   "scripts": {
     "start": "node server.cjs"
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
   }
 }

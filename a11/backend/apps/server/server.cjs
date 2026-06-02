@@ -5461,11 +5461,32 @@ function createLocalFileUploadWriter() {
   };
 }
 
+function isImageUploadCandidate({ filename = '', contentType = '' } = {}) {
+  const mime = String(contentType || '').trim().toLowerCase().split(';')[0];
+  if (mime.startsWith('image/')) return true;
+  const extension = path.extname(String(filename || '').trim().toLowerCase());
+  return ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.avif', '.svg'].includes(extension);
+}
+
+function shouldFallbackFileUploadToLocal(error) {
+  const value = String(error?.code || error?.name || error?.message || error || '').toLowerCase();
+  return /access\s*denied|accessdenied|invalidaccesskey|signaturedoesnotmatch|s3|r2|bucket|credentials?/.test(value);
+}
+
 function resolveFileUploadWriter({ preferLocal = false } = {}) {
   if (!preferLocal && isR2Configured()) {
+    const localFallback = createLocalFileUploadWriter();
     return {
-      backend: 'r2',
-      uploadBuffer: uploadBufferToR2,
+      backend: 'r2-or-local-file',
+      uploadBuffer: async (payload) => {
+        try {
+          return await uploadBufferToR2(payload);
+        } catch (error_) {
+          if (!shouldFallbackFileUploadToLocal(error_)) throw error_;
+          console.warn('[FILES] R2 upload failed, falling back to local-file:', error_?.message);
+          return localFallback.uploadBuffer(payload);
+        }
+      },
     };
   }
 
@@ -6819,7 +6840,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       preferExternalStorage,
     } = req.body || {};
     const requestSurface = resolveRequestSurface(req.body || {}, req);
-    const normalizedUploadContentType = String(contentType || '').trim().toLowerCase();
+    const uploadLooksLikeImage = isImageUploadCandidate({ filename, contentType });
     const rawStoragePreference = storageTarget || storageBackend || storagePreference;
     const requestedStoragePreference = normalizeStoragePreference(rawStoragePreference);
     const wantsSessionDriveStorage = requestedStoragePreference === 'session-drive' || preferExternalStorage === true;
@@ -6848,7 +6869,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       effectiveStoragePreference = 'session-drive';
     } else {
       uploadWriter = resolveFileUploadWriter({
-        preferLocal: normalizedUploadContentType.startsWith('image/'),
+        preferLocal: uploadLooksLikeImage,
       });
     }
     const normalizedConversationId = scopeConversationIdForSurface(

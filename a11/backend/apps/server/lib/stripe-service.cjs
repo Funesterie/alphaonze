@@ -39,7 +39,7 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     monthlyEur: 8.99,
     priceEnv: 'STRIPE_PREMIUM_PRICE_ID',
     fallbackPriceEnv: 'STRIPE_PRICE_ID',
-    lookupKey: 'a11_premium_monthly_899',
+    lookupSlug: 'a11_premium_monthly_899',
   }),
   founder: Object.freeze({
     id: 'founder',
@@ -47,7 +47,7 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     label: 'A11 Fondateur',
     monthlyEur: 29.99,
     priceEnv: 'STRIPE_FOUNDER_PRICE_ID',
-    lookupKey: 'a11_founder_monthly_2999',
+    lookupSlug: 'a11_founder_monthly_2999',
   }),
 });
 
@@ -105,10 +105,10 @@ function inferSubscriptionPlan(input, fallback = 'premium') {
   const lookupKey = String(price?.lookup_key || price?.lookupKey || '').trim().toLowerCase();
 
   const configured = getConfiguredPriceIds();
-  if ((configured.founder && priceId === configured.founder) || lookupKey === SUBSCRIPTION_PLANS.founder.lookupKey) {
+  if ((configured.founder && priceId === configured.founder) || lookupKey === SUBSCRIPTION_PLANS.founder.lookupSlug) {
     return 'founder';
   }
-  if ((configured.premium && priceId === configured.premium) || lookupKey === SUBSCRIPTION_PLANS.premium.lookupKey) {
+  if ((configured.premium && priceId === configured.premium) || lookupKey === SUBSCRIPTION_PLANS.premium.lookupSlug) {
     return 'premium';
   }
   if (lookupKey.includes('founder') || lookupKey.includes('fondateur') || lookupKey.includes('2999')) {
@@ -129,12 +129,12 @@ function inferSubscriptionPlan(input, fallback = 'premium') {
  */
 async function createCheckoutSession(userId, userEmail, options = {}) {
   if (!stripe) {
-    throw new Error('Stripe non configure');
+    throw new Error('Stripe non configuré');
   }
 
   const plan = resolvePlanConfig(options.plan);
   if (!plan.priceId) {
-    throw new Error(`Stripe price non configure pour ${plan.id}`);
+    throw new Error(`Stripe price non configuré pour ${plan.id}`);
   }
 
   const metadata = {
@@ -172,7 +172,7 @@ async function createCheckoutSession(userId, userEmail, options = {}) {
 
 async function createCustomerPortalSession(customerId) {
   if (!stripe) {
-    throw new Error('Stripe non configure');
+    throw new Error('Stripe non configuré');
   }
 
   const session = await stripe.billingPortal.sessions.create({
@@ -217,14 +217,14 @@ async function getSubscriptionStatus(customerId) {
       plan,
     };
   } catch (error) {
-    console.error('[Stripe] Erreur lors de la recuperation du statut:', error);
+    console.error('[Stripe] Erreur lors de la récupération du statut:', error);
     return { active: false, status: 'error', currentPeriodEnd: null, plan: null };
   }
 }
 
 async function cancelSubscription(subscriptionId) {
   if (!stripe) {
-    throw new Error('Stripe non configure');
+    throw new Error('Stripe non configuré');
   }
 
   const subscription = await stripe.subscriptions.update(subscriptionId, {

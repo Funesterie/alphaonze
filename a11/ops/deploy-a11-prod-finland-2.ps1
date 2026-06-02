@@ -22,7 +22,11 @@ $A11VoiceReference = Join-Path $RuntimeVoiceLibrary "a11-official-stern-french.w
 $VivyVoiceReference = Join-Path $RuntimeVoiceLibrary "vivy-official-french-conversational.wav"
 $Kaen44VoiceReference = Join-Path $RuntimeVoiceLibrary "kaen44-official-french-narrator.wav"
 $Remote = "deploy@62.238.43.32"
-$SshKey = "C:\Users\Djeff\.ssh\codex_a11_hetzner_20260511"
+$SshKey = if ($env:A11_HETZNER_SSH_KEY) {
+  $env:A11_HETZNER_SSH_KEY
+} else {
+  "C:\Users\Djeff\.ssh\codex-a11-hetzner-20260602_ed25519"
+}
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $TmpRoot = Join-Path $RepoRoot ".codex-tmp"
 $StageRoot = Join-Path $TmpRoot "a11-prod-finland-2-$Stamp"
@@ -655,7 +659,11 @@ http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http:/
   encode zstd gzip
   import microsoft_identity_association
   @a11Path path /a11 /a11/*
+  @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
   handle @a11Path {
+    import a11_backend
+  }
+  handle @a11PaymentApi {
     import a11_backend
   }
   handle {
@@ -667,7 +675,11 @@ https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, htt
   encode zstd gzip
   import microsoft_identity_association
   @a11Path path /a11 /a11/*
+  @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
   handle @a11Path {
+    import a11_backend
+  }
+  handle @a11PaymentApi {
     import a11_backend
   }
   handle {
@@ -710,7 +722,17 @@ $optionalFinanceEnvKeys = @(
   "MOLLIE_API_BASE_URL",
   "MOLLIE_PUBLIC_BASE_URL",
   "MOLLIE_WEBHOOK_URL",
-  "MOLLIE_ALLOW_PAYMENT_CREATE"
+  "MOLLIE_ALLOW_PAYMENT_CREATE",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_PUBLISHABLE_KEY",
+  "STRIPE_PRICE_ID",
+  "STRIPE_PREMIUM_PRICE_ID",
+  "STRIPE_FOUNDER_PRICE_ID",
+  "STRIPE_WEBHOOK_SECRET",
+  "PAYPAL_CLIENT_ID",
+  "PAYPAL_CLIENT_SECRET",
+  "PAYPAL_WEBHOOK_ID",
+  "PAYPAL_RECEIVER_EMAIL"
 )
 foreach ($key in $optionalFinanceEnvKeys) {
   Import-OptionalEnvValue $envMap $localEnvMap $key
@@ -854,6 +876,16 @@ $overrides = [ordered]@{
   PUBLIC_API_URL = "https://a11.funesterie.me"
   A11_SERVER_URL = "https://a11.funesterie.me"
   A11_PUBLIC_HOST = "a11.funesterie.me"
+  STRIPE_PRICE_ID = "price_1TdqwVHkqLcMgv54LWqd5jEb"
+  STRIPE_PREMIUM_PRICE_ID = "price_1TdqwVHkqLcMgv54LWqd5jEb"
+  STRIPE_FOUNDER_PRICE_ID = "price_1TdqwWHkqLcMgv54ZFUAbVFl"
+  STRIPE_WEBHOOK_URL = "https://a11.funesterie.me/api/subscription/webhook"
+  STRIPE_SUCCESS_URL = "https://funesterie.me/subscription/success"
+  STRIPE_CANCEL_URL = "https://funesterie.me/subscription/cancel"
+  STRIPE_PORTAL_RETURN_URL = "https://funesterie.me/compte/"
+  PAYPAL_ENV = "live"
+  PAYPAL_PUBLIC_BASE_URL = "https://funesterie.me"
+  PAYPAL_WEBHOOK_URL = "https://a11.funesterie.me/api/paypal/webhook"
   A11_MCP_URL = "https://mcp.funesterie.me/mcp"
   FUNESTERIE_MCP_URL = "https://mcp.funesterie.me/mcp"
   A11_PUBLIC_MCP_UPSTREAM_URL = "https://mcp.funesterie.me/mcp"

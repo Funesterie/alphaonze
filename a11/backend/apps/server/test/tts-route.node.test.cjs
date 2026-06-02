@@ -10,6 +10,17 @@ const ttsRouter = require('../routes/tts.cjs');
 
 async function withServer(registerRoutes, runAssertions) {
   const app = express();
+  app.use((req, _res, next) => {
+    if (!req.user && req.headers['x-test-basic'] !== '1') {
+      req.user = {
+        id: 'test-premium-user',
+        email: 'test-premium@example.local',
+        account_tier: 'premium',
+        subscription_active: true,
+      };
+    }
+    next();
+  });
   registerRoutes(app);
 
   const server = http.createServer(app);
@@ -280,6 +291,188 @@ test('tts speak route can return an async job and poll the generated audio paylo
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+  }
+});
+
+test('tts speak route keeps basic/public accounts on neutral SIWIS instead of paid identity voices', async () => {
+  const previousEnv = {
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+  };
+  const previousFetch = global.fetch;
+  const backendBodies = [];
+
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.TTS_URL = 'http://127.0.0.1:5002';
+  process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+
+  global.fetch = async (url, options = {}) => {
+    if (String(url) === 'http://127.0.0.1:5002/api/tts') {
+      backendBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ audio_url: '/api/tts/out/basic-siwis.mp3', via: 'http' });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour vivy',
+          persona: 'vivy',
+          provider: 'cartesia',
+          useDefaultVoiceReference: true,
+          vocalMode: 'adaptive',
+        }, { 'x-test-basic': '1' });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.via, 'http');
+        assert.equal(backendBodies.length, 1);
+        assert.equal(backendBodies[0].provider, 'piper');
+        assert.equal(backendBodies[0].voice, 'fr_FR-siwis-medium');
+        assert.equal(backendBodies[0].identityVoice, false);
+        assert.equal(backendBodies[0].ttsCostPolicy, 'basic_siwis_only');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route gives basic A11 the official local reference without paid cloud TTS', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-basic-official-voice-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const backendBodies = [];
+  const conversionForms = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 180 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.TTS_URL = 'http://127.0.0.1:5002';
+  process.env.A11_VOICE_MODULE_URL = 'http://127.0.0.1:5002';
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://127.0.0.1:5002/api/tts') {
+      backendBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ audio_url: '/out/basic-a11-source.wav', via: 'http' });
+        },
+      };
+    }
+    if (value === 'http://127.0.0.1:5002/out/basic-a11-source.wav' || value === 'http://127.0.0.1:5002/out/basic-a11-source.wav?consume=1') {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value === 'http://127.0.0.1:5002/api/voice/convert') {
+      conversionForms.push(options.body);
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'a11-official-stern-french';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value.includes('/tts/bytes')) {
+      throw new Error('cartesia_should_not_be_called_for_basic_a11_reference');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour',
+          persona: 'a11',
+          provider: 'cartesia',
+          useDefaultVoiceReference: true,
+          vocalMode: 'adaptive',
+        }, { 'x-test-basic': '1' });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
+        assert.equal(backendBodies.length, 1);
+        assert.equal(backendBodies[0].provider, 'piper');
+        assert.equal(backendBodies[0].voicePersona, 'a11');
+        assert.equal(backendBodies[0].useDefaultVoiceReference, true);
+        assert.equal(backendBodies[0].ttsCostPolicy, 'basic_a11_official_reference');
+        assert.equal(conversionForms.length, 1);
+        assert.equal(conversionForms[0].get('voiceStyle'), 'a11-official-stern-french');
+        assert.match(result.json.audioModule.reference.label, /A11 Official Stern French/i);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
 

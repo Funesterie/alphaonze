@@ -2406,6 +2406,28 @@ function isLikelyHtmlDocument(rawValue: unknown) {
   return /^<!doctype html/i.test(raw) || /^<html/i.test(raw);
 }
 
+function buildFriendlyChatApiErrorMessage(status: number, rawValue: unknown) {
+  const raw = typeof rawValue === 'string' ? rawValue.trim() : '';
+  let parsed: any = null;
+  if (raw && !isLikelyHtmlDocument(raw)) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+  const serverMessage = String(parsed?.message || parsed?.error || '').trim();
+  const statusCode = Number(status || parsed?.status || parsed?.statusCode || 0);
+  const isOverload = [429, 502, 503, 504, 524].includes(statusCode)
+    || /cloudflare|timeout|surcharge|overload|upstream|html inattendue/i.test(raw)
+    || isLikelyHtmlDocument(raw);
+  if (isOverload) {
+    return "Le serveur IA est surchargé ou un fournisseur a coupé la réponse. Les comptes Basic passent après les files Premium/Fondateur: réessaie dans quelques instants, ou passe Premium/Fondateur si tu veux plus de priorité.";
+  }
+  if (serverMessage) return `API ${statusCode || status}: ${serverMessage}`;
+  return `API ${statusCode || status}: ${raw || 'réponse assistant indisponible'}`;
+}
+
 function shouldLogRawChatPayload() {
   if (import.meta.env?.DEV) return true;
   try {
@@ -2807,10 +2829,7 @@ async function apiPost(body: unknown) {
   }
 
   if (!res.ok) {
-    const message = isLikelyHtmlDocument(text)
-      ? `API ${res.status}: reponse HTML inattendue recue au lieu d'une reponse assistant`
-      : `API ${res.status}: ${text}`;
-    throw new Error(message);
+    throw new Error(buildFriendlyChatApiErrorMessage(res.status, text));
   }
 
   let data: any;
@@ -3099,6 +3118,24 @@ export type A11ConversationResource = {
   updatedAt?: string;
 };
 
+export type A11UserStoredFile = {
+  id?: number;
+  userId?: string;
+  user_id?: string;
+  filename: string;
+  storageKey?: string;
+  storage_key?: string;
+  url?: string;
+  contentType?: string;
+  content_type?: string;
+  sizeBytes?: number;
+  size_bytes?: number;
+  expiresAt?: string | null;
+  expires_at?: string | null;
+  createdAt?: string;
+  created_at?: string;
+};
+
 export type A11ConversationActivityEntry = {
   id: string;
   type: string;
@@ -3220,6 +3257,47 @@ export async function fetchA11ConversationResources(convId: string, options?: { 
   });
   if (!res.ok) throw new Error('Erreur chargement ressources A-11');
   return res.json();
+}
+
+export async function fetchMyConversationResources(options?: { conversationId?: string; kind?: string; limit?: number }) {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, conversationId: options?.conversationId || null, count: 0, resources: [] as A11ConversationResource[] };
+  }
+
+  const params = new URLSearchParams();
+  if (options?.conversationId) params.set('conversationId', options.conversationId);
+  if (options?.kind) params.set('kind', options.kind);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/resources/my${suffix}`), {
+    headers: buildAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`Erreur chargement ressources (${res.status})`);
+  return res.json() as Promise<{
+    ok: boolean;
+    conversationId?: string | null;
+    count?: number;
+    resources?: A11ConversationResource[];
+  }>;
+}
+
+export async function fetchMyStoredFiles(options?: { limit?: number }) {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, count: 0, files: [] as A11UserStoredFile[] };
+  }
+
+  const params = new URLSearchParams();
+  if (options?.limit) params.set('limit', String(options.limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/files/my${suffix}`), {
+    headers: buildAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`Erreur chargement fichiers (${res.status})`);
+  return res.json() as Promise<{
+    ok: boolean;
+    count?: number;
+    files?: A11UserStoredFile[];
+  }>;
 }
 
 export async function fetchA11ConversationActivity(convId: string, options?: { limit?: number; surface?: string }) {
@@ -4380,6 +4458,7 @@ export type MatchArenaSession = {
   gameTitle: string;
   mode?: string;
   opponent?: string;
+  visibility?: 'private' | 'public';
   priorityTier?: MatchArenaPriorityTier;
   priorityLabel?: string;
   createdAt?: string;
@@ -4420,6 +4499,14 @@ export type MatchArenaSession = {
   error?: string | null;
   plan?: Record<string, unknown> | null;
   lastInputAt?: string | null;
+  players?: Array<{
+    slot: number;
+    label?: string;
+    role?: string | null;
+    joinedAt?: string | null;
+  }>;
+  playerSlot?: number | null;
+  joinable?: boolean;
 };
 
 export type MatchArenaStatus = {
@@ -4476,11 +4563,24 @@ export async function fetchMatchArenaGames(): Promise<MatchArenaGame[]> {
   return (Array.isArray(data?.games) ? data.games : []) as MatchArenaGame[];
 }
 
+export async function fetchMatchArenaSessions(): Promise<MatchArenaSession[]> {
+  const res = await authFetch(getApiUrl('/api/match-arena/sessions'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Sessions Match Arena indisponibles (${res.status})`);
+  }
+  return (Array.isArray(data?.sessions) ? data.sessions : []) as MatchArenaSession[];
+}
+
 export async function createMatchArenaSession(input: {
   gameId: string;
   mode?: string;
   opponent?: string;
   priorityTier?: MatchArenaPriorityTier;
+  visibility?: 'private' | 'public';
 }): Promise<MatchArenaSession> {
   const res = await authFetch(getApiUrl('/api/match-arena/sessions'), {
     method: 'POST',
@@ -4490,6 +4590,19 @@ export async function createMatchArenaSession(input: {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.ok === false) {
     throw new Error(data?.message || data?.error || `Session Match Arena refusee (${res.status})`);
+  }
+  return data.session as MatchArenaSession;
+}
+
+export async function joinMatchArenaSession(sessionId: string): Promise<MatchArenaSession> {
+  const res = await authFetch(getApiUrl(`/api/match-arena/sessions/${encodeURIComponent(sessionId)}/join`), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    body: JSON.stringify({}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.message || data?.error || `Session Match Arena impossible a rejoindre (${res.status})`);
   }
   return data.session as MatchArenaSession;
 }
@@ -4740,6 +4853,13 @@ export interface CustomerPortalResponse {
   url: string;
 }
 
+export interface CancelSubscriptionResponse {
+  ok: boolean;
+  cancelAt?: number | null;
+  endDate?: string | null;
+  message?: string;
+}
+
 /**
  * Récupère le statut d'abonnement de l'utilisateur
  */
@@ -4787,6 +4907,23 @@ export async function createCustomerPortal(): Promise<CustomerPortalResponse> {
   }
 
   return res.json();
+}
+
+/**
+ * Programme le désabonnement Stripe à la fin de la période déjà payée.
+ */
+export async function cancelSubscription(): Promise<CancelSubscriptionResponse> {
+  const res = await authFetch(getApiUrl('/api/subscription/cancel'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.message || data?.error || `Impossible de programmer le désabonnement (${res.status})`);
+  }
+
+  return data;
 }
 
 // ------------------------------------------------------------------

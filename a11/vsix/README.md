@@ -71,8 +71,8 @@ A11 Coder is part of the Funesterie/NOSSEN project. If it saves you time or help
 
 - Contact, invoice, sponsorship or urgent support: https://funesterie.me/contact/
 - Email: funeste38@gmail.com
-- Wero: `+33 7 83 46 37 61`
 - PayPal: https://paypal.me/funeste38
+- QR Wero: https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png
 - Stripe/card support: https://buy.stripe.com/7sYfZhfKW2DSffZgWU7Re01
 
 Support is voluntary; there is no fixed package price.

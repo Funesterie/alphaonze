@@ -1,10 +1,20 @@
 {
   "name": "funesterie-desktop",
   "version": "0.0.1",
-  "funding": {
-    "type": "custom",
-    "url": "https://funesterie.me/contact/"
-  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
   "private": true,
   "description": "Funesterie Desktop Nexus for PC1 and PC2.",
   "main": "electron/main.cjs",
@@ -75,5 +85,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Funesterie Desktop"
     }
+  },
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
   }
 }

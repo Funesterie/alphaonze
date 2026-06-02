@@ -32,6 +32,14 @@ Use this package for public installs, demos, CI smoke tests and external users.
 
 Operator machines that can access private packages should install `@funeste/all-in-one-nossen` instead. The private package depends on this public package and adds the private `@funeste/*` adapters.
 
+## Support NOSSEN
+
+NOSSEN packages stay public and usable under their license. If this package helps your workflow, support is voluntary and can be any amount:
+
+- PayPal: https://paypal.me/funeste38
+- QR Wero: https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png
+- Contact, invoice, sponsorship or custom support: https://funesterie.me/contact/
+
 ## Adding Future Modules
 
 1. Publish the new public module under `@nossen`.
