@@ -3,6 +3,16 @@ import { uploadConversationFile, uploadLocalImage } from './api';
 const RECENT_IMAGE_IMPORT_TTL_MS = 10_000;
 const recentImageImports = new Map<string, number>();
 
+export type ImportedConversationAttachment = {
+  kind: 'image' | 'file';
+  name: string;
+  url?: string;
+  resourceId?: string;
+  parser?: string;
+  suggestedAction?: string;
+  upload: any;
+};
+
 async function buildImageImportKey(file: File): Promise<string> {
   const fallback = `${file.type}:${file.size}:${file.name}`;
   if (!globalThis.crypto?.subtle) return fallback;
@@ -26,26 +36,31 @@ function pruneRecentImageImports(now: number) {
   }
 }
 
-function buildImageResourceText(file: File, upload: any): string {
+function buildImageAttachment(file: File, upload: any): ImportedConversationAttachment | null {
   const resource = upload?.conversationResource || upload?.file || null;
   const imageUrl = String(resource?.downloadUrl || resource?.url || upload?.url || '').trim();
+  if (!imageUrl) return null;
   const analysis = resource?.metadata?.analysis || upload?.analysis || {};
   const inference = analysis?.actionInference || {};
-  const parts = [
-    imageUrl ? `[image:${imageUrl}]` : '',
-    `[image-jointe:${file.name}]`,
-    resource?.id ? `id=${resource.id}` : '',
-    analysis?.parser ? `analyse=${analysis.parser}` : '',
-    inference?.suggestedAction ? `action-probable=${inference.suggestedAction}` : '',
-    'Image rattachee a la conversation; analyse-la avec la vision et decide quoi en faire avant de repondre.',
-  ].filter(Boolean);
-  return parts.join(' ');
+  return {
+    kind: 'image',
+    name: file.name,
+    url: imageUrl,
+    resourceId: String(resource?.id || resource?.storageKey || '').trim() || undefined,
+    parser: String(analysis?.parser || '').trim() || undefined,
+    suggestedAction: String(inference?.suggestedAction || '').trim() || undefined,
+    upload,
+  };
 }
 
 export default async function handleImportFiles(
   list: FileList | null,
   onText: (t: string) => void,
-  options?: { uploadImages?: boolean; conversationId?: string }
+  options?: {
+    uploadImages?: boolean;
+    conversationId?: string;
+    onAttachment?: (attachment: ImportedConversationAttachment) => void;
+  }
 ) {
   if (!list || list.length === 0) return;
   for (const f of Array.from(list)) {
@@ -81,15 +96,11 @@ export default async function handleImportFiles(
           if (!data) {
             data = await uploadLocalImage(f, { conversationId: options?.conversationId });
           }
-          const imageUrl = data?.url || null;
-          const resourceText = buildImageResourceText(f, data);
-          if (resourceText) {
-            onText(resourceText);
-            const loggedUrl = imageUrl || data?.conversationResource?.downloadUrl || data?.file?.downloadUrl || '';
+          const attachment = buildImageAttachment(f, data);
+          if (attachment?.url) {
+            options?.onAttachment?.(attachment);
+            const loggedUrl = attachment.url || data?.conversationResource?.downloadUrl || data?.file?.downloadUrl || '';
             console.log(`[Importer] Image uploaded locally: ${f.name}${loggedUrl ? ` -> ${loggedUrl}` : ''}`);
-          } else if (imageUrl) {
-            onText(`[image:${imageUrl}] Image rattachee a la conversation; analyse-la avec la vision avant de repondre.`);
-            console.log(`[Importer] Image uploaded locally: ${f.name} -> ${imageUrl}`);
           } else {
             // Upload a répondu mais sans URL — erreur propre, pas de base64
             console.warn(`[Importer] Upload returned no URL for ${f.name}`);

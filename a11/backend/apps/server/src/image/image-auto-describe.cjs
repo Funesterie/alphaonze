@@ -235,6 +235,7 @@ async function autoDescribeImage({
   timeoutMs = 30000,
   requestId = '',
   prompt = AUTO_DESCRIBE_PROMPT,
+  maxNewTokens = Number(process.env.A11_IMAGE_REFERENCE_JANUS_MAX_TOKENS || process.env.A11_JANUS_MAX_NEW_TOKENS || 640),
 } = {}) {
   const locator = String(imageLocator || '').trim();
   if (!locator) {
@@ -277,7 +278,7 @@ async function autoDescribeImage({
       contentType,
       prompt: String(prompt || AUTO_DESCRIBE_PROMPT).trim() || AUTO_DESCRIBE_PROMPT,
       requestId: requestId || `auto-describe-${Date.now()}`,
-      maxNewTokens: 120,
+      maxNewTokens: Math.max(160, Number(maxNewTokens) || 640),
       timeoutMs: Math.max(5000, Number(timeoutMs) || 30000),
     });
 

@@ -2958,11 +2958,20 @@
             body: JSON.stringify(Object.assign({
               text: text,
               voice: "vivy",
-              provider: "xtts-rvc",
+              provider: "cartesia",
+              ttsProvider: "cartesia",
               persona: "vivy",
               voicePersona: "vivy",
               voiceReferenceRequired: true,
               referenceVoiceRequired: true,
+              voiceConversion: false,
+              convertVoice: false,
+              morphVoice: false,
+              rvc: false,
+              allowRvc: false,
+              allowXttsRvc: false,
+              allowLegacyVoiceBridge: false,
+              xttsRvcOptIn: false,
               allowBrowserSpeechFallback: false
             }, vivyVoiceTuning(vocalMode), voiceReferenceOptions(), options || {}))
           }).then(function (response) {

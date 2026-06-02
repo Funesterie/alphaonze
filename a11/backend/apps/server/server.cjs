@@ -5429,14 +5429,7 @@ function isStoredResourceDownloadAvailable(storageKey) {
   return isR2Configured();
 }
 
-function resolveFileUploadWriter() {
-  if (isR2Configured()) {
-    return {
-      backend: 'r2',
-      uploadBuffer: uploadBufferToR2,
-    };
-  }
-
+function createLocalFileUploadWriter() {
   return {
     backend: 'local-file',
     uploadBuffer: async ({ filename, buffer, contentType, storageKey }) => {
@@ -5455,6 +5448,17 @@ function resolveFileUploadWriter() {
       return { ...saved, url: absoluteUrl };
     },
   };
+}
+
+function resolveFileUploadWriter({ preferLocal = false } = {}) {
+  if (!preferLocal && isR2Configured()) {
+    return {
+      backend: 'r2',
+      uploadBuffer: uploadBufferToR2,
+    };
+  }
+
+  return createLocalFileUploadWriter();
 }
 
 function normalizeStoragePreference(value = '') {
@@ -6804,6 +6808,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       preferExternalStorage,
     } = req.body || {};
     const requestSurface = resolveRequestSurface(req.body || {}, req);
+    const normalizedUploadContentType = String(contentType || '').trim().toLowerCase();
     const rawStoragePreference = storageTarget || storageBackend || storagePreference;
     const requestedStoragePreference = normalizeStoragePreference(rawStoragePreference);
     const wantsSessionDriveStorage = requestedStoragePreference === 'session-drive' || preferExternalStorage === true;
@@ -6831,7 +6836,9 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
       });
       effectiveStoragePreference = 'session-drive';
     } else {
-      uploadWriter = resolveFileUploadWriter();
+      uploadWriter = resolveFileUploadWriter({
+        preferLocal: normalizedUploadContentType.startsWith('image/'),
+      });
     }
     const normalizedConversationId = scopeConversationIdForSurface(
       conversationId || convId || sessionId,

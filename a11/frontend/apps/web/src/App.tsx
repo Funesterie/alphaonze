@@ -104,7 +104,7 @@ import {
   isAudioOutputUnlocked,
   setSpeechRecognitionLanguage,
 } from "./lib/speech";
-import handleImportFiles from "./lib/importer";
+import handleImportFiles, { type ImportedConversationAttachment } from "./lib/importer";
 import { chatCompletionDetailed, extractAssistantDisplayContent, resolveApiAssetUrl, type Provider } from "./lib/api";
 import { foldForLookup, toUnicodeLine, toUnicodeText } from "./lib/language";
 
@@ -2772,9 +2772,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   }
 
   function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
-    const officialOnly = usesOfficialVivyVoiceTool();
-    const diagnosticMode = /diagnostic/.test(foldForLookup(voiceTool));
-    const provider = diagnosticMode ? "auto" : "cartesia";
+    const officialOnly = !hasPrivateVoiceReference || usesOfficialVivyVoiceTool();
+    const diagnosticMode = hasPrivateVoiceReference && /diagnostic/.test(foldForLookup(voiceTool));
+    const provider = "cartesia";
     return {
       persona: "vivy",
       voicePersona: "vivy",
@@ -2789,8 +2789,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       audioFormat: "mp3",
       responseFormat: "mp3",
       ...buildVivyVoiceReferenceOptions(),
-      voiceReferenceRequired: !diagnosticMode && officialOnly,
-      referenceVoiceRequired: !diagnosticMode && officialOnly,
+      voiceReferenceRequired: officialOnly && !diagnosticMode,
+      referenceVoiceRequired: officialOnly && !diagnosticMode,
       voiceConversion: false,
       convertVoice: false,
       morphVoice: false,
@@ -2902,7 +2902,10 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         180
       );
       const vocalMode = voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive";
-      const provider = /diagnostic/.test(foldForLookup(voiceTool)) ? "auto" : "cartesia";
+      const provider = "cartesia";
+      if (!hasPrivateVoiceReference && /diagnostic/.test(foldForLookup(voiceTool))) {
+        setVoiceTool("Voix Vivy officielle");
+      }
       const payload = await ttsSpeak(
         testLine,
         "vivy",
@@ -6918,6 +6921,8 @@ export function App() {
   const [previewCarouselIndex, setPreviewCarouselIndex] = useState(0);
   const dragCounterRef = useRef(0);
   const recentFileImportRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
+  const pendingImportedImageUrlsRef = useRef<string[]>([]);
+  const pendingImportedFileUrlsRef = useRef<string[]>([]);
   const mobileAudioPrepKeyRef = useRef("");
   const copyMessageFeedbackTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const [createArtifactOpen, setCreateArtifactOpen] = useState(false);
@@ -7686,11 +7691,23 @@ export function App() {
       // Pas de timeout : les chips restent jusqu'à l'envoi du message
     }
 
-    // Upload et injection dans le textarea : on attend la fin pour avoir les URLs
+    // Upload des images: garder les URLs en metadata interne, pas dans le texte visible.
     if (importerFiles.length > 0) {
       await handleImportFiles(toSyntheticFileList(importerFiles), (txt: string) => {
         setInput((prev) => (prev ? prev + "\n" + txt : txt));
-      }, { uploadImages: true, conversationId: a11ConvId || selectedChatId || undefined });
+      }, {
+        uploadImages: true,
+        conversationId,
+        onAttachment: (attachment: ImportedConversationAttachment) => {
+          if (attachment.kind !== "image" || !attachment.url) return;
+          const resolvedUrl = resolveApiAssetUrl(attachment.url) || attachment.url;
+          pendingImportedImageUrlsRef.current = Array.from(new Set([
+            ...pendingImportedImageUrlsRef.current,
+            resolvedUrl,
+          ]));
+          setUploadFeedback(`${pendingImportedImageUrlsRef.current.length} image(s) prêtes pour l'analyse.`);
+        },
+      });
     }
 
     const audioTranscriptByName = new Map<string, string>();
@@ -7740,42 +7757,23 @@ export function App() {
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
       const failed: string[] = [];
-      const resourceBlocks: string[] = [];
       setUploadFeedback(`Import de ${nonImageFiles.length} fichier(s) en cours...`);
       for (const file of nonImageFiles) {
         try {
           const upload = await uploadConversationFile(file, { conversationId });
           const resource = upload.conversationResource || upload.file || null;
-          const resourceId = String(resource?.id || resource?.storageKey || "").trim();
           const resourceUrl = String(resource?.downloadUrl || resource?.url || "").trim();
-          const analysis = (resource as any)?.metadata?.analysis || (upload as any)?.analysis || {};
-          const inference = analysis?.actionInference || {};
-          const actionHint = String(inference?.suggestedAction || "").trim();
-          const parserHint = String(analysis?.parser || "").trim();
-          const kind = isAudioLikeFile(file) ? "audio" : "fichier";
-          const transcriptAlreadyInjected = isAudioLikeFile(file) && audioTranscriptByName.has(file.name);
-          const parts = [
-            `[${kind}-joint:${file.name}]`,
-            resourceId ? `id=${resourceId}` : "",
-            resourceUrl ? `url=${resourceUrl}` : "",
-            parserHint ? `analyse=${parserHint}` : "",
-            actionHint ? `action-probable=${actionHint}` : "",
-            transcriptAlreadyInjected
-              ? "Transcription ajoutee plus haut."
-              : "Fichier rattache a la conversation; analyse-le et decide quoi en faire avant de repondre.",
-          ].filter(Boolean);
-          resourceBlocks.push(parts.join(" "));
+          if (resourceUrl) {
+            pendingImportedFileUrlsRef.current = Array.from(new Set([
+              ...pendingImportedFileUrlsRef.current,
+              resolveApiAssetUrl(resourceUrl) || resourceUrl,
+            ]));
+          }
           uploaded.push(file.name);
         } catch (error_) {
           console.warn("[A11] file upload failed", file.name, error_);
           failed.push(file.name);
         }
-      }
-      if (resourceBlocks.length > 0) {
-        setInput((prev) => {
-          const nextText = resourceBlocks.join("\n");
-          return prev ? `${prev}\n${nextText}` : nextText;
-        });
       }
       if (conversationId) {
         await refreshConversationActivity(conversationId);
@@ -7825,6 +7823,8 @@ export function App() {
     setConversationResources([]);
     setActivityError("");
     setUploadFeedback("");
+    pendingImportedImageUrlsRef.current = [];
+    pendingImportedFileUrlsRef.current = [];
     setSidebarOpen(false);
   }
 
@@ -7943,6 +7943,13 @@ export function App() {
     const cleanText = text
       .replace(/\[image:([^\]]+)\]/g, (_match, url) => { imageUrls.push(url.trim()); return ''; })
       .replace(/\[image-data:(data:image\/[^;]+;base64,[^\]]+)\]/g, (_match, dataUrl) => { imageUrls.push(dataUrl.trim()); return ''; })
+      .replace(/\[image-jointe:[^\]]+\]/gi, '')
+      .replace(/\[(?:fichier|audio)-joint:[^\]]+\]/gi, '')
+      .replace(/\b(?:id|url|analyse|action-probable)=[^\s]+/gi, '')
+      .replace(/Image rattachee a la conversation;?\s*/gi, '')
+      .replace(/analyse-la avec la vision[^.?!]*(?:[.?!]|$)/gi, '')
+      .replace(/Fichier rattache a la conversation;?\s*/gi, '')
+      .replace(/analyse-le et decide quoi en faire avant de repondre\.?/gi, '')
       .trim();
     return { cleanText, imageUrls };
   }
@@ -7950,10 +7957,20 @@ export function App() {
   async function sendMessage(forcedText?: string) {
     const text = (forcedText ?? input).trim();
     const { cleanText: cleanedInput, imageUrls } = extractImageUrlsFromText(text);
-    const allImageUrls = imageUrls.map((u) => resolveApiAssetUrl(u) || u).filter(Boolean);
+    const pendingImageUrls = pendingImportedImageUrlsRef.current
+      .map((u) => resolveApiAssetUrl(u) || u)
+      .filter(Boolean);
+    const pendingFileUrls = pendingImportedFileUrlsRef.current
+      .map((u) => resolveApiAssetUrl(u) || u)
+      .filter(Boolean);
+    const allImageUrls = Array.from(new Set([
+      ...imageUrls.map((u) => resolveApiAssetUrl(u) || u).filter(Boolean),
+      ...pendingImageUrls,
+    ]));
     const previewImageUrl = allImageUrls[0] ?? "";
     const explicitSourceImageUrl = previewImageUrl || undefined;
-    const effectiveText = cleanedInput || (explicitSourceImageUrl ? "Image jointe." : text);
+    const effectiveText = cleanedInput
+      || (explicitSourceImageUrl ? "Image jointe." : pendingFileUrls.length ? "Fichier joint." : text);
     if (!effectiveText) return;
     const lastMediaForVision = !explicitSourceImageUrl && isImageInspectionRequest(effectiveText)
       ? findLastVisibleMedia(messages)
@@ -7986,6 +8003,7 @@ export function App() {
       content: effectiveText,
       imageUrl: previewImageUrl || (sourceImageUrl && isImageInspectionRequest(effectiveText) ? sourceImageUrl : null),
       imageUrls: allImageUrls.length > 1 ? allImageUrls : null,
+      fileUrl: pendingFileUrls[0] || null,
       ts: new Date().toISOString(),
     };
     setMessages((prev) => {
@@ -7994,6 +8012,8 @@ export function App() {
       return nm;
     });
     setInput("");
+    pendingImportedImageUrlsRef.current = [];
+    pendingImportedFileUrlsRef.current = [];
     setDragPreviewUrls((prev) => {
       prev.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
       return [];
