@@ -2744,6 +2744,13 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     ? (voiceFileName || "référence privée")
     : "Vivy officielle";
 
+  useEffect(() => {
+    if (hasPrivateVoiceReference) return;
+    if (/diagnostic|reference privee|référence privée/.test(foldForLookup(voiceTool))) {
+      setVoiceTool("Voix Vivy officielle");
+    }
+  }, [hasPrivateVoiceReference, voiceTool]);
+
   function buildVivyPlayableText(value: string, fallback: string, maxLength = 260) {
     const raw = toUnicodeText(value || fallback, maxLength * 3)
       .replace(/\([A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?(?:\s*-\s*[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?)*\)/gi, " ")
