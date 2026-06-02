@@ -15,14 +15,14 @@ const PLANS = [
   {
     envKey: 'STRIPE_PREMIUM_PRICE_ID',
     fallbackEnvKey: 'STRIPE_PRICE_ID',
-    lookupKey: 'a11_premium_monthly_899',
+    lookupSlug: 'a11_premium_monthly_899',
     productName: 'A11 Premium',
     unitAmount: 899,
     currency: 'eur',
   },
   {
     envKey: 'STRIPE_FOUNDER_PRICE_ID',
-    lookupKey: 'a11_founder_monthly_2999',
+    lookupSlug: 'a11_founder_monthly_2999',
     productName: 'A11 Fondateur',
     unitAmount: 2999,
     currency: 'eur',
@@ -98,7 +98,7 @@ async function ensureProduct(stripe, name) {
 
 async function ensureMonthlyPrice(stripe, plan) {
   const existing = await stripe.prices.list({
-    lookup_keys: [plan.lookupKey],
+    lookup_keys: [plan.lookupSlug],
     active: true,
     limit: 1,
   });
@@ -110,9 +110,9 @@ async function ensureMonthlyPrice(stripe, plan) {
     unit_amount: plan.unitAmount,
     currency: plan.currency,
     recurring: { interval: 'month' },
-    lookup_key: plan.lookupKey,
+    lookup_key: plan.lookupSlug,
     metadata: {
-      plan: plan.lookupKey.includes('founder') ? 'founder' : 'premium',
+      plan: plan.lookupSlug.includes('founder') ? 'founder' : 'premium',
     },
   });
 }
@@ -172,7 +172,7 @@ async function main() {
     }
     planResults.push({
       envKey: plan.envKey,
-      lookupKey: plan.lookupKey,
+      lookupSlug: plan.lookupSlug,
       priceId: maskId(price.id),
     });
   }
