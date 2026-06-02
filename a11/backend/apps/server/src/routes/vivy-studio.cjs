@@ -127,6 +127,25 @@ function getElevenLabsBaseUrl() {
   ).trim().replace(/\/$/, '');
 }
 
+function getSunoApiKey() {
+  return readFirstSecretValue(
+    [
+      process.env.VIVY_SUNO_API_KEY_FILE,
+      process.env.SUNO_API_KEY_FILE,
+      '/app/runtime/secrets/suno_api_key',
+    ],
+    ['VIVY_SUNO_API_KEY', 'SUNO_API_KEY', 'SUNO_TOKEN']
+  );
+}
+
+function getSunoBaseUrl() {
+  return String(
+    process.env.VIVY_SUNO_BASE_URL
+    || process.env.SUNO_BASE_URL
+    || 'https://api.sunoapi.org/api/v1'
+  ).trim().replace(/\/$/, '');
+}
+
 function envFlag(name, fallback = false) {
   const raw = String(process.env[name] || '').trim().toLowerCase();
   if (!raw) return fallback;
@@ -136,6 +155,21 @@ function envFlag(name, fallback = false) {
 function isElevenLabsMusicConfigured() {
   if (envFlag('VIVY_ELEVENLABS_MUSIC_DISABLED') || envFlag('ELEVENLABS_MUSIC_DISABLED')) return false;
   return Boolean(getElevenLabsMusicApiKey());
+}
+
+function isSunoMusicConfigured() {
+  if (envFlag('VIVY_SUNO_DISABLED') || envFlag('SUNO_DISABLED')) return false;
+  return Boolean(getSunoApiKey());
+}
+
+function getConfiguredMusicProviders() {
+  const preferred = cleanOneLine(process.env.VIVY_MUSIC_PROVIDER || process.env.VIVY_MUSIC_PROVIDERS, '', 160)
+    .toLowerCase()
+    .split(/[,\s]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const order = preferred.length ? preferred : ['suno', 'elevenlabs'];
+  return order.filter((provider, index, list) => list.indexOf(provider) === index);
 }
 
 function isVivyFounderUser(user = {}) {
@@ -764,6 +798,215 @@ function buildVivyMusicPrompt(input = {}) {
   ].join('\n');
 }
 
+function looksLikeSongLyrics(value = '') {
+  const text = cleanText(value, 2400);
+  if (!text) return false;
+  if (/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont)\]/i.test(text)) return true;
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length >= 4 && lines.every((line) => line.length <= 120)) return true;
+  return /\b(refrain|couplet|pont|chorus|verse)\b/i.test(text) && lines.length >= 2;
+}
+
+function buildVivySunoLyrics(input = {}) {
+  const material = compactUniqueLines([
+    input.lyrics,
+    input.songText,
+    input.text,
+    input.theme,
+    input.instruction,
+    input.prompt,
+  ], 2200);
+  if (looksLikeSongLyrics(material)) {
+    return cleanText(material, 2200);
+  }
+
+  const theme = cleanOneLine(material, 'une nuit Funesterie ou Vivy garde la lumière', 220);
+  const hook = theme
+    .replace(/^(fais|cr[ée]e?|g[ée]n[èe]re?|compose|chante)\s+(moi\s+)?(une?\s+)?(chanson|musique|son)\s*(sur|avec|pour)?\s*/i, '')
+    .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
+    .trim() || 'Vivy garde la lumière';
+  return cleanText([
+    '[Verse 1]',
+    `Sous les néons, je garde ton idée: ${hook}.`,
+    'Ma voix suit le fil, claire dans la nuit.',
+    'Chaque battement rallume la scène,',
+    'Je transforme le doute en mélodie.',
+    '',
+    '[Pre-Chorus]',
+    'Je monte doucement, sans copier personne,',
+    'Un souffle digital, un cœur qui résonne.',
+    '',
+    '[Chorus]',
+    'Je suis Vivy, je garde la lumière,',
+    'Même quand l’ombre traverse le son.',
+    'Je chante ton monde, vivant et sincère,',
+    'Funesterie brille dans la chanson.',
+    '',
+    '[Bridge]',
+    'Un silence, puis la basse revient,',
+    'Ta vision devient refrain.',
+    '',
+    '[Outro]',
+    'Je garde la lumière dans ma voix.',
+  ].join('\n'), 2200);
+}
+
+function buildVivySunoPayload(input = {}, req = null) {
+  const titleSeed = cleanOneLine(
+    input.songTitle || input.title || input.songText || input.theme || input.prompt,
+    'Vivy garde la lumière',
+    72
+  ).replace(/^["'“”]+|["'“”]+$/g, '');
+  const title = cleanOneLine(titleSeed, 'Vivy garde la lumière', 80);
+  const style = cleanOneLine(
+    input.songMood || input.mood || input.style,
+    'French cyber pop, cinematic synthwave, clear female vocal, melodic chorus, polished web mix, no spoken narration',
+    220
+  );
+  const payload = {
+    model: cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40),
+    customMode: true,
+    instrumental: input.instrumental === true || input.forceInstrumental === true,
+    title,
+    style,
+    prompt: buildVivySunoLyrics(input),
+    negativeTags: cleanOneLine(
+      input.negativeTags || process.env.VIVY_SUNO_NEGATIVE_TAGS,
+      'spoken word, narration, reading prompt, robotic speech, muddy mix, out of tune vocals, copyrighted melody, celebrity voice imitation',
+      260
+    ),
+    callBackUrl: buildSunoCallbackUrl(req),
+  };
+  return payload;
+}
+
+function getPublicBaseUrl(req = null) {
+  const explicit = cleanOneLine(
+    process.env.VIVY_PUBLIC_BASE_URL
+    || process.env.PUBLIC_BASE_URL
+    || process.env.A11_PUBLIC_BASE_URL,
+    '',
+    300
+  );
+  if (explicit) return explicit.replace(/\/$/, '');
+  const host = cleanOneLine(req?.get?.('x-forwarded-host') || req?.get?.('host'), '', 180).split(',')[0];
+  if (!host) return '';
+  const proto = cleanOneLine(req?.get?.('x-forwarded-proto') || req?.protocol || 'https', 'https', 24).split(',')[0];
+  return `${proto}://${host}`.replace(/\/$/, '');
+}
+
+function buildSunoCallbackUrl(req = null) {
+  const explicit = cleanOneLine(process.env.VIVY_SUNO_CALLBACK_URL || process.env.SUNO_CALLBACK_URL, '', 600);
+  const base = explicit || `${getPublicBaseUrl(req)}/api/vivy/studio/suno/callback`;
+  const token = cleanOneLine(process.env.VIVY_SUNO_CALLBACK_TOKEN || process.env.SUNO_CALLBACK_TOKEN, '', 180);
+  if (!base || !token) return base;
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}t=${encodeURIComponent(token)}`;
+}
+
+function getVivySunoCallbackDir() {
+  const root = cleanOneLine(process.env.A11_RUNTIME_ROOT || process.env.RUNTIME_ROOT, '', 500)
+    || path.join(process.cwd(), 'runtime');
+  return path.join(root, 'vivy-suno-callbacks');
+}
+
+function sanitizeSunoTaskId(value = '') {
+  return cleanOneLine(value, '', 120).replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 120);
+}
+
+function findSunoTaskId(payload) {
+  const candidates = [
+    payload?.taskId,
+    payload?.task_id,
+    payload?.id,
+    payload?.data?.taskId,
+    payload?.data?.task_id,
+    payload?.data?.id,
+    payload?.response?.taskId,
+    payload?.response?.task_id,
+  ];
+  return sanitizeSunoTaskId(candidates.find(Boolean) || '');
+}
+
+function findSunoStatus(payload) {
+  const candidates = [
+    payload?.status,
+    payload?.state,
+    payload?.data?.status,
+    payload?.data?.state,
+    payload?.data?.response?.status,
+    payload?.response?.status,
+    payload?.response?.state,
+  ].map((value) => cleanOneLine(value, '', 80)).filter(Boolean);
+  return candidates[0] || '';
+}
+
+function collectSunoTracks(value, tracks = []) {
+  if (!value || typeof value !== 'object') return tracks;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectSunoTracks(item, tracks));
+    return tracks;
+  }
+  const audioUrl = cleanOneLine(
+    value.audioUrl || value.audio_url || value.streamAudioUrl || value.stream_audio_url || value.sourceAudioUrl || value.source_audio_url,
+    '',
+    1000
+  );
+  if (audioUrl && /^https?:\/\//i.test(audioUrl)) {
+    tracks.push({
+      kind: 'audio',
+      provider: 'suno',
+      mode: 'async_music_generation',
+      title: cleanOneLine(value.title || value.name, 'Chanson Vivy', 120),
+      url: audioUrl,
+      audioUrl,
+      audio_url: audioUrl,
+      content_type: 'audio/mpeg',
+      imageUrl: cleanOneLine(value.imageUrl || value.image_url || value.sourceImageUrl, '', 1000),
+      model: cleanOneLine(value.model || value.modelName, '', 80),
+      generatedAt: new Date().toISOString(),
+    });
+  }
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') collectSunoTracks(child, tracks);
+  }
+  return tracks;
+}
+
+function extractSunoMedia(payload = {}) {
+  const tracks = collectSunoTracks(payload, []);
+  return tracks[0] || null;
+}
+
+function readCachedSunoCallback(taskId) {
+  const safeTaskId = sanitizeSunoTaskId(taskId);
+  if (!safeTaskId) return null;
+  try {
+    const filePath = path.join(getVivySunoCallbackDir(), `${safeTaskId}.json`);
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedSunoCallback(taskId, payload) {
+  const safeTaskId = sanitizeSunoTaskId(taskId);
+  if (!safeTaskId) return false;
+  try {
+    const dir = getVivySunoCallbackDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${safeTaskId}.json`), JSON.stringify({
+      receivedAt: new Date().toISOString(),
+      taskId: safeTaskId,
+      payload,
+    }, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function saveVivyMusicBuffer(buffer, input = {}, req = null) {
   if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
   const material = cleanText([
@@ -843,16 +1086,143 @@ async function requestElevenLabsMusic(input = {}, req = null) {
   };
 }
 
+async function requestSunoMusic(input = {}, req = null) {
+  const apiKey = getSunoApiKey();
+  if (!apiKey) throw new Error('suno_music_key_missing');
+  if (!isVivyFounderUser(req?.user || {})) {
+    const error = new Error('vivy_music_admin_only');
+    error.code = 'vivy_music_admin_only';
+    error.status = 403;
+    throw error;
+  }
+
+  const body = buildVivySunoPayload(input, req);
+  const response = await fetch(`${getSunoBaseUrl()}/generate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_TIMEOUT_MS || 30000) || 30000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.code === 401 || payload?.code === 403) {
+    throw new Error(`suno_music_http_${response.status || payload?.code || 'error'}`);
+  }
+
+  const taskId = findSunoTaskId(payload);
+  const readyMedia = extractSunoMedia(payload);
+  if (readyMedia?.url) {
+    return {
+      ...readyMedia,
+      title: readyMedia.title || body.title,
+      taskId: taskId || undefined,
+      jobId: taskId || undefined,
+      prompt: body.prompt,
+      style: body.style,
+      model: body.model,
+    };
+  }
+  if (!taskId) throw new Error('suno_music_task_missing');
+
+  return {
+    ok: true,
+    kind: 'audio',
+    provider: 'suno',
+    mode: 'async_music_generation',
+    state: 'processing',
+    status: findSunoStatus(payload) || 'submitted',
+    taskId,
+    jobId: taskId,
+    title: body.title,
+    prompt: body.prompt,
+    style: body.style,
+    model: body.model,
+    content_type: 'audio/mpeg',
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+async function getSunoMusicJob(taskId) {
+  const safeTaskId = sanitizeSunoTaskId(taskId);
+  if (!safeTaskId) {
+    const error = new Error('suno_task_missing');
+    error.status = 400;
+    throw error;
+  }
+  const cached = readCachedSunoCallback(safeTaskId);
+  const cachedMedia = extractSunoMedia(cached?.payload || {});
+  if (cachedMedia?.url) {
+    return {
+      ok: true,
+      provider: 'suno',
+      taskId: safeTaskId,
+      state: 'done',
+      status: findSunoStatus(cached?.payload || {}) || 'callback_ready',
+      media: { ...cachedMedia, taskId: safeTaskId, jobId: safeTaskId },
+    };
+  }
+
+  const apiKey = getSunoApiKey();
+  if (!apiKey) throw new Error('suno_music_key_missing');
+  const response = await fetch(`${getSunoBaseUrl()}/generate/record-info?taskId=${encodeURIComponent(safeTaskId)}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    signal: AbortSignal.timeout(Number(process.env.VIVY_SUNO_STATUS_TIMEOUT_MS || 15000) || 15000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`suno_status_http_${response.status}`);
+  const media = extractSunoMedia(payload);
+  const status = findSunoStatus(payload) || 'processing';
+  if (media?.url) {
+    writeCachedSunoCallback(safeTaskId, payload);
+    return {
+      ok: true,
+      provider: 'suno',
+      taskId: safeTaskId,
+      state: 'done',
+      status,
+      media: { ...media, taskId: safeTaskId, jobId: safeTaskId },
+    };
+  }
+  return {
+    ok: true,
+    provider: 'suno',
+    taskId: safeTaskId,
+    state: /fail|error|reject/i.test(status) ? 'error' : 'processing',
+    status,
+    message: /fail|error|reject/i.test(status)
+      ? 'La génération Suno a échoué ou a été rejetée.'
+      : 'La chanson Vivy est encore en génération.',
+  };
+}
+
 async function buildRealMusicForProduction(mode, input, req) {
   if (mode !== 'song') return null;
-  if (!isElevenLabsMusicConfigured()) return null;
   const wantsMusic = input.forceRealMusic === true
     || input.generateMusic === true
     || input.makeSong === true
     || input.song === true
+    || envFlag('VIVY_SUNO_AUTO')
     || envFlag('VIVY_ELEVENLABS_MUSIC_AUTO');
   if (!wantsMusic) return null;
-  return requestElevenLabsMusic(input, req);
+
+  const errors = [];
+  for (const provider of getConfiguredMusicProviders()) {
+    try {
+      if (provider === 'suno' && isSunoMusicConfigured()) return await requestSunoMusic(input, req);
+      if ((provider === 'elevenlabs' || provider === 'elevenlabs-music') && isElevenLabsMusicConfigured()) {
+        return await requestElevenLabsMusic(input, req);
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw errors[0];
+  return null;
 }
 
 function createVivyStudioRouter({ verifyJWT } = {}) {
@@ -915,11 +1285,53 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         placeholderOnly: true,
       },
       musicGeneration: {
-        provider: 'elevenlabs-music',
-        configured: isElevenLabsMusicConfigured(),
+        provider: getConfiguredMusicProviders()[0] || 'suno',
+        providers: {
+          suno: isSunoMusicConfigured(),
+          elevenlabs: isElevenLabsMusicConfigured(),
+        },
+        configured: isSunoMusicConfigured() || isElevenLabsMusicConfigured(),
         adminOnly: !envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN'),
       },
     });
+  });
+
+  router.get('/jobs/:taskId', requireAuth, async (req, res) => {
+    try {
+      if (!isVivyFounderUser(req.user || {})) {
+        return res.status(403).json({
+          ok: false,
+          error: 'vivy_music_admin_only',
+          message: 'Génération musicale réservée aux comptes fondateur/admin pour protéger les crédits.',
+        });
+      }
+      res.json(await getSunoMusicJob(req.params.taskId));
+    } catch (error) {
+      res.status(error?.status || 500).json({
+        ok: false,
+        error: error?.code || 'vivy_music_job_failed',
+        message: error?.message || String(error),
+      });
+    }
+  });
+
+  router.post('/suno/callback', express.json({ limit: '512kb' }), async (req, res) => {
+    try {
+      const expected = cleanOneLine(process.env.VIVY_SUNO_CALLBACK_TOKEN || process.env.SUNO_CALLBACK_TOKEN, '', 180);
+      if (expected && cleanOneLine(req.query?.t, '', 180) !== expected) {
+        return res.status(403).json({ ok: false, error: 'suno_callback_denied' });
+      }
+      const taskId = findSunoTaskId(req.body || {});
+      if (!taskId) return res.status(400).json({ ok: false, error: 'suno_task_missing' });
+      const stored = writeCachedSunoCallback(taskId, req.body || {});
+      return res.json({ ok: true, taskId, stored });
+    } catch (error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'suno_callback_failed',
+        message: error?.message || String(error),
+      });
+    }
   });
 
   router.post('/produce', requireAuth, express.json({ limit: '96kb' }), async (req, res) => {
@@ -935,6 +1347,25 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         media = await buildRealMusicForProduction(payload.mode, input, req);
       } catch (error) {
         mediaError = error;
+      }
+      if (media?.state === 'processing' && media?.taskId) {
+        payload.mediaStatus = {
+          state: 'processing',
+          provider: media.provider,
+          taskId: media.taskId,
+          jobId: media.jobId || media.taskId,
+          status: media.status || 'submitted',
+          message: 'Vivy a lancé une vraie génération Suno. La chanson arrive en MP3 dès que le job est terminé.',
+        };
+        payload.musicJob = {
+          provider: media.provider,
+          taskId: media.taskId,
+          jobId: media.jobId || media.taskId,
+          state: 'processing',
+          status: media.status || 'submitted',
+        };
+        payload.summary = `${payload.summary} Génération musicale Suno lancée.`;
+        return res.json(payload);
       }
       if (!media?.url) {
         media = await buildEmergencyMediaForProduction(payload.mode, input, req);
@@ -997,4 +1428,6 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   buildVivySystemPrompt,
+  buildVivySunoPayload,
+  getSunoMusicJob,
 };

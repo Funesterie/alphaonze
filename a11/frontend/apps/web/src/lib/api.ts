@@ -1897,6 +1897,12 @@ export type VivyStudioAction = {
 export type VivyStudioMedia = {
   kind?: 'audio' | 'video' | string;
   provider?: string;
+  mode?: string;
+  state?: string;
+  status?: string;
+  taskId?: string;
+  jobId?: string;
+  title?: string;
   url?: string;
   audioUrl?: string;
   audio_url?: string;
@@ -1964,8 +1970,19 @@ export type VivyStudioProductionResult = {
   video_url?: string;
   mediaStatus?: {
     state?: string;
+    provider?: string;
+    taskId?: string;
+    jobId?: string;
+    status?: string;
     reason?: string;
     message?: string;
+  };
+  musicJob?: {
+    provider?: string;
+    taskId?: string;
+    jobId?: string;
+    state?: string;
+    status?: string;
   };
   tokenStored?: boolean;
   aiMode?: 'llm' | 'fallback' | string;
@@ -1998,6 +2015,21 @@ export async function runVivyStudioProduction(
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Vivy Studio indisponible (${res.status})`);
+  }
+  return payload as VivyStudioProductionResult;
+}
+
+export async function getVivyStudioMusicJob(taskId: string): Promise<VivyStudioProductionResult> {
+  const safeTaskId = String(taskId || '').trim();
+  if (!safeTaskId) throw new Error('job_vivy_manquant');
+  const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Job Vivy indisponible (${res.status})`);
   }
   return payload as VivyStudioProductionResult;
 }

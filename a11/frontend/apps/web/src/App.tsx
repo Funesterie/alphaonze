@@ -45,6 +45,7 @@ import {
   register,
   forgotPassword,
   resetPassword,
+  getVivyStudioMusicJob,
   runVivyStudioProduction,
   sendMatchArenaInput,
   startGoogleOAuth,
@@ -3027,6 +3028,35 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     }
   }
 
+  function getVivySongMediaUrl(payload: any) {
+    return String(
+      payload?.audioUrl
+      || payload?.audio_url
+      || payload?.media?.audioUrl
+      || payload?.media?.audio_url
+      || payload?.media?.url
+      || ""
+    ).trim();
+  }
+
+  async function waitForVivySongJob(taskId: string) {
+    const safeTaskId = String(taskId || "").trim();
+    if (!safeTaskId) throw new Error("job_vivy_manquant");
+    const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    for (let attempt = 1; attempt <= 24; attempt += 1) {
+      await pause(attempt <= 3 ? 6000 : 10000);
+      const job = await getVivyStudioMusicJob(safeTaskId);
+      const statusText = String(job?.mediaStatus?.status || job?.musicJob?.status || (job as any)?.status || "").trim();
+      const mediaUrl = getVivySongMediaUrl(job);
+      if (mediaUrl) return job;
+      if (String(job?.mediaStatus?.state || job?.musicJob?.state || (job as any)?.state || "").toLowerCase() === "error") {
+        throw new Error(job?.mediaStatus?.message || job?.message || "generation_suno_echouee");
+      }
+      setStatus(`Chanson Vivy en génération Suno... ${statusText || `essai ${attempt}`}`);
+    }
+    throw new Error("generation_suno_trop_longue");
+  }
+
   async function produceSimpleVivySong() {
     if (!hasSession) {
       setStatus("Connexion requise pour générer une chanson Vivy.");
@@ -3053,20 +3083,27 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         durationSeconds: 45,
       });
       const payloadAny = payload as any;
-      const mediaUrl = String(payloadAny?.audioUrl || payloadAny?.audio_url || payloadAny?.media?.audioUrl || payloadAny?.media?.audio_url || payloadAny?.media?.url || "").trim();
+      let finalPayload: any = payloadAny;
+      let mediaUrl = getVivySongMediaUrl(finalPayload);
+      const taskId = String(payloadAny?.mediaStatus?.taskId || payloadAny?.musicJob?.taskId || payloadAny?.media?.taskId || "").trim();
+      if (!mediaUrl && taskId) {
+        setStatus("Suno compose la chanson Vivy. Je récupère le MP3 dès qu’il est prêt...");
+        finalPayload = await waitForVivySongJob(taskId);
+        mediaUrl = getVivySongMediaUrl(finalPayload);
+      }
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
-        provider: String(payloadAny?.media?.provider || "vivy-music"),
-        contentType: String(payloadAny?.media?.content_type || payloadAny?.contentType || payloadAny?.content_type || "audio/mpeg"),
+        provider: String(finalPayload?.media?.provider || payloadAny?.mediaStatus?.provider || "vivy-music"),
+        contentType: String(finalPayload?.media?.content_type || finalPayload?.contentType || finalPayload?.content_type || "audio/mpeg"),
       });
       setVivyOutput([
         "VIVY_MUSIC_GENERATION",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
-        `Prompt: ${playablePrompt}`,
+        taskId ? `Job Suno: ${taskId}` : `Prompt: ${playablePrompt}`,
         "",
-        payload?.summary || "Sortie: chanson audio Vivy générée.",
+        finalPayload?.summary || payload?.summary || "Sortie: chanson audio Vivy générée.",
       ].join("\n"));
       setStatus("Chanson Vivy prête.");
     } catch (error: any) {

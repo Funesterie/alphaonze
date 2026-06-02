@@ -951,6 +951,12 @@ $overrides = [ordered]@{
   VIVY_ELEVENLABS_API_KEY_FILE = $(if ($env:VIVY_ELEVENLABS_API_KEY_FILE) { $env:VIVY_ELEVENLABS_API_KEY_FILE } else { "/app/runtime/secrets/elevenlabs_api_key" })
   A11_ELEVENLABS_A11_VOICE_ID = $(if ($env:A11_ELEVENLABS_A11_VOICE_ID) { $env:A11_ELEVENLABS_A11_VOICE_ID } else { "JBFqnCBsd6RMkjVDRZzb" })
   VIVY_ELEVENLABS_MUSIC_MODEL = $(if ($env:VIVY_ELEVENLABS_MUSIC_MODEL) { $env:VIVY_ELEVENLABS_MUSIC_MODEL } else { "music_v1" })
+  VIVY_MUSIC_PROVIDER = $(if ($env:VIVY_MUSIC_PROVIDER) { $env:VIVY_MUSIC_PROVIDER } else { "suno,elevenlabs" })
+  VIVY_SUNO_API_KEY_FILE = $(if ($env:VIVY_SUNO_API_KEY_FILE) { $env:VIVY_SUNO_API_KEY_FILE } else { "/app/runtime/secrets/suno_api_key" })
+  VIVY_SUNO_BASE_URL = $(if ($env:VIVY_SUNO_BASE_URL) { $env:VIVY_SUNO_BASE_URL } else { "https://api.sunoapi.org/api/v1" })
+  VIVY_SUNO_MODEL = $(if ($env:VIVY_SUNO_MODEL) { $env:VIVY_SUNO_MODEL } else { "V4_5" })
+  VIVY_SUNO_CALLBACK_URL = $(if ($env:VIVY_SUNO_CALLBACK_URL) { $env:VIVY_SUNO_CALLBACK_URL } else { "https://vivy.funesterie.me/api/vivy/studio/suno/callback" })
+  VIVY_SUNO_CALLBACK_TOKEN = $(if ($env:VIVY_SUNO_CALLBACK_TOKEN) { $env:VIVY_SUNO_CALLBACK_TOKEN } else { "" })
   A11_VOICE_CONVERTER_PROVIDER = $(if ($env:A11_VOICE_CONVERTER_PROVIDER) { $env:A11_VOICE_CONVERTER_PROVIDER } else { "xtts-rvc,ffmpeg-morph" })
   A11_VOICE_XTTS_RVC_URL = $(if ($env:A11_VOICE_XTTS_RVC_URL) { $env:A11_VOICE_XTTS_RVC_URL } else { "http://a11-xtts-rvc:5000" })
   A11_VOICE_XTTS_RVC_PROTOCOL = $(if ($env:A11_VOICE_XTTS_RVC_PROTOCOL) { $env:A11_VOICE_XTTS_RVC_PROTOCOL } else { "a11" })
@@ -1020,6 +1026,24 @@ Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCy
 $remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/tts $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
+
+$localSunoSecret = if ($env:VIVY_SUNO_LOCAL_API_KEY_FILE) {
+  $env:VIVY_SUNO_LOCAL_API_KEY_FILE
+} else {
+  Join-Path $A11Root "runtime\secrets\suno_api_key"
+}
+if (Test-Path -LiteralPath $localSunoSecret) {
+  foreach ($remoteSunoSecret in @(
+    "$RemoteDataRoot/runtime/secrets/suno_api_key",
+    "$RemoteDataRoot/kaen44-runtime/secrets/suno_api_key"
+  )) {
+    & scp @sshBase $localSunoSecret "${Remote}:$remoteSunoSecret"
+    if ($LASTEXITCODE -ne 0) { throw "Copie secret Suno echouee vers $remoteSunoSecret" }
+  }
+  & ssh @sshBase $Remote "chmod 600 $RemoteDataRoot/runtime/secrets/suno_api_key $RemoteDataRoot/kaen44-runtime/secrets/suno_api_key"
+  if ($LASTEXITCODE -ne 0) { throw "Permissions secret Suno echouees" }
+  Write-Host "Secret Suno synchronise vers les runtimes A11 et Vivy/Kaen44." -ForegroundColor DarkCyan
+}
 
 $piperVoiceDownload = @"
 set -e
