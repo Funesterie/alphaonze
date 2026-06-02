@@ -2773,7 +2773,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
 
   function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
     const officialOnly = usesOfficialVivyVoiceTool();
-    const provider = officialOnly ? "cartesia" : "auto";
+    const diagnosticMode = /diagnostic/.test(foldForLookup(voiceTool));
+    const provider = diagnosticMode ? "auto" : "cartesia";
     return {
       persona: "vivy",
       voicePersona: "vivy",
@@ -2788,16 +2789,16 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       audioFormat: "mp3",
       responseFormat: "mp3",
       ...buildVivyVoiceReferenceOptions(),
-      voiceReferenceRequired: officialOnly || hasPrivateVoiceReference,
-      referenceVoiceRequired: officialOnly || hasPrivateVoiceReference,
-      voiceConversion: officialOnly ? false : undefined,
-      convertVoice: officialOnly ? false : undefined,
-      morphVoice: officialOnly ? false : undefined,
-      rvc: officialOnly ? false : undefined,
-      allowRvc: !officialOnly && hasPrivateVoiceReference,
-      allowXttsRvc: !officialOnly && hasPrivateVoiceReference,
-      allowLegacyVoiceBridge: !officialOnly && hasPrivateVoiceReference,
-      xttsRvcOptIn: !officialOnly && hasPrivateVoiceReference,
+      voiceReferenceRequired: !diagnosticMode && officialOnly,
+      referenceVoiceRequired: !diagnosticMode && officialOnly,
+      voiceConversion: false,
+      convertVoice: false,
+      morphVoice: false,
+      rvc: false,
+      allowRvc: false,
+      allowXttsRvc: false,
+      allowLegacyVoiceBridge: false,
+      xttsRvcOptIn: false,
       allowBrowserSpeechFallback: false,
     };
   }
@@ -2901,7 +2902,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         180
       );
       const vocalMode = voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive";
-      const provider = usesOfficialVivyVoiceTool() ? "cartesia" : "auto";
+      const provider = /diagnostic/.test(foldForLookup(voiceTool)) ? "auto" : "cartesia";
       const payload = await ttsSpeak(
         testLine,
         "vivy",

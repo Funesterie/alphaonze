@@ -3203,21 +3203,33 @@ function buildVivyTtsJobBody(body = {}) {
   const requestedF0Shift = resolveVoiceF0Shift(body);
   const vivyVoiceStrength = requestedStrength ?? (isSong ? 0.32 : 0.24);
   const vivyF0Shift = requestedF0Shift ?? (isSong ? -0.35 : -0.8);
+  const requestedProvider = getRequestedTtsProvider(body);
+  const explicitLegacyBridge = requestedProvider === PROVIDERS.XTTS_RVC && allowsXttsRvcForBody(body);
+  const provider = explicitLegacyBridge
+    ? PROVIDERS.XTTS_RVC
+    : (isCloudTtsProvider(requestedProvider) ? requestedProvider : PROVIDERS.CARTESIA);
   return {
     ...body,
     text,
     voice: body.voice || 'vivy',
-    provider: body.provider || 'auto',
-    ttsProvider: body.ttsProvider || body.provider || 'auto',
+    provider,
+    ttsProvider: provider,
     persona: body.persona || 'vivy',
     voicePersona: body.voicePersona || 'vivy',
     surface: body.surface || 'vivy',
     vocalMode: body.vocalMode || (isSong ? 'sing' : 'adaptive'),
-    voiceConversion: body.voiceConversion ?? false,
+    voiceConversion: explicitLegacyBridge ? (body.voiceConversion ?? true) : false,
+    convertVoice: explicitLegacyBridge ? (body.convertVoice ?? true) : false,
+    morphVoice: explicitLegacyBridge ? (body.morphVoice ?? true) : false,
+    rvc: explicitLegacyBridge ? (body.rvc ?? true) : false,
+    allowRvc: explicitLegacyBridge,
+    allowXttsRvc: explicitLegacyBridge,
+    allowLegacyVoiceBridge: explicitLegacyBridge,
+    xttsRvcOptIn: explicitLegacyBridge,
     useDefaultVoiceReference: body.useDefaultVoiceReference ?? !body.voiceReferenceId,
     defaultVoiceReference: body.defaultVoiceReference ?? !body.voiceReferenceId,
-    voiceReferenceRequired: body.voiceReferenceRequired ?? false,
-    referenceVoiceRequired: body.referenceVoiceRequired ?? false,
+    voiceReferenceRequired: explicitLegacyBridge ? (body.voiceReferenceRequired ?? true) : (body.voiceReferenceRequired ?? false),
+    referenceVoiceRequired: explicitLegacyBridge ? (body.referenceVoiceRequired ?? true) : (body.referenceVoiceRequired ?? false),
     allowBrowserSpeechFallback: false,
     audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
     responseFormat: normalizeTtsAudioFormat(body, 'mp3'),

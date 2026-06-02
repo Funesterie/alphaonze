@@ -69,6 +69,12 @@ describe('voice-provider-manifest', () => {
       const serialized = JSON.stringify(OFFICIAL_READY_VOICE_PROFILES).toLowerCase();
       assert.doesNotMatch(serialized, /terminator|donna paulsen|t-800|schwarzenegger/);
     });
+
+    it('uses the current approved Cartesia voice picks', () => {
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
+    });
   });
 
   describe('resolveVoiceProvider — official personas', () => {

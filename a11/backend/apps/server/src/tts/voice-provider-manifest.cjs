@@ -86,14 +86,14 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
 const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
   a11: Object.freeze({
     styleId: 'a11-official-stern-french',
-    displayName: 'A11 - Stern French Man',
+    displayName: 'A11 - Laurent Dependable Anchor',
     providerLabels: Object.freeze({
-      [PROVIDERS.CARTESIA]: 'Stern French Man',
+      [PROVIDERS.CARTESIA]: 'Laurent - Dependable Anchor',
       [PROVIDERS.AZURE]: 'fr-FR-Remy:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'onyx',
       [PROVIDERS.PIPER]: 'fr_FR-upmc-medium',
     }),
-    cartesiaVoiceId: '0418348a-0ca2-4e90-9986-800fb8b3bbc0',
+    cartesiaVoiceId: '7345dfa5-ee04-44d2-abf4-29262b880ab4',
     azureVoice: 'fr-FR-Remy:DragonHDLatestNeural',
     openAiVoice: 'onyx',
     piperVoice: 'fr_FR-upmc-medium',
@@ -114,14 +114,14 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
   }),
   vivy: Object.freeze({
     styleId: 'vivy-official-french-conversational',
-    displayName: 'Vivy - French Conversational Lady',
+    displayName: 'Vivy - Manon Bright Belle',
     providerLabels: Object.freeze({
-      [PROVIDERS.CARTESIA]: 'French Conversational Lady',
+      [PROVIDERS.CARTESIA]: 'Manon - Bright Belle',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'coral',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
-    cartesiaVoiceId: 'a249eaff-1e96-4d2c-b23b-12efa4f66f41',
+    cartesiaVoiceId: '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a',
     azureVoice: 'fr-FR-Vivienne:DragonHDLatestNeural',
     openAiVoice: 'coral',
     piperVoice: 'fr_FR-siwis-medium',
