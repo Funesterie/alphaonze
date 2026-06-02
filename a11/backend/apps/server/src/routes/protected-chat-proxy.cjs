@@ -35,9 +35,19 @@ const {
   t_download_file: defaultDownloadFile,
 } = require('../a11/tools-dispatcher.cjs');
 const { hasFullAccess } = require('../auth/full-access.cjs');
-const { resolveMcpAccountProfileSync } = require('../auth/mcp-account-tier.cjs');
+const {
+  canUseMcpPermission,
+  resolveMcpAccountProfileSync,
+} = require('../auth/mcp-account-tier.cjs');
+const {
+  callMcpTool: defaultCallMcpTool,
+  checkMcpHealth: defaultCheckMcpHealth,
+  getMcpConfig: defaultGetMcpConfig,
+  listMcpTools: defaultListMcpTools,
+} = require('../mcp-client.cjs');
 const {
   buildA11ChatSystemPrompt,
+  isMcpAccessQuestion,
 } = require('../chat/a11-active-identity.cjs');
 const {
   postProcessA11AssistantResponse,
@@ -239,6 +249,312 @@ function resolveProxyAccountTier(req = {}) {
     return String(resolveMcpAccountProfileSync(req?.user || {}).tier || 'basic').trim().toLowerCase() || 'basic';
   } catch {
     return hasFullAccess(req?.user || {}) ? 'admin_family' : 'basic';
+  }
+}
+
+function resolveProxyAccountProfile(req = {}) {
+  try {
+    return resolveMcpAccountProfileSync(req?.user || {});
+  } catch {
+    return resolveMcpAccountProfileSync({
+      ...(req?.user || {}),
+      role: hasFullAccess(req?.user || {}) ? 'admin' : req?.user?.role,
+    });
+  }
+}
+
+function normalizeCapabilityQuestionText(text = '') {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+function isMcpRuntimeStatusQuestion(text = '') {
+  const normalized = normalizeCapabilityQuestionText(text);
+  if (!normalized) return false;
+  if (isMcpAccessQuestion(normalized)) return true;
+  const hasTarget = /\b(mcp|neo4j|docker|podman|conteneur|container|outils?|tools?|qflush|runtime)\b/.test(normalized);
+  if (!hasTarget) return false;
+  const asksStatus = /(connect|branche|relie|status|statut|sante|health|marche|dispo|accessible|acces|access|combien|nombre|liste|outils?|tools?|\?)/.test(normalized);
+  return asksStatus;
+}
+
+function isOperatorAssistanceRequest(text = '') {
+  const normalized = normalizeCapabilityQuestionText(text);
+  if (!normalized) return false;
+  const hasSurface = /\b(ordinateur|pc|windows|bureau|ecran|screen|terminal|console|souris|mouse|clavier|keyboard|discord|logiciel|application|malvoyant|malvoyante|accessibilite|accessibility)\b/.test(normalized);
+  const hasAction = /(install|installer|installe|parametr|configur|regl|ouvrir|lancer|prendre la main|controle|control|pilote|aide|assiste|utilise|commande|terminal)/.test(normalized);
+  const asksCapability = /(peux|pourrais|fais|faire|gere|besoin|demande|si .*admin|fondateur|malvoyant|malvoyante|\?)/.test(normalized);
+  return hasSurface && hasAction && asksCapability;
+}
+
+function buildMcpToolNames(toolsResult) {
+  const tools = toolsResult?.result?.tools
+    || toolsResult?.response?.result?.tools
+    || toolsResult?.structuredContent?.tools
+    || toolsResult?.tools
+    || [];
+  if (!Array.isArray(tools)) return [];
+  return [...new Set(tools
+    .map((tool) => String(tool?.name || tool?.id || '').trim())
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function summarizeMcpToolGroups(toolNames = []) {
+  const has = (pattern) => toolNames.some((name) => pattern.test(name));
+  const groups = [];
+  if (has(/^neo4j_/i)) groups.push('Neo4j');
+  if (has(/qflush|romstation|keyboard|mouse|gamepad/i)) groups.push('Qflush/contrôle borné');
+  if (has(/job_|agent_jobs|operator/i)) groups.push('jobs opérateur');
+  if (has(/discussion|presence|heartbeat|route/i)) groups.push('coordination agents');
+  if (has(/memory|semantic|graph/i)) groups.push('mémoire/graphe');
+  if (has(/bucket|resource|file|cloud|search/i)) groups.push('fichiers/recherche');
+  if (has(/image|vision|janus/i)) groups.push('vision/image');
+  return groups;
+}
+
+function buildMcpStatusChatPayload({
+  profile,
+  health = null,
+  toolNames = [],
+  toolSource = 'none',
+  toolsError = '',
+  config = null,
+} = {}) {
+  const healthOk = health?.ok === true;
+  const count = toolNames.length;
+  const groups = summarizeMcpToolGroups(toolNames);
+  const canSeePrivateTools = canUseMcpPermission(profile, 'privateMcpTools');
+  const lines = [];
+
+  if (healthOk) {
+    lines.push('Oui, le pont MCP Funesterie répond et je dois le considérer comme disponible dans cette session.');
+  } else if (health) {
+    lines.push('Le pont MCP est configuré, mais son health-check ne répond pas proprement depuis cette surface au moment de la question.');
+  } else {
+    lines.push('Le pont MCP est configuré côté Funesterie, mais je n’ai pas lancé de health-check complet pour cette réponse.');
+  }
+
+  lines.push('Je ne suis pas “dans Docker” directement: je passe par le MCP/backend. Quand Neo4j Docker est exposé, je le vois via les outils Neo4j du pont.');
+
+  if (count) {
+    const sourceLabel = toolSource === 'live'
+      ? 'outils MCP réellement listés'
+      : 'outils autorisés côté backend';
+    lines.push(`Outils visibles pour cette session: ${count} ${sourceLabel}.`);
+  } else if (toolsError) {
+    lines.push(`Le comptage des outils n’a pas abouti cette fois: ${toolsError}.`);
+  } else {
+    lines.push('Je n’ai pas de comptage d’outils exploitable dans cette surface, donc je ne dois pas inventer un nombre.');
+  }
+
+  if (groups.length) {
+    lines.push(`Familles détectées: ${groups.join(', ')}.`);
+  }
+  if (!canSeePrivateTools) {
+    lines.push('Le détail complet des outils privés reste réservé aux comptes Fondateur/Admin famille.');
+  }
+  if (config?.tokenPresent === false) {
+    lines.push('Attention: aucun token MCP serveur n’est visible côté configuration backend; certaines actions privées peuvent être refusées.');
+  }
+  lines.push('Si une action précise échoue, je dois nommer le verrou probable au lieu de répondre que je n’ai aucun outil.');
+
+  const assistant = lines.join('\n');
+  return {
+    ok: true,
+    mode: 'mcp_status',
+    accountTier: profile?.tier || 'basic',
+    mcp: {
+      connected: healthOk,
+      healthStatus: health?.status || null,
+      healthUrl: health?.url || null,
+      tokenPresent: config?.tokenPresent ?? null,
+      toolCount: count || null,
+      toolSource,
+      toolGroups: groups,
+    },
+    assistant,
+    content: assistant,
+    choices: buildAssistantChoice(assistant),
+  };
+}
+
+async function buildMcpRuntimeStatusPayload(req, mcp = {}) {
+  const profile = resolveProxyAccountProfile(req);
+  const client = {
+    checkMcpHealth: mcp.checkMcpHealth || defaultCheckMcpHealth,
+    getMcpConfig: mcp.getMcpConfig || defaultGetMcpConfig,
+    listMcpTools: mcp.listMcpTools || defaultListMcpTools,
+  };
+  const config = client.getMcpConfig(process.env);
+  let health = null;
+  let toolNames = [];
+  let toolSource = 'none';
+  let toolsError = '';
+
+  if (canUseMcpPermission(profile, 'publicHealth') || canUseMcpPermission(profile, 'privateMcpStatus')) {
+    try {
+      health = await client.checkMcpHealth({ config });
+    } catch (error_) {
+      health = {
+        ok: false,
+        status: Number(error_?.status || 0) || null,
+        url: config?.url || null,
+        body: { message: sanitizeProxyMessage(error_?.message || error_) },
+      };
+    }
+  }
+
+  if (canUseMcpPermission(profile, 'privateMcpTools')) {
+    try {
+      toolNames = buildMcpToolNames(await client.listMcpTools({ config }));
+      toolSource = 'live';
+    } catch (error_) {
+      toolsError = sanitizeProxyMessage(error_?.message || error_ || 'liste outils indisponible');
+    }
+  } else if (config?.allowedTools instanceof Set) {
+    toolNames = [...config.allowedTools].sort((left, right) => left.localeCompare(right));
+    toolSource = 'allowlist';
+  }
+
+  return buildMcpStatusChatPayload({
+    profile,
+    health,
+    toolNames,
+    toolSource,
+    toolsError,
+    config,
+  });
+}
+
+function buildOperatorAssistDeniedPayload(profile) {
+  const assistant = [
+    'Je peux préparer ce type d’aide, mais le contrôle ordinateur/terminal est réservé aux comptes Fondateur ou Admin famille.',
+    'Pour un compte Basic/Premium, je peux guider pas à pas en texte, sans vision active ni action souris/clavier.',
+  ].join('\n');
+  return {
+    ok: true,
+    mode: 'operator_assist_denied',
+    accountTier: profile?.tier || 'basic',
+    assistant,
+    content: assistant,
+    choices: buildAssistantChoice(assistant),
+  };
+}
+
+function extractOperatorJobId(toolResult) {
+  return String(
+    toolResult?.result?.structuredContent?.result?.job?.id
+    || toolResult?.result?.structuredContent?.job?.id
+    || toolResult?.structuredContent?.result?.job?.id
+    || ''
+  ).trim();
+}
+
+function buildOperatorAssistJobInput(req, profile, latestUserMessage) {
+  const normalized = normalizeCapabilityQuestionText(latestUserMessage);
+  const isDiscord = /\bdiscord\b/.test(normalized);
+  const isAccessibility = /malvoy|accessibilite|accessibility/.test(normalized);
+  const userRef = profile?.user?.email || profile?.user?.username || profile?.user?.id || req?.user?.id || 'session';
+  const hash = crypto
+    .createHash('sha256')
+    .update(`${userRef}\n${normalized.slice(0, 800)}`)
+    .digest('hex')
+    .slice(0, 32);
+  return {
+    from: 'a11-protected-chat',
+    queue: 'operator',
+    kind: 'operator.assist',
+    title: isDiscord
+      ? 'Assistance PC: installer/configurer Discord'
+      : 'Assistance PC: vision et guidage opérateur',
+    priority: profile?.tier === 'admin_family' ? 80 : 60,
+    risk: 'medium',
+    requiredCapabilities: ['operator-wake', 'qflush'],
+    leaseMs: 30 * 60 * 1000,
+    maxRetries: 2,
+    idempotencyKey: `operator-assist-${hash}`,
+    payload: {
+      source: 'a11.protected_chat',
+      instruction: String(latestUserMessage || '').trim().slice(0, 2000),
+      requestedAt: new Date().toISOString(),
+      accountTier: profile?.tier || 'basic',
+      user: {
+        id: profile?.user?.id || '',
+        username: profile?.user?.username || '',
+        email: profile?.user?.email || '',
+      },
+      capabilitiesRequested: [
+        'screen_vision',
+        'guided_steps',
+        'bounded_keyboard_mouse_after_confirmation',
+        'bounded_terminal_after_confirmation',
+      ],
+      accessibilityMode: isAccessibility,
+      allowInput: false,
+      requiresHumanConfirmation: true,
+      destructiveActions: false,
+      terminalPolicy: 'bounded_qflush_only_no_raw_shell',
+      notes: [
+        'Ne jamais demander de secret brut dans le chat.',
+        'Confirmer chaque action souris/clavier/terminal avant exécution.',
+        'Si Discord est concerné, privilégier installation officielle et réglages accessibilité/audio.',
+      ],
+    },
+  };
+}
+
+async function buildOperatorAssistancePayload(req, latestUserMessage, mcp = {}) {
+  const profile = resolveProxyAccountProfile(req);
+  if (!canUseMcpPermission(profile, 'localRuntimeControl')) {
+    return buildOperatorAssistDeniedPayload(profile);
+  }
+
+  const client = {
+    callMcpTool: mcp.callMcpTool || defaultCallMcpTool,
+    getMcpConfig: mcp.getMcpConfig || defaultGetMcpConfig,
+  };
+  const config = client.getMcpConfig(process.env);
+  const jobInput = buildOperatorAssistJobInput(req, profile, latestUserMessage);
+
+  try {
+    const result = await client.callMcpTool('job_enqueue', jobInput, { config });
+    const jobId = extractOperatorJobId(result);
+    const assistant = [
+      'Oui, je peux lancer une aide opérateur bornée pour ce compte.',
+      jobId ? `J’ai déposé la demande dans la file operator (${jobId}).` : 'J’ai déposé la demande dans la file operator.',
+      'Le principe: vision de l’écran, consignes pas à pas, puis action souris/clavier/terminal seulement après confirmation.',
+      'Pour Discord, je peux guider l’installation officielle, les réglages audio, accessibilité et connexion, sans exposer de secret.',
+    ].join('\n');
+    return {
+      ok: true,
+      mode: 'operator_assist',
+      accountTier: profile?.tier || 'basic',
+      jobId: jobId || null,
+      assistant,
+      content: assistant,
+      choices: buildAssistantChoice(assistant),
+    };
+  } catch (error_) {
+    const message = sanitizeProxyMessage(error_?.message || error_ || 'job_enqueue indisponible');
+    const assistant = [
+      'Je peux gérer cette aide opérateur, mais le dépôt de job MCP n’a pas abouti à l’instant.',
+      `Blocage probable: ${message}.`,
+      'Je peux quand même guider en texte; les actions écran/terminal attendront que le pont operator soit rétabli.',
+    ].join('\n');
+    return {
+      ok: true,
+      mode: 'operator_assist_unavailable',
+      accountTier: profile?.tier || 'basic',
+      error: 'operator_job_enqueue_failed',
+      assistant,
+      content: assistant,
+      choices: buildAssistantChoice(assistant),
+    };
   }
 }
 
@@ -1744,6 +2060,12 @@ function createProtectedChatProxyRouter({
   hasFamilyAccess = (user) => hasFullAccess(user),
   shouldDefaultToLocalProvider = defaultShouldDefaultToLocalProvider,
   autoDescribeImage = defaultAutoDescribeImage,
+  mcp = {
+    callMcpTool: defaultCallMcpTool,
+    checkMcpHealth: defaultCheckMcpHealth,
+    getMcpConfig: defaultGetMcpConfig,
+    listMcpTools: defaultListMcpTools,
+  },
   intentRouterV2Enabled = isIntentRouterV2Enabled(),
   localDefaultModel = String(process.env.LOCAL_DEFAULT_MODEL || 'gemma4:e4b'),
   remoteDefaultModel = String(
@@ -1950,6 +2272,14 @@ function createProtectedChatProxyRouter({
   async function tryHandleIntentRequest(req, res) {
     const latestUserMessage = extractLatestUserMessage(req.body || {});
     if (!latestUserMessage) return false;
+
+    if (isOperatorAssistanceRequest(latestUserMessage)) {
+      return res.status(200).json(await buildOperatorAssistancePayload(req, latestUserMessage, mcp));
+    }
+
+    if (isMcpRuntimeStatusQuestion(latestUserMessage)) {
+      return res.status(200).json(await buildMcpRuntimeStatusPayload(req, mcp));
+    }
 
     const simpleEmailIntent = parseSimpleEmailIntent(latestUserMessage);
     if (simpleEmailIntent) {

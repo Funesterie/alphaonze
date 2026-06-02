@@ -1819,6 +1819,149 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
   );
 });
 
+test('POST /api/llm/chat answers MCP/Neo4j tool status without hallucinating no tools', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({
+    id: 'admin-mcp',
+    username: 'admin-mcp',
+    email: 'cellaurojeffrey@gmail.com',
+    role: 'admin',
+    isAdmin: true,
+  }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI() {
+          throw new Error('text_proxy_should_not_be_called');
+        },
+        mcp: {
+          getMcpConfig: () => ({
+            url: 'http://127.0.0.1:8787/mcp',
+            tokenPresent: true,
+            timeoutMs: 1000,
+            allowAllTools: true,
+            allowedTools: new Set(),
+          }),
+          checkMcpHealth: async () => ({
+            ok: true,
+            status: 200,
+            url: 'http://127.0.0.1:8787/health',
+            body: { status: 'ok' },
+          }),
+          listMcpTools: async () => ({
+            result: {
+              tools: [
+                { name: 'neo4j_status' },
+                { name: 'neo4j_read_query' },
+                { name: 'job_enqueue' },
+                { name: 'qflush_status' },
+              ],
+            },
+          }),
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: 'es tu connecté au mcp neo4j docker ? si oui avec combien d outils en tout ?' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mode, 'mcp_status');
+      assert.equal(json.mcp.toolCount, 4);
+      assert.match(json.assistant, /pont MCP Funesterie/i);
+      assert.match(json.assistant, /4 outils MCP réellement listés/i);
+      assert.match(json.assistant, /Neo4j/i);
+      assert.doesNotMatch(json.assistant, /aucun outil externe/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat enqueues bounded operator assistance for admin/founder accounts', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({
+    id: 'admin-operator',
+    username: 'admin-operator',
+    email: 'cellaurojeffrey@gmail.com',
+    role: 'admin',
+    isAdmin: true,
+  }, jwtSecret, { expiresIn: '1h' });
+  let enqueued = null;
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI() {
+          throw new Error('text_proxy_should_not_be_called');
+        },
+        mcp: {
+          getMcpConfig: () => ({
+            url: 'http://127.0.0.1:8787/mcp',
+            tokenPresent: true,
+            timeoutMs: 1000,
+            allowAllTools: true,
+            allowedTools: new Set(),
+          }),
+          callMcpTool: async (name, args) => {
+            assert.equal(name, 'job_enqueue');
+            enqueued = args;
+            return {
+              result: {
+                structuredContent: {
+                  result: {
+                    created: true,
+                    job: { id: 'job-test-operator-1' },
+                  },
+                },
+              },
+            };
+          },
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: 'je suis malvoyant, tu peux contrôler mon ordinateur pour installer et paramétrer Discord ?' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mode, 'operator_assist');
+      assert.equal(json.jobId, 'job-test-operator-1');
+      assert.equal(enqueued.queue, 'operator');
+      assert.equal(enqueued.kind, 'operator.assist');
+      assert.equal(enqueued.payload.accessibilityMode, true);
+      assert.equal(enqueued.payload.allowInput, false);
+      assert.equal(enqueued.payload.requiresHumanConfirmation, true);
+      assert.match(json.assistant, /confirmation/i);
+    }
+  );
+});
+
 test('POST /api/llm/chat strips stale media markers before text proxy chat', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-context', username: 'user-context' }, jwtSecret, { expiresIn: '1h' });
