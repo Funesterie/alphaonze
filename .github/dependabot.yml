@@ -33,3 +33,15 @@ updates:
     labels:
       - "security"
       - "github-actions"
+
+  # Legacy Windows desktop wrapper (Tauri/Rust)
+  - package-ecosystem: "cargo"
+    directory: "/a11/a11desktoptauri/src-tauri"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    labels:
+      - "security"
+      - "dependencies"
+      - "desktop"
