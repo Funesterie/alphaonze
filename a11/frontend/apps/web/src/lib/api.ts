@@ -3306,6 +3306,7 @@ export async function uploadConversationFile(file: File, options?: {
     file?: A11ConversationResource;
     conversationResource?: A11ConversationResource | null;
     record?: any;
+    analysis?: any;
     mail?: any;
   };
 }

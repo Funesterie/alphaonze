@@ -8,9 +8,25 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const fc = require('fast-check');
 
 const { serialize, deserialize, validate, ALLOWED_PREFIXES } = require('../lib/plan-serializer.cjs');
+
+const originalRuntimeDir = process.env.A11_RUNTIME_DIR;
+const testRuntimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-droid-test-'));
+process.env.A11_RUNTIME_DIR = testRuntimeDir;
+
+test.after(() => {
+  if (originalRuntimeDir === undefined) {
+    delete process.env.A11_RUNTIME_DIR;
+  } else {
+    process.env.A11_RUNTIME_DIR = originalRuntimeDir;
+  }
+  try { fs.rmSync(testRuntimeDir, { recursive: true, force: true }); } catch { /* ignore */ }
+});
 
 // ---------------------------------------------------------------------------
 // Propriété 2 : Validation des skills contre les préfixes autorisés

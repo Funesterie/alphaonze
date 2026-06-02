@@ -70,6 +70,9 @@ logs/
 
 # Runtime généré
 runtime/
+a11/backend/apps/server/.qflush/
+a11/backend/apps/server/knowledge-graph/tasks.json
+a11/backend/apps/server/runtime/
 
 # Local Netlify folder
 .netlify

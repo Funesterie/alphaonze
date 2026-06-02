@@ -6929,6 +6929,7 @@ app.post('/api/files/upload', express.json({ limit: process.env.A11_FILE_UPLOAD_
           downloadUrl: publicDownloadUrl || ingestion.record.url || ingestion.file.url || '',
         }
         : null,
+      analysis: ingestion.analysis || null,
       conversationResource: publicConversationResource
         ? {
           ...publicConversationResource,

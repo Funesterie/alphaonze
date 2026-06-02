@@ -533,6 +533,82 @@ function analyzeTextBuffer(buffer, fileKind) {
   };
 }
 
+function buildResourceActionInference({ filename, fileKind, analysis = {} }) {
+  const safeName = String(filename || 'fichier').trim() || 'fichier';
+  const preview = String(analysis.preview || '').trim();
+  const loweredName = safeName.toLowerCase();
+  const loweredPreview = preview.toLowerCase();
+  const hasBriefSignal = /\b(brief|objectif|mission|todo|tache|task|spec|cahier des charges|prompt)\b/.test(`${loweredName}\n${loweredPreview}`);
+  const hasInvoiceSignal = /\b(facture|invoice|devis|montant|tva|iban|paiement)\b/.test(`${loweredName}\n${loweredPreview}`);
+  const hasVoiceSignal = /\b(voix|voice|xtts|rvc|piper|cartesia|eleven|chant|song|audio)\b/.test(`${loweredName}\n${loweredPreview}`);
+  const hasImageEditSignal = /\b(image|photo|portrait|retouche|decor|scene|visuel|thumbnail|miniature)\b/.test(`${loweredName}\n${loweredPreview}`);
+  const hasCodeSignal = fileKind === 'code' || /\b(error|stack|exception|bug|fix|commit|diff|function|class|import|export)\b/.test(loweredPreview);
+
+  if (fileKind === 'image') {
+    return {
+      intent: hasImageEditSignal ? 'image_reference_or_edit' : 'visual_context',
+      suggestedAction: 'Analyser le visuel, identifier sujet/style/texte lisible, puis proposer la suite probable: description, retouche, generation ou comparaison.',
+      routeHints: ['vision_analyze', 'image_context'],
+    };
+  }
+
+  if (fileKind === 'audio') {
+    return {
+      intent: hasVoiceSignal ? 'voice_or_music_source' : 'audio_context',
+      suggestedAction: 'Ecouter/analyser les metadonnees et la transcription si disponible, puis decider si le fichier sert de reference voix, de chanson, de note vocale ou de contexte.',
+      routeHints: ['audio_transcribe', 'voice_reference', 'song_brief'],
+    };
+  }
+
+  if (fileKind === 'pdf') {
+    return {
+      intent: hasInvoiceSignal ? 'document_finance_or_admin' : 'document_summary',
+      suggestedAction: 'Resumer le document, extraire les points d action, puis signaler s il faut repondre, classer, transformer en brief ou produire un artefact.',
+      routeHints: ['document_summary', 'task_extract'],
+    };
+  }
+
+  if (fileKind === 'json' || fileKind === 'csv') {
+    return {
+      intent: 'structured_data',
+      suggestedAction: 'Inspecter la structure, resumer les champs importants, detecter anomalies/taches, puis proposer analyse, nettoyage ou import.',
+      routeHints: ['data_summary', 'task_extract'],
+    };
+  }
+
+  if (hasCodeSignal) {
+    return {
+      intent: 'code_or_debug_context',
+      suggestedAction: 'Lire le code ou log, detecter le probleme probable, puis proposer correction, test ou integration.',
+      routeHints: ['code_review', 'debug'],
+    };
+  }
+
+  if (hasBriefSignal) {
+    return {
+      intent: 'brief_or_task_context',
+      suggestedAction: 'Transformer le contenu en brouillon de travail: objectif, contraintes, prochaines actions, agent le plus adapte.',
+      routeHints: ['brief', 'task_extract'],
+    };
+  }
+
+  if (hasInvoiceSignal) {
+    return {
+      intent: 'document_finance_or_admin',
+      suggestedAction: 'Extraire montants, dates, interlocuteurs et action attendue, puis proposer classement ou reponse.',
+      routeHints: ['document_summary', 'admin'],
+    };
+  }
+
+  return {
+    intent: analysis.readableInChatContext ? 'general_file_context' : 'stored_attachment',
+    suggestedAction: analysis.readableInChatContext
+      ? 'Resumer le contenu visible, deviner l usage attendu, puis demander seulement si l action reste ambigue.'
+      : 'Garder le fichier rattache et expliquer ce qui manque pour l analyser plus loin.',
+    routeHints: analysis.readableInChatContext ? ['summary', 'task_extract'] : ['file_reference'],
+  };
+}
+
 /**
  * Analyse un buffer audio (MP3, WAV, OGG, FLAC, etc.) via ffprobe.
  * Retourne les métadonnées techniques + une transcription Whisper si disponible.
@@ -718,34 +794,30 @@ async function analyzeUploadedResource({ filename, contentType, buffer }) {
     sizeBytes: Buffer.isBuffer(buffer) ? buffer.length : 0,
   };
 
+  let analysis = null;
+
   if (fileKind === 'text' || fileKind === 'code' || fileKind === 'json' || fileKind === 'csv') {
-    return {
+    analysis = {
       ...base,
       ...analyzeTextBuffer(buffer, fileKind),
     };
-  }
-
-  if (fileKind === 'image') {
-    return {
+  } else if (fileKind === 'image') {
+    analysis = {
       ...base,
       ...(await analyzeImageBuffer(buffer, base.mime)),
     };
-  }
-
-  if (fileKind === 'audio') {
-    return {
+  } else if (fileKind === 'audio') {
+    analysis = {
       ...base,
       ...(await analyzeAudioBuffer(buffer, base.mime, filename)),
     };
-  }
-
-  if (fileKind === 'pdf') {
+  } else if (fileKind === 'pdf') {
     // Tentative avec l'extracteur robuste (pdf-parse → heuristique → OCR)
     try {
       const { extractPdfText, formatPdfPreview } = require('./pdf-extractor.cjs');
       const result = await extractPdfText(buffer, { maxChars: 2000 });
       if (result && result.text) {
-        return {
+        analysis = {
           ...base,
           readableInChatContext: true,
           parser: `pdf_${result.method}`,
@@ -761,35 +833,44 @@ async function analyzeUploadedResource({ filename, contentType, buffer }) {
     }
 
     // Fallback heuristique intégré
-    const pdfPreview = extractPdfTextPreview(buffer);
-    if (pdfPreview.preview) {
-      return {
-        ...base,
-        readableInChatContext: true,
-        parser: 'pdf_text_heuristic',
-        preview: pdfPreview.preview,
-        truncated: pdfPreview.truncated,
-        charCount: pdfPreview.charCount,
-        blockCount: pdfPreview.blockCount,
-        note: null,
-      };
+    if (!analysis) {
+      const pdfPreview = extractPdfTextPreview(buffer);
+      if (pdfPreview.preview) {
+        analysis = {
+          ...base,
+          readableInChatContext: true,
+          parser: 'pdf_text_heuristic',
+          preview: pdfPreview.preview,
+          truncated: pdfPreview.truncated,
+          charCount: pdfPreview.charCount,
+          blockCount: pdfPreview.blockCount,
+          note: null,
+        };
+      }
     }
 
-    return {
+    if (!analysis) {
+      analysis = {
+        ...base,
+        readableInChatContext: false,
+        parser: 'pdf_text_unavailable',
+        preview: '',
+        note: 'pdf_recu_mais_texte_non_extractible',
+      };
+    }
+  } else {
+    analysis = {
       ...base,
       readableInChatContext: false,
-      parser: 'pdf_text_unavailable',
+      parser: 'unsupported',
       preview: '',
-      note: 'pdf_recu_mais_texte_non_extractible',
+      note: 'type_non_lisible_automatiquement',
     };
   }
 
   return {
-    ...base,
-    readableInChatContext: false,
-    parser: 'unsupported',
-    preview: '',
-    note: 'type_non_lisible_automatiquement',
+    ...analysis,
+    actionInference: buildResourceActionInference({ filename, fileKind, analysis }),
   };
 }
 
@@ -814,6 +895,19 @@ function buildConversationResourceContext(resources, options = {}) {
     if (analysis.readableInChatContext && analysis.preview) {
       const preview = truncateText(String(analysis.preview || ''), 800).text;
       lines.push(`  Extrait utile:\n${preview}`);
+    }
+
+    const inference = analysis.actionInference && typeof analysis.actionInference === 'object'
+      ? analysis.actionInference
+      : null;
+    if (inference?.suggestedAction) {
+      lines.push(`  Action probable: ${String(inference.suggestedAction)}`);
+    }
+    if (Array.isArray(inference?.routeHints) && inference.routeHints.length) {
+      lines.push(`  Routes probables: ${inference.routeHints.map((hint) => String(hint)).join(', ')}`);
+    }
+
+    if (analysis.readableInChatContext && analysis.preview) {
       continue;
     }
 

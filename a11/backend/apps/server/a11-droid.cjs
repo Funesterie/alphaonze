@@ -25,9 +25,22 @@ const crypto = require('node:crypto');
 
 const DROID_VERSION = '1.0.0';
 const ROOT = process.cwd();
-const QFLUSH_DIR = path.join(ROOT, '.qflush');
+const RUNTIME_ROOT = path.resolve(
+  process.env.A11_RUNTIME_DIR
+  || process.env.A11_RUNTIME_ROOT
+  || process.env.RUNTIME_DIR
+  || path.join(ROOT, 'runtime')
+);
+const QFLUSH_DIR = path.resolve(
+  process.env.A11_QFLUSH_STATE_DIR
+  || process.env.QFLUSH_STATE_DIR
+  || path.join(RUNTIME_ROOT, 'qflush')
+);
+const LEGACY_QFLUSH_DIR = path.join(ROOT, '.qflush');
 const TASK_FILE = path.join(QFLUSH_DIR, 'a11d-tasks.json');
 const CHECKPOINT_FILE = path.join(QFLUSH_DIR, 'a11d-checkpoints.json');
+const LEGACY_TASK_FILE = path.join(LEGACY_QFLUSH_DIR, 'a11d-tasks.json');
+const LEGACY_CHECKPOINT_FILE = path.join(LEGACY_QFLUSH_DIR, 'a11d-checkpoints.json');
 
 const REDIS_TASKS_KEY = 'a11:droid:tasks';
 const REDIS_CHECKPOINTS_KEY = 'a11:droid:checkpoints';
@@ -66,6 +79,18 @@ function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   } catch (_e) {
     // ignore
+  }
+}
+
+function readJsonArrayFile(file) {
+  try {
+    if (!file || !fs.existsSync(file)) return [];
+    const raw = fs.readFileSync(file, 'utf8');
+    if (!raw.trim()) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_e) {
+    return [];
   }
 }
 
@@ -169,17 +194,12 @@ async function loadTasks() {
     }
   }
 
-  // Fallback fichier local
-  try {
-    if (!fs.existsSync(TASK_FILE)) return [];
-    const raw = fs.readFileSync(TASK_FILE, 'utf8');
-    if (!raw.trim()) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (_e) {
-    auditLog('WARN', 'local_load_tasks_failed', { error: String(_e && _e.message) });
-    return [];
-  }
+  // Fallback fichier local: runtime/ d'abord, ancien .qflush en lecture seule pour migration.
+  const runtimeTasks = readJsonArrayFile(TASK_FILE);
+  if (runtimeTasks.length) return runtimeTasks;
+  const legacyTasks = readJsonArrayFile(LEGACY_TASK_FILE);
+  if (legacyTasks.length) return legacyTasks;
+  return [];
 }
 
 /**
@@ -230,15 +250,11 @@ async function loadCheckpoints() {
     }
   }
 
-  try {
-    if (!fs.existsSync(CHECKPOINT_FILE)) return [];
-    const raw = fs.readFileSync(CHECKPOINT_FILE, 'utf8');
-    if (!raw.trim()) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (_e) {
-    return [];
-  }
+  const runtimeCheckpoints = readJsonArrayFile(CHECKPOINT_FILE);
+  if (runtimeCheckpoints.length) return runtimeCheckpoints;
+  const legacyCheckpoints = readJsonArrayFile(LEGACY_CHECKPOINT_FILE);
+  if (legacyCheckpoints.length) return legacyCheckpoints;
+  return [];
 }
 
 /**

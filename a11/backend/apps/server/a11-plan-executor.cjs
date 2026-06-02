@@ -264,14 +264,23 @@ async function _writeTaskNodeNeo4j(task, plan, duration) {
     // Fallback JSON local
   }
 
-  // Fallback JSON local
+  // Fallback JSON local: runtime/ d'abord, ancien fichier repo en lecture de migration.
   try {
-    const kgDir = path.join(__dirname, 'knowledge-graph');
+    const runtimeRoot = path.resolve(
+      process.env.A11_RUNTIME_DIR
+      || process.env.A11_RUNTIME_ROOT
+      || process.env.RUNTIME_DIR
+      || path.join(__dirname, 'runtime')
+    );
+    const kgDir = path.join(runtimeRoot, 'knowledge-graph');
     if (!fs.existsSync(kgDir)) fs.mkdirSync(kgDir, { recursive: true });
     const kgFile = path.join(kgDir, 'tasks.json');
+    const legacyKgFile = path.join(__dirname, 'knowledge-graph', 'tasks.json');
     let existing = [];
     if (fs.existsSync(kgFile)) {
       try { existing = JSON.parse(fs.readFileSync(kgFile, 'utf8')); } catch (_e) { existing = []; }
+    } else if (fs.existsSync(legacyKgFile)) {
+      try { existing = JSON.parse(fs.readFileSync(legacyKgFile, 'utf8')); } catch (_e) { existing = []; }
     }
     existing.push(taskNode);
     fs.writeFileSync(kgFile, JSON.stringify(existing, null, 2), 'utf8');

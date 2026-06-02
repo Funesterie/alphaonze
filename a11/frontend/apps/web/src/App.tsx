@@ -7711,15 +7711,21 @@ export function App() {
           const resource = upload.conversationResource || upload.file || null;
           const resourceId = String(resource?.id || resource?.storageKey || "").trim();
           const resourceUrl = String(resource?.downloadUrl || resource?.url || "").trim();
+          const analysis = (resource as any)?.metadata?.analysis || (upload as any)?.analysis || {};
+          const inference = analysis?.actionInference || {};
+          const actionHint = String(inference?.suggestedAction || "").trim();
+          const parserHint = String(analysis?.parser || "").trim();
           const kind = isAudioLikeFile(file) ? "audio" : "fichier";
           const transcriptAlreadyInjected = isAudioLikeFile(file) && audioTranscriptByName.has(file.name);
           const parts = [
             `[${kind}-joint:${file.name}]`,
             resourceId ? `id=${resourceId}` : "",
             resourceUrl ? `url=${resourceUrl}` : "",
+            parserHint ? `analyse=${parserHint}` : "",
+            actionHint ? `action-probable=${actionHint}` : "",
             transcriptAlreadyInjected
               ? "Transcription ajoutee plus haut."
-              : "Fichier rattache a la conversation; utilise-le comme contexte si necessaire.",
+              : "Fichier rattache a la conversation; analyse-le et decide quoi en faire avant de repondre.",
           ].filter(Boolean);
           resourceBlocks.push(parts.join(" "));
           uploaded.push(file.name);

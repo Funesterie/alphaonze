@@ -290,6 +290,7 @@ $serverExDirs = @(
 $serverExFiles = @(
   ".env", ".env.*", "*.env", "*.env.*", "a11.env", "kaen44.env",
   "*.pem", "*.key", "*.p12", "*.bak", "*.log", "*.sqlite", "*.db",
+  "tasks.json",
   "*.zip", "*.7z", "*.rar", "*.tar", "*.gz", "*.tgz",
   "*.mp4", "*.mov", "*.mkv", "*.avi", "*.webm",
   "*.wav", "*.flac", "*.mp3", "*.ogg",
