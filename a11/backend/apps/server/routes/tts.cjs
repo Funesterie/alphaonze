@@ -569,10 +569,21 @@ function releaseStaleLocalGpuWorkerLeases(now = Date.now()) {
   }
 }
 
+function hasConfiguredCloudTtsForBody(body = {}) {
+  try {
+    const resolved = resolveTtsProviderForRequest(body);
+    if (isCloudTtsProvider(resolved?.provider) && resolved?.configured === true) return true;
+    return getCloudTtsProviderOrder(body, resolved).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function shouldRouteTtsJobToLocalGpuWorker(body = {}) {
   if (!localGpuWorkerEnabled()) return false;
   const provider = getRequestedTtsProvider(body);
   if (isCloudTtsProvider(provider) && !allowsXttsRvcForBody(body)) return false;
+  if (provider !== PROVIDERS.XTTS_RVC && hasConfiguredCloudTtsForBody(body)) return false;
   return provider === PROVIDERS.XTTS_RVC
     || wantsOfficialIdentityVoice(body)
     || requiresReferenceVoice(body)

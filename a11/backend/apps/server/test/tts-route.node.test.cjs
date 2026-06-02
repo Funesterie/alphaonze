@@ -292,6 +292,18 @@ test('tts async official voice jobs can be claimed and completed by the local GP
     A11_LOCAL_GPU_WORKER_TOKEN_FILE: process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE,
     A11_TTS_LOCAL_WORKER_TOKEN_FILE: process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE,
     A11_LOCAL_GPU_WORKER_MAX_ACTIVE: process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+    A11_CARTESIA_API_KEY_FILE: process.env.A11_CARTESIA_API_KEY_FILE,
+    CARTESIA_API_KEY_FILE: process.env.CARTESIA_API_KEY_FILE,
+    A11_AZURE_SPEECH_KEY: process.env.A11_AZURE_SPEECH_KEY,
+    AZURE_SPEECH_KEY: process.env.AZURE_SPEECH_KEY,
+    SPEECH_KEY: process.env.SPEECH_KEY,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
   };
   const wav = createPcm16Wav();
 
@@ -302,6 +314,18 @@ test('tts async official voice jobs can be claimed and completed by the local GP
   delete process.env.A11_TTS_LOCAL_WORKER_TOKEN;
   delete process.env.A11_LOCAL_GPU_WORKER_TOKEN_FILE;
   delete process.env.A11_TTS_LOCAL_WORKER_TOKEN_FILE;
+  delete process.env.A11_CARTESIA_API_KEY;
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+  delete process.env.A11_CARTESIA_API_KEY_FILE;
+  delete process.env.CARTESIA_API_KEY_FILE;
+  delete process.env.A11_AZURE_SPEECH_KEY;
+  delete process.env.AZURE_SPEECH_KEY;
+  delete process.env.SPEECH_KEY;
+  delete process.env.OPENAI_TTS_API_KEY;
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
 
   try {
     await withServer(
@@ -1073,6 +1097,124 @@ test('tts async Vivy official Cartesia jobs bypass the local GPU worker', async 
         assert.equal(polled.provider, 'cartesia');
         assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
         assert.equal(cartesiaBodies.length, 1);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts async official auto voices prefer configured Cartesia over the local GPU worker', async () => {
+  const previousEnv = {
+    A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
+    A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
+    A11_LOCAL_GPU_WORKER_MAX_ACTIVE: process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const cartesiaBodies = [];
+
+  process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED = '1';
+  process.env.A11_LOCAL_GPU_WORKER_TOKEN = 'test-local-gpu-worker-token';
+  process.env.A11_LOCAL_GPU_WORKER_MAX_ACTIVE = '1';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('cartesia-auto-official-mp3');
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert'
+      || value === 'http://voice-bridge.test/api/voice/synthesize') {
+      throw new Error('local_gpu_or_xtts_rvc_should_not_run_for_official_auto_cartesia_async');
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_run_for_official_auto_cartesia_async');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const cases = [
+          {
+            persona: 'a11',
+            text: 'Je suis A11. Ma voix officielle est prête.',
+            voiceId: '0418348a-0ca2-4e90-9986-800fb8b3bbc0',
+          },
+          {
+            persona: 'vivy',
+            text: 'Je suis Vivy. Ma voix officielle est prête.',
+            voiceId: 'a249eaff-1e96-4d2c-b23b-12efa4f66f41',
+          },
+        ];
+
+        for (const currentCase of cases) {
+          const started = await postJson(baseUrl, '/api/tts/speak', {
+            text: currentCase.text,
+            voice: currentCase.persona,
+            persona: currentCase.persona,
+            voicePersona: currentCase.persona,
+            surface: currentCase.persona,
+            provider: 'auto',
+            ttsAsync: true,
+            useDefaultVoiceReference: true,
+            defaultVoiceReference: true,
+            voiceReferenceRequired: true,
+            referenceVoiceRequired: true,
+            voiceConversion: false,
+            allowRvc: false,
+            audioFormat: 'mp3',
+          });
+
+          assert.equal(started.response.status, 202);
+          assert.equal(started.json.worker, 'server');
+
+          let polled = null;
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const response = await fetch(baseUrl + started.json.statusUrl);
+            polled = await response.json();
+            if (polled.state === 'done' || polled.state === 'failed') break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+
+          assert.equal(polled.state, 'done');
+          assert.equal(polled.provider, 'cartesia');
+          assert.match(polled.audioUrl, /^\/api\/tts\/out\/tts-out-\d+-cartesia\.mp3$/);
+        }
+
+        assert.deepEqual(
+          cartesiaBodies.map((body) => body.voice.id),
+          cases.map((currentCase) => currentCase.voiceId)
+        );
       }
     );
   } finally {
