@@ -16,10 +16,13 @@ import {
   fetchMatchArenaGames,
   fetchMatchArenaSession,
   fetchMatchArenaStatus,
+  fetchMyConversationResources,
+  fetchMyStoredFiles,
   fetchRemoteProviderProfiles,
   fetchA11PortraitFramebook,
   fetchTtsVoiceReferences,
   fetchAuthSession,
+  getSubscriptionStatus,
   hasAdminApiAccess,
   hasAuthenticatedAdminApiAccess,
   isAuthInvalidError,
@@ -55,6 +58,7 @@ import {
   type A11ConversationActivityEntry,
   type A11ConversationResource,
   type A11HistoryItem,
+  type A11UserStoredFile,
   type RemoteProviderProfile,
   type RemoteProviderSaveInput,
   type TechnicalMemoSummaryResponse,
@@ -68,6 +72,7 @@ import {
   type MatchArenaGame,
   type MatchArenaSession,
   type MatchArenaStatus,
+  type SubscriptionStatus,
 } from "./lib/api";
 import { A11HistoryPanel } from "./components/A11HistoryPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -2962,13 +2967,14 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         makeSong: true,
         durationSeconds: 45,
       });
-      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || payload?.media?.url || "").trim();
+      const payloadAny = payload as any;
+      const mediaUrl = String(payloadAny?.audioUrl || payloadAny?.audio_url || payloadAny?.media?.audioUrl || payloadAny?.media?.audio_url || payloadAny?.media?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
-        provider: String(payload?.media?.provider || "vivy-music"),
-        contentType: String(payload?.media?.content_type || payload?.contentType || payload?.content_type || "audio/mpeg"),
+        provider: String(payloadAny?.media?.provider || "vivy-music"),
+        contentType: String(payloadAny?.media?.content_type || payloadAny?.contentType || payloadAny?.content_type || "audio/mpeg"),
       });
       setVivyOutput([
         "VIVY_MUSIC_GENERATION",
@@ -5567,6 +5573,88 @@ function readFunesterieAccountOverview() {
   return { conversations, files, vivyMessages, voiceReference };
 }
 
+type FunesterieAccountInventory = {
+  conversations: Record<FunesterieSurface, A11HistoryItem[]>;
+  files: A11UserStoredFile[];
+  resources: A11ConversationResource[];
+  subscription: SubscriptionStatus | null;
+  loadedAt: string | null;
+  loading: boolean;
+  error: string;
+};
+
+const EMPTY_ACCOUNT_CONVERSATIONS: Record<FunesterieSurface, A11HistoryItem[]> = {
+  a11: [],
+  kaen44: [],
+  vivy: [],
+};
+
+function getStoredFileSize(file: A11UserStoredFile | A11ConversationResource) {
+  return Number((file as A11UserStoredFile).sizeBytes ?? (file as A11UserStoredFile).size_bytes ?? (file as A11ConversationResource).sizeBytes ?? 0);
+}
+
+function formatCompactFileSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return "taille inconnue";
+  if (sizeBytes < 1024) return `${sizeBytes} o`;
+  if (sizeBytes < 1024 * 1024) return `${Math.round(sizeBytes / 1024)} Ko`;
+  return `${(sizeBytes / 1024 / 1024).toFixed(sizeBytes >= 10 * 1024 * 1024 ? 0 : 1)} Mo`;
+}
+
+function formatAccountDate(value?: string | null) {
+  if (!value) return "date inconnue";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "date inconnue";
+  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+function getStoredFileDate(file: A11UserStoredFile | A11ConversationResource) {
+  return String(
+    (file as A11UserStoredFile).createdAt
+    || (file as A11UserStoredFile).created_at
+    || (file as A11ConversationResource).updatedAt
+    || (file as A11ConversationResource).createdAt
+    || ""
+  );
+}
+
+function getStoredFileUrl(file: A11UserStoredFile | A11ConversationResource) {
+  return String((file as A11ConversationResource).downloadUrl || (file as A11ConversationResource).url || (file as A11UserStoredFile).url || "");
+}
+
+function getSubscriptionAccountLabel(status: SubscriptionStatus | null, authenticated: boolean) {
+  if (!authenticated) return "Connexion requise";
+  const tier = String(status?.tier || status?.plan || "").toLowerCase();
+  if (status?.fullAccess || tier.includes("admin")) return "Accès complet";
+  if (tier.includes("founder") || tier.includes("fondateur")) return "Fondateur";
+  if (status?.active || tier.includes("premium")) return "Premium actif";
+  return "Sans abonnement";
+}
+
+function getSubscriptionAccountText(status: SubscriptionStatus | null, authenticated: boolean) {
+  if (!authenticated) return "Connecte-toi pour voir l'état exact du compte et les moyens de paiement.";
+  if (!status) return "Statut abonnement non chargé.";
+  if (status.fullAccess) return "Compte autorisé en accès complet.";
+  if (status.active) {
+    const end = status.stripeStatus?.currentPeriodEnd || status.endDate || null;
+    return end ? `Actif jusqu'au ${formatAccountDate(typeof end === "number" ? new Date(end * 1000).toISOString() : end)}` : "Abonnement actif.";
+  }
+  return "Aucun abonnement actif. Premium et Fondateur passent par le paiement automatique.";
+}
+
+function downloadFunesterieJson(filename: string, payload: unknown) {
+  if (typeof window === "undefined") return;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function FunesterieAccountPage({
   surfaceLinks,
   authenticated = false,
@@ -5579,10 +5667,133 @@ function FunesterieAccountPage({
   onLogout?: () => void;
 }) {
   const overview = useMemo(() => readFunesterieAccountOverview(), [authenticated, displayName]);
-  const openWithSession = (event: React.MouseEvent<HTMLButtonElement>, targetUrl: string) => {
-    event.preventDefault();
-    if (typeof window === "undefined") return;
-    window.location.assign(buildSessionBridgeUrl(targetUrl));
+  const [inventory, setInventory] = useState<FunesterieAccountInventory>({
+    conversations: EMPTY_ACCOUNT_CONVERSATIONS,
+    files: [],
+    resources: [],
+    subscription: null,
+    loadedAt: null,
+    loading: false,
+    error: "",
+  });
+  const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal">("");
+
+  async function loadAccountInventory() {
+    if (!authenticated) {
+      setInventory({
+        conversations: EMPTY_ACCOUNT_CONVERSATIONS,
+        files: [],
+        resources: [],
+        subscription: null,
+        loadedAt: null,
+        loading: false,
+        error: "",
+      });
+      return;
+    }
+
+    setInventory((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const [
+        a11History,
+        kaen44History,
+        vivyHistory,
+        storedFiles,
+        resources,
+        subscription,
+      ] = await Promise.all([
+        fetchA11HistoryList({ surface: "a11" }).catch(() => []),
+        fetchA11HistoryList({ surface: "kaen44" }).catch(() => []),
+        fetchA11HistoryList({ surface: "vivy" }).catch(() => []),
+        fetchMyStoredFiles({ limit: 100 }).catch(() => ({ ok: false, files: [] })),
+        fetchMyConversationResources({ limit: 100 }).catch(() => ({ ok: false, resources: [] })),
+        getSubscriptionStatus().catch(() => null),
+      ]);
+
+      setInventory({
+        conversations: {
+          a11: Array.isArray(a11History) ? a11History : [],
+          kaen44: Array.isArray(kaen44History) ? kaen44History : [],
+          vivy: Array.isArray(vivyHistory) ? vivyHistory : [],
+        },
+        files: Array.isArray(storedFiles.files) ? storedFiles.files : [],
+        resources: Array.isArray(resources.resources) ? resources.resources : [],
+        subscription,
+        loadedAt: new Date().toISOString(),
+        loading: false,
+        error: "",
+      });
+    } catch (error) {
+      setInventory((current) => ({
+        ...current,
+        loading: false,
+        error: (error as Error).message || "Inventaire indisponible",
+      }));
+    }
+  }
+
+  useEffect(() => {
+    loadAccountInventory();
+  }, [authenticated]);
+
+  const conversationTotal = Object.values(inventory.conversations).reduce((sum, entries) => sum + entries.length, 0);
+  const messageTotal = Object.values(inventory.conversations).reduce((sum, entries) => (
+    sum + entries.reduce((inner, entry) => inner + Number(entry.messageCount || 0), 0)
+  ), 0);
+  const resourceTotal = inventory.files.length + inventory.resources.length;
+  const latestFiles = [...inventory.resources, ...inventory.files]
+    .sort((left, right) => getStoredFileDate(right).localeCompare(getStoredFileDate(left)))
+    .slice(0, 3);
+  const subscriptionLabel = getSubscriptionAccountLabel(inventory.subscription, authenticated);
+  const subscriptionText = getSubscriptionAccountText(inventory.subscription, authenticated);
+
+  function exportAccountInventory() {
+    const today = new Date().toISOString().slice(0, 10);
+    downloadFunesterieJson(`funesterie-inventaire-${today}.json`, {
+      exportedAt: new Date().toISOString(),
+      account: {
+        authenticated,
+        displayName: displayName || null,
+        subscription: inventory.subscription ? {
+          active: inventory.subscription.active,
+          fullAccess: inventory.subscription.fullAccess,
+          tier: inventory.subscription.tier,
+          plan: inventory.subscription.plan,
+          endDate: inventory.subscription.endDate,
+          stripeStatus: inventory.subscription.stripeStatus,
+        } : null,
+      },
+      localOverview: overview,
+      conversations: inventory.conversations,
+      files: inventory.files,
+      resources: inventory.resources,
+    });
+  }
+
+  async function openPayment(plan: "premium" | "founder" | "portal" = "premium") {
+    if (!authenticated) {
+      if (typeof window !== "undefined") window.location.assign(buildCentralLoginUrl(surfaceLinks.account));
+      return;
+    }
+
+    setPaymentBusy(plan);
+    try {
+      if (plan === "portal" || inventory.subscription?.active) {
+        const data = await createCustomerPortal();
+        if (data.url) window.location.href = data.url;
+        return;
+      }
+
+      const data = await createCheckoutSession(plan);
+      if (data.url) window.location.href = data.url;
+    } catch {
+      if (typeof window !== "undefined") {
+        const target = surfaceLinks.account.includes("#") ? surfaceLinks.account : `${surfaceLinks.account}#paiements`;
+        window.location.assign(target);
+      }
+    } finally {
+      setPaymentBusy("");
+    }
   };
 
   return (
@@ -5601,31 +5812,34 @@ function FunesterieAccountPage({
           </article>
           <article>
             <strong>Historique</strong>
-            <span>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} locale{overview.conversations > 1 ? "s" : ""}</span>
+            <span>{conversationTotal || overview.conversations} conversation{(conversationTotal || overview.conversations) > 1 ? "s" : ""}</span>
           </article>
           <article>
             <strong>Fichiers</strong>
-            <span>{overview.files} média/fichier en cache local</span>
+            <span>{resourceTotal || overview.files} média/fichier{(resourceTotal || overview.files) > 1 ? "s" : ""}</span>
           </article>
           <article>
-            <strong>Voix</strong>
-            <span>{overview.voiceReference}</span>
+            <strong>Abonnement</strong>
+            <span>{subscriptionLabel}</span>
           </article>
         </div>
       </section>
 
-      <section className="fun-token-panel" aria-label="Actions compte">
+      <section id="paiements" className="fun-token-panel" aria-label="Actions compte">
         <header className="fun-token-head">
           <div>
             <span>Réglages</span>
             <h2>Accès et données</h2>
-            <p>Gestion courte du compte, des conversations locales et des fichiers liés aux agents.</p>
+            <p>Inventaire récupérable du compte, des discussions, médias et fichiers liés à ta session.</p>
           </div>
           <aside>
-            <strong>{authenticated ? "Privé" : "Public"}</strong>
-            <small>{authenticated ? (displayName || "connecté") : "connexion requise"}</small>
+            <strong>{inventory.loading ? "Synchro" : (authenticated ? "Privé" : "Public")}</strong>
+            <small>{inventory.loadedAt ? `maj ${formatAccountDate(inventory.loadedAt)}` : (authenticated ? (displayName || "connecté") : "connexion requise")}</small>
           </aside>
         </header>
+        {inventory.error && (
+          <p className="fun-account-alert">{inventory.error}</p>
+        )}
         <div className="fun-integration-grid">
           <article className="fun-token-card">
             <header>
@@ -5644,31 +5858,84 @@ function FunesterieAccountPage({
           <article className="fun-token-card">
             <header>
               <h3>Conversations</h3>
-              <span>Historique</span>
+              <span>Inventaire</span>
             </header>
-            <p>{overview.conversations} conversation{overview.conversations > 1 ? "s" : ""} détectée{overview.conversations > 1 ? "s" : ""} côté navigateur.</p>
+            <p>
+              {conversationTotal} conversation{conversationTotal > 1 ? "s" : ""} serveur,
+              {messageTotal ? ` ${messageTotal} message${messageTotal > 1 ? "s" : ""},` : ""} cache local: {overview.conversations}.
+            </p>
+            <div className="fun-account-mini-list">
+              <span>A11: {inventory.conversations.a11.length}</span>
+              <span>K44: {inventory.conversations.kaen44.length}</span>
+              <span>Vivy: {inventory.conversations.vivy.length}</span>
+            </div>
             <footer>
-              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.a11Cockpit)}>Ouvrir A11</button>
+              <div className="fun-token-card-actions">
+                <button type="button" onClick={loadAccountInventory} disabled={!authenticated || inventory.loading}>
+                  {inventory.loading ? "Chargement" : "Actualiser"}
+                </button>
+                <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
+                  Export JSON
+                </button>
+              </div>
             </footer>
           </article>
           <article className="fun-token-card">
             <header>
               <h3>Fichiers</h3>
-              <span>Ressources</span>
+              <span>Médias</span>
             </header>
-            <p>{overview.files} ressource{overview.files > 1 ? "s" : ""} locale{overview.files > 1 ? "s" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}.</p>
+            <p>
+              {inventory.files.length} fichier{inventory.files.length > 1 ? "s" : ""} compte,
+              {" "}{inventory.resources.length} ressource{inventory.resources.length > 1 ? "s" : ""} conversation.
+            </p>
+            <div className="fun-account-mini-list">
+              {latestFiles.length ? latestFiles.map((file, index) => {
+                const url = getStoredFileUrl(file);
+                const name = String(file.filename || `fichier-${index + 1}`);
+                const label = `${name} · ${formatCompactFileSize(getStoredFileSize(file))}`;
+                return url ? (
+                  <a key={`${name}-${index}`} href={resolveApiAssetUrl(url) || url} target="_blank" rel="noreferrer">{label}</a>
+                ) : (
+                  <span key={`${name}-${index}`}>{label}</span>
+                );
+              }) : (
+                <span>{overview.files} élément{overview.files > 1 ? "s" : ""} local{overview.files > 1 ? "aux" : ""}; Vivy: {overview.vivyMessages} message{overview.vivyMessages > 1 ? "s" : ""}</span>
+              )}
+            </div>
             <footer>
-              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.vivy)}>Ouvrir Vivy</button>
+              <button type="button" onClick={exportAccountInventory} disabled={!authenticated}>
+                Télécharger l'inventaire
+              </button>
             </footer>
           </article>
           <article className="fun-token-card">
             <header>
-              <h3>Préférences</h3>
-              <span>Local</span>
+              <h3>Abonnement</h3>
+              <span>Paiement</span>
             </header>
-            <p>Voix, langue et réglages restent dans le navigateur quand ils ne nécessitent pas serveur.</p>
+            <p>{subscriptionText}</p>
+            <div className="fun-account-mini-list">
+              <span>Voix: {overview.voiceReference}</span>
+              <span>Plan: {subscriptionLabel}</span>
+            </div>
             <footer>
-              <button type="button" onClick={(event) => openWithSession(event, surfaceLinks.kaen44Cockpit)}>Ouvrir K44</button>
+              <div className="fun-token-card-actions">
+                {inventory.subscription?.active ? (
+                  <button type="button" onClick={() => openPayment("portal")} disabled={!!paymentBusy}>
+                    {paymentBusy ? "Ouverture" : "Gérer"}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => openPayment("premium")} disabled={!!paymentBusy}>
+                      {paymentBusy === "premium" ? "Ouverture" : "Premium"}
+                    </button>
+                    <button type="button" onClick={() => openPayment("founder")} disabled={!!paymentBusy}>
+                      {paymentBusy === "founder" ? "Ouverture" : "Fondateur"}
+                    </button>
+                  </>
+                )}
+              </div>
             </footer>
           </article>
         </div>

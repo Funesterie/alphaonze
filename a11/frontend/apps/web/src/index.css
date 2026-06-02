@@ -8281,6 +8281,61 @@ body {
   align-self: end;
 }
 
+.fun-account-alert {
+  margin: 0;
+  border: 1px solid rgba(255, 184, 108, 0.28);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #ffe0b4;
+  background: rgba(255, 184, 108, 0.08);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fun-account-mini-list {
+  min-height: 42px;
+  display: grid;
+  gap: 5px;
+  color: #d7f4f0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fun-account-mini-list span,
+.fun-account-mini-list a {
+  min-width: 0;
+  color: #d7f4f0;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fun-account-mini-list a {
+  min-height: 0;
+  display: block;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  text-transform: none;
+  text-decoration: underline;
+  text-decoration-color: rgba(54, 212, 196, 0.38);
+  text-underline-offset: 3px;
+}
+
+.fun-token-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fun-token-card-actions button,
+.fun-token-card-actions a {
+  flex: 1 1 112px;
+  min-width: 0;
+}
+
 .a11-media-dashboard,
 .a11-media-dashboard * {
   box-sizing: border-box;

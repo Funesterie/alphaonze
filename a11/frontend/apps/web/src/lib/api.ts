@@ -3099,6 +3099,24 @@ export type A11ConversationResource = {
   updatedAt?: string;
 };
 
+export type A11UserStoredFile = {
+  id?: number;
+  userId?: string;
+  user_id?: string;
+  filename: string;
+  storageKey?: string;
+  storage_key?: string;
+  url?: string;
+  contentType?: string;
+  content_type?: string;
+  sizeBytes?: number;
+  size_bytes?: number;
+  expiresAt?: string | null;
+  expires_at?: string | null;
+  createdAt?: string;
+  created_at?: string;
+};
+
 export type A11ConversationActivityEntry = {
   id: string;
   type: string;
@@ -3220,6 +3238,47 @@ export async function fetchA11ConversationResources(convId: string, options?: { 
   });
   if (!res.ok) throw new Error('Erreur chargement ressources A-11');
   return res.json();
+}
+
+export async function fetchMyConversationResources(options?: { conversationId?: string; kind?: string; limit?: number }) {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, conversationId: options?.conversationId || null, count: 0, resources: [] as A11ConversationResource[] };
+  }
+
+  const params = new URLSearchParams();
+  if (options?.conversationId) params.set('conversationId', options.conversationId);
+  if (options?.kind) params.set('kind', options.kind);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/resources/my${suffix}`), {
+    headers: buildAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`Erreur chargement ressources (${res.status})`);
+  return res.json() as Promise<{
+    ok: boolean;
+    conversationId?: string | null;
+    count?: number;
+    resources?: A11ConversationResource[];
+  }>;
+}
+
+export async function fetchMyStoredFiles(options?: { limit?: number }) {
+  if (hasLocalDevBypassSession()) {
+    return { ok: true, count: 0, files: [] as A11UserStoredFile[] };
+  }
+
+  const params = new URLSearchParams();
+  if (options?.limit) params.set('limit', String(options.limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const res = await authFetch(getApiUrl(`/api/files/my${suffix}`), {
+    headers: buildAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(`Erreur chargement fichiers (${res.status})`);
+  return res.json() as Promise<{
+    ok: boolean;
+    count?: number;
+    files?: A11UserStoredFile[];
+  }>;
 }
 
 export async function fetchA11ConversationActivity(convId: string, options?: { limit?: number; surface?: string }) {
