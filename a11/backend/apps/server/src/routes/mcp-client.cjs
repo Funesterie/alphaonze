@@ -48,6 +48,21 @@ function buildTierCard(tier) {
   };
 }
 
+function capability(id, label, permission, minimumTier, account, options = {}) {
+  const permissions = account?.permissions || {};
+  return {
+    id,
+    label,
+    permission,
+    minimumTier,
+    category: options.category || 'MCP',
+    description: options.description || '',
+    recommended: options.recommended !== false,
+    adjustable: options.adjustable !== false,
+    allowed: permissions[permission] === true,
+  };
+}
+
 function buildConnectorCatalog(account) {
   const permissions = account?.permissions || {};
   const allowed = (permission) => permissions[permission] === true;
@@ -65,48 +80,64 @@ function buildConnectorCatalog(account) {
       preservesExistingDataByDefault: !allowed('destructiveActions'),
     },
     capabilities: [
-      {
-        id: 'mcp-public-read',
-        label: 'MCP public lecture',
-        permission: 'publicProxyRead',
-        minimumTier: TIERS.BASIC,
-        allowed: allowed('publicProxyRead'),
-      },
-      {
-        id: 'mcp-public-call',
-        label: 'MCP public avance',
-        permission: 'publicProxyCall',
-        minimumTier: TIERS.PREMIUM,
-        allowed: allowed('publicProxyCall'),
-      },
-      {
-        id: 'romstation-state',
-        label: 'RomStation lecture',
-        permission: 'romstationState',
-        minimumTier: TIERS.PREMIUM,
-        allowed: allowed('romstationState'),
-      },
-      {
-        id: 'romstation-control',
-        label: 'RomStation controle session',
-        permission: 'romstationControl',
-        minimumTier: TIERS.FOUNDER,
-        allowed: allowed('romstationControl'),
-      },
-      {
-        id: 'mcp-private-session',
-        label: 'MCP prive de session',
-        permission: 'privateMcpProxy',
-        minimumTier: TIERS.FOUNDER,
-        allowed: allowed('privateMcpProxy'),
-      },
-      {
-        id: 'a11-local-install',
-        label: 'Installation locale A11',
-        permission: 'localRuntimeInstall',
-        minimumTier: TIERS.FOUNDER,
-        allowed: allowed('localRuntimeInstall'),
-      },
+      capability('account-inventory', 'Inventaire compte', 'sessionConnectors', TIERS.BASIC, account, {
+        category: 'Compte',
+        description: 'Conversations, médias et fichiers du compte, exportables depuis la page Compte.',
+      }),
+      capability('mcp-public-read', 'MCP public lecture', 'publicProxyRead', TIERS.BASIC, account, {
+        category: 'MCP',
+        description: 'Health, statut public, informations non sensibles et vérifications simples.',
+      }),
+      capability('vision-image', 'Analyse image', 'publicProxyRead', TIERS.BASIC, account, {
+        category: 'Vision',
+        description: 'Analyse d’images jointes avec routage vision quand le module est disponible.',
+      }),
+      capability('mcp-public-call', 'MCP public avancé', 'publicProxyCall', TIERS.PREMIUM, account, {
+        category: 'MCP',
+        description: 'Appels publics autorisés, sans routes privées ni secrets.',
+      }),
+      capability('romstation-state', 'RomStation lecture', 'romstationState', TIERS.PREMIUM, account, {
+        category: 'Jeu',
+        description: 'État session, jeux détectés, préparation match sans contrôle direct.',
+      }),
+      capability('mcp-private-session', 'MCP privé de session', 'privateMcpProxy', TIERS.FOUNDER, account, {
+        category: 'MCP',
+        description: 'Pont privé de session, limité au compte courant et sans exposition de secrets.',
+      }),
+      capability('mcp-tool-list', 'Liste outils privés', 'privateMcpTools', TIERS.FOUNDER, account, {
+        category: 'MCP',
+        description: 'Inventaire détaillé des outils réellement exposés par le pont.',
+      }),
+      capability('mcp-tool-call', 'Appels outils privés', 'privateMcpCall', TIERS.FOUNDER, account, {
+        category: 'MCP',
+        description: 'Appels outillés bornés, journalisés et réservés aux actions autorisées.',
+      }),
+      capability('romstation-control', 'RomStation contrôle', 'romstationControl', TIERS.FOUNDER, account, {
+        category: 'Jeu',
+        description: 'Contrôle clavier/manette de session pour match arena et tests de jeu.',
+      }),
+      capability('operator-assist', 'Assistance ordinateur', 'localRuntimeControl', TIERS.FOUNDER, account, {
+        category: 'Assistance',
+        description: 'Vision écran, guidage, souris/clavier/terminal bornés après confirmation.',
+      }),
+      capability('bounded-terminal', 'Terminal borné', 'localRuntimeControl', TIERS.FOUNDER, account, {
+        category: 'Assistance',
+        description: 'Commandes limitées via opérateur/Qflush, pas de shell libre exposé.',
+      }),
+      capability('a11-local-install', 'Installation locale A11', 'localRuntimeInstall', TIERS.FOUNDER, account, {
+        category: 'Local',
+        description: 'Pack local A11 et connecteurs de session sur le poste de l’utilisateur.',
+      }),
+      capability('admin-infra-ops', 'Opérations infra', 'destructiveActions', TIERS.ADMIN_FAMILY, account, {
+        category: 'Admin',
+        description: 'Maintenance et opérations sensibles réservées famille/admin.',
+        recommended: false,
+      }),
+      capability('cross-account-support', 'Support cross-compte', 'crossAccountAccess', TIERS.ADMIN_FAMILY, account, {
+        category: 'Admin',
+        description: 'Support multi-compte réservé famille/admin, jamais activé pour les comptes publics.',
+        recommended: false,
+      }),
     ],
     connectors: [
       {

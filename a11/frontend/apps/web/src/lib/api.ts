@@ -1242,6 +1242,56 @@ export type McpAccountProfile = {
   };
 };
 
+export type McpAccessTierCard = {
+  tier: string;
+  label?: string;
+  pricing?: {
+    monthlyEur?: number | null;
+    publicLabel?: string;
+  };
+  features?: string[];
+};
+
+export type McpAccessCapability = {
+  id: string;
+  label: string;
+  permission?: string;
+  minimumTier?: string;
+  category?: string;
+  description?: string;
+  recommended?: boolean;
+  adjustable?: boolean;
+  allowed?: boolean;
+};
+
+export type McpAccessConnector = {
+  id: string;
+  label: string;
+  permission?: string;
+  minimumTier?: string;
+  allowed?: boolean;
+};
+
+export type McpAccessCatalog = {
+  tiers?: McpAccessTierCard[];
+  sessionSafety?: {
+    scopedToOwnSession?: boolean;
+    destructiveActions?: boolean;
+    crossAccountAccess?: boolean;
+    preservesExistingDataByDefault?: boolean;
+  };
+  capabilities?: McpAccessCapability[];
+  connectors?: McpAccessConnector[];
+};
+
+export type McpAccessCatalogResponse = {
+  ok: boolean;
+  account?: McpAccountProfile;
+  catalog?: McpAccessCatalog;
+  error?: string;
+  message?: string;
+};
+
 export type McpCockpitThreadList = {
   total?: number;
   items?: McpCockpitThread[];
@@ -1352,6 +1402,26 @@ export async function fetchMcpCockpitStatus(): Promise<McpCockpitSummary> {
     throw error;
   }
   return data;
+}
+
+export async function fetchMcpAccessCatalog(): Promise<McpAccessCatalogResponse> {
+  const res = await authFetch(getApiUrl('/api/mcp/access'), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (!res.ok || data?.ok === false) {
+    const error = new Error(data?.message || data?.error || `Catalogue MCP indisponible (${res.status})`) as Error & {
+      status?: number;
+      payload?: unknown;
+    };
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
+  return data as McpAccessCatalogResponse;
 }
 
 function isKaen44WebSurface() {

@@ -8345,6 +8345,233 @@ body {
   line-height: 1.35;
 }
 
+.fun-access-panel {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--fun-line);
+  border-radius: 8px;
+  padding: clamp(18px, 3vw, 28px);
+  background:
+    linear-gradient(135deg, rgba(54, 212, 196, 0.1), rgba(7, 9, 15, 0.88) 42%, rgba(233, 184, 108, 0.06)),
+    rgba(7, 9, 15, 0.78);
+}
+
+.fun-access-summary,
+.fun-plan-comparison {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.fun-access-summary article,
+.fun-plan-card {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 13px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fun-access-summary article {
+  display: grid;
+  gap: 6px;
+}
+
+.fun-access-summary strong,
+.fun-plan-card strong {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.fun-access-summary span {
+  color: #d7f4f0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.fun-access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fun-access-actions button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(54, 212, 196, 0.34);
+  border-radius: 8px;
+  padding: 0 13px;
+  color: #eafffb;
+  background: rgba(54, 212, 196, 0.08);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.fun-access-actions button:disabled {
+  opacity: 0.62;
+  cursor: progress;
+}
+
+.fun-access-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.fun-access-toggle {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fun-access-toggle--enabled {
+  border-color: rgba(54, 212, 196, 0.44);
+  background: rgba(54, 212, 196, 0.08);
+}
+
+.fun-access-toggle--locked {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.fun-access-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fun-access-switch {
+  width: 42px;
+  height: 24px;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.fun-access-switch::after {
+  content: "";
+  width: 18px;
+  height: 18px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  border-radius: 999px;
+  background: #a8bcc2;
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.fun-access-toggle input:checked + .fun-access-switch {
+  border-color: rgba(54, 212, 196, 0.58);
+  background: rgba(54, 212, 196, 0.2);
+}
+
+.fun-access-toggle input:checked + .fun-access-switch::after {
+  transform: translateX(18px);
+  background: #64fff0;
+}
+
+.fun-access-toggle input:disabled + .fun-access-switch {
+  opacity: 0.52;
+}
+
+.fun-access-toggle-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.fun-access-toggle-copy strong {
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.fun-access-toggle-copy small {
+  color: var(--fun-amber);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fun-access-toggle-copy em {
+  color: var(--fun-muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fun-plan-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.fun-plan-card--current {
+  border-color: rgba(54, 212, 196, 0.44);
+  background: rgba(54, 212, 196, 0.08);
+}
+
+.fun-plan-card header {
+  display: grid;
+  gap: 5px;
+}
+
+.fun-plan-card header span {
+  color: #d7f4f0;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.fun-plan-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fun-plan-card li {
+  color: var(--fun-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.fun-plan-card li::before {
+  content: "-";
+  margin-right: 6px;
+  color: #64fff0;
+}
+
+.fun-plan-card > small {
+  align-self: end;
+  width: fit-content;
+  border: 1px solid rgba(54, 212, 196, 0.34);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #eafffb;
+  background: rgba(54, 212, 196, 0.1);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .a11-media-dashboard,
 .a11-media-dashboard * {
   box-sizing: border-box;
@@ -8613,8 +8840,14 @@ body {
   }
 
   .fun-account-grid,
-  .fun-integration-grid {
+  .fun-integration-grid,
+  .fun-access-summary,
+  .fun-plan-comparison {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fun-access-controls {
+    grid-template-columns: 1fr;
   }
 
   .fun-architecture-map,
@@ -8893,6 +9126,9 @@ body {
 
   .fun-account-grid,
   .fun-integration-grid,
+  .fun-access-summary,
+  .fun-access-controls,
+  .fun-plan-comparison,
   .fun-architecture-hero,
   .fun-architecture-map,
   .fun-architecture-proof-grid,

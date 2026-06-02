@@ -11,6 +11,7 @@ import {
   fetchA11ConversationResources,
   disconnectConnector,
   fetchAuthConnectors,
+  fetchMcpAccessCatalog,
   fetchMcpCockpitAccount,
   fetchMcpCockpitStatus,
   fetchMatchArenaGames,
@@ -72,6 +73,9 @@ import {
   type A11PortraitFramebook,
   type AuthConnectorProviderState,
   type AuthConnectorsResponse,
+  type McpAccessCapability,
+  type McpAccessCatalogResponse,
+  type McpAccessTierCard,
   type McpAccountProfile,
   type MatchArenaGame,
   type MatchArenaSession,
@@ -5780,16 +5784,84 @@ type FunesterieAccountInventory = {
   files: A11UserStoredFile[];
   resources: A11ConversationResource[];
   subscription: SubscriptionStatus | null;
+  mcpAccess: McpAccessCatalogResponse | null;
+  accessPreferences: FunesterieAccessPreferences;
   loadedAt: string | null;
   loading: boolean;
   error: string;
 };
+
+type FunesterieAccessPreferences = Record<string, boolean>;
+
+const ACCOUNT_ACCESS_STORAGE_PREFIX = "funesterie:account-access:";
 
 const EMPTY_ACCOUNT_CONVERSATIONS: Record<FunesterieSurface, A11HistoryItem[]> = {
   a11: [],
   kaen44: [],
   vivy: [],
 };
+
+function getMcpAccountStorageKey(account: McpAccountProfile | null, displayName = "") {
+  const identity = String(
+    account?.user?.id
+    || account?.user?.email
+    || displayName
+    || account?.tier
+    || "anonymous"
+  ).trim().toLowerCase();
+  return `${ACCOUNT_ACCESS_STORAGE_PREFIX}${identity || "anonymous"}`;
+}
+
+function readAccessPreferences(key: string): FunesterieAccessPreferences {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as FunesterieAccessPreferences : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAccessPreferences(key: string, preferences: FunesterieAccessPreferences) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(preferences));
+  } catch {
+    // Local settings are comfort only. Server permissions remain authoritative.
+  }
+}
+
+function resetAccessPreferencesForKey(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore local storage failures.
+  }
+}
+
+function isCapabilityEnabled(capability: McpAccessCapability, preferences: FunesterieAccessPreferences) {
+  if (!capability.allowed) return false;
+  if (Object.prototype.hasOwnProperty.call(preferences, capability.id)) return preferences[capability.id] === true;
+  return capability.recommended !== false;
+}
+
+function formatTierPriceLabel(tier: McpAccessTierCard) {
+  const monthlyEur = tier.pricing?.monthlyEur;
+  if (monthlyEur == null) return tier.pricing?.publicLabel || "Interne";
+  if (monthlyEur <= 0) return tier.pricing?.publicLabel || "0 EUR";
+  return `${monthlyEur.toFixed(2).replace(".", ",")} EUR/mois`;
+}
+
+function formatMcpTierLabel(tier?: string) {
+  const normalized = String(tier || "").trim().toLowerCase();
+  if (normalized === "basic") return "Basic";
+  if (normalized === "premium") return "Premium";
+  if (normalized === "founder") return "Fondateur";
+  if (normalized === "admin_family") return "Admin famille";
+  if (normalized === "admin") return "Admin";
+  return tier || "niveau supérieur";
+}
 
 function getStoredFileSize(file: A11UserStoredFile | A11ConversationResource) {
   return Number((file as A11UserStoredFile).sizeBytes ?? (file as A11UserStoredFile).size_bytes ?? (file as A11ConversationResource).sizeBytes ?? 0);
@@ -5879,6 +5951,8 @@ function FunesterieAccountPage({
     files: [],
     resources: [],
     subscription: null,
+    mcpAccess: null,
+    accessPreferences: {},
     loadedAt: null,
     loading: false,
     error: "",
@@ -5892,6 +5966,8 @@ function FunesterieAccountPage({
         files: [],
         resources: [],
         subscription: null,
+        mcpAccess: null,
+        accessPreferences: {},
         loadedAt: null,
         loading: false,
         error: "",
@@ -5908,6 +5984,7 @@ function FunesterieAccountPage({
         storedFiles,
         resources,
         subscription,
+        mcpAccess,
       ] = await Promise.all([
         fetchA11HistoryList({ surface: "a11" }).catch(() => []),
         fetchA11HistoryList({ surface: "kaen44" }).catch(() => []),
@@ -5915,8 +5992,10 @@ function FunesterieAccountPage({
         fetchMyStoredFiles({ limit: 100 }).catch(() => ({ ok: false, files: [] })),
         fetchMyConversationResources({ limit: 100 }).catch(() => ({ ok: false, resources: [] })),
         getSubscriptionStatus().catch(() => null),
+        fetchMcpAccessCatalog().catch(() => null),
       ]);
 
+      const accessStorageKey = getMcpAccountStorageKey(mcpAccess?.account || null, displayName);
       setInventory({
         conversations: {
           a11: Array.isArray(a11History) ? a11History : [],
@@ -5926,6 +6005,8 @@ function FunesterieAccountPage({
         files: Array.isArray(storedFiles.files) ? storedFiles.files : [],
         resources: Array.isArray(resources.resources) ? resources.resources : [],
         subscription,
+        mcpAccess,
+        accessPreferences: readAccessPreferences(accessStorageKey),
         loadedAt: new Date().toISOString(),
         loading: false,
         error: "",
@@ -5953,6 +6034,13 @@ function FunesterieAccountPage({
     .slice(0, 3);
   const subscriptionLabel = getSubscriptionAccountLabel(inventory.subscription, authenticated);
   const subscriptionText = getSubscriptionAccountText(inventory.subscription, authenticated);
+  const accessAccount = inventory.mcpAccess?.account || null;
+  const accessCapabilities = inventory.mcpAccess?.catalog?.capabilities || [];
+  const accessTiers = inventory.mcpAccess?.catalog?.tiers || [];
+  const accessStorageKey = getMcpAccountStorageKey(accessAccount, displayName);
+  const allowedAccessCount = accessCapabilities.filter((capability) => capability.allowed).length;
+  const enabledAccessCount = accessCapabilities.filter((capability) => isCapabilityEnabled(capability, inventory.accessPreferences)).length;
+  const lockedAccessCount = Math.max(0, accessCapabilities.length - allowedAccessCount);
 
   function exportAccountInventory() {
     const today = new Date().toISOString().slice(0, 10);
@@ -5971,10 +6059,30 @@ function FunesterieAccountPage({
         } : null,
       },
       localOverview: overview,
+      toolsAccess: {
+        accountTier: accessAccount?.tier || null,
+        accountLabel: accessAccount?.label || null,
+        preferences: inventory.accessPreferences,
+        capabilities: accessCapabilities,
+        tiers: accessTiers,
+      },
       conversations: inventory.conversations,
       files: inventory.files,
       resources: inventory.resources,
     });
+  }
+
+  function toggleAccessCapability(id: string, enabled: boolean) {
+    setInventory((current) => {
+      const nextPreferences = { ...current.accessPreferences, [id]: enabled };
+      writeAccessPreferences(accessStorageKey, nextPreferences);
+      return { ...current, accessPreferences: nextPreferences };
+    });
+  }
+
+  function resetAccessPreferences() {
+    resetAccessPreferencesForKey(accessStorageKey);
+    setInventory((current) => ({ ...current, accessPreferences: {} }));
   }
 
   async function openPayment(plan: "premium" | "founder" | "portal" = "premium") {
@@ -6049,6 +6157,10 @@ function FunesterieAccountPage({
           <article>
             <strong>Abonnement</strong>
             <span>{subscriptionLabel}</span>
+          </article>
+          <article>
+            <strong>Outils</strong>
+            <span>{authenticated ? `${enabledAccessCount}/${allowedAccessCount || accessCapabilities.length || 0} actifs` : "Connexion requise"}</span>
           </article>
         </div>
       </section>
@@ -6176,6 +6288,122 @@ function FunesterieAccountPage({
             </footer>
           </article>
         </div>
+      </section>
+
+      <section className="fun-access-panel" aria-label="Outils et accès autorisés">
+        <header className="fun-token-head">
+          <div>
+            <span>Outils</span>
+            <h2>Accès autorisés</h2>
+            <p>Choisis les outils actifs pour cette session. Les limites serveur restent liées à ton type de compte.</p>
+          </div>
+          <aside>
+            <strong>{accessAccount?.label || subscriptionLabel}</strong>
+            <small>
+              {accessCapabilities.length
+                ? `${enabledAccessCount} actif${enabledAccessCount > 1 ? "s" : ""}, ${lockedAccessCount} verrouillé${lockedAccessCount > 1 ? "s" : ""}`
+                : "catalogue en attente"}
+            </small>
+          </aside>
+        </header>
+
+        {!authenticated ? (
+          <p className="fun-account-alert">Connecte-toi avec Google ou Microsoft pour vérifier les accès MCP liés à ton compte.</p>
+        ) : (
+          <>
+            <div className="fun-access-summary">
+              <article>
+                <strong>Compte actuel</strong>
+                <span>{accessAccount?.label || subscriptionLabel}</span>
+              </article>
+              <article>
+                <strong>Autorisés</strong>
+                <span>{allowedAccessCount}/{accessCapabilities.length || 0}</span>
+              </article>
+              <article>
+                <strong>Actifs session</strong>
+                <span>{enabledAccessCount}</span>
+              </article>
+              <article>
+                <strong>Sécurité</strong>
+                <span>{inventory.mcpAccess?.catalog?.sessionSafety?.crossAccountAccess ? "Support multi-compte" : "Session personnelle"}</span>
+              </article>
+            </div>
+
+            <div className="fun-access-actions">
+              <button type="button" onClick={loadAccountInventory} disabled={inventory.loading}>
+                {inventory.loading ? "Vérification" : "Vérifier MCP"}
+              </button>
+              <button type="button" onClick={resetAccessPreferences} disabled={!accessCapabilities.length}>
+                Réglages recommandés
+              </button>
+              <button type="button" onClick={() => openPayment(inventory.subscription?.active ? "portal" : "premium")} disabled={!!paymentBusy}>
+                Voir les abonnements
+              </button>
+            </div>
+
+            <div className="fun-access-controls" aria-label="Réglages outils par session">
+              {accessCapabilities.length ? accessCapabilities.map((capability) => {
+                const enabled = isCapabilityEnabled(capability, inventory.accessPreferences);
+                const locked = !capability.allowed;
+                const fixed = capability.adjustable === false;
+                return (
+                  <label
+                    key={capability.id}
+                    className={[
+                      "fun-access-toggle",
+                      enabled ? "fun-access-toggle--enabled" : "",
+                      locked || fixed ? "fun-access-toggle--locked" : "",
+                    ].filter(Boolean).join(" ")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      disabled={locked || fixed}
+                      onChange={(event) => toggleAccessCapability(capability.id, event.currentTarget.checked)}
+                    />
+                    <span className="fun-access-switch" aria-hidden="true" />
+                    <span className="fun-access-toggle-copy">
+                      <strong>{capability.label}</strong>
+                      <small>
+                        {capability.category || "MCP"} · {locked
+                          ? `Requis: ${formatMcpTierLabel(capability.minimumTier)}`
+                          : fixed
+                            ? "Géré par le serveur"
+                            : "Autorisé"}
+                      </small>
+                      {capability.description && <em>{capability.description}</em>}
+                    </span>
+                  </label>
+                );
+              }) : (
+                <p className="fun-account-alert">Catalogue des outils indisponible pour le moment. Réessaie avec “Vérifier MCP”.</p>
+              )}
+            </div>
+
+            <div className="fun-plan-comparison" aria-label="Comparatif des abonnements">
+              {accessTiers.length ? accessTiers.map((tier) => {
+                const current = String(tier.tier || "").toLowerCase() === String(accessAccount?.tier || "").toLowerCase();
+                return (
+                  <article key={tier.tier} className={current ? "fun-plan-card fun-plan-card--current" : "fun-plan-card"}>
+                    <header>
+                      <strong>{tier.label || formatMcpTierLabel(tier.tier)}</strong>
+                      <span>{formatTierPriceLabel(tier)}</span>
+                    </header>
+                    <ul>
+                      {(tier.features || []).slice(0, 6).map((feature) => (
+                        <li key={feature}>{feature}</li>
+                      ))}
+                    </ul>
+                    {current && <small>Plan actuel</small>}
+                  </article>
+                );
+              }) : (
+                <p className="fun-account-alert">Comparatif des abonnements non chargé.</p>
+              )}
+            </div>
+          </>
+        )}
       </section>
       <FunesteriePublicFooter
         surfaceLinks={surfaceLinks}
