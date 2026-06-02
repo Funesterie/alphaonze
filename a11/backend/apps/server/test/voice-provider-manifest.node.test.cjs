@@ -6,6 +6,7 @@ const {
   VOICE_PERSONA_DIRECTIONS,
   VOICE_REFERENCE_POLICY,
   PROVIDERS,
+  LOCAL_PROVIDER_ORDER,
   OFFICIAL_READY_VOICE_PROFILES,
   OFFICIAL_PERSONAS,
   buildVoicePersonaInstruction,
@@ -79,6 +80,10 @@ describe('voice-provider-manifest', () => {
   });
 
   describe('resolveVoiceProvider — official personas', () => {
+    it('local/basic provider order keeps cloud voices out of the automatic path', () => {
+      assert.deepEqual(LOCAL_PROVIDER_ORDER, [PROVIDERS.XTTS_RVC, PROVIDERS.PIPER]);
+    });
+
     for (const persona of ['a11', 'kaen44', 'vivy']) {
       it(`${persona}: auto-selects neutral fallback when no ready-made provider is configured`, () => {
         const result = resolveVoiceProvider(persona);
@@ -87,16 +92,22 @@ describe('voice-provider-manifest', () => {
       });
 
       it(`${persona}: auto-selects Cartesia when its key is configured`, () => {
-        const previous = process.env.A11_CARTESIA_API_KEY;
+        const previous = {
+          A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+          A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        };
         process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+        delete process.env.A11_ELEVENLABS_API_KEY;
         try {
           assert.equal(isProviderRuntimeConfigured(PROVIDERS.CARTESIA), true);
           const result = resolveVoiceProvider(persona);
           assert.equal(result.provider, PROVIDERS.CARTESIA);
           assert.equal(result.configured, true);
         } finally {
-          if (previous === undefined) delete process.env.A11_CARTESIA_API_KEY;
-          else process.env.A11_CARTESIA_API_KEY = previous;
+          for (const [key, value] of Object.entries(previous)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+          }
         }
       });
 
@@ -128,6 +139,52 @@ describe('voice-provider-manifest', () => {
       try {
         const result = resolveVoiceProvider('a11');
         assert.equal(result.provider, PROVIDERS.ELEVENLABS);
+        assert.equal(result.configured, true);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
+
+    it('a11: local/basic auto-select ignores configured cloud voices', () => {
+      const previous = {
+        A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+        A11_TTS_ALLOW_XTTS_RVC_AUTO: process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO,
+        A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+      };
+      process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+      process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+      delete process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO;
+      delete process.env.A11_VOICE_XTTS_RVC_URL;
+      try {
+        const result = resolveVoiceProvider('a11', { allowCloud: false });
+        assert.equal(result.provider, PROVIDERS.PIPER);
+        assert.equal(result.configured, true);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
+
+    it('a11: local/basic auto-select can use XTTS/RVC when explicitly enabled', () => {
+      const previous = {
+        A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+        A11_TTS_ALLOW_XTTS_RVC_AUTO: process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO,
+        A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+      };
+      process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+      process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+      process.env.A11_TTS_ALLOW_XTTS_RVC_AUTO = 'true';
+      process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+      try {
+        const result = resolveVoiceProvider('a11', { allowCloud: false });
+        assert.equal(result.provider, PROVIDERS.XTTS_RVC);
         assert.equal(result.configured, true);
       } finally {
         for (const [key, value] of Object.entries(previous)) {

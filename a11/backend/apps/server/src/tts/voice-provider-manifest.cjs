@@ -24,6 +24,11 @@ const PROVIDER_ORDER = [
   PROVIDERS.PIPER,
 ];
 
+const LOCAL_PROVIDER_ORDER = [
+  PROVIDERS.XTTS_RVC,
+  PROVIDERS.PIPER,
+];
+
 const LEGACY_EXPERIMENTAL_PROVIDERS = [
   PROVIDERS.GPT_SOVITS,
   PROVIDERS.CHATTERBOX,
@@ -277,7 +282,7 @@ const MANIFEST = Object.freeze({
  * Falls back to piper if nothing is configured.
  *
  * @param {string} persona
- * @param {{ explicitProvider?: string, allowRvc?: boolean }} options
+ * @param {{ explicitProvider?: string, allowRvc?: boolean, allowCloud?: boolean }} options
  * @returns {{ provider: string, configured: boolean, note: string, diagnostic?: string }}
  */
 function resolveVoiceProvider(persona, options = {}) {
@@ -331,9 +336,10 @@ function resolveVoiceProvider(persona, options = {}) {
     }
   }
 
-  // Auto-select: walk provider order, pick first configured one.
-  // Official personas prefer ready-made licensed cloud voices; XTTS/RVC is legacy opt-in.
-  for (const provider of PROVIDER_ORDER) {
+  // Auto-select: paid plans prefer ready-made licensed cloud voices.
+  // Basic/public requests keep the path local so they do not silently spend provider credits.
+  const providerOrder = options.allowCloud === false ? LOCAL_PROVIDER_ORDER : PROVIDER_ORDER;
+  for (const provider of providerOrder) {
     const providerConfig = entry.providers[provider];
     const configured = providerConfig?.configured === 'runtime'
       ? isProviderRuntimeConfigured(provider)
@@ -375,6 +381,7 @@ function guardDemoModel(persona, modelName) {
 module.exports = {
   PROVIDERS,
   PROVIDER_ORDER,
+  LOCAL_PROVIDER_ORDER,
   LEGACY_EXPERIMENTAL_PROVIDERS,
   OFFICIAL_PERSONAS,
   VOICE_REFERENCE_POLICY,

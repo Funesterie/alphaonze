@@ -1848,6 +1848,20 @@ function isCloudTtsProvider(provider = '') {
     .includes(String(provider || '').trim().toLowerCase());
 }
 
+function allowsPaidTtsVoiceForBody(body = {}) {
+  const explicit = parseOptionalBoolean(
+    body?.allowPaidTtsVoice
+    ?? body?.paidTtsAllowed
+    ?? body?.allowCloudTts
+    ?? body?.allowReadyMadeCloudVoice,
+    null
+  );
+  if (explicit === false) return false;
+  const costPolicy = String(body?.ttsCostPolicy || '').trim().toLowerCase();
+  if (costPolicy.startsWith('basic_')) return false;
+  return true;
+}
+
 function allowsXttsRvcForBody(body = {}) {
   const requestedProvider = getRequestedTtsProvider(body);
   const explicitBody = parseOptionalBoolean(
@@ -1894,7 +1908,11 @@ function resolveTtsProviderForRequest(body = {}) {
   const persona = getTtsPersonaFromBody(body);
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
   const requestedProvider = getRequestedTtsProvider(body);
+  const allowPaidVoice = allowsPaidTtsVoiceForBody(body);
   if (requestedProvider === PROVIDERS.CARTESIA) {
+    if (!allowPaidVoice) {
+      return resolveVoiceProvider(persona, { explicitProvider: PROVIDERS.PIPER, allowCloud: false, allowRvc: false });
+    }
     return {
       provider: PROVIDERS.CARTESIA,
       configured: isProviderRuntimeConfigured(PROVIDERS.CARTESIA),
@@ -1903,6 +1921,9 @@ function resolveTtsProviderForRequest(body = {}) {
     };
   }
   if (requestedProvider === PROVIDERS.ELEVENLABS) {
+    if (!allowPaidVoice) {
+      return resolveVoiceProvider(persona, { explicitProvider: PROVIDERS.PIPER, allowCloud: false, allowRvc: false });
+    }
     return {
       provider: PROVIDERS.ELEVENLABS,
       configured: isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS),
@@ -1911,6 +1932,9 @@ function resolveTtsProviderForRequest(body = {}) {
     };
   }
   if (requestedProvider === PROVIDERS.AZURE) {
+    if (!allowPaidVoice) {
+      return resolveVoiceProvider(persona, { explicitProvider: PROVIDERS.PIPER, allowCloud: false, allowRvc: false });
+    }
     return {
       provider: PROVIDERS.AZURE,
       configured: isProviderRuntimeConfigured(PROVIDERS.AZURE),
@@ -1919,6 +1943,9 @@ function resolveTtsProviderForRequest(body = {}) {
     };
   }
   if (isExplicitOpenAiProvider(requestedProvider)) {
+    if (!allowPaidVoice) {
+      return resolveVoiceProvider(persona, { explicitProvider: PROVIDERS.PIPER, allowCloud: false, allowRvc: false });
+    }
     return {
       provider: 'openai',
       configured: shouldTryOpenAiTts(body),
@@ -1959,6 +1986,7 @@ function resolveTtsProviderForRequest(body = {}) {
         ? requestedProvider
         : undefined,
       allowRvc: allowsXttsRvcForBody(body),
+      allowCloud: allowPaidVoice,
     });
   }
 
@@ -1983,10 +2011,12 @@ function resolveTtsProviderForRequest(body = {}) {
   return resolveVoiceProvider(persona, {
     explicitProvider,
     allowRvc: explicitProvider === PROVIDERS.XTTS_RVC,
+    allowCloud: allowPaidVoice,
   });
 }
 
 function shouldTryOpenAiTts(body = {}) {
+  if (!allowsPaidTtsVoiceForBody(body)) return false;
   const disabled = String(process.env.A11_OPENAI_TTS_ENABLED || process.env.OPENAI_TTS_ENABLED || '').trim().toLowerCase();
   if (disabled === '0' || disabled === 'false' || disabled === 'off') return false;
   const requestedProvider = getRequestedTtsProvider(body);
@@ -1995,12 +2025,14 @@ function shouldTryOpenAiTts(body = {}) {
 }
 
 function shouldTryCartesiaTts(body = {}) {
+  if (!allowsPaidTtsVoiceForBody(body)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.CARTESIA) return false;
   return Boolean(getCartesiaTtsApiKey());
 }
 
 function shouldTryElevenLabsTts(body = {}) {
+  if (!allowsPaidTtsVoiceForBody(body)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.ELEVENLABS) return false;
   if (!requestedProvider || requestedProvider === 'auto') {
@@ -2012,6 +2044,7 @@ function shouldTryElevenLabsTts(body = {}) {
 }
 
 function shouldTryAzureTts(body = {}) {
+  if (!allowsPaidTtsVoiceForBody(body)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.AZURE) return false;
   return Boolean(getAzureSpeechKey() && getAzureSpeechEndpoint());
@@ -2037,6 +2070,7 @@ function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
 }
 
 function getCloudTtsProviderOrder(body = {}, resolvedProvider = {}) {
+  if (!allowsPaidTtsVoiceForBody(body)) return [];
   const requestedProvider = getRequestedTtsProvider(body);
   if (isCloudTtsProvider(requestedProvider)) return [requestedProvider];
 

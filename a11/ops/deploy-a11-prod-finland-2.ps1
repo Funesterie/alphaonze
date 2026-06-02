@@ -635,6 +635,8 @@ $caddyKaen44BackendService = $Kaen44BackendService
 $caddy = @"
 (a11_backend) {
   reverse_proxy ${caddyA11BackendService}:3000 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
     lb_try_duration 45s
     lb_try_interval 250ms
   }
@@ -642,6 +644,8 @@ $caddy = @"
 
 (kaen44_backend) {
   reverse_proxy ${caddyKaen44BackendService}:3001 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
     lb_try_duration 45s
     lb_try_interval 250ms
   }

@@ -7777,9 +7777,26 @@ function getEmbeddedUiBuildId(indexPath) {
   }
 }
 
+const EMBEDDED_UI_SURFACE_HOSTS = new Set([
+  'funesterie.me',
+  'www.funesterie.me',
+  'a11.funesterie.me',
+  'k44.funesterie.me',
+  'kaen44.funesterie.me',
+  'vivy.funesterie.me',
+  'music.funesterie.me',
+]);
+
+function normalizeRequestHost(value = '') {
+  return String(value || '').split(',')[0].trim().replace(/:\d+$/, '').toLowerCase();
+}
+
 function getRequestSurfaceHost(req) {
-  const raw = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
-  return raw.replace(/:\d+$/, '').toLowerCase();
+  const host = normalizeRequestHost(req.get('host'));
+  const forwardedHost = normalizeRequestHost(req.get('x-forwarded-host'));
+  if (EMBEDDED_UI_SURFACE_HOSTS.has(host)) return host;
+  if (EMBEDDED_UI_SURFACE_HOSTS.has(forwardedHost)) return forwardedHost;
+  return host || forwardedHost;
 }
 
 function isGeneralFunesterieSurfaceHost(hostname) {

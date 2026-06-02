@@ -302,6 +302,8 @@ test('tts speak route keeps basic/public accounts on neutral SIWIS instead of pa
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
     CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
   };
   const previousFetch = global.fetch;
   const backendBodies = [];
@@ -309,6 +311,8 @@ test('tts speak route keeps basic/public accounts on neutral SIWIS instead of pa
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.TTS_URL = 'http://127.0.0.1:5002';
   process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   delete process.env.CARTESIA_API_KEY;
   delete process.env.CARTESIA_TOKEN;
 
@@ -322,6 +326,9 @@ test('tts speak route keeps basic/public accounts on neutral SIWIS instead of pa
           return JSON.stringify({ audio_url: '/api/tts/out/basic-siwis.mp3', via: 'http' });
         },
       };
+    }
+    if (String(url).startsWith('https://api.elevenlabs.test/v1/')) {
+      throw new Error('elevenlabs_should_not_be_called_for_basic_voice');
     }
     return previousFetch(url, options);
   };
@@ -372,6 +379,8 @@ test('tts speak route gives basic A11 the official local reference without paid 
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
     CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
   };
   const previousFetch = global.fetch;
   const wav = createPcm16Wav();
@@ -388,6 +397,8 @@ test('tts speak route gives basic A11 the official local reference without paid 
   process.env.A11_VOICE_MODULE_URL = 'http://127.0.0.1:5002';
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
   process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
   delete process.env.CARTESIA_API_KEY;
   delete process.env.CARTESIA_TOKEN;
 
@@ -434,6 +445,9 @@ test('tts speak route gives basic A11 the official local reference without paid 
     }
     if (value.includes('/tts/bytes')) {
       throw new Error('cartesia_should_not_be_called_for_basic_a11_reference');
+    }
+    if (value.startsWith('https://api.elevenlabs.test/v1/')) {
+      throw new Error('elevenlabs_should_not_be_called_for_basic_a11_reference');
     }
     return previousFetch(url, options);
   };
