@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "react": "^19.2.7",
-    "react-dom": "^19.2.6",
+    "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
@@ -35,7 +35,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.3.1",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14"
+    "vite": "^8.0.16"
   },
   "funesterieSupport": {
     "paypal": "https://paypal.me/funeste38",
