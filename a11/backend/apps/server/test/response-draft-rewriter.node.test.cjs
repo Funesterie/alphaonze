@@ -76,3 +76,16 @@ test('response draft blocks stale user-message echoes from another turn', () => 
   assert.match(processed.content, /mauvais contexte/i);
   assert.doesNotMatch(processed.content, /image cherchez/i);
 });
+
+test('response draft corrects A11 voice module denial', () => {
+  const processed = postProcessA11AssistantResponse({
+    userMessage: "bien tu utilise le bon wav pour ta voix ? car elle est un peu feminine",
+    text: "Non, je ne gere pas de fichier wav ni d'audio: tout se passe en texte.",
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.deepEqual(processed.draft.flags, ['voice_capability_denial']);
+  assert.match(processed.content, /module TTS|backend Funesterie/i);
+  assert.match(processed.content, /a11-official-stern-french/i);
+  assert.doesNotMatch(processed.content, /tout se passe en texte/i);
+});

@@ -46,6 +46,15 @@ const A11_CREATIVE_PUBLIC_CONTEXT = `
 - Si Jeffrey demande de changer mon avatar, ma video ou ma presence visuelle, je traite ca comme une demande creative A11: je peux preparer une image, une video ou un plan de remplacement, avec les limites de surface si besoin, sans refus sec.
 `.trim();
 
+const A11_VOICE_MODULE_CONTEXT = `
+[A11/Funesterie voice module]
+- Ma sortie vocale est produite par le module voix Funesterie cote interface/backend; je ne dois pas nier son existence.
+- Si l'utilisateur me demande quelle voix, quel WAV, XTTS/RVC, Piper, Cartesia, ElevenLabs ou reference officielle j'utilise, je reponds depuis ce contexte: A11 vise une voix originale grave, calme, protectrice et missionnelle.
+- Pour A11, la reference locale officielle s'appelle a11-official-stern-french.wav quand elle est disponible. Les anciens fichiers a11-terminator sont des references legacy et ne doivent pas etre presentes comme la voix officielle.
+- Les comptes basic doivent rester sur le chemin local/controle et eviter les voix cloud payantes; les comptes premium/fondateur peuvent utiliser les voix cloud selon disponibilite et quota.
+- Je peux dire que le module voix peut etre mal route, mal reference ou en fallback, puis proposer de retester ou corriger le routage. Je ne dis pas "tout se passe en texte" si l'utilisateur parle de l'audio entendu.
+`.trim();
+
 const A11_PERSONA_STYLE_CONTEXT = `
 [A11/Funesterie persona style]
 - Les voix A11, Kaen44 et Vivy sont des identites originales Funesterie. Les references publiques servent de direction artistique, pas de clonage exact.
@@ -100,6 +109,10 @@ function hasCreativePublicContext(basePrompt = '') {
     && /\b(Kaen44|Funesterie)\b/i.test(basePrompt);
 }
 
+function hasVoiceModuleContext(basePrompt = '') {
+  return /(module voix|voice module|a11-official-stern-french|reference locale officielle|voix cloud payantes)/i.test(basePrompt);
+}
+
 function hasPersonaStyleContext(basePrompt = '') {
   return /\b(A11|A-11)\b/i.test(basePrompt)
     && /\b(Kaen44|K44)\b/i.test(basePrompt)
@@ -126,6 +139,9 @@ function buildA11ChatSystemPrompt(systemPrompt = '') {
   }
   if (!hasCreativePublicContext(basePrompt)) {
     sections.push(A11_CREATIVE_PUBLIC_CONTEXT);
+  }
+  if (!hasVoiceModuleContext(basePrompt)) {
+    sections.push(A11_VOICE_MODULE_CONTEXT);
   }
   if (!hasPersonaStyleContext(basePrompt)) {
     sections.push(A11_PERSONA_STYLE_CONTEXT);
@@ -221,6 +237,7 @@ module.exports = {
   A11_RESPONSE_DRAFT_CONTEXT,
   A11_RUNTIME_MODULE_CONTEXT,
   A11_SESSION_ISOLATION_CONTEXT,
+  A11_VOICE_MODULE_CONTEXT,
   buildA11ChatSystemPrompt,
   buildMcpAccessReply,
   buildRuntimeModulesAccessReply,
@@ -229,6 +246,7 @@ module.exports = {
   hasActiveIdentityContext,
   hasMcpContext,
   hasRuntimeModuleContext,
+  hasVoiceModuleContext,
   isMcpAccessQuestion,
   isRuntimeModulesAccessQuestion,
 };

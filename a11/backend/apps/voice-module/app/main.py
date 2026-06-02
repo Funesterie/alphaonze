@@ -29,6 +29,8 @@ ESPEAK_DATA = Path(os.environ.get("A11_ESPEAK_DATA", ROOT / "piper" / "espeak-ng
 CONVERSION_PROVIDER = os.environ.get("A11_VOICE_CONVERTER_PROVIDER", "ffmpeg").strip().lower() or "ffmpeg"
 DEFAULT_CONVERSION_STRENGTH = float(os.environ.get("A11_VOICE_CONVERSION_STRENGTH", "0.45") or "0.45")
 DEFAULT_F0_SHIFT = float(os.environ.get("A11_VOICE_DEFAULT_F0_SHIFT", "-1.5") or "-1.5")
+A11_CONVERSION_STRENGTH = float(os.environ.get("A11_A11_VOICE_CONVERSION_STRENGTH", "0.62") or "0.62")
+A11_DEFAULT_F0_SHIFT = float(os.environ.get("A11_A11_VOICE_DEFAULT_F0_SHIFT", "-2.4") or "-2.4")
 VIVY_CONVERSION_STRENGTH = float(os.environ.get("A11_VIVY_VOICE_CONVERSION_STRENGTH", "0.28") or "0.28")
 VIVY_DEFAULT_F0_SHIFT = float(os.environ.get("A11_VIVY_VOICE_DEFAULT_F0_SHIFT", "0") or "0")
 XTTS_RVC_URL = (
@@ -95,7 +97,12 @@ def normalize_persona(value: Optional[str]) -> str:
 
 def preferred_reference_names(persona: str, mode: str) -> list[str]:
     if persona == "a11":
-        return ["a11-terminator.wav", "a11-terminator-context.wav"]
+        return [
+            "a11-official-stern-french.wav",
+            "a11-official-stern-french-context.wav",
+            "a11-terminator.wav",
+            "a11-terminator-context.wav",
+        ]
     if persona == "kaen44":
         return ["kaen44-donna.wav", "kaen44-donna-extra.wav", "kaen44-donna-context.wav"]
     if persona == "vivy":
@@ -161,6 +168,9 @@ def prune_old_audio(max_age_seconds: int = 600) -> None:
 class SynthesizeRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4096)
     voice: Optional[str] = None
+    model: Optional[str] = None
+    piperVoice: Optional[str] = None
+    piperModel: Optional[str] = None
     persona: Optional[str] = None
     voicePersona: Optional[str] = None
     voiceStyle: Optional[str] = None
@@ -237,6 +247,78 @@ def piper_params(mode: str, req: SynthesizeRequest) -> dict:
     }
 
 
+def piper_model_dirs() -> list[Path]:
+    configured = (
+        os.environ.get("A11_PIPER_MODEL_DIRS")
+        or os.environ.get("A11_PIPER_MODEL_DIR")
+        or os.environ.get("PIPER_MODEL_DIRS")
+        or os.environ.get("PIPER_MODEL_DIR")
+        or ""
+    )
+    dirs = split_path_env(configured)
+    dirs.extend([
+        Path("/app/extra-models"),
+        PIPER_MODEL.parent,
+        ROOT / "models",
+    ])
+    seen = set()
+    unique = []
+    for item in dirs:
+        key = str(item)
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
+def normalize_piper_model_name(value: Optional[str]) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    name = Path(raw).name
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "", name)
+    if not name:
+        return ""
+    if not name.endswith(".onnx"):
+        name = f"{name}.onnx"
+    return name
+
+
+def resolve_piper_model(req: SynthesizeRequest) -> tuple[Path, Path]:
+    requested = (
+        req.piperModel
+        or req.piperVoice
+        or req.model
+        or req.voice
+        or ""
+    )
+    candidates: list[Path] = []
+    requested_raw = str(requested or "").strip()
+    if requested_raw:
+        requested_path = Path(requested_raw)
+        if requested_path.is_absolute():
+            candidates.append(requested_path)
+        requested_name = normalize_piper_model_name(requested_raw)
+        if requested_name:
+            for directory in piper_model_dirs():
+                candidates.append(directory / requested_name)
+
+    candidates.append(PIPER_MODEL)
+    for model_path in candidates:
+        try:
+            if model_path.exists() and model_path.is_file():
+                config_path = Path(f"{model_path}.json")
+                legacy_config_path = model_path.with_suffix(".onnx.json")
+                if config_path.exists():
+                    return model_path, config_path
+                if legacy_config_path.exists():
+                    return model_path, legacy_config_path
+                return model_path, config_path
+        except Exception:
+            continue
+    return PIPER_MODEL, PIPER_CONFIG
+
+
 def wav_duration_ms(path: Path) -> Optional[int]:
     try:
         with wave.open(str(path), "rb") as wav:
@@ -258,12 +340,16 @@ def clamp_float(value: Optional[float], fallback: float, low: float, high: float
 
 
 def default_conversion_strength_for(reference_style: str, persona: str = "") -> float:
+    if normalize_persona(persona) == "a11" or reference_style in {"a11-official-stern-french", "a11"}:
+        return A11_CONVERSION_STRENGTH
     if normalize_persona(persona or reference_style) == "vivy" or reference_style == "vivy":
         return VIVY_CONVERSION_STRENGTH
     return DEFAULT_CONVERSION_STRENGTH
 
 
 def default_f0_shift_for(reference_style: str, persona: str = "") -> float:
+    if normalize_persona(persona) == "a11" or reference_style in {"a11-official-stern-french", "a11"}:
+        return A11_DEFAULT_F0_SHIFT
     if normalize_persona(persona or reference_style) == "vivy" or reference_style == "vivy":
         return VIVY_DEFAULT_F0_SHIFT
     return DEFAULT_F0_SHIFT
@@ -337,6 +423,8 @@ def atempo_chain(speed: float) -> str:
 
 def infer_reference_style(reference_file: Optional[Path]) -> str:
     key = str(reference_file.name if reference_file else "").lower()
+    if "a11-official-stern-french" in key or ("a11" in key and "official" in key):
+        return "a11-official-stern-french"
     if "terminator" in key or "a11" in key:
         return "terminator"
     if "donna" in key or "kaen44" in key or "k44" in key:
@@ -652,18 +740,19 @@ def run_ffmpeg_morph(generated_file: Path, reference_file: Optional[Path], out_f
 
 
 def run_piper(text: str, out_file: Path, req: SynthesizeRequest) -> dict:
+    model_path, config_path = resolve_piper_model(req)
     if not PIPER_BIN.exists():
         raise RuntimeError("piper_missing")
-    if not PIPER_MODEL.exists():
+    if not model_path.exists():
         raise RuntimeError("piper_model_missing")
 
     params = piper_params(req.vocalMode, req)
     args = [
         str(PIPER_BIN),
         "--model",
-        str(PIPER_MODEL),
+        str(model_path),
         "--config",
-        str(PIPER_CONFIG),
+        str(config_path),
         "--output_file",
         str(out_file),
         "--length_scale",
@@ -689,7 +778,7 @@ def run_piper(text: str, out_file: Path, req: SynthesizeRequest) -> dict:
     if proc.returncode != 0 or not out_file.exists():
         details = (proc.stderr or proc.stdout or "").strip()[:800]
         raise RuntimeError(f"piper_failed:{details}")
-    return {"via": "piper", "params": params}
+    return {"via": "piper", "params": params, "model": model_path.name}
 
 
 def run_espeak(text: str, out_file: Path, req: SynthesizeRequest) -> dict:

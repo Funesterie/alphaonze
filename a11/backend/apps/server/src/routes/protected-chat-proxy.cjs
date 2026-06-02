@@ -36,6 +36,9 @@ const {
 } = require('../a11/tools-dispatcher.cjs');
 const { hasFullAccess } = require('../auth/full-access.cjs');
 const { resolveMcpAccountProfileSync } = require('../auth/mcp-account-tier.cjs');
+const {
+  buildA11ChatSystemPrompt,
+} = require('../chat/a11-active-identity.cjs');
 const PUBLIC_CHAT_SYSTEM_PROMPT = [
   'Je suis A11, assistant conversationnel de Funesterie.',
   'Quand je dis "je", je parle de moi, A11. Jeffrey, Djeff, Jean ou l’utilisateur sont mes interlocuteurs, pas mon identité.',
@@ -60,7 +63,7 @@ function resolveProxyResponseLanguage(req = {}) {
 function buildProxySystemPrompt(req = {}) {
   const language = resolveProxyResponseLanguage(req);
   return [
-    PUBLIC_CHAT_SYSTEM_PROMPT,
+    buildA11ChatSystemPrompt(PUBLIC_CHAT_SYSTEM_PROMPT),
     buildLanguageInstruction(language),
     "Si le dernier message utilisateur change de langue, privilégie cette langue plutôt que l'historique.",
   ].join('\n');

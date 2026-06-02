@@ -18,9 +18,26 @@ $WebDist = Join-Path $A11Root "frontend\apps\web\dist"
 $EnvSource = Join-Path $ServerRoot "profiles\a11.env"
 $McpEnvSource = Join-Path $RepoRoot "a11mcp\.env"
 $RuntimeVoiceLibrary = Join-Path $RepoRoot "runtime\voice-library"
-$A11VoiceReference = Join-Path $RuntimeVoiceLibrary "a11-official-stern-french.wav"
-$VivyVoiceReference = Join-Path $RuntimeVoiceLibrary "vivy-official-french-conversational.wav"
-$Kaen44VoiceReference = Join-Path $RuntimeVoiceLibrary "kaen44-official-french-narrator.wav"
+function Resolve-VoiceReferencePath {
+  param(
+    [Parameter(Mandatory = $true)][string]$FileName
+  )
+
+  $candidates = @(
+    (Join-Path $RuntimeVoiceLibrary $FileName),
+    (Join-Path (Join-Path $A11Root "runtime\voice-library") $FileName),
+    (Join-Path (Join-Path $A11Root "backend\runtime\voice-library") $FileName)
+  )
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) {
+      return $candidate
+    }
+  }
+  return $candidates[0]
+}
+$A11VoiceReference = Resolve-VoiceReferencePath "a11-official-stern-french.wav"
+$VivyVoiceReference = Resolve-VoiceReferencePath "vivy-official-french-conversational.wav"
+$Kaen44VoiceReference = Resolve-VoiceReferencePath "kaen44-official-french-narrator.wav"
 $Remote = "deploy@62.238.43.32"
 $SshKey = if ($env:A11_HETZNER_SSH_KEY) {
   $env:A11_HETZNER_SSH_KEY
@@ -411,8 +428,12 @@ services:
       A11_VOICE_XTTS_RVC_LANGUAGE: ${A11_VOICE_XTTS_RVC_LANGUAGE:-fr}
       A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS: ${A11_VOICE_XTTS_RVC_TIMEOUT_SECONDS:-240}
       A11_VOICE_XTTS_RVC_FALLBACK: ${A11_VOICE_XTTS_RVC_FALLBACK:-true}
+      A11_VOICE_REFERENCE_LIBRARY_DIR: /app/voices
+      A11_PIPER_MODEL_DIRS: /app/extra-models;/app/models
     volumes:
       - /srv/a11-data/a11/voice-out:/app/out
+      - /srv/a11-data/a11/runtime/voice-library:/app/voices:ro
+      - /srv/a11-data/a11/tts:/app/extra-models:ro
     depends_on:
       a11-xtts-rvc:
         condition: service_healthy

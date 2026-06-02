@@ -9,6 +9,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 - If a fact is not verified in the current context, I say it is to verify or I keep it out. I do not invent precise names, numbers, diseases, logs, routes or monitoring status.
 - If the user asks casually how I am or whether I notice issues, I answer from what is actually known in this conversation, or I offer to run a check.
 - For Vivy/audio questions, I distinguish the official/default voice, private reference voice, XTTS/RVC, neutral fallback, and async job status without pretending that one means the other.
+- For A11 voice questions, I do not deny the voice module. I say the answer text is separate from the backend/interface TTS path, then name the likely routing: A11 official local reference, cloud voice, or neutral fallback.
 - For image/vision questions, I use the provided image or verified vision context when it exists. If it is missing, I ask for the image or say the vision pass failed; I do not claim that Janus/vision does not exist.
 `.trim();
 
@@ -63,6 +64,13 @@ function looksLikeUnverifiedMonitoringClaim(text = '', userMessage = '') {
   return /(temps reel|garde un oeil|aucun blocage majeur|tout roule de mon cote|logs|alerte immediatement|sans interruption)/.test(foldedText);
 }
 
+function looksLikeVoiceCapabilityDenial(text = '', userMessage = '') {
+  const foldedText = foldText(text);
+  const foldedUser = foldText(userMessage);
+  if (!/(voix|voice|audio|tts|wav|mp3|xtts|rvc|piper|cartesia|elevenlabs)/.test(foldedUser)) return false;
+  return /(je ne gere pas.*(?:wav|audio|voix)|je ne manipule pas.*(?:wav|audio|voix)|tout se passe en texte|je n ai pas de voix|je ne produis pas d audio)/.test(foldedText);
+}
+
 function looksLikeStaleUserMessageEcho(text = '', userMessage = '') {
   const current = foldText(userMessage);
   if (!current) return false;
@@ -98,6 +106,7 @@ function buildA11VirtualResponseDraft({ userMessage = '', assistantText = '', co
   if (looksLikeToolInventory(text)) flags.push('tool_inventory_dump');
   if (looksLikeMarkdownTable(text) && !userAskedForStructuredFormat(userMessage)) flags.push('unrequested_table');
   if (looksLikeUnverifiedMonitoringClaim(text, userMessage)) flags.push('unverified_monitoring_claim');
+  if (looksLikeVoiceCapabilityDenial(text, userMessage)) flags.push('voice_capability_denial');
 
   const intent = inferUserIntent(userMessage);
   const mustRewrite = flags.length > 0;
@@ -143,6 +152,10 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
 
   if (responseDraft.flags.includes('unverified_monitoring_claim')) {
     return "Je ne vais pas faire semblant de surveiller les logs en continu depuis ce message. La, je n'ai pas de signal d'alerte verifie dans le contexte; si tu veux un vrai etat, je lance un check backend/MCP et je te rends le resultat proprement.";
+  }
+
+  if (responseDraft.flags.includes('voice_capability_denial')) {
+    return "Tu as raison de parler de voix: ma reponse texte est separee du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est une voix grave et protectrice avec la reference locale a11-official-stern-french quand elle est disponible; si le rendu sonne feminin, c'est probablement un mauvais routage, une voix cloud de fallback ou une ancienne reference, pas mon intention officielle.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {

@@ -472,6 +472,7 @@ test('tts speak route gives basic A11 the official local reference without paid 
         assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
         assert.equal(backendBodies.length, 1);
         assert.equal(backendBodies[0].provider, 'piper');
+        assert.equal(backendBodies[0].voice, 'fr_FR-tom-medium');
         assert.equal(backendBodies[0].voicePersona, 'a11');
         assert.equal(backendBodies[0].useDefaultVoiceReference, true);
         assert.equal(backendBodies[0].ttsCostPolicy, 'basic_a11_official_reference');
@@ -1018,7 +1019,7 @@ test('tts piper route selects persona-specific local Piper voice when cloud TTS 
         status: 200,
         async text() {
           return JSON.stringify({
-            audio_url: '/out/a11-upmc.wav',
+            audio_url: '/out/a11-tom.wav',
             via: 'piper',
           });
         },
@@ -1043,8 +1044,8 @@ test('tts piper route selects persona-specific local Piper voice when cloud TTS 
 
         assert.equal(result.response.status, 200);
         assert.equal(requestBodies.length, 1);
-        assert.equal(requestBodies[0].voice, 'fr_FR-upmc-medium');
-        assert.equal(requestBodies[0].model, 'fr_FR-upmc-medium');
+        assert.equal(requestBodies[0].voice, 'fr_FR-tom-medium');
+        assert.equal(requestBodies[0].model, 'fr_FR-tom-medium');
       }
     );
   } finally {
