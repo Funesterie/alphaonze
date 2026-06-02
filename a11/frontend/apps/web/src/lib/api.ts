@@ -3365,7 +3365,7 @@ export async function fetchSessionDriveStorageStatus(): Promise<SessionDriveStor
   return data;
 }
 
-export async function uploadLocalImage(file: File) {
+export async function uploadLocalImage(file: File, options?: { conversationId?: string }) {
   const contentBase64 = await readFileAsDataUrl(file);
   const res = await fetch(getApiUrl('/api/upload/image-local'), {
     method: 'POST',
@@ -3373,6 +3373,7 @@ export async function uploadLocalImage(file: File) {
     body: JSON.stringify({
       filename: file.name,
       contentBase64,
+      conversationId: options?.conversationId,
     }),
   });
 

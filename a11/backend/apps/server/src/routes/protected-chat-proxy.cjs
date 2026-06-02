@@ -1782,7 +1782,7 @@ function createProtectedChatProxyRouter({
         visionResult = await autoDescribeImage({
           imageLocator: visionImageLocator,
           runtimeRoot,
-          timeoutMs: Number(req.body?.visionTimeoutMs || process.env.A11_CHAT_VISION_TIMEOUT_MS || 18000),
+          timeoutMs: Number(req.body?.visionTimeoutMs || process.env.A11_CHAT_VISION_TIMEOUT_MS || 75000),
           requestId: `chat-vision-${Date.now()}`,
           prompt: buildVisionQuestionPrompt(latestUserMessage),
         });
@@ -1796,8 +1796,11 @@ function createProtectedChatProxyRouter({
 
       const description = String(visionResult?.description || '').trim();
       if (description && visionResult?.skipped !== true) {
+        const prefix = visionResult?.fallback
+          ? 'Je vois le fichier image. '
+          : 'Oui, je la vois. ';
         return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
-          content: `Oui, je la vois. ${description}`,
+          content: `${prefix}${description}`,
           provider: visionResult?.provider,
           sourceImageUrl: visionImageLocator,
         }), resolution, req.body || {}));

@@ -2898,7 +2898,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     try {
       const testLine = buildVivyPlayableText(
         voiceInstruction.trim(),
-        "Je suis Vivy. Ma voix officielle est prête côté Funesterie.",
+        "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.",
         180
       );
       const vocalMode = voiceTool.toLowerCase().includes("chant") ? "sing" : "adaptive";
@@ -7662,6 +7662,7 @@ export function App() {
     }
     recentFileImportRef.current = { key: importKey, at: now };
 
+    const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const audioFiles = allFiles.filter(isAudioLikeFile);
     const importerFiles = allFiles.filter((file) => !isAudioLikeFile(file));
 
@@ -7735,7 +7736,6 @@ export function App() {
     }
 
     // Upload des fichiers non-image dans la conversation (PDF, etc.)
-    const conversationId = buildSurfaceConversationId(a11ConvId || selectedChatId || undefined, surfaceKind) || undefined;
     const nonImageFiles = allFiles.filter((f) => !f.type.startsWith('image/'));
     if (nonImageFiles.length > 0) {
       const uploaded: string[] = [];
@@ -8325,9 +8325,9 @@ export function App() {
       value ? normalizeConversationSurface(value) : surfaceKind
     );
     const defaultVoiceTextForSurface = (surface: FunesterieSurface) => {
-      if (surface === "vivy") return "Je suis Vivy. Ma voix officielle est prete cote Funesterie.";
-      if (surface === "kaen44") return "Je suis Kaen44. Ma voix officielle est prete cote Funesterie.";
-      return "Je suis A11. Ma voix officielle est prete cote Funesterie.";
+      if (surface === "vivy") return "Salut Jeffrey. Je suis Vivy. Je parle doucement, avec une voix claire et proche.";
+      if (surface === "kaen44") return "Salut Jeffrey. Je suis Kaen44. Interface claire, ton pose, et reponse courte.";
+      return "Salut Jeffrey. Je suis A11. Je parle doucement, clairement, avec une voix posee. Si tu m'entends bien, le test vocal est bon.";
     };
     const testVoice = (surfaceOrText?: string, maybeText?: string, extraOptions?: Record<string, unknown>) => {
       const first = String(surfaceOrText || "").trim();
