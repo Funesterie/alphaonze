@@ -2938,42 +2938,38 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       return;
     }
     setIsBusy(true);
-    setStatus("Vivy lance la génération audio...");
+    setStatus("Vivy lance la génération musicale...");
     try {
       const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde la lumière dans l'obscurité.", 320);
-      const songPrompt = [
-        `Chanson Vivy courte.`,
-        `Direction: ${songMood || "electro pop dark cinematographique"}.`,
-        `Voix: ${activeVoiceReferenceLabel}.`,
-        `Refrain à chanter: ${playablePrompt}`,
-      ].join("\n");
-      const payload = await ttsSpeak(songPrompt, "vivy", "auto", {
-        ...buildVivyTtsOptions("sing"),
-        voiceStyle: "vivy-official-song",
+      const payload = await runVivyStudioProduction({
+        mode: "song",
+        songSource,
+        songMood,
+        songText: prompt,
+        prompt: playablePrompt,
+        forceRealMusic: true,
+        generateMusic: true,
+        makeSong: true,
+        durationSeconds: 45,
       });
-      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
+      const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.media?.audioUrl || payload?.media?.audio_url || payload?.media?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
       setVivyMedia({
         kind: "audio",
         url: resolveApiAssetUrl(mediaUrl) || mediaUrl,
-        provider: String(payload?.provider || payload?.via || "a11-voice-module"),
-        contentType: String(payload?.contentType || payload?.content_type || "audio/wav"),
+        provider: String(payload?.media?.provider || "vivy-music"),
+        contentType: String(payload?.media?.content_type || payload?.contentType || payload?.content_type || "audio/mpeg"),
       });
       setVivyOutput([
-        "VIVY_SIMPLE_SONG",
+        "VIVY_MUSIC_GENERATION",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
-        `Voix: ${activeVoiceReferenceLabel}`,
         `Prompt: ${playablePrompt}`,
         "",
-        payload?.promptRenderedAsSpeech === false
-          ? `Sortie: maquette audio Vivy depuis ${activeVoiceReferenceLabel}; paroles et structure gardées dans ce brief.`
-          : "Sortie: audio chanson simple généré depuis prompt + voix Vivy.",
+        payload?.summary || "Sortie: chanson audio Vivy générée.",
       ].join("\n"));
-      setStatus(payload?.promptRenderedAsSpeech === false
-        ? `Maquette chanson Vivy prête depuis ${activeVoiceReferenceLabel}.`
-        : "Chanson simple Vivy prête.");
+      setStatus("Chanson Vivy prête.");
     } catch (error: any) {
-      setStatus(`Chanson simple indisponible: ${error?.message || error}`);
+      setStatus(`Chanson Vivy indisponible: ${error?.message || error}`);
     } finally {
       setIsBusy(false);
     }
@@ -3161,7 +3157,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
               </label>
               <div className="vivy-studio-actions vivy-studio-actions--song">
                 <button type="button" onClick={produceSimpleVivySong} disabled={!hasSession || isBusy || !songText.trim()}>
-                  Prompt + voix active = chanson
+                  Générer chanson Vivy
                 </button>
               </div>
             </>

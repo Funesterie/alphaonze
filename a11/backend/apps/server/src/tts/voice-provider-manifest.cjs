@@ -6,6 +6,7 @@
 
 const PROVIDERS = Object.freeze({
   CARTESIA:   'cartesia',
+  ELEVENLABS: 'elevenlabs',
   AZURE:      'azure',
   OPENAI:     'openai',
   GPT_SOVITS: 'gpt-sovits',
@@ -16,6 +17,7 @@ const PROVIDERS = Object.freeze({
 
 // Provider resolution order for production requests
 const PROVIDER_ORDER = [
+  PROVIDERS.ELEVENLABS,
   PROVIDERS.CARTESIA,
   PROVIDERS.AZURE,
   PROVIDERS.OPENAI,
@@ -88,11 +90,13 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
     styleId: 'a11-official-stern-french',
     displayName: 'A11 - Laurent Dependable Anchor',
     providerLabels: Object.freeze({
+      [PROVIDERS.ELEVENLABS]: 'George - Warm Captivating Storyteller',
       [PROVIDERS.CARTESIA]: 'Laurent - Dependable Anchor',
       [PROVIDERS.AZURE]: 'fr-FR-Remy:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'onyx',
       [PROVIDERS.PIPER]: 'fr_FR-upmc-medium',
     }),
+    elevenLabsVoiceId: 'JBFqnCBsd6RMkjVDRZzb',
     cartesiaVoiceId: '7345dfa5-ee04-44d2-abf4-29262b880ab4',
     azureVoice: 'fr-FR-Remy:DragonHDLatestNeural',
     openAiVoice: 'onyx',
@@ -165,6 +169,11 @@ function isProviderRuntimeConfigured(provider) {
     return hasEnvValue('A11_CARTESIA_API_KEY', 'CARTESIA_API_KEY', 'CARTESIA_TOKEN')
       || hasEnvValue('A11_CARTESIA_API_KEY_FILE', 'CARTESIA_API_KEY_FILE');
   }
+  if (normalized === PROVIDERS.ELEVENLABS) {
+    if (envFlag('A11_ELEVENLABS_TTS_DISABLED') || envFlag('ELEVENLABS_TTS_DISABLED')) return false;
+    return hasEnvValue('A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY')
+      || hasEnvValue('A11_ELEVENLABS_API_KEY_FILE', 'ELEVENLABS_API_KEY_FILE');
+  }
   if (normalized === PROVIDERS.AZURE) {
     if (envFlag('A11_AZURE_TTS_DISABLED') || envFlag('AZURE_TTS_DISABLED')) return false;
     return hasEnvValue('A11_AZURE_SPEECH_KEY', 'AZURE_SPEECH_KEY', 'SPEECH_KEY')
@@ -215,6 +224,7 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original A11 cybernetic voice. Licensed/consented data only; no T-800/actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original A11 direction; public film clips are moodboard only.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Primary A11 ready-made licensed voice.' },
       [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Primary ready-made licensed voice.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Secondary HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Tertiary high-quality ready-made voice.' },

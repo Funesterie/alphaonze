@@ -940,6 +940,87 @@ test('tts speak route uses Cartesia ready-made voice before legacy bridge for of
   }
 });
 
+test('tts speak route uses ElevenLabs as the A11 voice mode when configured', async () => {
+  const previousEnv = {
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_MODEL: process.env.A11_ELEVENLABS_MODEL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const elevenLabsBodies = [];
+
+  process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128') {
+      elevenLabsBodies.push(JSON.parse(String(options.body || '{}')));
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers['xi-api-key'], 'test-elevenlabs-key');
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('elevenlabs-a11-mp3');
+        },
+      };
+    }
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      throw new Error('cartesia_should_not_be_called_when_elevenlabs_is_ready_for_a11');
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_be_called_for_a11_elevenlabs');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour',
+          persona: 'a11',
+          voicePersona: 'a11',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'elevenlabs');
+        assert.equal(result.json.via, 'elevenlabs-tts');
+        assert.match(result.json.voiceReference.label, /George/i);
+        assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
+        assert.equal(elevenLabsBodies.length, 1);
+        assert.equal(elevenLabsBodies[0].model_id, 'eleven_multilingual_v2');
+        assert.equal(elevenLabsBodies[0].language_code, 'fr');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('tts speak route treats official persona alone as identity voice request', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,

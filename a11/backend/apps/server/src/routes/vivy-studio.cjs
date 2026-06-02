@@ -2,6 +2,7 @@
 
 const express = require('express');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const path = require('node:path');
 const { extractRequestAuthToken } = require('../middleware/jwt-auth.cjs');
 const {
@@ -76,6 +77,82 @@ function hashShort(value, max = 24) {
     .update(String(value || ''))
     .digest('hex')
     .slice(0, max);
+}
+
+function slugify(value = '', fallback = 'vivy') {
+  const slug = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug || fallback;
+}
+
+function readFirstSecretValue(fileCandidates = [], envCandidates = []) {
+  for (const candidate of fileCandidates.filter(Boolean)) {
+    try {
+      const value = fs.readFileSync(path.resolve(candidate), 'utf8').trim();
+      if (value) return value;
+    } catch {
+      // Secret file is optional.
+    }
+  }
+  for (const name of envCandidates.filter(Boolean)) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function getElevenLabsMusicApiKey() {
+  return readFirstSecretValue(
+    [
+      process.env.VIVY_ELEVENLABS_API_KEY_FILE,
+      process.env.A11_ELEVENLABS_API_KEY_FILE,
+      process.env.ELEVENLABS_API_KEY_FILE,
+      '/app/runtime/secrets/elevenlabs_api_key',
+    ],
+    ['VIVY_ELEVENLABS_API_KEY', 'A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY']
+  );
+}
+
+function getElevenLabsBaseUrl() {
+  return String(
+    process.env.VIVY_ELEVENLABS_BASE_URL
+    || process.env.A11_ELEVENLABS_BASE_URL
+    || process.env.ELEVENLABS_BASE_URL
+    || 'https://api.elevenlabs.io/v1'
+  ).trim().replace(/\/$/, '');
+}
+
+function envFlag(name, fallback = false) {
+  const raw = String(process.env[name] || '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+function isElevenLabsMusicConfigured() {
+  if (envFlag('VIVY_ELEVENLABS_MUSIC_DISABLED') || envFlag('ELEVENLABS_MUSIC_DISABLED')) return false;
+  return Boolean(getElevenLabsMusicApiKey());
+}
+
+function isVivyFounderUser(user = {}) {
+  if (envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN')) return true;
+  const values = [
+    user?.id,
+    user?.email,
+    user?.username,
+    user?.displayName,
+    user?.role,
+    user?.tier,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+  return user?.isAdmin === true
+    || user?.admin === true
+    || user?.fullAccess === true
+    || values.some((value) => /\b(admin|owner|founder|fondateur|djeff|jeffrey|funeste)\b/i.test(value));
 }
 
 function getVivyOpenAIConfig() {
@@ -666,6 +743,118 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
   return null;
 }
 
+function buildVivyMusicPrompt(input = {}) {
+  const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
+  const mood = cleanOneLine(input.songMood || input.mood || input.style, 'electro pop dark cinematic', 180);
+  const material = compactUniqueLines([
+    input.songText,
+    input.lyrics,
+    input.text,
+    input.theme,
+    input.instruction,
+    input.prompt,
+  ], 2400);
+  return [
+    'Original Funesterie song for Vivy, in French.',
+    `Source: ${source}.`,
+    `Style and production: ${mood}.`,
+    'Mood: luminous synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
+    material ? `Lyrics or theme material:\n${material}` : 'Short hook about keeping light through a dark cyber-pop night.',
+    'Arrangement: intro, verse, pre-chorus, memorable chorus, short bridge, clean ending. Web-ready, no copyrighted melody.',
+  ].join('\n');
+}
+
+function saveVivyMusicBuffer(buffer, input = {}, req = null) {
+  if (!Buffer.isBuffer(buffer) || buffer.length <= 0) return null;
+  const material = cleanText([
+    input.title,
+    input.songTitle,
+    input.songText,
+    input.prompt,
+    input.songMood,
+  ].filter(Boolean).join('\n'), 600);
+  const title = cleanOneLine(input.title || input.songTitle || material.split(/\n|[.!?]/).find(Boolean), 'vivy-song', 80);
+  const digest = crypto.createHash('sha1').update(`${title}\n${material}\n${Date.now()}`).digest('hex').slice(0, 10);
+  const filename = `vivy-music-${slugify(title, 'song')}-${digest}.mp3`;
+  const filePath = getEmergencyMediaAssetPath(filename);
+  if (!filePath) return null;
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, buffer);
+  const url = `/api/vivy/studio/assets/${encodeURIComponent(filename)}`;
+  return {
+    ok: true,
+    kind: 'audio',
+    provider: 'elevenlabs-music',
+    mode: 'real_music_generation',
+    title,
+    filename,
+    path: filePath,
+    url,
+    audio_url: url,
+    audioUrl: url,
+    content_type: 'audio/mpeg',
+    emergencyFallback: false,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+async function requestElevenLabsMusic(input = {}, req = null) {
+  const apiKey = getElevenLabsMusicApiKey();
+  if (!apiKey) throw new Error('elevenlabs_music_key_missing');
+  if (!isVivyFounderUser(req?.user || {})) {
+    const error = new Error('vivy_music_admin_only');
+    error.code = 'vivy_music_admin_only';
+    error.status = 403;
+    throw error;
+  }
+  const durationMs = Math.max(
+    8000,
+    Math.min(180000, Math.round(Number(input.durationMs || input.duration_ms || input.durationSeconds * 1000 || 45000) || 45000))
+  );
+  const prompt = buildVivyMusicPrompt(input);
+  const modelId = cleanOneLine(input.musicModel || process.env.VIVY_ELEVENLABS_MUSIC_MODEL || 'music_v1', 'music_v1', 80);
+  const response = await fetch(`${getElevenLabsBaseUrl()}/music?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      prompt,
+      music_length_ms: durationMs,
+      model_id: modelId,
+      force_instrumental: input.instrumental === true || input.forceInstrumental === true,
+    }),
+    signal: AbortSignal.timeout(Number(process.env.VIVY_ELEVENLABS_MUSIC_TIMEOUT_MS || 90000) || 90000),
+  });
+  if (!response.ok) {
+    await response.arrayBuffer().catch(() => null);
+    throw new Error(`elevenlabs_music_http_${response.status}`);
+  }
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  if (!audioBuffer.length) throw new Error('elevenlabs_music_empty_audio');
+  const media = saveVivyMusicBuffer(audioBuffer, input, req);
+  if (!media?.url) throw new Error('elevenlabs_music_save_failed');
+  return {
+    ...media,
+    prompt,
+    model: modelId,
+    durationMs,
+  };
+}
+
+async function buildRealMusicForProduction(mode, input, req) {
+  if (mode !== 'song') return null;
+  if (!isElevenLabsMusicConfigured()) return null;
+  const wantsMusic = input.forceRealMusic === true
+    || input.generateMusic === true
+    || input.makeSong === true
+    || input.song === true
+    || envFlag('VIVY_ELEVENLABS_MUSIC_AUTO');
+  if (!wantsMusic) return null;
+  return requestElevenLabsMusic(input, req);
+}
+
 function createVivyStudioRouter({ verifyJWT } = {}) {
   const router = express.Router();
   const optionalAuth = (req, res, next) => {
@@ -690,12 +879,12 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         return res.status(404).json({ ok: false, error: 'asset_not_found' });
       }
       const extension = path.extname(filePath).toLowerCase();
-      if (extension !== '.wav' && extension !== '.mp4') {
+      if (extension !== '.wav' && extension !== '.mp3' && extension !== '.mp4') {
         return res.status(404).json({ ok: false, error: 'asset_not_found' });
       }
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      res.type(extension === '.mp4' ? 'video/mp4' : 'audio/wav');
+      res.type(extension === '.mp4' ? 'video/mp4' : extension === '.mp3' ? 'audio/mpeg' : 'audio/wav');
       return res.sendFile(filePath);
     } catch {
       return res.status(404).json({ ok: false, error: 'asset_not_found' });
@@ -725,6 +914,11 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         video: String(process.env.VIVY_STUDIO_ENABLE_PLACEHOLDER_MEDIA || '').trim() === '1',
         placeholderOnly: true,
       },
+      musicGeneration: {
+        provider: 'elevenlabs-music',
+        configured: isElevenLabsMusicConfigured(),
+        adminOnly: !envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN'),
+      },
     });
   });
 
@@ -735,7 +929,16 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         ...input,
         shareToken: undefined,
       });
-      const media = await buildEmergencyMediaForProduction(payload.mode, input, req);
+      let media = null;
+      let mediaError = null;
+      try {
+        media = await buildRealMusicForProduction(payload.mode, input, req);
+      } catch (error) {
+        mediaError = error;
+      }
+      if (!media?.url) {
+        media = await buildEmergencyMediaForProduction(payload.mode, input, req);
+      }
       if (media?.url) {
         payload.media = media;
         if (media.kind === 'audio') {
@@ -748,12 +951,16 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         }
         payload.assistant = appendMediaToAssistant(payload.assistant, media);
         payload.brief = appendMediaToAssistant(payload.brief, media);
-        payload.summary = `${payload.summary} Média de secours prêt.`;
+        payload.summary = media.emergencyFallback
+          ? `${payload.summary} Média de secours prêt.`
+          : `${payload.summary} Chanson audio générée.`;
       } else {
         payload.mediaStatus = {
           state: 'not_configured',
-          reason: 'real_music_provider_not_connected',
-          message: 'Brief prêt. Aucun faux WAV ajouté; utilise le bouton prompt + voix active pour créer un audio via /api/tts/speak.',
+          reason: mediaError?.code || mediaError?.message || 'real_music_provider_not_connected',
+          message: mediaError
+            ? 'Brief prêt. La génération musicale réelle n’a pas abouti; aucun faux WAV ajouté automatiquement.'
+            : 'Brief prêt. Aucun faux WAV ajouté; utilise le bouton musique admin ou prompt + voix active selon le besoin.',
         };
       }
       res.json(payload);

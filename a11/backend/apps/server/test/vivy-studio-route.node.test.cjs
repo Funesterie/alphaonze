@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const vivyMemoryDir = path.join(os.tmpdir(), `vivy-studio-test-memory-${process.pid}`);
 process.env.A11_EPISODIC_MEMORY_DIR = vivyMemoryDir;
+process.env.A11_RUNTIME_ROOT = path.join(vivyMemoryDir, 'runtime');
 process.env.VIVY_CHAT_DISABLE_LLM = 'true';
 
 const {
@@ -115,6 +116,70 @@ test('POST /api/vivy/studio/produce does not attach placeholder audio unless req
     assert.equal(json.mediaStatus.reason, 'real_music_provider_not_connected');
     assert.match(json.mediaStatus.message, /aucun faux WAV/i);
   });
+});
+
+test('POST /api/vivy/studio/produce can generate real ElevenLabs music for founder accounts', async () => {
+  const previousEnv = {
+    VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    VIVY_ELEVENLABS_BASE_URL: process.env.VIVY_ELEVENLABS_BASE_URL,
+    VIVY_ELEVENLABS_MUSIC_MODEL: process.env.VIVY_ELEVENLABS_MUSIC_MODEL,
+  };
+  const previousFetch = global.fetch;
+  const musicBodies = [];
+  const founderAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-founder-token') {
+      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  process.env.VIVY_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.VIVY_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.VIVY_ELEVENLABS_MUSIC_MODEL = 'music_v1';
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.elevenlabs.test/v1/music?output_format=mp3_44100_128') {
+      musicBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('vivy-elevenlabs-music-mp3');
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+    }, async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
+        mode: 'song',
+        songText: 'Vivy allume la scène et garde la lumière.',
+        songMood: 'electro pop cinématique',
+        forceRealMusic: true,
+      }, { Authorization: 'Bearer vivy-founder-token' });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mode, 'song');
+      assert.equal(json.media.provider, 'elevenlabs-music');
+      assert.equal(json.media.content_type, 'audio/mpeg');
+      assert.match(json.audioUrl, /^\/api\/vivy\/studio\/assets\/vivy-music-.+\.mp3$/);
+      assert.equal(musicBodies.length, 1);
+      assert.match(musicBodies[0].prompt, /Original Funesterie song for Vivy/i);
+      assert.equal(musicBodies[0].model_id, 'music_v1');
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('song mode accepts natural aliases from client prompts', () => {

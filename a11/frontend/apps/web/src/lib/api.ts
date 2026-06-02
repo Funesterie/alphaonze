@@ -1940,6 +1940,10 @@ export type VivyStudioProductionInput = {
   shareInstruction?: string;
   disableEmergencyMedia?: boolean;
   allowPlaceholderMedia?: boolean;
+  forceRealMusic?: boolean;
+  generateMusic?: boolean;
+  makeSong?: boolean;
+  durationSeconds?: number;
 };
 
 export type VivyStudioProductionResult = {

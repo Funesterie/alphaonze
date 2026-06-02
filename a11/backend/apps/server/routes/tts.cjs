@@ -1687,6 +1687,17 @@ function getCartesiaTtsApiKey() {
   );
 }
 
+function getElevenLabsTtsApiKey() {
+  return readFirstSecretValue(
+    [
+      process.env.A11_ELEVENLABS_API_KEY_FILE,
+      process.env.ELEVENLABS_API_KEY_FILE,
+      '/app/runtime/secrets/elevenlabs_api_key',
+    ],
+    ['A11_ELEVENLABS_API_KEY', 'ELEVENLABS_API_KEY', 'XI_API_KEY']
+  );
+}
+
 function getAzureSpeechKey() {
   return readFirstSecretValue(
     [
@@ -1728,7 +1739,7 @@ function isExplicitOpenAiProvider(provider = '') {
 }
 
 function isCloudTtsProvider(provider = '') {
-  return [PROVIDERS.CARTESIA, PROVIDERS.AZURE, PROVIDERS.OPENAI]
+  return [PROVIDERS.ELEVENLABS, PROVIDERS.CARTESIA, PROVIDERS.AZURE, PROVIDERS.OPENAI]
     .includes(String(provider || '').trim().toLowerCase());
 }
 
@@ -1784,6 +1795,14 @@ function resolveTtsProviderForRequest(body = {}) {
       configured: isProviderRuntimeConfigured(PROVIDERS.CARTESIA),
       note: 'Explicit Cartesia ready-made voice request.',
       diagnostic: isProviderRuntimeConfigured(PROVIDERS.CARTESIA) ? null : 'cartesia_tts_unavailable',
+    };
+  }
+  if (requestedProvider === PROVIDERS.ELEVENLABS) {
+    return {
+      provider: PROVIDERS.ELEVENLABS,
+      configured: isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS),
+      note: 'Explicit ElevenLabs ready-made voice request.',
+      diagnostic: isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS) ? null : 'elevenlabs_tts_unavailable',
     };
   }
   if (requestedProvider === PROVIDERS.AZURE) {
@@ -1876,6 +1895,17 @@ function shouldTryCartesiaTts(body = {}) {
   return Boolean(getCartesiaTtsApiKey());
 }
 
+function shouldTryElevenLabsTts(body = {}) {
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.ELEVENLABS) return false;
+  if (!requestedProvider || requestedProvider === 'auto') {
+    const persona = getTtsPersonaFromBody(body);
+    if (persona !== 'a11') return false;
+  }
+  if (envBool('A11_ELEVENLABS_TTS_DISABLED') || envBool('ELEVENLABS_TTS_DISABLED')) return false;
+  return Boolean(getElevenLabsTtsApiKey());
+}
+
 function shouldTryAzureTts(body = {}) {
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.AZURE) return false;
@@ -1910,16 +1940,20 @@ function getCloudTtsProviderOrder(body = {}, resolvedProvider = {}) {
   if (!wantsIdentity) return [];
 
   const configured = [];
+  if (shouldTryElevenLabsTts(body)) configured.push(PROVIDERS.ELEVENLABS);
   if (shouldTryCartesiaTts(body)) configured.push(PROVIDERS.CARTESIA);
   if (shouldTryAzureTts(body)) configured.push(PROVIDERS.AZURE);
   if (shouldTryOpenAiTts(body)) configured.push(PROVIDERS.OPENAI);
   const resolved = String(resolvedProvider?.provider || '').trim().toLowerCase();
-  if (isCloudTtsProvider(resolved) && !configured.includes(resolved)) configured.unshift(resolved);
-  return Array.from(new Set(configured));
+  return Array.from(new Set([
+    isCloudTtsProvider(resolved) ? resolved : null,
+    ...configured,
+  ].filter(Boolean)));
 }
 
 async function requestCloudTtsProvider(provider, text, body = {}, options = {}) {
   const normalized = String(provider || '').trim().toLowerCase();
+  if (normalized === PROVIDERS.ELEVENLABS) return requestElevenLabsTts(text, body, options);
   if (normalized === PROVIDERS.CARTESIA) return requestCartesiaTts(text, body, options);
   if (normalized === PROVIDERS.AZURE) return requestAzureTts(text, body, options);
   if (normalized === PROVIDERS.OPENAI) return requestOpenAiTts(text, body, options);
@@ -3257,6 +3291,14 @@ function getCartesiaTtsBaseUrl() {
   ).trim().replace(/\/$/, '');
 }
 
+function getElevenLabsTtsBaseUrl() {
+  return String(
+    process.env.A11_ELEVENLABS_BASE_URL
+    || process.env.ELEVENLABS_BASE_URL
+    || 'https://api.elevenlabs.io/v1'
+  ).trim().replace(/\/$/, '');
+}
+
 function resolveCartesiaVoiceId(persona, body = {}) {
   const profile = getReadyVoiceProfile(persona, PROVIDERS.CARTESIA);
   return String(
@@ -3267,6 +3309,21 @@ function resolveCartesiaVoiceId(persona, body = {}) {
     || getPersonaScopedEnvValue('CARTESIA', persona, ['VOICE_ID', 'VOICE'])
     || getPersonaScopedEnvValue('A11_TTS', persona, ['VOICE_ID'])
     || profile?.cartesiaVoiceId
+    || ''
+  ).trim();
+}
+
+function resolveElevenLabsVoiceId(persona, body = {}) {
+  const profile = getReadyVoiceProfile(persona, PROVIDERS.ELEVENLABS);
+  return String(
+    body?.elevenLabsVoiceId
+    || body?.elevenlabsVoiceId
+    || body?.elevenlabs_voice_id
+    || body?.providerVoiceId
+    || getPersonaScopedEnvValue('A11_ELEVENLABS', persona, ['VOICE_ID', 'VOICE'])
+    || getPersonaScopedEnvValue('ELEVENLABS', persona, ['VOICE_ID', 'VOICE'])
+    || getPersonaScopedEnvValue('A11_TTS', persona, ['ELEVENLABS_VOICE_ID'])
+    || profile?.elevenLabsVoiceId
     || ''
   ).trim();
 }
@@ -3316,6 +3373,73 @@ function buildReadyVoicePayloadMeta(provider, persona, voice, audioFormat) {
     },
     audioFormat,
     content_type: contentTypeForGeneratedFormat(audioFormat),
+  };
+}
+
+async function requestElevenLabsTts(text, body = {}, options = {}) {
+  const apiKey = getElevenLabsTtsApiKey();
+  if (!apiKey) throw new Error('elevenlabs_tts_key_missing');
+
+  const vocalMode = normalizeVocalMode({ ...(body || {}), ...(options || {}) });
+  const persona = getTtsPersonaFromBody(body || {}, options?.persona || options?.surface || '');
+  const voiceId = resolveElevenLabsVoiceId(persona, body);
+  if (!voiceId) throw new Error('elevenlabs_voice_id_missing');
+
+  const audioFormat = normalizeTtsAudioFormat(body, 'mp3');
+  const outputFormat = audioFormat === 'wav' ? 'pcm_44100' : 'mp3_44100_128';
+  const model = String(
+    body?.elevenLabsModel
+    || body?.elevenlabsModel
+    || body?.ttsModel
+    || process.env.A11_ELEVENLABS_MODEL
+    || process.env.ELEVENLABS_MODEL
+    || 'eleven_multilingual_v2'
+  ).trim();
+  const stability = Number(body?.elevenLabsStability ?? process.env.A11_ELEVENLABS_STABILITY ?? 0.54);
+  const similarityBoost = Number(body?.elevenLabsSimilarityBoost ?? process.env.A11_ELEVENLABS_SIMILARITY_BOOST ?? 0.72);
+  const style = Number(body?.elevenLabsStyle ?? process.env.A11_ELEVENLABS_STYLE ?? (vocalMode === 'sing' ? 0.18 : 0.08));
+  const useSpeakerBoost = parseOptionalBoolean(
+    body?.elevenLabsUseSpeakerBoost ?? process.env.A11_ELEVENLABS_USE_SPEAKER_BOOST,
+    true
+  );
+
+  const response = await fetch(`${getElevenLabsTtsBaseUrl()}/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: String(text || '').slice(0, 5000),
+      model_id: model,
+      language_code: String(body?.language || body?.ttsLanguage || 'fr').slice(0, 12),
+      voice_settings: {
+        stability: Number.isFinite(stability) ? Math.max(0, Math.min(1, stability)) : 0.54,
+        similarity_boost: Number.isFinite(similarityBoost) ? Math.max(0, Math.min(1, similarityBoost)) : 0.72,
+        style: Number.isFinite(style) ? Math.max(0, Math.min(1, style)) : 0.08,
+        use_speaker_boost: useSpeakerBoost !== false,
+      },
+    }),
+    signal: AbortSignal.timeout(Number(process.env.ELEVENLABS_TTS_TIMEOUT_MS || 22000) || 22000),
+  });
+
+  if (!response.ok) {
+    await response.arrayBuffer().catch(() => null);
+    throw new Error(`elevenlabs_tts_http_${response.status}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  if (!audioBuffer.length) throw new Error('elevenlabs_tts_empty_audio');
+  const audioUrl = saveProviderAudioBuffer(audioBuffer, PROVIDERS.ELEVENLABS, audioFormat);
+  return {
+    success: true,
+    provider: PROVIDERS.ELEVENLABS,
+    via: 'elevenlabs-tts',
+    model,
+    voice: voiceId,
+    ...buildReadyVoicePayloadMeta(PROVIDERS.ELEVENLABS, persona, voiceId, audioFormat),
+    audioUrl,
+    audio_url: audioUrl,
   };
 }
 

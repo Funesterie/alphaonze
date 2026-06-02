@@ -71,6 +71,7 @@ describe('voice-provider-manifest', () => {
     });
 
     it('uses the current approved Cartesia voice picks', () => {
+      assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, 'JBFqnCBsd6RMkjVDRZzb');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
       assert.equal(OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a');
@@ -116,6 +117,37 @@ describe('voice-provider-manifest', () => {
         assert.equal(result.provider, PROVIDERS.XTTS_RVC);
       });
     }
+
+    it('a11: auto-selects ElevenLabs before Cartesia when configured', () => {
+      const previous = {
+        A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+        A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+      };
+      process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+      delete process.env.A11_CARTESIA_API_KEY;
+      try {
+        const result = resolveVoiceProvider('a11');
+        assert.equal(result.provider, PROVIDERS.ELEVENLABS);
+        assert.equal(result.configured, true);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
+
+    it('kaen44 and vivy do not inherit the A11 ElevenLabs voice', () => {
+      const previous = process.env.A11_ELEVENLABS_API_KEY;
+      process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+      try {
+        assert.notEqual(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
+        assert.notEqual(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+      } finally {
+        if (previous === undefined) delete process.env.A11_ELEVENLABS_API_KEY;
+        else process.env.A11_ELEVENLABS_API_KEY = previous;
+      }
+    });
   });
 
   describe('resolveVoiceProvider — demo-alice', () => {
