@@ -2415,6 +2415,7 @@ type VivyStudioMediaPreview = {
 };
 
 const VIVY_STUDIO_DRAFT_KEY = "vivy:studio:draft:v2";
+const VIVY_STUDIO_SUNO_SESSION_KEY = "vivy:suno:session-key";
 const VIVY_PUBLIC_CHAT_KEY = "vivy:public-chat:v2";
 const VIVY_PUBLIC_CONVERSATION_ID_KEY = "vivy:conversation-id";
 const VIVY_PUBLIC_VOICE_REFERENCE_KEY = "vivy:voice-reference";
@@ -2665,6 +2666,24 @@ function writeVivyStudioDraft(value: Record<string, unknown>) {
   }
 }
 
+function readVivySessionSunoKey() {
+  try {
+    return String(globalThis.sessionStorage?.getItem(VIVY_STUDIO_SUNO_SESSION_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeVivySessionSunoKey(value: string) {
+  const safeValue = String(value || "").trim();
+  try {
+    if (safeValue) globalThis.sessionStorage?.setItem(VIVY_STUDIO_SUNO_SESSION_KEY, safeValue);
+    else globalThis.sessionStorage?.removeItem(VIVY_STUDIO_SUNO_SESSION_KEY);
+  } catch {
+    // Session key is optional and never persisted outside this browser session.
+  }
+}
+
 function buildVivyStudioBrief(options: {
   mode: VivyStudioMode;
   voiceTool: string;
@@ -2674,6 +2693,7 @@ function buildVivyStudioBrief(options: {
   songSource: string;
   songMood: string;
   songText: string;
+  sessionSunoKeyPresent: boolean;
   shareTarget: string;
   shareUrl: string;
   shareTokenPresent: boolean;
@@ -2710,7 +2730,8 @@ function buildVivyStudioBrief(options: {
       `- Source: ${options.songSource}`,
       `- Direction sonore: ${options.songMood}`,
       `- Matière: ${options.songText || "thème libre à développer"}`,
-      "- Sortie simple possible: prompt + voix Vivy active = chanson audio, sans obligation YouTube ni partage externe.",
+      `- Clé Suno personnelle: ${options.sessionSunoKeyPresent ? "oui, session navigateur seulement" : "non"}`,
+      "- Sortie simple possible: vraie génération Suno ou brief chantable selon les droits disponibles.",
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
       "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
     );
@@ -2759,6 +2780,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
   const [songSource, setSongSource] = useState(String(initialDraft.songSource || "Thème"));
   const [songMood, setSongMood] = useState(String(initialDraft.songMood || "Electro pop dark cinematographique"));
   const [songText, setSongText] = useState(String(initialDraft.songText || ""));
+  const [sunoSessionKey, setSunoSessionKey] = useState(() => readVivySessionSunoKey());
   const [shareTarget, setShareTarget] = useState(String(initialDraft.shareTarget || "YouTube"));
   const [shareUrl, setShareUrl] = useState(String(initialDraft.shareUrl || ""));
   const [shareToken, setShareToken] = useState("");
@@ -2788,6 +2810,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     songSource,
     songMood,
     songText,
+    sessionSunoKeyPresent: Boolean(sunoSessionKey.trim()),
     shareTarget,
     shareUrl,
     shareTokenPresent: Boolean(shareToken.trim()),
@@ -2801,6 +2824,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     songSource,
     songMood,
     songText,
+    sunoSessionKey,
     shareTarget,
     shareUrl,
     shareToken,
@@ -2828,6 +2852,10 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       vivyOutput,
     });
   }, [activeMode, voiceTool, voiceInstruction, voiceFileName, voiceReferenceId, songSource, songMood, songText, shareTarget, shareUrl, shareInstruction, shareToken, vivyOutput]);
+
+  useEffect(() => {
+    writeVivySessionSunoKey(sunoSessionKey);
+  }, [sunoSessionKey]);
 
   const activeMeta = VIVY_STUDIO_MODES.find((item) => item.id === activeMode) || VIVY_STUDIO_MODES[0];
   const hasPrivateVoiceReference = Boolean(voiceReferenceId.trim());
@@ -2986,6 +3014,12 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     setStatus("Voix Vivy officielle sélectionnée. Aucun upload nécessaire.");
   }
 
+  function forgetSunoSessionKey() {
+    setSunoSessionKey("");
+    writeVivySessionSunoKey("");
+    setStatus("Clé Suno personnelle oubliée pour cette session.");
+  }
+
   async function testDefaultVivyVoice() {
     if (!hasSession) {
       setStatus("Connexion requise pour tester la voix Vivy.");
@@ -3045,7 +3079,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
     for (let attempt = 1; attempt <= 24; attempt += 1) {
       await pause(attempt <= 3 ? 6000 : 10000);
-      const job = await getVivyStudioMusicJob(safeTaskId);
+      const job = await getVivyStudioMusicJob(safeTaskId, sunoSessionKey);
       const statusText = String(job?.mediaStatus?.status || job?.musicJob?.status || (job as any)?.status || "").trim();
       const mediaUrl = getVivySongMediaUrl(job);
       if (mediaUrl) return job;
@@ -3068,7 +3102,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       return;
     }
     setIsBusy(true);
-    setStatus("Vivy lance la génération musicale...");
+    setStatus(sunoSessionKey.trim()
+      ? "Vivy lance Suno avec ta clé personnelle de session..."
+      : "Vivy lance Suno si ton compte a les droits fondateur/admin.");
     try {
       const playablePrompt = buildVivyPlayableText(prompt, songMood || "Vivy garde la lumière dans l'obscurité.", 320);
       const payload = await runVivyStudioProduction({
@@ -3076,6 +3112,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         songSource,
         songMood,
         songText: prompt,
+        sessionSunoApiKey: sunoSessionKey.trim() || undefined,
         prompt: playablePrompt,
         forceRealMusic: true,
         generateMusic: true,
@@ -3130,6 +3167,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         songSource,
         songMood,
         songText,
+        sessionSunoApiKey: sunoSessionKey.trim() || undefined,
         shareTarget,
         shareUrl,
         shareInstruction,
@@ -3264,7 +3302,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   disabled={!hasSession}
                   onChange={(event) => setSongSource(event.target.value)}
                 >
-                  <option>Prompt + voix Vivy</option>
+                  <option>Prompt + Suno Vivy</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
@@ -3293,9 +3331,25 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."
                 />
               </label>
+              <label>
+                Clé Suno personnelle
+                <input
+                  id="vivy-studio-suno-key"
+                  name="sessionSunoApiKey"
+                  type="password"
+                  value={sunoSessionKey}
+                  disabled={!hasSession}
+                  onChange={(event) => setSunoSessionKey(event.target.value)}
+                  placeholder="Optionnel, gardé seulement dans cette session navigateur"
+                  autoComplete="off"
+                />
+              </label>
               <div className="vivy-studio-actions vivy-studio-actions--song">
                 <button type="button" onClick={produceSimpleVivySong} disabled={!hasSession || isBusy || !songText.trim()}>
-                  Générer chanson Vivy
+                  Créer vraie chanson Suno
+                </button>
+                <button type="button" onClick={forgetSunoSessionKey} disabled={!hasSession || isBusy || !sunoSessionKey.trim()}>
+                  Oublier clé Suno
                 </button>
               </div>
             </>

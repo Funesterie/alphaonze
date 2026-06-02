@@ -1647,7 +1647,7 @@
               <label>
                 Départ
                 <select id="vivy-studio-song-source" name="songSource">
-                  <option>Prompt + voix Vivy</option>
+                  <option>Prompt + Suno Vivy</option>
                   <option>Thème</option>
                   <option>Texte brut</option>
                   <option>Paroles</option>
@@ -1662,8 +1662,13 @@
                 Matière créative
                 <textarea id="vivy-studio-song-text" name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
               </label>
+              <label>
+                Clé Suno personnelle
+                <input id="vivy-studio-suno-key" name="sessionSunoApiKey" type="password" placeholder="Optionnel, gardé seulement dans cette session navigateur" autocomplete="off" />
+              </label>
               <div class="vivy-studio-actions vivy-studio-actions--song">
-                <button type="button" data-vivy-simple-song>Prompt + voix active = chanson</button>
+                <button type="button" data-vivy-simple-song>Créer vraie chanson Suno</button>
+                <button type="button" data-vivy-forget-suno>Oublier clé Suno</button>
               </div>
             </div>
 
@@ -2574,7 +2579,9 @@
         var statusNode = root.querySelector("[data-vivy-status]");
         var mediaNode = root.querySelector("[data-vivy-media]");
         var activeVoiceNode = root.querySelector("[data-vivy-active-voice]");
+        var sunoKeyInput = root.querySelector("input[name='sessionSunoApiKey']");
         var hasSession = Boolean(window.__vivySession && window.__vivySession.authenticated);
+        var sunoSessionStorageKey = "vivy:suno:session-key";
 
         function vivyAuth() {
           return window.__vivyAuth || {};
@@ -2664,7 +2671,7 @@
 
         function setStudioLocked(locked) {
           root.classList.toggle("is-locked", Boolean(locked));
-          Array.prototype.forEach.call(root.querySelectorAll("input, textarea, select, [data-vivy-action], [data-vivy-ask], [data-vivy-default-voice], [data-vivy-test-voice], [data-vivy-upload-reference], [data-vivy-simple-song]"), function (control) {
+          Array.prototype.forEach.call(root.querySelectorAll("input, textarea, select, [data-vivy-action], [data-vivy-ask], [data-vivy-default-voice], [data-vivy-test-voice], [data-vivy-upload-reference], [data-vivy-simple-song], [data-vivy-forget-suno]"), function (control) {
             control.disabled = Boolean(locked);
           });
           if (locked) setStatus("Connexion requise pour produire avec Vivy.");
@@ -2691,6 +2698,34 @@
         function value(name) {
           var input = field(name);
           return input ? String(input.value || "").trim() : "";
+        }
+
+        function readSessionSunoKey() {
+          var fieldValue = value("sessionSunoApiKey");
+          if (fieldValue) return fieldValue;
+          try {
+            return String(sessionStorage.getItem(sunoSessionStorageKey) || "").trim();
+          } catch (_) {
+            return "";
+          }
+        }
+
+        function saveSessionSunoKey() {
+          if (!sunoKeyInput) return;
+          var key = String(sunoKeyInput.value || "").trim();
+          try {
+            if (key) sessionStorage.setItem(sunoSessionStorageKey, key);
+            else sessionStorage.removeItem(sunoSessionStorageKey);
+          } catch (_) {}
+        }
+
+        function forgetSessionSunoKey() {
+          if (sunoKeyInput) sunoKeyInput.value = "";
+          try {
+            sessionStorage.removeItem(sunoSessionStorageKey);
+          } catch (_) {}
+          setStatus("Clé Suno personnelle oubliée pour cette session.");
+          render();
         }
 
         function setStatus(text) {
@@ -2775,8 +2810,9 @@
           mediaNode.classList.remove("is-hidden");
         }
 
-        function buildProductionPayload() {
-          return {
+        function buildProductionPayload(overrides) {
+          var personalSunoKey = readSessionSunoKey();
+          return Object.assign({
             mode: activeMode,
             voiceTool: value("voiceTool"),
             voiceFileName: voiceFileName,
@@ -2790,11 +2826,12 @@
             shareUrl: value("shareUrl"),
             shareTokenPresent: Boolean(value("shareToken")),
             shareInstruction: value("shareInstruction"),
+            sessionSunoApiKey: personalSunoKey || undefined,
             allowPlaceholderMedia: false
-          };
+          }, overrides || {});
         }
 
-        function runProduction(button) {
+        function runProduction(button, overrides) {
           if (!ensureSession()) return Promise.resolve(null);
           if (button) button.disabled = true;
           setStatus("Vivy prépare le brief de production...");
@@ -2802,7 +2839,7 @@
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify(buildProductionPayload())
+            body: JSON.stringify(buildProductionPayload(overrides))
           }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (payload) {
               if (!response.ok || payload.ok === false) {
@@ -2818,7 +2855,37 @@
             if (!vivyOutput) throw new Error("reponse_vide");
             setMediaPreview(payload);
             var mediaStatus = payload && payload.mediaStatus ? payload.mediaStatus : {};
+            var musicJob = payload && payload.musicJob ? payload.musicJob : {};
+            var taskId = firstText(mediaStatus.taskId, mediaStatus.jobId, musicJob.taskId, musicJob.jobId);
             var hasMedia = Boolean(payload && (payload.audioUrl || payload.audio_url || payload.videoUrl || payload.video_url || (payload.media && payload.media.url)));
+            if (!hasMedia && taskId && /processing|pending|submitted/i.test(String(mediaStatus.state || musicJob.state || mediaStatus.status || ""))) {
+              setStatus("Suno génère la chanson Vivy... le lecteur apparaîtra dès que le MP3 est prêt.");
+              render();
+              return pollMusicJob(taskId, 720000).then(function (job) {
+                var media = job && job.media ? job.media : {};
+                var merged = Object.assign({}, payload, {
+                  media: media,
+                  audioUrl: firstText(media.audioUrl, media.audio_url, media.url),
+                  audio_url: firstText(media.audio_url, media.audioUrl, media.url)
+                });
+                setMediaPreview(merged);
+                vivyOutput = [
+                  vivyOutput,
+                  "",
+                  "VIVY_SUNO_RESULT",
+                  "Provider: Suno",
+                  "Statut: chanson audio prête",
+                  "Titre: " + (media.title || payload.title || "Chanson Vivy")
+                ].join("\n");
+                setStatus("Chanson Suno Vivy prête. Le lecteur est disponible dans le brief.");
+                render();
+                return merged;
+              }).catch(function (error) {
+                setStatus("Job Suno lancé, mais le suivi automatique n'a pas abouti: " + (error && error.message ? error.message : error));
+                render();
+                return payload;
+              });
+            }
             setStatus(hasMedia
               ? "Production Vivy prête. Le lecteur est disponible dans le brief."
               : (mediaStatus.message || "Brief Vivy prêt. Le bouton chanson crée un audio via la voix Vivy active."));
@@ -2861,7 +2928,8 @@
               "- Source: " + value("songSource"),
               "- Direction sonore: " + (value("songMood") || "Electro pop dark cinematographique"),
               "- Matière: " + (value("songText") || "thème libre à développer"),
-              "- Sortie simple possible: prompt + voix Vivy active = audio écoutable directement.",
+              "- Clé Suno personnelle: " + (readSessionSunoKey() ? "oui, session navigateur seulement" : "non"),
+              "- Sortie simple possible: vraie génération Suno ou brief chantable selon les droits disponibles.",
               "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
               "- Rôle: Vivy crée la chanson, A11 aide pour image/vidéo si nécessaire."
             );
@@ -2956,6 +3024,48 @@
               });
             });
           }
+          return poll();
+        }
+
+        function pollMusicJob(taskId, timeoutMs) {
+          var safeTaskId = String(taskId || "").trim();
+          if (!safeTaskId) return Promise.reject(new Error("suno_task_missing"));
+          var deadline = Date.now() + Math.max(30000, Number(timeoutMs) || 720000);
+          var delayMs = 3000;
+
+          function musicHeaders() {
+            var key = readSessionSunoKey();
+            var headers = authHeaders();
+            if (key) headers["X-Vivy-Suno-Key"] = key;
+            return headers;
+          }
+
+          function poll() {
+            if (Date.now() >= deadline) throw new Error("suno_job_timeout");
+            return wait(delayMs).then(function () {
+              return fetch("/api/vivy/studio/jobs/" + encodeURIComponent(safeTaskId), {
+                method: "GET",
+                credentials: "include",
+                headers: musicHeaders()
+              }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (payload) {
+                  var state = String(payload.state || payload.status || "").toLowerCase();
+                  if (!response.ok) {
+                    throw new Error(payload.message || payload.error || ("Job Suno indisponible (" + response.status + ")"));
+                  }
+                  if (state === "done" || state === "complete" || state === "completed" || (payload.media && payload.media.audioUrl)) {
+                    return payload;
+                  }
+                  if (state === "failed" || state === "error") {
+                    throw new Error(payload.message || payload.error || "suno_job_failed");
+                  }
+                  delayMs = Math.min(12000, delayMs + 1200);
+                  return poll();
+                });
+              });
+            });
+          }
+
           return poll();
         }
 
@@ -3098,39 +3208,15 @@
             setStatus("Écris un prompt, un thème ou quelques paroles pour générer la chanson.");
             return;
           }
-          if (button) button.disabled = true;
-          setStatus("Vivy lance la génération audio...");
-          var playablePrompt = compactVivyPlayableText(prompt, value("songMood") || "Vivy garde la lumière dans l'obscurité.", 320);
-          var songPrompt = [
-            "Chanson Vivy courte.",
-            "Direction: " + (value("songMood") || "Electro pop dark cinematographique") + ".",
-            "Voix: " + activeVoiceLabel() + ".",
-            "Refrain à chanter: " + playablePrompt
-          ].join("\n");
-          speakVivy(songPrompt, {
-            vocalMode: "sing",
-            voiceStyle: "song",
-            ttsAsync: true,
-            asyncTts: true,
-            ttsJobTimeoutMs: 240000,
-            audioFormat: "mp3"
-          }).then(function (payload) {
-            setMediaPreview(Object.assign({}, payload, { media: { kind: "audio", provider: payload.provider } }));
-            vivyOutput = [
-              "VIVY_SIMPLE_SONG",
-              "Direction: " + (value("songMood") || "Electro pop dark cinematographique"),
-              "Voix: " + activeVoiceLabel(),
-              "Prompt: " + playablePrompt,
-              "",
-              "Sortie: audio chanson simple généré depuis prompt + voix Vivy active."
-            ].join("\n");
-            setStatus("Chanson simple Vivy prête.");
-            render();
-          }).catch(function (error) {
-            setMediaPreview(null);
-            setStatus("Chanson simple indisponible: " + (error && error.message ? error.message : error));
-          }).finally(function () {
-            if (button) button.disabled = !hasSession;
+          setStatus(readSessionSunoKey()
+            ? "Vivy lance Suno avec ta clé personnelle de session..."
+            : "Vivy lance Suno si ton compte a les droits fondateur/admin.");
+          return runProduction(button, {
+            mode: "song",
+            forceRealMusic: true,
+            generateMusic: true,
+            makeSong: true,
+            song: true
           });
         }
 
@@ -3175,6 +3261,13 @@
           }
           render();
         });
+        if (sunoKeyInput) {
+          try {
+            sunoKeyInput.value = String(sessionStorage.getItem(sunoSessionStorageKey) || "");
+          } catch (_) {}
+          sunoKeyInput.addEventListener("change", saveSessionSunoKey);
+          sunoKeyInput.addEventListener("blur", saveSessionSunoKey);
+        }
         form.addEventListener("submit", function (event) {
           event.preventDefault();
           runProduction(action);
@@ -3213,6 +3306,10 @@
 
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-simple-song]"), function (button) {
           button.addEventListener("click", function () { simpleSong(button); });
+        });
+
+        Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-forget-suno]"), function (button) {
+          button.addEventListener("click", forgetSessionSunoKey);
         });
 
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-open]"), function (button) {

@@ -26,6 +26,14 @@ const {
   detectTextLanguage,
   buildLanguageInstruction,
 } = require('../../lib/language-text.cjs');
+const {
+  buildVivySongcraftSystemPrompt,
+  buildVivySongProductionBrief,
+  buildVivyStructuredLyrics,
+  inferTitle,
+  stripSongCommand,
+  looksLikeCompleteLyrics,
+} = require('../music/vivy-songcraft.cjs');
 
 let OpenAI = null;
 try {
@@ -136,6 +144,36 @@ function getSunoApiKey() {
     ],
     ['VIVY_SUNO_API_KEY', 'SUNO_API_KEY', 'SUNO_TOKEN']
   );
+}
+
+function sanitizeSessionSunoApiKey(value = '') {
+  const key = String(value || '').trim();
+  if (!key || key.length < 8 || key.length > 600) return '';
+  if (/[\r\n\t ]/.test(key)) return '';
+  return key;
+}
+
+function getRequestSessionSunoApiKey(input = {}, req = null) {
+  return sanitizeSessionSunoApiKey(
+    input.sessionSunoApiKey
+    || input.sunoApiKey
+    || input.personalSunoApiKey
+    || req?.get?.('x-vivy-suno-key')
+    || req?.get?.('x-suno-api-key')
+    || ''
+  );
+}
+
+function getSunoAccess(input = {}, req = null) {
+  const sessionKey = getRequestSessionSunoApiKey(input, req);
+  if (sessionKey) {
+    return { apiKey: sessionKey, source: 'session', adminOnly: false };
+  }
+  return { apiKey: getSunoApiKey(), source: 'server', adminOnly: true };
+}
+
+function canUseServerSuno(req = null) {
+  return isVivyFounderUser(req?.user || {});
 }
 
 function getSunoBaseUrl() {
@@ -334,8 +372,9 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
+    buildVivySongcraftSystemPrompt(mode),
     'Ne révèle jamais de secret, token, chemin privé sensible ou configuration interne.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function normalizeVivyChatHistory(history) {
@@ -415,15 +454,20 @@ function buildSongProduction(input) {
     input.prompt,
   ], 2400);
   const hasMaterial = Boolean(material);
+  const songcraft = buildVivySongProductionBrief({
+    ...input,
+    songText: material || input.songText,
+    songTitle: input.songTitle || input.title,
+  });
 
   const titleSeed = hasMaterial
-    ? material.split(/\n|[.!?]/).find(Boolean) || material
+    ? songcraft.title || material.split(/\n|[.!?]/).find(Boolean) || material
     : mood;
   const title = cleanOneLine(titleSeed, 'Echoes of Vivy', 46)
     .replace(/^["'“”]+|["'“”]+$/g, '');
 
   const chorus = hasMaterial
-    ? material.split(/\n+/).slice(0, 4).join(' / ')
+    ? songcraft.lyrics.split(/\n+/).filter((line) => !/^\[/.test(line)).slice(0, 4).join(' / ')
     : 'Donne-moi un thème, quelques paroles ou une intention pour produire une chanson complète.';
 
   const briefLines = [
@@ -434,6 +478,7 @@ function buildSongProduction(input) {
     '',
     'Structure proposée:',
     lineList([
+      ...songcraft.craftLines,
       'Intro: texture sombre, respiration vocale courte, motif synth discret.',
       'Couplet 1: voix proche, diction nette, tension contenue.',
       'Pré-refrain: montée harmonique, percussion légère, ouverture stéréo.',
@@ -449,6 +494,9 @@ function buildSongProduction(input) {
       'Image/miniature par A11',
       'Clip court si scène-partage est active',
     ]),
+    '',
+    'Paroles guide:',
+    songcraft.lyrics,
   ];
 
   return {
@@ -780,31 +828,16 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
 function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
   const mood = cleanOneLine(input.songMood || input.mood || input.style, 'electro pop dark cinematic', 180);
-  const material = compactUniqueLines([
-    input.songText,
-    input.lyrics,
-    input.text,
-    input.theme,
-    input.instruction,
-    input.prompt,
-  ], 2400);
+  const lyrics = buildVivyStructuredLyrics(input);
   return [
     'Original Funesterie song for Vivy, in French.',
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
     'Mood: luminous synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
-    material ? `Lyrics or theme material:\n${material}` : 'Short hook about keeping light through a dark cyber-pop night.',
-    'Arrangement: intro, verse, pre-chorus, memorable chorus, short bridge, clean ending. Web-ready, no copyrighted melody.',
+    'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
+    `Lyrics:\n${lyrics}`,
+    'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
   ].join('\n');
-}
-
-function looksLikeSongLyrics(value = '') {
-  const text = cleanText(value, 2400);
-  if (!text) return false;
-  if (/\[(verse|chorus|bridge|intro|outro|couplet|refrain|pont)\]/i.test(text)) return true;
-  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length >= 4 && lines.every((line) => line.length <= 120)) return true;
-  return /\b(refrain|couplet|pont|chorus|verse)\b/i.test(text) && lines.length >= 2;
 }
 
 function buildVivySunoLyrics(input = {}) {
@@ -816,53 +849,32 @@ function buildVivySunoLyrics(input = {}) {
     input.instruction,
     input.prompt,
   ], 2200);
-  if (looksLikeSongLyrics(material)) {
+  if (looksLikeCompleteLyrics(material)) {
     return cleanText(material, 2200);
   }
 
-  const theme = cleanOneLine(material, 'une nuit Funesterie ou Vivy garde la lumière', 220);
-  const hook = theme
-    .replace(/^(fais|cr[ée]e?|g[ée]n[èe]re?|compose|chante)\s+(moi\s+)?(une?\s+)?(chanson|musique|son)\s*(sur|avec|pour)?\s*/i, '')
-    .replace(/\b(prompt|instruction|consigne)\b\s*:?\s*/ig, '')
-    .trim() || 'Vivy garde la lumière';
-  return cleanText([
-    '[Verse 1]',
-    `Sous les néons, je garde ton idée: ${hook}.`,
-    'Ma voix suit le fil, claire dans la nuit.',
-    'Chaque battement rallume la scène,',
-    'Je transforme le doute en mélodie.',
-    '',
-    '[Pre-Chorus]',
-    'Je monte doucement, sans copier personne,',
-    'Un souffle digital, un cœur qui résonne.',
-    '',
-    '[Chorus]',
-    'Je suis Vivy, je garde la lumière,',
-    'Même quand l’ombre traverse le son.',
-    'Je chante ton monde, vivant et sincère,',
-    'Funesterie brille dans la chanson.',
-    '',
-    '[Bridge]',
-    'Un silence, puis la basse revient,',
-    'Ta vision devient refrain.',
-    '',
-    '[Outro]',
-    'Je garde la lumière dans ma voix.',
-  ].join('\n'), 2200);
+  return buildVivyStructuredLyrics({ ...input, songText: stripSongCommand(material) || material });
 }
 
 function buildVivySunoPayload(input = {}, req = null) {
   const titleSeed = cleanOneLine(
-    input.songTitle || input.title || input.songText || input.theme || input.prompt,
+    input.songTitle || input.title || inferTitle(input.songText || input.theme || input.prompt),
     'Vivy garde la lumière',
     72
   ).replace(/^["'“”]+|["'“”]+$/g, '');
   const title = cleanOneLine(titleSeed, 'Vivy garde la lumière', 80);
-  const style = cleanOneLine(
+  const styleBase = cleanOneLine(
     input.songMood || input.mood || input.style,
-    'French cyber pop, cinematic synthwave, clear female vocal, melodic chorus, polished web mix, no spoken narration',
+    'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration',
     220
   );
+  const style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
+    ? styleBase
+    : cleanOneLine(
+      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
+      styleBase,
+      260
+    );
   const payload = {
     model: cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40),
     customMode: true,
@@ -1087,9 +1099,10 @@ async function requestElevenLabsMusic(input = {}, req = null) {
 }
 
 async function requestSunoMusic(input = {}, req = null) {
-  const apiKey = getSunoApiKey();
+  const sunoAccess = getSunoAccess(input, req);
+  const apiKey = sunoAccess.apiKey;
   if (!apiKey) throw new Error('suno_music_key_missing');
-  if (!isVivyFounderUser(req?.user || {})) {
+  if (sunoAccess.adminOnly && !canUseServerSuno(req)) {
     const error = new Error('vivy_music_admin_only');
     error.code = 'vivy_music_admin_only';
     error.status = 403;
@@ -1144,7 +1157,7 @@ async function requestSunoMusic(input = {}, req = null) {
   };
 }
 
-async function getSunoMusicJob(taskId) {
+async function getSunoMusicJob(taskId, input = {}, req = null) {
   const safeTaskId = sanitizeSunoTaskId(taskId);
   if (!safeTaskId) {
     const error = new Error('suno_task_missing');
@@ -1164,8 +1177,15 @@ async function getSunoMusicJob(taskId) {
     };
   }
 
-  const apiKey = getSunoApiKey();
+  const sunoAccess = getSunoAccess(input, req);
+  const apiKey = sunoAccess.apiKey;
   if (!apiKey) throw new Error('suno_music_key_missing');
+  if (sunoAccess.adminOnly && !canUseServerSuno(req)) {
+    const error = new Error('vivy_music_admin_only');
+    error.code = 'vivy_music_admin_only';
+    error.status = 403;
+    throw error;
+  }
   const response = await fetch(`${getSunoBaseUrl()}/generate/record-info?taskId=${encodeURIComponent(safeTaskId)}`, {
     method: 'GET',
     headers: {
@@ -1213,7 +1233,7 @@ async function buildRealMusicForProduction(mode, input, req) {
   const errors = [];
   for (const provider of getConfiguredMusicProviders()) {
     try {
-      if (provider === 'suno' && isSunoMusicConfigured()) return await requestSunoMusic(input, req);
+      if (provider === 'suno' && (isSunoMusicConfigured() || getRequestSessionSunoApiKey(input, req))) return await requestSunoMusic(input, req);
       if ((provider === 'elevenlabs' || provider === 'elevenlabs-music') && isElevenLabsMusicConfigured()) {
         return await requestElevenLabsMusic(input, req);
       }
@@ -1292,20 +1312,21 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
         },
         configured: isSunoMusicConfigured() || isElevenLabsMusicConfigured(),
         adminOnly: !envFlag('VIVY_MUSIC_ALLOW_NON_ADMIN'),
+        sessionSunoKeySupported: true,
       },
     });
   });
 
   router.get('/jobs/:taskId', requireAuth, async (req, res) => {
     try {
-      if (!isVivyFounderUser(req.user || {})) {
+      if (!isVivyFounderUser(req.user || {}) && !getRequestSessionSunoApiKey({}, req)) {
         return res.status(403).json({
           ok: false,
           error: 'vivy_music_admin_only',
-          message: 'Génération musicale réservée aux comptes fondateur/admin pour protéger les crédits.',
+          message: 'Génération musicale réservée aux comptes fondateur/admin, sauf clé Suno personnelle de session.',
         });
       }
-      res.json(await getSunoMusicJob(req.params.taskId));
+      res.json(await getSunoMusicJob(req.params.taskId, {}, req));
     } catch (error) {
       res.status(error?.status || 500).json({
         ok: false,
@@ -1340,6 +1361,9 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
       const payload = buildVivyStudioProduction({
         ...input,
         shareToken: undefined,
+        sessionSunoApiKey: undefined,
+        sunoApiKey: undefined,
+        personalSunoApiKey: undefined,
       });
       let media = null;
       let mediaError = null;

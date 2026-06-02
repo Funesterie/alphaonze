@@ -198,12 +198,84 @@ test('Suno payload turns a brief into lyrics instead of spoken prompt instructio
 
   assert.equal(payload.customMode, true);
   assert.equal(payload.instrumental, false);
+  assert.match(payload.prompt, /\[Title:/);
   assert.match(payload.prompt, /\[Verse 1\]/);
+  assert.match(payload.prompt, /\[Verse 2\]/);
   assert.match(payload.prompt, /\[Chorus\]/);
   assert.match(payload.prompt, /lapin qui court dans les néons/i);
   assert.doesNotMatch(payload.prompt.split(/\n/)[0], /fais une chanson/i);
+  assert.match(payload.style, /structured rhymed lyrics/i);
   assert.match(payload.style, /electro pop sombre/i);
   assert.match(payload.callBackUrl, /^https:\/\/vivy\.funesterie\.test\/api\/vivy\/studio\/suno\/callback/);
+});
+
+test('Suno session key lets a non-founder launch a personal music job without leaking the key', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    SUNO_API_KEY: process.env.SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+    VIVY_MUSIC_PROVIDER: process.env.VIVY_MUSIC_PROVIDER,
+    VIVY_ELEVENLABS_API_KEY: process.env.VIVY_ELEVENLABS_API_KEY,
+    VIVY_ELEVENLABS_API_KEY_FILE: process.env.VIVY_ELEVENLABS_API_KEY_FILE,
+  };
+  const previousFetch = global.fetch;
+  const bodies = [];
+  const basicAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-basic-token') {
+      req.user = { id: 'basic-user', username: 'Nathan', tier: 'basic' };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  delete process.env.VIVY_SUNO_API_KEY;
+  delete process.env.SUNO_API_KEY;
+  delete process.env.VIVY_ELEVENLABS_API_KEY;
+  delete process.env.VIVY_ELEVENLABS_API_KEY_FILE;
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  process.env.VIVY_MUSIC_PROVIDER = 'suno';
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.suno.test/api/v1/generate') {
+      assert.equal(options.headers.Authorization, 'Bearer session-suno-test-key');
+      bodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { code: 200, data: { taskId: 'personal-suno-task', status: 'PENDING' } };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: basicAuth }));
+    }, async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
+        mode: 'song',
+        songText: 'fais une chanson sur un flocon dans mon bol',
+        sessionSunoApiKey: 'session-suno-test-key',
+        forceRealMusic: true,
+      }, { Authorization: 'Bearer vivy-basic-token' });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mediaStatus.provider, 'suno');
+      assert.equal(json.mediaStatus.taskId, 'personal-suno-task');
+      assert.equal(bodies.length, 1);
+      assert.match(bodies[0].prompt, /\[Chorus\]/);
+      assert.doesNotMatch(JSON.stringify(json), /session-suno-test-key/);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('POST /api/vivy/studio/produce starts an async Suno music job for founder accounts', async () => {
@@ -342,6 +414,77 @@ test('GET /api/vivy/studio/jobs/:taskId returns completed Suno audio when ready'
   }
 });
 
+test('GET /api/vivy/studio/jobs/:taskId accepts personal Suno session key for non-founder status polling', async () => {
+  const previousEnv = {
+    VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
+    SUNO_API_KEY: process.env.SUNO_API_KEY,
+    VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const basicAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-basic-token') {
+      req.user = { id: 'basic-user', username: 'Nathan', tier: 'basic' };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
+  };
+
+  delete process.env.VIVY_SUNO_API_KEY;
+  delete process.env.SUNO_API_KEY;
+  process.env.VIVY_SUNO_BASE_URL = 'https://api.suno.test/api/v1';
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.suno.test/api/v1/generate/record-info?taskId=personal-suno-task') {
+      assert.equal(options.headers.Authorization, 'Bearer session-suno-test-key');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            code: 200,
+            data: {
+              taskId: 'personal-suno-task',
+              status: 'SUCCESS',
+              response: {
+                sunoData: [{
+                  title: 'Vivy Perso',
+                  audioUrl: 'https://cdn.suno.test/vivy-perso.mp3',
+                }],
+              },
+            },
+          };
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer((app) => {
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: basicAuth }));
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/vivy/studio/jobs/personal-suno-task`, {
+        headers: {
+          Authorization: 'Bearer vivy-basic-token',
+          'X-Vivy-Suno-Key': 'session-suno-test-key',
+        },
+      });
+      const json = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.state, 'done');
+      assert.equal(json.media.audioUrl, 'https://cdn.suno.test/vivy-perso.mp3');
+      assert.doesNotMatch(JSON.stringify(json), /session-suno-test-key/);
+    });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('song mode accepts natural aliases from client prompts', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
@@ -364,6 +507,8 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /IA musicale/i);
   assert.match(prompt, /originale Funesterie/i);
   assert.match(prompt, /pas de réponse toute faite/i);
+  assert.match(prompt, /Module Vivy Songcraft actif/i);
+  assert.match(prompt, /rimes audibles/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
 });

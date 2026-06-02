@@ -1940,6 +1940,7 @@ export type VivyStudioProductionInput = {
   songSource?: string;
   songMood?: string;
   songText?: string;
+  sessionSunoApiKey?: string;
   shareTarget?: string;
   shareUrl?: string;
   shareTokenPresent?: boolean;
@@ -2019,12 +2020,15 @@ export async function runVivyStudioProduction(
   return payload as VivyStudioProductionResult;
 }
 
-export async function getVivyStudioMusicJob(taskId: string): Promise<VivyStudioProductionResult> {
+export async function getVivyStudioMusicJob(taskId: string, sessionSunoApiKey?: string): Promise<VivyStudioProductionResult> {
   const safeTaskId = String(taskId || '').trim();
   if (!safeTaskId) throw new Error('job_vivy_manquant');
+  const headers = buildAuthHeaders();
+  const safeSessionKey = String(sessionSunoApiKey || '').trim();
+  if (safeSessionKey) headers['X-Vivy-Suno-Key'] = safeSessionKey;
   const res = await authFetch(getApiUrl(`/api/vivy/studio/jobs/${encodeURIComponent(safeTaskId)}`), {
     method: 'GET',
-    headers: buildAuthHeaders(),
+    headers,
     credentials: 'include',
   });
   const payload = await res.json().catch(() => ({}));
