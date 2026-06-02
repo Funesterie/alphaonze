@@ -39,7 +39,7 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     monthlyEur: 8.99,
     priceEnv: 'STRIPE_PREMIUM_PRICE_ID',
     fallbackPriceEnv: 'STRIPE_PRICE_ID',
-    lookupKey: 'a11_premium_monthly_899',
+    lookupSlug: 'a11_premium_monthly_899',
   }),
   founder: Object.freeze({
     id: 'founder',
@@ -47,7 +47,7 @@ const SUBSCRIPTION_PLANS = Object.freeze({
     label: 'A11 Fondateur',
     monthlyEur: 29.99,
     priceEnv: 'STRIPE_FOUNDER_PRICE_ID',
-    lookupKey: 'a11_founder_monthly_2999',
+    lookupSlug: 'a11_founder_monthly_2999',
   }),
 });
 
@@ -105,10 +105,10 @@ function inferSubscriptionPlan(input, fallback = 'premium') {
   const lookupKey = String(price?.lookup_key || price?.lookupKey || '').trim().toLowerCase();
 
   const configured = getConfiguredPriceIds();
-  if ((configured.founder && priceId === configured.founder) || lookupKey === SUBSCRIPTION_PLANS.founder.lookupKey) {
+  if ((configured.founder && priceId === configured.founder) || lookupKey === SUBSCRIPTION_PLANS.founder.lookupSlug) {
     return 'founder';
   }
-  if ((configured.premium && priceId === configured.premium) || lookupKey === SUBSCRIPTION_PLANS.premium.lookupKey) {
+  if ((configured.premium && priceId === configured.premium) || lookupKey === SUBSCRIPTION_PLANS.premium.lookupSlug) {
     return 'premium';
   }
   if (lookupKey.includes('founder') || lookupKey.includes('fondateur') || lookupKey.includes('2999')) {
