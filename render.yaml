@@ -99,10 +99,6 @@ services:
         fromDatabase:
           name: a11-postgres
           property: connectionString
-      - key: REDIS_URL
-        fromDatabase:
-          name: a11-redis
-          property: connectionString
       - key: A11_ENABLE_QFLUSH
         value: 0
       - key: MANAGE_CERBERE
@@ -113,10 +109,6 @@ services:
 databases:
   - name: a11-postgres
     databaseName: a11
-    plan: free
-    region: frankfurt
-    ipAllowList: []
-  - name: a11-redis
-    plan: free
+    plan: basic-256mb
     region: frankfurt
     ipAllowList: []
