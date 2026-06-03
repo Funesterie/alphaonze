@@ -35,6 +35,8 @@ services:
         value: cellaurojeffrey@gmail.com,marvincellauro@gmail.com,giovannabrunetto@gmail.com,bayetgerard@gmail.com,boostro38@gmail.com,charlenejewitt@gmail.com,jeffrey38330@gmail.com
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: A11_GOOGLE_CLIENT_ID
+        sync: false
 
       # CORS
       - key: CORS_ORIGINS
@@ -53,14 +55,34 @@ services:
         value: openai
       - key: DEFAULT_MODEL
         value: gpt-4o-mini
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: A11_OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: A11_AGENT_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: A11_OPENAI_BASE_URL
+        value: https://api.openai.com/v1
       - key: A11_LLM_TIMEOUT_MS
         value: 60000
       - key: OPENAI_API_KEY
         sync: false # Secret, à configurer manuellement
+      - key: A11_OPENAI_API_KEY
+        sync: false # Secret, alias A11
       - key: A11_LLM_LLAMA
         sync: false # Secret Ollama Cloud/API key, alias local pour OLLAMA_API_KEY
       - key: OLLAMA_API_KEY
         sync: false # Secret officiel Ollama Cloud si on pointe vers https://ollama.com/api
+      - key: GEMINI_API_KEY
+        sync: false # Secret Gemini
+      - key: GOOGLE_GENAI_API_KEY
+        sync: false # Secret Gemini/Google GenAI
+      - key: XAI_API_KEY
+        sync: false # Secret xAI
+      - key: MISTRAL_API_KEY
+        sync: false # Secret Mistral
 
       # LLM Fallbacks (optionnel)
       - key: A11_LLM_FALLBACK_PROVIDER
@@ -79,6 +101,8 @@ services:
         value: meta-llama/Llama-3.3-70B-Instruct-Turbo
       - key: HF_API_KEY
         sync: false # Secret, à configurer manuellement
+      - key: HUGGINGFACE_API_KEY
+        sync: false # Secret, alias Hugging Face
       - key: HF_MODEL
         value: meta-llama/Llama-3.1-8B-Instruct
 
