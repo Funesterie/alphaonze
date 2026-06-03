@@ -73,6 +73,7 @@ function resolveHuggingFaceVideoConfig(env = process.env) {
   const defaultFrames = clampInteger(env.A11_HF_VIDEO_FRAMES || env.A11_HUGGINGFACE_VIDEO_FRAMES || 16, 4, 121, 16);
   const defaultSteps = clampInteger(env.A11_HF_VIDEO_STEPS || env.A11_HUGGINGFACE_VIDEO_STEPS || 4, 1, 50, 4);
   const timeoutMs = clampInteger(env.A11_HF_VIDEO_TIMEOUT_MS || env.A11_HUGGINGFACE_VIDEO_TIMEOUT_MS || 600000, 1000, 3600000, 600000);
+  const pollIntervalMs = clampInteger(env.A11_HF_VIDEO_POLL_INTERVAL_MS || env.A11_HUGGINGFACE_VIDEO_POLL_INTERVAL_MS || 3000, 10, 30000, 3000);
   const strict = isTruthy(env.A11_HF_VIDEO_STRICT || env.A11_HUGGINGFACE_VIDEO_STRICT)
     || ['hf', 'huggingface', 'huggingface-video', 'hf-video'].includes(String(env.A11_VIDEO_BACKEND || '').trim().toLowerCase());
   return {
@@ -84,6 +85,7 @@ function resolveHuggingFaceVideoConfig(env = process.env) {
     defaultFrames,
     defaultSteps,
     timeoutMs,
+    pollIntervalMs,
     strict,
   };
 }
@@ -109,13 +111,19 @@ function normalizeNegativePrompt(value) {
   return text ? [text] : undefined;
 }
 
+function normalizeNegativePromptText(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).join(', ');
+  return String(value || '').trim() || undefined;
+}
+
 function buildHuggingFaceVideoPayload(config, request = {}) {
   const prompt = String(request.prompt || request.message || '').trim();
+  const minFrames = config.provider === 'replicate' ? 81 : 4;
   const numFrames = clampInteger(
     request.num_frames || request.numFrames || request.frameCount || request.frame_count || request.frames,
-    4,
+    minFrames,
     121,
-    config.defaultFrames
+    Math.max(minFrames, config.defaultFrames)
   );
   const steps = clampInteger(
     request.num_inference_steps || request.numInferenceSteps || request.steps,
@@ -129,7 +137,10 @@ function buildHuggingFaceVideoPayload(config, request = {}) {
     ...(Number.isFinite(Number(request.guidance_scale || request.guidanceScale))
       ? { guidance_scale: Number(request.guidance_scale || request.guidanceScale) }
       : {}),
-    ...(normalizeNegativePrompt(request.negative_prompt || request.negativePrompt)
+    ...(config.provider === 'replicate' && normalizeNegativePromptText(request.negative_prompt || request.negativePrompt)
+      ? { negative_prompt: normalizeNegativePromptText(request.negative_prompt || request.negativePrompt) }
+      : {}),
+    ...(config.provider !== 'replicate' && normalizeNegativePrompt(request.negative_prompt || request.negativePrompt)
       ? { negative_prompt: normalizeNegativePrompt(request.negative_prompt || request.negativePrompt) }
       : {}),
     ...(Number.isFinite(Number(request.seed)) ? { seed: Number(request.seed) } : {}),
@@ -194,7 +205,7 @@ function findVideoUrl(value, depth = 0) {
 
 async function downloadVideoUrl(fetchImpl, url, token, timeoutMs) {
   const response = await fetchImpl(url, {
-    headers: /^https:\/\/router\.huggingface\.co\//i.test(url) ? { Authorization: `Bearer ${token}` } : {},
+    headers: headersForHuggingFaceVideoUrl(url, token),
     signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = await readResponsePayload(response);
@@ -203,6 +214,145 @@ async function downloadVideoUrl(fetchImpl, url, token, timeoutMs) {
   }
   if (!payload.buffer.length) throw new Error('hf_video_download_empty');
   return payload;
+}
+
+function headersForHuggingFaceVideoUrl(url, token) {
+  return /^https:\/\/router\.huggingface\.co\//i.test(String(url || ''))
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+}
+
+function normalizeQueueUrl(requestUrl, value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^https?:\/\//i.test(text)) return text;
+  const parsed = new URL(requestUrl);
+  return `${parsed.protocol}//${parsed.host}${text.startsWith('/') ? '' : '/'}${text}`;
+}
+
+function normalizeFalQueueStatus(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+function extractFalQueueUrls(json = {}, requestUrl = '') {
+  const statusUrl = normalizeQueueUrl(
+    requestUrl,
+    json.status_url || json.statusUrl || json.urls?.status || json.data?.status_url || json.data?.urls?.status || ''
+  );
+  const responseUrl = normalizeQueueUrl(
+    requestUrl,
+    json.response_url || json.responseUrl || json.urls?.response || json.data?.response_url || json.data?.urls?.response || ''
+  );
+  return { statusUrl, responseUrl };
+}
+
+function extractFalQueueStatus(json = {}) {
+  return normalizeFalQueueStatus(
+    json.status || json.state || json.data?.status || json.data?.state || json.queue?.status || ''
+  );
+}
+
+async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, pollIntervalMs) {
+  let { statusUrl, responseUrl } = extractFalQueueUrls(responseJson, requestUrl);
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = extractFalQueueStatus(responseJson);
+  let lastMessage = '';
+
+  while (Date.now() < deadline) {
+    if (statusUrl) {
+      const statusResponse = await fetchImpl(statusUrl, {
+        headers: headersForHuggingFaceVideoUrl(statusUrl, token),
+        signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
+      });
+      const statusPayload = await readResponsePayload(statusResponse);
+      if (!statusResponse.ok) {
+        throw new Error(statusPayload.text || `hf_fal_queue_status_${statusResponse.status}`);
+      }
+      const statusJson = statusPayload.json || {};
+      const urls = extractFalQueueUrls(statusJson, requestUrl);
+      statusUrl = urls.statusUrl || statusUrl;
+      responseUrl = urls.responseUrl || responseUrl;
+      lastStatus = extractFalQueueStatus(statusJson) || lastStatus;
+      lastMessage = String(statusJson.error || statusJson.message || statusJson.logs?.[0]?.message || statusPayload.text || '').trim();
+      if (['completed', 'complete', 'succeeded', 'success', 'ok'].includes(lastStatus)) {
+        break;
+      }
+      if (['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(lastStatus)) {
+        throw new Error(lastMessage || `hf_fal_queue_${lastStatus}`);
+      }
+    } else if (responseUrl) {
+      const resultResponse = await fetchImpl(responseUrl, {
+        headers: headersForHuggingFaceVideoUrl(responseUrl, token),
+        signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
+      });
+      const resultPayload = await readResponsePayload(resultResponse);
+      if (resultResponse.ok) {
+        if (!resultPayload.json) return resultPayload;
+        const videoUrl = findVideoUrl(resultPayload.json);
+        if (videoUrl) return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs);
+        lastStatus = extractFalQueueStatus(resultPayload.json) || lastStatus;
+      } else if (![202, 409, 425].includes(Number(resultResponse.status))) {
+        throw new Error(resultPayload.text || `hf_fal_queue_response_${resultResponse.status}`);
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  if (!responseUrl) {
+    throw new Error(lastMessage || 'hf_fal_queue_missing_response_url');
+  }
+
+  const finalResponse = await fetchImpl(responseUrl, {
+    headers: headersForHuggingFaceVideoUrl(responseUrl, token),
+    signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
+  });
+  const finalPayload = await readResponsePayload(finalResponse);
+  if (!finalResponse.ok) {
+    throw new Error(finalPayload.text || `hf_fal_queue_result_${finalResponse.status}`);
+  }
+  if (!finalPayload.json) return finalPayload;
+  const videoUrl = findVideoUrl(finalPayload.json);
+  if (!videoUrl) {
+    throw new Error(lastMessage || 'hf_fal_queue_missing_video_url');
+  }
+  return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs);
+}
+
+function extractReplicatePredictionUrl(json = {}, requestUrl = '') {
+  return normalizeQueueUrl(
+    requestUrl,
+    json.urls?.get || json.get_url || json.getUrl || json.prediction_url || json.predictionUrl || ''
+  );
+}
+
+async function pollReplicateResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, pollIntervalMs) {
+  let prediction = responseJson || {};
+  const predictionUrl = extractReplicatePredictionUrl(responseJson, requestUrl);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const status = normalizeFalQueueStatus(prediction.status || prediction.state || '');
+    if (['succeeded', 'success', 'completed', 'complete', 'ok'].includes(status)) {
+      const videoUrl = findVideoUrl(prediction.output || prediction.result || prediction.video || prediction.data || {});
+      if (!videoUrl) throw new Error('hf_replicate_missing_video_url');
+      return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs);
+    }
+    if (['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(status)) {
+      throw new Error(String(prediction.error || prediction.logs || `hf_replicate_${status}`));
+    }
+    if (!predictionUrl) break;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    const response = await fetchImpl(predictionUrl, {
+      headers: headersForHuggingFaceVideoUrl(predictionUrl, token),
+      signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
+    });
+    const payload = await readResponsePayload(response);
+    if (!response.ok) throw new Error(payload.text || `hf_replicate_status_${response.status}`);
+    prediction = payload.json || {};
+  }
+
+  throw new Error('hf_replicate_timeout');
 }
 
 async function pollWavespeedResult(fetchImpl, responseJson, requestUrl, token, timeoutMs) {
@@ -318,6 +468,34 @@ async function tryGenerateVideoWithHuggingFace({
   if (responsePayload.json) {
     if (config.provider === 'wavespeed' && responsePayload.json?.data?.urls?.get) {
       videoPayload = await pollWavespeedResult(fetchImpl, responsePayload.json, config.endpoint, config.token, config.timeoutMs);
+    } else if (config.provider === 'replicate' && (responsePayload.json?.urls?.get || responsePayload.json?.status)) {
+      videoPayload = await pollReplicateResult(
+        fetchImpl,
+        responsePayload.json,
+        config.endpoint,
+        config.token,
+        config.timeoutMs,
+        config.pollIntervalMs
+      );
+    } else if (
+      config.provider === 'fal-ai'
+      && (
+        responsePayload.json?.status_url
+        || responsePayload.json?.statusUrl
+        || responsePayload.json?.response_url
+        || responsePayload.json?.responseUrl
+        || responsePayload.json?.request_id
+        || responsePayload.json?.requestId
+      )
+    ) {
+      videoPayload = await pollFalQueueResult(
+        fetchImpl,
+        responsePayload.json,
+        config.endpoint,
+        config.token,
+        config.timeoutMs,
+        config.pollIntervalMs
+      );
     } else {
       const videoUrl = findVideoUrl(responsePayload.json);
       if (!videoUrl) {
