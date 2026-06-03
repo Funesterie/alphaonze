@@ -1,0 +1,154 @@
+{
+  "id": "format.zen.container",
+  "label": "ZEN - Conteneur NEZ Inverse",
+  "discipline": "container-format",
+  "activation": {
+    "languagesAny": ["fr"],
+    "modesAny": ["semantic", "plan", "chat", "generate"],
+    "keywordsAny": [
+      "ZEN",
+      ".zen",
+      "NEZ inverse",
+      "Zero-Exposed NEZ",
+      "zip inverse",
+      "archive chiffree",
+      "archive chiffrée",
+      "conteneur opaque",
+      "conteneur chiffre",
+      "conteneur chiffré",
+      "dump NEZ",
+      "cube RGBA",
+      "cubes couleur",
+      "multi-load",
+      "Qflush",
+      "Freeland",
+      "Morphing"
+    ]
+  },
+  "knowledge": {
+    "canonicalDefinition": "ZEN est un zip inverse: il ne compresse pas seulement des fichiers, il cache l'ordre dans lequel ils existent.",
+    "shortDefinition": "ZEN est un conteneur Funesterie chiffre, opaque et multi-load, construit comme NEZ inverse.",
+    "publicHeader": {
+      "format": "zen",
+      "version": "1.0",
+      "mode": "encrypted_multiload"
+    },
+    "concepts": [
+      "ZEN signifie Zero-Exposed NEZ archive: une archive qui expose le moins possible sans cle",
+      "NEZ regarde ou inspecte; ZEN cache le sens jusqu'a la cle",
+      "ZEN n'est pas un zip classique: il combine conteneur, graphe, corpus, routage interne et chiffrement",
+      "le fichier n'est plus un document lineaire mais une constellation de fragments reconstruits par regle",
+      "sans la cle, on ne doit pas savoir combien de fichiers existent, quels types ils ont, ni dans quel ordre les lire"
+    ],
+    "architecture": [
+      "fichiers -> corpus -> cubes couleur RGBA -> multi-load -> chiffrement -> fichier .zen",
+      "dimension 1: donnees",
+      "dimension 2: relations",
+      "dimension 3: ordre de reconstruction",
+      "la cle reconstruit l'ordre des cubes, le type des fichiers, le mapping RGBA, l'index corpus et les payloads finaux"
+    ],
+    "layers": [
+      {
+        "id": "header",
+        "label": "Header minimal public",
+        "visibility": "public",
+        "purpose": "annoncer uniquement format/version/mode sans exposer le contenu"
+      },
+      {
+        "id": "corpus",
+        "label": "Corpus chiffre",
+        "visibility": "encrypted",
+        "purpose": "stocker les textes, index, metadonnees utiles et contexte de reconstruction"
+      },
+      {
+        "id": "cube_map",
+        "label": "Cube map RGBA chiffree",
+        "visibility": "encrypted",
+        "purpose": "definir les faces, canaux, relations et routes internes"
+      },
+      {
+        "id": "payload_shards",
+        "label": "Fragments de payload",
+        "visibility": "encrypted",
+        "purpose": "porter les morceaux de fichiers, parfois repartis entre plusieurs objets"
+      },
+      {
+        "id": "checksum_signature",
+        "label": "Checksum et signature",
+        "visibility": "minimal-public-or-encrypted",
+        "purpose": "verifier integrite, origine et compatibilite sans devoiler la structure"
+      }
+    ],
+    "pipeline": [
+      {
+        "id": "zen-stores",
+        "subject": "ZEN",
+        "verb": "stocke",
+        "object": "fragments, corpus, cube map et routage chiffre"
+      },
+      {
+        "id": "freeland-normalizes",
+        "subject": "Freeland",
+        "verb": "normalise",
+        "object": "formats, OS, chemins et contextes d'execution"
+      },
+      {
+        "id": "morphing-transforms",
+        "subject": "Morphing",
+        "verb": "transforme",
+        "object": "representations et projections entre formats"
+      },
+      {
+        "id": "qflush-orchestrates",
+        "subject": "Qflush",
+        "verb": "orchestre",
+        "object": "multi-load, files, workers et services cibles"
+      },
+      {
+        "id": "nez-inspects",
+        "subject": "NEZ/Nezlephant",
+        "verb": "inspecte ou transporte",
+        "object": "les projections lisibles quand la cle ou le contexte l'autorise"
+      }
+    ],
+    "methods": [
+      "decrire ZEN comme un format de recherche/specification tant que la lib chiffree n'est pas implementee",
+      "utiliser une cryptographie eprouvee pour l'implementation reelle: ne pas inventer l'algorithme de chiffrement",
+      "garder le header public pauvre: format, version, mode, rien de plus",
+      "ne jamais stocker les cles dans le fichier .zen ni dans le depot",
+      "relier ZEN a Neo4j comme graphe de concepts et a Qflush comme orchestration, pas comme archive plate"
+    ],
+    "commonErrors": [
+      "dire que ZEN est seulement un fichier zip renomme",
+      "exposer dans le header le nombre de fichiers, les noms, les types ou l'ordre interne",
+      "confondre ZEN avec NEZ: NEZ inspecte, ZEN cache",
+      "inventer une crypto maison au lieu d'utiliser une primitive standard et auditable"
+    ],
+    "sourceCards": [
+      {
+        "id": "zen:source:codex-chat-2026-06-03",
+        "title": "Discussion Codex / ChatGPT sur ZEN NEZ inverse",
+        "role": "foundational-canon",
+        "note": "ZEN defini comme archive chiffree multi-load, zip inverse et conteneur opaque qui cache l'ordre d'existence des fichiers jusqu'a la cle."
+      }
+    ]
+  },
+  "semantic": {
+    "scoreAdjustments": {
+      "file.archive.plan": 0.35,
+      "system.design": 0.25,
+      "memory.graph": 0.15
+    }
+  },
+  "impacts": {
+    "semantic": [
+      "si l'utilisateur parle de ZEN, repondre en termes de conteneur chiffre, corpus, graphe, RGBA et routage, pas seulement compression"
+    ],
+    "plan": [
+      "proposer une specification puis un prototype secret-safe avant toute implementation de chiffrement"
+    ],
+    "generate": [
+      "pour Vivy, transformer ZEN en image de constellation de fragments, cube opaque, cle et ordre cache"
+    ]
+  }
+}

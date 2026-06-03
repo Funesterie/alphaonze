@@ -11,6 +11,10 @@ const {
   buildNumaContext,
   lookupNumaToken,
 } = require('../src/knowledge/numa-symbolic-language.cjs');
+const {
+  buildZenContext,
+  isZenPrompt,
+} = require('../src/knowledge/zen-container.cjs');
 
 test('knowledge operator infers french for common A11 prompts', () => {
   assert.equal(inferLanguage('génère un lapin doré'), 'fr');
@@ -106,4 +110,29 @@ test('knowledge operator activates NUMA symbolic language without generic numero
   const context = buildNumaContext(text);
   assert.equal(context.isNumaPrompt, true);
   assert.deepEqual(context.tokens.map((entry) => entry.token), ['5', '16', '40']);
+});
+
+test('knowledge operator activates ZEN container format as NEZ inverse', () => {
+  const text = 'ZEN est un zip inverse: une archive chiffree multi-load avec cube RGBA et NEZ inverse';
+  const semanticAnalysis = analyzeSemanticIntent(text);
+  const modules = activateKnowledgeModules({
+    text,
+    semanticAnalysis,
+    mode: 'semantic',
+    domain: '',
+    promptSeed: buildPromptSeed(text, semanticAnalysis),
+    canonicalIntent: {
+      task: { domain: '' },
+      execution: { mode: 'semantic' },
+      style: { renderHints: [] },
+      subject: { references: [] },
+    },
+  });
+
+  assert.ok(modules.some((entry) => entry.id === 'format.zen.container'));
+  assert.equal(isZenPrompt(text), true);
+  const context = buildZenContext(text);
+  assert.match(context.canonicalDefinition, /zip inverse/);
+  assert.ok(context.commonErrors.some((entry) => entry.includes('zip renomme')));
+  assert.ok(context.layers.some((entry) => entry.id === 'cube_map'));
 });

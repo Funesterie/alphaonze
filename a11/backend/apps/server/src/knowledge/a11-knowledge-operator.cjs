@@ -12,13 +12,14 @@ const MODULES = [
   require('./modules/security.auth.module.json'),
   require('./modules/networking.basics.module.json'),
   require('./modules/language.numa.symbolic.module.json'),
+  require('./modules/format.zen.container.module.json'),
 ];
 
 function inferLanguage(text = '') {
   const normalized = normalizeText(text);
   if (!normalized) return 'unknown';
 
-  const frenchSignal = /\b(je|tu|il|elle|nous|vous|quel|quelle|quels|quelles|genere|génère|fais|montre|image|avec|dans|bonjour|salut|stp|sujet|nombres|numeros|numéros)\b/.test(normalized);
+  const frenchSignal = /\b(je|tu|il|elle|nous|vous|est|quel|quelle|quels|quelles|genere|génère|fais|montre|image|avec|dans|bonjour|salut|stp|sujet|nombres|numeros|numéros|archive|conteneur|chiffre|chiffré|chiffree|chiffrée|cle|clé)\b/.test(normalized);
   if (frenchSignal) return 'fr';
   return 'unknown';
 }

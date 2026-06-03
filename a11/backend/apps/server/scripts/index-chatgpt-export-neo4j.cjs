@@ -29,6 +29,7 @@ const SECRET_PATTERNS = [
 
 const TAG_RULES = [
   ['numa', /\bnuma\b|force des nombres|valeurs? des num[ée]ros?|valeurs? des chiffres|maison blanche|white house|\b1600\b|GHOST88|ENTERA|ligne magenta/i],
+  ['zen_container', /\bzen\b|\.zen\b|zero-exposed nez|nez invers[ée]|zip invers[ée]|archive chiffr[ée]e?|conteneur opaque|conteneur chiffr[ée]|dump nez|cube rgba|cubes couleur|multi-load/i],
   ['neo4j_memory', /\bneo4j\b|cypher|knowledge[-\s]?graph|graph memory|m[ée]moire graphe/i],
   ['mcp_tools', /\bmcp\b|model context protocol|outils?|tools?|pont d.orchestration/i],
   ['qflush', /\bqflush\b|\bqflash\b|rgba cube|cube qflush|bat|rome|allmight/i],

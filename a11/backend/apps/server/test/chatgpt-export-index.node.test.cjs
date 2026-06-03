@@ -28,6 +28,12 @@ test('ChatGPT export index classifies NUMA and runtime tags', () => {
   ]);
 });
 
+test('ChatGPT export index classifies ZEN container passages', () => {
+  assert.deepEqual(classifyTagsFromText('ZEN est un zip inverse, conteneur opaque NEZ inverse avec cube RGBA'), [
+    'zen_container',
+  ]);
+});
+
 test('ChatGPT export index extracts conversation messages and chunks', () => {
   const conversation = {
     id: 'conv-1',
