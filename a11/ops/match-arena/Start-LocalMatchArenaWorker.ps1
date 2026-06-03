@@ -7,7 +7,10 @@ param(
   [string]$StreamUrl = "",
   [string]$StreamCandidates = "",
   [int]$StreamPort = 6080,
+  [string]$RetroArchCommand = "E:\Funesterie\RetroArch\retroarch.exe",
+  [string]$RetroArchCore = "",
   [switch]$NoAutoStream,
+  [switch]$NoAutoLaunch,
   [switch]$RestartWorker,
   [switch]$Visible
 )
@@ -92,6 +95,9 @@ $workerEnv = @"
 `$env:A11_MATCH_ARENA_STREAM_CANDIDATES='$StreamCandidates'
 `$env:A11_MATCH_ARENA_STREAM_PORT='$StreamPort'
 `$env:A11_MATCH_ARENA_AUTOSTREAM='$((-not $NoAutoStream).ToString().ToLowerInvariant())'
+`$env:A11_MATCH_ARENA_RETROARCH_COMMAND='$RetroArchCommand'
+`$env:A11_MATCH_ARENA_RETROARCH_CORE='$RetroArchCore'
+`$env:A11_MATCH_ARENA_AUTOLAUNCH='$((-not $NoAutoLaunch).ToString().ToLowerInvariant())'
 Set-Location -LiteralPath 'D:\projets\funesterie'
 & '$node' '$workerScript' 1>> '$workerStdout' 2>> '$workerStderr'
 "@

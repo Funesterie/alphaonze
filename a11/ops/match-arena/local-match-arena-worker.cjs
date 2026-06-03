@@ -9,6 +9,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const DEFAULT_GAMES_ROOT = 'C:\\Users\\Djeff\\Desktop\\jeux';
 const DEFAULT_STATUS_PATH = 'E:\\Funesterie\\match-arena\\local-match-arena-worker-status.json';
 const DEFAULT_EXPORT_ROOT = 'E:\\Funesterie\\match-arena\\sessions';
+const DEFAULT_RETROARCH_COMMAND = 'E:\\Funesterie\\RetroArch\\retroarch.exe';
 const DEFAULT_LOCAL_STREAM_PORT = 6080;
 const DEFAULT_STREAM_CANDIDATES = [
   'http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',
@@ -117,6 +118,60 @@ function commandAvailable(command) {
   } catch {
     return false;
   }
+}
+
+function fileExists(filePath) {
+  try {
+    return Boolean(filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile());
+  } catch {
+    return false;
+  }
+}
+
+function resolveRetroarchCommand() {
+  const configured = env('A11_MATCH_ARENA_RETROARCH_COMMAND');
+  if (configured && (fileExists(configured) || commandAvailable(configured))) return configured;
+  if (commandAvailable('retroarch')) return 'retroarch';
+  if (fileExists(DEFAULT_RETROARCH_COMMAND)) return DEFAULT_RETROARCH_COMMAND;
+  if (fileExists('C:\\RetroArch-Win64\\retroarch.exe')) return 'C:\\RetroArch-Win64\\retroarch.exe';
+  return '';
+}
+
+function resolveRetroarchCore(playablePath, game, capabilities = null) {
+  const explicit = env('A11_MATCH_ARENA_RETROARCH_CORE');
+  if (explicit && fileExists(explicit)) {
+    return { corePath: explicit, coreName: path.basename(explicit), source: 'env' };
+  }
+
+  const command = capabilities?.retroarchCommand || resolveRetroarchCommand();
+  const inferredCoreDir = command && path.isAbsolute(command)
+    ? path.join(path.dirname(command), 'cores')
+    : '';
+  const coreDir = env('A11_MATCH_ARENA_RETROARCH_CORE_DIR', inferredCoreDir);
+  if (!coreDir) return null;
+
+  const ext = path.extname(playablePath || '').toLowerCase();
+  const label = `${game?.title || ''} ${path.basename(playablePath || '')}`.toLowerCase();
+  let candidates = [];
+  if (['.smc', '.sfc'].includes(ext) || (ext === '.zip' && /(snes|super nintendo|killer instinct|mortal kombat|street fighter|donkey kong|kirby|dragon ball)/i.test(label))) {
+    candidates = ['snes9x_libretro.dll', 'bsnes_libretro.dll'];
+  } else if (['.gb', '.gbc'].includes(ext)) {
+    candidates = ['gambatte_libretro.dll', 'sameboy_libretro.dll'];
+  } else if (ext === '.gba') {
+    candidates = ['mgba_libretro.dll'];
+  } else if (ext === '.nes') {
+    candidates = ['nestopia_libretro.dll', 'fceumm_libretro.dll'];
+  } else if (['.md', '.gen', '.gg', '.sms'].includes(ext)) {
+    candidates = ['genesis_plus_gx_libretro.dll'];
+  } else if (['.n64', '.z64', '.v64'].includes(ext)) {
+    candidates = ['mupen64plus_next_libretro.dll'];
+  }
+
+  for (const coreName of candidates) {
+    const corePath = path.join(coreDir, coreName);
+    if (fileExists(corePath)) return { corePath, coreName, source: 'inferred' };
+  }
+  return null;
 }
 
 function ffmpegAvailable() {
@@ -361,12 +416,14 @@ async function resolveStreamUrl() {
 
 async function detectCapabilities() {
   const stream = await resolveStreamUrl();
-  const retroarchAvailable = commandAvailable('retroarch') || Boolean(env('A11_MATCH_ARENA_RETROARCH_COMMAND'));
+  const retroarchCommand = resolveRetroarchCommand();
+  const retroarchAvailable = Boolean(retroarchCommand);
   const dockerAvailable = commandAvailable('docker');
   const podmanAvailable = commandAvailable('podman');
   const streamMode = env('A11_MATCH_ARENA_STREAM_MODE', stream.url ? (stream.source === 'local-ffmpeg' ? 'local-ffmpeg-mjpeg' : 'novnc') : 'waiting-novnc');
   return {
     retroarchAvailable,
+    retroarchCommand,
     dockerAvailable,
     podmanAvailable,
     streamReady: Boolean(stream.url),
@@ -578,6 +635,7 @@ function writeSessionManifest(session, inventory, capabilities) {
   fs.mkdirSync(path.join(sessionDir, 'replays'), { recursive: true });
   fs.mkdirSync(path.join(sessionDir, 'saves'), { recursive: true });
   const { game, playablePath } = resolvePlayablePath(session, inventory);
+  const retroarchCore = resolveRetroarchCore(playablePath, game, capabilities);
   const stream = buildStreamDescriptor(capabilities);
   const runtime = buildRuntimeDescriptor(capabilities, playablePath);
   const manifest = {
@@ -600,7 +658,8 @@ function writeSessionManifest(session, inventory, capabilities) {
     launch: {
       localPlayablePath: playablePath,
       autolaunch: capabilities.autolaunch,
-      retroarchCommand: env('A11_MATCH_ARENA_RETROARCH_COMMAND') || null,
+      retroarchCommand: capabilities.retroarchCommand || null,
+      retroarchCore: retroarchCore?.corePath || null,
       containerImage: env('A11_MATCH_ARENA_CONTAINER_IMAGE') || null,
     },
     stream,
@@ -617,7 +676,7 @@ function writeSessionManifest(session, inventory, capabilities) {
       streamMode: stream.mode,
     },
     next: [
-      'Launch RetroArch/noVNC bridge when stream URL is configured',
+      'Keep RetroArch focused while the local desktop stream is published',
       'Map input events to RetroArch controls',
       'Mirror save/replay/logs to Drive or OneDrive',
     ],
@@ -635,7 +694,53 @@ function writeSessionManifest(session, inventory, capabilities) {
     }
   }
 
-  return { manifestPath, sessionDir, drivePath, stream, runtime, playablePath };
+  return { manifestPath, sessionDir, drivePath, stream, runtime, playablePath, game, retroarchCore };
+}
+
+function launchRetroarchSession(session, game, playablePath, capabilities, sessionDir) {
+  if (!capabilities.autolaunch) return { launched: false, reason: 'autolaunch_disabled' };
+  if (!playablePath) return { launched: false, reason: 'playable_missing' };
+  const command = capabilities.retroarchCommand || resolveRetroarchCommand();
+  if (!command) return { launched: false, reason: 'retroarch_missing' };
+
+  const core = resolveRetroarchCore(playablePath, game, capabilities);
+  const allowCoreless = envBool('A11_MATCH_ARENA_RETROARCH_ALLOW_CORELESS', false);
+  if (!core && !allowCoreless) {
+    return {
+      launched: false,
+      reason: 'core_missing',
+      playablePath,
+      hint: 'Install a matching libretro core or set A11_MATCH_ARENA_RETROARCH_CORE.',
+    };
+  }
+
+  const args = [];
+  if (core?.corePath) args.push('-L', core.corePath);
+  args.push(playablePath);
+  const logPath = path.join(sessionDir, 'logs', 'retroarch-launch.json');
+  const child = spawn(command, args, {
+    cwd: path.isAbsolute(command) ? path.dirname(command) : undefined,
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,
+  });
+  child.unref();
+  const launch = {
+    launched: true,
+    pid: child.pid || null,
+    command,
+    args,
+    core: core?.coreName || null,
+    playablePath,
+    sessionId: session.id,
+    gameTitle: game?.title || session.gameTitle || null,
+  };
+  try {
+    fs.writeFileSync(logPath, JSON.stringify({ schema: 'funesterie.match-arena.retroarch-launch.v1', createdAt: new Date().toISOString(), ...launch }, null, 2), 'utf8');
+  } catch {
+    // Launch logging is best effort.
+  }
+  return launch;
 }
 
 async function pollActiveSessionInputs(activeSessions, token) {
@@ -778,25 +883,30 @@ async function run() {
 
       try {
         const exported = writeSessionManifest(session, cachedInventory, capabilities);
+        const retroarchLaunch = launchRetroarchSession(session, exported.game, exported.playablePath, capabilities, exported.sessionDir);
         activeSessions.set(session.id, {
           remoteBaseUrl: claimedRemoteBaseUrl,
           sessionDir: exported.sessionDir,
           lastSeq: Number(session.input?.sequence || 0),
           failures: 0,
         });
+        const readyMessage = exported.stream.ready
+          ? (retroarchLaunch.launched
+              ? 'Session prete: RetroArch est lance, le stream worker est publie et les commandes navigateur sont en file active.'
+              : `Session prete: le stream worker est publie, mais RetroArch n a pas ete lance automatiquement (${retroarchLaunch.reason || 'raison inconnue'}). Choisis un jeu SNES ou installe le core adapte.`)
+          : 'Session prete cote worker: commandes en file active; le flux video apparaitra automatiquement quand le pont noVNC/WebRTC sera detecte.';
         await postJson(buildUrl(claimedRemoteBaseUrl, `/api/match-arena/local-worker/sessions/${encodeURIComponent(session.id)}/complete`), token, {
           workerId,
           state: 'ready',
           stream: exported.stream,
           runtime: exported.runtime,
+          launch: retroarchLaunch,
           input: { mode: capabilities.inputMode },
           streamMode: exported.stream.mode,
           streamUrl: exported.stream.url,
           localExportPath: exported.sessionDir,
           drivePath: exported.drivePath,
-          message: exported.stream.ready
-            ? 'Session prete: le stream worker est publie et les commandes navigateur sont en file active.'
-            : 'Session prete cote worker: commandes en file active; le flux video apparaitra automatiquement quand le pont noVNC/WebRTC sera detecte.',
+          message: readyMessage,
         }, 30000);
         processed += 1;
         writeStatus({
@@ -808,6 +918,7 @@ async function run() {
           localExportPath: exported.sessionDir,
           drivePath: exported.drivePath,
           playablePath: exported.playablePath,
+          retroarchLaunch,
           stream: exported.stream,
           runtime: exported.runtime,
           activeSessions: activeSessions.size,
