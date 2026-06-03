@@ -1,5 +1,7 @@
 const express = require('express');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const sdToolsModule = require('./sd-tools.cjs');
 const {
@@ -50,8 +52,72 @@ function resolveVideoProxyUrl() {
   return normalizeProxyUrl(
     process.env.A11_VIDEO_PROXY_URL
     || process.env.VIDEO_PROXY_URL
+    || process.env.A11_VIDEO_LOCAL_RUNNER_URL
+    || process.env.A11_MOCHI_RUNNER_URL
     || ''
   );
+}
+
+const LOCAL_VIDEO_WEIGHT_FILES = [
+  { name: 'dit.safetensors', minBytes: 40_000_000_000 },
+  { name: 'encoder.safetensors', minBytes: 300_000_000 },
+  { name: 'decoder.safetensors', minBytes: 1_000_000_000 },
+];
+
+function resolveLocalVideoWeightsDir() {
+  return String(
+    process.env.A11_VIDEO_LOCAL_WEIGHTS_DIR
+    || process.env.A11_MOCHI_WEIGHTS_DIR
+    || 'E:\\Funesterie\\models\\video\\weights'
+  ).trim();
+}
+
+function statLocalWeightFile(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return {
+      exists: stat.isFile(),
+      sizeBytes: stat.isFile() ? stat.size : 0,
+    };
+  } catch {
+    return {
+      exists: false,
+      sizeBytes: 0,
+    };
+  }
+}
+
+function resolveLocalVideoWeightsStatus() {
+  const directory = resolveLocalVideoWeightsDir();
+  const runnerUrl = normalizeProxyUrl(
+    process.env.A11_VIDEO_LOCAL_RUNNER_URL
+    || process.env.A11_MOCHI_RUNNER_URL
+    || ''
+  );
+  const files = LOCAL_VIDEO_WEIGHT_FILES.map((entry) => {
+    const stat = directory ? statLocalWeightFile(path.join(directory, entry.name)) : { exists: false, sizeBytes: 0 };
+    return {
+      name: entry.name,
+      present: Boolean(stat.exists && stat.sizeBytes >= entry.minBytes),
+      sizeBytes: stat.sizeBytes,
+    };
+  });
+  const installed = files.every((file) => file.present);
+  const backend = String(process.env.A11_VIDEO_BACKEND || '').trim().toLowerCase();
+  const enabled = isTruthy(process.env.A11_VIDEO_LOCAL_WEIGHTS_ENABLED)
+    || isTruthy(process.env.A11_MOCHI_ENABLED)
+    || backend.includes('mochi');
+
+  return {
+    configured: Boolean(directory),
+    installed,
+    enabled,
+    modelFamily: 'mochi',
+    modelHint: 'genmo/mochi-1-preview',
+    files,
+    runnerConfigured: Boolean(runnerUrl),
+    inferenceReady: Boolean(installed && runnerUrl),
+  };
 }
 
 function resolveVideoProxyTimeoutMs() {
@@ -580,6 +646,13 @@ function createVideoGenerateRouter(overrides = {}) {
       });
     }
 
+    const proxied = await generateViaProxy({
+      req: options.req || null,
+      body,
+      prompt,
+    });
+    if (proxied) return proxied;
+
     const hfVideoConfig = resolveHuggingFaceVideoConfig();
     if (hfVideoConfig.enabled) {
       const hfResult = await tryGenerateVideoWithHuggingFace({
@@ -602,13 +675,6 @@ function createVideoGenerateRouter(overrides = {}) {
       }
       console.warn('[A11][video-route] Hugging Face video unavailable, falling back:', String(hfResult?.message || hfResult?.error || 'unknown'));
     }
-
-    const proxied = await generateViaProxy({
-      req: options.req || null,
-      body,
-      prompt,
-    });
-    if (proxied) return proxied;
 
     try {
       return await localGenerateVideoInternal(options);
@@ -733,6 +799,7 @@ function createVideoGenerateRouter(overrides = {}) {
       huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
       huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
       huggingFaceModel: resolveHuggingFaceVideoConfig().model,
+      localWeights: resolveLocalVideoWeightsStatus(),
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       emergencyFallback: shouldFallbackToEmergencyVideo({}),
       asyncJobs: asyncVideoJobs.size,
@@ -747,6 +814,7 @@ function createVideoGenerateRouter(overrides = {}) {
       huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
       huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
       huggingFaceModel: resolveHuggingFaceVideoConfig().model,
+      localWeights: resolveLocalVideoWeightsStatus(),
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       asyncJobs: asyncVideoJobs.size,
     });
@@ -789,5 +857,6 @@ function videoGenerateEntrypoint(...args) {
 videoGenerateEntrypoint.router = defaultVideoRouter.router;
 videoGenerateEntrypoint.generateVideoInternal = defaultVideoRouter.generateVideoInternal;
 videoGenerateEntrypoint.createVideoGenerateRouter = createVideoGenerateRouter;
+videoGenerateEntrypoint.resolveLocalVideoWeightsStatus = resolveLocalVideoWeightsStatus;
 
 module.exports = videoGenerateEntrypoint;

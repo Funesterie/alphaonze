@@ -65,6 +65,8 @@ A11_VIDEO_FRAME_INIT_STRENGTH=0.28
 A11_VIDEO_USE_JANUS_FRAME_ANALYSIS=false
 A11_VIDEO_PROXY_URL=
 A11_VIDEO_PROXY_TIMEOUT_MS=600000
+A11_VIDEO_LOCAL_WEIGHTS_DIR=E:\\Funesterie\\models\\video\\weights
+A11_VIDEO_LOCAL_RUNNER_URL=
 ```
 
 For the current production topology on Railway, prefer:
@@ -74,6 +76,36 @@ A11_VIDEO_PROXY_URL=https://sd.funesterie.me/api/tools/generate_video
 ```
 
 This keeps Railway as the public API while the local Windows backend performs the actual GPU render and NVENC encode.
+
+## Local model weights
+
+A11 can now detect a local Mochi-style video pack with:
+
+- `dit.safetensors`
+- `encoder.safetensors`
+- `decoder.safetensors`
+
+Default install path on the Windows GPU host:
+
+```env
+A11_VIDEO_LOCAL_WEIGHTS_DIR=E:\\Funesterie\\models\\video\\weights
+```
+
+The public backend does not load these weights directly. It uses them through a local video runner. When that runner is available, set:
+
+```env
+A11_VIDEO_LOCAL_RUNNER_URL=http://127.0.0.1:17880/api/tools/generate_video
+```
+
+`/api/video/health` and `/api/video/status` expose whether the pack is installed and whether a local runner is configured.
+
+On the Windows GPU host, the prepared runner wrapper is:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11\\ops\\video\\Start-LocalMochiRunner.ps1
+```
+
+The official Genmo harness is flexible but heavy. Their README notes around 60 GB VRAM for this direct runner, while ComfyUI can run Mochi with lower VRAM. If the local GPU cannot load this harness, keep the same A11 route and swap the runner URL to a ComfyUI/Mochi worker.
 
 ## Installation
 

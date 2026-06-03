@@ -691,6 +691,10 @@ function isProxyTransientOverloadError(error_, status = 0) {
 }
 
 function buildProxyUserMessage(error_, fallbackError = 'proxy_error', req = {}, status = 0) {
+  const summary = summarizeProxyError(error_, fallbackError);
+  if (/video_engine_unavailable|generateVideo handler unavailable|real_video_unavailable|video_proxy_fetch_unavailable|local video runner|mochi|A11_VIDEO_LOCAL_RUNNER/i.test(summary)) {
+    return "Le moteur vidéo local n'est pas encore prêt: le routage est actif, mais le worker de rendu vidéo n'est pas lancé ou pas branché. Les poids locaux sont installés; il faut démarrer le runner vidéo avant de lancer le clip.";
+  }
   if (isProxyTransientOverloadError(error_, status)) {
     const tier = resolveProxyAccountTier(req);
     if (tier === 'basic') {
@@ -698,7 +702,7 @@ function buildProxyUserMessage(error_, fallbackError = 'proxy_error', req = {}, 
     }
     return "Le serveur IA est surchargé ou un fournisseur a coupé la réponse. Réessaie dans quelques instants; ta file prioritaire reste conservée.";
   }
-  return summarizeProxyError(error_, fallbackError);
+  return summary;
 }
 
 function attachIntentDebug(payload, _resolution, _body = {}) {

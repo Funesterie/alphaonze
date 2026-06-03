@@ -1353,8 +1353,11 @@ function canReuseLastMediaForRequest(value: string) {
 
 function formatChatErrorForUser(error: unknown) {
   const message = String((error as any)?.message || error || "").trim();
+  if (/video_engine_unavailable|generateVideo handler unavailable|real_video_unavailable|video_proxy_fetch_unavailable|local video runner|mochi|A11_VIDEO_LOCAL_RUNNER/i.test(message)) {
+    return "Le moteur vidéo local n'est pas encore prêt: le routage est actif, mais le worker de rendu vidéo n'est pas lancé ou pas branché. Les poids locaux sont installés; il faut démarrer le runner vidéo avant de lancer le clip.";
+  }
   if (/\b(API\s*)?(502|503|504|524)\b/i.test(message) || /html inattendue|timeout|surcharge|upstream/i.test(message)) {
-    return "Le serveur IA est surchargé ou un fournisseur a coupé la réponse. Les comptes Basic passent après les files Premium/Fondateur: réessaie dans quelques instants, ou passe Premium/Fondateur si tu veux plus de priorité.";
+    return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; si tu es en compte Basic, les demandes Premium/Fondateur peuvent passer avant toi quand la file est chargée.";
   }
   return `Erreur lors de l'appel au chat A11 : ${message || "erreur inconnue"}`;
 }

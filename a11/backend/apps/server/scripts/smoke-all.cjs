@@ -148,6 +148,7 @@ function checkStoragePolicy() {
     'OLLAMA_MODELS',
     'A11_RUNTIME_ROOT',
     'A11_VIDEO_WORK_ROOT',
+    'A11_VIDEO_LOCAL_WEIGHTS_DIR',
     'A11_MATCH_ARENA_EXPORT_ROOT',
     'A11_EXPORT_ROOT',
     'A11_CACHE_ROOT',
@@ -164,6 +165,49 @@ function checkStoragePolicy() {
     checkedKeys: configured.map((entry) => entry.key),
     gamesRootConfigured: Boolean(gamesRoot),
     offDriveKeys: offDrive.map((entry) => entry.key),
+  };
+}
+
+function checkLocalVideoWeights() {
+  const weightsDir = String(
+    process.env.A11_VIDEO_LOCAL_WEIGHTS_DIR
+    || process.env.A11_MOCHI_WEIGHTS_DIR
+    || 'E:\\Funesterie\\models\\video\\weights'
+  ).trim();
+  const required = [
+    { name: 'dit.safetensors', minBytes: 40_000_000_000 },
+    { name: 'encoder.safetensors', minBytes: 300_000_000 },
+    { name: 'decoder.safetensors', minBytes: 1_000_000_000 },
+  ];
+  const files = required.map((entry) => {
+    const filePath = path.join(weightsDir, entry.name);
+    let sizeBytes = 0;
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.isFile()) sizeBytes = stat.size;
+    } catch {
+      sizeBytes = 0;
+    }
+    return {
+      name: entry.name,
+      present: sizeBytes >= entry.minBytes,
+      sizeBytes,
+    };
+  });
+  const installed = files.every((entry) => entry.present);
+  const runnerConfigured = Boolean(String(
+    process.env.A11_VIDEO_LOCAL_RUNNER_URL
+    || process.env.A11_MOCHI_RUNNER_URL
+    || ''
+  ).trim());
+  return {
+    name: 'video-local-weights',
+    status: installed ? 'ok' : 'warn',
+    modelFamily: 'mochi',
+    installed,
+    runnerConfigured,
+    inferenceReady: installed && runnerConfigured,
+    files,
   };
 }
 
@@ -184,6 +228,7 @@ async function main() {
   checks.push(checkChopper());
   checks.push(checkStripeEnv());
   checks.push(checkStoragePolicy());
+  checks.push(checkLocalVideoWeights());
 
   const summary = {
     ok: checks.every((check) => check.status === 'ok' || check.status === 'warn'),

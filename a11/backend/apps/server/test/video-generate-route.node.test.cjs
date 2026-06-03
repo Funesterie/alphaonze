@@ -105,6 +105,75 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
   }
 });
 
+test('video generate router can proxy through the local video runner env', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+  };
+
+  let receivedBody = null;
+  const proxyServer = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      receivedBody = body ? JSON.parse(body) : null;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        tool: 'generate_video',
+        video_url: 'https://video.example.com/local-runner.mp4',
+        proxied: true,
+      }));
+    });
+  });
+
+  await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
+  const address = proxyServer.address();
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  process.env.A11_VIDEO_LOCAL_RUNNER_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when a local video runner is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'genere un clip de Vivy',
+        durationSeconds: 1,
+        fps: 2,
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.video_url, 'https://video.example.com/local-runner.mp4');
+    assert.equal(receivedBody?.prompt, 'genere un clip de Vivy');
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await new Promise((resolve) => proxyServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('video generate router uses Hugging Face video when enabled', async () => {
   const previousEnv = {
     A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,

@@ -223,7 +223,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('stale_user_message_echo')) {
-    return "Je me suis trompe de contexte. Repose-moi la question en une phrase et je reponds uniquement a celle-la.";
+    return "Mauvais contexte detecte: je reprends sur ton dernier message. Repose-moi la question en une phrase et je reponds uniquement a celle-la.";
   }
 
   return text;
