@@ -9,6 +9,7 @@
  *   a11.chat.v1              — proxifie vers le backend LLM configuré
  *   a11.memory.summary.v1   — résumé de mémoire conversationnelle
  *   a11.memory.ephemeral.v1 — mémoire clé-valeur éphémère (set/get/list/delete/clear)
+ *   qflush.rgba.multiload.v1 — projection RGBA mémoire/outils/données/orchestration
  *   web_fetch                — fetch HTTP d'une URL
  *   fs.search                — recherche de fichiers dans le workspace
  *
@@ -16,6 +17,8 @@
  *   POST /api/qflush/run          — exécuter un flow (public)
  *   POST /api/qflush/admin/run    — exécuter un flow admin (JWT requis)
  *   GET  /api/qflush/status       — état du daemon et des flows disponibles
+ *   GET  /api/qflush/cube/status  — état du cube RGBA
+ *   POST /api/qflush/cube/plan    — planifier un multiload RGBA
  *   GET  /api/qflush/memory/ephemeral/list  — lister la mémoire éphémère
  *   POST /api/qflush/memory/ephemeral       — set/get/delete mémoire éphémère
  *
@@ -30,6 +33,10 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { getLogger } = require('../../lib/structured-logger.cjs');
 const { runQflushFlow } = require('../qflush-integration.cjs');
+const {
+  buildQflushRgbaMultiload,
+  getQflushRgbaCubeSpec,
+} = require('../qflush-rgba-cube.cjs');
 const {
   getGamepadStatus,
   queueGamepadCommand,
@@ -47,6 +54,7 @@ const PUBLIC_FLOWS = new Set([
   'a11.chat.v1',
   'a11.memory.summary.v1',
   'a11.memory.ephemeral.v1',
+  'qflush.rgba.multiload.v1',
   'web_fetch',
   'fs.search',
 ]);
@@ -405,6 +413,7 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
           'a11.chat.v1': 'Proxifie vers le backend LLM configuré',
           'a11.memory.summary.v1': 'Résumé de mémoire conversationnelle',
           'a11.memory.ephemeral.v1': 'Mémoire clé-valeur éphémère (set/get/list/delete/clear)',
+          'qflush.rgba.multiload.v1': 'Projection Qflush RGBA vers mémoire, outils, données et orchestration',
           'web_fetch': 'Fetch HTTP d\'une URL',
           'fs.search': 'Recherche de fichiers dans le workspace',
         },
@@ -414,6 +423,35 @@ function createQflushFlowRouter({ workspaceRoot, runtimeRoot } = {}) {
         runtime: getRuntimeRoot(),
       },
     });
+  });
+
+  router.get('/cube/status', (_req, res) => {
+    return res.json(getQflushRgbaCubeSpec());
+  });
+
+  router.post('/cube/plan', express.json({ limit: '4mb' }), (req, res) => {
+    try {
+      const body = req.body || {};
+      const items = Array.isArray(body.items)
+        ? body.items
+        : (Object.prototype.hasOwnProperty.call(body, 'payload') ? [body] : []);
+
+      if (!items.length) {
+        return res.status(400).json({ ok: false, error: 'missing_items' });
+      }
+
+      const plan = buildQflushRgbaMultiload(items, {
+        sessionId: body.sessionId,
+        accountTier: body.accountTier || body.tier,
+        dedupe: body.dedupe,
+        maxItems: body.maxItems,
+        includePreview: body.includePreview === true,
+      });
+      return res.json(plan);
+    } catch (err) {
+      logger.error('Qflush RGBA cube plan error', { error: err.message });
+      return res.status(500).json({ ok: false, error: 'cube_plan_failed', message: err.message });
+    }
   });
 
   // ── POST /api/qflush/run ──────────────────────────────────────────────────

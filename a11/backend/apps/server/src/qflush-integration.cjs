@@ -19,6 +19,7 @@ const {
   getTtsBinaryPathCandidates,
   getTtsEspeakPathCandidates,
 } = require('../lib/tts-paths.cjs');
+const { buildQflushRgbaMultiload } = require('./qflush-rgba-cube.cjs');
 
 // Always available since we have our own implementation
 const qflushAvailable = true;
@@ -873,10 +874,27 @@ function runBuiltInEphemeralMemoryFlow(payload = {}) {
   };
 }
 
-function runBuiltInLocalFlow(flow, payload = {}) {
+function runBuiltInLocalFlow(flow, payload = {}, options = {}) {
   const normalizedFlow = String(flow || '').trim().toLowerCase();
   if (normalizedFlow === 'a11.memory.ephemeral.v1') {
     return runBuiltInEphemeralMemoryFlow(payload || {});
+  }
+  if (normalizedFlow === 'qflush.rgba.multiload.v1') {
+    const items = Array.isArray(payload?.items)
+      ? payload.items
+      : (Array.isArray(payload) ? payload : [payload || {}]);
+    return {
+      ...buildQflushRgbaMultiload(items, {
+        sessionId: payload?.sessionId,
+        accountTier: payload?.accountTier || payload?.tier,
+        admin: options.admin === true || payload?.admin === true,
+        dedupe: payload?.dedupe,
+        maxItems: payload?.maxItems,
+        includePreview: payload?.includePreview === true,
+      }),
+      flow: normalizedFlow,
+      provider: 'local-qflush-fallback',
+    };
   }
   if (normalizedFlow === 'a11.memory.summary.v1') {
     const messages = Array.isArray(payload.messages) ? payload.messages : [];
@@ -968,7 +986,7 @@ async function runQflushFlow(flow, payload, options = {}) {
     }
   }
 
-  const builtInResult = runBuiltInLocalFlow(flow, payload || {});
+  const builtInResult = runBuiltInLocalFlow(flow, payload || {}, options);
   if (builtInResult) {
     return builtInResult;
   }

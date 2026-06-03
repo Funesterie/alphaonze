@@ -8,6 +8,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 export * as horn from "./core/horn";
+export * as rgbaCube from "./cortex/rgbaCube";
 
 export async function runCli(argv = process.argv.slice(2)) {
   const first = argv[0];
