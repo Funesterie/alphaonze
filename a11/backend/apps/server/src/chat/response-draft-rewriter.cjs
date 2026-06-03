@@ -84,9 +84,40 @@ function looksLikeStaleUserMessageEcho(text = '', userMessage = '') {
 
 function looksLikeVirtualDraftLeak(text = '') {
   const folded = foldText(text);
-  return /^(brouillon|draft|analyse interne|intent(?:ion)? utilisateur|contexte fiable)\s*:/i.test(normalizeText(text))
+  const normalized = normalizeText(text);
+  return /^(brouillon|draft|analyse interne|intent(?:ion)? utilisateur|contexte fiable)\s*:/i.test(normalized)
+    || /^(voici|here(?:'s| is)|there(?:'s| is))\s+(?:un\s+)?(?:brouillon|draft)\.?$/i.test(normalized)
+    || /^voici\s+un\s+brouillon\b/i.test(normalized)
+    || /^here(?:'s| is)\s+a\s+draft\b/i.test(normalized)
     || folded.includes('brouillon virtuel')
     || folded.includes('virtual response draft');
+}
+
+function looksLikeGenericContextPlaceholder(text = '') {
+  const normalized = normalizeText(text)
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+  return /^sure,?\s+here(?:'s| is)\s+(?:a\s+)?short reply to the last message\.?$/i.test(normalized)
+    || /^here(?:'s| is)\s+(?:a\s+)?short reply to the last message\.?$/i.test(normalized)
+    || /^certainly,?\s+here(?:'s| is)\s+(?:a\s+)?short reply\b/i.test(normalized)
+    || /^bien sur,?\s+voici\s+une\s+reponse\s+courte\s+au\s+dernier\s+message\.?$/i.test(foldText(normalized));
+}
+
+function userMessageLooksFrench(userMessage = '') {
+  const folded = foldText(userMessage);
+  if (!folded) return false;
+  return /[àâçéèêëîïôùûüÿœæ]/i.test(String(userMessage || ''))
+    || /\b(salut|ca|ça|oui|non|pourquoi|comment|quoi|qui|tu|toi|te|ta|ton|tes|avec|faire|fais|peux|peut|marche|fonctionne|probleme|problème|reponds|réponds)\b/i.test(folded);
+}
+
+function looksLikeEnglishDrift(text = '', userMessage = '') {
+  if (!userMessageLooksFrench(userMessage)) return false;
+  const foldedText = foldText(text);
+  if (!foldedText) return false;
+  const englishSignals = (foldedText.match(/\b(sure|here|here's|last message|reply|certainly|can help|how can i help|today|what can i do)\b/g) || []).length;
+  const frenchSignals = (foldedText.match(/\b(oui|non|salut|bonjour|je|tu|te|toi|avec|pour|quoi|comment|peux|peut|reponse|réponse)\b/g) || []).length;
+  return englishSignals >= 2 && frenchSignals === 0;
 }
 
 function inferUserIntent(userMessage = '') {
@@ -107,6 +138,8 @@ function buildA11VirtualResponseDraft({ userMessage = '', assistantText = '', co
   if (looksLikeMarkdownTable(text) && !userAskedForStructuredFormat(userMessage)) flags.push('unrequested_table');
   if (looksLikeUnverifiedMonitoringClaim(text, userMessage)) flags.push('unverified_monitoring_claim');
   if (looksLikeVoiceCapabilityDenial(text, userMessage)) flags.push('voice_capability_denial');
+  if (looksLikeGenericContextPlaceholder(text)) flags.push('generic_context_placeholder');
+  if (looksLikeEnglishDrift(text, userMessage)) flags.push('english_language_drift');
 
   const intent = inferUserIntent(userMessage);
   const mustRewrite = flags.length > 0;
@@ -150,6 +183,10 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   const responseDraft = draft || buildA11VirtualResponseDraft({ userMessage, assistantText: text });
   if (!responseDraft.mustRewrite) return text;
 
+  if (responseDraft.flags.includes('generic_context_placeholder') || responseDraft.flags.includes('english_language_drift')) {
+    return "Je viens de perdre le fil et de renvoyer une phrase générique au lieu d'une vraie réponse. Je reprends depuis ton dernier message: dis-moi ce que tu veux faire, et je réponds en français sans recycler un ancien contexte.";
+  }
+
   if (responseDraft.flags.includes('unverified_monitoring_claim')) {
     return "Je ne vais pas faire semblant de surveiller les logs en continu depuis ce message. La, je n'ai pas de signal d'alerte verifie dans le contexte; si tu veux un vrai etat, je lance un check backend/MCP et je te rends le resultat proprement.";
   }
@@ -171,9 +208,13 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('virtual_draft_leak')) {
-    return stripMarkdownTable(text)
+    const cleaned = stripMarkdownTable(text)
       .replace(/^(brouillon|draft|analyse interne|intent(?:ion)? utilisateur|contexte fiable)\s*:\s*/i, '')
+      .replace(/^(voici|here(?:'s| is)|there(?:'s| is))\s+(?:un\s+)?(?:brouillon|draft)\.?\s*$/i, '')
+      .replace(/^voici\s+un\s+brouillon\b\.?\s*/i, '')
+      .replace(/^here(?:'s| is)\s+a\s+draft\b\.?\s*/i, '')
       .trim();
+    return cleaned || "Je viens de sortir une note interne au lieu de la réponse finale. Je reprends depuis ton dernier message, simplement.";
   }
 
   if (responseDraft.flags.includes('stale_user_message_echo')) {

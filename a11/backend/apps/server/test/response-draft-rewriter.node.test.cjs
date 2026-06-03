@@ -89,3 +89,26 @@ test('response draft corrects A11 voice module denial', () => {
   assert.match(processed.content, /a11-official-stern-french/i);
   assert.doesNotMatch(processed.content, /tout se passe en texte/i);
 });
+
+test('response draft blocks visible draft placeholders', () => {
+  const processed = postProcessA11AssistantResponse({
+    userMessage: 'salut k44 ca va ?',
+    text: 'Voici un brouillon.',
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.ok(processed.draft.flags.includes('virtual_draft_leak'));
+  assert.doesNotMatch(processed.content, /brouillon/i);
+});
+
+test('response draft rewrites English generic last-message placeholders in French sessions', () => {
+  const processed = postProcessA11AssistantResponse({
+    userMessage: 'pour faire quoi ?',
+    text: "Sure, here's a short reply to the last message.",
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.ok(processed.draft.flags.includes('generic_context_placeholder'));
+  assert.match(processed.content, /reprends depuis ton dernier message/i);
+  assert.doesNotMatch(processed.content, /Sure|last message/i);
+});
