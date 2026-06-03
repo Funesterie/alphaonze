@@ -459,6 +459,13 @@ function encodePathSegments(value = '') {
 function extractGeneratedVideoRelativePath(value = '') {
   const normalized = String(value || '').trim().replace(/\\/g, '/');
   if (!normalized) return '';
+
+  const localComfyPublicMarker = '/runtime/files/generated/videos/comfy/';
+  const localComfyPublicIndex = normalized.toLowerCase().indexOf(localComfyPublicMarker);
+  if (localComfyPublicIndex >= 0) {
+    return normalized.slice(localComfyPublicIndex + localComfyPublicMarker.length);
+  }
+
   const marker = '/files/generated/videos/';
   const markerIndex = normalized.toLowerCase().indexOf(marker);
   if (markerIndex >= 0) {

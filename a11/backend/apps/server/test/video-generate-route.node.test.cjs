@@ -383,7 +383,7 @@ test('video generate router polls async local video proxy jobs', async () => {
 
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
-    assert.equal(payload.video_url, 'https://sd.funesterie.me/files/generated/videos/comfy/20260603/demo.mp4');
+    assert.equal(payload.video_url, 'https://sd.funesterie.me/files/generated/videos/20260603/demo.mp4');
     assert.equal(requests[0]?.body?.acceptAsyncVideoJob, true);
     assert.equal(requests[0]?.headers?.['x-a11-video-token'], 'video-bridge-token');
     assert.equal(requests.find((entry) => entry.method === 'GET')?.headers?.['x-a11-video-token'], 'video-bridge-token');

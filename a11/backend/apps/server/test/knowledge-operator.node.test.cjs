@@ -7,6 +7,10 @@ const {
   activateKnowledgeModules,
   inferLanguage,
 } = require('../src/knowledge/a11-knowledge-operator.cjs');
+const {
+  buildNumaContext,
+  lookupNumaToken,
+} = require('../src/knowledge/numa-symbolic-language.cjs');
 
 test('knowledge operator infers french for common A11 prompts', () => {
   assert.equal(inferLanguage('génère un lapin doré'), 'fr');
@@ -76,4 +80,30 @@ test('knowledge operator can select auth and network modules from semantic vocab
 
   assert.ok(modules.some((entry) => entry.id === 'security.auth'));
   assert.ok(modules.some((entry) => entry.id === 'networking.basics'));
+});
+
+test('knowledge operator activates NUMA symbolic language without generic numerology', () => {
+  const text = 'en NUMA, quelle est la force des nombres 5, 16 et 40 ?';
+  const semanticAnalysis = analyzeSemanticIntent(text);
+  const modules = activateKnowledgeModules({
+    text,
+    semanticAnalysis,
+    mode: 'semantic',
+    domain: '',
+    promptSeed: buildPromptSeed(text, semanticAnalysis),
+    canonicalIntent: {
+      task: { domain: '' },
+      execution: { mode: 'semantic' },
+      style: { renderHints: [] },
+      subject: { references: [] },
+    },
+  });
+
+  assert.ok(modules.some((entry) => entry.id === 'language.numa.symbolic'));
+  assert.equal(lookupNumaToken('5').primaryMeaning, 'creation et chaos');
+  assert.equal(lookupNumaToken('16').primaryMeaning, 'maison, habitat, foyer');
+  assert.equal(lookupNumaToken('40').primaryMeaning, 'mort');
+  const context = buildNumaContext(text);
+  assert.equal(context.isNumaPrompt, true);
+  assert.deepEqual(context.tokens.map((entry) => entry.token), ['5', '16', '40']);
 });

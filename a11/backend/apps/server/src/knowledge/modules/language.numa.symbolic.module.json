@@ -1,0 +1,291 @@
+{
+  "id": "language.numa.symbolic",
+  "label": "NUMA - Langage Symbolique Funesterie",
+  "discipline": "symbolic-language",
+  "activation": {
+    "languagesAny": ["fr"],
+    "modesAny": ["semantic", "plan", "chat", "generate"],
+    "keywordsAny": [
+      "NUMA",
+      "force des nombres",
+      "valeur des numeros",
+      "valeur des numéros",
+      "valeur des chiffres",
+      "langage secret",
+      "langage abstrait",
+      "code numerique",
+      "code numérique",
+      "Maison Blanche 1600",
+      "GHOST88",
+      "ENTERA",
+      "ligne magenta"
+    ]
+  },
+  "knowledge": {
+    "concepts": [
+      "NUMA est un langage symbolique Funesterie, pas une numerologie generique",
+      "un nombre peut rester compose: 16 n'est pas automatiquement reduit a 1+6",
+      "les valeurs viennent du corpus Jeffrey/GPT et doivent etre traitees comme canon prive experimental",
+      "les nombres servent a encoder des idees, des lieux, des tensions, des cycles et des intentions",
+      "les lectures NUMA doivent toujours citer le niveau de confiance quand la valeur n'est pas confirmee"
+    ],
+    "methods": [
+      "demander si l'utilisateur veut la lecture NUMA ou la numerologie publique quand la demande est ambigue",
+      "privilegier les valeurs confirmees par Jeffrey avant les associations externes",
+      "conserver les nombres composes importants comme 16, 30, 40, 83 ou 1600",
+      "analyser un nombre comme motif, contexte, repetition et voisinage plutot que comme simple calcul",
+      "pour Vivy, transformer les valeurs NUMA en images poetiques, rimes et refrains sans pretendre a une verite universelle"
+    ],
+    "commonErrors": [
+      "dire que 1 represente la creation dans NUMA alors que Jeffrey associe creation et chaos au 5",
+      "remplacer le canon NUMA par une table de numerologie standard",
+      "reduire systematiquement les nombres composes",
+      "presenter NUMA comme une science etablie au lieu d'un langage symbolique experimental"
+    ],
+    "numberValues": [
+      {
+        "token": "0",
+        "primaryMeaning": "Do, retour ou rupture",
+        "aliases": ["retour au Do", "rupture"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "2",
+        "primaryMeaning": "harmonie",
+        "aliases": ["accord", "equilibre", "paire"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "3",
+        "primaryMeaning": "chance, amitie",
+        "aliases": ["chance", "amitie"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "4",
+        "primaryMeaning": "croissance",
+        "aliases": ["developpement", "structure qui grandit"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "5",
+        "primaryMeaning": "creation et chaos",
+        "aliases": ["creation", "chaos", "generatif instable"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "7",
+        "primaryMeaning": "chance qui tourne",
+        "aliases": ["casino", "roulette", "divin en mouvement"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "12",
+        "primaryMeaning": "pause, demi-tout",
+        "aliases": ["break", "demi-cycle"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "13",
+        "primaryMeaning": "chance ou poisse",
+        "aliases": ["ambivalence", "renversement"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "16",
+        "primaryMeaning": "maison, habitat, foyer",
+        "aliases": ["chez-soi", "lieu de vie", "maison"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "23",
+        "primaryMeaning": "pause prevue",
+        "aliases": ["etape planifiee"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "29",
+        "primaryMeaning": "fete, party",
+        "aliases": ["celebration"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "30",
+        "primaryMeaning": "combat",
+        "aliases": ["affrontement", "epreuve", "film 300"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "31",
+        "primaryMeaning": "sexe",
+        "aliases": ["desir", "corps"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "32",
+        "primaryMeaning": "rupture amoureuse",
+        "aliases": ["separation affective"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "33",
+        "primaryMeaning": "aventure",
+        "aliases": ["tour", "piste audio", "mouvement narratif"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "34",
+        "primaryMeaning": "suite chanceuse, destin",
+        "aliases": ["destin", "enchaînement favorable"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "35",
+        "primaryMeaning": "chaotique",
+        "aliases": ["desordre", "instabilite"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "36",
+        "primaryMeaning": "tour, contour, observation",
+        "aliases": ["tourner autour", "regarder"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "37",
+        "primaryMeaning": "loto, casino, chance",
+        "aliases": ["jeu", "tirage", "hasard"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "38",
+        "primaryMeaning": "amour, mariage",
+        "aliases": ["union", "lien amoureux"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "39",
+        "primaryMeaning": "gloire",
+        "aliases": ["rayonnement", "reconnaissance"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "40",
+        "primaryMeaning": "mort",
+        "aliases": ["fin", "arret", "seuil final"],
+        "confidence": "user-confirmed"
+      },
+      {
+        "token": "41",
+        "primaryMeaning": "vie",
+        "aliases": ["reprise", "souffle"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "42",
+        "primaryMeaning": "monde, univers",
+        "aliases": ["totalite", "cosmos"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "43",
+        "primaryMeaning": "calme apres la tempete",
+        "aliases": ["retour au calme"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "44",
+        "primaryMeaning": "mort ou vie",
+        "aliases": ["seuil double", "bascule"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "45",
+        "primaryMeaning": "intelligence",
+        "aliases": ["analyse", "esprit"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "46",
+        "primaryMeaning": "course, vitesse",
+        "aliases": ["mouvement rapide", "Rossi"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "47",
+        "primaryMeaning": "cadence",
+        "aliases": ["rythme", "tempo"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "48",
+        "primaryMeaning": "divorce",
+        "aliases": ["separation formelle"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "67",
+        "primaryMeaning": "cafe",
+        "aliases": ["pause cafe"],
+        "confidence": "source-candidate"
+      },
+      {
+        "token": "83",
+        "primaryMeaning": "lieu intime, tante, famille elargie",
+        "aliases": ["famille elargie", "tante", "lieu intime"],
+        "confidence": "source-candidate"
+      }
+    ],
+    "examples": [
+      {
+        "input": "1600 / Maison Blanche",
+        "reading": "16 porte la valeur maison-foyer; 1600 peut donc etre lu comme une maison de pouvoir ou un foyer institutionnel, sans reduire 16 a 7.",
+        "confidence": "user-confirmed"
+      },
+      {
+        "input": "300",
+        "reading": "30 active le combat; le film 300 sert d'exemple culturel de cette association.",
+        "confidence": "user-confirmed"
+      },
+      {
+        "input": "7 au casino",
+        "reading": "7 porte la chance qui tourne: hasard, roue, renversement possible.",
+        "confidence": "user-confirmed"
+      }
+    ],
+    "sourceCards": [
+      {
+        "id": "chatgpt-export-2026-05-07:scanner-transparence-medicale",
+        "title": "Scanner et transparence medicale",
+        "role": "corpus-source",
+        "note": "Conversation exportee ChatGPT contenant les tables NUMA candidates."
+      },
+      {
+        "id": "user-directive-2026-06-03:numa",
+        "title": "Corrections NUMA directes Jeffrey",
+        "role": "canon-user",
+        "note": "Corrections explicites: 5 creation-chaos, 4 croissance, 2 harmonie, 16 foyer, 30 combat, 40 mort, 7 chance qui tourne."
+      }
+    ]
+  },
+  "apply": {
+    "constraints": {
+      "privateSymbolicCanon": true,
+      "avoidGenericNumerology": true,
+      "preserveCompoundNumbers": true
+    }
+  },
+  "impacts": {
+    "semantic": [
+      "active une lecture NUMA privee quand l'utilisateur parle de force des nombres ou de valeurs symboliques",
+      "evite de contredire les valeurs confirmees par Jeffrey avec des tables de numerologie publiques"
+    ],
+    "chat": [
+      "repond dans la langue de l'interlocuteur et presente NUMA comme langage symbolique Funesterie",
+      "demande une confirmation quand une valeur n'est pas encore canonisee"
+    ],
+    "generate": [
+      "utilise les valeurs NUMA comme couche poetique ou intentionnelle sans ecraser la demande visuelle/audio principale"
+    ]
+  }
+}
