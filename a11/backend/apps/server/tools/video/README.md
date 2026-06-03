@@ -123,6 +123,17 @@ A11_COMFY_URL=http://127.0.0.1:8188
 A11_VIDEO_LOCAL_RUNNER_URL=http://127.0.0.1:17881/api/tools/generate_video
 ```
 
+Optional private model downloads can use a Civitai token. Store it as a
+Windows user environment variable on the GPU host; do not put it in Git,
+`.env`, logs or shared notes:
+
+```env
+CIVITAI_API_TOKEN=...
+```
+
+`Start-LocalComfyMochi.ps1` forwards `CIVITAI_API_TOKEN` / `CIVITAI_TOKEN` to
+ComfyUI and the local runner when they start.
+
 Important: a public backend cannot call `127.0.0.1` on the Windows PC. For
 `a11.funesterie.me`, expose this runner through the existing private bridge or a
 secured tunnel, then point `A11_VIDEO_PROXY_URL` to that reachable URL.

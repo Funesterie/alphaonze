@@ -43,6 +43,15 @@ $env:A11_COMFY_TEMP_DIR = $tempDir
 $env:A11_COMFY_PUBLIC_VIDEO_DIR = $publicCopyDir
 $env:A11_VIDEO_LOCAL_RUNNER_URL = "http://$RunnerHost`:$RunnerPort/api/tools/generate_video"
 
+$civitaiToken = [Environment]::GetEnvironmentVariable("CIVITAI_API_TOKEN", "User")
+if (-not $civitaiToken) {
+  $civitaiToken = [Environment]::GetEnvironmentVariable("CIVITAI_TOKEN", "User")
+}
+if ($civitaiToken) {
+  $env:CIVITAI_API_TOKEN = $civitaiToken
+  $env:CIVITAI_TOKEN = $civitaiToken
+}
+
 function Test-HttpOk([string]$Url) {
   try {
     $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 8
