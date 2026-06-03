@@ -27,10 +27,20 @@ services:
         sync: false
       - key: JWT_EXPIRY
         value: 7d
+      - key: A11_FULL_ACCESS_EMAILS
+        value: cellaurojeffrey@gmail.com,marvincellauro@gmail.com,giovannabrunetto@gmail.com,bayetgerard@gmail.com,boostro38@gmail.com,charlenejewitt@gmail.com,jeffrey38330@gmail.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: CORS_ORIGINS
-        value: https://a11.funesterie.me,https://a11.funesterie.me
+        value: https://funesterie.me,https://a11.funesterie.me,https://k44.funesterie.me,https://vivy.funesterie.me
       - key: APP_URL
         value: https://a11.funesterie.me
+      - key: PUBLIC_API_URL
+        value: https://a11.funesterie.me
+      - key: GOOGLE_CALLBACK_URL
+        value: https://a11.funesterie.me/api/auth/google/callback
+      - key: A11_GOOGLE_CALLBACK_URL
+        value: https://a11.funesterie.me/api/auth/google/callback
       - key: A11_LLM_PROVIDER
         value: openai
       - key: DEFAULT_MODEL
@@ -38,6 +48,10 @@ services:
       - key: A11_LLM_TIMEOUT_MS
         value: 60000
       - key: OPENAI_API_KEY
+        sync: false
+      - key: A11_LLM_LLAMA
+        sync: false
+      - key: OLLAMA_API_KEY
         sync: false
       - key: A11_LLM_FALLBACK_PROVIDER
         value: groq

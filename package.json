@@ -55,7 +55,10 @@
     "nossen:logic-reduce:pack": "npm --prefix packages/nossen/logic-reduce run pack:dry",
     "funeste:logic-reduce:test": "npm --prefix packages/funeste/logic-reduce-nossen test",
     "funeste:logic-reduce:pack": "npm --prefix packages/funeste/logic-reduce-nossen run pack:dry",
-    "rubixcube:vault": "node scripts/rubixgate/rubixcube-vault.cjs"
+    "rubixcube:vault": "node scripts/rubixgate/rubixcube-vault.cjs",
+    "ollama:up": "docker compose -f docker-compose.ollama.yml up -d ollama",
+    "ollama:up:gpu": "docker compose -f docker-compose.ollama.yml -f docker-compose.ollama.gpu.yml up -d ollama",
+    "ollama:down": "docker compose -f docker-compose.ollama.yml down"
   },
   "version": "0.0.1",
   "funding": [

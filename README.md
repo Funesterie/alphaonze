@@ -195,6 +195,7 @@ credential dans une issue, un chat ou une capture.
 - local: `a11\launchers\a11-local.ps1`
 - bureau: `a11\launchers\a11-desktop.ps1`
 - bureau + Ollama: `a11\launchers\a11-ollama-desktop.ps1`
+- Docker Ollama Qflush/Doctor: `npm run ollama:up` ou `npm run ollama:up:gpu`
 - prod/online: `a11\launchers\start-online-a11.ps1`
 - raccourcis bureau: `a11\launchers\create-desktop-shortcut.ps1`
 

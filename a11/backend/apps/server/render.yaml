@@ -38,7 +38,7 @@ services:
 
       # CORS
       - key: CORS_ORIGINS
-        value: https://a11.funesterie.me,https://a11.funesterie.me,https://a11.funesterie.me,https://a11.funesterie.me
+        value: https://funesterie.me,https://a11.funesterie.me,https://k44.funesterie.me,https://vivy.funesterie.me
       - key: APP_URL
         value: https://a11.funesterie.me
       - key: PUBLIC_API_URL
@@ -73,6 +73,14 @@ services:
         sync: false # Secret, à configurer manuellement
       - key: DEEPSEEK_MODEL
         value: deepseek-chat
+      - key: TOGETHER_API_KEY
+        sync: false # Secret, à configurer manuellement
+      - key: TOGETHER_MODEL
+        value: meta-llama/Llama-3.3-70B-Instruct-Turbo
+      - key: HF_API_KEY
+        sync: false # Secret, à configurer manuellement
+      - key: HF_MODEL
+        value: meta-llama/Llama-3.1-8B-Instruct
 
       # Stripe
       - key: STRIPE_SECRET_KEY
