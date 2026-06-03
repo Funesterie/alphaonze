@@ -13,6 +13,9 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
   const previousEnv = {
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
+    A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
+    A11_VIDEO_BRIDGE_TOKEN: process.env.A11_VIDEO_BRIDGE_TOKEN,
+    VIDEO_PROXY_TOKEN: process.env.VIDEO_PROXY_TOKEN,
     NEZ_ADMIN_TOKEN: process.env.NEZ_ADMIN_TOKEN,
     A11_NEZ_ADMIN_TOKEN: process.env.A11_NEZ_ADMIN_TOKEN,
     NEZ_SERVICE_TOKEN: process.env.NEZ_SERVICE_TOKEN,
@@ -49,6 +52,9 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
   const address = proxyServer.address();
   process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
   process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
+  delete process.env.A11_VIDEO_PROXY_TOKEN;
+  delete process.env.A11_VIDEO_BRIDGE_TOKEN;
+  delete process.env.VIDEO_PROXY_TOKEN;
   process.env.NEZ_ADMIN_TOKEN = 'server-admin-token';
   delete process.env.A11_NEZ_ADMIN_TOKEN;
   delete process.env.NEZ_SERVICE_TOKEN;
@@ -110,6 +116,9 @@ test('video generate router can proxy through the local video runner env', async
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
     VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
     A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
+    A11_VIDEO_BRIDGE_TOKEN: process.env.A11_VIDEO_BRIDGE_TOKEN,
+    VIDEO_PROXY_TOKEN: process.env.VIDEO_PROXY_TOKEN,
   };
 
   let receivedBody = null;
@@ -134,6 +143,9 @@ test('video generate router can proxy through the local video runner env', async
   const address = proxyServer.address();
   delete process.env.A11_VIDEO_PROXY_URL;
   delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_PROXY_TOKEN;
+  delete process.env.A11_VIDEO_BRIDGE_TOKEN;
+  delete process.env.VIDEO_PROXY_TOKEN;
   process.env.A11_VIDEO_LOCAL_RUNNER_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
 
   const app = express();
@@ -164,6 +176,94 @@ test('video generate router can proxy through the local video runner env', async
     assert.equal(payload.ok, true);
     assert.equal(payload.video_url, 'https://video.example.com/local-runner.mp4');
     assert.equal(receivedBody?.prompt, 'genere un clip de Vivy');
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await new Promise((resolve) => proxyServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router sends the dedicated video bridge token when configured', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
+    A11_VIDEO_BRIDGE_TOKEN: process.env.A11_VIDEO_BRIDGE_TOKEN,
+    VIDEO_PROXY_TOKEN: process.env.VIDEO_PROXY_TOKEN,
+    NEZ_ADMIN_TOKEN: process.env.NEZ_ADMIN_TOKEN,
+    A11_NEZ_ADMIN_TOKEN: process.env.A11_NEZ_ADMIN_TOKEN,
+    NEZ_SERVICE_TOKEN: process.env.NEZ_SERVICE_TOKEN,
+    A11_NEZ_SERVICE_TOKEN: process.env.A11_NEZ_SERVICE_TOKEN,
+    NEZ_ALLOWED_TOKEN: process.env.NEZ_ALLOWED_TOKEN,
+    NEZ_ALLOWED_TOKENS: process.env.NEZ_ALLOWED_TOKENS,
+    NEZ_TOKENS: process.env.NEZ_TOKENS,
+    NEZ_TOKEN: process.env.NEZ_TOKEN,
+    A11_NEZ_TOKEN: process.env.A11_NEZ_TOKEN,
+  };
+
+  let receivedHeaders = null;
+  const proxyServer = http.createServer((req, res) => {
+    receivedHeaders = req.headers || {};
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        tool: 'generate_video',
+        video_path: 'D:\\projets\\funesterie\\a11\\backend\\apps\\server\\runtime\\files\\generated\\videos\\comfy\\demo.mp4',
+      }));
+    });
+  });
+
+  await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
+  const address = proxyServer.address();
+  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_PROXY_TOKEN = 'video-bridge-token';
+  delete process.env.A11_VIDEO_BRIDGE_TOKEN;
+  delete process.env.VIDEO_PROXY_TOKEN;
+  delete process.env.NEZ_ADMIN_TOKEN;
+  delete process.env.A11_NEZ_ADMIN_TOKEN;
+  delete process.env.NEZ_SERVICE_TOKEN;
+  delete process.env.A11_NEZ_SERVICE_TOKEN;
+  delete process.env.NEZ_ALLOWED_TOKEN;
+  delete process.env.NEZ_ALLOWED_TOKENS;
+  delete process.env.NEZ_TOKENS;
+  delete process.env.NEZ_TOKEN;
+  delete process.env.A11_NEZ_TOKEN;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when proxy is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: 'Bearer user-jwt-token',
+      },
+      body: JSON.stringify({
+        prompt: 'clip test',
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(receivedHeaders?.authorization, undefined);
+    assert.equal(receivedHeaders?.['x-a11-video-token'], 'video-bridge-token');
+    assert.equal(receivedHeaders?.['x-nez-token'], 'video-bridge-token');
+    assert.equal(receivedHeaders?.['x-nez-admin-token'], undefined);
   } finally {
     await new Promise((resolve) => appServer.close(resolve));
     await new Promise((resolve) => proxyServer.close(resolve));

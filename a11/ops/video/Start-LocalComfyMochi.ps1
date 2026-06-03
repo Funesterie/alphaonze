@@ -52,6 +52,15 @@ if ($civitaiToken) {
   $env:CIVITAI_TOKEN = $civitaiToken
 }
 
+$videoProxyToken = [Environment]::GetEnvironmentVariable("A11_VIDEO_PROXY_TOKEN", "User")
+if (-not $videoProxyToken) {
+  $videoProxyToken = [Environment]::GetEnvironmentVariable("A11_VIDEO_BRIDGE_TOKEN", "User")
+}
+if ($videoProxyToken) {
+  $env:A11_VIDEO_PROXY_TOKEN = $videoProxyToken
+  $env:A11_VIDEO_BRIDGE_TOKEN = $videoProxyToken
+}
+
 function Test-HttpOk([string]$Url) {
   try {
     $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 8

@@ -1,0 +1,32 @@
+{
+  "id": "vivy-visual-direction",
+  "label": "Vivy Visual Direction",
+  "match": {
+    "renderHintsAny": ["vivy-pop-anime"],
+    "referenceHintsAny": ["vivy"]
+  },
+  "apply": {
+    "style": {
+      "render": "stylized pop anime music video",
+      "modifiers": [
+        "pink hair",
+        "green eyes",
+        "bright smile",
+        "jewelry highlights",
+        "neon pop reflections",
+        "concert-ready energy",
+        "original character design"
+      ]
+    },
+    "composition": [
+      "close expressive framing",
+      "dynamic musical movement",
+      "clean readable face"
+    ],
+    "constraints": {
+      "originalCharacter": true,
+      "avoidDirectArtworkCopy": true,
+      "referenceModelHint": "Civitai image 132491722: Anima base with Creepy Cute Magical LoRA; trigger CreepyCuteMagic; use as Vivy art-direction memory only."
+    }
+  }
+}

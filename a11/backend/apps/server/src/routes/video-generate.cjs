@@ -29,6 +29,11 @@ function firstConfiguredToken(...values) {
 }
 
 function buildAiServiceAuthHeaders() {
+  const videoProxyToken = firstConfiguredToken(
+    process.env.A11_VIDEO_PROXY_TOKEN,
+    process.env.A11_VIDEO_BRIDGE_TOKEN,
+    process.env.VIDEO_PROXY_TOKEN
+  );
   const adminToken = firstConfiguredToken(
     process.env.NEZ_ADMIN_TOKEN,
     process.env.A11_NEZ_ADMIN_TOKEN,
@@ -43,7 +48,8 @@ function buildAiServiceAuthHeaders() {
     process.env.A11_NEZ_TOKEN
   );
   const headers = {};
-  if (serviceToken) headers['x-nez-token'] = serviceToken;
+  if (videoProxyToken) headers['x-a11-video-token'] = videoProxyToken;
+  if (serviceToken || videoProxyToken) headers['x-nez-token'] = serviceToken || videoProxyToken;
   if (adminToken) headers['x-nez-admin-token'] = adminToken;
   return headers;
 }

@@ -64,6 +64,8 @@ A11_VIDEO_FFMPEG_BIN=ffmpeg
 A11_VIDEO_FRAME_INIT_STRENGTH=0.28
 A11_VIDEO_USE_JANUS_FRAME_ANALYSIS=false
 A11_VIDEO_PROXY_URL=
+A11_VIDEO_PROXY_TOKEN=
+A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL=
 A11_VIDEO_PROXY_TIMEOUT_MS=600000
 A11_VIDEO_LOCAL_WEIGHTS_DIR=E:\\Funesterie\\models\\video\\weights
 A11_VIDEO_LOCAL_RUNNER_URL=
@@ -73,6 +75,8 @@ For the current production topology on Railway, prefer:
 
 ```env
 A11_VIDEO_PROXY_URL=https://sd.funesterie.me/api/tools/generate_video
+A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL=https://sd.funesterie.me/files/generated/videos
+A11_VIDEO_PROXY_TIMEOUT_MS=1800000
 ```
 
 This keeps Railway as the public API while the local Windows backend performs the actual GPU render and NVENC encode.
@@ -137,6 +141,44 @@ ComfyUI and the local runner when they start.
 Important: a public backend cannot call `127.0.0.1` on the Windows PC. For
 `a11.funesterie.me`, expose this runner through the existing private bridge or a
 secured tunnel, then point `A11_VIDEO_PROXY_URL` to that reachable URL.
+
+For the current Windows GPU bridge, start Comfy and the local A11 runner, then
+start the secured Cloudflare tunnel:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11\\ops\\video\\Start-LocalComfyMochi.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11\\ops\\video\\Start-LocalComfyTunnel.ps1 -SelfTest
+```
+
+The tunnel should target:
+
+```env
+A11_VIDEO_PROXY_URL=https://sd.funesterie.me/api/tools/generate_video
+A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL=https://sd.funesterie.me/files/generated/videos
+```
+
+Store `A11_VIDEO_PROXY_TOKEN` only in local user environment variables and in the
+production secret store. The backend sends it as `x-a11-video-token`, and the
+local runner refuses video generation without it.
+
+### Vivy visual direction memory
+
+Vivy's current video/image direction is tracked in:
+
+```text
+src/image/packs/vivy-visual-direction.pack.json
+```
+
+Reference memory from the Civitai page selected by Jeffrey:
+
+- image page: `https://civitai.com/images/132491722`
+- base direction: Anima
+- LoRA direction: Creepy Cute Magical
+- trigger hint: `CreepyCuteMagic`
+- visible traits: pink hair, green eyes, bright smile, jewelry, neon pop energy
+
+Use this as an original Vivy art-direction memory. Do not instruct the model to
+copy a specific public artwork one-to-one.
 
 ## Installation
 

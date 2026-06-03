@@ -11,6 +11,7 @@ function normalizeImagePromptLiteral(value = '') {
 const RENDER_HINT_PATTERNS = [
   { key: 'cartoon', pattern: /\b(cartoon|cartoonesque|dessin anime|toon)\b/i },
   { key: 'anime', pattern: /\b(anime|manga|ghibli|one piece|naruto|dragon ball|pokemon)\b/i },
+  { key: 'vivy-pop-anime', pattern: /\b(vivy|crepuscule funeste|crépuscule funeste|CreepyCuteMagic|creepy cute magical)\b/i },
   { key: 'retro-game', pattern: /\b(mario 64|mario|donkey kong|zelda|nintendo|retro game|jeu retro)\b/i },
   { key: 'pixel-art', pattern: /\b(pixel art|pixel-art|8 ?bit|16 ?bit)\b/i },
   { key: 'photorealistic', pattern: /\b(photo|photorealiste|photorealistic|realiste|realistic)\b/i },
@@ -25,6 +26,7 @@ const REFERENCE_HINT_PATTERNS = [
   { key: 'ghibli', pattern: /\bghibli\b/i },
   { key: 'zelda', pattern: /\bzelda\b/i },
   { key: 'hogwarts', pattern: /\bhogwarts|harry potter\b/i },
+  { key: 'vivy', pattern: /\b(vivy|crepuscule funeste|crépuscule funeste|CreepyCuteMagic|creepy cute magical)\b/i },
 ];
 
 const COLOR_TOKEN_PATTERN = /\b(orange|rouge|bleu|vert|jaune|violet|purple|red|blue|green|yellow|black|white|blanc|noir|rose|pink|marron|brown|gris|gray|grey|dore|gold|golden|argent|silver)\b/gi;

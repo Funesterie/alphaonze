@@ -8,6 +8,7 @@ A11_VIDEO_LOCAL_RUNNER_URL when a reachable bridge/tunnel is configured.
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import math
 import os
@@ -20,7 +21,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import uvicorn
@@ -43,6 +44,56 @@ DEFAULT_STEPS = int(os.environ.get("A11_COMFY_MOCHI_STEPS", "8"))
 DEFAULT_MAX_FRAMES = int(os.environ.get("A11_COMFY_MOCHI_MAX_FRAMES", "13"))
 DEFAULT_TIMEOUT_SEC = int(os.environ.get("A11_COMFY_MOCHI_TIMEOUT_SEC", "1800"))
 DEFAULT_MAX_PIXELS = int(os.environ.get("A11_COMFY_MOCHI_MAX_PIXELS", str(384 * 384)))
+
+
+def first_configured_token(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "")
+        for token in str(value or "").replace(",", " ").split():
+            token = token.strip()
+            if token:
+                return token
+    return ""
+
+
+ACCESS_TOKEN = first_configured_token(
+    "A11_VIDEO_PROXY_TOKEN",
+    "A11_VIDEO_BRIDGE_TOKEN",
+    "VIDEO_PROXY_TOKEN",
+    "A11_NEZ_ADMIN_TOKEN",
+    "NEZ_ADMIN_TOKEN",
+    "A11_NEZ_SERVICE_TOKEN",
+    "NEZ_SERVICE_TOKEN",
+    "A11_NEZ_TOKEN",
+    "NEZ_TOKEN",
+)
+
+
+def require_bridge_auth(request: Request) -> None:
+    if not ACCESS_TOKEN:
+        return
+
+    candidates = [
+        request.headers.get("x-a11-video-token"),
+        request.headers.get("x-nez-token"),
+        request.headers.get("x-nez-admin-token"),
+    ]
+    authorization = str(request.headers.get("authorization") or "").strip()
+    if authorization.lower().startswith("bearer "):
+        candidates.append(authorization[7:].strip())
+
+    for candidate in candidates:
+        if candidate and hmac.compare_digest(str(candidate), ACCESS_TOKEN):
+            return
+
+    raise HTTPException(
+        status_code=401,
+        detail={
+            "ok": False,
+            "error": "video_bridge_unauthorized",
+            "message": "video_bridge_unauthorized",
+        },
+    )
 
 
 class VideoRequest(BaseModel):
@@ -243,6 +294,7 @@ class ComfyMochiRuntime:
                 "comfyUrl": self.comfy_url,
                 "outputDir": str(DEFAULT_OUTPUT_DIR),
                 "publicCopyDir": str(self.public_copy_dir),
+                "authRequired": bool(ACCESS_TOKEN),
                 "nodes": {name: name in nodes for name in required},
                 "model": MODEL_NAME,
                 "vae": VAE_NAME,
@@ -254,6 +306,7 @@ class ComfyMochiRuntime:
                 "service": "a11-local-comfy-mochi-runner",
                 "provider": "comfyui-mochi",
                 "comfyUrl": self.comfy_url,
+                "authRequired": bool(ACCESS_TOKEN),
                 "error": str(exc),
             }
 
@@ -318,7 +371,8 @@ def build_app(runtime: ComfyMochiRuntime) -> FastAPI:
         return runtime.health()
 
     @app.post("/api/tools/generate_video")
-    def generate_video(request: VideoRequest) -> dict[str, Any]:
+    def generate_video(request: VideoRequest, http_request: Request) -> dict[str, Any]:
+        require_bridge_auth(http_request)
         try:
             return runtime.generate(request)
         except Exception as exc:

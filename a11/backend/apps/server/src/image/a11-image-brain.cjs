@@ -27,6 +27,7 @@ const PACKS = [
   require('./packs/cartoon-render.pack.json'),
   require('./packs/anime-render.pack.json'),
   require('./packs/retro-game-character.pack.json'),
+  require('./packs/vivy-visual-direction.pack.json'),
 ];
 
 function clamp01(value) {
