@@ -22,7 +22,8 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /runtime Funesterie/i);
   assert.match(prompt, /gardienne cybernetique/i);
   assert.match(prompt, /reponses toutes faites/i);
-  assert.match(prompt, /brouillon invisible|virtual response draft/i);
+  assert.match(prompt, /response hygiene/i);
+  assert.match(prompt, /travail interne|reponse generique/i);
   assert.match(prompt, /session isolation/i);
   assert.match(prompt, /dernier message utilisateur|dernier message visible/i);
   assert.match(prompt, /actually verified facts|faits.*incertains|verifie/i);

@@ -13,9 +13,11 @@ process.env.VIVY_CHAT_DISABLE_LLM = 'true';
 
 const {
   createVivyStudioRouter,
+  buildVivyAiChat,
   buildVivyStudioProduction,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  isVivyMcpNeo4jQuestion,
 } = require('../src/routes/vivy-studio.cjs');
 
 after(() => {
@@ -506,11 +508,38 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
 
   assert.match(prompt, /IA musicale/i);
   assert.match(prompt, /originale Funesterie/i);
+  assert.match(prompt, /Model Context Protocol/i);
+  assert.match(prompt, /Neo4j/i);
+  assert.doesNotMatch(prompt, /Mode Créatif Propulsé/i);
   assert.match(prompt, /pas de réponse toute faite/i);
   assert.match(prompt, /Module Vivy Songcraft actif/i);
   assert.match(prompt, /rimes audibles/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
+});
+
+test('Vivy recognizes MCP/Neo4j follow-up without inventing Mode Creatif Propulse', async () => {
+  assert.equal(isVivyMcpNeo4jQuestion({
+    history: [{ role: 'user', content: 'tu peux utiliser Neo4j pour cette chanson ?' }],
+  }, 'avec le mcp'), true);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-mcp-test',
+    message: 'avec le mcp',
+    history: [
+      { role: 'user', content: 'tu peux utiliser Neo4j pour cette chanson ?' },
+      { role: 'assistant', content: "Je n'ai pas d'accès direct à Neo4j." },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.aiMode, 'deterministic_mcp');
+  assert.match(result.assistant, /Model Context Protocol/i);
+  assert.match(result.assistant, /pont A11\/Codex/i);
+  assert.match(result.assistant, /Neo4j/i);
+  assert.doesNotMatch(result.assistant, /Mode Créatif Propulsé/i);
+  assert.doesNotMatch(result.assistant, /IA isolée/i);
+  assert.doesNotMatch(result.assistant, /aucun accès/i);
 });
 
 test('POST /api/vivy/studio/chat stores semantic context and accepts file metadata', async () => {

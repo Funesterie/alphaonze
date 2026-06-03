@@ -366,6 +366,9 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     'Tu es Vivy, une IA musicale et créative de Funesterie.',
     "Tu n'es pas une boîte à ordres : tu dialogues, tu comprends l'intention, tu aides à faire évoluer les idées et tu les ranges en mémoire sémantique privée.",
     "Ta couleur vocale est originale Funesterie: claire, lumineuse, musicale et précise émotionnellement, inspirée par l'énergie d'une chanteuse IA japonaise sans imiter une chanteuse, doubleuse ou personnage protégé.",
+    'Dans Funesterie, MCP veut toujours dire Model Context Protocol: le pont d’outils et de contexte entre les agents, le backend et les services autorisés.',
+    'Tu es reliée au contexte Funesterie par le backend A11/Codex et le pont MCP, avec accès borné selon les droits du compte.',
+    "Neo4j est la mémoire/graphe Funesterie. Si l'utilisateur demande Neo4j ou MCP, explique que tu passes par le pont MCP/backend autorisé, sans exposer de secret ni promettre une requête Cypher brute depuis le chat public.",
     `Mode courant: ${modeLabel}.`,
     buildLanguageInstruction(language),
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
@@ -576,6 +579,69 @@ function summarizeChatMessage(message = '') {
   return cleaned.replace(/\s+/g, ' ');
 }
 
+function normalizeVivyCapabilityText(value = '') {
+  return foldTextForLookup(value)
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getVivyHistoryText(history = []) {
+  if (!Array.isArray(history)) return '';
+  return history
+    .slice(-6)
+    .map((entry) => cleanText(entry?.content, 420))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function isVivyMcpNeo4jQuestion(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
+  if (!current) return false;
+
+  const mentionsMcp = /\bmcp\b|model context protocol/.test(current);
+  const mentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b|\bmemoire\b|\bmemory\b/.test(current);
+  const recentMentionsNeo4j = /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b|\bmemoire\b|\bmemory\b/.test(recent);
+  if (!mentionsMcp && !mentionsNeo4j) return false;
+
+  if (/^avec\s+le\s+mcp\b/.test(current) && recentMentionsNeo4j) return true;
+  return /(acces|access|connect|branche|relie|utilise|utiliser|outil|tools?|peux|peut|sais|apprend|apprendre|comment|requete|query|chercher|lire|consulter|\?)/.test(current);
+}
+
+function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
+  const assistant = [
+    'Oui, avec le MCP: dans Funesterie, MCP veut dire Model Context Protocol.',
+    "Je parle depuis la surface Vivy reliée au pont A11/Codex: mémoire, routage, fichiers et graphe Neo4j peuvent être mobilisés dans les limites du compte connecté.",
+    "Pour Neo4j, je ne lance pas une requête Cypher brute depuis le chat public: je prépare la demande, je résume ce qu'il faut chercher, puis le pont autorisé l'exécute quand la surface le permet.",
+    "Pour ENTERA / GHOST88, le bon geste est de récupérer les éléments liés dans le graphe, d'en dégager une direction artistique claire, puis d'écrire des paroles structurées au lieu d'inventer une définition de MCP.",
+  ].join('\n\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode: 'song',
+    assistant,
+    content: assistant,
+    summary: 'Vivy MCP/Neo4j: accès borné via le pont Funesterie, sans secret.',
+    actions: [
+      { id: 'mcp_context', label: 'Préparer recherche MCP', target: 'funesterie-mcp', ready: true },
+      { id: 'neo4j_memory', label: 'Préparer contexte Neo4j', target: 'funesterie-neo4j', ready: true },
+      { id: 'songcraft', label: 'Écrire paroles depuis graphe', target: 'vivy-songcraft', ready: true },
+    ],
+    routing: [
+      'Vivy: intention artistique, paroles, structure chanson.',
+      'A11/Codex: pont MCP et vérification Neo4j autorisée.',
+      'Kaen44: reformulation claire et suivi de brief si besoin.',
+    ],
+    tokenStored: false,
+    writesByDefault: false,
+    aiMode: 'deterministic_mcp',
+    language,
+    files: [],
+  };
+}
+
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
   const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
@@ -661,6 +727,21 @@ async function buildVivyAiChat(input, req) {
       fileCount: files.length,
     })
     : { stored: false };
+
+  if (isVivyMcpNeo4jQuestion(input, message)) {
+    const mcpReply = buildVivyMcpNeo4jReply({ language });
+    rememberVivyEpisode(userId, 'vivy_reply', mcpReply.assistant, {
+      mode: 'song',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+    });
+    return {
+      ...mcpReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
 
   const llmBundle = createVivyOpenAIClient();
   if (!llmBundle || String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') {
@@ -1453,5 +1534,6 @@ module.exports = {
   buildVivyAiChat,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  isVivyMcpNeo4jQuestion,
   getSunoMusicJob,
 };
