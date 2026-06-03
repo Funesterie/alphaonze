@@ -105,7 +105,15 @@ function getMcpConfig(env = process.env) {
 function getHealthUrl(mcpUrl) {
   try {
     const url = new URL(mcpUrl);
-    url.pathname = url.pathname.replace(/\/mcp\/?$/, '/health') || '/health';
+    const pathname = (url.pathname || '/').replace(/\/+$/, '') || '/';
+    if (pathname === '/kiro/mcp') {
+      url.pathname = '/health';
+    } else if (pathname.endsWith('/mcp')) {
+      const basePath = pathname.slice(0, -'/mcp'.length).replace(/\/+$/, '');
+      url.pathname = basePath ? `${basePath}/health` : '/health';
+    } else {
+      url.pathname = '/health';
+    }
     url.search = '';
     return url.toString();
   } catch {
@@ -293,6 +301,7 @@ module.exports = {
   callMcpTool,
   checkMcpHealth,
   getMcpConfig,
+  getHealthUrl,
   listMcpTools,
   mcpJsonRpc,
   parseMcpResponse,

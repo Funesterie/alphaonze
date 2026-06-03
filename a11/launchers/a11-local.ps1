@@ -1120,6 +1120,12 @@ function Write-PackagedConfig {
     '# A11 packaged local launcher configuration',
     'A11_LOCAL_HOST=127.0.0.1',
     'A11_RUNTIME_ROOT=..\runtime',
+    'A11_CACHE_ROOT=..\runtime\cache',
+    'A11_EXPORT_ROOT=..\runtime\exports',
+    'A11_VIDEO_WORK_ROOT=..\runtime\files\generated\videos',
+    'A11_MATCH_ARENA_GAMES_ROOT=',
+    'A11_MATCH_ARENA_EXPORT_ROOT=..\runtime\match-arena\sessions',
+    'OLLAMA_MODELS=..\runtime\ollama\models',
     'A11_UI_MODE=embedded',
     'A11_AUTO_OPEN_UI=1',
     "A11_DESKTOP_BROWSER=$($Context.DesktopBrowser)",
@@ -1269,9 +1275,14 @@ function Build-ServiceDefinitions {
   $frontendPort = To-IntValue (Get-ConfigValue $Config 'A11_FRONTEND_PORT' '5173') 5173
   $a11Root = [System.IO.Path]::GetFullPath((Join-Path $LauncherDirectory '..'))
   $runtimeRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_RUNTIME_ROOT' '..\runtime') -BaseDirectory $LauncherDirectory
+  $cacheRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_CACHE_ROOT' (Join-Path $runtimeRoot 'cache')) -BaseDirectory $LauncherDirectory
+  $exportRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_EXPORT_ROOT' (Join-Path $runtimeRoot 'exports')) -BaseDirectory $LauncherDirectory
+  $ollamaModelsRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'OLLAMA_MODELS' (Join-Path $runtimeRoot 'ollama\models')) -BaseDirectory $LauncherDirectory
+  $matchArenaGamesRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_MATCH_ARENA_GAMES_ROOT' '') -BaseDirectory $LauncherDirectory
+  $matchArenaExportRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_MATCH_ARENA_EXPORT_ROOT' (Join-Path $exportRoot 'match-arena\sessions')) -BaseDirectory $LauncherDirectory
   $safeDataRoot = Join-Path $runtimeRoot 'files'
   $launcherRuntimeRoot = Join-Path $runtimeRoot 'launcher'
-  $videoWorkRoot = Join-Path $safeDataRoot 'generated\videos'
+  $videoWorkRoot = Resolve-LauncherRelativePath -Value (Get-ConfigValue $Config 'A11_VIDEO_WORK_ROOT' (Join-Path $safeDataRoot 'generated\videos')) -BaseDirectory $LauncherDirectory
 
   $qflushChatFlow = Get-ConfigValue $Config 'A11_QFLUSH_CHAT_FLOW' ''
   $qflushMemorySummaryFlow = Get-ConfigValue $Config 'A11_QFLUSH_MEMORY_SUMMARY_FLOW' 'a11.memory.summary.v1'
@@ -1322,6 +1333,7 @@ function Build-ServiceDefinitions {
       A11_LLM_PROVIDER           = 'ollama'
       A11_LLM_FALLBACK_PROVIDER  = $llmFallbackProvider
       OLLAMA_BASE                = $ollamaBase
+      OLLAMA_MODELS              = $ollamaModelsRoot
       A11_OLLAMA_PRIMARY_MODEL   = $ollamaPrimaryModel
       A11_OLLAMA_FALLBACK_MODEL  = $ollamaFallbackModel
       A11_LLM_REQUEST_TIMEOUT_MS = '90000'
@@ -1411,7 +1423,12 @@ function Build-ServiceDefinitions {
     A11_RUNTIME_PROFILE                  = 'local'
     A11_WORKSPACE_ROOT                   = $a11Root
     A11_RUNTIME_ROOT                     = $runtimeRoot
+    A11_CACHE_ROOT                       = $cacheRoot
+    A11_EXPORT_ROOT                      = $exportRoot
     A11_SAFE_DATA_ROOT                   = $safeDataRoot
+    OLLAMA_MODELS                        = $ollamaModelsRoot
+    A11_MATCH_ARENA_GAMES_ROOT           = $matchArenaGamesRoot
+    A11_MATCH_ARENA_EXPORT_ROOT          = $matchArenaExportRoot
     A11_SHELL_CWD                        = $a11Root
     BACKEND                              = $(if ($useRemoteProvider) { 'openai' } else { 'local' })
     APP_URL                              = $(if ([string]::IsNullOrWhiteSpace($PublicFrontendUrl)) { $LocalUiUrl } else { $PublicFrontendUrl })

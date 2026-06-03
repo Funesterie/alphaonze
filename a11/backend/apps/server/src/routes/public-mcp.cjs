@@ -284,6 +284,26 @@ function isSelfRelay(relayUrl, publicBaseUrl) {
   }
 }
 
+function buildMcpHealthUrl(mcpUrl) {
+  try {
+    const url = new URL(mcpUrl);
+    const pathname = (url.pathname || '/').replace(/\/+$/, '') || '/';
+    if (pathname === '/kiro/mcp') {
+      url.pathname = '/health';
+    } else if (pathname.endsWith('/mcp')) {
+      const basePath = pathname.slice(0, -'/mcp'.length).replace(/\/+$/, '');
+      url.pathname = basePath ? `${basePath}/health` : '/health';
+    } else {
+      url.pathname = '/health';
+    }
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return DEFAULT_PUBLIC_MCP_UPSTREAM_URL.replace(/\/mcp\/?$/, '/health');
+  }
+}
+
 function filterRelayTools(tools, relayConfig) {
   if (!Array.isArray(tools)) return [];
   const filtered = relayConfig.allowAllTools
@@ -529,7 +549,7 @@ async function callLocalTool(req, toolName, args = {}) {
 
   if (toolName === 'a11_mcp_relay_status') {
     const relayConfig = getRelayConfig();
-    const healthUrl = relayConfig.url.replace(/\/mcp\/?$/, '/health');
+    const healthUrl = buildMcpHealthUrl(relayConfig.url);
     let health = null;
     try {
       const response = await fetch(healthUrl, {

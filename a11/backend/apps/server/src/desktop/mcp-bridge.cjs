@@ -202,8 +202,15 @@ class McpBridge {
 
   _healthUrlFor(url) {
     const parsed = new URL(url);
-    parsed.pathname = parsed.pathname.replace(/\/mcp\/?$/, '/health');
-    if (!/\/health\/?$/.test(parsed.pathname)) parsed.pathname = '/health';
+    const pathname = (parsed.pathname || '/').replace(/\/+$/, '') || '/';
+    if (pathname === '/kiro/mcp') {
+      parsed.pathname = '/health';
+    } else if (pathname.endsWith('/mcp')) {
+      const basePath = pathname.slice(0, -'/mcp'.length).replace(/\/+$/, '');
+      parsed.pathname = basePath ? `${basePath}/health` : '/health';
+    } else {
+      parsed.pathname = '/health';
+    }
     parsed.search = '';
     parsed.hash = '';
     return parsed.toString();

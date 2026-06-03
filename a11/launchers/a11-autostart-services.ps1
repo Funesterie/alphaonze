@@ -204,7 +204,11 @@ function Start-OllamaIfNeeded {
         return
     }
 
-    $logDir = "D:\projets\funesterie\a11\runtime\logs"
+    $heavyRoot = if (Test-Path "E:\") { "E:\Funesterie" } else { "D:\projets\funesterie\a11\runtime" }
+    $env:OLLAMA_MODELS = Join-Path $heavyRoot "ollama\models"
+    if (-not (Test-Path $env:OLLAMA_MODELS)) { New-Item -ItemType Directory -Path $env:OLLAMA_MODELS -Force | Out-Null }
+
+    $logDir = Join-Path $heavyRoot "logs"
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 
     Start-Process -FilePath $ollamaExe -ArgumentList "serve" `

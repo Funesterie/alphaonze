@@ -2,17 +2,20 @@
 
 ## Situation Identifiée
 
-Deux répertoires `runtime` existent dans le projet :
+La cible locale active est désormais hors disque système pour éviter de remplir `C:\` :
 
 1. **`D:\projets\funesterie\runtime`** (ANCIEN - À SUPPRIMER)
    - Dernière modification : 26/04/2026 11:26
    - Contenu : 9 fichiers générés (anciens)
    - Utilisé par : Ancienne configuration (obsolète)
 
-2. **`D:\projets\funesterie\a11\runtime`** (ACTIF - À CONSERVER) ✅
-   - Dernière modification : 26/04/2026 18:40
-   - Contenu : 20 fichiers générés (récents)
-   - Utilisé par : Configuration actuelle (`.env.local`)
+2. **`D:\projets\funesterie\a11\runtime`** (HISTORIQUE - À DÉCHARGER)
+   - Peut encore contenir d'anciens fichiers générés.
+   - À conserver seulement le temps de migrer les fichiers utiles.
+
+3. **`E:\Funesterie\runtime`** (ACTIF - À CONSERVER) ✅
+   - Utilisé par : configuration locale actuelle (`.env.local` et launcher).
+   - Cache, exports, vidéo/audio et modèles doivent rester sur `E:\`.
 
 ## Configuration Actuelle
 
@@ -20,8 +23,12 @@ Deux répertoires `runtime` existent dans le projet :
 
 ```bash
 A11_WORKSPACE_ROOT=D:\projets\funesterie\a11
-A11_RUNTIME_ROOT=D:\projets\funesterie\a11\runtime
-A11_SAFE_DATA_ROOT=D:\projets\funesterie\a11\runtime\files
+A11_RUNTIME_ROOT=E:\Funesterie\runtime
+A11_SAFE_DATA_ROOT=E:\Funesterie\runtime\files
+A11_CACHE_ROOT=E:\Funesterie\cache
+A11_EXPORT_ROOT=E:\Funesterie\exports
+A11_VIDEO_WORK_ROOT=E:\Funesterie\generated\videos
+OLLAMA_MODELS=E:\Funesterie\ollama\models
 ```
 
 ## Contenu des Répertoires
@@ -213,7 +220,7 @@ Write-Host "Runtime actif: $newRuntime" -ForegroundColor Green
 ```bash
 # Vérifier que .env.local pointe vers le bon runtime
 grep "A11_RUNTIME_ROOT" a11/backend/apps/server/.env.local
-# Doit afficher: A11_RUNTIME_ROOT=D:\projets\funesterie\a11\runtime
+# Doit afficher: A11_RUNTIME_ROOT=E:\Funesterie\runtime
 ```
 
 ### 2. Tester le Backend

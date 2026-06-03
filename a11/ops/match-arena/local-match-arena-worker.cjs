@@ -6,8 +6,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const DEFAULT_GAMES_ROOT = 'C:\\Users\\Djeff\\Desktop\\jeux';
-const DEFAULT_STATUS_PATH = 'D:\\agent-bus\\match-arena\\local-match-arena-worker-status.json';
-const DEFAULT_EXPORT_ROOT = 'D:\\agent-bus\\match-arena\\sessions';
+const DEFAULT_STATUS_PATH = 'E:\\Funesterie\\match-arena\\local-match-arena-worker-status.json';
+const DEFAULT_EXPORT_ROOT = 'E:\\Funesterie\\match-arena\\sessions';
 const DEFAULT_STREAM_CANDIDATES = [
   'http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',
   'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',

@@ -3,7 +3,7 @@
 # Crée un lien symbolique depuis %USERPROFILE%\.ollama\models vers a11/runtime/ollama_models
 
 param(
-    [string]$CustomPath = "D:\projets\funesterie\a11\runtime\ollama_models",
+    [string]$CustomPath = "",
     [switch]$Force
 )
 
@@ -21,6 +21,9 @@ if (-not $isAdmin) {
 }
 
 $DefaultPath = "$env:USERPROFILE\.ollama\models"
+if ([string]::IsNullOrWhiteSpace($CustomPath)) {
+    $CustomPath = if (Test-Path "E:\") { "E:\Funesterie\ollama\models" } else { "D:\projets\funesterie\a11\runtime\ollama_models" }
+}
 
 Write-Host "Chemin par défaut Ollama : $DefaultPath" -ForegroundColor Gray
 Write-Host "Chemin personnalisé A11   : $CustomPath" -ForegroundColor Gray

@@ -27,8 +27,8 @@ Créer un lien symbolique depuis le répertoire par défaut vers un emplacement 
 # 1. Arrêter Ollama
 Stop-Process -Name ollama -Force -ErrorAction SilentlyContinue
 
-# 2. Créer le répertoire de destination
-$CustomPath = "D:\projets\funesterie\a11\runtime\ollama_models"
+# 2. Créer le répertoire de destination sur le disque de données
+$CustomPath = "E:\Funesterie\ollama\models"
 New-Item -ItemType Directory -Path $CustomPath -Force
 
 # 3. Déplacer les modèles existants (si présents)
@@ -79,7 +79,7 @@ Certaines versions récentes d'Ollama supportent `OLLAMA_MODELS` (non documenté
 # Définir la variable d'environnement système
 [System.Environment]::SetEnvironmentVariable(
     "OLLAMA_MODELS",
-    "D:\projets\funesterie\a11\runtime\ollama_models",
+    "E:\Funesterie\ollama\models",
     [System.EnvironmentVariableTarget]::User
 )
 
@@ -115,7 +115,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ./a11/runtime/ollama_models:/root/.ollama
+      - E:\Funesterie\ollama\models:/root/.ollama
     environment:
       - OLLAMA_HOST=0.0.0.0
 ```

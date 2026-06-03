@@ -2,8 +2,8 @@ param(
   [string]$GamesRoot = "C:\Users\Djeff\Desktop\jeux",
   [string]$RemoteUrls = "https://a11.funesterie.me,https://k44.funesterie.me",
   [string]$TokenFile = "D:\projets\funesterie\secrets\match-arena-worker-token.txt",
-  [string]$StatusPath = "D:\agent-bus\match-arena\local-match-arena-worker-status.json",
-  [string]$ExportRoot = "D:\agent-bus\match-arena\sessions",
+  [string]$StatusPath = "E:\Funesterie\match-arena\local-match-arena-worker-status.json",
+  [string]$ExportRoot = "E:\Funesterie\match-arena\sessions",
   [string]$StreamUrl = "",
   [string]$StreamCandidates = "",
   [switch]$RestartWorker,
@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $workerScript = Join-Path $PSScriptRoot "local-match-arena-worker.cjs"
-$logDir = "D:\agent-bus\match-arena\logs"
+$logDir = "E:\Funesterie\match-arena\logs"
 $workerStdout = Join-Path $logDir "local-match-arena-worker.stdout.log"
 $workerStderr = Join-Path $logDir "local-match-arena-worker.stderr.log"
 

@@ -47,6 +47,7 @@
     "test:stripe": "node test-stripe-integration.cjs",
     "test:subscription": "node test-subscription-flow.cjs",
     "smoke:kaen44": "node scripts/smoke-kaen44-public.cjs",
+    "smoke:all": "node scripts/smoke-all.cjs",
     "seed:route-map": "node scripts/seed-a11-local-route-map.cjs",
     "memory:status": "node scripts/a11-memory-router.cjs status",
     "memory:search": "node scripts/a11-memory-router.cjs search",

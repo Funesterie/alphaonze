@@ -172,8 +172,15 @@ function sendHealthcheck(_req, res) {
   return res.json({ status: 'ok' });
 }
 
+const { buildBuildInfo } = require('./src/build-info.cjs');
+
+function sendBuildInfo(_req, res) {
+  return res.json(buildBuildInfo({ cwd: __dirname }));
+}
+
 app.get('/health', sendHealthcheck);
 app.get('/api/health', sendHealthcheck);
+app.get(['/api/build', '/api/version'], sendBuildInfo);
 
 // Microsoft Entra publisher domain verification
 app.get('/.well-known/microsoft-identity-association.json', (_req, res) => {
