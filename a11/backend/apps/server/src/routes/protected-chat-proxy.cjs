@@ -670,14 +670,17 @@ function isCurrentTurnImageActionRequest(text = '', body = {}) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[’']/g, ' ')
+    .replace(/[-/]/g, ' ')
+    .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
   if (!normalized) return false;
   const hasCurrentImage = Boolean(extractVisionImageLocator(body));
   const hasImageNoun = /\b(image|photo|illustration|visuel|avatar|logo|dessin|portrait|capture|screenshot|screen)\b/.test(normalized);
+  const hasVisualStyle = /\b(cartoon|anime|manga|pixel art|pixelart|comic|bd|rendu|render|3d|cinematique|cinematic|stylise|styliser|affiche|poster)\b/.test(normalized);
   const hasCreationVerb = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|imagine|fais|faire)\b/.test(normalized);
   const hasEditVerb = /\b(rajoute|ajoute|modifie|retouche|transforme|remplace|anime|ameliore|corrige)\b/.test(normalized);
-  return (hasCreationVerb && hasImageNoun) || (hasCurrentImage && (hasImageNoun || hasEditVerb || isVisionInspectionChatRequest(text)));
+  return (hasCreationVerb && (hasImageNoun || hasVisualStyle)) || (hasCurrentImage && (hasImageNoun || hasEditVerb || isVisionInspectionChatRequest(text)));
 }
 
 function isProxyTransientOverloadError(error_, status = 0) {
@@ -2344,6 +2347,8 @@ function createProtectedChatProxyRouter({
       executeImage: false,
       canonicalizeImage: true,
       executeWebSearch: true,
+      allowExplicitImageIntentFallback: true,
+      allowVisualImageBrainFallback: true,
     });
     resolution._scopedBody = scopedBody;
     resolution._scopedMessages = scopedMessages;

@@ -148,7 +148,8 @@ test('protected chat proxy returns requestId in header and body when upstream th
       assert.equal(response.headers.get('x-request-id'), 'req-proxy-1');
       assert.equal(json.requestId, 'req-proxy-1');
       assert.equal(json.error, 'proxy_error');
-      assert.equal(json.message, 'boom');
+      assert.match(json.message, /serveur IA est surcharg/i);
+      assert.match(json.message, /Basic/);
     }
   );
 });
@@ -186,7 +187,8 @@ test('protected chat proxy sanitizes upstream html timeout pages', async () => {
 
       assert.equal(response.status, 504);
       assert.equal(json.requestId, 'req-proxy-html-1');
-      assert.equal(json.message, 'Upstream timeout (Cloudflare 524)');
+      assert.match(json.message, /serveur IA est surcharg/i);
+      assert.match(json.message, /Basic/);
       assert.equal(json.upstream.status, 524);
       assert.equal(json.upstream.body, 'Upstream timeout (Cloudflare 524)');
     }

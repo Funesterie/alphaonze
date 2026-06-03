@@ -100,7 +100,7 @@
     "stripe:setup:billing": "node scripts/setup-stripe-billing.cjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1058.0",
+    "@aws-sdk/client-s3": "^3.1059.0",
     "@nossen/allmight": "^2.0.1",
     "@nossen/bat": "^2.0.2",
     "@nossen/beam": "^2.0.1",

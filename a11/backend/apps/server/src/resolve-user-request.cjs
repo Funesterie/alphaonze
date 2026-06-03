@@ -266,9 +266,10 @@ function isExplicitImageGenerationRequest(text = '') {
 
   const creationCue = /\b(genere|generer|cree|creer|dessine|dessiner|fabrique|produis|prepare|rends moi|fais moi|fais|fait|make|generate|create|draw)\b/.test(normalized);
   const imageCue = /\b(image|illustration|dessin|photo|visuel|portrait|artwork)\b/.test(normalized);
+  const visualStyleCue = /\b(cartoon|anime|manga|pixel art|pixelart|comic|bd|rendu|render|3d|cinematique|cinematic|stylise|styliser|affiche|poster|avatar|logo)\b/.test(normalized);
   const troubleshootingCue = /\b(pourquoi|comment|probleme|bug|erreur|marche pas|fonctionne pas|peux tu|peux pas|capable|capacite)\b/.test(normalized);
 
-  if (!creationCue || !imageCue) return false;
+  if (!creationCue || (!imageCue && !visualStyleCue)) return false;
   if (troubleshootingCue && !/\b(genere|generer|cree|creer|dessine|dessiner|generate|create|draw)\b/.test(normalized)) {
     return false;
   }
@@ -722,10 +723,12 @@ function createIntentResolver(overrides = {}) {
     const hasReferenceImageForRequest = earlyImageReferencesForIntent.length > 0;
     const allowLegacySemanticFallback = isLegacySemanticIntentFallbackEnabled();
     const allowSafeSemanticFallback = shouldUseSemanticIntentFallback(llmIntentResult);
+    const allowExplicitImageIntentFallback = input.allowExplicitImageIntentFallback === true;
+    const allowVisualImageBrainFallback = input.allowVisualImageBrainFallback === true;
     const forcedReferenceImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
       && hasReferenceImageForRequest
       && (isImageTransformRequest(userText) || isVisualFeedbackEditRequest(userText));
-    const forcedExplicitImageIntent = (allowLegacySemanticFallback || allowSafeSemanticFallback)
+    const forcedExplicitImageIntent = (allowExplicitImageIntentFallback || allowLegacySemanticFallback || allowSafeSemanticFallback)
       && isExplicitImageGenerationRequest(userText);
     const llmIntentType = (forcedReferenceImageIntent || forcedExplicitImageIntent)
       ? 'image.generate'
@@ -758,8 +761,8 @@ function createIntentResolver(overrides = {}) {
 
     const shouldConsultImageBrain = (
       selectedIntentType === 'chat.reply'
-      && allowSemanticIntentFallback
-      && (!llmIntentType || shouldUseSemanticIntentFallback(llmIntentResult))
+      && (allowSemanticIntentFallback || (allowVisualImageBrainFallback && isExplicitImageGenerationRequest(userText)))
+      && (!llmIntentType || llmIntentType === 'chat.reply' || shouldUseSemanticIntentFallback(llmIntentResult))
     );
     if (shouldConsultImageBrain) {
       const imageBrain = createImageBrainRuntime(deps);
