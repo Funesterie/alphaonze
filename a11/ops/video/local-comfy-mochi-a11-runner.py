@@ -50,6 +50,7 @@ DEFAULT_MAX_PIXELS = int(os.environ.get("A11_COMFY_MOCHI_MAX_PIXELS", str(384 * 
 DEFAULT_JOB_TTL_SEC = int(os.environ.get("A11_COMFY_MOCHI_JOB_TTL_SEC", "3600"))
 DEFAULT_JOB_POLL_INTERVAL_MS = int(os.environ.get("A11_COMFY_MOCHI_JOB_POLL_INTERVAL_MS", "5000"))
 DEFAULT_JOB_WORKERS = max(1, int(os.environ.get("A11_COMFY_MOCHI_WORKERS", "1")))
+MOCHI_SAFE_DIMENSION_MULTIPLE = 16
 
 VIDEO_JOBS: dict[str, dict[str, Any]] = {}
 VIDEO_JOBS_LOCK = threading.Lock()
@@ -266,7 +267,7 @@ def http_json(method: str, url: str, payload: dict[str, Any] | None = None, time
 def clamp_dimension(value: int | None, fallback: int) -> int:
     numeric = int(value or fallback)
     numeric = max(128, min(848, numeric))
-    return max(128, (numeric // 8) * 8)
+    return max(128, (numeric // MOCHI_SAFE_DIMENSION_MULTIPLE) * MOCHI_SAFE_DIMENSION_MULTIPLE)
 
 
 def clamp_resolution(width: int, height: int) -> tuple[int, int]:
@@ -274,8 +275,8 @@ def clamp_resolution(width: int, height: int) -> tuple[int, int]:
     if pixels <= DEFAULT_MAX_PIXELS:
         return width, height
     scale = math.sqrt(DEFAULT_MAX_PIXELS / pixels)
-    width = max(128, int((width * scale) // 8) * 8)
-    height = max(128, int((height * scale) // 8) * 8)
+    width = max(128, int((width * scale) // MOCHI_SAFE_DIMENSION_MULTIPLE) * MOCHI_SAFE_DIMENSION_MULTIPLE)
+    height = max(128, int((height * scale) // MOCHI_SAFE_DIMENSION_MULTIPLE) * MOCHI_SAFE_DIMENSION_MULTIPLE)
     return width, height
 
 
