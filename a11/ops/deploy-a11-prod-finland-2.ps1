@@ -217,6 +217,15 @@ function Assert-FunesterieWebBundle([string]$DistRoot, [string]$Label) {
 
 Require-Path $RepoRoot "Repo"
 Invoke-SourceUpdate $RepoRoot
+$BuildCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($BuildCommit)) {
+  throw "Lecture du commit Git impossible"
+}
+$BuildBranch = (& git -C $RepoRoot rev-parse --abbrev-ref HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($BuildBranch)) {
+  $BuildBranch = "unknown"
+}
+$BuildDateIso = (Get-Date).ToUniversalTime().ToString("o")
 Require-Path $ServerRoot "Backend A11"
 Require-Path $VoiceRoot "Module voix"
 Require-Path $VoiceBridgeRoot "Pont voix XTTS/RVC"
@@ -635,6 +644,8 @@ services:
       - /srv/a11-data/a11/caddy-data:/data
       - /srv/a11-data/a11/caddy-config:/config
 '@
+$buildInfoComposeEnv = "      A11_BUILD_COMMIT: `"$BuildCommit`"`n      A11_BUILD_BRANCH: `"$BuildBranch`"`n      A11_BUILD_DATE: `"$BuildDateIso`"`n"
+$compose = $compose.Replace("      A11_WEB_DIST_DIR: /web/dist", $buildInfoComposeEnv + "      A11_WEB_DIST_DIR: /web/dist")
 if ($BlueGreen) {
   $compose = $compose.Replace("  a11-backend:`r`n", "  ${A11BackendService}:`r`n")
   $compose = $compose.Replace("  a11-backend:`n", "  ${A11BackendService}:`n")
