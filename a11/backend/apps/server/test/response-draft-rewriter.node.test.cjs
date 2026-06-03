@@ -41,7 +41,7 @@ test('response draft blocks unverified realtime monitoring claims', () => {
     userMessage: 'daccord et sinon ca va ? tu remarques des soucis ?',
     text: raw,
   });
-  assert.match(processed.content, /pas faire semblant/i);
+  assert.match(processed.content, /check lance|backend\/MCP/i);
   assert.doesNotMatch(processed.content, /temps reel|garde un oeil/i);
 });
 
@@ -73,7 +73,7 @@ test('response draft blocks stale user-message echoes from another turn', () => 
 
   assert.equal(processed.rewritten, true);
   assert.deepEqual(processed.draft.flags, ['stale_user_message_echo']);
-  assert.match(processed.content, /mauvais contexte/i);
+  assert.match(processed.content, /trompe de contexte/i);
   assert.doesNotMatch(processed.content, /image cherchez/i);
 });
 
@@ -99,6 +99,7 @@ test('response draft blocks visible draft placeholders', () => {
   assert.equal(processed.rewritten, true);
   assert.ok(processed.draft.flags.includes('virtual_draft_leak'));
   assert.doesNotMatch(processed.content, /brouillon/i);
+  assert.match(processed.content, /Salut|reponse exploitable/i);
 });
 
 test('response draft rewrites English generic last-message placeholders in French sessions', () => {
@@ -109,6 +110,6 @@ test('response draft rewrites English generic last-message placeholders in Frenc
 
   assert.equal(processed.rewritten, true);
   assert.ok(processed.draft.flags.includes('generic_context_placeholder'));
-  assert.match(processed.content, /reprends depuis ton dernier message/i);
+  assert.match(processed.content, /resultat voulu|reponse exploitable/i);
   assert.doesNotMatch(processed.content, /Sure|last message/i);
 });

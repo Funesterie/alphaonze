@@ -548,10 +548,22 @@ function pruneSessions(now = Date.now()) {
   }
 }
 
-function findClaimableSession() {
+function sessionHasUsableStream(session = {}) {
+  return session.stream?.ready === true
+    || Boolean(session.stream?.url)
+    || Boolean(session.stream?.embedUrl);
+}
+
+function findClaimableSession(options = {}) {
   pruneSessions();
+  const workerCanRefreshStream = options.streamReady === true;
   return Array.from(sessions.values())
-    .filter((session) => session.state === 'queued')
+    .filter((session) => {
+      if (session.state === 'queued') return true;
+      return workerCanRefreshStream
+        && session.state === 'ready'
+        && !sessionHasUsableStream(session);
+    })
     .sort((a, b) => {
       const priorityDelta = Number(b.priorityScore || 0) - Number(a.priorityScore || 0);
       if (priorityDelta) return priorityDelta;
@@ -941,7 +953,7 @@ function createMatchArenaRouter(options = {}) {
         activeSessions: Number.isFinite(Number(req.body?.activeSessions)) ? Number(req.body.activeSessions) : null,
       },
     };
-    const claimable = findClaimableSession();
+    const claimable = findClaimableSession({ streamReady: req.body?.streamReady === true });
     res.json({
       ok: true,
       enabled: envBool('A11_MATCH_ARENA_ENABLED', true),
@@ -987,7 +999,7 @@ function createMatchArenaRouter(options = {}) {
     if (!envBool('A11_MATCH_ARENA_ENABLED', true)) {
       return res.json({ ok: true, enabled: false, session: null, pollIntervalMs: 2500 });
     }
-    const session = findClaimableSession();
+    const session = findClaimableSession({ streamReady: req.body?.streamReady === true });
     if (!session) {
       return res.json({
         ok: true,

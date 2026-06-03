@@ -6,6 +6,8 @@ param(
   [string]$ExportRoot = "E:\Funesterie\match-arena\sessions",
   [string]$StreamUrl = "",
   [string]$StreamCandidates = "",
+  [int]$StreamPort = 6080,
+  [switch]$NoAutoStream,
   [switch]$RestartWorker,
   [switch]$Visible
 )
@@ -88,6 +90,8 @@ $workerEnv = @"
 `$env:A11_MATCH_ARENA_WORKER_ID='$workerId'
 `$env:A11_MATCH_ARENA_STREAM_URL='$StreamUrl'
 `$env:A11_MATCH_ARENA_STREAM_CANDIDATES='$StreamCandidates'
+`$env:A11_MATCH_ARENA_STREAM_PORT='$StreamPort'
+`$env:A11_MATCH_ARENA_AUTOSTREAM='$((-not $NoAutoStream).ToString().ToLowerInvariant())'
 Set-Location -LiteralPath 'D:\projets\funesterie'
 & '$node' '$workerScript' 1>> '$workerStdout' 2>> '$workerStderr'
 "@

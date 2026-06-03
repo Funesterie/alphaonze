@@ -1,16 +1,13 @@
 'use strict';
 
 const A11_RESPONSE_DRAFT_CONTEXT = `
-[A11/Funesterie virtual response draft]
-- Before the final answer, I build an invisible draft: user intent, reliable context, actually verified facts, uncertainty, useful action, and final shape.
-- I never show this draft and I never label it as "draft", "analysis" or "brouillon" in the answer.
-- Context blocks, tool outputs, route lists and module inventories are raw material, not a final answer. I summarize them in natural speech.
-- If the draft says a table, inventory or diagnostic dump is not explicitly requested, the final answer stays short prose.
-- If a fact is not verified in the current context, I say it is to verify or I keep it out. I do not invent precise names, numbers, diseases, logs, routes or monitoring status.
-- If the user asks casually how I am or whether I notice issues, I answer from what is actually known in this conversation, or I offer to run a check.
-- For Vivy/audio questions, I distinguish the official/default voice, private reference voice, XTTS/RVC, neutral fallback, and async job status without pretending that one means the other.
-- For A11 voice questions, I do not deny the voice module. I say the answer text is separate from the backend/interface TTS path, then name the likely routing: A11 official local reference, cloud voice, or neutral fallback.
-- For image/vision questions, I use the provided image or verified vision context when it exists. If it is missing, I ask for the image or say the vision pass failed; I do not claim that Janus/vision does not exist.
+[A11/Funesterie response hygiene]
+- Je reponds au dernier message visible, dans la langue naturelle de l'utilisateur.
+- Les blocs contexte, outils, routes, memoire et modules servent de notes internes: je les transforme en reponse simple, je ne les recopie pas.
+- Je ne produis pas de texte meta du type "brouillon", "draft", "analyse interne" ou "short reply to the last message".
+- Si un fait n'est pas verifie dans le tour courant, je le garde prudent ou je propose une verification.
+- Si l'utilisateur demande comment je vais ou s'il y a un souci, je ne pretends pas surveiller les logs en temps reel sans check lance.
+- Pour les voix, images, fichiers, MCP et runtime, je parle de routage, permission ou surface disponible plutot que de nier l'existence du module.
 `.trim();
 
 function normalizeText(value = '') {
@@ -25,7 +22,7 @@ function foldText(value = '') {
 }
 
 function hasResponseDraftContext(basePrompt = '') {
-  return /virtual response draft|brouillon invisible|brouillon virtuel|actually verified facts/i.test(String(basePrompt || ''));
+  return /response hygiene|virtual response draft|brouillon invisible|brouillon virtuel|actually verified facts/i.test(String(basePrompt || ''));
 }
 
 function userAskedForStructuredFormat(userMessage = '') {
@@ -113,11 +110,9 @@ function userMessageLooksFrench(userMessage = '') {
 
 function looksLikeEnglishDrift(text = '', userMessage = '') {
   if (!userMessageLooksFrench(userMessage)) return false;
-  const foldedText = foldText(text);
-  if (!foldedText) return false;
-  const englishSignals = (foldedText.match(/\b(sure|here|here's|last message|reply|certainly|can help|how can i help|today|what can i do)\b/g) || []).length;
-  const frenchSignals = (foldedText.match(/\b(oui|non|salut|bonjour|je|tu|te|toi|avec|pour|quoi|comment|peux|peut|reponse|réponse)\b/g) || []).length;
-  return englishSignals >= 2 && frenchSignals === 0;
+  const normalized = normalizeText(text).replace(/\s+/g, ' ').trim();
+  return /^(sure|certainly|here)\b/i.test(normalized)
+    && /\b(short reply|last message|how can i help|what can i do)\b/i.test(normalized);
 }
 
 function inferUserIntent(userMessage = '') {
@@ -182,13 +177,23 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   const text = normalizeText(assistantText);
   const responseDraft = draft || buildA11VirtualResponseDraft({ userMessage, assistantText: text });
   if (!responseDraft.mustRewrite) return text;
+  const foldedUser = foldText(userMessage);
+  const fallback = () => {
+    if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas)/.test(foldedUser)) {
+      return 'Salut, oui ca va. Et toi ?';
+    }
+    if (/(pour faire quoi|quoi faire|tu veux faire quoi)/.test(foldedUser)) {
+      return "Pour repondre a ta demande du moment. Dis-moi le resultat voulu et je m'en occupe.";
+    }
+    return "Je n'ai pas recu une reponse exploitable. Reformule en une phrase et je repars proprement.";
+  };
 
   if (responseDraft.flags.includes('generic_context_placeholder') || responseDraft.flags.includes('english_language_drift')) {
-    return "Je viens de perdre le fil et de renvoyer une phrase générique au lieu d'une vraie réponse. Je reprends depuis ton dernier message: dis-moi ce que tu veux faire, et je réponds en français sans recycler un ancien contexte.";
+    return fallback();
   }
 
   if (responseDraft.flags.includes('unverified_monitoring_claim')) {
-    return "Je ne vais pas faire semblant de surveiller les logs en continu depuis ce message. La, je n'ai pas de signal d'alerte verifie dans le contexte; si tu veux un vrai etat, je lance un check backend/MCP et je te rends le resultat proprement.";
+    return "Je n'ai pas de check lance dans ce tour. Si tu veux un vrai etat, je verifie le backend/MCP et je te rends le resultat.";
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
@@ -214,11 +219,11 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
       .replace(/^voici\s+un\s+brouillon\b\.?\s*/i, '')
       .replace(/^here(?:'s| is)\s+a\s+draft\b\.?\s*/i, '')
       .trim();
-    return cleaned || "Je viens de sortir une note interne au lieu de la réponse finale. Je reprends depuis ton dernier message, simplement.";
+    return cleaned || fallback();
   }
 
   if (responseDraft.flags.includes('stale_user_message_echo')) {
-    return "Je me suis accrochee a un mauvais contexte de conversation. Je reprends depuis ton dernier message, sans reutiliser une ancienne demande.";
+    return "Je me suis trompe de contexte. Repose-moi la question en une phrase et je reponds uniquement a celle-la.";
   }
 
   return text;

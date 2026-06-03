@@ -1,13 +1,15 @@
 'use strict';
 
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const DEFAULT_GAMES_ROOT = 'C:\\Users\\Djeff\\Desktop\\jeux';
 const DEFAULT_STATUS_PATH = 'E:\\Funesterie\\match-arena\\local-match-arena-worker-status.json';
 const DEFAULT_EXPORT_ROOT = 'E:\\Funesterie\\match-arena\\sessions';
+const DEFAULT_LOCAL_STREAM_PORT = 6080;
 const DEFAULT_STREAM_CANDIDATES = [
   'http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',
   'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&view_only=false',
@@ -44,6 +46,7 @@ const PLAYABLE_EXTENSIONS = new Set([
   '.m3u',
 ]);
 const MAX_SCAN_FILES = 5000;
+let localStreamBridge = null;
 
 function env(name, fallback = '') {
   const value = String(process.env[name] || '').trim();
@@ -54,6 +57,13 @@ function envBool(name, fallback = false) {
   const raw = env(name).toLowerCase();
   if (!raw) return fallback;
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(raw);
+}
+
+function envNumber(name, fallback) {
+  const raw = env(name);
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function sleep(ms) {
@@ -109,6 +119,185 @@ function commandAvailable(command) {
   }
 }
 
+function ffmpegAvailable() {
+  return Boolean(env('A11_MATCH_ARENA_FFMPEG_COMMAND')) || commandAvailable('ffmpeg');
+}
+
+function getLocalStreamPort() {
+  return Math.max(1, Math.min(65535, envNumber('A11_MATCH_ARENA_STREAM_PORT', DEFAULT_LOCAL_STREAM_PORT)));
+}
+
+function getLocalStreamUrl() {
+  const port = getLocalStreamPort();
+  return `http://127.0.0.1:${port}/vnc.html?autoconnect=true&resize=scale&view_only=false`;
+}
+
+function writeJsonResponse(res, statusCode, payload) {
+  res.writeHead(statusCode, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  res.end(JSON.stringify(payload || {}));
+}
+
+function localStreamHtml() {
+  return `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Funesterie Match Arena</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #020817; color: #e2e8f0; font-family: system-ui, sans-serif; overflow: hidden; }
+    .stage { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 45%, #102033, #020817 72%); }
+    img { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+    .badge { position: fixed; left: 12px; bottom: 12px; padding: 6px 9px; border: 1px solid rgba(56,189,248,.5); border-radius: 7px; background: rgba(2,8,23,.72); color: #bae6fd; font-size: 12px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="stage"><img src="/screen.mjpg" alt="Flux local Match Arena"></div>
+  <div class="badge">Match Arena - flux local</div>
+</body>
+</html>`;
+}
+
+function buildFfmpegCaptureArgs() {
+  const fps = String(Math.max(1, Math.min(30, envNumber('A11_MATCH_ARENA_STREAM_FPS', 10))));
+  const width = Math.max(320, Math.min(1920, envNumber('A11_MATCH_ARENA_STREAM_WIDTH', 1280)));
+  const quality = String(Math.max(2, Math.min(15, envNumber('A11_MATCH_ARENA_STREAM_QUALITY', 8))));
+  if (process.platform === 'win32') {
+    return [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'gdigrab',
+      '-framerate',
+      fps,
+      '-i',
+      env('A11_MATCH_ARENA_STREAM_SOURCE', 'desktop'),
+      '-vf',
+      `scale=${width}:-1`,
+      '-q:v',
+      quality,
+      '-f',
+      'mjpeg',
+      'pipe:1',
+    ];
+  }
+  return [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'x11grab',
+    '-framerate',
+    fps,
+    '-i',
+    env('DISPLAY', ':0.0'),
+    '-vf',
+    `scale=${width}:-1`,
+    '-q:v',
+    quality,
+    '-f',
+    'mjpeg',
+    'pipe:1',
+  ];
+}
+
+function serveMjpegStream(req, res) {
+  const command = env('A11_MATCH_ARENA_FFMPEG_COMMAND', 'ffmpeg');
+  const args = buildFfmpegCaptureArgs();
+  res.writeHead(200, {
+    'content-type': 'multipart/x-mixed-replace; boundary=frame',
+    'cache-control': 'no-store',
+    connection: 'close',
+  });
+  const child = spawn(command, args, {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  let buffer = Buffer.alloc(0);
+  let closed = false;
+  const closeChild = () => {
+    if (closed) return;
+    closed = true;
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      // Best effort.
+    }
+  };
+  req.on('close', closeChild);
+  child.on('exit', () => {
+    if (!res.writableEnded) res.end();
+  });
+  child.stdout.on('data', (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    while (buffer.length > 4) {
+      const start = buffer.indexOf(Buffer.from([0xff, 0xd8]));
+      if (start < 0) {
+        buffer = Buffer.alloc(0);
+        return;
+      }
+      const end = buffer.indexOf(Buffer.from([0xff, 0xd9]), start + 2);
+      if (end < 0) {
+        if (start > 0) buffer = buffer.subarray(start);
+        return;
+      }
+      const frame = buffer.subarray(start, end + 2);
+      buffer = buffer.subarray(end + 2);
+      res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+      res.write(frame);
+      res.write('\r\n');
+    }
+  });
+}
+
+function startLocalStreamBridge() {
+  if (!envBool('A11_MATCH_ARENA_AUTOSTREAM', true)) return null;
+  if (!ffmpegAvailable()) return null;
+  if (localStreamBridge?.server) return localStreamBridge;
+
+  const port = getLocalStreamPort();
+  const server = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `127.0.0.1:${port}`}`);
+    if (requestUrl.pathname === '/health') {
+      return writeJsonResponse(res, 200, {
+        ok: true,
+        schema: 'funesterie.match-arena.local-stream.v1',
+        mode: 'local-ffmpeg-mjpeg',
+      });
+    }
+    if (requestUrl.pathname === '/screen.mjpg') {
+      return serveMjpegStream(req, res);
+    }
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    return res.end(localStreamHtml());
+  });
+  localStreamBridge = {
+    server,
+    url: getLocalStreamUrl(),
+    source: 'local-ffmpeg',
+    mode: 'local-ffmpeg-mjpeg',
+    reachable: true,
+    listening: false,
+  };
+  server.on('listening', () => {
+    localStreamBridge.listening = true;
+    localStreamBridge.reachable = true;
+  });
+  server.on('error', (error) => {
+    localStreamBridge.error = String(error?.message || error);
+    localStreamBridge.reachable = false;
+  });
+  server.listen(port, '127.0.0.1');
+  return localStreamBridge;
+}
+
 async function urlResponds(url, timeoutMs = 900) {
   try {
     const response = await fetch(url, {
@@ -143,6 +332,13 @@ async function resolveStreamUrl() {
       reachable: await urlResponds(explicit, 1200),
     };
   }
+  if (localStreamBridge?.url && await urlResponds(localStreamBridge.url, 900)) {
+    return {
+      url: localStreamBridge.url,
+      source: localStreamBridge.source || 'local-ffmpeg',
+      reachable: true,
+    };
+  }
   for (const candidate of parseStreamCandidates()) {
     if (await urlResponds(candidate)) {
       return {
@@ -152,6 +348,14 @@ async function resolveStreamUrl() {
       };
     }
   }
+  const localBridge = startLocalStreamBridge();
+  if (localBridge?.url) {
+    return {
+      url: localBridge.url,
+      source: localBridge.source,
+      reachable: localBridge.reachable !== false,
+    };
+  }
   return { url: '', source: 'none', reachable: false };
 }
 
@@ -160,7 +364,7 @@ async function detectCapabilities() {
   const retroarchAvailable = commandAvailable('retroarch') || Boolean(env('A11_MATCH_ARENA_RETROARCH_COMMAND'));
   const dockerAvailable = commandAvailable('docker');
   const podmanAvailable = commandAvailable('podman');
-  const streamMode = env('A11_MATCH_ARENA_STREAM_MODE', stream.url ? 'novnc' : 'waiting-novnc');
+  const streamMode = env('A11_MATCH_ARENA_STREAM_MODE', stream.url ? (stream.source === 'local-ffmpeg' ? 'local-ffmpeg-mjpeg' : 'novnc') : 'waiting-novnc');
   return {
     retroarchAvailable,
     dockerAvailable,
@@ -181,6 +385,7 @@ async function detectCapabilities() {
       dockerAvailable ? 'docker' : null,
       podmanAvailable ? 'podman' : null,
       stream.url ? `browser-stream-url:${stream.source}` : null,
+      stream.source === 'local-ffmpeg' ? 'local-ffmpeg-mjpeg' : null,
     ].filter(Boolean),
   };
 }
@@ -515,7 +720,13 @@ async function run() {
             processed,
             failed,
           }, 15000);
-          const candidate = await postJson(buildUrl(remoteBaseUrl, '/api/match-arena/local-worker/claim'), token, { workerId }, 30000);
+          const candidate = await postJson(buildUrl(remoteBaseUrl, '/api/match-arena/local-worker/claim'), token, {
+            workerId,
+            streamReady: capabilities.streamReady,
+            streamMode: capabilities.streamMode,
+            streamSource: capabilities.streamSource,
+            inputMode: capabilities.inputMode,
+          }, 30000);
           if (candidate?.session) {
             claim = candidate;
             claimedRemoteBaseUrl = remoteBaseUrl;
