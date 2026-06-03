@@ -187,6 +187,12 @@ function shouldFallbackToEmergencyVideo(body = {}) {
   return isTruthy(configured);
 }
 
+function shouldForceAsyncVideoProxy() {
+  const configured = process.env.A11_VIDEO_PROXY_FORCE_ASYNC;
+  if (configured === undefined || String(configured || '').trim() === '') return true;
+  return !isFalsey(configured);
+}
+
 function isAsyncVideoJobRequested(body = {}) {
   return body?.acceptAsyncVideoJob === true
     || body?.acceptAsyncJob === true
@@ -200,6 +206,86 @@ function isAsyncVideoJobRequested(body = {}) {
 
 function buildAsyncVideoJobPath(jobId = '') {
   return `/api/video/jobs/${encodeURIComponent(String(jobId || '').trim())}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function summarizeProxyErrorText(text = '', status = 0) {
+  const value = String(text || '').trim();
+  if (!value) return `video_proxy_status_${status || 'unknown'}`;
+  if (/^<!doctype html/i.test(value) || /<html[\s>]/i.test(value)) {
+    return `video_proxy_status_${status || 'unknown'}_html_response`;
+  }
+  return value.slice(0, 1000);
+}
+
+function proxyPayloadStatus(payload = {}) {
+  const status = String(
+    payload?.status
+    || payload?.asyncJob?.status
+    || payload?.job?.status
+    || ''
+  ).trim().toLowerCase();
+  return status;
+}
+
+function proxyPayloadJobId(payload = {}) {
+  return String(
+    payload?.jobId
+    || payload?.id
+    || payload?.asyncJob?.jobId
+    || payload?.asyncJob?.id
+    || payload?.job?.jobId
+    || payload?.job?.id
+    || ''
+  ).trim();
+}
+
+function isProxyAsyncJobPayload(payload = {}) {
+  const status = proxyPayloadStatus(payload);
+  if (['pending', 'queued', 'running', 'processing'].includes(status)) return true;
+  return Boolean(proxyPayloadJobId(payload) && (payload?.poll_url || payload?.pollUrl || payload?.asyncJob?.poll_url || payload?.asyncJob?.pollUrl));
+}
+
+function isProxyDonePayload(payload = {}) {
+  return ['done', 'complete', 'completed', 'success', 'succeeded'].includes(proxyPayloadStatus(payload));
+}
+
+function isProxyErrorPayload(payload = {}) {
+  return ['error', 'failed', 'failure', 'cancelled', 'canceled'].includes(proxyPayloadStatus(payload));
+}
+
+function extractProxyJobResultPayload(payload = {}) {
+  if (payload?.result && typeof payload.result === 'object') {
+    return {
+      ...payload.result,
+      proxied: true,
+      provider: payload.result.provider || payload.provider || 'comfyui-mochi',
+    };
+  }
+  return {
+    ...(payload || {}),
+    proxied: true,
+    provider: payload?.provider || 'comfyui-mochi',
+  };
+}
+
+function resolveProxyPollUrl(videoProxyUrl = '', payload = {}) {
+  const raw = String(
+    payload?.poll_url
+    || payload?.pollUrl
+    || payload?.asyncJob?.poll_url
+    || payload?.asyncJob?.pollUrl
+    || ''
+  ).trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw, videoProxyUrl).toString();
+  } catch {
+    return '';
+  }
 }
 
 function cleanupExpiredVideoJobs() {
@@ -591,6 +677,87 @@ function createVideoGenerateRouter(overrides = {}) {
   });
   const fetchImpl = overrides.fetch || (typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null);
 
+  async function pollVideoProxyJob({ videoProxyUrl = '', initialPayload = {}, req = null } = {}) {
+    const pollUrl = resolveProxyPollUrl(videoProxyUrl, initialPayload);
+    if (!pollUrl) {
+      const error = new Error('video_proxy_poll_url_missing');
+      error.statusCode = 502;
+      error.payload = {
+        ok: false,
+        error: 'video_proxy_poll_url_missing',
+        message: 'video_proxy_poll_url_missing',
+      };
+      throw error;
+    }
+
+    const pollIntervalMs = Math.max(
+      1000,
+      Math.min(30000, Number(initialPayload?.pollIntervalMs || initialPayload?.asyncJob?.pollIntervalMs || ASYNC_VIDEO_JOB_POLL_INTERVAL_MS) || ASYNC_VIDEO_JOB_POLL_INTERVAL_MS)
+    );
+    const maxWaitMs = Math.max(
+      pollIntervalMs,
+      Math.min(resolveVideoProxyTimeoutMs(), Number(initialPayload?.maxWaitMs || initialPayload?.asyncJob?.maxWaitMs || resolveVideoProxyTimeoutMs()) || resolveVideoProxyTimeoutMs())
+    );
+    const startedAt = Date.now();
+    let payload = initialPayload || {};
+
+    while (Date.now() - startedAt <= maxWaitMs) {
+      if (isProxyDonePayload(payload)) {
+        return rewriteVideoProxyPayload(extractProxyJobResultPayload(payload), req);
+      }
+      if (isProxyErrorPayload(payload)) {
+        const message = String(payload?.message || payload?.error || 'video_proxy_job_failed');
+        const error = new Error(message);
+        error.statusCode = 502;
+        error.payload = {
+          ok: false,
+          error: String(payload?.error || 'video_proxy_job_failed'),
+          message,
+          jobId: proxyPayloadJobId(payload),
+        };
+        throw error;
+      }
+
+      await sleep(pollIntervalMs);
+      const pollResponse = await fetchImpl(pollUrl, {
+        method: 'GET',
+        headers: {
+          ...buildAiServiceAuthHeaders(),
+        },
+        signal: AbortSignal.timeout(Math.min(60_000, Math.max(5_000, pollIntervalMs + 10_000))),
+      });
+      const text = await pollResponse.text();
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = null;
+      }
+
+      if (!pollResponse.ok) {
+        const message = summarizeProxyErrorText(text, pollResponse.status);
+        const error = new Error(message);
+        error.statusCode = pollResponse.status || 502;
+        error.payload = payload || {
+          ok: false,
+          error: 'video_proxy_poll_failed',
+          message,
+          jobId: proxyPayloadJobId(initialPayload),
+        };
+        throw error;
+      }
+    }
+
+    const error = new Error(`video_proxy_job_timeout: ${proxyPayloadJobId(initialPayload) || 'unknown'}`);
+    error.statusCode = 504;
+    error.payload = {
+      ok: false,
+      error: 'video_proxy_job_timeout',
+      message: 'video_proxy_job_timeout',
+      jobId: proxyPayloadJobId(initialPayload),
+    };
+    throw error;
+  }
+
   async function generateViaProxy({ req = null, body = {}, prompt = '' } = {}) {
     const videoProxyUrl = resolveVideoProxyUrl();
     if (!videoProxyUrl) return null;
@@ -606,6 +773,10 @@ function createVideoGenerateRouter(overrides = {}) {
     }
 
     const proxyBody = withProxyDefaults(body, prompt);
+    if (shouldForceAsyncVideoProxy()) {
+      proxyBody.acceptAsyncVideoJob = true;
+      proxyBody.acceptAsyncJob = true;
+    }
     const proxyResponse = await fetchImpl(videoProxyUrl, {
       method: 'POST',
       headers: {
@@ -624,14 +795,23 @@ function createVideoGenerateRouter(overrides = {}) {
     }
 
     if (!proxyResponse.ok) {
-      const error = new Error(text || `video_proxy_status_${proxyResponse.status}`);
+      const message = summarizeProxyErrorText(text, proxyResponse.status);
+      const error = new Error(message);
       error.statusCode = proxyResponse.status || 502;
       error.payload = payload || {
         ok: false,
         error: 'video_proxy_failed',
-        message: text || `video_proxy_status_${proxyResponse.status}`,
+        message,
       };
       throw error;
+    }
+
+    if (isProxyAsyncJobPayload(payload || {})) {
+      return pollVideoProxyJob({
+        videoProxyUrl,
+        initialPayload: payload || {},
+        req,
+      });
     }
 
     return rewriteVideoProxyPayload(payload || {

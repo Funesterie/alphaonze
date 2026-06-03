@@ -274,6 +274,130 @@ test('video generate router sends the dedicated video bridge token when configur
   }
 });
 
+test('video generate router polls async local video proxy jobs', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
+    A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
+    A11_VIDEO_PROXY_FORCE_ASYNC: process.env.A11_VIDEO_PROXY_FORCE_ASYNC,
+    A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL: process.env.A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL,
+    A11_VIDEO_PUBLIC_FILE_BASE_URL: process.env.A11_VIDEO_PUBLIC_FILE_BASE_URL,
+    PUBLIC_API_URL: process.env.PUBLIC_API_URL,
+    API_URL: process.env.API_URL,
+    A11_SERVER_URL: process.env.A11_SERVER_URL,
+  };
+
+  const requests = [];
+  let pollCount = 0;
+  const proxyServer = http.createServer((req, res) => {
+    requests.push({
+      method: req.method,
+      url: req.url,
+      headers: req.headers || {},
+    });
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk.toString();
+      });
+      req.on('end', () => {
+        const parsedBody = body ? JSON.parse(body) : null;
+        requests[requests.length - 1].body = parsedBody;
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          ok: true,
+          status: 'pending',
+          jobId: 'lvjob-test-1',
+          poll_url: '/api/video/jobs/lvjob-test-1',
+          pollIntervalMs: 1000,
+        }));
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/video/jobs/lvjob-test-1') {
+      pollCount += 1;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (pollCount === 1) {
+        res.end(JSON.stringify({
+          ok: true,
+          status: 'running',
+          jobId: 'lvjob-test-1',
+          poll_url: '/api/video/jobs/lvjob-test-1',
+          pollIntervalMs: 1000,
+        }));
+        return;
+      }
+      res.end(JSON.stringify({
+        ok: true,
+        status: 'done',
+        jobId: 'lvjob-test-1',
+        result: {
+          ok: true,
+          provider: 'comfyui-mochi',
+          video_path: 'D:\\projets\\funesterie\\a11\\backend\\apps\\server\\runtime\\files\\generated\\videos\\comfy\\20260603\\demo.mp4',
+        },
+      }));
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: 'not_found' }));
+  });
+
+  await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
+  const address = proxyServer.address();
+  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
+  process.env.A11_VIDEO_PROXY_TOKEN = 'video-bridge-token';
+  process.env.A11_VIDEO_PROXY_FORCE_ASYNC = 'true';
+  process.env.A11_VIDEO_PROXY_PUBLIC_FILE_BASE_URL = 'https://sd.funesterie.me/files/generated/videos';
+  delete process.env.A11_VIDEO_PUBLIC_FILE_BASE_URL;
+  delete process.env.PUBLIC_API_URL;
+  delete process.env.API_URL;
+  delete process.env.A11_SERVER_URL;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when proxy is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'clip vivy async',
+        durationSeconds: 1,
+        fps: 2,
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.video_url, 'https://sd.funesterie.me/files/generated/videos/comfy/20260603/demo.mp4');
+    assert.equal(requests[0]?.body?.acceptAsyncVideoJob, true);
+    assert.equal(requests[0]?.headers?.['x-a11-video-token'], 'video-bridge-token');
+    assert.equal(requests.find((entry) => entry.method === 'GET')?.headers?.['x-a11-video-token'], 'video-bridge-token');
+    assert.equal(pollCount, 2);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await new Promise((resolve) => proxyServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('video generate router uses Hugging Face video when enabled', async () => {
   const previousEnv = {
     A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,
