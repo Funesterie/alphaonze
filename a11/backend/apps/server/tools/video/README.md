@@ -107,6 +107,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11
 
 The official Genmo harness is flexible but heavy. Their README notes around 60 GB VRAM for this direct runner, while ComfyUI can run Mochi with lower VRAM. If the local GPU cannot load this harness, keep the same A11 route and swap the runner URL to a ComfyUI/Mochi worker.
 
+### Local ComfyUI/Mochi worker
+
+The Windows GPU host also has a lighter ComfyUI path. It keeps ComfyUI,
+models, caches, outputs and temp files on `E:\Funesterie`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11\\ops\\video\\Start-LocalComfyMochi.ps1
+```
+
+Default local endpoints:
+
+```env
+A11_COMFY_URL=http://127.0.0.1:8188
+A11_VIDEO_LOCAL_RUNNER_URL=http://127.0.0.1:17881/api/tools/generate_video
+```
+
+Important: a public backend cannot call `127.0.0.1` on the Windows PC. For
+`a11.funesterie.me`, expose this runner through the existing private bridge or a
+secured tunnel, then point `A11_VIDEO_PROXY_URL` to that reachable URL.
+
 ## Installation
 
 ### ffmpeg
