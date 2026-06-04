@@ -495,8 +495,6 @@ class ComfyWanRuntime:
                     "prompt_extend": True,
                     "watermark": False,
                     "shot_type": "single",
-                    "api_key_comfy_org": COMFY_ORG_API_KEY,
-                    "unique_id": job_id,
                 },
             },
             "3": {
@@ -525,7 +523,18 @@ class ComfyWanRuntime:
         uploaded_image = self.upload_reference_image(source)
         workflow = self.build_workflow(request, job_id, uploaded_image)
         client_id = uuid.uuid4().hex
-        queued = http_json("POST", f"{self.comfy_url}/prompt", {"prompt": workflow, "client_id": client_id}, timeout=60)
+        queued = http_json(
+            "POST",
+            f"{self.comfy_url}/prompt",
+            {
+                "prompt": workflow,
+                "client_id": client_id,
+                "extra_data": {
+                    "api_key_comfy_org": COMFY_ORG_API_KEY,
+                },
+            },
+            timeout=60,
+        )
         prompt_id = str(queued.get("prompt_id") or "").strip()
         if not prompt_id:
             raise RuntimeError(f"comfy_prompt_queue_failed: {queued}")
