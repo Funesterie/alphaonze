@@ -7,6 +7,7 @@ const {
   buildAccountConnectorState,
   buildConnectorAwareSystemPrompt,
   buildConnectorStateContext,
+  buildConnectorStatePrompt,
   isConnectorCapabilitiesQuestion,
   resolveOAuthProviderConfig,
 } = require('../src/auth/account-connectors.cjs');
@@ -128,4 +129,14 @@ test('injecte le bloc connecteurs une seule fois dans le prompt systeme', () => 
   assert.match(prompt, /pas une reponse toute faite/);
   assert.equal(twice, prompt);
   assert.doesNotMatch(buildConnectorStateContext(state), /Basic: chat K44/);
+});
+
+test('autorise un enrichissement NEZ/QFlush borne au compte courant', () => {
+  const state = buildAccountConnectorState({ user: { id: 'u1' }, env: {} });
+  const prompt = buildConnectorStatePrompt(state);
+
+  assert.match(prompt, /NEZ\/QFlush/);
+  assert.match(prompt, /compte connecte/);
+  assert.match(prompt, /Ne lance pas d appel payant/);
+  assert.match(prompt, /ne melange jamais plusieurs comptes/);
 });
