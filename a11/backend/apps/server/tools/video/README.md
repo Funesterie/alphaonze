@@ -161,6 +161,46 @@ Store `A11_VIDEO_PROXY_TOKEN` only in local user environment variables and in th
 production secret store. The backend sends it as `x-a11-video-token`, and the
 local runner refuses video generation without it.
 
+### Local ComfyUI/Wan API worker
+
+Use this path for real image-to-video jobs such as a Vivy reference image
+moving through a cyberpunk city. It is separate from Mochi: Wan uses the Comfy
+Org API node, while Mochi is local text-to-video.
+
+Store the Comfy Org API key only as a local user environment variable or in a
+private key file on the GPU host. Do not put it in Git, `.env`, logs or shared
+notes:
+
+```env
+A11_COMFY_ORG_API_KEY=...
+```
+
+Then start ComfyUI plus the Wan runner:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11\\ops\\video\\Start-LocalComfyWanApi.ps1
+```
+
+Default local endpoints:
+
+```env
+A11_COMFY_URL=http://127.0.0.1:8188
+A11_VIDEO_LOCAL_RUNNER_URL=http://127.0.0.1:17882/api/tools/generate_video
+```
+
+Expose it through the same secured Cloudflare tunnel when production must call
+the PC worker:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\\projets\\funesterie\\a11\\ops\\video\\Start-LocalComfyTunnel.ps1 -RunnerPort 17882 -SelfTest
+```
+
+The runner defaults to `wan2.5-i2v-preview`, `480P` and 5 second jobs to avoid
+burning Comfy credits. If `A11_COMFY_WAN_MODEL=wan2.6-i2v` is selected, the
+runner automatically uses at least `720P` because Comfy/Wan 2.6 does not accept
+`480P`. Override locally with `A11_COMFY_WAN_RESOLUTION=720P` and
+`A11_COMFY_WAN_DURATION_SEC=10` or `15` only when needed.
+
 ### Vivy visual direction memory
 
 Vivy's current video/image direction is tracked in:

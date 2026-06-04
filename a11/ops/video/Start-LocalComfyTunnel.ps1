@@ -63,12 +63,23 @@ function Test-TunnelExists([string]$Name) {
   return ($list -join "`n") -match "(?m)\s$([regex]::Escape($Name))\s"
 }
 
-function Test-TunnelProcess([string]$Name) {
+function Get-TunnelProcesses([string]$Name) {
   $escaped = [regex]::Escape($Name)
   $processes = Get-CimInstance Win32_Process -Filter "Name = 'cloudflared.exe'" -ErrorAction SilentlyContinue
+  $foundProcesses = @()
   foreach ($process in $processes) {
     if ([string]::IsNullOrEmpty($process.CommandLine)) { continue }
     if ($process.CommandLine -match $escaped -and $process.CommandLine -match "\btunnel\b" -and $process.CommandLine -match "\brun\b") {
+      $foundProcesses += $process
+    }
+  }
+  return $foundProcesses
+}
+
+function Test-TunnelProcess([string]$Name, [string]$ExpectedUrl) {
+  $processes = @(Get-TunnelProcesses $Name)
+  foreach ($process in $processes) {
+    if ($process.CommandLine -match [regex]::Escape($ExpectedUrl)) {
       return $true
     }
   }
@@ -81,7 +92,7 @@ $healthUrl = "$runnerUrl/health"
 $publicHealthUrl = "https://$Hostname/health"
 
 if (-not (Test-HttpOk $healthUrl)) {
-  throw "Runner video local introuvable: $healthUrl. Lance Start-LocalComfyMochi.ps1 avant le tunnel."
+  throw "Runner video local introuvable: $healthUrl. Lance Start-LocalComfyMochi.ps1 ou Start-LocalComfyWanApi.ps1 avant le tunnel."
 }
 
 if (-not (Test-TunnelExists $TunnelName)) {
@@ -92,7 +103,14 @@ if (-not $SkipDnsRoute) {
   Invoke-CloudflaredQuiet @("tunnel", "route", "dns", "--overwrite-dns", $TunnelName, $Hostname) | Out-Null
 }
 
-if (-not (Test-TunnelProcess $TunnelName)) {
+$staleProcesses = Get-TunnelProcesses $TunnelName | Where-Object {
+  $_.CommandLine -notmatch [regex]::Escape($runnerUrl)
+}
+foreach ($process in $staleProcesses) {
+  Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+if (-not (Test-TunnelProcess $TunnelName $runnerUrl)) {
   Start-Process -FilePath $cloudflared `
     -WindowStyle Hidden `
     -ArgumentList @(
@@ -105,11 +123,11 @@ if (-not (Test-TunnelProcess $TunnelName)) {
   $deadline = (Get-Date).AddSeconds(60)
   do {
     Start-Sleep -Seconds 3
-    if (Test-TunnelProcess $TunnelName) { break }
+    if (Test-TunnelProcess $TunnelName $runnerUrl) { break }
   } while ((Get-Date) -lt $deadline)
 }
 
-if (-not (Test-TunnelProcess $TunnelName)) {
+if (-not (Test-TunnelProcess $TunnelName $runnerUrl)) {
   throw "Tunnel Cloudflare non demarre: $TunnelName"
 }
 
@@ -125,7 +143,7 @@ if ($SelfTest) {
   }
 }
 
-Write-Host "A11 Comfy/Mochi tunnel pret"
+Write-Host "A11 Comfy tunnel pret"
 Write-Host "  Host:   https://$Hostname"
 Write-Host "  Runner: $runnerUrl"
 Write-Host "  Health: $publicHealthUrl"
