@@ -112,6 +112,14 @@ class VideoRequest(BaseModel):
     message: str = Field(default="")
     negativePrompt: str = Field(default="")
     negative_prompt: str = Field(default="")
+    sourceImageUrl: str = Field(default="")
+    source_image_url: str = Field(default="")
+    referenceImageUrl: str = Field(default="")
+    reference_image_url: str = Field(default="")
+    initImageUrl: str = Field(default="")
+    init_image_url: str = Field(default="")
+    imageUrl: str = Field(default="")
+    image_url: str = Field(default="")
     durationSeconds: float = Field(default=2)
     duration_seconds: float | None = None
     fps: int = Field(default=6)
@@ -144,6 +152,42 @@ def is_async_requested(request: VideoRequest) -> bool:
         or is_truthy(request.mobileAsync)
         or is_truthy(request.async_request)
     )
+
+
+def request_reference_image_url(request: VideoRequest) -> str:
+    for attr in (
+        "sourceImageUrl",
+        "source_image_url",
+        "referenceImageUrl",
+        "reference_image_url",
+        "initImageUrl",
+        "init_image_url",
+        "imageUrl",
+        "image_url",
+    ):
+        value = str(getattr(request, attr, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def build_image_reference_unsupported_payload(request: VideoRequest) -> dict[str, Any] | None:
+    if not request_reference_image_url(request):
+        return None
+    if is_truthy(os.environ.get("A11_COMFY_MOCHI_ALLOW_IMAGE_REFERENCE")):
+        return None
+    return {
+        "ok": False,
+        "error": "local_comfy_mochi_image_reference_unsupported",
+        "message": (
+            "Le runner Comfy/Mochi local est texte-vers-video seulement: il ne sait pas "
+            "respecter une image de reference. Utilise un runner image-to-video reel "
+            "(Wan/Kling/LTX/Runway/Comfy API connecte) pour ce clip."
+        ),
+        "provider": "comfyui-mochi",
+        "imageReferenceSupported": False,
+        "suggestedProviders": ["comfy-wan-api", "kling-i2v", "ltx-i2v", "runway-i2v"],
+    }
 
 
 def now_ms() -> int:
@@ -434,6 +478,7 @@ class ComfyMochiRuntime:
                 "authRequired": bool(ACCESS_TOKEN),
                 "asyncJobs": len(VIDEO_JOBS),
                 "asyncWorkers": DEFAULT_JOB_WORKERS,
+                "imageReferenceSupported": False,
                 "nodes": {name: name in nodes for name in required},
                 "model": MODEL_NAME,
                 "vae": VAE_NAME,
@@ -448,10 +493,15 @@ class ComfyMochiRuntime:
                 "authRequired": bool(ACCESS_TOKEN),
                 "asyncJobs": len(VIDEO_JOBS),
                 "asyncWorkers": DEFAULT_JOB_WORKERS,
+                "imageReferenceSupported": False,
                 "error": str(exc),
             }
 
     def generate(self, request: VideoRequest) -> dict[str, Any]:
+        unsupported = build_image_reference_unsupported_payload(request)
+        if unsupported:
+            raise ValueError(unsupported["error"])
+
         prompt_text = (request.prompt or request.message or "").strip()
         if not prompt_text:
             raise ValueError("prompt_required")
@@ -514,6 +564,9 @@ def build_app(runtime: ComfyMochiRuntime) -> FastAPI:
     @app.post("/api/tools/generate_video")
     def generate_video(request: VideoRequest, http_request: Request) -> dict[str, Any]:
         require_bridge_auth(http_request)
+        unsupported = build_image_reference_unsupported_payload(request)
+        if unsupported:
+            return JSONResponse(status_code=422, content=unsupported)
         if is_async_requested(request):
             return JSONResponse(status_code=202, content=start_async_video_job(runtime, request))
         try:
