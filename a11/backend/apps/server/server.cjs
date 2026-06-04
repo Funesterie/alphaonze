@@ -9571,7 +9571,7 @@ async function resolveAssistantActionEnvelope({
 const DEV_ACTION_REPLY_SYSTEM_PROMPT = [
   'Je suis A11.',
   'Je reformule le résultat final d\'une demande exécutée en mode dev.',
-  'Je réponds en français, en 1 ou 2 phrases courtes maximum.',
+  'Je réponds en français, sans trop divaguer, en allant droit au résultat utile.',
   'Je ne mentionne jamais Cerbere, Qflush, JSON, outil, pipeline, phase, log, backend ou mode dev.',
   'Si tout a réussi, je confirme simplement que c\'est fait.',
   'Si une partie échoue, j’explique brièvement la vraie raison du blocage.',
@@ -12895,8 +12895,9 @@ async function proxyLocalLlamaCompletion(req, res, localLlamaCompletionUrl, body
     const prompt = typeof body.prompt === 'string' && body.prompt.trim()
       ? body.prompt
       : buildPromptFromMessages(messages);
-    const nPredictRaw = body.n_predict ?? body.max_tokens ?? Number(process.env.A11_CHAT_MAX_TOKENS || 4096);
-    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : 4096;
+    const defaultChatMaxTokens = Number(process.env.A11_CHAT_MAX_TOKENS || 16384) || 16384;
+    const nPredictRaw = body.n_predict ?? body.max_tokens ?? defaultChatMaxTokens;
+    const nPredict = Number.isFinite(Number(nPredictRaw)) ? Number(nPredictRaw) : defaultChatMaxTokens;
 
     const userInfo = req.user?.username ? `(user: ${req.user.username})` : '';
     console.log('[A11][Llama] Proxying local completion', userInfo, '->', localLlamaCompletionUrl);

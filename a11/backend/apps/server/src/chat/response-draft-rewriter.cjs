@@ -102,6 +102,27 @@ function looksLikeGenericContextPlaceholder(text = '') {
     || /^bien sur,?\s+voici\s+une\s+reponse\s+courte\s+au\s+dernier\s+message\.?$/i.test(foldText(normalized));
 }
 
+function looksLikeInternalReasoningLeak(text = '') {
+  const normalized = normalizeText(text);
+  const folded = foldText(normalized);
+  if (!normalized) return false;
+  if (/<\|(?:start|message|channel|end)\|>/i.test(normalized)) return true;
+  if (/(?:analysis){2,}|(?:commentary){2,}/i.test(normalized)) return true;
+  if (/\b(?:analysis|commentary|final)\b.{0,80}<\|/i.test(normalized)) return true;
+  if (/\b(?:channel|role)\s*[:=]\s*(?:analysis|commentary|final)\b/i.test(normalized)) return true;
+
+  const metaPatterns = [
+    /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
+    /\bthe user (?:wants|asks|said|typed|is asking)\b/i,
+    /\bwe (?:respond|answer|should|need|can respond)\b/i,
+    /\blet'?s produce (?:final|the final|a final)/i,
+    /\bcurrent channel\b/i,
+    /\bfinal answer\b/i,
+  ];
+  const hits = metaPatterns.reduce((count, pattern) => count + (pattern.test(normalized) ? 1 : 0), 0);
+  return hits >= 2 || (hits >= 1 && folded.includes('analysis') && normalized.length > 80);
+}
+
 function userMessageLooksFrench(userMessage = '') {
   const folded = foldText(userMessage);
   if (!folded) return false;
@@ -136,6 +157,7 @@ function buildA11VirtualResponseDraft({ userMessage = '', assistantText = '', co
   if (looksLikeVoiceCapabilityDenial(text, userMessage)) flags.push('voice_capability_denial');
   if (looksLikeGenericContextPlaceholder(text)) flags.push('generic_context_placeholder');
   if (looksLikeEnglishDrift(text, userMessage)) flags.push('english_language_drift');
+  if (looksLikeInternalReasoningLeak(text)) flags.push('internal_reasoning_leak');
 
   const intent = inferUserIntent(userMessage);
   const mustRewrite = flags.length > 0;
@@ -144,7 +166,7 @@ function buildA11VirtualResponseDraft({ userMessage = '', assistantText = '', co
     intent,
     flags,
     mustRewrite,
-    finalShape: userAskedForStructuredFormat(userMessage) ? 'structured_if_useful' : 'short_natural_prose',
+    finalShape: userAskedForStructuredFormat(userMessage) ? 'structured_if_useful' : 'natural_prose',
     contextSummary,
   };
 }
@@ -191,6 +213,13 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
 
   if (responseDraft.flags.includes('generic_context_placeholder') || responseDraft.flags.includes('english_language_drift')) {
     return fallback();
+  }
+
+  if (responseDraft.flags.includes('internal_reasoning_leak')) {
+    if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas|tout va bien|utilisateurs?)/.test(foldedUser)) {
+      return "Je reprends proprement: ma sortie précédente a laissé passer du brouillon technique. Je reste sur cette conversation; si tu veux un état réel, je vérifie le MCP/runtime au lieu de répondre au hasard.";
+    }
+    return "Je reprends proprement: ma sortie précédente a laissé passer du brouillon technique. Redonne-moi la demande et je réponds normalement, sans afficher mes notes de préparation.";
   }
 
   if (responseDraft.flags.includes('unverified_monitoring_claim')) {

@@ -173,6 +173,28 @@ Implementation path:
 - Useful as a loss/score, not as a prime formula.
 - Can score whether multiple control curves are synchronized.
 
+### C5 - Zone Factor Gate
+
+Source: oral/user correction, 2026-06-04.
+
+Status: experimental proxy only. This records the hypothesis that the binary
+gate `q(n)` may depend on the local zone of `n`, not only on `n` itself.
+
+```text
+Z_7# = 2*3*5*7 = 210
+Z_7! = 7!      = 5040
+zone_index = floor(n / Z)
+local_n    = n mod Z
+q_Z(n)     = closure(local_n, zone_index, mg_phase)
+```
+
+Implementation path:
+
+- Test both `Z_7#=210` and `Z_7!=5040`.
+- Keep them separate until the real zone operator is defined.
+- Record derivative and primitive of `q(n)`, not only the selected points.
+- Do not claim a prime rule; this is a resonance/zone candidate.
+
 ## Custom OP Algebra
 
 ### O1 - Cross Around M
@@ -414,7 +436,10 @@ Audio-safe interpretation:
 Observed constants:
 
 ```text
-mg = 0.3 + 0.06 + 0.009 + 0.0005 = 0.3695
+T_linear = 0.3 + 0.06 + 0.009 + 0.0005 = 0.3695
+T_spectral = T_linear + epsilon_1 + epsilon_2 + ...
+Q_hyper = a + b*i + c*j + d*k + e*l + f*m
+epsilon_r = real_projection(F_r(Q_hyper))
 0.292
 1.265
 c7 ~= 0.029202
@@ -424,7 +449,15 @@ phi - pi/2 ~= 0.0472376
 
 Status:
 
-- `mg`, `0.292`, and `1.265` recur often.
+- `T_linear`, `0.292`, and `1.265` recur often.
+- Historical screenshots sometimes call `0.3695` "mg"; corrected reading:
+  it is a linearized/truncated spectral coefficient, not `mg_phase`.
+- The more exact coefficient may be an asymptotic/perturbative expansion
+  (`0.3695...`, possibly `0.369479...` after deeper corrections).
+- Hypothesis: later epsilon terms may come from hypercomplex projections over
+  five research axes `i,j,k,l,m`, in a form like `a+b*i+c*j+d*k+e*l+f*m`.
+  This is not yet a locked algebra; define projection/norm/multiplication table
+  before using it as a formula.
 - Some derivations are explicitly failed or corrected later.
 - Store constants with provenance; avoid hardcoding unexplained meanings.
 
@@ -458,15 +491,85 @@ the source and version when using constants.
 
 Source: local test from `scripts/research/Test-PrimeCandidateCurve.ps1`
 
-Observation: with `mg=0.3695`, `pivot=0.292`, and `period=40.0005`, the local
+Observation: with historical `T_linear=0.3695`, `pivot=0.292`, and `period=40.0005`, the local
 maxima are regular periodic peaks around multiples of 40 and hit no primes
 under `10000`. Do not use the literal C1 rule as a primality detector.
+
+### F5 - q(n) Binary Resonance Gate
+
+Source: local test from `scripts/research/Test-PrimeSpiralQn.py`
+
+Definition:
+
+```text
+q(n)=1 -> selected / resonant candidate
+q(n)=0 -> not selected
+```
+
+Score families tested:
+
+- old C1 high-score gate
+- `40.0005π/c7` modular residual
+- `40.0005/c7` modular residual
+- `T_linear` residual
+- `mg_phase` residual
+- `target_0005π` residual
+- cross-unit `π/2` residual
+- flat `R_a + R_a = 2R_a` preload residual
+- bounded addition cascade `unit(z + phi + jhi*i)` from `z0=i`
+- bounded multiplication cascade `unit(z * (c7 + mg_phase*i))` from `z0=i`
+- bounded cascade `unit(exp(z))` from `z0=i`
+- bounded cascade `unit(i^z)` from `z0=i`
+- bounded log/ln cascade `unit(log(1+z))` from `z0=i`
+- bounded `ln -> division` cascade `unit(z/(1+ln(1+z)))` from `z0=i`
+- bounded inverse/division cascade `unit(1/(1+z))` from `z0=i`
+- bounded full op round `add -> multiply -> exp -> log/ln -> divide -> invert`
+- cross-star phase cascade with `R_a` preload
+
+Results:
+
+| Limit | Best family | Precision topK | Lift vs prime density |
+|-------|-------------|----------------|-----------------------|
+| 10 000 | `cascade_add_unit` | 0.1627 | 1.324 |
+| 100 000 | `cascade_add_unit` | 0.1232 | 1.285 |
+| 1 000 000 | `cascade_add_unit` | 0.0981 | 1.250 |
+
+Observation: `q(n)` can be kept as a weak resonance gate, but none of the
+tested families is a reliable prime detector. The local maximum rule already
+failed completely. Revision 2026-06-04: applying the cascade principle to all
+operations, not only `exp`, improves the topK lift. The best current signal is
+`cascade_add_unit`, with `cascade_ops_round_unit` close behind. However, the
+primitive remains poor, so this is a ranking signal, not a cumulative law.
+
+Discrete calculus:
+
+```text
+Dq(n)=q(n)-q(n-1)
+Pq(n)=Σ_{k<=n} q(k)
+```
+
+At `n <= 1 000 000`, current best by topK lift `cascade_add_unit` gives:
+
+```text
+Dq rising prime precision ≈ 0.0000
+Pq mean absolute error vs π(n) ≈ 34469
+```
+
+By contrast, `old_c1_high` has weaker topK lift (`≈1.065`) but much better
+primitive error (`≈1701`). This means the new all-op cascade is better at
+ranking isolated candidates, while the older curve follows the global counting
+shape better.
+
+Cascade observation: `unit(exp(z))` and `unit(i^z)` are weak or actively bad
+under the current scoring. The useful next test is a formally defined
+Funesterie `op` table, especially the candidate branch `ln -> division`.
 
 ## Module Policy
 
 Allowed now:
 
 - Use `S1`, `S2`, `S3`, and `C1` as normalized experimental control curves.
+- Use `q(n)` only as a `researchOnly` resonance gate.
 - Use `R1` as an audio chirp, not as a proof.
 - Use `C4` as a synchronization score.
 
@@ -481,7 +584,7 @@ Blocked until defined:
 Next implementation step:
 
 1. Add `formula_registry.json` generated from this file or the OCR queue.
-2. Implement tests for C1 against actual primes.
+2. Extend `q(n)` tests with OP-derived score families once `op` is defined.
 3. Extend the OP table into a custom `op` resolver and falsify it against the
    retry/fail OCR lane.
 4. Only then wire OP modes into the audio module.

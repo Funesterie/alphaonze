@@ -113,3 +113,21 @@ test('response draft rewrites English generic last-message placeholders in Frenc
   assert.match(processed.content, /bugué|dernier message|rien de spécial/i);
   assert.doesNotMatch(processed.content, /Sure|last message/i);
 });
+
+test('response draft removes internal channel and reasoning leaks', () => {
+  const raw = [
+    'We need to answer: greet, mention MCP link to MCP.',
+    'analysisanalysisanalysis <|message|> commentary <|channel|>analysis',
+    'The user wants a response. Let\'s produce final answer.',
+  ].join('\n');
+
+  const processed = postProcessA11AssistantResponse({
+    userMessage: "je voulais savoir si tout va bien si ya d'autres utilisateurs qui te parle",
+    text: raw,
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.ok(processed.draft.flags.includes('internal_reasoning_leak'));
+  assert.match(processed.content, /brouillon technique|MCP\/runtime/i);
+  assert.doesNotMatch(processed.content, /We need|analysis|<\|channel\|>|final answer/i);
+});
