@@ -975,6 +975,15 @@ $overrides = [ordered]@{
   A11_OLLAMA_BASE = "http://a11-ollama:11434"
   A11_OLLAMA_PRIMARY_MODEL = "gpt-oss:20b-cloud"
   A11_OLLAMA_FALLBACK_MODEL = "llama3.2:latest"
+  A11_ENABLE_EMBEDDINGS = "true"
+  A11_EMBEDDING_BASE_URL = "http://a11-ollama:11434"
+  A11_EMBEDDING_MODEL = "nomic-embed-text"
+  A11_STT_PROVIDER = $(if ($env:A11_STT_PROVIDER) { $env:A11_STT_PROVIDER } else { "auto" })
+  A11_STT_OLLAMA_ENABLED = $(if ($env:A11_STT_OLLAMA_ENABLED) { $env:A11_STT_OLLAMA_ENABLED } else { "false" })
+  A11_STT_OLLAMA_BASE = "http://a11-ollama:11434"
+  A11_STT_OLLAMA_MODEL = $(if ($env:A11_STT_OLLAMA_MODEL) { $env:A11_STT_OLLAMA_MODEL } else { "whisper" })
+  A11_STT_OPENAI_BASE_URL = $(if ($env:A11_STT_OPENAI_BASE_URL) { $env:A11_STT_OPENAI_BASE_URL } else { "https://api.openai.com/v1" })
+  A11_STT_OPENAI_MODEL = $(if ($env:A11_STT_OPENAI_MODEL) { $env:A11_STT_OPENAI_MODEL } else { "whisper-1" })
   A11_TRANSLATION_BASE_URL = "http://a11-ollama:11434"
   A11_TRANSLATION_MODEL = "gpt-oss:20b-cloud"
   A11_CERBERE_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
@@ -1059,6 +1068,9 @@ $buildEnvMap = [ordered]@{
   A11_INSTALL_JANUS = $(if ($env:A11_INSTALL_JANUS) { $env:A11_INSTALL_JANUS } else { "1" })
   A11_JANUS_TORCH_INDEX_URL = $(if ($env:A11_JANUS_TORCH_INDEX_URL) { $env:A11_JANUS_TORCH_INDEX_URL } else { "https://download.pytorch.org/whl/cpu" })
   A11_JANUS_TORCH_PACKAGES = $(if ($env:A11_JANUS_TORCH_PACKAGES) { $env:A11_JANUS_TORCH_PACKAGES } else { "" })
+  A11_BUILD_COMMIT = $BuildCommit
+  A11_BUILD_BRANCH = $BuildBranch
+  A11_BUILD_DATE = $BuildDateIso
 }
 Write-EnvFile $buildEnvMap $BuildEnvStage
 }
@@ -1159,8 +1171,38 @@ foreach ($voiceReference in $voiceReferenceCopies) {
   if ($LASTEXITCODE -ne 0) { throw "Copie reference voix $($voiceReference.Label) K44 echouee" }
 }
 
+$remoteBuildEnvRefresh = @'
+test -s __REMOTE_ROOT__/secrets/compose.env
+build_env="__REMOTE_ROOT__/secrets/build.env"
+a11_env="__REMOTE_ROOT__/secrets/a11.env"
+compose_env="__REMOTE_ROOT__/secrets/compose.env"
+tmp_build="$(mktemp)"
+if [ -s "$build_env" ]; then
+  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE)=' "$build_env" > "$tmp_build" || true
+fi
+printf 'A11_BUILD_COMMIT=%s\n' '__BUILD_COMMIT__' >> "$tmp_build"
+printf 'A11_BUILD_BRANCH=%s\n' '__BUILD_BRANCH__' >> "$tmp_build"
+printf 'A11_BUILD_DATE=%s\n' '__BUILD_DATE__' >> "$tmp_build"
+mv "$tmp_build" "$build_env"
+chmod 600 "$build_env"
+if [ -s "$a11_env" ]; then
+  cat "$a11_env" "$build_env" > "$compose_env"
+else
+  tmp_compose="$(mktemp)"
+  grep -v -E '^(A11_BUILD_COMMIT|A11_BUILD_BRANCH|A11_BUILD_DATE)=' "$compose_env" > "$tmp_compose" || true
+  cat "$build_env" >> "$tmp_compose"
+  mv "$tmp_compose" "$compose_env"
+fi
+chmod 600 "$compose_env"
+'@
+$remoteBuildEnvRefresh = $remoteBuildEnvRefresh.
+  Replace('__REMOTE_ROOT__', $RemoteRoot).
+  Replace('__BUILD_COMMIT__', $BuildCommit).
+  Replace('__BUILD_BRANCH__', $BuildBranch).
+  Replace('__BUILD_DATE__', $BuildDateIso)
+
 $remoteSecretStep = if ($ReuseRemoteSecrets) {
-  "test -s $RemoteRoot/secrets/compose.env"
+  $remoteBuildEnvRefresh
 } else {
   @"
 chmod 600 $RemoteRoot/secrets/a11.env
@@ -1192,6 +1234,7 @@ if ! docker inspect a11-ollama --format '{{json .NetworkSettings.Networks}}' | g
 fi
 docker update --restart unless-stopped a11-ollama >/dev/null
 docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/id_ed25519.pub ]; then ollama signin >/dev/null 2>&1 || true; fi'
+docker exec a11-ollama sh -lc 'ollama pull nomic-embed-text >/dev/null 2>&1 || true'
 '@
 
 if ($BlueGreen) {

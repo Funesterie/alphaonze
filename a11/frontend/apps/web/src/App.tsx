@@ -2705,7 +2705,8 @@ function writeVivyStudioDraft(value: Record<string, unknown>) {
 
 function readVivySessionSunoKey() {
   try {
-    return String(globalThis.sessionStorage?.getItem(VIVY_STUDIO_SUNO_SESSION_KEY) || "").trim();
+    const directKey = String(globalThis.sessionStorage?.getItem(VIVY_STUDIO_SUNO_SESSION_KEY) || "").trim();
+    return directKey || String(readSessionAppTokens().suno || "").trim();
   } catch {
     return "";
   }
@@ -2716,6 +2717,7 @@ function writeVivySessionSunoKey(value: string) {
   try {
     if (safeValue) globalThis.sessionStorage?.setItem(VIVY_STUDIO_SUNO_SESSION_KEY, safeValue);
     else globalThis.sessionStorage?.removeItem(VIVY_STUDIO_SUNO_SESSION_KEY);
+    writeSessionAppToken("suno", safeValue);
   } catch {
     // Session key is optional and never persisted outside this browser session.
   }
@@ -5796,8 +5798,112 @@ type FunesterieAccountInventory = {
 };
 
 type FunesterieAccessPreferences = Record<string, boolean>;
+type FunesterieSessionAppTokenMap = Record<string, string>;
+
+type FunesterieSessionAppTokenConfig = {
+  id: string;
+  label: string;
+  scope: string;
+  placeholder: string;
+  help: string;
+};
 
 const ACCOUNT_ACCESS_STORAGE_PREFIX = "funesterie:account-access:";
+const FUNESTERIE_SESSION_APP_TOKEN_STORAGE_KEY = "funesterie:session-app-tokens:v1";
+
+const FUNESTERIE_SESSION_APP_TOKENS: FunesterieSessionAppTokenConfig[] = [
+  {
+    id: "suno",
+    label: "Suno",
+    scope: "Vivy chanson",
+    placeholder: "Clé API Suno personnelle",
+    help: "Utilisée par Vivy Studio pour générer une vraie chanson avec la clé de cette session.",
+  },
+  {
+    id: "runcomfy",
+    label: "RunComfy",
+    scope: "Vidéo cloud",
+    placeholder: "Clé API RunComfy",
+    help: "Prévue pour les générations vidéo cloud quand le PC local n'est pas suffisant.",
+  },
+  {
+    id: "civitai",
+    label: "Civitai",
+    scope: "Modèles image",
+    placeholder: "Jeton Civitai",
+    help: "Prévu pour retrouver modèles, LoRA et références visuelles par session.",
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    scope: "Modèles IA",
+    placeholder: "Jeton Hugging Face",
+    help: "Prévu pour jobs, modèles et téléchargements autorisés par le compte utilisateur.",
+  },
+  {
+    id: "replicate",
+    label: "Replicate",
+    scope: "Vidéo/image",
+    placeholder: "Jeton Replicate",
+    help: "Prévu pour les pipelines image/vidéo externes quand ils sont explicitement demandés.",
+  },
+];
+
+function readSessionAppTokens(): FunesterieSessionAppTokenMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(FUNESTERIE_SESSION_APP_TOKEN_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, value]) => [String(key), String(value || "").trim()])
+        .filter(([, value]) => value)
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionAppTokens(tokens: FunesterieSessionAppTokenMap) {
+  if (typeof window === "undefined") return;
+  try {
+    const safeTokens = Object.fromEntries(
+      Object.entries(tokens)
+        .map(([key, value]) => [String(key), String(value || "").trim()])
+        .filter(([, value]) => value)
+    );
+    if (Object.keys(safeTokens).length) {
+      window.sessionStorage.setItem(FUNESTERIE_SESSION_APP_TOKEN_STORAGE_KEY, JSON.stringify(safeTokens));
+    } else {
+      window.sessionStorage.removeItem(FUNESTERIE_SESSION_APP_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Session keys are optional and should never block account rendering.
+  }
+}
+
+function writeSessionAppToken(id: string, value: string) {
+  const safeId = String(id || "").trim();
+  if (!safeId) return;
+  const nextTokens = readSessionAppTokens();
+  const safeValue = String(value || "").trim();
+  if (safeValue) nextTokens[safeId] = safeValue;
+  else delete nextTokens[safeId];
+  writeSessionAppTokens(nextTokens);
+}
+
+function forgetSessionAppTokens() {
+  writeSessionAppTokens({});
+  try {
+    globalThis.sessionStorage?.removeItem(VIVY_STUDIO_SUNO_SESSION_KEY);
+  } catch {
+    // Ignore session storage failures.
+  }
+}
+
+function getSessionAppTokenPresence(tokens: FunesterieSessionAppTokenMap) {
+  return Object.fromEntries(FUNESTERIE_SESSION_APP_TOKENS.map((token) => [token.id, Boolean(tokens[token.id])]));
+}
 
 const EMPTY_ACCOUNT_CONVERSATIONS: Record<FunesterieSurface, A11HistoryItem[]> = {
   a11: [],
@@ -5962,6 +6068,8 @@ function FunesterieAccountPage({
     error: "",
   });
   const [paymentBusy, setPaymentBusy] = useState<"" | "premium" | "founder" | "portal" | "cancel">("");
+  const [sessionAppTokens, setSessionAppTokens] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
+  const [sessionAppTokenDrafts, setSessionAppTokenDrafts] = useState<FunesterieSessionAppTokenMap>(() => readSessionAppTokens());
 
   async function loadAccountInventory() {
     if (!authenticated) {
@@ -6070,6 +6178,7 @@ function FunesterieAccountPage({
         capabilities: accessCapabilities,
         tiers: accessTiers,
       },
+      sessionAppTokens: getSessionAppTokenPresence(sessionAppTokens),
       conversations: inventory.conversations,
       files: inventory.files,
       resources: inventory.resources,
@@ -6087,6 +6196,33 @@ function FunesterieAccountPage({
   function resetAccessPreferences() {
     resetAccessPreferencesForKey(accessStorageKey);
     setInventory((current) => ({ ...current, accessPreferences: {} }));
+  }
+
+  function updateSessionAppTokenDraft(id: string, value: string) {
+    setSessionAppTokenDrafts((current) => ({ ...current, [id]: value }));
+  }
+
+  function saveSessionAppToken(id: string) {
+    const safeValue = String(sessionAppTokenDrafts[id] || "").trim();
+    writeSessionAppToken(id, safeValue);
+    if (id === "suno") writeVivySessionSunoKey(safeValue);
+    const nextTokens = readSessionAppTokens();
+    setSessionAppTokens(nextTokens);
+    setSessionAppTokenDrafts(nextTokens);
+  }
+
+  function forgetSessionAppToken(id: string) {
+    writeSessionAppToken(id, "");
+    if (id === "suno") writeVivySessionSunoKey("");
+    const nextTokens = readSessionAppTokens();
+    setSessionAppTokens(nextTokens);
+    setSessionAppTokenDrafts(nextTokens);
+  }
+
+  function forgetAllSessionAppTokens() {
+    forgetSessionAppTokens();
+    setSessionAppTokens({});
+    setSessionAppTokenDrafts({});
   }
 
   async function openPayment(plan: "premium" | "founder" | "portal" = "premium") {
@@ -6291,6 +6427,67 @@ function FunesterieAccountPage({
               </div>
             </footer>
           </article>
+        </div>
+      </section>
+
+      <section className="fun-token-panel fun-session-token-panel" aria-label="Jetons applicatifs de session">
+        <header className="fun-token-head">
+          <div>
+            <span>Session</span>
+            <h2>Jetons applicatifs</h2>
+            <p>Ajoute des clés temporaires pour les services de création. Elles restent dans cette session navigateur et ne partent jamais dans l'export.</p>
+          </div>
+          <aside>
+            <strong>{Object.values(getSessionAppTokenPresence(sessionAppTokens)).filter(Boolean).length} actif{Object.values(getSessionAppTokenPresence(sessionAppTokens)).filter(Boolean).length > 1 ? "s" : ""}</strong>
+            <small>{authenticated ? "session locale" : "connexion requise"}</small>
+          </aside>
+        </header>
+        {!authenticated && (
+          <p className="fun-account-alert">Connecte-toi avant d'ajouter un jeton applicatif. Les clés restent privées dans le navigateur et expirent avec la session.</p>
+        )}
+        <div className="fun-integration-grid fun-session-token-grid">
+          {FUNESTERIE_SESSION_APP_TOKENS.map((token) => {
+            const present = Boolean(sessionAppTokens[token.id]);
+            return (
+              <article key={token.id} className={present ? "fun-token-card fun-token-card--connected" : "fun-token-card"}>
+                <header>
+                  <h3>{token.label}</h3>
+                  <span>{present ? "Prêt" : token.scope}</span>
+                </header>
+                <p>{token.help}</p>
+                <label className="fun-session-token-field">
+                  <span>{token.scope}</span>
+                  <input
+                    id={`fun-session-token-${token.id}`}
+                    name={`sessionToken_${token.id}`}
+                    type="password"
+                    value={sessionAppTokenDrafts[token.id] || ""}
+                    disabled={!authenticated}
+                    onChange={(event) => updateSessionAppTokenDraft(token.id, event.currentTarget.value)}
+                    placeholder={present ? "Jeton déjà présent" : token.placeholder}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+                <footer>
+                  <div className="fun-token-card-actions">
+                    <button type="button" onClick={() => saveSessionAppToken(token.id)} disabled={!authenticated || !String(sessionAppTokenDrafts[token.id] || "").trim()}>
+                      Enregistrer
+                    </button>
+                    <button type="button" onClick={() => forgetSessionAppToken(token.id)} disabled={!authenticated || !present}>
+                      Oublier
+                    </button>
+                  </div>
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+        <div className="fun-session-token-footer">
+          <p>Les comptes admin/fondateur peuvent garder les clés serveur privées. Ces jetons de session servent seulement quand l'utilisateur veut brancher son propre service.</p>
+          <button type="button" onClick={forgetAllSessionAppTokens} disabled={!authenticated || !Object.values(sessionAppTokens).some(Boolean)}>
+            Oublier tous les jetons
+          </button>
         </div>
       </section>
 

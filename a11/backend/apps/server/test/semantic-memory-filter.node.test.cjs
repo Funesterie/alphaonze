@@ -9,6 +9,8 @@ const {
 } = require('../lib/semantic-memory-filter.cjs');
 const {
   areEmbeddingsEnabled,
+  generateEmbedding,
+  isEmbeddingTemporarilyPaused,
   resolveEmbeddingBaseUrl,
 } = require('../lib/vector-memory.cjs');
 const {
@@ -53,4 +55,32 @@ test('embedding config is quiet in production unless a base URL is configured', 
   assert.equal(isTripletExtractionEnabled({}, configuredEnv), true);
   assert.equal(resolveEmbeddingBaseUrl({}, configuredEnv), 'http://embed.local');
   assert.equal(resolveTripletExtractionBaseUrl({}, configuredEnv), 'http://kg.local');
+});
+
+test('embedding model 404 pauses vector calls briefly instead of spamming Ollama', async () => {
+  const previousFetch = global.fetch;
+  const baseUrl = `http://embed-${Date.now()}.local`;
+  const model = `missing-${Date.now()}`;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return {
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      text: async () => 'model not found',
+    };
+  };
+
+  try {
+    const text = 'Je garde une note de mémoire sémantique assez claire pour A11.';
+    assert.equal(await generateEmbedding(text, { ollamaBase: baseUrl, model }), null);
+    assert.equal(calls, 1);
+    assert.equal(isEmbeddingTemporarilyPaused(baseUrl, model), true);
+
+    assert.equal(await generateEmbedding(text, { ollamaBase: baseUrl, model }), null);
+    assert.equal(calls, 1);
+  } finally {
+    global.fetch = previousFetch;
+  }
 });

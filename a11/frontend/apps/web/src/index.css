@@ -8345,6 +8345,81 @@ body {
   line-height: 1.35;
 }
 
+.fun-session-token-panel {
+  gap: 16px;
+}
+
+.fun-session-token-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.fun-session-token-field {
+  display: grid;
+  gap: 7px;
+}
+
+.fun-session-token-field span {
+  color: var(--fun-amber);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fun-session-token-field input {
+  min-height: 40px;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid rgba(54, 212, 196, 0.26);
+  border-radius: 8px;
+  padding: 0 11px;
+  color: #eafffb;
+  background: rgba(5, 12, 20, 0.68);
+  font: inherit;
+  font-size: 13px;
+}
+
+.fun-session-token-field input:disabled {
+  opacity: 0.58;
+}
+
+.fun-session-token-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(54, 212, 196, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(54, 212, 196, 0.06);
+}
+
+.fun-session-token-footer p {
+  flex: 1 1 320px;
+  margin: 0;
+  color: var(--fun-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fun-session-token-footer button {
+  min-height: 40px;
+  border: 1px solid rgba(255, 107, 107, 0.34);
+  border-radius: 8px;
+  padding: 0 13px;
+  color: #ffe8e8;
+  background: rgba(255, 107, 107, 0.1);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.fun-session-token-footer button:disabled {
+  opacity: 0.62;
+  cursor: progress;
+}
+
 .fun-access-panel {
   width: min(1180px, 100%);
   margin: 0 auto;

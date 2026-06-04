@@ -3,17 +3,18 @@
  * STT Service — Speech-to-Text pour A11
  *
  * Stratégie de routing (par ordre de priorité) :
- *   1. Whisper local via Ollama  (A11_STT_PROVIDER=ollama  ou OLLAMA_BASE défini)
- *   2. Whisper API OpenAI        (A11_STT_PROVIDER=openai  ou OPENAI_API_KEY défini)
+ *   1. Whisper local via Ollama  (A11_STT_PROVIDER=ollama ou A11_STT_OLLAMA_ENABLED=true)
+ *   2. Whisper API OpenAI        (A11_STT_PROVIDER=openai ou clé OpenAI officielle)
  *   3. Erreur explicite          (aucun provider disponible)
  *
  * Variables d'environnement :
  *   A11_STT_PROVIDER      — "ollama" | "openai" | "auto" (défaut: "auto")
  *   A11_STT_MODEL         — modèle Whisper (défaut: "whisper-1" pour OpenAI, "whisper" pour Ollama)
  *   A11_STT_LANGUAGE      — langue ISO 639-1 (défaut: "fr")
- *   OLLAMA_BASE           — URL Ollama (ex: http://127.0.0.1:11434)
- *   OPENAI_API_KEY        — clé OpenAI pour Whisper API
- *   OPENAI_BASE_URL       — base URL OpenAI (défaut: https://api.openai.com/v1)
+ *   A11_STT_OLLAMA_ENABLED — active Ollama STT en auto si true
+ *   A11_STT_OLLAMA_BASE   — URL Ollama STT (sinon OLLAMA_BASE)
+ *   A11_STT_OPENAI_API_KEY — clé OpenAI dédiée STT (sinon OPENAI_API_KEY)
+ *   A11_STT_OPENAI_BASE_URL — base URL STT (défaut: https://api.openai.com/v1)
  *   A11_STT_ALLOW_OPENAI_COMPATIBLE — autorise un endpoint non-OpenAI pour STT
  */
 
@@ -26,13 +27,15 @@ const logger = getLogger({ component: 'stt-service' });
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 function getSttConfig() {
+  const provider = String(process.env.A11_STT_PROVIDER || 'auto').trim().toLowerCase();
   return {
-    provider: String(process.env.A11_STT_PROVIDER || 'auto').trim().toLowerCase(),
+    provider,
     language: String(process.env.A11_STT_LANGUAGE || 'fr').trim(),
-    ollamaBase: String(process.env.OLLAMA_BASE || '').trim().replace(/\/+$/, ''),
+    ollamaBase: String(process.env.A11_STT_OLLAMA_BASE || process.env.OLLAMA_BASE || '').trim().replace(/\/+$/, ''),
+    ollamaEnabled: provider === 'ollama' || isTruthy(process.env.A11_STT_OLLAMA_ENABLED),
     ollamaModel: String(process.env.A11_STT_MODEL || process.env.A11_STT_OLLAMA_MODEL || 'whisper').trim(),
-    openaiApiKey: String(process.env.OPENAI_API_KEY || '').trim(),
-    openaiBaseUrl: String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim().replace(/\/+$/, ''),
+    openaiApiKey: String(process.env.A11_STT_OPENAI_API_KEY || process.env.OPENAI_API_KEY || '').trim(),
+    openaiBaseUrl: String(process.env.A11_STT_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim().replace(/\/+$/, ''),
     openaiModel: String(process.env.A11_STT_MODEL || process.env.A11_STT_OPENAI_MODEL || 'whisper-1').trim(),
     allowOpenAiCompatibleStt: isTruthy(process.env.A11_STT_ALLOW_OPENAI_COMPATIBLE),
   };
@@ -41,11 +44,11 @@ function getSttConfig() {
 // ─── Provider detection ───────────────────────────────────────────────────────
 
 function detectProvider(config) {
-  if (config.provider === 'ollama') return 'ollama';
+  if (config.provider === 'ollama') return config.ollamaBase ? 'ollama' : null;
   if (config.provider === 'openai') return hasOpenAiSttConfig(config) ? 'openai' : null;
 
-  // auto: préférer Ollama local si disponible
-  if (config.ollamaBase) return 'ollama';
+  // auto: ne pas confondre Ollama chat avec un vrai provider Whisper local.
+  if (config.ollamaEnabled && config.ollamaBase) return 'ollama';
   if (hasOpenAiSttConfig(config)) return 'openai';
 
   return null;
@@ -247,7 +250,7 @@ async function transcribe(audioBuffer, mimeType, options = {}) {
 
   if (!provider) {
     throw new Error(
-      'Aucun provider STT disponible. Configure OLLAMA_BASE (Whisper local) ou OPENAI_API_KEY (Whisper API).'
+      'Aucun provider STT disponible. Active A11_STT_PROVIDER=ollama avec un modèle Whisper local compatible, ou configure A11_STT_OPENAI_API_KEY.'
     );
   }
 
@@ -318,6 +321,7 @@ function getSttStatus() {
     model: provider === 'ollama' ? config.ollamaModel : config.openaiModel,
     language: config.language,
     ollamaConfigured: !!config.ollamaBase,
+    ollamaEnabled: !!config.ollamaEnabled,
     openaiConfigured: hasOpenAiSttConfig(config),
     openaiCompatibleAllowed: !!config.allowOpenAiCompatibleStt,
   };

@@ -11,6 +11,8 @@ const {
 } = require('./semantic-memory-filter.cjs');
 
 const logger = getLogger({ component: 'vector-memory' });
+const embeddingFailureCache = new Map();
+const EMBEDDING_FAILURE_PAUSE_MS = 5 * 60 * 1000;
 
 /**
  * Calcule la similarité cosinus entre deux vecteurs
@@ -56,6 +58,28 @@ function resolveEmbeddingBaseUrl(options = {}, env = process.env) {
   return options.ollamaBase || env.A11_EMBEDDING_BASE_URL || env.OLLAMA_BASE || 'http://127.0.0.1:11434';
 }
 
+function getEmbeddingFailureKey(baseUrl, model) {
+  return `${String(baseUrl || '').trim()}|${String(model || '').trim()}`;
+}
+
+function isEmbeddingTemporarilyPaused(baseUrl, model, now = Date.now()) {
+  const key = getEmbeddingFailureKey(baseUrl, model);
+  const pausedUntil = embeddingFailureCache.get(key);
+  if (!pausedUntil) return false;
+  if (pausedUntil <= now) {
+    embeddingFailureCache.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function pauseEmbeddingModel(baseUrl, model, now = Date.now()) {
+  embeddingFailureCache.set(
+    getEmbeddingFailureKey(baseUrl, model),
+    now + EMBEDDING_FAILURE_PAUSE_MS
+  );
+}
+
 async function generateEmbedding(text, options = {}) {
   const normalizedText = String(text || '').trim();
   if (!isSemanticMemoryText(normalizedText, { maxChars: options.maxChars || 9000 })) {
@@ -73,6 +97,11 @@ async function generateEmbedding(text, options = {}) {
   const ollamaBase = resolveEmbeddingBaseUrl(options);
   const model = options.model || process.env.A11_EMBEDDING_MODEL || 'nomic-embed-text';
 
+  if (isEmbeddingTemporarilyPaused(ollamaBase, model)) {
+    logger.debug('Embeddings temporarily paused after provider/model failure', { model });
+    return null;
+  }
+
   try {
     const response = await fetch(`${ollamaBase}/api/embeddings`, {
       method: 'POST',
@@ -84,7 +113,16 @@ async function generateEmbedding(text, options = {}) {
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama embeddings failed: ${response.status} ${response.statusText}`);
+      const errText = await response.text().catch(() => '');
+      if (response.status === 404) {
+        pauseEmbeddingModel(ollamaBase, model);
+        logger.warn('Embedding model unavailable; vector memory paused briefly', {
+          model,
+          status: response.status,
+        });
+        return null;
+      }
+      throw new Error(`Ollama embeddings failed: ${response.status} ${response.statusText} ${errText.slice(0, 120)}`);
     }
 
     const data = await response.json();
@@ -350,4 +388,5 @@ module.exports = {
   cosineSimilarity,
   areEmbeddingsEnabled,
   resolveEmbeddingBaseUrl,
+  isEmbeddingTemporarilyPaused,
 };
