@@ -695,6 +695,7 @@ test('video generate router follows Hugging Face replicate predictions', async (
       },
       body: JSON.stringify({
         prompt: 'genere une video sombre pour vivy',
+        sourceImageUrl: 'https://files.example.com/vivy-cover.png',
         negative_prompt: ['text', 'watermark'],
       }),
     });
@@ -707,6 +708,7 @@ test('video generate router follows Hugging Face replicate predictions', async (
     assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
     assert.equal(calls.length, 3);
     assert.equal(calls[0].body.input.prompt, 'genere une video sombre pour vivy');
+    assert.equal(calls[0].body.input.image, 'https://files.example.com/vivy-cover.png');
     assert.equal(calls[0].body.input.num_frames, 81);
     assert.equal(calls[0].body.input.num_inference_steps, 2);
     assert.equal(calls[0].body.input.negative_prompt, 'text, watermark');

@@ -116,8 +116,30 @@ function normalizeNegativePromptText(value) {
   return String(value || '').trim() || undefined;
 }
 
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function resolveVideoReferenceImageUrl(request = {}) {
+  return firstNonEmptyString(
+    request.sourceImageUrl,
+    request.source_image_url,
+    request.referenceImageUrl,
+    request.reference_image_url,
+    request.initImageUrl,
+    request.init_image_url,
+    request.imageUrl,
+    request.image_url
+  );
+}
+
 function buildHuggingFaceVideoPayload(config, request = {}) {
   const prompt = String(request.prompt || request.message || '').trim();
+  const referenceImageUrl = resolveVideoReferenceImageUrl(request);
   const minFrames = config.provider === 'replicate' ? 81 : 4;
   const numFrames = clampInteger(
     request.num_frames || request.numFrames || request.frameCount || request.frame_count || request.frames,
@@ -147,7 +169,13 @@ function buildHuggingFaceVideoPayload(config, request = {}) {
   };
 
   if (config.provider === 'replicate') {
-    return { input: { prompt, ...parameters } };
+    return {
+      input: {
+        prompt,
+        ...(referenceImageUrl ? { image: referenceImageUrl } : {}),
+        ...parameters,
+      },
+    };
   }
   if (config.provider === 'hf-inference') {
     return { inputs: prompt, parameters };
