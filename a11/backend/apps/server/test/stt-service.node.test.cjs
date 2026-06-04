@@ -12,6 +12,10 @@ const STT_ENV_KEYS = [
   'A11_STT_PROVIDER',
   'A11_STT_ALLOW_OPENAI_COMPATIBLE',
   'A11_STT_MODEL',
+  'A11_STT_FAST_WHISPER_BASE_URL',
+  'A11_STT_FAST_WHISPER_ENABLED',
+  'A11_STT_FAST_WHISPER_MODEL',
+  'A11_STT_FAST_WHISPER_TOKEN',
   'A11_STT_OLLAMA_BASE',
   'A11_STT_OLLAMA_ENABLED',
   'A11_STT_OLLAMA_MODEL',
@@ -68,6 +72,43 @@ test('STT auto uses Ollama only when local Whisper is explicitly enabled', () =>
     assert.equal(status.available, true);
     assert.equal(status.provider, 'ollama');
     assert.equal(status.ollamaEnabled, true);
+  });
+});
+
+test('STT auto prefers faster-whisper only when the local worker is explicitly enabled', () => {
+  withCleanSttEnv(() => {
+    process.env.A11_STT_PROVIDER = 'auto';
+    process.env.A11_STT_FAST_WHISPER_BASE_URL = 'http://127.0.0.1:17911';
+
+    let status = getSttStatus();
+
+    assert.equal(status.available, false);
+    assert.equal(status.provider, 'none');
+    assert.equal(status.fasterWhisperConfigured, true);
+    assert.equal(status.fasterWhisperEnabled, false);
+
+    process.env.A11_STT_FAST_WHISPER_ENABLED = 'true';
+    status = getSttStatus();
+
+    assert.equal(status.available, true);
+    assert.equal(status.provider, 'faster-whisper');
+    assert.equal(status.model, 'Systran/faster-whisper-large-v3');
+    assert.equal(status.fasterWhisperEnabled, true);
+  });
+});
+
+test('STT explicit faster-whisper uses the configured local worker and model', () => {
+  withCleanSttEnv(() => {
+    process.env.A11_STT_PROVIDER = 'faster-whisper';
+    process.env.A11_STT_FAST_WHISPER_BASE_URL = 'http://127.0.0.1:17911';
+    process.env.A11_STT_FAST_WHISPER_MODEL = 'Systran/faster-whisper-large-v3';
+
+    const status = getSttStatus();
+
+    assert.equal(status.available, true);
+    assert.equal(status.provider, 'faster-whisper');
+    assert.equal(status.model, 'Systran/faster-whisper-large-v3');
+    assert.equal(status.fasterWhisperConfigured, true);
   });
 });
 

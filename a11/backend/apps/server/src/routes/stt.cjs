@@ -6,13 +6,13 @@
  *   Body: multipart/form-data
  *     - audio: fichier audio (webm, mp4, wav, ogg, mp3, flac)
  *     - language: (optionnel) code ISO 639-1, ex: "fr", "en"
- *     - provider: (optionnel) "ollama" | "openai" | "auto"
+ *     - provider: (optionnel) "faster-whisper" | "ollama" | "openai" | "auto"
  *
  * GET /api/stt/status
  *   Retourne le provider actif, le modèle et la disponibilité.
  *
  * Réponse succès:
- *   { ok: true, text: "...", language: "fr", duration: 3.2, provider: "ollama", model: "whisper" }
+ *   { ok: true, text: "...", language: "fr", duration: 3.2, provider: "faster-whisper", model: "Systran/faster-whisper-large-v3" }
  *
  * Réponse erreur:
  *   { ok: false, error: "...", message: "..." }

@@ -3,14 +3,19 @@
  * STT Service — Speech-to-Text pour A11
  *
  * Stratégie de routing (par ordre de priorité) :
- *   1. Whisper local via Ollama  (A11_STT_PROVIDER=ollama ou A11_STT_OLLAMA_ENABLED=true)
- *   2. Whisper API OpenAI        (A11_STT_PROVIDER=openai ou clé OpenAI officielle)
- *   3. Erreur explicite          (aucun provider disponible)
+ *   1. faster-whisper local/worker (A11_STT_PROVIDER=faster-whisper ou A11_STT_FAST_WHISPER_ENABLED=true)
+ *   2. Whisper local via Ollama    (A11_STT_PROVIDER=ollama ou A11_STT_OLLAMA_ENABLED=true)
+ *   3. Whisper API OpenAI          (A11_STT_PROVIDER=openai ou clé OpenAI officielle)
+ *   4. Erreur explicite            (aucun provider disponible)
  *
  * Variables d'environnement :
- *   A11_STT_PROVIDER      — "ollama" | "openai" | "auto" (défaut: "auto")
+ *   A11_STT_PROVIDER      — "faster-whisper" | "ollama" | "openai" | "auto" (défaut: "auto")
  *   A11_STT_MODEL         — modèle Whisper (défaut: "whisper-1" pour OpenAI, "whisper" pour Ollama)
  *   A11_STT_LANGUAGE      — langue ISO 639-1 (défaut: "fr")
+ *   A11_STT_FAST_WHISPER_ENABLED — active faster-whisper en auto si true
+ *   A11_STT_FAST_WHISPER_BASE_URL — URL du runner local/worker faster-whisper
+ *   A11_STT_FAST_WHISPER_MODEL — modèle faster-whisper (défaut: Systran/faster-whisper-large-v3)
+ *   A11_STT_FAST_WHISPER_TOKEN — jeton optionnel pour le runner local/worker
  *   A11_STT_OLLAMA_ENABLED — active Ollama STT en auto si true
  *   A11_STT_OLLAMA_BASE   — URL Ollama STT (sinon OLLAMA_BASE)
  *   A11_STT_OPENAI_API_KEY — clé OpenAI dédiée STT (sinon OPENAI_API_KEY)
@@ -31,6 +36,10 @@ function getSttConfig() {
   return {
     provider,
     language: String(process.env.A11_STT_LANGUAGE || 'fr').trim(),
+    fasterWhisperBaseUrl: String(process.env.A11_STT_FAST_WHISPER_BASE_URL || process.env.FASTER_WHISPER_BASE_URL || '').trim().replace(/\/+$/, ''),
+    fasterWhisperEnabled: provider === 'faster-whisper' || provider === 'faster_whisper' || isTruthy(process.env.A11_STT_FAST_WHISPER_ENABLED),
+    fasterWhisperModel: String(process.env.A11_STT_MODEL || process.env.A11_STT_FAST_WHISPER_MODEL || 'Systran/faster-whisper-large-v3').trim(),
+    fasterWhisperToken: String(process.env.A11_STT_FAST_WHISPER_TOKEN || '').trim(),
     ollamaBase: String(process.env.A11_STT_OLLAMA_BASE || process.env.OLLAMA_BASE || '').trim().replace(/\/+$/, ''),
     ollamaEnabled: provider === 'ollama' || isTruthy(process.env.A11_STT_OLLAMA_ENABLED),
     ollamaModel: String(process.env.A11_STT_MODEL || process.env.A11_STT_OLLAMA_MODEL || 'whisper').trim(),
@@ -44,10 +53,14 @@ function getSttConfig() {
 // ─── Provider detection ───────────────────────────────────────────────────────
 
 function detectProvider(config) {
+  if (config.provider === 'faster-whisper' || config.provider === 'faster_whisper') {
+    return config.fasterWhisperBaseUrl ? 'faster-whisper' : null;
+  }
   if (config.provider === 'ollama') return config.ollamaBase ? 'ollama' : null;
   if (config.provider === 'openai') return hasOpenAiSttConfig(config) ? 'openai' : null;
 
   // auto: ne pas confondre Ollama chat avec un vrai provider Whisper local.
+  if (config.fasterWhisperEnabled && config.fasterWhisperBaseUrl) return 'faster-whisper';
   if (config.ollamaEnabled && config.ollamaBase) return 'ollama';
   if (hasOpenAiSttConfig(config)) return 'openai';
 
@@ -76,6 +89,73 @@ function explainSttProviderError(err, config) {
     );
   }
   return err;
+}
+
+// ─── faster-whisper local/worker ─────────────────────────────────────────────
+
+async function transcribeWithFasterWhisper(audioBuffer, mimeType, config) {
+  const { fasterWhisperBaseUrl, fasterWhisperModel, fasterWhisperToken, language } = config;
+
+  if (!fasterWhisperBaseUrl) {
+    throw new Error('A11_STT_FAST_WHISPER_BASE_URL non configuré');
+  }
+
+  const url = `${fasterWhisperBaseUrl}/v1/audio/transcriptions`;
+  const boundary = `----A11STTBoundary${Date.now()}`;
+  const filename = `audio.${mimeTypeToExt(mimeType)}`;
+
+  const parts = [];
+  parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${fasterWhisperModel}\r\n`);
+  if (language) {
+    parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`);
+  }
+  parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\njson\r\n`);
+
+  const fileHeader = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+  const fileFooter = `\r\n--${boundary}--\r\n`;
+
+  const body = Buffer.concat([
+    Buffer.from(parts.join(''), 'utf8'),
+    Buffer.from(fileHeader, 'utf8'),
+    audioBuffer,
+    Buffer.from(fileFooter, 'utf8'),
+  ]);
+
+  const headers = {
+    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    'Content-Length': String(body.length),
+  };
+  if (fasterWhisperToken) {
+    headers.Authorization = `Bearer ${fasterWhisperToken}`;
+    headers['x-a11-stt-token'] = fasterWhisperToken;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body,
+    signal: AbortSignal.timeout(Number(process.env.A11_STT_FAST_WHISPER_TIMEOUT_MS || 180_000)),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`faster-whisper STT error ${response.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const text = String(data?.text || data?.transcription || '').trim();
+
+  if (!text) {
+    throw new Error('faster-whisper STT: réponse vide');
+  }
+
+  return {
+    text,
+    language: data?.language || language,
+    duration: data?.duration || null,
+    provider: 'faster-whisper',
+    model: data?.model || fasterWhisperModel,
+  };
 }
 
 // ─── Ollama Whisper ───────────────────────────────────────────────────────────
@@ -250,13 +330,15 @@ async function transcribe(audioBuffer, mimeType, options = {}) {
 
   if (!provider) {
     throw new Error(
-      'Aucun provider STT disponible. Active A11_STT_PROVIDER=ollama avec un modèle Whisper local compatible, ou configure A11_STT_OPENAI_API_KEY.'
+      'Aucun provider STT disponible. Lance le runner faster-whisper et configure A11_STT_PROVIDER=faster-whisper + A11_STT_FAST_WHISPER_BASE_URL, ou active un provider STT Ollama/OpenAI valide.'
     );
   }
 
   try {
     let result;
-    if (provider === 'ollama') {
+    if (provider === 'faster-whisper') {
+      result = await transcribeWithFasterWhisper(audioBuffer, resolvedMime, config);
+    } else if (provider === 'ollama') {
       result = await transcribeWithOllama(audioBuffer, resolvedMime, config);
     } else {
       result = await transcribeWithOpenAI(audioBuffer, resolvedMime, config);
@@ -270,9 +352,9 @@ async function transcribe(audioBuffer, mimeType, options = {}) {
 
     return result;
   } catch (err) {
-    // Si Ollama échoue en mode auto, tenter OpenAI en fallback
-    if (provider === 'ollama' && config.provider === 'auto' && hasOpenAiSttConfig(config)) {
-      logger.warn('Ollama STT failed, falling back to OpenAI', { error: err.message });
+    // Si un provider local échoue en mode auto, tenter OpenAI en fallback.
+    if ((provider === 'ollama' || provider === 'faster-whisper') && config.provider === 'auto' && hasOpenAiSttConfig(config)) {
+      logger.warn('Local STT failed, falling back to OpenAI', { provider, error: err.message });
       const result = await transcribeWithOpenAI(audioBuffer, resolvedMime, config);
       logger.info('STT fallback to OpenAI succeeded', { textLength: result.text.length });
       return result;
@@ -318,8 +400,13 @@ function getSttStatus() {
   return {
     available: !!provider,
     provider: provider || 'none',
-    model: provider === 'ollama' ? config.ollamaModel : config.openaiModel,
+    model: provider === 'faster-whisper'
+      ? config.fasterWhisperModel
+      : (provider === 'ollama' ? config.ollamaModel : config.openaiModel),
     language: config.language,
+    fasterWhisperConfigured: !!config.fasterWhisperBaseUrl,
+    fasterWhisperEnabled: !!config.fasterWhisperEnabled,
+    fasterWhisperModel: config.fasterWhisperModel,
     ollamaConfigured: !!config.ollamaBase,
     ollamaEnabled: !!config.ollamaEnabled,
     openaiConfigured: hasOpenAiSttConfig(config),
