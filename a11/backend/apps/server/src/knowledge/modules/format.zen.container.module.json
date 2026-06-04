@@ -22,7 +22,12 @@
       "multi-load",
       "Qflush",
       "Freeland",
-      "Morphing"
+      "Morphing",
+      "Stargate",
+      "anneau",
+      "cartographie imaginaire",
+      "axes imaginaires",
+      "nombre d'imaginaires"
     ]
   },
   "knowledge": {
@@ -38,13 +43,17 @@
       "NEZ regarde ou inspecte; ZEN cache le sens jusqu'a la cle",
       "ZEN n'est pas un zip classique: il combine conteneur, graphe, corpus, routage interne et chiffrement",
       "le fichier n'est plus un document lineaire mais une constellation de fragments reconstruits par regle",
-      "sans la cle, on ne doit pas savoir combien de fichiers existent, quels types ils ont, ni dans quel ordre les lire"
+      "sans la cle, on ne doit pas savoir combien de fichiers existent, quels types ils ont, ni dans quel ordre les lire",
+      "ZEN peut utiliser une cartographie spatiale imaginaire: les axes imaginaires donnent les coordonnees des fragments, pi relie la carte a un anneau circulaire, et la taille de l'anneau donne la zone de passage",
+      "dans cette lecture, les nombres premiers ne sont que la projection reelle; ZEN vise la carte imaginaire complete"
     ],
     "architecture": [
       "fichiers -> corpus -> cubes couleur RGBA -> multi-load -> chiffrement -> fichier .zen",
       "dimension 1: donnees",
       "dimension 2: relations",
       "dimension 3: ordre de reconstruction",
+      "dimension imaginaire: axes/symboles qui placent les fragments dans une carte spatiale",
+      "anneau pi: rabattement circulaire de la carte vers une zone de reconstruction",
       "la cle reconstruit l'ordre des cubes, le type des fichiers, le mapping RGBA, l'index corpus et les payloads finaux"
     ],
     "layers": [
@@ -130,6 +139,12 @@
         "title": "Discussion Codex / ChatGPT sur ZEN NEZ inverse",
         "role": "foundational-canon",
         "note": "ZEN defini comme archive chiffree multi-load, zip inverse et conteneur opaque qui cache l'ordre d'existence des fichiers jusqu'a la cle."
+      },
+      {
+        "id": "zen:source:djeff-spatial-imaginary-map-2026-06-04",
+        "title": "Cartographie spatiale imaginaire pour ZEN",
+        "role": "research-canon",
+        "note": "La zone ZEN vient du nombre d'axes ou symboles imaginaires choisis pour cartographier les fragments; pi sert d'anneau/Stargate, et les nombres premiers sont seulement une projection reelle."
       }
     ]
   },
@@ -142,7 +157,8 @@
   },
   "impacts": {
     "semantic": [
-      "si l'utilisateur parle de ZEN, repondre en termes de conteneur chiffre, corpus, graphe, RGBA et routage, pas seulement compression"
+      "si l'utilisateur parle de ZEN, repondre en termes de conteneur chiffre, corpus, graphe, RGBA et routage, pas seulement compression",
+      "si l'utilisateur parle de zone, anneau, Stargate, nombres premiers ou imaginaires, expliquer que les premiers sont la projection reelle et que ZEN utilise une carte imaginaire plus complete"
     ],
     "plan": [
       "proposer une specification puis un prototype secret-safe avant toute implementation de chiffrement"

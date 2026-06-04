@@ -19,8 +19,9 @@ Source : récapitulatif ChatGPT × Djeff (session mars 2026, confirmé 2026-05-2
 | dim_0005π_flat | target_0005π / mg_phase | **≈ 1.01048476000666** — diagnostic plat seulement si `op = ×` |
 | pivot_residual_old | 0.292 − 10c₇ | **≈ 5.52 × 10⁻⁵** — ancienne branche, ne plus appeler `mg` |
 | S | 40.0005 × π | **≈ 125.6699** — candidat spectral à comparer après racines |
-| Z_7# | 2 × 3 × 5 × 7 | **210** — primorial 7, facteur de zone candidat |
-| Z_7! | 7! | **5040** — factorielle 7, autre lecture de zone candidate |
+| Z_m | nombre d'axes/symboles imaginaires | **à définir** — facteur de zone canonique pour la cartographie spatiale imaginaire |
+| Z_7# | 2 × 3 × 5 × 7 | **210** — ancienne piste de zone, non canon |
+| Z_7! | 7! | **5040** — ancienne piste de zone, non canon |
 
 ---
 
@@ -177,24 +178,35 @@ Les composantes `a,b,c,d,e,f` sont à tester comme sorties spectrales,
 dimensionnelles, ou hybrides. Ne pas les verrouiller comme constantes plates
 avant comparaison numérique.
 
-Facteur de zone candidat :
+Facteur de zone canonique :
+
+```text
+Z_m(n) = zone induite par m axes/symboles imaginaires
+```
+
+Lecture Djeff 2026-06-04 : la zone ne vient pas d'abord de `7#` ou `7!`. Elle
+vient du nombre d'imaginaires retenus pour cartographier le nombre. Les nombres
+premiers sont la projection réelle ; les imaginaires définissent les coordonnées
+spatiales plus profondes.
+
+`π` sert alors à relier la carte au plan circulaire :
+
+```text
+axes imaginaires -> carte spatiale
+π                 -> anneau / Stargate
+taille anneau     -> zone de passage
+```
+
+Anciennes pistes à garder comme témoins, pas comme canon :
 
 ```text
 Z_7# = 2 × 3 × 5 × 7 = 210
 Z_7! = 7! = 5040
 ```
 
-Ces valeurs servent à tester si `q(n)` dépend seulement de `n`, ou de la zone
-locale où `n` tombe. Le proxy de première passe est :
-
-```text
-zone_index = floor(n / Z)
-local_n    = n mod Z
-q_Z(n)     = closure(local_n, zone_index, mg_phase)
-```
-
-Lecture prudente : `210` et `5040` sont deux hypothèses différentes. Ne pas les
-fusionner tant que l'opérateur de zone n'est pas défini.
+Elles peuvent tester des proxys, mais ne doivent plus être présentées comme la
+source de la zone. La question devient : combien d'axes imaginaires faut-il pour
+cartographier proprement `n` ?
 
 Hypothèse de passage en croix/étoile :
 
@@ -246,6 +258,7 @@ opération Funesterie à définir.
 - **target_0005π = 0.0005π** = cible dimensionnelle distincte, pas `mg`
 - **dim_0005π_flat ≈ 1.01048476000666** = diagnostic plat ; ne pas le confondre avec l'opérateur réel
 - **4.0005π** = cible corrigée Djeff ; l'ancienne proximité `4.5π ≈ t₁` reste une branche historique, pas le canon demandé
+- **Z_m** = zone canonique issue du nombre d'axes/symboles imaginaires ; `7#` et `7!` sont seulement des témoins historiques
 - **inv** = fermeture / inversion finale, encore à définir
 - **18 modes imaginaires** (version avec π/9)
 - **Symétrie 2-3-5** + correction 5
@@ -255,7 +268,9 @@ opération Funesterie à définir.
 ## 7. Interprétation globale
 
 Architecture spectrale discrète :
-- Nombres premiers = résonances stables (R(n) ≈ 0 mod c₇)
+- Nombres premiers = projection réelle / trace stable possible, pas l'objet complet du modèle
+- Axes imaginaires = cartographie spatiale des positions dimensionnelles
+- π = anneau circulaire reliant la carte à une zone de passage
 - Zéros de ζ = fréquences propres du système
 - Cycle 40.0005π = candidat de comparaison avec le mode fondamental t₁ après calcul des racines
 - 1/e = comparaison de dissipation possible, à ne pas confondre avec `T_spectral`
