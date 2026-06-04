@@ -28,8 +28,8 @@ DEFAULT_MODEL_ID = os.environ.get("A11_STT_FAST_WHISPER_MODEL", "Systran/faster-
 DEFAULT_WORK_ROOT = Path(os.environ.get("A11_STT_WORK_ROOT", r"E:\Funesterie\stt\faster-whisper"))
 DEFAULT_DOWNLOAD_ROOT = Path(os.environ.get("A11_STT_DOWNLOAD_ROOT", str(DEFAULT_WORK_ROOT / "models")))
 DEFAULT_TEMP_ROOT = Path(os.environ.get("A11_STT_TEMP_ROOT", str(DEFAULT_WORK_ROOT / "tmp")))
-DEFAULT_DEVICE = os.environ.get("A11_STT_FAST_WHISPER_DEVICE", "auto")
-DEFAULT_COMPUTE_TYPE = os.environ.get("A11_STT_FAST_WHISPER_COMPUTE_TYPE", "auto")
+DEFAULT_DEVICE = os.environ.get("A11_STT_FAST_WHISPER_DEVICE", "cpu")
+DEFAULT_COMPUTE_TYPE = os.environ.get("A11_STT_FAST_WHISPER_COMPUTE_TYPE", "int8")
 DEFAULT_BEAM_SIZE = int(os.environ.get("A11_STT_FAST_WHISPER_BEAM_SIZE", "5"))
 DEFAULT_VAD_FILTER = os.environ.get("A11_STT_FAST_WHISPER_VAD", "true").lower() not in {"0", "false", "no", "off"}
 ACCESS_TOKEN = os.environ.get("A11_STT_FAST_WHISPER_TOKEN", "").strip()
@@ -129,15 +129,24 @@ async def transcribe(
             handle.write(chunk)
 
     try:
-        whisper = get_model()
-        segments, info = whisper.transcribe(
-            str(temp_path),
-            language=language or None,
-            beam_size=DEFAULT_BEAM_SIZE,
-            vad_filter=DEFAULT_VAD_FILTER,
-            condition_on_previous_text=False,
-        )
-        text = " ".join(segment.text.strip() for segment in segments if segment.text).strip()
+        try:
+            whisper = get_model()
+            segments, info = whisper.transcribe(
+                str(temp_path),
+                language=language or None,
+                beam_size=DEFAULT_BEAM_SIZE,
+                vad_filter=DEFAULT_VAD_FILTER,
+                condition_on_previous_text=False,
+            )
+            text = " ".join(segment.text.strip() for segment in segments if segment.text).strip()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail={
+                "ok": False,
+                "error": "stt_transcription_failed",
+                "message": str(exc),
+                "device": device,
+                "compute_type": compute_type,
+            }) from exc
         payload = {
             "text": text,
             "language": getattr(info, "language", None) or language or None,

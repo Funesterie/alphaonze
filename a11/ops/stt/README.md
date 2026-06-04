@@ -7,6 +7,7 @@ Ce dossier branche un worker local de transcription audio pour A11.
 - Par defaut : `Systran/faster-whisper-large-v3`
 - Cache, modele, logs et temporaires : `E:\Funesterie\stt\faster-whisper`
 - Endpoint local : `http://127.0.0.1:17911/v1/audio/transcriptions`
+- Mode par defaut : CPU `int8`, plus lent mais fiable sans CUDA/cuBLAS.
 
 ## Lancement local
 
@@ -30,3 +31,11 @@ $env:A11_STT_FAST_WHISPER_MODEL = "Systran/faster-whisper-large-v3"
 ```
 
 La prod garde `A11_STT_FAST_WHISPER_ENABLED=false` tant que le worker n'est pas expose via un pont prive fiable.
+
+## GPU plus tard
+
+Quand CUDA/cuBLAS est propre sur la machine, relancer avec :
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-LocalFasterWhisper.ps1 -Device cuda -ComputeType float16
+```

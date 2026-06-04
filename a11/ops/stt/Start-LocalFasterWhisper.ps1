@@ -4,8 +4,8 @@ param(
   [string]$HostAddress = "127.0.0.1",
   [int]$Port = 17911,
   [string]$Model = "Systran/faster-whisper-large-v3",
-  [string]$Device = "auto",
-  [string]$ComputeType = "auto",
+  [string]$Device = "cpu",
+  [string]$ComputeType = "int8",
   [switch]$DownloadModel,
   [switch]$Foreground
 )
