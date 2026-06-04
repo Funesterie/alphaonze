@@ -1080,6 +1080,24 @@ function looksLikeLeakedActionTranscript(value: string) {
   return /\/app\/api\/public\/resources\/\d+\/download\?token=/i.test(raw);
 }
 
+function looksLikeInternalAssistantLeak(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  if (/<\|(?:start|message|channel|end)\|>/i.test(raw)) return true;
+  if (/(?:analysis){2,}|(?:commentary){2,}/i.test(raw)) return true;
+  if (/\b(?:analysis|commentary|final)\b.{0,80}<\|/i.test(raw)) return true;
+
+  const metaHits = [
+    /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
+    /\bthe user (?:wants|asks|said|typed|is asking)\b/i,
+    /\bwe (?:respond|answer|should|need|can respond)\b/i,
+    /\blet'?s produce (?:final|the final|a final)/i,
+    /\bfinal answer\b/i,
+  ].reduce((count, pattern) => count + (pattern.test(raw) ? 1 : 0), 0);
+  const repeatedMeta = (raw.match(/\b(?:the user wants|we need|we respond|analysis|commentary)\b/gi) || []).length;
+  return metaHits >= 2 || repeatedMeta >= 5;
+}
+
 function looksLikeActionEnvelope(value: string) {
   const raw = String(value || "").trim();
   if (looksLikeLeakedActionTranscript(raw)) return true;
@@ -1117,6 +1135,7 @@ function isAssistantHistoryPoisoned(value: string) {
     return true;
   }
   if (looksLikeLeakedActionTranscript(text)) return true;
+  if (looksLikeInternalAssistantLeak(text)) return true;
   if (looksCorruptedAssistantText(text)) return true;
   return [
     "Je n'ai pas reçu une réponse lisible. Réessaie une fois avec cette conversation.",
@@ -1140,6 +1159,10 @@ function normalizeAssistantMessagePayload(
 
   if (looksLikeLeakedActionTranscript(cleanedContent) || looksLikeLeakedActionTranscript(rawContent)) {
     cleanedContent = "Je n'ai pas reçu une confirmation exploitable pour cette action.";
+  }
+
+  if (looksLikeInternalAssistantLeak(cleanedContent) || looksLikeInternalAssistantLeak(rawContent)) {
+    cleanedContent = "Je reprends proprement: ma réponse précédente a laissé passer du brouillon technique. Repose-moi la demande en une phrase et je réponds normalement.";
   }
 
   const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*(?:Réponse|Reponse) potentiellement non (?:vérifiée|verifiee):\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);

@@ -2644,8 +2644,35 @@ function extractAssistantContentFromPayload(payload: unknown, depth = 0): string
   return '';
 }
 
+function looksLikeInternalAssistantLeak(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/<\|(?:start|message|channel|end)\|>/i.test(raw)) return true;
+  if (/(?:analysis){2,}|(?:commentary){2,}/i.test(raw)) return true;
+  if (/\b(?:analysis|commentary|final)\b.{0,80}<\|/i.test(raw)) return true;
+
+  const metaHits = [
+    /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
+    /\bthe user (?:wants|asks|said|typed|is asking)\b/i,
+    /\bwe (?:respond|answer|should|need|can respond)\b/i,
+    /\blet'?s produce (?:final|the final|a final)/i,
+    /\bfinal answer\b/i,
+  ].reduce((count, pattern) => count + (pattern.test(raw) ? 1 : 0), 0);
+  const repeatedMeta = (raw.match(/\b(?:the user wants|we need|we respond|analysis|commentary)\b/gi) || []).length;
+  return metaHits >= 2 || repeatedMeta >= 5;
+}
+
+function sanitizeAssistantDisplayText(value: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (looksLikeInternalAssistantLeak(raw)) {
+    return "Je reprends proprement: ma réponse précédente a laissé passer du brouillon technique. Repose-moi la demande en une phrase et je réponds normalement.";
+  }
+  return raw;
+}
+
 export function extractAssistantDisplayContent(payload: unknown) {
-  return String(extractAssistantContentFromPayload(payload) || '').trim();
+  return sanitizeAssistantDisplayText(String(extractAssistantContentFromPayload(payload) || '').trim());
 }
 
 function sleep(ms: number) {

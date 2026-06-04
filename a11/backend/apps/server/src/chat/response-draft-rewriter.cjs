@@ -111,6 +111,8 @@ function looksLikeInternalReasoningLeak(text = '') {
   if (/(?:analysis){2,}|(?:commentary){2,}/i.test(normalized)) return true;
   if (/\b(?:analysis|commentary|final)\b.{0,80}<\|/i.test(normalized)) return true;
   if (/\b(?:channel|role)\s*[:=]\s*(?:analysis|commentary|final)\b/i.test(normalized)) return true;
+  const specialTokenCount = (normalized.match(/<\|(?:start|message|channel|end)\|>/gi) || []).length;
+  if (specialTokenCount >= 2) return true;
 
   const metaPatterns = [
     /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
@@ -121,7 +123,11 @@ function looksLikeInternalReasoningLeak(text = '') {
     /\bfinal answer\b/i,
   ];
   const hits = metaPatterns.reduce((count, pattern) => count + (pattern.test(normalized) ? 1 : 0), 0);
-  return hits >= 2 || (hits >= 1 && folded.includes('analysis') && normalized.length > 80);
+  const repeatedMeta = (normalized.match(/\b(?:the user wants|the user asks|we need|we respond|we should|analysis|commentary)\b/gi) || []).length;
+  return hits >= 2
+    || repeatedMeta >= 5
+    || (hits >= 1 && folded.includes('analysis') && normalized.length > 80)
+    || (hits >= 1 && repeatedMeta >= 2 && normalized.length > 240);
 }
 
 function userMessageLooksFrench(userMessage = '') {

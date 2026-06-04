@@ -11,7 +11,7 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /\bA-11\b/);
   assert.match(prompt, /\bNOSSEN\b/);
   assert.match(prompt, /\bFunesterie\b/);
-  assert.match(prompt, /assistant local/i);
+  assert.match(prompt, /agent media audio\/video/i);
   assert.match(prompt, /QFlush/i);
   assert.match(prompt, /Vivy/i);
   assert.match(prompt, /\bMCP\b/);
@@ -36,7 +36,8 @@ test('/api/llm/chat empty system prompt still receives active identity context',
 
   assert.match(prompt, /\bNOSSEN\b/);
   assert.match(prompt, /Je connais Funesterie comme l'espace de travail/i);
-  assert.match(prompt, /ma surface client est Kaen44/i);
+  assert.match(prompt, /identites front distinctes/i);
+  assert.match(prompt, /Si la surface active est Kaen44\/K44/i);
   assert.match(prompt, /\bVivy\b/);
   assert.match(prompt, /identite musicale/i);
   assert.match(prompt, /A11 MCP/i);
@@ -45,6 +46,20 @@ test('/api/llm/chat empty system prompt still receives active identity context',
   assert.match(prompt, /identites originales Funesterie/i);
   assert.match(prompt, /clonage exact/i);
   assert.match(prompt, /comptes basic.*chemin local/i);
+});
+
+test('/api/chat Kaen44 surface pins first-person identity away from A11', () => {
+  const prompt = chatRouter.buildA11ChatSystemPrompt('Je suis Kaen44.', {
+    surface: 'kaen44',
+    persona: 'kaen44',
+  });
+
+  assert.match(prompt, /Surface active: Kaen44/i);
+  assert.match(prompt, /Quand je dis "je", je suis Kaen44/i);
+  assert.match(prompt, /copilote de bureau Funesterie/i);
+  assert.match(prompt, /je ne reponds pas comme "A11"/i);
+  assert.match(prompt, /je n utilise pas "we"/i);
+  assert.doesNotMatch(prompt, /ma surface client est Kaen44/i);
 });
 
 test('/api/chat Ollama fallback injects the active identity before the user message', () => {

@@ -565,7 +565,12 @@ function createChatRouter(overrides = {}) {
         buildConnectorAwareSystemPrompt(
           familyAccess ? SYSTEM_PROMPT : PUBLIC_SYSTEM_PROMPT,
           connectorState
-        )
+        ),
+        {
+          surface: req.body?.surface,
+          persona: req.body?.persona,
+          voicePersona: req.body?.voicePersona,
+        }
       );
       const informativeContexts = [];
       if (!(await enforcePaidLongChat(req, res, db, familyAccess, userMessage))) return;
@@ -1039,7 +1044,12 @@ function createChatRouter(overrides = {}) {
       buildConnectorAwareSystemPrompt(
         familyAccess ? SYSTEM_PROMPT : PUBLIC_SYSTEM_PROMPT,
         connectorState
-      )
+      ),
+      {
+        surface: req.body?.surface,
+        persona: req.body?.persona,
+        voicePersona: req.body?.voicePersona,
+      }
     );
     const informativeContexts = [];
     if (!(await enforcePaidLongChat(req, res, db, familyAccess, userMessage))) return;

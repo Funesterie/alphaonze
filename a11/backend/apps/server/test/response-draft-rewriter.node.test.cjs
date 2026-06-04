@@ -131,3 +131,22 @@ test('response draft removes internal channel and reasoning leaks', () => {
   assert.match(processed.content, /brouillon technique|MCP\/runtime/i);
   assert.doesNotMatch(processed.content, /We need|analysis|<\|channel\|>|final answer/i);
 });
+
+test('response draft catches long repeated meta loops from streamed providers', () => {
+  const raw = [
+    '<|channel|>analysis<|message|>The user wants to short reply.',
+    'We need to answer. The user wants to check the conversation.',
+    'The user wants to keep the last message. We respond. analysis commentary final.',
+    'The user wants to short the last message. The user wants to maintain the conversation.',
+  ].join(' ');
+
+  const processed = postProcessA11AssistantResponse({
+    userMessage: 'pourquoi tu reponds en we et tu melanges a11 et k44 ?',
+    text: raw,
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.ok(processed.draft.flags.includes('internal_reasoning_leak'));
+  assert.match(processed.content, /brouillon technique/i);
+  assert.doesNotMatch(processed.content, /The user wants|We respond|<\|channel\|>/i);
+});

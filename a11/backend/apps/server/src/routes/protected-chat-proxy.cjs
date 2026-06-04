@@ -75,8 +75,13 @@ function resolveProxyResponseLanguage(req = {}) {
 
 function buildProxySystemPrompt(req = {}) {
   const language = resolveProxyResponseLanguage(req);
+  const body = req?.body && typeof req.body === 'object' ? req.body : {};
   return [
-    buildA11ChatSystemPrompt(PUBLIC_CHAT_SYSTEM_PROMPT),
+    buildA11ChatSystemPrompt(PUBLIC_CHAT_SYSTEM_PROMPT, {
+      surface: body.surface,
+      persona: body.persona,
+      voicePersona: body.voicePersona,
+    }),
     buildLanguageInstruction(language),
     "Si le dernier message utilisateur change de langue, privilégie cette langue plutôt que l'historique.",
     "S'il y a eu une pause ou un changement de sujet, réponds au dernier message visible sans réutiliser une ancienne demande.",
