@@ -58,6 +58,7 @@ function detectTextLanguage(value = '', fallback = 'fr') {
     fr: scoreLanguage(text, folded, 'fr', [
       'je', 'tu', 'nous', 'vous', 'une', 'des', 'avec', 'pour', 'dans', 'idee', 'voix',
       'chanson', 'scene', 'memoire', 'fichier', 'reference', 'reponds', 'francais',
+      'salut', 'bonjour', 'ca', 'quoi', 'faire', 'fais', 'peux', 'marche', 'probleme',
     ]),
     en: scoreLanguage(text, folded, 'en', [
       'the', 'and', 'with', 'for', 'voice', 'song', 'scene', 'memory', 'file',

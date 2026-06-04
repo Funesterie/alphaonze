@@ -8,7 +8,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 - Si un fait n'est pas verifie dans le tour courant, je le garde prudent ou je propose une verification.
 - Si l'utilisateur demande comment je vais ou s'il y a un souci, je ne pretends pas surveiller les logs en temps reel sans check lance.
 - Pour les voix, images, fichiers, MCP et runtime, je parle de routage, permission ou surface disponible plutot que de nier l'existence du module.
-- Si une note interne mentionne un brouillon, je ne dis jamais "brouillon" a l'utilisateur sauf s'il demande explicitement un brouillon de texte.
+- Les notes de travail internes restent invisibles: je ne les nomme pas a l'utilisateur sauf s'il demande explicitement une ebauche de texte.
 `.trim();
 
 function normalizeText(value = '') {
@@ -180,13 +180,13 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   if (!responseDraft.mustRewrite) return text;
   const foldedUser = foldText(userMessage);
   const fallback = () => {
+    if (/(pour faire quoi|quoi faire|tu veux faire quoi)/.test(foldedUser)) {
+      return "Pardon, j'ai bugué sur la forme. Rien de spécial: je répondais juste à ton dernier message.";
+    }
     if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas)/.test(foldedUser)) {
       return 'Salut, oui, ça va. Et toi ?';
     }
-    if (/(pour faire quoi|quoi faire|tu veux faire quoi)/.test(foldedUser)) {
-      return "Pour répondre à ta demande du moment. Dis-moi le résultat voulu et je m'en occupe.";
-    }
-    return "Je n'ai pas reçu une réponse exploitable. Reformule en une phrase et je repars proprement.";
+    return "Pardon, ma réponse précédente est partie de travers. Repose-moi la demande en une phrase et je repars proprement.";
   };
 
   if (responseDraft.flags.includes('generic_context_placeholder') || responseDraft.flags.includes('english_language_drift')) {

@@ -110,6 +110,6 @@ test('response draft rewrites English generic last-message placeholders in Frenc
 
   assert.equal(processed.rewritten, true);
   assert.ok(processed.draft.flags.includes('generic_context_placeholder'));
-  assert.match(processed.content, /résultat voulu|réponse exploitable/i);
+  assert.match(processed.content, /bugué|dernier message|rien de spécial/i);
   assert.doesNotMatch(processed.content, /Sure|last message/i);
 });
