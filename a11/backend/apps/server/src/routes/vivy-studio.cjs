@@ -34,6 +34,9 @@ const {
   stripSongCommand,
   looksLikeCompleteLyrics,
 } = require('../music/vivy-songcraft.cjs');
+const {
+  postProcessA11AssistantResponse,
+} = require('../chat/response-draft-rewriter.cjs');
 
 let OpenAI = null;
 try {
@@ -702,6 +705,18 @@ function buildVivyChat(input) {
   };
 }
 
+function postProcessVivyAssistantText({ text = '', userMessage = '', systemPrompt = '' } = {}) {
+  const processed = postProcessA11AssistantResponse({
+    text,
+    userMessage,
+    contextText: systemPrompt,
+  });
+  return {
+    ...processed,
+    content: cleanText(processed.content, 3200),
+  };
+}
+
 async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
   const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
@@ -761,8 +776,9 @@ async function buildVivyAiChat(input, req) {
       fileContext ? `Pièces jointes et contexte fichier:\n${fileContext}` : '',
     ], 4200) || 'Continue la conversation Vivy avec douceur et précision.';
 
+    const systemPrompt = buildVivySystemPrompt(mode, language);
     const messages = [
-      { role: 'system', content: buildVivySystemPrompt(mode, language) },
+      { role: 'system', content: systemPrompt },
       memoryContext ? { role: 'system', content: `Mémoire Vivy récente, privée pour cette session:\n${memoryContext}` } : null,
       ...history,
       { role: 'user', content: userContent },
@@ -774,7 +790,13 @@ async function buildVivyAiChat(input, req) {
       temperature: Number(process.env.VIVY_CHAT_TEMPERATURE || 0.74),
       max_tokens: Number(process.env.VIVY_CHAT_MAX_TOKENS || 900),
     });
-    const assistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
+    const rawAssistant = cleanText(completion?.choices?.[0]?.message?.content, 3200);
+    const processed = postProcessVivyAssistantText({
+      text: rawAssistant,
+      userMessage: message,
+      systemPrompt,
+    });
+    const assistant = processed.content;
     if (!assistant) {
       return {
         ...fallback,
@@ -1534,6 +1556,7 @@ module.exports = {
   buildVivyAiChat,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  postProcessVivyAssistantText,
   isVivyMcpNeo4jQuestion,
   getSunoMusicJob,
 };

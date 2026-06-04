@@ -18,6 +18,7 @@ const {
   buildVivySystemPrompt,
   buildVivySunoPayload,
   isVivyMcpNeo4jQuestion,
+  postProcessVivyAssistantText,
 } = require('../src/routes/vivy-studio.cjs');
 
 after(() => {
@@ -516,6 +517,20 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /rimes audibles/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
+});
+
+test('Vivy chat post-process removes leaked draft placeholders without over-restricting', () => {
+  const result = postProcessVivyAssistantText({
+    text: "Sure, here's a short reply to the last message.",
+    userMessage: 'pour faire quoi ?',
+    systemPrompt: buildVivySystemPrompt('song', 'fr'),
+  });
+
+  assert.equal(result.rewritten, true);
+  assert.match(result.content, /Pardon|bugué|dernier message/i);
+  assert.doesNotMatch(result.content, /short reply/i);
+  assert.doesNotMatch(result.content, /Sure/i);
+  assert.doesNotMatch(result.content, /The user wants/i);
 });
 
 test('Vivy recognizes MCP/Neo4j follow-up without inventing Mode Creatif Propulse', async () => {

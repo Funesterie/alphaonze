@@ -62,6 +62,15 @@ test('/api/chat Kaen44 surface pins first-person identity away from A11', () => 
   assert.doesNotMatch(prompt, /ma surface client est Kaen44/i);
 });
 
+test('/api/chat system prompt avoids priming leaked reasoning phrases', () => {
+  const prompt = chatRouter.buildA11ChatSystemPrompt('', { surface: 'kaen44' });
+
+  assert.doesNotMatch(prompt, /short reply/i);
+  assert.doesNotMatch(prompt, /We need/i);
+  assert.doesNotMatch(prompt, /The user wants/i);
+  assert.match(prompt, /sans trop divaguer/i);
+});
+
 test('/api/chat Ollama fallback injects the active identity before the user message', () => {
   const messages = chatRouter.buildOllamaMessages('et NOSSEN ?');
 
