@@ -701,40 +701,26 @@ async function analyzeAudioBuffer(buffer, mime, filename) {
       // loudness optionnel
     }
 
-    // Tentative de transcription Whisper via l'API OpenAI (si disponible)
+    // Tentative de transcription via le service STT central (Ollama prioritaire, fallback encadré).
     let transcription = '';
     let transcriptionNote = '';
-    const openaiKey = process.env.OPENAI_API_KEY;
     const whisperEnabled = String(process.env.AUDIO_TRANSCRIPTION_ENABLED || 'true').trim().toLowerCase() !== 'false';
-    if (openaiKey && whisperEnabled && buffer.length < 25 * 1024 * 1024) {
+    if (whisperEnabled && buffer.length < 25 * 1024 * 1024) {
       try {
-        const FormData = require('form-data');
-        const nodeFetch = (...args) => import('node-fetch').then((m) => m.default(...args));
-        const form = new FormData();
-        form.append('file', buffer, { filename: path.basename(filename || 'audio.mp3'), contentType: mime });
-        form.append('model', 'whisper-1');
-        form.append('language', 'fr');
-        const whisperRes = await nodeFetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${openaiKey}`,
-            ...form.getHeaders(),
-          },
-          body: form,
-          signal: AbortSignal.timeout(30000),
-        });
-        if (whisperRes.ok) {
-          const whisperData = await whisperRes.json();
-          transcription = String(whisperData?.text || '').trim();
-          if (transcription) {
-            transcriptionNote = 'transcription_whisper_ok';
-          }
+        const { getSttStatus, transcribe } = require('./stt-service.cjs');
+        const sttStatus = getSttStatus();
+        if (sttStatus.available) {
+          const sttResult = await transcribe(buffer, mime, { language: 'fr' });
+          transcription = String(sttResult?.text || '').trim();
+          transcriptionNote = transcription ? `transcription_${sttResult.provider}_ok` : 'transcription_empty';
+        } else {
+          transcriptionNote = 'transcription_skipped_no_stt_provider';
         }
-      } catch (whisperErr) {
-        transcriptionNote = `whisper_unavailable: ${String(whisperErr?.message || '').slice(0, 80)}`;
+      } catch (sttErr) {
+        transcriptionNote = `stt_unavailable: ${String(sttErr?.message || '').slice(0, 80)}`;
       }
-    } else if (!openaiKey) {
-      transcriptionNote = 'whisper_skipped_no_api_key';
+    } else if (!whisperEnabled) {
+      transcriptionNote = 'transcription_disabled';
     }
 
     // Construire le preview lisible pour le contexte LLM

@@ -223,7 +223,7 @@ const LLM_REQUEST_TIMEOUT_MS = Number(process.env.A11_LLM_REQUEST_TIMEOUT_MS || 
 const OLLAMA_TAGS_CACHE_TTL_MS = Number(process.env.A11_OLLAMA_TAGS_CACHE_TTL_MS || 5000) || 5000;
 const RUNTIME_FALLBACK_ORDER = String(
   process.env.A11_LLM_RUNTIME_FALLBACK_ORDER
-  || "openai,gemini,deepseek,together,xai,huggingface,ollama"
+  || "ollama,openai,gemini,deepseek,together,xai,huggingface"
 )
   .split(",")
   .map((entry) => normalizeLlmProvider(entry, ""))

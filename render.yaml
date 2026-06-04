@@ -44,15 +44,23 @@ services:
       - key: A11_GOOGLE_CALLBACK_URL
         value: https://a11.funesterie.me/api/auth/google/callback
       - key: A11_LLM_PROVIDER
-        value: openai
+        value: ollama
+      - key: OLLAMA_BASE
+        value: http://a11-ollama:11434
+      - key: A11_OLLAMA_PRIMARY_MODEL
+        value: gpt-oss:20b-cloud
+      - key: A11_OLLAMA_FALLBACK_MODEL
+        value: llama3.2:latest
+      - key: LOCAL_DEFAULT_MODEL
+        value: gpt-oss:20b-cloud
       - key: DEFAULT_MODEL
-        value: gpt-4o-mini
+        value: gpt-oss:20b-cloud
       - key: OPENAI_MODEL
-        value: gpt-4o-mini
+        value: meta-llama/llama-3.3-70b-instruct
       - key: A11_OPENAI_MODEL
-        value: gpt-4o-mini
+        value: meta-llama/llama-3.3-70b-instruct
       - key: A11_AGENT_MODEL
-        value: gpt-4o-mini
+        value: gpt-oss:20b-cloud
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
       - key: A11_OPENAI_BASE_URL
@@ -75,8 +83,10 @@ services:
         sync: false
       - key: MISTRAL_API_KEY
         sync: false
+      - key: A11_LLM_RUNTIME_FALLBACK_ORDER
+        value: ollama,openai,groq,together,xai,huggingface,deepseek
       - key: A11_LLM_FALLBACK_PROVIDER
-        value: groq
+        value: openai
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL

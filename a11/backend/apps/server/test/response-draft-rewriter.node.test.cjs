@@ -41,7 +41,7 @@ test('response draft blocks unverified realtime monitoring claims', () => {
     userMessage: 'daccord et sinon ca va ? tu remarques des soucis ?',
     text: raw,
   });
-  assert.match(processed.content, /check lance|backend\/MCP/i);
+  assert.match(processed.content, /vérification lancée|backend\/MCP/i);
   assert.doesNotMatch(processed.content, /temps reel|garde un oeil/i);
 });
 
@@ -73,7 +73,7 @@ test('response draft blocks stale user-message echoes from another turn', () => 
 
   assert.equal(processed.rewritten, true);
   assert.deepEqual(processed.draft.flags, ['stale_user_message_echo']);
-  assert.match(processed.content, /trompe de contexte/i);
+  assert.match(processed.content, /Mauvais contexte détecté/i);
   assert.doesNotMatch(processed.content, /image cherchez/i);
 });
 
@@ -110,6 +110,6 @@ test('response draft rewrites English generic last-message placeholders in Frenc
 
   assert.equal(processed.rewritten, true);
   assert.ok(processed.draft.flags.includes('generic_context_placeholder'));
-  assert.match(processed.content, /resultat voulu|reponse exploitable/i);
+  assert.match(processed.content, /résultat voulu|réponse exploitable/i);
   assert.doesNotMatch(processed.content, /Sure|last message/i);
 });

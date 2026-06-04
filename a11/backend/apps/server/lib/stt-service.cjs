@@ -14,6 +14,7 @@
  *   OLLAMA_BASE           — URL Ollama (ex: http://127.0.0.1:11434)
  *   OPENAI_API_KEY        — clé OpenAI pour Whisper API
  *   OPENAI_BASE_URL       — base URL OpenAI (défaut: https://api.openai.com/v1)
+ *   A11_STT_ALLOW_OPENAI_COMPATIBLE — autorise un endpoint non-OpenAI pour STT
  */
 
 const fs = require('node:fs');
@@ -33,6 +34,7 @@ function getSttConfig() {
     openaiApiKey: String(process.env.OPENAI_API_KEY || '').trim(),
     openaiBaseUrl: String(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').trim().replace(/\/+$/, ''),
     openaiModel: String(process.env.A11_STT_MODEL || process.env.A11_STT_OPENAI_MODEL || 'whisper-1').trim(),
+    allowOpenAiCompatibleStt: isTruthy(process.env.A11_STT_ALLOW_OPENAI_COMPATIBLE),
   };
 }
 
@@ -40,13 +42,37 @@ function getSttConfig() {
 
 function detectProvider(config) {
   if (config.provider === 'ollama') return 'ollama';
-  if (config.provider === 'openai') return 'openai';
+  if (config.provider === 'openai') return hasOpenAiSttConfig(config) ? 'openai' : null;
 
   // auto: préférer Ollama local si disponible
   if (config.ollamaBase) return 'ollama';
-  if (config.openaiApiKey && config.openaiApiKey !== 'dummy') return 'openai';
+  if (hasOpenAiSttConfig(config)) return 'openai';
 
   return null;
+}
+
+function isTruthy(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
+}
+
+function hasOpenAiSttConfig(config) {
+  const key = String(config.openaiApiKey || '').trim();
+  if (!key || key === 'dummy') return false;
+
+  const base = String(config.openaiBaseUrl || '').trim().toLowerCase();
+  if (config.allowOpenAiCompatibleStt) return true;
+  return base === 'https://api.openai.com/v1' || base.startsWith('https://api.openai.com/');
+}
+
+function explainSttProviderError(err, config) {
+  const message = String(err?.message || err || '');
+  if (/model\s+['"]?whisper['"]?\s+not found/i.test(message) || /not\s+found/i.test(message)) {
+    return new Error(
+      `STT Ollama indisponible: le modèle "${config.ollamaModel}" n'est pas installé côté Ollama. ` +
+      'Installe un modèle STT local compatible ou configure A11_STT_PROVIDER=openai avec une clé OpenAI valide.'
+    );
+  }
+  return err;
 }
 
 // ─── Ollama Whisper ───────────────────────────────────────────────────────────
@@ -242,13 +268,13 @@ async function transcribe(audioBuffer, mimeType, options = {}) {
     return result;
   } catch (err) {
     // Si Ollama échoue en mode auto, tenter OpenAI en fallback
-    if (provider === 'ollama' && config.provider === 'auto' && config.openaiApiKey && config.openaiApiKey !== 'dummy') {
+    if (provider === 'ollama' && config.provider === 'auto' && hasOpenAiSttConfig(config)) {
       logger.warn('Ollama STT failed, falling back to OpenAI', { error: err.message });
       const result = await transcribeWithOpenAI(audioBuffer, resolvedMime, config);
       logger.info('STT fallback to OpenAI succeeded', { textLength: result.text.length });
       return result;
     }
-    throw err;
+    throw provider === 'ollama' ? explainSttProviderError(err, config) : err;
   }
 }
 
@@ -292,7 +318,8 @@ function getSttStatus() {
     model: provider === 'ollama' ? config.ollamaModel : config.openaiModel,
     language: config.language,
     ollamaConfigured: !!config.ollamaBase,
-    openaiConfigured: !!(config.openaiApiKey && config.openaiApiKey !== 'dummy'),
+    openaiConfigured: hasOpenAiSttConfig(config),
+    openaiCompatibleAllowed: !!config.allowOpenAiCompatibleStt,
   };
 }
 
@@ -300,6 +327,7 @@ module.exports = {
   transcribe,
   getSttStatus,
   getSttConfig,
+  hasOpenAiSttConfig,
   normalizeMimeType,
   mimeTypeToExt,
 };

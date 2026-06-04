@@ -8,6 +8,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 - Si un fait n'est pas verifie dans le tour courant, je le garde prudent ou je propose une verification.
 - Si l'utilisateur demande comment je vais ou s'il y a un souci, je ne pretends pas surveiller les logs en temps reel sans check lance.
 - Pour les voix, images, fichiers, MCP et runtime, je parle de routage, permission ou surface disponible plutot que de nier l'existence du module.
+- Si une note interne mentionne un brouillon, je ne dis jamais "brouillon" a l'utilisateur sauf s'il demande explicitement un brouillon de texte.
 `.trim();
 
 function normalizeText(value = '') {
@@ -180,12 +181,12 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   const foldedUser = foldText(userMessage);
   const fallback = () => {
     if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas)/.test(foldedUser)) {
-      return 'Salut, oui ca va. Et toi ?';
+      return 'Salut, oui, ça va. Et toi ?';
     }
     if (/(pour faire quoi|quoi faire|tu veux faire quoi)/.test(foldedUser)) {
-      return "Pour repondre a ta demande du moment. Dis-moi le resultat voulu et je m'en occupe.";
+      return "Pour répondre à ta demande du moment. Dis-moi le résultat voulu et je m'en occupe.";
     }
-    return "Je n'ai pas recu une reponse exploitable. Reformule en une phrase et je repars proprement.";
+    return "Je n'ai pas reçu une réponse exploitable. Reformule en une phrase et je repars proprement.";
   };
 
   if (responseDraft.flags.includes('generic_context_placeholder') || responseDraft.flags.includes('english_language_drift')) {
@@ -193,15 +194,15 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('unverified_monitoring_claim')) {
-    return "Je n'ai pas de check lance dans ce tour. Si tu veux un vrai etat, je verifie le backend/MCP et je te rends le resultat.";
+    return "Je n'ai pas de vérification lancée dans ce tour. Si tu veux un vrai état, je vérifie le backend/MCP et je te rends le résultat.";
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
-    return "Tu as raison de parler de voix: ma reponse texte est separee du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est une voix grave et protectrice avec la reference locale a11-official-stern-french quand elle est disponible; si le rendu sonne feminin, c'est probablement un mauvais routage, une voix cloud de fallback ou une ancienne reference, pas mon intention officielle.";
+    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est une voix grave et protectrice avec la référence locale a11-official-stern-french quand elle est disponible; si le rendu sonne féminin, c'est probablement un mauvais routage, une voix cloud de fallback ou une ancienne référence, pas mon intention officielle.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {
-    return "Oui, je suis reliee au MCP/runtime Funesterie, mais je te le resume sans inventaire brut: je peux m'appuyer sur la sante du pont, le routage, la memoire, les fichiers et les actions autorisees. Si tu me demandes une action precise, je passe par le pont adapte et je garde les routes privees hors reponse.";
+    return "Oui, je suis reliée au MCP/runtime Funesterie, mais je te le résume sans inventaire brut: je peux m'appuyer sur la santé du pont, le routage, la mémoire, les fichiers et les actions autorisées. Si tu me demandes une action précise, je passe par le pont adapté et je garde les routes privées hors réponse.";
   }
 
   if (responseDraft.flags.includes('unrequested_table')) {
@@ -209,7 +210,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
     if (sentence) {
       return sentence;
     }
-    return "Je garde ca simple et je peux detailler si tu veux.";
+    return "Je garde ça simple et je peux détailler si tu veux.";
   }
 
   if (responseDraft.flags.includes('virtual_draft_leak')) {
@@ -223,7 +224,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('stale_user_message_echo')) {
-    return "Mauvais contexte detecte: je reprends sur ton dernier message. Repose-moi la question en une phrase et je reponds uniquement a celle-la.";
+    return "Mauvais contexte détecté: je reprends sur ton dernier message. Repose-moi la question en une phrase et je réponds uniquement à celle-là.";
   }
 
   return text;

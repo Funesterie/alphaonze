@@ -52,15 +52,23 @@ services:
 
       # LLM
       - key: A11_LLM_PROVIDER
-        value: openai
+        value: ollama
+      - key: OLLAMA_BASE
+        value: http://a11-ollama:11434
+      - key: A11_OLLAMA_PRIMARY_MODEL
+        value: gpt-oss:20b-cloud
+      - key: A11_OLLAMA_FALLBACK_MODEL
+        value: llama3.2:latest
+      - key: LOCAL_DEFAULT_MODEL
+        value: gpt-oss:20b-cloud
       - key: DEFAULT_MODEL
-        value: gpt-4o-mini
+        value: gpt-oss:20b-cloud
       - key: OPENAI_MODEL
-        value: gpt-4o-mini
+        value: meta-llama/llama-3.3-70b-instruct
       - key: A11_OPENAI_MODEL
-        value: gpt-4o-mini
+        value: meta-llama/llama-3.3-70b-instruct
       - key: A11_AGENT_MODEL
-        value: gpt-4o-mini
+        value: gpt-oss:20b-cloud
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
       - key: A11_OPENAI_BASE_URL
@@ -85,8 +93,10 @@ services:
         sync: false # Secret Mistral
 
       # LLM Fallbacks (optionnel)
+      - key: A11_LLM_RUNTIME_FALLBACK_ORDER
+        value: ollama,openai,groq,together,xai,huggingface,deepseek
       - key: A11_LLM_FALLBACK_PROVIDER
-        value: groq # groq, deepseek, openai, ou none
+        value: openai # ollama d'abord, puis secours cloud si le pont local tombe
       - key: GROQ_API_KEY
         sync: false # Secret, à configurer manuellement
       - key: GROQ_MODEL
