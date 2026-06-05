@@ -46,19 +46,20 @@ jobs:
         run: |
           printf '%s' "$NODE_AUTH_TOKEN" | docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build Docker image
-        shell: bash
-        run: |
-          docker build \
-            --secret id=npm_token,env=NODE_AUTH_TOKEN \
-            --file a11/backend/apps/server/Dockerfile \
-            --tag "${{ steps.image.outputs.name }}:latest" \
-            --tag "${{ steps.image.outputs.name }}:${GITHUB_SHA}" \
-            a11/backend/apps/server
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push Docker image
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          docker push "${{ steps.image.outputs.name }}:latest"
-          docker push "${{ steps.image.outputs.name }}:${GITHUB_SHA}"
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: a11/backend/apps/server
+          file: a11/backend/apps/server/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+          secrets: |
+            npm_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha,scope=a11-backend
+          cache-to: type=gha,mode=max,scope=a11-backend
