@@ -1,5 +1,11 @@
-# Render Blueprint pour A11 Backend
+# Render Blueprint pour A11 Backend API fallback
 # Documentation: https://render.com/docs/blueprint-spec
+#
+# Source de verite routage:
+# - Le trafic public principal reste Cloudflare -> Hetzner -> Caddy.
+# - Render est un secours API seulement. Ne pas y router le chat, la voix,
+#   la vision, la video, Qflush ou Ollama en fonctionnement normal.
+# - Les URLs publiques restent funesterie.me / a11.funesterie.me via Caddy.
 
 services:
   # Backend API
@@ -22,7 +28,9 @@ services:
       - key: HOST_SERVER
         value: 0.0.0.0
       - key: BACKEND
-        value: render
+        value: render-fallback
+      - key: A11_DEPLOY_ROLE
+        value: fallback
 
       # Security
       - key: NEZ_SECURITY_MODE

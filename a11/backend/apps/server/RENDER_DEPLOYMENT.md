@@ -1,12 +1,20 @@
-# 🚀 Déploiement A11 Backend sur Render
+# Deploiement A11 Backend sur Render
 
-## Pourquoi Render ?
+## Statut actuel: fallback uniquement
 
-- ✅ **Gratuit** : Tier gratuit généreux (750h/mois)
-- ✅ **Docker natif** : Support Dockerfile out-of-the-box
-- ✅ **Auto-deploy** : Déploiement automatique depuis GitHub
-- ✅ **Databases** : PostgreSQL, Redis inclus
-- ✅ **Simple** : Configuration plus simple que Railway
+Ce document est conserve comme runbook de secours. La route principale Funesterie est:
+
+```text
+Cloudflare -> Hetzner -> Caddy -> backend local
+```
+
+Render ne doit pas etre utilise comme backend principal pour le chat, la voix, la vision, la video, Qflush ou Ollama. Il sert seulement de fallback API temporaire en cas d'incident Caddy/Hetzner.
+
+## Pourquoi garder Render ?
+
+- Secours API minimal si Hetzner/Caddy est indisponible.
+- Health check externe simple.
+- Deploiement automatique depuis GitHub pour un plan B controle.
 
 ## 📋 Prérequis
 
@@ -130,7 +138,8 @@ A11_LLM_TIMEOUT_MS=60000
 PORT=3000
 HOST_SERVER=0.0.0.0
 NODE_ENV=production
-BACKEND=render
+BACKEND=render-fallback
+A11_DEPLOY_ROLE=fallback
 A11_ENABLE_QFLUSH=0
 MANAGE_CERBERE=false
 MANAGE_TTS=false
@@ -148,22 +157,24 @@ MANAGE_TTS=false
 ### 5. Configurer le Webhook Stripe
 
 1. **Va sur Stripe Dashboard** : https://dashboard.stripe.com/webhooks
-2. **Ajoute un endpoint** :
-   - URL : `https://a11-backend.onrender.com/api/subscription/webhook`
+2. **Ajoute un endpoint canonique** :
+   - URL : `https://a11.funesterie.me/api/subscription/webhook`
    - Events : `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
 3. **Copie le signing secret** (commence par `whsec_...`)
-4. **Mets à jour** `STRIPE_WEBHOOK_SECRET` sur Render
+4. **Mets à jour** `STRIPE_WEBHOOK_SECRET` dans le secret store de la route active.
+
+Ne bascule le webhook vers `https://a11-backend.onrender.com/api/subscription/webhook` que pendant un incident explicite de la route Caddy.
 
 ### 6. Mettre à Jour le Frontend
 
 Dans `a11/frontend/apps/web/.env.production` (ou Netlify env vars) :
 
 ```bash
-VITE_API_URL=https://a11-backend.onrender.com
-VITE_API_BASE_URL=https://a11-backend.onrender.com
+VITE_API_URL=https://a11.funesterie.me
+VITE_API_BASE_URL=https://a11.funesterie.me
 ```
 
-Redéploie le frontend sur Netlify.
+Le frontend public ne doit pointer vers `onrender.com` que pendant un failover temporaire documente.
 
 ## 🔍 Vérification
 
@@ -246,7 +257,7 @@ Render détecte le push et redéploie en ~2-5 minutes.
 | **Auto-deploy** | Oui         | Oui            |
 | **UI**          | Simple      | Moderne        |
 
-**Recommandation** : Render pour le tier gratuit, Railway pour la production payante.
+**Recommandation actuelle** : Hetzner/Caddy pour la production; Render uniquement comme secours API temporaire.
 
 ## 🐛 Troubleshooting
 
@@ -272,7 +283,8 @@ Render détecte le push et redéploie en ~2-5 minutes.
 
 - Vérifie l'URL du webhook sur Stripe Dashboard
 - Vérifie que `STRIPE_WEBHOOK_SECRET` est correct
-- Teste avec Stripe CLI : `stripe listen --forward-to https://a11-backend.onrender.com/api/subscription/webhook`
+- Teste avec Stripe CLI : `stripe listen --forward-to https://a11.funesterie.me/api/subscription/webhook`
+- Pendant un incident Caddy seulement, tu peux tester le fallback Render avec `https://a11-backend.onrender.com/api/subscription/webhook`.
 
 ## 🎯 Prochaines Étapes
 
@@ -280,7 +292,7 @@ Render détecte le push et redéploie en ~2-5 minutes.
 2. ✅ Configurer les variables d'environnement
 3. ✅ Déployer
 4. ✅ Configurer le webhook Stripe
-5. ✅ Mettre à jour le frontend
+5. ✅ Garder le frontend sur les domaines Caddy
 6. ✅ Tester l'intégration complète
 
 ---

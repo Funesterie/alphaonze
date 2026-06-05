@@ -20,6 +20,9 @@ These probes were checked after PR #115 and PR #116:
 
 - Cloudflare is the public edge for `funesterie.me`, `a11.funesterie.me`, `k44.funesterie.me`, and `mcp.funesterie.me`.
 - `funesterie.me`, `a11.funesterie.me`, and `k44.funesterie.me` are not Cloudflare Pages and are not Netlify for the active validation path. The live HTTP evidence includes `via: 1.1 Caddy`.
+- Primary runtime priority is Cloudflare -> Hetzner -> Caddy -> local backend (`127.0.0.1:3000` for A11/payment APIs, `127.0.0.1:3001` for the public Funesterie/K44/Vivy surface).
+- Render is an emergency API fallback only. It must not be used as the normal backend for chat, voice, vision, video, Qflush, Ollama, or other heavy/runtime workloads.
+- If a temporary failover to Render is required, route only the minimum API surface needed, keep public callbacks on the canonical `funesterie.me` / `a11.funesterie.me` origins where possible, and restore Caddy as soon as the incident is over.
 - The public web/legal pages are served by the Express backend and the embedded static web dist behind Caddy.
 - Do not fix validation routing with Netlify `_redirects`, Cloudflare Pages `_redirects`, or Pages-only rules unless a fresh probe proves a Pages deployment is actually serving the hostname.
 - For `/privacy/` and `/terms/`, the authoritative code path is `a11/backend/apps/server/server.cjs` plus `a11/frontend/apps/web/public/privacy/index.html` and `a11/frontend/apps/web/public/terms/index.html`.
@@ -45,3 +48,9 @@ If an agent proposes a fix using Netlify, Cloudflare Pages, `_redirects`, or a s
 2. Probe the live URL headers first.
 3. If `via: 1.1 Caddy` is present, patch Express/Caddy/static dist instead of Pages/Netlify.
 4. Post the probe evidence in MCP before opening a PR.
+
+If an agent proposes moving the primary backend to Render:
+
+1. Stop.
+2. Remember Render is fallback only for this stack.
+3. Keep Caddy/Hetzner as the primary route unless Jeffrey explicitly asks for a temporary incident failover.

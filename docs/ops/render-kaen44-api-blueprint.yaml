@@ -31,7 +31,9 @@ services:
       - key: HOST_SERVER
         value: 0.0.0.0
       - key: BACKEND
-        value: render
+        value: render-fallback
+      - key: A11_DEPLOY_ROLE
+        value: fallback
       - key: SERVE_STATIC
         value: "false"
       - key: A11_PRODUCT

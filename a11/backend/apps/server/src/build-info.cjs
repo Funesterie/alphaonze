@@ -75,16 +75,36 @@ function readGitBranch(cwd) {
 }
 
 function buildRuntimeProvider(env = process.env) {
+  const explicitProvider = firstEnv(env, [
+    'A11_DEPLOY_PROVIDER',
+    'DEPLOY_PROVIDER',
+    'A11_RUNTIME_PROVIDER',
+  ]).toLowerCase();
+  if (explicitProvider) return explicitProvider;
+
   if (env.RENDER || env.RENDER_SERVICE_ID || env.RENDER_SERVICE_NAME) return 'render';
   if (env.RAILWAY_ENVIRONMENT || env.RAILWAY_PROJECT_ID) return 'railway';
   if (env.VERCEL || env.VERCEL_ENV) return 'vercel';
   if (env.FLY_APP_NAME) return 'fly';
+  if (String(env.NODE_ENV || '').trim().toLowerCase() === 'production' && !env.BACKEND) return 'caddy-hetzner';
   return String(env.BACKEND || env.NODE_ENV || 'local').trim().toLowerCase();
+}
+
+function buildDeployRole(env = process.env, provider = buildRuntimeProvider(env)) {
+  const explicitRole = firstEnv(env, [
+    'A11_DEPLOY_ROLE',
+    'DEPLOY_ROLE',
+    'A11_RUNTIME_ROLE',
+  ]).toLowerCase();
+  if (explicitRole) return explicitRole;
+
+  return provider === 'render' ? 'fallback' : 'primary';
 }
 
 function buildBuildInfo(options = {}) {
   const env = options.env || process.env;
   const cwd = options.cwd || path.resolve(__dirname, '..');
+  const provider = buildRuntimeProvider(env);
   const commit =
     normalizeCommit(firstEnv(env, [
       'A11_BUILD_COMMIT',
@@ -123,7 +143,8 @@ function buildBuildInfo(options = {}) {
     branch: branch || null,
     buildDate,
     startedAt: STARTED_AT,
-    provider: buildRuntimeProvider(env),
+    provider,
+    deployRole: buildDeployRole(env, provider),
     render: {
       serviceName: env.RENDER_SERVICE_NAME || null,
       serviceId: env.RENDER_SERVICE_ID || null,
@@ -135,6 +156,7 @@ function buildBuildInfo(options = {}) {
 
 module.exports = {
   buildBuildInfo,
+  buildDeployRole,
   normalizeCommit,
   normalizeIsoDate,
 };

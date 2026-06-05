@@ -1,6 +1,18 @@
-# 🚀 Déploiement Rapide sur Render
+# Deploiement rapide sur Render
 
-## Option 1 : Blueprint (Automatique - Recommandé)
+## Statut actuel: fallback uniquement
+
+La production Funesterie ne doit pas tourner principalement sur Render.
+
+Route principale:
+
+```text
+Cloudflare -> Hetzner -> Caddy -> backend local
+```
+
+Render sert seulement de fallback API temporaire. Ne pas y router le chat, la voix, la vision, la video, Qflush ou Ollama en fonctionnement normal.
+
+## Option 1 : Blueprint de secours
 
 ### Étape 1 : Commit le Blueprint
 
@@ -93,7 +105,8 @@ Dashboard → a11-backend → Environment → Add Environment Variable :
 NODE_ENV=production
 PORT=3000
 HOST_SERVER=0.0.0.0
-BACKEND=render
+BACKEND=render-fallback
+A11_DEPLOY_ROLE=fallback
 
 # Security
 NEZ_SECURITY_MODE=production
@@ -158,34 +171,36 @@ curl -X POST https://a11-backend.onrender.com/api/auth/login \
 
 1. **Stripe Dashboard** : https://dashboard.stripe.com/webhooks
 2. **Add endpoint** :
-   - URL : `https://a11-backend.onrender.com/api/subscription/webhook`
+   - URL : `https://a11.funesterie.me/api/subscription/webhook`
    - Events : `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
 3. **Copie le signing secret** et mets à jour `STRIPE_WEBHOOK_SECRET`
 
 ### 4. Mettre à Jour le Frontend
 
-**Netlify** → Site settings → Environment variables :
+Le frontend doit garder les domaines publics Caddy :
 
 ```bash
-VITE_API_URL=https://a11-backend.onrender.com
-VITE_API_BASE_URL=https://a11-backend.onrender.com
+VITE_API_URL=https://a11.funesterie.me
+VITE_API_BASE_URL=https://a11.funesterie.me
 ```
 
-Redéploie le frontend.
+Ne pointe vers `onrender.com` que pendant un failover temporaire documente.
 
 ---
 
 ## 🎯 URL Finale
 
-- **Backend API** : `https://a11-backend.onrender.com`
+- **Backend API principale** : `https://a11.funesterie.me`
+- **Fallback API Render** : `https://a11-backend.onrender.com`
 - **Frontend** : `https://a11.funesterie.me`
-- **Health** : `https://a11-backend.onrender.com/health`
+- **Health principale** : `https://a11.funesterie.me/health`
+- **Health fallback** : `https://a11-backend.onrender.com/health`
 
 ---
 
 ## 📝 Notes
 
-- **Free tier** : Le service sleep après 15min d'inactivité (réveil en ~30s)
+- **Free tier** : Le service sleep après 15min d'inactivité (réveil en ~30s), donc il ne convient pas au runtime principal.
 - **Upgrade** : $7/mois pour éviter le sleep
 - **Auto-deploy** : Push sur `master` → redéploiement automatique
 - **Logs** : Dashboard → Service → Logs (temps réel)

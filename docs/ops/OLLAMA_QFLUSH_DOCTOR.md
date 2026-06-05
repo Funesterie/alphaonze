@@ -69,5 +69,4 @@ OLLAMA_BACKEND_TIMEOUT_MS=120000
 
 ## Regle importante
 
-Ne pas mettre ce conteneur Ollama dans Render. Render reste le backend web; Ollama doit tourner sur une machine locale, Hetzner dedie, ou une machine GPU privee. Qflush/Doctor peuvent ensuite l'appeler via une URL interne ou un tunnel controle.
-
+Ne pas mettre ce conteneur Ollama dans Render. Le backend web principal reste sur Hetzner/Caddy; Render est seulement un secours API leger. Ollama doit tourner sur une machine locale, Hetzner dedie, ou une machine GPU privee. Qflush/Doctor peuvent ensuite l'appeler via une URL interne ou un tunnel controle.

@@ -34,9 +34,37 @@ test('buildBuildInfo exposes commit metadata without secrets', () => {
 
   assert.equal(info.ok, true);
   assert.equal(info.provider, 'render');
+  assert.equal(info.deployRole, 'fallback');
   assert.equal(info.commitShort, '12345678');
   assert.equal(info.branch, 'master');
   assert.equal(info.render.serviceName, 'a11-backend');
   assert.equal(info.secretsExposed, false);
   assert.equal(JSON.stringify(info).includes('must-not-appear'), false);
+});
+
+test('buildBuildInfo keeps non-Render runtimes as primary unless overridden', () => {
+  const info = buildBuildInfo({
+    cwd: __dirname,
+    env: {
+      NODE_ENV: 'production',
+      BACKEND: 'caddy-hetzner',
+      A11_BUILD_COMMIT: 'abcdef1234567',
+    },
+  });
+
+  assert.equal(info.provider, 'caddy-hetzner');
+  assert.equal(info.deployRole, 'primary');
+});
+
+test('buildBuildInfo labels plain production as caddy-hetzner primary', () => {
+  const info = buildBuildInfo({
+    cwd: __dirname,
+    env: {
+      NODE_ENV: 'production',
+      A11_BUILD_COMMIT: 'abcdef1234567',
+    },
+  });
+
+  assert.equal(info.provider, 'caddy-hetzner');
+  assert.equal(info.deployRole, 'primary');
 });
