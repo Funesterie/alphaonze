@@ -1,6 +1,6 @@
 {
   "name": "@funeste/all-in-one-nossen",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Private all-in-one Funesterie/NOSSEN package for authenticated operator machines.",
   "type": "commonjs",
   "main": "index.cjs",
@@ -40,7 +40,7 @@
     "@funeste/freeland-nossen": "2.0.0",
     "@funeste/graph-router-nossen": "2.0.0",
     "@funeste/katana-nossen": "2.0.0",
-    "@funeste/logic-reduce-nossen": "2.0.1",
+    "@funeste/logic-reduce-nossen": "2.0.2",
     "@funeste/mcp-agent-bus-nossen": "0.1.1",
     "@funeste/mcp-chopper-mixer-nossen": "0.1.1",
     "@funeste/mcp-cloud-assets-nossen": "0.1.1",
@@ -64,7 +64,7 @@
     "@funeste/scream-nossen": "2.0.0",
     "@funeste/spyder-graph-nossen": "2.0.0",
     "@funeste/spyder-nossen": "2.0.1",
-    "@nossen/all-in-one": "0.1.4"
+    "@nossen/all-in-one": "0.1.5"
   },
   "funding": [
     {
