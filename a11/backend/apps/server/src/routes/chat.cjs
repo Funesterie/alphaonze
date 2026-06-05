@@ -21,6 +21,9 @@ const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
 const {
+  resolveChatContextNoise,
+} = require('../chat/context-noise-resolver.cjs');
+const {
   buildAccountConnectorState,
   buildConnectorAwareSystemPrompt,
   isConnectorCapabilitiesQuestion,
@@ -313,25 +316,15 @@ function shouldAllowCloudChatFallback() {
   return provider === 'openai' || fallbackProvider === 'openai';
 }
 
-function normalizeConversationMessages(messages, fallbackUserMessage = '') {
-  const normalized = [];
-  if (Array.isArray(messages)) {
-    for (const message of messages) {
-      const role = String(message?.role || '').trim().toLowerCase();
-      const content = String(message?.content || '').trim();
-      if (!content) continue;
-      if (role !== 'user' && role !== 'assistant') continue;
-      normalized.push({ role, content });
-    }
-  }
-  const fallback = String(fallbackUserMessage || '').trim();
-  if (fallback) {
-    const last = normalized[normalized.length - 1];
-    if (!last || last.role !== 'user' || last.content !== fallback) {
-      normalized.push({ role: 'user', content: fallback });
-    }
-  }
-  return normalized;
+function normalizeConversationMessages(messages, fallbackUserMessage = '', options = {}) {
+  return resolveChatContextNoise({
+    messages,
+    latestUserMessage: fallbackUserMessage,
+    allowSystem: false,
+    maxHistoryMessages: options.maxHistoryMessages,
+    maxContextChars: options.maxContextChars,
+    maxMessageChars: options.maxMessageChars,
+  }).messages;
 }
 
 function buildOllamaMessages(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT) {

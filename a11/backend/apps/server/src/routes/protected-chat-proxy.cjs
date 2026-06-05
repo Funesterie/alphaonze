@@ -52,6 +52,9 @@ const {
 const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
+const {
+  resolveChatContextNoise,
+} = require('../chat/context-noise-resolver.cjs');
 const PUBLIC_CHAT_SYSTEM_PROMPT = [
   'Je suis A11, assistant conversationnel de Funesterie.',
   'Quand je dis "je", je parle de moi, A11. Jeffrey, Djeff, Jean ou l’utilisateur sont mes interlocuteurs, pas mon identité.',
@@ -567,87 +570,15 @@ const PROXY_MAX_CONTEXT_CHARS = Math.max(8000, Number(process.env.A11_PROXY_MAX_
 const PROXY_MAX_MESSAGE_CHARS = Math.max(2000, Number(process.env.A11_PROXY_MAX_MESSAGE_CHARS || 12000));
 const PROXY_MAX_HISTORY_MESSAGES = Math.max(4, Number(process.env.A11_PROXY_MAX_HISTORY_MESSAGES || 18));
 
-function stripHistoricalMediaMarkers(content = '') {
-  return String(content || '')
-    .replace(/\[image-data:data:image\/[^;]+;base64,[^\]]+\]/gi, '')
-    .replace(/\[(?:image|video|file|audio):[^\]]+\]/gi, '')
-    .replace(/\[(?:image|fichier|audio)-joint(?:e)?[^\]]*\]/gi, '')
-    .replace(/\b(?:id|url|analyse|action-probable)=[^\s]+/gi, '')
-    .replace(/Image rattachee a la conversation;?\s*/gi, '')
-    .replace(/Fichier rattache a la conversation;?\s*/gi, '')
-    .replace(/analyse-la avec la vision[^.?!]*(?:[.?!]|$)/gi, '')
-    .replace(/analyse-le et decide quoi en faire avant de repondre\.?/gi, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function trimProxyMessageContent(content = '', maxChars = PROXY_MAX_MESSAGE_CHARS) {
-  const text = String(content || '').trim();
-  if (text.length <= maxChars) return text;
-  const headChars = Math.max(1200, Math.floor(maxChars * 0.58));
-  const tailChars = Math.max(1200, maxChars - headChars - 140);
-  return [
-    text.slice(0, headChars).trimEnd(),
-    `\n\n[... contexte ancien coupe: ${text.length - headChars - tailChars} caracteres retires ...]\n\n`,
-    text.slice(-tailChars).trimStart(),
-  ].join('').trim();
-}
-
 function normalizeProxyMessagesForModel(messages = [], latestUserMessage = '') {
-  const rawMessages = (Array.isArray(messages) ? messages : [])
-    .filter((message) => {
-      const role = String(message?.role || '').trim().toLowerCase();
-      if (role !== 'user' && role !== 'assistant' && role !== 'system') return false;
-      return String(message?.content || '').trim();
-    })
-    .slice(-PROXY_MAX_HISTORY_MESSAGES);
-
-  const latestUserIndex = (() => {
-    for (let index = rawMessages.length - 1; index >= 0; index -= 1) {
-      if (String(rawMessages[index]?.role || '').trim().toLowerCase() === 'user') return index;
-    }
-    return -1;
-  })();
-
-  const normalized = rawMessages
-    .map((message, index) => {
-      const role = String(message?.role || '').trim().toLowerCase();
-      const keepCurrentMediaMarkers = role === 'user' && index === latestUserIndex;
-      const content = trimProxyMessageContent(
-        keepCurrentMediaMarkers
-          ? String(message?.content || '').trim()
-          : stripHistoricalMediaMarkers(message?.content || '')
-      );
-      if (!content) return null;
-      return { role, content };
-    })
-    .filter(Boolean);
-
-  const latest = String(latestUserMessage || '').trim();
-  const lastMessage = normalized[normalized.length - 1];
-  if (latest && (!lastMessage || lastMessage.role !== 'user' || String(lastMessage.content || '').trim() !== latest)) {
-    normalized.push({ role: 'user', content: latest });
-  }
-
-  let usedChars = 0;
-  const selected = [];
-  for (let index = normalized.length - 1; index >= 0; index -= 1) {
-    const message = normalized[index];
-    const contentLength = String(message.content || '').length;
-    const remaining = PROXY_MAX_CONTEXT_CHARS - usedChars;
-    if (remaining <= 0) break;
-    if (contentLength > remaining) {
-      selected.unshift({
-        ...message,
-        content: trimProxyMessageContent(message.content, Math.max(1600, remaining)),
-      });
-      break;
-    }
-    selected.unshift(message);
-    usedChars += contentLength;
-  }
-
-  return selected;
+  return resolveChatContextNoise({
+    messages,
+    latestUserMessage,
+    allowSystem: false,
+    maxHistoryMessages: PROXY_MAX_HISTORY_MESSAGES,
+    maxContextChars: PROXY_MAX_CONTEXT_CHARS,
+    maxMessageChars: PROXY_MAX_MESSAGE_CHARS,
+  }).messages;
 }
 
 function sanitizeProxyRequestHistory(req, latestUserMessage = '') {

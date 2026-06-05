@@ -122,6 +122,48 @@ test('/api/chat keeps conversation history and strips foreign system prompts bef
   assert.match(messages[0].content, /\bVivy\b/);
 });
 
+test('/api/chat removes leaked reasoning from old assistant history before model call', () => {
+  const requestMessages = [
+    { role: 'user', content: 'ca va mieux ?' },
+    {
+      role: 'assistant',
+      content: [
+        'We just answer: "Oui, j ai compris."',
+        'The user is asking "Sure, what is the short answer."',
+        'So respond in French. Provide short.',
+      ].join(' '),
+    },
+    { role: 'user', content: 'allo ?' },
+  ];
+
+  const normalized = chatRouter.normalizeConversationMessages(requestMessages, 'allo ?');
+  const joined = normalized.map((message) => message.content).join('\n');
+
+  assert.equal(normalized.at(-1).role, 'user');
+  assert.equal(normalized.at(-1).content, 'allo ?');
+  assert.doesNotMatch(joined, /We just answer|The user is asking|Provide short|respond in French/i);
+});
+
+test('/api/chat strips stale media instructions but keeps the current user attachment marker', () => {
+  const requestMessages = [
+    {
+      role: 'user',
+      content: '[image:https://old.example/image.png]\nImage rattachee a la conversation; analyse-la avec la vision avant de repondre.',
+    },
+    { role: 'assistant', content: 'Je vois une image ancienne.' },
+    {
+      role: 'user',
+      content: '[image:https://new.example/image.png]\ntu vois quoi ?',
+    },
+  ];
+
+  const normalized = chatRouter.normalizeConversationMessages(requestMessages);
+
+  assert.doesNotMatch(normalized[0].content, /old\.example|analyse-la|Image rattachee/i);
+  assert.match(normalized.at(-1).content, /\[image:https:\/\/new\.example\/image\.png\]/);
+  assert.match(normalized.at(-1).content, /tu vois quoi/i);
+});
+
 test('/api/chat prompt does not duplicate the identity block when already present but still adds missing MCP context', () => {
   const base = 'Je suis A-11, assistant local NOSSEN de Funesterie workspace.';
   const prompt = chatRouter.buildA11ChatSystemPrompt(base);
