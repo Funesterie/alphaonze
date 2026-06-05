@@ -116,14 +116,17 @@ function looksLikeInternalReasoningLeak(text = '') {
 
   const metaPatterns = [
     /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
+    /\bwe just answer\b/i,
     /\bthe user (?:wants|asks|said|typed|is asking)\b/i,
+    /\brespond in (?:french|english|spanish)\b/i,
+    /\bprovide short\b/i,
     /\bwe (?:respond|answer|should|need|can respond)\b/i,
     /\blet'?s produce (?:final|the final|a final)/i,
     /\bcurrent channel\b/i,
     /\bfinal answer\b/i,
   ];
   const hits = metaPatterns.reduce((count, pattern) => count + (pattern.test(normalized) ? 1 : 0), 0);
-  const repeatedMeta = (normalized.match(/\b(?:the user wants|the user asks|we need|we respond|we should|analysis|commentary)\b/gi) || []).length;
+  const repeatedMeta = (normalized.match(/\b(?:the user wants|the user asks|the user is asking|we need|we respond|we should|we just answer|respond in french|provide short|analysis|commentary)\b/gi) || []).length;
   return hits >= 2
     || repeatedMeta >= 5
     || (hits >= 1 && folded.includes('analysis') && normalized.length > 80)
@@ -146,6 +149,7 @@ function looksLikeEnglishDrift(text = '', userMessage = '') {
 
 function inferUserIntent(userMessage = '') {
   const folded = foldText(userMessage);
+  if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) return 'presence_check';
   if (/(ca va|comment tu vas|soucis|problemes|tu remarques)/.test(folded)) return 'casual_status';
   if (/(mcp|runtime|modules?|outils?|tools?|routes?)/.test(folded)) return 'capabilities';
   if (/(voix|voice|xtts|rvc|audio|tts|vivy|chanson|mp3|wav|mov)/.test(folded)) return 'voice_audio';
@@ -209,13 +213,19 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   if (!responseDraft.mustRewrite) return text;
   const foldedUser = foldText(userMessage);
   const fallback = () => {
+    if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(foldedUser)) {
+      return "Oui, je suis là. Je reprends normalement.";
+    }
+    if (/(ca va mieux|ça va mieux|mieux)/.test(foldedUser)) {
+      return "Oui, mieux. La réponse précédente a dérapé côté technique, mais je reprends normalement.";
+    }
     if (/(pour faire quoi|quoi faire|tu veux faire quoi)/.test(foldedUser)) {
-      return "Pardon, j'ai bugué sur la forme. Rien de spécial: je répondais juste à ton dernier message.";
+      return "Rien de spécial: je répondais juste à ton dernier message, sans lancer d'action.";
     }
     if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas)/.test(foldedUser)) {
       return 'Salut, oui, ça va. Et toi ?';
     }
-    return "Pardon, ma réponse précédente est partie de travers. Repose-moi la demande en une phrase et je repars proprement.";
+    return "Je reprends sur ton dernier message. Dis-moi ce que tu veux faire et je réponds simplement.";
   };
 
   if (responseDraft.flags.includes('generic_context_placeholder') || responseDraft.flags.includes('english_language_drift')) {
@@ -223,10 +233,16 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('internal_reasoning_leak')) {
-    if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas|tout va bien|utilisateurs?)/.test(foldedUser)) {
-      return "Je reprends proprement: ma sortie précédente a laissé passer du brouillon technique. Je reste sur cette conversation; si tu veux un état réel, je vérifie le MCP/runtime au lieu de répondre au hasard.";
+    if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(foldedUser)) {
+      return "Oui, je suis là. Je reprends normalement.";
     }
-    return "Je reprends proprement: ma sortie précédente a laissé passer du brouillon technique. Redonne-moi la demande et je réponds normalement, sans afficher mes notes de préparation.";
+    if (/(ca va mieux|ça va mieux|mieux)/.test(foldedUser)) {
+      return "Oui, mieux. La réponse précédente a laissé passer du texte technique, mais je reprends normalement.";
+    }
+    if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas|tout va bien|utilisateurs?)/.test(foldedUser)) {
+      return "Oui, je suis là. Le message précédent était une sortie technique qui n'aurait pas dû apparaître; je reprends normalement sur cette conversation.";
+    }
+    return fallback();
   }
 
   if (responseDraft.flags.includes('unverified_monitoring_claim')) {

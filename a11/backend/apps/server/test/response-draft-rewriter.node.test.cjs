@@ -128,7 +128,7 @@ test('response draft removes internal channel and reasoning leaks', () => {
 
   assert.equal(processed.rewritten, true);
   assert.ok(processed.draft.flags.includes('internal_reasoning_leak'));
-  assert.match(processed.content, /brouillon technique|MCP\/runtime/i);
+  assert.match(processed.content, /je suis là|reprends normalement|conversation/i);
   assert.doesNotMatch(processed.content, /We need|analysis|<\|channel\|>|final answer/i);
 });
 
@@ -147,6 +147,22 @@ test('response draft catches long repeated meta loops from streamed providers', 
 
   assert.equal(processed.rewritten, true);
   assert.ok(processed.draft.flags.includes('internal_reasoning_leak'));
-  assert.match(processed.content, /brouillon technique/i);
+  assert.match(processed.content, /dernier message|normalement|simplement/i);
   assert.doesNotMatch(processed.content, /The user wants|We respond|<\|channel\|>/i);
+});
+
+test('response draft catches the We just answer leak seen in Kaen44 history', () => {
+  const processed = postProcessA11AssistantResponse({
+    userMessage: 'ca va mieux ?',
+    text: [
+      'We just answer: "Oui, j ai compris. Je peux vous aider a verifier l acces, etc."',
+      'The user is asking "Sure, what is the short answer."',
+      'So respond in French. Provide short.',
+    ].join(' '),
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.ok(processed.draft.flags.includes('internal_reasoning_leak'));
+  assert.match(processed.content, /Oui, mieux|reprends normalement/i);
+  assert.doesNotMatch(processed.content, /We just answer|The user is asking|Provide short|respond in French/i);
 });

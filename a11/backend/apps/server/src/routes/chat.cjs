@@ -344,12 +344,48 @@ function buildOllamaMessages(userMessageOrMessages, systemPrompt = SYSTEM_PROMPT
   ];
 }
 
-function finalizeA11ChatReply(text, userMessage = '', contextText = '') {
-  return postProcessA11AssistantResponse({
+function foldChatText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function buildAssistantPresenceFallback(userMessage = '', options = {}) {
+  const surface = String(options?.surface || options?.persona || '').trim().toLowerCase();
+  const folded = foldChatText(userMessage);
+  const isKaen44 = surface === 'kaen44' || surface === 'k44';
+  const isVivy = surface === 'vivy';
+  const name = isKaen44 ? 'Kaen44' : isVivy ? 'Vivy' : 'A11';
+
+  if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
+    return `Oui, je suis là. ${name} reprend normalement.`;
+  }
+  if (/(ca va mieux|ça va mieux|mieux)/.test(folded)) {
+    return 'Oui, mieux. La réponse précédente a dérapé côté technique, mais je reprends normalement.';
+  }
+  if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas)/.test(folded)) {
+    return isKaen44
+      ? 'Oui, je suis là. On reprend simplement: qu’est-ce que tu veux faire ?'
+      : isVivy
+        ? 'Oui, je suis là. On repart proprement.'
+        : 'Oui, je suis là. Je reprends proprement.';
+  }
+  if (/(pour faire quoi|quoi faire|tu veux faire quoi)/.test(folded)) {
+    return 'Rien de spécial: je répondais juste à ton dernier message, sans lancer d’action.';
+  }
+  return `${name} est là. Je n'ai pas reçu une réponse exploitable du modèle, donc je repars sur ton dernier message sans afficher de brouillon.`;
+}
+
+function finalizeA11ChatReply(text, userMessage = '', contextText = '', options = {}) {
+  const processed = postProcessA11AssistantResponse({
     text,
     userMessage,
     contextText,
-  }).content;
+  });
+  const content = String(processed?.content || '').trim();
+  if (content) return content;
+  return buildAssistantPresenceFallback(userMessage, options);
 }
 
 /**
@@ -950,7 +986,10 @@ function createChatRouter(overrides = {}) {
         );
         if (ollamaText) {
           const { model } = getOllamaConfig();
-          const finalText = finalizeA11ChatReply(ollamaText, userMessage, systemPrompt);
+          const finalText = finalizeA11ChatReply(ollamaText, userMessage, systemPrompt, {
+            surface: req.body?.surface,
+            persona: req.body?.persona,
+          });
           if (pendingStructuredPayload) {
             return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: finalText }, resolution, req.body || {}));
           }
@@ -1008,7 +1047,10 @@ function createChatRouter(overrides = {}) {
         max_tokens: Number(process.env.A11_CHAT_MAX_TOKENS || 16384),
       });
 
-      const text = finalizeA11ChatReply(completion?.choices?.[0]?.message?.content || '', userMessage, systemPrompt);
+      const text = finalizeA11ChatReply(completion?.choices?.[0]?.message?.content || '', userMessage, systemPrompt, {
+        surface: req.body?.surface,
+        persona: req.body?.persona,
+      });
       if (pendingStructuredPayload) {
         return res.json(attachIntentDebug({ ...pendingStructuredPayload, assistant: text }, resolution, req.body || {}));
       }
@@ -1156,6 +1198,8 @@ chatEntrypoint.buildA11ChatSystemPrompt = buildA11ChatSystemPrompt;
 chatEntrypoint.buildMcpAccessReply = buildMcpAccessReply;
 chatEntrypoint.buildRuntimeModulesAccessReply = buildRuntimeModulesAccessReply;
 chatEntrypoint.buildOllamaMessages = buildOllamaMessages;
+chatEntrypoint.finalizeA11ChatReply = finalizeA11ChatReply;
+chatEntrypoint.buildAssistantPresenceFallback = buildAssistantPresenceFallback;
 chatEntrypoint.normalizeConversationMessages = normalizeConversationMessages;
 chatEntrypoint.isMcpAccessQuestion = isMcpAccessQuestion;
 chatEntrypoint.isRuntimeModulesAccessQuestion = isRuntimeModulesAccessQuestion;

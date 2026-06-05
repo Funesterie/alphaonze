@@ -2653,12 +2653,15 @@ function looksLikeInternalAssistantLeak(value: unknown) {
 
   const metaHits = [
     /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
+    /\bwe just answer\b/i,
     /\bthe user (?:wants|asks|said|typed|is asking)\b/i,
+    /\brespond in (?:french|english|spanish)\b/i,
+    /\bprovide short\b/i,
     /\bwe (?:respond|answer|should|need|can respond)\b/i,
     /\blet'?s produce (?:final|the final|a final)/i,
     /\bfinal answer\b/i,
   ].reduce((count, pattern) => count + (pattern.test(raw) ? 1 : 0), 0);
-  const repeatedMeta = (raw.match(/\b(?:the user wants|we need|we respond|analysis|commentary)\b/gi) || []).length;
+  const repeatedMeta = (raw.match(/\b(?:the user wants|the user asks|the user is asking|we need|we respond|we should|we just answer|respond in french|provide short|analysis|commentary)\b/gi) || []).length;
   return metaHits >= 2 || repeatedMeta >= 5;
 }
 
@@ -2666,7 +2669,7 @@ function sanitizeAssistantDisplayText(value: string) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   if (looksLikeInternalAssistantLeak(raw)) {
-    return "Je reprends proprement: ma réponse précédente a laissé passer du brouillon technique. Repose-moi la demande en une phrase et je réponds normalement.";
+    return "";
   }
   return raw;
 }

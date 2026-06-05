@@ -1089,12 +1089,15 @@ function looksLikeInternalAssistantLeak(value: string) {
 
   const metaHits = [
     /\bwe need to (?:answer|respond|produce|call|search|use)\b/i,
+    /\bwe just answer\b/i,
     /\bthe user (?:wants|asks|said|typed|is asking)\b/i,
+    /\brespond in (?:french|english|spanish)\b/i,
+    /\bprovide short\b/i,
     /\bwe (?:respond|answer|should|need|can respond)\b/i,
     /\blet'?s produce (?:final|the final|a final)/i,
     /\bfinal answer\b/i,
   ].reduce((count, pattern) => count + (pattern.test(raw) ? 1 : 0), 0);
-  const repeatedMeta = (raw.match(/\b(?:the user wants|we need|we respond|analysis|commentary)\b/gi) || []).length;
+  const repeatedMeta = (raw.match(/\b(?:the user wants|the user asks|the user is asking|we need|we respond|we should|we just answer|respond in french|provide short|analysis|commentary)\b/gi) || []).length;
   return metaHits >= 2 || repeatedMeta >= 5;
 }
 
@@ -1156,13 +1159,15 @@ function normalizeAssistantMessagePayload(
   const rawContent = String(content || "");
   let cleanedContent = extractAssistantDisplayContent(rawContent) || rawContent.trim();
   let qflushVerification: ChatMessage["qflushVerification"] = null;
+  let hideAssistantText = false;
 
   if (looksLikeLeakedActionTranscript(cleanedContent) || looksLikeLeakedActionTranscript(rawContent)) {
     cleanedContent = "Je n'ai pas reçu une confirmation exploitable pour cette action.";
   }
 
   if (looksLikeInternalAssistantLeak(cleanedContent) || looksLikeInternalAssistantLeak(rawContent)) {
-    cleanedContent = "Je reprends proprement: ma réponse précédente a laissé passer du brouillon technique. Repose-moi la demande en une phrase et je réponds normalement.";
+    hideAssistantText = true;
+    cleanedContent = "";
   }
 
   const qflushVerifyMatch = cleanedContent.match(/^\[QFLUSH VERIFY\]\s*(?:Réponse|Reponse) potentiellement non (?:vérifiée|verifiee):\s*(.+?)(?:\n{2,}([\s\S]*))?$/i);
@@ -1237,7 +1242,7 @@ function normalizeAssistantMessagePayload(
   }
 
   cleanedContent = cleanedContent.replace(/\n{3,}/g, "\n\n").trim();
-  if (!cleanedContent && rawContent.trim() && !resolvedImageUrl && !resolvedVideoUrl && !resolvedFileUrl) {
+  if (!cleanedContent && rawContent.trim() && !resolvedImageUrl && !resolvedVideoUrl && !resolvedFileUrl && !hideAssistantText) {
     cleanedContent = "Réponse indisponible.";
   }
 
@@ -1248,6 +1253,49 @@ function normalizeAssistantMessagePayload(
     fileUrl: resolvedFileUrl || null,
     qflushVerification,
   };
+}
+
+function isRenderableChatMessage(message: ChatMessage) {
+  if (!message) return false;
+  if (message.role === "system") return true;
+  if (message.role === "user") {
+    return Boolean(
+      String(message.content || "").trim()
+      || message.imageUrl
+      || message.videoUrl
+      || message.fileUrl
+      || (Array.isArray(message.imageUrls) && message.imageUrls.length > 0)
+    );
+  }
+  if (message.role === "assistant") {
+    return Boolean(
+      String(message.content || "").trim()
+      || message.imageUrl
+      || message.videoUrl
+      || message.fileUrl
+    );
+  }
+  return false;
+}
+
+function buildClientAssistantFallback(userText = "", surface: FunesterieSurface = "a11") {
+  const folded = String(userText || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const label = surface === "kaen44" ? "Kaen44" : surface === "vivy" ? "Vivy" : "A11";
+  if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
+    return `Oui, je suis là. ${label} reprend normalement.`;
+  }
+  if (/(ca va mieux|ça va mieux|mieux)/.test(folded)) {
+    return "Oui, mieux. La réponse précédente a dérapé côté technique, mais je reprends normalement.";
+  }
+  if (/(salut|bonjour|coucou|ca va|ça va|comment tu vas)/.test(folded)) {
+    return surface === "kaen44"
+      ? "Oui, je suis là. On reprend simplement: qu'est-ce que tu veux faire ?"
+      : "Oui, je suis là. Je reprends proprement.";
+  }
+  return `${label} est là. Je n'ai pas reçu une réponse exploitable du modèle, donc je repars sur ton dernier message.`;
 }
 
 const A11_MAX_CONTEXT_CHARS = 48_000;
@@ -8513,7 +8561,7 @@ export function App() {
                 fileUrl: role === 'system' ? null : normalizedAssistant.fileUrl,
                 ts: normalizeMessageTimestamp(m.ts),
               };
-            }) : [{ id: `sys-${Date.now()}`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO, ts: new Date().toISOString() }]
+            }).filter(isRenderableChatMessage) : [{ id: `sys-${Date.now()}`, role: 'system' as Role, content: DEFAULT_SYSTEM_NINDO, ts: new Date().toISOString() }]
           }));
           setChats(sanitized);
           setSelectedChatId(sanitized[0].id);
@@ -8610,9 +8658,10 @@ export function App() {
   // helper to update messages for selected chat
   function updateChatMessages(chatId: string | null, newMessages: ChatMessage[]) {
     if (!chatId) return;
+    const renderableMessages = newMessages.filter(isRenderableChatMessage);
     setChats((prev) =>
       prev.map((c) =>
-        c.id === chatId ? { ...c, messages: newMessages, updated: Date.now() } : c
+        c.id === chatId ? { ...c, messages: renderableMessages, updated: Date.now() } : c
       )
     );
   }
@@ -8660,7 +8709,7 @@ export function App() {
           : null,
         ts: normalizeMessageTimestamp(message?.ts),
       };
-    });
+    }).filter(isRenderableChatMessage);
   }
 
   const currentConversationId = a11ConvId || selectedChatId;
@@ -9487,12 +9536,18 @@ export function App() {
           assistantReply.videoUrl || null,
           assistantReply.fileUrl || null
         );
+        const assistantContent = String(normalizedAssistant.content || "").trim()
+          || (
+            normalizedAssistant.imageUrl || normalizedAssistant.videoUrl || normalizedAssistant.fileUrl
+              ? ""
+              : buildClientAssistantFallback(item.text, surfaceKind)
+          );
         detectAndPushFromResponse(assistantReply.raw || assistantReply);
 
         const aiMsg: ChatMessage = {
           id: `a-${Date.now()}`,
           role: "assistant",
-          content: normalizedAssistant.content,
+          content: assistantContent,
           imageUrl: normalizedAssistant.imageUrl,
           videoUrl: normalizedAssistant.videoUrl,
           fileUrl: normalizedAssistant.fileUrl,

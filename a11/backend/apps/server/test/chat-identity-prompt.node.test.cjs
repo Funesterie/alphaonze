@@ -71,6 +71,28 @@ test('/api/chat system prompt avoids priming leaked reasoning phrases', () => {
   assert.match(prompt, /sans trop divaguer/i);
 });
 
+test('/api/chat finalizer never returns an empty Kaen44 assistant bubble', () => {
+  const content = chatRouter.finalizeA11ChatReply('', 'allo ?', '', {
+    surface: 'kaen44',
+    persona: 'kaen44',
+  });
+
+  assert.match(content, /Kaen44|je suis là/i);
+  assert.doesNotMatch(content, /^\s*$/);
+});
+
+test('/api/chat finalizer rewrites Kaen44 internal reasoning leaks naturally', () => {
+  const content = chatRouter.finalizeA11ChatReply(
+    'We just answer. The user is asking for a short answer. Respond in French. Provide short.',
+    'ca va mieux ?',
+    '',
+    { surface: 'kaen44', persona: 'kaen44' }
+  );
+
+  assert.match(content, /Oui, mieux|reprends normalement/i);
+  assert.doesNotMatch(content, /We just answer|The user is asking|Provide short|Respond in French/i);
+});
+
 test('/api/chat Ollama fallback injects the active identity before the user message', () => {
   const messages = chatRouter.buildOllamaMessages('et NOSSEN ?');
 
