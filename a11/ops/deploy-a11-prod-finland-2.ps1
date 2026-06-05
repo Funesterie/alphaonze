@@ -1123,6 +1123,7 @@ download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_F
 download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/tom/medium/fr_FR-tom-medium.onnx" "$RemoteDataRoot/tts/fr_FR-tom-medium.onnx"
 download_voice "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/tom/medium/fr_FR-tom-medium.onnx.json" "$RemoteDataRoot/tts/fr_FR-tom-medium.onnx.json"
 "@
+$piperVoiceDownload = $piperVoiceDownload -replace "`r`n?", "`n"
 & ssh @sshBase $Remote $piperVoiceDownload
 if ($LASTEXITCODE -ne 0) { throw "Telechargement voix Piper distantes echoue" }
 
