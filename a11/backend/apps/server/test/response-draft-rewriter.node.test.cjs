@@ -86,7 +86,7 @@ test('response draft corrects A11 voice module denial', () => {
   assert.equal(processed.rewritten, true);
   assert.deepEqual(processed.draft.flags, ['voice_capability_denial']);
   assert.match(processed.content, /module TTS|backend Funesterie/i);
-  assert.match(processed.content, /a11-official-stern-french/i);
+  assert.match(processed.content, /WAV Djeff|a11-official-stern-french|XTTS\/RVC/i);
   assert.doesNotMatch(processed.content, /tout se passe en texte/i);
 });
 

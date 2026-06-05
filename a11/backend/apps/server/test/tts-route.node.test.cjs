@@ -374,6 +374,7 @@ test('tts speak route gives basic A11 the official local reference without paid 
     A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
     A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     TTS_URL: process.env.TTS_URL,
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
@@ -396,6 +397,7 @@ test('tts speak route gives basic A11 the official local reference without paid 
   process.env.TTS_URL = 'http://127.0.0.1:5002';
   process.env.A11_VOICE_MODULE_URL = 'http://127.0.0.1:5002';
   process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
   process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
   process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
   process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
@@ -404,6 +406,15 @@ test('tts speak route gives basic A11 the official local reference without paid 
 
   global.fetch = async (url, options = {}) => {
     const value = String(url);
+    if (value === 'http://127.0.0.1:5002/api/voice/synthesize') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
+        },
+      };
+    }
     if (value === 'http://127.0.0.1:5002/api/tts') {
       backendBodies.push(JSON.parse(String(options.body || '{}')));
       return {
@@ -470,15 +481,123 @@ test('tts speak route gives basic A11 the official local reference without paid 
         assert.equal(result.response.status, 200);
         assert.equal(result.json.provider, 'xtts-rvc');
         assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-xtts-rvc\.mp3$/);
-        assert.equal(backendBodies.length, 1);
-        assert.equal(backendBodies[0].provider, 'piper');
-        assert.equal(backendBodies[0].voice, 'fr_FR-tom-medium');
-        assert.equal(backendBodies[0].voicePersona, 'a11');
-        assert.equal(backendBodies[0].useDefaultVoiceReference, true);
-        assert.equal(backendBodies[0].ttsCostPolicy, 'basic_a11_official_reference');
+        assert.equal(backendBodies.length, 0);
         assert.equal(conversionForms.length, 1);
+        assert.equal(conversionForms[0].get('persona'), 'a11');
         assert.equal(conversionForms[0].get('voiceStyle'), 'a11-official-stern-french');
         assert.match(result.json.audioModule.reference.label, /A11 Official Stern French/i);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts speak route keeps premium A11 on the official WAV reference by default', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-premium-official-voice-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav({ frequency: 160 });
+  const conversionForms = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 160 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://127.0.0.1:5002';
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_API_KEY = 'cartesia-should-not-be-used';
+  process.env.A11_ELEVENLABS_API_KEY = 'elevenlabs-should-not-be-used';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://127.0.0.1:5002/api/voice/synthesize') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
+        },
+      };
+    }
+    if (value === 'http://127.0.0.1:5002/api/voice/convert') {
+      conversionForms.push(options.body);
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'a11-official-stern-french';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    if (value.includes('/tts/bytes')) {
+      throw new Error('cartesia_should_not_be_called_for_premium_a11_reference');
+    }
+    if (value.startsWith('https://api.elevenlabs.test/v1/')) {
+      throw new Error('elevenlabs_should_not_be_called_for_premium_a11_reference');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour',
+          persona: 'a11',
+          provider: 'auto',
+          useDefaultVoiceReference: true,
+          vocalMode: 'adaptive',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(conversionForms.length, 1);
+        assert.equal(conversionForms[0].get('persona'), 'a11');
+        assert.equal(conversionForms[0].get('voiceStyle'), 'a11-official-stern-french');
       }
     );
   } finally {
@@ -1040,6 +1159,9 @@ test('tts piper route selects persona-specific local Piper voice when cloud TTS 
           persona: 'a11',
           voicePersona: 'a11',
           provider: 'piper',
+          identityVoice: false,
+          useIdentityVoice: false,
+          neutralVoice: true,
         });
 
         assert.equal(result.response.status, 200);
@@ -1123,6 +1245,8 @@ test('tts speak route uses Cartesia ready-made voice before legacy bridge for of
           text: 'bonjour',
           persona: 'a11',
           voicePersona: 'a11',
+          provider: 'cartesia',
+          allowA11CloudVoice: true,
           vocalMode: 'adaptive',
           useDefaultVoiceReference: true,
           voiceReferenceRequired: true,
@@ -1205,6 +1329,8 @@ test('tts speak route uses ElevenLabs as the A11 voice mode when configured', as
           text: 'bonjour',
           persona: 'a11',
           voicePersona: 'a11',
+          provider: 'elevenlabs',
+          allowA11CloudVoice: true,
           vocalMode: 'adaptive',
           useDefaultVoiceReference: true,
           voiceReferenceRequired: true,
@@ -1567,6 +1693,9 @@ test('tts async official auto voices prefer configured Cartesia over the local G
             voicePersona: currentCase.persona,
             surface: currentCase.persona,
             provider: 'auto',
+            allowA11CloudVoice: currentCase.persona === 'a11',
+            forceCloudTts: currentCase.persona === 'a11',
+            useReadyMadeCloudVoice: currentCase.persona === 'a11',
             ttsAsync: true,
             useDefaultVoiceReference: true,
             defaultVoiceReference: true,
@@ -1642,17 +1771,35 @@ test('tts speak route ignores stale Piper preference for official reference voic
     const value = String(url);
     if (value === 'https://api.cartesia.test/tts/bytes') {
       cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
+      throw new Error('cartesia_should_not_be_called_for_stale_official_voice_preference');
+    }
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
       return {
-        ok: true,
-        status: 200,
-        async arrayBuffer() {
-          return Buffer.from('cartesia-a11-mp3');
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
         },
       };
     }
     if (value === 'http://voice-bridge.test/api/voice/convert') {
       bridgeCalls.push({ url: value, body: options.body });
-      throw new Error('legacy_bridge_should_not_be_called_for_stale_official_voice_preference');
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'a11-official-stern-french';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return createPcm16Wav({ frequency: 150 });
+        },
+      };
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_be_called_for_stale_official_voice_preference');
@@ -1679,13 +1826,13 @@ test('tts speak route ignores stale Piper preference for official reference voic
         });
 
         assert.equal(result.response.status, 200);
-        assert.equal(result.json.provider, 'cartesia');
-        assert.equal(result.json.via, 'cartesia-tts');
-        assert.equal(result.json.providerCapabilities.readyMadeVoice, true);
-        assert.match(result.json.voiceReference.label, /Laurent/i);
-        assert.equal(cartesiaBodies.length, 1);
-        assert.equal(cartesiaBodies[0].voice.id, '7345dfa5-ee04-44d2-abf4-29262b880ab4');
-        assert.equal(bridgeCalls.length, 0);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.via, 'xtts-rvc-direct');
+        assert.equal(result.json.providerCapabilities.referenceVoice, true);
+        assert.equal(cartesiaBodies.length, 0);
+        assert.equal(bridgeCalls.length, 1);
+        assert.equal(bridgeCalls[0].body.get('persona'), 'a11');
+        assert.equal(bridgeCalls[0].body.get('voiceStyle'), 'a11-official-stern-french');
       }
     );
   } finally {
@@ -1906,6 +2053,9 @@ test('tts speak route uses low-latency OpenAI MP3 and skips slow XTTS/RVC bridge
           text: 'test interactif A11',
           persona: 'a11',
           voicePersona: 'a11',
+          provider: 'openai',
+          allowA11CloudVoice: true,
+          forceCloudTts: true,
           vocalMode: 'adaptive',
           latencyMode: 'interactive',
           audioFormat: 'mp3',

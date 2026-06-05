@@ -9296,20 +9296,34 @@ export function App() {
   }
 
   function buildAssistantSpeechOptions(vocalMode: "speech" | "adaptive" | "sing" = ttsVocalMode) {
+    const useA11OfficialReference = surfaceKind === "a11";
+    const provider = useA11OfficialReference
+      ? "xtts-rvc"
+      : (effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode);
     return {
       lang: selectedA11Language.speechLang,
       voiceReferenceId: speechVoiceReferenceId || undefined,
       vocalMode,
       audioFormat: "mp3",
       latencyMode: "interactive",
-      voiceConversion: false,
+      voiceConversion: useA11OfficialReference,
+      convertVoice: useA11OfficialReference,
+      morphVoice: useA11OfficialReference,
+      rvc: useA11OfficialReference,
       persona: surfaceKind,
       voicePersona: surfaceKind,
-      voiceReferenceRequired: false,
+      voiceReferenceRequired: useA11OfficialReference,
+      referenceVoiceRequired: useA11OfficialReference,
       useDefaultVoiceReference: true,
-      allowBrowserSpeechFallback: true,
-      provider: effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode,
-      ttsProvider: effectiveTtsProviderMode,
+      defaultVoiceReference: true,
+      usePersonaVoiceReference: useA11OfficialReference,
+      allowRvc: useA11OfficialReference,
+      allowXttsRvc: useA11OfficialReference,
+      allowLegacyVoiceBridge: useA11OfficialReference,
+      xttsRvcOptIn: useA11OfficialReference,
+      allowBrowserSpeechFallback: !useA11OfficialReference,
+      provider,
+      ttsProvider: useA11OfficialReference ? "xtts-rvc" : effectiveTtsProviderMode,
     };
   }
 

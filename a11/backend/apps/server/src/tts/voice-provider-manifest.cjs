@@ -50,15 +50,16 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     persona: 'a11',
     label: 'A11 official stern French guardian',
     referenceMoodboard: [
-      'Stern French operator voice, gravelly and assertive, licensed provider voice only.',
+      'Stern French operator voice, gravelly and assertive, based on the owned Djeff WAV reference when available.',
     ],
     protectedReferences: [],
     referenceClipNotes: [
-      'Official path: ready-made licensed French TTS voice. XTTS/RVC references are legacy opt-in only.',
+      'Official path: owned Djeff WAV reference through the Funesterie XTTS/RVC bridge when available.',
+      'Ready-made cloud voices are fallback/explicit override only for A11, not the official default.',
       'Target original A11: low, mission-focused French diction with restrained warmth.',
     ],
     prompt:
-      'Voix A11 originale: grave, stable, protectrice, avec diction nette, economie de mots, cadence missionnelle et chaleur contenue. Utilise une voix prete a l emploi licenciee; ne clone aucune personne ni personnage.',
+      'Voix A11 originale: grave, stable, protectrice, avec diction nette, economie de mots, cadence missionnelle et chaleur contenue. Utilise la reference WAV Djeff possedee par Funesterie via XTTS/RVC quand elle est disponible; ne clone aucune personne ni personnage.',
   }),
   kaen44: Object.freeze({
     persona: 'kaen44',
@@ -93,12 +94,13 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
 const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
   a11: Object.freeze({
     styleId: 'a11-official-stern-french',
-    displayName: 'A11 - Laurent Dependable Anchor',
+    displayName: 'A11 - Djeff WAV XTTS/RVC',
     providerLabels: Object.freeze({
       [PROVIDERS.ELEVENLABS]: 'George - Warm Captivating Storyteller',
       [PROVIDERS.CARTESIA]: 'Laurent - Dependable Anchor',
       [PROVIDERS.AZURE]: 'fr-FR-Remy:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'onyx',
+      [PROVIDERS.XTTS_RVC]: 'Djeff WAV - A11 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-tom-medium',
     }),
     elevenLabsVoiceId: 'JBFqnCBsd6RMkjVDRZzb',
@@ -229,11 +231,11 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original A11 cybernetic voice. Licensed/consented data only; no T-800/actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original A11 direction; public film clips are moodboard only.' },
-      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Primary A11 ready-made licensed voice.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Primary ready-made licensed voice.' },
-      [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Secondary HD ready-made voice.' },
-      [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Tertiary high-quality ready-made voice.' },
-      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: null, note: 'Legacy opt-in bridge only; never auto-selected unless explicitly enabled.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Fallback/explicit override A11 ready-made licensed voice.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Fallback/explicit override ready-made licensed voice.' },
+      [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
+      [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
+      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/a11-official-stern-french.wav', note: 'Official A11 bridge using the owned Djeff WAV reference when available.' },
       [PROVIDERS.PIPER]:      { configured: true,  note: 'Neutral fallback when cloud voices are not configured.' },
     },
   },

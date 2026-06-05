@@ -250,7 +250,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
-    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est une voix grave et protectrice avec la référence locale a11-official-stern-french quand elle est disponible; si le rendu sonne féminin, c'est probablement un mauvais routage, une voix cloud de fallback ou une ancienne référence, pas mon intention officielle.";
+    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est la référence WAV Djeff a11-official-stern-french via XTTS/RVC quand elle est disponible; si tu entends Cartesia, ElevenLabs ou une voix féminine, c'est un mauvais routage ou un fallback, pas la voix officielle A11.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {

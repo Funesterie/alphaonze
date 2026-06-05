@@ -559,6 +559,77 @@ function shouldUseA11OfficialReferenceForBasic(body = {}) {
   return wantsOfficialIdentityVoice(body);
 }
 
+function allowsExplicitA11CloudVoice(body = {}) {
+  const provider = getRequestedTtsProvider(body);
+  const explicitCloudOverride = parseOptionalBoolean(
+    body?.allowA11CloudVoice
+    ?? body?.forceA11CloudVoice
+    ?? body?.forceCloudTts
+    ?? body?.useReadyMadeCloudVoice,
+    false
+  ) === true;
+  if (!explicitCloudOverride) return false;
+  if (isCloudTtsProvider(provider)) return true;
+  return parseOptionalBoolean(
+    body?.forceCloudTts
+    ?? body?.useReadyMadeCloudVoice,
+    false
+  ) === true;
+}
+
+function shouldUseA11OfficialReferenceVoice(body = {}) {
+  const explicitPersona = getExplicitTtsPersonaFromBody(body);
+  if (explicitPersona !== 'a11') return false;
+  if (body?.identityVoice === false || body?.useIdentityVoice === false || body?.neutralVoice === true) {
+    return false;
+  }
+  if (allowsExplicitA11CloudVoice(body)) return false;
+  const costPolicy = String(body?.ttsCostPolicy || '').trim().toLowerCase();
+  return costPolicy === 'basic_a11_official_reference'
+    || wantsOfficialIdentityVoice(body)
+    || requiresReferenceVoice(body)
+    || wantsDefaultVoiceReference(body);
+}
+
+function normalizeA11OfficialReferenceRequest(body = {}) {
+  if (!shouldUseA11OfficialReferenceVoice(body)) return body;
+  const piperProfile = getReadyVoiceProfile('a11', PROVIDERS.PIPER);
+  const piperVoice = String(piperProfile?.piperVoice || 'fr_FR-tom-medium').trim() || 'fr_FR-tom-medium';
+  const vocalMode = normalizeVocalMode(body);
+  return {
+    ...(body || {}),
+    provider: PROVIDERS.XTTS_RVC,
+    ttsProvider: PROVIDERS.XTTS_RVC,
+    voice: body?.voice || piperVoice,
+    model: body?.model || piperVoice,
+    piperVoice,
+    persona: 'a11',
+    voicePersona: 'a11',
+    surface: body?.surface || 'a11',
+    vocalMode: vocalMode === 'speech' ? 'adaptive' : vocalMode,
+    voiceConversion: true,
+    convertVoice: true,
+    morphVoice: true,
+    rvc: true,
+    voiceReferenceRequired: true,
+    requireVoiceReference: true,
+    referenceVoiceRequired: true,
+    useDefaultVoiceReference: true,
+    defaultVoiceReference: true,
+    usePersonaVoiceReference: true,
+    identityVoice: true,
+    useIdentityVoice: true,
+    neutralVoice: false,
+    allowRvc: true,
+    allowXttsRvc: true,
+    allowLegacyVoiceBridge: true,
+    xttsRvcOptIn: true,
+    audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
+    responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
+    ttsCostPolicy: String(body?.ttsCostPolicy || '').trim() || 'a11_official_reference',
+  };
+}
+
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
   if (shouldUseA11OfficialReferenceForBasic(body)) {
@@ -673,6 +744,7 @@ function releaseStaleLocalGpuWorkerLeases(now = Date.now()) {
 
 function hasConfiguredCloudTtsForBody(body = {}) {
   try {
+    if (shouldUseA11OfficialReferenceVoice(body)) return false;
     const resolved = resolveTtsProviderForRequest(body);
     if (isCloudTtsProvider(resolved?.provider) && resolved?.configured === true) return true;
     return getCloudTtsProviderOrder(body, resolved).length > 0;
@@ -683,6 +755,7 @@ function hasConfiguredCloudTtsForBody(body = {}) {
 
 function shouldRouteTtsJobToLocalGpuWorker(body = {}) {
   if (!localGpuWorkerEnabled()) return false;
+  if (shouldUseA11OfficialReferenceVoice(body)) return true;
   const provider = getRequestedTtsProvider(body);
   if (isCloudTtsProvider(provider) && !allowsXttsRvcForBody(body)) return false;
   if (provider !== PROVIDERS.XTTS_RVC && hasConfiguredCloudTtsForBody(body)) return false;
@@ -1909,6 +1982,14 @@ function resolveTtsProviderForRequest(body = {}) {
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
   const requestedProvider = getRequestedTtsProvider(body);
   const allowPaidVoice = allowsPaidTtsVoiceForBody(body);
+  if (shouldUseA11OfficialReferenceVoice(body)) {
+    return {
+      provider: PROVIDERS.XTTS_RVC,
+      configured: true,
+      note: 'A11 official Djeff WAV reference routed through XTTS/RVC.',
+      diagnostic: null,
+    };
+  }
   if (requestedProvider === PROVIDERS.CARTESIA) {
     if (!allowPaidVoice) {
       return resolveVoiceProvider(persona, { explicitProvider: PROVIDERS.PIPER, allowCloud: false, allowRvc: false });
@@ -2016,6 +2097,7 @@ function resolveTtsProviderForRequest(body = {}) {
 }
 
 function shouldTryOpenAiTts(body = {}) {
+  if (shouldUseA11OfficialReferenceVoice(body)) return false;
   if (!allowsPaidTtsVoiceForBody(body)) return false;
   const disabled = String(process.env.A11_OPENAI_TTS_ENABLED || process.env.OPENAI_TTS_ENABLED || '').trim().toLowerCase();
   if (disabled === '0' || disabled === 'false' || disabled === 'off') return false;
@@ -2025,6 +2107,7 @@ function shouldTryOpenAiTts(body = {}) {
 }
 
 function shouldTryCartesiaTts(body = {}) {
+  if (shouldUseA11OfficialReferenceVoice(body)) return false;
   if (!allowsPaidTtsVoiceForBody(body)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.CARTESIA) return false;
@@ -2032,6 +2115,7 @@ function shouldTryCartesiaTts(body = {}) {
 }
 
 function shouldTryElevenLabsTts(body = {}) {
+  if (shouldUseA11OfficialReferenceVoice(body)) return false;
   if (!allowsPaidTtsVoiceForBody(body)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.ELEVENLABS) return false;
@@ -2044,6 +2128,7 @@ function shouldTryElevenLabsTts(body = {}) {
 }
 
 function shouldTryAzureTts(body = {}) {
+  if (shouldUseA11OfficialReferenceVoice(body)) return false;
   if (!allowsPaidTtsVoiceForBody(body)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.AZURE) return false;
@@ -2051,6 +2136,7 @@ function shouldTryAzureTts(body = {}) {
 }
 
 function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
+  if (shouldUseA11OfficialReferenceVoice(body)) return false;
   const provider = getRequestedTtsProvider(body);
   if (provider === 'openai') return shouldTryOpenAiTts(body);
   if (provider === 'piper' || provider === 'local' || provider === 'espeak') return false;
@@ -2070,6 +2156,7 @@ function shouldPreferOpenAiTtsFirst(body = {}, vocalMode = 'speech') {
 }
 
 function getCloudTtsProviderOrder(body = {}, resolvedProvider = {}) {
+  if (shouldUseA11OfficialReferenceVoice(body)) return [];
   if (!allowsPaidTtsVoiceForBody(body)) return [];
   const requestedProvider = getRequestedTtsProvider(body);
   if (isCloudTtsProvider(requestedProvider)) return [requestedProvider];
@@ -3705,7 +3792,7 @@ router.options(['/tts/piper', '/tts/speak', '/tts/jobs/:jobId', '/vivy/jobs', '/
 
 async function handleTtsSpeakRequest(req, res) {
   try {
-    const requestBody = enforceBasicTtsCostPolicy(req, req.body || {});
+    const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
     req.body = requestBody;
     const text = String(requestBody?.text || '').trim();
     const vocalMode = normalizeVocalMode(requestBody || {});
@@ -3718,13 +3805,15 @@ async function handleTtsSpeakRequest(req, res) {
     }
 
     let remoteError = null;
-    const preparedBody = {
+    let preparedBody = {
       ...(requestBody || {}),
       text: readableText,
       voice,
       model: voice || requestBody?.model,
       vocalMode,
     };
+    preparedBody = normalizeA11OfficialReferenceRequest(preparedBody);
+    req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
     const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
@@ -4018,7 +4107,7 @@ function startTtsAsyncJob(req, res, options = {}) {
       queue: buildTtsQueueSnapshot(),
     });
   }
-  const requestBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
   req.body = requestBody;
   const body = buildAsyncTtsJobBody(requestBody);
   const routeToLocalGpu = shouldRouteTtsJobToLocalGpuWorker(body);
@@ -4326,7 +4415,7 @@ router.get('/tts/out/:filename', async (req, res) => {
 
 router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
   setTtsCorsHeaders(req, res);
-  const requestBody = enforceBasicTtsCostPolicy(req, req.body || {});
+  const requestBody = normalizeA11OfficialReferenceRequest(enforceBasicTtsCostPolicy(req, req.body || {}));
   req.body = requestBody;
   if (wantsAsyncTtsJob(requestBody) && String(req.headers?.['x-a11-internal-tts-job'] || '') !== '1') {
     return startTtsAsyncJob(req, res);
@@ -4343,13 +4432,15 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
     }
 
     let remoteError = null;
-    const preparedBody = {
+    let preparedBody = {
       ...(requestBody || {}),
       text: readableText,
       voice,
       model: voice || requestBody?.model,
       vocalMode,
     };
+    preparedBody = normalizeA11OfficialReferenceRequest(preparedBody);
+    req.body = preparedBody;
     let openAiTtsErrorMessage = null;
     const resolvedProvider = resolveTtsProviderForRequest(preparedBody);
     const strictOfficialVoice = shouldBlockNeutralVoiceFallback(preparedBody);
