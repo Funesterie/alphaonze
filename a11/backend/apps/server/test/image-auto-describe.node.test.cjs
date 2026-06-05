@@ -79,8 +79,10 @@ test('autoDescribeImage keeps a local fallback when Janus is disabled', async ()
 
       assert.equal(result.skipped, false);
       assert.equal(result.fallback, true);
+      assert.equal(result.visualReliable, false);
       assert.match(result.provider, /local-image-fallback/);
-      assert.match(result.description, /Analyse locale de secours|Image recue/);
+      assert.match(result.description, /lecture locale de secours/i);
+      assert.match(result.description, /Ne deduis pas le sujet visuel/i);
     } finally {
       if (previousProvider == null) {
         delete process.env.A11_VISION_PROVIDER;

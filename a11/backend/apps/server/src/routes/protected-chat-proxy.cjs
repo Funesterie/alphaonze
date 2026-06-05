@@ -152,9 +152,45 @@ function writeProxyPayloadAssistantText(payload, content = '') {
   return payload;
 }
 
-function postProcessProxyPayload(payload, latestUserMessage = '') {
+function payloadCanCarryAssistantText(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  if ('assistant' in payload || 'content' in payload || 'message' in payload) return true;
+  return Boolean(payload.choices?.[0]?.message && typeof payload.choices[0].message === 'object');
+}
+
+function normalizeProxySurface(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['k44', 'kaen', 'kaen44'].includes(normalized)) return 'kaen44';
+  if (['vivy', 'vivy-one', 'vivy_one'].includes(normalized)) return 'vivy';
+  if (['a11', 'a-11', 'alphaonze', 'alpha-onze'].includes(normalized)) return 'a11';
+  return '';
+}
+
+function buildProxyEmptyAssistantFallback(latestUserMessage = '', options = {}) {
+  const folded = String(latestUserMessage || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const surface = normalizeProxySurface(options.surface || options.persona || options.voicePersona);
+  const name = surface === 'kaen44' ? 'Kaen44' : surface === 'vivy' ? 'Vivy' : 'A11';
+
+  if (/(allo|t es la|tu es la|vous etes la|quelqu un|reponds|réponds)/.test(folded)) {
+    return `Oui, je suis là. ${name} reprend normalement.`;
+  }
+  if (/(ca va|ça va|comment tu vas|salut|bonjour|coucou)/.test(folded)) {
+    if (surface === 'kaen44') return 'Oui, je suis là. On reprend simplement: qu’est-ce que tu veux faire ?';
+    if (surface === 'vivy') return 'Oui, je suis là. On repart proprement.';
+    return 'Oui, je suis là. Je reprends proprement.';
+  }
+  return `${name} est là. Le modèle a renvoyé une réponse vide, donc je reprends sur ton dernier message sans afficher de brouillon.`;
+}
+
+function postProcessProxyPayload(payload, latestUserMessage = '', options = {}) {
   const assistantText = extractProxyPayloadAssistantText(payload);
-  if (!assistantText) return payload;
+  if (!assistantText) {
+    if (!payloadCanCarryAssistantText(payload)) return payload;
+    return writeProxyPayloadAssistantText(payload, buildProxyEmptyAssistantFallback(latestUserMessage, options));
+  }
   const processed = postProcessA11AssistantResponse({
     text: assistantText,
     userMessage: latestUserMessage,
@@ -163,12 +199,12 @@ function postProcessProxyPayload(payload, latestUserMessage = '') {
   return writeProxyPayloadAssistantText(payload, processed.content);
 }
 
-function installProxyResponsePostProcessor(res, latestUserMessage = '') {
+function installProxyResponsePostProcessor(res, latestUserMessage = '', options = {}) {
   if (!res || res.locals?.a11ProxyPostProcessorInstalled) return;
   res.locals = res.locals || {};
   res.locals.a11ProxyPostProcessorInstalled = true;
   const originalJson = res.json.bind(res);
-  res.json = (payload) => originalJson(postProcessProxyPayload(payload, latestUserMessage));
+  res.json = (payload) => originalJson(postProcessProxyPayload(payload, latestUserMessage, options));
 }
 
 function guardNonFamilyPromptAccess(req) {
@@ -1159,7 +1195,7 @@ function isVisionInspectionChatRequest(text = '') {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
   if (!normalized.trim()) return false;
-  return /\b(image|photo|capture|screenshot|screen|visuel|voir|vois|voit|regarde|analyse|analyser|decris|decrire|identifie|identifier|qui|quoi|c(?:e|')?est|celle|celui|ca|ça)\b/.test(normalized)
+  return /\b(image|photo|capture|screenshot|screen|visuel|vision|janus|voir|vois|voit|regarde|analyse|analyser|decris|decrire|identifie|identifier|qui|quoi|c(?:e|')?est|celle|celui|ca|ça)\b/.test(normalized)
     || /t.?arriv(?:e|es).{0,20}voir/.test(normalized)
     || /tu.{0,12}vois/.test(normalized);
 }
@@ -1180,6 +1216,7 @@ function buildVisionChatPayload({
   sourceImageUrl = '',
   skipped = false,
   reason = '',
+  fallback = false,
 } = {}) {
   const assistant = String(content || '').trim();
   return {
@@ -1190,9 +1227,25 @@ function buildVisionChatPayload({
     content: assistant,
     sourceImageUrl: String(sourceImageUrl || '').trim() || null,
     skipped: Boolean(skipped),
+    fallback: Boolean(fallback),
     reason: String(reason || '').trim() || null,
     choices: buildAssistantChoice(assistant),
   };
+}
+
+function buildVisionFallbackChatContent(visionResult = {}) {
+  const reason = String(visionResult?.reason || 'vision_indisponible').trim();
+  const description = String(visionResult?.description || '').trim();
+  const details = description
+    ? ` Lecture locale disponible: ${description}`
+    : '';
+  return [
+    "Je vois bien qu'une image est jointe, mais Janus/vision avancee n'a pas produit de lecture fiable cette fois.",
+    "Je ne vais pas inventer le sujet de l'image a partir du prompt ou de l'OCR.",
+    details,
+    `Raison: ${reason}.`,
+    "Relance l'analyse ou renvoie l'image, et je retente le passage vision proprement.",
+  ].filter(Boolean).join(' ');
 }
 
 function buildIllustratedPdfFallbackPrompt(sourceText = '') {
@@ -2322,11 +2375,18 @@ function createProtectedChatProxyRouter({
 
       const description = String(visionResult?.description || '').trim();
       if (description && visionResult?.skipped !== true) {
-        const prefix = visionResult?.fallback
-          ? 'Je vois le fichier image. '
-          : 'Oui, je la vois. ';
+        if (visionResult?.fallback || visionResult?.visualReliable === false) {
+          return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
+            content: buildVisionFallbackChatContent(visionResult),
+            provider: visionResult?.provider,
+            sourceImageUrl: visionImageLocator,
+            skipped: true,
+            fallback: true,
+            reason: visionResult?.reason || 'vision_fallback',
+          }), resolution, req.body || {}));
+        }
         return res.status(200).json(attachIntentDebug(buildVisionChatPayload({
-          content: `${prefix}${description}`,
+          content: `Oui, je la vois. ${description}`,
           provider: visionResult?.provider,
           sourceImageUrl: visionImageLocator,
         }), resolution, req.body || {}));
@@ -2506,7 +2566,11 @@ function createProtectedChatProxyRouter({
 
     applyProviderDefaults(req);
     injectProxySystemPrompt(req);
-    installProxyResponsePostProcessor(res, latestUserMessage);
+    installProxyResponsePostProcessor(res, latestUserMessage, {
+      surface: req.body?.surface,
+      persona: req.body?.persona,
+      voicePersona: req.body?.voicePersona,
+    });
     return proxyChatToOpenAI(req, res);
   }
 

@@ -1819,6 +1819,103 @@ test('POST /api/llm/chat answers image inspection with vision instead of proxyin
   );
 });
 
+test('POST /api/llm/chat does not claim visual certainty from local OCR fallback', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-vision-fallback', username: 'user-vision-fallback' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI() {
+          throw new Error('text_proxy_should_not_be_called');
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        autoDescribeImage: async () => ({
+          skipped: false,
+          fallback: true,
+          visualReliable: false,
+          provider: 'janus-test+local-image-fallback',
+          reason: 'janus_worker_unavailable',
+          description: 'Vision avancee indisponible; lecture locale de secours uniquement: 1024x1536px, format png. OCR texte lisible: KAEN44. Ne deduis pas le sujet visuel de ce fallback.',
+        }),
+        generateSd: async () => {
+          throw new Error('should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: "t'as pas Janus vision ?" }],
+        sourceImageUrl: 'https://assets.example.test/k44-moto.png',
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(json.ok, true);
+      assert.equal(json.mode, 'vision_chat');
+      assert.equal(json.fallback, true);
+      assert.equal(json.skipped, true);
+      assert.match(json.assistant, /Janus\/vision avancee/i);
+      assert.match(json.assistant, /je ne vais pas inventer/i);
+      assert.doesNotMatch(json.assistant, /oui, je la vois|bureau|ecran|clavier/i);
+    }
+  );
+});
+
+test('POST /api/llm/chat fills empty assistant proxy bubbles with a natural surface fallback', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-empty', username: 'user-empty' }, jwtSecret, { expiresIn: '1h' });
+
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouterForTests({
+        verifyJWT(req, res, next) {
+          try {
+            const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+            req.user = jwt.verify(bearer, jwtSecret);
+            next();
+          } catch (error_) {
+            res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+          }
+        },
+        proxyChatToOpenAI(_req, res) {
+          return res.json({
+            choices: [{ message: { role: 'assistant', content: '' } }],
+          });
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        hasLocalChatUpstreamConfigured: () => true,
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        persona: 'kaen44',
+        surface: 'kaen44',
+        messages: [{ role: 'user', content: 'allo ?' }],
+      }, {
+        authorization: `Bearer ${token}`,
+      });
+
+      assert.equal(response.status, 200);
+      const content = String(json.choices?.[0]?.message?.content || '');
+      assert.match(content, /Kaen44 reprend normalement|je suis là/i);
+      assert.doesNotMatch(content, /^\s*$/);
+    }
+  );
+});
+
 test('POST /api/llm/chat answers MCP/Neo4j tool status without hallucinating no tools', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({

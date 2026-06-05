@@ -115,6 +115,20 @@ function buildImageMetadataSentence(analysis = {}) {
   return details.length ? details.join(', ') : 'image recue';
 }
 
+function buildLocalVisionFallbackText({ metadata = '', preview = '', reason = '' } = {}) {
+  const parts = [
+    `Vision avancee indisponible; lecture locale de secours uniquement: ${String(metadata || 'image recue').trim()}.`,
+  ];
+  const ocr = String(preview || '').trim();
+  if (ocr) {
+    parts.push(`OCR texte lisible: ${ocr}`);
+  } else {
+    parts.push(`Aucune description visuelle fiable n'a ete produite (${String(reason || 'vision_indisponible')}).`);
+  }
+  parts.push("Ne deduis pas le sujet visuel de ce fallback.");
+  return parts.join(' ');
+}
+
 async function buildLocalImageFallbackDescription({ buffer, contentType, reason }) {
   try {
     const { analyzeUploadedResource } = require('../../lib/resource-reader.cjs');
@@ -125,19 +139,16 @@ async function buildLocalImageFallbackDescription({ buffer, contentType, reason 
     });
     const metadata = buildImageMetadataSentence(analysis);
     const preview = String(analysis?.preview || '').trim();
-    if (preview) {
-      return {
-        description: `Analyse locale de secours: ${metadata}. Texte lisible detecte: ${preview}`,
-        analysis,
-      };
-    }
     return {
-      description: `Analyse locale de secours: ${metadata}. Le moteur vision n'a pas donne de description visuelle complete (${String(reason || 'vision_indisponible')}).`,
+      description: buildLocalVisionFallbackText({ metadata, preview, reason }),
       analysis,
     };
   } catch (fallbackError) {
     return {
-      description: `Image recue, mais l'analyse visuelle complete n'a pas abouti (${String(reason || fallbackError?.message || 'vision_indisponible')}).`,
+      description: buildLocalVisionFallbackText({
+        metadata: 'image recue',
+        reason: String(reason || fallbackError?.message || 'vision_indisponible'),
+      }),
       analysis: null,
     };
   }
@@ -239,7 +250,7 @@ async function autoDescribeImage({
 } = {}) {
   const locator = String(imageLocator || '').trim();
   if (!locator) {
-    return { description: '', provider: 'none', skipped: true, reason: 'no_locator' };
+    return { description: '', provider: 'none', skipped: true, fallback: false, visualReliable: false, reason: 'no_locator' };
   }
 
   const provider = resolveVisionProvider();
@@ -267,6 +278,7 @@ async function autoDescribeImage({
       provider: 'local-image-fallback',
       skipped: false,
       fallback: true,
+      visualReliable: false,
       reason: 'janus_unavailable',
       analysis: fallback.analysis || null,
     };
@@ -286,11 +298,11 @@ async function autoDescribeImage({
     const description = raw.replace(/^(the image shows?|this image shows?|i see|i can see)\s*/i, '').trim();
 
     if (!description) {
-      return { description: '', provider, skipped: true, reason: 'empty_description' };
+      return { description: '', provider, skipped: true, fallback: false, visualReliable: false, reason: 'empty_description' };
     }
 
     console.log(`[A11][auto-describe] Janus described image: "${description.slice(0, 120)}${description.length > 120 ? '…' : ''}"`);
-    return { description, provider, skipped: false };
+    return { description, provider, skipped: false, fallback: false, visualReliable: true };
   } catch (janusErr) {
     console.warn(`[A11][auto-describe] Janus vision failed: ${String(janusErr?.message || janusErr)}`);
     const reason = String(janusErr?.message || 'janus_failed');
@@ -304,6 +316,7 @@ async function autoDescribeImage({
       provider: `${provider}+local-image-fallback`,
       skipped: false,
       fallback: true,
+      visualReliable: false,
       reason,
       analysis: fallback.analysis || null,
     };
@@ -324,6 +337,7 @@ module.exports = {
   autoDescribeImage,
   buildAutoDescribeUserMessage,
   buildLocalImageFallbackDescription,
+  buildLocalVisionFallbackText,
   loadImageBuffer,
   resolveRuntimeImagePathFromLocator,
   AUTO_DESCRIBE_PROMPT,
