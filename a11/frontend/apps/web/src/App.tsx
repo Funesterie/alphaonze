@@ -9310,8 +9310,9 @@ export function App() {
   }
 
   function buildAssistantSpeechOptions(vocalMode: "speech" | "adaptive" | "sing" = ttsVocalMode) {
-    const useA11OfficialReference = surfaceKind === "a11";
-    const provider = useA11OfficialReference
+    const ownedOfficialReferencePersonas = new Set(["a11", "kaen44", "k44", "kaen"]);
+    const useOwnedOfficialReference = ownedOfficialReferencePersonas.has(surfaceKind);
+    const provider = useOwnedOfficialReference
       ? "xtts-rvc"
       : (effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode);
     return {
@@ -9320,24 +9321,24 @@ export function App() {
       vocalMode,
       audioFormat: "mp3",
       latencyMode: "interactive",
-      voiceConversion: useA11OfficialReference,
-      convertVoice: useA11OfficialReference,
-      morphVoice: useA11OfficialReference,
-      rvc: useA11OfficialReference,
+      voiceConversion: useOwnedOfficialReference,
+      convertVoice: useOwnedOfficialReference,
+      morphVoice: useOwnedOfficialReference,
+      rvc: useOwnedOfficialReference,
       persona: surfaceKind,
       voicePersona: surfaceKind,
-      voiceReferenceRequired: useA11OfficialReference,
-      referenceVoiceRequired: useA11OfficialReference,
+      voiceReferenceRequired: useOwnedOfficialReference,
+      referenceVoiceRequired: useOwnedOfficialReference,
       useDefaultVoiceReference: true,
       defaultVoiceReference: true,
-      usePersonaVoiceReference: useA11OfficialReference,
-      allowRvc: useA11OfficialReference,
-      allowXttsRvc: useA11OfficialReference,
-      allowLegacyVoiceBridge: useA11OfficialReference,
-      xttsRvcOptIn: useA11OfficialReference,
-      allowBrowserSpeechFallback: !useA11OfficialReference,
+      usePersonaVoiceReference: useOwnedOfficialReference,
+      allowRvc: useOwnedOfficialReference,
+      allowXttsRvc: useOwnedOfficialReference,
+      allowLegacyVoiceBridge: useOwnedOfficialReference,
+      xttsRvcOptIn: useOwnedOfficialReference,
+      allowBrowserSpeechFallback: !useOwnedOfficialReference,
       provider,
-      ttsProvider: useA11OfficialReference ? "xtts-rvc" : effectiveTtsProviderMode,
+      ttsProvider: useOwnedOfficialReference ? "xtts-rvc" : effectiveTtsProviderMode,
     };
   }
 
