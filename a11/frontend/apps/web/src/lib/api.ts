@@ -2022,6 +2022,85 @@ export async function transcribeAudioFile(
   };
 }
 
+export type VoiceLearningStatus = {
+  ok: boolean;
+  enabled?: boolean;
+  canCapture?: boolean;
+  persona?: string | null;
+  clipCount?: number;
+  secondsCollected?: number;
+  requiredSeconds?: number;
+  corpusReady?: boolean;
+  totalBytes?: number;
+  lastClipAt?: string | null;
+  queuedTrainingCount?: number;
+  duplicate?: boolean;
+  clipId?: string;
+  message?: string;
+  nextAction?: string;
+};
+
+export async function fetchVoiceLearningStatus(persona: 'a11' | 'kaen44' | string): Promise<VoiceLearningStatus> {
+  const query = persona ? `?persona=${encodeURIComponent(persona)}` : '';
+  const res = await authFetch(getApiUrl(`/api/voice-learning/status${query}`), {
+    method: 'GET',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Statut apprentissage voix indisponible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function uploadVoiceLearningSnippet(
+  file: File,
+  options: {
+    persona: 'a11' | 'kaen44' | string;
+    durationMs?: number;
+    transcript?: string;
+    source?: string;
+    consent?: string;
+  }
+): Promise<VoiceLearningStatus> {
+  const form = new FormData();
+  form.append('audio', file);
+  form.append('persona', options.persona);
+  form.append('source', options.source || 'micro');
+  form.append('consent', options.consent || 'voice-learning-v1');
+  if (Number.isFinite(Number(options.durationMs)) && Number(options.durationMs) > 0) {
+    form.append('durationMs', String(Math.round(Number(options.durationMs))));
+  }
+  if (options.transcript) form.append('transcript', options.transcript);
+
+  const res = await authFetch(getApiUrl('/api/voice-learning/snippet'), {
+    method: 'POST',
+    headers: buildAuthHeaders(),
+    credentials: 'include',
+    body: form,
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Capture voix impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function queueVoiceLearningTraining(persona: 'a11' | 'kaen44' | string): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/train'), {
+    method: 'POST',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ persona, consent: 'voice-learning-v1' }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Entrainement voix impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
 export type VivyStudioMode = 'voice' | 'song' | 'share';
 
 export type VivyStudioAction = {

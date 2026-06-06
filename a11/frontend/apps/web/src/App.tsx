@@ -55,6 +55,8 @@ import {
   setAuthDisplayName,
   transcribeAudioFile,
   ttsSpeak,
+  fetchVoiceLearningStatus,
+  uploadVoiceLearningSnippet,
   uploadTtsVoiceReference,
   saveRemoteProviderProfile,
   purgeMemoryNow,
@@ -68,6 +70,7 @@ import {
   type RemoteProviderSaveInput,
   type TechnicalMemoSummaryResponse,
   type TtsVoiceReference,
+  type VoiceLearningStatus,
   type VivyChatFileAttachment,
   type A11PortraitFrame,
   type A11PortraitFramebook,
@@ -106,9 +109,12 @@ import ReactMarkdown from "react-markdown";
 import "./index.css";
 import {
   initSpeech,
+  startMicAudioCapture,
   startMic,
+  stopMicAudioCapture,
   stopMic,
   speak,
+  type MicAudioCaptureResult,
   cancelSpeech,
   setTtsQueueEnabled,
   setSpeechMuted,
@@ -7824,9 +7830,16 @@ export function App() {
   const [micStarting, setMicStarting] = useState(false);
   const [micPermissionBlocked, setMicPermissionBlocked] = useState(false);
   const [micStatusMessage, setMicStatusMessage] = useState("");
+  const [voiceLearningStatus, setVoiceLearningStatus] = useState<VoiceLearningStatus | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const authInvalidatedRef = useRef(false);
   const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
+  const voiceLearningPersona = surfaceKind === "a11"
+    ? "a11"
+    : surfaceKind === "kaen44"
+      ? "kaen44"
+      : "";
+  const canCaptureVoiceLearning = Boolean(voiceLearningPersona && voiceLearningStatus?.canCapture);
 
   useEffect(() => {
     document.title = isGeneralCockpit
@@ -8099,6 +8112,24 @@ export function App() {
       authInvalidatedRef.current = false;
     }
   }, [hasPrivateSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isFunesteriePublicShell || !hasPrivateSession || !voiceLearningPersona) {
+      setVoiceLearningStatus(null);
+      return;
+    }
+    fetchVoiceLearningStatus(voiceLearningPersona)
+      .then((status) => {
+        if (!cancelled) setVoiceLearningStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setVoiceLearningStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPrivateSession, isFunesteriePublicShell, voiceLearningPersona]);
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -9641,6 +9672,41 @@ export function App() {
     }
   }
 
+  function getCaptureFileExtension(mimeType: string) {
+    const normalized = String(mimeType || "").toLowerCase();
+    if (normalized.includes("mp4") || normalized.includes("m4a")) return "m4a";
+    if (normalized.includes("ogg")) return "ogg";
+    if (normalized.includes("wav")) return "wav";
+    return "webm";
+  }
+
+  async function submitVoiceLearningCapture(capture: MicAudioCaptureResult | null) {
+    if (!capture?.blob?.size || !canCaptureVoiceLearning || !voiceLearningPersona) return;
+    if (capture.durationMs < 700) return;
+    try {
+      const ext = getCaptureFileExtension(capture.mimeType);
+      const file = new File(
+        [capture.blob],
+        `${voiceLearningPersona}-micro-${Date.now()}.${ext}`,
+        { type: capture.mimeType || "audio/webm" }
+      );
+      const status = await uploadVoiceLearningSnippet(file, {
+        persona: voiceLearningPersona,
+        durationMs: capture.durationMs,
+        source: "micro",
+        consent: "voice-learning-v1",
+      });
+      setVoiceLearningStatus(status);
+      if (!status.duplicate) {
+        const current = Number(status.secondsCollected || 0);
+        const required = Number(status.requiredSeconds || 180);
+        setMicStatusMessage(`Corpus voix ${voiceLearningPersona === "kaen44" ? "K44" : "A11"}: ${Math.round(current)}s/${Math.round(required)}s collectées.`);
+      }
+    } catch (error) {
+      console.info("[A11] voice learning capture ignored", error);
+    }
+  }
+
   async function toggleMic() {
     console.log("[A11] toggleMic clicked, current voiceListening=", voiceListening);
     if (micStarting) {
@@ -9709,17 +9775,31 @@ export function App() {
 
     if (voiceListening) {
       try { stopMic(); } catch { };
+      const captured = await stopMicAudioCapture().catch(() => null);
       setVoiceListening(false);
       setMicStatusMessage("");
+      void submitVoiceLearningCapture(captured);
     } else {
+      let rawCaptureStarted = false;
       try {
         setMicStarting(true);
         setMicStatusMessage("");
+        if (canCaptureVoiceLearning) {
+          try {
+            await startMicAudioCapture();
+            rawCaptureStarted = true;
+          } catch (captureError) {
+            console.info("[A11] raw mic capture unavailable, dictation continues", captureError);
+          }
+        }
         await startMic({ lang: selectedA11Language.speechLang });
         setMicPermissionBlocked(false);
         setTtsFallback(false);
         setVoiceListening(true);
       } catch (e) {
+        if (rawCaptureStarted) {
+          await stopMicAudioCapture().catch(() => null);
+        }
         setVoiceListening(false);
         setMicPermissionBlocked(true);
         setTtsFallback(true);
@@ -9816,24 +9896,33 @@ export function App() {
       const text = String(firstAsSurface ? maybeText : first || maybeText || "").trim()
         || defaultVoiceTextForSurface(targetSurface);
       const vocalMode = targetSurface === "vivy" ? "adaptive" : ttsVocalMode;
+      const usesOwnedOfficialReference = ["a11", "kaen44", "k44", "kaen"].includes(targetSurface);
       const voiceOptions: Record<string, unknown> = {
         lang: selectedA11Language.speechLang,
         voice: targetSurface === "kaen44" ? "kaen44" : targetSurface,
         persona: targetSurface,
         surface: targetSurface,
         voicePersona: targetSurface,
-        provider: "auto",
-        ttsProvider: "auto",
+        provider: usesOwnedOfficialReference ? "xtts-rvc" : "auto",
+        ttsProvider: usesOwnedOfficialReference ? "xtts-rvc" : "auto",
         audioFormat: "mp3",
         responseFormat: "mp3",
         latencyMode: "interactive",
         vocalMode,
-        voiceConversion: false,
+        voiceConversion: usesOwnedOfficialReference,
+        convertVoice: usesOwnedOfficialReference,
+        morphVoice: usesOwnedOfficialReference,
+        rvc: usesOwnedOfficialReference,
         useDefaultVoiceReference: true,
         defaultVoiceReference: true,
-        voiceReferenceRequired: false,
-        referenceVoiceRequired: false,
-        allowBrowserSpeechFallback: true,
+        usePersonaVoiceReference: usesOwnedOfficialReference,
+        voiceReferenceRequired: usesOwnedOfficialReference,
+        referenceVoiceRequired: usesOwnedOfficialReference,
+        allowRvc: usesOwnedOfficialReference,
+        allowXttsRvc: usesOwnedOfficialReference,
+        allowLegacyVoiceBridge: usesOwnedOfficialReference,
+        xttsRvcOptIn: usesOwnedOfficialReference,
+        allowBrowserSpeechFallback: !usesOwnedOfficialReference,
         ...(targetSurface === "vivy" ? getVivyVoiceTuning(vocalMode) : {}),
         ...(extraOptions || {}),
       };

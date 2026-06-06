@@ -578,6 +578,106 @@ export function retryPlayUrl(url: string): void {
   });
 }
 
+// --- Capture audio brute du micro pour apprentissage voix opt-in ---
+export type MicAudioCaptureResult = {
+  blob: Blob;
+  mimeType: string;
+  durationMs: number;
+};
+
+let micCaptureStream: MediaStream | null = null;
+let micCaptureRecorder: MediaRecorder | null = null;
+let micCaptureChunks: BlobPart[] = [];
+let micCaptureStartedAt = 0;
+let micCaptureStopPromise: Promise<MicAudioCaptureResult | null> | null = null;
+
+function pickMicCaptureMimeType() {
+  const recorderCtor = (globalThis as any)?.MediaRecorder;
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+  ];
+  if (!recorderCtor?.isTypeSupported) return '';
+  return candidates.find((candidate) => recorderCtor.isTypeSupported(candidate)) || '';
+}
+
+function stopMicCaptureTracks() {
+  try {
+    micCaptureStream?.getTracks?.().forEach((track) => track.stop());
+  } catch {
+    // Best effort: the browser may already have released the stream.
+  }
+  micCaptureStream = null;
+}
+
+export async function startMicAudioCapture(): Promise<void> {
+  if (micCaptureRecorder?.state === 'recording') return;
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    throw new Error('MediaRecorder not available');
+  }
+
+  if (micCaptureRecorder) {
+    try { micCaptureRecorder.stop(); } catch {}
+    micCaptureRecorder = null;
+  }
+  stopMicCaptureTracks();
+
+  micCaptureChunks = [];
+  micCaptureStartedAt = Date.now();
+  micCaptureStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+  const mimeType = pickMicCaptureMimeType();
+  micCaptureRecorder = mimeType
+    ? new MediaRecorder(micCaptureStream, { mimeType })
+    : new MediaRecorder(micCaptureStream);
+  micCaptureRecorder.ondataavailable = (event) => {
+    if (event.data?.size) micCaptureChunks.push(event.data);
+  };
+  micCaptureRecorder.start(1000);
+}
+
+export function stopMicAudioCapture(): Promise<MicAudioCaptureResult | null> {
+  if (micCaptureStopPromise) return micCaptureStopPromise;
+  const recorder = micCaptureRecorder;
+  if (!recorder) {
+    stopMicCaptureTracks();
+    return Promise.resolve(null);
+  }
+
+  micCaptureStopPromise = new Promise((resolve) => {
+    const finish = () => {
+      const mimeType = recorder.mimeType || pickMicCaptureMimeType() || 'audio/webm';
+      const durationMs = Math.max(0, Date.now() - micCaptureStartedAt);
+      const blob = micCaptureChunks.length ? new Blob(micCaptureChunks, { type: mimeType }) : null;
+      micCaptureChunks = [];
+      micCaptureRecorder = null;
+      micCaptureStartedAt = 0;
+      stopMicCaptureTracks();
+      micCaptureStopPromise = null;
+      resolve(blob?.size ? { blob, mimeType, durationMs } : null);
+    };
+
+    recorder.onstop = finish;
+    recorder.onerror = () => finish();
+    try {
+      if (recorder.state !== 'inactive') recorder.stop();
+      else finish();
+    } catch {
+      finish();
+    }
+  });
+
+  return micCaptureStopPromise;
+}
+
 // --- Reconnaissance vocale (Web Speech API) ---
 let recognition: any = null;
 let recognitionCallback: ((txt: string, isFinal?: boolean) => void) | null = null;

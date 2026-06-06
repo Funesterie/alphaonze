@@ -6213,6 +6213,15 @@ try {
   console.warn('[Server] STT routes unavailable:', e.message);
 }
 
+// === Voice learning — capture audio consentie pour les voix officielles ===
+try {
+  const createVoiceLearningRouter = require('./src/routes/voice-learning.cjs');
+  app.use('/api', createVoiceLearningRouter({ verifyJWT }));
+  console.log('[Server] Voice learning routes mounted under /api/voice-learning');
+} catch (e) {
+  console.warn('[Server] Voice learning routes unavailable:', e.message);
+}
+
 // === Async SD job queue (pour Space HF / clients avec timeout court) ===
 const _sdJobQueue = new Map();
 app.post('/api/jobs/sd', express.json({ limit: '2mb' }), verifyJWT, requireSubscription, async (req, res) => {
