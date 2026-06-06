@@ -12,6 +12,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 - Si une reponse courte manque de matiere, je ne remplis pas avec de la meta-conversation: j'utilise seulement le contexte autorise du compte courant quand il aide vraiment.
 `.trim();
 const A11_OFFICIAL_VOICE_AUDIO_URL = '/api/tts/official/a11/audio';
+const KAEN44_OFFICIAL_VOICE_AUDIO_URL = '/api/tts/official/kaen44/audio';
 
 function normalizeText(value = '') {
   return String(value || '').replace(/\r\n/g, '\n').trim();
@@ -212,8 +213,19 @@ function repairOfficialVoiceListenLinks(text = '') {
   const input = normalizeText(text);
   if (!input) return input;
   const folded = foldText(input);
-  if (!/(a11|voix officielle|a11-official-stern-french|extrait de ma voix|belle voix)/.test(folded)) {
+  if (!/(a11|kaen44|k44|voix officielle|a11-official-stern-french|kaen44-official-french-narrator|extrait de ma voix|belle voix)/.test(folded)) {
     return input;
+  }
+
+  if (/(kaen44|k44|kaen44-official-french-narrator)/.test(folded)) {
+    let output = input.replace(
+      /\[([^\]]*(?:Kaen44|K44|kaen44|k44|voix officielle|Voix officielle|voix de Kaen44|voix de K44)[^\]]*)\]\((?!\/api\/tts\/official\/kaen44\/audio\))[^)]*\)/g,
+      `[$1](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`
+    );
+    if (!output.includes(KAEN44_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|kaen44-official-french-narrator)/i.test(input)) {
+      output = `${output}\n\n[Écouter Kaen44 – voix officielle](${KAEN44_OFFICIAL_VOICE_AUDIO_URL})`;
+    }
+    return output;
   }
 
   let output = input.replace(
@@ -278,7 +290,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
-    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est la référence WAV Djeff a11-official-stern-french via XTTS/RVC quand elle est disponible; si tu entends Cartesia, ElevenLabs ou une voix féminine, c'est un mauvais routage ou un fallback, pas la voix officielle A11.";
+    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est la référence WAV Djeff a11-official-stern-french via XTTS/RVC. Pour Kaen44, c'est le WAV familial kaen44-official-french-narrator via XTTS/RVC. Si tu entends Cartesia, ElevenLabs, Donna ou une voix hors persona, c'est un mauvais routage ou un fallback.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {

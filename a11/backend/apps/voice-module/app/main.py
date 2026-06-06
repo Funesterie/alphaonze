@@ -104,7 +104,12 @@ def preferred_reference_names(persona: str, mode: str) -> list[str]:
             "a11-terminator-context.wav",
         ]
     if persona == "kaen44":
-        return ["kaen44-donna.wav", "kaen44-donna-extra.wav", "kaen44-donna-context.wav"]
+        return [
+            "kaen44-official-french-narrator.wav",
+            "kaen44-donna.wav",
+            "kaen44-donna-extra.wav",
+            "kaen44-donna-context.wav",
+        ]
     if persona == "vivy":
         if mode == "sing":
             return ["vivy.wav", "vivy-song-context.wav", "vivy-pv-context.wav", "vivy-adaptive.wav"]
@@ -425,10 +430,12 @@ def infer_reference_style(reference_file: Optional[Path]) -> str:
     key = str(reference_file.name if reference_file else "").lower()
     if "a11-official-stern-french" in key or ("a11" in key and "official" in key):
         return "a11-official-stern-french"
+    if "kaen44-official-french-narrator" in key or (("kaen44" in key or "k44" in key) and "official" in key):
+        return "kaen44-official-french-narrator"
     if "terminator" in key or "a11" in key:
         return "terminator"
     if "donna" in key or "kaen44" in key or "k44" in key:
-        return "donna"
+        return "kaen44-official-french-narrator"
     if "vivy" in key:
         return "vivy"
     return ""
@@ -480,11 +487,13 @@ def xtts_rvc_env_name(reference_style: str, kind: Literal["voice", "rvc"]) -> st
         if value:
             return value
     default_voice = {
+        "kaen44-official-french-narrator": "kaen44-official-french-narrator.wav",
         "terminator": "a11-terminator.wav",
         "donna": "kaen44-donna.wav",
         "vivy": "vivy.wav",
     }
     default_rvc = {
+        "kaen44-official-french-narrator": "",
         "terminator": "a11-terminator.pth",
         "donna": "kaen44-donna.pth",
         "vivy": "vivy.pth",

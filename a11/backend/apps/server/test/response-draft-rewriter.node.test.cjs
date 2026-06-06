@@ -88,6 +88,7 @@ test('response draft corrects A11 voice module denial', () => {
   assert.deepEqual(processed.draft.flags, ['voice_capability_denial']);
   assert.match(processed.content, /module TTS|backend Funesterie/i);
   assert.match(processed.content, /WAV Djeff|a11-official-stern-french|XTTS\/RVC/i);
+  assert.match(processed.content, /kaen44-official-french-narrator/i);
   assert.doesNotMatch(processed.content, /tout se passe en texte/i);
 });
 
@@ -108,6 +109,15 @@ test('official voice link repair adds a real link when the model only names the 
   );
 
   assert.match(repaired, /\[Écouter A11 – voix officielle\]\(\/api\/tts\/official\/a11\/audio\)/);
+});
+
+test('official voice link repair routes Kaen44 voice links to the Kaen44 sample', () => {
+  const repaired = repairOfficialVoiceListenLinks(
+    'Voici ma voix: [Écouter Kaen44 – voix officielle](https://k44.funesterie.me/cockpit). kaen44-official-french-narrator.wav.'
+  );
+
+  assert.match(repaired, /\[Écouter Kaen44 – voix officielle\]\(\/api\/tts\/official\/kaen44\/audio\)/);
+  assert.doesNotMatch(repaired, /k44\.funesterie\.me\/cockpit/i);
 });
 
 test('response draft blocks visible draft placeholders', () => {

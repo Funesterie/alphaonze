@@ -28,6 +28,7 @@ test('/api/chat system prompt always carries A11 NOSSEN identity', () => {
   assert.match(prompt, /dernier message utilisateur|dernier message visible/i);
   assert.match(prompt, /actually verified facts|faits.*incertains|verifie/i);
   assert.match(prompt, /a11-official-stern-french/i);
+  assert.match(prompt, /kaen44-official-french-narrator/i);
   assert.match(prompt, /module voix Funesterie/i);
 });
 
@@ -59,6 +60,7 @@ test('/api/chat Kaen44 surface pins first-person identity away from A11', () => 
   assert.match(prompt, /copilote de bureau Funesterie/i);
   assert.match(prompt, /je ne reponds pas comme "A11"/i);
   assert.match(prompt, /je n utilise pas "we"/i);
+  assert.match(prompt, /kaen44-official-french-narrator/i);
   assert.doesNotMatch(prompt, /ma surface client est Kaen44/i);
 });
 

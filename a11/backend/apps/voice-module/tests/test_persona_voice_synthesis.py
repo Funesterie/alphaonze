@@ -109,7 +109,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
         self.assertEqual(payload["voiceReference"]["label"], "a11-official-stern-french.wav")
         self.assertEqual(payload["voiceConversion"]["voiceStyle"], "a11-official-stern-french")
 
-    def test_official_persona_synthesis_uses_local_reference_voice(self):
+    def test_kaen44_official_persona_synthesis_uses_owned_family_reference_voice(self):
         previous_library = os.environ.get("A11_VOICE_LIBRARY_DIR")
         previous_out_dir = main.OUT_DIR
         previous_run_piper = main.run_piper
@@ -123,6 +123,7 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
             library.mkdir()
             out_dir.mkdir()
             write_wav(library / "kaen44-donna.wav")
+            write_wav(library / "kaen44-official-french-narrator.wav")
             main.OUT_DIR = out_dir
             os.environ["A11_VOICE_LIBRARY_DIR"] = str(library)
 
@@ -134,9 +135,9 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
                 raise AssertionError("espeak should not run when piper succeeds")
 
             def fake_morph(generated_file, reference_file, out_file, mode, strength, f0_shift):
-                self.assertEqual(reference_file.name, "kaen44-donna.wav")
+                self.assertEqual(reference_file.name, "kaen44-official-french-narrator.wav")
                 write_wav(out_file)
-                return {"provider": "ffmpeg-morph", "engine": "test-morph", "voiceStyle": "donna"}
+                return {"provider": "ffmpeg-morph", "engine": "test-morph", "voiceStyle": "kaen44-official-french-narrator"}
 
             main.run_piper = fake_piper
             main.run_espeak = fake_espeak
@@ -165,7 +166,8 @@ class PersonaVoiceSynthesisTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["providerCapabilities"]["referenceVoice"], True)
         self.assertEqual(payload["voiceConversion"]["ok"], True)
-        self.assertEqual(payload["voiceReference"]["label"], "kaen44-donna.wav")
+        self.assertEqual(payload["voiceReference"]["label"], "kaen44-official-french-narrator.wav")
+        self.assertEqual(payload["voiceConversion"]["voiceStyle"], "kaen44-official-french-narrator")
         self.assertEqual(payload["via"], "a11-voice-module-persona")
 
 
