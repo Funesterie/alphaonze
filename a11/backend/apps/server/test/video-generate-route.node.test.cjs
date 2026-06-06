@@ -111,6 +111,250 @@ test('video generate router proxies requests when A11_VIDEO_PROXY_URL is configu
   }
 });
 
+test('video generate router forwards personal session provider tokens to the proxy without leaking them', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    A11_VIDEO_PROXY_TIMEOUT_MS: process.env.A11_VIDEO_PROXY_TIMEOUT_MS,
+    A11_VIDEO_PROXY_TOKEN: process.env.A11_VIDEO_PROXY_TOKEN,
+    A11_VIDEO_BRIDGE_TOKEN: process.env.A11_VIDEO_BRIDGE_TOKEN,
+    VIDEO_PROXY_TOKEN: process.env.VIDEO_PROXY_TOKEN,
+  };
+
+  let receivedHeaders = null;
+  const proxyServer = http.createServer((req, res) => {
+    receivedHeaders = req.headers || {};
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        tool: 'generate_video',
+        video_url: 'https://video.example.com/session-provider.mp4',
+      }));
+    });
+  });
+
+  await new Promise((resolve) => proxyServer.listen(0, '127.0.0.1', resolve));
+  const address = proxyServer.address();
+  process.env.A11_VIDEO_PROXY_URL = `http://127.0.0.1:${address.port}/api/tools/generate_video`;
+  process.env.A11_VIDEO_PROXY_TIMEOUT_MS = '30000';
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when proxy is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-Video-Provider': 'runcomfy',
+        'X-A11-RunComfy-Key': 'session-runcomfy-secret',
+        'X-A11-HF-Video-Key': 'session-hf-secret',
+      },
+      body: JSON.stringify({
+        prompt: 'vivy roule dans une cite cyberpunk magenta',
+        durationSeconds: 6,
+      }),
+    });
+    const payload = await response.json();
+    const serializedPayload = JSON.stringify(payload);
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(receivedHeaders?.['x-a11-runcomfy-key'], 'session-runcomfy-secret');
+    assert.equal(receivedHeaders?.['x-runcomfy-api-key'], 'session-runcomfy-secret');
+    assert.equal(receivedHeaders?.['x-a11-hf-video-key'], 'session-hf-secret');
+    assert.equal(receivedHeaders?.['x-huggingface-token'], 'session-hf-secret');
+    assert.doesNotMatch(serializedPayload, /session-runcomfy-secret/);
+    assert.doesNotMatch(serializedPayload, /session-hf-secret/);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await new Promise((resolve) => proxyServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router can use Grok Imagine xAI with a personal session key', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_XAI_BASE_URL: process.env.A11_XAI_BASE_URL,
+    A11_XAI_VIDEO_MODEL: process.env.A11_XAI_VIDEO_MODEL,
+    A11_XAI_VIDEO_TIMEOUT_MS: process.env.A11_XAI_VIDEO_TIMEOUT_MS,
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,
+    A11_ENABLE_HUGGINGFACE_VIDEO: process.env.A11_ENABLE_HUGGINGFACE_VIDEO,
+    A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    HF_TOKEN: process.env.HF_TOKEN,
+  };
+  const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-xai-video-'));
+  const calls = [];
+  process.env.A11_RUNTIME_ROOT = tempRoot;
+  process.env.A11_XAI_BASE_URL = 'https://api.x.ai/v1';
+  process.env.A11_XAI_VIDEO_MODEL = 'grok-imagine-video';
+  process.env.A11_XAI_VIDEO_TIMEOUT_MS = '30000';
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  delete process.env.A11_ENABLE_HF_VIDEO;
+  delete process.env.A11_ENABLE_HUGGINGFACE_VIDEO;
+  delete process.env.A11_HF_VIDEO_TOKEN;
+  delete process.env.HF_TOKEN;
+
+  const fakeFetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url).endsWith('/videos/generations')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        arrayBuffer: async () => Buffer.from(JSON.stringify({
+          video_url: 'https://cdn.x.ai/demo-vivy.mp4',
+        })),
+      };
+    }
+    if (String(url) === 'https://cdn.x.ai/demo-vivy.mp4') {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'video/mp4' },
+        arrayBuffer: async () => Buffer.from('fake-mp4-payload'),
+      };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    uploadBufferToR2: async ({ filename, buffer }) => ({
+      filename,
+      storageKey: `tests/${filename}`,
+      url: `https://r2.example.com/tests/${filename}`,
+      sizeBytes: buffer.length,
+    }),
+    generateVideo: async () => {
+      throw new Error('local generator should not be called for xAI session video');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-Video-Provider': 'xai',
+        'X-A11-XAI-Key': 'session-xai-secret',
+      },
+      body: JSON.stringify({
+        prompt: 'Vivy passe en hypervitesse dans une cite cyberpunk magenta.',
+        durationSeconds: 6,
+      }),
+    });
+    const payload = await response.json();
+    const serializedPayload = JSON.stringify(payload);
+    const generationCall = calls.find((call) => call.url.endsWith('/videos/generations'));
+    const postedBody = JSON.parse(generationCall?.init?.body || '{}');
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.backend, 'xai-video');
+    assert.equal(payload.provider, 'xai');
+    assert.match(payload.video_url, /^https:\/\/r2\.example\.com\/tests\/a11-xai-video-/);
+    assert.equal(generationCall?.init?.headers?.Authorization, 'Bearer session-xai-secret');
+    assert.equal(postedBody.model, 'grok-imagine-video');
+    assert.equal(postedBody.duration, 6);
+    assert.doesNotMatch(serializedPayload, /session-xai-secret/);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router blocks server-paid xAI video without an authenticated premium tier', async () => {
+  const previousEnv = {
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_VIDEO_LOCAL_RUNNER_URL: process.env.A11_VIDEO_LOCAL_RUNNER_URL,
+    A11_ENABLE_XAI_VIDEO: process.env.A11_ENABLE_XAI_VIDEO,
+    A11_XAI_VIDEO_TOKEN: process.env.A11_XAI_VIDEO_TOKEN,
+    A11_XAI_BASE_URL: process.env.A11_XAI_BASE_URL,
+  };
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+  delete process.env.A11_VIDEO_LOCAL_RUNNER_URL;
+  process.env.A11_ENABLE_XAI_VIDEO = '1';
+  process.env.A11_XAI_VIDEO_TOKEN = 'server-paid-xai-secret';
+  process.env.A11_XAI_BASE_URL = 'https://api.x.ai/v1';
+  let fetchCalled = false;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: async () => {
+      fetchCalled = true;
+      throw new Error('xAI server credit should not be called without an authenticated premium tier');
+    },
+    generateVideo: async () => {
+      throw new Error('local generator should not be called for a strict xAI provider request');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-A11-Video-Provider': 'xai',
+      },
+      body: JSON.stringify({
+        prompt: 'Vivy roule en hypervitesse dans la cite magenta.',
+        durationSeconds: 6,
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 402);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, 'paid_video_demo_required');
+    assert.equal(payload.provider, 'xai');
+    assert.equal(fetchCalled, false);
+    assert.doesNotMatch(JSON.stringify(payload), /server-paid-xai-secret/);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('video generate router can proxy through the local video runner env', async () => {
   const previousEnv = {
     A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
@@ -444,6 +688,10 @@ test('video generate router uses Hugging Face video when enabled', async () => {
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));
+  app.use((req, _res, next) => {
+    req.user = { id: 'premium-video-test', email: 'premium-video@example.com', tier: 'premium' };
+    next();
+  });
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     fetch: fakeFetch,
     uploadBufferToR2: async () => {
@@ -561,6 +809,10 @@ test('video generate router follows Hugging Face fal queue responses', async () 
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));
+  app.use((req, _res, next) => {
+    req.user = { id: 'premium-video-test', email: 'premium-video@example.com', tier: 'premium' };
+    next();
+  });
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     fetch: fakeFetch,
     uploadBufferToR2: async () => {
@@ -670,6 +922,10 @@ test('video generate router follows Hugging Face replicate predictions', async (
 
   const app = express();
   app.use(express.json({ limit: '4mb' }));
+  app.use((req, _res, next) => {
+    req.user = { id: 'premium-video-test', email: 'premium-video@example.com', tier: 'premium' };
+    next();
+  });
   app.use('/api', videoGenerateModule.createVideoGenerateRouter({
     fetch: fakeFetch,
     uploadBufferToR2: async () => {

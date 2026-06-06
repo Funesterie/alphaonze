@@ -1,6 +1,8 @@
 // --- Génération d'image via backend DALL·E ---
 type A11GenerationSourceOptions = {
   sourceImageUrl?: string | null;
+  provider?: string;
+  videoProvider?: string;
   width?: number;
   height?: number;
   steps?: number;
@@ -18,6 +20,68 @@ type A11GenerationSourceOptions = {
   pollIntervalMs?: number;
   maxWaitMs?: number;
 };
+
+const FUNESTERIE_SESSION_APP_TOKEN_STORAGE_KEY = "funesterie:session-app-tokens:v1";
+
+function readSessionAppTokenMapForApi(): Record<string, string> {
+  try {
+    const storage = (globalThis as any)?.sessionStorage;
+    if (!storage?.getItem) return {};
+    const parsed = JSON.parse(storage.getItem(FUNESTERIE_SESSION_APP_TOKEN_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, value]) => [String(key).trim().toLowerCase(), String(value || "").trim()])
+        .filter(([key, value]) => Boolean(key && value))
+    );
+  } catch {
+    return {};
+  }
+}
+
+function normalizeVideoProviderName(value = "") {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+  if (["grok", "grok-imagine", "xai", "x-ai"].includes(normalized)) return "xai";
+  if (["hf", "hugging-face", "huggingface"].includes(normalized)) return "huggingface";
+  if (["run-comfy", "runcomfy", "comfy", "comfyui", "comfy-ui"].includes(normalized)) return "runcomfy";
+  return normalized;
+}
+
+function resolveSessionVideoProvider(tokens: Record<string, string>, requestedProvider = "") {
+  const requested = normalizeVideoProviderName(requestedProvider);
+  if (requested) return requested;
+  if (tokens.xai || tokens.grok) return "xai";
+  if (tokens.huggingface || tokens.hf) return "huggingface";
+  if (tokens.runcomfy || tokens.comfy) return "runcomfy";
+  if (tokens.replicate) return "replicate";
+  return "";
+}
+
+function buildSessionVideoProviderHeaders(requestedProvider = "") {
+  const tokens = readSessionAppTokenMapForApi();
+  const provider = resolveSessionVideoProvider(tokens, requestedProvider);
+  const headers: Record<string, string> = {};
+  if (provider) headers["X-A11-Video-Provider"] = provider;
+  const xaiToken = tokens.xai || tokens.grok;
+  if (xaiToken) {
+    headers["X-A11-XAI-Key"] = xaiToken;
+    headers["X-A11-Grok-Key"] = xaiToken;
+    headers["X-XAI-API-Key"] = xaiToken;
+  }
+  const hfToken = tokens.huggingface || tokens.hf;
+  if (hfToken) {
+    headers["X-A11-HF-Video-Key"] = hfToken;
+    headers["X-HuggingFace-Token"] = hfToken;
+  }
+  const runComfyToken = tokens.runcomfy || tokens.comfy;
+  if (runComfyToken) {
+    headers["X-A11-RunComfy-Key"] = runComfyToken;
+    headers["X-RunComfy-API-Key"] = runComfyToken;
+  }
+  if (tokens.civitai) headers["X-A11-Civitai-Key"] = tokens.civitai;
+  if (tokens.replicate) headers["X-A11-Replicate-Key"] = tokens.replicate;
+  return { provider, headers };
+}
 
 function isMobileLongTaskClient() {
   try {
@@ -137,6 +201,8 @@ export async function generateVideoWithPrompt(
   const height = resolvePositiveNumber(options.height);
   const sdSteps = resolvePositiveNumber(options.sdSteps, options.steps);
   const guidanceScale = resolvePositiveNumber(options.guidanceScale);
+  const requestedProvider = normalizeVideoProviderName(options.videoProvider || options.provider || "");
+  const sessionVideoAuth = buildSessionVideoProviderHeaders(requestedProvider);
   const hasManualTiming = Boolean(durationSeconds || fps || frameCount);
   const mobileAsync = options.mobileAsync ?? isMobileLongTaskClient();
   const maxWaitMs = Math.max(
@@ -159,6 +225,7 @@ export async function generateVideoWithPrompt(
     pollIntervalMs,
     maxWaitMs,
   };
+  if (sessionVideoAuth.provider) body.videoProvider = sessionVideoAuth.provider;
   if (durationSeconds) body.durationSeconds = durationSeconds;
   if (fps) body.fps = fps;
   if (frameCount) body.frameCount = frameCount;
@@ -171,7 +238,7 @@ export async function generateVideoWithPrompt(
   return withMobileLongTaskGuard(maxWaitMs, async () => {
     const res = await fetch(getApiUrl('/api/video/generate'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...sessionVideoAuth.headers },
       body: JSON.stringify(body)
     });
     let data: any = {};

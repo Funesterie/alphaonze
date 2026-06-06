@@ -56,20 +56,23 @@ function clampInteger(value, min, max, fallback) {
   return Math.max(min, Math.min(max, Math.round(numeric)));
 }
 
-function resolveHuggingFaceVideoConfig(env = process.env) {
-  const enabled = isHuggingFaceVideoEnabled(env);
-  const provider = normalizeProvider(env.A11_HF_VIDEO_PROVIDER || env.A11_HUGGINGFACE_VIDEO_PROVIDER || 'fal-ai');
+function resolveHuggingFaceVideoConfig(env = process.env, overrides = {}) {
+  const overrideToken = String(overrides.token || overrides.tokenOverride || '').trim();
+  const enabled = Boolean(overrides.enabled) || Boolean(overrideToken) || isHuggingFaceVideoEnabled(env);
+  const provider = normalizeProvider(overrides.provider || env.A11_HF_VIDEO_PROVIDER || env.A11_HUGGINGFACE_VIDEO_PROVIDER || 'fal-ai');
   const model = String(
-    env.A11_HF_VIDEO_MODEL
+    overrides.model
+    || env.A11_HF_VIDEO_MODEL
     || env.A11_HUGGINGFACE_VIDEO_MODEL
     || 'Wan-AI/Wan2.2-TI2V-5B'
   ).trim();
   const endpoint = String(
-    env.A11_HF_VIDEO_ENDPOINT
+    overrides.endpoint
+    || env.A11_HF_VIDEO_ENDPOINT
     || env.A11_HUGGINGFACE_VIDEO_ENDPOINT
     || defaultEndpointForProvider(provider, model)
   ).trim();
-  const token = resolveHuggingFaceVideoToken(env);
+  const token = overrideToken || resolveHuggingFaceVideoToken(env);
   const defaultFrames = clampInteger(env.A11_HF_VIDEO_FRAMES || env.A11_HUGGINGFACE_VIDEO_FRAMES || 16, 4, 121, 16);
   const defaultSteps = clampInteger(env.A11_HF_VIDEO_STEPS || env.A11_HUGGINGFACE_VIDEO_STEPS || 4, 1, 50, 4);
   const timeoutMs = clampInteger(env.A11_HF_VIDEO_TIMEOUT_MS || env.A11_HUGGINGFACE_VIDEO_TIMEOUT_MS || 600000, 1000, 3600000, 600000);
@@ -421,8 +424,13 @@ async function tryGenerateVideoWithHuggingFace({
   req = null,
   fetchImpl = null,
   uploadBufferToR2Impl = uploadBufferToR2,
+  tokenOverride = '',
+  configOverrides = {},
 } = {}) {
-  const config = resolveHuggingFaceVideoConfig();
+  const config = resolveHuggingFaceVideoConfig(process.env, {
+    ...configOverrides,
+    token: tokenOverride || configOverrides.token,
+  });
   if (!config.enabled) {
     return {
       ok: false,

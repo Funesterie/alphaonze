@@ -5898,6 +5898,13 @@ const FUNESTERIE_SESSION_APP_TOKENS: FunesterieSessionAppTokenConfig[] = [
     help: "Prévue pour les générations vidéo cloud quand le PC local n'est pas suffisant.",
   },
   {
+    id: "comfy",
+    label: "Comfy Cloud",
+    scope: "Vidéo cloud",
+    placeholder: "Clé API Comfy Cloud",
+    help: "Utilisée en session pour les workflows Comfy Cloud ou un pont compatible.",
+  },
+  {
     id: "civitai",
     label: "Civitai",
     scope: "Modèles image",
@@ -5910,6 +5917,13 @@ const FUNESTERIE_SESSION_APP_TOKENS: FunesterieSessionAppTokenConfig[] = [
     scope: "Modèles IA",
     placeholder: "Jeton Hugging Face",
     help: "Prévu pour jobs, modèles et téléchargements autorisés par le compte utilisateur.",
+  },
+  {
+    id: "xai",
+    label: "Grok / xAI",
+    scope: "Vidéo Grok Imagine",
+    placeholder: "Clé API xAI personnelle",
+    help: "Utilisée uniquement dans cette session pour tester Grok Imagine sans consommer les crédits serveur.",
   },
   {
     id: "replicate",

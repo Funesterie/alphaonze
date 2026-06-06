@@ -5589,6 +5589,11 @@ const verifyJWT = createVerifyJWT({
   authSessionRegistry,
 });
 
+async function optionalVerifyJWT(req, res, next) {
+  if (!extractRequestAuthToken(req)) return next();
+  return verifyJWT(req, res, next);
+}
+
 function requireFamilyAccess(req, res, next) {
   const state = buildCerbereMegaSnapshot({
     user: req?.user || {},
@@ -6197,7 +6202,7 @@ app.use('/api', createChatRouter({
 }));
 
 app.use('/api', sdTools.router);
-app.use('/api', videoTools.router);
+app.use('/api', optionalVerifyJWT, videoTools.router);
 
 // === STT — Speech-to-Text (Whisper via Ollama ou OpenAI) ===
 try {

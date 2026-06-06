@@ -14,6 +14,13 @@ const {
   tryGenerateVideoWithHuggingFace,
   resolveHuggingFaceVideoConfig,
 } = require('../../lib/hf-video.cjs');
+const {
+  tryGenerateVideoWithXai,
+  resolveXaiVideoConfig,
+} = require('../../lib/xai-video.cjs');
+const {
+  resolveMcpAccountProfileSync,
+} = require('../auth/mcp-account-tier.cjs');
 
 function normalizeProxyUrl(rawValue = '') {
   const value = String(rawValue || '').trim();
@@ -28,7 +35,109 @@ function firstConfiguredToken(...values) {
   return '';
 }
 
-function buildAiServiceAuthHeaders() {
+function getRequestHeader(req = null, name = '') {
+  const headers = req?.headers || {};
+  const normalized = String(name || '').trim().toLowerCase();
+  if (!normalized) return '';
+  const value = headers[normalized] ?? headers[name];
+  if (Array.isArray(value)) return String(value.find(Boolean) || '').trim();
+  return String(value || '').trim();
+}
+
+function sanitizeSessionProviderToken(value = '') {
+  const token = String(value || '').trim();
+  if (!token || token.length > 8192) return '';
+  return token;
+}
+
+function resolveSessionVideoTokens(req = null, body = {}) {
+  return {
+    huggingface: sanitizeSessionProviderToken(
+      body.sessionHuggingFaceVideoKey
+      || body.sessionHuggingFaceKey
+      || body.sessionHfVideoKey
+      || body.sessionHfKey
+      || getRequestHeader(req, 'x-a11-hf-video-key')
+      || getRequestHeader(req, 'x-a11-huggingface-key')
+      || getRequestHeader(req, 'x-huggingface-token')
+      || getRequestHeader(req, 'x-hf-token')
+    ),
+    runcomfy: sanitizeSessionProviderToken(
+      body.sessionRunComfyKey
+      || body.sessionRuncomfyKey
+      || body.sessionComfyKey
+      || getRequestHeader(req, 'x-a11-runcomfy-key')
+      || getRequestHeader(req, 'x-runcomfy-api-key')
+      || getRequestHeader(req, 'x-a11-comfy-key')
+      || getRequestHeader(req, 'x-comfy-api-key')
+    ),
+    xai: sanitizeSessionProviderToken(
+      body.sessionXaiKey
+      || body.sessionGrokKey
+      || getRequestHeader(req, 'x-a11-xai-key')
+      || getRequestHeader(req, 'x-a11-grok-key')
+      || getRequestHeader(req, 'x-xai-api-key')
+      || getRequestHeader(req, 'x-grok-api-key')
+    ),
+    civitai: sanitizeSessionProviderToken(
+      body.sessionCivitaiKey
+      || getRequestHeader(req, 'x-a11-civitai-key')
+      || getRequestHeader(req, 'x-civitai-token')
+    ),
+    replicate: sanitizeSessionProviderToken(
+      body.sessionReplicateKey
+      || getRequestHeader(req, 'x-a11-replicate-key')
+      || getRequestHeader(req, 'x-replicate-api-token')
+    ),
+  };
+}
+
+function normalizeVideoProvider(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  if (['grok', 'grok-imagine', 'xai', 'x-ai'].includes(normalized)) return 'xai';
+  if (['hf', 'hugging-face', 'huggingface'].includes(normalized)) return 'huggingface';
+  if (['run-comfy', 'runcomfy', 'comfy', 'comfyui', 'comfy-ui'].includes(normalized)) return 'runcomfy';
+  return normalized;
+}
+
+function resolveRequestedVideoProvider(body = {}, req = null) {
+  return normalizeVideoProvider(
+    body.videoProvider
+    || body.provider
+    || body.video_provider
+    || body.generator
+    || getRequestHeader(req, 'x-a11-video-provider')
+  );
+}
+
+function isXaiVideoProvider(provider = '') {
+  return normalizeVideoProvider(provider) === 'xai';
+}
+
+function isHuggingFaceVideoProvider(provider = '') {
+  return normalizeVideoProvider(provider) === 'huggingface';
+}
+
+function isRunComfyVideoProvider(provider = '') {
+  return normalizeVideoProvider(provider) === 'runcomfy';
+}
+
+function canUseServerPaidVideo(req = null) {
+  if (!req?.user) return false;
+  const profile = resolveMcpAccountProfileSync(req.user || {});
+  return ['premium', 'founder', 'admin_family'].includes(String(profile?.tier || '').trim().toLowerCase());
+}
+
+function buildPaidVideoDeniedPayload(provider = 'video') {
+  return {
+    ok: false,
+    error: 'paid_video_demo_required',
+    message: 'Generation video cloud reservee aux comptes Famille/Premium/Fondateur, sauf si tu ajoutes ta propre cle API dans les reglages de session.',
+    provider,
+  };
+}
+
+function buildAiServiceAuthHeaders(req = null, body = {}) {
   const videoProxyToken = firstConfiguredToken(
     process.env.A11_VIDEO_PROXY_TOKEN,
     process.env.A11_VIDEO_BRIDGE_TOKEN,
@@ -51,6 +160,21 @@ function buildAiServiceAuthHeaders() {
   if (videoProxyToken) headers['x-a11-video-token'] = videoProxyToken;
   if (serviceToken || videoProxyToken) headers['x-nez-token'] = serviceToken || videoProxyToken;
   if (adminToken) headers['x-nez-admin-token'] = adminToken;
+  const sessionTokens = resolveSessionVideoTokens(req, body);
+  if (sessionTokens.runcomfy) {
+    headers['x-a11-runcomfy-key'] = sessionTokens.runcomfy;
+    headers['x-runcomfy-api-key'] = sessionTokens.runcomfy;
+  }
+  if (sessionTokens.huggingface) {
+    headers['x-a11-hf-video-key'] = sessionTokens.huggingface;
+    headers['x-huggingface-token'] = sessionTokens.huggingface;
+  }
+  if (sessionTokens.xai) {
+    headers['x-a11-xai-key'] = sessionTokens.xai;
+    headers['x-xai-api-key'] = sessionTokens.xai;
+  }
+  if (sessionTokens.civitai) headers['x-a11-civitai-key'] = sessionTokens.civitai;
+  if (sessionTokens.replicate) headers['x-a11-replicate-key'] = sessionTokens.replicate;
   return headers;
 }
 
@@ -516,6 +640,17 @@ function buildPublicVideoUrlFromPath(value = '', req = null) {
   return encodedPath ? `${baseUrl}/${encodedPath}` : '';
 }
 
+function isPublicExternalVideoUrl(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    return /^https?:$/i.test(parsed.protocol) && !isLocalishHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function rewriteSdProxyFileUrl(value = '', req = null) {
   const rewrittenFilesUrl = rewritePublicFilesUrl(value, req);
   if (rewrittenFilesUrl && rewrittenFilesUrl !== String(value || '').trim()) return rewrittenFilesUrl;
@@ -542,6 +677,13 @@ function rewriteSdProxyFileUrl(value = '', req = null) {
 
 function firstPublicVideoUrlFromPayload(payload = {}, req = null) {
   const candidates = [
+    payload.url,
+    payload.video_url,
+    payload.videoUrl,
+    payload.download_url,
+    payload.downloadUrl,
+    payload.file_url,
+    payload.fileUrl,
     payload.outputPath,
     payload.output_path,
     payload.local_path,
@@ -550,16 +692,10 @@ function firstPublicVideoUrlFromPayload(payload = {}, req = null) {
     payload.file_path,
     payload.video_path,
     payload.videoPath,
-    payload.url,
-    payload.video_url,
-    payload.videoUrl,
-    payload.download_url,
-    payload.downloadUrl,
-    payload.file_url,
-    payload.fileUrl,
   ];
 
   for (const candidate of candidates) {
+    if (isPublicExternalVideoUrl(candidate)) return String(candidate || '').trim();
     const rewritten = buildPublicVideoUrlFromPath(candidate, req);
     if (rewritten) return rewritten;
   }
@@ -729,7 +865,7 @@ function createVideoGenerateRouter(overrides = {}) {
       const pollResponse = await fetchImpl(pollUrl, {
         method: 'GET',
         headers: {
-          ...buildAiServiceAuthHeaders(),
+          ...buildAiServiceAuthHeaders(req),
         },
         signal: AbortSignal.timeout(Math.min(60_000, Math.max(5_000, pollIntervalMs + 10_000))),
       });
@@ -788,7 +924,7 @@ function createVideoGenerateRouter(overrides = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...buildAiServiceAuthHeaders(),
+        ...buildAiServiceAuthHeaders(req, body),
       },
       body: JSON.stringify(proxyBody),
       signal: AbortSignal.timeout(resolveVideoProxyTimeoutMs()),
@@ -830,44 +966,110 @@ function createVideoGenerateRouter(overrides = {}) {
 
   async function generateVideoInternal(options = {}) {
     const body = options.body || options.req?.body || {};
+    const req = options.req || null;
     const prompt = options.prompt || body.prompt || body.message || '';
+    const requestedProvider = resolveRequestedVideoProvider(body, req);
+    const sessionVideoTokens = resolveSessionVideoTokens(req, body);
     if (shouldUseEmergencyVideoFirst(body)) {
       return createEmergencyVideoAsset({
         prompt,
         body,
-        req: options.req || null,
+        req,
       });
     }
 
-    const proxied = await generateViaProxy({
-      req: options.req || null,
-      body,
-      prompt,
-    });
-    if (proxied) return proxied;
-
-    const hfVideoConfig = resolveHuggingFaceVideoConfig();
-    if (hfVideoConfig.enabled) {
-      const hfResult = await tryGenerateVideoWithHuggingFace({
-        req: options.req || null,
+    const xaiVideoConfig = resolveXaiVideoConfig(process.env, { token: sessionVideoTokens.xai });
+    if (isXaiVideoProvider(requestedProvider) || sessionVideoTokens.xai) {
+      const usesServerToken = Boolean(!sessionVideoTokens.xai && xaiVideoConfig.token);
+      if (usesServerToken && !canUseServerPaidVideo(req)) {
+        const error = new Error('paid_video_demo_required');
+        error.statusCode = 402;
+        error.payload = buildPaidVideoDeniedPayload('xai');
+        throw error;
+      }
+      const xaiResult = await tryGenerateVideoWithXai({
+        req,
         body,
         prompt,
         fetchImpl,
         uploadBufferToR2Impl: overrides.uploadBufferToR2,
+        tokenOverride: sessionVideoTokens.xai,
       });
-      if (hfResult?.ok) return rewriteVideoProxyPayload(hfResult, options.req || null);
-      if (hfVideoConfig.strict) {
-        const error = new Error(hfResult?.message || hfResult?.error || 'hf_video_failed');
-        error.statusCode = hfResult?.statusCode || 502;
-        error.payload = hfResult || {
+      if (xaiResult?.ok) return rewriteVideoProxyPayload(xaiResult, req);
+      if (isXaiVideoProvider(requestedProvider) || xaiVideoConfig.strict) {
+        const error = new Error(xaiResult?.message || xaiResult?.error || 'xai_video_failed');
+        error.statusCode = xaiResult?.statusCode || 502;
+        error.payload = xaiResult || {
           ok: false,
-          error: 'hf_video_failed',
-          message: 'hf_video_failed',
+          error: 'xai_video_failed',
+          message: 'xai_video_failed',
         };
         throw error;
       }
-      console.warn('[A11][video-route] Hugging Face video unavailable, falling back:', String(hfResult?.message || hfResult?.error || 'unknown'));
+      console.warn('[A11][video-route] xAI video unavailable, falling back:', String(xaiResult?.message || xaiResult?.error || 'unknown'));
     }
+
+    if (isRunComfyVideoProvider(requestedProvider) && !resolveVideoProxyUrl()) {
+      const error = new Error('runcomfy_proxy_missing');
+      error.statusCode = 424;
+      error.payload = {
+        ok: false,
+        error: 'runcomfy_proxy_missing',
+        message: 'RunComfy/Comfy demande une URL proxy A11_VIDEO_PROXY_URL ou A11_VIDEO_LOCAL_RUNNER_URL.',
+        provider: 'runcomfy',
+      };
+      throw error;
+    }
+
+    if (!isHuggingFaceVideoProvider(requestedProvider) && !isXaiVideoProvider(requestedProvider)) {
+      const proxied = await generateViaProxy({
+        req,
+        body,
+        prompt,
+      });
+      if (proxied) return proxied;
+    }
+
+    const hfVideoConfig = resolveHuggingFaceVideoConfig(process.env, { token: sessionVideoTokens.huggingface });
+    if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.enabled) {
+      const usesServerToken = Boolean(!sessionVideoTokens.huggingface && hfVideoConfig.token);
+      if (usesServerToken && !canUseServerPaidVideo(req)) {
+        if (isHuggingFaceVideoProvider(requestedProvider)) {
+          const error = new Error('paid_video_demo_required');
+          error.statusCode = 402;
+          error.payload = buildPaidVideoDeniedPayload('huggingface');
+          throw error;
+        }
+      } else {
+        const hfResult = await tryGenerateVideoWithHuggingFace({
+          req,
+          body,
+          prompt,
+          fetchImpl,
+          uploadBufferToR2Impl: overrides.uploadBufferToR2,
+          tokenOverride: sessionVideoTokens.huggingface,
+        });
+        if (hfResult?.ok) return rewriteVideoProxyPayload(hfResult, req);
+        if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.strict) {
+          const error = new Error(hfResult?.message || hfResult?.error || 'hf_video_failed');
+          error.statusCode = hfResult?.statusCode || 502;
+          error.payload = hfResult || {
+            ok: false,
+            error: 'hf_video_failed',
+            message: 'hf_video_failed',
+          };
+          throw error;
+        }
+        console.warn('[A11][video-route] Hugging Face video unavailable, falling back:', String(hfResult?.message || hfResult?.error || 'unknown'));
+      }
+    }
+
+    const proxied = await generateViaProxy({
+      req,
+      body,
+      prompt,
+    });
+    if (proxied) return proxied;
 
     try {
       return await localGenerateVideoInternal(options);
@@ -877,7 +1079,7 @@ function createVideoGenerateRouter(overrides = {}) {
       return createEmergencyVideoAsset({
         prompt,
         body,
-        req: options.req || null,
+        req,
       });
     }
   }
@@ -985,6 +1187,7 @@ function createVideoGenerateRouter(overrides = {}) {
   router.post('/video/generate', express.json({ limit: '4mb' }), handleGenerate);
   router.post('/tools/generate_video', express.json({ limit: '4mb' }), handleGenerate);
   router.get('/video/health', (_req, res) => {
+    const xaiVideoConfig = resolveXaiVideoConfig();
     res.json({
       ok: true,
       service: 'a11-video',
@@ -992,6 +1195,8 @@ function createVideoGenerateRouter(overrides = {}) {
       huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
       huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
       huggingFaceModel: resolveHuggingFaceVideoConfig().model,
+      xaiConfigured: Boolean(xaiVideoConfig.enabled && xaiVideoConfig.token),
+      xaiModel: xaiVideoConfig.model,
       localWeights: resolveLocalVideoWeightsStatus(),
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       emergencyFallback: shouldFallbackToEmergencyVideo({}),
@@ -999,14 +1204,17 @@ function createVideoGenerateRouter(overrides = {}) {
     });
   });
   router.get('/video/status', (_req, res) => {
+    const xaiVideoConfig = resolveXaiVideoConfig();
     res.json({
       ok: true,
       service: 'a11-video',
-      modes: ['generate', 'async-job', 'emergency-video'],
+      modes: ['generate', 'async-job', 'proxy', 'huggingface', 'xai-grok-imagine', 'emergency-video'],
       proxyConfigured: Boolean(resolveVideoProxyUrl()),
       huggingFaceConfigured: Boolean(resolveHuggingFaceVideoConfig().enabled && resolveHuggingFaceVideoConfig().token),
       huggingFaceProvider: resolveHuggingFaceVideoConfig().provider,
       huggingFaceModel: resolveHuggingFaceVideoConfig().model,
+      xaiConfigured: Boolean(xaiVideoConfig.enabled && xaiVideoConfig.token),
+      xaiModel: xaiVideoConfig.model,
       localWeights: resolveLocalVideoWeightsStatus(),
       emergencyMode: shouldUseEmergencyVideoFirst({}),
       asyncJobs: asyncVideoJobs.size,
