@@ -42,6 +42,12 @@ PERSONA_MANIFEST_PATH = Path(
 ).resolve()
 
 DEFAULT_PERSONA_MANIFEST = {
+    "a11-official-stern-french": {
+        "persona": "a11",
+        "voice": "a11-official-stern-french.wav",
+        "rvc": "",
+        "index": "",
+    },
     "terminator": {
         "persona": "a11",
         "voice": "a11-terminator.wav",
@@ -100,13 +106,25 @@ def ensure_models() -> None:
 
 def normalize_style(value: str) -> str:
     key = (value or "").strip().lower()
-    if key in {"a11", "terminator", "robot", "robotique"}:
+    if key in {
+        "a11",
+        "alpha",
+        "alphaonze",
+        "a11-official",
+        "a11-official-stern-french",
+        "official-a11",
+        "official",
+        "djeff",
+        "djeff-a11",
+    }:
+        return "a11-official-stern-french"
+    if key in {"terminator", "robot", "robotique"}:
         return "terminator"
     if key in {"k44", "kaen44", "kaen", "donna"}:
         return "donna"
     if key == "vivy":
         return "vivy"
-    return "terminator"
+    return "a11-official-stern-french"
 
 
 def resolve_style(persona: str = "", voice_style: str = "") -> str:
@@ -115,7 +133,7 @@ def resolve_style(persona: str = "", voice_style: str = "") -> str:
     if raw_style in {"", "default", "voice", "speech", "song", "sing", "chant", "music", "musique"}:
         return persona_style
     style = normalize_style(raw_style)
-    if style == "terminator" and persona_style != "terminator" and raw_style not in {"a11", "terminator", "robot", "robotique"}:
+    if style == "terminator" and persona_style != "terminator" and raw_style not in {"terminator", "robot", "robotique"}:
         return persona_style
     return style
 
@@ -193,7 +211,7 @@ def resolve_persona_binding(style: str) -> dict:
     voice_name = env_name(style, "voice")
     rvc_name = env_name(style, "rvc")
     voice_path = resolve_data_path(VOICES_DIR, voice_name)
-    rvc_path = resolve_data_path(RVCS_DIR, rvc_name)
+    rvc_path = resolve_data_path(RVCS_DIR, rvc_name) if rvc_name else RVCS_DIR / "__no_rvc_model__.pth"
     index_path = resolve_index_path(style, rvc_path)
     return {
         "persona": entry.get("persona", style),
@@ -203,13 +221,19 @@ def resolve_persona_binding(style: str) -> dict:
         "rvcPath": rvc_path,
         "indexName": index_path.name,
         "indexPath": index_path,
-        "hasVoice": voice_path.exists(),
-        "hasRvc": rvc_path.exists(),
-        "hasIndex": index_path.exists(),
+        "hasVoice": voice_path.is_file(),
+        "hasRvc": rvc_path.is_file(),
+        "hasIndex": index_path.is_file(),
     }
 
 
 STYLE_RVC_TUNING = {
+    "a11-official-stern-french": {
+        "pitch": 0.0,
+        "index_rate": 0.0,
+        "rms_mix_rate": 0.5,
+        "protect": 0.35,
+    },
     "terminator": {
         "pitch": -1.0,
         "index_rate": 0.5,
@@ -426,14 +450,14 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
 
             engine = "xtts-reference"
             tuning = resolve_rvc_tuning(style, f0_shift)
-            if rvc_path.exists():
+            if rvc_path.is_file():
                 run_rvc(
                     xtts_path,
                     final_path,
                     rvc_path,
                     tuning["pitch"],
                     tuning["index_rate"],
-                    index_path=rvc_index_path if rvc_index_path.exists() else None,
+                    index_path=rvc_index_path if rvc_index_path.is_file() else None,
                     rms_mix_rate=tuning["rms_mix_rate"],
                     protect=tuning["protect"],
                 )
@@ -454,8 +478,8 @@ def synthesize_persona_voice(text: str, persona: str = "", voice_style: str = ""
         "engine": engine,
         "rvcPath": rvc_path,
         "rvcIndexPath": rvc_index_path,
-        "hasRvc": rvc_path.exists(),
-        "hasRvcIndex": rvc_index_path.exists(),
+        "hasRvc": rvc_path.is_file(),
+        "hasRvcIndex": rvc_index_path.is_file(),
         "tuning": tuning,
     }
 
@@ -466,7 +490,7 @@ def health():
     rvcs = sorted(item.name for item in RVCS_DIR.glob("*.pth") if item.is_file())
     rvc_indexes = sorted(item.name for item in RVCS_DIR.glob("*.index") if item.is_file())
     styles = {}
-    for style in ("terminator", "donna", "vivy"):
+    for style in ("a11-official-stern-french", "terminator", "donna", "vivy"):
         binding = resolve_persona_binding(style)
         styles[style] = {
             "persona": binding["persona"],
@@ -518,8 +542,8 @@ async def convert_voice(
         headers={
             "X-A11-Voice-Engine": result["engine"],
             "X-A11-Voice-Style": result["style"],
-            "X-A11-RVC-Model": rvc_path.name if rvc_path.exists() else "",
-            "X-A11-RVC-Index": rvc_index_path.name if rvc_index_path.exists() else "",
+            "X-A11-RVC-Model": rvc_path.name if rvc_path.is_file() else "",
+            "X-A11-RVC-Index": rvc_index_path.name if rvc_index_path.is_file() else "",
         },
         background=background_tasks,
     )
@@ -558,8 +582,8 @@ def synthesize_voice(req: SynthesizeRequest):
             "engine": result["engine"],
             "voiceStyle": result["style"],
             "attemptedEngines": [result["engine"]],
-            "rvcModel": rvc_path.name if rvc_path.exists() else "",
-            "rvcIndex": rvc_index_path.name if rvc_index_path.exists() else "",
+            "rvcModel": rvc_path.name if rvc_path.is_file() else "",
+            "rvcIndex": rvc_index_path.name if rvc_index_path.is_file() else "",
             "tuning": result.get("tuning"),
         },
     }
