@@ -667,6 +667,9 @@ function buildProxyUserMessage(error_, fallbackError = 'proxy_error', req = {}, 
   if (/video_engine_unavailable|generateVideo handler unavailable|real_video_unavailable|video_proxy_fetch_unavailable|local video runner|mochi|A11_VIDEO_LOCAL_RUNNER/i.test(summary)) {
     return "Le moteur vidéo local n'est pas encore prêt: le routage est actif, mais le worker de rendu vidéo n'est pas lancé ou pas branché. Les poids locaux sont installés; il faut démarrer le runner vidéo avant de lancer le clip.";
   }
+  if (/hf_(?:replicate|video).*status_401|huggingface.*401|replicate.*401|provider.*401/i.test(summary)) {
+    return "Le fournisseur vidéo/image a refusé l'autorisation de cette demande. Ce n'est pas lié au nombre d'utilisateurs: je ne relance pas en boucle pour éviter de gaspiller des crédits; il faut vérifier le token ou changer de route vidéo.";
+  }
   if (isProxyTransientOverloadError(error_, status)) {
     const tier = resolveProxyAccountTier(req);
     if (tier === 'basic') {

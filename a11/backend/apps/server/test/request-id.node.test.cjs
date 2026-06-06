@@ -195,6 +195,40 @@ test('protected chat proxy sanitizes upstream html timeout pages', async () => {
   );
 });
 
+test('protected chat proxy reports video provider authorization failures without overload wording', async () => {
+  await withServer(
+    (app) => {
+      app.use('/api', createProtectedChatProxyRouter({
+        verifyJWT(_req, _res, next) {
+          next();
+        },
+        proxyChatToOpenAI() {
+          const error = new Error('hf_replicate_status_401');
+          error.status = 502;
+          throw error;
+        },
+        detectImageIntent: () => false,
+        detectWebImageIntent: () => false,
+        generateSd: async () => {
+          throw new Error('should_not_be_called');
+        },
+      }));
+    },
+    async (baseUrl) => {
+      const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+        messages: [{ role: 'user', content: 'hello' }],
+      }, {
+        'X-Request-Id': 'req-proxy-hf-video-401',
+      });
+
+      assert.equal(response.status, 502);
+      assert.equal(json.requestId, 'req-proxy-hf-video-401');
+      assert.match(json.message, /fournisseur vidéo\/image/i);
+      assert.doesNotMatch(json.message, /Basic|surcharg/i);
+    }
+  );
+});
+
 test('admin run returns requestId and upstream diagnostics on remote failures', async () => {
   await withServer(
     (app) => {
