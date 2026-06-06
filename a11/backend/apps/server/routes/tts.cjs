@@ -606,6 +606,10 @@ function normalizeA11OfficialReferenceRequest(body = {}) {
     ...(body || {}),
     provider: PROVIDERS.XTTS_RVC,
     ttsProvider: PROVIDERS.XTTS_RVC,
+    engine: body?.engine || body?.voiceEngine || PROVIDERS.XTTS_RVC,
+    voiceEngine: body?.voiceEngine || body?.engine || PROVIDERS.XTTS_RVC,
+    voiceConversionEngine: body?.voiceConversionEngine || body?.conversionEngine || PROVIDERS.XTTS_RVC,
+    conversionEngine: body?.conversionEngine || body?.voiceConversionEngine || PROVIDERS.XTTS_RVC,
     voice: body?.voice || piperVoice,
     model: body?.model || piperVoice,
     piperVoice,
@@ -646,6 +650,10 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
       ...(body || {}),
       provider: PROVIDERS.PIPER,
       ttsProvider: PROVIDERS.PIPER,
+      engine: body?.engine || body?.voiceEngine || PROVIDERS.XTTS_RVC,
+      voiceEngine: body?.voiceEngine || body?.engine || PROVIDERS.XTTS_RVC,
+      voiceConversionEngine: body?.voiceConversionEngine || body?.conversionEngine || PROVIDERS.XTTS_RVC,
+      conversionEngine: body?.conversionEngine || body?.voiceConversionEngine || PROVIDERS.XTTS_RVC,
       voice: body?.voice || piperVoice,
       model: body?.model || piperVoice,
       piperVoice,
@@ -1705,6 +1713,24 @@ function isReferenceAwareTtsPayload(payload = {}) {
   return false;
 }
 
+function isFfmpegMorphVoicePayload(payload = {}) {
+  const conversion = payload?.voiceConversion || {};
+  const values = [
+    payload?.provider,
+    payload?.engine,
+    conversion?.provider,
+    conversion?.engine,
+    ...(Array.isArray(conversion?.attemptedEngines) ? conversion.attemptedEngines : []),
+    ...(Array.isArray(payload?.attemptedEngines) ? payload.attemptedEngines : []),
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+  return values.some((value) => ['ffmpeg', 'ffmpeg-morph', 'morph'].includes(value));
+}
+
+function isOfficialA11ReferenceRequest(req = {}) {
+  const body = req?.body || req || {};
+  return getTtsPersonaFromBody(body, '') === 'a11' && shouldUseA11OfficialReferenceVoice(body);
+}
+
 function buildReferenceVoiceUnavailablePayload(payload = {}) {
   return {
     ok: false,
@@ -2496,6 +2522,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       form.append('voiceStyle', voiceStyle);
       form.append('styleInstruction', buildVoicePersonaInstruction(persona));
       form.append('mode', vocalMode || 'adaptive');
+      form.append('engine', String(body?.voiceConversionEngine || body?.conversionEngine || body?.engine || body?.voiceEngine || 'auto').trim() || 'auto');
       form.append('audioFormat', audioFormat);
       if (conversionStrength !== undefined) {
         form.append('strength', String(conversionStrength));
@@ -3885,6 +3912,16 @@ async function handleTtsSpeakRequest(req, res) {
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
       const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
+      if (isOfficialA11ReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
+        return res.status(424).json({
+          ok: false,
+          error: 'voice_reference_tts_unavailable',
+          message: 'Voix officielle A11 indisponible: le runtime a propose un fallback ffmpeg-morph au lieu du moteur XTTS/RVC. La fausse voix est bloquee.',
+          provider: PROVIDERS.XTTS_RVC,
+          diagnostic: 'a11_official_ffmpeg_morph_blocked',
+          voiceConversion: payload?.voiceConversion || null,
+        });
+      }
       if (requiresReferenceVoice(req) && !isReferenceAwareTtsPayload(payload)) {
         return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
       }
@@ -4512,6 +4549,16 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
       const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
+      if (isOfficialA11ReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
+        return res.status(424).json({
+          ok: false,
+          error: 'voice_reference_tts_unavailable',
+          message: 'Voix officielle A11 indisponible: le runtime a propose un fallback ffmpeg-morph au lieu du moteur XTTS/RVC. La fausse voix est bloquee.',
+          provider: PROVIDERS.XTTS_RVC,
+          diagnostic: 'a11_official_ffmpeg_morph_blocked',
+          voiceConversion: payload?.voiceConversion || null,
+        });
+      }
       if (requiresReferenceVoice(req) && !isReferenceAwareTtsPayload(payload)) {
         return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
       }

@@ -1833,6 +1833,7 @@ test('tts speak route ignores stale Piper preference for official reference voic
         assert.equal(bridgeCalls.length, 1);
         assert.equal(bridgeCalls[0].body.get('persona'), 'a11');
         assert.equal(bridgeCalls[0].body.get('voiceStyle'), 'a11-official-stern-french');
+        assert.equal(bridgeCalls[0].body.get('engine'), 'xtts-rvc');
       }
     );
   } finally {
@@ -2592,6 +2593,97 @@ test('tts out local generated assets survive repeated browser reads', async () =
     );
   } finally {
     fs.rmSync(filePath, { force: true });
+  }
+});
+
+test('tts speak route blocks ffmpeg morph for official A11 reference voice', async () => {
+  const previousEnv = {
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const bridgeCalls = [];
+
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://voice-bridge.test';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'http://voice-bridge.test/api/voice/synthesize') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'synthesize_disabled_for_test' });
+        },
+      };
+    }
+    if (value === 'http://voice-bridge.test/api/voice/convert') {
+      bridgeCalls.push({ url: value, body: options.body });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'a11-official-stern-french';
+            if (header === 'x-a11-voice-engine') return 'ffmpeg-morph';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return createPcm16Wav({ frequency: 150 });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'bonjour',
+          persona: 'a11',
+          voicePersona: 'a11',
+          vocalMode: 'adaptive',
+          provider: 'piper',
+          ttsProvider: 'piper',
+          useDefaultVoiceReference: true,
+          voiceReferenceRequired: true,
+        });
+
+        assert.equal(result.response.status, 424);
+        assert.equal(result.json.diagnostic, 'a11_official_ffmpeg_morph_blocked');
+        assert.equal(bridgeCalls.length, 1);
+        assert.equal(bridgeCalls[0].body.get('engine'), 'xtts-rvc');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
