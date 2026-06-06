@@ -578,6 +578,7 @@ const createA11HistoryRouter = require('./src/routes/a11-history.cjs');
 const createA11MemoryWriteRouter = require('./src/routes/a11-memory-write.cjs');
 const createVectorMemoryRouter = require('./src/routes/vector-memory.cjs');
 const createKnowledgeGraphRouter = require('./src/routes/knowledge-graph.cjs');
+const createMemoryGraphV1Router = require('./src/routes/memory-graph-v1.cjs');
 const createReflectionRouter = require('./src/routes/reflection.cjs');
 const createEpisodicMemoryRouter = require('./src/routes/episodic-memory.cjs');
 const createImageCardinalityDebugRouter = require('./src/routes/image-cardinality-debug.cjs');
@@ -6199,6 +6200,10 @@ app.use('/api', createChatRouter({
   generateSd: sdTools.generateImageInternal,
   generateVideo: videoTools.generateVideoInternal,
   db,
+}));
+
+app.use(createMemoryGraphV1Router({
+  verifyJWT,
 }));
 
 app.use('/api', sdTools.router);

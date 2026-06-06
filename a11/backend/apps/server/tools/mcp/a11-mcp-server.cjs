@@ -22,6 +22,7 @@ const { URL } = require('node:url');
 const workerSupervisor = require('../../lib/worker-supervisor.cjs');
 const westsideChopper = require('../../lib/westside-chopper.cjs');
 const funesterieMixer = require('../../lib/funesterie-mixer.cjs');
+const a11MemoryGraph = require('../../src/knowledge/a11-memory-graph-v1.cjs');
 
 // ---------------------------------------------------------------------------
 // Config
@@ -1270,6 +1271,62 @@ const TOOLS = [
     },
   },
   {
+    name: 'a11_memory_graph_trace_service',
+    description:
+      'Trace un service Funesterie dans A11 Memory Graph v1: endpoints, domaines, dependances et fichiers lies. Lecture seule, aucun secret.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        service: {
+          type: 'string',
+          description: 'Nom, id ou domaine du service a tracer.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Nombre maximum de voisins a retourner.',
+        },
+      },
+      required: ['service'],
+    },
+  },
+  {
+    name: 'a11_memory_graph_recent_incidents',
+    description:
+      'Retourne les incidents recents metadata-only detectes dans A11 Memory Graph v1. Lecture seule, aucun secret.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Nombre maximum d incidents a retourner.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'a11_memory_graph_explain_agent_context',
+    description:
+      'Explique le contexte graphe d un agent A11/K44/Vivy: services, outils, concepts et liens principaux. Lecture seule, aucun secret.',
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: {
+          type: 'string',
+          description: 'Agent a expliquer, par exemple a11, k44, kaen44 ou vivy.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Nombre maximum de voisins a retourner.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'a11_identity_route',
     description:
       'Retourne la route d identite A11 compacte pour recuperer le contexte sans dependre de Neo4j.',
@@ -1531,6 +1588,9 @@ function inferToolAnnotations(name = '') {
     'a11_ecosystem_scope',
     'a11_ecosystem_corpus',
     'a11_ecosystem_briefing',
+    'a11_memory_graph_trace_service',
+    'a11_memory_graph_recent_incidents',
+    'a11_memory_graph_explain_agent_context',
     'a11_identity_route',
   ].includes(normalized);
   const destructive = /delete|remove|purge|reset|revoke|overwrite/.test(normalized);
@@ -1810,6 +1870,26 @@ async function handleTool(name, args) {
       return formatObject(buildEcosystemBriefingStatus({
         includeExecutive: Boolean(args.includeExecutive),
         includeArchitecture: Boolean(args.includeArchitecture),
+      }));
+    }
+
+    case 'a11_memory_graph_trace_service': {
+      const service = String(args.service || args.name || args.query || '').trim();
+      if (!service) throw new Error('service is required');
+      return formatObject(a11MemoryGraph.traceService(service, {
+        limit: Number(args.limit || 80),
+      }));
+    }
+
+    case 'a11_memory_graph_recent_incidents': {
+      return formatObject(a11MemoryGraph.findRecentIncidents({
+        limit: Number(args.limit || 12),
+      }));
+    }
+
+    case 'a11_memory_graph_explain_agent_context': {
+      return formatObject(a11MemoryGraph.explainAgentContext(String(args.agent || 'a11'), {
+        limit: Number(args.limit || 80),
       }));
     }
 

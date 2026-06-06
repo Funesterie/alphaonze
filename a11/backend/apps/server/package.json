@@ -70,6 +70,8 @@
     "sync:ecosystem-scope-neo4j:dry-run": "node scripts/sync-ecosystem-scope-neo4j.cjs --dry-run",
     "sync:ecosystem-corpus-neo4j": "node scripts/sync-ecosystem-corpus-neo4j.cjs",
     "sync:ecosystem-corpus-neo4j:dry-run": "node scripts/sync-ecosystem-corpus-neo4j.cjs --dry-run",
+    "sync:a11-memory-graph-v1": "node scripts/sync-a11-memory-graph-v1.cjs",
+    "sync:a11-memory-graph-v1:dry-run": "node scripts/sync-a11-memory-graph-v1.cjs --dry-run --no-write-files",
     "generate:ecosystem-briefing": "node scripts/generate-ecosystem-briefing.cjs",
     "generate:ecosystem-briefing:pdf": "node scripts/generate-ecosystem-briefing.cjs --pdf",
     "ensure:runtime-modules": "node scripts/ensure-runtime-modules.cjs",
