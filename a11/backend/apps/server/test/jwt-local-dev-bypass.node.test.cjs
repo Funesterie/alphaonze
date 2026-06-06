@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { shouldBypassJwtForLocalDev } = require('../src/middleware/jwt-auth.cjs');
+const {
+  createVerifyJWT,
+  isPublicAuthRoute,
+  shouldBypassJwtForLocalDev,
+} = require('../src/middleware/jwt-auth.cjs');
 
 function localRequest(headers = {}) {
   return {
@@ -68,4 +72,84 @@ test('local browser bypass header is accepted only on loopback non-production re
       process.env.A11_LOCAL_AUTH_BYPASS = previousLocalBypass;
     }
   }
+});
+
+test('OAuth start and callback routes stay public even with stale session cookies', async () => {
+  const verifyJWT = createVerifyJWT({
+    jwt: {
+      verify() {
+        throw new Error('jwt expired');
+      },
+    },
+    jwtSecret: 'test-secret',
+    logger: { warn() {} },
+  });
+
+  for (const route of [
+    '/api/auth/google/start',
+    '/api/auth/google/callback',
+    '/api/auth/microsoft/start',
+    '/api/auth/microsoft/callback',
+  ]) {
+    assert.equal(isPublicAuthRoute({ method: 'GET', path: route }), true);
+
+    let nextCalled = false;
+    await verifyJWT(
+      {
+        method: 'GET',
+        path: route,
+        headers: {
+          cookie: 'a11_session=expired.jwt.token',
+        },
+      },
+      {
+        status() {
+          throw new Error(`JWT should not reject ${route}`);
+        },
+      },
+      () => {
+        nextCalled = true;
+      }
+    );
+    assert.equal(nextCalled, true, route);
+  }
+});
+
+test('protected auth status routes still require a valid JWT', async () => {
+  const verifyJWT = createVerifyJWT({
+    jwt: {
+      verify() {
+        throw new Error('jwt expired');
+      },
+    },
+    jwtSecret: 'test-secret',
+    logger: { warn() {} },
+  });
+
+  let statusCode = 0;
+  let payload = null;
+  await verifyJWT(
+    {
+      method: 'GET',
+      path: '/api/auth/me',
+      headers: {
+        cookie: 'a11_session=expired.jwt.token',
+      },
+    },
+    {
+      status(code) {
+        statusCode = code;
+        return this;
+      },
+      json(body) {
+        payload = body;
+      },
+    },
+    () => {
+      throw new Error('protected route should not call next');
+    }
+  );
+
+  assert.equal(statusCode, 401);
+  assert.equal(payload?.error, 'A11_JWT_Invalid');
 });

@@ -63,6 +63,25 @@ function isLoopbackRequest(req) {
   return values.some((value) => value === 'localhost' || value === '127.0.0.1' || value === '::1' || value === '[::1]');
 }
 
+function getRequestPathname(req) {
+  return String(req?.path || req?.originalUrl || req?.url || '/')
+    .split('?')[0]
+    .trim() || '/';
+}
+
+function isPublicAuthRoute(req) {
+  const method = String(req?.method || 'GET').trim().toUpperCase();
+  const pathname = getRequestPathname(req).replace(/\/+$/, '') || '/';
+
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') return false;
+
+  if (method === 'GET' || method === 'HEAD') {
+    return /^\/api\/auth\/(?:google|microsoft)\/(?:start|callback)$/i.test(pathname);
+  }
+
+  return /^\/api\/auth\/(?:login|register|reset|reset-password|forgot-password)$/i.test(pathname);
+}
+
 function shouldBypassJwtForLocalDev(req) {
   const securityMode = String(process.env.NEZ_SECURITY_MODE || '').trim().toLowerCase();
   const explicitBypass = ['true', '1', 'yes', 'on'].includes(
@@ -89,6 +108,10 @@ function createVerifyJWT({ jwt, jwtSecret, logger = console, logSuccess = false,
   }
 
   return async function verifyJWT(req, res, next) {
+    if (isPublicAuthRoute(req)) {
+      return next();
+    }
+
     if (shouldBypassJwtForLocalDev(req)) {
       req.user = {
         id: 'local-dev',
@@ -150,6 +173,7 @@ module.exports = {
   extractRequestAuthToken,
   extractRequestAuthTokenCandidates,
   parseCookieHeader,
+  isPublicAuthRoute,
   shouldBypassJwtForLocalDev,
   createVerifyJWT,
 };
