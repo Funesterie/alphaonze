@@ -2027,6 +2027,10 @@ export type VoiceLearningStatus = {
   enabled?: boolean;
   canCapture?: boolean;
   persona?: string | null;
+  consentRequired?: boolean;
+  consent?: string;
+  isOfficialSource?: boolean;
+  contributorRole?: 'official-source' | 'opt-in-user' | string;
   clipCount?: number;
   secondsCollected?: number;
   requiredSeconds?: number;
@@ -2038,6 +2042,7 @@ export type VoiceLearningStatus = {
   clipId?: string;
   message?: string;
   nextAction?: string;
+  deleted?: boolean;
 };
 
 export async function fetchVoiceLearningStatus(persona: 'a11' | 'kaen44' | string): Promise<VoiceLearningStatus> {
@@ -2083,6 +2088,20 @@ export async function uploadVoiceLearningSnippet(
   const payload = await res.json().catch(() => ({}));
   if (!res.ok || payload?.ok === false) {
     throw new Error(payload?.message || payload?.error || `Capture voix impossible (${res.status})`);
+  }
+  return payload as VoiceLearningStatus;
+}
+
+export async function deleteVoiceLearningCorpus(persona: 'a11' | 'kaen44' | string): Promise<VoiceLearningStatus> {
+  const res = await authFetch(getApiUrl('/api/voice-learning/corpus'), {
+    method: 'DELETE',
+    headers: buildAuthHeaders('application/json'),
+    credentials: 'include',
+    body: JSON.stringify({ persona, confirm: 'delete-voice-learning-corpus' }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.ok === false) {
+    throw new Error(payload?.message || payload?.error || `Retrait corpus voix impossible (${res.status})`);
   }
   return payload as VoiceLearningStatus;
 }

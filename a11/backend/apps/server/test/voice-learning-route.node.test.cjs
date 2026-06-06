@@ -61,33 +61,46 @@ async function withVoiceLearningServer(fn) {
   }
 }
 
-async function postAudio(baseUrl, { email, persona = 'a11', file, filename, mimeType = 'audio/wav', durationMs } = {}) {
+async function postAudio(baseUrl, { email, persona = 'a11', file, filename, mimeType = 'audio/wav', durationMs, consent = 'voice-learning-v1' } = {}) {
   const form = new FormData();
   form.append('audio', new Blob([file], { type: mimeType }), filename || `clip.${mimeType.includes('webm') ? 'webm' : 'wav'}`);
   form.append('persona', persona);
   form.append('source', 'test');
-  form.append('consent', 'voice-learning-v1');
+  if (consent !== null) form.append('consent', consent);
   if (durationMs) form.append('durationMs', String(durationMs));
+  const headers = {};
+  if (email !== undefined) headers['x-test-email'] = email;
   const res = await fetch(`${baseUrl}/api/voice-learning/snippet`, {
     method: 'POST',
-    headers: {
-      'x-test-email': email,
-    },
+    headers,
     body: form,
   });
   const payload = await res.json().catch(() => ({}));
   return { res, payload };
 }
 
-test('voice learning accepts snippets only for the configured source account', async () => {
+test('voice learning accepts consented snippets from any connected account', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-'));
   const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
   process.env.A11_VOICE_LEARNING_DIR = root;
 
   try {
     await withVoiceLearningServer(async (baseUrl) => {
+      const anonymousStatus = await fetch(`${baseUrl}/api/voice-learning/status?persona=a11`);
+      const anonymousPayload = await anonymousStatus.json();
+      assert.equal(anonymousStatus.status, 200);
+      assert.equal(anonymousPayload.canCapture, false);
+
+      const connectedStatus = await fetch(`${baseUrl}/api/voice-learning/status?persona=a11`, {
+        headers: { 'x-test-email': 'someone@example.com' },
+      });
+      const connectedPayload = await connectedStatus.json();
+      assert.equal(connectedStatus.status, 200);
+      assert.equal(connectedPayload.canCapture, true);
+      assert.equal(connectedPayload.contributorRole, 'opt-in-user');
+
       const allowed = await postAudio(baseUrl, {
-        email: 'cellaurojeffrey@gmail.com',
+        email: 'someone@example.com',
         persona: 'a11',
         file: createPcm16Wav(),
         filename: 'a11.wav',
@@ -96,9 +109,10 @@ test('voice learning accepts snippets only for the configured source account', a
       assert.equal(allowed.payload.ok, true);
       assert.equal(allowed.payload.persona, 'a11');
       assert.equal(allowed.payload.clipCount, 1);
+      assert.equal(allowed.payload.contributorRole, 'opt-in-user');
 
       const duplicate = await postAudio(baseUrl, {
-        email: 'cellaurojeffrey@gmail.com',
+        email: 'someone@example.com',
         persona: 'a11',
         file: createPcm16Wav(),
         filename: 'a11.wav',
@@ -107,14 +121,72 @@ test('voice learning accepts snippets only for the configured source account', a
       assert.equal(duplicate.payload.duplicate, true);
       assert.equal(duplicate.payload.clipCount, 1);
 
-      const denied = await postAudio(baseUrl, {
-        email: 'someone@example.com',
+      const missingConsent = await postAudio(baseUrl, {
+        email: 'another@example.com',
         persona: 'a11',
         file: createPcm16Wav(),
-        filename: 'blocked.wav',
+        filename: 'missing-consent.wav',
+        consent: null,
       });
-      assert.equal(denied.res.status, 403);
-      assert.equal(denied.payload.error, 'voice_learning_not_allowed');
+      assert.equal(missingConsent.res.status, 400);
+      assert.equal(missingConsent.payload.error, 'missing_consent');
+
+      const officialStatus = await fetch(`${baseUrl}/api/voice-learning/status?persona=a11`, {
+        headers: { 'x-test-email': 'cellaurojeffrey@gmail.com' },
+      });
+      const officialPayload = await officialStatus.json();
+      assert.equal(officialStatus.status, 200);
+      assert.equal(officialPayload.isOfficialSource, true);
+      assert.equal(officialPayload.contributorRole, 'official-source');
+    });
+  } finally {
+    if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;
+    else process.env.A11_VOICE_LEARNING_DIR = previousRoot;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('voice learning lets a connected account delete its own corpus', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-voice-learning-delete-'));
+  const previousRoot = process.env.A11_VOICE_LEARNING_DIR;
+  process.env.A11_VOICE_LEARNING_DIR = root;
+
+  try {
+    await withVoiceLearningServer(async (baseUrl) => {
+      const uploaded = await postAudio(baseUrl, {
+        email: 'participant@example.com',
+        persona: 'kaen44',
+        file: createPcm16Wav({ frequency: 660 }),
+        filename: 'participant.wav',
+      });
+      assert.equal(uploaded.res.status, 200);
+      assert.equal(uploaded.payload.clipCount, 1);
+
+      const missingConfirm = await fetch(`${baseUrl}/api/voice-learning/corpus`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-test-email': 'participant@example.com',
+        },
+        body: JSON.stringify({ persona: 'kaen44' }),
+      });
+      const missingConfirmPayload = await missingConfirm.json();
+      assert.equal(missingConfirm.status, 400);
+      assert.equal(missingConfirmPayload.error, 'missing_delete_confirmation');
+
+      const deleted = await fetch(`${baseUrl}/api/voice-learning/corpus`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-test-email': 'participant@example.com',
+        },
+        body: JSON.stringify({ persona: 'kaen44', confirm: 'delete-voice-learning-corpus' }),
+      });
+      const deletedPayload = await deleted.json();
+      assert.equal(deleted.status, 200);
+      assert.equal(deletedPayload.deleted, true);
+      assert.equal(deletedPayload.clipCount, 0);
+      assert.equal(deletedPayload.nextAction, 'record');
     });
   } finally {
     if (previousRoot === undefined) delete process.env.A11_VOICE_LEARNING_DIR;

@@ -4738,6 +4738,41 @@ body {
   color: var(--n-fg-muted) !important;
 }
 
+.voice-learning-consent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #a7f3d0;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.voice-learning-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 6px auto 0;
+  font-size: 11.5px;
+}
+
+.voice-learning-consent input {
+  width: 14px;
+  height: 14px;
+  accent-color: #22c55e;
+}
+
+.voice-learning-remove {
+  padding: 2px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(248,113,113,0.45);
+  background: rgba(127,29,29,0.24);
+  color: #fecaca;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 /* ----------------------------------------------------------------
    BOUTON ENVOYER
 ---------------------------------------------------------------- */
@@ -9319,6 +9354,12 @@ body {
     width: 48px !important;
     flex: 0 0 48px;
     margin-left: 0 !important;
+  }
+
+  .voice-learning-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    padding: 0 2px;
   }
 
   .vivy-chat-reference {

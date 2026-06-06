@@ -56,6 +56,7 @@ import {
   transcribeAudioFile,
   ttsSpeak,
   fetchVoiceLearningStatus,
+  deleteVoiceLearningCorpus,
   uploadVoiceLearningSnippet,
   uploadTtsVoiceReference,
   saveRemoteProviderProfile,
@@ -7831,15 +7832,19 @@ export function App() {
   const [micPermissionBlocked, setMicPermissionBlocked] = useState(false);
   const [micStatusMessage, setMicStatusMessage] = useState("");
   const [voiceLearningStatus, setVoiceLearningStatus] = useState<VoiceLearningStatus | null>(null);
+  const [voiceLearningConsentEnabled, setVoiceLearningConsentEnabled] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const authInvalidatedRef = useRef(false);
   const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
   const voiceLearningPersona = surfaceKind === "a11"
     ? "a11"
-    : surfaceKind === "kaen44"
-      ? "kaen44"
-      : "";
-  const canCaptureVoiceLearning = Boolean(voiceLearningPersona && voiceLearningStatus?.canCapture);
+      : surfaceKind === "kaen44"
+        ? "kaen44"
+        : "";
+  const voiceLearningConsentStorageKey = voiceLearningPersona ? `funesterie:voice-learning-consent:${voiceLearningPersona}` : "";
+  const canOptIntoVoiceLearning = Boolean(voiceLearningPersona && voiceLearningStatus?.canCapture);
+  const canCaptureVoiceLearning = Boolean(canOptIntoVoiceLearning && voiceLearningConsentEnabled);
+  const voiceLearningPersonaLabel = voiceLearningPersona === "kaen44" ? "K44" : "A11";
 
   useEffect(() => {
     document.title = isGeneralCockpit
@@ -8112,6 +8117,18 @@ export function App() {
       authInvalidatedRef.current = false;
     }
   }, [hasPrivateSession]);
+
+  useEffect(() => {
+    if (isFunesteriePublicShell || !hasPrivateSession || !voiceLearningConsentStorageKey) {
+      setVoiceLearningConsentEnabled(false);
+      return;
+    }
+    try {
+      setVoiceLearningConsentEnabled(localStorage.getItem(voiceLearningConsentStorageKey) === "1");
+    } catch {
+      setVoiceLearningConsentEnabled(false);
+    }
+  }, [hasPrivateSession, isFunesteriePublicShell, voiceLearningConsentStorageKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -9678,6 +9695,36 @@ export function App() {
     if (normalized.includes("ogg")) return "ogg";
     if (normalized.includes("wav")) return "wav";
     return "webm";
+  }
+
+  function setVoiceLearningContribution(next: boolean) {
+    setVoiceLearningConsentEnabled(next);
+    if (voiceLearningConsentStorageKey) {
+      try {
+        if (next) localStorage.setItem(voiceLearningConsentStorageKey, "1");
+        else localStorage.removeItem(voiceLearningConsentStorageKey);
+      } catch {
+        // ignore storage access errors
+      }
+    }
+    setMicStatusMessage(next
+      ? `Contribution voix ${voiceLearningPersonaLabel} active: le prochain micro ajoute du flux audio au corpus.`
+      : `Contribution voix ${voiceLearningPersonaLabel} coupee.`);
+  }
+
+  async function removeVoiceLearningCorpus() {
+    if (!voiceLearningPersona) return;
+    const confirmed = window.confirm(`Retirer tes extraits voix du corpus ${voiceLearningPersonaLabel} ?`);
+    if (!confirmed) return;
+    try {
+      const status = await deleteVoiceLearningCorpus(voiceLearningPersona);
+      setVoiceLearningStatus(status);
+      setVoiceLearningContribution(false);
+      setMicStatusMessage(`Corpus voix ${voiceLearningPersonaLabel} retire pour ce compte.`);
+    } catch (error) {
+      setMicStatusMessage("Retrait du corpus voix impossible pour l'instant.");
+      console.info("[A11] voice learning corpus delete failed", error);
+    }
   }
 
   async function submitVoiceLearningCapture(capture: MicAudioCaptureResult | null) {
@@ -12097,6 +12144,29 @@ export function App() {
                     </span>
                   )}
                 </div>
+                {canOptIntoVoiceLearning && (
+                  <div className="voice-learning-row">
+                    <label className="voice-learning-consent" htmlFor={`voice-learning-consent-${voiceLearningPersona}`}>
+                      <input
+                        id={`voice-learning-consent-${voiceLearningPersona}`}
+                        name={`voice-learning-consent-${voiceLearningPersona}`}
+                        type="checkbox"
+                        checked={voiceLearningConsentEnabled}
+                        onChange={(event) => setVoiceLearningContribution(event.target.checked)}
+                      />
+                      <span>Contribuer ma voix {voiceLearningPersonaLabel}</span>
+                    </label>
+                    {Number(voiceLearningStatus?.clipCount || 0) > 0 && (
+                      <button
+                        type="button"
+                        className="voice-learning-remove"
+                        onClick={() => void removeVoiceLearningCorpus()}
+                      >
+                        Retirer
+                      </button>
+                    )}
+                  </div>
+                )}
                 {dragPreviewUrls.length > 0 && (() => {
                   const total = dragPreviewUrls.length;
                   const idx = Math.min(previewCarouselIndex, total - 1);

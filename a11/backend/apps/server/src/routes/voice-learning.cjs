@@ -23,6 +23,9 @@ const DEFAULT_PERSONA_EMAILS = {
   kaen44: ['giovannabrunetto@gmail.com', 'giovannabrunettogiovanna@gmail.com'],
 };
 
+const VOICE_LEARNING_CONSENT = 'voice-learning-v1';
+const DELETE_CONFIRMATION = 'delete-voice-learning-corpus';
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -61,19 +64,30 @@ function getAllowedEmailsForPersona(persona) {
   return new Set((configured.length ? configured : defaults).map(normalizeLooseEmail).filter(Boolean));
 }
 
+function requireOfficialSourceAccount() {
+  const raw = String(process.env.A11_VOICE_LEARNING_SOURCE_ONLY || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
 function resolveLearningAccess(req, requestedPersona = '') {
+  const hasRequestedPersona = String(requestedPersona || '').trim().length > 0;
   const persona = normalizePersona(requestedPersona);
   const email = normalizeLooseEmail(req.user?.email || req.user?.username || '');
   if (!email) return null;
+  if (hasRequestedPersona && !persona) return null;
 
   const candidates = persona ? [persona] : ['a11', 'kaen44'];
+  const sourceOnly = requireOfficialSourceAccount();
   for (const candidate of candidates) {
     const allowed = getAllowedEmailsForPersona(candidate);
-    if (allowed.has(email)) {
+    const isOfficialSource = allowed.has(email);
+    if (isOfficialSource || !sourceOnly) {
       return {
         persona: candidate,
         email,
         ownerKey: getUserKey({ ...req.user, email }),
+        isOfficialSource,
+        contributorRole: isOfficialSource ? 'official-source' : 'opt-in-user',
       };
     }
   }
@@ -170,7 +184,12 @@ function safeTranscriptPreview(value = '') {
 
 function requireConsent(req) {
   const raw = String(req.body?.consent || req.query?.consent || '').trim().toLowerCase();
-  return raw === 'voice-learning-v1' || raw === 'true' || raw === '1' || raw === 'yes';
+  return raw === VOICE_LEARNING_CONSENT || raw === 'true' || raw === '1' || raw === 'yes';
+}
+
+function requireDeleteConfirmation(req) {
+  const raw = String(req.body?.confirm || req.query?.confirm || '').trim().toLowerCase();
+  return raw === DELETE_CONFIRMATION;
 }
 
 function createVoiceLearningRouter(options = {}) {
@@ -188,19 +207,59 @@ function createVoiceLearningRouter(options = {}) {
         enabled: true,
         canCapture: false,
         persona: requestedPersona || null,
-        message: 'Capture vocale reservee au compte source de cette voix.',
+        consentRequired: true,
+        consent: VOICE_LEARNING_CONSENT,
+        message: 'Connecte-toi puis active la contribution voix pour participer au corpus.',
         requiredSeconds: REQUIRED_CORPUS_MS / 1000,
       });
     }
 
     const index = readIndex(access);
+    const summary = makeSummary(index);
     return res.json({
       ok: true,
       enabled: true,
       canCapture: true,
       persona: access.persona,
-      ...makeSummary(index),
-      nextAction: makeSummary(index).corpusReady ? 'train' : 'record',
+      consentRequired: true,
+      consent: VOICE_LEARNING_CONSENT,
+      isOfficialSource: access.isOfficialSource,
+      contributorRole: access.contributorRole,
+      ...summary,
+      nextAction: summary.corpusReady ? 'train' : 'record',
+    });
+  });
+
+  router.delete('/voice-learning/corpus', verifyJWT, express.json({ limit: '64kb' }), (req, res) => {
+    if (!requireDeleteConfirmation(req)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'missing_delete_confirmation',
+        message: 'Confirmation de suppression corpus voix manquante.',
+      });
+    }
+    const access = resolveLearningAccess(req, req.body?.persona || req.query?.persona || '');
+    if (!access) {
+      return res.status(403).json({
+        ok: false,
+        error: 'voice_learning_not_allowed',
+        message: 'Compte connecte requis pour retirer ce corpus voix.',
+      });
+    }
+    const corpusDir = getCorpusDir(access);
+    fs.rmSync(corpusDir, { recursive: true, force: true });
+    return res.json({
+      ok: true,
+      enabled: true,
+      canCapture: true,
+      deleted: true,
+      persona: access.persona,
+      consentRequired: true,
+      consent: VOICE_LEARNING_CONSENT,
+      isOfficialSource: access.isOfficialSource,
+      contributorRole: access.contributorRole,
+      ...makeSummary({ clips: [], trainRequests: [] }),
+      nextAction: 'record',
     });
   });
 
@@ -217,7 +276,7 @@ function createVoiceLearningRouter(options = {}) {
       return res.status(403).json({
         ok: false,
         error: 'voice_learning_not_allowed',
-        message: 'Ce compte ne peut pas entrainer cette voix officielle.',
+        message: 'Connecte-toi et active la contribution voix avant de nourrir le corpus.',
       });
     }
 
@@ -229,6 +288,8 @@ function createVoiceLearningRouter(options = {}) {
         ok: true,
         duplicate: true,
         persona: access.persona,
+        isOfficialSource: access.isOfficialSource,
+        contributorRole: access.contributorRole,
         clipId: duplicate.id,
         ...makeSummary(index),
       });
@@ -250,6 +311,9 @@ function createVoiceLearningRouter(options = {}) {
       persona: access.persona,
       ownerKey: access.ownerKey,
       emailHash: crypto.createHash('sha256').update(access.email).digest('hex').slice(0, 16),
+      contributorRole: access.contributorRole,
+      isOfficialSource: access.isOfficialSource,
+      consent: VOICE_LEARNING_CONSENT,
       filename,
       mimeType: req.file.mimetype || null,
       originalName: req.file.originalname || null,
@@ -269,6 +333,8 @@ function createVoiceLearningRouter(options = {}) {
       ok: true,
       duplicate: false,
       persona: access.persona,
+      isOfficialSource: access.isOfficialSource,
+      contributorRole: access.contributorRole,
       clipId: clip.id,
       durationMs,
       ...makeSummary(index),
@@ -299,7 +365,7 @@ function createVoiceLearningRouter(options = {}) {
       return res.status(403).json({
         ok: false,
         error: 'voice_learning_not_allowed',
-        message: 'Ce compte ne peut pas entrainer cette voix officielle.',
+        message: 'Connecte-toi et active la contribution voix avant de lancer un entrainement.',
       });
     }
 
@@ -325,6 +391,8 @@ function createVoiceLearningRouter(options = {}) {
       createdAt: new Date().toISOString(),
       engine: 'rvc',
       source: 'voice-learning',
+      contributorRole: access.contributorRole,
+      isOfficialSource: access.isOfficialSource,
     };
     index.trainRequests.push(trainRequest);
     writeIndex(access, index);
