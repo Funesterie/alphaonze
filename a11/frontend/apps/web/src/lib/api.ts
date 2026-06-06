@@ -2531,10 +2531,10 @@ function buildFriendlyChatApiErrorMessage(status: number, rawValue: unknown) {
   const isOverload = [429, 502, 503, 504, 524].includes(statusCode)
     || /cloudflare|timeout|surcharge|overload|upstream|html inattendue/i.test(raw)
     || isLikelyHtmlDocument(raw);
+  if (serverMessage) return serverMessage;
   if (isOverload) {
-    return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; si tu es en compte Basic, les demandes Premium/Fondateur peuvent passer avant toi quand la file est chargée.";
+    return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; la priorité de ton compte reste conservée.";
   }
-  if (serverMessage) return `API ${statusCode || status}: ${serverMessage}`;
   return `API ${statusCode || status}: ${raw || 'réponse assistant indisponible'}`;
 }
 

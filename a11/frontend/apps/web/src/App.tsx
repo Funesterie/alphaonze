@@ -1428,7 +1428,7 @@ function formatChatErrorForUser(error: unknown) {
     return "Le moteur vidéo local n'est pas encore prêt: le routage est actif, mais le worker de rendu vidéo n'est pas lancé ou pas branché. Les poids locaux sont installés; il faut démarrer le runner vidéo avant de lancer le clip.";
   }
   if (/\b(API\s*)?(502|503|504|524)\b/i.test(message) || /html inattendue|timeout|surcharge|upstream/i.test(message)) {
-    return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; si tu es en compte Basic, les demandes Premium/Fondateur peuvent passer avant toi quand la file est chargée.";
+    return "Le serveur IA ou un fournisseur externe a coupé la réponse. Réessaie dans quelques instants; la priorité de ton compte reste conservée.";
   }
   return `Erreur lors de l'appel au chat A11 : ${message || "erreur inconnue"}`;
 }
