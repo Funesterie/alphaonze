@@ -136,3 +136,26 @@ test('knowledge operator activates ZEN container format as NEZ inverse', () => {
   assert.ok(context.commonErrors.some((entry) => entry.includes('zip renomme')));
   assert.ok(context.layers.some((entry) => entry.id === 'cube_map'));
 });
+
+test('knowledge operator activates wheeling gate model for rider and prime gap prompts', () => {
+  const text = 'applique la porte en wheeling aux nombres premiers, non-premiers et pattern gaps';
+  const semanticAnalysis = analyzeSemanticIntent(text);
+  const modules = activateKnowledgeModules({
+    text,
+    semanticAnalysis,
+    mode: 'semantic',
+    domain: '',
+    promptSeed: buildPromptSeed(text, semanticAnalysis),
+    canonicalIntent: {
+      task: { domain: '' },
+      execution: { mode: 'semantic' },
+      style: { renderHints: [] },
+      subject: { references: [] },
+    },
+  });
+
+  const module = modules.find((entry) => entry.id === 'mobility.wheeling.gate');
+  assert.ok(module);
+  assert.ok(module.knowledge.threeForces.some((entry) => entry.id === 'return-rotation'));
+  assert.ok(module.knowledge.primeMapping.some((entry) => entry.includes('gap')));
+});

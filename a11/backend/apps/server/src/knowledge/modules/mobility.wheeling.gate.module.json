@@ -1,0 +1,132 @@
+{
+  "id": "mobility.wheeling.gate",
+  "label": "Porte en Wheeling - Skill Tree Funesterie",
+  "discipline": "symbolic-mobility",
+  "activation": {
+    "languagesAny": ["fr"],
+    "modesAny": ["semantic", "plan", "chat", "generate"],
+    "keywordsAny": [
+      "wheeling",
+      "wheelie",
+      "porte en wheeling",
+      "porte oubliee",
+      "porte oubliée",
+      "skill tree",
+      "arbre des competences",
+      "arbre des compétences",
+      "arbre de maitrise",
+      "arbre de maîtrise",
+      "frein arriere",
+      "frein arrière",
+      "accelerateur",
+      "accélérateur",
+      "suspension",
+      "basculement du rider",
+      "pattern gap",
+      "pattern gaps",
+      "nombres premiers",
+      "non-premiers",
+      "gouffre 0",
+      "danger maitrise",
+      "danger maîtrisé",
+      "adrenaline",
+      "adrénaline"
+    ]
+  },
+  "knowledge": {
+    "canonicalDefinition": "La Porte en Wheeling est un modele symbolique Funesterie ou trois forces de pilotage ouvrent une structure: retour/rotation, vertical/contenant, et basculement du rider.",
+    "shortDefinition": "Trois forces issues du wheeling servent de carte pour penser premiers, non-premiers et pattern gaps.",
+    "principles": [
+      "partir des references moto et pilotage avant les references manga quand le sujet est mecanique",
+      "ne pas forcer le glitch ou le power-up: la porte s'ouvre par synchronisation, pas par contrainte",
+      "l'adrenaline est lue ici comme peur du danger maitrisee",
+      "le skill tree est l'arbre de maitrise; comme la porte est en bois, l'image de l'arbre est canonique",
+      "les noms poetiques sont autorises, mais ils doivent rester ancres dans la mecanique du rider"
+    ],
+    "threeForces": [
+      {
+        "id": "return-rotation",
+        "label": "Force de retour / rotation",
+        "mechanics": "frein arriere + accelerateur",
+        "primeMap": "nombres premiers",
+        "meaning": "rythme, pivots, rotation controlee, cadence qui resiste a la desintegration"
+      },
+      {
+        "id": "vertical-container",
+        "label": "Force verticale / contenant",
+        "mechanics": "suspension + bascule droite/gauche",
+        "primeMap": "non-premiers et composites",
+        "meaning": "structure, absorption, densite, maintien de l'espace"
+      },
+      {
+        "id": "rider-opening",
+        "label": "Force d'ouverture / basculement du rider",
+        "mechanics": "poids, timing, intention et energie du pilote",
+        "primeMap": "pattern gaps entre premiers",
+        "meaning": "vide actif, appel d'air, peur du danger maitrisee, ouverture de la porte"
+      }
+    ],
+    "primeMapping": [
+      "premier = force de rotation controlee",
+      "non-premier = force de maintien vertical",
+      "gap = force d'ouverture du rider",
+      "un grand gap doit etre traite comme une tension/ouverture, pas seulement comme une absence"
+    ],
+    "naming": {
+      "gate": "Porte en Wheeling",
+      "tree": "Arbre de la Porte Oubliee",
+      "returnForce": "Roue Noire",
+      "containerForce": "Berceau d'Acier",
+      "openingForce": "Basculement du Fantome"
+    },
+    "referencePolicy": [
+      "pour la moto: prioriser stunt, supermotard, motocross, Ghost Rider, Torque, Isle of Man et FMX",
+      "eviter de remplacer la mecanique par des references manga si l'utilisateur parle frein, gaz, suspension ou pilotage",
+      "les references anime peuvent servir d'image secondaire, jamais d'explication principale"
+    ],
+    "methods": [
+      "quand l'utilisateur parle de porte, wheeling ou gaps, rappeler les trois forces avant de proposer une formule",
+      "si une metaphore devient trop floue, revenir au triplet frein/gaz, suspension, rider",
+      "pour Neo4j, relier ce module a Prime Spiral, NUMA, ZEN, Qflush et aux concepts de pattern gaps",
+      "pour Vivy, transformer la porte en images de route, bois, neon, peur maitrisee, rythme et refrain"
+    ],
+    "commonErrors": [
+      "nommer automatiquement la structure avec une reference externe au lieu de conserver le vocabulaire Funesterie",
+      "dire que les composites sont inutiles alors qu'ils servent de contenant",
+      "reduire les gaps a un vide passif",
+      "forcer un power-up/glitch au lieu de decrire une synchronisation progressive"
+    ],
+    "sourceCards": [
+      {
+        "id": "wheeling-gate:source:grok-chat-2026-06-07",
+        "title": "Discussion Grok / Jeffrey sur porte en wheeling et nombres premiers",
+        "role": "foundational-canon",
+        "note": "Frein arriere + accelerateur, suspension + bascule, et energie du rider deviennent trois forces pour mapper premiers, non-premiers et pattern gaps."
+      },
+      {
+        "id": "wheeling-gate:source:skill-tree-2026-06-07",
+        "title": "Skill Tree comme arbre de la Porte Oubliee",
+        "role": "symbolic-canon",
+        "note": "Le skill tree est l'arbre de maitrise; la porte en bois renforce l'image canonique de l'arbre."
+      }
+    ]
+  },
+  "semantic": {
+    "scoreAdjustments": {
+      "general.chat": 0.12,
+      "file.analyze": 0.08
+    }
+  },
+  "impacts": {
+    "semantic": [
+      "si l'utilisateur parle de wheeling, porte, gaps ou nombres premiers, activer la lecture a trois forces",
+      "si le texte contient une reference moto, privilegier une analyse mecanique avant les references anime"
+    ],
+    "plan": [
+      "proposer une carte Neo4j Concept -> Force -> Mapping plutot qu'une formule decorative"
+    ],
+    "generate": [
+      "pour une image ou video moto, garder la coherence rider: frein/gaz, suspension, bascule, route et tension"
+    ]
+  }
+}

@@ -178,6 +178,8 @@ function buildMemoryGraph(options = {}) {
     ['concept:mcp', 'MCP', 'Model Context Protocol tools and capability boundary.'],
     ['concept:qflush', 'Qflush', 'Runtime orchestration and packet routing.'],
     ['concept:neo4j', 'Neo4j', 'Knowledge graph backing for agent memory.'],
+    ['concept:prime-spiral', 'Prime Spiral', 'Experimental spectral and imaginary-space framework from the Djeff corpus.'],
+    ['concept:wheeling-gate', 'Porte en Wheeling', 'Three-force rider model mapping wheelie mechanics to primes, composites and pattern gaps.'],
     ['concept:document-intelligence-watch', 'Document Intelligence watch', 'Keep Neo4j Document Intelligence on watch; preview/potentially paid, do not auto-enable.'],
   ]) {
     addNode(graph, concept[0], ['Concept'], { name: concept[1], summary: concept[2] });
@@ -191,6 +193,9 @@ function buildMemoryGraph(options = {}) {
   });
   addRel(graph, 'decision:a11-memory-graph-v1', 'MENTIONS', 'concept:neo4j');
   addRel(graph, 'decision:a11-memory-graph-v1', 'MENTIONS', 'concept:graphrag');
+  addRel(graph, 'decision:a11-memory-graph-v1', 'MENTIONS', 'concept:prime-spiral');
+  addRel(graph, 'concept:prime-spiral', 'RELATES_TO', 'concept:wheeling-gate');
+  addRel(graph, 'concept:wheeling-gate', 'RELATES_TO', 'concept:qflush');
   addRel(graph, 'project:funesterie', 'HAS_DECISION', 'decision:a11-memory-graph-v1');
 
   ingestRouteMap(graph, routeMap);

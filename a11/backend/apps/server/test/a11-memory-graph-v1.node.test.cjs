@@ -77,7 +77,9 @@ test('A11 Memory Graph v1 builds a sanitized explainable graph', () => {
     assert.equal(graph.schema, 'funesterie.a11-memory-graph.v1');
     assert.ok(graph.summary.nodes > 0);
     assert.ok(graph.summary.relationships > 0);
-  assert.equal(JSON.stringify(graph).includes('fixture-value'), false);
+    assert.equal(JSON.stringify(graph).includes('fixture-value'), false);
+    assert.ok(graph.nodes.some((node) => node.id === 'concept:prime-spiral'));
+    assert.ok(graph.nodes.some((node) => node.id === 'concept:wheeling-gate'));
 
     const traced = traceService('a11-backend', { graph });
     assert.equal(traced.ok, true);
