@@ -65,15 +65,16 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     persona: 'kaen44',
     label: 'Kaen44 official French desk operator',
     referenceMoodboard: [
-      'Elegant French narrator / operator voice, licensed provider voice only.',
+      'Elegant French desk-operator voice, based on the owned family WAV reference when available.',
     ],
     protectedReferences: [],
     referenceClipNotes: [
-      'Official path: ready-made licensed French TTS voice. Old TV-character references are legacy opt-in only.',
+      'Official path: owned family WAV reference through the Funesterie XTTS/RVC bridge when available.',
+      'Ready-made cloud voices are fallback/explicit override only for Kaen44, not the official default.',
       'Target original Kaen44: sharp desk-operator timing, confident warmth, fast wit.',
     ],
     prompt:
-      'Voix Kaen44 originale: operatrice vive, elegante et sure d elle, precise sans etre froide, esprit rapide, tact humain, sens du dossier et repliques courtes. Utilise une voix prete a l emploi licenciee; ne clone aucune personne ni personnage.',
+      'Voix Kaen44 originale: operatrice vive, elegante et sure d elle, precise sans etre froide, esprit rapide, tact humain, sens du dossier et repliques courtes. Utilise la reference WAV familiale consentie par Funesterie via XTTS/RVC quand elle est disponible; ne clone aucune personne ni personnage sans consentement explicite.',
   }),
   vivy: Object.freeze({
     persona: 'vivy',
@@ -116,6 +117,7 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
       [PROVIDERS.CARTESIA]: 'French Narrator Lady',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'sage',
+      [PROVIDERS.XTTS_RVC]: 'Family WAV - Kaen44 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
     cartesiaVoiceId: '8832a0b5-47b2-4751-bb22-6a8e2149303d',
@@ -246,10 +248,10 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Kaen44 executive voice. Licensed/consented data only; no real-person or character clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Kaen44 direction; public TV/audio clips are moodboard only.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Primary ready-made licensed voice.' },
-      [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.azureVoice, note: 'Secondary HD ready-made voice.' },
-      [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.openAiVoice, note: 'Tertiary high-quality ready-made voice.' },
-      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: null, note: 'Legacy opt-in bridge only; never auto-selected unless explicitly enabled.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Fallback/explicit override ready-made licensed voice.' },
+      [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
+      [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
+      [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/kaen44-official-french-narrator.wav', note: 'Official Kaen44 bridge using the owned family WAV reference when available.' },
       [PROVIDERS.PIPER]:      { configured: true,  note: 'Neutral fallback when cloud voices are not configured.' },
     },
   },

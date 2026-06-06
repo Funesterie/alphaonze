@@ -63,6 +63,7 @@ const OFFICIAL_VOICE_SAMPLE_FILES = {
   k44: 'kaen44-official-french-narrator.wav',
   vivy: 'vivy-official-french-conversational.wav',
 };
+const OWNED_OFFICIAL_REFERENCE_PERSONAS = new Set(['a11', 'kaen44']);
 
 function configureTtsRouter(options = {}) {
   if (typeof options.verifyJWT === 'function') {
@@ -556,20 +557,31 @@ function canUsePaidTtsVoice(req = {}) {
   return ['admin_family', 'founder', 'premium'].includes(tier);
 }
 
-function shouldUseA11OfficialReferenceForBasic(body = {}) {
+function getOwnedOfficialReferencePersona(body = {}) {
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
-  if (explicitPersona !== 'a11') return false;
+  return OWNED_OFFICIAL_REFERENCE_PERSONAS.has(explicitPersona) ? explicitPersona : '';
+}
+
+function shouldUseOwnedOfficialReferenceForBasic(body = {}) {
+  const explicitPersona = getOwnedOfficialReferencePersona(body);
+  if (!explicitPersona) return false;
   if (body?.identityVoice === false || body?.useIdentityVoice === false || body?.neutralVoice === true) {
     return false;
   }
   return wantsOfficialIdentityVoice(body);
 }
 
-function allowsExplicitA11CloudVoice(body = {}) {
+function allowsExplicitOwnedOfficialCloudVoice(body = {}) {
+  const explicitPersona = getOwnedOfficialReferencePersona(body);
+  if (!explicitPersona) return false;
   const provider = getRequestedTtsProvider(body);
   const explicitCloudOverride = parseOptionalBoolean(
-    body?.allowA11CloudVoice
-    ?? body?.forceA11CloudVoice
+    body?.allowOfficialCloudVoice
+    ?? body?.forceOfficialCloudVoice
+    ?? body?.allowIdentityCloudVoice
+    ?? body?.forceIdentityCloudVoice
+    ?? (explicitPersona === 'a11' ? (body?.allowA11CloudVoice ?? body?.forceA11CloudVoice) : undefined)
+    ?? (explicitPersona === 'kaen44' ? (body?.allowKaen44CloudVoice ?? body?.forceKaen44CloudVoice ?? body?.allowK44CloudVoice ?? body?.forceK44CloudVoice) : undefined)
     ?? body?.forceCloudTts
     ?? body?.useReadyMadeCloudVoice,
     false
@@ -584,14 +596,15 @@ function allowsExplicitA11CloudVoice(body = {}) {
 }
 
 function shouldUseA11OfficialReferenceVoice(body = {}) {
-  const explicitPersona = getExplicitTtsPersonaFromBody(body);
-  if (explicitPersona !== 'a11') return false;
+  const explicitPersona = getOwnedOfficialReferencePersona(body);
+  if (!explicitPersona) return false;
   if (body?.identityVoice === false || body?.useIdentityVoice === false || body?.neutralVoice === true) {
     return false;
   }
-  if (allowsExplicitA11CloudVoice(body)) return false;
+  if (allowsExplicitOwnedOfficialCloudVoice(body)) return false;
   const costPolicy = String(body?.ttsCostPolicy || '').trim().toLowerCase();
-  return costPolicy === 'basic_a11_official_reference'
+  return costPolicy === `basic_${explicitPersona}_official_reference`
+    || costPolicy === `${explicitPersona}_official_reference`
     || wantsOfficialIdentityVoice(body)
     || requiresReferenceVoice(body)
     || wantsDefaultVoiceReference(body);
@@ -599,7 +612,8 @@ function shouldUseA11OfficialReferenceVoice(body = {}) {
 
 function normalizeA11OfficialReferenceRequest(body = {}) {
   if (!shouldUseA11OfficialReferenceVoice(body)) return body;
-  const piperProfile = getReadyVoiceProfile('a11', PROVIDERS.PIPER);
+  const persona = getOwnedOfficialReferencePersona(body) || 'a11';
+  const piperProfile = getReadyVoiceProfile(persona, PROVIDERS.PIPER);
   const piperVoice = String(piperProfile?.piperVoice || 'fr_FR-tom-medium').trim() || 'fr_FR-tom-medium';
   const vocalMode = normalizeVocalMode(body);
   return {
@@ -613,9 +627,9 @@ function normalizeA11OfficialReferenceRequest(body = {}) {
     voice: body?.voice || piperVoice,
     model: body?.model || piperVoice,
     piperVoice,
-    persona: 'a11',
-    voicePersona: 'a11',
-    surface: body?.surface || 'a11',
+    persona,
+    voicePersona: persona,
+    surface: body?.surface || persona,
     vocalMode: vocalMode === 'speech' ? 'adaptive' : vocalMode,
     voiceConversion: true,
     convertVoice: true,
@@ -636,14 +650,15 @@ function normalizeA11OfficialReferenceRequest(body = {}) {
     xttsRvcOptIn: true,
     audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
     responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
-    ttsCostPolicy: String(body?.ttsCostPolicy || '').trim() || 'a11_official_reference',
+    ttsCostPolicy: String(body?.ttsCostPolicy || '').trim() || `${persona}_official_reference`,
   };
 }
 
 function enforceBasicTtsCostPolicy(req = {}, body = {}) {
   if (canUsePaidTtsVoice(req)) return body;
-  if (shouldUseA11OfficialReferenceForBasic(body)) {
-    const piperProfile = getReadyVoiceProfile('a11', PROVIDERS.PIPER);
+  if (shouldUseOwnedOfficialReferenceForBasic(body)) {
+    const persona = getOwnedOfficialReferencePersona(body) || 'a11';
+    const piperProfile = getReadyVoiceProfile(persona, PROVIDERS.PIPER);
     const piperVoice = String(piperProfile?.piperVoice || 'fr_FR-upmc-medium').trim() || 'fr_FR-upmc-medium';
     const vocalMode = normalizeVocalMode(body);
     return {
@@ -657,9 +672,9 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
       voice: body?.voice || piperVoice,
       model: body?.model || piperVoice,
       piperVoice,
-      persona: 'a11',
-      voicePersona: 'a11',
-      surface: body?.surface || 'a11',
+      persona,
+      voicePersona: persona,
+      surface: body?.surface || persona,
       vocalMode: vocalMode === 'speech' ? 'adaptive' : vocalMode,
       voiceConversion: true,
       convertVoice: true,
@@ -680,7 +695,7 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
       xttsRvcOptIn: true,
       audioFormat: normalizeTtsAudioFormat(body, 'mp3'),
       responseFormat: normalizeTtsAudioFormat(body, 'mp3'),
-      ttsCostPolicy: 'basic_a11_official_reference',
+      ttsCostPolicy: `basic_${persona}_official_reference`,
     };
   }
   const provider = getRequestedTtsProvider(body);
@@ -1726,9 +1741,9 @@ function isFfmpegMorphVoicePayload(payload = {}) {
   return values.some((value) => ['ffmpeg', 'ffmpeg-morph', 'morph'].includes(value));
 }
 
-function isOfficialA11ReferenceRequest(req = {}) {
+function isOwnedOfficialReferenceRequest(req = {}) {
   const body = req?.body || req || {};
-  return getTtsPersonaFromBody(body, '') === 'a11' && shouldUseA11OfficialReferenceVoice(body);
+  return Boolean(getOwnedOfficialReferencePersona(body)) && shouldUseA11OfficialReferenceVoice(body);
 }
 
 function buildReferenceVoiceUnavailablePayload(payload = {}) {
@@ -2015,10 +2030,11 @@ function resolveTtsProviderForRequest(body = {}) {
   const requestedProvider = getRequestedTtsProvider(body);
   const allowPaidVoice = allowsPaidTtsVoiceForBody(body);
   if (shouldUseA11OfficialReferenceVoice(body)) {
+    const ownedPersona = getOwnedOfficialReferencePersona(body) || persona;
     return {
       provider: PROVIDERS.XTTS_RVC,
       configured: true,
-      note: 'A11 official Djeff WAV reference routed through XTTS/RVC.',
+      note: `${ownedPersona} official owned WAV reference routed through XTTS/RVC.`,
       diagnostic: null,
     };
   }
@@ -3912,7 +3928,7 @@ async function handleTtsSpeakRequest(req, res) {
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
       const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
-      if (isOfficialA11ReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
+      if (isOwnedOfficialReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
         return res.status(424).json({
           ok: false,
           error: 'voice_reference_tts_unavailable',
@@ -4549,7 +4565,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
       && (!hasDirectIdentityBridge || interactiveTts || !hasExplicitDirectIdentityBridge);
     const sendFinalizedPayload = async (basePayload) => {
       const payload = await finalizeTtsPayload(basePayload, req, vocalMode);
-      if (isOfficialA11ReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
+      if (isOwnedOfficialReferenceRequest(req) && isFfmpegMorphVoicePayload(payload)) {
         return res.status(424).json({
           ok: false,
           error: 'voice_reference_tts_unavailable',

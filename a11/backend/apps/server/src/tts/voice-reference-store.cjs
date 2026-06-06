@@ -105,8 +105,8 @@ function getVoiceReferenceLibraryCandidates() {
       path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'),
       path.join(runtimeRoot, 'voice-library', 'vivy.wav'),
       path.join(runtimeRoot, 'voice-library', 'vivy-official-french-conversational.wav'),
-      path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'),
       path.join(runtimeRoot, 'voice-library', 'kaen44-official-french-narrator.wav'),
+      path.join(runtimeRoot, 'voice-library', 'kaen44-donna.wav'),
       path.join(runtimeRoot, 'voice-library'),
       path.join(runtimeRoot, 'voice-references', 'library')
     );

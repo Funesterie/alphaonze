@@ -1366,6 +1366,7 @@ test('tts speak route treats official persona alone as identity voice request', 
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
   const previousFetch = global.fetch;
+  const wav = createPcm16Wav({ frequency: 330 });
   const bridgeCalls = [];
   const cartesiaBodies = [];
 
@@ -1381,18 +1382,26 @@ test('tts speak route treats official persona alone as identity voice request', 
     const value = String(url);
     if (value === 'https://api.cartesia.test/tts/bytes') {
       cartesiaBodies.push(JSON.parse(String(options.body || '{}')));
-      assert.equal(options.method, 'POST');
-      return {
-        ok: true,
-        status: 200,
-        async arrayBuffer() {
-          return Buffer.from('cartesia-kaen44-mp3');
-        },
-      };
+      throw new Error('cartesia_should_not_be_called_for_kaen44_official_reference');
     }
     if (value === 'http://voice-bridge.test/api/voice/convert') {
       bridgeCalls.push({ url: value, body: options.body });
-      throw new Error('legacy_bridge_should_not_be_called_for_official_persona_default');
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            const header = String(name || '').toLowerCase();
+            if (header === 'content-type') return 'audio/wav';
+            if (header === 'x-a11-voice-style') return 'kaen44-official-french-narrator';
+            if (header === 'x-a11-voice-engine') return 'xtts-rvc';
+            return '';
+          },
+        },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
     }
     if (value === 'http://a11-voice:5002/api/tts') {
       throw new Error('piper_http_should_not_be_called_for_official_persona_default');
@@ -1413,13 +1422,14 @@ test('tts speak route treats official persona alone as identity voice request', 
         });
 
         assert.equal(result.response.status, 200);
-        assert.equal(result.json.provider, 'cartesia');
-        assert.equal(result.json.via, 'cartesia-tts');
-        assert.equal(result.json.providerCapabilities.readyMadeVoice, true);
-        assert.match(result.json.voiceReference.label, /French Narrator Lady/i);
-        assert.equal(cartesiaBodies.length, 1);
-        assert.equal(cartesiaBodies[0].voice.id, '8832a0b5-47b2-4751-bb22-6a8e2149303d');
-        assert.equal(bridgeCalls.length, 0);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.equal(result.json.via, 'xtts-rvc-direct');
+        assert.equal(result.json.providerCapabilities.referenceVoice, true);
+        assert.equal(result.json.voiceConversion.voiceStyle, 'kaen44-official-french-narrator');
+        assert.equal(cartesiaBodies.length, 0);
+        assert.equal(bridgeCalls.length, 1);
+        assert.equal(bridgeCalls[0].body.get('persona'), 'kaen44');
+        assert.equal(bridgeCalls[0].body.get('voiceStyle'), 'kaen44-official-french-narrator');
       }
     );
   } finally {
@@ -1945,6 +1955,8 @@ test('tts speak route uses ready-made OpenAI style when cloud voices are unavail
           text: 'bonjour Jeffrey',
           persona: 'kaen44',
           voicePersona: 'kaen44',
+          provider: 'openai',
+          forceCloudTts: true,
           vocalMode: 'adaptive',
           useDefaultVoiceReference: true,
           voiceReferenceRequired: true,
@@ -2088,7 +2100,7 @@ test('tts speak route uses low-latency OpenAI MP3 and skips slow XTTS/RVC bridge
   }
 });
 
-test('tts speak route keeps trying voice module when OpenAI identity fallback is rate-limited', async () => {
+test('tts speak route uses the voice module directly for Kaen44 official reference voices', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-rate-limited-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -2224,7 +2236,7 @@ test('tts speak route keeps trying voice module when OpenAI identity fallback is
         assert.equal(result.json.provider, 'xtts-rvc');
         assert.equal(result.json.voiceConversion.ok, true);
         assert.equal(result.json.voiceConversion.voiceStyle, 'kaen44-official-french-narrator');
-        assert.ok(calls.filter((call) => call === 'https://api.openai.test/v1/audio/speech').length >= 1);
+        assert.equal(calls.filter((call) => call === 'https://api.openai.test/v1/audio/speech').length, 0);
         assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/convert').length, 1);
       }
     );
