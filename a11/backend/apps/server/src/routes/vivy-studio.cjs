@@ -176,7 +176,17 @@ function getSunoAccess(input = {}, req = null) {
 }
 
 function canUseServerSuno(req = null) {
-  return isVivyFounderUser(req?.user || {});
+  const user = req?.user || {};
+  if (isVivyFounderUser(user)) return true;
+  const values = [
+    user?.role,
+    user?.tier,
+    user?.plan,
+    user?.subscriptionTier,
+    user?.subscription_tier,
+    ...(Array.isArray(user?.roles) ? user.roles : []),
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+  return values.some((value) => /\b(premium|famille|family|founder|fondateur|admin_family)\b/i.test(value));
 }
 
 function getSunoBaseUrl() {
@@ -1422,11 +1432,11 @@ function createVivyStudioRouter({ verifyJWT } = {}) {
 
   router.get('/jobs/:taskId', requireAuth, async (req, res) => {
     try {
-      if (!isVivyFounderUser(req.user || {}) && !getRequestSessionSunoApiKey({}, req)) {
+      if (!canUseServerSuno(req) && !getRequestSessionSunoApiKey({}, req)) {
         return res.status(403).json({
           ok: false,
           error: 'vivy_music_admin_only',
-          message: 'Génération musicale réservée aux comptes fondateur/admin, sauf clé Suno personnelle de session.',
+          message: 'Génération musicale réservée aux comptes Famille/Premium/Fondateur, sauf clé Suno personnelle de session.',
         });
       }
       res.json(await getSunoMusicJob(req.params.taskId, {}, req));

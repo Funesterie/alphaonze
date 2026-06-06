@@ -281,7 +281,7 @@ test('Suno session key lets a non-founder launch a personal music job without le
   }
 });
 
-test('POST /api/vivy/studio/produce starts an async Suno music job for founder accounts', async () => {
+test('POST /api/vivy/studio/produce starts an async Suno music job for premium accounts', async () => {
   const previousEnv = {
     VIVY_SUNO_API_KEY: process.env.VIVY_SUNO_API_KEY,
     VIVY_SUNO_BASE_URL: process.env.VIVY_SUNO_BASE_URL,
@@ -291,9 +291,9 @@ test('POST /api/vivy/studio/produce starts an async Suno music job for founder a
   };
   const previousFetch = global.fetch;
   const bodies = [];
-  const founderAuth = (req, res, next) => {
-    if (req.headers.authorization === 'Bearer vivy-founder-token') {
-      req.user = { id: 'djeff', username: 'Djeff', roles: ['founder'] };
+  const premiumAuth = (req, res, next) => {
+    if (req.headers.authorization === 'Bearer vivy-premium-token') {
+      req.user = { id: 'premium-user', username: 'Premium', tier: 'premium', roles: ['premium'] };
       return next();
     }
     return res.status(401).json({ ok: false, error: 'A11_JWT_Missing', message: 'Connexion requise' });
@@ -321,14 +321,14 @@ test('POST /api/vivy/studio/produce starts an async Suno music job for founder a
 
   try {
     await withServer((app) => {
-      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: founderAuth }));
+      app.use('/api/vivy/studio', createVivyStudioRouter({ verifyJWT: premiumAuth }));
     }, async (baseUrl) => {
       const { response, json } = await postJson(baseUrl, '/api/vivy/studio/produce', {
         mode: 'song',
         songText: 'Vivy danse dans les néons.',
         songMood: 'cyber pop mélodique',
         forceRealMusic: true,
-      }, { Authorization: 'Bearer vivy-founder-token' });
+      }, { Authorization: 'Bearer vivy-premium-token' });
 
       assert.equal(response.status, 200);
       assert.equal(json.ok, true);
