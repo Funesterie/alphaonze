@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   buildA11VirtualResponseDraft,
   postProcessA11AssistantResponse,
+  repairOfficialVoiceListenLinks,
 } = require('../src/chat/response-draft-rewriter.cjs');
 
 test('response draft rewrites raw MCP tool inventories into natural speech', () => {
@@ -88,6 +89,25 @@ test('response draft corrects A11 voice module denial', () => {
   assert.match(processed.content, /module TTS|backend Funesterie/i);
   assert.match(processed.content, /WAV Djeff|a11-official-stern-french|XTTS\/RVC/i);
   assert.doesNotMatch(processed.content, /tout se passe en texte/i);
+});
+
+test('response draft repairs fake A11 official voice links', () => {
+  const processed = postProcessA11AssistantResponse({
+    userMessage: 'saluuttt fais moi écouter ta belle voix',
+    text: 'Voici un extrait de ma voix: [Écouter A11 – voix officielle](https://a11.funesterie.me/cockpit). Il s’agit du fichier WAV local a11-official-stern-french.wav.',
+  });
+
+  assert.equal(processed.rewritten, true);
+  assert.match(processed.content, /\[Écouter A11 – voix officielle\]\(\/api\/tts\/official\/a11\/audio\)/);
+  assert.doesNotMatch(processed.content, /a11\.funesterie\.me\/cockpit/i);
+});
+
+test('official voice link repair adds a real link when the model only names the WAV', () => {
+  const repaired = repairOfficialVoiceListenLinks(
+    'Voici un extrait de ma voix officielle: a11-official-stern-french.wav.'
+  );
+
+  assert.match(repaired, /\[Écouter A11 – voix officielle\]\(\/api\/tts\/official\/a11\/audio\)/);
 });
 
 test('response draft blocks visible draft placeholders', () => {

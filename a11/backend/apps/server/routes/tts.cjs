@@ -57,6 +57,12 @@ const TTS_PRIORITY_SCORES = {
   family: 60,
   public: 10,
 };
+const OFFICIAL_VOICE_SAMPLE_FILES = {
+  a11: 'a11-official-stern-french.wav',
+  kaen44: 'kaen44-official-french-narrator.wav',
+  k44: 'kaen44-official-french-narrator.wav',
+  vivy: 'vivy-official-french-conversational.wav',
+};
 
 function configureTtsRouter(options = {}) {
   if (typeof options.verifyJWT === 'function') {
@@ -3274,6 +3280,30 @@ router.get('/tts/references/:id/audio', requireJwt, (req, res) => {
   }
 });
 
+router.get('/tts/official/:persona/audio', (req, res) => {
+  setTtsCorsHeaders(req, res);
+  try {
+    const sample = resolveOfficialVoiceSample(req.params?.persona);
+    if (!sample?.filePath) {
+      return res.status(404).json({
+        ok: false,
+        error: 'official_voice_sample_not_found',
+        message: 'Reference vocale officielle indisponible sur ce runtime.',
+      });
+    }
+    res.setHeader('Content-Type', sample.reference?.mimeType || contentTypeForTtsAsset(sample.filePath));
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('X-A11-Voice-Persona', sample.persona);
+    return res.sendFile(sample.filePath);
+  } catch (error_) {
+    return res.status(500).json({
+      ok: false,
+      error: 'official_voice_sample_read_failed',
+      message: String(error_?.message || error_),
+    });
+  }
+});
+
 router.delete('/tts/references/:id', requireJwt, (req, res) => {
   try {
     const deleted = deleteVoiceReference({ user: req.user, id: req.params?.id });
@@ -3365,6 +3395,32 @@ function contentTypeForTtsAsset(filename = '') {
   if (ext === '.png') return 'image/png';
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
   return 'application/octet-stream';
+}
+
+function normalizeOfficialVoiceSamplePersona(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['a11', 'alphaonze', 'alpha-onze', 'a-11'].includes(normalized)) return 'a11';
+  if (['k44', 'kaen44', 'kaen'].includes(normalized)) return 'kaen44';
+  if (['vivy', 'vivy-one', 'vivy_one'].includes(normalized)) return 'vivy';
+  return '';
+}
+
+function resolveOfficialVoiceSample(persona = '') {
+  const normalized = normalizeOfficialVoiceSamplePersona(persona);
+  const expectedFile = OFFICIAL_VOICE_SAMPLE_FILES[normalized];
+  if (!expectedFile) return null;
+
+  const references = listLibraryVoiceReferences({ includePath: true });
+  const match = references.find((reference) => (
+    String(reference?.originalName || '').toLowerCase() === expectedFile
+    || path.basename(String(reference?.filePath || '')).toLowerCase() === expectedFile
+  ));
+  if (!match?.filePath || !fs.existsSync(match.filePath)) return null;
+  return {
+    persona: normalized,
+    filePath: match.filePath,
+    reference: match,
+  };
 }
 
 function parseTtsStreamPreference(body = {}) {

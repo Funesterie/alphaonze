@@ -2595,6 +2595,48 @@ test('tts out local generated assets survive repeated browser reads', async () =
   }
 });
 
+test('tts official A11 sample route serves the official library WAV', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-official-sample-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+  };
+  const wav = createPcm16Wav({ frequency: 180 });
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), wav);
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/tts/official/a11/audio`, {
+          headers: { 'x-test-basic': '1' },
+        });
+        assert.equal(response.status, 200);
+        assert.match(String(response.headers.get('content-type') || ''), /audio\/wav/i);
+        assert.equal(response.headers.get('x-a11-voice-persona'), 'a11');
+        assert.equal(Buffer.from(await response.arrayBuffer()).length, wav.length);
+
+        const missing = await fetch(`${baseUrl}/api/tts/official/unknown/audio`);
+        assert.equal(missing.status, 404);
+      }
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts route can run generated audio through the voice conversion module', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-conversion-'));
   const previousEnv = {

@@ -11,6 +11,7 @@ const A11_RESPONSE_DRAFT_CONTEXT = `
 - Les notes de travail internes restent invisibles: je ne les nomme pas a l'utilisateur sauf s'il demande explicitement une ebauche de texte.
 - Si une reponse courte manque de matiere, je ne remplis pas avec de la meta-conversation: j'utilise seulement le contexte autorise du compte courant quand il aide vraiment.
 `.trim();
+const A11_OFFICIAL_VOICE_AUDIO_URL = '/api/tts/official/a11/audio';
 
 function normalizeText(value = '') {
   return String(value || '').replace(/\r\n/g, '\n').trim();
@@ -207,6 +208,33 @@ function firstUsefulSentence(text = '') {
   return (match?.[1] || cleaned.slice(0, 260)).trim();
 }
 
+function repairOfficialVoiceListenLinks(text = '') {
+  const input = normalizeText(text);
+  if (!input) return input;
+  const folded = foldText(input);
+  if (!/(a11|voix officielle|a11-official-stern-french|extrait de ma voix|belle voix)/.test(folded)) {
+    return input;
+  }
+
+  let output = input.replace(
+    /\[([^\]]*(?:A11|a11|voix officielle|Voix officielle|voix d['’]?A11)[^\]]*)\]\((?!\/api\/tts\/official\/a11\/audio\))[^)]*\)/g,
+    `[$1](${A11_OFFICIAL_VOICE_AUDIO_URL})`
+  );
+
+  if (!output.includes(A11_OFFICIAL_VOICE_AUDIO_URL)) {
+    output = output.replace(
+      /\b(Écouter\s*A11\s*[–-]\s*voix officielle|Ecouter\s*A11\s*[–-]\s*voix officielle)\b/i,
+      `[$1](${A11_OFFICIAL_VOICE_AUDIO_URL})`
+    );
+  }
+
+  if (!output.includes(A11_OFFICIAL_VOICE_AUDIO_URL) && /(extrait de ma voix|a11-official-stern-french)/i.test(input)) {
+    output = `${output}\n\n[Écouter A11 – voix officielle](${A11_OFFICIAL_VOICE_AUDIO_URL})`;
+  }
+
+  return output;
+}
+
 function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = '', draft = null } = {}) {
   const text = normalizeText(assistantText);
   const responseDraft = draft || buildA11VirtualResponseDraft({ userMessage, assistantText: text });
@@ -284,7 +312,8 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
 
 function postProcessA11AssistantResponse({ text = '', userMessage = '', contextText = '' } = {}) {
   const draft = buildA11VirtualResponseDraft({ userMessage, assistantText: text, contextText });
-  const content = rewriteA11ResponseFromVirtualDraft({ userMessage, assistantText: text, draft });
+  const rewrittenContent = rewriteA11ResponseFromVirtualDraft({ userMessage, assistantText: text, draft });
+  const content = repairOfficialVoiceListenLinks(rewrittenContent);
   return {
     content,
     draft,
@@ -297,6 +326,7 @@ module.exports = {
   buildA11VirtualResponseDraft,
   hasResponseDraftContext,
   postProcessA11AssistantResponse,
+  repairOfficialVoiceListenLinks,
   rewriteA11ResponseFromVirtualDraft,
   userAskedForStructuredFormat,
 };
