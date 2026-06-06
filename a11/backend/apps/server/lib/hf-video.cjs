@@ -36,6 +36,30 @@ function resolveHuggingFaceVideoToken(env = process.env) {
   ).trim();
 }
 
+function resolveReplicateVideoToken(env = process.env) {
+  return String(
+    env.A11_REPLICATE_VIDEO_TOKEN
+    || env.A11_REPLICATE_API_TOKEN
+    || env.REPLICATE_API_TOKEN
+    || env.REPLICATE_TOKEN
+    || ''
+  ).trim();
+}
+
+function resolveReplicateVideoModel(env = process.env) {
+  return String(
+    env.A11_REPLICATE_VIDEO_MODEL
+    || env.REPLICATE_VIDEO_MODEL
+    || 'wan-video/wan-2.2-5b-fast'
+  ).trim() || 'wan-video/wan-2.2-5b-fast';
+}
+
+function defaultReplicateEndpoint(env = process.env) {
+  const baseUrl = String(env.A11_REPLICATE_BASE_URL || 'https://api.replicate.com/v1').trim().replace(/\/+$/, '');
+  const modelPath = resolveReplicateVideoModel(env).split('/').map(encodeURIComponent).join('/');
+  return `${baseUrl}/models/${modelPath}/predictions`;
+}
+
 function defaultEndpointForProvider(provider = 'fal-ai', model = '') {
   const encodedModel = String(model || '').trim().split('/').map(encodeURIComponent).join('/');
   if (provider === 'fal-ai') {
@@ -58,21 +82,29 @@ function clampInteger(value, min, max, fallback) {
 
 function resolveHuggingFaceVideoConfig(env = process.env, overrides = {}) {
   const overrideToken = String(overrides.token || overrides.tokenOverride || '').trim();
-  const enabled = Boolean(overrides.enabled) || Boolean(overrideToken) || isHuggingFaceVideoEnabled(env);
+  const overrideReplicateToken = String(overrides.replicateToken || overrides.replicateTokenOverride || '').trim();
   const provider = normalizeProvider(overrides.provider || env.A11_HF_VIDEO_PROVIDER || env.A11_HUGGINGFACE_VIDEO_PROVIDER || 'fal-ai');
+  const replicateToken = overrideReplicateToken || resolveReplicateVideoToken(env);
+  const tokenKind = provider === 'replicate' && replicateToken ? 'replicate' : 'huggingface';
+  const enabled = Boolean(overrides.enabled) || Boolean(overrideToken) || Boolean(overrideReplicateToken) || isHuggingFaceVideoEnabled(env);
   const model = String(
     overrides.model
     || env.A11_HF_VIDEO_MODEL
     || env.A11_HUGGINGFACE_VIDEO_MODEL
     || 'Wan-AI/Wan2.2-TI2V-5B'
   ).trim();
-  const endpoint = String(
+  const endpointOverride = String(
     overrides.endpoint
     || env.A11_HF_VIDEO_ENDPOINT
     || env.A11_HUGGINGFACE_VIDEO_ENDPOINT
+    || ''
+  ).trim();
+  const endpoint = String(
+    endpointOverride
+    || (tokenKind === 'replicate' ? defaultReplicateEndpoint(env) : '')
     || defaultEndpointForProvider(provider, model)
   ).trim();
-  const token = overrideToken || resolveHuggingFaceVideoToken(env);
+  const token = tokenKind === 'replicate' ? replicateToken : (overrideToken || resolveHuggingFaceVideoToken(env));
   const defaultFrames = clampInteger(env.A11_HF_VIDEO_FRAMES || env.A11_HUGGINGFACE_VIDEO_FRAMES || 16, 4, 121, 16);
   const defaultSteps = clampInteger(env.A11_HF_VIDEO_STEPS || env.A11_HUGGINGFACE_VIDEO_STEPS || 4, 1, 50, 4);
   const timeoutMs = clampInteger(env.A11_HF_VIDEO_TIMEOUT_MS || env.A11_HUGGINGFACE_VIDEO_TIMEOUT_MS || 600000, 1000, 3600000, 600000);
@@ -85,6 +117,7 @@ function resolveHuggingFaceVideoConfig(env = process.env, overrides = {}) {
     model,
     endpoint,
     token,
+    tokenKind,
     defaultFrames,
     defaultSteps,
     timeoutMs,
@@ -234,9 +267,9 @@ function findVideoUrl(value, depth = 0) {
   return '';
 }
 
-async function downloadVideoUrl(fetchImpl, url, token, timeoutMs) {
+async function downloadVideoUrl(fetchImpl, url, token, timeoutMs, tokenKind = 'huggingface') {
   const response = await fetchImpl(url, {
-    headers: headersForHuggingFaceVideoUrl(url, token),
+    headers: headersForHuggingFaceVideoUrl(url, token, tokenKind),
     signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = await readResponsePayload(response);
@@ -247,8 +280,11 @@ async function downloadVideoUrl(fetchImpl, url, token, timeoutMs) {
   return payload;
 }
 
-function headersForHuggingFaceVideoUrl(url, token) {
-  return /^https:\/\/router\.huggingface\.co\//i.test(String(url || ''))
+function headersForHuggingFaceVideoUrl(url, token, tokenKind = 'huggingface') {
+  const targetUrl = String(url || '');
+  if (!token) return {};
+  return /^https:\/\/router\.huggingface\.co\//i.test(targetUrl)
+    || (tokenKind === 'replicate' && /^https:\/\/api\.replicate\.com\//i.test(targetUrl))
     ? { Authorization: `Bearer ${token}` }
     : {};
 }
@@ -283,7 +319,7 @@ function extractFalQueueStatus(json = {}) {
   );
 }
 
-async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, pollIntervalMs) {
+async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, pollIntervalMs, tokenKind = 'huggingface') {
   let { statusUrl, responseUrl } = extractFalQueueUrls(responseJson, requestUrl);
   const deadline = Date.now() + timeoutMs;
   let lastStatus = extractFalQueueStatus(responseJson);
@@ -292,7 +328,7 @@ async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, ti
   while (Date.now() < deadline) {
     if (statusUrl) {
       const statusResponse = await fetchImpl(statusUrl, {
-        headers: headersForHuggingFaceVideoUrl(statusUrl, token),
+        headers: headersForHuggingFaceVideoUrl(statusUrl, token, tokenKind),
         signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
       });
       const statusPayload = await readResponsePayload(statusResponse);
@@ -313,14 +349,14 @@ async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, ti
       }
     } else if (responseUrl) {
       const resultResponse = await fetchImpl(responseUrl, {
-        headers: headersForHuggingFaceVideoUrl(responseUrl, token),
+        headers: headersForHuggingFaceVideoUrl(responseUrl, token, tokenKind),
         signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
       });
       const resultPayload = await readResponsePayload(resultResponse);
       if (resultResponse.ok) {
         if (!resultPayload.json) return resultPayload;
         const videoUrl = findVideoUrl(resultPayload.json);
-        if (videoUrl) return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs);
+        if (videoUrl) return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs, tokenKind);
         lastStatus = extractFalQueueStatus(resultPayload.json) || lastStatus;
       } else if (![202, 409, 425].includes(Number(resultResponse.status))) {
         throw new Error(resultPayload.text || `hf_fal_queue_response_${resultResponse.status}`);
@@ -335,7 +371,7 @@ async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, ti
   }
 
   const finalResponse = await fetchImpl(responseUrl, {
-    headers: headersForHuggingFaceVideoUrl(responseUrl, token),
+    headers: headersForHuggingFaceVideoUrl(responseUrl, token, tokenKind),
     signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
   });
   const finalPayload = await readResponsePayload(finalResponse);
@@ -347,7 +383,7 @@ async function pollFalQueueResult(fetchImpl, responseJson, requestUrl, token, ti
   if (!videoUrl) {
     throw new Error(lastMessage || 'hf_fal_queue_missing_video_url');
   }
-  return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs);
+  return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs, tokenKind);
 }
 
 function extractReplicatePredictionUrl(json = {}, requestUrl = '') {
@@ -357,7 +393,7 @@ function extractReplicatePredictionUrl(json = {}, requestUrl = '') {
   );
 }
 
-async function pollReplicateResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, pollIntervalMs) {
+async function pollReplicateResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, pollIntervalMs, tokenKind = 'huggingface') {
   let prediction = responseJson || {};
   const predictionUrl = extractReplicatePredictionUrl(responseJson, requestUrl);
   const deadline = Date.now() + timeoutMs;
@@ -367,7 +403,7 @@ async function pollReplicateResult(fetchImpl, responseJson, requestUrl, token, t
     if (['succeeded', 'success', 'completed', 'complete', 'ok'].includes(status)) {
       const videoUrl = findVideoUrl(prediction.output || prediction.result || prediction.video || prediction.data || {});
       if (!videoUrl) throw new Error('hf_replicate_missing_video_url');
-      return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs);
+      return downloadVideoUrl(fetchImpl, videoUrl, token, timeoutMs, tokenKind);
     }
     if (['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(status)) {
       throw new Error(String(prediction.error || prediction.logs || `hf_replicate_${status}`));
@@ -375,7 +411,7 @@ async function pollReplicateResult(fetchImpl, responseJson, requestUrl, token, t
     if (!predictionUrl) break;
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     const response = await fetchImpl(predictionUrl, {
-      headers: headersForHuggingFaceVideoUrl(predictionUrl, token),
+      headers: headersForHuggingFaceVideoUrl(predictionUrl, token, tokenKind),
       signal: AbortSignal.timeout(Math.min(30000, Math.max(1000, deadline - Date.now()))),
     });
     const payload = await readResponsePayload(response);
@@ -386,7 +422,7 @@ async function pollReplicateResult(fetchImpl, responseJson, requestUrl, token, t
   throw new Error('hf_replicate_timeout');
 }
 
-async function pollWavespeedResult(fetchImpl, responseJson, requestUrl, token, timeoutMs) {
+async function pollWavespeedResult(fetchImpl, responseJson, requestUrl, token, timeoutMs, tokenKind = 'huggingface') {
   const resultPath = responseJson?.data?.urls?.get;
   if (!resultPath) return null;
   const parsed = new URL(requestUrl);
@@ -409,7 +445,7 @@ async function pollWavespeedResult(fetchImpl, responseJson, requestUrl, token, t
     if (data.status === 'completed') {
       const outputUrl = Array.isArray(data.outputs) ? data.outputs[0] : data.outputs;
       if (!outputUrl) throw new Error('hf_wavespeed_missing_output');
-      return downloadVideoUrl(fetchImpl, outputUrl, token, timeoutMs);
+      return downloadVideoUrl(fetchImpl, outputUrl, token, timeoutMs, tokenKind);
     }
     if (data.status === 'failed') {
       throw new Error(String(data.error || 'hf_wavespeed_failed'));
@@ -476,9 +512,12 @@ async function tryGenerateVideoWithHuggingFace({
   const response = await fetchImpl(config.endpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${config.token}`,
+      ...headersForHuggingFaceVideoUrl(config.endpoint, config.token, config.tokenKind),
       'Content-Type': 'application/json',
       Accept: 'video/mp4, application/json',
+      ...(config.provider === 'replicate' && config.tokenKind === 'replicate'
+        ? { Prefer: `wait=${Math.min(60, Math.ceil(config.timeoutMs / 1000))}` }
+        : {}),
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(config.timeoutMs),
@@ -503,7 +542,7 @@ async function tryGenerateVideoWithHuggingFace({
   let videoPayload = responsePayload;
   if (responsePayload.json) {
     if (config.provider === 'wavespeed' && responsePayload.json?.data?.urls?.get) {
-      videoPayload = await pollWavespeedResult(fetchImpl, responsePayload.json, config.endpoint, config.token, config.timeoutMs);
+      videoPayload = await pollWavespeedResult(fetchImpl, responsePayload.json, config.endpoint, config.token, config.timeoutMs, config.tokenKind);
     } else if (config.provider === 'replicate' && (responsePayload.json?.urls?.get || responsePayload.json?.status)) {
       videoPayload = await pollReplicateResult(
         fetchImpl,
@@ -511,7 +550,8 @@ async function tryGenerateVideoWithHuggingFace({
         config.endpoint,
         config.token,
         config.timeoutMs,
-        config.pollIntervalMs
+        config.pollIntervalMs,
+        config.tokenKind
       );
     } else if (
       config.provider === 'fal-ai'
@@ -530,7 +570,8 @@ async function tryGenerateVideoWithHuggingFace({
         config.endpoint,
         config.token,
         config.timeoutMs,
-        config.pollIntervalMs
+        config.pollIntervalMs,
+        config.tokenKind
       );
     } else {
       const videoUrl = findVideoUrl(responsePayload.json);
@@ -543,7 +584,7 @@ async function tryGenerateVideoWithHuggingFace({
           model: config.model,
         };
       }
-      videoPayload = await downloadVideoUrl(fetchImpl, videoUrl, config.token, config.timeoutMs);
+      videoPayload = await downloadVideoUrl(fetchImpl, videoUrl, config.token, config.timeoutMs, config.tokenKind);
     }
   }
 

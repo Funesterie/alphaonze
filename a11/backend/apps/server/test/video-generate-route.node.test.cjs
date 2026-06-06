@@ -747,6 +747,8 @@ test('video generate router follows Hugging Face fal queue responses', async () 
     A11_HF_VIDEO_PROVIDER: process.env.A11_HF_VIDEO_PROVIDER,
     A11_HF_VIDEO_MODEL: process.env.A11_HF_VIDEO_MODEL,
     A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    A11_REPLICATE_VIDEO_TOKEN: process.env.A11_REPLICATE_VIDEO_TOKEN,
+    REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
     A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
     A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
     A11_HF_VIDEO_POLL_INTERVAL_MS: process.env.A11_HF_VIDEO_POLL_INTERVAL_MS,
@@ -870,6 +872,8 @@ test('video generate router follows Hugging Face replicate predictions', async (
     A11_HF_VIDEO_PROVIDER: process.env.A11_HF_VIDEO_PROVIDER,
     A11_HF_VIDEO_MODEL: process.env.A11_HF_VIDEO_MODEL,
     A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    A11_REPLICATE_VIDEO_TOKEN: process.env.A11_REPLICATE_VIDEO_TOKEN,
+    REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
     A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
     A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
     A11_HF_VIDEO_POLL_INTERVAL_MS: process.env.A11_HF_VIDEO_POLL_INTERVAL_MS,
@@ -913,6 +917,8 @@ test('video generate router follows Hugging Face replicate predictions', async (
   process.env.A11_HF_VIDEO_PROVIDER = 'replicate';
   process.env.A11_HF_VIDEO_MODEL = 'Wan-AI/Wan2.2-TI2V-5B';
   process.env.A11_HF_VIDEO_TOKEN = 'hf_test_video_token';
+  delete process.env.A11_REPLICATE_VIDEO_TOKEN;
+  delete process.env.REPLICATE_API_TOKEN;
   process.env.A11_HF_VIDEO_FRAMES = '16';
   process.env.A11_HF_VIDEO_STEPS = '2';
   process.env.A11_HF_VIDEO_POLL_INTERVAL_MS = '10';
@@ -969,6 +975,130 @@ test('video generate router follows Hugging Face replicate predictions', async (
     assert.equal(calls[0].body.input.num_inference_steps, 2);
     assert.equal(calls[0].body.input.negative_prompt, 'text, watermark');
     assert.equal(calls[1].headers.Authorization, 'Bearer hf_test_video_token');
+    assert.equal(calls[2].headers.Authorization, undefined);
+  } finally {
+    await new Promise((resolve) => appServer.close(resolve));
+    await fsp.rm(runtimeRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('video generate router uses direct Replicate token for replicate video provider', async () => {
+  const previousEnv = {
+    A11_ENABLE_HF_VIDEO: process.env.A11_ENABLE_HF_VIDEO,
+    A11_HF_VIDEO_PROVIDER: process.env.A11_HF_VIDEO_PROVIDER,
+    A11_HF_VIDEO_MODEL: process.env.A11_HF_VIDEO_MODEL,
+    A11_HF_VIDEO_TOKEN: process.env.A11_HF_VIDEO_TOKEN,
+    A11_REPLICATE_VIDEO_TOKEN: process.env.A11_REPLICATE_VIDEO_TOKEN,
+    REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
+    A11_REPLICATE_VIDEO_MODEL: process.env.A11_REPLICATE_VIDEO_MODEL,
+    A11_REPLICATE_BASE_URL: process.env.A11_REPLICATE_BASE_URL,
+    A11_HF_VIDEO_FRAMES: process.env.A11_HF_VIDEO_FRAMES,
+    A11_HF_VIDEO_STEPS: process.env.A11_HF_VIDEO_STEPS,
+    A11_HF_VIDEO_POLL_INTERVAL_MS: process.env.A11_HF_VIDEO_POLL_INTERVAL_MS,
+    A11_VIDEO_PROXY_URL: process.env.A11_VIDEO_PROXY_URL,
+    VIDEO_PROXY_URL: process.env.VIDEO_PROXY_URL,
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+  };
+  const runtimeRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'a11-direct-replicate-video-'));
+  const calls = [];
+  const fakeFetch = async (url, options = {}) => {
+    calls.push({
+      url: String(url),
+      headers: options.headers || {},
+      body: options.body ? JSON.parse(String(options.body)) : null,
+    });
+    if (calls.length === 1) {
+      return new Response(JSON.stringify({
+        status: 'processing',
+        urls: { get: 'https://api.replicate.com/v1/predictions/replicate-direct-1' },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (String(url).includes('/predictions/')) {
+      return new Response(JSON.stringify({
+        status: 'succeeded',
+        output: ['https://replicate.delivery/direct-video.mp4'],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(Buffer.from('fake-direct-replicate-mp4'), {
+      status: 200,
+      headers: { 'Content-Type': 'video/mp4' },
+    });
+  };
+
+  process.env.A11_ENABLE_HF_VIDEO = 'true';
+  process.env.A11_HF_VIDEO_PROVIDER = 'replicate';
+  process.env.A11_HF_VIDEO_MODEL = 'Wan-AI/Wan2.2-TI2V-5B';
+  process.env.REPLICATE_API_TOKEN = 'r8_test_video_token';
+  delete process.env.A11_HF_VIDEO_TOKEN;
+  delete process.env.A11_REPLICATE_VIDEO_TOKEN;
+  delete process.env.A11_REPLICATE_VIDEO_MODEL;
+  delete process.env.A11_REPLICATE_BASE_URL;
+  process.env.A11_HF_VIDEO_FRAMES = '16';
+  process.env.A11_HF_VIDEO_STEPS = '2';
+  process.env.A11_HF_VIDEO_POLL_INTERVAL_MS = '10';
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  delete process.env.A11_VIDEO_PROXY_URL;
+  delete process.env.VIDEO_PROXY_URL;
+
+  const app = express();
+  app.use(express.json({ limit: '4mb' }));
+  app.use((req, _res, next) => {
+    req.user = { id: 'premium-video-test', email: 'premium-video@example.com', tier: 'premium' };
+    next();
+  });
+  app.use('/api', videoGenerateModule.createVideoGenerateRouter({
+    fetch: fakeFetch,
+    uploadBufferToR2: async () => {
+      throw new Error('r2 unavailable in test');
+    },
+    generateVideo: async () => {
+      throw new Error('local generator should not be called when direct Replicate video is configured');
+    },
+  }).router);
+
+  const appServer = http.createServer(app);
+  await new Promise((resolve) => appServer.listen(0, '127.0.0.1', resolve));
+  const appAddress = appServer.address();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${appAddress.port}/api/video/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        host: 'a11.funesterie.me',
+        'x-forwarded-host': 'a11.funesterie.me',
+        'x-forwarded-proto': 'https',
+      },
+      body: JSON.stringify({
+        prompt: 'vivy passe en hypervitesse dans une cite magenta',
+        sourceImageUrl: 'https://files.example.com/vivy-cover.png',
+        provider: 'replicate',
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.backend, 'huggingface-video');
+    assert.equal(payload.provider, 'replicate');
+    assert.match(payload.video_url, /^https:\/\/a11\.funesterie\.me\/files\/runtime\/files\/generated\/videos\/a11-hf-video-/);
+    assert.equal(calls.length, 3);
+    assert.equal(calls[0].url, 'https://api.replicate.com/v1/models/wan-video/wan-2.2-5b-fast/predictions');
+    assert.equal(calls[0].headers.Authorization, 'Bearer r8_test_video_token');
+    assert.equal(calls[0].headers.Prefer, 'wait=60');
+    assert.equal(calls[0].body.input.prompt, 'vivy passe en hypervitesse dans une cite magenta');
+    assert.equal(calls[0].body.input.image, 'https://files.example.com/vivy-cover.png');
+    assert.equal(calls[1].headers.Authorization, 'Bearer r8_test_video_token');
     assert.equal(calls[2].headers.Authorization, undefined);
   } finally {
     await new Promise((resolve) => appServer.close(resolve));

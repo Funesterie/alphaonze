@@ -115,7 +115,7 @@ function isXaiVideoProvider(provider = '') {
 }
 
 function isHuggingFaceVideoProvider(provider = '') {
-  return normalizeVideoProvider(provider) === 'huggingface';
+  return ['huggingface', 'replicate'].includes(normalizeVideoProvider(provider));
 }
 
 function isRunComfyVideoProvider(provider = '') {
@@ -1030,14 +1030,19 @@ function createVideoGenerateRouter(overrides = {}) {
       if (proxied) return proxied;
     }
 
-    const hfVideoConfig = resolveHuggingFaceVideoConfig(process.env, { token: sessionVideoTokens.huggingface });
+    const hfProviderOverride = isHuggingFaceVideoProvider(requestedProvider) ? requestedProvider : '';
+    const hfVideoConfig = resolveHuggingFaceVideoConfig(process.env, {
+      token: sessionVideoTokens.huggingface,
+      replicateToken: sessionVideoTokens.replicate,
+      provider: hfProviderOverride,
+    });
     if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.enabled) {
-      const usesServerToken = Boolean(!sessionVideoTokens.huggingface && hfVideoConfig.token);
+      const usesServerToken = Boolean(!sessionVideoTokens.huggingface && !sessionVideoTokens.replicate && hfVideoConfig.token);
       if (usesServerToken && !canUseServerPaidVideo(req)) {
         if (isHuggingFaceVideoProvider(requestedProvider)) {
           const error = new Error('paid_video_demo_required');
           error.statusCode = 402;
-          error.payload = buildPaidVideoDeniedPayload('huggingface');
+          error.payload = buildPaidVideoDeniedPayload(hfVideoConfig.provider || 'huggingface');
           throw error;
         }
       } else {
@@ -1048,6 +1053,10 @@ function createVideoGenerateRouter(overrides = {}) {
           fetchImpl,
           uploadBufferToR2Impl: overrides.uploadBufferToR2,
           tokenOverride: sessionVideoTokens.huggingface,
+          configOverrides: {
+            provider: hfProviderOverride,
+            replicateToken: sessionVideoTokens.replicate,
+          },
         });
         if (hfResult?.ok) return rewriteVideoProxyPayload(hfResult, req);
         if (isHuggingFaceVideoProvider(requestedProvider) || hfVideoConfig.strict) {
