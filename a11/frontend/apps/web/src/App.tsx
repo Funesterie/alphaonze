@@ -3555,8 +3555,11 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       setStatus("Connexion requise pour produire avec Vivy.");
       return;
     }
+    const wantsSongPreview = activeMode === "song";
     setIsBusy(true);
-    setStatus("Vivy Studio prépare la production...");
+    setStatus(wantsSongPreview
+      ? "Vivy Studio prépare la chanson et une maquette audio locale..."
+      : "Vivy Studio prépare la production...");
     try {
       const payload = await runVivyStudioProduction({
         mode: activeMode,
@@ -3576,7 +3579,12 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         shareUrl,
         shareInstruction,
         shareTokenPresent: Boolean(shareToken.trim()),
-        allowPlaceholderMedia: false,
+        prompt: wantsSongPreview
+          ? buildVivyPlayableText(songText || songMood || voiceInstruction, songMood || "Vivy garde la lumière dans l'obscurité.", 320)
+          : undefined,
+        durationSeconds: wantsSongPreview ? 12 : undefined,
+        allowPlaceholderMedia: wantsSongPreview,
+        disableEmergencyMedia: !wantsSongPreview,
       });
       const text = String(payload?.assistant || payload?.message || payload?.content || "").trim();
       if (!text) throw new Error("reponse_vide");
@@ -3593,7 +3601,9 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         }
         : null);
       setStatus(mediaUrl
-        ? (payload.summary || "Production Vivy ajoutée au brief.")
+        ? (wantsSongPreview && audioUrl
+          ? (payload.summary || "Maquette audio locale prête avant Suno.")
+          : (payload.summary || "Production Vivy ajoutée au brief."))
         : (payload.mediaStatus?.message || payload.summary || "Brief Vivy prêt. Le bouton chanson crée un audio via la voix Vivy active."));
     } catch (error: any) {
       setStatus(`Production Vivy indisponible: ${error?.message || error}`);
@@ -3637,7 +3647,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
           ))}
         </div>
 
-        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); if (!hasSession) setStatus("Connexion requise pour préparer Vivy."); else void copyBrief(`${activeMeta.action}: brief prêt.`); }}>
+        <form className="vivy-studio-form" onSubmit={(event) => { event.preventDefault(); void askVivy(); }}>
           <h3>{activeMeta.title}</h3>
 
           {activeMode === "voice" && (
@@ -3850,7 +3860,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
           )}
 
           <div className="vivy-studio-actions">
-            <button type="submit" disabled={!hasSession}>{activeMeta.action}</button>
+            <button type="submit" disabled={!hasSession || isBusy}>{activeMeta.action}</button>
             <button type="button" onClick={askVivy} disabled={!hasSession || isBusy}>Demander à Vivy</button>
             <button type="button" onClick={() => openAgent("a11")}>Ouvrir A11</button>
             <button type="button" onClick={() => openAgent("k44")}>Kaen44</button>
