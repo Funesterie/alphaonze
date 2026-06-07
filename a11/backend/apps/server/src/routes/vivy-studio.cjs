@@ -791,13 +791,61 @@ function looksLikeVivyExternalLookupTarget(message = '') {
   return /https?:\/\/|(?:^|[\s/])(?:[a-z0-9-]+\.)+(?:com|fr|me|io|dev|org|net|app|ai|gg|tv|co|uk)(?:\b|\/)/i.test(String(message || ''));
 }
 
-function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
+function looksLikeVivyRenderedWebResearch(message = '') {
   const normalized = foldTextForLookup(message);
+  return /je declenche une recherche web/.test(normalized)
+    && /\b(?:recherche|resultats utiles|sources)\b/.test(normalized);
+}
+
+function cleanVivyOperatorTranscriptLine(line = '') {
+  const raw = String(line || '').trim();
+  if (!raw) return '';
+
+  if (/^je\s+d[ée]clenche\s+une\s+recherche\s+web\b/i.test(raw)
+    || /^r[ée]sultats\s+utiles\s*:/i.test(raw)
+    || /^je\s+m['’]?appuie\s+sur\s+ces\s+sources\b/i.test(raw)
+    || /^la\s+voix\s+vivy\s+par\s+d[ée]faut\b/i.test(raw)) {
+    return '';
+  }
+
+  if (/^[-*]\s+/.test(raw) && /https?:\/\//i.test(raw)) {
+    return '';
+  }
+
+  if (/^recherche\s*:/i.test(raw)) {
+    return cleanVivyOperatorTranscriptLine(raw.replace(/^recherche\s*:/i, '').trim());
+  }
+
+  const roleMatch = raw.match(/^(?:codex|assistant|system|syst[èe]me|kiro|a11|kaen44|k44|vivy|chatgpt|claude|grok|gemini|github\s+copilot|outil|tool)\s*[:：-]\s*(.*)$/i);
+  if (!roleMatch) return raw;
+
+  const content = roleMatch[1].trim();
+  if (!content) return '';
+  const folded = foldTextForLookup(content);
+  const operatorProgress = /\b(?:je reprends le fil|je vais verrouiller|je lance|je relance|je corrige|je patch|je pousse|je deploy|test et deploiement|requete web plus propre|contexte historique pris en compte|backend|frontend|commit|push|build|bundle|prod)\b/.test(folded);
+  const firstPersonOps = /\b(?:je|j)\b/.test(folded)
+    && /\b(?:reprends|verrouiller|lance|relance|corrige|patch|pousse|deploy|deploie|test|build|commit|prod|serveur|backend|frontend|requete|contexte)\b/.test(folded);
+  if (operatorProgress || firstPersonOps) return '';
+  return content;
+}
+
+function stripVivyOperatorTranscript(value = '') {
+  return cleanText(String(value || '')
+    .split(/\r?\n+/)
+    .map((line) => cleanVivyOperatorTranscriptLine(line))
+    .filter(Boolean)
+    .join('\n'), 1800);
+}
+
+function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
+  if (looksLikeVivyRenderedWebResearch(message)) return false;
+  const searchableMessage = stripVivyOperatorTranscript(message);
+  const normalized = foldTextForLookup(searchableMessage);
   if (!normalized) return false;
-  if (mode === 'song' && isDirectSongwritingRequest(message) && !/\b(actualite|actualites|recent|recente|dernier|derniere|latest|source|sources|web|internet|site|url|github|npm|docker)\b/.test(normalized)) {
+  if (mode === 'song' && isDirectSongwritingRequest(searchableMessage) && !/\b(actualite|actualites|recent|recente|dernier|derniere|latest|source|sources|web|internet|site|url|github|npm|docker)\b/.test(normalized)) {
     return false;
   }
-  if (looksLikeVivyExternalLookupTarget(message)) return true;
+  if (looksLikeVivyExternalLookupTarget(searchableMessage)) return true;
 
   const explicitWebLookup = /\b(cherche|chercher|recherche|trouve|trouver|verifie|verifier|consulte|regarde)\b.{0,90}\b(web|internet|google|en ligne|source|sources|site|site officiel|documentation|docs|github|npm|docker|docker hub|actualite|actualites)\b/.test(normalized)
     || /\b(web|internet|google|source officielle|sources officielles|site officiel|documentation officielle|docs officielles|github|docker hub|npm)\b/.test(normalized);
@@ -840,7 +888,7 @@ function scoreVivySearchCandidate(value = '') {
 }
 
 function extractVivySearchCandidates(text = '') {
-  const raw = normalizeVivySearchSpelling(cleanOneLine(text, '', 420));
+  const raw = normalizeVivySearchSpelling(stripVivyOperatorTranscript(cleanOneLine(text, '', 420)));
   const stripped = stripVivySearchFiller(raw);
   const candidates = [stripped];
 
@@ -877,7 +925,7 @@ function pickVivyHistorySearchContext(history = []) {
     .reverse()
     .map((entry) => ({
       role: String(entry?.role || '').toLowerCase(),
-      content: cleanText(entry?.content || entry?.message || '', 520),
+      content: stripVivyOperatorTranscript(cleanText(entry?.content || entry?.message || '', 520)),
     }))
     .filter((entry) => entry.content && entry.role !== 'assistant');
   for (const entry of entries) {
@@ -902,7 +950,8 @@ function buildVivyWebSearchQuery(message = '', files = [], history = []) {
   const fileHint = files.length
     ? ` ${files.map((file) => file.filename).filter(Boolean).slice(0, 3).join(' ')}`
     : '';
-  const current = pickVivySearchCandidate(`${message}${fileHint}`);
+  const searchableMessage = stripVivyOperatorTranscript(message);
+  const current = pickVivySearchCandidate(`${searchableMessage}${fileHint}`);
   const historyContext = pickVivyHistorySearchContext(history);
   const currentScore = scoreVivySearchCandidate(current);
   const query = shouldBlendVivyHistorySearchContext(current, historyContext)
@@ -910,7 +959,7 @@ function buildVivyWebSearchQuery(message = '', files = [], history = []) {
     : currentScore >= 22
     ? current
     : compactUniqueLines([historyContext, current], 220);
-  return cleanOneLine(query || `${message}${fileHint}`, 'Funesterie Vivy', 260)
+  return cleanOneLine(query || `${searchableMessage}${fileHint}`, 'Funesterie Vivy', 260)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -3070,6 +3119,7 @@ module.exports = {
   buildVivyWebSearchQuery,
   postProcessVivyAssistantText,
   isDirectSongwritingRequest,
+  shouldVivyAutoWebSearch,
   looksLikeWeakSongwritingReply,
   isVivyMcpNeo4jQuestion,
   getSunoMusicJob,

@@ -23,6 +23,7 @@ const {
   isVivyMcpNeo4jQuestion,
   looksLikeWeakSongwritingReply,
   postProcessVivyAssistantText,
+  shouldVivyAutoWebSearch,
 } = require('../src/routes/vivy-studio.cjs');
 
 after(() => {
@@ -1046,6 +1047,56 @@ test('Vivy web research query strips chat filler and keeps film context', () => 
   assert.match(query, /Kiyoshi Kurosawa/i);
   assert.match(query, /Eiichiro Oda/i);
   assert.doesNotMatch(query, /j['’]?ai|cherch|pas vu|quelques extrait|trop bien/i);
+});
+
+test('Vivy web research ignores Codex operator transcript lines', async () => {
+  const operatorTranscript = "codex : Je reprends le fil: le texte collé montre surtout que Vivy a cherché la phrase entière au lieu d'extraire le vrai sujet. Je vais verrouiller ça côté serveur: requête web plus propre, contexte historique pris en compte, puis test et déploiement si tout";
+
+  assert.equal(shouldVivyAutoWebSearch(operatorTranscript, 'chat'), false);
+
+  const query = buildVivyWebSearchQuery(operatorTranscript, [], []);
+  assert.equal(query, 'Funesterie Vivy');
+  assert.doesNotMatch(query, /codex|requ[eê]te web|déploiement|deploiement|Je reprends/i);
+
+  const previousFixture = process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE;
+  process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = JSON.stringify({
+    ok: true,
+    results: [{ title: 'Should not be used', url: 'https://example.test/nope', snippet: 'not used' }],
+  });
+  try {
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-codex-transcript-test',
+      message: operatorTranscript,
+      history: [],
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, 'chat');
+    assert.notEqual(result.aiMode, 'deterministic_web_research');
+    assert.doesNotMatch(result.assistant, /Je déclenche une recherche web|Should not be used/i);
+  } finally {
+    if (previousFixture === undefined) {
+      delete process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE;
+    } else {
+      process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = previousFixture;
+    }
+  }
+});
+
+test('Vivy does not recurse on its own rendered web research answer', () => {
+  const renderedResearch = [
+    "Je déclenche une recherche web parce que ta demande dépend probablement d'une info externe ou récente.",
+    "Recherche: codex : Je reprends le fil: requête web plus propre, contexte historique pris en compte.",
+    '',
+    'Résultats utiles:',
+    '- Analyseur de phrases françaises - Lexis Rex (https://www.lexisrex.com/Français/Étude-de-la-Phrase)',
+    '- Comment utiliser OpenAI Codex (https://example.test/codex)',
+    '',
+    "Je m'appuie sur ces sources plutôt que d'inventer une certitude de tête.",
+  ].join('\n');
+
+  assert.equal(shouldVivyAutoWebSearch(renderedResearch, 'chat'), false);
+  assert.equal(buildVivyWebSearchQuery(renderedResearch, [], []), 'Funesterie Vivy');
 });
 
 test('Vivy triggers web research for current external information instead of guessing', async () => {
