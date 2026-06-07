@@ -2913,219 +2913,6 @@ type VivyStudioVoiceProfile = {
   uploadLabel: string;
 };
 
-type VivyAscii4SoundBinding = {
-  id: string;
-  group: "attaque" | "grain" | "flow" | "hauteur" | "espace" | "effet";
-  code: string;
-  label: string;
-  hint: string;
-};
-
-type VivyNuma8ColorBinding = {
-  id: string;
-  group: "contact" | "zen" | "liaison";
-  code: string;
-  label: string;
-  note: string;
-  rgba: string;
-  color: string;
-  hint: string;
-};
-
-const VIVY_ASCII4_SOUND_BINDINGS: VivyAscii4SoundBinding[] = [
-  {
-    id: "atk-net",
-    group: "attaque",
-    code: "[a4:atk=net]",
-    label: "Kick net",
-    hint: "attaque courte, consonnes propres, depart sec",
-  },
-  {
-    id: "atk-soft",
-    group: "attaque",
-    code: "[a4:atk=soft]",
-    label: "Velours",
-    hint: "attaque douce, entrée respirée, peu de claquant",
-  },
-  {
-    id: "grain-grit",
-    group: "grain",
-    code: "[a4:grain=grit]",
-    label: "Grain",
-    hint: "grain rap, legere saturation, bord de voix",
-  },
-  {
-    id: "grain-clear",
-    group: "grain",
-    code: "[a4:grain=clear]",
-    label: "Clair",
-    hint: "timbre clair, diction lisible, pas de boue",
-  },
-  {
-    id: "flow-rap",
-    group: "flow",
-    code: "[a4:flow=rap]",
-    label: "Rap serre",
-    hint: "debit serre, placement rythmique, fins de lignes percus",
-  },
-  {
-    id: "flow-sing",
-    group: "flow",
-    code: "[a4:flow=sing]",
-    label: "Chant",
-    hint: "phrase allongee, voyelles tenues, hook chantable",
-  },
-  {
-    id: "pitch-rise",
-    group: "hauteur",
-    code: "[a4:pitch=rise]",
-    label: "Monte",
-    hint: "fin de phrase qui leve, energie ascendante",
-  },
-  {
-    id: "pitch-low",
-    group: "hauteur",
-    code: "[a4:pitch=low]",
-    label: "Grave",
-    hint: "registre plus bas, pose calme, centre de gravite",
-  },
-  {
-    id: "space-near",
-    group: "espace",
-    code: "[a4:space=near]",
-    label: "Proche",
-    hint: "proximite micro, voix devant, peu de reverb",
-  },
-  {
-    id: "space-wide",
-    group: "espace",
-    code: "[a4:space=wide]",
-    label: "Large",
-    hint: "espace stereo, souffle de scene, air autour",
-  },
-  {
-    id: "fx-breath",
-    group: "effet",
-    code: "[a4:fx=breath]",
-    label: "Souffle",
-    hint: "petites respirations expressives, intime",
-  },
-  {
-    id: "fx-engine",
-    group: "effet",
-    code: "[a4:fx=engine]",
-    label: "Moteur",
-    hint: "energie moteur, pulsation mecanique, adlibs courts",
-  },
-];
-
-const VIVY_NUMA8_COLOR_BINDINGS: VivyNuma8ColorBinding[] = [
-  {
-    id: "numa-red-g",
-    group: "contact",
-    code: "[numa8:red=G;rgba=ff3b30ff;zen=appel]",
-    label: "Rouge / Sol",
-    note: "G",
-    rgba: "ff3b30ff",
-    color: "#ff3b30",
-    hint: "appel clair, première balise du motif contact",
-  },
-  {
-    id: "numa-amber-a",
-    group: "contact",
-    code: "[numa8:amber=A;rgba=ffb020ff;zen=avance]",
-    label: "Ambre / La",
-    note: "A",
-    rgba: "ffb020ff",
-    color: "#ffb020",
-    hint: "réponse qui avance, tension chaude",
-  },
-  {
-    id: "numa-gold-f",
-    group: "contact",
-    code: "[numa8:gold=F;rgba=f8e45cff;zen=miroir]",
-    label: "Jaune / Fa",
-    note: "F",
-    rgba: "f8e45cff",
-    color: "#f8e45c",
-    hint: "miroir lumineux, ligne courte",
-  },
-  {
-    id: "numa-blue-f",
-    group: "contact",
-    code: "[numa8:blue=F;rgba=3aa7ffff;zen=reponse]",
-    label: "Bleu / Fa",
-    note: "F",
-    rgba: "3aa7ffff",
-    color: "#3aa7ff",
-    hint: "réponse froide, stabilisation du signal",
-  },
-  {
-    id: "numa-violet-c",
-    group: "contact",
-    code: "[numa8:violet=C;rgba=a855f7ff;zen=ancrage]",
-    label: "Violet / Do",
-    note: "C",
-    rgba: "a855f7ff",
-    color: "#a855f7",
-    hint: "ancrage final, résolution calme",
-  },
-  {
-    id: "numa-white-silence",
-    group: "zen",
-    code: "[numa8:white=silence;rgba=ffffffff;zen=respire]",
-    label: "Blanc / Silence",
-    note: "silence",
-    rgba: "ffffffff",
-    color: "#ffffff",
-    hint: "pause respirable, vide utile",
-  },
-  {
-    id: "numa-green-pulse",
-    group: "liaison",
-    code: "[numa8:green=pulse;rgba=2dd4bfff;zen=liaison]",
-    label: "Vert / Pulse",
-    note: "pulse",
-    rgba: "2dd4bfff",
-    color: "#2dd4bf",
-    hint: "liaison monde réel Funesterie",
-  },
-  {
-    id: "numa-black-drop",
-    group: "zen",
-    code: "[numa8:black=drop;rgba=111827ff;zen=coupure]",
-    label: "Noir / Drop",
-    note: "drop",
-    rgba: "111827ff",
-    color: "#111827",
-    hint: "coupure nette, scène qui bascule",
-  },
-];
-
-function extractVivyAscii4SoundBindings(...values: Array<string | null | undefined>) {
-  const text = values.map((value) => String(value || "")).join("\n");
-  return VIVY_ASCII4_SOUND_BINDINGS.filter((binding) => text.includes(binding.code));
-}
-
-function extractVivyNuma8ColorBindings(...values: Array<string | null | undefined>) {
-  const text = values.map((value) => String(value || "")).join("\n");
-  return VIVY_NUMA8_COLOR_BINDINGS.filter((binding) => text.includes(binding.code));
-}
-
-function buildVivySignalLanguageLines(...values: Array<string | null | undefined>) {
-  const asciiBindings = extractVivyAscii4SoundBindings(...values);
-  const numaBindings = extractVivyNuma8ColorBindings(...values);
-  return [
-    "- Langage interne Vivy: ASCII^4 + NUMA^8 zen/rgba/numa, clavier couleur-son utilisable par Vivy pour choisir timbre, scène, silence et impulsion.",
-    `- Alphabet NUMA^8: ${VIVY_NUMA8_COLOR_BINDINGS.map((binding) => binding.code).join(" ")}`,
-    asciiBindings.length ? `- Clavier son ASCII^4 actif: ${asciiBindings.map((binding) => binding.code).join(" ")}` : "",
-    ...asciiBindings.map((binding) => `  ${binding.code} ${binding.label}: ${binding.hint}.`),
-    numaBindings.length ? `- Motif couleur NUMA^8 actif: ${numaBindings.map((binding) => binding.code).join(" ")}` : "",
-    ...numaBindings.map((binding) => `  ${binding.code} ${binding.label} (${binding.note}, ${binding.rgba}): ${binding.hint}.`),
-    "- Règle: Vivy applique ces balises comme prosodie/couleur/scène/effet, sans les chanter mot pour mot.",
-  ].filter(Boolean);
-}
-
 function getVivyStudioVoiceProfileForTool(
   voiceTool: string,
   hasPrivateReference = false,
@@ -3287,14 +3074,12 @@ function buildVivyStudioBrief(options: {
   ];
 
   if (options.mode === "voice") {
-    const soundLines = buildVivySignalLanguageLines(options.voiceInstruction);
     lines.push(
       "Flux voix:",
       `- Outil cible: ${options.voiceTool}`,
       `- Profil actif: ${voiceProfile.label}`,
       `- Référence audio: ${voiceProfile.referenceLabel}`,
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
-      ...soundLines,
       `- Sortie attendue: phrase de test avec ${voiceProfile.briefVoicePersona}, puis notes de calibration si besoin.`,
       "- Route recommandée: /api/tts/speak en XTTS/RVC quand une référence Vivy/Djeff/A11/K44 existe; texte libre, argot et diction naturelle autorisés; garder les références privées hors publication brute.",
       "- Sécurité: ne pas publier la référence brute sans accord; les gros fichiers restent hors upload public."
@@ -3302,17 +3087,15 @@ function buildVivyStudioBrief(options: {
   }
 
   if (options.mode === "song") {
-    const soundLines = buildVivySignalLanguageLines(options.voiceInstruction, options.songMood, options.songText);
     lines.push(
       "Flux chanson:",
       `- Source: ${options.songSource}`,
       `- Direction sonore: ${options.songMood}`,
       `- Matière: ${options.songText || "thème libre à développer"}`,
-      `- Artistes cochés: ${artistCast.label}`,
+      `- Casting vocal: ${artistCast.label}`,
       `- Nombre de chanteurs: ${artistCast.countLabel}`,
       `- Distribution vocale: ${artistCast.songCast}`,
       `- Outil voix actif: ${voiceProfile.label}`,
-      ...soundLines,
       `- Clé Suno personnelle: ${options.sessionSunoKeyPresent ? "oui, session navigateur seulement" : "non"}`,
       "- Sortie simple possible: vraie génération Suno ou brief chantable selon les droits disponibles.",
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
@@ -3498,51 +3281,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     });
   }
 
-  function appendVivySoundBinding(binding: VivyAscii4SoundBinding) {
-    const appendToken = (current: string) => {
-      const base = current.trimEnd();
-      if (base.includes(binding.code)) return base;
-      return `${base}${base ? " " : ""}${binding.code}`;
-    };
-    if (activeMode === "song") {
-      setSongText(appendToken);
-    } else {
-      setVoiceInstruction(appendToken);
-    }
-    setStatus(`${binding.label}: ${binding.hint}.`);
-  }
-
-  function appendVivyNuma8ColorBinding(binding: VivyNuma8ColorBinding) {
-    const appendToken = (current: string) => {
-      const base = current.trimEnd();
-      if (base.includes(binding.code)) return base;
-      return `${base}${base ? " " : ""}${binding.code}`;
-    };
-    if (activeMode === "song") {
-      setSongText(appendToken);
-    } else {
-      setVoiceInstruction(appendToken);
-    }
-    setStatus(`${binding.label}: ${binding.hint}.`);
-  }
-
-  function appendVivyContactMotif() {
-    const motif = VIVY_NUMA8_COLOR_BINDINGS
-      .filter((binding) => binding.group === "contact")
-      .map((binding) => binding.code);
-    const appendMotif = (current: string) => {
-      const base = current.trimEnd();
-      const next = motif.filter((code) => !base.includes(code));
-      return next.length ? `${base}${base ? " " : ""}${next.join(" ")}` : base;
-    };
-    if (activeMode === "song") {
-      setSongText(appendMotif);
-    } else {
-      setVoiceInstruction(appendMotif);
-    }
-    setStatus("Motif contact NUMA^8 posé pour Vivy: G-A-F-F-C.");
-  }
-
   function buildVivyPlayableText(value: string, fallback: string, maxLength = 260) {
     const raw = toUnicodeText(value || fallback, maxLength * 3)
       .replace(/\([A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?(?:\s*-\s*[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?)*\)/gi, " ")
@@ -3584,22 +3322,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       conversionEngine: "xtts-rvc",
       vocalMode,
       ...getVivyVoiceTuning(vocalMode),
-      ascii4SoundBindings: extractVivyAscii4SoundBindings(voiceInstruction).map((binding) => ({
-        code: binding.code,
-        group: binding.group,
-        label: binding.label,
-        hint: binding.hint,
-      })),
-      numa8ColorBindings: extractVivyNuma8ColorBindings(voiceInstruction).map((binding) => ({
-        code: binding.code,
-        group: binding.group,
-        label: binding.label,
-        note: binding.note,
-        rgba: binding.rgba,
-        hint: binding.hint,
-      })),
-      vivySignalLanguage: "ascii4-numa8-zen-rgba-v1",
-      enableVivyInternalSignalLanguage: true,
       ttsAsync: true,
       asyncTts: true,
       ttsJobTimeoutMs: vocalMode === "sing" ? 240000 : 180000,
@@ -3621,27 +3343,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       allowLegacyVoiceBridge: true,
       xttsRvcOptIn: true,
       allowBrowserSpeechFallback: false,
-    };
-  }
-
-  function buildVivySignalPayload(...values: string[]) {
-    return {
-      vivySignalLanguage: "ascii4-numa8-zen-rgba-v1",
-      enableVivyInternalSignalLanguage: true,
-      ascii4SoundBindings: extractVivyAscii4SoundBindings(...values).map((binding) => ({
-        code: binding.code,
-        group: binding.group,
-        label: binding.label,
-        hint: binding.hint,
-      })),
-      numa8ColorBindings: extractVivyNuma8ColorBindings(...values).map((binding) => ({
-        code: binding.code,
-        group: binding.group,
-        label: binding.label,
-        note: binding.note,
-        rgba: binding.rgba,
-        hint: binding.hint,
-      })),
     };
   }
 
@@ -3842,7 +3543,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         songText: prompt,
         sessionSunoApiKey: sunoSessionKey.trim() || undefined,
         prompt: playablePrompt,
-        ...buildVivySignalPayload(voiceInstruction, songMood, prompt),
         forceRealMusic: true,
         generateMusic: true,
         makeSong: true,
@@ -3867,7 +3567,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       setVivyOutput([
         "VIVY_MUSIC_GENERATION",
         `Direction: ${songMood || "electro pop dark cinematographique"}`,
-        `Artistes: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
+        `Casting vocal: ${activeSongArtistCast.countLabel} - ${activeSongArtistCast.label}`,
         taskId ? `Job Suno: ${taskId}` : `Prompt: ${playablePrompt}`,
         "",
         finalPayload?.summary || payload?.summary || "Sortie: chanson audio Vivy générée.",
@@ -3909,7 +3609,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         shareUrl,
         shareInstruction,
         shareTokenPresent: Boolean(shareToken.trim()),
-        ...buildVivySignalPayload(voiceInstruction, songMood, songText, shareInstruction),
         prompt: wantsSongPreview
           ? buildVivyPlayableText(songText || songMood || voiceInstruction, songMood || "Vivy garde la lumière dans l'obscurité.", 320)
           : undefined,
@@ -3949,57 +3648,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       ? buildSessionBridgeUrl(new URL("/cockpit", A11_PUBLIC_APP_URL).toString())
       : buildSessionBridgeUrl(new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString());
     window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  function renderVivySoundKeyboard() {
-    const activeText = activeMode === "song" ? songText : voiceInstruction;
-    const selectedCodes = new Set(extractVivyAscii4SoundBindings(activeText).map((binding) => binding.code));
-    const selectedColorCodes = new Set(extractVivyNuma8ColorBindings(activeText).map((binding) => binding.code));
-    return (
-      <fieldset className="vivy-sound-keyboard">
-        <legend>Langage Vivy ASCII^4 / NUMA^8</legend>
-        <div className="vivy-color-keyboard">
-          <div className="vivy-color-keyboard-head">
-            <span>Motif contact</span>
-            <button type="button" disabled={!hasSession} onClick={appendVivyContactMotif}>
-              G-A-F-F-C
-            </button>
-          </div>
-          <div className="vivy-color-key-grid">
-            {VIVY_NUMA8_COLOR_BINDINGS.map((binding) => (
-              <button
-                key={binding.id}
-                type="button"
-                className={selectedColorCodes.has(binding.code) ? "is-selected" : ""}
-                disabled={!hasSession}
-                onClick={() => appendVivyNuma8ColorBinding(binding)}
-                title={`${binding.code} - ${binding.hint}`}
-              >
-                <i style={{ background: binding.color }} aria-hidden="true" />
-                <span>{binding.label}</span>
-                <code>{binding.note}</code>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="vivy-sound-key-grid">
-          {VIVY_ASCII4_SOUND_BINDINGS.map((binding) => (
-            <button
-              key={binding.id}
-              type="button"
-              className={selectedCodes.has(binding.code) ? "is-selected" : ""}
-              disabled={!hasSession}
-              onClick={() => appendVivySoundBinding(binding)}
-              title={`${binding.code} - ${binding.hint}`}
-            >
-              <code>{binding.code.replace("[a4:", "").replace("]", "")}</code>
-              <span>{binding.label}</span>
-            </button>
-          ))}
-        </div>
-        <p>Ces codes donnent à Vivy un clavier interne de couleur, timbre, débit, espace et effets; ils guident le rendu sans être lus.</p>
-      </fieldset>
-    );
   }
 
   return (
@@ -4084,7 +3732,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."
                 />
               </label>
-              {renderVivySoundKeyboard()}
               <div className="vivy-studio-actions vivy-studio-actions--voice">
                 <button type="button" onClick={useDefaultVivyVoice} disabled={!hasSession || isBusy}>Voix Vivy par défaut</button>
                 <button type="button" onClick={testDefaultVivyVoice} disabled={!hasSession || isBusy}>Tester voix active</button>
@@ -4114,7 +3761,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                 </select>
               </label>
               <fieldset className="vivy-studio-artist-fieldset">
-                <legend>Artistes</legend>
+                <legend>Casting vocal</legend>
                 <div className="vivy-studio-artist-grid">
                   {VIVY_STUDIO_ARTISTS.map((artist) => {
                     const checked = songArtists.includes(artist.id);
@@ -4161,7 +3808,6 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."
                 />
               </label>
-              {renderVivySoundKeyboard()}
               <label>
                 Clé Suno personnelle
                 <input
@@ -4493,8 +4139,6 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           conversationId,
           files: apiFiles,
           history: apiHistory,
-          vivySignalLanguage: "ascii4-numa8-zen-rgba-v1",
-          enableVivyInternalSignalLanguage: true,
           disableEmergencyMedia: true,
           allowPlaceholderMedia: false,
         })
