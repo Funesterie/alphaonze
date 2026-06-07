@@ -879,6 +879,79 @@ test('Vivy answers image inspection from attached images instead of continuing l
   assert.doesNotMatch(result.assistant, /je vais continuer|modèle de langage|capacité de visualiser/i);
 });
 
+test('Vivy hides technical vision fallback garbage from image answers', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-image-fallback-clean-test',
+    message: 'que vois tu ?',
+    files: [
+      {
+        filename: 'boosters 5.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 42 * 1024,
+        description: 'Vision avancée indisponible; lecture locale de secours uniquement: 453x604px, format jpeg, 42 Ko. OCR texte lisible: PE. all & 4% A. Ne deduis pas le sujet visuel de ce fallback.',
+        visualDescription: 'Image reçue par A11 (jpeg, 453x604, 42 Ko). Vision détaillée disponible côté chat.',
+        analysis: {
+          width: 453,
+          height: 604,
+          format: 'jpeg',
+          originalBytes: 42 * 1024,
+          readableInChatContext: true,
+        },
+        uploaded: true,
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_image_context');
+  assert.match(result.assistant, /boosters 5\.jpg/i);
+  assert.match(result.assistant, /453x604|42 Ko|image reçue/i);
+  assert.doesNotMatch(result.assistant, /Vision avancée indisponible|lecture locale de secours|OCR texte lisible|Ne deduis|Ne déduis/i);
+  assert.doesNotMatch(result.assistant, /\[Verse|\[Refrain|\[Chorus/i);
+});
+
+test('Vivy can use the vision LLM fallback when Janus returns only local metadata', async () => {
+  const previousProvider = process.env.A11_VISION_PROVIDER;
+  const previousFixture = process.env.VIVY_IMAGE_VISION_FIXTURE;
+  const previousDisableLlm = process.env.VIVY_CHAT_DISABLE_LLM;
+  const previousOcrEnabled = process.env.IMAGE_OCR_ENABLED;
+  process.env.A11_VISION_PROVIDER = 'none';
+  process.env.VIVY_CHAT_DISABLE_LLM = 'true';
+  process.env.IMAGE_OCR_ENABLED = 'false';
+  process.env.VIVY_IMAGE_VISION_FIXTURE = 'On voit un booster/scooter photographié en extérieur, avec une carrosserie bleue et des détails mécaniques visibles.';
+  try {
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-image-vision-llm-fallback-test',
+      message: 'que vois tu ?',
+      files: [
+        {
+          filename: 'boosters 5.jpg',
+          contentType: 'image/jpeg',
+          sizeBytes: 42 * 1024,
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lYdX3wAAAABJRU5ErkJggg==',
+          uploaded: true,
+        },
+      ],
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, 'chat');
+    assert.equal(result.aiMode, 'deterministic_image_context');
+    assert.match(result.assistant, /booster\/scooter|carrosserie bleue|détails mécaniques/i);
+    assert.doesNotMatch(result.assistant, /Vision avancée indisponible|lecture locale de secours|OCR texte lisible|Ne deduis|Ne déduis/i);
+  } finally {
+    if (previousProvider == null) delete process.env.A11_VISION_PROVIDER;
+    else process.env.A11_VISION_PROVIDER = previousProvider;
+    if (previousFixture == null) delete process.env.VIVY_IMAGE_VISION_FIXTURE;
+    else process.env.VIVY_IMAGE_VISION_FIXTURE = previousFixture;
+    if (previousDisableLlm == null) delete process.env.VIVY_CHAT_DISABLE_LLM;
+    else process.env.VIVY_CHAT_DISABLE_LLM = previousDisableLlm;
+    if (previousOcrEnabled == null) delete process.env.IMAGE_OCR_ENABLED;
+    else process.env.IMAGE_OCR_ENABLED = previousOcrEnabled;
+  }
+});
+
 test('Vivy auto-analyzes readable attached files when the message points at them', async () => {
   const result = await buildVivyAiChat({
     conversationId: 'vivy-file-context-test',

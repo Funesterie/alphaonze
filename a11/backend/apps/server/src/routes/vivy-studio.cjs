@@ -40,6 +40,7 @@ const {
 } = require('../chat/response-draft-rewriter.cjs');
 const {
   autoDescribeImage,
+  loadImageBuffer,
 } = require('../image/image-auto-describe.cjs');
 
 let OpenAI = null;
@@ -289,6 +290,37 @@ function createVivyOpenAIClient() {
   };
 }
 
+function getVivyVisionModel(baseURL = '') {
+  const explicit = cleanOneLine(
+    process.env.VIVY_VISION_MODEL
+      || process.env.A11_VISION_MODEL
+      || process.env.OPENAI_VISION_MODEL,
+    '',
+    120
+  );
+  if (explicit) return explicit;
+  return /openrouter\.ai/i.test(String(baseURL || ''))
+    ? 'openai/gpt-4o-mini'
+    : 'gpt-4o-mini';
+}
+
+function createVivyVisionOpenAIClient() {
+  if (!OpenAI) return null;
+  const config = getVivyOpenAIConfig();
+  if (!config.apiKey) return null;
+  const model = getVivyVisionModel(config.baseURL);
+  return {
+    client: new OpenAI({
+      baseURL: config.baseURL,
+      apiKey: config.apiKey,
+      defaultHeaders: {
+        'X-NEZ-TOKEN': process.env.NEZ_ALLOWED_TOKEN || process.env.NEZ_TOKENS || 'nez:a11-client-funesterie-pro',
+      },
+    }),
+    model,
+  };
+}
+
 function resolveVivyMemoryUser(req, input = {}) {
   const authenticated = cleanOneLine(
     req?.user?.id || req?.user?.email || req?.user?.username,
@@ -399,22 +431,146 @@ function describeVivyImageMetadata(file = {}) {
   return parts.join(', ');
 }
 
+function looksLikeVivyTechnicalVisionFallback(value = '') {
+  const normalized = foldTextForLookup(value);
+  return /\bvision avancee indisponible\b/.test(normalized)
+    || /\blecture locale de secours\b/.test(normalized)
+    || /\bne deduis pas le sujet visuel\b/.test(normalized)
+    || /\bjanus_unavailable\b/.test(normalized)
+    || /\bvision_indisponible\b/.test(normalized);
+}
+
+function looksLikeVivyGenericUploadImageContext(value = '') {
+  const normalized = foldTextForLookup(value);
+  return /\bimage recue par a11\b/.test(normalized)
+    || /\bvision detaillee disponible cote chat\b/.test(normalized)
+    || /\bfichier joint a la conversation vivy\b/.test(normalized)
+    || /\bimage stockee pour analyse visuelle a11\b/.test(normalized);
+}
+
+function cleanVivyKnownImageContext(value = '') {
+  const text = cleanText(value, 900);
+  if (!text) return '';
+  if (looksLikeVivyTechnicalVisionFallback(text)) return '';
+  if (looksLikeVivyGenericUploadImageContext(text)) return '';
+  return text;
+}
+
 function cleanVivyImageObservation(value = '') {
-  return cleanText(value, 900)
+  const cleaned = cleanText(value, 900)
     .replace(/^vision avanc[ée]e indisponible;\s*/i, 'Vision avancée indisponible; ')
     .replace(/\s+/g, ' ')
     .trim();
+  return looksLikeVivyTechnicalVisionFallback(cleaned) ? '' : cleaned;
+}
+
+function buildVivyImageQuestionPrompt(file = {}) {
+  const filename = cleanOneLine(file.filename, 'image', 180);
+  return [
+    'Réponds en français, en une description concrète et utile.',
+    "Décris ce qui est vraiment visible dans l'image: sujet principal, objets, décor, couleurs, état, détails mécaniques ou textes lisibles.",
+    "Si c'est un scooter, une moto, une pièce, un atelier ou un booster, nomme les éléments visibles sans inventer une marque non confirmée.",
+    "Ne parle pas de métadonnées, d'OCR, de fallback, de modèle ou d'indisponibilité technique.",
+    `Nom du fichier seulement pour contexte: ${filename}.`,
+  ].join('\n');
+}
+
+function parseVivyVisionFixture() {
+  const fixture = String(process.env.VIVY_IMAGE_VISION_FIXTURE || '').trim();
+  if (!fixture) return null;
+  try {
+    const parsed = JSON.parse(fixture);
+    const description = cleanText(parsed?.description || parsed?.assistant || parsed?.text || '', 1200);
+    return description ? { description, provider: 'vision-llm-fixture' } : null;
+  } catch (_) {
+    return { description: cleanText(fixture, 1200), provider: 'vision-llm-fixture' };
+  }
+}
+
+async function describeVivyImageWithVisionLlm(file = {}) {
+  const fixture = parseVivyVisionFixture();
+  if (fixture?.description) {
+    return {
+      reliable: true,
+      observation: fixture.description,
+      provider: fixture.provider,
+    };
+  }
+
+  if (String(process.env.VIVY_CHAT_DISABLE_LLM || '').toLowerCase() === 'true') return null;
+  if (!file.url) return null;
+
+  const llmBundle = createVivyVisionOpenAIClient();
+  if (!llmBundle) return null;
+
+  let loaded = null;
+  try {
+    loaded = await loadImageBuffer(file.url, process.env.A11_RUNTIME_ROOT || '');
+  } catch (loadError) {
+    console.warn('[Vivy][vision-llm] image load failed:', String(loadError?.message || loadError));
+    return null;
+  }
+
+  const maxBytes = Number(process.env.VIVY_VISION_LLM_MAX_IMAGE_BYTES || 8 * 1024 * 1024);
+  if (!Buffer.isBuffer(loaded.buffer) || !loaded.buffer.length || loaded.buffer.length > maxBytes) {
+    return null;
+  }
+
+  const contentType = cleanOneLine(loaded.contentType || file.contentType, 'image/jpeg', 80);
+  const dataUrl = `data:${contentType};base64,${loaded.buffer.toString('base64')}`;
+  try {
+    const completion = await llmBundle.client.chat.completions.create({
+      model: llmBundle.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Tu es le module vision Vivy/A11. Tu décris seulement ce qui est visible, en français, sans texte technique interne.',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: buildVivyImageQuestionPrompt(file) },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+      temperature: Number(process.env.VIVY_VISION_TEMPERATURE || 0.2),
+      max_tokens: Number(process.env.VIVY_VISION_MAX_TOKENS || 500),
+    });
+    const observation = cleanVivyImageObservation(completion?.choices?.[0]?.message?.content);
+    if (!observation) return null;
+    return {
+      reliable: true,
+      observation,
+      provider: `vision-llm:${llmBundle.model}`,
+    };
+  } catch (error) {
+    console.warn('[Vivy][vision-llm] failed:', String(error?.message || error));
+    return null;
+  }
 }
 
 async function describeVivyImageFile(file = {}, req) {
   const filename = cleanOneLine(file.filename, 'image', 180);
   const known = cleanText([
-    file.visualDescription,
-    file.description && !/^fichier joint\b/i.test(file.description) ? file.description : '',
-    file.textPreview ? `Texte/OCR visible: ${file.textPreview}` : '',
+    cleanVivyKnownImageContext(file.visualDescription),
+    file.description && !/^fichier joint\b/i.test(file.description) ? cleanVivyKnownImageContext(file.description) : '',
+    file.textPreview && !looksLikeVivyTechnicalVisionFallback(file.textPreview) ? `Texte lisible: ${file.textPreview}` : '',
   ].filter(Boolean).join(' '), 1200);
 
   if (file.url) {
+    if (parseVivyVisionFixture()?.description) {
+      const llmVision = await describeVivyImageWithVisionLlm(file);
+      if (llmVision?.observation) {
+        return {
+          filename,
+          reliable: llmVision.reliable === true,
+          observation: llmVision.observation,
+          provider: llmVision.provider,
+        };
+      }
+    }
+
     try {
       const prompt = [
         'Décris très concrètement ce qui est visible dans cette image, en français.',
@@ -429,10 +585,10 @@ async function describeVivyImageFile(file = {}, req) {
         prompt,
       });
       const description = cleanVivyImageObservation(vision?.description);
-      if (description && vision?.skipped !== true) {
+      if (description && vision?.skipped !== true && vision?.visualReliable !== false && vision?.fallback !== true) {
         return {
           filename,
-          reliable: vision?.visualReliable !== false && vision?.fallback !== true,
+          reliable: true,
           observation: description,
           provider: cleanOneLine(vision?.provider, '', 80),
         };
@@ -440,12 +596,22 @@ async function describeVivyImageFile(file = {}, req) {
     } catch (_) {
       // Vision is best-effort; fallback to uploaded metadata below.
     }
+
+    const llmVision = await describeVivyImageWithVisionLlm(file);
+    if (llmVision?.observation) {
+      return {
+        filename,
+        reliable: llmVision.reliable === true,
+        observation: llmVision.observation,
+        provider: llmVision.provider,
+      };
+    }
   }
 
   const metadata = describeVivyImageMetadata(file);
   const fallback = known || (metadata
-    ? `Je peux confirmer que le fichier est bien une image (${metadata}), mais je n'ai pas encore de description visuelle fiable de son contenu.`
-    : "Je vois bien la pièce jointe image, mais elle n'a pas encore été analysée visuellement.");
+    ? `Image reçue correctement (${metadata}). La lecture visuelle détaillée n'a pas répondu cette fois; je ne vais pas inventer son contenu depuis l'OCR ou le nom du fichier.`
+    : "Image reçue correctement. La lecture visuelle détaillée n'a pas répondu cette fois; je ne vais pas inventer son contenu depuis l'OCR ou le nom du fichier.");
   return {
     filename,
     reliable: Boolean(known),
