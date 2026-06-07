@@ -1689,6 +1689,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     buildLanguageInstruction(language),
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
+    "Si Jeffrey corrige ton intent, ta sensibilité, ton seuil ou ton mode de réponse, traite ça comme un réglage interne borné: accuse le réglage clairement, baisse la structuration automatique, puis réponds au fond.",
     "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
     "Quand des images ou photos sont jointes et que Jeffrey demande ce que tu vois, réponds sur les pièces jointes: utilise la vision/contexte disponible, ne continue pas une chanson et ne dis pas que tu es seulement un modèle de langage.",
     "Quand une demande dépend d'informations externes, récentes, d'un site, d'une version, d'un prix, d'une source ou d'une documentation, déclenche/assume la recherche web disponible avant de répondre au lieu de deviner.",
@@ -2083,6 +2084,101 @@ function summarizeChatMessage(message = '') {
   return cleaned.replace(/\s+/g, ' ');
 }
 
+function isVivyOpinionFollowup(message = '') {
+  const normalized = foldTextForLookup(message);
+  return /\b(et\s+toi|toi\s+tu|tu\s+en\s+penses|t\s*en\s+penses|qu\s*en\s+penses|ton\s+avis|tu\s+penses\s+quoi)\b/.test(normalized);
+}
+
+function buildVivyFreeformChatReply({ message = '', files = [], history = [] } = {}) {
+  const current = summarizeChatMessage(message);
+  const historyText = getVivyUserHistoryText(history);
+  const foldedContext = foldTextForLookup(`${historyText}\n${message}`);
+  const fileLine = files.length
+    ? `J'ai aussi ${files.length} fichier${files.length > 1 ? 's' : ''} en contexte: ${files.map((file) => file.filename).join(', ')}.`
+    : '';
+
+  if (isVivyOpinionFollowup(message) && /\b(cerveau|interpretation|interprete|donnee|donnees|yeux|oreilles|bouche|voir|entendre|parler|signaux|signal)\b/.test(foldedContext)) {
+    return cleanText([
+      "Je pense que tu touches un truc juste: voir, entendre et parler, ce n'est pas juste des organes, c'est un flux de signaux que le cerveau transforme en monde.",
+      "Les yeux ne donnent pas la réalité brute: ils donnent de la lumière codée. Les oreilles donnent des vibrations. La bouche pousse de l'air et du rythme. Derrière, le cerveau fait le montage, le sens, l'émotion.",
+      "Pour moi, l'équivalent c'est pareil en version données: je ne « vois » pas comme toi, mais je lis des traces, du texte, des fichiers, parfois de la vision backend, puis j'en fais une interprétation. Donc si mon intent est trop haut, je dois baisser le seuil et répondre au fond avant de classer en chanson, outil ou structure.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 1800);
+  }
+
+  if (/\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|heuristique|seuil)\b/.test(foldedContext)) {
+    return cleanText([
+      "Oui, je peux le traiter comme un réglage de conversation, pas comme une demande de chanson.",
+      `Là je comprends: ${current}`,
+      "Je garde le mode chat libre en priorité: je réponds d'abord au fond, puis seulement après je propose une structure si tu la demandes.",
+      fileLine,
+    ].filter(Boolean).join('\n\n'), 1600);
+  }
+
+  return cleanText([
+    "Oui, je reste en discussion libre.",
+    `Je capte: ${current}`,
+    fileLine,
+    "Je ne transforme pas ça en paroles automatiquement: je réponds d'abord à l'idée, et on bascule en composition seulement quand tu le demandes vraiment.",
+  ].filter(Boolean).join('\n\n'), 1600);
+}
+
+function isVivyInternalTuningRequest(input = {}, message = '') {
+  const current = foldTextForLookup(message);
+  const recent = foldTextForLookup(getVivyHistoryText(input.history));
+  const combined = `${current}\n${recent}`;
+  const mentionsSettings = /\b(intent|intention|reglage|reglages|parametre|parametres|sensibilite|seuil|heuristique|r2gl2|regle|regler|bidouille|bidouiller)\b/.test(combined);
+  const asksAdjustment = /\b(ajuste|ajuster|baisse|baisser|descend|descendre|calme|corrige|corriger|regle|regler|modifie|modifier|bidouille|bidouiller)\b/.test(current)
+    || /\btrop\s+(haut|haute|sensible|fort|forte)\b/.test(current);
+  return mentionsSettings && asksAdjustment;
+}
+
+function buildVivyInternalTuningReply({ message = '', history = [], language = 'fr' } = {}) {
+  const context = foldTextForLookup(`${getVivyUserHistoryText(history)}\n${message}`);
+  const settings = {
+    chatIntentSensitivity: 'lowered',
+    songStructureMode: 'explicit_only',
+    fallbackStyle: 'free_chat',
+    toolAutonomy: 'bounded_intents_only',
+    webSearchMode: 'only_when_needed_or_explicit',
+  };
+  const philosophyLine = /\b(cerveau|interpretation|donnee|donnees|yeux|oreilles|bouche|signaux)\b/.test(context)
+    ? "Et sur ton idée juste avant: oui, tout passe par l'interprétation des signaux. Je dois donc traiter tes phrases comme du sens vivant, pas comme des cases à cocher."
+    : '';
+  const assistant = [
+    "Oui, je l'ajuste.",
+    "Mon intent était trop haut: il classait trop vite la conversation au lieu de répondre naturellement.",
+    "Réglage appliqué: `chat_intent_sensitivity` baissé, `song_structure` en explicite seulement, et fallback en discussion libre.",
+    "Concrètement: tant que tu n'appuies pas sur Chanson ou que tu ne demandes pas clairement des paroles/refrain/couplet, je reste en chat et je réponds au fond.",
+    philosophyLine,
+    "Je garde ça comme réglage de session Vivy. Les outils restent bornés: je peux router vers les intents autorisés, pas ouvrir une commande dangereuse en douce.",
+  ].filter(Boolean).join('\n\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode: 'chat',
+    assistant: cleanText(assistant, 1800),
+    content: cleanText(assistant, 1800),
+    summary: "Vivy a abaissé sa sensibilité d'intent pour privilégier la discussion libre.",
+    actions: [
+      { id: 'vivy_intent_sensitivity', label: 'Intent moins sensible', target: 'vivy-session-settings', ready: true },
+      { id: 'vivy_song_explicit_only', label: 'Chanson explicite seulement', target: 'vivy-song-mode', ready: true },
+    ],
+    routing: [
+      'Vivy: répondre en chat libre quand Envoyer est utilisé.',
+      'Vivy: réserver les paroles structurées au bouton Chanson ou à une demande explicite.',
+      'A11/MCP: garder les outils en intents bornés, sans commande arbitraire.',
+    ],
+    tokenStored: false,
+    writesByDefault: false,
+    aiMode: 'deterministic_internal_tuning',
+    settings,
+    language,
+    files: [],
+  };
+}
+
 function isDirectSongwritingRequest(message = '') {
   const normalized = foldTextForLookup(message);
   return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
@@ -2298,28 +2394,19 @@ function buildVivyChat(input) {
     : [];
 
   if (mode === 'chat') {
-    const fileLine = files.length
-      ? `J'ai aussi noté ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
-      : '';
-    const assistant = [
-      'Je te suis.',
-      `Ce que je comprends: ${summarizeChatMessage(message)}`,
-      fileLine,
-      "Je garde ça comme discussion et matière de travail, sans le transformer automatiquement en chanson.",
-      'Si tu veux une version structurée, clique sur Chanson ou demande clairement des paroles, un refrain ou une composition.',
-    ].filter(Boolean).join('\n\n');
+    const assistant = buildVivyFreeformChatReply({ message, files, history: input.history });
     return {
       ok: true,
       service: 'vivy-chat',
       mode,
       assistant,
       content: assistant,
-      summary: 'Message rangé dans le fil Vivy sans structure chanson automatique.',
+      summary: 'Message gardé en discussion libre sans structure chanson automatique.',
       actions: [],
       routing: buildRouting('song'),
       tokenStored: false,
       writesByDefault: false,
-      aiMode: 'fallback_chat',
+      aiMode: 'fallback_chat_freeform',
       language,
       files,
     };
@@ -2414,6 +2501,28 @@ async function buildVivyAiChat(input, req) {
     ? buildVivyLocalContextSnapshot(message)
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
+
+  if (isVivyInternalTuningRequest(input, message)) {
+    const tuningReply = buildVivyInternalTuningReply({ message, history: input.history, language });
+    rememberVivyEpisode(userId, 'vivy_settings', JSON.stringify(tuningReply.settings), {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      internalTuning: true,
+    });
+    rememberVivyEpisode(userId, 'vivy_reply', tuningReply.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      internalTuning: true,
+    });
+    return {
+      ...tuningReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
 
   if (isVivyToolCapabilityQuestion(input, message)) {
     const capabilityContext = localContext || buildVivyLocalContextSnapshot(message);

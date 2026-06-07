@@ -766,6 +766,51 @@ test('Vivy chat mode does not structure raw rap material sent with Envoyer', asy
   assert.doesNotMatch(result.assistant, /Garde la lumière/);
 });
 
+test('Vivy chat fallback answers philosophical follow-ups instead of canned notebook text', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-freeform-philosophy',
+    message: "et toi qu'en penses tu ?",
+    history: [
+      {
+        role: 'user',
+        content: "vivy je vais te poser, une question c'est avec les yeux qu'on voit, avec les oreilles qu'on entend avec la bouche qu'on parle ?",
+      },
+      {
+        role: 'user',
+        content: "et bien tout n'est qu'interpretation de donnée par le cerveau",
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.match(result.assistant, /cerveau|interpr[ée]tation|signaux|donn[ée]es/i);
+  assert.doesNotMatch(result.assistant, /^Je te suis\./);
+  assert.doesNotMatch(result.assistant, /clique sur Chanson/i);
+  assert.doesNotMatch(result.assistant, /\*\*Titre :\*\*/);
+});
+
+test('Vivy can lower internal intent sensitivity from user feedback', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-internal-tuning',
+    message: 'TON INTENT EST R2GL2 TROP HAUT tu peux l ajuster ?',
+    history: [
+      { role: 'user', content: "et bien tout n'est qu'interpretation de donnée par le cerveau" },
+      { role: 'assistant', content: 'Je te suis. Ce que je comprends: et toi qu en penses tu ?' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_internal_tuning');
+  assert.equal(result.settings?.chatIntentSensitivity, 'lowered');
+  assert.equal(result.settings?.songStructureMode, 'explicit_only');
+  assert.match(result.assistant, /intent|r[ée]glage|sensibilit[ée]/i);
+  assert.match(result.assistant, /chanson|structure/i);
+  assert.doesNotMatch(result.assistant, /^Je te suis\./);
+  assert.doesNotMatch(result.assistant, /clique sur Chanson/i);
+});
+
 test('Vivy song mode structures the same rap draft when Chanson is explicit', async () => {
   const rapDraft = "course poursuite, shmite aux fesses, métrakit, traces de gomme, giro derrière, skill tree qui se dévoile";
 
