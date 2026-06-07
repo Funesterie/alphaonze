@@ -1162,8 +1162,30 @@ app.post('/api/tts', express.json({ limit: '1mb' }), async (req, res) => {
 });
 const router = Router();
 
-// Racine de travail (doit pointer sur D:\A12 chez toi en .env)
+function firstExistingRoot(candidates, fallback) {
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim();
+    if (!raw) continue;
+    const resolved = path.resolve(raw);
+    try {
+      if (fs.existsSync(resolved)) return resolved;
+    } catch (_) {
+      // ignore volatile roots
+    }
+  }
+  return path.resolve(fallback);
+}
+
+// Racine de travail A11: garde le runtime canonique sous a11/runtime.
 const WORKSPACE_ROOT = process.env.A11_WORKSPACE_ROOT || path.resolve(__dirname, '..', '..', '..');
+// Racine de lecture large pour Qflush/LLM local: repo Funesterie complet quand il est monté/disponible.
+const QFLUSH_WORKSPACE_ROOT = firstExistingRoot([
+  process.env.QFLUSH_WORKSPACE_ROOT,
+  process.env.A11_QFLUSH_WORKSPACE_ROOT,
+  process.env.FUNESTERIE_ROOT,
+  path.resolve(__dirname, '..', '..', '..', '..'),
+  WORKSPACE_ROOT,
+], WORKSPACE_ROOT);
 const PUBLIC_RUNTIME_ROOT = path.resolve(
   String(process.env.A11_RUNTIME_ROOT || path.join(WORKSPACE_ROOT, 'runtime')).trim()
 );
@@ -6713,7 +6735,7 @@ console.log('[Server] Match Arena routes mounted under /api/match-arena');
 // Qflush Flow — A11 contrôle ses flows directement (Jarvis mode)
 const createQflushFlowRouter = require('./src/routes/qflush-flow.cjs');
 app.use('/api/qflush/admin', verifyJWT); // admin routes nécessitent JWT
-app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: WORKSPACE_ROOT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
+app.use('/api/qflush', createQflushFlowRouter({ workspaceRoot: QFLUSH_WORKSPACE_ROOT, runtimeRoot: PUBLIC_RUNTIME_ROOT }));
 console.log('[Server] Qflush flow routes mounted under /api/qflush');
 app.use('/oauth', createOAuthRouter(express));
 console.log('[Server] MCP OAuth routes mounted under /oauth');

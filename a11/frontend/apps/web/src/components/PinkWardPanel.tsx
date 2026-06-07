@@ -69,7 +69,17 @@ function VramBar({ usedGb, totalGb }: { usedGb?: number | null; totalGb?: number
   );
 }
 
-export function PinkWardPanel() {
+export type PinkWardPanelProps = {
+  embedded?: boolean;
+  title?: string;
+  subtitle?: string;
+};
+
+export function PinkWardPanel({
+  embedded = false,
+  title = "Pink Ward",
+  subtitle = "Vision Janus Pro, budget GPU, fallback CPU, QFlush et A11Host dans une seule vue de controle.",
+}: PinkWardPanelProps = {}) {
   const [status, setStatus] = useState<PinkWardStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -104,13 +114,13 @@ export function PinkWardPanel() {
   const workerReady = Boolean(status?.janus?.worker?.alive || status?.janus?.worker?.ready);
 
   return (
-    <section style={{ marginTop: 24 }}>
+    <section style={{ marginTop: embedded ? 0 : 24 }}>
       <div
         style={{
           border: "1px solid rgba(236, 72, 153, 0.42)",
-          borderRadius: 14,
+          borderRadius: embedded ? 8 : 14,
           background: "radial-gradient(circle at top right, rgba(236, 72, 153, 0.15), transparent 35%), #070b14",
-          padding: 16,
+          padding: embedded ? 12 : 16,
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -118,9 +128,9 @@ export function PinkWardPanel() {
             <div style={{ color: "#f0abfc", fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" }}>
               Multimodal runtime
             </div>
-            <h3 style={{ margin: "5px 0 0", color: "#fdf2f8", fontSize: 18 }}>Pink Ward</h3>
+            <h3 style={{ margin: "5px 0 0", color: "#fdf2f8", fontSize: 18 }}>{title}</h3>
             <p style={{ margin: "6px 0 0", color: "#94a3b8", fontSize: 12, maxWidth: 760 }}>
-              Vision Janus Pro, budget GPU, fallback CPU, QFlush et A11Host dans une seule vue de controle.
+              {subtitle}
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

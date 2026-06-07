@@ -3936,6 +3936,14 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
           )}
         </aside>
       </div>
+
+      <div className="vivy-studio-runtime">
+        <PinkWardPanel
+          embedded
+          title="Janus Vision"
+          subtitle="Vision reliée au LLM Vivy: Janus quand il répond, fallback vision LLM si le worker dort, Qflush et runtime local en contrôle."
+        />
+      </div>
     </section>
   );
 }

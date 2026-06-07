@@ -979,6 +979,26 @@ test('Vivy auto-analyzes readable attached files when the message points at them
   assert.doesNotMatch(result.assistant, /\[Verse|\[Refrain|\[Chorus/i);
 });
 
+test('Vivy uses safe local context for Janus runtime and code questions', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-local-context-test',
+    message: "janus vision runtime local, tu peux regarder ton code et tes dossiers ?",
+    history: [
+      { role: 'assistant', content: "Je ne peux pas accéder aux fichiers locaux." },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_local_context');
+  assert.match(result.assistant, /contexte local/i);
+  assert.match(result.assistant, /Janus Vision/i);
+  assert.match(result.assistant, /Runtime canonique/i);
+  assert.ok(result.localContext);
+  assert.ok(Array.isArray(result.localContext.runtimeDirs));
+  assert.doesNotMatch(JSON.stringify(result), /\.env|secret-token-value|private key/i);
+});
+
 test('Vivy triggers web research for current external information instead of guessing', async () => {
   const previousFixture = process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE;
   process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = JSON.stringify({

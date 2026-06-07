@@ -85,8 +85,13 @@ function resolveWorkspacePath(workspaceRoot, runtimeRoot, relativePath) {
   const blocked = [
     '/node_modules/',
     '/.git/',
+    '/.codex-tmp/',
     '/.env',
     '/secrets',
+    '/credentials',
+    '/tokens',
+    '/.ssh/',
+    '/private',
     '/.kiro/settings/mcp.json',
   ];
   for (const b of blocked) {

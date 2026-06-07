@@ -2237,6 +2237,19 @@ export type VivyStudioProductionResult = {
     episodeId?: string | null;
     totalEpisodes?: number;
   };
+  visionContext?: Array<{
+    filename?: string;
+    reliable?: boolean;
+    provider?: string;
+    observation?: string;
+  }>;
+  localContext?: {
+    roots?: Array<Record<string, unknown>>;
+    runtimeDirs?: string[];
+    janus?: Record<string, unknown> | null;
+    searchTerms?: string[];
+    matches?: Array<Record<string, unknown>>;
+  } | null;
   files?: VivyChatFileAttachment[];
   error?: string;
   message?: string;
