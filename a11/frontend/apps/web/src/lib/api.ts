@@ -2121,6 +2121,7 @@ export async function queueVoiceLearningTraining(persona: 'a11' | 'kaen44' | str
 }
 
 export type VivyStudioMode = 'voice' | 'song' | 'share';
+export type VivyChatMode = 'chat' | VivyStudioMode;
 
 export type VivyStudioAction = {
   id: string;
@@ -2173,6 +2174,10 @@ export type VivyStudioProductionInput = {
   voiceReferenceId?: string;
   voiceReferenceName?: string;
   songSource?: string;
+  songArtists?: string[];
+  vocalCast?: string;
+  artistCount?: number;
+  singerCount?: number;
   songMood?: string;
   songText?: string;
   sessionSunoApiKey?: string;
@@ -2191,7 +2196,7 @@ export type VivyStudioProductionInput = {
 export type VivyStudioProductionResult = {
   ok: boolean;
   service?: string;
-  mode?: VivyStudioMode;
+  mode?: VivyChatMode;
   title?: string;
   summary?: string;
   assistant?: string;
@@ -2277,7 +2282,7 @@ export async function chatWithVivy(
   input: {
     message?: string;
     history?: VivyStudioProductionInput['history'];
-    mode?: VivyStudioMode;
+    mode?: VivyChatMode;
     conversationId?: string;
     files?: VivyChatFileAttachment[];
   }

@@ -14,10 +14,13 @@ process.env.VIVY_CHAT_DISABLE_LLM = 'true';
 const {
   createVivyStudioRouter,
   buildVivyAiChat,
+  buildVivyDirectSongReply,
   buildVivyStudioProduction,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
+  looksLikeWeakSongwritingReply,
   postProcessVivyAssistantText,
 } = require('../src/routes/vivy-studio.cjs');
 
@@ -78,6 +81,82 @@ test('Vivy Studio produces a song handoff without storing tokens', () => {
   assert.match(result.brief, /VIVY_SONG_PRODUCTION/);
     assert.match(result.brief, /Entre lumière et ombre/);
   assert.doesNotMatch(result.brief, /must-not-leak/);
+});
+
+test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceTool: 'Voix Djeff rap',
+    voiceInstruction: 'flow rap technique, diction nette, grain proche micro',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'voice');
+  assert.match(result.title, /Djeff rap/);
+  assert.match(result.brief, /voicePersona: a11/);
+  assert.match(result.brief, /Djeff\/A11 officielle/);
+  assert.match(result.brief, /chaîne sur couronne|chaine sur couronne/i);
+  assert.match(result.brief, /Ne pas publier la référence brute/);
+  assert.match(JSON.stringify(result.actions), /Tester Voix Djeff rap/);
+});
+
+test('Vivy Studio song handoff keeps Djeff and Vivy separated for duet rap', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    voiceTool: 'Duo Djeff + Vivy',
+    songSource: 'Prompt',
+    songMood: 'rap technique sombre, basse cinematic',
+    songText: 'rap moto radiateur pignon couronne huile essence, Vivy en refrain',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.brief, /Distribution vocale: Duo Djeff \+ Vivy/);
+  assert.match(result.brief, /Djeff: couplets rap techniques/i);
+  assert.match(result.brief, /Vivy: refrain clair/i);
+  assert.match(result.brief, /\[Verse 1 - Djeff\]/);
+  assert.match(result.brief, /\[Chorus - Duo\]/);
+  assert.match(result.brief, /radiateur/i);
+  assert.match(result.brief, /pignon/i);
+  assert.doesNotMatch(result.brief, /Garde la lumière/);
+});
+
+test('Vivy Studio song handoff supports selected Djeff A11 K44 Vivy singers', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    songSource: 'Prompt +',
+    songArtists: ['djeff', 'a11', 'k44', 'vivy'],
+    songMood: 'rap cinematic, refrain clair, pont machine',
+    songText: 'course poursuite, skill tree, moteur, mémoire et équipe Funesterie',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.brief, /Nombre de chanteurs: 4/i);
+  assert.match(result.brief, /Djeff: couplets rap techniques/i);
+  assert.match(result.brief, /A11: pont grave synthétique/i);
+  assert.match(result.brief, /K44: contre-chant posé/i);
+  assert.match(result.brief, /Vivy: refrain clair/i);
+  assert.match(result.brief, /\[Verse 1 - Djeff\]/);
+  assert.match(result.brief, /\[Verse 2 - A11\]/);
+  assert.match(result.brief, /\[Bridge - K44\]/);
+  assert.match(result.brief, /\[Chorus - Tous\]/);
+});
+
+test('Vivy Studio can calibrate A11 and K44 official voices', () => {
+  const a11 = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceTool: 'Voix A11 officielle',
+  });
+  const k44 = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceTool: 'Voix K44 officielle',
+  });
+
+  assert.match(a11.brief, /voicePersona: a11/);
+  assert.match(a11.brief, /A11 officielle/);
+  assert.match(k44.brief, /voicePersona: kaen44/);
+  assert.match(k44.brief, /K44 officielle/);
 });
 
 test('POST /api/vivy/studio/produce accepts share mode and never echoes secret token', async () => {
@@ -210,6 +289,41 @@ test('Suno payload turns a brief into lyrics instead of spoken prompt instructio
   assert.match(payload.style, /structured rhymed lyrics/i);
   assert.match(payload.style, /electro pop sombre/i);
   assert.match(payload.callBackUrl, /^https:\/\/vivy\.funesterie\.test\/api\/vivy\/studio\/suno\/callback/);
+});
+
+test('Suno payload can prepare a Djeff and Vivy duet instead of the old Vivy template', () => {
+  const payload = buildVivySunoPayload({
+    voiceTool: 'Duo Djeff + Vivy',
+    songMood: 'rap technique moto, basse lourde, hook clair',
+    songText: 'fais un duo rap moto avec radiateur, pignon, couronne, essence et huile',
+  });
+
+  assert.match(payload.style, /Djeff rap verses/i);
+  assert.match(payload.style, /Vivy melodic hook/i);
+  assert.match(payload.prompt, /\[Intro - Djeff\]/);
+  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
+  assert.match(payload.prompt, /\[Chorus - Duo\]/);
+  assert.match(payload.prompt, /radiateur/i);
+  assert.match(payload.prompt, /pignon/i);
+  assert.doesNotMatch(payload.prompt, /Garde la lumière/);
+});
+
+test('Suno payload carries explicit multi-singer cast tags', () => {
+  const payload = buildVivySunoPayload({
+    songArtists: ['djeff', 'a11', 'k44', 'vivy'],
+    songMood: 'rap cinematic, synth bridge, hook lumineux',
+    songText: 'course poursuite et mémoire Funesterie',
+  });
+
+  assert.match(payload.style, /4 distinct vocalists/i);
+  assert.match(payload.style, /Djeff/i);
+  assert.match(payload.style, /A11/i);
+  assert.match(payload.style, /K44/i);
+  assert.match(payload.style, /Vivy/i);
+  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
+  assert.match(payload.prompt, /\[Verse 2 - A11\]/);
+  assert.match(payload.prompt, /\[Bridge - K44\]/);
+  assert.match(payload.prompt, /\[Chorus - Tous\]/);
 });
 
 test('Suno session key lets a non-founder launch a personal music job without leaking the key', async () => {
@@ -515,8 +629,104 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /pas de réponse toute faite/i);
   assert.match(prompt, /Module Vivy Songcraft actif/i);
   assert.match(prompt, /rimes audibles/i);
+  assert.match(prompt, /n'ouvre pas un questionnaire/i);
+  assert.match(prompt, /fin de ligne/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
+});
+
+test('Vivy song guard replaces weak assistant drafts with structured lyrics', () => {
+  const userMessage = 'Transforme cette idée en chanson Vivy avec structure et refrain. Il faut que les fins de ligne riment.';
+  const weakReply = [
+    'Je comprends mieux maintenant.',
+    'Quel est le message principal que tu veux transmettre ?',
+    'Quel est le ton que tu veux adopter ?',
+    "N'hésite pas à me donner tes retours.",
+  ].join('\n');
+
+  assert.equal(isDirectSongwritingRequest(userMessage), true);
+  assert.equal(looksLikeWeakSongwritingReply(weakReply), true);
+
+  const repaired = buildVivyDirectSongReply({
+    message: userMessage,
+    history: [
+      {
+        role: 'user',
+        content: 'Djeff se fait poursuivre par les Guardian NOSSEN, reverse porte en stuppie hyper vitesse, ouverture du skill tree.',
+      },
+    ],
+  });
+
+  assert.match(repaired, /\*\*Titre :\*\*/);
+  assert.match(repaired, /\[Intro(?: - [^\]]+)?\]/);
+  assert.match(repaired, /\[Chorus(?: - [^\]]+)?\]/);
+  assert.match(repaired, /\[Bridge(?: - [^\]]+)?\]/);
+  assert.doesNotMatch(repaired, /Quel est le message principal/i);
+  assert.doesNotMatch(repaired, /N'hésite pas/i);
+});
+
+test('Vivy chat mode does not structure raw rap material sent with Envoyer', async () => {
+  const rapDraft = [
+    "hé je sais raper, hein, ca commence par une course poursuite mon coeur bas si vite, les shmite au fesses",
+    "le sternum qui stress si t'es un homme tu trace, ca sent le roussi alors on fonce comme Rossi",
+    "sur le bolide c'est tout kité genre tout en métrakit, je slalom, ca laisse des traces de gomme",
+    "la vitesse et le frein qui se complete, son du mur qui s'effondre, les structure qui se fonde",
+  ].join(' ');
+
+  assert.equal(isDirectSongwritingRequest(rapDraft), false);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-chat-raw-rap',
+    message: rapDraft,
+    history: [
+      { role: 'assistant', content: 'Qu’est-ce que tu penses de commencer par écrire des paroles ?' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.doesNotMatch(result.assistant, /\*\*Titre :\*\*/);
+  assert.doesNotMatch(result.assistant, /\[Intro(?: - [^\]]+)?\]/);
+  assert.doesNotMatch(result.assistant, /\[Verse 1(?: - [^\]]+)?\]/);
+  assert.doesNotMatch(result.assistant, /Garde la lumière/);
+});
+
+test('Vivy song mode structures the same rap draft when Chanson is explicit', async () => {
+  const rapDraft = "course poursuite, shmite aux fesses, métrakit, traces de gomme, giro derrière, skill tree qui se dévoile";
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-song-raw-rap',
+    mode: 'song',
+    message: rapDraft,
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.assistant, /\*\*Titre :\*\*/);
+  assert.match(result.assistant, /\[Intro(?: - [^\]]+)?\]/);
+  assert.match(result.assistant, /\[Chorus(?: - [^\]]+)?\]/);
+});
+
+test('Vivy song guard writes a fresh Djeff rap duet when the context asks for moto technique', () => {
+  const repaired = buildVivyDirectSongReply({
+    message: 'Fais une chanson rap technique moto en duo Djeff et Vivy, radiateur pignon couronne essence huile.',
+    history: [
+      {
+        role: 'assistant',
+        content: 'Ancien brouillon: Vois Raison Fraiyeur Son.',
+      },
+    ],
+  });
+
+  assert.match(repaired, /Djeff/i);
+  assert.match(repaired, /Vivy/i);
+  assert.match(repaired, /\[Verse 1 - Djeff\]/);
+  assert.match(repaired, /\[Chorus - Duo\]/);
+  assert.match(repaired, /radiateur/i);
+  assert.match(repaired, /pignon/i);
+  assert.doesNotMatch(repaired, /Garde la lumière/);
+  assert.doesNotMatch(repaired, /Vois Raison Fraiyeur Son/i);
 });
 
 test('Vivy chat post-process removes leaked draft placeholders without over-restricting', () => {

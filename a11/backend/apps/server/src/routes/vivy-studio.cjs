@@ -30,6 +30,7 @@ const {
   buildVivySongcraftSystemPrompt,
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
+  buildVivySongArtistCast,
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
@@ -46,6 +47,7 @@ try {
 }
 
 const MODES = new Set(['voice', 'song', 'share']);
+const CHAT_MODES = new Set(['chat', 'voice', 'song', 'share']);
 
 function cleanText(value, max = 2000) {
   return normalizeTextNfc(value, max);
@@ -58,6 +60,11 @@ function cleanOneLine(value, fallback = '', max = 160) {
 function parseMode(value) {
   const mode = cleanOneLine(value, 'song', 24).toLowerCase();
   return MODES.has(mode) ? mode : 'song';
+}
+
+function parseVivyChatMode(value) {
+  const mode = cleanOneLine(value, '', 24).toLowerCase();
+  return CHAT_MODES.has(mode) ? mode : 'chat';
 }
 
 function lineList(items) {
@@ -374,7 +381,13 @@ function detectVivyInputLanguage(input = {}, fallback = 'fr') {
 }
 
 function buildVivySystemPrompt(mode, language = 'fr') {
-  const modeLabel = mode === 'voice' ? 'voix' : mode === 'share' ? 'scène/publication' : 'chanson/idée';
+  const modeLabel = mode === 'voice'
+    ? 'voix'
+    : mode === 'share'
+      ? 'scène/publication'
+      : mode === 'song'
+        ? 'chanson/idée'
+        : 'discussion libre';
   return [
     'Tu es Vivy, une IA musicale et créative de Funesterie.',
     "Tu n'es pas une boîte à ordres : tu dialogues, tu comprends l'intention, tu aides à faire évoluer les idées et tu les ranges en mémoire sémantique privée.",
@@ -410,34 +423,195 @@ function buildRouting(mode = 'song') {
   return buildRoutingLines(intent, { withAudio: true });
 }
 
+function getVivyStudioVoiceProfile(input = {}) {
+  const voiceSource = cleanText([
+    input.voiceTool,
+    input.vocalCast,
+    input.songText,
+    input.lyrics,
+    input.text,
+    input.theme,
+    input.instruction,
+    input.prompt,
+    input.message,
+  ].filter(Boolean).join('\n'), 1400);
+  const folded = foldTextForLookup(voiceSource);
+  const requestedTool = cleanOneLine(input.voiceTool, '', 100);
+  const referenceName = cleanOneLine(input.voiceFileName || input.voiceReferenceName, '', 160);
+  const referenceId = cleanOneLine(input.voiceReferenceId || input.voiceRefId || input.referenceId, '', 160);
+  const hasPrivateReference = Boolean(referenceName || referenceId);
+  const wantsDuo = /\bduo\b|djeff.*vivy|vivy.*djeff/.test(folded);
+  const wantsK44 = /\bk44\b|\bkaen44\b|\bkaen\b/.test(folded);
+  const wantsA11 = /\ba11\b|\balpha\s*onze\b|\balphaonze\b/.test(folded);
+  const wantsDjeff = wantsDuo || /\bdjeff\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bpignon\b|\bcouronne\b|\bchaine\b|\bradiateur\b/.test(folded);
+  const wantsSing = /\bchant\b|\bsing\b|\bvocal\b/.test(folded);
+
+  if (wantsDuo) {
+    return {
+      id: 'duo-djeff-vivy',
+      tool: requestedTool || 'Duo Djeff + Vivy',
+      label: 'Duo Djeff + Vivy',
+      summaryLabel: 'duo Djeff rap + Vivy',
+      ttsPersona: 'a11',
+      vocalMode: 'adaptive',
+      lead: 'Djeff rappe les couplets avec grain A11/Djeff; Vivy porte les refrains et réponses mélodiques.',
+      referenceLabel: hasPrivateReference
+        ? (referenceName || 'référence privée Djeff active')
+        : 'Djeff/A11 officielle locale + Vivy officielle',
+      defaultReferenceStep: 'Base Djeff/A11 officielle locale pour les couplets, Vivy officielle pour les refrains; référence privée optionnelle pour affiner le grain Djeff.',
+      testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis; Vivy répond dans la nuit, radiateur froid, moteur lucide.',
+      songCastLines: [
+        'Djeff: couplets rap techniques, diction serrée, grain grave A11/Djeff ou référence privée.',
+        'Vivy: refrain clair, réponses mélodiques, lift lumineux sans imiter une artiste protégée.',
+        'Duo: tags [Djeff], [Vivy] et [Duo] dans les paroles pour éviter que le moteur mélange tout.',
+      ],
+      sunoStyle: 'French technical rap duet, male rap verses for Djeff, clear female melodic hook for Vivy, motorcycle mechanics imagery, cinematic bass, structured rhymed lyrics, no spoken narration',
+      musicLead: 'Original Funesterie rap duet for Djeff and Vivy, in French.',
+      musicMood: 'Djeff delivers technical rap verses; Vivy answers with a clean melodic hook. Original voices only, no celebrity imitation.',
+    };
+  }
+
+  if (wantsK44) {
+    return {
+      id: 'k44-official',
+      tool: requestedTool || 'Voix K44 officielle',
+      label: 'Voix K44 officielle',
+      summaryLabel: 'voix K44 officielle',
+      ttsPersona: 'kaen44',
+      vocalMode: 'adaptive',
+      lead: 'K44 prend le contre-chant posé, les réponses propres et les punchlines calmes.',
+      referenceLabel: hasPrivateReference ? (referenceName || 'référence privée K44 active') : 'K44 officielle locale',
+      defaultReferenceStep: 'Voix K44 officielle locale active; référence privée possible pour affiner la présence.',
+      testPhrase: 'K44 pose la ligne, calme dans la cabine, chaque mot verrouille le rythme sans forcer.',
+      songCastLines: [
+        'K44: contre-chant posé, diction nette, punchlines calmes et second lead propre.',
+      ],
+      sunoStyle: 'French original calm counter-vocal, K44 second lead, structured rhymed lyrics, melodic chorus, no spoken narration',
+      musicLead: 'Original Funesterie song for K44, in French.',
+      musicMood: 'K44 calm counter-vocal, composed delivery, no celebrity imitation.',
+    };
+  }
+
+  if (wantsA11) {
+    return {
+      id: 'a11-official',
+      tool: requestedTool || 'Voix A11 officielle',
+      label: 'Voix A11 officielle',
+      summaryLabel: 'voix A11 officielle',
+      ttsPersona: 'a11',
+      vocalMode: 'adaptive',
+      lead: 'A11 prend les ponts graves, les réponses synthétiques et la tension machine humaine.',
+      referenceLabel: hasPrivateReference ? (referenceName || 'référence privée A11 active') : 'A11 officielle locale',
+      defaultReferenceStep: 'Voix A11 officielle locale active; référence privée possible pour affiner le grain.',
+      testPhrase: 'A11 garde le signal, voix basse et nette, la machine respire avec le cœur humain.',
+      songCastLines: [
+        'A11: pont grave synthétique, tension machine humaine, réponse courte et précise.',
+      ],
+      sunoStyle: 'French original low synthetic vocal, A11 spoken-sung bridge, structured rhymed lyrics, melodic chorus, no spoken narration',
+      musicLead: 'Original Funesterie song for A11, in French.',
+      musicMood: 'A11 low synthetic voice direction, human-machine tension, no celebrity imitation.',
+    };
+  }
+
+  if (wantsDjeff) {
+    return {
+      id: 'djeff-rap',
+      tool: requestedTool || 'Voix Djeff rap',
+      label: 'Voix Djeff rap',
+      summaryLabel: 'voix Djeff rap',
+      ttsPersona: 'a11',
+      vocalMode: 'adaptive',
+      lead: 'Djeff prend les couplets rap avec base A11/Djeff officielle ou référence privée.',
+      referenceLabel: hasPrivateReference
+        ? (referenceName || 'référence privée Djeff active')
+        : 'Djeff/A11 officielle locale',
+      defaultReferenceStep: 'Voix Djeff/A11 officielle locale active; référence privée courte possible pour un grain rap plus proche.',
+      testPhrase: 'Djeff cale le kick, chaîne sur couronne, pignon précis, radiateur froid et moteur lucide.',
+      songCastLines: [
+        'Djeff: lead rap technique, diction nette, rimes internes et fins de lignes percussives.',
+        'Vivy: adlibs ou refrain possible si le mode duo est demandé.',
+      ],
+      sunoStyle: 'French technical rap, male lead rap vocal, motorcycle mechanics imagery, cinematic bass, structured rhymed lyrics, no spoken narration',
+      musicLead: 'Original Funesterie rap song for Djeff, in French.',
+      musicMood: 'Djeff lead rap energy with owned A11/Djeff identity direction when the local voice bridge is used. No celebrity imitation.',
+    };
+  }
+
+  if (wantsSing) {
+    return {
+      id: 'vivy-sing',
+      tool: requestedTool || 'Voix Vivy chant',
+      label: 'Voix Vivy chant',
+      summaryLabel: 'voix Vivy chant',
+      ttsPersona: 'vivy',
+      vocalMode: 'sing',
+      lead: 'Vivy porte la voix chantée principale.',
+      referenceLabel: hasPrivateReference ? (referenceName || 'référence privée Vivy active') : 'Vivy officielle locale',
+      defaultReferenceStep: 'Voix Vivy officielle chant active: aucun upload requis pour une phrase test.',
+      testPhrase: 'Je garde ma voix claire, proche du micro, et je transforme la nuit en refrain.',
+      songCastLines: [
+        'Vivy: lead chanté clair, diction française propre, émotion lumineuse.',
+      ],
+      sunoStyle: 'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration',
+      musicLead: 'Original Funesterie song for Vivy, in French.',
+      musicMood: 'Luminous synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
+    };
+  }
+
+  return {
+    id: 'vivy-official',
+    tool: requestedTool || 'Voix Vivy officielle',
+    label: 'Voix Vivy officielle',
+    summaryLabel: 'voix Vivy officielle',
+    ttsPersona: 'vivy',
+    vocalMode: 'adaptive',
+    lead: 'Vivy porte la voix principale.',
+    referenceLabel: hasPrivateReference ? (referenceName || 'référence privée Vivy active') : 'Vivy officielle locale',
+    defaultReferenceStep: 'Voix Vivy officielle active: aucun upload requis pour générer une phrase test.',
+    testPhrase: 'Je garde la lumière dans ma voix, même quand la nuit devient scène.',
+    songCastLines: [
+      'Vivy: voix principale claire, musicale et précise émotionnellement.',
+    ],
+    sunoStyle: 'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration',
+    musicLead: 'Original Funesterie song for Vivy, in French.',
+    musicMood: 'Luminous synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
+  };
+}
+
 function buildVoiceProduction(input) {
   const tool = cleanOneLine(input.voiceTool, 'Voix Vivy officielle', 80);
   const instruction = cleanText(input.voiceInstruction, 900);
   const referenceName = cleanOneLine(input.voiceFileName || input.voiceReferenceName, '', 160);
   const referenceId = cleanOneLine(input.voiceReferenceId || input.voiceRefId || input.referenceId, '', 160);
   const hasPrivateReference = Boolean(referenceName || referenceId);
+  const profile = getVivyStudioVoiceProfile(input);
 
   const steps = [
     hasPrivateReference
       ? `Référence privée active: ${referenceName || 'référence stockée'}. La garder privée et l'utiliser comme repère de timbre.`
-      : 'Voix Vivy officielle active: aucun upload requis pour générer une phrase test.',
+      : profile.defaultReferenceStep,
     `Méthode cible: ${tool}.`,
+    `Distribution: ${profile.lead}`,
     instruction
       ? `Direction: ${instruction}`
       : 'Définir proximité micro, énergie, diction, souffle, saturation et limites de transformation.',
-    'Phrase test: "Je garde la lumière dans ma voix, même quand la nuit devient scène."',
-    'Vérifier trois passes: voix parlée claire, voix chantée courte, voix chuchotée contrôlée.',
+    `Phrase test: "${profile.testPhrase}"`,
+    profile.id === 'duo-djeff-vivy'
+      ? 'Vérifier trois passes: couplet Djeff, réponse Vivy, alternance duo sans fusionner les identités.'
+      : 'Vérifier trois passes: voix parlée claire, débit rap/chant court, voix chuchotée contrôlée.',
   ];
 
   return {
-    title: 'Calibration voix Vivy',
+    title: `Calibration ${profile.label}`,
     summary: hasPrivateReference
-      ? 'Référence privée Vivy prête pour phrase test et calibration.'
-      : 'Voix Vivy officielle prête pour phrase test et chanson simple.',
+      ? `Référence privée prête pour ${profile.summaryLabel}, phrase test et calibration.`
+      : `${profile.label} prête pour phrase test et chanson simple.`,
     brief: [
       'VIVY_VOICE_CALIBRATION',
       `Méthode: ${tool}`,
-      `Référence: ${hasPrivateReference ? (referenceName || 'privée active') : 'Vivy officielle locale'}`,
+      `Voix cible: ${profile.label}`,
+      `voicePersona: ${profile.id === 'duo-djeff-vivy' ? 'a11 pour Djeff, vivy pour Vivy' : profile.ttsPersona}`,
+      `Référence: ${profile.referenceLabel}`,
       '',
       'Plan:',
       lineList(steps),
@@ -451,14 +625,16 @@ function buildVoiceProduction(input) {
     ].join('\n'),
     actions: [
       { id: 'default_voice', label: 'Revenir voix Vivy officielle', target: '/api/tts/speak', ready: true },
-      { id: 'upload_reference', label: 'Remplacer référence privée', target: '/api/tts/references', ready: Boolean(referenceName) },
-      { id: 'tts_test', label: 'Tester voix Vivy active', target: '/api/tts/speak', ready: true },
+      { id: 'upload_reference', label: profile.id.includes('djeff') ? 'Ajouter/remplacer référence Djeff privée' : 'Remplacer référence privée', target: '/api/tts/references', ready: Boolean(referenceName) },
+      { id: 'tts_test', label: `Tester ${profile.label}`, target: '/api/tts/speak', ready: true },
       { id: 'voice_convert', label: 'Convertir vers référence privée', target: '/api/voice/convert', ready: hasPrivateReference },
     ],
   };
 }
 
 function buildSongProduction(input) {
+  const voiceProfile = getVivyStudioVoiceProfile(input);
+  const artistCast = buildVivySongArtistCast(input);
   const source = cleanOneLine(input.songSource || input.source, 'Thème', 80);
   const mood = cleanOneLine(input.songMood || input.mood || input.style, 'Electro pop sombre cinématographique', 160);
   const material = compactUniqueLines([
@@ -495,6 +671,11 @@ function buildSongProduction(input) {
     'Structure proposée:',
     lineList([
       ...songcraft.craftLines,
+      `Artistes cochés: ${artistCast.label}.`,
+      `${artistCast.countLabel}.`,
+      `Distribution vocale: ${artistCast.label}.`,
+      `Outil voix actif: ${voiceProfile.label}.`,
+      ...artistCast.songCastLines,
       'Intro: texture sombre, respiration vocale courte, motif synth discret.',
       'Couplet 1: voix proche, diction nette, tension contenue.',
       'Pré-refrain: montée harmonique, percussion légère, ouverture stéréo.',
@@ -506,7 +687,7 @@ function buildSongProduction(input) {
     'Assets à produire:',
     lineList([
       'Paroles finalisées',
-      'Voix guide TTS ou référence chantée',
+      `Voix guide ${artistCast.label} ou référence chantée`,
       'Image/miniature par A11',
       'Clip court si scène-partage est active',
     ]),
@@ -523,8 +704,8 @@ function buildSongProduction(input) {
     brief: briefLines.join('\n'),
     actions: [
       { id: 'lyrics_refine', label: 'Finaliser paroles', target: '/api/chat', ready: hasMaterial },
-      { id: 'voice_guide', label: 'Créer voix guide Vivy', target: '/api/tts/speak', ready: hasMaterial },
-      { id: 'simple_song_audio', label: 'Créer audio chanson avec voix Vivy active', target: '/api/tts/speak', ready: hasMaterial },
+      { id: 'voice_guide', label: `Créer voix guide ${artistCast.label}`, target: '/api/tts/speak', ready: hasMaterial },
+      { id: 'simple_song_audio', label: `Créer audio chanson avec ${artistCast.label}`, target: '/api/tts/speak', ready: hasMaterial },
       { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
@@ -577,19 +758,73 @@ function buildShareProduction(input) {
 
 function inferVivyChatMode(message = '') {
   const normalized = foldTextForLookup(message);
-  if (/\b(voix|voice|chanter|chant|timbre|micro|rvc|voicemod|parle|speech)\b/i.test(normalized)) {
+  if (/\b(prepare|prépare|calibre|calibrer|changer|change)\b.{0,80}\b(voix|voice|timbre|micro|rvc|voicemod|speech)\b/i.test(normalized)) {
     return 'voice';
   }
-  if (/\b(publie|publier|youtube|clip|short|scene|partage|upload|description|tags|miniature)\b/i.test(normalized)) {
+  if (/\b(prepare|prépare|publie|publier)\b.{0,100}\b(youtube|clip|short|scene|scène|partage|upload|description|tags|miniature)\b/i.test(normalized)) {
     return 'share';
   }
-  return 'song';
+  if (isDirectSongwritingRequest(message)) return 'song';
+  return 'chat';
 }
 
 function summarizeChatMessage(message = '') {
   const cleaned = cleanText(message, 360);
   if (!cleaned) return 'on part sur une intention musicale à préciser.';
   return cleaned.replace(/\s+/g, ' ');
+}
+
+function isDirectSongwritingRequest(message = '') {
+  const normalized = foldTextForLookup(message);
+  return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(transforme|structure|arrange|mets|met)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
+    || /\b(chanson|paroles|lyrics)\b.{0,80}\b(structure|refrain|couplet|rime|rimes)\b/.test(normalized);
+}
+
+function looksLikeWeakSongwritingReply(text = '') {
+  const content = cleanText(text, 3200);
+  if (!content) return true;
+  const normalized = foldTextForLookup(content);
+  const sectionCount = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro)\]/ig) || []).length;
+  const asksInsteadOfWriting = /(quel est le message|quel est le ton|quels sont les elements|qu en dis tu|n hesite pas|je vais essayer|je comprends mieux|poser quelques questions)/.test(normalized);
+  const metaInsteadOfLyrics = /(intention\s*:|paroles\s*:|voici une proposition)/.test(normalized)
+    && sectionCount < 4
+    && content.split(/\n+/).filter((line) => line.trim()).length < 12;
+  const brokenRhymeExercise = /(je suis en trousse|avec une rescousse|je trousse|liberte libre|detstresse)/.test(normalized);
+  return asksInsteadOfWriting || metaInsteadOfLyrics || brokenRhymeExercise;
+}
+
+function buildVivyDirectSongReply(input = {}) {
+  const historyText = getVivyUserHistoryText(input.history);
+  const material = compactUniqueLines([
+    historyText,
+    input.message,
+    input.prompt,
+    input.songText,
+    input.text,
+    input.theme,
+    input.instruction,
+  ], 2600);
+  const voiceProfile = getVivyStudioVoiceProfile({ ...input, songText: material || input.songText || input.message });
+  const songcraft = buildVivySongProductionBrief({
+    ...input,
+    songText: material || input.songText || input.message,
+    rhymeScheme: input.rhymeScheme || 'Fins de lignes rimées par paires, images mécaniques et sémantiques, refrain stable et chantable.',
+  });
+  const lyrics = cleanText(songcraft.lyrics.replace(/^\[Title:\s*[^\]]+\]\s*/i, '').trim(), 2600);
+  const intention = voiceProfile.id === 'duo-djeff-vivy'
+    ? 'duo rap Djeff + Vivy, mécanique moto concrète, couplets techniques et refrain chantable.'
+    : voiceProfile.id === 'djeff-rap'
+      ? 'voix Djeff rap, mécanique précise, débit serré et refrain prêt à répondre avec Vivy.'
+      : 'ouverture du skill tree, fuite hypervitesse et retour sémantique à la réalité.';
+  return cleanText([
+    `**Titre :** ${songcraft.title}`,
+    `**Intention :** ${intention}`,
+    '',
+    lyrics,
+    '',
+    `**Rimes / débit :** ${songcraft.rhymeScheme}`,
+  ].join('\n'), 3200);
 }
 
 function normalizeVivyCapabilityText(value = '') {
@@ -603,6 +838,16 @@ function getVivyHistoryText(history = []) {
   if (!Array.isArray(history)) return '';
   return history
     .slice(-6)
+    .map((entry) => cleanText(entry?.content, 420))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function getVivyUserHistoryText(history = []) {
+  if (!Array.isArray(history)) return '';
+  return history
+    .slice(-8)
+    .filter((entry) => String(entry?.role || '').toLowerCase() !== 'assistant')
     .map((entry) => cleanText(entry?.content, 420))
     .filter(Boolean)
     .join('\n');
@@ -633,7 +878,7 @@ function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
   return {
     ok: true,
     service: 'vivy-chat',
-    mode: 'song',
+    mode: 'chat',
     assistant,
     content: assistant,
     summary: 'Vivy MCP/Neo4j: accès borné via le pont Funesterie, sans secret.',
@@ -657,7 +902,7 @@ function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
 
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
-  const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
+  const mode = parseVivyChatMode(input.mode) || inferVivyChatMode(message);
   const files = normalizeVivyFiles(input);
   const language = detectVivyInputLanguage({ ...input, files });
   const history = Array.isArray(input.history)
@@ -667,9 +912,37 @@ function buildVivyChat(input) {
       .filter(Boolean)
     : [];
 
+  if (mode === 'chat') {
+    const fileLine = files.length
+      ? `J'ai aussi noté ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
+      : '';
+    const assistant = [
+      'Je te suis.',
+      `Ce que je comprends: ${summarizeChatMessage(message)}`,
+      fileLine,
+      "Je garde ça comme discussion et matière de travail, sans le transformer automatiquement en chanson.",
+      'Si tu veux une version structurée, clique sur Chanson ou demande clairement des paroles, un refrain ou une composition.',
+    ].filter(Boolean).join('\n\n');
+    return {
+      ok: true,
+      service: 'vivy-chat',
+      mode,
+      assistant,
+      content: assistant,
+      summary: 'Message rangé dans le fil Vivy sans structure chanson automatique.',
+      actions: [],
+      routing: buildRouting('song'),
+      tokenStored: false,
+      writesByDefault: false,
+      aiMode: 'fallback_chat',
+      language,
+      files,
+    };
+  }
+
   const production = buildVivyStudioProduction({
     ...input,
-    mode,
+    mode: MODES.has(mode) ? mode : 'song',
     songSource: input.songSource || 'Conversation',
     songText: mode === 'song' ? compactUniqueLines([history.join('\n'), message], 2200) : input.songText,
     voiceInstruction: mode === 'voice' ? compactUniqueLines([history.join('\n'), message], 1200) : input.voiceInstruction,
@@ -685,18 +958,18 @@ function buildVivyChat(input) {
   const fileLine = files.length
     ? `J'ai aussi noté ${files.length} fichier${files.length > 1 ? 's' : ''}: ${files.map((file) => file.filename).join(', ')}.`
     : '';
-  const assistant = [
-    `Je te suis. Je garde cette idée dans le fil Vivy et je pars sur ${modeLabel}.`,
-    `Ce que je comprends: ${summarizeChatMessage(message)}`,
-    fileLine,
-    production.summary,
-    readyActions.length ? `Je peux déjà préparer: ${readyActions.join(', ')}.` : 'Je peux clarifier le thème et préparer une première direction.',
-    mode === 'voice'
-      ? 'Envoie-moi une intention de timbre, une phrase test ou une référence vocale, et je te fais une calibration propre.'
-      : mode === 'share'
-        ? 'Donne-moi le canal, le format et la contrainte de publication, et je prépare le plan de scène.'
-        : 'Donne-moi un thème, une phrase ou une ambiance, et je transforme ça en chanson exploitable.',
-  ].join('\n\n');
+  const assistant = mode === 'song'
+    ? buildVivyDirectSongReply({ ...input, message, files, history })
+    : [
+      `Je te suis. Je garde cette idée dans le fil Vivy et je pars sur ${modeLabel}.`,
+      `Ce que je comprends: ${summarizeChatMessage(message)}`,
+      fileLine,
+      production.summary,
+      readyActions.length ? `Je peux déjà préparer: ${readyActions.join(', ')}.` : 'Je peux clarifier le thème et préparer une première direction.',
+      mode === 'voice'
+        ? 'Envoie-moi une intention de timbre, une phrase test ou une référence vocale, et je te fais une calibration propre.'
+        : 'Donne-moi le canal, le format et la contrainte de publication, et je prépare le plan de scène.',
+    ].join('\n\n');
 
   return {
     ok: true,
@@ -709,7 +982,7 @@ function buildVivyChat(input) {
     routing: production.routing,
     tokenStored: false,
     writesByDefault: false,
-    aiMode: 'fallback',
+    aiMode: mode === 'song' ? 'fallback_songcraft' : 'fallback',
     language,
     files,
   };
@@ -729,7 +1002,7 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
 
 async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
-  const mode = MODES.has(String(input.mode || '').trim()) ? parseMode(input.mode) : inferVivyChatMode(message);
+  const mode = parseVivyChatMode(input.mode);
   const files = normalizeVivyFiles(input);
   const language = detectVivyInputLanguage({ ...input, files });
   const fallback = buildVivyChat({ ...input, files, mode });
@@ -756,13 +1029,32 @@ async function buildVivyAiChat(input, req) {
   if (isVivyMcpNeo4jQuestion(input, message)) {
     const mcpReply = buildVivyMcpNeo4jReply({ language });
     rememberVivyEpisode(userId, 'vivy_reply', mcpReply.assistant, {
-      mode: 'song',
+      mode: 'chat',
       conversationId: cleanOneLine(input.conversationId, '', 120),
       deterministic: true,
     });
     return {
       ...mcpReply,
       files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (mode === 'song') {
+    const history = normalizeVivyChatHistory(input.history);
+    const assistant = buildVivyDirectSongReply({ ...input, message, files, history });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode,
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+    });
+    return {
+      ...fallback,
+      assistant,
+      content: assistant,
+      aiMode: 'deterministic_songcraft',
+      language,
       semanticMemory,
       memoryStored: semanticMemory.stored,
     };
@@ -806,7 +1098,10 @@ async function buildVivyAiChat(input, req) {
       userMessage: message,
       systemPrompt,
     });
-    const assistant = processed.content;
+    const assistant = mode === 'song'
+      && looksLikeWeakSongwritingReply(processed.content)
+        ? buildVivyDirectSongReply({ ...input, message, files, history })
+        : processed.content;
     if (!assistant) {
       return {
         ...fallback,
@@ -941,12 +1236,13 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
 function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
   const mood = cleanOneLine(input.songMood || input.mood || input.style, 'electro pop dark cinematic', 180);
+  const artistCast = buildVivySongArtistCast(input);
   const lyrics = buildVivyStructuredLyrics(input);
   return [
-    'Original Funesterie song for Vivy, in French.',
+    artistCast.musicLead,
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
-    'Mood: luminous synthetic singer, clean vowels, emotional but not imitating any protected artist or character.',
+    `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
     'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
     `Lyrics:\n${lyrics}`,
     'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
@@ -970,6 +1266,7 @@ function buildVivySunoLyrics(input = {}) {
 }
 
 function buildVivySunoPayload(input = {}, req = null) {
+  const artistCast = buildVivySongArtistCast(input);
   const titleSeed = cleanOneLine(
     input.songTitle || input.title || inferTitle(input.songText || input.theme || input.prompt),
     'Vivy garde la lumière',
@@ -978,15 +1275,22 @@ function buildVivySunoPayload(input = {}, req = null) {
   const title = cleanOneLine(titleSeed, 'Vivy garde la lumière', 80);
   const styleBase = cleanOneLine(
     input.songMood || input.mood || input.style,
-    'French cyber pop, cinematic synthwave, clear female vocal, structured rhymed lyrics, melodic chorus, polished web mix, no spoken narration',
+    artistCast.sunoStyle,
     220
   );
+  const castStyle = artistCast.ids.includes('djeff') && artistCast.ids.includes('vivy') && artistCast.count === 2
+    ? 'alternating Djeff rap verses and Vivy melodic hook'
+    : artistCast.count > 1
+      ? `${artistCast.count} distinct vocalists: ${artistCast.label}; keep tagged sections separate`
+      : `${artistCast.label} vocal lead`;
   const style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? styleBase
+    ? cleanOneLine(castStyle && !new RegExp(castStyle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(styleBase)
+      ? `${styleBase}, ${castStyle}`
+      : styleBase, styleBase, 280)
     : cleanOneLine(
-      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration`,
+      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castStyle ? `, ${castStyle}` : ''}`,
       styleBase,
-      260
+      280
     );
   const payload = {
     model: cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40),
@@ -1565,8 +1869,11 @@ module.exports = {
   buildVivyChat,
   buildVivyAiChat,
   buildVivySystemPrompt,
+  buildVivyDirectSongReply,
   buildVivySunoPayload,
   postProcessVivyAssistantText,
+  isDirectSongwritingRequest,
+  looksLikeWeakSongwritingReply,
   isVivyMcpNeo4jQuestion,
   getSunoMusicJob,
 };

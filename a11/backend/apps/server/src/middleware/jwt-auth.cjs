@@ -64,7 +64,7 @@ function isLoopbackRequest(req) {
 }
 
 function getRequestPathname(req) {
-  return String(req?.path || req?.originalUrl || req?.url || '/')
+  return String(req?.originalUrl || req?.url || req?.path || '/')
     .split('?')[0]
     .trim() || '/';
 }

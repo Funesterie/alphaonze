@@ -4046,6 +4046,79 @@ html.a11-auth-page-root body {
   resize: vertical;
 }
 
+.vivy-studio-artist-fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(240, 121, 216, 0.24);
+  border-radius: 8px;
+}
+
+.vivy-studio-artist-fieldset legend {
+  padding: 0 6px;
+  color: #f2cfe8;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.vivy-studio-artist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vivy-studio-artist-option {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px !important;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(240, 121, 216, 0.22);
+  border-radius: 8px;
+  background: rgba(2, 1, 5, 0.44);
+  cursor: pointer;
+  text-transform: none;
+}
+
+.vivy-studio-artist-option.is-selected {
+  border-color: rgba(240, 121, 216, 0.78);
+  background: rgba(240, 121, 216, 0.14);
+}
+
+.vivy-studio-artist-option input {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: #f079d8;
+}
+
+.vivy-studio-artist-option span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.vivy-studio-artist-option strong {
+  color: #fff3fc;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.vivy-studio-artist-option small,
+.vivy-studio-artist-fieldset p {
+  margin: 0;
+  color: #d9bfd2;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .vivy-studio input:focus,
 .vivy-studio select:focus,
 .vivy-studio textarea:focus {
@@ -4261,6 +4334,10 @@ html.a11-auth-page-root body {
 
   .vivy-studio-modes button {
     min-height: auto;
+  }
+
+  .vivy-studio-artist-grid {
+    grid-template-columns: 1fr;
   }
 
   .vivy-studio-actions {
