@@ -2636,6 +2636,9 @@ function readVivyPublicChat(): VivyPublicChatMessage[] {
               downloadUrl: toUnicodeLine(file?.downloadUrl || file?.url, "", 800),
               description: toUnicodeText(file?.description, 900),
               textPreview: toUnicodeText(file?.textPreview, 6000),
+              visualDescription: toUnicodeText(file?.visualDescription, 900),
+              analysisSummary: toUnicodeText(file?.analysisSummary, 900),
+              analysis: file?.analysis && typeof file.analysis === "object" ? file.analysis : null,
               uploaded: file?.uploaded === true,
               uploadState: file?.uploadState === "stored" ? "stored" as const : "local" as const,
               uploadError: toUnicodeLine(file?.uploadError, "", 120),
@@ -2701,6 +2704,28 @@ function canReadVivyFilePreview(file: File) {
     file.type.startsWith("text/")
     || /\.(txt|md|markdown|json|csv|srt|vtt|lyrics?|prompt)$/i.test(name)
   );
+}
+
+function isVivyImageFile(file: File | VivyPublicChatFile | null | undefined) {
+  const value = file as any;
+  const type = String(value?.type || value?.contentType || "").toLowerCase();
+  const name = String(file instanceof File ? file.name : value?.filename || "").toLowerCase();
+  return type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name);
+}
+
+function describeVivyUploadAnalysis(analysis: any) {
+  const payload = analysis && typeof analysis === "object" ? analysis : null;
+  if (!payload) return "";
+  const preview = toUnicodeText(payload.preview, 900);
+  if (payload.readableInChatContext && preview) return `Analyse A11/OCR: ${preview}`;
+  const parts = [
+    payload.format ? String(payload.format) : "",
+    payload.width && payload.height ? `${payload.width}x${payload.height}` : "",
+    payload.sizeBytes || payload.originalBytes ? formatVivyFileSize(Number(payload.sizeBytes || payload.originalBytes)) : "",
+  ].filter(Boolean);
+  if (parts.length) return `Image reçue par A11 (${parts.join(", ")}). Vision détaillée disponible côté chat.`;
+  if (payload.note) return `Analyse A11: ${toUnicodeLine(payload.note, "image reçue", 160)}`;
+  return "";
 }
 
 function readVivyFileTextPreview(file: File): Promise<string> {
@@ -4081,6 +4106,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           downloadUrl: file.downloadUrl,
           description: file.description,
           textPreview: file.textPreview,
+          visualDescription: file.visualDescription,
+          analysisSummary: file.analysisSummary,
+          analysis: file.analysis,
           uploaded: file.uploaded,
         }));
       const apiHistory = nextMessages.map((entry) => ({
@@ -4211,6 +4239,7 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
     const nextFiles: VivyPublicChatFile[] = [];
     for (const file of selected) {
       const textPreview = await readVivyFileTextPreview(file);
+      const isImage = isVivyImageFile(file);
       const baseFile: VivyPublicChatFile = {
         id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         filename: toUnicodeLine(file.name, "fichier", 180),
@@ -4226,10 +4255,12 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
         const upload = await uploadConversationFile(file, {
           conversationId,
           surface: "vivy",
-          storagePreference: "session-drive",
-          preferExternalStorage: true,
+          storagePreference: isImage ? "server-local" : "session-drive",
+          preferExternalStorage: !isImage,
         });
         const resource = upload.conversationResource || upload.file || null;
+        const analysis = upload.analysis || (resource as any)?.metadata?.analysis || null;
+        const analysisSummary = describeVivyUploadAnalysis(analysis);
         nextFiles.push({
           ...baseFile,
           id: String(resource?.id || resource?.storageKey || baseFile.id),
@@ -4237,9 +4268,14 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           downloadUrl: resource?.downloadUrl || resource?.url,
           contentType: resource?.contentType || baseFile.contentType,
           sizeBytes: resource?.sizeBytes || baseFile.sizeBytes,
+          description: analysisSummary || (isImage ? "Image stockée pour analyse visuelle A11." : baseFile.description),
+          textPreview: textPreview || (analysis?.preview ? toUnicodeText(analysis.preview, 6000) : baseFile.textPreview),
+          visualDescription: analysisSummary,
+          analysisSummary,
+          analysis,
           uploaded: true,
           uploadState: "stored",
-          storageBackend: (upload as any)?.storageBackend || (resource as any)?.storageBackend || "session-drive",
+          storageBackend: (upload as any)?.storageBackend || (resource as any)?.storageBackend || (isImage ? "server-local" : "session-drive"),
         });
       } catch (error: any) {
         const errorCode = String(error?.payload?.error || error?.code || "").trim();
@@ -4248,7 +4284,9 @@ function VivyPublicChat({ hasSession }: VivySessionProps) {
           .filter((target: any) => target?.linked)
           .map((target: any) => String(target?.label || target?.destination || target?.provider || "").trim())
           .filter(Boolean);
-        const description = errorCode === "session_drive_writer_missing"
+        const description = isImage
+          ? `Image gardée localement dans le navigateur; upload A11 indisponible.${error?.message ? ` (${error.message})` : ""}`
+          : errorCode === "session_drive_writer_missing"
           ? `Drive autorisé (${linkedTargets.join(", ") || "Google/OneDrive"}), writer de session pas encore branché; fichier conservé localement dans le navigateur.`
           : errorCode === "session_drive_not_authorized"
             ? "Drive/OneDrive non autorisé pour cette session; fichier conservé localement dans le navigateur."

@@ -2157,6 +2157,9 @@ export type VivyChatFileAttachment = {
   downloadUrl?: string;
   description?: string;
   textPreview?: string;
+  visualDescription?: string;
+  analysisSummary?: string;
+  analysis?: Record<string, unknown> | null;
   uploaded?: boolean;
 };
 
