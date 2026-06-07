@@ -476,6 +476,165 @@ async function buildVivyImageAttachmentReply(input = {}, req) {
   return cleanText(lines.join('\n'), 2400);
 }
 
+function getVivyNonImageFiles(files = []) {
+  return files.filter((file) => !isVivyImageFile(file));
+}
+
+function isVivyFileInspectionRequest(message = '', files = []) {
+  const nonImageFiles = getVivyNonImageFiles(files);
+  if (!nonImageFiles.length) return false;
+  const normalized = foldTextForLookup(message);
+  const hasReadableContext = nonImageFiles.some((file) => file.description || file.textPreview || file.visualDescription);
+  if (!normalized) return hasReadableContext;
+
+  const asksForFile = /\b(fichier|fichiers|document|documents|pdf|texte|txt|piece jointe|pieces jointes|upload|joint|joints|dedans|contenu|contenus|corpus|archive|archives|historique|logs|lis|lire|ouvre|ouvrir|analyse|analyser|resume|resumer|inspecte|inspecter|regarde|verifie|verifier)\b/.test(normalized);
+  const refersToThis = /\b(ca|ceci|cela|ces|ce|cette|celui|celle|tout ca|la dedans|dedans|joint|voici|voila|tiens|corpus|archive|historique)\b/.test(normalized);
+  return asksForFile || (hasReadableContext && refersToThis && !isDirectSongwritingRequest(message));
+}
+
+function describeVivyGenericFile(file = {}) {
+  const filename = cleanOneLine(file.filename, 'fichier', 180);
+  const metadata = [
+    cleanOneLine(file.contentType, '', 80),
+    file.sizeBytes ? formatFileSize(file.sizeBytes) : '',
+  ].filter(Boolean).join(', ');
+  const readable = compactUniqueLines([
+    file.description,
+    file.textPreview ? `Extrait lisible: ${file.textPreview}` : '',
+  ], 1100);
+  const observation = readable || (metadata
+    ? `Fichier reçu (${metadata}), mais pas encore de contenu textuel lisible dans ce chat.`
+    : 'Fichier reçu, mais pas encore de contenu lisible dans ce chat.');
+  return { filename, observation };
+}
+
+function buildVivyFileAttachmentReply(input = {}) {
+  const files = getVivyNonImageFiles(normalizeVivyFiles(input));
+  const lines = [
+    "Je bascule en analyse de fichiers joints, pas en paroles automatiques.",
+    '',
+    ...files.slice(0, 5).map((file) => {
+      const entry = describeVivyGenericFile(file);
+      return `- ${entry.filename}: ${entry.observation}`;
+    }),
+    '',
+    "Si un fichier n'a pas encore de texte extrait, je le marque comme non lisible au lieu d'inventer son contenu.",
+  ];
+  return cleanText(lines.join('\n'), 2400);
+}
+
+function looksLikeVivyExternalLookupTarget(message = '') {
+  return /https?:\/\/|(?:^|[\s/])(?:[a-z0-9-]+\.)+(?:com|fr|me|io|dev|org|net|app|ai|gg|tv|co|uk)(?:\b|\/)/i.test(String(message || ''));
+}
+
+function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
+  const normalized = foldTextForLookup(message);
+  if (!normalized) return false;
+  if (mode === 'song' && isDirectSongwritingRequest(message) && !/\b(actualite|actualites|recent|recente|dernier|derniere|latest|source|sources|web|internet|site|url|github|npm|docker)\b/.test(normalized)) {
+    return false;
+  }
+  if (looksLikeVivyExternalLookupTarget(message)) return true;
+
+  const explicitWebLookup = /\b(cherche|chercher|recherche|trouve|trouver|verifie|verifier|consulte|regarde)\b.{0,90}\b(web|internet|google|en ligne|source|sources|site|site officiel|documentation|docs|github|npm|docker|docker hub|actualite|actualites)\b/.test(normalized)
+    || /\b(web|internet|google|source officielle|sources officielles|site officiel|documentation officielle|docs officielles|github|docker hub|npm)\b/.test(normalized);
+  const freshnessLookup = /\b(aujourd hui|maintenant|en ce moment|actuel|actuelle|actuels|actuelles|dernier|derniere|dernieres|latest|recent|recente|recents|recentes|nouveau|nouvelle|news|actualite|actualites|prix|tarif|version|release|mise a jour|changelog|status|statut|ci|workflow)\b/.test(normalized);
+  return explicitWebLookup || freshnessLookup;
+}
+
+function buildVivyWebSearchQuery(message = '', files = []) {
+  const fileHint = files.length
+    ? ` ${files.map((file) => file.filename).filter(Boolean).slice(0, 3).join(' ')}`
+    : '';
+  return cleanOneLine(`${message}${fileHint}`, 'Funesterie Vivy', 260)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sanitizeVivyWebResults(results = []) {
+  return (Array.isArray(results) ? results : [])
+    .map((entry) => ({
+      title: cleanOneLine(entry?.title, 'Résultat web', 180),
+      url: cleanOneLine(entry?.url, '', 800),
+      snippet: cleanText(entry?.snippet || entry?.summary || '', 360),
+    }))
+    .filter((entry) => entry.url || entry.snippet || entry.title)
+    .slice(0, 4);
+}
+
+async function runVivyWebSearch(query) {
+  const fixture = String(process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE || '').trim();
+  if (fixture) {
+    try {
+      const parsed = JSON.parse(fixture);
+      return {
+        ok: parsed?.ok !== false,
+        query,
+        results: sanitizeVivyWebResults(parsed?.results || parsed),
+        source: 'fixture',
+      };
+    } catch (error) {
+      return { ok: false, query, results: [], source: 'fixture', error: cleanOneLine(error?.message || error, 'fixture_failed', 180) };
+    }
+  }
+  if (String(process.env.VIVY_CHAT_DISABLE_WEB_SEARCH || '').toLowerCase() === 'true') {
+    return { ok: false, query, results: [], disabled: true, error: 'web_search_disabled' };
+  }
+  try {
+    const { t_web_search: webSearch } = require('../a11/tools-dispatcher.cjs');
+    const result = await webSearch({ query, limit: Number(process.env.VIVY_CHAT_WEB_SEARCH_LIMIT || 4) || 4 });
+    return {
+      ok: result?.ok !== false,
+      query: cleanOneLine(result?.query || query, query, 260),
+      results: sanitizeVivyWebResults(result?.results),
+      source: 'a11-web-search',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      query,
+      results: [],
+      source: 'a11-web-search',
+      error: cleanOneLine(error?.message || error, 'web_search_failed', 180),
+    };
+  }
+}
+
+async function buildVivyWebResearchReply(input = {}) {
+  const files = normalizeVivyFiles(input);
+  const query = buildVivyWebSearchQuery(input.message || input.prompt || input.text || '', files);
+  const search = await runVivyWebSearch(query);
+  const results = sanitizeVivyWebResults(search.results);
+  const resultLines = results.map((entry) => {
+    const source = entry.url ? ` (${entry.url})` : '';
+    const snippet = entry.snippet ? ` - ${entry.snippet}` : '';
+    return `- ${entry.title}${source}${snippet}`;
+  });
+  const lines = [
+    "Je déclenche une recherche web parce que ta demande dépend probablement d'une info externe ou récente.",
+    `Recherche: ${query}`,
+    '',
+    resultLines.length
+      ? 'Résultats utiles:'
+      : "Je n'ai pas obtenu de résultat web exploitable là tout de suite.",
+    ...resultLines,
+    '',
+    resultLines.length
+      ? "Je m'appuie sur ces sources plutôt que d'inventer une certitude de tête."
+      : "Je garde la demande en chat, mais je signale clairement que la vérification web n'a pas abouti.",
+  ];
+  return {
+    assistant: cleanText(lines.join('\n'), 2600),
+    webSearch: {
+      ok: search.ok === true,
+      query,
+      results,
+      disabled: search.disabled === true,
+      error: search.error || null,
+      source: search.source || '',
+    },
+  };
+}
+
 function buildVivyMemoryContext(userId) {
   const result = getEpisodes(userId, { limit: 8, days: 45 });
   if (!result?.ok || !Array.isArray(result.episodes) || !result.episodes.length) return '';
@@ -540,6 +699,8 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
     "Quand des images ou photos sont jointes et que Jeffrey demande ce que tu vois, réponds sur les pièces jointes: utilise la vision/contexte disponible, ne continue pas une chanson et ne dis pas que tu es seulement un modèle de langage.",
+    "Quand une demande dépend d'informations externes, récentes, d'un site, d'une version, d'un prix, d'une source ou d'une documentation, déclenche/assume la recherche web disponible avant de répondre au lieu de deviner.",
+    "Quand des fichiers joints sont importants pour comprendre la demande, analyse d'abord le contexte lisible ou visuel disponible, puis réponds; n'attends pas une formule exacte de l'utilisateur.",
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode),
@@ -1203,6 +1364,71 @@ async function buildVivyAiChat(input, req) {
       actions: [],
       routing: buildRouting('image'),
       aiMode: 'deterministic_image_context',
+      language,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (shouldVivyAutoWebSearch(message, mode)) {
+    const research = await buildVivyWebResearchReply({ ...input, message, files });
+    rememberVivyEpisode(userId, 'vivy_reply', research.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      webSearch: true,
+      webSearchOk: research.webSearch.ok === true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant: research.assistant,
+      content: research.assistant,
+      summary: research.webSearch.ok
+        ? 'Vivy a lancé une recherche web avant de répondre.'
+        : "Vivy a détecté le besoin de recherche web mais n'a pas obtenu de résultat exploitable.",
+      actions: [
+        { id: 'web_search', label: 'Recherche web', target: 'a11-web-search', ready: research.webSearch.ok === true, query: research.webSearch.query },
+      ],
+      routing: [
+        'Vivy: détecter le besoin de source externe ou récente.',
+        'A11: lancer web_search borné via le backend autorisé.',
+        'Vivy: restituer les résultats sans inventer ce qui manque.',
+      ],
+      aiMode: research.webSearch.ok ? 'deterministic_web_research' : 'deterministic_web_research_unavailable',
+      language,
+      files,
+      webSearch: research.webSearch,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (isVivyFileInspectionRequest(message, files)) {
+    const assistant = buildVivyFileAttachmentReply({ ...input, message, files });
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      fileContext: true,
+      fileCount: files.length,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a analysé le contexte lisible des fichiers joints.',
+      actions: [
+        { id: 'file_context', label: 'Analyser fichiers joints', target: 'vivy-file-context', ready: true },
+      ],
+      routing: [
+        'Vivy: détecter que les pièces jointes portent le sens de la demande.',
+        'A11: fournir métadonnées, extraits et descriptions disponibles.',
+        'Vivy: répondre sur les fichiers sans basculer en chanson.',
+      ],
+      aiMode: 'deterministic_file_context',
       language,
       files,
       semanticMemory,

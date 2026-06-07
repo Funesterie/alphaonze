@@ -879,6 +879,71 @@ test('Vivy answers image inspection from attached images instead of continuing l
   assert.doesNotMatch(result.assistant, /je vais continuer|modèle de langage|capacité de visualiser/i);
 });
 
+test('Vivy auto-analyzes readable attached files when the message points at them', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-file-context-test',
+    message: 'voici le corpus, tu en penses quoi ?',
+    history: [
+      { role: 'assistant', content: '[Verse 1]\nJe repars en chanson.' },
+    ],
+    files: [
+      {
+        filename: 'corpus-nossen.zen',
+        contentType: 'text/plain',
+        sizeBytes: 420,
+        textPreview: 'NOSSEN = liaison entre monde réel et monde Funesterie. Les pièces réelles ancrent le graphe.',
+        uploaded: true,
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_file_context');
+  assert.match(result.assistant, /analyse de fichiers joints/i);
+  assert.match(result.assistant, /corpus-nossen\.zen/i);
+  assert.match(result.assistant, /liaison entre monde réel et monde Funesterie/i);
+  assert.doesNotMatch(result.assistant, /\[Verse|\[Refrain|\[Chorus/i);
+});
+
+test('Vivy triggers web research for current external information instead of guessing', async () => {
+  const previousFixture = process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE;
+  process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = JSON.stringify({
+    ok: true,
+    results: [
+      {
+        title: '@nossen/all-in-one - npm',
+        url: 'https://www.npmjs.com/package/@nossen/all-in-one',
+        snippet: 'Package page with the latest published version and metadata.',
+      },
+    ],
+  });
+  try {
+    const result = await buildVivyAiChat({
+      conversationId: 'vivy-web-research-test',
+      message: "c'est quoi la dernière version de @nossen/all-in-one sur npm ?",
+      history: [
+        { role: 'assistant', content: 'Je crois que je sais de mémoire.' },
+      ],
+    }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, 'chat');
+    assert.equal(result.aiMode, 'deterministic_web_research');
+    assert.equal(result.webSearch.ok, true);
+    assert.match(result.assistant, /recherche web/i);
+    assert.match(result.assistant, /@nossen\/all-in-one - npm/i);
+    assert.match(result.assistant, /https:\/\/www\.npmjs\.com\/package\/@nossen\/all-in-one/i);
+    assert.doesNotMatch(result.assistant, /je crois|de mémoire/i);
+  } finally {
+    if (previousFixture === undefined) {
+      delete process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE;
+    } else {
+      process.env.VIVY_CHAT_WEB_SEARCH_FIXTURE = previousFixture;
+    }
+  }
+});
+
 test('POST /api/vivy/studio/chat requires a logged-in user when auth is configured', async () => {
   const verifyJWT = (req, res, next) => {
     if (req.headers.authorization === 'Bearer vivy-test-token') {
