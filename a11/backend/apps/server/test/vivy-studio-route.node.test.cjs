@@ -630,6 +630,7 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /Module Vivy Songcraft actif/i);
   assert.match(prompt, /rimes audibles/i);
   assert.match(prompt, /n'ouvre pas un questionnaire/i);
+  assert.match(prompt, /tutoyant/i);
   assert.match(prompt, /fin de ligne/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
   assert.doesNotMatch(prompt, /clone Kairi/i);
@@ -643,9 +644,17 @@ test('Vivy song guard replaces weak assistant drafts with structured lyrics', ()
     'Quel est le ton que tu veux adopter ?',
     "N'hésite pas à me donner tes retours.",
   ].join('\n');
+  const genericRapReply = [
+    'Je vais continuer à développer les paroles.',
+    '[Verse 2 - Vivy]',
+    'Nous sommes les maîtres de la vitesse, nous sommes les rois de la route.',
+    'Je suis libre, je suis vivant, je suis en vie.',
+    "J'espère que cela correspond à ce que vous attendiez.",
+  ].join('\n');
 
   assert.equal(isDirectSongwritingRequest(userMessage), true);
   assert.equal(looksLikeWeakSongwritingReply(weakReply), true);
+  assert.equal(looksLikeWeakSongwritingReply(genericRapReply), true);
 
   const repaired = buildVivyDirectSongReply({
     message: userMessage,
@@ -706,6 +715,45 @@ test('Vivy song mode structures the same rap draft when Chanson is explicit', as
   assert.match(result.assistant, /\*\*Titre :\*\*/);
   assert.match(result.assistant, /\[Intro(?: - [^\]]+)?\]/);
   assert.match(result.assistant, /\[Chorus(?: - [^\]]+)?\]/);
+});
+
+test('Vivy intent header routes Chanson to Djeff songcraft while preserving raw rap grain', async () => {
+  const rawDjeffDraft = [
+    'VIVY_INTENT',
+    'Instruction: Transforme cette idée en chanson Vivy avec structure et refrain.',
+    '',
+    "un quatorzieme dans la bombonne, 2point 2 dans l'ipone",
+    'je dose au millimietre pas de hasard dans le style',
+    'double radiateur freshh, pas de ca va salam wesh',
+    'la main qui guide les geste le cruxi tourne lucide',
+    'Je retoune le temps, la vision sur le pendule',
+    'casque vissé, pignon couronne cranté,',
+    "Le mur du son a eu porte et j'ai pas besoin de la clef",
+    "quand la vitesse monte et et que l'e moteur respire,",
+    'les roues en fond tout un rayon, les pneus en guise de crayon',
+    "c'est dans ce style la qu'il faut t'écrive",
+  ].join('\n');
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-song-intent-header-djeff-rap',
+    message: rawDjeffDraft,
+    history: [],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(isDirectSongwritingRequest(rawDjeffDraft), true);
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.equal(result.aiMode, 'deterministic_songcraft');
+  assert.match(result.assistant, /\*\*Titre :\*\*/);
+  assert.match(result.assistant, /\[Verse 1 - Djeff\]/);
+  assert.match(result.assistant, /quatorzieme dans la bombonne/i);
+  assert.match(result.assistant, /2point 2/i);
+  assert.match(result.assistant, /freshh/i);
+  assert.match(result.assistant, /cruxi/i);
+  assert.match(result.assistant, /pneus en guise de crayon/i);
+  assert.doesNotMatch(result.assistant, /VIVY_INTENT|Transforme cette idée/i);
+  assert.doesNotMatch(result.assistant, /ma[îi]tres? de la vitesse|rois? de la route|je suis libre|je suis en vie/i);
+  assert.doesNotMatch(result.assistant, /J'espère que cela correspond|N'hésitez pas/i);
 });
 
 test('Vivy song guard writes a fresh Djeff rap duet when the context asks for moto technique', () => {

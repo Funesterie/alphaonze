@@ -67,6 +67,12 @@ function parseVivyChatMode(value) {
   return CHAT_MODES.has(mode) ? mode : 'chat';
 }
 
+function resolveVivyChatMode(input = {}, message = '') {
+  const rawMode = cleanOneLine(input.mode, '', 24);
+  if (rawMode) return parseVivyChatMode(rawMode);
+  return inferVivyChatMode(message);
+}
+
 function lineList(items) {
   return items.filter(Boolean).map((item) => `- ${item}`).join('\n');
 }
@@ -399,6 +405,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     buildLanguageInstruction(language),
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
+    "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode),
@@ -778,7 +785,8 @@ function isDirectSongwritingRequest(message = '') {
   const normalized = foldTextForLookup(message);
   return /\b(fais|fait|ecris|ecrit|compose|genere|genere|cree|crée)\b.{0,80}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
     || /\b(transforme|structure|arrange|mets|met)\b.{0,100}\b(chanson|musique|son|paroles|lyrics|refrain|couplet)\b/.test(normalized)
-    || /\b(chanson|paroles|lyrics)\b.{0,80}\b(structure|refrain|couplet|rime|rimes)\b/.test(normalized);
+    || /\b(chanson|paroles|lyrics)\b.{0,80}\b(structure|refrain|couplet|rime|rimes)\b/.test(normalized)
+    || /\b(vivy_intent|instruction)\b.{0,180}\b(chanson|paroles|refrain|couplet|composition)\b/.test(normalized);
 }
 
 function looksLikeWeakSongwritingReply(text = '') {
@@ -787,11 +795,13 @@ function looksLikeWeakSongwritingReply(text = '') {
   const normalized = foldTextForLookup(content);
   const sectionCount = (content.match(/\[(intro|verse|couplet|pre-chorus|pre-refrain|pré-refrain|chorus|refrain|bridge|pont|outro)\]/ig) || []).length;
   const asksInsteadOfWriting = /(quel est le message|quel est le ton|quels sont les elements|qu en dis tu|n hesite pas|je vais essayer|je comprends mieux|poser quelques questions)/.test(normalized);
+  const serviceWrapper = /(je vais continuer|j espere que cela correspond|feedbacks?|modifications si necessaire|vous attendiez|vous avez deja commence)/.test(normalized);
+  const genericRapFiller = /(maitres? de la vitesse|rois? de la route|reines? de la nuit|maitres? du son|je suis vivant|je suis en vie|je suis libre|monde de vitesse et de liberte)/.test(normalized);
   const metaInsteadOfLyrics = /(intention\s*:|paroles\s*:|voici une proposition)/.test(normalized)
     && sectionCount < 4
     && content.split(/\n+/).filter((line) => line.trim()).length < 12;
   const brokenRhymeExercise = /(je suis en trousse|avec une rescousse|je trousse|liberte libre|detstresse)/.test(normalized);
-  return asksInsteadOfWriting || metaInsteadOfLyrics || brokenRhymeExercise;
+  return asksInsteadOfWriting || serviceWrapper || genericRapFiller || metaInsteadOfLyrics || brokenRhymeExercise;
 }
 
 function buildVivyDirectSongReply(input = {}) {
@@ -902,7 +912,7 @@ function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
 
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
-  const mode = parseVivyChatMode(input.mode) || inferVivyChatMode(message);
+  const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = detectVivyInputLanguage({ ...input, files });
   const history = Array.isArray(input.history)
@@ -1002,7 +1012,7 @@ function postProcessVivyAssistantText({ text = '', userMessage = '', systemPromp
 
 async function buildVivyAiChat(input, req) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 2600);
-  const mode = parseVivyChatMode(input.mode);
+  const mode = resolveVivyChatMode(input, message);
   const files = normalizeVivyFiles(input);
   const language = detectVivyInputLanguage({ ...input, files });
   const fallback = buildVivyChat({ ...input, files, mode });

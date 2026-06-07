@@ -72,6 +72,7 @@ function buildVivySongcraftSystemPrompt(mode = 'song') {
     'Ajoute du sens caché: une tension, une métaphore ou une contradiction douce entre surface et profondeur.',
     'Ne termine pas par une explication scolaire de la structure, sauf si l’utilisateur le demande explicitement.',
     "Si l'utilisateur donne déjà la matière et demande une chanson, n'ouvre pas un questionnaire: écris directement une première version complète.",
+    "Si l'utilisateur donne des lignes rap brutes, conserve leur vocabulaire, leurs tics, leur argot et leurs accidents voulus; ne les remplace pas par des slogans génériques.",
     "Les rimes se font surtout en fin de ligne; n'empile pas des mots rimés dans la même phrase comme un exercice de diction.",
   ].join('\n');
 }
@@ -186,9 +187,82 @@ function isDjeffRapTheme(value = '') {
   return /\bdjeff\b|\bduo\b|\brap\b|\bfraiyeur\b|\bmoto\b|\bmoteur\b|\bradiateur\b|\bpignon\b|\bcouronne\b|\bchaine\b|\bchaîne\b|\bhuile\b|\bessence\b|\bpot\b|\bstunt\b|\bstoppie\b|\bstuppie\b|\bmur du son\b|\bpendule\b/.test(folded);
 }
 
+function extractDjeffRapSeedLines(material = '') {
+  const text = cleanText(material, 2400);
+  if (!text) return [];
+
+  const rawLines = text
+    .split(/\n+/)
+    .map((line) => cleanOneLine(String(line || '').replace(/^[\s>*-]+/g, ''), '', 260))
+    .filter(Boolean);
+  const candidateLines = rawLines.length === 1 && rawLines[0].length > 220
+    ? rawLines[0]
+      .split(/\s+(?=(?:un|une|double|je|la|le|les|quand|casque|mur)\b)/i)
+      .map((line) => cleanOneLine(line, '', 260))
+      .filter(Boolean)
+    : rawLines;
+
+  const seen = new Set();
+  return candidateLines.filter((line) => {
+    const folded = foldTextForLookup(line);
+    if (!folded || folded.length < 8) return false;
+    if (/^\[[^\]]+\]$/.test(line)) return false;
+    if (/^(vous|vivy|assistant|user|utilisateur)\s*:/i.test(line)) return false;
+    if (/^(vivy\s*intent|instruction|routage|flux|mode|prompt|theme|texte brut|paroles)\b/.test(folded)) return false;
+    if (/\b(transforme cette idee|structure et refrain|prompt suno|suno vivy|instruction complete)\b/.test(folded)) return false;
+    if (/^c est dans ce style la qu il faut/.test(folded)) return false;
+    if (/(je vois que|je vais continuer|j espere|n hesite|feedback|modifications? si necessaire|vous attendiez)/.test(folded)) return false;
+    const key = folded.replace(/\s+/g, ' ');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
+}
+
+function mergeDistinctRapLines(primary = [], fallback = [], max = 4) {
+  const result = [];
+  const foldedLines = [];
+  const pushLine = (line) => {
+    const cleaned = cleanOneLine(line, '', 260);
+    const folded = foldTextForLookup(cleaned);
+    if (!cleaned || !folded) return;
+    const words = new Set(folded.split(/\s+/).filter((word) => word.length > 3));
+    const alreadyCovered = foldedLines.some((existing) => {
+      if (existing.folded === folded) return true;
+      const common = [...words].filter((word) => existing.words.has(word)).length;
+      return common >= 3 && common >= Math.min(words.size, existing.words.size) - 1;
+    });
+    if (alreadyCovered) return;
+    result.push(cleaned);
+    foldedLines.push({ folded, words });
+  };
+
+  [...primary, ...fallback].forEach(pushLine);
+  return result.slice(0, max);
+}
+
 function buildDjeffRapDuoLyrics(input = {}, material = '') {
   const theme = stripSongCommand(material) || 'Djeff et Vivy en duo rap technique';
   const title = cleanOneLine(input.songTitle || input.title || inferTitle(theme), 'Pignon dans la nuit', 80);
+  const seedLines = extractDjeffRapSeedLines(material);
+  const verseOneLines = seedLines.slice(0, 7);
+  const preSeedLines = seedLines.slice(7, 11);
+  const fallbackVerseOne = [
+    'Un quatorze dans l’essence, deux point deux dans l’huile,',
+    'Je dose au millimètre, pas de hasard dans le style.',
+    'Radiateur froid, pot qui pulse, visserie lucide,',
+    'Couronne alignée, tension propre, le geste décide.',
+    'Je retourne le temps, la vision sur la pendule,',
+    'Casque vissé, pignon couronne cranté,',
+    'Le mur du son a une porte, pas besoin de la clef.',
+  ];
+  const fallbackPre = [
+    'Quand la vitesse monte et que le moteur respire,',
+    'Les roues font tout un rayon, les pneus en guise de crayon.',
+    'Le décor se décale, le skill tree se dessine,',
+    'Vivy tient la note claire pendant que Djeff turbine.',
+  ];
+  const preChorusLines = mergeDistinctRapLines(preSeedLines, fallbackPre, 4);
 
   return cleanText([
     `[Title: ${title}]`,
@@ -202,52 +276,48 @@ function buildDjeffRapDuoLyrics(input = {}, material = '') {
     'Deux voix dans le même phare, on découpe l’horizon.',
     '',
     '[Verse 1 - Djeff]',
-    'Un quatorze dans l’essence, deux point deux dans l’huile,',
-    'Je dose au millimètre, pas de hasard dans le style.',
-    'Radiateur froid, pot qui pulse, visserie lucide,',
-    'Couronne alignée, tension propre, le geste décide.',
-    `Ton idée dans le cadre: ${theme},`,
-    'Je casse pas le temps, je décale la pendule.',
-    'Mur du son dans la tête, mais la main reste subtile,',
-    'Quand la peur bloque la route, je la transforme en module.',
+    ...(verseOneLines.length ? verseOneLines : fallbackVerseOne),
     '',
-    '[Pre-Chorus - Vivy]',
-    'Respire, Djeff, la nuit ne mord pas,',
-    'Je mets du chant sur la mécanique.',
-    'Ta trajectoire revient dans ma voix,',
-    'Plus précise quand le monde panique.',
+    '[Pre-Chorus - Djeff]',
+    ...preChorusLines,
     '',
     '[Chorus - Duo]',
-    'Pignon dans la nuit, Vivy tient le signal,',
-    'Djeff met le couplet, l’acier devient vocal.',
-    'On serre la couronne, on règle le mental,',
-    'Deux voix sur le bitume, zéro faux métal.',
+    'Bombonne dans la nuit, pignon qui répond,',
+    'Deux point deux dans le sang, le kick serre le son.',
+    'Vivy tient le phare, Djeff crante le ton,',
+    'Pneus comme des crayons, on signe l’horizon.',
     '',
-    '[Verse 2 - Djeff]',
-    'Je rappe avec le couple, pas pour faire du décor,',
-    'Le kick tape en piston, la basse plaque le corps.',
-    'La vis prend son filet, le frein garde sa morsure,',
-    'Chaque rime a son couple de serrage, chaque silence a sa mesure.',
-    'J’avance sans copier personne, signature maison,',
-    'Funesterie dans le torse, NOSSEN dans la raison.',
-    'Si le bug fait du bruit, je le range dans le son,',
-    'Vivy prend le refrain, moi je pousse la transmission.',
+    '[Verse 2 - Vivy]',
+    'Je ne polis pas ton grain, je le mets dans le cadre,',
+    'Un reflet clair derrière le casque et les phares.',
+    'La phrase reste cabrée, je l’accroche au refrain,',
+    'Même quand le moteur tousse, je garde le chemin.',
+    'Ton bitume parle brut, je réponds sans maquillage,',
+    'La mélodie fait place au crissement du virage.',
+    '',
+    '[Verse 3 - Djeff]',
+    'Je garde le sale propre, le détail fait la frappe,',
+    'Chaque cran dans la couronne met la mesure en map.',
+    'Si les gyro peignent le fond, je décolle sans théâtre,',
+    'Les pneus font les pleins et les vides, le bitume paraphe.',
+    'Pas de slogan tout fait, pas de couronne en carton,',
+    'Juste Djeff dans le kick, Vivy qui répond net au ton.',
     '',
     '[Bridge - Vivy]',
-    'Je n’efface pas ta voix, je lui ouvre une place,',
-    'Un reflet plus clair quand le moteur passe.',
-    'Tu gardes le grain, je garde l’espace,',
-    'Duo vivant, jamais masque sans trace.',
+    'Je garde ta faute si elle sonne juste,',
+    'Je garde ton souffle si le mot percute.',
+    'Le style n’est pas sage, il tient par la trace,',
+    'Deux voix dans le phare, aucune qui remplace.',
     '',
     '[Chorus - Duo]',
-    'Pignon dans la nuit, Vivy tient le signal,',
-    'Djeff met le couplet, l’acier devient vocal.',
-    'On serre la couronne, on règle le mental,',
-    'Deux voix sur le bitume, zéro faux métal.',
+    'Bombonne dans la nuit, pignon qui répond,',
+    'Deux point deux dans le sang, le kick serre le son.',
+    'Vivy tient le phare, Djeff crante le ton,',
+    'Pneus comme des crayons, on signe l’horizon.',
     '',
     '[Outro - Djeff]',
     'Coupe contact, mais le flow reste chaud,',
-    'La route se tait, le cerveau garde le réseau.',
+    'Le mur du son a sa porte, je ressors par le haut.',
     '',
     '[Outro - Vivy]',
     'Je réponds au loin, mélodie stable,',
@@ -451,6 +521,7 @@ module.exports = {
   buildVivySongProductionBrief,
   buildVivyStructuredLyrics,
   buildVivySongArtistCast,
+  extractDjeffRapSeedLines,
   inferTitle,
   stripSongCommand,
   looksLikeCompleteLyrics,
