@@ -3081,7 +3081,7 @@ function buildVivyStudioBrief(options: {
       `- Référence audio: ${voiceProfile.referenceLabel}`,
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
       `- Sortie attendue: phrase de test avec ${voiceProfile.briefVoicePersona}, puis notes de calibration si besoin.`,
-      "- Route recommandée: /api/tts/speak via le module voix; garder les références privées hors publication brute.",
+      "- Route recommandée: /api/tts/speak en XTTS/RVC quand une référence Vivy/Djeff/A11/K44 existe; texte libre, argot et diction naturelle autorisés; garder les références privées hors publication brute.",
       "- Sécurité: ne pas publier la référence brute sans accord; les gros fichiers restent hors upload public."
     );
   }
@@ -3304,14 +3304,10 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     };
   }
 
-  function usesOfficialVivyVoiceTool() {
-    return !hasPrivateVoiceReference && activeVoiceProfile.id !== "vivy-private" && activeVoiceProfile.id !== "diagnostic";
-  }
-
   function buildVivyTtsOptions(vocalMode: "adaptive" | "sing") {
-    const officialOnly = !hasPrivateVoiceReference || usesOfficialVivyVoiceTool();
-    const diagnosticMode = hasPrivateVoiceReference && /diagnostic/.test(foldForLookup(voiceTool));
-    const provider = "cartesia";
+    const diagnosticMode = /diagnostic/.test(foldForLookup(voiceTool));
+    const voiceConversion = !diagnosticMode || hasPrivateVoiceReference;
+    const provider = "xtts-rvc";
     return {
       persona: activeVoiceProfile.ttsPersona,
       voicePersona: activeVoiceProfile.ttsPersona,
@@ -3320,6 +3316,10 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       vocalCast: activeVoiceProfile.label,
       provider,
       ttsProvider: provider,
+      engine: provider,
+      voiceEngine: provider,
+      voiceConversionEngine: "xtts-rvc",
+      conversionEngine: "xtts-rvc",
       vocalMode,
       ...getVivyVoiceTuning(vocalMode),
       ttsAsync: true,
@@ -3328,16 +3328,20 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       audioFormat: "mp3",
       responseFormat: "mp3",
       ...buildVivyVoiceReferenceOptions(),
-      voiceReferenceRequired: officialOnly && !diagnosticMode,
-      referenceVoiceRequired: officialOnly && !diagnosticMode,
-      voiceConversion: false,
-      convertVoice: false,
-      morphVoice: false,
-      rvc: false,
-      allowRvc: false,
-      allowXttsRvc: false,
-      allowLegacyVoiceBridge: false,
-      xttsRvcOptIn: false,
+      voiceReferenceRequired: !diagnosticMode,
+      referenceVoiceRequired: !diagnosticMode,
+      requireVoiceReference: !diagnosticMode,
+      voiceConversion,
+      convertVoice: voiceConversion,
+      morphVoice: voiceConversion,
+      rvc: voiceConversion,
+      identityVoice: true,
+      useIdentityVoice: true,
+      neutralVoice: false,
+      allowRvc: true,
+      allowXttsRvc: true,
+      allowLegacyVoiceBridge: true,
+      xttsRvcOptIn: true,
       allowBrowserSpeechFallback: false,
     };
   }
@@ -3450,7 +3454,8 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         180
       );
       const vocalMode = activeVoiceProfile.vocalMode;
-      const provider = "cartesia";
+      const ttsOptions = buildVivyTtsOptions(vocalMode);
+      const provider = String(ttsOptions.provider || "auto");
       if (!hasPrivateVoiceReference && /diagnostic/.test(foldForLookup(voiceTool))) {
         setVoiceTool("Voix Vivy officielle");
       }
@@ -3458,7 +3463,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
         testLine,
         activeVoiceProfile.ttsPersona,
         provider,
-        buildVivyTtsOptions(vocalMode)
+        ttsOptions
       );
       const mediaUrl = String(payload?.audioUrl || payload?.audio_url || payload?.url || "").trim();
       if (!mediaUrl) throw new Error("audio_url_missing");
