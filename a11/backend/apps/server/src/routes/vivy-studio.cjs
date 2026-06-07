@@ -300,7 +300,7 @@ function getVivyVisionModel(baseURL = '') {
   );
   if (explicit) return explicit;
   return /openrouter\.ai/i.test(String(baseURL || ''))
-    ? 'openai/gpt-4o-mini'
+    ? 'google/gemini-2.5-flash'
     : 'gpt-4o-mini';
 }
 
