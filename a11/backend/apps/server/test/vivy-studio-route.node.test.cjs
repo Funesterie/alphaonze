@@ -103,7 +103,7 @@ test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () 
   assert.match(JSON.stringify(result.actions), /Tester Voix Djeff rap/);
 });
 
-test('Vivy Studio routes ASCII4 sound keyboard bindings as audio direction', () => {
+test('Vivy Studio hides legacy sound tokens and builds prime-complex prosody', () => {
   const result = buildVivyStudioProduction({
     mode: 'voice',
     voiceTool: 'Voix Djeff rap',
@@ -112,15 +112,17 @@ test('Vivy Studio routes ASCII4 sound keyboard bindings as audio direction', () 
 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'voice');
-  assert.match(result.brief, /Palette sonore ASCII\^4/);
-  assert.match(result.brief, /\[a4:flow=rap\]/);
-  assert.match(result.brief, /Rap serre/);
-  assert.match(result.brief, /\[a4:grain=grit\]/);
-  assert.match(result.brief, /\[a4:fx=engine\]/);
-  assert.match(result.brief, /Ne pas lire ni chanter les balises/);
+  assert.match(result.brief, /Prosodie interne/i);
+  assert.match(result.brief, /impulsions premieres/i);
+  assert.doesNotMatch(result.brief, /\[a4:/);
+  assert.doesNotMatch(result.brief, /ASCII4|NUMA8/i);
+  assert.equal(result.prosody.schema, 'funesterie.vivy.prosody-prime-complex.v1');
+  assert.ok(result.prosody.segments.length >= 1);
+  assert.equal(Number.isInteger(result.prosody.segments[0].prime), true);
+  assert.equal(typeof result.prosody.segments[0].imaginary, 'number');
 });
 
-test('Vivy Studio routes NUMA8 color bindings as internal signal language', () => {
+test('Vivy Studio turns legacy color bindings into hidden continuous phase', () => {
   const result = buildVivyStudioProduction({
     mode: 'song',
     songSource: 'Prompt +',
@@ -131,16 +133,16 @@ test('Vivy Studio routes NUMA8 color bindings as internal signal language', () =
 
   assert.equal(result.ok, true);
   assert.equal(result.mode, 'song');
-  assert.match(result.brief, /Langage interne Vivy: NUMA\^8/);
-  assert.match(result.brief, /motif contact G-A-F-F-C/i);
-  assert.match(result.brief, /\[numa8:red=G;rgba=ff3b30ff;zen=appel\]/);
-  assert.match(result.brief, /Rouge \/ Sol/);
-  assert.match(result.brief, /\[numa8:blue=F;rgba=3aa7ffff;zen=reponse\]/);
-  assert.match(result.brief, /Bleu \/ Fa/);
-  assert.match(result.brief, /clavier interne de prosodie, couleur, scene et audio/i);
+  assert.match(result.brief, /Prosodie interne/i);
+  assert.match(result.brief, /Courbe continue temps\/phase/i);
+  assert.doesNotMatch(result.brief, /\[numa8:/);
+  assert.doesNotMatch(result.brief, /NUMA8|ASCII4/i);
+  assert.ok(result.prosody.neo4j.labels.includes('ComplexPhase'));
+  assert.ok(result.prosody.neo4j.labels.includes('PrimePulse'));
+  assert.ok(result.prosody.segments.every((segment) => typeof segment.real === 'number' && typeof segment.imaginary === 'number'));
 });
 
-test('Vivy Suno lyrics strip ASCII4 tokens before music generation', () => {
+test('Vivy Suno lyrics strip legacy signal tokens before music generation', () => {
   const payload = buildVivySunoPayload({
     mode: 'song',
     voiceTool: 'Duo Djeff + Vivy',
@@ -154,6 +156,7 @@ test('Vivy Suno lyrics strip ASCII4 tokens before music generation', () => {
   assert.doesNotMatch(payload.title, /a4:/);
   assert.doesNotMatch(payload.title, /numa8:/);
   assert.doesNotMatch(payload.style, /numa8:/);
+  assert.match(payload.style, /prime-pulsed phrasing/i);
   assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
   assert.match(payload.style, /Djeff rap verses and Vivy melodic hook/i);
 });

@@ -72,6 +72,8 @@
     "sync:ecosystem-corpus-neo4j:dry-run": "node scripts/sync-ecosystem-corpus-neo4j.cjs --dry-run",
     "sync:zen-container-neo4j": "node scripts/sync-zen-container-neo4j.cjs",
     "sync:zen-container-neo4j:dry-run": "node scripts/sync-zen-container-neo4j.cjs --dry-run",
+    "sync:vivy-prosody-neo4j": "node scripts/sync-vivy-prosody-prime-complex-neo4j.cjs",
+    "sync:vivy-prosody-neo4j:dry-run": "node scripts/sync-vivy-prosody-prime-complex-neo4j.cjs --dry-run",
     "sync:a11-memory-graph-v1": "node scripts/sync-a11-memory-graph-v1.cjs",
     "sync:a11-memory-graph-v1:dry-run": "node scripts/sync-a11-memory-graph-v1.cjs --dry-run --no-write-files",
     "generate:ecosystem-briefing": "node scripts/generate-ecosystem-briefing.cjs",

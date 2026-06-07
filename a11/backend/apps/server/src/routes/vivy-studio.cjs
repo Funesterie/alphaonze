@@ -36,6 +36,13 @@ const {
   looksLikeCompleteLyrics,
 } = require('../music/vivy-songcraft.cjs');
 const {
+  buildVivyProsodyPlan,
+  buildVivyProsodyStyleHint,
+  formatVivyProsodyPlanForBrief,
+  formatVivyProsodyPlanForPrompt,
+  stripLegacySignalTokens,
+} = require('../vivy/prosody-prime-complex.cjs');
+const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
 const {
@@ -198,83 +205,8 @@ function compactUniqueLines(items, max = 2400) {
   return cleanText(lines.join('\n\n'), max);
 }
 
-const VIVY_ASCII4_SOUND_BINDINGS = [
-  { code: '[a4:atk=net]', label: 'Kick net', hint: 'attaque courte, consonnes propres, depart sec' },
-  { code: '[a4:atk=soft]', label: 'Velours', hint: 'attaque douce, entree respiree, peu de claquant' },
-  { code: '[a4:grain=grit]', label: 'Grain', hint: 'grain rap, legere saturation, bord de voix' },
-  { code: '[a4:grain=clear]', label: 'Clair', hint: 'timbre clair, diction lisible, pas de boue' },
-  { code: '[a4:flow=rap]', label: 'Rap serre', hint: 'debit serre, placement rythmique, fins de lignes percus' },
-  { code: '[a4:flow=sing]', label: 'Chant', hint: 'phrase allongee, voyelles tenues, hook chantable' },
-  { code: '[a4:pitch=rise]', label: 'Monte', hint: 'fin de phrase qui leve, energie ascendante' },
-  { code: '[a4:pitch=low]', label: 'Grave', hint: 'registre plus bas, pose calme, centre de gravite' },
-  { code: '[a4:space=near]', label: 'Proche', hint: 'proximite micro, voix devant, peu de reverb' },
-  { code: '[a4:space=wide]', label: 'Large', hint: 'espace stereo, souffle de scene, air autour' },
-  { code: '[a4:fx=breath]', label: 'Souffle', hint: 'petites respirations expressives, intime' },
-  { code: '[a4:fx=engine]', label: 'Moteur', hint: 'energie moteur, pulsation mecanique, adlibs courts' },
-];
-
-const VIVY_NUMA8_COLOR_BINDINGS = [
-  { code: '[numa8:red=G;rgba=ff3b30ff;zen=appel]', label: 'Rouge / Sol', color: '#ff3b30', note: 'G', hint: 'appel clair, premiere balise du motif contact, energie qui ouvre' },
-  { code: '[numa8:amber=A;rgba=ffb020ff;zen=avance]', label: 'Ambre / La', color: '#ffb020', note: 'A', hint: 'reponse qui avance, tension chaude, impulsion confiante' },
-  { code: '[numa8:gold=F;rgba=f8e45cff;zen=miroir]', label: 'Jaune / Fa', color: '#f8e45c', note: 'F', hint: 'miroir lumineux, ligne courte, intelligence joueuse' },
-  { code: '[numa8:blue=F;rgba=3aa7ffff;zen=reponse]', label: 'Bleu / Fa', color: '#3aa7ff', note: 'F', hint: 'retour du Fa, reponse plus froide, stabilisation du signal' },
-  { code: '[numa8:violet=C;rgba=a855f7ff;zen=ancrage]', label: 'Violet / Do', color: '#a855f7', note: 'C', hint: 'ancrage final, resolution, presence calme' },
-  { code: '[numa8:white=silence;rgba=ffffffff;zen=respire]', label: 'Blanc / Silence', color: '#ffffff', note: 'silence', hint: 'pause respirable, laisser Vivy choisir le vide utile' },
-  { code: '[numa8:green=pulse;rgba=2dd4bfff;zen=liaison]', label: 'Vert / Pulse', color: '#2dd4bf', note: 'pulse', hint: 'liaison monde reel Funesterie, battement discret' },
-  { code: '[numa8:black=drop;rgba=111827ff;zen=coupure]', label: 'Noir / Drop', color: '#111827', note: 'drop', hint: 'coupure nette, basse courte, scene qui bascule' },
-];
-
-function extractVivyAscii4SoundBindings(...values) {
-  const text = values.map((value) => String(value || '')).join('\n');
-  return VIVY_ASCII4_SOUND_BINDINGS.filter((binding) => text.includes(binding.code));
-}
-
-function extractVivyNuma8ColorBindings(...values) {
-  const text = values.map((value) => String(value || '')).join('\n');
-  return VIVY_NUMA8_COLOR_BINDINGS.filter((binding) => text.includes(binding.code));
-}
-
 function stripVivyAscii4SoundTokens(value = '') {
-  return cleanText(String(value || '')
-    .replace(/\[a4:[^\]]+\]/gi, ' ')
-    .replace(/\[numa8:[^\]]+\]/gi, ' '), 2600);
-}
-
-function buildVivyAscii4SoundPlan(input = {}) {
-  const values = [
-    input.voiceInstruction,
-    input.songMood,
-    input.songText,
-    input.lyrics,
-    input.text,
-    input.theme,
-    input.instruction,
-    input.prompt,
-    input.message
-  ];
-  const asciiBindings = extractVivyAscii4SoundBindings(...values);
-  const numaBindings = extractVivyNuma8ColorBindings(...values);
-  const signalEnabled = input.enableVivyInternalSignalLanguage === true
-    || input.enableNuma8SignalLanguage === true
-    || String(input.vivySignalLanguage || '').trim();
-
-  if (!asciiBindings.length && !numaBindings.length && !signalEnabled) return [];
-
-  const lines = [];
-  if (signalEnabled || numaBindings.length) {
-    lines.push('Langage interne Vivy: NUMA^8 couleur-son, inspire du motif contact G-A-F-F-C, etendu en zen/rgba/numa pour piloter scene, timbre, silence et impulsions.');
-    lines.push(`Alphabet NUMA^8 disponible: ${VIVY_NUMA8_COLOR_BINDINGS.map((binding) => binding.code).join(' ')}.`);
-  }
-  if (asciiBindings.length) {
-    lines.push(`Palette sonore ASCII^4 active: ${asciiBindings.map((binding) => binding.code).join(' ')}.`);
-    lines.push(...asciiBindings.map((binding) => `${binding.code}: ${binding.label} - ${binding.hint}.`));
-  }
-  if (numaBindings.length) {
-    lines.push(`Motif couleur NUMA^8 actif: ${numaBindings.map((binding) => binding.code).join(' ')}.`);
-    lines.push(...numaBindings.map((binding) => `${binding.code}: ${binding.label} (${binding.note}, ${binding.color}) - ${binding.hint}.`));
-  }
-  lines.push('Ne pas lire ni chanter les balises: Vivy les utilise comme clavier interne de prosodie, couleur, scene et audio.');
-  return lines;
+  return cleanText(stripLegacySignalTokens(value), 2600);
 }
 
 function hashShort(value, max = 24) {
@@ -1944,11 +1876,13 @@ function getVivyStudioVoiceProfile(input = {}) {
 
 function buildVoiceProduction(input) {
   const tool = cleanOneLine(input.voiceTool, 'Voix Vivy officielle', 80);
-  const instruction = cleanText(input.voiceInstruction, 900);
+  const instruction = cleanText(stripVivyAscii4SoundTokens(input.voiceInstruction), 900);
   const referenceName = cleanOneLine(input.voiceFileName || input.voiceReferenceName, '', 160);
   const referenceId = cleanOneLine(input.voiceReferenceId || input.voiceRefId || input.referenceId, '', 160);
   const hasPrivateReference = Boolean(referenceName || referenceId);
   const profile = getVivyStudioVoiceProfile(input);
+  const prosodyPlan = buildVivyProsodyPlan({ ...input, mode: 'voice' });
+  const prosodyBrief = formatVivyProsodyPlanForBrief(prosodyPlan);
 
   const steps = [
     hasPrivateReference
@@ -1959,7 +1893,7 @@ function buildVoiceProduction(input) {
     instruction
       ? `Direction: ${instruction}`
       : 'Définir proximité micro, énergie, diction, souffle, saturation et limites de transformation.',
-    ...buildVivyAscii4SoundPlan(input),
+    prosodyBrief,
     `Phrase test: "${profile.testPhrase}"`,
     profile.id === 'duo-djeff-vivy'
       ? 'Vérifier trois passes: couplet Djeff, réponse Vivy, alternance duo sans fusionner les identités.'
@@ -1994,6 +1928,7 @@ function buildVoiceProduction(input) {
       { id: 'tts_test', label: `Tester ${profile.label}`, target: '/api/tts/speak', ready: true },
       { id: 'voice_convert', label: 'Convertir vers référence privée', target: '/api/voice/convert', ready: hasPrivateReference },
     ],
+    prosodyPlan,
   };
 }
 
@@ -2012,6 +1947,12 @@ function buildSongProduction(input) {
   ], 2400);
   const materialForLyrics = stripVivyAscii4SoundTokens(material);
   const hasMaterial = Boolean(materialForLyrics || material);
+  const prosodyPlan = buildVivyProsodyPlan({
+    ...input,
+    mode: 'song',
+    songText: materialForLyrics || material || input.songText,
+  });
+  const prosodyBrief = formatVivyProsodyPlanForBrief(prosodyPlan);
   const songcraft = buildVivySongProductionBrief({
     ...input,
     songText: materialForLyrics || material || input.songText,
@@ -2041,7 +1982,7 @@ function buildSongProduction(input) {
       `${artistCast.countLabel}.`,
       `Distribution vocale: ${artistCast.label}.`,
       `Outil voix actif: ${voiceProfile.label}.`,
-      ...buildVivyAscii4SoundPlan(input),
+      prosodyBrief,
       ...artistCast.songCastLines,
       'Intro: texture sombre, respiration vocale courte, motif synth discret.',
       'Couplet 1: voix proche, diction nette, tension contenue.',
@@ -2076,6 +2017,7 @@ function buildSongProduction(input) {
       { id: 'cover_image', label: 'Créer miniature A11', target: '/api/tools/generate_sd', ready: hasMaterial },
       { id: 'clip_video', label: 'Créer clip A11', target: '/api/video/generate', ready: hasMaterial },
     ],
+    prosodyPlan,
   };
 }
 
@@ -2773,6 +2715,7 @@ function buildVivyStudioProduction(input) {
     'Routage:',
     lineList(routing),
   ].join('\n');
+  const prosodyPlan = production.prosodyPlan || null;
 
   return {
     ok: true,
@@ -2786,6 +2729,32 @@ function buildVivyStudioProduction(input) {
     routing,
     mediaAgentRoles,
     mediaPipeline,
+    prosody: prosodyPlan ? {
+      schema: prosodyPlan.schema,
+      id: prosodyPlan.id,
+      model: prosodyPlan.model,
+      summary: prosodyPlan.summary,
+      cast: prosodyPlan.cast,
+      primeSignature: prosodyPlan.primeSignature,
+      complexBasis: prosodyPlan.complexBasis,
+      neo4j: prosodyPlan.neo4j,
+      segments: prosodyPlan.segments.map((segment) => ({
+        id: segment.id,
+        order: segment.order,
+        label: segment.label,
+        kind: segment.kind,
+        roleId: segment.roleId,
+        roleLabel: segment.roleLabel,
+        prime: segment.prime,
+        real: segment.real,
+        imaginary: segment.imaginary,
+        magnitude: segment.magnitude,
+        phase: segment.phase,
+        pace: segment.pace,
+        breath: segment.breath,
+        derivative: segment.derivative,
+      })),
+    } : null,
     orchestration: {
       mode: 'funesterie-media-roles-v1',
       intent: mode,
@@ -2854,7 +2823,8 @@ function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
   const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'electro pop dark cinematic', 180);
   const artistCast = buildVivySongArtistCast(input);
-  const soundPlan = buildVivyAscii4SoundPlan(input);
+  const prosodyPlan = buildVivyProsodyPlan(input);
+  const prosodyPrompt = formatVivyProsodyPlanForPrompt(prosodyPlan);
   const lyrics = buildVivyStructuredLyrics({
     ...input,
     songText: stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
@@ -2864,7 +2834,7 @@ function buildVivyMusicPrompt(input = {}) {
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
     `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
-    soundPlan.length ? `ASCII4 sound direction: ${soundPlan.join(' ')}` : '',
+    prosodyPrompt,
     'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
     `Lyrics:\n${lyrics}`,
     'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
@@ -2889,6 +2859,8 @@ function buildVivySunoLyrics(input = {}) {
 
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
+  const prosodyPlan = buildVivyProsodyPlan(input);
+  const prosodyStyle = buildVivyProsodyStyleHint(prosodyPlan);
   const titleMaterial = stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt);
   const titleSeed = cleanOneLine(
     input.songTitle || input.title || inferTitle(titleMaterial),
@@ -2907,13 +2879,11 @@ function buildVivySunoPayload(input = {}, req = null) {
       ? `${artistCast.count} distinct vocalists: ${artistCast.label}; keep tagged sections separate`
       : `${artistCast.label} vocal lead`;
   const style = /structured rhymed lyrics|rimes|paroles structur/i.test(styleBase)
-    ? cleanOneLine(castStyle && !new RegExp(castStyle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(styleBase)
-      ? `${styleBase}, ${castStyle}`
-      : styleBase, styleBase, 280)
+    ? cleanOneLine([styleBase, castStyle, prosodyStyle].filter((item, index, list) => item && list.indexOf(item) === index).join(', '), styleBase, 360)
     : cleanOneLine(
-      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castStyle ? `, ${castStyle}` : ''}`,
+      `${styleBase}, structured rhymed lyrics, melodic chorus, sung vocals, no spoken narration${castStyle ? `, ${castStyle}` : ''}${prosodyStyle ? `, ${prosodyStyle}` : ''}`,
       styleBase,
-      280
+      360
     );
   const payload = {
     model: cleanOneLine(input.musicModel || process.env.VIVY_SUNO_MODEL || 'V4_5', 'V4_5', 40),
