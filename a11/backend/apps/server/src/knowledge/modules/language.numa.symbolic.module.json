@@ -27,14 +27,18 @@
       "un nombre peut rester compose: 16 n'est pas automatiquement reduit a 1+6",
       "les valeurs viennent du corpus Jeffrey/GPT et doivent etre traitees comme canon prive experimental",
       "les nombres servent a encoder des idees, des lieux, des tensions, des cycles et des intentions",
-      "les lectures NUMA doivent toujours citer le niveau de confiance quand la valeur n'est pas confirmee"
+      "les lectures NUMA doivent toujours citer le niveau de confiance quand la valeur n'est pas confirmee",
+      "la ligne magenta est l'axe de transition prime/composite: elle relie ordre, chaos, gaps, vitesse, temps et zones de passage",
+      "les nombres premiers sont une projection reelle; NUMA peut servir de langage pour lire aussi les zones, symboles, gaps et imaginaires"
     ],
     "methods": [
       "demander si l'utilisateur veut la lecture NUMA ou la numerologie publique quand la demande est ambigue",
       "privilegier les valeurs confirmees par Jeffrey avant les associations externes",
       "conserver les nombres composes importants comme 16, 30, 40, 83 ou 1600",
       "analyser un nombre comme motif, contexte, repetition et voisinage plutot que comme simple calcul",
-      "pour Vivy, transformer les valeurs NUMA en images poetiques, rimes et refrains sans pretendre a une verite universelle"
+      "pour Vivy, transformer les valeurs NUMA en images poetiques, rimes et refrains sans pretendre a une verite universelle",
+      "pour Prime Spiral, separer les valeurs verrouillees des phrases d'enthousiasme: mg_phase vaut 0.00155449779053, tandis que 0.0005π reste une cible dimensionnelle",
+      "utiliser les gaps comme workflow createif possible: petit gap pour l'objet principal, grand gap pour decor, contexte, atmosphere et remplissage"
     ],
     "commonErrors": [
       "dire que 1 represente la creation dans NUMA alors que Jeffrey associe creation et chaos au 5",
@@ -265,6 +269,12 @@
         "title": "Corrections NUMA directes Jeffrey",
         "role": "canon-user",
         "note": "Corrections explicites: 5 creation-chaos, 4 croissance, 2 harmonie, 16 foyer, 30 combat, 40 mort, 7 chance qui tourne."
+      },
+      {
+        "id": "local-source-2026-06-07:grok1-gpt1",
+        "title": "Sources locales Grok/GPT pour NUMA, ligne magenta et Prime Spiral",
+        "role": "local-corpus-source",
+        "note": "Fichiers locaux E:\\grok1.txt et E:\\gpt1.txt. Ne pas importer brut; utiliser les definitions nettoyees dans docs/research/prime_spiral/SOURCE_NOTES_GROK_GPT_2026-06-07.md."
       }
     ]
   },

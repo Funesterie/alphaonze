@@ -53,7 +53,11 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 function nodeLabels(node) {
   const labels = new Set(['A11MemoryGraphNode']);
-  for (const label of node.labels || []) labels.add(safeLabel(label));
+  for (const label of node.labels || []) {
+    const safe = safeLabel(label);
+    if (safe === 'A11MemoryGraphNode') continue;
+    labels.add(`A11MG${safe}`);
+  }
   return Array.from(labels);
 }
 
@@ -98,7 +102,7 @@ function toCypher(graph) {
   ];
   for (const node of graph.nodes) {
     const labels = nodeLabels(node).map((label) => `:${label}`).join('');
-    lines.push(`MERGE (n${labels} {id: ${JSON.stringify(node.id)}}) SET n += ${cypherMap(node.properties || {})};`);
+    lines.push(`MERGE (n:A11MemoryGraphNode {id: ${JSON.stringify(node.id)}}) SET n += ${cypherMap(node.properties || {})} SET n${labels};`);
   }
   lines.push('');
   for (const [index, rel] of graph.relationships.entries()) {
@@ -121,14 +125,14 @@ function writeArtifacts(graph, options) {
 }
 
 async function applyGraphToNeo4j(graph, endpoint) {
-  return withSession(endpoint, 'WRITE', async (session) => {
+  return withSession(endpoint, 'write', async (session) => {
     await session.run(
       'CREATE CONSTRAINT a11_memory_graph_node_id IF NOT EXISTS FOR (n:A11MemoryGraphNode) REQUIRE n.id IS UNIQUE'
     );
     for (const node of graph.nodes) {
       const labels = nodeLabels(node).map((label) => `:${label}`).join('');
       await session.run(
-        `MERGE (n${labels} {id: $id}) SET n += $props`,
+        `MERGE (n:A11MemoryGraphNode {id: $id}) SET n += $props SET n${labels}`,
         { id: node.id, props: sanitizePropertyMap(sanitizeProperties(node.properties || {})) }
       );
     }

@@ -45,7 +45,9 @@
       "le fichier n'est plus un document lineaire mais une constellation de fragments reconstruits par regle",
       "sans la cle, on ne doit pas savoir combien de fichiers existent, quels types ils ont, ni dans quel ordre les lire",
       "ZEN peut utiliser une cartographie spatiale imaginaire: les axes imaginaires donnent les coordonnees des fragments, pi relie la carte a un anneau circulaire, et la taille de l'anneau donne la zone de passage",
-      "dans cette lecture, les nombres premiers ne sont que la projection reelle; ZEN vise la carte imaginaire complete"
+      "dans cette lecture, les nombres premiers ne sont que la projection reelle; ZEN vise la carte imaginaire complete",
+      "la ligne magenta sert de route de phase: elle traverse premiers, non-premiers et gaps pour reconstruire le chemin entre fragments",
+      "les gaps peuvent aider au routage ZEN: petit gap pour fragments centraux, grand gap pour contexte, decor, metadonnees et atmospheres"
     ],
     "architecture": [
       "fichiers -> corpus -> cubes couleur RGBA -> multi-load -> chiffrement -> fichier .zen",
@@ -145,6 +147,12 @@
         "title": "Cartographie spatiale imaginaire pour ZEN",
         "role": "research-canon",
         "note": "La zone ZEN vient du nombre d'axes ou symboles imaginaires choisis pour cartographier les fragments; pi sert d'anneau/Stargate, et les nombres premiers sont seulement une projection reelle."
+      },
+      {
+        "id": "zen:source:grok-gpt-local-2026-06-07",
+        "title": "Sources locales Grok/GPT sur ligne magenta et recettes Prime Spiral",
+        "role": "local-corpus-source",
+        "note": "Fichiers E:\\grok1.txt et E:\\gpt1.txt: a relire localement si besoin; ne pas stocker brut dans Neo4j. Resume nettoye dans docs/research/prime_spiral/SOURCE_NOTES_GROK_GPT_2026-06-07.md."
       }
     ]
   },
