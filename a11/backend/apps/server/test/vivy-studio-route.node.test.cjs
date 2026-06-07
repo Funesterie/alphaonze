@@ -21,6 +21,7 @@ const {
   buildVivyWebSearchQuery,
   isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
+  isVivyToolCapabilityQuestion,
   looksLikeWeakSongwritingReply,
   postProcessVivyAssistantText,
   shouldVivyAutoWebSearch,
@@ -687,6 +688,11 @@ test('Vivy chat prompt keeps original musical direction and avoids canned replie
   assert.match(prompt, /Module Vivy Songcraft actif/i);
   assert.match(prompt, /rimes audibles/i);
   assert.match(prompt, /n'ouvre pas un questionnaire/i);
+  assert.match(prompt, /Carte outils Vivy autorisée/i);
+  assert.match(prompt, /vision\.images/i);
+  assert.match(prompt, /model\.gguf/i);
+  assert.match(prompt, /commands\.intent/i);
+  assert.match(prompt, /ne contourne pas les garde-fous/i);
   assert.match(prompt, /tutoyant/i);
   assert.match(prompt, /fin de ligne/i);
   assert.match(prompt, /autorisé\/licencié\/consenti/i);
@@ -852,6 +858,9 @@ test('Vivy recognizes MCP/Neo4j follow-up without inventing Mode Creatif Propuls
   assert.equal(isVivyMcpNeo4jQuestion({
     history: [{ role: 'user', content: 'tu peux utiliser Neo4j pour cette chanson ?' }],
   }, 'avec le mcp'), true);
+  assert.equal(isVivyToolCapabilityQuestion({
+    history: [{ role: 'user', content: 'tu peux utiliser Neo4j pour cette chanson ?' }],
+  }, 'avec le mcp'), false);
 
   const result = await buildVivyAiChat({
     conversationId: 'vivy-mcp-test',
@@ -870,6 +879,35 @@ test('Vivy recognizes MCP/Neo4j follow-up without inventing Mode Creatif Propuls
   assert.doesNotMatch(result.assistant, /Mode Créatif Propulsé/i);
   assert.doesNotMatch(result.assistant, /IA isolée/i);
   assert.doesNotMatch(result.assistant, /aucun accès/i);
+});
+
+test('Vivy maps authorized tools and Zen GGUF without bypassing safeguards', async () => {
+  const message = 'oui fais ca pour tout les outils et commande interne, avec zen on peut acceder au uggf et decortiqer la crevette';
+
+  assert.equal(isVivyToolCapabilityQuestion({
+    history: [{ role: 'assistant', content: 'Je peux router les outils autorisés.' }],
+  }, message), true);
+
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-tool-capability-test',
+    message,
+    history: [
+      { role: 'assistant', content: 'Je peux router les outils autorisés.' },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_tool_capabilities');
+  assert.match(result.assistant, /outils autorisés|carte d'outils/i);
+  assert.match(result.assistant, /Zen|\.zen|@funeste\/zen/i);
+  assert.match(result.assistant, /GGUF|uggf/i);
+  assert.match(result.assistant, /metadata-only|métadonnées|metadata/i);
+  assert.match(result.assistant, /pas de shell arbitraire|commande devient un intent/i);
+  assert.doesNotMatch(result.assistant, /désactiver les garde-fous|faire sauter les garde-fous/i);
+  assert.ok(result.localContext);
+  assert.ok(Array.isArray(result.localContext.artifacts));
+  assert.match(JSON.stringify(result.actions), /gguf_inventory|zen_inspect|tool_capability_map/);
 });
 
 test('POST /api/vivy/studio/chat stores semantic context and accepts file metadata', async () => {

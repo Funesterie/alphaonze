@@ -93,6 +93,64 @@ const VIVY_LOCAL_TEXT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const VIVY_LOCAL_SECRET_RE = /(^|[\\/])(?:\.env(?:\..*)?|secrets?|credentials?|private|tokens?|passwords?|\.kiro[\\/]settings[\\/]mcp\.json)(?:[\\/]|$)|\.(?:pem|pfx|key)$/i;
+const VIVY_TOOL_CAPABILITIES = [
+  {
+    id: 'vision.images',
+    label: 'Vision images',
+    trigger: 'png, jpg, webp, gif, image jointe',
+    route: 'Janus Vision, puis fallback vision LLM si Janus ne voit que des métadonnées',
+    limit: 'décrire seulement ce qui est visible; ne pas inventer depuis le nom du fichier',
+  },
+  {
+    id: 'files.readable',
+    label: 'Fichiers lisibles',
+    trigger: 'txt, md, json, code, extrait de document, .zen avec aperçu fourni',
+    route: 'contexte fichier A11: métadonnées, extrait, résumé, analyse jointe',
+    limit: 'pas de secrets; demander le contenu manquant si le texte n’est pas disponible',
+  },
+  {
+    id: 'web.search',
+    label: 'Recherche web',
+    trigger: 'information récente, site, doc, GitHub, npm, Docker, source externe',
+    route: 'recherche web bornée côté backend, puis restitution sourcée',
+    limit: 'ne pas recycler les sorties Codex/opérateur comme requête',
+  },
+  {
+    id: 'local.context',
+    label: 'Contexte local Funesterie',
+    trigger: 'Janus, runtime, MCP, Qflush, code, corpus, Zen, Neo4j, encode/decode',
+    route: 'lecture locale filtrée, racines sûres, indices courts, sans écriture automatique',
+    limit: 'ne pas lire .env, clés, tokens, credentials, ni chemins privés sensibles',
+  },
+  {
+    id: 'zen.corpus',
+    label: 'Corpus Zen',
+    trigger: '.zen, @funeste/zen, encode, decode, corpus',
+    route: 'inspection du header public et routage encode/decode via @funeste/zen quand une clé autorisée existe',
+    limit: 'ne jamais afficher la clé; ne pas décoder un corpus chiffré sans clé/session autorisée',
+  },
+  {
+    id: 'model.gguf',
+    label: 'Modèles GGUF',
+    trigger: 'gguf, uggf, modèle local, poids, quantization',
+    route: 'inventaire local métadonnées: chemin relatif sûr, taille, magic/version quand lisible',
+    limit: 'pas de dump de poids, pas de contournement de licence, pas de décompilation brute',
+  },
+  {
+    id: 'audio.voice',
+    label: 'Voix et audio',
+    trigger: 'micro, STT, TTS, XTTS/RVC, voix Vivy/Djeff/A11/K44',
+    route: 'pipeline audio A11: référence privée, TTS/XTTS/RVC, fallback navigateur contrôlé',
+    limit: 'références vocales consenties; ne pas imiter une personne protégée sans droit',
+  },
+  {
+    id: 'commands.intent',
+    label: 'Commandes internes',
+    trigger: 'outil, commande, action, MCP, Qflush, Neo4j',
+    route: 'intent borné vers backend/MCP/agents; pas de shell arbitraire depuis Vivy public',
+    limit: 'confirmation ou opérateur requis pour écriture, suppression, secret, infra et coûts',
+  },
+];
 
 function cleanText(value, max = 2000) {
   return normalizeTextNfc(value, max);
@@ -504,6 +562,24 @@ function formatFileSize(sizeBytes = 0) {
   if (size < 1024) return `${size} o`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} Ko`;
   return `${(size / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function formatVivyToolCapabilityLines() {
+  return VIVY_TOOL_CAPABILITIES.map((capability) => [
+    `- ${capability.id} (${capability.label})`,
+    `déclencheur: ${capability.trigger}`,
+    `route: ${capability.route}`,
+    `limite: ${capability.limit}`,
+  ].join(' | '));
+}
+
+function buildVivyToolCapabilityPrompt() {
+  return [
+    'Carte outils Vivy autorisée:',
+    ...formatVivyToolCapabilityLines(),
+    "Règle: si un outil autorisé peut aider, utilise l'intent ou le contexte backend disponible au lieu de répondre que tu ne peux rien faire.",
+    "Règle sécurité: ne contourne pas les garde-fous, ne lis pas de secrets, ne promets pas d'exécuter une commande non autorisée; nomme le verrou probable et l'action bornée suivante.",
+  ].join('\n');
 }
 
 function formatVivyFilesForPrompt(files = []) {
@@ -1316,6 +1392,174 @@ function getVivyJanusStatusSummary() {
   }
 }
 
+function shouldCollectVivyLocalArtifacts(message = '') {
+  const normalized = foldTextForLookup(message);
+  return /\b(zen|gguf|uggf|modele|model|corpus|encode|decode|decoder|encoder|poids|quant|quantization|quantisation|outil|outils|commande|commandes)\b/.test(normalized);
+}
+
+function inspectVivyZenHeader(absPath = '') {
+  try {
+    const fd = fs.openSync(absPath, 'r');
+    try {
+      const prefix = Buffer.alloc(12);
+      const read = fs.readSync(fd, prefix, 0, prefix.length, 0);
+      if (read < 12 || !prefix.subarray(0, 8).equals(Buffer.from('NOSSENZ1'))) {
+        return { format: 'zen?', valid: false, reason: 'magic_absent' };
+      }
+      const headerLength = prefix.readUInt32BE(8);
+      if (!Number.isFinite(headerLength) || headerLength <= 0 || headerLength > 64 * 1024) {
+        return { format: 'zen', valid: false, reason: 'header_length_invalid' };
+      }
+      const headerBytes = Buffer.alloc(headerLength);
+      fs.readSync(fd, headerBytes, 0, headerLength, 12);
+      const header = JSON.parse(headerBytes.toString('utf8'));
+      return {
+        format: cleanOneLine(header.format, 'zen', 40),
+        valid: true,
+        version: Number(header.version || 0) || null,
+        mode: cleanOneLine(header.mode, '', 80),
+        codec: cleanOneLine(header.codec, '', 80),
+        cipher: cleanOneLine(header.cipher, '', 80),
+        kdf: typeof header.kdf === 'object' ? cleanOneLine(header.kdf?.name, '', 80) : cleanOneLine(header.kdf, '', 80),
+      };
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (error) {
+    return { format: 'zen?', valid: false, reason: cleanOneLine(error?.message || error, 'zen_header_unreadable', 120) };
+  }
+}
+
+function inspectVivyGgufHeader(absPath = '') {
+  try {
+    const fd = fs.openSync(absPath, 'r');
+    try {
+      const header = Buffer.alloc(24);
+      const read = fs.readSync(fd, header, 0, header.length, 0);
+      if (read < 8 || header.subarray(0, 4).toString('ascii') !== 'GGUF') {
+        return { format: 'gguf?', valid: false, reason: 'magic_absent' };
+      }
+      const version = header.readUInt32LE(4);
+      const tensorCount = read >= 16 ? Number(header.readBigUInt64LE(8)) : null;
+      const metadataKvCount = read >= 24 ? Number(header.readBigUInt64LE(16)) : null;
+      return {
+        format: 'gguf',
+        valid: true,
+        version: Number.isFinite(version) ? version : null,
+        tensorCount: Number.isSafeInteger(tensorCount) ? tensorCount : null,
+        metadataKvCount: Number.isSafeInteger(metadataKvCount) ? metadataKvCount : null,
+      };
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (error) {
+    return { format: 'gguf?', valid: false, reason: cleanOneLine(error?.message || error, 'gguf_header_unreadable', 120) };
+  }
+}
+
+function describeVivyArtifactHeader(kind = '', header = {}) {
+  if (!header || typeof header !== 'object') return '';
+  if (kind === 'zen') {
+    if (header.valid) {
+      return [
+        `format=${header.format || 'zen'}`,
+        header.version ? `v${header.version}` : '',
+        header.mode ? `mode=${header.mode}` : '',
+        header.cipher ? `cipher=${header.cipher}` : '',
+        header.kdf ? `kdf=${header.kdf}` : '',
+      ].filter(Boolean).join(', ');
+    }
+    return `header zen non confirmé (${header.reason || 'illisible'})`;
+  }
+  if (kind === 'gguf') {
+    if (header.valid) {
+      return [
+        `format=gguf`,
+        header.version ? `v${header.version}` : '',
+        header.tensorCount != null ? `tensors=${header.tensorCount}` : '',
+        header.metadataKvCount != null ? `metadata=${header.metadataKvCount}` : '',
+      ].filter(Boolean).join(', ');
+    }
+    return `header gguf non confirmé (${header.reason || 'illisible'})`;
+  }
+  return '';
+}
+
+function collectVivyLocalArtifacts(root, roots, output, options = {}) {
+  const rootPath = safeExistingPath(root);
+  if (!rootPath || output.length >= Number(options.limit || 14)) return;
+  const limit = Number(options.limit || 14);
+  const maxDepth = Number(options.maxDepth || 8);
+  const maxScannedEntries = Number(options.maxScannedEntries || 3500);
+  const queue = [{ dir: rootPath, depth: 0 }];
+  const seen = new Set();
+  let scanned = 0;
+  while (queue.length && output.length < limit && scanned < maxScannedEntries) {
+    const current = queue.shift();
+    if (!current || current.depth > maxDepth) continue;
+    const key = process.platform === 'win32' ? current.dir.toLowerCase() : current.dir;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current.dir, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries) {
+      scanned += 1;
+      const abs = path.join(current.dir, entry.name);
+      const rel = path.relative(rootPath, abs);
+      if (entry.isDirectory()) {
+        if (!shouldSkipVivyLocalDir(entry.name) && !isVivySecretishPath(rel)) {
+          queue.push({ dir: abs, depth: current.depth + 1 });
+        }
+        continue;
+      }
+      if (!entry.isFile() || isVivySecretishPath(rel)) continue;
+      const lower = entry.name.toLowerCase();
+      const kind = lower.endsWith('.zen')
+        ? 'zen'
+        : lower.endsWith('.gguf') || lower.endsWith('.uggf')
+          ? 'gguf'
+          : '';
+      if (!kind) continue;
+      let stat = null;
+      try {
+        stat = fs.statSync(abs);
+      } catch (_) {
+        continue;
+      }
+      const header = kind === 'zen' ? inspectVivyZenHeader(abs) : inspectVivyGgufHeader(abs);
+      output.push({
+        kind,
+        path: formatVivyLocalPath(abs, roots),
+        sizeBytes: stat?.size || 0,
+        size: formatFileSize(stat?.size || 0),
+        header,
+        headerSummary: describeVivyArtifactHeader(kind, header),
+      });
+      if (output.length >= limit) break;
+    }
+  }
+}
+
+function getVivyLocalArtifactSummary(roots = uniqueVivyLocalRoots(), message = '') {
+  if (!shouldCollectVivyLocalArtifacts(message)) return [];
+  const artifacts = [];
+  for (const root of roots) {
+    collectVivyLocalArtifacts(root.path, roots, artifacts, { limit: 14 });
+    if (artifacts.length >= 14) break;
+  }
+  const seen = new Set();
+  return artifacts.filter((artifact) => {
+    const key = `${artifact.kind}:${artifact.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 14);
+}
+
 function extractVivyLocalSearchTerms(message = '') {
   const normalized = foldTextForLookup(message);
   const terms = [];
@@ -1334,6 +1578,11 @@ function extractVivyLocalSearchTerms(message = '') {
     'decode',
     'workspace',
     'module',
+    'gguf',
+    'uggf',
+    'modele',
+    'outils',
+    'commande',
   ];
   for (const term of candidates) {
     if (normalized.includes(term)) terms.push(term);
@@ -1404,8 +1653,8 @@ function searchVivyLocalText(root, roots, query, output, options = {}) {
 function shouldVivyUseLocalContext(message = '') {
   const normalized = foldTextForLookup(message);
   if (!normalized) return false;
-  return /\b(local|dossier|fichier|repo|code|codage|workspace|runtime|janus|vision|qflush|mcp|module|corpus|neo4j|zen|encode|decode|cherche|chercher|scan|scanne|verifie|verifier)\b/.test(normalized)
-    && /\b(local|dossier|repo|code|workspace|runtime|janus|vision|qflush|mcp|module|corpus|neo4j|zen|encode|decode|fichier|chercher|cherche|scan|scanne|verifie|verifier)\b/.test(normalized);
+  return /\b(local|dossier|fichier|repo|code|codage|workspace|runtime|janus|vision|qflush|mcp|module|corpus|neo4j|zen|encode|decode|gguf|uggf|modele|model|outil|outils|commande|commandes|cherche|chercher|scan|scanne|verifie|verifier)\b/.test(normalized)
+    && /\b(local|dossier|repo|code|workspace|runtime|janus|vision|qflush|mcp|module|corpus|neo4j|zen|encode|decode|gguf|uggf|modele|model|outil|outils|commande|commandes|fichier|chercher|cherche|scan|scanne|verifie|verifier)\b/.test(normalized);
 }
 
 function buildVivyLocalContextSnapshot(message = '') {
@@ -1428,12 +1677,16 @@ function buildVivyLocalContextSnapshot(message = '') {
     if (matches.length >= 14) break;
   }
   const janus = getVivyJanusStatusSummary();
+  const artifacts = getVivyLocalArtifactSummary(roots, message);
   const prompt = cleanText([
     'Contexte local Funesterie fourni par le backend A11, lecture seule et filtré contre les secrets.',
     `Racines lisibles: ${rootSummary.map((entry) => `${entry.id}=${entry.pathRef}`).join(', ') || 'aucune racine locale confirmée'}.`,
     `Runtime canonique conseillé: a11-runtime:.`,
     runtimeDirs.length ? `Runtime observés: ${runtimeDirs.join(', ')}.` : 'Runtime observés: aucun runtime local listé.',
     `Janus Vision: provider=${janus.provider}; enabled=${janus.enabled}; workerReady=${janus.workerReady}; model=${janus.model || '-'}; device=${janus.device || '-'}.`,
+    artifacts.length
+      ? `Artefacts Zen/GGUF sûrs:\n${artifacts.map((artifact) => `- ${artifact.path} (${artifact.kind}, ${artifact.size || 'taille inconnue'}${artifact.headerSummary ? `, ${artifact.headerSummary}` : ''})`).join('\n')}`
+      : 'Artefacts Zen/GGUF sûrs: aucun artefact local listé dans cette passe.',
     matches.length
       ? `Indices code/doc pertinents:\n${matches.map((match) => `- ${match.path}:${match.line} ${match.text}`).join('\n')}`
       : 'Indices code/doc pertinents: aucun match texte court dans les fichiers sûrs.',
@@ -1444,6 +1697,7 @@ function buildVivyLocalContextSnapshot(message = '') {
     roots: rootSummary,
     runtimeDirs,
     janus,
+    artifacts,
     searchTerms,
     matches,
     prompt,
@@ -1463,6 +1717,9 @@ function buildVivyLocalContextReply(context = {}) {
     context.matches?.length
       ? `Indices trouvés: ${context.matches.slice(0, 5).map((match) => `${match.path}:${match.line}`).join(', ')}.`
       : "Je n'ai pas trouvé de ligne courte utile dans les fichiers sûrs pour cette demande.",
+    context.artifacts?.length
+      ? `Artefacts Zen/GGUF vus: ${context.artifacts.slice(0, 5).map((artifact) => `${artifact.path} (${artifact.kind}${artifact.size ? `, ${artifact.size}` : ''})`).join(', ')}.`
+      : 'Aucun artefact Zen/GGUF local listé dans cette passe.',
     '',
     "Je peux m'en servir pour répondre et raisonner sur Janus, le runtime, MCP, Qflush, corpus, Zen et le code Funesterie. Les secrets et actions destructives restent bloqués.",
   ];
@@ -1475,6 +1732,7 @@ function serializeVivyLocalContext(context = null) {
     roots: Array.isArray(context.roots) ? context.roots : [],
     runtimeDirs: Array.isArray(context.runtimeDirs) ? context.runtimeDirs.slice(0, 18) : [],
     janus: context.janus || null,
+    artifacts: Array.isArray(context.artifacts) ? context.artifacts.slice(0, 8) : [],
     searchTerms: Array.isArray(context.searchTerms) ? context.searchTerms : [],
     matches: Array.isArray(context.matches) ? context.matches.slice(0, 8) : [],
   };
@@ -1504,6 +1762,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     "Quand une demande dépend d'informations externes, récentes, d'un site, d'une version, d'un prix, d'une source ou d'une documentation, déclenche/assume la recherche web disponible avant de répondre au lieu de deviner.",
     "Quand des fichiers joints sont importants pour comprendre la demande, analyse d'abord le contexte lisible ou visuel disponible, puis réponds; n'attends pas une formule exacte de l'utilisateur.",
     "Quand le backend fournit un contexte local Funesterie/Janus/runtime/code, utilise-le comme accès réel borné et ne prétends pas que tu ne peux pas voir les dossiers.",
+    buildVivyToolCapabilityPrompt(),
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode),
@@ -2011,6 +2270,79 @@ function buildVivyMcpNeo4jReply({ language = 'fr' } = {}) {
   };
 }
 
+function isVivyToolCapabilityQuestion(input = {}, message = '') {
+  const current = normalizeVivyCapabilityText(message);
+  if (!current) return false;
+  const recent = normalizeVivyCapabilityText(getVivyHistoryText(input.history));
+  const text = `${recent}\n${current}`;
+  const currentToolSignal = /\b(outil|outils|tools?|capacite|capacites|capability|capabilities|commande|commandes|interne|internes|pipeline|routage|route|autorise|autorises|janus|vision|png|jpg|jpeg|image|images|video|audio|stt|tts|xtts|rvc|web|internet|fichier|fichiers|local|runtime|zen|gguf|uggf|decode|encode|decoder|encoder|modele|model|poids|quant|quantisation|quantization)\b/.test(current);
+  if (!currentToolSignal) return false;
+  const asksEnable = /\b(fais ca|fait ca|branche|brancher|active|activer|debride|debrider|fait sauter|accede|acceder|voir|utilise|utiliser|peux|peut|doit|doivent|decortique|decortiquer|carte|liste|inventaire|inspecte|inspecter)\b/.test(text);
+  const broadToolRequest = /\b(tout|tous|toute|toutes|interne|internes|carte|liste|inventaire|pipeline|routage|commande|commandes|zen|gguf|uggf)\b/.test(current);
+  const onlyMcpFollowUp = /^avec\s+le\s+mcp\b/.test(current)
+    && /\bneo4j\b|\bcypher\b|\bgraphe\b|\bgraph\b|\bmemoire\b|\bmemory\b/.test(recent)
+    && !broadToolRequest;
+  return !onlyMcpFollowUp && asksEnable && broadToolRequest;
+}
+
+function buildVivyToolCapabilityReply({ localContext = null, language = 'fr' } = {}) {
+  const artifacts = Array.isArray(localContext?.artifacts) ? localContext.artifacts : [];
+  const artifactLines = artifacts.length
+    ? artifacts.slice(0, 6).map((artifact) => {
+      const header = artifact.headerSummary ? `, ${artifact.headerSummary}` : '';
+      return `- ${artifact.path} (${artifact.kind}, ${artifact.size || 'taille inconnue'}${header})`;
+    })
+    : ["- Aucun .zen/.gguf local listé dans cette passe; je garde quand même la route prête pour l'inventaire."];
+  const capabilityLines = VIVY_TOOL_CAPABILITIES.map((capability) => (
+    `- ${capability.id}: ${capability.route}. Limite: ${capability.limit}.`
+  ));
+  const assistant = [
+    "Oui, je branche ça comme carte d'outils autorisés pour Vivy, pas comme débridage sauvage.",
+    "Quand elle détecte qu'un outil peut aider, elle doit router vers l'intent disponible au lieu de faire semblant d'être aveugle.",
+    '',
+    'Carte active:',
+    ...capabilityLines,
+    '',
+    'Zen / corpus:',
+    "@funeste/zen sert à inspecter le header public et à router encode/decode quand une clé de session autorisée existe. La clé ne doit jamais sortir dans le chat.",
+    '',
+    'GGUF / modèles:',
+    "Je traite GGUF comme inventaire metadata-only: chemin relatif sûr, taille, magic/version/tensors si lisible. Pas de dump des poids, pas de décompilation, pas de contournement de licence.",
+    '',
+    'Commande interne:',
+    "Une commande devient un intent borné vers A11/MCP/Qflush/agents. Pas de shell arbitraire depuis Vivy public; pour écriture, suppression, infra, coût ou secret, il faut un verrou opérateur.",
+    '',
+    'Artefacts vus maintenant:',
+    ...artifactLines,
+  ].join('\n');
+
+  return {
+    ok: true,
+    service: 'vivy-chat',
+    mode: 'chat',
+    assistant: cleanText(assistant, 3200),
+    content: cleanText(assistant, 3200),
+    summary: "Vivy a préparé la carte d'outils autorisés: vision, fichiers, web, local, Zen, GGUF, audio et intents.",
+    actions: [
+      { id: 'tool_capability_map', label: 'Carte outils Vivy', target: 'vivy-tool-capabilities', ready: true },
+      { id: 'zen_inspect', label: 'Inspecter .zen', target: '@funeste/zen inspect', ready: true },
+      { id: 'gguf_inventory', label: 'Inventaire GGUF', target: 'a11-local-context', ready: true },
+      { id: 'vision_route', label: 'Router vision', target: 'janus-vision', ready: true },
+    ],
+    routing: [
+      'Vivy: détecter intent outil et parler clairement du verrou disponible.',
+      'A11: fournir contexte local, fichiers, web, mémoire et artefacts en lecture sûre.',
+      'MCP/Qflush/Janus: exécuter seulement les routes autorisées et bornées.',
+      'Codex/Kiro/Chopper: appliquer code, tests et déploiement quand le chat demande une vraie modification.',
+    ],
+    tokenStored: false,
+    writesByDefault: false,
+    aiMode: 'deterministic_tool_capabilities',
+    language,
+    files: [],
+  };
+}
+
 function buildVivyChat(input) {
   const message = cleanText(input.message || input.prompt || input.songText || input.text, 1800);
   const mode = resolveVivyChatMode(input, message);
@@ -2140,6 +2472,24 @@ async function buildVivyAiChat(input, req) {
     ? buildVivyLocalContextSnapshot(message)
     : null;
   const localContextForResponse = serializeVivyLocalContext(localContext);
+
+  if (isVivyToolCapabilityQuestion(input, message)) {
+    const capabilityContext = localContext || buildVivyLocalContextSnapshot(message);
+    const capabilityReply = buildVivyToolCapabilityReply({ localContext: capabilityContext, language });
+    rememberVivyEpisode(userId, 'vivy_reply', capabilityReply.assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      toolCapabilities: true,
+    });
+    return {
+      ...capabilityReply,
+      files,
+      localContext: serializeVivyLocalContext(capabilityContext),
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
 
   if (isVivyMcpNeo4jQuestion(input, message)) {
     const mcpReply = buildVivyMcpNeo4jReply({ language });
@@ -3157,5 +3507,6 @@ module.exports = {
   shouldVivyAutoWebSearch,
   looksLikeWeakSongwritingReply,
   isVivyMcpNeo4jQuestion,
+  isVivyToolCapabilityQuestion,
   getSunoMusicJob,
 };
