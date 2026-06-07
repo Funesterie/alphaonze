@@ -909,18 +909,52 @@ function safeExistingPath(candidate = '') {
   }
 }
 
+function isVivyFilesystemRoot(candidate = '') {
+  const resolved = path.resolve(String(candidate || ''));
+  return path.dirname(resolved) === resolved;
+}
+
+function looksLikeVivyAppRoot(candidate = '') {
+  const root = safeExistingPath(candidate);
+  if (!root || isVivyFilesystemRoot(root)) return '';
+  const has = (relativePath) => fs.existsSync(path.join(root, relativePath));
+  if (has('a11') && has('package.json')) return root;
+  if (has('server.cjs') && has('package.json')) return root;
+  if (has('backend/apps/server/server.cjs')) return root;
+  if (has('a11/backend/apps/server/server.cjs')) return root;
+  return '';
+}
+
 function getVivyRepoRoot() {
-  return safeExistingPath(process.env.FUNESTERIE_ROOT)
-    || safeExistingPath(path.resolve(__dirname, '..', '..', '..', '..', '..', '..'))
-    || safeExistingPath(process.cwd())
+  const candidates = [
+    process.env.FUNESTERIE_ROOT,
+    process.env.A11_SERVER_ROOT,
+    process.env.A11_WORKSPACE_ROOT,
+    path.resolve(__dirname, '..', '..', '..', '..', '..', '..'),
+    path.resolve(__dirname, '..', '..', '..'),
+    process.cwd(),
+  ];
+  for (const candidate of candidates) {
+    const root = looksLikeVivyAppRoot(candidate);
+    if (root) return root;
+  }
+  return safeExistingPath(process.cwd())
     || path.resolve(process.cwd());
 }
 
 function getVivyA11Root(repoRoot = getVivyRepoRoot()) {
-  return safeExistingPath(process.env.A11_WORKSPACE_ROOT)
-    || safeExistingPath(path.join(repoRoot, 'a11'))
-    || safeExistingPath(path.resolve(__dirname, '..', '..', '..', '..', '..'))
-    || repoRoot;
+  const candidates = [
+    process.env.A11_WORKSPACE_ROOT,
+    path.join(repoRoot, 'a11'),
+    path.resolve(__dirname, '..', '..', '..', '..', '..'),
+    path.resolve(__dirname, '..', '..', '..'),
+    repoRoot,
+  ];
+  for (const candidate of candidates) {
+    const root = looksLikeVivyAppRoot(candidate);
+    if (root) return root;
+  }
+  return repoRoot;
 }
 
 function uniqueVivyLocalRoots() {
