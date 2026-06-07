@@ -2331,7 +2331,9 @@
           attachmentsRoot.innerHTML = "";
           attachedFiles.forEach(function (file, index) {
             var chip = document.createElement("span");
-            chip.textContent = file.filename + (file.sizeBytes ? " - " + formatSize(file.sizeBytes) : "");
+            chip.textContent = file.filename
+              + (file.sizeBytes ? " - " + formatSize(file.sizeBytes) : "")
+              + (file.uploaded ? " - prêt" : file.uploadError ? " - local" : "");
             var remove = document.createElement("button");
             remove.type = "button";
             remove.textContent = "x";
@@ -2363,27 +2365,120 @@
           });
         }
 
+        function isImageFile(file) {
+          var type = String(file && file.type || "").toLowerCase();
+          var name = String(file && file.name || "").toLowerCase();
+          return type.indexOf("image/") === 0 || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name);
+        }
+
+        function readFileAsDataUrl(file) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onerror = function () { reject(reader.error || new Error("lecture fichier impossible")); };
+            reader.onload = function () { resolve(String(reader.result || "")); };
+            reader.readAsDataURL(file);
+          });
+        }
+
+        function describeUploadAnalysis(analysis) {
+          analysis = analysis && typeof analysis === "object" ? analysis : {};
+          var preview = unicodeText(analysis.preview || "", 900);
+          if (analysis.readableInChatContext && preview) {
+            return "Analyse A11/OCR: " + preview;
+          }
+          var parts = [];
+          if (analysis.format) parts.push(String(analysis.format));
+          if (analysis.width && analysis.height) parts.push(String(analysis.width) + "x" + String(analysis.height));
+          if (analysis.sizeBytes || analysis.originalBytes) parts.push(formatSize(analysis.sizeBytes || analysis.originalBytes));
+          if (parts.length) {
+            return "Image reçue par A11 (" + parts.join(", ") + "). Vision détaillée à lancer depuis le chat.";
+          }
+          if (analysis.note) return "Analyse A11: " + unicodeLine(analysis.note, "image reçue", 160);
+          return "";
+        }
+
+        function uploadConversationFile(file) {
+          if (!file || file.size > 12 * 1024 * 1024) {
+            return Promise.reject(new Error("fichier trop lourd pour l'upload direct Vivy"));
+          }
+          return readFileAsDataUrl(file).then(function (contentBase64) {
+            return fetch("/api/files/upload", {
+              method: "POST",
+              credentials: "include",
+              headers: authHeaders({ "Content-Type": "application/json" }),
+              body: JSON.stringify({
+                filename: file.name,
+                contentType: file.type || "application/octet-stream",
+                contentBase64: contentBase64,
+                conversationId: conversationId,
+                surface: "vivy",
+                storagePreference: "server-local"
+              })
+            });
+          }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              if (!response.ok || payload.ok === false) {
+                if (response.status === 401) throw new Error("Connexion requise");
+                throw new Error(payload.message || payload.error || ("upload impossible (" + response.status + ")"));
+              }
+              return payload;
+            });
+          });
+        }
+
+        function buildConversationFile(file) {
+          return readTextPreview(file).then(function (preview) {
+            var baseFile = {
+              id: "local-" + Date.now() + "-" + Math.random().toString(16).slice(2),
+              filename: unicodeLine(file.name, "fichier", 180),
+              contentType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+              description: preview ? "Extrait texte lu localement pour Vivy." : "Fichier joint à la conversation Vivy.",
+              textPreview: preview,
+              uploaded: false
+            };
+
+            if (!isImageFile(file) && !preview) return baseFile;
+
+            return uploadConversationFile(file).then(function (payload) {
+              var resource = payload.conversationResource || payload.file || payload.record || {};
+              var analysis = payload.analysis || resource.analysis || (resource.metadata && resource.metadata.analysis) || null;
+              var analysisSummary = describeUploadAnalysis(analysis);
+              var url = resource.downloadUrl || resource.url || (payload.file && (payload.file.downloadUrl || payload.file.url)) || "";
+              return Object.assign({}, baseFile, {
+                id: String(resource.id || resource.storageKey || (payload.file && (payload.file.id || payload.file.storageKey)) || baseFile.id),
+                url: url,
+                downloadUrl: url,
+                contentType: resource.contentType || resource.content_type || baseFile.contentType,
+                sizeBytes: resource.sizeBytes || resource.size || baseFile.sizeBytes,
+                description: analysisSummary || (isImageFile(file) ? "Image stockée pour analyse visuelle A11." : baseFile.description),
+                textPreview: preview || (analysis && analysis.preview ? unicodeText(analysis.preview, 1800) : ""),
+                visualDescription: analysisSummary,
+                analysisSummary: analysisSummary,
+                uploaded: true
+              });
+            }).catch(function (error) {
+              if (!isImageFile(file)) return baseFile;
+              return Object.assign({}, baseFile, {
+                description: "Image gardée localement dans le navigateur; upload A11 indisponible: " + unicodeLine(error && error.message ? error.message : error, "upload_failed", 160),
+                uploadError: "upload_failed"
+              });
+            });
+          });
+        }
+
         function addConversationFiles(fileList) {
           if (!ensureSession()) return;
           var selected = Array.prototype.slice.call(fileList || []).slice(0, 4);
           if (!selected.length) return;
           setStatus("Vivy ajoute les fichiers au contexte...");
           Promise.all(selected.map(function (file) {
-            return readTextPreview(file).then(function (preview) {
-              return {
-                id: "local-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-                filename: unicodeLine(file.name, "fichier", 180),
-                contentType: file.type || "application/octet-stream",
-                sizeBytes: file.size,
-                description: preview ? "Extrait texte lu localement pour Vivy." : "Fichier joint à la conversation Vivy.",
-                textPreview: preview,
-                uploaded: false
-              };
-            });
+            return buildConversationFile(file);
           })).then(function (files) {
             attachedFiles = attachedFiles.concat(files).slice(-6);
             renderAttachments();
-            setStatus("Fichiers ajoutés au contexte Vivy");
+            var stored = files.filter(function (file) { return file.uploaded; }).length;
+            setStatus(stored ? "Fichiers prêts pour Vivy, images incluses" : "Fichiers ajoutés au contexte Vivy");
           });
         }
 

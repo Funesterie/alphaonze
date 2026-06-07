@@ -38,6 +38,9 @@ const {
 const {
   postProcessA11AssistantResponse,
 } = require('../chat/response-draft-rewriter.cjs');
+const {
+  autoDescribeImage,
+} = require('../image/image-auto-describe.cjs');
 
 let OpenAI = null;
 try {
@@ -303,14 +306,37 @@ function normalizeVivyFileAttachment(file) {
 
   const contentType = cleanOneLine(file.contentType || file.type, 'application/octet-stream', 120);
   const size = Number(file.sizeBytes ?? file.size ?? 0);
+  const analysis = file.analysis && typeof file.analysis === 'object' ? file.analysis : null;
+  const visualDescription = cleanText(
+    file.visualDescription
+      || file.visionDescription
+      || file.imageDescription
+      || file.analysisSummary
+      || analysis?.description
+      || analysis?.summary,
+    900
+  );
   return {
     id: cleanOneLine(file.id || file.storageKey || filename, filename, 180),
     filename,
     contentType,
     sizeBytes: Number.isFinite(size) && size > 0 ? size : 0,
     url: cleanOneLine(file.url || file.downloadUrl, '', 800),
-    description: cleanText(file.description || file.summary, 900),
-    textPreview: cleanText(file.textPreview || file.preview || file.excerpt, 1800),
+    description: cleanText(file.description || file.summary || visualDescription, 900),
+    textPreview: cleanText(file.textPreview || file.preview || file.excerpt || analysis?.preview, 1800),
+    visualDescription,
+    analysis: analysis
+      ? {
+        fileKind: cleanOneLine(analysis.fileKind, '', 40),
+        mime: cleanOneLine(analysis.mime, '', 80),
+        parser: cleanOneLine(analysis.parser, '', 80),
+        width: Number(analysis.width || 0) || null,
+        height: Number(analysis.height || 0) || null,
+        format: cleanOneLine(analysis.format, '', 40),
+        note: cleanOneLine(analysis.note, '', 120),
+        readableInChatContext: analysis.readableInChatContext === true,
+      }
+      : null,
     uploaded: file.uploaded === true,
   };
 }
@@ -337,10 +363,117 @@ function formatVivyFilesForPrompt(files = []) {
       file.sizeBytes ? `taille ${formatFileSize(file.sizeBytes)}` : '',
       file.url ? `stocké ${file.url}` : '',
       file.description ? `description ${file.description}` : '',
+      file.visualDescription ? `vision ${file.visualDescription}` : '',
       file.textPreview ? `extrait:\n${file.textPreview}` : '',
     ].filter(Boolean);
     return details.join('\n');
   }).join('\n\n');
+}
+
+function isVivyImageFile(file = {}) {
+  const contentType = String(file.contentType || '').trim().toLowerCase();
+  const filename = String(file.filename || '').trim().toLowerCase();
+  return contentType.startsWith('image/')
+    || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename);
+}
+
+function isVivyImageInspectionRequest(message = '', files = []) {
+  if (!files.some(isVivyImageFile)) return false;
+  const normalized = foldTextForLookup(message);
+  if (!normalized) return files.some((file) => file.uploaded || file.url || file.description || file.textPreview);
+  const asksToSee = /\b(regarde|voir|vois|voit|vu|decris|decrit|decrire|analyse|analyser|identifie|identifier|qu(?:e|oi)|dedans|dedan|image|photo|fichier|piece jointe|visuel)\b/.test(normalized);
+  const correctsTitles = /\b(titres?|noms?)\b.{0,80}\b(fichiers?|images?|photos?)\b/.test(normalized)
+    || /\b(ce sont|c est|c est pas|pas)\b.{0,80}\b(fichiers?|images?|photos?)\b/.test(normalized);
+  return asksToSee || correctsTitles;
+}
+
+function describeVivyImageMetadata(file = {}) {
+  const analysis = file.analysis && typeof file.analysis === 'object' ? file.analysis : null;
+  const parts = [];
+  const format = cleanOneLine(analysis?.format || file.contentType, '', 80);
+  const width = Number(analysis?.width || 0) || null;
+  const height = Number(analysis?.height || 0) || null;
+  if (format) parts.push(format);
+  if (width && height) parts.push(`${width}x${height}`);
+  if (file.sizeBytes) parts.push(formatFileSize(file.sizeBytes));
+  return parts.join(', ');
+}
+
+function cleanVivyImageObservation(value = '') {
+  return cleanText(value, 900)
+    .replace(/^vision avanc[ée]e indisponible;\s*/i, 'Vision avancée indisponible; ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function describeVivyImageFile(file = {}, req) {
+  const filename = cleanOneLine(file.filename, 'image', 180);
+  const known = cleanText([
+    file.visualDescription,
+    file.description && !/^fichier joint\b/i.test(file.description) ? file.description : '',
+    file.textPreview ? `Texte/OCR visible: ${file.textPreview}` : '',
+  ].filter(Boolean).join(' '), 1200);
+
+  if (file.url) {
+    try {
+      const prompt = [
+        'Décris très concrètement ce qui est visible dans cette image, en français.',
+        'Si c’est une moto, un scooter, une pièce mécanique ou un atelier, nomme les éléments visibles.',
+        'Ne déduis pas depuis le nom du fichier; dis seulement ce que la vision permet de confirmer.',
+      ].join(' ');
+      const vision = await autoDescribeImage({
+        imageLocator: file.url,
+        runtimeRoot: process.env.A11_RUNTIME_ROOT || '',
+        timeoutMs: Number(process.env.VIVY_IMAGE_ANALYSIS_TIMEOUT_MS || 45000),
+        requestId: `vivy-image-${Date.now()}`,
+        prompt,
+      });
+      const description = cleanVivyImageObservation(vision?.description);
+      if (description && vision?.skipped !== true) {
+        return {
+          filename,
+          reliable: vision?.visualReliable !== false && vision?.fallback !== true,
+          observation: description,
+          provider: cleanOneLine(vision?.provider, '', 80),
+        };
+      }
+    } catch (_) {
+      // Vision is best-effort; fallback to uploaded metadata below.
+    }
+  }
+
+  const metadata = describeVivyImageMetadata(file);
+  const fallback = known || (metadata
+    ? `Je peux confirmer que le fichier est bien une image (${metadata}), mais je n'ai pas encore de description visuelle fiable de son contenu.`
+    : "Je vois bien la pièce jointe image, mais elle n'a pas encore été analysée visuellement.");
+  return {
+    filename,
+    reliable: Boolean(known),
+    observation: fallback,
+    provider: known ? 'uploaded-context' : 'metadata-only',
+  };
+}
+
+async function buildVivyImageAttachmentReply(input = {}, req) {
+  const files = normalizeVivyFiles(input).filter(isVivyImageFile);
+  const observations = [];
+  for (const file of files.slice(0, 4)) {
+    observations.push(await describeVivyImageFile(file, req));
+  }
+  const reliableCount = observations.filter((entry) => entry.reliable).length;
+  const lines = [
+    "Oui Djeff, là je traite ça comme des images réelles jointes, pas comme de simples titres.",
+    '',
+    ...observations.map((entry) => {
+      const prefix = entry.reliable ? 'Je vois' : 'Je peux confirmer';
+      return `- ${prefix} dans ${entry.filename}: ${entry.observation}`;
+    }),
+    '',
+    reliableCount
+      ? "Je garde ces fichiers comme références concrètes NOSSEN/Funesterie: du réel qui sert de point d'ancrage, pas un décor de jeu vidéo."
+      : "Je garde ces fichiers comme références réelles, mais je ne vais pas inventer les détails visuels tant que la vision fiable n'a pas donné plus que les métadonnées.",
+  ];
+  return cleanText(lines.join('\n'), 2400);
 }
 
 function buildVivyMemoryContext(userId) {
@@ -406,6 +539,7 @@ function buildVivySystemPrompt(mode, language = 'fr') {
     "Réponds librement à l'intention: pas de réponse toute faite, pas de canevas forcé, pas de refrain automatique si la discussion demande juste de réfléchir.",
     "Quand une idée arrive, tu peux reformuler, proposer une direction ou poser une vraie question, selon ce qui aide le plus.",
     "Adresse-toi à Jeffrey/Djeff en tutoyant. N'utilise pas un vouvoiement générique de service client.",
+    "Quand des images ou photos sont jointes et que Jeffrey demande ce que tu vois, réponds sur les pièces jointes: utilise la vision/contexte disponible, ne continue pas une chanson et ne dis pas que tu es seulement un modèle de langage.",
     "Si l'utilisateur veut changer ta voix, demande un court fichier audio autorisé/licencié/consenti et rappelle qu'il reste privé pour son compte.",
     'Si des fichiers sont joints, intègre-les comme contexte, cite leur nom seulement si utile, et demande le contenu manquant si tu ne peux pas le lire.',
     buildVivySongcraftSystemPrompt(mode),
@@ -426,7 +560,7 @@ function normalizeVivyChatHistory(history) {
 }
 
 function buildRouting(mode = 'song') {
-  const intent = mode === 'voice' ? 'audio' : mode === 'share' ? 'share' : 'song';
+  const intent = mode === 'voice' ? 'audio' : mode === 'share' ? 'share' : mode === 'image' ? 'image' : 'song';
   return buildRoutingLines(intent, { withAudio: true });
 }
 
@@ -1045,6 +1179,31 @@ async function buildVivyAiChat(input, req) {
     });
     return {
       ...mcpReply,
+      files,
+      semanticMemory,
+      memoryStored: semanticMemory.stored,
+    };
+  }
+
+  if (isVivyImageInspectionRequest(message, files)) {
+    const assistant = await buildVivyImageAttachmentReply({ ...input, message, files }, req);
+    rememberVivyEpisode(userId, 'vivy_reply', assistant, {
+      mode: 'chat',
+      conversationId: cleanOneLine(input.conversationId, '', 120),
+      deterministic: true,
+      fileCount: files.length,
+      imageContext: true,
+    });
+    return {
+      ...fallback,
+      mode: 'chat',
+      assistant,
+      content: assistant,
+      summary: 'Vivy a répondu sur les images jointes sans repartir en paroles.',
+      actions: [],
+      routing: buildRouting('image'),
+      aiMode: 'deterministic_image_context',
+      language,
       files,
       semanticMemory,
       memoryStored: semanticMemory.stored,

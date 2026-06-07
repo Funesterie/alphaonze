@@ -842,6 +842,43 @@ test('POST /api/vivy/studio/chat stores semantic context and accepts file metada
   });
 });
 
+test('Vivy answers image inspection from attached images instead of continuing lyrics', async () => {
+  const result = await buildVivyAiChat({
+    conversationId: 'vivy-image-context-test',
+    message: "non ca c'est les titres mais ce sont des fichiers image, que vois tu dedan ?",
+    history: [
+      { role: 'user', content: "mais NOSSEN c'est la liaison entre le monde réel et le monde Funesterie" },
+      { role: 'assistant', content: '[Verse 3 - Djeff]\nJe roule dans les deux mondes.' },
+    ],
+    files: [
+      {
+        filename: 'beta 1ere transfo.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 94 * 1024,
+        description: 'On voit une vraie base scooter/moto Beta en transformation, référence mécanique réelle pour NOSSEN.',
+        uploaded: true,
+      },
+      {
+        filename: 'beta neuve poignée.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 70 * 1024,
+        visualDescription: 'Image de poignée neuve et détails de poste de pilotage, pas un décor virtuel.',
+        uploaded: true,
+      },
+    ],
+  }, { user: { id: 'vivy-auth-user', username: 'VivyUser' } });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'chat');
+  assert.equal(result.aiMode, 'deterministic_image_context');
+  assert.match(result.assistant, /images réelles jointes/i);
+  assert.match(result.assistant, /beta 1ere transfo\.jpg/i);
+  assert.match(result.assistant, /scooter|moto|Beta/i);
+  assert.match(result.assistant, /poignée neuve|poste de pilotage/i);
+  assert.doesNotMatch(result.assistant, /\[Verse|\[Refrain|\[Chorus/i);
+  assert.doesNotMatch(result.assistant, /je vais continuer|modèle de langage|capacité de visualiser/i);
+});
+
 test('POST /api/vivy/studio/chat requires a logged-in user when auth is configured', async () => {
   const verifyJWT = (req, res, next) => {
     if (req.headers.authorization === 'Bearer vivy-test-token') {
