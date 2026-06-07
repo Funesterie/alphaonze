@@ -140,6 +140,50 @@ function compactUniqueLines(items, max = 2400) {
   return cleanText(lines.join('\n\n'), max);
 }
 
+const VIVY_ASCII4_SOUND_BINDINGS = [
+  { code: '[a4:atk=net]', label: 'Kick net', hint: 'attaque courte, consonnes propres, depart sec' },
+  { code: '[a4:atk=soft]', label: 'Velours', hint: 'attaque douce, entree respiree, peu de claquant' },
+  { code: '[a4:grain=grit]', label: 'Grain', hint: 'grain rap, legere saturation, bord de voix' },
+  { code: '[a4:grain=clear]', label: 'Clair', hint: 'timbre clair, diction lisible, pas de boue' },
+  { code: '[a4:flow=rap]', label: 'Rap serre', hint: 'debit serre, placement rythmique, fins de lignes percus' },
+  { code: '[a4:flow=sing]', label: 'Chant', hint: 'phrase allongee, voyelles tenues, hook chantable' },
+  { code: '[a4:pitch=rise]', label: 'Monte', hint: 'fin de phrase qui leve, energie ascendante' },
+  { code: '[a4:pitch=low]', label: 'Grave', hint: 'registre plus bas, pose calme, centre de gravite' },
+  { code: '[a4:space=near]', label: 'Proche', hint: 'proximite micro, voix devant, peu de reverb' },
+  { code: '[a4:space=wide]', label: 'Large', hint: 'espace stereo, souffle de scene, air autour' },
+  { code: '[a4:fx=breath]', label: 'Souffle', hint: 'petites respirations expressives, intime' },
+  { code: '[a4:fx=engine]', label: 'Moteur', hint: 'energie moteur, pulsation mecanique, adlibs courts' },
+];
+
+function extractVivyAscii4SoundBindings(...values) {
+  const text = values.map((value) => String(value || '')).join('\n');
+  return VIVY_ASCII4_SOUND_BINDINGS.filter((binding) => text.includes(binding.code));
+}
+
+function stripVivyAscii4SoundTokens(value = '') {
+  return cleanText(String(value || '').replace(/\[a4:[^\]]+\]/gi, ' '), 2600);
+}
+
+function buildVivyAscii4SoundPlan(input = {}) {
+  const bindings = extractVivyAscii4SoundBindings(
+    input.voiceInstruction,
+    input.songMood,
+    input.songText,
+    input.lyrics,
+    input.text,
+    input.theme,
+    input.instruction,
+    input.prompt,
+    input.message
+  );
+  if (!bindings.length) return [];
+  return [
+    `Palette sonore ASCII^4: ${bindings.map((binding) => binding.code).join(' ')}.`,
+    ...bindings.map((binding) => `${binding.code}: ${binding.label} - ${binding.hint}.`),
+    'Ne pas lire les balises a voix haute: les appliquer comme prosodie, timbre, espace ou effet.',
+  ];
+}
+
 function hashShort(value, max = 24) {
   return crypto
     .createHash('sha256')
@@ -761,11 +805,112 @@ function shouldVivyAutoWebSearch(message = '', mode = 'chat') {
   return explicitWebLookup || freshnessLookup;
 }
 
-function buildVivyWebSearchQuery(message = '', files = []) {
+function normalizeVivySearchSpelling(value = '') {
+  return String(value || '')
+    .replace(/\bechiro\s+oda\b/gi, 'Eiichiro Oda')
+    .replace(/\beichiro\s+oda\b/gi, 'Eiichiro Oda')
+    .replace(/\bechiiro\s+oda\b/gi, 'Eiichiro Oda');
+}
+
+function stripVivySearchFiller(value = '') {
+  return normalizeVivySearchSpelling(value)
+    .replace(/https?:\/\/\S+/gi, (match) => ` ${match} `)
+    .replace(/\b(?:non|oui|ouais|ben|bah|en\s+fait|du\s+coup|genre|mdr+)\b/gi, ' ')
+    .replace(/\b(?:je\s+crois|je\s+pense|je\s+sais\s+pas|c['’]?est\s+ca|c['’]?est\s+ça)\b/gi, ' ')
+    .replace(/\b(?:j['’]?\s*ai\s+)?cherch[eé]\s+(?:sur\s+)?(?:internet|web|google)\b/gi, ' ')
+    .replace(/\b(?:je\s+l['’]?\s*ai\s+pas\s+vu\s+en\s+entier|pas\s+vu\s+en\s+entier|juste\s+quelques?\s+extraits?|quelques?\s+extraits?)\b/gi, ' ')
+    .replace(/\b(?:il\s+a\s+l['’]?\s*air|trop\s+bien|dedans|dans\s+le\s+film)\b/gi, ' ')
+    .replace(/[?!.,;:()[\]{}<>]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function scoreVivySearchCandidate(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+  const folded = foldTextForLookup(raw);
+  let score = Math.min(30, raw.length / 4);
+  if (/https?:\/\/|(?:^|[\s/])(?:[a-z0-9-]+\.)+(?:com|fr|me|io|dev|org|net|app|ai|gg|tv|co|uk)\b/i.test(raw)) score += 50;
+  if (/@[a-z0-9][a-z0-9._/-]+/i.test(raw)) score += 45;
+  if (/\b(?:film|movie|anime|manga|realisateur|réalisateur|director|kurosawa|oda|npm|github|docker|version|release)\b/i.test(raw)) score += 22;
+  if (/\b[A-Z][A-Z0-9]{2,}\b/.test(raw)) score += 18;
+  if (/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(raw)) score += 18;
+  if (/\b(?:j ai|je |tu |il |elle |on |nous |vous |ils |elles )\b/.test(folded)) score -= 10;
+  return score;
+}
+
+function extractVivySearchCandidates(text = '') {
+  const raw = normalizeVivySearchSpelling(cleanOneLine(text, '', 420));
+  const stripped = stripVivySearchFiller(raw);
+  const candidates = [stripped];
+
+  const urlMatches = raw.match(/https?:\/\/\S+|(?:^|[\s/])(?:[a-z0-9-]+\.)+(?:com|fr|me|io|dev|org|net|app|ai|gg|tv|co|uk)(?:\b|\/\S*)/gi) || [];
+  candidates.push(...urlMatches.map((entry) => entry.trim()));
+
+  const packageMatches = raw.match(/@[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?/gi) || [];
+  candidates.push(...packageMatches);
+
+  const titleByCreator = raw.match(/\b[A-Z0-9][A-Z0-9'’._-]{1,}(?:\s+(?:de|by)\s+[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){0,3})/gu) || [];
+  candidates.push(...titleByCreator.map((entry) => `${entry} film`));
+
+  const capitalNames = raw.match(/\b[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}'’-]+){1,3}\b/gu) || [];
+  candidates.push(...capitalNames);
+
+  if (/\bkurosawa\b/i.test(raw) && /\breal\b/i.test(raw)) candidates.push('REAL Kiyoshi Kurosawa film');
+  if (/\be[iy]?i?ch?iro\s+oda\b/i.test(raw) || /\bEiichiro Oda\b/.test(stripped)) candidates.push('Eiichiro Oda');
+
+  return candidates
+    .map((entry) => cleanOneLine(entry, '', 220))
+    .filter(Boolean);
+}
+
+function pickVivySearchCandidate(text = '') {
+  const candidates = extractVivySearchCandidates(text)
+    .map((candidate) => ({ candidate, score: scoreVivySearchCandidate(candidate) }))
+    .sort((a, b) => b.score - a.score);
+  return candidates[0]?.candidate || '';
+}
+
+function pickVivyHistorySearchContext(history = []) {
+  const entries = (Array.isArray(history) ? history : [])
+    .slice(-8)
+    .reverse()
+    .map((entry) => ({
+      role: String(entry?.role || '').toLowerCase(),
+      content: cleanText(entry?.content || entry?.message || '', 520),
+    }))
+    .filter((entry) => entry.content && entry.role !== 'assistant');
+  for (const entry of entries) {
+    const candidate = pickVivySearchCandidate(entry.content);
+    if (candidate && scoreVivySearchCandidate(candidate) >= 20) return candidate;
+  }
+  return '';
+}
+
+function shouldBlendVivyHistorySearchContext(current = '', historyContext = '') {
+  if (!current || !historyContext) return false;
+  if (looksLikeVivyExternalLookupTarget(current) || /@[a-z0-9][a-z0-9._/-]+/i.test(current)) return false;
+  const currentScore = scoreVivySearchCandidate(current);
+  const historyScore = scoreVivySearchCandidate(historyContext);
+  if (historyScore < 20) return false;
+  if (currentScore < 35) return true;
+  return /\b(?:Eiichiro\s+Oda|Oda|Kurosawa)\b/i.test(current)
+    && /\b(?:REAL|film|movie|Kurosawa|Oda)\b/i.test(historyContext);
+}
+
+function buildVivyWebSearchQuery(message = '', files = [], history = []) {
   const fileHint = files.length
     ? ` ${files.map((file) => file.filename).filter(Boolean).slice(0, 3).join(' ')}`
     : '';
-  return cleanOneLine(`${message}${fileHint}`, 'Funesterie Vivy', 260)
+  const current = pickVivySearchCandidate(`${message}${fileHint}`);
+  const historyContext = pickVivyHistorySearchContext(history);
+  const currentScore = scoreVivySearchCandidate(current);
+  const query = shouldBlendVivyHistorySearchContext(current, historyContext)
+    ? compactUniqueLines([historyContext, current], 220)
+    : currentScore >= 22
+    ? current
+    : compactUniqueLines([historyContext, current], 220);
+  return cleanOneLine(query || `${message}${fileHint}`, 'Funesterie Vivy', 260)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -821,7 +966,7 @@ async function runVivyWebSearch(query) {
 
 async function buildVivyWebResearchReply(input = {}) {
   const files = normalizeVivyFiles(input);
-  const query = buildVivyWebSearchQuery(input.message || input.prompt || input.text || '', files);
+  const query = buildVivyWebSearchQuery(input.message || input.prompt || input.text || '', files, input.history);
   const search = await runVivyWebSearch(query);
   const results = sanitizeVivyWebResults(search.results);
   const resultLines = results.map((entry) => {
@@ -1471,6 +1616,7 @@ function buildVoiceProduction(input) {
     instruction
       ? `Direction: ${instruction}`
       : 'Définir proximité micro, énergie, diction, souffle, saturation et limites de transformation.',
+    ...buildVivyAscii4SoundPlan(input),
     `Phrase test: "${profile.testPhrase}"`,
     profile.id === 'duo-djeff-vivy'
       ? 'Vérifier trois passes: couplet Djeff, réponse Vivy, alternance duo sans fusionner les identités.'
@@ -1521,15 +1667,16 @@ function buildSongProduction(input) {
     input.instruction,
     input.prompt,
   ], 2400);
-  const hasMaterial = Boolean(material);
+  const materialForLyrics = stripVivyAscii4SoundTokens(material);
+  const hasMaterial = Boolean(materialForLyrics || material);
   const songcraft = buildVivySongProductionBrief({
     ...input,
-    songText: material || input.songText,
+    songText: materialForLyrics || material || input.songText,
     songTitle: input.songTitle || input.title,
   });
 
   const titleSeed = hasMaterial
-    ? songcraft.title || material.split(/\n|[.!?]/).find(Boolean) || material
+    ? songcraft.title || materialForLyrics.split(/\n|[.!?]/).find(Boolean) || material
     : mood;
   const title = cleanOneLine(titleSeed, 'Echoes of Vivy', 46)
     .replace(/^["'“”]+|["'“”]+$/g, '');
@@ -1551,6 +1698,7 @@ function buildSongProduction(input) {
       `${artistCast.countLabel}.`,
       `Distribution vocale: ${artistCast.label}.`,
       `Outil voix actif: ${voiceProfile.label}.`,
+      ...buildVivyAscii4SoundPlan(input),
       ...artistCast.songCastLines,
       'Intro: texture sombre, respiration vocale courte, motif synth discret.',
       'Couplet 1: voix proche, diction nette, tension contenue.',
@@ -1675,7 +1823,7 @@ function looksLikeWeakSongwritingReply(text = '') {
 
 function buildVivyDirectSongReply(input = {}) {
   const historyText = getVivyUserHistoryText(input.history);
-  const material = compactUniqueLines([
+  const material = stripVivyAscii4SoundTokens(compactUniqueLines([
     historyText,
     input.message,
     input.prompt,
@@ -1683,7 +1831,7 @@ function buildVivyDirectSongReply(input = {}) {
     input.text,
     input.theme,
     input.instruction,
-  ], 2600);
+  ], 2600));
   const voiceProfile = getVivyStudioVoiceProfile({ ...input, songText: material || input.songText || input.message });
   const songcraft = buildVivySongProductionBrief({
     ...input,
@@ -2272,27 +2420,32 @@ function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
   const mood = cleanOneLine(input.songMood || input.mood || input.style, 'electro pop dark cinematic', 180);
   const artistCast = buildVivySongArtistCast(input);
-  const lyrics = buildVivyStructuredLyrics(input);
+  const soundPlan = buildVivyAscii4SoundPlan(input);
+  const lyrics = buildVivyStructuredLyrics({
+    ...input,
+    songText: stripVivyAscii4SoundTokens(input.songText || input.lyrics || input.text || input.theme || input.prompt),
+  });
   return [
     artistCast.musicLead,
     `Source: ${source}.`,
     `Style and production: ${mood}.`,
     `Vocal cast: ${artistCast.countLabel}: ${artistCast.label}. ${artistCast.musicMood}`,
+    soundPlan.length ? `ASCII4 sound direction: ${soundPlan.join(' ')}` : '',
     'Lyrics must be sung, not spoken. Use the provided sections as real lyrics.',
     `Lyrics:\n${lyrics}`,
     'Arrangement: intro, verse, pre-chorus, memorable chorus, second verse, bridge, chorus, clean ending. Web-ready, no copyrighted melody.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function buildVivySunoLyrics(input = {}) {
-  const material = compactUniqueLines([
+  const material = stripVivyAscii4SoundTokens(compactUniqueLines([
     input.lyrics,
     input.songText,
     input.text,
     input.theme,
     input.instruction,
     input.prompt,
-  ], 2200);
+  ], 2200));
   if (looksLikeCompleteLyrics(material)) {
     return cleanText(material, 2200);
   }
@@ -2302,8 +2455,9 @@ function buildVivySunoLyrics(input = {}) {
 
 function buildVivySunoPayload(input = {}, req = null) {
   const artistCast = buildVivySongArtistCast(input);
+  const titleMaterial = stripVivyAscii4SoundTokens(input.songText || input.theme || input.prompt);
   const titleSeed = cleanOneLine(
-    input.songTitle || input.title || inferTitle(input.songText || input.theme || input.prompt),
+    input.songTitle || input.title || inferTitle(titleMaterial),
     'Vivy garde la lumière',
     72
   ).replace(/^["'“”]+|["'“”]+$/g, '');
@@ -2913,6 +3067,7 @@ module.exports = {
   buildVivySystemPrompt,
   buildVivyDirectSongReply,
   buildVivySunoPayload,
+  buildVivyWebSearchQuery,
   postProcessVivyAssistantText,
   isDirectSongwritingRequest,
   looksLikeWeakSongwritingReply,

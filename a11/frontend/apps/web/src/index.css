@@ -4124,6 +4124,70 @@ html.a11-auth-page-root body {
   overflow-wrap: anywhere;
 }
 
+.vivy-sound-keyboard {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 8px;
+  background: rgba(2, 8, 18, 0.46);
+}
+
+.vivy-sound-keyboard legend {
+  padding: 0 6px;
+  color: #c9f2ff;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.vivy-sound-key-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vivy-sound-keyboard button {
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border-color: rgba(125, 211, 252, 0.26);
+  background: rgba(7, 16, 33, 0.62);
+  color: #dff9ff;
+  text-transform: none;
+}
+
+.vivy-sound-keyboard button.is-selected {
+  border-color: rgba(125, 211, 252, 0.86);
+  background: linear-gradient(135deg, rgba(125, 211, 252, 0.24), rgba(240, 121, 216, 0.12));
+}
+
+.vivy-sound-keyboard code {
+  color: #7dd3fc;
+  font-size: 11px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.vivy-sound-keyboard span {
+  color: #fff3fc;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.vivy-sound-keyboard p {
+  margin: 0;
+  color: #bdeffc;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .vivy-studio input:focus,
 .vivy-studio select:focus,
 .vivy-studio textarea:focus {
@@ -4343,6 +4407,10 @@ html.a11-auth-page-root body {
 
   .vivy-studio-artist-grid {
     grid-template-columns: 1fr;
+  }
+
+  .vivy-sound-key-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .vivy-studio-actions {

@@ -2913,6 +2913,116 @@ type VivyStudioVoiceProfile = {
   uploadLabel: string;
 };
 
+type VivyAscii4SoundBinding = {
+  id: string;
+  group: "attaque" | "grain" | "flow" | "hauteur" | "espace" | "effet";
+  code: string;
+  label: string;
+  hint: string;
+};
+
+const VIVY_ASCII4_SOUND_BINDINGS: VivyAscii4SoundBinding[] = [
+  {
+    id: "atk-net",
+    group: "attaque",
+    code: "[a4:atk=net]",
+    label: "Kick net",
+    hint: "attaque courte, consonnes propres, depart sec",
+  },
+  {
+    id: "atk-soft",
+    group: "attaque",
+    code: "[a4:atk=soft]",
+    label: "Velours",
+    hint: "attaque douce, entrée respirée, peu de claquant",
+  },
+  {
+    id: "grain-grit",
+    group: "grain",
+    code: "[a4:grain=grit]",
+    label: "Grain",
+    hint: "grain rap, legere saturation, bord de voix",
+  },
+  {
+    id: "grain-clear",
+    group: "grain",
+    code: "[a4:grain=clear]",
+    label: "Clair",
+    hint: "timbre clair, diction lisible, pas de boue",
+  },
+  {
+    id: "flow-rap",
+    group: "flow",
+    code: "[a4:flow=rap]",
+    label: "Rap serre",
+    hint: "debit serre, placement rythmique, fins de lignes percus",
+  },
+  {
+    id: "flow-sing",
+    group: "flow",
+    code: "[a4:flow=sing]",
+    label: "Chant",
+    hint: "phrase allongee, voyelles tenues, hook chantable",
+  },
+  {
+    id: "pitch-rise",
+    group: "hauteur",
+    code: "[a4:pitch=rise]",
+    label: "Monte",
+    hint: "fin de phrase qui leve, energie ascendante",
+  },
+  {
+    id: "pitch-low",
+    group: "hauteur",
+    code: "[a4:pitch=low]",
+    label: "Grave",
+    hint: "registre plus bas, pose calme, centre de gravite",
+  },
+  {
+    id: "space-near",
+    group: "espace",
+    code: "[a4:space=near]",
+    label: "Proche",
+    hint: "proximite micro, voix devant, peu de reverb",
+  },
+  {
+    id: "space-wide",
+    group: "espace",
+    code: "[a4:space=wide]",
+    label: "Large",
+    hint: "espace stereo, souffle de scene, air autour",
+  },
+  {
+    id: "fx-breath",
+    group: "effet",
+    code: "[a4:fx=breath]",
+    label: "Souffle",
+    hint: "petites respirations expressives, intime",
+  },
+  {
+    id: "fx-engine",
+    group: "effet",
+    code: "[a4:fx=engine]",
+    label: "Moteur",
+    hint: "energie moteur, pulsation mecanique, adlibs courts",
+  },
+];
+
+function extractVivyAscii4SoundBindings(...values: Array<string | null | undefined>) {
+  const text = values.map((value) => String(value || "")).join("\n");
+  return VIVY_ASCII4_SOUND_BINDINGS.filter((binding) => text.includes(binding.code));
+}
+
+function buildVivyAscii4SoundLines(...values: Array<string | null | undefined>) {
+  const bindings = extractVivyAscii4SoundBindings(...values);
+  if (!bindings.length) return [];
+  return [
+    `- Clavier son ASCII^4: ${bindings.map((binding) => binding.code).join(" ")}`,
+    ...bindings.map((binding) => `  ${binding.code} ${binding.label}: ${binding.hint}.`),
+    "- Règle: appliquer ces balises comme prosodie/timbre/effet, ne pas les chanter mot pour mot.",
+  ];
+}
+
 function getVivyStudioVoiceProfileForTool(
   voiceTool: string,
   hasPrivateReference = false,
@@ -3074,12 +3184,14 @@ function buildVivyStudioBrief(options: {
   ];
 
   if (options.mode === "voice") {
+    const soundLines = buildVivyAscii4SoundLines(options.voiceInstruction);
     lines.push(
       "Flux voix:",
       `- Outil cible: ${options.voiceTool}`,
       `- Profil actif: ${voiceProfile.label}`,
       `- Référence audio: ${voiceProfile.referenceLabel}`,
       `- Instruction: ${options.voiceInstruction || "définir le timbre, les limites et le style de modulation"}`,
+      ...soundLines,
       `- Sortie attendue: phrase de test avec ${voiceProfile.briefVoicePersona}, puis notes de calibration si besoin.`,
       "- Route recommandée: /api/tts/speak en XTTS/RVC quand une référence Vivy/Djeff/A11/K44 existe; texte libre, argot et diction naturelle autorisés; garder les références privées hors publication brute.",
       "- Sécurité: ne pas publier la référence brute sans accord; les gros fichiers restent hors upload public."
@@ -3087,6 +3199,7 @@ function buildVivyStudioBrief(options: {
   }
 
   if (options.mode === "song") {
+    const soundLines = buildVivyAscii4SoundLines(options.voiceInstruction, options.songMood, options.songText);
     lines.push(
       "Flux chanson:",
       `- Source: ${options.songSource}`,
@@ -3096,6 +3209,7 @@ function buildVivyStudioBrief(options: {
       `- Nombre de chanteurs: ${artistCast.countLabel}`,
       `- Distribution vocale: ${artistCast.songCast}`,
       `- Outil voix actif: ${voiceProfile.label}`,
+      ...soundLines,
       `- Clé Suno personnelle: ${options.sessionSunoKeyPresent ? "oui, session navigateur seulement" : "non"}`,
       "- Sortie simple possible: vraie génération Suno ou brief chantable selon les droits disponibles.",
       "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
@@ -3281,6 +3395,20 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     });
   }
 
+  function appendVivySoundBinding(binding: VivyAscii4SoundBinding) {
+    const appendToken = (current: string) => {
+      const base = current.trimEnd();
+      if (base.includes(binding.code)) return base;
+      return `${base}${base ? " " : ""}${binding.code}`;
+    };
+    if (activeMode === "song") {
+      setSongText(appendToken);
+    } else {
+      setVoiceInstruction(appendToken);
+    }
+    setStatus(`${binding.label}: ${binding.hint}.`);
+  }
+
   function buildVivyPlayableText(value: string, fallback: string, maxLength = 260) {
     const raw = toUnicodeText(value || fallback, maxLength * 3)
       .replace(/\([A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?(?:\s*-\s*[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus)?)*\)/gi, " ")
@@ -3322,6 +3450,12 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
       conversionEngine: "xtts-rvc",
       vocalMode,
       ...getVivyVoiceTuning(vocalMode),
+      ascii4SoundBindings: extractVivyAscii4SoundBindings(voiceInstruction).map((binding) => ({
+        code: binding.code,
+        group: binding.group,
+        label: binding.label,
+        hint: binding.hint,
+      })),
       ttsAsync: true,
       asyncTts: true,
       ttsJobTimeoutMs: vocalMode === "sing" ? 240000 : 180000,
@@ -3650,6 +3784,32 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  function renderVivySoundKeyboard() {
+    const activeText = activeMode === "song" ? songText : voiceInstruction;
+    const selectedCodes = new Set(extractVivyAscii4SoundBindings(activeText).map((binding) => binding.code));
+    return (
+      <fieldset className="vivy-sound-keyboard">
+        <legend>Clavier son ASCII^4</legend>
+        <div className="vivy-sound-key-grid">
+          {VIVY_ASCII4_SOUND_BINDINGS.map((binding) => (
+            <button
+              key={binding.id}
+              type="button"
+              className={selectedCodes.has(binding.code) ? "is-selected" : ""}
+              disabled={!hasSession}
+              onClick={() => appendVivySoundBinding(binding)}
+              title={`${binding.code} - ${binding.hint}`}
+            >
+              <code>{binding.code.replace("[a4:", "").replace("]", "")}</code>
+              <span>{binding.label}</span>
+            </button>
+          ))}
+        </div>
+        <p>Les touches ajoutent des codes de timbre, débit, espace et effets; Vivy les applique au rendu audio sans les lire.</p>
+      </fieldset>
+    );
+  }
+
   return (
     <section id="vivy-studio" className="vivy-studio" aria-label="Studio Vivy">
       <div className="vivy-studio-head">
@@ -3732,6 +3892,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   placeholder="Ex: voix douce, proche micro, légère saturation pop, garder une diction claire."
                 />
               </label>
+              {renderVivySoundKeyboard()}
               <div className="vivy-studio-actions vivy-studio-actions--voice">
                 <button type="button" onClick={useDefaultVivyVoice} disabled={!hasSession || isBusy}>Voix Vivy par défaut</button>
                 <button type="button" onClick={testDefaultVivyVoice} disabled={!hasSession || isBusy}>Tester voix active</button>
@@ -3808,6 +3969,7 @@ function VivyStudioLab({ hasSession }: VivySessionProps) {
                   placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."
                 />
               </label>
+              {renderVivySoundKeyboard()}
               <label>
                 Clé Suno personnelle
                 <input

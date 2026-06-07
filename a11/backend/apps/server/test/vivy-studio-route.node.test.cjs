@@ -18,6 +18,7 @@ const {
   buildVivyStudioProduction,
   buildVivySystemPrompt,
   buildVivySunoPayload,
+  buildVivyWebSearchQuery,
   isDirectSongwritingRequest,
   isVivyMcpNeo4jQuestion,
   looksLikeWeakSongwritingReply,
@@ -98,6 +99,38 @@ test('Vivy Studio calibrates Djeff rap voice through the owned A11 persona', () 
   assert.match(result.brief, /chaîne sur couronne|chaine sur couronne/i);
   assert.match(result.brief, /Ne pas publier la référence brute/);
   assert.match(JSON.stringify(result.actions), /Tester Voix Djeff rap/);
+});
+
+test('Vivy Studio routes ASCII4 sound keyboard bindings as audio direction', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'voice',
+    voiceTool: 'Voix Djeff rap',
+    voiceInstruction: 'couplet proche micro [a4:flow=rap] [a4:grain=grit] [a4:fx=engine]',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'voice');
+  assert.match(result.brief, /Palette sonore ASCII\^4/);
+  assert.match(result.brief, /\[a4:flow=rap\]/);
+  assert.match(result.brief, /Rap serre/);
+  assert.match(result.brief, /\[a4:grain=grit\]/);
+  assert.match(result.brief, /\[a4:fx=engine\]/);
+  assert.match(result.brief, /Ne pas lire les balises a voix haute/);
+});
+
+test('Vivy Suno lyrics strip ASCII4 tokens before music generation', () => {
+  const payload = buildVivySunoPayload({
+    mode: 'song',
+    voiceTool: 'Duo Djeff + Vivy',
+    songArtists: ['djeff', 'vivy'],
+    songMood: 'rap technique cinematic',
+    songText: '[a4:flow=rap] [a4:space=near]\n[Verse 1 - Djeff]\nJe cale le pignon dans la nuit.\n[Chorus - Duo]\nOn decoupe horizon et bruit.',
+  });
+
+  assert.doesNotMatch(payload.prompt, /\[a4:/);
+  assert.doesNotMatch(payload.title, /a4:/);
+  assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
+  assert.match(payload.style, /Djeff rap verses and Vivy melodic hook/i);
 });
 
 test('Vivy Studio song handoff keeps Djeff and Vivy separated for duet rap', () => {
@@ -997,6 +1030,22 @@ test('Vivy uses safe local context for Janus runtime and code questions', async 
   assert.ok(result.localContext);
   assert.ok(Array.isArray(result.localContext.runtimeDirs));
   assert.doesNotMatch(JSON.stringify(result), /\.env|secret-token-value|private key/i);
+});
+
+test('Vivy web research query strips chat filler and keeps film context', () => {
+  const query = buildVivyWebSearchQuery(
+    "non j'ai cherché sur internet et puis je l'ai pas vu en entier juste quelques extrait, mais il a l'air trop bien on dirait echiro oda dedans",
+    [],
+    [
+      { role: 'user', content: "je crois que c'est REAL de Kiyoshi Kurosawa" },
+      { role: 'assistant', content: "Oui, c'est REAL." },
+    ]
+  );
+
+  assert.match(query, /REAL/i);
+  assert.match(query, /Kiyoshi Kurosawa/i);
+  assert.match(query, /Eiichiro Oda/i);
+  assert.doesNotMatch(query, /j['’]?ai|cherch|pas vu|quelques extrait|trop bien/i);
 });
 
 test('Vivy triggers web research for current external information instead of guessing', async () => {
