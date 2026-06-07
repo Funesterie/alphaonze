@@ -1760,6 +1760,14 @@ function buildReferenceVoiceUnavailablePayload(payload = {}) {
   };
 }
 
+function hasUsableReferenceVoicePayload(payload = {}) {
+  if (payload?.voiceConversion?.ok === true) return true;
+  if (payload?.referenceVoice?.ok === true) return true;
+  if (payload?.providerCapabilities?.referenceVoice === true) return true;
+  if (payload?.provider === 'openai' && payload?.voiceReference?.id) return true;
+  return false;
+}
+
 function shouldProxyTtsAsset(baseUrl = '', value = '') {
   const assetUrl = String(value || '').trim();
   if (!assetUrl) return false;
@@ -3938,7 +3946,7 @@ async function handleTtsSpeakRequest(req, res) {
           voiceConversion: payload?.voiceConversion || null,
         });
       }
-      if (requiresReferenceVoice(req) && !isReferenceAwareTtsPayload(payload)) {
+      if (requiresReferenceVoice(req) && !hasUsableReferenceVoicePayload(payload)) {
         return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
       }
       return sendTtsPayloadResponse(req, res, payload);
@@ -4575,7 +4583,7 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
           voiceConversion: payload?.voiceConversion || null,
         });
       }
-      if (requiresReferenceVoice(req) && !isReferenceAwareTtsPayload(payload)) {
+      if (requiresReferenceVoice(req) && !hasUsableReferenceVoicePayload(payload)) {
         return res.status(424).json(buildReferenceVoiceUnavailablePayload(payload));
       }
       return sendTtsPayloadResponse(req, res, payload);

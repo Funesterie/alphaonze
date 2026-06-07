@@ -3011,3 +3011,141 @@ test('tts route can run generated audio through the voice conversion module', as
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
   }
 });
+
+test('tts route blocks Piper audio when an official reference voice conversion fails', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-block-piper-official-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const backendCalls = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'a11-official-stern-french.wav'), createPcm16Wav({ frequency: 190 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  delete process.env.A11_VOICE_XTTS_RVC_URL;
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    backendCalls.push({ url: value, method: options?.method || 'GET' });
+    if (value === 'http://a11-voice:5002/api/voice/synthesize') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'xtts_synthesize_offline' });
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/voice/convert') {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return JSON.stringify({ ok: false, error: 'xtts_convert_offline' });
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            audio_url: '/out/source.wav',
+            audioUrl: '/out/source.wav',
+            provider: 'piper',
+            via: 'piper',
+          });
+        },
+      };
+    }
+    if (value.startsWith('http://a11-voice:5002/out/source.wav')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Djeff cale le kick, chaine sur couronne, pignon precis.',
+          persona: 'a11',
+          voicePersona: 'a11',
+          surface: 'a11',
+          vocalMode: 'adaptive',
+          provider: 'xtts-rvc',
+          ttsProvider: 'xtts-rvc',
+          engine: 'xtts-rvc',
+          voiceEngine: 'xtts-rvc',
+          voiceConversionEngine: 'xtts-rvc',
+          conversionEngine: 'xtts-rvc',
+          useDefaultVoiceReference: true,
+          defaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+          requireVoiceReference: true,
+          voiceConversion: true,
+          convertVoice: true,
+          morphVoice: true,
+          rvc: true,
+          allowRvc: true,
+          allowXttsRvc: true,
+          allowLegacyVoiceBridge: true,
+          xttsRvcOptIn: true,
+        });
+
+        assert.equal(result.response.status, 424);
+        assert.equal(result.json.error, 'voice_reference_tts_unavailable');
+        assert.equal(result.json.voiceConversion.ok, false);
+        assert.equal(
+          backendCalls.some((call) => call.url === 'http://a11-voice:5002/api/tts'),
+          true
+        );
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
