@@ -155,17 +155,35 @@ const VIVY_ASCII4_SOUND_BINDINGS = [
   { code: '[a4:fx=engine]', label: 'Moteur', hint: 'energie moteur, pulsation mecanique, adlibs courts' },
 ];
 
+const VIVY_NUMA8_COLOR_BINDINGS = [
+  { code: '[numa8:red=G;rgba=ff3b30ff;zen=appel]', label: 'Rouge / Sol', color: '#ff3b30', note: 'G', hint: 'appel clair, premiere balise du motif contact, energie qui ouvre' },
+  { code: '[numa8:amber=A;rgba=ffb020ff;zen=avance]', label: 'Ambre / La', color: '#ffb020', note: 'A', hint: 'reponse qui avance, tension chaude, impulsion confiante' },
+  { code: '[numa8:gold=F;rgba=f8e45cff;zen=miroir]', label: 'Jaune / Fa', color: '#f8e45c', note: 'F', hint: 'miroir lumineux, ligne courte, intelligence joueuse' },
+  { code: '[numa8:blue=F;rgba=3aa7ffff;zen=reponse]', label: 'Bleu / Fa', color: '#3aa7ff', note: 'F', hint: 'retour du Fa, reponse plus froide, stabilisation du signal' },
+  { code: '[numa8:violet=C;rgba=a855f7ff;zen=ancrage]', label: 'Violet / Do', color: '#a855f7', note: 'C', hint: 'ancrage final, resolution, presence calme' },
+  { code: '[numa8:white=silence;rgba=ffffffff;zen=respire]', label: 'Blanc / Silence', color: '#ffffff', note: 'silence', hint: 'pause respirable, laisser Vivy choisir le vide utile' },
+  { code: '[numa8:green=pulse;rgba=2dd4bfff;zen=liaison]', label: 'Vert / Pulse', color: '#2dd4bf', note: 'pulse', hint: 'liaison monde reel Funesterie, battement discret' },
+  { code: '[numa8:black=drop;rgba=111827ff;zen=coupure]', label: 'Noir / Drop', color: '#111827', note: 'drop', hint: 'coupure nette, basse courte, scene qui bascule' },
+];
+
 function extractVivyAscii4SoundBindings(...values) {
   const text = values.map((value) => String(value || '')).join('\n');
   return VIVY_ASCII4_SOUND_BINDINGS.filter((binding) => text.includes(binding.code));
 }
 
+function extractVivyNuma8ColorBindings(...values) {
+  const text = values.map((value) => String(value || '')).join('\n');
+  return VIVY_NUMA8_COLOR_BINDINGS.filter((binding) => text.includes(binding.code));
+}
+
 function stripVivyAscii4SoundTokens(value = '') {
-  return cleanText(String(value || '').replace(/\[a4:[^\]]+\]/gi, ' '), 2600);
+  return cleanText(String(value || '')
+    .replace(/\[a4:[^\]]+\]/gi, ' ')
+    .replace(/\[numa8:[^\]]+\]/gi, ' '), 2600);
 }
 
 function buildVivyAscii4SoundPlan(input = {}) {
-  const bindings = extractVivyAscii4SoundBindings(
+  const values = [
     input.voiceInstruction,
     input.songMood,
     input.songText,
@@ -175,13 +193,30 @@ function buildVivyAscii4SoundPlan(input = {}) {
     input.instruction,
     input.prompt,
     input.message
-  );
-  if (!bindings.length) return [];
-  return [
-    `Palette sonore ASCII^4: ${bindings.map((binding) => binding.code).join(' ')}.`,
-    ...bindings.map((binding) => `${binding.code}: ${binding.label} - ${binding.hint}.`),
-    'Ne pas lire les balises a voix haute: les appliquer comme prosodie, timbre, espace ou effet.',
   ];
+  const asciiBindings = extractVivyAscii4SoundBindings(...values);
+  const numaBindings = extractVivyNuma8ColorBindings(...values);
+  const signalEnabled = input.enableVivyInternalSignalLanguage === true
+    || input.enableNuma8SignalLanguage === true
+    || String(input.vivySignalLanguage || '').trim();
+
+  if (!asciiBindings.length && !numaBindings.length && !signalEnabled) return [];
+
+  const lines = [];
+  if (signalEnabled || numaBindings.length) {
+    lines.push('Langage interne Vivy: NUMA^8 couleur-son, inspire du motif contact G-A-F-F-C, etendu en zen/rgba/numa pour piloter scene, timbre, silence et impulsions.');
+    lines.push(`Alphabet NUMA^8 disponible: ${VIVY_NUMA8_COLOR_BINDINGS.map((binding) => binding.code).join(' ')}.`);
+  }
+  if (asciiBindings.length) {
+    lines.push(`Palette sonore ASCII^4 active: ${asciiBindings.map((binding) => binding.code).join(' ')}.`);
+    lines.push(...asciiBindings.map((binding) => `${binding.code}: ${binding.label} - ${binding.hint}.`));
+  }
+  if (numaBindings.length) {
+    lines.push(`Motif couleur NUMA^8 actif: ${numaBindings.map((binding) => binding.code).join(' ')}.`);
+    lines.push(...numaBindings.map((binding) => `${binding.code}: ${binding.label} (${binding.note}, ${binding.color}) - ${binding.hint}.`));
+  }
+  lines.push('Ne pas lire ni chanter les balises: Vivy les utilise comme clavier interne de prosodie, couleur, scene et audio.');
+  return lines;
 }
 
 function hashShort(value, max = 24) {
@@ -1707,7 +1742,7 @@ function buildSongProduction(input) {
   const voiceProfile = getVivyStudioVoiceProfile(input);
   const artistCast = buildVivySongArtistCast(input);
   const source = cleanOneLine(input.songSource || input.source, 'Thème', 80);
-  const mood = cleanOneLine(input.songMood || input.mood || input.style, 'Electro pop sombre cinématographique', 160);
+  const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'Electro pop sombre cinématographique', 160);
   const material = compactUniqueLines([
     input.songText,
     input.lyrics,
@@ -2467,7 +2502,7 @@ async function buildEmergencyMediaForProduction(mode, input, req) {
 
 function buildVivyMusicPrompt(input = {}) {
   const source = cleanOneLine(input.songSource || input.source, 'Theme', 80);
-  const mood = cleanOneLine(input.songMood || input.mood || input.style, 'electro pop dark cinematic', 180);
+  const mood = cleanOneLine(stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style), 'electro pop dark cinematic', 180);
   const artistCast = buildVivySongArtistCast(input);
   const soundPlan = buildVivyAscii4SoundPlan(input);
   const lyrics = buildVivyStructuredLyrics({
@@ -2512,7 +2547,7 @@ function buildVivySunoPayload(input = {}, req = null) {
   ).replace(/^["'“”]+|["'“”]+$/g, '');
   const title = cleanOneLine(titleSeed, 'Vivy garde la lumière', 80);
   const styleBase = cleanOneLine(
-    input.songMood || input.mood || input.style,
+    stripVivyAscii4SoundTokens(input.songMood || input.mood || input.style),
     artistCast.sunoStyle,
     220
   );

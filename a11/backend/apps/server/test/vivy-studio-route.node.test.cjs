@@ -116,7 +116,27 @@ test('Vivy Studio routes ASCII4 sound keyboard bindings as audio direction', () 
   assert.match(result.brief, /Rap serre/);
   assert.match(result.brief, /\[a4:grain=grit\]/);
   assert.match(result.brief, /\[a4:fx=engine\]/);
-  assert.match(result.brief, /Ne pas lire les balises a voix haute/);
+  assert.match(result.brief, /Ne pas lire ni chanter les balises/);
+});
+
+test('Vivy Studio routes NUMA8 color bindings as internal signal language', () => {
+  const result = buildVivyStudioProduction({
+    mode: 'song',
+    songSource: 'Prompt +',
+    songMood: 'rap contact cinematic [numa8:red=G;rgba=ff3b30ff;zen=appel]',
+    songText: 'Vivy repond au motif [numa8:blue=F;rgba=3aa7ffff;zen=reponse] avant le refrain.',
+    enableVivyInternalSignalLanguage: true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, 'song');
+  assert.match(result.brief, /Langage interne Vivy: NUMA\^8/);
+  assert.match(result.brief, /motif contact G-A-F-F-C/i);
+  assert.match(result.brief, /\[numa8:red=G;rgba=ff3b30ff;zen=appel\]/);
+  assert.match(result.brief, /Rouge \/ Sol/);
+  assert.match(result.brief, /\[numa8:blue=F;rgba=3aa7ffff;zen=reponse\]/);
+  assert.match(result.brief, /Bleu \/ Fa/);
+  assert.match(result.brief, /clavier interne de prosodie, couleur, scene et audio/i);
 });
 
 test('Vivy Suno lyrics strip ASCII4 tokens before music generation', () => {
@@ -124,12 +144,15 @@ test('Vivy Suno lyrics strip ASCII4 tokens before music generation', () => {
     mode: 'song',
     voiceTool: 'Duo Djeff + Vivy',
     songArtists: ['djeff', 'vivy'],
-    songMood: 'rap technique cinematic',
-    songText: '[a4:flow=rap] [a4:space=near]\n[Verse 1 - Djeff]\nJe cale le pignon dans la nuit.\n[Chorus - Duo]\nOn decoupe horizon et bruit.',
+    songMood: 'rap technique cinematic [numa8:red=G;rgba=ff3b30ff;zen=appel]',
+    songText: '[a4:flow=rap] [a4:space=near] [numa8:violet=C;rgba=a855f7ff;zen=ancrage]\n[Verse 1 - Djeff]\nJe cale le pignon dans la nuit.\n[Chorus - Duo]\nOn decoupe horizon et bruit.',
   });
 
   assert.doesNotMatch(payload.prompt, /\[a4:/);
+  assert.doesNotMatch(payload.prompt, /\[numa8:/);
   assert.doesNotMatch(payload.title, /a4:/);
+  assert.doesNotMatch(payload.title, /numa8:/);
+  assert.doesNotMatch(payload.style, /numa8:/);
   assert.match(payload.prompt, /\[Verse 1 - Djeff\]/);
   assert.match(payload.style, /Djeff rap verses and Vivy melodic hook/i);
 });

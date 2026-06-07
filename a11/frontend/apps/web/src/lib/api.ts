@@ -2183,6 +2183,11 @@ export type VivyStudioProductionInput = {
   singerCount?: number;
   songMood?: string;
   songText?: string;
+  vivySignalLanguage?: string;
+  enableVivyInternalSignalLanguage?: boolean;
+  enableNuma8SignalLanguage?: boolean;
+  ascii4SoundBindings?: Array<Record<string, unknown>>;
+  numa8ColorBindings?: Array<Record<string, unknown>>;
   sessionSunoApiKey?: string;
   shareTarget?: string;
   shareUrl?: string;
