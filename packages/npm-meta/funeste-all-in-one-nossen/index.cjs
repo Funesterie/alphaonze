@@ -37,13 +37,14 @@ const privatePackages = Object.freeze([
   '@funeste/scentgate-nossen',
   '@funeste/scream-nossen',
   '@funeste/spyder-graph-nossen',
-  '@funeste/spyder-nossen'
+  '@funeste/spyder-nossen',
+  '@funeste/zen'
 ]);
 
 module.exports = Object.freeze({
   name: '@funeste/all-in-one-nossen',
   scope: 'private',
-  generatedAt: '2026-06-01',
+  generatedAt: '2026-06-07',
   publicMetaPackage: '@nossen/all-in-one',
   privatePackageCount: privatePackages.length,
   privatePackages

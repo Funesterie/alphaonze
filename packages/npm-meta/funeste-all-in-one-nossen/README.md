@@ -16,7 +16,7 @@ You need an npm token that can read the private `@funeste` scope. Do not paste t
 
 - `@nossen/all-in-one`, which brings the public NOSSEN train.
 - Private `@funeste/*-nossen` operator adapters.
-- Private graph, MCP, worker and runtime bridge packages.
+- Private graph, MCP, worker, runtime bridge and ZEN route packages.
 
 ## Package Manifest
 

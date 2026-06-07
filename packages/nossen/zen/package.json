@@ -1,0 +1,63 @@
+{
+  "name": "@nossen/zen",
+  "version": "0.1.1",
+  "description": "Zero-Exposed NEZ archive encoder/decoder for .zen corpus containers.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "bin": {
+    "nossen-zen": "bin/nossen-zen.cjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "zen",
+    "archive",
+    "corpus",
+    "brotli",
+    "encryption",
+    "nossen"
+  ],
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/nossen/zen"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
+  }
+}

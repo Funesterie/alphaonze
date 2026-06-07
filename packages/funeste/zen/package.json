@@ -1,0 +1,67 @@
+{
+  "name": "@funeste/zen",
+  "version": "0.1.1",
+  "description": "Private Funesterie presets and routing helpers for @nossen/zen corpus containers.",
+  "type": "commonjs",
+  "main": "src/index.cjs",
+  "bin": {
+    "funeste-zen": "bin/funeste-zen.cjs",
+    "nossen-zen-private": "bin/funeste-zen.cjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "funesterie",
+    "nossen",
+    "zen",
+    "corpus",
+    "neo4j",
+    "mcp"
+  ],
+  "author": "NOSSEN <contact@funesterie.me>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Funesterie/funesterie#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Funesterie/funesterie.git",
+    "directory": "packages/funeste/zen"
+  },
+  "bugs": {
+    "url": "https://github.com/Funesterie/funesterie/issues"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@nossen/zen": "0.1.1"
+  },
+  "funding": [
+    {
+      "type": "paypal",
+      "url": "https://paypal.me/funeste38"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png"
+    },
+    {
+      "type": "custom",
+      "url": "https://funesterie.me/contact/"
+    }
+  ],
+  "funesterieSupport": {
+    "paypal": "https://paypal.me/funeste38",
+    "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
+    "contact": "https://funesterie.me/contact/"
+  }
+}

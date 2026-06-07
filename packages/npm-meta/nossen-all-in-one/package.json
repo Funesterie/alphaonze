@@ -63,6 +63,7 @@
     "@nossen/scentgate": "2.0.1",
     "@nossen/scream": "2.0.2",
     "@nossen/spyder": "2.0.2",
+    "@nossen/zen": "0.1.1",
     "a11-coder": "1.0.1"
   },
   "funding": [
