@@ -92,6 +92,10 @@ test('OAuth start and callback routes stay public even with stale session cookie
     '/api/auth/microsoft/callback',
   ]) {
     assert.equal(isPublicAuthRoute({ method: 'GET', path: route }), true);
+    assert.equal(
+      isPublicAuthRoute({ method: 'GET', path: route.replace(/^\/api/, ''), originalUrl: route }),
+      true
+    );
 
     let nextCalled = false;
     await verifyJWT(
@@ -112,6 +116,27 @@ test('OAuth start and callback routes stay public even with stale session cookie
       }
     );
     assert.equal(nextCalled, true, route);
+
+    nextCalled = false;
+    await verifyJWT(
+      {
+        method: 'GET',
+        path: route.replace(/^\/api/, ''),
+        originalUrl: `${route}?client=funesterie-cockpit`,
+        headers: {
+          cookie: 'a11_session=expired.jwt.token',
+        },
+      },
+      {
+        status() {
+          throw new Error(`mounted JWT should not reject ${route}`);
+        },
+      },
+      () => {
+        nextCalled = true;
+      }
+    );
+    assert.equal(nextCalled, true, `mounted ${route}`);
   }
 });
 
