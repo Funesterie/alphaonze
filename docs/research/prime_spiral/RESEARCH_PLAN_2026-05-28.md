@@ -119,6 +119,21 @@ Test the first prime-candidate curve:
 .\scripts\research\Test-PrimeCandidateCurve.ps1 -Limit 10000 -Top 50
 ```
 
+Test binary q(n) resonance gates:
+
+```powershell
+python .\scripts\research\Test-PrimeSpiralQn.py --limit 1000000
+```
+
+This also records:
+
+```text
+Dq(n)=q(n)-q(n-1)
+Pq(n)=Σ q(k)
+bounded cascades for addition, multiplication, exp, power, log/ln,
+ln->division, inversion, full op round, and cross-star phase.
+```
+
 Apply A/B WAV morph:
 
 ```powershell

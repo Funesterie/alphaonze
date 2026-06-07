@@ -104,7 +104,8 @@ S ≈ 8.889 × t₁  (t₁ = premier zéro ζ ≈ 14.134)
 
 Les **gaps des premiers** (2, 4, 6, 2, 4, 6, ...) génèrent des patterns rythmiques non-répétitifs mais structurés — parfait pour Vivy.
 
-Garde : ne pas coller `S`, `t₁` ou `4.5π` dans le moteur comme source canon.
+Garde : ne pas coller `S`, `t₁` ou `4.0005π` dans le moteur comme source canon.
+Correction Djeff 2026-06-04 : ne pas substituer l'ancienne piste `4.5π` à la cible `4.0005π`.
 Les modes spectraux doivent d'abord sortir de `W_n(w)=0`, puis seulement être comparés.
 
 ---
