@@ -1134,6 +1134,57 @@
         box-shadow: 0 0 0 3px rgba(240, 121, 216, 0.12);
       }
 
+      .vivy-studio-fieldset {
+        margin: 0;
+        padding: 12px;
+        border: 1px solid rgba(240, 121, 216, 0.28);
+        background: rgba(12, 4, 18, 0.52);
+      }
+
+      .vivy-studio-fieldset legend {
+        padding: 0 6px;
+        color: #ffd2f4;
+        text-transform: uppercase;
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .vivy-studio-checkgrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .vivy-studio-checkgrid label {
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        padding: 9px 10px;
+        border: 1px solid rgba(240, 121, 216, 0.28);
+        background: rgba(28, 8, 31, 0.72);
+        color: #ffe0f8;
+        font-size: 12px;
+        line-height: 1.2;
+        text-transform: none;
+      }
+
+      .vivy-studio-checkgrid input {
+        width: 16px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0;
+        accent-color: #f079d8;
+      }
+
+      .vivy-studio-cast-status {
+        margin: 8px 0 0;
+        color: #dcb3d2;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
       .vivy-studio-actions,
       .vivy-studio-brief div {
         display: flex;
@@ -1623,6 +1674,10 @@
                 <select id="vivy-studio-voice-tool" name="voiceTool">
                   <option>Voix Vivy officielle</option>
                   <option>Voix Vivy chant</option>
+                  <option>Voix Djeff rap</option>
+                  <option>Duo Djeff + Vivy</option>
+                  <option>Voix A11 officielle</option>
+                  <option>Voix K44 officielle</option>
                   <option>Voix Vivy + référence privée</option>
                   <option>Diagnostic module voix</option>
                 </select>
@@ -1658,6 +1713,28 @@
                 Couleur sonore
                 <input id="vivy-studio-song-mood" name="songMood" value="Electro pop dark cinematographique" />
               </label>
+              <fieldset class="vivy-studio-fieldset">
+                <legend>Artistes / chanteurs</legend>
+                <div class="vivy-studio-checkgrid">
+                  <label>
+                    <input type="checkbox" name="songArtists" value="vivy" checked />
+                    Vivy
+                  </label>
+                  <label>
+                    <input type="checkbox" name="songArtists" value="djeff" />
+                    Djeff rap
+                  </label>
+                  <label>
+                    <input type="checkbox" name="songArtists" value="a11" />
+                    A11
+                  </label>
+                  <label>
+                    <input type="checkbox" name="songArtists" value="k44" />
+                    K44
+                  </label>
+                </div>
+                <p class="vivy-studio-cast-status" data-vivy-artist-status>1 chanteur: Vivy.</p>
+              </fieldset>
               <label>
                 Matière créative
                 <textarea id="vivy-studio-song-text" name="songText" rows="8" placeholder="Thème, paroles, ambiance, intention, histoire ou simple idée."></textarea>
@@ -2474,6 +2551,18 @@
           });
         }
 
+        function buildIntentMessage(intentText) {
+          var intent = unicodeLine(intentText, "Instruction Vivy", 240);
+          var typed = unicodeText(input ? input.value : "", 5000);
+          if (!typed) return intent;
+          return [
+            "VIVY_INTENT",
+            "Instruction: " + intent,
+            "",
+            typed
+          ].join("\n");
+        }
+
         if (form) {
           form.addEventListener("submit", function (event) {
             event.preventDefault();
@@ -2497,7 +2586,7 @@
         Array.prototype.forEach.call(root.querySelectorAll("[data-vivy-chat-prompt]"), function (button) {
           button.addEventListener("click", function () {
             if (!ensureSession()) return;
-            send(button.getAttribute("data-vivy-chat-prompt") || "");
+            send(buildIntentMessage(button.getAttribute("data-vivy-chat-prompt") || ""));
           });
         });
         if (reset) {
@@ -2579,9 +2668,16 @@
         var statusNode = root.querySelector("[data-vivy-status]");
         var mediaNode = root.querySelector("[data-vivy-media]");
         var activeVoiceNode = root.querySelector("[data-vivy-active-voice]");
+        var artistStatusNode = root.querySelector("[data-vivy-artist-status]");
         var sunoKeyInput = root.querySelector("input[name='sessionSunoApiKey']");
         var hasSession = Boolean(window.__vivySession && window.__vivySession.authenticated);
         var sunoSessionStorageKey = "vivy:suno:session-key";
+        var songArtistLabels = {
+          vivy: "Vivy",
+          djeff: "Djeff rap",
+          a11: "A11",
+          k44: "K44"
+        };
 
         function vivyAuth() {
           return window.__vivyAuth || {};
@@ -2746,6 +2842,45 @@
           return { useDefaultVoiceReference: true };
         }
 
+        function readSongArtists() {
+          var checked = Array.prototype.slice.call(root.querySelectorAll("input[name='songArtists']:checked"))
+            .map(function (input) { return String(input.value || "").trim(); })
+            .filter(Boolean);
+          return checked.length ? checked : ["vivy"];
+        }
+
+        function setSongArtists(ids) {
+          var wanted = {};
+          (ids && ids.length ? ids : ["vivy"]).forEach(function (id) {
+            wanted[String(id || "").trim()] = true;
+          });
+          Array.prototype.forEach.call(root.querySelectorAll("input[name='songArtists']"), function (input) {
+            input.checked = Boolean(wanted[input.value]);
+          });
+        }
+
+        function songArtistLabel(ids) {
+          return (ids && ids.length ? ids : ["vivy"])
+            .map(function (id) { return songArtistLabels[id] || id; })
+            .join(" + ");
+        }
+
+        function updateArtistStatus() {
+          if (!artistStatusNode) return;
+          var ids = readSongArtists();
+          artistStatusNode.textContent = ids.length + " chanteur" + (ids.length > 1 ? "s" : "") + ": " + songArtistLabel(ids) + ".";
+        }
+
+        function syncSongArtistsFromVoiceTool() {
+          var tool = String(value("voiceTool") || "").toLowerCase();
+          if (/duo/.test(tool) && /djeff/.test(tool)) setSongArtists(["djeff", "vivy"]);
+          else if (/djeff/.test(tool)) setSongArtists(["djeff"]);
+          else if (/a11/.test(tool)) setSongArtists(["a11"]);
+          else if (/k44|kaen44/.test(tool)) setSongArtists(["k44"]);
+          else if (/vivy/.test(tool)) setSongArtists(["vivy"]);
+          updateArtistStatus();
+        }
+
         function vivyVoiceTuning(vocalMode) {
           return String(vocalMode || "").toLowerCase() === "sing"
             ? { voiceConversionStrength: 0.32, f0Shift: -0.35 }
@@ -2812,6 +2947,7 @@
 
         function buildProductionPayload(overrides) {
           var personalSunoKey = readSessionSunoKey();
+          var selectedArtists = readSongArtists();
           return Object.assign({
             mode: activeMode,
             voiceTool: value("voiceTool"),
@@ -2826,6 +2962,10 @@
             shareUrl: value("shareUrl"),
             shareTokenPresent: Boolean(value("shareToken")),
             shareInstruction: value("shareInstruction"),
+            songArtists: selectedArtists,
+            artists: selectedArtists,
+            vocalCast: selectedArtists.join(", "),
+            singerCount: selectedArtists.length,
             sessionSunoApiKey: personalSunoKey || undefined,
             allowPlaceholderMedia: false
           }, overrides || {});
@@ -2923,11 +3063,14 @@
           }
 
           if (activeMode === "song") {
+            var selectedArtists = readSongArtists();
             lines.push(
               "Flux chanson:",
               "- Source: " + value("songSource"),
               "- Direction sonore: " + (value("songMood") || "Electro pop dark cinematographique"),
               "- Matière: " + (value("songText") || "thème libre à développer"),
+              "- Artistes / chanteurs: " + songArtistLabel(selectedArtists),
+              "- Nombre de chanteurs: " + selectedArtists.length,
               "- Clé Suno personnelle: " + (readSessionSunoKey() ? "oui, session navigateur seulement" : "non"),
               "- Sortie simple possible: vraie génération Suno ou brief chantable selon les droits disponibles.",
               "- Sortie attendue: titre, intention, structure couplet/refrain, paroles, arrangement, voix guide et assets à produire.",
@@ -2974,6 +3117,7 @@
           if (title) title.textContent = modes[activeMode].title;
           if (action) action.textContent = modes[activeMode].action;
           if (activeVoiceNode) activeVoiceNode.textContent = "Voix active: " + activeVoiceLabel();
+          updateArtistStatus();
           if (briefNode) briefNode.textContent = buildBrief();
         }
 
@@ -3258,6 +3402,12 @@
             voiceFileName = voiceFile ? voiceFile.name : "";
             voiceReferenceId = "";
             if (voiceFile && field("voiceTool")) field("voiceTool").value = "Voix Vivy + référence privée";
+          }
+          if (event.target && event.target.name === "voiceTool") {
+            syncSongArtistsFromVoiceTool();
+          }
+          if (event.target && event.target.name === "songArtists" && !root.querySelector("input[name='songArtists']:checked")) {
+            setSongArtists(["vivy"]);
           }
           render();
         });
