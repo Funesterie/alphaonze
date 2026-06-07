@@ -14,7 +14,7 @@
       ]
     },
     "a11mcp-shared": {
-      "url": "https://mcp.funesterie.me/kiro/mcp",
+      "url": "https://mcp.funesterie.me/mcp",
       "disabled": false,
       "autoApprove": [
         "*"

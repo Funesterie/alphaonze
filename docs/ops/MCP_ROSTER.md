@@ -1,7 +1,7 @@
 # Funesterie MCP Roster
 
 Status: active
-Last update: 2026-05-16
+Last update: 2026-06-07
 Canonical machine file: `docs/ops/mcp-roster.json`
 
 This is the secret-free control map for agents connected to Funesterie through MCP. It answers four questions before any big operation:
@@ -19,15 +19,17 @@ This is the secret-free control map for agents connected to Funesterie through M
 | ChatGPT public | `https://mcp.funesterie.me/chatgpt/mcp` | none | available | public-safe connector lane |
 | Grok public | `https://mcp.funesterie.me/grok/mcp` | none | available | public-safe challenge/review lane |
 | Full private MCP | `https://mcp.funesterie.me/mcp` | bearer or OAuth | connected | bounded private agent lane |
-| Kiro local A11 | `node .../a11-mcp-server.cjs` | local process | configured | local A11 route map and diagnostics |
+| Kiro local A11 | `node .../a11-mcp-server.cjs` | local process | configured | local A11 route map, diagnostics, shared MCP health |
 | A11 backend | `https://a11.funesterie.me` | app auth | healthy | product/backend surface |
 
-Health checked on 2026-05-16:
+Health checked on 2026-06-07:
 
 - `https://mcp.funesterie.me/health` returned OK.
 - `https://a11.funesterie.me/health` returned OK.
-- Gemini CLI sees `funesterie` and `funesterie_full` connected.
-- Kiro config sees `a11` local and `a11mcp-shared`.
+- `https://funesterie.me/health`, `https://k44.funesterie.me/health`, and `https://vivy.funesterie.me/health` returned OK.
+- Authenticated `https://mcp.funesterie.me/mcp` listed 101 tools, including `container_runtime_status`.
+- `agent_role_route` version `2026-06-07` routes Docker/Podman/container runtime work to `codex-kiro`.
+- Kiro workspace config uses canonical `https://mcp.funesterie.me/mcp`; `/kiro/mcp` is legacy.
 
 ## Agent Roster
 
@@ -57,6 +59,19 @@ ChatGPT -> Chopper/Qflush/A11/Kaen44/Vivy/Codex/Kiro
 
 Use `agent_role_route` before dispatching fuzzy work. Qflush physical input remains opt-in and bounded.
 
+## Container Runtime Lanes
+
+Use `container_runtime_status` before any Docker, Podman, image, registry, MCP-container, or Neo4j-container claim.
+
+| Lane | Engine / Place | Use |
+| --- | --- | --- |
+| Runtime | Docker Desktop, context `desktop-linux` | live MCP bridge, local Neo4j, A11/NOSSEN quick checks |
+| Atelier | Podman WSL, context `podman-a11` | isolated builds, rescue, migrations, experiments, scoped tests |
+| Registry | Docker Hub `funeste38/pool` | image storage and publish target only |
+| Prod | Hetzner Docker/Caddy | public Funesterie/A11/K44/Vivy services via deploy/hotfix scripts |
+
+MCP only exposes read-only routing/status for these lanes. It must not expose `docker.sock`, raw shell, registry tokens, or unscoped start/stop/delete/prune/build controls. Codex or a local operator may run scoped commands when the human asks.
+
 ## Tool Policy
 
 Public read-only tools:
@@ -73,6 +88,7 @@ Private safe tools:
 
 - presence and heartbeat;
 - agent role routing;
+- container runtime routing/status;
 - discussions;
 - job status and schema;
 - Neo4j read-only status/query;
@@ -95,6 +111,7 @@ Blocked by default:
 - raw filesystem read outside allowlist;
 - secret reads;
 - `docker.sock`;
+- direct Docker/Podman stop, delete, prune, build, or deploy without explicit human scope;
 - root;
 - worker start/stop/restart from external agents;
 - direct Neo4j write query;
