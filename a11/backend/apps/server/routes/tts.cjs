@@ -1724,6 +1724,8 @@ function isReferenceAwareTtsPayload(payload = {}) {
   if (payload?.voiceConversion?.ok === true) return true;
   if (payload?.referenceVoice?.ok === true) return true;
   if (payload?.providerCapabilities?.referenceVoice === true) return true;
+  if (payload?.audioModule?.reference?.id || payload?.audioModule?.reference?.label) return true;
+  if (payload?.audioModule?.comparison?.ok === true) return true;
   if (payload?.provider === 'openai' && payload?.voiceReference?.id) return true;
   return false;
 }
@@ -2475,9 +2477,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
           baseUrl,
           rawAudioUrl
         );
-        const referenceAware = synthesizePayload?.voiceConversion?.ok === true
-          || synthesizePayload?.providerCapabilities?.referenceVoice === true
-          || synthesizePayload?.voiceReference?.id;
+        const referenceAware = isReferenceAwareTtsPayload(synthesizePayload);
         if (remoteAudioUrl && referenceAware) {
           const sourceAudioUrl = resolveRemoteTtsAssetFetchUrl(baseUrl, rawAudioUrl) || remoteAudioUrl;
           const materializedAudioUrl = await materializeTtsAudioUrlForFormat(sourceAudioUrl, audioFormat, 'xtts-rvc');

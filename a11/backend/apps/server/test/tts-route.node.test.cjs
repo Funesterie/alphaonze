@@ -2250,6 +2250,148 @@ test('tts speak route uses the voice module directly for Kaen44 official referen
   }
 });
 
+test('tts speak route accepts audioModule reference metadata from direct Vivy synthesize', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-vivy-audiomodule-reference-'));
+  const previousEnv = {
+    A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
+    A11_VOICE_REFERENCE_DIR: process.env.A11_VOICE_REFERENCE_DIR,
+    A11_VOICE_REFERENCE_LIBRARY_DISABLED: process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED,
+    A11_VOICE_CONVERSION_ENABLED: process.env.A11_VOICE_CONVERSION_ENABLED,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
+    A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const wav = createPcm16Wav();
+  const calls = [];
+
+  fs.mkdirSync(path.join(runtimeRoot, 'voice-library'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, 'voice-library', 'vivy-official-french-conversational.wav'), createPcm16Wav({ frequency: 260 }));
+  process.env.A11_RUNTIME_ROOT = runtimeRoot;
+  process.env.A11_VOICE_REFERENCE_DIR = path.join(runtimeRoot, 'voice-references');
+  delete process.env.A11_VOICE_REFERENCE_LIBRARY_DISABLED;
+  process.env.A11_VOICE_CONVERSION_ENABLED = 'true';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  process.env.A11_VOICE_XTTS_RVC_URL = 'http://a11-voice:5002';
+  delete process.env.A11_XTTS_RVC_URL;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    calls.push(value);
+    if (value === 'http://a11-voice:5002/api/voice/synthesize') {
+      assert.equal(options.method, 'POST');
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            ok: true,
+            audio_url: '/out/vivy-synth.wav',
+            audioUrl: '/out/vivy-synth.wav',
+            provider: 'http',
+            via: 'a11-voice-module',
+            audioModule: {
+              ok: true,
+              reference: {
+                id: 'library_vivy_official',
+                label: 'Vivy Official French Conversational',
+                scope: 'library',
+              },
+              comparison: {
+                ok: true,
+                similarity: 0.64,
+              },
+            },
+          });
+        },
+      };
+    }
+    if (value === 'http://a11-voice:5002/api/voice/convert') {
+      throw new Error('convert_should_not_be_needed_when_synthesize_has_audio_module_reference');
+    }
+    if (value.startsWith('http://a11-voice:5002/out/vivy-synth.wav')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'audio/wav' },
+        async arrayBuffer() {
+          return wav;
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: "T'inquiete, je gere la voix libre en XTTS.",
+          persona: 'vivy',
+          voicePersona: 'vivy',
+          surface: 'vivy',
+          provider: 'xtts-rvc',
+          ttsProvider: 'xtts-rvc',
+          engine: 'xtts-rvc',
+          voiceEngine: 'xtts-rvc',
+          voiceConversionEngine: 'xtts-rvc',
+          conversionEngine: 'xtts-rvc',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          defaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+          requireVoiceReference: true,
+          voiceConversion: true,
+          convertVoice: true,
+          morphVoice: true,
+          rvc: true,
+          allowRvc: true,
+          allowXttsRvc: true,
+          allowLegacyVoiceBridge: true,
+          xttsRvcOptIn: true,
+          audioFormat: 'mp3',
+          responseFormat: 'mp3',
+        });
+
+        assert.equal(result.response.status, 200);
+        assert.equal(result.json.provider, 'xtts-rvc');
+        assert.match(result.json.audioModule.reference.label, /Vivy Official French Conversational/i);
+        assert.equal(result.json.voiceConversion.ok, true);
+        assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/synthesize').length, 1);
+        assert.equal(calls.filter((call) => call === 'http://a11-voice:5002/api/voice/convert').length, 0);
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
 test('tts piper route respects OpenAI-first voice persona before HTTP module', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-tts-openai-first-'));
   const previousEnv = {
