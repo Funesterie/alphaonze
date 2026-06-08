@@ -8334,10 +8334,11 @@ export function App() {
     const onMicError = (event: Event) => {
       const detail = (event as CustomEvent<{ error?: string; message?: string }>).detail || {};
       const error = String(detail.error || "");
+      const directSpeechFallbackErrors = new Set(["network", "audio-capture", "no-speech", "aborted"]);
       setMicStarting(false);
       setVoiceListening(false);
-      setMicDictationFallbackActive(false);
       if (error === "not-allowed" || error === "service-not-allowed") {
+        setMicDictationFallbackActive(false);
         setMicPermissionBlocked(true);
         setMicStatusMessage("Micro bloqué par le navigateur. Mode voix sortie actif; autorise le micro dans le cadenas du site pour dicter.");
         setTtsFallback(true);
@@ -8348,7 +8349,13 @@ export function App() {
         }
         return;
       }
+      if (directSpeechFallbackErrors.has(error)) {
+        setMicStatusMessage("Reconnaissance vocale directe indisponible: j'essaie le micro de secours.");
+        console.info("[A11] reconnaissance vocale directe indisponible:", error);
+        return;
+      }
       if (error) {
+        setMicDictationFallbackActive(false);
         setMicStatusMessage(`Micro indisponible: ${error}`);
         console.info("[A11] micro indisponible:", error);
       }

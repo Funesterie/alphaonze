@@ -396,6 +396,27 @@ services:
       timeout: 5s
       retries: 10
 
+  a11-stt-whisper:
+    image: hwdsl2/whisper-server:latest
+    container_name: a11-stt-whisper
+    restart: unless-stopped
+    environment:
+      WHISPER_MODEL: ${A11_STT_LOCAL_MODEL:-base}
+      WHISPER_LANGUAGE: ${A11_STT_LANGUAGE:-fr}
+      WHISPER_DEVICE: ${A11_STT_FAST_WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${A11_STT_FAST_WHISPER_COMPUTE_TYPE:-int8}
+      WHISPER_THREADS: ${A11_STT_FAST_WHISPER_THREADS:-4}
+    volumes:
+      - /srv/a11-data/a11/stt/whisper:/var/lib/whisper
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 10
+
   a11-xtts-rvc:
     build:
       context: ../xtts-rvc-bridge
@@ -527,6 +548,8 @@ services:
         condition: service_healthy
       a11-redis:
         condition: service_healthy
+      a11-stt-whisper:
+        condition: service_healthy
       a11-voice:
         condition: service_started
     volumes:
@@ -620,6 +643,8 @@ services:
         condition: service_healthy
       a11-redis:
         condition: service_healthy
+      a11-stt-whisper:
+        condition: service_healthy
       a11-voice:
         condition: service_started
     volumes:
@@ -702,7 +727,7 @@ $caddy = @"
 http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44-hetzner-test.funesterie.me, http://vivy.funesterie.me, http://music.funesterie.me {
   encode zstd gzip
   import microsoft_identity_association
-  @a11Path path /a11 /a11/* /api/admin/* /api/tools/run /api/runtime* /api/qflush/*
+  @a11Path path /a11 /a11/* /api/admin/* /api/tools/run /api/runtime* /api/qflush/* /api/stt/*
   @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
   handle @a11Path {
     import a11_backend
@@ -957,14 +982,16 @@ $overrides = [ordered]@{
   A11_EMBEDDING_BASE_URL = "http://a11-ollama:11434"
   A11_EMBEDDING_MODEL = "nomic-embed-text"
   A11_STT_PROVIDER = $(if ($env:A11_STT_PROVIDER) { $env:A11_STT_PROVIDER } else { "auto" })
-  A11_STT_FAST_WHISPER_ENABLED = $(if ($env:A11_STT_FAST_WHISPER_ENABLED) { $env:A11_STT_FAST_WHISPER_ENABLED } else { "false" })
-  A11_STT_FAST_WHISPER_BASE_URL = $(if ($env:A11_STT_FAST_WHISPER_BASE_URL) { $env:A11_STT_FAST_WHISPER_BASE_URL } else { "" })
-  A11_STT_FAST_WHISPER_MODEL = $(if ($env:A11_STT_FAST_WHISPER_MODEL) { $env:A11_STT_FAST_WHISPER_MODEL } else { "Systran/faster-whisper-large-v3" })
+  A11_STT_FAST_WHISPER_ENABLED = $(if ($env:A11_STT_FAST_WHISPER_ENABLED) { $env:A11_STT_FAST_WHISPER_ENABLED } else { "true" })
+  A11_STT_FAST_WHISPER_BASE_URL = $(if ($env:A11_STT_FAST_WHISPER_BASE_URL) { $env:A11_STT_FAST_WHISPER_BASE_URL } else { "http://a11-stt-whisper:9000" })
+  A11_STT_FAST_WHISPER_MODEL = $(if ($env:A11_STT_FAST_WHISPER_MODEL) { $env:A11_STT_FAST_WHISPER_MODEL } else { "whisper-1" })
   A11_STT_OLLAMA_ENABLED = $(if ($env:A11_STT_OLLAMA_ENABLED) { $env:A11_STT_OLLAMA_ENABLED } else { "false" })
   A11_STT_OLLAMA_BASE = "http://a11-ollama:11434"
   A11_STT_OLLAMA_MODEL = $(if ($env:A11_STT_OLLAMA_MODEL) { $env:A11_STT_OLLAMA_MODEL } else { "whisper" })
+  A11_STT_OPENAI_API_KEY = $(if ($env:A11_STT_OPENAI_API_KEY) { $env:A11_STT_OPENAI_API_KEY } else { "" })
   A11_STT_OPENAI_BASE_URL = $(if ($env:A11_STT_OPENAI_BASE_URL) { $env:A11_STT_OPENAI_BASE_URL } else { "https://api.openai.com/v1" })
   A11_STT_OPENAI_MODEL = $(if ($env:A11_STT_OPENAI_MODEL) { $env:A11_STT_OPENAI_MODEL } else { "whisper-1" })
+  A11_STT_ALLOW_OPENAI_COMPATIBLE = $(if ($env:A11_STT_ALLOW_OPENAI_COMPATIBLE) { $env:A11_STT_ALLOW_OPENAI_COMPATIBLE } else { "false" })
   A11_TRANSLATION_BASE_URL = "http://a11-ollama:11434"
   A11_TRANSLATION_MODEL = "gpt-oss:20b-cloud"
   A11_CERBERE_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
@@ -1064,7 +1091,7 @@ if ($LASTEXITCODE -ne 0) { throw "Creation archive echouee" }
 $archiveSizeMb = [Math]::Round((Get-Item -LiteralPath $Archive).Length / 1MB, 2)
 Write-Host "Archive creee: $Archive ($archiveSizeMb MB)" -ForegroundColor DarkCyan
 
-$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/tts $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
+$remotePrepare = "mkdir -p $RemoteRoot/secrets $RemoteRoot/releases $RemoteDataRoot/postgres $RemoteDataRoot/redis $RemoteDataRoot/logs $RemoteDataRoot/runtime $RemoteDataRoot/runtime/secrets $RemoteDataRoot/runtime/voice-library $RemoteDataRoot/uploads $RemoteDataRoot/tts $RemoteDataRoot/stt/whisper $RemoteDataRoot/voice-out $RemoteDataRoot/xtts-rvc/models $RemoteDataRoot/xtts-rvc/rvcs $RemoteDataRoot/xtts-rvc/outputs $RemoteDataRoot/kaen44-logs $RemoteDataRoot/kaen44-runtime $RemoteDataRoot/kaen44-runtime/secrets $RemoteDataRoot/kaen44-runtime/voice-library $RemoteDataRoot/kaen44-uploads $RemoteDataRoot/caddy-data $RemoteDataRoot/caddy-config && chmod 700 $RemoteRoot/secrets"
 & ssh @sshBase $Remote $remotePrepare
 if ($LASTEXITCODE -ne 0) { throw "Preparation distante echouee" }
 
@@ -1235,7 +1262,7 @@ tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
 $remoteSecretStep
 $remoteOllamaStep
-docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build a11-postgres a11-redis a11-xtts-rvc a11-voice
+docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build a11-postgres a11-redis a11-stt-whisper a11-xtts-rvc a11-voice
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko "`$a11_service" "`$k44_service"
 echo "__BLUEGREEN_HEALTH__"
 for i in `$(seq 1 45); do
