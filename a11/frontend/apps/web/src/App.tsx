@@ -602,6 +602,23 @@ function isAllowedFunesterieReturnOrigin(origin: string) {
 
 const POST_LOGIN_RETURN_TO_KEY = "funesterie.postLoginReturnTo";
 
+function isGeneralPostLoginCockpitTarget(target: URL) {
+  const hostname = String(target.hostname || "").trim().toLowerCase();
+  const pathname = String(target.pathname || "/").toLowerCase();
+  if (!/^\/cockpit(?:\/|$)/.test(pathname)) return false;
+  return isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname);
+}
+
+function getHomeUrlForReturnTarget(target?: URL) {
+  if (target && isAllowedFunesterieReturnOrigin(target.origin)) {
+    const hostname = String(target.hostname || "").trim().toLowerCase();
+    if (isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname)) {
+      return new URL("/", target.origin).toString();
+    }
+  }
+  return getFunesteriePostLoginHomeUrl();
+}
+
 function getFunesteriePostLoginHomeUrl() {
   if (typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)) {
     return new URL("/", window.location.origin).toString();
@@ -624,6 +641,7 @@ function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback 
     const target = new URL(raw || fallback, base);
     if (!isAllowedFunesterieReturnOrigin(target.origin)) return fallback;
     if (isLoginRoute(target.pathname)) return fallback;
+    if (isGeneralPostLoginCockpitTarget(target)) return getHomeUrlForReturnTarget(target);
     return target.toString();
   } catch {
     return fallback;
@@ -633,7 +651,8 @@ function normalizeAllowedReturnTo(rawValue: string | null | undefined, fallback 
 function isSafePostLoginReturnTo(target: URL) {
   return isAllowedFunesterieReturnOrigin(target.origin)
     && !isLoginRoute(target.pathname)
-    && !isAuthSuccessRoute(target.pathname);
+    && !isAuthSuccessRoute(target.pathname)
+    && !isGeneralPostLoginCockpitTarget(target);
 }
 
 function rememberPostLoginReturnTo(rawValue: string | null | undefined) {
@@ -765,6 +784,7 @@ function getSafeAuthSuccessNext(surface: FunesterieSurface) {
     const target = new URL(next, window.location.origin);
     if (target.origin !== window.location.origin) return "";
     if (isLoginRoute(target.pathname) || isAuthSuccessRoute(target.pathname)) return "";
+    if (isGeneralPostLoginCockpitTarget(target)) return "";
     return `${target.pathname}${target.search}${target.hash}`;
   } catch {
     return "";
@@ -784,6 +804,7 @@ function resolveAuthSuccessRedirectPath(pathname: string, surface: FunesterieSur
   const next = getSafeAuthSuccessNext(surface);
   if (next) return next;
   if (/^\/cockpit(?:\/|$)/.test(normalizedPath)) {
+    if (isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname)) return "/";
     return "/cockpit/";
   }
   if (isGeneralFunesterieHost(hostname)) return "/";
@@ -797,6 +818,7 @@ function resolveAuthFailureRedirectPath(pathname: string) {
   const { hostname } = getLocationSnapshot();
   const surface = getCurrentSurfaceKind();
   if (/^\/cockpit(?:\/|$)/.test(normalizedPath)) {
+    if (isGeneralFunesterieHost(hostname) || isLocalSurfaceHost(hostname)) return "/login?error=session_verification_failed";
     return "/cockpit?error=session_verification_failed";
   }
   if (isGeneralFunesterieHost(hostname)) return "/login?error=session_verification_failed";
