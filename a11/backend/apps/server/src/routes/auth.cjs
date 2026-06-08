@@ -55,6 +55,129 @@ function stableHash(value, length = 12) {
   return nodeCrypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, length);
 }
 
+function normalizeDisplayName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 96);
+}
+
+function titleizeDisplaySlug(value) {
+  const words = String(value || '')
+    .trim()
+    .replace(/[-_.]+/g, ' ')
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+  return words
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(' ')
+    .slice(0, 96);
+}
+
+function stripGeneratedUsernameSuffix(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.replace(/[-_.][a-f0-9]{6,12}$/i, '') || text;
+}
+
+function resolvePublicDisplayName(user = {}, extra = {}) {
+  const explicit = [
+    extra.displayName,
+    extra.display_name,
+    extra.name,
+    extra.fullName,
+    extra.full_name,
+    user.displayName,
+    user.display_name,
+    user.name,
+    user.fullName,
+    user.full_name,
+  ].map(normalizeDisplayName).find(Boolean);
+  if (explicit) {
+    const readableExplicit = stripGeneratedUsernameSuffix(explicit);
+    if (readableExplicit !== explicit) {
+      return titleizeDisplaySlug(readableExplicit) || readableExplicit;
+    }
+    return explicit;
+  }
+
+  const username = normalizeDisplayName(
+    extra.username
+    || extra.preferred_username
+    || user.username
+    || user.preferred_username
+  );
+  if (username) {
+    const readableUsername = stripGeneratedUsernameSuffix(username);
+    if (readableUsername !== username) {
+      return titleizeDisplaySlug(readableUsername) || readableUsername;
+    }
+    return username;
+  }
+
+  const email = normalizeEmail(
+    extra.email
+    || extra.mail
+    || extra.userPrincipalName
+    || user.email
+    || user.mail
+    || user.userPrincipalName
+  );
+  if (email) {
+    return titleizeDisplaySlug(email.split('@')[0]) || email;
+  }
+
+  return 'Utilisateur';
+}
+
+function resolvePublicStorageScope(user = {}, extra = {}) {
+  const explicit = String(
+    extra.storageScope
+    || extra.storage_scope
+    || user.storageScope
+    || user.storage_scope
+    || ''
+  ).trim();
+  if (explicit) return explicit.slice(0, 96);
+
+  const email = normalizeEmail(
+    extra.email
+    || extra.mail
+    || extra.userPrincipalName
+    || user.email
+    || user.mail
+    || user.userPrincipalName
+  );
+  if (email) return `email:${stableHash(email, 20)}`;
+
+  const id = String(extra.id ?? extra.sub ?? extra.userId ?? extra.user_id ?? user.id ?? user.sub ?? user.userId ?? user.user_id ?? '').trim();
+  if (id) return `user:${stableHash(id, 20)}`;
+
+  const username = normalizeUsernameCandidate(
+    extra.username
+    || extra.preferred_username
+    || user.username
+    || user.preferred_username
+    || '',
+    ''
+  );
+  if (username) return `username:${stableHash(username.toLowerCase(), 20)}`;
+
+  return '';
+}
+
+function resolveGoogleProfileDisplayName(profile = {}, email = '') {
+  const fullName = [profile?.given_name, profile?.family_name].map(normalizeDisplayName).filter(Boolean).join(' ');
+  return normalizeDisplayName(profile?.name || fullName)
+    || titleizeDisplaySlug(String(email || '').split('@')[0])
+    || '';
+}
+
+function resolveMicrosoftProfileDisplayName(profile = {}, email = '') {
+  const fullName = [profile?.givenName, profile?.surname].map(normalizeDisplayName).filter(Boolean).join(' ');
+  return normalizeDisplayName(profile?.displayName || profile?.name || fullName)
+    || titleizeDisplaySlug(String(email || '').split('@')[0])
+    || '';
+}
+
 function normalizeAccessPacks(user = {}, extra = {}) {
   const rawValues = [
     extra.accessPacks,
@@ -87,8 +210,12 @@ function buildAuthClaims(user = {}, extra = {}) {
     id: extra.id ?? user.id,
     username: String(extra.username || user.username || '').trim(),
   };
+  const displayName = resolvePublicDisplayName(user, extra);
+  const storageScope = resolvePublicStorageScope(user, extra);
 
   if (email) claims.email = email;
+  if (displayName) claims.displayName = displayName;
+  if (storageScope) claims.storageScope = storageScope;
   if (role) claims.role = role;
   if (extra.localAuth || user.localAuth) claims.localAuth = true;
   if (extra.provider || user.provider || user.auth_provider) {
@@ -170,7 +297,9 @@ function buildPublicAuthUser(user = {}, extra = {}) {
   return {
     id: claims.id,
     username: claims.username,
+    displayName: claims.displayName,
     email: claims.email || normalizeEmail(user.email),
+    storageScope: claims.storageScope,
     role: claims.role || undefined,
     fullAccess: claims.fullAccess === true,
     provider: claims.provider || undefined,
@@ -1180,12 +1309,18 @@ function createAuthRouter({
           provider: 'google',
         };
         console.log('[AUTH] Google local login:', email);
-        return await issueAuthResponse(req, res, googleUser, { provider: 'google' });
+        return await issueAuthResponse(req, res, googleUser, {
+          provider: 'google',
+          displayName: resolveGoogleProfileDisplayName(profile, email),
+        });
       }
 
       const user = await findOrCreateGoogleUser({ ...profile, email });
       console.log('[AUTH] Google login:', email);
-      return await issueAuthResponse(req, res, user, { provider: 'google' });
+      return await issueAuthResponse(req, res, user, {
+        provider: 'google',
+        displayName: resolveGoogleProfileDisplayName(profile, email),
+      });
     } catch (error) {
       const code = String(error?.message || 'google_auth_failed');
       const status = code === 'google_auth_not_configured' ? 503 : 401;
@@ -1464,6 +1599,7 @@ function createAuthRouter({
       });
       const sessionToken = await issueSessionCookie(req, res, user, {
         provider: 'google',
+        displayName: resolveGoogleProfileDisplayName(profile, email),
         surface: statePayload?.surface,
         client: statePayload?.client,
         oauthScopeProfile: statePayload?.oauthScopeProfile,
@@ -1669,6 +1805,7 @@ function createAuthRouter({
       });
       const sessionToken = await issueSessionCookie(req, res, user, {
         provider: 'microsoft',
+        displayName: resolveMicrosoftProfileDisplayName(profile, email),
         surface: statePayload?.surface,
         client: statePayload?.client,
         oauthScopeProfile: statePayload?.oauthScopeProfile,

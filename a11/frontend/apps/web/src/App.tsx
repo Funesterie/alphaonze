@@ -36,6 +36,7 @@ import {
   emailConversationResource,
   clearAuthToken,
   getAuthDisplayName,
+  getLegacyAuthStorageScopes,
   getAuthStorageScope,
   login,
   loginWithGoogleCredential,
@@ -8408,7 +8409,7 @@ export function App() {
             return;
           }
           setIsAuthenticated(true);
-          setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
+          setDisplayName(session?.user?.displayName || session?.user?.username || session?.user?.email || "Utilisateur");
           const sessionRole = String(session?.user?.role || "").trim().toLowerCase();
           const sessionTier = String(session?.user?.tier || session?.user?.accountTier || "").trim().toLowerCase();
           setIsFunesterieAdmin(Boolean(
@@ -9010,10 +9011,15 @@ export function App() {
 
     let legacyChatRaw = "";
     try {
+      const legacyScopes = getLegacyAuthStorageScopes();
       const legacyKeys = [
-        buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope),
-        CHAT_STORAGE_KEY_PREFIX,
-      ].filter((key) => key !== chatStorageKey);
+        ...legacyScopes.flatMap((scope) => [
+          buildSurfaceScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope, surfaceKind),
+          surfaceKind === "a11" ? buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, scope) : "",
+        ]),
+        surfaceKind === "a11" ? buildScopedStorageKey(CHAT_STORAGE_KEY_PREFIX, authStorageScope) : "",
+        surfaceKind === "a11" ? CHAT_STORAGE_KEY_PREFIX : "",
+      ].filter((key) => key && key !== chatStorageKey);
       for (const key of legacyKeys) {
         const rawLegacy = localStorage.getItem(key);
         if (rawLegacy) {
@@ -9027,9 +9033,9 @@ export function App() {
 
     try {
       const currentRaw = localStorage.getItem(chatStorageKey);
-      const raw = currentRaw || (surfaceKind === "a11" ? legacyChatRaw : "");
+      const raw = currentRaw || legacyChatRaw;
       if (raw) {
-        if (!currentRaw && surfaceKind === "a11") {
+        if (!currentRaw) {
           try {
             localStorage.setItem(chatStorageKey, raw);
           } catch {
@@ -9108,7 +9114,7 @@ export function App() {
     setActivityError("");
     setResourceError("");
     setUploadFeedback("");
-  }, [isAuthenticated, authStorageScope, chatStorageKey]);
+  }, [isAuthenticated, authStorageScope, chatStorageKey, surfaceKind]);
 
   useEffect(() => {
     try {

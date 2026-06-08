@@ -697,6 +697,42 @@ export function setAuthDisplayName(name: string | null | undefined) {
   }
 }
 
+function stripGeneratedAuthNameSuffix(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.replace(/[-_.][a-f0-9]{6,12}$/i, '') || text;
+}
+
+function prettifyAuthName(value: unknown) {
+  const raw = String(value || '').trim();
+  const text = stripGeneratedAuthNameSuffix(raw);
+  if (!text) return '';
+  if (text === raw) return text;
+  return text
+    .replace(/[-_.]+/g, ' ')
+    .split(/\s+/)
+    .map((word) => word ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : '')
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 96);
+}
+
+function resolveAuthUserDisplayName(user: any, fallback = '') {
+  const candidates = [
+    user?.displayName,
+    user?.display_name,
+    user?.name,
+    user?.username,
+    user?.email,
+    fallback,
+  ];
+  for (const candidate of candidates) {
+    const resolved = prettifyAuthName(candidate);
+    if (resolved) return resolved;
+  }
+  return '';
+}
+
 function setAuthUserProfile(user: any) {
   try {
     if (!user || typeof user !== 'object') {
@@ -706,7 +742,9 @@ function setAuthUserProfile(user: any) {
     localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify({
       id: user.id ?? '',
       username: user.username || '',
+      displayName: user.displayName || user.display_name || user.name || '',
       email: user.email || '',
+      storageScope: user.storageScope || user.storage_scope || '',
       role: user.role || '',
       fullAccess: user.fullAccess === true,
       isAdmin: user.isAdmin === true,
@@ -789,6 +827,48 @@ export function getAuthIdentity() {
 
   const payload = decodeJwtPayload(getAuthToken()) || {};
   const storedUser = getStoredAuthUserProfile() || {};
+  const explicitStorageScope = normalizeStorageScopePart(
+    payload?.storageScope
+    || payload?.storage_scope
+    || storedUser?.storageScope
+    || storedUser?.storage_scope
+    || ''
+  );
+  const id = normalizeStorageScopePart(
+    payload?.id
+    || payload?.userId
+    || payload?.user_id
+    || payload?.sub
+    || storedUser?.id
+    || ''
+  );
+  const username = normalizeStorageScopePart(
+    payload?.username
+    || payload?.preferred_username
+    || payload?.name
+    || storedUser?.username
+    || ''
+  );
+  const email = normalizeStorageScopePart(
+    payload?.email
+    || storedUser?.email
+    || ''
+  );
+  const primary = email || id || username;
+  const storageScope = explicitStorageScope || (primary ? `account__${primary}` : '');
+  return {
+    id,
+    username,
+    email,
+    storageScope: storageScope || '',
+  };
+}
+
+export function getLegacyAuthStorageScopes() {
+  if (hasLocalDevBypassSession()) return [];
+
+  const payload = decodeJwtPayload(getAuthToken()) || {};
+  const storedUser = getStoredAuthUserProfile() || {};
   const id = normalizeStorageScopePart(
     payload?.id
     || payload?.userId
@@ -815,15 +895,11 @@ export function getAuthIdentity() {
     || ''
   );
   const primary = id || email || username;
-  const storageScope = [provider, primary, username && username !== primary ? username : '']
+  const legacyScope = [provider, primary, username && username !== primary ? username : '']
     .filter(Boolean)
     .join('__');
-  return {
-    id,
-    username,
-    email,
-    storageScope: storageScope || '',
-  };
+  const currentScope = getAuthStorageScope();
+  return Array.from(new Set([legacyScope].filter((scope) => scope && scope !== currentScope)));
 }
 
 export function getAuthEmail() {
@@ -907,23 +983,25 @@ export function getAuthDisplayName() {
 
   try {
     const saved = String(localStorage.getItem(DISPLAY_NAME_STORAGE_KEY) || '').trim();
-    if (saved) return saved;
+    if (saved) return prettifyAuthName(saved);
   } catch {
     // ignore storage issues
   }
 
   const payload = decodeJwtPayload(getAuthToken());
   const fromToken =
+    payload?.displayName ||
+    payload?.display_name ||
     payload?.username ||
     payload?.preferred_username ||
     payload?.name ||
     payload?.email ||
     payload?.sub ||
     '';
-  if (fromToken) return String(fromToken || '').trim();
+  if (fromToken) return prettifyAuthName(fromToken);
 
   const storedUser = getStoredAuthUserProfile();
-  return String(storedUser?.username || storedUser?.email || '').trim();
+  return resolveAuthUserDisplayName(storedUser);
 }
 
 export function clearAuthToken() {
@@ -966,7 +1044,7 @@ export async function login(username: string, password: string) {
   if (data.success) {
     setAuthToken(data.token);
     setAuthUserProfile(data?.user);
-    setAuthDisplayName(data?.user?.username || username);
+    setAuthDisplayName(resolveAuthUserDisplayName(data?.user, username));
     return data;
   }
   throw new Error(data.error || 'Connexion impossible');
@@ -990,7 +1068,7 @@ export async function loginWithGoogleCredential(credential: string) {
   if (res.ok && data.success && data.token) {
     setAuthToken(data.token);
     setAuthUserProfile(data?.user);
-    setAuthDisplayName(data?.user?.username || data?.user?.email || 'Google');
+    setAuthDisplayName(resolveAuthUserDisplayName(data?.user, 'Google'));
     return data;
   }
 
@@ -1006,7 +1084,9 @@ export type AuthSessionResponse = {
   user?: {
     id?: string | number;
     username?: string;
+    displayName?: string;
     email?: string;
+    storageScope?: string;
     role?: string;
     isAdmin?: boolean;
     fullAccess?: boolean;
@@ -1162,7 +1242,7 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
       }
       if (retryData?.authenticated || retryData?.user) {
         setAuthUserProfile(retryData?.user);
-        setAuthDisplayName(retryData?.user?.username || retryData?.user?.email || '');
+        setAuthDisplayName(resolveAuthUserDisplayName(retryData?.user));
       }
       return retryData;
     }
@@ -1197,7 +1277,7 @@ export async function fetchAuthSession(): Promise<AuthSessionResponse> {
     return data;
   }
   setAuthUserProfile(data?.user);
-  setAuthDisplayName(data?.user?.username || data?.user?.email || '');
+  setAuthDisplayName(resolveAuthUserDisplayName(data?.user));
   return data;
 }
 
@@ -1670,7 +1750,7 @@ export async function register(username: string, email: string, password: string
   if (data.token) {
     setAuthToken(data.token);
     setAuthUserProfile(data?.user);
-    setAuthDisplayName(data?.user?.username || username);
+    setAuthDisplayName(resolveAuthUserDisplayName(data?.user, username));
   }
 
   return data;

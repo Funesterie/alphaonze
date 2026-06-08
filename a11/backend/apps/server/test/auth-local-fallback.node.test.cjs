@@ -65,6 +65,45 @@ function getCookieValue(setCookies, name) {
   return decodeURIComponent((cookie?.match(new RegExp(`^${name}=([^;]+)`)) || [])[1] || '');
 }
 
+test('auth/me exposes a stable public identity for generated OAuth usernames', async () => {
+  await withServer(
+    (app) => {
+      app.use(createAuthRouter({
+        db: null,
+        bcrypt,
+        jwt,
+        jwtSecret: 'test-secret',
+        jwtExpiry: '1h',
+        localAuthStore: createLocalAuthStore({ logger: { warn() {} } }),
+        emailService: { isConfigured: () => false, getStatus: () => ({}) },
+        crypto,
+        normalizePublicAppUrl: (value) => value,
+      }));
+    },
+    async (baseUrl) => {
+      const token = jwt.sign(
+        {
+          id: 'google-test-user',
+          username: 'jeffrey-cellauro-e78695',
+          email: 'cellaurojeffrey@gmail.com',
+          provider: 'google',
+        },
+        'test-secret',
+        { expiresIn: '1h' }
+      );
+
+      const result = await getJson(baseUrl, '/api/auth/me', {
+        Authorization: `Bearer ${token}`,
+      });
+      assert.equal(result.response.status, 200);
+      assert.equal(result.json.authenticated, true);
+      assert.equal(result.json.user.username, 'jeffrey-cellauro-e78695');
+      assert.equal(result.json.user.displayName, 'Jeffrey Cellauro');
+      assert.match(result.json.user.storageScope, /^email:[a-f0-9]{20}$/);
+    }
+  );
+});
+
 test('K44 OAuth start redirects to the central Funesterie OAuth host before state cookies', async (t) => {
   const previous = {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
