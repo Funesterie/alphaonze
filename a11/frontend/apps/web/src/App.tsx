@@ -8303,6 +8303,8 @@ export function App() {
   const [voiceLearningConsentEnabled, setVoiceLearningConsentEnabled] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const authInvalidatedRef = useRef(false);
+  const micDictationFallbackActiveRef = useRef(false);
+  const micDictationFallbackStartingRef = useRef(false);
   const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
   const voiceLearningPersona = surfaceKind === "a11"
     ? "a11"
@@ -8383,6 +8385,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    micDictationFallbackActiveRef.current = micDictationFallbackActive;
+  }, [micDictationFallbackActive]);
+
+  useEffect(() => {
     const onMicError = (event: Event) => {
       const detail = (event as CustomEvent<{ error?: string; message?: string }>).detail || {};
       const error = String(detail.error || "");
@@ -8403,6 +8409,9 @@ export function App() {
       }
       if (directSpeechFallbackErrors.has(error)) {
         setMicStatusMessage("Reconnaissance vocale directe indisponible: j'essaie le micro de secours.");
+        if (error !== "aborted" && !micDictationFallbackActiveRef.current && !micDictationFallbackStartingRef.current) {
+          void startMicDictationFallback("Reconnaissance vocale directe indisponible: micro de secours actif.");
+        }
         console.info("[A11] reconnaissance vocale directe indisponible:", error);
         return;
       }
@@ -10299,6 +10308,8 @@ export function App() {
   }
 
   async function startMicDictationFallback(reason = "") {
+    if (micDictationFallbackActiveRef.current || micDictationFallbackStartingRef.current) return true;
+    micDictationFallbackStartingRef.current = true;
     try {
       setMicStarting(true);
       setMicStatusMessage(reason || "Micro de secours: parle, puis retouche le bouton pour envoyer.");
@@ -10311,11 +10322,13 @@ export function App() {
         // ignore storage access errors
       }
       setMicDictationFallbackActive(true);
+      micDictationFallbackActiveRef.current = true;
       setVoiceListening(true);
       setMicStatusMessage("Micro de secours actif: parle, puis retouche le bouton pour envoyer.");
       return true;
     } catch (error) {
       setMicDictationFallbackActive(false);
+      micDictationFallbackActiveRef.current = false;
       setVoiceListening(false);
       setMicPermissionBlocked(true);
       setTtsFallback(true);
@@ -10328,6 +10341,7 @@ export function App() {
       console.info("[A11] mic dictation fallback unavailable", error);
       return false;
     } finally {
+      micDictationFallbackStartingRef.current = false;
       setMicStarting(false);
     }
   }
@@ -10335,8 +10349,10 @@ export function App() {
   async function stopMicDictationFallback() {
     const captured = await stopMicAudioCapture().catch(() => null);
     setMicDictationFallbackActive(false);
+    micDictationFallbackActiveRef.current = false;
     setVoiceListening(false);
     setMicStatusMessage("");
+    void submitVoiceLearningCapture(captured);
     await transcribeMicDictationCapture(captured);
   }
 
@@ -10424,11 +10440,11 @@ export function App() {
         }
         setVoiceListening(true);
       } catch (e) {
-        if (rawCaptureStarted) {
-          await stopMicAudioCapture().catch(() => null);
-        }
         const fallbackStarted = await startMicDictationFallback("Micro direct indisponible: j'essaie le micro de secours.");
         if (!fallbackStarted) {
+          if (rawCaptureStarted) {
+            await stopMicAudioCapture().catch(() => null);
+          }
           setVoiceListening(false);
           setMicPermissionBlocked(true);
           setTtsFallback(true);
