@@ -894,19 +894,19 @@ function resolvePortraitAssetPath(src = "") {
 
 const LOCAL_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
-    value: "local:gemma4:e4b",
-    label: "gemma4 e4b",
-    provider: "local",
-    model: "gemma4:e4b",
+    value: "ollama:gpt-oss:20b-cloud",
+    label: "A11 Ollama - gpt-oss 20b",
+    provider: "ollama",
+    model: "gpt-oss:20b-cloud",
   },
 ];
 
 const DEFAULT_REMOTE_CHAT_MODEL_CHOICES: ChatModelChoice[] = [
   {
-    value: "openai:gpt-4o-mini",
-    label: "A11 online",
+    value: "openai:meta-llama/llama-3.3-70b-instruct",
+    label: "OpenRouter secours - Llama 3.3 70B",
     provider: "openai",
-    model: "gpt-4o-mini",
+    model: "meta-llama/llama-3.3-70b-instruct",
   },
 ];
 
@@ -918,11 +918,7 @@ function buildChatModelChoices(remoteProfiles: RemoteProviderProfile[]) {
     model: profile.model,
     providerProfileId: profile.id,
   }));
-  const isOnlineRuntime = typeof window !== "undefined"
-    && !["localhost", "127.0.0.1"].includes(window.location.hostname);
-  return isOnlineRuntime
-    ? [...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices, ...LOCAL_CHAT_MODEL_CHOICES]
-    : [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
+  return [...LOCAL_CHAT_MODEL_CHOICES, ...DEFAULT_REMOTE_CHAT_MODEL_CHOICES, ...remoteChoices];
 }
 
 function resolveChatModelChoice(
@@ -8770,7 +8766,7 @@ export function App() {
   const chatScrollFrameRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const [model, setModel] = useState("openai:gpt-4o-mini");
+  const [model, setModel] = useState(LOCAL_CHAT_MODEL_CHOICES[0].value);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [remoteProviderProfiles, setRemoteProviderProfiles] = useState<RemoteProviderProfile[]>([]);
   const [loadingRemoteProviders, setLoadingRemoteProviders] = useState(false);

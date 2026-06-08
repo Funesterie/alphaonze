@@ -2361,12 +2361,12 @@ export async function chatWithVivy(
 
 export type Provider = "local" | "ollama" | "openai";
 
-const DEFAULT_OLLAMA_MODEL = 'gemma4:e4b';
+const DEFAULT_OLLAMA_MODEL = 'gpt-oss:20b-cloud';
 
 export function getModelForProvider(provider: Provider): string {
   switch (provider) {
     case 'openai':
-      return 'gpt-4o-mini';
+      return 'meta-llama/llama-3.3-70b-instruct';
     case 'ollama':
       return DEFAULT_OLLAMA_MODEL;
     case 'local':
