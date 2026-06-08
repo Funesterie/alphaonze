@@ -692,7 +692,6 @@ function buildCentralLoginUrl(returnTo = getRequestedLoginReturnTo()) {
     ? new URL("/login", window.location.origin)
     : new URL("/login", FUNESTERIE_PUBLIC_APP_URL);
   const normalizedReturnTo = normalizeAllowedReturnTo(returnTo);
-  rememberPostLoginReturnTo(normalizedReturnTo);
   base.searchParams.set("returnTo", normalizedReturnTo);
   return base.toString();
 }
