@@ -43,6 +43,8 @@ const client = new Client({
   ssl: resolvePgSslConfig(databaseUrl),
 });
 
+const STARTUP_SCHEMA_LOCK = "hashtext('funesterie:a11:startup-schema:v1')";
+
 const DEFAULT_ADMIN_USERNAME = String(process.env.DEFAULT_ADMIN_USERNAME || 'Djeff').trim();
 const DEFAULT_ADMIN_EMAIL = String(process.env.DEFAULT_ADMIN_EMAIL || 'djeff@a11.local').trim().toLowerCase();
 const DEFAULT_ADMIN_PASSWORD = Object.prototype.hasOwnProperty.call(process.env, 'DEFAULT_ADMIN_PASSWORD')
@@ -129,6 +131,17 @@ const statements = [
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
   )`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS user_id TEXT`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS filename TEXT`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_key TEXT`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS content_type TEXT`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS size_bytes INTEGER`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS url TEXT`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS metadata_json JSONB`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
+  `ALTER TABLE files ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `UPDATE files SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `ALTER TABLE files ALTER COLUMN user_id SET DEFAULT 'legacy'`,
   `CREATE INDEX IF NOT EXISTS idx_files_expires_at ON files (expires_at)`,
 
   `CREATE TABLE IF NOT EXISTS messages (
@@ -140,6 +153,35 @@ const statements = [
     metadata_json JSONB,
     created_at TIMESTAMP DEFAULT NOW()
   )`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_id TEXT`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id TEXT`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS role TEXT`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS author TEXT`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS content TEXT`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata_json JSONB`,
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+  `UPDATE messages SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `DO $$ DECLARE column_type TEXT; BEGIN
+    SELECT udt_name INTO column_type
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'messages'
+       AND column_name = 'conversation_id';
+
+    IF column_type IN ('text', 'varchar', 'bpchar') THEN
+      UPDATE messages
+         SET conversation_id = 'legacy'
+       WHERE conversation_id IS NULL OR conversation_id = '';
+      ALTER TABLE messages ALTER COLUMN conversation_id SET DEFAULT 'legacy';
+    ELSE
+      ALTER TABLE messages ALTER COLUMN conversation_id DROP DEFAULT;
+    END IF;
+  END $$`,
+  `UPDATE messages SET role = COALESCE(NULLIF(author, ''), 'user') WHERE role IS NULL OR role = ''`,
+  `UPDATE messages SET metadata_json = metadata WHERE metadata_json IS NULL AND metadata IS NOT NULL`,
+  `ALTER TABLE messages ALTER COLUMN user_id SET DEFAULT 'legacy'`,
+  `ALTER TABLE messages ALTER COLUMN role SET DEFAULT 'user'`,
   `CREATE INDEX IF NOT EXISTS idx_messages_user_conversation_created_at
     ON messages (user_id, conversation_id, created_at DESC)`,
 
@@ -163,6 +205,7 @@ const statements = [
     last_used_at TIMESTAMP,
     UNIQUE (user_id, fact_key)
   )`,
+  `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS user_id TEXT`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS fact_key TEXT`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS fact_value TEXT`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS confidence REAL`,
@@ -172,6 +215,10 @@ const statements = [
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_facts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP`,
+  `UPDATE user_facts SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `UPDATE user_facts SET fact_key = CONCAT('legacy-', id::text) WHERE fact_key IS NULL OR fact_key = ''`,
+  `UPDATE user_facts SET fact_value = '' WHERE fact_value IS NULL`,
+  `ALTER TABLE user_facts ALTER COLUMN user_id SET DEFAULT 'legacy'`,
   `DO $$ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM information_schema.table_constraints
@@ -199,12 +246,19 @@ const statements = [
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
   )`,
+  `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS user_id TEXT`,
+  `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS title TEXT`,
+  `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS description TEXT`,
+  `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'normal'`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS due_at TIMESTAMP`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'chat_message'`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP`,
+  `UPDATE user_tasks SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `UPDATE user_tasks SET status = 'pending' WHERE status IS NULL OR status = ''`,
+  `ALTER TABLE user_tasks ALTER COLUMN user_id SET DEFAULT 'legacy'`,
   `CREATE INDEX IF NOT EXISTS idx_user_tasks_user_status_updated
     ON user_tasks (user_id, status, updated_at DESC)`,
 
@@ -222,10 +276,19 @@ const statements = [
     updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (user_id, storage_key)
   )`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS user_id TEXT`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS filename TEXT`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS storage_key TEXT`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS content_type TEXT`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS size_bytes INTEGER`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS url TEXT`,
+  `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS metadata_json JSONB`,
   `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'upload'`,
   `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
   `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE user_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
+  `UPDATE user_files SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `ALTER TABLE user_files ALTER COLUMN user_id SET DEFAULT 'legacy'`,
   `DO $$ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM information_schema.table_constraints
@@ -254,8 +317,12 @@ const statements = [
     updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE (user_id, conversation_id, storage_key)
   )`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS user_id TEXT`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS conversation_id TEXT`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS resource_kind TEXT NOT NULL DEFAULT 'file'`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS origin TEXT DEFAULT 'upload'`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS filename TEXT`,
+  `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS storage_key TEXT`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS url TEXT`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS content_type TEXT`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS size_bytes INTEGER`,
@@ -263,6 +330,10 @@ const statements = [
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE conversation_resources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
+  `UPDATE conversation_resources SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `UPDATE conversation_resources SET conversation_id = 'legacy' WHERE conversation_id IS NULL OR conversation_id = ''`,
+  `ALTER TABLE conversation_resources ALTER COLUMN user_id SET DEFAULT 'legacy'`,
+  `ALTER TABLE conversation_resources ALTER COLUMN conversation_id SET DEFAULT 'legacy'`,
   `CREATE INDEX IF NOT EXISTS idx_conversation_resources_user_conversation_created
     ON conversation_resources (user_id, conversation_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_conversation_resources_user_kind_updated
@@ -284,12 +355,20 @@ const statements = [
     expires_at TIMESTAMP,
     resolved_at TIMESTAMP
   )`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS user_id TEXT`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS conversation_id TEXT`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS original_prompt TEXT`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS clarification_question TEXT`,
+  `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`,
   `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'semantic'`,
   `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS payload_json JSONB`,
   `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
   `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
   `ALTER TABLE a11_pending_clarifications ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP`,
+  `UPDATE a11_pending_clarifications SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''`,
+  `UPDATE a11_pending_clarifications SET status = 'pending' WHERE status IS NULL OR status = ''`,
+  `ALTER TABLE a11_pending_clarifications ALTER COLUMN user_id SET DEFAULT 'legacy'`,
   `CREATE INDEX IF NOT EXISTS idx_a11_pending_clarifications_user_conv_kind
     ON a11_pending_clarifications (user_id, conversation_id, kind, updated_at DESC)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_a11_pending_clarifications_active
@@ -387,16 +466,21 @@ async function activateFullAccessAllowlist() {
 
 async function main() {
   await client.connect();
+  await client.query(`SELECT pg_advisory_lock(${STARTUP_SCHEMA_LOCK})`);
 
-  for (const statement of statements) {
-    await client.query(statement);
+  try {
+    for (const statement of statements) {
+      await client.query(statement);
+    }
+
+    await disableUnsafeDefaultAdmin();
+    await activateFullAccessAllowlist();
+
+    console.log(`[DB] startup schema applied (${statements.length} statements)`);
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock(${STARTUP_SCHEMA_LOCK})`).catch(() => {});
+    await client.end();
   }
-
-  await disableUnsafeDefaultAdmin();
-  await activateFullAccessAllowlist();
-
-  await client.end();
-  console.log(`[DB] startup schema applied (${statements.length} statements)`);
 }
 
 main().catch(async (error) => {

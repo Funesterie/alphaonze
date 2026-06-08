@@ -1582,8 +1582,24 @@ if (db) {
         await db.query("UPDATE messages SET user_id = 'legacy' WHERE user_id IS NULL OR user_id = ''");
         await db.query("ALTER TABLE messages ALTER COLUMN user_id SET DEFAULT 'legacy'");
         await db.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id TEXT');
-        await db.query("UPDATE messages SET conversation_id = 'legacy' WHERE conversation_id IS NULL OR conversation_id = ''");
-        await db.query("ALTER TABLE messages ALTER COLUMN conversation_id SET DEFAULT 'legacy'");
+        await db.query(`
+          DO $$ DECLARE column_type TEXT; BEGIN
+            SELECT udt_name INTO column_type
+              FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'messages'
+               AND column_name = 'conversation_id';
+
+            IF column_type IN ('text', 'varchar', 'bpchar') THEN
+              UPDATE messages
+                 SET conversation_id = 'legacy'
+               WHERE conversation_id IS NULL OR conversation_id = '';
+              ALTER TABLE messages ALTER COLUMN conversation_id SET DEFAULT 'legacy';
+            ELSE
+              ALTER TABLE messages ALTER COLUMN conversation_id DROP DEFAULT;
+            END IF;
+          END $$
+        `);
         await db.query('CREATE INDEX IF NOT EXISTS idx_messages_user_created_at ON messages (user_id, created_at DESC)');
         await db.query('CREATE INDEX IF NOT EXISTS idx_messages_user_conversation_created_at ON messages (user_id, conversation_id, created_at DESC)');
         await db.query(`

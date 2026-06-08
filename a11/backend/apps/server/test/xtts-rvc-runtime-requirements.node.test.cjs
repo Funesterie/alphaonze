@@ -21,11 +21,11 @@ function readPinnedRequirements() {
   return pins;
 }
 
-test('XTTS/RVC runtime keeps Coqui TTS on a transformers 4.x compatible stack', () => {
+test('XTTS/RVC runtime keeps Coqui TTS on the patched transformers stack', () => {
   const pins = readPinnedRequirements();
 
   assert.equal(pins.get('tts'), '0.22.0');
-  assert.match(pins.get('transformers') || '', /^4\./);
-  assert.equal(pins.get('tokenizers'), '0.19.1');
-  assert.equal(pins.get('huggingface-hub'), '0.23.5');
+  assert.equal(pins.get('transformers'), '5.0.0rc3');
+  assert.equal(pins.get('tokenizers'), '0.22.2');
+  assert.equal(pins.get('huggingface-hub'), '1.18.0');
 });
