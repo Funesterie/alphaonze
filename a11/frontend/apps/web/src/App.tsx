@@ -602,11 +602,18 @@ function isAllowedFunesterieReturnOrigin(origin: string) {
 
 const POST_LOGIN_RETURN_TO_KEY = "funesterie.postLoginReturnTo";
 
+function getFunesteriePostLoginHomeUrl() {
+  if (typeof window !== "undefined" && isLocalSurfaceHost(window.location.hostname)) {
+    return new URL("/", window.location.origin).toString();
+  }
+  return new URL("/", FUNESTERIE_PUBLIC_APP_URL).toString();
+}
+
 function getDefaultPostLoginUrl(surface: FunesterieSurface = getCurrentSurfaceKind()) {
   if (surface === "kaen44") return new URL("/cockpit", KAEN44_PUBLIC_APP_URL).toString();
   if (surface === "vivy") return VIVY_PUBLIC_APP_URL;
   const { hostname } = getLocationSnapshot();
-  if (isGeneralFunesterieHost(hostname)) return new URL("/compte/", FUNESTERIE_PUBLIC_APP_URL).toString();
+  if (isGeneralFunesterieHost(hostname)) return getFunesteriePostLoginHomeUrl();
   return new URL("/cockpit", A11_PUBLIC_APP_URL).toString();
 }
 
@@ -779,7 +786,7 @@ function resolveAuthSuccessRedirectPath(pathname: string, surface: FunesterieSur
   if (/^\/cockpit(?:\/|$)/.test(normalizedPath)) {
     return "/cockpit/";
   }
-  if (isGeneralFunesterieHost(hostname)) return "/compte/";
+  if (isGeneralFunesterieHost(hostname)) return "/";
   if (surface === "kaen44") return buildSurfacePath(surface, "/cockpit");
   if (surface === "vivy") return buildSurfacePath(surface, "/");
   return buildSurfacePath(surface, "/");
@@ -1972,7 +1979,7 @@ function LoginPanel({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [microsoftLoading, setMicrosoftLoading] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
-  const requestedReturnTo = useMemo(() => getRequestedLoginReturnTo(), []);
+  const requestedReturnTo = useMemo(() => getFunesteriePostLoginHomeUrl(), []);
 
   const completeLogin = (token?: string | null, provider = "local") => {
     const target = normalizeAllowedReturnTo(requestedReturnTo);
@@ -11093,7 +11100,7 @@ export function App() {
 
   if (isGeneralLogin) {
     if (isAuthenticated && typeof window !== "undefined") {
-      window.location.replace(buildSessionBridgeUrl(getRequestedLoginReturnTo()));
+      window.location.replace(buildSessionBridgeUrl(getFunesteriePostLoginHomeUrl()));
       return null;
     }
 
