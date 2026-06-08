@@ -8484,7 +8484,7 @@ export function App() {
         const label = via === "openai-tts" || via === "openai" ? "OpenAI"
           : via.includes("cartesia") ? "Cartesia"
             : via.includes("xtts") || via.includes("rvc") ? "XTTS/RVC privé"
-            : via === "spawn" || via === "piper" ? "Piper local"
+            : via === "spawn" || via === "piper" ? "Voix serveur locale"
               : via === "espeak" || via === "espeak-ng" ? "Secours robot"
                 : via;
         setVoiceReferenceStatus(`Audio: ${label}`);
