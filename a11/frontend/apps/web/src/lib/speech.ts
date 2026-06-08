@@ -32,6 +32,7 @@ let currentAudio: HTMLAudioElement | null = null;
 let currentAudioObjectUrl: string | null = null;
 let serverTtsDisabledUntil = 0;
 const OFFICIAL_VOICE_PERSONAS = new Set(['a11', 'kaen44', 'k44', 'kaen', 'vivy']);
+const IDENTITY_VOICE_PROVIDERS = new Set(['xtts-rvc', 'cartesia', 'elevenlabs', 'azure', 'openai']);
 
 // Unlock audio context on first user interaction (required by autoplay policy)
 let _audioUnlocked = false;
@@ -125,6 +126,7 @@ function canUseBrowserSpeech() {
 }
 
 function shouldUseBrowserSpeechFallback(options: any = {}) {
+  if (isOfficialIdentityVoiceRequest(options) && options.allowRobotVoice !== true) return false;
   if (options.allowBrowserSpeechFallback === true || options.allowRobotVoice === true) return true;
   const configured = String(import.meta.env?.VITE_A11_ALLOW_BROWSER_SPEECH_FALLBACK || '')
     .trim()
@@ -201,9 +203,14 @@ function normalizePersonaName(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
 
-function shouldUseAsyncServerTts(options: any = {}): boolean {
-  if (options.ttsAsync === false || options.asyncTts === false || options.backgroundTts === false) return false;
-  if (options.ttsAsync === true || options.asyncTts === true || options.backgroundTts === true) return true;
+function isExplicitNeutralVoiceRequest(options: any = {}): boolean {
+  return options.identityVoice === false
+    || options.useIdentityVoice === false
+    || options.neutralVoice === true;
+}
+
+function isOfficialIdentityVoiceRequest(options: any = {}): boolean {
+  if (isExplicitNeutralVoiceRequest(options)) return false;
   if (options.voiceReferenceRequired === true || options.referenceVoiceRequired === true) return true;
   return [
     options.voicePersona,
@@ -211,6 +218,12 @@ function shouldUseAsyncServerTts(options: any = {}): boolean {
     options.persona,
     options.surface,
   ].some((value) => OFFICIAL_VOICE_PERSONAS.has(normalizePersonaName(value)));
+}
+
+function shouldUseAsyncServerTts(options: any = {}): boolean {
+  if (options.ttsAsync === false || options.asyncTts === false || options.backgroundTts === false) return false;
+  if (options.ttsAsync === true || options.asyncTts === true || options.backgroundTts === true) return true;
+  return isOfficialIdentityVoiceRequest(options);
 }
 
 async function pollServerTtsJob(
@@ -264,6 +277,26 @@ function isRobotVoiceFallbackPayload(data: any): boolean {
   const provider = String(data?.provider || data?.audioModule?.provider || '').trim().toLowerCase();
   const via = String(data?.via || data?.audioModule?.via || provider).trim().toLowerCase();
   return provider.includes('espeak') || via.includes('espeak');
+}
+
+function isIdentityVoicePayload(data: any): boolean {
+  const provider = String(data?.provider || data?.audioModule?.provider || '').trim().toLowerCase();
+  const conversionProvider = String(data?.voiceConversion?.provider || data?.voiceConversion?.engine || '').trim().toLowerCase();
+  return IDENTITY_VOICE_PROVIDERS.has(provider)
+    || IDENTITY_VOICE_PROVIDERS.has(conversionProvider)
+    || data?.providerCapabilities?.referenceVoice === true
+    || data?.voiceConversion?.ok === true
+    || data?.referenceVoice?.ok === true
+    || Boolean(data?.voiceReference?.id || data?.audioModule?.reference?.id);
+}
+
+function isNeutralVoiceFallbackPayload(data: any): boolean {
+  if (isIdentityVoicePayload(data)) return false;
+  const provider = String(data?.provider || data?.audioModule?.provider || '').trim().toLowerCase();
+  const via = String(data?.via || data?.audioModule?.via || provider).trim().toLowerCase();
+  return ['piper', 'local', 'spawn', 'espeak', 'espeak-ng', 'http'].some((value) => (
+    provider.includes(value) || via.includes(value)
+  ));
 }
 
 function stopCurrentAudio() {
@@ -485,6 +518,11 @@ async function fetchAndPlayPiperTTS(text: string, options: any = {}, onEnd?: () 
         serverTtsDisabledUntil = Date.now() + 30_000;
         emitCustomEvent('a11:audioBlocked', { reason: 'robot_voice_disabled' });
         throw new Error('Robot voice fallback disabled');
+      }
+      if (isOfficialIdentityVoiceRequest(options) && isNeutralVoiceFallbackPayload(data) && options.allowRobotVoice !== true) {
+        serverTtsDisabledUntil = Date.now() + 30_000;
+        emitCustomEvent('a11:audioBlocked', { reason: 'official_voice_neutral_fallback_blocked' });
+        throw new Error('Official voice fallback disabled');
       }
       resolvedSource = resolveAudioUrl(String(audioUrl));
     }

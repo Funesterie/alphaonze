@@ -3133,10 +3133,10 @@ test('tts route blocks Piper audio when an official reference voice conversion f
 
         assert.equal(result.response.status, 424);
         assert.equal(result.json.error, 'voice_reference_tts_unavailable');
-        assert.equal(result.json.voiceConversion.ok, false);
+        assert.equal(result.json.diagnostic, 'xtts_rvc_failed');
         assert.equal(
           backendCalls.some((call) => call.url === 'http://a11-voice:5002/api/tts'),
-          true
+          false
         );
       }
     );
@@ -3147,5 +3147,109 @@ test('tts route blocks Piper audio when an official reference voice conversion f
       else process.env[key] = value;
     }
     fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
+});
+
+test('tts route blocks neutral Piper fallback for official Vivy identity voice', async () => {
+  const previousEnv = {
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_CARTESIA_TTS_DISABLED: process.env.A11_CARTESIA_TTS_DISABLED,
+    A11_AZURE_TTS_DISABLED: process.env.A11_AZURE_TTS_DISABLED,
+    A11_OPENAI_TTS_DISABLED: process.env.A11_OPENAI_TTS_DISABLED,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+    CARTESIA_TOKEN: process.env.CARTESIA_TOKEN,
+    OPENAI_TTS_API_KEY: process.env.OPENAI_TTS_API_KEY,
+    A11_OPENAI_TTS_API_KEY: process.env.A11_OPENAI_TTS_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    A11_OPENAI_API_KEY: process.env.A11_OPENAI_API_KEY,
+    TTS_URL: process.env.TTS_URL,
+    TTS_HOST: process.env.TTS_HOST,
+    TTS_BASE_URL: process.env.TTS_BASE_URL,
+    TTS_PUBLIC_BASE_URL: process.env.TTS_PUBLIC_BASE_URL,
+  };
+  const previousFetch = global.fetch;
+  const backendCalls = [];
+
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+  process.env.A11_CARTESIA_TTS_DISABLED = '1';
+  process.env.A11_AZURE_TTS_DISABLED = '1';
+  process.env.A11_OPENAI_TTS_DISABLED = '1';
+  delete process.env.A11_CARTESIA_API_KEY;
+  delete process.env.CARTESIA_API_KEY;
+  delete process.env.CARTESIA_TOKEN;
+  delete process.env.OPENAI_TTS_API_KEY;
+  delete process.env.A11_OPENAI_TTS_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.A11_OPENAI_API_KEY;
+  delete process.env.TTS_URL;
+  delete process.env.TTS_HOST;
+  delete process.env.TTS_BASE_URL;
+  delete process.env.TTS_PUBLIC_BASE_URL;
+
+  global.fetch = async (url, options = {}) => {
+    backendCalls.push({ url: String(url), method: options?.method || 'GET' });
+    if (String(url) === 'http://a11-voice:5002/api/tts') {
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            audio_url: '/out/vivy-neutral.wav',
+            audioUrl: '/out/vivy-neutral.wav',
+            provider: 'piper',
+            via: 'piper',
+          });
+        },
+      };
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        const result = await postJson(baseUrl, '/api/tts/speak', {
+          text: 'Salut Jeffrey. Je suis Vivy.',
+          voice: 'vivy',
+          persona: 'vivy',
+          voicePersona: 'vivy',
+          surface: 'vivy',
+          provider: 'auto',
+          ttsProvider: 'auto',
+          vocalMode: 'adaptive',
+          useDefaultVoiceReference: true,
+          defaultVoiceReference: true,
+          voiceReferenceRequired: true,
+          referenceVoiceRequired: true,
+          identityVoice: true,
+          useIdentityVoice: true,
+          neutralVoice: false,
+          voiceConversion: false,
+          allowRvc: false,
+          audioFormat: 'mp3',
+        });
+
+        assert.equal(result.response.status, 424);
+        assert.equal(result.json.error, 'voice_reference_tts_unavailable');
+        assert.equal(result.json.diagnostic, 'neutral_provider_blocked');
+        assert.equal(
+          backendCalls.some((call) => call.url === 'http://a11-voice:5002/api/tts'),
+          false
+        );
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });

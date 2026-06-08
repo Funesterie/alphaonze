@@ -9828,10 +9828,12 @@ export function App() {
 
   function buildAssistantSpeechOptions(vocalMode: "speech" | "adaptive" | "sing" = ttsVocalMode) {
     const ownedOfficialReferencePersonas = new Set(["a11", "kaen44", "k44", "kaen"]);
+    const officialVoicePersonas = new Set(["a11", "kaen44", "k44", "kaen", "vivy"]);
     const useOwnedOfficialReference = ownedOfficialReferencePersonas.has(surfaceKind);
+    const useOfficialIdentityVoice = officialVoicePersonas.has(surfaceKind);
     const provider = useOwnedOfficialReference
       ? "xtts-rvc"
-      : (effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode);
+      : (useOfficialIdentityVoice ? "auto" : (effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode));
     return {
       lang: selectedA11Language.speechLang,
       voiceReferenceId: speechVoiceReferenceId || undefined,
@@ -9844,18 +9846,21 @@ export function App() {
       rvc: useOwnedOfficialReference,
       persona: surfaceKind,
       voicePersona: surfaceKind,
-      voiceReferenceRequired: useOwnedOfficialReference,
-      referenceVoiceRequired: useOwnedOfficialReference,
+      voiceReferenceRequired: useOfficialIdentityVoice,
+      referenceVoiceRequired: useOfficialIdentityVoice,
       useDefaultVoiceReference: true,
       defaultVoiceReference: true,
-      usePersonaVoiceReference: useOwnedOfficialReference,
+      usePersonaVoiceReference: useOfficialIdentityVoice,
+      identityVoice: useOfficialIdentityVoice,
+      useIdentityVoice: useOfficialIdentityVoice,
+      neutralVoice: useOfficialIdentityVoice ? false : undefined,
       allowRvc: useOwnedOfficialReference,
       allowXttsRvc: useOwnedOfficialReference,
       allowLegacyVoiceBridge: useOwnedOfficialReference,
       xttsRvcOptIn: useOwnedOfficialReference,
-      allowBrowserSpeechFallback: true,
+      allowBrowserSpeechFallback: !useOfficialIdentityVoice,
       provider,
-      ttsProvider: useOwnedOfficialReference ? "xtts-rvc" : effectiveTtsProviderMode,
+      ttsProvider: provider || effectiveTtsProviderMode,
     };
   }
 
@@ -10500,14 +10505,16 @@ export function App() {
         || defaultVoiceTextForSurface(targetSurface);
       const vocalMode = targetSurface === "vivy" ? "adaptive" : ttsVocalMode;
       const usesOwnedOfficialReference = ["a11", "kaen44", "k44", "kaen"].includes(targetSurface);
+      const usesOfficialIdentityVoice = ["a11", "kaen44", "k44", "kaen", "vivy"].includes(targetSurface);
+      const voiceProvider = usesOwnedOfficialReference ? "xtts-rvc" : "auto";
       const voiceOptions: Record<string, unknown> = {
         lang: selectedA11Language.speechLang,
         voice: targetSurface === "kaen44" ? "kaen44" : targetSurface,
         persona: targetSurface,
         surface: targetSurface,
         voicePersona: targetSurface,
-        provider: usesOwnedOfficialReference ? "xtts-rvc" : "auto",
-        ttsProvider: usesOwnedOfficialReference ? "xtts-rvc" : "auto",
+        provider: voiceProvider,
+        ttsProvider: voiceProvider,
         audioFormat: "mp3",
         responseFormat: "mp3",
         latencyMode: "interactive",
@@ -10518,14 +10525,17 @@ export function App() {
         rvc: usesOwnedOfficialReference,
         useDefaultVoiceReference: true,
         defaultVoiceReference: true,
-        usePersonaVoiceReference: usesOwnedOfficialReference,
-        voiceReferenceRequired: usesOwnedOfficialReference,
-        referenceVoiceRequired: usesOwnedOfficialReference,
+        usePersonaVoiceReference: usesOfficialIdentityVoice,
+        voiceReferenceRequired: usesOfficialIdentityVoice,
+        referenceVoiceRequired: usesOfficialIdentityVoice,
+        identityVoice: usesOfficialIdentityVoice,
+        useIdentityVoice: usesOfficialIdentityVoice,
+        neutralVoice: usesOfficialIdentityVoice ? false : undefined,
         allowRvc: usesOwnedOfficialReference,
         allowXttsRvc: usesOwnedOfficialReference,
         allowLegacyVoiceBridge: usesOwnedOfficialReference,
         xttsRvcOptIn: usesOwnedOfficialReference,
-        allowBrowserSpeechFallback: true,
+        allowBrowserSpeechFallback: !usesOfficialIdentityVoice,
         ...(targetSurface === "vivy" ? getVivyVoiceTuning(vocalMode) : {}),
         ...(extraOptions || {}),
       };

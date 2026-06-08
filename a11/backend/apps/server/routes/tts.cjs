@@ -1348,6 +1348,27 @@ function parseJsonMaybe(value) {
   }
 }
 
+function errorMessageFromPayload(value, fallback = '') {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Error) return value.message || fallback;
+  if (typeof value === 'object') {
+    for (const key of ['message', 'error', 'detail', 'reason', 'code']) {
+      if (value[key] != null && value[key] !== value) {
+        const nested = errorMessageFromPayload(value[key], '');
+        if (nested) return nested;
+      }
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback || 'unknown_error';
+    }
+  }
+  return String(value || fallback || 'unknown_error');
+}
+
 function isTtsOutPath(pathname = '') {
   const normalized = String(pathname || '').replace(/\\/g, '/');
   return normalized.startsWith('/out/') || normalized.startsWith('/api/tts/out/');
@@ -1661,7 +1682,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
         const textBody = await response.text();
         const parsed = parseJsonMaybe(textBody);
         if (!response.ok || parsed?.ok === false) {
-          throw new Error(parsed?.detail || parsed?.message || parsed?.error || `voice_conversion_http_${response.status}`);
+          throw new Error(errorMessageFromPayload(parsed?.detail ?? parsed?.message ?? parsed?.error, `voice_conversion_http_${response.status}`));
         }
         const convertedUrl = normalizeRemoteAssetUrl(baseUrl, parsed?.audio_url || parsed?.audioUrl || parsed?.url || '');
         if (!convertedUrl) throw new Error('voice_conversion_missing_audio_url');
@@ -1706,7 +1727,7 @@ async function requestVoiceConversionWithModule(payload, req, vocalMode) {
       voiceConversion: {
         ok: false,
         error: 'voice_conversion_failed',
-        message: String(error_?.message || error_).slice(0, 500),
+        message: errorMessageFromPayload(error_, 'voice_conversion_failed').slice(0, 500),
       },
     };
   }
@@ -2011,9 +2032,7 @@ function wantsOfficialIdentityVoice(body = {}) {
   const requestedProvider = getRequestedTtsProvider(body);
   const vocalMode = normalizeVocalMode(body);
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
-  const explicitlyNeutral = body?.identityVoice === false
-    || body?.useIdentityVoice === false
-    || body?.neutralVoice === true;
+  const explicitlyNeutral = isExplicitNeutralVoiceRequest(body);
   if (OFFICIAL_PERSONAS.has(explicitPersona) && !explicitlyNeutral) return true;
   return requestedProvider === PROVIDERS.XTTS_RVC
     || requiresReferenceVoice(body)
@@ -2022,16 +2041,20 @@ function wantsOfficialIdentityVoice(body = {}) {
     || vocalMode === 'sing';
 }
 
+function isExplicitNeutralVoiceRequest(body = {}) {
+  return body?.identityVoice === false
+    || body?.useIdentityVoice === false
+    || body?.neutralVoice === true;
+}
+
 function shouldBlockNeutralVoiceFallback(body = {}) {
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
   const requestedProvider = getRequestedTtsProvider(body);
   if (!OFFICIAL_PERSONAS.has(explicitPersona)) return false;
-  if (isNeutralTtsProvider(requestedProvider)) return false;
-  if (requiresReferenceVoice(body)) {
-    const strict = String(process.env.A11_TTS_STRICT_REFERENCE_REQUIRED || '').trim().toLowerCase();
-    return ['1', 'true', 'yes', 'on'].includes(strict);
-  }
-  return false;
+  if (isExplicitNeutralVoiceRequest(body)) return false;
+  if (requiresReferenceVoice(body) || wantsDefaultVoiceReference(body)) return true;
+  if (wantsOfficialIdentityVoice(body)) return true;
+  return !isNeutralTtsProvider(requestedProvider);
 }
 
 function resolveTtsProviderForRequest(body = {}) {
@@ -2528,11 +2551,10 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
         }
       } else if (synthesizePayload?.detail || synthesizePayload?.error || synthesizePayload?.message) {
         lastError = new Error(
-          synthesizePayload?.detail?.message
-          || synthesizePayload?.detail?.error
-          || synthesizePayload?.error
-          || synthesizePayload?.message
-          || `voice_synthesize_http_${synthesizeResponse.status}`
+          errorMessageFromPayload(
+            synthesizePayload?.detail ?? synthesizePayload?.error ?? synthesizePayload?.message,
+            `voice_synthesize_http_${synthesizeResponse.status}`
+          )
         );
       }
     } catch (error_) {
@@ -2605,7 +2627,7 @@ async function requestDirectXttsRvc(text, body = {}, options = {}) {
       const textBody = await response.text();
       const parsed = parseJsonMaybe(textBody);
       if (!response.ok || parsed?.ok === false) {
-        throw new Error(parsed?.detail || parsed?.message || parsed?.error || `xtts_rvc_http_${response.status}`);
+        throw new Error(errorMessageFromPayload(parsed?.detail ?? parsed?.message ?? parsed?.error, `xtts_rvc_http_${response.status}`));
       }
       const rawAudioUrl = parsed?.audio_url || parsed?.audioUrl || parsed?.url || '';
       const remoteAudioUrl = normalizeRemoteAssetUrl(baseUrl, rawAudioUrl);
@@ -4076,6 +4098,16 @@ async function handleTtsSpeakRequest(req, res) {
       }
     }
 
+    if (strictOfficialVoice && isNeutralTtsProvider(resolvedProvider.provider)) {
+      return res.status(424).json({
+        ok: false,
+        error: 'voice_reference_tts_unavailable',
+        message: 'Voix officielle indisponible: aucun provider identitaire n’a produit d’audio. Piper est bloque pour cette voix.',
+        provider: resolvedProvider.provider || null,
+        diagnostic: 'neutral_provider_blocked',
+      });
+    }
+
     if (preferHttpTts) {
       try {
         const remote = await requestRemoteTts(preparedBody);
@@ -4711,6 +4743,16 @@ router.post(['/tts/piper', '/tts/speak'], runOptionalJwt, async (req, res) => {
           });
         }
       }
+    }
+
+    if (strictOfficialVoice && isNeutralTtsProvider(resolvedProvider.provider)) {
+      return res.status(424).json({
+        ok: false,
+        error: 'voice_reference_tts_unavailable',
+        message: 'Voix officielle indisponible: aucun provider identitaire n’a produit d’audio. Piper est bloque pour cette voix.',
+        provider: resolvedProvider.provider || null,
+        diagnostic: 'neutral_provider_blocked',
+      });
     }
 
     if (preferHttpTts) {
