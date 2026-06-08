@@ -12743,8 +12743,8 @@ export function App() {
                     onClick={toggleMic}
                     disabled={micStarting || audioTranscribing}
                     aria-pressed={voiceListening}
-                    aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : audioTranscribing ? "Transcription du micro" : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
-                    title={mobileVoiceReady ? (preparingMobileAudio ? "Préparation audio mobile" : `Jouer la voix ${productName}`) : audioTranscribing ? "Transcription du micro" : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : "Démarrer le micro"}
+                    aria-label={mobileVoiceReady ? `Jouer la voix ${productName}` : audioTranscribing ? "Transcription du micro" : micPermissionBlocked ? "Micro bloqué" : voiceListening ? "Arrêter le micro" : shouldUseServerPushToTalk(surfaceKind) ? "Démarrer le push-to-talk serveur" : "Démarrer le micro"}
+                    title={mobileVoiceReady ? (preparingMobileAudio ? "Préparation audio mobile" : `Jouer la voix ${productName}`) : audioTranscribing ? "Transcription du micro" : micPermissionBlocked ? "Micro bloqué par le navigateur" : voiceListening ? "Arrêter le micro" : shouldUseServerPushToTalk(surfaceKind) ? "Push-to-talk serveur: touche pour enregistrer, retouche pour envoyer" : "Démarrer le micro"}
                     style={{
                       marginLeft: 8,
                       opacity: micPermissionBlocked ? 0.78 : 1,
@@ -12752,7 +12752,7 @@ export function App() {
                       color: micPermissionBlocked ? "#fecaca" : undefined,
                     }}
                   >
-                    {micStarting || audioTranscribing ? "..." : mobileVoiceReady ? (preparingMobileAudio ? "..." : "Play") : voiceListening ? "ON" : micPermissionBlocked ? "!" : "MIC"}
+                    {micStarting || audioTranscribing ? "..." : mobileVoiceReady ? (preparingMobileAudio ? "..." : "Play") : voiceListening ? "ON" : micPermissionBlocked ? "!" : shouldUseServerPushToTalk(surfaceKind) ? "PTT" : "MIC"}
                   </button>
                 </div>
                 <div className="hint">
