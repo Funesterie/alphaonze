@@ -1246,6 +1246,32 @@ docker exec a11-ollama sh -lc 'mkdir -p /root/.ollama; if [ ! -s /root/.ollama/i
 docker exec a11-ollama sh -lc 'ollama pull nomic-embed-text >/dev/null 2>&1 || true'
 '@
 
+$remoteComposeOwnershipStep = @'
+compose_file="${compose_file:-__REMOTE_ROOT__/current/server/docker-compose.prod.yml}"
+compose_project="${COMPOSE_PROJECT_NAME:-$(basename "$(dirname "$compose_file")")}"
+ensure_compose_named_container_owner() {
+  service="$1"
+  container="$2"
+  if ! docker inspect "$container" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  existing_project="$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+  existing_service="$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.service" }}' 2>/dev/null || true)"
+  if [ "$existing_project" = "$compose_project" ] && [ "$existing_service" = "$service" ]; then
+    return 0
+  fi
+
+  echo "__A11_COMPOSE_CONTAINER_CONFLICT__ $container existing_project=${existing_project:-none} existing_service=${existing_service:-none}; recreating via compose"
+  docker rm -f "$container" >/dev/null
+}
+
+# STT is stateless apart from its bind-mounted cache; older manual containers may
+# miss Compose labels and block blue/green deploys because container_name is fixed.
+ensure_compose_named_container_owner "a11-stt-whisper" "a11-stt-whisper"
+'@
+$remoteComposeOwnershipStep = $remoteComposeOwnershipStep.Replace('__REMOTE_ROOT__', $RemoteRoot)
+
 if ($BlueGreen) {
   $cleanOldFlag = if ($CleanOldBlueGreen) { "1" } else { "0" }
   $remoteDeploy = @"
@@ -1262,6 +1288,7 @@ tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
 $remoteSecretStep
 $remoteOllamaStep
+$remoteComposeOwnershipStep
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build a11-postgres a11-redis a11-stt-whisper a11-xtts-rvc a11-voice
 docker compose -f "`$compose_file" --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate a11-ekko "`$a11_service" "`$k44_service"
 echo "__BLUEGREEN_HEALTH__"
@@ -1302,6 +1329,7 @@ tar -xzf $RemoteArchive -C "`$release"
 ln -sfn "`$release" $RemoteRoot/current
 $remoteSecretStep
 $remoteOllamaStep
+$remoteComposeOwnershipStep
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env up -d --build --force-recreate
 docker compose -f $RemoteRoot/current/server/docker-compose.prod.yml --env-file $RemoteRoot/secrets/compose.env ps
 echo "__A11_HEALTH__"
