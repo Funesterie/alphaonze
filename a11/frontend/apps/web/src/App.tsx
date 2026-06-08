@@ -8384,7 +8384,17 @@ export function App() {
           }
           setIsAuthenticated(true);
           setDisplayName(session?.user?.username || session?.user?.email || "Utilisateur");
-          setIsFunesterieAdmin(Boolean(session?.user?.fullAccess || String(session?.user?.role || "").toLowerCase() === "admin" || hasAuthenticatedAdminApiAccess()));
+          const sessionRole = String(session?.user?.role || "").trim().toLowerCase();
+          const sessionTier = String(session?.user?.tier || session?.user?.accountTier || "").trim().toLowerCase();
+          setIsFunesterieAdmin(Boolean(
+            session?.user?.isAdmin
+            || session?.user?.fullAccess
+            || sessionRole === "admin"
+            || sessionTier === "admin"
+            || sessionTier === "admin_family"
+            || sessionTier === "founder"
+            || hasAuthenticatedAdminApiAccess()
+          ));
           setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {
             const surface = getCurrentSurfaceKind();
