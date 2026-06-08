@@ -88,5 +88,8 @@
     "paypal": "https://paypal.me/funeste38",
     "weroQr": "https://funesterie.me/assets/wero-jeffrey-cellauro-qr.png",
     "contact": "https://funesterie.me/contact/"
+  },
+  "devDependencies": {
+    "electron": "npm:electron-nightly@44.0.0-nightly.20260605"
   }
 }
