@@ -5,6 +5,7 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1" # Chaque lundi à 6h
 
@@ -17,12 +18,57 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve TruffleHog scan range
+        id: trufflehog_range
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          elif [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            base="$(git rev-list --max-count=1 --before='14 days ago' HEAD || true)"
+            if [[ -z "$base" ]]; then
+              base="$(git rev-list --max-parents=0 HEAD)"
+            fi
+            head="HEAD"
+          else
+            before="${{ github.event.before }}"
+            head="${{ github.sha }}"
+            if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+              base=""
+            else
+              base="$before"
+            fi
+          fi
+
+          skip="false"
+          base_commit=""
+          head_commit="$(git rev-parse "$head" 2>/dev/null || true)"
+          if [[ -n "$base" ]]; then
+            base_commit="$(git rev-parse "$base" 2>/dev/null || true)"
+          fi
+          if [[ -n "$base_commit" && -n "$head_commit" && "$base_commit" == "$head_commit" ]]; then
+            skip="true"
+          fi
+
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - name: Skip unchanged scheduled secret scan
+        if: steps.trufflehog_range.outputs.skip == 'true'
+        run: echo "No commits in the scheduled scan window."
+
       - name: TruffleHog — scan secrets in git history
-        uses: trufflesecurity/trufflehog@main
+        if: steps.trufflehog_range.outputs.skip != 'true'
+        uses: trufflesecurity/trufflehog@v3.95.5
         with:
           path: ./
-          base: ${{ github.event.before || github.event.pull_request.base.sha }}
-          head: ${{ github.sha || github.event.pull_request.head.sha }}
+          base: ${{ steps.trufflehog_range.outputs.base }}
+          head: ${{ steps.trufflehog_range.outputs.head }}
+          version: 3.95.5
           extra_args: --only-verified
 
   dependency-audit:

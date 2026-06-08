@@ -54,9 +54,16 @@ node_modules
 
 # Secrets & credentials — jamais committer
 secrets/
+.codex-tmp/
 credentials.routes.js
 credentials.store.js
 runtime/auth/
+.env
+.env.*
+*.env
+*.env.*
+!*.env.example
+!.env.example
 *.jwt.json
 *-client-secret.txt
 *-agent-token-*.txt
