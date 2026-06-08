@@ -3234,7 +3234,7 @@ test('tts route blocks neutral Piper fallback for official Vivy identity voice',
           voiceConversion: false,
           allowRvc: false,
           audioFormat: 'mp3',
-        });
+        }, { 'x-test-basic': '1' });
 
         assert.equal(result.response.status, 424);
         assert.equal(result.json.error, 'voice_reference_tts_unavailable');

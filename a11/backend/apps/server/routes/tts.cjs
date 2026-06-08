@@ -698,6 +698,28 @@ function enforceBasicTtsCostPolicy(req = {}, body = {}) {
       ttsCostPolicy: `basic_${persona}_official_reference`,
     };
   }
+  const explicitPersona = getExplicitTtsPersonaFromBody(body);
+  const explicitIdentityRequest = OFFICIAL_PERSONAS.has(explicitPersona)
+    && !isExplicitNeutralVoiceRequest(body)
+    && (
+      requiresReferenceVoice(body)
+      || body?.identityVoice === true
+      || body?.useIdentityVoice === true
+      || body?.neutralVoice === false
+    );
+  if (explicitIdentityRequest) {
+    return {
+      ...(body || {}),
+      identityVoice: true,
+      useIdentityVoice: true,
+      neutralVoice: false,
+      allowPaidTtsVoice: false,
+      paidTtsAllowed: false,
+      allowCloudTts: false,
+      allowReadyMadeCloudVoice: false,
+      ttsCostPolicy: `basic_${explicitPersona}_identity_blocked`,
+    };
+  }
   const provider = getRequestedTtsProvider(body);
   const explicitlyNeutral = body?.identityVoice === false
     || body?.useIdentityVoice === false
