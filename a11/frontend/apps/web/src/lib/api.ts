@@ -561,9 +561,11 @@ function getApiOrigin() {
 export function resolveApiAssetUrl(rawValue: string | null | undefined) {
   const raw = String(rawValue || '').trim();
   if (!raw) return null;
+  if (/^(?:sandbox|file|vscode|cursor):/i.test(raw) || /^\/?sandbox:/i.test(raw)) return null;
   if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) {
     try {
       const parsed = new URL(raw, globalThis.location?.origin || 'http://178.105.86.89');
+      if (/^\/sandbox:/i.test(parsed.pathname) || /\/sandbox:\//i.test(parsed.pathname)) return null;
       const assetHost = parsed.hostname.toLowerCase();
       if (
         [

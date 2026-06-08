@@ -1158,6 +1158,20 @@ function looksCorruptedAssistantText(value: string) {
   return text.length >= 40 && suspiciousGlyphs / text.length > 0.2;
 }
 
+function resolveRenderableAssetUrl(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^(?:sandbox|file|vscode|cursor):/i.test(raw) || /^\/?sandbox:/i.test(raw) || /\/sandbox:\//i.test(raw)) {
+    return null;
+  }
+  const resolved = resolveApiAssetUrl(raw);
+  if (!resolved) return null;
+  if (/^(?:sandbox|file|vscode|cursor):/i.test(resolved) || /^\/?sandbox:/i.test(resolved) || /\/sandbox:\//i.test(resolved)) {
+    return null;
+  }
+  return resolved;
+}
+
 function isAssistantHistoryPoisoned(value: string) {
   const text = String(value || "").trim();
   if (!text) return false;
@@ -1189,9 +1203,9 @@ function normalizeAssistantMessagePayload(
   explicitVideoUrl?: string | null,
   explicitFileUrl?: string | null
 ) {
-  let resolvedImageUrl = explicitImageUrl ? resolveApiAssetUrl(explicitImageUrl) : null;
-  let resolvedVideoUrl = explicitVideoUrl ? resolveApiAssetUrl(explicitVideoUrl) : null;
-  let resolvedFileUrl = explicitFileUrl ? resolveApiAssetUrl(explicitFileUrl) : null;
+  let resolvedImageUrl = explicitImageUrl ? resolveRenderableAssetUrl(explicitImageUrl) : null;
+  let resolvedVideoUrl = explicitVideoUrl ? resolveRenderableAssetUrl(explicitVideoUrl) : null;
+  let resolvedFileUrl = explicitFileUrl ? resolveRenderableAssetUrl(explicitFileUrl) : null;
   const rawContent = String(content || "");
   let cleanedContent = extractAssistantDisplayContent(rawContent) || rawContent.trim();
   let qflushVerification: ChatMessage["qflushVerification"] = null;
@@ -1218,13 +1232,13 @@ function normalizeAssistantMessagePayload(
 
   cleanedContent = cleanedContent.replace(MARKDOWN_IMAGE_PATTERN, (_fullMatch, rawUrl: string) => {
     if (!resolvedImageUrl) {
-      resolvedImageUrl = resolveApiAssetUrl(rawUrl);
+      resolvedImageUrl = resolveRenderableAssetUrl(rawUrl);
     }
     return "";
   });
 
   cleanedContent = cleanedContent.replace(MARKDOWN_LINK_PATTERN, (fullMatch, rawLabel: string, rawUrl: string) => {
-    const resolvedCandidate = resolveApiAssetUrl(rawUrl);
+    const resolvedCandidate = resolveRenderableAssetUrl(rawUrl);
     const label = String(rawLabel || "").trim().toLowerCase();
     const looksImageLink = /\.(?:png|jpe?g|webp|bmp|svg)(?:[?#].*)?$/i.test(String(rawUrl || "").trim())
       || label.includes("image")
@@ -8310,6 +8324,7 @@ export function App() {
   const micDictationFallbackActiveRef = useRef(false);
   const micDictationFallbackStartingRef = useRef(false);
   const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
+  const hasConfirmedAdminAccess = hasPrivateSession && isFunesterieAdmin;
   const voiceLearningPersona = surfaceKind === "a11"
     ? "a11"
       : surfaceKind === "kaen44"
@@ -8454,6 +8469,9 @@ export function App() {
           setDisplayName(session?.user?.displayName || session?.user?.username || session?.user?.email || "Utilisateur");
           const sessionRole = String(session?.user?.role || "").trim().toLowerCase();
           const sessionTier = String(session?.user?.tier || session?.user?.accountTier || "").trim().toLowerCase();
+          const sessionAccessPacks = Array.isArray(session?.user?.accessPacks)
+            ? (session?.user?.accessPacks || []).map((entry) => String(entry || "").trim().toLowerCase()).filter(Boolean)
+            : [];
           setIsFunesterieAdmin(Boolean(
             session?.user?.isAdmin
             || session?.user?.fullAccess
@@ -8461,7 +8479,9 @@ export function App() {
             || sessionTier === "admin"
             || sessionTier === "admin_family"
             || sessionTier === "founder"
-            || hasAuthenticatedAdminApiAccess()
+            || sessionAccessPacks.includes("admin")
+            || sessionAccessPacks.includes("admin_family")
+            || sessionAccessPacks.includes("founder")
           ));
           setAuthSessionReady(true);
           if (isAuthSuccessRoute(pathname)) {
@@ -9114,9 +9134,9 @@ export function App() {
                 )
                 : {
                   content: rawContent,
-                  imageUrl: typeof m.imageUrl === 'string' ? resolveApiAssetUrl(m.imageUrl) : null,
-                  videoUrl: typeof m.videoUrl === 'string' ? resolveApiAssetUrl(m.videoUrl) : null,
-                  fileUrl: typeof m.fileUrl === 'string' ? resolveApiAssetUrl(m.fileUrl) : null,
+                  imageUrl: typeof m.imageUrl === 'string' ? resolveRenderableAssetUrl(m.imageUrl) : null,
+                  videoUrl: typeof m.videoUrl === 'string' ? resolveRenderableAssetUrl(m.videoUrl) : null,
+                  fileUrl: typeof m.fileUrl === 'string' ? resolveRenderableAssetUrl(m.fileUrl) : null,
                 };
               return {
                 id: String(m.id || (`m-${Date.now()}`)),
@@ -9253,13 +9273,13 @@ export function App() {
         : {
           content: String(message?.content || ""),
           imageUrl: typeof (message?.imageUrl || message?.image_url || message?.imagePath) === "string"
-            ? resolveApiAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
+            ? resolveRenderableAssetUrl(message?.imageUrl || message?.image_url || message?.imagePath)
             : null,
           videoUrl: typeof (message?.videoUrl || message?.video_url || message?.videoPath) === "string"
-            ? resolveApiAssetUrl(message?.videoUrl || message?.video_url || message?.videoPath)
+            ? resolveRenderableAssetUrl(message?.videoUrl || message?.video_url || message?.videoPath)
             : null,
           fileUrl: typeof (message?.fileUrl || message?.file_url || message?.filePath) === "string"
-            ? resolveApiAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
+            ? resolveRenderableAssetUrl(message?.fileUrl || message?.file_url || message?.filePath)
             : null,
           qflushVerification: null,
         };
@@ -9343,7 +9363,7 @@ export function App() {
   }
 
   async function refreshRemoteAiProfiles() {
-    if (isFunesteriePublicShell || !hasPrivateSession || !hasAuthenticatedAdminApiAccess()) {
+    if (isFunesteriePublicShell || !hasPrivateSession || !hasConfirmedAdminAccess) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
@@ -10678,13 +10698,13 @@ export function App() {
 
   useEffect(() => {
     if (isFunesteriePublicShell || !hasPrivateSession || isResetRoute || isKaen44) return;
-    if (!hasAuthenticatedAdminApiAccess()) {
+    if (!hasConfirmedAdminAccess) {
       setRemoteProviderProfiles([]);
       setRemoteProviderError("");
       return;
     }
     refreshRemoteAiProfiles();
-  }, [hasPrivateSession, isResetRoute, isKaen44, isFunesteriePublicShell]);
+  }, [hasPrivateSession, hasConfirmedAdminAccess, isResetRoute, isKaen44, isFunesteriePublicShell]);
 
   useEffect(() => {
     if (isFunesteriePublicShell || !hasPrivateSession) return;
@@ -12418,6 +12438,18 @@ export function App() {
                                 rel="noreferrer"
                               />
                             ),
+                            img: ({ node: _node, ref: _ref, src, alt, ...props }: any) => {
+                              const safeSrc = resolveRenderableAssetUrl(src);
+                              if (!safeSrc) return null;
+                              return (
+                                <img
+                                  {...props}
+                                  src={safeSrc}
+                                  alt={String(alt || "")}
+                                  loading="lazy"
+                                />
+                              );
+                            },
                           }}
                         >
                           {m.content}
