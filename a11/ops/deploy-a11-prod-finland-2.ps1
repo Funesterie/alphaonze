@@ -699,10 +699,10 @@ $caddy = @"
   }
 }
 
-http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://vivy.funesterie.me {
+http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44-hetzner-test.funesterie.me, http://vivy.funesterie.me, http://music.funesterie.me {
   encode zstd gzip
   import microsoft_identity_association
-  @a11Path path /a11 /a11/*
+  @a11Path path /a11 /a11/* /api/admin/* /api/tools/run /api/runtime* /api/qflush/*
   @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
   handle @a11Path {
     import a11_backend
@@ -715,29 +715,7 @@ http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http:/
   }
 }
 
-https://funesterie.me, https://www.funesterie.me, https://k44.funesterie.me, https://vivy.funesterie.me {
-  encode zstd gzip
-  import microsoft_identity_association
-  @a11Path path /a11 /a11/*
-  @a11PaymentApi path /api/paypal /api/paypal/* /api/subscription /api/subscription/* /subscription/success /subscription/cancel
-  handle @a11Path {
-    import a11_backend
-  }
-  handle @a11PaymentApi {
-    import a11_backend
-  }
-  handle {
-    import kaen44_backend
-  }
-}
-
-http://a11.funesterie.me {
-  encode zstd gzip
-  import microsoft_identity_association
-  import a11_backend
-}
-
-https://a11.funesterie.me {
+http://a11.funesterie.me, http://api.funesterie.me, http://cp.funesterie.me {
   encode zstd gzip
   import microsoft_identity_association
   import a11_backend

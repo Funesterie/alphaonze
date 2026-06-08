@@ -5,7 +5,7 @@ ingress:
   - hostname: kaen44-hetzner-test.funesterie.me
     service: http://127.0.0.1:80
     originRequest:
-      httpHostHeader: k44.funesterie.me
+      httpHostHeader: kaen44-hetzner-test.funesterie.me
   - hostname: k44.funesterie.me
     service: http://127.0.0.1:80
     originRequest:
@@ -13,7 +13,7 @@ ingress:
   - hostname: kaen44.funesterie.me
     service: http://127.0.0.1:80
     originRequest:
-      httpHostHeader: k44.funesterie.me
+      httpHostHeader: kaen44.funesterie.me
   - hostname: funesterie.me
     service: http://127.0.0.1:80
     originRequest:
@@ -22,4 +22,24 @@ ingress:
     service: http://127.0.0.1:80
     originRequest:
       httpHostHeader: www.funesterie.me
+  - hostname: vivy.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: vivy.funesterie.me
+  - hostname: music.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: music.funesterie.me
+  - hostname: a11.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: a11.funesterie.me
+  - hostname: api.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: api.funesterie.me
+  - hostname: cp.funesterie.me
+    service: http://127.0.0.1:80
+    originRequest:
+      httpHostHeader: cp.funesterie.me
   - service: http_status:404

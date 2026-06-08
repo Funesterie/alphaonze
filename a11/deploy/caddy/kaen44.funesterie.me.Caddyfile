@@ -1,4 +1,4 @@
-funesterie.me, www.funesterie.me, k44.funesterie.me, kaen44.funesterie.me, vivy.funesterie.me {
+http://funesterie.me, http://www.funesterie.me, http://k44.funesterie.me, http://kaen44.funesterie.me, http://kaen44-hetzner-test.funesterie.me, http://vivy.funesterie.me, http://music.funesterie.me {
 	encode zstd gzip
 
 	@blocked_admin path /api/v1/vs/* /api/v1/fs/* /api/admin/* /api/tools/run /api/browse* /api/agent/shell* /api/runtime*
@@ -9,7 +9,7 @@ funesterie.me, www.funesterie.me, k44.funesterie.me, kaen44.funesterie.me, vivy.
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
-		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=(), payment=(self)"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
