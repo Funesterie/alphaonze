@@ -1425,7 +1425,29 @@ function canReuseLastMediaForRequest(value: string) {
 }
 
 function formatChatErrorForUser(error: unknown) {
-  const message = String((error as any)?.message || error || "").trim();
+  let message = String((error as any)?.message || "").trim();
+  if (!message && error && typeof error === "object") {
+    const candidate = error as any;
+    message = String(
+      candidate?.message
+      || candidate?.error_description
+      || candidate?.error?.message
+      || candidate?.payload?.message
+      || candidate?.data?.message
+      || candidate?.statusText
+      || ""
+    ).trim();
+  }
+  if (!message) {
+    try {
+      message = JSON.stringify(error);
+    } catch {
+      message = String(error || "").trim();
+    }
+  }
+  if (message === "{}" || message === "[object Object]") {
+    message = "le serveur a renvoyé une erreur sans détail lisible";
+  }
   if (/video_engine_unavailable|generateVideo handler unavailable|real_video_unavailable|video_proxy_fetch_unavailable|local video runner|mochi|A11_VIDEO_LOCAL_RUNNER/i.test(message)) {
     return "Le moteur vidéo local n'est pas encore prêt: le routage est actif, mais le worker de rendu vidéo n'est pas lancé ou pas branché. Les poids locaux sont installés; il faut démarrer le runner vidéo avant de lancer le clip.";
   }

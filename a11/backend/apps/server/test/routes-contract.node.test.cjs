@@ -1692,6 +1692,68 @@ test('POST /api/llm/chat rewrites explicit local provider to remote when no loca
   }
 });
 
+test('POST /api/llm/chat forwards explicit remote provider requests to remote proxy lane', async () => {
+  const jwtSecret = 'test-secret';
+  const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });
+  const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const previousOpenAiModel = process.env.OPENAI_MODEL;
+  const previousOllamaPrimaryModel = process.env.A11_OLLAMA_PRIMARY_MODEL;
+
+  process.env.OPENAI_API_KEY = 'test-openai-key';
+  process.env.OPENAI_MODEL = 'test-remote-model';
+  process.env.A11_OLLAMA_PRIMARY_MODEL = 'gpt-oss:20b-cloud';
+
+  try {
+    await withServer(
+      (app) => {
+        app.use('/api', createProtectedChatProxyRouter({
+          verifyJWT(req, res, next) {
+            try {
+              const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+              req.user = jwt.verify(bearer, jwtSecret);
+              next();
+            } catch (error_) {
+              res.status(401).json({ ok: false, error: 'invalid_jwt', message: String(error_?.message || error_) });
+            }
+          },
+          proxyChatToOpenAI(req, res) {
+            return res.json({
+              provider: req.body?.provider || null,
+              model: req.body?.model || null,
+            });
+          },
+          hasLocalChatUpstreamConfigured: () => true,
+          detectImageIntent: () => false,
+          detectWebImageIntent: () => false,
+          generateSd: async () => {
+            throw new Error('should_not_be_called');
+          },
+        }));
+      },
+      async (baseUrl) => {
+        const { response, json } = await postJson(baseUrl, '/api/llm/chat', {
+          provider: 'openai',
+          model: 'gpt-oss:20b-cloud',
+          messages: [{ role: 'user', content: 't es la' }],
+        }, {
+          authorization: `Bearer ${token}`,
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal(json.provider, 'openai');
+        assert.equal(json.model, 'gpt-oss:20b-cloud');
+      }
+    );
+  } finally {
+    if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+    if (previousOpenAiModel === undefined) delete process.env.OPENAI_MODEL;
+    else process.env.OPENAI_MODEL = previousOpenAiModel;
+    if (previousOllamaPrimaryModel === undefined) delete process.env.A11_OLLAMA_PRIMARY_MODEL;
+    else process.env.A11_OLLAMA_PRIMARY_MODEL = previousOllamaPrimaryModel;
+  }
+});
+
 test('POST /api/llm/chat keeps explicit local provider when only Qflush chat is configured', async () => {
   const jwtSecret = 'test-secret';
   const token = jwt.sign({ id: 'user-1', username: 'user-1' }, jwtSecret, { expiresIn: '1h' });

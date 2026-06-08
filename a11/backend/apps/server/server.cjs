@@ -16,6 +16,9 @@ const {
   readLocalUploadBuffer,
   saveBufferToLocalUploadStorage,
 } = require('./lib/local-upload-storage.cjs');
+const {
+  getResolvedRemoteModelForRequest,
+} = require('./src/llm/remote-model.cjs');
 
 // Load local env before early feature gates and client wiring read process.env.
 (() => {
@@ -10350,12 +10353,6 @@ function getCompletionsUrlForRequest(body) {
   return getOpenAICompletionsUrl(remoteProfileUrl || remoteProfileBaseUrl || undefined);
 }
 
-function getResolvedRemoteModelForRequest(body, fallbackModel = process.env.OPENAI_MODEL || 'gpt-4o-mini') {
-  const profileModel = String(body?.providerConfig?.model || '').trim();
-  const requestedModel = String(body?.model || '').trim();
-  return requestedModel || profileModel || String(fallbackModel || 'gpt-4o-mini').trim();
-}
-
 function getQflushChatFlow() {
   if (!isQflushEnabledByEnv(process.env)) return '';
   return String(
@@ -13212,7 +13209,7 @@ async function proxyChatToOpenAI(req, res) {
     upstreamBody.providerConfig = remoteProviderConfig;
     upstreamBody.model = getResolvedRemoteModelForRequest(upstreamBody, remoteProviderConfig.model);
   }
-  if (provider !== 'local' && !String(upstreamBody.model || '').trim()) {
+  if (provider !== 'local') {
     upstreamBody.model = getResolvedRemoteModelForRequest(
       upstreamBody,
       remoteProviderConfig?.model || process.env.OPENAI_MODEL || process.env.A11_OPENAI_MODEL || 'gpt-4o-mini'
