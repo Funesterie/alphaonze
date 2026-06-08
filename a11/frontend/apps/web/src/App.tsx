@@ -200,6 +200,10 @@ function isOfficialVoiceSurface(surface: FunesterieSurface) {
   return surface === "a11" || surface === "kaen44" || surface === "vivy";
 }
 
+function shouldUseServerPushToTalk(surface: FunesterieSurface) {
+  return surface === "a11" || surface === "kaen44";
+}
+
 function resolveEffectiveTtsProviderMode(
   providerMode: TtsProviderMode,
   surface: FunesterieSurface
@@ -9885,10 +9889,16 @@ export function App() {
       identityVoice: useOfficialIdentityVoice,
       useIdentityVoice: useOfficialIdentityVoice,
       neutralVoice: useOfficialIdentityVoice ? false : undefined,
+      allowPaidTtsVoice: useOwnedOfficialReference ? false : undefined,
+      paidTtsAllowed: useOwnedOfficialReference ? false : undefined,
+      allowCloudTts: useOwnedOfficialReference ? false : undefined,
+      allowReadyMadeCloudVoice: useOwnedOfficialReference ? false : undefined,
+      useReadyMadeCloudVoice: useOwnedOfficialReference ? false : undefined,
       allowRvc: useOwnedOfficialReference,
       allowXttsRvc: useOwnedOfficialReference,
       allowLegacyVoiceBridge: useOwnedOfficialReference,
       xttsRvcOptIn: useOwnedOfficialReference,
+      ttsCostPolicy: useOwnedOfficialReference ? `${surfaceKind}_official_reference` : undefined,
       allowBrowserSpeechFallback: !useOfficialIdentityVoice,
       provider,
       ttsProvider: provider || effectiveTtsProviderMode,
@@ -10324,7 +10334,11 @@ export function App() {
       setMicDictationFallbackActive(true);
       micDictationFallbackActiveRef.current = true;
       setVoiceListening(true);
-      setMicStatusMessage("Micro de secours actif: parle, puis retouche le bouton pour envoyer.");
+      setMicStatusMessage(
+        shouldUseServerPushToTalk(surfaceKind)
+          ? `Micro ${productName} actif: parle, puis retouche le bouton pour envoyer.`
+          : "Micro de secours actif: parle, puis retouche le bouton pour envoyer."
+      );
       return true;
     } catch (error) {
       setMicDictationFallbackActive(false);
@@ -10395,6 +10409,16 @@ export function App() {
     void unlockAudioOutput();
     if (voiceListening && micDictationFallbackActive) {
       await stopMicDictationFallback();
+      return;
+    }
+    if (!voiceListening && shouldUseServerPushToTalk(surfaceKind)) {
+      if (toggleLockRef.current) {
+        console.log("[A11] toggle ignored due to lock");
+        return;
+      }
+      toggleLockRef.current = true;
+      setTimeout(() => { toggleLockRef.current = false; }, 600);
+      await startMicDictationFallback(`Micro ${productName}: parle, puis retouche le bouton pour envoyer.`);
       return;
     }
     const SpeechRecognition =
@@ -10569,10 +10593,16 @@ export function App() {
         identityVoice: usesOfficialIdentityVoice,
         useIdentityVoice: usesOfficialIdentityVoice,
         neutralVoice: usesOfficialIdentityVoice ? false : undefined,
+        allowPaidTtsVoice: usesOwnedOfficialReference ? false : undefined,
+        paidTtsAllowed: usesOwnedOfficialReference ? false : undefined,
+        allowCloudTts: usesOwnedOfficialReference ? false : undefined,
+        allowReadyMadeCloudVoice: usesOwnedOfficialReference ? false : undefined,
+        useReadyMadeCloudVoice: usesOwnedOfficialReference ? false : undefined,
         allowRvc: usesOwnedOfficialReference,
         allowXttsRvc: usesOwnedOfficialReference,
         allowLegacyVoiceBridge: usesOwnedOfficialReference,
         xttsRvcOptIn: usesOwnedOfficialReference,
+        ttsCostPolicy: usesOwnedOfficialReference ? `${targetSurface}_official_reference` : undefined,
         allowBrowserSpeechFallback: !usesOfficialIdentityVoice,
         ...(targetSurface === "vivy" ? getVivyVoiceTuning(vocalMode) : {}),
         ...(extraOptions || {}),
