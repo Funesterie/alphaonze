@@ -121,7 +121,7 @@
     "@nossen/scream": "^2.0.2",
     "@nossen/spyder": "^2.0.2",
     "adm-zip": "^0.5.17",
-    "axios": "^1.16.1",
+    "axios": "^1.17.0",
     "bcrypt": "^6.0.0",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
