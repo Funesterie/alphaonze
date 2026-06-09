@@ -193,8 +193,50 @@ type ChatModelChoice = {
   providerProfileId?: string;
 };
 
-type TtsProviderMode = "auto" | "piper" | "openai";
+type TtsProviderMode = "official" | "auto" | "piper" | "openai" | "elevenlabs" | "cartesia";
 type A11LanguageCode = "fr" | "en" | "it" | "es" | "de";
+
+const TTS_PROVIDER_MODE_VALUES = new Set<TtsProviderMode>([
+  "official",
+  "auto",
+  "piper",
+  "openai",
+  "elevenlabs",
+  "cartesia",
+]);
+
+const CLOUD_TTS_PROVIDER_MODES = new Set<TtsProviderMode>([
+  "openai",
+  "elevenlabs",
+  "cartesia",
+]);
+
+function normalizeTtsProviderMode(value: unknown, fallback: TtsProviderMode = "auto"): TtsProviderMode {
+  const raw = String(value || "").trim().toLowerCase() as TtsProviderMode;
+  return TTS_PROVIDER_MODE_VALUES.has(raw) ? raw : fallback;
+}
+
+function getDefaultTtsProviderMode(surface: FunesterieSurface): TtsProviderMode {
+  if (surface === "kaen44") return "official";
+  return "elevenlabs";
+}
+
+function getTtsProviderStorageKey(surface: FunesterieSurface) {
+  return `a11:tts:provider-mode:${surface}`;
+}
+
+function readStoredTtsProviderMode(surface: FunesterieSurface): TtsProviderMode {
+  const fallback = getDefaultTtsProviderMode(surface);
+  try {
+    return normalizeTtsProviderMode(
+      localStorage.getItem(getTtsProviderStorageKey(surface))
+      || localStorage.getItem("a11:tts:provider-mode"),
+      fallback
+    );
+  } catch {
+    return fallback;
+  }
+}
 
 function isOfficialVoiceSurface(surface: FunesterieSurface) {
   return surface === "a11" || surface === "kaen44" || surface === "vivy";
@@ -208,8 +250,9 @@ function resolveEffectiveTtsProviderMode(
   providerMode: TtsProviderMode,
   surface: FunesterieSurface
 ): TtsProviderMode {
-  if (providerMode === "piper" && isOfficialVoiceSurface(surface)) return "auto";
-  return providerMode;
+  const normalized = normalizeTtsProviderMode(providerMode, getDefaultTtsProviderMode(surface));
+  if (normalized === "auto") return getDefaultTtsProviderMode(surface);
+  return normalized;
 }
 
 const A11_LANGUAGE_CHOICES: Array<{
@@ -8302,12 +8345,13 @@ export function App() {
     || isGeneralPrivacy
     || isGeneralTerms
     || isGeneralLogin;
-  const productName = isKaen44 ? "Kaen44" : "A11";
+  const productName = isVivy ? "Vivy" : isKaen44 ? "Kaen44" : "A11";
   const surfaceLinks = getSurfaceLinks();
   const agentShortcuts = useMemo(() => getFunesterieAgentShortcuts(surfaceLinks), [surfaceLinks]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authSessionReady, setAuthSessionReady] = useState(false);
   const [isFunesterieAdmin, setIsFunesterieAdmin] = useState(false);
+  const [voiceAccountTier, setVoiceAccountTier] = useState("basic");
   const [isResetRoute, setIsResetRoute] = useState(false);
   const [displayName, setDisplayName] = useState(() => getAuthDisplayName() || "Utilisateur");
   const [showHistory, setShowHistory] = useState(false);
@@ -8337,6 +8381,10 @@ export function App() {
   const micDictationFallbackStartingRef = useRef(false);
   const hasPrivateSession = isAuthenticated && authSessionReady && !authInvalidatedRef.current;
   const hasConfirmedAdminAccess = hasPrivateSession && isFunesterieAdmin;
+  const canUseReadyMadeVoiceProviders = hasPrivateSession && (
+    isFunesterieAdmin
+    || ["premium", "founder", "admin_family"].includes(String(voiceAccountTier || "").trim().toLowerCase())
+  );
   const voiceLearningPersona = surfaceKind === "a11"
     ? "a11"
       : surfaceKind === "kaen44"
@@ -8559,6 +8607,24 @@ export function App() {
 
   useEffect(() => {
     if (isFunesteriePublicShell || !hasPrivateSession) {
+      setVoiceAccountTier("basic");
+      return;
+    }
+    let cancelled = false;
+    fetchMcpCockpitAccount()
+      .then((account) => {
+        if (!cancelled) setVoiceAccountTier(String(account?.tier || "basic").trim().toLowerCase() || "basic");
+      })
+      .catch(() => {
+        if (!cancelled) setVoiceAccountTier(isFunesterieAdmin ? "admin_family" : "basic");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPrivateSession, isFunesterieAdmin, isFunesteriePublicShell]);
+
+  useEffect(() => {
+    if (isFunesteriePublicShell || !hasPrivateSession) {
       setVoiceReferences([]);
       setVoiceReferenceStatus("");
       return;
@@ -8577,7 +8643,8 @@ export function App() {
       const via = String(detail?.via || detail?.provider || "").trim();
       if (via) {
         const label = via === "openai-tts" || via === "openai" ? "OpenAI"
-          : via.includes("cartesia") || via.includes("elevenlabs") ? "Voix legacy bloquee"
+          : via.includes("elevenlabs") ? "ElevenLabs"
+            : via.includes("cartesia") ? "Cartesia"
             : via.includes("xtts") || via.includes("rvc") ? "XTTS/RVC privé"
             : via === "spawn" || via === "piper" ? "Voix serveur locale"
               : via === "espeak" || via === "espeak-ng" ? "Secours robot"
@@ -8772,12 +8839,7 @@ export function App() {
     }
   });
   const [ttsProviderMode, setTtsProviderMode] = useState<TtsProviderMode>(() => {
-    try {
-      const saved = localStorage.getItem("a11:tts:provider-mode");
-      return saved === "piper" || saved === "openai" ? saved : "auto";
-    } catch {
-      return "auto";
-    }
+    return readStoredTtsProviderMode(surfaceKind);
   });
   const effectiveTtsProviderMode = useMemo(
     () => resolveEffectiveTtsProviderMode(ttsProviderMode, surfaceKind),
@@ -8814,23 +8876,21 @@ export function App() {
     : defaultVoiceReferenceLabel;
   const voiceReferenceControlsDisabled = isFunesteriePublicShell || !hasPrivateSession;
   const voiceReferenceStorageKey = useMemo(() => getVoiceReferenceStorageKey(surfaceKind), [surfaceKind]);
+  const ttsProviderStorageKey = useMemo(() => getTtsProviderStorageKey(surfaceKind), [surfaceKind]);
   useEffect(() => {
     setSelectedVoiceReferenceId(readStoredVoiceReferenceId(surfaceKind));
+    setTtsProviderMode(readStoredTtsProviderMode(surfaceKind));
   }, [surfaceKind]);
-  useEffect(() => {
-    if (effectiveTtsProviderMode !== ttsProviderMode) {
-      setTtsProviderMode(effectiveTtsProviderMode);
-    }
-  }, [effectiveTtsProviderMode, ttsProviderMode]);
   useEffect(() => {
     try {
       localStorage.setItem(voiceReferenceStorageKey, selectedVoiceReferenceId || "");
       localStorage.setItem("a11:tts:vocal-mode", ttsVocalMode);
+      localStorage.setItem(ttsProviderStorageKey, ttsProviderMode);
       localStorage.setItem("a11:tts:provider-mode", effectiveTtsProviderMode);
     } catch {
       // ignore storage access errors
     }
-  }, [effectiveTtsProviderMode, selectedVoiceReferenceId, ttsVocalMode, voiceReferenceStorageKey]);
+  }, [effectiveTtsProviderMode, selectedVoiceReferenceId, ttsProviderMode, ttsProviderStorageKey, ttsVocalMode, voiceReferenceStorageKey]);
   useEffect(() => {
     try {
       localStorage.setItem("a11:language", selectedA11Language.code);
@@ -9885,13 +9945,16 @@ export function App() {
   }
 
   function buildAssistantSpeechOptions(vocalMode: "speech" | "adaptive" | "sing" = ttsVocalMode) {
-    const ownedOfficialReferencePersonas = new Set(["a11", "kaen44", "k44", "kaen"]);
     const officialVoicePersonas = new Set(["a11", "kaen44", "k44", "kaen", "vivy"]);
-    const useOwnedOfficialReference = ownedOfficialReferencePersonas.has(surfaceKind);
     const useOfficialIdentityVoice = officialVoicePersonas.has(surfaceKind);
+    const selectedProviderMode = effectiveTtsProviderMode;
+    const wantsCloudProvider = CLOUD_TTS_PROVIDER_MODES.has(selectedProviderMode);
+    const canUseSelectedCloudProvider = wantsCloudProvider && canUseReadyMadeVoiceProviders;
+    const useOwnedOfficialReference = useOfficialIdentityVoice
+      && (!wantsCloudProvider || !canUseSelectedCloudProvider || selectedProviderMode === "official");
     const provider = useOwnedOfficialReference
       ? "xtts-rvc"
-      : (useOfficialIdentityVoice ? "auto" : (effectiveTtsProviderMode === "auto" ? undefined : effectiveTtsProviderMode));
+      : (selectedProviderMode === "auto" ? undefined : selectedProviderMode);
     return {
       lang: selectedA11Language.speechLang,
       voiceReferenceId: speechVoiceReferenceId || undefined,
@@ -9917,6 +9980,9 @@ export function App() {
       allowCloudTts: useOwnedOfficialReference ? false : undefined,
       allowReadyMadeCloudVoice: useOwnedOfficialReference ? false : undefined,
       useReadyMadeCloudVoice: useOwnedOfficialReference ? false : undefined,
+      allowOfficialCloudVoice: canUseSelectedCloudProvider || undefined,
+      allowIdentityCloudVoice: canUseSelectedCloudProvider || undefined,
+      forceCloudTts: canUseSelectedCloudProvider || undefined,
       allowRvc: useOwnedOfficialReference,
       allowXttsRvc: useOwnedOfficialReference,
       allowLegacyVoiceBridge: useOwnedOfficialReference,
@@ -9924,7 +9990,7 @@ export function App() {
       ttsCostPolicy: useOwnedOfficialReference ? `${surfaceKind}_official_reference` : undefined,
       allowBrowserSpeechFallback: !useOfficialIdentityVoice,
       provider,
-      ttsProvider: provider || effectiveTtsProviderMode,
+      ttsProvider: provider || selectedProviderMode,
     };
   }
 
@@ -11675,6 +11741,33 @@ export function App() {
                     </select>
                     <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
                       Chat, micro, transcription audio et voix {productName} utilisent cette langue.
+                    </div>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#cbd5e1", fontWeight: 800 }}>
+                      Voix IA
+                      <select
+                        id="a11-tts-provider-mode"
+                        name="ttsProviderMode"
+                        value={ttsProviderMode}
+                        onChange={(e) => setTtsProviderMode(normalizeTtsProviderMode(e.target.value, getDefaultTtsProviderMode(surfaceKind)))}
+                        style={{ ...headerSelectStyle, width: "100%", maxWidth: "100%" }}
+                        title="Choisir la route voix pour cette IA"
+                      >
+                        <option value="official">Voix officielle</option>
+                        <option value="elevenlabs" disabled={!canUseReadyMadeVoiceProviders}>
+                          ElevenLabs
+                        </option>
+                        <option value="cartesia" disabled={!canUseReadyMadeVoiceProviders}>
+                          Cartesia
+                        </option>
+                        <option value="openai" disabled={!canUseReadyMadeVoiceProviders}>
+                          OpenAI
+                        </option>
+                        <option value="piper">Secours local</option>
+                        <option value="auto">Auto</option>
+                      </select>
+                    </label>
+                    <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.35 }}>
+                      Défaut: {surfaceKind === "kaen44" ? "voix officielle K44" : "ElevenLabs temporaire"}. Cloud réservé Premium/Famille/Admin.
                     </div>
                     <div className="a11-menu-voice-tools" aria-label="Réglages voix">
                       <button

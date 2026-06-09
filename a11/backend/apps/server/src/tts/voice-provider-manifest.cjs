@@ -22,6 +22,7 @@ const PROVIDERS = Object.freeze({
 
 // Provider resolution order for production requests
 const PROVIDER_ORDER = [
+  PROVIDERS.ELEVENLABS,
   PROVIDERS.XTTS_RVC,
   PROVIDERS.AZURE,
   PROVIDERS.OPENAI,
@@ -43,6 +44,10 @@ const LEGACY_CLOUD_TTS_PROVIDERS = new Set([
   PROVIDERS.CARTESIA,
   PROVIDERS.ELEVENLABS,
 ]);
+
+const CLOUD_DEFAULT_PERSONAS = new Set(['a11', 'vivy']);
+const LOCAL_OFFICIAL_PRIORITY_PERSONAS = new Set(['kaen44', 'k44', 'kaen', 'djeff', 'djeff-rap']);
+const DEFAULT_ELEVENLABS_FAMILY_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
 
 // Official personas — these may never fall back to a demo model
 const OFFICIAL_PERSONAS = new Set(['a11', 'kaen44', 'vivy']);
@@ -69,7 +74,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
       'Official path: owned Djeff WAV reference through the Funesterie XTTS/RVC bridge when available.',
       'Optional path: a11-voix-de-lait local reference is a persona/mood style for measured interior and symbolic clarity; it must not override the official A11 voice unless explicitly selected.',
       'Optional path: djeff-rap local reference is a consented Djeff rap style for Vivy Studio and duet drafting; it must not override A11 unless explicitly selected.',
-      'Cartesia/ElevenLabs are legacy cloud providers and stay disabled by default; use owned local references first.',
+      'ElevenLabs and Cartesia are privileged ready-made choices; default cloud routing may be used until the definitive family WAV is provided, while the owned local reference remains the official route.',
       'Target original A11: low, mission-focused French diction with restrained warmth.',
     ],
     prompt:
@@ -84,7 +89,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     protectedReferences: [],
     referenceClipNotes: [
       'Official path: owned family WAV reference through the Funesterie XTTS/RVC bridge when available.',
-      'Cartesia/ElevenLabs are legacy cloud providers and stay disabled by default; use the owned family reference first.',
+      'Cartesia/ElevenLabs remain explicit privileged choices only; use the owned family reference first.',
       'Target original Kaen44: sharp desk-operator timing, confident warmth, fast wit.',
     ],
     prompt:
@@ -98,7 +103,7 @@ const VOICE_PERSONA_DIRECTIONS = Object.freeze({
     ],
     protectedReferences: [],
     referenceClipNotes: [
-      'Official path: Funesterie-owned or explicitly approved voice references. Cartesia/ElevenLabs are legacy opt-in only.',
+      'Official path: Funesterie-owned or explicitly approved voice references. ElevenLabs is the temporary privileged default until the definitive family WAV is provided; Cartesia is explicit opt-in.',
       'Target original Vivy: luminous AI-singer mood, precise emotion, clean vowels, gentle musical lift.',
     ],
     prompt:
@@ -111,12 +116,13 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
     styleId: 'a11-official-stern-french',
     displayName: 'A11 - Djeff WAV XTTS/RVC',
     providerLabels: Object.freeze({
+      [PROVIDERS.ELEVENLABS]: 'ElevenLabs A11 family default',
       [PROVIDERS.AZURE]: 'fr-FR-Remy:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'onyx',
       [PROVIDERS.XTTS_RVC]: 'Djeff WAV - A11 official reference',
       [PROVIDERS.PIPER]: 'fr_FR-tom-medium',
     }),
-    elevenLabsVoiceId: 'JBFqnCBsd6RMkjVDRZzb',
+    elevenLabsVoiceId: DEFAULT_ELEVENLABS_FAMILY_VOICE_ID,
     cartesiaVoiceId: '7345dfa5-ee04-44d2-abf4-29262b880ab4',
     azureVoice: 'fr-FR-Remy:DragonHDLatestNeural',
     openAiVoice: 'onyx',
@@ -140,11 +146,13 @@ const OFFICIAL_READY_VOICE_PROFILES = Object.freeze({
     styleId: 'vivy-official-french-conversational',
     displayName: 'Vivy - Funesterie reference',
     providerLabels: Object.freeze({
+      [PROVIDERS.ELEVENLABS]: 'ElevenLabs Vivy temporary default',
       [PROVIDERS.AZURE]: 'fr-FR-Vivienne:DragonHDLatestNeural',
       [PROVIDERS.OPENAI]: 'coral',
       [PROVIDERS.XTTS_RVC]: 'Vivy Funesterie approved reference',
       [PROVIDERS.PIPER]: 'fr_FR-siwis-medium',
     }),
+    elevenLabsVoiceId: DEFAULT_ELEVENLABS_FAMILY_VOICE_ID,
     cartesiaVoiceId: '2f8e82c4-cb94-4e6d-8b6a-29bf58ceb60a',
     azureVoice: 'fr-FR-Vivienne:DragonHDLatestNeural',
     openAiVoice: 'coral',
@@ -162,6 +170,13 @@ function hasEnvValue(...names) {
   return names.some((name) => String(process.env[name] || '').trim());
 }
 
+function envExplicitlyDisabled(...names) {
+  return names.some((name) => {
+    const raw = String(process.env[name] || '').trim().toLowerCase();
+    return raw === '0' || raw === 'false' || raw === 'no' || raw === 'off' || raw === 'disabled';
+  });
+}
+
 function isLegacyCloudTtsProvider(provider = '') {
   return LEGACY_CLOUD_TTS_PROVIDERS.has(String(provider || '').trim().toLowerCase());
 }
@@ -170,13 +185,20 @@ function isLegacyCloudTtsProviderEnabled(provider = '') {
   const normalized = String(provider || '').trim().toLowerCase();
   if (normalized === PROVIDERS.CARTESIA) {
     if (envFlag('A11_CARTESIA_TTS_DISABLED') || envFlag('CARTESIA_TTS_DISABLED')) return false;
-    return envFlag('A11_CARTESIA_TTS_ENABLED') || envFlag('CARTESIA_TTS_ENABLED');
+    return !envExplicitlyDisabled('A11_CARTESIA_TTS_ENABLED', 'CARTESIA_TTS_ENABLED');
   }
   if (normalized === PROVIDERS.ELEVENLABS) {
     if (envFlag('A11_ELEVENLABS_TTS_DISABLED') || envFlag('ELEVENLABS_TTS_DISABLED')) return false;
-    return envFlag('A11_ELEVENLABS_TTS_ENABLED') || envFlag('ELEVENLABS_TTS_ENABLED');
+    return !envExplicitlyDisabled('A11_ELEVENLABS_TTS_ENABLED', 'ELEVENLABS_TTS_ENABLED');
   }
   return true;
+}
+
+function getDefaultVoiceProviderForPersona(persona = 'a11') {
+  const normalized = normalizePersonaKey(persona);
+  if (LOCAL_OFFICIAL_PRIORITY_PERSONAS.has(normalized)) return PROVIDERS.XTTS_RVC;
+  if (CLOUD_DEFAULT_PERSONAS.has(normalized)) return PROVIDERS.ELEVENLABS;
+  return PROVIDERS.XTTS_RVC;
 }
 
 function getReadyVoiceProfile(persona = 'a11', provider = '') {
@@ -261,8 +283,8 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original A11 cybernetic voice. Licensed/consented data only; no T-800/actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original A11 direction; public film clips are moodboard only.' },
-      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.elevenLabsVoiceId, note: 'Privileged ready-made default until the definitive A11 WAV is provided.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.a11.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.a11.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
       [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/a11-official-stern-french.wav', optionalStylePath: 'voice-library/a11-voix-de-lait.wav', optionalRapStylePath: 'voice-library/djeff-rap.wav', note: 'Official A11 bridge using the owned Djeff WAV reference when available; optional a11-voix-de-lait and djeff-rap styles are explicit opt-in only.' },
@@ -276,7 +298,7 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Kaen44 executive voice. Licensed/consented data only; no real-person or character clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Kaen44 direction; public TV/audio clips are moodboard only.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.kaen44.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice; local K44 official reference stays first.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.azureVoice, note: 'Fallback/explicit override HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.kaen44.openAiVoice, note: 'Fallback/explicit override high-quality ready-made voice.' },
       [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/kaen44-official-french-narrator.wav', note: 'Official Kaen44 bridge using the owned family WAV reference when available.' },
@@ -290,7 +312,8 @@ const MANIFEST = Object.freeze({
     providers: {
       [PROVIDERS.GPT_SOVITS]: { configured: false, modelPath: null, note: 'Pending trained original Vivy musical voice. Licensed/consented data only; no anime singer/voice actor clone.' },
       [PROVIDERS.CHATTERBOX]: { configured: false, refClipId: null, note: 'Pending approved ref clip for original Vivy direction; public anime songs are moodboard only.' },
-      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, note: 'Legacy cloud voice disabled by default; explicit emergency opt-in only.' },
+      [PROVIDERS.ELEVENLABS]: { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.elevenLabsVoiceId, note: 'Privileged ready-made default until the definitive Vivy WAV is provided.' },
+      [PROVIDERS.CARTESIA]:   { configured: 'runtime', voiceId: OFFICIAL_READY_VOICE_PROFILES.vivy.cartesiaVoiceId, note: 'Privileged explicit ready-made voice choice.' },
       [PROVIDERS.AZURE]:      { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.vivy.azureVoice, note: 'Secondary HD ready-made voice.' },
       [PROVIDERS.OPENAI]:     { configured: 'runtime', voice: OFFICIAL_READY_VOICE_PROFILES.vivy.openAiVoice, note: 'Tertiary high-quality ready-made voice.' },
       [PROVIDERS.XTTS_RVC]:   { configured: 'runtime', modelPath: 'voice-library/vivy.wav', note: 'Official Vivy bridge using the Funesterie-approved local reference when available.' },
@@ -424,6 +447,8 @@ module.exports = {
   LOCAL_PROVIDER_ORDER,
   LEGACY_EXPERIMENTAL_PROVIDERS,
   LEGACY_CLOUD_TTS_PROVIDERS,
+  CLOUD_DEFAULT_PERSONAS,
+  LOCAL_OFFICIAL_PRIORITY_PERSONAS,
   OFFICIAL_PERSONAS,
   VOICE_REFERENCE_POLICY,
   FAMILY_VOICE_IDENTITIES,
@@ -432,6 +457,7 @@ module.exports = {
   OFFICIAL_READY_VOICE_PROFILES,
   MANIFEST,
   getVoicePersonaDirection,
+  getDefaultVoiceProviderForPersona,
   getReadyVoiceProfile,
   buildVoicePersonaInstruction,
   resolveVoiceProvider,

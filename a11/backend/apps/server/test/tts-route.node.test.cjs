@@ -498,7 +498,7 @@ test('tts speak route gives basic A11 the official local reference without paid 
   }
 });
 
-test('tts speak route keeps premium A11 on the official WAV reference by default', async () => {
+test('tts speak route keeps premium A11 on the official WAV reference when official is selected', async () => {
   const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'a11-premium-official-voice-'));
   const previousEnv = {
     A11_RUNTIME_ROOT: process.env.A11_RUNTIME_ROOT,
@@ -588,7 +588,7 @@ test('tts speak route keeps premium A11 on the official WAV reference by default
         const result = await postJson(baseUrl, '/api/tts/speak', {
           text: 'bonjour',
           persona: 'a11',
-          provider: 'auto',
+          provider: 'official',
           useDefaultVoiceReference: true,
           vocalMode: 'adaptive',
         });
@@ -1085,6 +1085,9 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
     A11_CARTESIA_VERSION: process.env.A11_CARTESIA_VERSION,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+    XI_API_KEY: process.env.XI_API_KEY,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
@@ -1096,6 +1099,9 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
   process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
   process.env.A11_CARTESIA_VERSION = '2026-03-01';
+  delete process.env.A11_ELEVENLABS_API_KEY;
+  delete process.env.ELEVENLABS_API_KEY;
+  delete process.env.XI_API_KEY;
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;
@@ -1148,6 +1154,9 @@ test('vivy jobs route exposes a Bat/Rome async official TTS job with web audio o
         const started = await postJson(baseUrl, '/api/vivy/jobs', {
           prompt: 'Chante une phrase courte pour Vivy.',
           song: true,
+          provider: 'official',
+          allowRvc: true,
+          allowXttsRvc: true,
         });
 
         assert.equal(started.response.status, 202);
@@ -1437,7 +1446,7 @@ test('tts piper route selects persona-specific local Piper voice when cloud TTS 
   }
 });
 
-test('tts speak route can use Cartesia only when legacy opt-in is enabled', async () => {
+test('tts speak route can use Cartesia when selected explicitly by an authorized voice request', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_VOICE_XTTS_RVC_RETRIES: process.env.A11_VOICE_XTTS_RVC_RETRIES,
@@ -1532,7 +1541,7 @@ test('tts speak route can use Cartesia only when legacy opt-in is enabled', asyn
   }
 });
 
-test('tts speak route can use ElevenLabs only when legacy opt-in is enabled', async () => {
+test('tts speak route can use ElevenLabs when selected explicitly by an authorized voice request', async () => {
   const previousEnv = {
     A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
     A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
@@ -1606,6 +1615,88 @@ test('tts speak route can use ElevenLabs only when legacy opt-in is enabled', as
         assert.equal(elevenLabsBodies.length, 1);
         assert.equal(elevenLabsBodies[0].model_id, 'eleven_multilingual_v2');
         assert.equal(elevenLabsBodies[0].language_code, 'fr');
+      }
+    );
+  } finally {
+    global.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('tts speak route defaults A11 and Vivy auto voices to ElevenLabs when configured', async () => {
+  const previousEnv = {
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
+    A11_ELEVENLABS_BASE_URL: process.env.A11_ELEVENLABS_BASE_URL,
+    A11_ELEVENLABS_MODEL: process.env.A11_ELEVENLABS_MODEL,
+    A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
+    A11_LOCAL_XTTS_RVC_AUTODETECT: process.env.A11_LOCAL_XTTS_RVC_AUTODETECT,
+    ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
+    A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
+  };
+  const previousFetch = global.fetch;
+  const elevenLabsBodies = [];
+
+  process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
+  process.env.A11_ELEVENLABS_TTS_ENABLED = 'true';
+  process.env.A11_ELEVENLABS_BASE_URL = 'https://api.elevenlabs.test/v1';
+  process.env.A11_ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+  process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
+  process.env.A11_LOCAL_XTTS_RVC_AUTODETECT = '0';
+  process.env.ENABLE_PIPER_HTTP = 'true';
+  process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
+
+  global.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value === 'https://api.elevenlabs.test/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128') {
+      elevenLabsBodies.push(JSON.parse(String(options.body || '{}')));
+      return {
+        ok: true,
+        status: 200,
+        async arrayBuffer() {
+          return Buffer.from('elevenlabs-auto-mp3');
+        },
+      };
+    }
+    if (value === 'https://api.cartesia.test/tts/bytes') {
+      throw new Error('cartesia_should_not_be_called_for_auto_default');
+    }
+    if (value === 'http://a11-voice:5002/api/tts') {
+      throw new Error('piper_http_should_not_be_called_for_auto_elevenlabs');
+    }
+    return previousFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      (app) => {
+        app.use(express.json());
+        app.use('/api', ttsRouter);
+      },
+      async (baseUrl) => {
+        for (const persona of ['a11', 'vivy']) {
+          const result = await postJson(baseUrl, '/api/tts/speak', {
+            text: `Bonjour ${persona}`,
+            persona,
+            voicePersona: persona,
+            surface: persona,
+            provider: 'auto',
+            vocalMode: 'adaptive',
+            useDefaultVoiceReference: true,
+            voiceReferenceRequired: true,
+            audioFormat: 'mp3',
+          });
+
+          assert.equal(result.response.status, 200);
+          assert.equal(result.json.provider, 'elevenlabs');
+          assert.equal(result.json.via, 'elevenlabs-tts');
+          assert.match(result.json.voiceReference.label, new RegExp(persona === 'a11' ? 'A11' : 'Vivy', 'i'));
+          assert.match(result.json.audio_url, /^\/api\/tts\/out\/tts-out-\d+-elevenlabs\.mp3$/);
+        }
+        assert.equal(elevenLabsBodies.length, 2);
       }
     );
   } finally {
@@ -1703,7 +1794,7 @@ test('tts speak route treats official persona alone as identity voice request', 
   }
 });
 
-test('tts speak route can use Vivy Cartesia only when legacy opt-in is enabled', async () => {
+test('tts speak route can use Vivy Cartesia when selected explicitly by an authorized voice request', async () => {
   const previousEnv = {
     A11_VOICE_XTTS_RVC_URL: process.env.A11_VOICE_XTTS_RVC_URL,
     A11_XTTS_RVC_URL: process.env.A11_XTTS_RVC_URL,
@@ -1711,6 +1802,9 @@ test('tts speak route can use Vivy Cartesia only when legacy opt-in is enabled',
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+    XI_API_KEY: process.env.XI_API_KEY,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
@@ -1792,7 +1886,7 @@ test('tts speak route can use Vivy Cartesia only when legacy opt-in is enabled',
   }
 });
 
-test('tts async Vivy Cartesia jobs require legacy opt-in and bypass the local GPU worker', async () => {
+test('tts async Vivy Cartesia jobs are explicit cloud jobs and bypass the local GPU worker', async () => {
   const previousEnv = {
     A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
     A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
@@ -1803,6 +1897,9 @@ test('tts async Vivy Cartesia jobs require legacy opt-in and bypass the local GP
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+    XI_API_KEY: process.env.XI_API_KEY,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
@@ -1896,7 +1993,7 @@ test('tts async Vivy Cartesia jobs require legacy opt-in and bypass the local GP
   }
 });
 
-test('tts async official auto voices prefer XTTS/RVC over configured legacy cloud voices', async () => {
+test('tts async official auto voices keep Cartesia explicit-only and use local official reference when ElevenLabs is absent', async () => {
   const previousEnv = {
     A11_TTS_LOCAL_GPU_WORKER_ENABLED: process.env.A11_TTS_LOCAL_GPU_WORKER_ENABLED,
     A11_LOCAL_GPU_WORKER_TOKEN: process.env.A11_LOCAL_GPU_WORKER_TOKEN,
@@ -1907,6 +2004,9 @@ test('tts async official auto voices prefer XTTS/RVC over configured legacy clou
     A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
     A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
     A11_CARTESIA_BASE_URL: process.env.A11_CARTESIA_BASE_URL,
+    A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+    XI_API_KEY: process.env.XI_API_KEY,
     ENABLE_PIPER_HTTP: process.env.ENABLE_PIPER_HTTP,
     A11_VOICE_MODULE_URL: process.env.A11_VOICE_MODULE_URL,
   };
@@ -1921,6 +2021,9 @@ test('tts async official auto voices prefer XTTS/RVC over configured legacy clou
   process.env.A11_CARTESIA_API_KEY = 'test-cartesia-key';
   delete process.env.A11_CARTESIA_TTS_ENABLED;
   process.env.A11_CARTESIA_BASE_URL = 'https://api.cartesia.test';
+  delete process.env.A11_ELEVENLABS_API_KEY;
+  delete process.env.ELEVENLABS_API_KEY;
+  delete process.env.XI_API_KEY;
   process.env.ENABLE_PIPER_HTTP = 'true';
   process.env.A11_VOICE_MODULE_URL = 'http://a11-voice:5002';
   delete process.env.A11_XTTS_RVC_URL;

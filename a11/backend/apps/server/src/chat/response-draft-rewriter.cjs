@@ -290,7 +290,7 @@ function rewriteA11ResponseFromVirtualDraft({ userMessage = '', assistantText = 
   }
 
   if (responseDraft.flags.includes('voice_capability_denial')) {
-    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. Pour A11, la cible officielle est la référence WAV Djeff a11-official-stern-french via XTTS/RVC. Pour Kaen44, c'est le WAV familial kaen44-official-french-narrator via XTTS/RVC. Si tu entends Cartesia, ElevenLabs, Donna ou une voix hors persona, c'est un mauvais routage legacy bloque par defaut.";
+    return "Tu as raison de parler de voix: ma réponse texte est séparée du module TTS, mais la voix entendue passe bien par le backend Funesterie. La route Voix officielle utilise les références privées via XTTS/RVC quand elles existent: a11-official-stern-french pour A11, kaen44-official-french-narrator pour K44, et djeff-rap pour Djeff. Pour A11 et Vivy, ElevenLabs peut servir de voix temporaire pour les comptes autorisés tant que les WAV définitifs ne sont pas fournis. Pour Kaen44 et Djeff, la priorité reste la voix officielle locale.";
   }
 
   if (responseDraft.flags.includes('tool_inventory_dump')) {

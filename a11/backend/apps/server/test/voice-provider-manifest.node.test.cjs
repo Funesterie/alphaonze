@@ -100,9 +100,9 @@ describe('voice-provider-manifest', () => {
   });
 
   describe('resolveVoiceProvider — official personas', () => {
-    it('local/basic provider order keeps cloud voices out of the automatic path', () => {
+    it('provider order keeps ElevenLabs available for privileged A11/Vivy defaults while local/basic stays local', () => {
       assert.deepEqual(LOCAL_PROVIDER_ORDER, [PROVIDERS.XTTS_RVC, PROVIDERS.PIPER]);
-      assert.deepEqual(PROVIDER_ORDER, [PROVIDERS.XTTS_RVC, PROVIDERS.AZURE, PROVIDERS.OPENAI, PROVIDERS.PIPER]);
+      assert.deepEqual(PROVIDER_ORDER, [PROVIDERS.ELEVENLABS, PROVIDERS.XTTS_RVC, PROVIDERS.AZURE, PROVIDERS.OPENAI, PROVIDERS.PIPER]);
     });
 
     for (const persona of ['a11', 'kaen44', 'vivy']) {
@@ -112,7 +112,7 @@ describe('voice-provider-manifest', () => {
         assert.equal(result.configured, true);
       });
 
-      it(`${persona}: ignores Cartesia keys unless the legacy provider is explicitly enabled`, () => {
+      it(`${persona}: keeps Cartesia explicit-only even when its key exists`, () => {
         const previous = {
           A11_CARTESIA_API_KEY: process.env.A11_CARTESIA_API_KEY,
           A11_CARTESIA_TTS_ENABLED: process.env.A11_CARTESIA_TTS_ENABLED,
@@ -124,12 +124,15 @@ describe('voice-provider-manifest', () => {
         delete process.env.A11_CARTESIA_TTS_ENABLED;
         delete process.env.A11_ELEVENLABS_TTS_ENABLED;
         try {
-          assert.equal(isLegacyCloudTtsProviderEnabled(PROVIDERS.CARTESIA), false);
-          assert.equal(isProviderRuntimeConfigured(PROVIDERS.CARTESIA), false);
+          assert.equal(isLegacyCloudTtsProviderEnabled(PROVIDERS.CARTESIA), true);
+          assert.equal(isProviderRuntimeConfigured(PROVIDERS.CARTESIA), true);
           const result = resolveVoiceProvider(persona);
           assert.notEqual(result.provider, PROVIDERS.CARTESIA);
           assert.notEqual(result.provider, PROVIDERS.ELEVENLABS);
           assert.equal(result.configured, true);
+          const explicit = resolveVoiceProvider(persona, { explicitProvider: PROVIDERS.CARTESIA, allowCloud: true });
+          assert.equal(explicit.provider, PROVIDERS.CARTESIA);
+          assert.equal(explicit.configured, true);
         } finally {
           for (const [key, value] of Object.entries(previous)) {
             if (value === undefined) delete process.env[key];
@@ -156,7 +159,7 @@ describe('voice-provider-manifest', () => {
       });
     }
 
-    it('a11: ignores ElevenLabs keys unless the legacy provider is explicitly enabled', () => {
+    it('a11 and vivy: use ElevenLabs as the temporary privileged default when configured', () => {
       const previous = {
         A11_ELEVENLABS_API_KEY: process.env.A11_ELEVENLABS_API_KEY,
         A11_ELEVENLABS_TTS_ENABLED: process.env.A11_ELEVENLABS_TTS_ENABLED,
@@ -168,11 +171,9 @@ describe('voice-provider-manifest', () => {
       delete process.env.A11_ELEVENLABS_TTS_ENABLED;
       delete process.env.A11_CARTESIA_TTS_ENABLED;
       try {
-        const result = resolveVoiceProvider('a11');
-        assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), false);
-        assert.notEqual(result.provider, PROVIDERS.ELEVENLABS);
-        assert.notEqual(result.provider, PROVIDERS.CARTESIA);
-        assert.equal(result.configured, true);
+        assert.equal(isProviderRuntimeConfigured(PROVIDERS.ELEVENLABS), true);
+        assert.equal(resolveVoiceProvider('a11').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
       } finally {
         for (const [key, value] of Object.entries(previous)) {
           if (value === undefined) delete process.env[key];
@@ -227,12 +228,12 @@ describe('voice-provider-manifest', () => {
       }
     });
 
-    it('kaen44 and vivy do not inherit the A11 ElevenLabs voice', () => {
+    it('kaen44 does not inherit the A11/Vivy ElevenLabs default', () => {
       const previous = process.env.A11_ELEVENLABS_API_KEY;
       process.env.A11_ELEVENLABS_API_KEY = 'test-elevenlabs-key';
       try {
         assert.notEqual(resolveVoiceProvider('kaen44').provider, PROVIDERS.ELEVENLABS);
-        assert.notEqual(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
+        assert.equal(resolveVoiceProvider('vivy').provider, PROVIDERS.ELEVENLABS);
       } finally {
         if (previous === undefined) delete process.env.A11_ELEVENLABS_API_KEY;
         else process.env.A11_ELEVENLABS_API_KEY = previous;

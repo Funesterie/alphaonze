@@ -11,6 +11,7 @@ const { resolveMcpAccountProfileSync } = require('../src/auth/mcp-account-tier.c
 const { buildStorageQuotaPayload } = require('../src/storage/account-storage-quota.cjs');
 const {
   buildVoicePersonaInstruction,
+  getDefaultVoiceProviderForPersona,
   getReadyVoiceProfile,
   isLegacyCloudTtsProvider,
   isLegacyCloudTtsProviderEnabled,
@@ -579,7 +580,7 @@ function allowsExplicitOwnedOfficialCloudVoice(body = {}) {
   const explicitPersona = getOwnedOfficialReferencePersona(body);
   if (!explicitPersona) return false;
   const provider = getRequestedTtsProvider(body);
-  if (isCloudTtsProvider(provider) && !isLegacyCloudTtsProvider(provider)) return true;
+  if (isCloudTtsProvider(provider)) return true;
   const explicitCloudOverride = parseOptionalBoolean(
     body?.allowOfficialCloudVoice
     ?? body?.forceOfficialCloudVoice
@@ -600,6 +601,31 @@ function allowsExplicitOwnedOfficialCloudVoice(body = {}) {
   ) === true;
 }
 
+function wantsSpecificLocalVoiceReference(body = {}) {
+  return Boolean(String(
+    body?.voiceReferenceId
+    || body?.voiceRefId
+    || body?.referenceId
+    || body?.voiceStyle
+    || body?.voice_style
+    || body?.voiceReferenceName
+    || body?.voiceReferenceLabel
+    || body?.referenceVoiceStyle
+    || ''
+  ).trim());
+}
+
+function shouldUseDefaultCloudVoiceForPersona(body = {}) {
+  const explicitPersona = getOwnedOfficialReferencePersona(body);
+  if (!explicitPersona) return false;
+  if (!allowsPaidTtsVoiceForBody(body)) return false;
+  const requestedProvider = getRequestedTtsProvider(body);
+  if (requestedProvider && requestedProvider !== 'auto') return false;
+  if (wantsSpecificLocalVoiceReference(body)) return false;
+  const defaultProvider = getDefaultVoiceProviderForPersona(explicitPersona);
+  return isCloudTtsProvider(defaultProvider) && isProviderRuntimeConfigured(defaultProvider);
+}
+
 function shouldUseA11OfficialReferenceVoice(body = {}) {
   const explicitPersona = getOwnedOfficialReferencePersona(body);
   if (!explicitPersona) return false;
@@ -607,6 +633,7 @@ function shouldUseA11OfficialReferenceVoice(body = {}) {
     return false;
   }
   if (allowsExplicitOwnedOfficialCloudVoice(body)) return false;
+  if (shouldUseDefaultCloudVoiceForPersona(body)) return false;
   const costPolicy = String(body?.ttsCostPolicy || '').trim().toLowerCase();
   return costPolicy === `basic_${explicitPersona}_official_reference`
     || costPolicy === `${explicitPersona}_official_reference`
@@ -2011,7 +2038,11 @@ function getAzureSpeechEndpoint() {
 }
 
 function getRequestedTtsProvider(body = {}) {
-  return String(body?.ttsProvider || body?.provider || '').trim().toLowerCase();
+  const raw = String(body?.ttsProvider || body?.provider || '').trim().toLowerCase();
+  if (['official', 'voix-officielle', 'voix_officielle', 'official-local', 'local-official'].includes(raw)) {
+    return PROVIDERS.XTTS_RVC;
+  }
+  return raw;
 }
 
 function isNeutralTtsProvider(provider = '') {
@@ -2090,6 +2121,7 @@ function resolveTtsProviderForRequest(body = {}) {
   const explicitPersona = getExplicitTtsPersonaFromBody(body);
   const requestedProvider = getRequestedTtsProvider(body);
   const allowPaidVoice = allowsPaidTtsVoiceForBody(body);
+  const defaultProvider = getDefaultVoiceProviderForPersona(explicitPersona || persona);
   if (shouldUseA11OfficialReferenceVoice(body)) {
     const ownedPersona = getOwnedOfficialReferencePersona(body) || persona;
     return {
@@ -2154,6 +2186,15 @@ function resolveTtsProviderForRequest(body = {}) {
   }
 
   if (OFFICIAL_PERSONAS.has(explicitPersona) && wantsOfficialIdentityVoice(body)) {
+    if ((!requestedProvider || requestedProvider === 'auto') && allowPaidVoice && isCloudTtsProvider(defaultProvider)) {
+      const configured = isProviderRuntimeConfigured(defaultProvider);
+      return {
+        provider: defaultProvider,
+        configured,
+        note: `Default ${explicitPersona} privileged ready-made voice request.`,
+        diagnostic: configured ? null : `${defaultProvider}_tts_unavailable`,
+      };
+    }
     if (requestedProvider === PROVIDERS.XTTS_RVC) {
       return resolveVoiceProvider(persona, {
         explicitProvider: requestedProvider,
@@ -2209,7 +2250,7 @@ function shouldTryCartesiaTts(body = {}) {
   if (!allowsPaidTtsVoiceForBody(body)) return false;
   if (!isLegacyCloudTtsProviderEnabled(PROVIDERS.CARTESIA)) return false;
   const requestedProvider = getRequestedTtsProvider(body);
-  if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.CARTESIA) return false;
+  if (requestedProvider !== PROVIDERS.CARTESIA) return false;
   return Boolean(getCartesiaTtsApiKey());
 }
 
@@ -2221,7 +2262,7 @@ function shouldTryElevenLabsTts(body = {}) {
   if (requestedProvider && requestedProvider !== 'auto' && requestedProvider !== PROVIDERS.ELEVENLABS) return false;
   if (!requestedProvider || requestedProvider === 'auto') {
     const persona = getTtsPersonaFromBody(body);
-    if (persona !== 'a11') return false;
+    if (!['a11', 'vivy'].includes(persona)) return false;
   }
   return Boolean(getElevenLabsTtsApiKey());
 }
@@ -2272,7 +2313,7 @@ function getCloudTtsProviderOrder(body = {}, resolvedProvider = {}) {
   if (shouldTryOpenAiTts(body)) configured.push(PROVIDERS.OPENAI);
   const resolved = String(resolvedProvider?.provider || '').trim().toLowerCase();
   return Array.from(new Set([
-    isCloudTtsProvider(resolved) ? resolved : null,
+    isCloudTtsProvider(resolved) && resolvedProvider?.configured === true ? resolved : null,
     ...configured,
   ].filter(Boolean)));
 }
@@ -3673,12 +3714,17 @@ function buildVivyTtsJobBody(body = {}) {
   const vivyF0Shift = requestedF0Shift ?? (isSong ? -0.35 : -0.8);
   const requestedProvider = getRequestedTtsProvider(body);
   const explicitLegacyBridge = requestedProvider === PROVIDERS.XTTS_RVC && allowsXttsRvcForBody(body);
-  const requestedActiveCloudProvider = isCloudTtsProvider(requestedProvider) && !isLegacyCloudTtsProvider(requestedProvider)
+  const requestedLocalReference = (requestedProvider === 'auto' || !requestedProvider)
+    && (allowsXttsRvcForBody(body) || wantsSpecificLocalVoiceReference(body));
+  const requestedCloudProvider = isCloudTtsProvider(requestedProvider)
     ? requestedProvider
     : '';
+  const defaultProvider = getDefaultVoiceProviderForPersona('vivy');
   const provider = explicitLegacyBridge
     ? PROVIDERS.XTTS_RVC
-    : (requestedActiveCloudProvider || PROVIDERS.XTTS_RVC);
+    : (requestedLocalReference
+      ? PROVIDERS.XTTS_RVC
+      : (requestedCloudProvider || (isProviderRuntimeConfigured(defaultProvider) ? defaultProvider : PROVIDERS.XTTS_RVC)));
   const useXttsBridge = provider === PROVIDERS.XTTS_RVC;
   return {
     ...body,
